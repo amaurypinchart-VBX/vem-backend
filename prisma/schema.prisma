@@ -1,0 +1,547 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  project_manager
+  site_manager
+  technical_manager
+  engineer
+  worker
+  client
+}
+
+enum ProjectStatus {
+  draft
+  confirmed
+  in_preparation
+  loading
+  on_site
+  installation
+  handover
+  dismantling
+  completed
+  cancelled
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+  blocked
+  cancelled
+}
+
+enum Priority {
+  low
+  normal
+  high
+  critical
+}
+
+enum TicketStatus {
+  open
+  assigned
+  in_progress
+  resolved
+  validated
+  closed
+}
+
+enum TicketUrgency {
+  low
+  medium
+  high
+  critical
+}
+
+enum BoxStatus {
+  preparing
+  ready
+  loaded
+  on_site
+  returned
+  incomplete
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  phone        String?
+  role         UserRole  @default(worker)
+  avatarUrl    String?   @map("avatar_url")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLogin    DateTime? @map("last_login")
+  pushToken    String?   @map("push_token")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  managedProjects    Project[]      @relation("TechnicalManager")
+  createdProjects    Project[]      @relation("CreatedBy")
+  projectTeam        ProjectTeam[]
+  assignedTasks      Task[]         @relation("AssignedTo")
+  createdTasks       Task[]         @relation("TaskCreatedBy")
+  taskComments       TaskComment[]
+  handovers          Handover[]     @relation("HandoverCreatedBy")
+  siteManagerHandover Handover[]    @relation("SiteManager")
+  dailyReports       DailyReport[]
+  reportedTickets    Ticket[]       @relation("ReportedBy")
+  assignedTickets    Ticket[]       @relation("TicketAssignedTo")
+  validatedTickets   Ticket[]       @relation("ValidatedBy")
+  preparedBoxes      WarehouseBox[] @relation("BoxPreparedBy")
+  validatedBoxes     WarehouseBox[] @relation("BoxValidatedBy")
+  notifications      Notification[]
+  refreshTokens      RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Client {
+  id          String    @id @default(uuid())
+  name        String
+  contactName String?   @map("contact_name")
+  email       String?
+  phone       String?
+  address     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  projects    Project[]
+
+  @@map("clients")
+}
+
+model Project {
+  id                  String        @id @default(uuid())
+  internalNumber      String        @unique @map("internal_number")
+  name                String
+  clientId            String        @map("client_id")
+  status              ProjectStatus @default(draft)
+  address             String
+  city                String?
+  installationStart   DateTime      @map("installation_start")
+  installationEnd     DateTime      @map("installation_end")
+  dismantlingStart    DateTime?     @map("dismantling_start")
+  dismantlingEnd      DateTime?     @map("dismantling_end")
+  workersCount        Int           @default(0) @map("workers_count")
+  description         String?
+  specialInstructions String?       @map("special_instructions")
+  technicalManagerId  String?       @map("technical_manager_id")
+  createdById         String?       @map("created_by")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  client           Client          @relation(fields: [clientId], references: [id])
+  technicalManager User?           @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
+  createdBy        User?           @relation("CreatedBy", fields: [createdById], references: [id])
+  team             ProjectTeam[]
+  trucks           Truck[]
+  files            ProjectFile[]
+  tasks            Task[]
+  handovers        Handover[]
+  dailyReports     DailyReport[]
+  tickets          Ticket[]
+  warehouseBoxes   WarehouseBox[]
+  toolboxes        Toolbox[]
+
+  @@map("projects")
+}
+
+model ProjectTeam {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  role      String
+  isLead    Boolean  @default(false) @map("is_lead")
+  createdAt DateTime @default(now()) @map("created_at")
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@map("project_team")
+}
+
+model Truck {
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  truckNumber   String?   @map("truck_number")
+  licensePlate  String?   @map("license_plate")
+  driverName    String?   @map("driver_name")
+  loadingDate   DateTime? @map("loading_date")
+  departureDate DateTime? @map("departure_date")
+  arrivalDate   DateTime? @map("arrival_date")
+  notes         String?
+  status        String    @default("planned")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("trucks")
+}
+
+model ProjectFile {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  uploadedBy String?  @map("uploaded_by")
+  fileName   String   @map("file_name")
+  fileUrl    String   @map("file_url")
+  publicId   String?  @map("public_id")
+  fileType   String?  @map("file_type")
+  fileSize   Int?     @map("file_size")
+  category   String   @default("general")
+  createdAt  DateTime @default(now()) @map("created_at")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_files")
+}
+
+model Task {
+  id             String     @id @default(uuid())
+  projectId      String     @map("project_id")
+  title          String
+  description    String?
+  taskDate       DateTime   @map("task_date")
+  startTime      String?    @map("start_time")
+  endTime        String?    @map("end_time")
+  status         TaskStatus @default(todo)
+  priority       Priority   @default(normal)
+  assignedToId   String?    @map("assigned_to")
+  createdById    String?    @map("created_by")
+  estimatedHours Float?     @map("estimated_hours")
+  actualHours    Float?     @map("actual_hours")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTo User?         @relation("AssignedTo", fields: [assignedToId], references: [id])
+  createdBy  User?         @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  photos     TaskPhoto[]
+  comments   TaskComment[]
+
+  @@map("tasks")
+}
+
+model TaskPhoto {
+  id         String   @id @default(uuid())
+  taskId     String   @map("task_id")
+  uploadedBy String?  @map("uploaded_by")
+  photoUrl   String   @map("photo_url")
+  publicId   String?  @map("public_id")
+  caption    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_photos")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  userId    String?  @map("user_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("task_comments")
+}
+
+model Handover {
+  id                  String    @id @default(uuid())
+  projectId           String    @map("project_id")
+  createdById         String?   @map("created_by")
+  clientName          String?   @map("client_name")
+  clientEmail         String?   @map("client_email")
+  clientSignatureUrl  String?   @map("client_signature_url")
+  clientSignedAt      DateTime? @map("client_signed_at")
+  managerSignatureUrl String?   @map("manager_signature_url")
+  managerSignedAt     DateTime? @map("manager_signed_at")
+  siteManagerId       String?   @map("site_manager_id")
+  status              String    @default("draft")
+  pdfUrl              String?   @map("pdf_url")
+  generalNotes        String?   @map("general_notes")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy   User?          @relation("HandoverCreatedBy", fields: [createdById], references: [id])
+  siteManager User?          @relation("SiteManager", fields: [siteManagerId], references: [id])
+  items       HandoverItem[]
+  photos      HandoverPhoto[]
+
+  @@map("handovers")
+}
+
+model HandoverItem {
+  id         String         @id @default(uuid())
+  handoverId String         @map("handover_id")
+  zoneName   String         @map("zone_name")
+  status     String         @default("ok")
+  comment    String?
+  sortOrder  Int            @default(0) @map("sort_order")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  handover   Handover       @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  photos     HandoverPhoto[]
+
+  @@map("handover_items")
+}
+
+model HandoverPhoto {
+  id           String        @id @default(uuid())
+  handoverId   String?       @map("handover_id")
+  itemId       String?       @map("item_id")
+  uploadedById String?       @map("uploaded_by")
+  photoUrl     String        @map("photo_url")
+  publicId     String?       @map("public_id")
+  caption      String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  handover     Handover?     @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  item         HandoverItem? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("handover_photos")
+}
+
+model DailyReport {
+  id             String                    @id @default(uuid())
+  projectId      String                    @map("project_id")
+  reportDate     DateTime                  @map("report_date")
+  createdById    String?                   @map("created_by")
+  weather        String?
+  workersPresent Int                       @default(0) @map("workers_present")
+  generalNotes   String?                   @map("general_notes")
+  sentAt         DateTime?                 @map("sent_at")
+  pdfUrl         String?                   @map("pdf_url")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  project   Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?                         @relation(fields: [createdById], references: [id])
+  entries   DailyReportEntry[]
+  checklist DailyReportChecklistItem[]
+  photos    DailyReportPhoto[]
+
+  @@unique([projectId, reportDate])
+  @@map("daily_reports")
+}
+
+model DailyReportEntry {
+  id          String      @id @default(uuid())
+  reportId    String      @map("report_id")
+  entryTime   String      @map("entry_time")
+  description String
+  createdAt   DateTime    @default(now()) @map("created_at")
+  report      DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("daily_report_entries")
+}
+
+model DailyReportChecklistItem {
+  id        String      @id @default(uuid())
+  reportId  String      @map("report_id")
+  item      String
+  checked   Boolean     @default(false)
+  notes     String?
+  createdAt DateTime    @default(now()) @map("created_at")
+  report    DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("daily_report_checklist")
+}
+
+model DailyReportPhoto {
+  id        String      @id @default(uuid())
+  reportId  String      @map("report_id")
+  photoUrl  String      @map("photo_url")
+  publicId  String?     @map("public_id")
+  caption   String?
+  createdAt DateTime    @default(now()) @map("created_at")
+  report    DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("daily_report_photos")
+}
+
+model Ticket {
+  id              String        @id @default(uuid())
+  projectId       String?       @map("project_id")
+  title           String
+  description     String
+  urgency         TicketUrgency @default(medium)
+  status          TicketStatus  @default(open)
+  locationOnSite  String?       @map("location_on_site")
+  reportedById    String?       @map("reported_by")
+  assignedToId    String?       @map("assigned_to")
+  plannedDate     DateTime?     @map("planned_date")
+  resolvedAt      DateTime?     @map("resolved_at")
+  validatedById   String?       @map("validated_by")
+  validatedAt     DateTime?     @map("validated_at")
+  timeSpent       Float?        @map("time_spent")
+  resolutionNotes String?       @map("resolution_notes")
+  autoEscalated   Boolean       @default(false) @map("auto_escalated")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  project     Project?        @relation(fields: [projectId], references: [id])
+  reportedBy  User?           @relation("ReportedBy", fields: [reportedById], references: [id])
+  assignedTo  User?           @relation("TicketAssignedTo", fields: [assignedToId], references: [id])
+  validatedBy User?           @relation("ValidatedBy", fields: [validatedById], references: [id])
+  photos      TicketPhoto[]
+  history     TicketHistory[]
+
+  @@map("tickets")
+}
+
+model TicketPhoto {
+  id           String   @id @default(uuid())
+  ticketId     String   @map("ticket_id")
+  uploadedById String?  @map("uploaded_by")
+  photoUrl     String   @map("photo_url")
+  publicId     String?  @map("public_id")
+  phase        String   @default("before")
+  caption      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_photos")
+}
+
+model TicketHistory {
+  id          String       @id @default(uuid())
+  ticketId    String       @map("ticket_id")
+  changedById String?      @map("changed_by")
+  oldStatus   TicketStatus? @map("old_status")
+  newStatus   TicketStatus? @map("new_status")
+  comment     String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_history")
+}
+
+model WarehouseBox {
+  id           String    @id @default(uuid())
+  projectId    String    @map("project_id")
+  name         String
+  description  String?
+  status       BoxStatus @default(preparing)
+  qrCode       String?   @unique @map("qr_code")
+  preparedById String?   @map("prepared_by")
+  validatedById String?  @map("validated_by")
+  validatedAt  DateTime? @map("validated_at")
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  preparedBy  User?      @relation("BoxPreparedBy", fields: [preparedById], references: [id])
+  validatedBy User?      @relation("BoxValidatedBy", fields: [validatedById], references: [id])
+  items       BoxItem[]
+  photos      BoxPhoto[]
+
+  @@map("warehouse_boxes")
+}
+
+model BoxItem {
+  id          String       @id @default(uuid())
+  boxId       String       @map("box_id")
+  productName String       @map("product_name")
+  quantity    Float        @default(1)
+  unit        String       @default("pcs")
+  description String?
+  isPresent   Boolean?     @map("is_present")
+  notes       String?
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  box         WarehouseBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+
+  @@map("box_items")
+}
+
+model BoxPhoto {
+  id        String       @id @default(uuid())
+  boxId     String       @map("box_id")
+  photoUrl  String       @map("photo_url")
+  publicId  String?      @map("public_id")
+  phase     String       @default("content")
+  caption   String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  box       WarehouseBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+
+  @@map("box_photos")
+}
+
+model Toolbox {
+  id           String          @id @default(uuid())
+  name         String
+  description  String?
+  projectId    String?         @map("project_id")
+  qrCode       String?         @unique @map("qr_code")
+  status       String          @default("in_warehouse")
+  preparedById String?         @map("prepared_by")
+  validatedAt  DateTime?       @map("validated_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  project      Project?        @relation(fields: [projectId], references: [id])
+  drawers      ToolboxDrawer[]
+
+  @@map("toolboxes")
+}
+
+model ToolboxDrawer {
+  id          String       @id @default(uuid())
+  toolboxId   String       @map("toolbox_id")
+  name        String
+  sortOrder   Int          @default(0) @map("sort_order")
+  photoUrl    String?      @map("photo_url")
+  isValidated Boolean      @default(false) @map("is_validated")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  toolbox     Toolbox      @relation(fields: [toolboxId], references: [id], onDelete: Cascade)
+  tools       ToolboxTool[]
+
+  @@map("toolbox_drawers")
+}
+
+model ToolboxTool {
+  id          String        @id @default(uuid())
+  drawerId    String        @map("drawer_id")
+  name        String
+  expectedQty Int           @default(1) @map("expected_qty")
+  actualQty   Int?          @map("actual_qty")
+  status      String        @default("ok")
+  isChecked   Boolean       @default(false) @map("is_checked")
+  notes       String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  drawer      ToolboxDrawer @relation(fields: [drawerId], references: [id], onDelete: Cascade)
+
+  @@map("toolbox_tools")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  body      String?
+  data      String?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
