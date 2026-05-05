@@ -10,8 +10,8 @@ RUN npm install --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src ./src/
-RUN npm run build && npx prisma generate
+RUN npx prisma generate && npm run build
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"]
+CMD ["node", "dist/index.js"]
