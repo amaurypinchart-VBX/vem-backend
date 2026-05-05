@@ -10,6 +10,8 @@ RUN npm install --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src ./src/
+COPY public ./public/
+
 RUN npx prisma generate && npm run build
 
 EXPOSE 3000
