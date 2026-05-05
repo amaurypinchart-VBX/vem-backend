@@ -1,10 +1,8 @@
-# railway.toml — Configuration Railway
 [build]
-builder = "nixpacks"
-buildCommand = "npm install && npm run build && npx prisma generate"
+builder = "dockerfile"
 
 [deploy]
-startCommand = "npx prisma migrate deploy && node dist/index.js"
+startCommand = "node dist/index.js"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
