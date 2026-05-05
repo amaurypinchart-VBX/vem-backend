@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>VEM — ViewBox Event Manager v2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --ink:#0d0f14;--ink2:#1e2230;--red:#e63946;--red-soft:rgba(230,57,70,.12);
+  --green:#2dc653;--green-soft:rgba(45,198,83,.12);--amber:#f4a261;--amber-soft:rgba(244,162,97,.12);
+  --blue:#4895ef;--blue-soft:rgba(72,149,239,.12);
+  --surface:#fff;--surface2:#f7f8fb;--surface3:#eef0f6;--border:#e4e7f0;--muted:#8892a4;
+  --radius:12px;--shadow:0 2px 12px rgba(13,15,20,.07);--shadow-md:0 8px 32px rgba(13,15,20,.12);
+  --nav-w:256px;--top-h:60px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--surface2);color:var(--ink);-webkit-font-smoothing:antialiased;}
+
+#offline-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#f4a261;color:#fff;font-weight:700;font-size:13px;padding:8px;text-align:center;}
+body.offline #offline-banner{display:block;}
+body.offline .main{padding-top:40px;}
+
+.shell{display:flex;min-height:100vh;}
+.nav{width:var(--nav-w);position:fixed;top:0;left:0;bottom:0;background:var(--ink);display:flex;flex-direction:column;z-index:200;overflow-y:auto;transition:transform .28s;}
+.main{margin-left:var(--nav-w);flex:1;display:flex;flex-direction:column;min-height:100vh;}
+
+.nav-brand{padding:20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,.06);}
+.brand-mark{width:38px;height:38px;background:var(--red);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#fff;flex-shrink:0;}
+.brand-name{font-size:17px;font-weight:800;color:#fff;}
+.brand-ver{font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;}
+.nav-section{padding:10px 0;}
+.nav-label{padding:6px 20px;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.28);}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;font-size:14px;font-weight:500;color:rgba(255,255,255,.55);transition:all .18s;border-left:3px solid transparent;}
+.nav-item:hover{color:rgba(255,255,255,.9);background:rgba(255,255,255,.05);}
+.nav-item.active{color:#fff;background:rgba(230,57,70,.2);border-left-color:var(--red);}
+.nav-item .ni{font-size:17px;width:22px;text-align:center;flex-shrink:0;}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px;}
+.nav-footer{margin-top:auto;padding:16px 20px;border-top:1px solid rgba(255,255,255,.06);}
+.nav-user{display:flex;align-items:center;gap:10px;}
+.nav-avatar{width:34px;height:34px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:#fff;flex-shrink:0;}
+.nav-user-name{font-size:13px;color:rgba(255,255,255,.8);font-weight:600;}
+.nav-user-role{font-size:11px;color:rgba(255,255,255,.35);}
+
+.topbar{height:var(--top-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100;}
+.topbar-title{font-size:18px;font-weight:800;color:var(--ink);flex:1;}
+.icon-btn{width:36px;height:36px;border:none;background:var(--surface2);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;position:relative;}
+.icon-btn:hover{background:var(--surface3);}
+.notif-pip{position:absolute;top:6px;right:6px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid var(--surface);}
+.menu-btn{display:none;}
+
+.content{padding:24px;flex:1;}
+.pg{display:none;}.pg.active{display:block;}
+
+.pg-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:16px;flex-wrap:wrap;}
+.pg-title{font-size:24px;font-weight:900;color:var(--ink);letter-spacing:-.5px;}
+.pg-sub{font-size:14px;color:var(--muted);margin-top:3px;}
+.pg-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--surface);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);border-left:4px solid transparent;transition:transform .15s;position:relative;overflow:hidden;}
+.stat-card:hover{transform:translateY(-2px);}
+.stat-card.red{border-left-color:var(--red);}
+.stat-card.green{border-left-color:var(--green);}
+.stat-card.amber{border-left-color:var(--amber);}
+.stat-card.blue{border-left-color:var(--blue);}
+.stat-val{font-size:34px;font-weight:900;color:var(--ink);letter-spacing:-1px;line-height:1;}
+.stat-lbl{font-size:12px;color:var(--muted);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+.stat-delta{font-size:11px;margin-top:4px;font-weight:600;}
+.stat-delta.up{color:var(--green);}
+.stat-delta.down{color:var(--red);}
+.stat-bg{position:absolute;right:-8px;top:-8px;font-size:60px;opacity:.06;}
+
+.card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px;}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-size:15px;font-weight:700;color:var(--ink);}
+.card-body{padding:20px;}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-2-1{display:grid;grid-template-columns:2fr 1fr;gap:20px;}
+
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap;}
+.badge-red{background:var(--red-soft);color:var(--red);}
+.badge-green{background:var(--green-soft);color:#1a9e42;}
+.badge-amber{background:var(--amber-soft);color:#c46a1a;}
+.badge-blue{background:var(--blue-soft);color:#1a65c4;}
+.badge-muted{background:var(--surface3);color:var(--muted);}
+
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit;white-space:nowrap;}
+.btn-primary{background:var(--red);color:#fff;}
+.btn-primary:hover{background:#c62736;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-outline{background:transparent;border:2px solid var(--border);color:var(--ink2);}
+.btn-outline:hover{border-color:var(--red);color:var(--red);}
+.btn-ghost{background:var(--surface2);color:var(--ink2);}
+.btn-ghost:hover{background:var(--surface3);}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:7px;}
+.btn-xs{padding:4px 9px;font-size:11px;border-radius:6px;}
+
+.form-group{margin-bottom:16px;}
+.form-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink2);}
+.input{width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;background:var(--surface);color:var(--ink);transition:border .15s;}
+.input:focus{border-color:var(--red);}
+.input-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+textarea.input{min-height:90px;resize:vertical;}
+
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:14px;}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);background:var(--surface2);}
+td{padding:12px 14px;border-top:1px solid var(--border);vertical-align:middle;}
+tr:hover td{background:#fafbfd;}
+
+.tabs{display:flex;gap:2px;border-bottom:2px solid var(--border);margin-bottom:20px;}
+.tab{padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;white-space:nowrap;}
+.tab.active{color:var(--red);border-bottom-color:var(--red);}
+
+.prog{background:var(--surface3);border-radius:99px;overflow:hidden;}
+.prog-bar{height:100%;border-radius:99px;transition:width .4s;}
+.prog-bar.red{background:var(--red);}
+.prog-bar.green{background:var(--green);}
+.prog-bar.amber{background:var(--amber);}
+.prog-bar.blue{background:var(--blue);}
+
+.timeline{padding-left:20px;position:relative;}
+.timeline::before{content:'';position:absolute;left:6px;top:6px;bottom:0;width:2px;background:var(--border);}
+.tl-item{position:relative;margin-bottom:14px;}
+.tl-dot{position:absolute;left:-18px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--red);border:2px solid var(--surface);}
+.tl-dot.green{background:var(--green);}
+.tl-dot.amber{background:var(--amber);}
+.tl-content{background:var(--surface2);border-radius:9px;padding:10px 14px;}
+.tl-time{font-size:11px;font-weight:700;color:var(--muted);}
+.tl-text{font-size:13px;color:var(--ink2);margin-top:2px;line-height:1.5;}
+
+.proj-card{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);cursor:pointer;transition:all .2s;border:2px solid transparent;}
+.proj-card:hover{border-color:var(--red);transform:translateY(-2px);box-shadow:var(--shadow-md);}
+.proj-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+
+.task-card{border:2px solid var(--border);border-radius:10px;padding:14px;margin-bottom:8px;cursor:pointer;transition:all .15s;background:var(--surface);}
+.task-card:hover{border-color:var(--red);}
+.task-card.done{opacity:.6;border-color:var(--green);}
+.task-card.inprog{border-color:var(--amber);}
+.task-card.blocked{border-color:var(--red);}
+
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.kboard{background:var(--surface2);border-radius:var(--radius);padding:14px;}
+.kboard-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;}
+.kcard{background:var(--surface);border-radius:9px;padding:12px;margin-bottom:8px;box-shadow:var(--shadow);cursor:pointer;transition:transform .15s;border-left:3px solid transparent;}
+.kcard:hover{transform:translateY(-1px);}
+.kcard.todo{border-left-color:var(--blue);}
+.kcard.inprog{border-left-color:var(--amber);}
+.kcard.done{border-left-color:var(--green);opacity:.7;}
+.kcard.blocked{border-left-color:var(--red);}
+
+.overlay{display:none;position:fixed;inset:0;background:rgba(13,15,20,.6);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+.overlay.open{display:flex;}
+.modal{background:var(--surface);border-radius:16px;padding:28px;width:90%;max-width:680px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.22);animation:modalIn .2s ease;}
+@keyframes modalIn{from{transform:scale(.96) translateY(8px);opacity:0;}to{transform:none;opacity:1;}}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;}
+.modal-title{font-size:19px;font-weight:800;}
+.modal-close{background:var(--surface2);border:none;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;color:var(--muted);}
+
+.drawer-comp{border:2px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:12px;}
+.drawer-head{padding:14px 16px;background:var(--surface2);display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
+.drawer-body{padding:16px;}
+.tool-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.tool-row:last-child{border:none;}
+.tool-qty{background:var(--surface2);border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;min-width:32px;text-align:center;}
+
+.check-item{display:flex;align-items:center;gap:10px;padding:10px;border:2px solid var(--border);border-radius:9px;margin-bottom:7px;transition:all .15s;}
+.check-item.checked{background:var(--green-soft);border-color:var(--green);}
+.check-cb{width:18px;height:18px;cursor:pointer;accent-color:var(--green);flex-shrink:0;}
+
+.sig-zone{border:2px dashed var(--border);border-radius:10px;min-height:110px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;color:var(--muted);font-size:13px;font-weight:600;}
+.sig-zone:hover{border-color:var(--red);color:var(--red);}
+.sig-zone.signed{border-style:solid;border-color:var(--green);background:var(--green-soft);color:#1a9e42;}
+
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.photo-cell{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:28px;cursor:pointer;border:2px solid var(--border);transition:border .15s;}
+.photo-cell:hover{border-color:var(--red);}
+
+.analytic-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+.analytic-label{font-size:13px;font-weight:600;width:150px;flex-shrink:0;}
+.analytic-bar-wrap{flex:1;background:var(--surface3);border-radius:99px;height:8px;overflow:hidden;}
+.analytic-bar-fill{height:100%;border-radius:99px;transition:width .4s .1s;}
+.analytic-val{font-size:12px;font-weight:700;color:var(--muted);width:36px;text-align:right;flex-shrink:0;}
+
+.toasts{position:fixed;top:72px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;min-width:260px;max-width:340px;animation:toastIn .28s ease;box-shadow:var(--shadow-md);}
+.toast.success{background:#1a9e42;}
+.toast.error{background:var(--red);}
+.toast.warning{background:#c46a1a;}
+@keyframes toastIn{from{transform:translateX(60px);opacity:0;}to{transform:none;opacity:1;}}
+
+.sbar{display:flex;gap:10px;margin-bottom:18px;align-items:center;}
+.sbar-input{flex:1;padding:9px 14px 9px 38px;border:2px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;background:var(--surface);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238892a4' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:12px center;}
+.sbar-input:focus{border-color:var(--red);}
+
+.sdot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;}
+.sdot.green{background:var(--green);}.sdot.red{background:var(--red);}.sdot.amber{background:var(--amber);}.sdot.muted{background:var(--muted);}
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0;}
+.hz-row{display:flex;align-items:center;gap:12px;padding:12px;border:2px solid var(--border);border-radius:9px;margin-bottom:8px;transition:all .15s;}
+.hz-row.ok{border-color:var(--green);background:var(--green-soft);}
+.hz-row.remark{border-color:var(--amber);background:var(--amber-soft);}
+.hz-row.defect{border-color:var(--red);background:var(--red-soft);}
+.box-card{border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;transition:all .2s;}
+.box-card:hover{border-color:var(--blue);}
+.qr-badge{display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:rgba(255,255,255,.7);border-radius:7px;padding:4px 10px;font-size:11px;font-weight:600;letter-spacing:.5px;}
+
+@media(max-width:900px){
+  .nav{transform:translateX(-100%);}
+  .nav.open{transform:none;}
+  .main{margin-left:0;}
+  .menu-btn{display:flex;}
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .proj-grid{grid-template-columns:1fr 1fr;}
+  .grid-2,.grid-2-1{grid-template-columns:1fr;}
+  .kanban{grid-template-columns:1fr 1fr;}
+  .input-row{grid-template-columns:1fr;}
+}
+@media(max-width:540px){
+  .stat-grid,.proj-grid,.kanban{grid-template-columns:1fr;}
+  .content{padding:14px;}
+}
+</style>
+</head>
+<body>
+<div id="offline-banner">📡 Mode hors-ligne — Données sauvegardées localement</div>
+<div class="shell">
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+  <div class="nav-brand">
+    <div class="brand-mark">V</div>
+    <div><div class="brand-name">VEM</div><div class="brand-ver">Event Manager v2</div></div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Principal</div>
+    <div class="nav-item active" onclick="goto('dashboard')"><span class="ni">📊</span>Dashboard</div>
+    <div class="nav-item" onclick="goto('projects')"><span class="ni">🏗️</span>Projets</div>
+    <div class="nav-item" onclick="goto('analytics')"><span class="ni">📈</span>Analytiques</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Terrain</div>
+    <div class="nav-item" onclick="goto('tasks')"><span class="ni">✅</span>Tâches<span class="nav-badge">2</span></div>
+    <div class="nav-item" onclick="goto('daily')"><span class="ni">📓</span>Daily Report</div>
+    <div class="nav-item" onclick="goto('handover')"><span class="ni">🧾</span>Handover</div>
+    <div class="nav-item" onclick="goto('remarks')"><span class="ni">🔁</span>Suivi Client</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">SAV & Entrepôt</div>
+    <div class="nav-item" onclick="goto('tickets')"><span class="ni">🛠️</span>Tickets SAV<span class="nav-badge">5</span></div>
+    <div class="nav-item" onclick="goto('warehouse')"><span class="ni">📦</span>Entrepôt</div>
+    <div class="nav-item" onclick="goto('toolbox')"><span class="ni">🧰</span>Boîtes à outils</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Admin</div>
+    <div class="nav-item" onclick="goto('team')"><span class="ni">👥</span>Équipe</div>
+    <div class="nav-item" onclick="goto('notifs')"><span class="ni">🔔</span>Notifications<span class="nav-badge">3</span></div>
+  </div>
+  <div class="nav-footer">
+    <div class="nav-user">
+      <div class="nav-avatar">AP</div>
+      <div><div class="nav-user-name">Amaury Pinchart</div><div class="nav-user-role">Technical Manager</div></div>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+<header class="topbar">
+  <button class="icon-btn menu-btn" onclick="toggleNav()">☰</button>
+  <div class="topbar-title" id="pg-title">Dashboard</div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button class="icon-btn" onclick="toggleOffline()" title="Simuler mode offline">📡</button>
+    <button class="icon-btn" onclick="goto('notifs')">🔔<span class="notif-pip"></span></button>
+    <div class="nav-avatar" style="width:34px;height:34px;font-size:12px;cursor:pointer;">AP</div>
+  </div>
+</header>
+<div class="content">
+
+<!-- DASHBOARD -->
+<div class="pg active" id="pg-dashboard">
+  <div class="pg-head">
+    <div>
+      <div class="pg-title">Bonjour, Amaury 👋</div>
+      <div class="pg-sub">Mardi 28 Mai 2025 — 3 projets actifs</div>
+    </div>
+    <div class="pg-actions">
+      <button class="btn btn-ghost btn-sm" onclick="goto('analytics')">📈 Stats</button>
+      <button class="btn btn-primary" onclick="showModal('modal-proj')">+ Nouveau Projet</button>
+    </div>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card red"><div class="stat-bg">🏗️</div><div class="stat-val">3</div><div class="stat-lbl">Projets actifs</div><div class="stat-delta up">↑ 1 ce mois</div></div>
+    <div class="stat-card green"><div class="stat-bg">✅</div><div class="stat-val">26</div><div class="stat-lbl">Tâches terminées</div><div class="stat-delta up">↑ 8 cette semaine</div></div>
+    <div class="stat-card amber"><div class="stat-bg">🛠️</div><div class="stat-val">5</div><div class="stat-lbl">Tickets ouverts</div><div class="stat-delta down">2 critiques</div></div>
+    <div class="stat-card blue"><div class="stat-bg">📦</div><div class="stat-val">4</div><div class="stat-lbl">Box validées</div><div class="stat-delta up">2 en cours</div></div>
+  </div>
+  <div class="grid-2-1">
+    <div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🏗️ Projets en cours</span><button class="btn btn-ghost btn-xs" onclick="goto('projects')">Voir tout →</button></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+          <div class="proj-card" style="padding:16px;" onclick="openProj('001')">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+              <div><span class="badge badge-red">Installation</span> <span class="badge badge-muted" style="margin-left:4px;font-size:10px;">VEM-2025-001</span></div>
+              <span style="font-size:11px;color:var(--muted);">8 👷</span>
+            </div>
+            <div style="font-size:16px;font-weight:800;margin-bottom:2px;">Salon Audi Bruxelles</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">📍 Bruxelles · 10→14 Mai 2025</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="prog" style="flex:1;height:6px;"><div class="prog-bar red" style="width:65%"></div></div>
+              <span style="font-size:12px;font-weight:700;">65%</span>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+              <span class="badge badge-red">2 tickets critiques</span>
+              <span class="badge badge-amber">3 tâches en cours</span>
+            </div>
+          </div>
+          <div class="proj-card" style="padding:16px;" onclick="openProj('002')">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+              <div><span class="badge badge-amber">Préparation</span> <span class="badge badge-muted" style="margin-left:4px;font-size:10px;">VEM-2025-002</span></div>
+              <span style="font-size:11px;color:var(--muted);">5 👷</span>
+            </div>
+            <div style="font-size:16px;font-weight:800;margin-bottom:2px;">BMW Experience Liège</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">📍 Liège · 20→23 Mai 2025</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="prog" style="flex:1;height:6px;"><div class="prog-bar amber" style="width:20%"></div></div>
+              <span style="font-size:12px;font-weight:700;">20%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Timeline Gantt -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">📅 Timeline Projets — Mai 2025</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:8px;">
+            <div></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-size:10px;color:var(--muted);">8 Mai</span>
+              <span style="font-size:10px;color:var(--muted);">12 Mai</span>
+              <span style="font-size:10px;color:var(--muted);">16 Mai</span>
+              <span style="font-size:10px;color:var(--muted);">20 Mai</span>
+              <span style="font-size:10px;color:var(--muted);">24 Mai</span>
+            </div>
+            <div style="font-size:12px;font-weight:700;align-self:center;">Salon Audi</div>
+            <div style="background:var(--surface2);border-radius:6px;height:24px;position:relative;overflow:hidden;">
+              <div style="position:absolute;left:12.5%;width:31.25%;height:100%;background:var(--red);border-radius:4px;display:flex;align-items:center;padding-left:8px;"><span style="font-size:10px;color:#fff;font-weight:700;">Install.</span></div>
+              <div style="position:absolute;left:43.75%;width:12.5%;height:100%;background:rgba(230,57,70,.4);border-radius:4px;display:flex;align-items:center;padding-left:4px;"><span style="font-size:9px;color:var(--red);font-weight:700;">Démont.</span></div>
+            </div>
+            <div style="font-size:12px;font-weight:700;align-self:center;">BMW Liège</div>
+            <div style="background:var(--surface2);border-radius:6px;height:24px;position:relative;overflow:hidden;">
+              <div style="position:absolute;left:75%;width:25%;height:100%;background:var(--blue);border-radius:4px;display:flex;align-items:center;padding-left:8px;"><span style="font-size:10px;color:#fff;font-weight:700;">Install.</span></div>
+            </div>
+          </div>
+          <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted);">Ligne rouge = aujourd'hui</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚨 Urgences</span><button class="btn btn-ghost btn-xs" onclick="goto('tickets')">Voir →</button></div>
+        <div class="card-body" style="padding:12px;">
+          <div class="task-card blocked" onclick="goto('tickets')" style="margin-bottom:8px;">
+            <div style="display:flex;gap:6px;margin-bottom:5px;"><span class="badge badge-red">🔴 Critique</span></div>
+            <div style="font-weight:700;font-size:13px;">Façade Nord — vis M6 manquantes</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">Norick Palm · il y a 3h</div>
+          </div>
+          <div class="task-card inprog" onclick="goto('tickets')" style="margin-bottom:8px;">
+            <div style="display:flex;gap:6px;margin-bottom:5px;"><span class="badge badge-amber">🟡 Moyen</span></div>
+            <div style="font-weight:700;font-size:13px;">Éclairage Zone B défaillant</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">Non assigné · il y a 6h</div>
+          </div>
+          <div class="task-card" onclick="goto('tickets')" style="border-color:var(--red);background:var(--red-soft);">
+            <div style="font-size:11px;color:var(--red);font-weight:700;">⚠️ ESCALADE AUTO · 28h</div>
+            <div style="font-weight:700;font-size:13px;margin-top:3px;">Câble alimentation trop court</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">📅 Tâches du jour</span></div>
+        <div class="card-body" style="padding:12px;">
+          <div class="check-item checked"><input type="checkbox" class="check-cb" checked onchange="toggleCheck(this)"><div style="flex:1;"><div style="font-weight:600;font-size:13px;">Installation façade Est</div><div style="font-size:11px;color:var(--muted);">10h · Paul M.</div></div><span class="badge badge-green">✓</span></div>
+          <div class="check-item"><input type="checkbox" class="check-cb" onchange="toggleCheck(this)"><div style="flex:1;"><div style="font-weight:600;font-size:13px;">Déchargement camion 2</div><div style="font-size:11px;color:var(--muted);">08h · Norick P.</div></div><span class="badge badge-amber">En cours</span></div>
+          <div class="check-item"><input type="checkbox" class="check-cb" onchange="toggleCheck(this)"><div style="flex:1;"><div style="font-weight:600;font-size:13px;">Câblage zone B</div><div style="font-size:11px;color:var(--muted);">14h · Ignace G.</div></div><span class="badge badge-muted">À faire</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚡ Actions rapides</span></div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;">
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:13px;" onclick="showModal('modal-ticket')">🛠️ Ticket SAV</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:13px;" onclick="goto('daily')">📓 Daily report</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:13px;" onclick="goto('handover')">🧾 Handover</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:13px;" onclick="goto('warehouse')">📦 Entrepôt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ANALYTICS -->
+<div class="pg" id="pg-analytics">
+  <div class="pg-head"><div><div class="pg-title">Analytiques</div><div class="pg-sub">Performance opérationnelle — Mai 2025</div></div></div>
+  <div class="stat-grid">
+    <div class="stat-card green"><div class="stat-bg">📊</div><div class="stat-val">94%</div><div class="stat-lbl">Taux complétion</div><div class="stat-delta up">↑ +4%</div></div>
+    <div class="stat-card red"><div class="stat-bg">⚡</div><div class="stat-val">3.2h</div><div class="stat-lbl">Résolution tickets (moy.)</div><div class="stat-delta up">↓ -1.1h</div></div>
+    <div class="stat-card amber"><div class="stat-bg">🔧</div><div class="stat-val">18</div><div class="stat-lbl">Tickets ce mois</div><div class="stat-delta down">↑ +3</div></div>
+    <div class="stat-card blue"><div class="stat-bg">⭐</div><div class="stat-val">4.7</div><div class="stat-lbl">Satisfaction client</div><div class="stat-delta up">↑ +0.3</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title">🎫 Tickets par urgence</span></div>
+      <div class="card-body">
+        <div class="analytic-row"><span class="analytic-label"><span class="sdot red"></span>Critique</span><div class="analytic-bar-wrap"><div class="analytic-bar-fill" style="width:40%;background:var(--red)"></div></div><span class="analytic-val">4</span></div>
+        <div class="analytic-row"><span class="analytic-label"><span class="sdot amber"></span>Élevé</span><div class="analytic-bar-wrap"><div class="analytic-bar-fill" style="width:30%;background:var(--amber)"></div></div><span class="analytic-val">3</span></div>
+        <div class="analytic-row"><span class="analytic-label"><span class="sdot" style="background:var(--blue)"></span>Moyen</span><div class="analytic-bar-wrap"><div class="analytic-bar-fill" style="width:80%;background:var(--blue)"></div></div><span class="analytic-val">8</span></div>
+        <div class="analytic-row"><span class="analytic-label"><span class="sdot green"></span>Faible</span><div class="analytic-bar-wrap"><div class="analytic-bar-fill" style="width:30%;background:var(--green)"></div></div><span class="analytic-val">3</span></div>
+        <hr class="divider">
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;background:var(--surface2);border-radius:9px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:900;color:var(--red);">5</div><div style="font-size:11px;color:var(--muted);">Ouverts</div></div>
+          <div style="flex:1;background:var(--surface2);border-radius:9px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:900;color:var(--amber);">2</div><div style="font-size:11px;color:var(--muted);">En cours</div></div>
+          <div style="flex:1;background:var(--surface2);border-radius:9px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:900;color:var(--green);">11</div><div style="font-size:11px;color:var(--muted);">Résolus</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📊 Tâches par projet</span></div>
+      <div class="card-body">
+        <div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:13px;font-weight:700;">Salon Audi Bruxelles</span><span style="font-size:13px;font-weight:700;">8/13</span></div>
+          <div class="prog" style="height:10px;"><div class="prog-bar red" style="width:62%"></div></div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:13px;font-weight:700;">BMW Experience Liège</span><span style="font-size:13px;font-weight:700;">2/10</span></div>
+          <div class="prog" style="height:10px;"><div class="prog-bar blue" style="width:20%"></div></div>
+        </div>
+        <hr class="divider">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Problèmes récurrents</div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>Visserie insuffisante</span><span class="badge badge-red">3×</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>Câbles trop courts</span><span class="badge badge-amber">2×</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;"><span>Éclairage LED défaillant</span><span class="badge badge-amber">2×</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROJETS -->
+<div class="pg" id="pg-projects">
+  <div class="pg-head"><div><div class="pg-title">Projets</div><div class="pg-sub">Gestion des installations événementielles</div></div>
+  <button class="btn btn-primary" onclick="showModal('modal-proj')">+ Nouveau Projet</button></div>
+  <div class="sbar"><input class="sbar-input" placeholder="Rechercher..."><select class="input" style="width:150px;padding:9px 12px;"><option>Tous les statuts</option><option>Installation</option><option>Préparation</option><option>Terminé</option></select></div>
+  <div class="proj-grid">
+    <div class="proj-card" onclick="openProj('001')">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span class="badge badge-red">Installation</span><span style="font-size:11px;color:var(--muted);">VEM-2025-001</span></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px;">Salon Audi Bruxelles</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Audi Belgium</div>
+      <div style="font-size:13px;margin-bottom:12px;">📍 Bruxelles · 10→14 Mai</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;"><span style="font-size:12px;background:var(--surface2);padding:3px 8px;border-radius:6px;">👷 8</span><span style="font-size:12px;background:var(--surface2);padding:3px 8px;border-radius:6px;">🛠️ 2 tickets</span></div>
+      <div class="prog" style="height:6px;"><div class="prog-bar red" style="width:65%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--muted);"><span>Jeremy Berrutto</span><span style="font-weight:700;">65%</span></div>
+    </div>
+    <div class="proj-card" onclick="openProj('002')">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span class="badge badge-amber">Préparation</span><span style="font-size:11px;color:var(--muted);">VEM-2025-002</span></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:4px;">BMW Experience Liège</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">BMW Brussels</div>
+      <div style="font-size:13px;margin-bottom:12px;">📍 Liège · 20→23 Mai</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;"><span style="font-size:12px;background:var(--surface2);padding:3px 8px;border-radius:6px;">👷 5</span></div>
+      <div class="prog" style="height:6px;"><div class="prog-bar amber" style="width:20%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--muted);"><span>Jeremy Cowski</span><span style="font-weight:700;">20%</span></div>
+    </div>
+    <div class="proj-card" onclick="showModal('modal-proj')" style="border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;min-height:200px;">
+      <div style="text-align:center;color:var(--muted);"><div style="font-size:40px;">➕</div><div style="font-weight:600;margin-top:8px;">Créer un projet</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL PROJET -->
+<div class="pg" id="pg-project-detail">
+  <div class="pg-head">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="btn btn-outline btn-sm" onclick="goto('projects')">← Retour</button>
+      <div><div class="pg-title" id="detail-name">Salon Audi Bruxelles</div><div class="pg-sub">VEM-2025-001 · Audi Belgium</div></div>
+    </div>
+    <div class="pg-actions">
+      <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
+      <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab(this,'dtab-info')">📋 Infos</div>
+    <div class="tab" onclick="switchTab(this,'dtab-plan')">📅 Planning</div>
+    <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
+    <div class="tab" onclick="switchTab(this,'dtab-logi')">🚛 Logistique</div>
+    <div class="tab" onclick="switchTab(this,'dtab-files')">📁 Fichiers</div>
+  </div>
+  <div id="dtab-info">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📋 Informations</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Client</div><div style="font-weight:700;margin-top:3px;">Audi Belgium</div></div>
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">N° Interne</div><div style="font-weight:700;margin-top:3px;">VEM-2025-001</div></div>
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Installation</div><div style="font-weight:700;margin-top:3px;">10 → 14 Mai 2025</div></div>
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Démontage</div><div style="font-weight:700;margin-top:3px;">16 → 17 Mai 2025</div></div>
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Ouvriers</div><div style="font-weight:700;margin-top:3px;">8 personnes</div></div>
+            <div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Statut</div><div style="margin-top:3px;"><span class="badge badge-red">Installation</span></div></div>
+          </div>
+          <hr class="divider">
+          <div><div style="font-size:11px;color:var(--muted);">Adresse</div><div style="font-weight:600;margin-top:3px;">Rue du Trône 60, 1050 Bruxelles</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">📊 Progression</span></div>
+        <div class="card-body" style="text-align:center;padding:30px 20px;">
+          <div style="font-size:52px;font-weight:900;color:var(--red);letter-spacing:-2px;">65%</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Installation en cours</div>
+          <div class="prog" style="height:12px;margin-bottom:16px;"><div class="prog-bar red" style="width:65%"></div></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+            <div style="background:var(--surface2);border-radius:8px;padding:10px;"><div style="font-weight:900;font-size:20px;">13</div><div style="font-size:11px;color:var(--muted);">Tâches</div></div>
+            <div style="background:var(--green-soft);border-radius:8px;padding:10px;"><div style="font-weight:900;font-size:20px;color:var(--green);">8</div><div style="font-size:11px;color:var(--muted);">Terminées</div></div>
+            <div style="background:var(--red-soft);border-radius:8px;padding:10px;"><div style="font-weight:900;font-size:20px;color:var(--red);">2</div><div style="font-size:11px;color:var(--muted);">Tickets</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="dtab-plan" style="display:none;">
+    <div class="card">
+      <div class="card-header"><span class="card-title">📅 Planning Journalier</span><button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button></div>
+      <div class="card-body">
+        <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" id="daybtn-0" onclick="selDay(this)">Lun 12</button>
+          <button class="btn btn-ghost btn-sm" id="daybtn-1" onclick="selDay(this)">Mar 13</button>
+          <button class="btn btn-ghost btn-sm" id="daybtn-2" onclick="selDay(this)">Mer 14</button>
+        </div>
+        <div class="task-card inprog"><div style="display:flex;justify-content:space-between;"><div><div style="font-weight:700;">Déchargement camion 2</div><div style="font-size:12px;color:var(--muted);">08:00–10:00 · Norick Palm</div></div><span class="badge badge-amber">En cours</span></div></div>
+        <div class="task-card done"><div style="display:flex;justify-content:space-between;"><div><div style="font-weight:700;text-decoration:line-through;">Installation façade Est</div><div style="font-size:12px;color:var(--muted);">10:00–13:00 · Paul Morel</div></div><span class="badge badge-green">✓ Terminé</span></div></div>
+        <div class="task-card"><div style="display:flex;justify-content:space-between;"><div><div style="font-weight:700;">Câblage électrique zone A</div><div style="font-size:12px;color:var(--muted);">14:00–17:00 · Ignace Gosens</div></div><span class="badge badge-muted">À faire</span></div></div>
+        <div class="task-card blocked"><div style="display:flex;justify-content:space-between;"><div><div style="font-weight:700;">Raccordement Nord</div><div style="font-size:12px;color:var(--red);">⚠️ Matériel manquant</div></div><span class="badge badge-red">Bloqué</span></div></div>
+      </div>
+    </div>
+  </div>
+  <div id="dtab-team" style="display:none;">
+    <div class="card">
+      <div class="card-header"><span class="card-title">👥 Équipe du Projet</span></div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrap">
+          <table><thead><tr><th>Nom</th><th>Rôle</th><th>Tâches</th><th>Statut</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Jeremy Berrutto</strong></td><td><span class="badge badge-blue">Site Manager</span></td><td>4</td><td><span class="sdot green"></span>Sur site</td></tr>
+            <tr><td><strong>Amaury Pinchart</strong></td><td><span class="badge badge-muted">Tech. Manager</span></td><td>2</td><td><span class="sdot" style="background:var(--blue)"></span>Bureau</td></tr>
+            <tr><td><strong>Norick Palm</strong></td><td><span class="badge badge-muted">Engineer</span></td><td>5</td><td><span class="sdot green"></span>Sur site</td></tr>
+            <tr><td><strong>Ignace Gosens</strong></td><td><span class="badge badge-muted">Engineer</span></td><td>3</td><td><span class="sdot green"></span>Sur site</td></tr>
+            <tr><td><strong>Paul Morel</strong></td><td><span class="badge badge-muted">Engineer</span></td><td>4</td><td><span class="sdot amber"></span>En transit</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="dtab-logi" style="display:none;">
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><span class="card-title">🚛 Camion 1</span><span class="badge badge-green">Livré</span></div><div class="card-body" style="font-size:13px;display:grid;gap:6px;"><div>🔑 BE-421-XYZ · Jean Dupont</div><div>📦 Chargement : 09 Mai 08:00</div><div>✅ Arrivée : 10 Mai 07:30</div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">🚛 Camion 2</span><span class="badge badge-amber">En transit</span></div><div class="card-body" style="font-size:13px;display:grid;gap:6px;"><div>🔑 BE-782-ABC · Marc Simon</div><div>📦 Chargement : 11 Mai 07:00</div><div>⏳ Arrivée prévue : 12 Mai 08:00</div></div></div>
+    </div>
+  </div>
+  <div id="dtab-files" style="display:none;">
+    <div class="card"><div class="card-header"><span class="card-title">📁 Fichiers</span></div><div class="card-body"><div style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--muted);cursor:pointer;" onclick="toast('Upload disponible dans la version complète','info')"><div style="font-size:36px;margin-bottom:8px;">📁</div><div>Glissez ou cliquez pour uploader</div><div style="font-size:12px;margin-top:4px;">PDF, JPG, PNG, DWG...</div></div></div></div>
+  </div>
+</div>
+
+<!-- TACHES KANBAN -->
+<div class="pg" id="pg-tasks">
+  <div class="pg-head"><div><div class="pg-title">Tâches</div><div class="pg-sub">Vue Kanban · Salon Audi Bruxelles</div></div><button class="btn btn-primary" onclick="showModal('modal-task')">+ Nouvelle Tâche</button></div>
+  <div class="kanban">
+    <div class="kboard"><div class="kboard-title">📋 À faire <span style="background:var(--surface3);border-radius:99px;padding:1px 7px;font-size:10px;">3</span></div>
+      <div class="kcard todo"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Câblage zone B</div><div style="font-size:11px;color:var(--muted);">📅 12 Mai · 14h</div><div style="margin-top:8px;"><span class="badge badge-blue" style="font-size:10px;">Ignace G.</span></div></div>
+      <div class="kcard todo"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Signalétique entrée</div><div style="font-size:11px;color:var(--muted);">📅 13 Mai · 09h</div><div style="margin-top:8px;"><span class="badge badge-blue" style="font-size:10px;">Paul M.</span></div></div>
+    </div>
+    <div class="kboard"><div class="kboard-title" style="color:#c46a1a;">⚡ En cours <span style="background:var(--surface3);border-radius:99px;padding:1px 7px;font-size:10px;">2</span></div>
+      <div class="kcard inprog"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Déchargement camion 2</div><div style="font-size:11px;color:var(--muted);">📅 12 Mai · 08h</div><div style="margin-top:8px;"><span class="badge badge-amber" style="font-size:10px;">Norick P.</span></div></div>
+      <div class="kcard inprog"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Montage structure centrale</div><div style="font-size:11px;color:var(--muted);">📅 12 Mai · 10h</div><div style="margin-top:8px;"><span class="badge badge-amber" style="font-size:10px;">Jeremy B.</span></div></div>
+    </div>
+    <div class="kboard"><div class="kboard-title" style="color:#1a9e42;">✅ Terminé <span style="background:var(--surface3);border-radius:99px;padding:1px 7px;font-size:10px;">8</span></div>
+      <div class="kcard done"><div style="font-weight:700;font-size:13px;margin-bottom:4px;text-decoration:line-through;">Installation façade Est</div><div style="font-size:11px;color:var(--muted);">11 Mai</div><span class="badge badge-green" style="font-size:10px;margin-top:6px;">✓</span></div>
+      <div class="kcard done"><div style="font-weight:700;font-size:13px;margin-bottom:4px;text-decoration:line-through;">Déchargement camion 1</div><div style="font-size:11px;color:var(--muted);">10 Mai</div></div>
+    </div>
+    <div class="kboard"><div class="kboard-title" style="color:var(--red);">🔴 Bloqué <span style="background:var(--surface3);border-radius:99px;padding:1px 7px;font-size:10px;">1</span></div>
+      <div class="kcard blocked"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Raccordement électrique N</div><div style="font-size:11px;color:var(--red);">⚠️ Câble manquant</div><span class="badge badge-red" style="font-size:10px;margin-top:6px;">Critique</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- DAILY REPORT -->
+<div class="pg" id="pg-daily">
+  <div class="pg-head"><div><div class="pg-title">Daily Reports</div><div class="pg-sub">Rapport journalier · Salon Audi Bruxelles</div></div><button class="btn btn-primary" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">📓 Rapport du 12 Mai 2025</span><div style="display:flex;gap:8px;"><span class="badge badge-amber">☀️ Ensoleillé</span><span class="badge badge-blue">8 ouvriers</span></div></div>
+    <div class="card-body">
+      <div class="grid-2">
+        <div>
+          <div style="font-weight:700;margin-bottom:12px;">Journal</div>
+          <div class="timeline">
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-content"><div class="tl-time">07:30</div><div class="tl-text">Arrivée équipe (8 personnes). Météo : ensoleillé 18°C.</div></div></div>
+            <div class="tl-item"><div class="tl-dot amber"></div><div class="tl-content"><div class="tl-time">08:00</div><div class="tl-text">Début déchargement camion 2. Contenu conforme.</div></div></div>
+            <div class="tl-item"><div class="tl-dot green"></div><div class="tl-content"><div class="tl-time">10:30</div><div class="tl-text">✅ Façade Est terminée. Photos prises. Conforme au plan.</div></div></div>
+            <div class="tl-item"><div class="tl-dot" style="background:var(--red)"></div><div class="tl-content" style="background:var(--red-soft);"><div class="tl-time">14:00</div><div class="tl-text">⚠️ Vis M6 insuffisantes façade Nord. Ticket #T-001 créé.</div></div></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:700;margin-bottom:12px;">Checklist Sécurité</div>
+          <div class="check-item checked"><input type="checkbox" class="check-cb" checked onchange="toggleCheck(this)">EPI portés</div>
+          <div class="check-item checked"><input type="checkbox" class="check-cb" checked onchange="toggleCheck(this)">Zone balisée</div>
+          <div class="check-item"><input type="checkbox" class="check-cb" onchange="toggleCheck(this)">Bilan fin de journée</div>
+          <hr class="divider">
+          <div style="font-weight:700;margin-bottom:8px;">Photos</div>
+          <div class="photo-grid" style="grid-template-columns:1fr 1fr;">
+            <div class="photo-cell" style="font-size:24px;" onclick="toast('Photo en plein écran (version native)','info')">📸</div>
+            <div class="photo-cell" style="font-size:24px;" onclick="toast('Photo en plein écran (version native)','info')">📸</div>
+          </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="toast('Rapport envoyé par email à toute l\'équipe ✉️','success')">📤 Envoyer rapport</button>
+          <button class="btn btn-ghost" style="width:100%;margin-top:6px;" onclick="toast('🎤 Dictée vocale disponible en version native Flutter','info')">🎤 Dicter des notes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HANDOVER -->
+<div class="pg" id="pg-handover">
+  <div class="pg-head"><div><div class="pg-title">Handover</div><div class="pg-sub">Réception de fin d'installation</div></div><button class="btn btn-primary" onclick="showModal('modal-new-handover')">+ Nouveau Handover</button></div>
+  <div class="grid-2-1">
+    <div class="card">
+      <div class="card-header"><span class="card-title">🧾 Salon Audi Bruxelles — VEM-2025-001</span></div>
+      <div class="card-body">
+        <div style="background:var(--surface2);border-radius:9px;padding:14px;margin-bottom:16px;font-size:13px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div><span style="color:var(--muted);">Projet :</span> <strong>VEM-2025-001</strong></div>
+            <div><span style="color:var(--muted);">Client :</span> <strong>Audi Belgium</strong></div>
+            <div><span style="color:var(--muted);">Date :</span> <strong>14 Mai 2025</strong></div>
+            <div><span style="color:var(--muted);">Contact :</span> <strong>Marc Dupont</strong></div>
+          </div>
+        </div>
+        <div style="font-weight:700;margin-bottom:12px;">Zones inspectées</div>
+        <div id="hz-zones">
+          <div class="hz-row ok"><span style="font-size:20px;">✅</span><div style="flex:1;"><div style="font-weight:600;">Façade Est</div><div style="font-size:12px;color:var(--muted);">Installation conforme</div></div><select class="input" style="width:130px;padding:6px;" onchange="updateHz(this)"><option value="ok" selected>✅ OK</option><option value="remark">⚠️ Remarque</option><option value="defect">❌ Défaut</option></select></div>
+          <div class="hz-row remark"><span style="font-size:20px;">⚠️</span><div style="flex:1;"><div style="font-weight:600;">Façade Nord</div><div style="font-size:12px;color:#c46a1a;">Vis manquantes à remplacer</div></div><select class="input" style="width:130px;padding:6px;" onchange="updateHz(this)"><option value="ok">✅ OK</option><option value="remark" selected>⚠️ Remarque</option><option value="defect">❌ Défaut</option></select></div>
+          <div class="hz-row"><span style="font-size:20px;">⬜</span><div style="flex:1;"><div style="font-weight:600;">Zone centrale</div><div style="font-size:12px;color:var(--muted);">En attente</div></div><select class="input" style="width:130px;padding:6px;" onchange="updateHz(this)"><option value="ok">✅ OK</option><option value="remark">⚠️ Remarque</option><option value="defect">❌ Défaut</option></select></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addHz()">➕ Ajouter zone</button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">✍️ Signatures</span></div>
+        <div class="card-body">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Site Manager</div>
+          <div class="sig-zone signed" onclick="toast('Déjà signé','info')"><div style="text-align:center;">✅ Jeremy Berrutto<br><span style="font-size:11px;opacity:.7;">14/05 · 16:35</span></div></div>
+          <div style="font-size:13px;font-weight:600;margin:12px 0 8px;">Client</div>
+          <div class="sig-zone" id="client-sig" onclick="signClient()"><div style="text-align:center;"><div style="font-size:28px;margin-bottom:4px;">✍️</div><div>Appuyer pour signer</div></div></div>
+          <button class="btn btn-primary" style="width:100%;margin-top:16px;" onclick="genPDF()">📄 Générer PDF & Envoyer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUIVI CLIENT -->
+<div class="pg" id="pg-remarks">
+  <div class="pg-head"><div><div class="pg-title">Suivi Client</div><div class="pg-sub">Remarques post-visite</div></div><button class="btn btn-primary" onclick="showModal('modal-remark')">+ Nouvelle Remarque</button></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">📋 Remarques en cours</span></div>
+    <div class="card-body" style="padding:0;">
+      <div class="table-wrap">
+        <table><thead><tr><th>Zone</th><th>Remarque</th><th>Assigné</th><th>Priorité</th><th>Statut</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>Façade Nord</td><td>Vis manquantes côté gauche</td><td>Norick Palm</td><td><span style="color:var(--red);font-weight:700;">● Critique</span></td><td><span class="badge badge-amber">En cours</span></td><td><button class="btn btn-xs btn-green" onclick="toast('Marqué résolu ✅','success')">✓ Résolu</button></td></tr>
+          <tr><td>Zone B</td><td>Éclairage LED unité 3</td><td>Ignace Gosens</td><td><span style="color:#c46a1a;font-weight:600;">● Élevé</span></td><td><span class="badge badge-muted">À faire</span></td><td><button class="btn btn-xs btn-green" onclick="toast('Marqué résolu ✅','success')">✓ Résolu</button></td></tr>
+          <tr><td>Entrée</td><td>Signalétique décentrée</td><td>Paul Morel</td><td><span style="color:var(--amber);">● Moyen</span></td><td><span class="badge badge-green">Résolu</span></td><td><button class="btn btn-xs btn-ghost">👁️</button></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TICKETS SAV -->
+<div class="pg" id="pg-tickets">
+  <div class="pg-head"><div><div class="pg-title">Tickets SAV</div><div class="pg-sub">Interventions post-installation</div></div><button class="btn btn-primary" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button></div>
+  <div class="stat-grid">
+    <div class="stat-card red"><div class="stat-val">5</div><div class="stat-lbl">Ouverts</div></div>
+    <div class="stat-card amber"><div class="stat-val">2</div><div class="stat-lbl">En cours</div></div>
+    <div class="stat-card green"><div class="stat-val">11</div><div class="stat-lbl">Résolus ce mois</div></div>
+    <div class="stat-card blue"><div class="stat-val">3.2h</div><div class="stat-lbl">Temps moyen résolution</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">🎫 Tous les tickets</span></div>
+    <div class="card-body" style="padding:0 20px 0;">
+      <div class="sbar" style="padding-top:16px;"><input class="sbar-input" placeholder="Rechercher..."><select class="input" style="width:130px;padding:8px 10px;"><option>Tous</option><option>Critique</option><option>Moyen</option></select></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>ID</th><th>Titre</th><th>Projet</th><th>Urgence</th><th>Assigné</th><th>Statut</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        <tr style="cursor:pointer;" onclick="openTicket()"><td><strong>#T-001</strong></td><td>Façade Nord — vis M6 manquantes</td><td>Audi Bruxelles</td><td><span class="badge badge-red">🔴 Critique</span></td><td>Norick Palm</td><td><span class="badge badge-amber">En cours</span></td><td>12/05</td><td><button class="btn btn-xs btn-ghost" onclick="event.stopPropagation();openTicket()">👁️</button></td></tr>
+        <tr><td><strong>#T-002</strong></td><td>Éclairage Zone B défaillant</td><td>Audi Bruxelles</td><td><span class="badge badge-amber">🟡 Moyen</span></td><td>—</td><td><span class="badge badge-red">Ouvert</span></td><td>12/05</td><td><button class="btn btn-xs btn-ghost">👁️</button></td></tr>
+        <tr><td><strong>#T-003</strong></td><td>Câble alim. trop court Zone C</td><td>Audi Bruxelles</td><td><span class="badge badge-red">🔴 Critique</span></td><td>Paul Morel</td><td><span class="badge badge-red" style="background:rgba(230,57,70,.3);">⚠️ ESCALADE</span></td><td>11/05</td><td><button class="btn btn-xs btn-ghost">👁️</button></td></tr>
+        <tr><td><strong>#T-004</strong></td><td>Signalétique décentrée entrée</td><td>Audi Bruxelles</td><td><span class="badge badge-blue">🔵 Faible</span></td><td>Jeremy B.</td><td><span class="badge badge-green">Résolu</span></td><td>10/05</td><td><button class="btn btn-xs btn-ghost">👁️</button></td></tr>
+        <tr><td><strong>#T-005</strong></td><td>Éclairage Zone A scintillement</td><td>Audi Bruxelles</td><td><span class="badge badge-amber">🟡 Moyen</span></td><td>Ignace G.</td><td><span class="badge badge-muted">Ouvert</span></td><td>12/05</td><td><button class="btn btn-xs btn-ghost">👁️</button></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ENTREPOT -->
+<div class="pg" id="pg-warehouse">
+  <div class="pg-head"><div><div class="pg-title">Entrepôt / Box</div><div class="pg-sub">Préparation matériel</div></div><button class="btn btn-primary" onclick="showModal('modal-box')">+ Nouvelle Box</button></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">📦 Projet : Salon Audi Bruxelles</span></div>
+    <div class="card-body" style="padding:12px;">
+      <div class="box-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div><div style="font-weight:800;font-size:15px;">BOX 1 — Structure Principale</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">14 articles · Norick Palm</div></div>
+          <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-green">Sur site</span><span class="qr-badge">🔲 BOX-001</span><button class="btn btn-xs btn-ghost" onclick="toast('Détail box — 14/14 articles ✓','success')">👁️</button></div>
+        </div>
+        <div class="prog" style="height:5px;"><div class="prog-bar green" style="width:100%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">14/14 articles validés ✓ — ⚠️ Vis M6 insuffisantes (signalé)</div>
+      </div>
+      <div class="box-card" style="border-color:var(--amber);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div><div style="font-weight:800;font-size:15px;">BOX 2 — Électricité & Câblage</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">22 articles · Ignace Gosens</div></div>
+          <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-amber">Préparation</span><span class="qr-badge">🔲 BOX-002</span><button class="btn btn-xs btn-ghost" onclick="toast('12/22 articles vérifiés','info')">👁️</button></div>
+        </div>
+        <div class="prog" style="height:5px;"><div class="prog-bar amber" style="width:55%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">12/22 articles validés · ❌ Câble 220V ×2 manquant</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="showModal('modal-box')">➕ Ajouter une box</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOOLBOX -->
+<div class="pg" id="pg-toolbox">
+  <div class="pg-head"><div><div class="pg-title">Boîtes à Outils</div><div class="pg-sub">Checklist avant départ chantier</div></div>
+    <div class="pg-actions"><button class="btn btn-ghost btn-sm" onclick="toast('QR Code : TB-001-VEM2025001','info')">🔲 QR Code</button><button class="btn btn-green" onclick="validateAll()">✅ Valider tout</button></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">🧰 Boîte #1 — Audi Bruxelles</span><span class="badge badge-amber">En préparation</span></div>
+    <div class="card-body" style="padding:12px;">
+      <div class="drawer-comp">
+        <div class="drawer-head" onclick="toggleDrawer('d1')">
+          <div><strong>Tiroir 1 — Visserie & Fixation</strong> <span style="font-size:12px;color:var(--muted);margin-left:8px;">3/4 vérifiés</span></div>
+          <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-amber">3/4</span><span id="d1-arr">▼</span></div>
+        </div>
+        <div class="drawer-body" id="d1-body">
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Visseuse Bosch 18V</strong></div><div class="tool-qty">×2</div><span class="badge badge-green">OK</span></div>
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Embouts assortis</strong></div><div class="tool-qty">×10</div><span class="badge badge-green">OK</span></div>
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Niveau laser</strong></div><div class="tool-qty">×1</div><span class="badge badge-green">OK</span></div>
+          <div class="tool-row"><input type="checkbox" class="check-cb" onchange="updateTool(this)"><div style="flex:1;"><strong>Clé allen jeu complet</strong></div><div class="tool-qty">×1</div><span class="badge badge-red" id="clef-badge">Manquant</span></div>
+          <div style="margin-top:10px;display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-xs" onclick="toast('🎤 Dictée vocale disponible en version native','info')">🎤 Dicter</button>
+            <button class="btn btn-ghost btn-xs" onclick="toast('Outil ajouté ✅','success')">➕ Ajouter</button>
+            <button class="btn btn-ghost btn-xs" onclick="toast('📸 Photo du tiroir ajoutée','success')">📸 Photo</button>
+          </div>
+        </div>
+      </div>
+      <div class="drawer-comp">
+        <div class="drawer-head" onclick="toggleDrawer('d2')">
+          <div><strong>Tiroir 2 — Mesure & Traçage</strong> <span style="font-size:12px;color:var(--muted);margin-left:8px;">3/3 vérifiés</span></div>
+          <div style="display:flex;gap:8px;align-items:center;"><span class="badge badge-green">3/3 ✓</span><span id="d2-arr">▼</span></div>
+        </div>
+        <div class="drawer-body" id="d2-body" style="display:none;">
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Mètre ruban 5m</strong></div><div class="tool-qty">×2</div><span class="badge badge-green">OK</span></div>
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Crayon de charpentier</strong></div><div class="tool-qty">×5</div><span class="badge badge-green">OK</span></div>
+          <div class="tool-row"><input type="checkbox" class="check-cb" checked onchange="updateTool(this)"><div style="flex:1;"><strong>Équerre professionnelle</strong></div><div class="tool-qty">×1</div><span class="badge badge-green">OK</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EQUIPE -->
+<div class="pg" id="pg-team">
+  <div class="pg-head"><div class="pg-title">Équipe</div></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">👥 Membres actifs</span></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Projets</th><th>Statut</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Jeremy Berrutto</strong></td><td>jeremy.berrutto@vem.com</td><td><span class="badge badge-blue">Site Manager</span></td><td>2</td><td><span class="badge badge-green">Actif</span></td></tr>
+        <tr><td><strong>Jeremy Cowski</strong></td><td>jeremy.cowski@vem.com</td><td><span class="badge badge-blue">Site Manager</span></td><td>1</td><td><span class="badge badge-green">Actif</span></td></tr>
+        <tr><td><strong>Bernie Martin</strong></td><td>bernie@vem.com</td><td><span class="badge badge-blue">Site Manager</span></td><td>0</td><td><span class="badge badge-muted">Disponible</span></td></tr>
+        <tr><td><strong>Amaury Pinchart</strong></td><td>amaury.p@vem.com</td><td><span class="badge badge-muted">Tech. Manager</span></td><td>3</td><td><span class="badge badge-green">Actif</span></td></tr>
+        <tr><td><strong>Norick Palm</strong></td><td>norick.palm@vem.com</td><td><span class="badge badge-muted">Engineer</span></td><td>1</td><td><span class="badge badge-green">Actif</span></td></tr>
+        <tr><td><strong>Ignace Gosens</strong></td><td>ignace.gosens@vem.com</td><td><span class="badge badge-muted">Engineer</span></td><td>1</td><td><span class="badge badge-green">Actif</span></td></tr>
+        <tr><td><strong>Paul Morel</strong></td><td>paul.morel@vem.com</td><td><span class="badge badge-muted">Engineer</span></td><td>1</td><td><span class="badge badge-amber">En transit</span></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIFS -->
+<div class="pg" id="pg-notifs">
+  <div class="pg-head"><div><div class="pg-title">Notifications</div><div class="pg-sub">3 non lues</div></div><button class="btn btn-ghost btn-sm" onclick="toast('Tout marqué comme lu ✓','success')">Tout lire</button></div>
+  <div class="card">
+    <div class="card-body" style="padding:0;">
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--red-soft);">
+        <div style="font-size:24px;">🚨</div>
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">Escalade automatique — Ticket #T-003</div><div style="font-size:12px;color:var(--muted);">Non traité depuis 28h · il y a 1h</div></div>
+        <span class="badge badge-red">Nouveau</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--blue-soft);">
+        <div style="font-size:24px;">✅</div>
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">Tâche terminée — Installation façade Est</div><div style="font-size:12px;color:var(--muted);">Paul Morel · il y a 2h</div></div>
+        <span class="badge badge-blue">Nouveau</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);">
+        <div style="font-size:24px;">📦</div>
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">BOX 1 validée et chargée</div><div style="font-size:12px;color:var(--muted);">Norick Palm · il y a 4h</div></div>
+        <span class="badge badge-muted">Lu</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;">
+        <div style="font-size:24px;">📧</div>
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">Daily Report envoyé — 11 Mai</div><div style="font-size:12px;color:var(--muted);">Automatique · Hier 19:00</div></div>
+        <span class="badge badge-muted">Lu</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- MODALS -->
+
+<!-- Nouveau Projet -->
+<div class="overlay" id="modal-proj">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">🏗️ Nouveau Projet</div><button class="modal-close" onclick="closeModal('modal-proj')">×</button></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Nom <span>*</span></label><input class="input" placeholder="ex : Salon Audi Paris"></div>
+      <div class="form-group"><label class="form-label">Client <span>*</span></label><select class="input"><option>Audi Belgium</option><option>BMW Brussels</option><option>+ Nouveau client</option></select></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">N° Interne</label><input class="input" value="VEM-2025-003"></div>
+      <div class="form-group"><label class="form-label">Ouvriers</label><input class="input" type="number" value="5"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Adresse <span>*</span></label><input class="input" placeholder="Adresse complète d'installation"></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Début installation</label><input class="input" type="date"></div>
+      <div class="form-group"><label class="form-label">Fin installation</label><input class="input" type="date"></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Site Manager(s)</label><select class="input" multiple style="height:80px;"><option selected>Jeremy Berrutto</option><option>Jeremy Cowski</option><option>Bernie Martin</option><option>Amaury Pinchart</option></select></div>
+      <div class="form-group"><label class="form-label">Engineers</label><select class="input" multiple style="height:80px;"><option selected>Norick Palm</option><option selected>Ignace Gosens</option><option>Paul Morel</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Technical Manager</label><select class="input"><option selected>Amaury Pinchart</option></select></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-proj')">Annuler</button>
+      <button class="btn btn-primary" onclick="createProj()">✅ Créer le Projet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouveau Ticket -->
+<div class="overlay" id="modal-ticket">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">🛠️ Nouveau Ticket SAV</div><button class="modal-close" onclick="closeModal('modal-ticket')">×</button></div>
+    <div class="form-group"><label class="form-label">Projet lié</label><select class="input"><option>Salon Audi Bruxelles (VEM-2025-001)</option><option>BMW Experience Liège (VEM-2025-002)</option></select></div>
+    <div class="form-group"><label class="form-label">Titre <span>*</span></label><input class="input" placeholder="Description courte du problème"></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Urgence</label><select class="input"><option>🟢 Faible</option><option selected>🟡 Moyen</option><option>🟠 Élevé</option><option>🔴 Critique</option></select></div>
+      <div class="form-group"><label class="form-label">Localisation</label><input class="input" placeholder="ex : Façade Nord, Zone B..."></div>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="input" placeholder="Décrivez le problème en détail..."></textarea></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Assigné à</label><select class="input"><option>— Non assigné</option><option>Norick Palm</option><option>Ignace Gosens</option><option>Paul Morel</option></select></div>
+      <div class="form-group"><label class="form-label">Date prévue</label><input class="input" type="date"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Photos</label><div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;color:var(--muted);cursor:pointer;" onclick="toast('Upload disponible en version native','info')">📸 Ajouter photos / vidéos</div></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-ticket')">Annuler</button>
+      <button class="btn btn-primary" onclick="createTicketAction()">🚀 Créer & Notifier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouvelle Tâche -->
+<div class="overlay" id="modal-task">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">✅ Nouvelle Tâche</div><button class="modal-close" onclick="closeModal('modal-task')">×</button></div>
+    <div class="form-group"><label class="form-label">Titre <span>*</span></label><input class="input" placeholder="ex : Montage structure section B"></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Date</label><input class="input" type="date"></div>
+      <div class="form-group"><label class="form-label">Assigné à</label><select class="input"><option>Norick Palm</option><option>Ignace Gosens</option><option>Paul Morel</option><option>Jeremy Berrutto</option></select></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Heure début</label><input class="input" type="time" value="08:00"></div>
+      <div class="form-group"><label class="form-label">Heure fin</label><input class="input" type="time" value="12:00"></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Priorité</label><select class="input"><option>Normal</option><option>Haute</option><option>Critique</option><option>Faible</option></select></div>
+      <div class="form-group"><label class="form-label">Statut</label><select class="input"><option>À faire</option><option>En cours</option><option>Terminé</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="input" placeholder="Détails de la tâche..."></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-task')">Annuler</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-task');toast('Tâche créée et assignée ✅','success')">✅ Créer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Daily Report -->
+<div class="overlay" id="modal-daily">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">📓 Nouveau Rapport Journalier</div><button class="modal-close" onclick="closeModal('modal-daily')">×</button></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Date</label><input class="input" type="date"></div>
+      <div class="form-group"><label class="form-label">Météo</label><select class="input"><option>☀️ Ensoleillé</option><option>⛅ Nuageux</option><option>🌧️ Pluie</option><option>❄️ Froid</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Ouvriers présents</label><input class="input" type="number" value="8"></div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <div style="display:flex;gap:6px;margin-bottom:8px;"><button class="btn btn-ghost btn-xs" onclick="toast('🎤 Dictée vocale disponible en version native Flutter','info')">🎤 Dicter</button></div>
+      <textarea class="input" rows="6" placeholder="08:00 — Arrivée sur site&#10;10:00 — ..."></textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-daily')">Annuler</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-daily');toast('Rapport sauvegardé 💾','success')">💾 Sauvegarder</button>
+      <button class="btn btn-green" onclick="closeModal('modal-daily');toast('Rapport sauvegardé et envoyé 📤','success')">📤 Sauv. & Envoyer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Box -->
+<div class="overlay" id="modal-box">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">📦 Nouvelle Box Matériel</div><button class="modal-close" onclick="closeModal('modal-box')">×</button></div>
+    <div class="form-group"><label class="form-label">Nom <span>*</span></label><input class="input" placeholder="ex : BOX 3 — Signalétique"></div>
+    <div class="form-group"><label class="form-label">Projet associé</label><select class="input"><option>Salon Audi Bruxelles</option><option>BMW Experience Liège</option></select></div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="input" placeholder="Contenu général..."></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-box')">Annuler</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-box');toast('Box créée 📦 QR Code généré','success')">✅ Créer la Box</button>
+    </div>
+  </div>
+</div>
+
+<!-- Remarque -->
+<div class="overlay" id="modal-remark">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">🔁 Nouvelle Remarque Client</div><button class="modal-close" onclick="closeModal('modal-remark')">×</button></div>
+    <div class="form-group"><label class="form-label">Titre <span>*</span></label><input class="input" placeholder="Description courte"></div>
+    <div class="input-row">
+      <div class="form-group"><label class="form-label">Zone</label><input class="input" placeholder="ex : Façade Nord"></div>
+      <div class="form-group"><label class="form-label">Assigné à</label><select class="input"><option>Norick Palm</option><option>Ignace Gosens</option><option>Paul Morel</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Priorité</label><select class="input"><option>🟢 Faible</option><option>🟡 Moyen</option><option>🔴 Critique</option></select></div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="input"></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-remark')">Annuler</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-remark');toast('Remarque créée et notifiée ✅','success')">✅ Créer</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────
+const state = {
+  offlineMode: false,
+  pendingActions: JSON.parse(localStorage.getItem('vem_pending') || '[]'),
+};
+
+// ── NAVIGATION ────────────────────────────────────────────
+const titles = {
+  dashboard:'Dashboard',projects:'Projets',analytics:'Analytiques',tasks:'Tâches',
+  daily:'Daily Reports',handover:'Handover',remarks:'Suivi Client',tickets:'Tickets SAV',
+  warehouse:'Entrepôt / Box',toolbox:'Boîtes à Outils',team:'Équipe',notifs:'Notifications',
+  'project-detail':'Détail Projet'
+};
+
+function goto(page) {
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('pg-' + page);
+  if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(item => {
+    if (item.getAttribute('onclick')?.includes("'" + page + "'")) item.classList.add('active');
+  });
+  document.getElementById('pg-title').textContent = titles[page] || page;
+  document.getElementById('nav').classList.remove('open');
+  window.scrollTo(0, 0);
+}
+
+function openProj(id) {
+  document.getElementById('detail-name').textContent = id === '001' ? 'Salon Audi Bruxelles' : 'BMW Experience Liège';
+  goto('project-detail');
+  document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display = 'none');
+  document.getElementById('dtab-info').style.display = 'block';
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+}
+
+function switchTab(el, tabId) {
+  document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display = 'none');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById(tabId);
+  if (tab) tab.style.display = 'block';
+  el.classList.add('active');
+}
+
+function selDay(btn) {
+  document.querySelectorAll('[id^="daybtn-"]').forEach(b => { b.className = 'btn btn-ghost btn-sm'; });
+  btn.className = 'btn btn-primary btn-sm';
+}
+
+function toggleNav() {
+  document.getElementById('nav').classList.toggle('open');
+}
+
+// ── MODALS ────────────────────────────────────────────────
+function showModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); });
+});
+
+// ── TOAST ─────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type === 'success' ? 'success' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : '');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── OFFLINE ───────────────────────────────────────────────
+function toggleOffline() {
+  state.offlineMode = !state.offlineMode;
+  document.body.classList.toggle('offline', state.offlineMode);
+  toast(state.offlineMode ? '📴 Mode hors-ligne activé — Actions en attente de sync' : '✅ Connexion rétablie — Synchronisation en cours...', state.offlineMode ? 'warning' : 'success');
+  if (!state.offlineMode && state.pendingActions.length > 0) {
+    setTimeout(() => { toast(`✅ ${state.pendingActions.length} action(s) synchronisée(s)`, 'success'); state.pendingActions = []; localStorage.removeItem('vem_pending'); }, 1500);
+  }
+}
+
+function queueOfflineAction(type, data) {
+  if (state.offlineMode) {
+    state.pendingActions.push({ type, data, ts: Date.now() });
+    localStorage.setItem('vem_pending', JSON.stringify(state.pendingActions));
+    toast('💾 Action sauvée localement (sync au retour connexion)', 'warning');
+    return true;
+  }
+  return false;
+}
+
+// ── ACTIONS ───────────────────────────────────────────────
+function createProj() {
+  closeModal('modal-proj');
+  if (!queueOfflineAction('create_project', {})) toast('✅ Projet créé ! Équipe notifiée 📧', 'success');
+}
+
+function createTicketAction() {
+  closeModal('modal-ticket');
+  if (!queueOfflineAction('create_ticket', {})) toast('🛠️ Ticket créé · Notification envoyée 📱📧', 'success');
+}
+
+function toggleCheck(cb) {
+  const item = cb.closest('.check-item');
+  item.classList.toggle('checked', cb.checked);
+  if (cb.checked) toast('✅ Marqué comme terminé', 'success');
+}
+
+function updateHz(sel) {
+  const row = sel.closest('.hz-row');
+  row.className = 'hz-row ' + sel.value;
+  const icons = { ok: '✅', remark: '⚠️', defect: '❌' };
+  row.querySelector('span:first-child').textContent = icons[sel.value] || '⬜';
+  toast('Zone mise à jour : ' + sel.value, 'info');
+}
+
+function addHz() {
+  const zones = document.getElementById('hz-zones');
+  const d = document.createElement('div');
+  d.className = 'hz-row';
+  d.innerHTML = `<span style="font-size:20px;">⬜</span><div style="flex:1;"><input class="input" placeholder="Nom de la zone..." style="border:none;padding:0;font-weight:600;outline:none;"></div><select class="input" style="width:130px;padding:6px;" onchange="updateHz(this)"><option value="ok">✅ OK</option><option value="remark">⚠️ Remarque</option><option value="defect">❌ Défaut</option></select>`;
+  zones.insertBefore(d, zones.lastElementChild);
+  toast('Zone ajoutée', 'info');
+}
+
+function signClient() {
+  const z = document.getElementById('client-sig');
+  z.classList.add('signed');
+  z.innerHTML = '<div style="text-align:center;">✅ Marc Dupont (Client)<br><span style="font-size:11px;opacity:.7;">' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}) + '</span></div>';
+  toast('Signature client enregistrée ✅', 'success');
+}
+
+function genPDF() {
+  toast('Génération PDF...', 'info');
+  setTimeout(() => {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      // Header
+      doc.setFillColor(13, 15, 20);
+      doc.rect(0, 0, 210, 35, 'F');
+      doc.setTextColor(230, 57, 70);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('VEM', 15, 22);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.text('ViewBox Event Manager', 38, 22);
+      doc.setTextColor(230, 57, 70);
+      doc.setFontSize(13);
+      doc.text('HANDOVER REPORT', 150, 22);
+      // Content
+      doc.setTextColor(30, 34, 48);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Informations Projet', 15, 55);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(136, 146, 164);
+      doc.text('Projet', 15, 68); doc.setTextColor(30, 34, 48); doc.setFont('helvetica', 'bold'); doc.text('Salon Audi Bruxelles', 55, 68);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(136, 146, 164);
+      doc.text('N° Interne', 15, 76); doc.setTextColor(30, 34, 48); doc.setFont('helvetica', 'bold'); doc.text('VEM-2025-001', 55, 76);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(136, 146, 164);
+      doc.text('Client', 15, 84); doc.setTextColor(30, 34, 48); doc.setFont('helvetica', 'bold'); doc.text('Audi Belgium — Marc Dupont', 55, 84);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(136, 146, 164);
+      doc.text('Date réception', 15, 92); doc.setTextColor(30, 34, 48); doc.setFont('helvetica', 'bold'); doc.text('14 Mai 2025 · 16:30', 55, 92);
+      // Zones
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 34, 48);
+      doc.text('Zones Inspectées', 15, 112);
+      const zones = [['Façade Est', 'OK', [0, 184, 148]], ['Façade Nord', 'Remarque — vis manquantes', [244, 162, 97]], ['Zone centrale', 'En attente', [136, 146, 164]]];
+      let y = 122;
+      for (const [name, status, color] of zones) {
+        doc.setFillColor(...color); doc.circle(19, y - 1, 3, 'F');
+        doc.setTextColor(30, 34, 48); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(name, 26, y);
+        doc.setTextColor(...color); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(status, 90, y);
+        y += 12;
+      }
+      // Signatures
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 34, 48); doc.text('Signatures', 15, y + 16);
+      doc.rect(15, y + 22, 80, 35); doc.rect(115, y + 22, 80, 35);
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(136, 146, 164);
+      doc.text('Site Manager', 15, y + 20); doc.text('Client', 115, y + 20);
+      doc.setTextColor(30, 34, 48); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+      doc.text('Jeremy Berrutto', 18, y + 52); doc.text('Marc Dupont (signé)', 118, y + 52);
+      // Footer
+      doc.setFillColor(247, 248, 251); doc.rect(0, 282, 210, 15, 'F');
+      doc.setTextColor(136, 146, 164); doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+      doc.text('Généré par VEM · ViewBox Event Manager · ' + new Date().toLocaleString('fr-FR'), 105, 290, { align: 'center' });
+      doc.save('Handover_VEM-2025-001.pdf');
+      toast('📄 PDF généré & téléchargé ! Email envoyé au client 📧', 'success');
+    } catch (e) {
+      toast('PDF généré (version démo)', 'success');
+    }
+  }, 800);
+}
+
+function toggleDrawer(id) {
+  const body = document.getElementById(id + '-body');
+  const arr = document.getElementById(id + '-arr');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  if (arr) arr.textContent = hidden ? '▲' : '▼';
+}
+
+function validateAll() {
+  document.querySelectorAll('.check-cb').forEach(cb => {
+    cb.checked = true;
+    const item = cb.closest('.check-item');
+    if (item) item.classList.add('checked');
+  });
+  document.querySelectorAll('.tool-row .badge').forEach(b => {
+    b.className = 'badge badge-green';
+    b.textContent = 'OK';
+  });
+  toast('🧰 Boîte à outils entièrement validée ✅', 'success');
+}
+
+function updateTool(cb) {
+  const row = cb.closest('.tool-row');
+  const badge = row.querySelector('.badge');
+  if (badge) {
+    badge.className = cb.checked ? 'badge badge-green' : 'badge badge-red';
+    badge.textContent = cb.checked ? 'OK' : 'Manquant';
+  }
+}
+
+function openTicket() {
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+  <div class="modal" style="max-width:750px;">
+    <div class="modal-head"><div class="modal-title">🛠️ Ticket #T-001</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <span class="badge badge-red">🔴 Critique</span>
+      <span class="badge badge-amber">En cours</span>
+      <span style="font-size:12px;color:var(--muted);align-self:center;">VEM-2025-001 · 12/05/2025</span>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;">
+      <div>
+        <h3 style="margin-bottom:8px;">Façade Nord — vis M6 manquantes</h3>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6;">Sur la section 3 à 5 de la façade Nord, il manque environ 12 vis M6×20. Les panneaux sont instables et ne peuvent pas être livrés en l'état.</p>
+        <div style="background:var(--surface2);border-radius:9px;padding:12px;margin-bottom:16px;font-size:13px;">📍 Façade Nord — Section 3 à 5</div>
+        <div style="font-weight:700;margin-bottom:10px;">Photos avant intervention</div>
+        <div class="photo-grid">
+          <div class="photo-cell" style="font-size:24px;">🔧</div>
+          <div class="photo-cell" style="font-size:24px;">⚠️</div>
+          <div class="photo-cell" style="font-size:20px;color:var(--muted);">+ Photo</div>
+        </div>
+        <div style="margin-top:16px;font-weight:700;margin-bottom:8px;">Changer le statut</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="toast('Statut → En cours','info')">⚡ En cours</button>
+          <button class="btn btn-green btn-sm" onclick="toast('Ticket résolu ! Notification envoyée ✅','success');this.closest('.overlay').remove()">✅ Résolu</button>
+          <button class="btn btn-outline btn-sm" onclick="toast('Demande de validation envoyée','info')">📋 Demander validation</button>
+        </div>
+      </div>
+      <div>
+        <div style="background:var(--surface2);border-radius:9px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:12px;color:var(--muted);">Assigné à</div>
+          <div style="font-weight:700;margin-top:3px;">Norick Palm</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:10px;">Date prévue</div>
+          <div style="font-weight:700;margin-top:3px;">13 Mai 2025</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:10px;">Temps passé (h)</div>
+          <input type="number" class="input" style="margin-top:4px;" value="1.5" step="0.5">
+        </div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:13px;">Historique</div>
+        <div style="font-size:12px;border-left:2px solid var(--border);padding-left:10px;">
+          <div style="margin-bottom:8px;"><strong>12/05 14:00</strong><br>Ticket créé — Jeremy B.</div>
+          <div style="margin-bottom:8px;"><strong>12/05 14:30</strong><br>Assigné à Norick Palm</div>
+          <div><strong>12/05 15:00</strong><br>Pris en charge</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+// Init toasts
+setTimeout(() => toast('👋 VEM v2 chargé — 3 projets actifs', 'info'), 600);
+setTimeout(() => toast('🚨 Escalade auto — Ticket #T-003 (28h sans traitement)', 'error'), 1600);
+setTimeout(() => toast('📡 Mode offline disponible — Cliquez sur 📡 pour tester', 'info'), 2800);
+</script>
+</body>
+</html>
