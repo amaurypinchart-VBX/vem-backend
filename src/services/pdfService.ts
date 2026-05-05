@@ -1,5 +1,6 @@
 // src/services/pdfService.ts
-import PDFDocument from 'pdfkit';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PDFDocument = require('pdfkit');
 
 const RED    = '#e63946';
 const DARK   = '#1a1a2e';
@@ -7,7 +8,7 @@ const MUTED  = '#8892a4';
 const GREEN  = '#2dc653';
 const AMBER  = '#f4a261';
 
-function header(doc: PDFKit.PDFDocument, subtitle: string) {
+function header(doc: any, subtitle: string) {
   doc.rect(0,0,595,70).fill(DARK);
   doc.fillColor(RED).font('Helvetica-Bold').fontSize(26).text('VEM', 40, 22);
   doc.fillColor('white').font('Helvetica').fontSize(11).text('ViewBox Event Manager', 82, 28);
@@ -15,19 +16,19 @@ function header(doc: PDFKit.PDFDocument, subtitle: string) {
   doc.moveDown(2.5);
 }
 
-function footer(doc: PDFKit.PDFDocument) {
+function footer(doc: any) {
   doc.rect(0, 810, 595, 30).fill('#f8f8f8');
   doc.fillColor(MUTED).fontSize(8).font('Helvetica')
     .text(`Généré par VEM · ${new Date().toLocaleString('fr-FR')}`, 40, 817, { align: 'center', width: 515 });
 }
 
-function sectionTitle(doc: PDFKit.PDFDocument, title: string) {
+function sectionTitle(doc: any, title: string) {
   doc.fillColor(DARK).font('Helvetica-Bold').fontSize(14).text(title, 40, doc.y);
   doc.moveTo(40, doc.y+2).lineTo(555, doc.y+2).strokeColor('#ddd').lineWidth(1).stroke();
   doc.moveDown(0.5);
 }
 
-function infoRow(doc: PDFKit.PDFDocument, label: string, value: string) {
+function infoRow(doc: any, label: string, value: string) {
   const y = doc.y;
   doc.fillColor(MUTED).font('Helvetica').fontSize(10).text(label, 40, y, { width: 130 });
   doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(value, 175, y, { width: 370 });
