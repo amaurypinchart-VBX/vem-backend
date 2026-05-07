@@ -25,7 +25,8 @@ import notifRoutes      from './routes/notifications';
 import userRoutes       from './routes/users';
 import clientRoutes     from './routes/clients';
 import reportRoutes     from './routes/reports';
-
+import taskTemplatesRoutes from './routes/taskTemplates';
+app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
 const app  = express();
 const http = createServer(app);
 
