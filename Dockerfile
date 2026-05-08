@@ -12,7 +12,7 @@ COPY tsconfig.json ./
 COPY src ./src/
 COPY public ./public/
 
-RUN npx prisma generate && npm run build
+RUN npx prisma generate --no-engine && npm run build
 
 EXPOSE 3000
 
