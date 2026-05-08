@@ -12,6 +12,7 @@ COPY tsconfig.json ./
 COPY src ./src/
 COPY public ./public/
 
+RUN npx prisma db pull --force || true
 RUN npx prisma generate && npm run build
 
 EXPOSE 3000
