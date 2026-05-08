@@ -1698,17 +1698,20 @@ async function createProject() {
   const btn = document.getElementById('proj-create-btn');
   if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
 
-  const res = await api('POST', '/projects', {
+  // Build body — only include dismantling if filled
+  const body = {
     name, clientId, address,
-    internalNumber: document.getElementById('proj-num').value || undefined,
+    internalNumber: document.getElementById('proj-num').value.trim() || undefined,
     workersCount: parseInt(document.getElementById('proj-workers').value) || 0,
-    description: document.getElementById('proj-desc').value || undefined,
+    description: document.getElementById('proj-desc').value.trim() || undefined,
     installationStart: start,
     installationEnd: end,
-    dismantlingStart: dismStart || undefined,
-    dismantlingEnd: dismEnd || undefined,
     city: address.split(',').pop()?.trim() || '',
-  });
+  };
+  if (dismStart) body.dismantlingStart = dismStart;
+  if (dismEnd)   body.dismantlingEnd   = dismEnd;
+
+  const res = await api('POST', '/projects', body);
 
   if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer le Projet'; }
 
