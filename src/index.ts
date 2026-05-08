@@ -1,3 +1,6 @@
+
+import clientRemarksRoutes from './routes/clientRemarks';
+app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
