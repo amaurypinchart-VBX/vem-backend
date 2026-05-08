@@ -1,6 +1,5 @@
 
-import clientRemarksRoutes from './routes/clientRemarks';
-app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -29,6 +28,7 @@ import userRoutes       from './routes/users';
 import clientRoutes     from './routes/clients';
 import reportRoutes     from './routes/reports';
 import taskTemplatesRoutes from './routes/taskTemplates';
+import clientRemarksRoutes from './routes/clientRemarks';
 app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
 const app  = express();
 const http = createServer(app);
@@ -70,7 +70,8 @@ app.use(`${API}/toolbox`,       authMiddleware, toolboxRoutes);
 app.use(`${API}/upload`,        authMiddleware, uploadRoutes);
 app.use(`${API}/notifications`, authMiddleware, notifRoutes);
 app.use(`${API}/reports`,       authMiddleware, reportRoutes);
-
+app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
+app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 // SPA fallback
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
