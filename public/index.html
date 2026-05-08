@@ -1062,7 +1062,7 @@ function projCardHTML(p) {
 }
 
 async function loadDashTickets() {
-  const res = await api('GET', '/tickets?status=open&status=in_progress');
+  const res = await api('GET', `/tickets`);
   const el = document.getElementById('dash-tickets');
   if (!res?.success || !res.data.length) {
     el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun ticket urgent</div>';
