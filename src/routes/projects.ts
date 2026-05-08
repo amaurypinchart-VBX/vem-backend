@@ -104,5 +104,34 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
     res.json({ success: true });
   } catch (err) { next(err); }
 });
+// POST /projects/:id/team — ajouter un membre
+router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { userId, role, isLead } = req.body;
+    const member = await prisma.projectTeam.create({
+      data: { projectId: req.params.id, userId, role, isLead: isLead||false },
+      include: { user: { select: { firstName:true, lastName:true, email:true } } },
+    });
+    res.status(201).json({ success: true, data: member });
+  } catch (err: any) {
+    if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Déjà dans l\'équipe' });
+    next(err);
+  }
+});
 
+// POST /projects/:id/trucks — ajouter camion/machine
+router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const truck = await prisma.truck.create({
+      data: {
+        projectId: req.params.id,
+        ...req.body,
+        loadingDate:  req.body.loadingDate  ? new Date(req.body.loadingDate)  : null,
+        arrivalDate:  req.body.arrivalDate  ? new Date(req.body.arrivalDate)  : null,
+        departureDate: req.body.departureDate ? new Date(req.body.departureDate) : null,
+      },
+    });
+    res.status(201).json({ success: true, data: truck });
+  } catch (err) { next(err); }
+});
 export default router;
