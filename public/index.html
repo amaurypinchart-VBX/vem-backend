@@ -755,23 +755,69 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- Daily Report -->
 <div class="overlay" id="modal-daily">
-  <div class="modal">
-    <div class="modal-head"><div class="modal-title">📓 Nouveau Rapport Journalier</div><button class="modal-close" onclick="closeModal('modal-daily')">×</button></div>
-    <div class="form-group2"><label class="form-label2">Projet</label><select class="input" id="daily-project"><option value="">— Sélectionner —</option></select></div>
-    <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="daily-date"></div>
-      <div class="form-group2"><label class="form-label2">Météo</label>
-        <select class="input" id="daily-weather">
-          <option>☀️ Ensoleillé</option><option>⛅ Nuageux</option><option>🌧️ Pluie</option><option>❄️ Froid</option>
-        </select>
+  <div class="modal" style="max-width:860px;">
+    <div class="modal-head">
+      <div><div class="modal-title">📓 Rapport Journalier</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Journal de chantier complet</div></div>
+      <button class="modal-close" onclick="closeModal('modal-daily')">×</button>
+    </div>
+
+    <!-- INFOS GÉNÉRALES -->
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Projet *</label><select class="input" id="daily-project" onchange="loadDailyTasks(this.value)"><option value="">— Sélectionner —</option></select></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Date *</label><input class="input" type="date" id="daily-date"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Météo</label><select class="input" id="daily-weather"><option>☀️ Ensoleillé</option><option>⛅ Nuageux</option><option>🌧️ Pluie</option><option>❄️ Froid</option><option>🌩️ Orage</option></select></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="daily-workers" value="0" min="0"></div>
       </div>
     </div>
-    <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="daily-workers" value="0"></div>
-    <div class="form-group2"><label class="form-label2">Notes générales</label><textarea class="input" id="daily-notes" rows="5" placeholder="Résumé de la journée..."></textarea></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+      <!-- COLONNE GAUCHE : Journal chronologique -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">⏱️ Journal de chantier</div>
+          <button class="btn btn-ghost btn-xs" onclick="addDailyEntry()">+ Entrée</button>
+        </div>
+        <div id="daily-entries-list" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+
+        <!-- Nouvelle entrée rapide -->
+        <div style="margin-top:10px;background:var(--bg3);border-radius:var(--radius);padding:10px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <input class="input" type="time" id="new-entry-time" style="width:90px;padding:7px 8px;font-size:13px;">
+            <!-- Bouton vocal -->
+            <button class="btn btn-ghost btn-sm" id="voice-btn" onclick="toggleVoiceRecording()" style="flex-shrink:0;" title="Dicter par vocal">🎙️</button>
+            <span id="voice-status" style="font-size:11px;color:var(--text3);align-self:center;display:none;">● Écoute...</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <textarea class="input" id="new-entry-text" rows="2" placeholder="Décrivez ce qui a été fait... ou cliquez sur 🎙️ pour dicter" style="font-size:13px;resize:none;flex:1;"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="addDailyEntry()" style="align-self:flex-end;flex-shrink:0;">Ajouter</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLONNE DROITE : Tâches du projet -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">✅ Avancement des tâches</div>
+          <span style="font-size:11px;color:var(--text3);">Cocher = marquer terminé</span>
+        </div>
+        <div id="daily-tasks-list" style="max-height:340px;overflow-y:auto;">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES GÉNÉRALES -->
+    <div class="form-group2" style="margin-top:14px;">
+      <label class="form-label2">Notes générales / Résumé de journée</label>
+      <textarea class="input" id="daily-notes" rows="3" placeholder="Résumé, incidents, points à noter..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
       <button class="btn btn-outline" onclick="closeModal('modal-daily')">Annuler</button>
       <button class="btn btn-primary" onclick="createDailyReport()">💾 Sauvegarder</button>
-      <button class="btn btn-green" onclick="createAndSendDailyReport()">📤 Sauv. & Envoyer</button>
+      <button class="btn btn-green" onclick="createDailyReport(true)">📤 Sauv. & Envoyer</button>
     </div>
   </div>
 </div>
@@ -1764,23 +1810,213 @@ async function createTask() {
   else toast('Erreur création tâche', 'error');
 }
 
+// ═══ DAILY REPORT STATE ═══
+let DAILY_ENTRIES = []; // {id, time, text}
+let DAILY_TASK_UPDATES = {}; // {taskId: newStatus}
+let voiceRecognition = null;
+let isRecording = false;
+
+function resetDailyReport() {
+  DAILY_ENTRIES = [];
+  DAILY_TASK_UPDATES = {};
+  renderDailyEntries();
+  document.getElementById('daily-tasks-list').innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>';
+  document.getElementById('new-entry-text').value = '';
+  document.getElementById('daily-notes').value = '';
+  document.getElementById('daily-workers').value = '0';
+  // Set current time
+  const now = new Date();
+  document.getElementById('new-entry-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
+function addDailyEntry() {
+  const time = document.getElementById('new-entry-time').value;
+  const text = document.getElementById('new-entry-text').value.trim();
+  if (!text) { toast('Décrivez ce qui a été fait','error'); return; }
+  const entry = { id: Date.now(), time: time || '00:00', text };
+  DAILY_ENTRIES.push(entry);
+  DAILY_ENTRIES.sort((a,b) => a.time.localeCompare(b.time));
+  renderDailyEntries();
+  document.getElementById('new-entry-text').value = '';
+  // Auto-advance time by 30min
+  if (time) {
+    const [h,m] = time.split(':').map(Number);
+    const next = new Date(2000,0,1,h,m+30);
+    document.getElementById('new-entry-time').value = `${String(next.getHours()).padStart(2,'0')}:${String(next.getMinutes()).padStart(2,'0')}`;
+  }
+}
+
+function removeDailyEntry(id) {
+  DAILY_ENTRIES = DAILY_ENTRIES.filter(e => e.id !== id);
+  renderDailyEntries();
+}
+
+function renderDailyEntries() {
+  const el = document.getElementById('daily-entries-list');
+  if (!el) return;
+  if (!DAILY_ENTRIES.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:16px;">Aucune entrée — ajoutez des activités ci-dessous</div>';
+    return;
+  }
+  el.innerHTML = DAILY_ENTRIES.map(e => `
+    <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
+      <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);min-width:40px;margin-top:1px;">${e.time}</div>
+      <div style="flex:1;font-size:13px;color:var(--text2);line-height:1.4;">${e.text}</div>
+      <button onclick="removeDailyEntry(${e.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
+    </div>`).join('');
+}
+
+// ── VOICE RECORDING ──────────────────────────────────────────
+function toggleVoiceRecording() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Vocal non supporté sur ce navigateur — essayez Chrome','warning');
+    return;
+  }
+  if (isRecording) {
+    stopVoiceRecording();
+  } else {
+    startVoiceRecording();
+  }
+}
+
+function startVoiceRecording() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.lang = 'fr-FR';
+  voiceRecognition.continuous = true;
+  voiceRecognition.interimResults = true;
+
+  voiceRecognition.onstart = () => {
+    isRecording = true;
+    const btn = document.getElementById('voice-btn');
+    const status = document.getElementById('voice-status');
+    if (btn) { btn.style.background = 'rgba(230,57,70,.2)'; btn.style.color = 'var(--accent)'; }
+    if (status) status.style.display = 'inline';
+    toast('🎙️ Écoute en cours... Parlez !', 'info');
+  };
+
+  voiceRecognition.onresult = (event) => {
+    let transcript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    const el = document.getElementById('new-entry-text');
+    if (el) el.value = transcript;
+  };
+
+  voiceRecognition.onerror = (event) => {
+    toast('Erreur micro: ' + event.error, 'error');
+    stopVoiceRecording();
+  };
+
+  voiceRecognition.onend = () => {
+    if (isRecording) stopVoiceRecording();
+  };
+
+  voiceRecognition.start();
+}
+
+function stopVoiceRecording() {
+  isRecording = false;
+  if (voiceRecognition) voiceRecognition.stop();
+  const btn = document.getElementById('voice-btn');
+  const status = document.getElementById('voice-status');
+  if (btn) { btn.style.background = ''; btn.style.color = ''; }
+  if (status) status.style.display = 'none';
+  // Auto-add entry if text is present
+  const text = document.getElementById('new-entry-text')?.value.trim();
+  if (text) toast('✅ Transcription terminée — cliquez Ajouter', 'success');
+}
+
+// ── LOAD TASKS FOR DAILY REPORT ──────────────────────────────
+async function loadDailyTasks(projectId) {
+  const el = document.getElementById('daily-tasks-list');
+  if (!el || !projectId) return;
+  el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>';
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucune tâche dans ce projet</div>';
+    return;
+  }
+  const active = res.data.filter(t => t.status !== 'cancelled');
+  const byStatus = { todo: [], in_progress: [], done: [], blocked: [] };
+  active.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+
+  const statusColor = { todo:'var(--blue)', in_progress:'var(--amber)', done:'var(--green)', blocked:'var(--accent)' };
+  const statusLabel = { todo:'À faire', in_progress:'En cours', done:'Terminé', blocked:'Bloqué' };
+
+  let html = '';
+  ['in_progress','todo','blocked','done'].forEach(s => {
+    if (!byStatus[s].length) return;
+    html += `<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin:8px 0 4px;">${statusLabel[s]}</div>`;
+    byStatus[s].forEach(t => {
+      const isDone = DAILY_TASK_UPDATES[t.id] === 'done' || t.status === 'done';
+      const isInProg = DAILY_TASK_UPDATES[t.id] === 'in_progress' || (t.status === 'in_progress' && !DAILY_TASK_UPDATES[t.id]);
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:var(--radius);margin-bottom:3px;background:var(--bg3);border:1px solid ${isDone?'rgba(45,198,83,.3)':'var(--border)'};">
+        <input type="checkbox" ${isDone?'checked':''} onchange="toggleTaskDone('${t.id}','${t.status}',this.checked)" style="accent-color:var(--green);width:15px;height:15px;flex-shrink:0;cursor:pointer;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:${isDone?'400':'500'};color:${isDone?'var(--text3)':'var(--text)'};${isDone?'text-decoration:line-through;':''}white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.title}</div>
+          ${t.assignedTo?`<div style="font-size:10px;color:var(--text3);">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+        </div>
+        <div style="display:flex;gap:3px;flex-shrink:0;">
+          ${t.status!=='in_progress'&&!isDone?`<button onclick="setTaskInProgress('${t.id}')" style="background:rgba(244,162,97,.15);color:var(--amber);border:none;border-radius:5px;padding:2px 6px;font-size:10px;cursor:pointer;">▶ En cours</button>`:''}
+        </div>
+      </div>`;
+    });
+  });
+  el.innerHTML = html;
+}
+
+function toggleTaskDone(taskId, currentStatus, checked) {
+  if (checked) {
+    DAILY_TASK_UPDATES[taskId] = 'done';
+  } else {
+    DAILY_TASK_UPDATES[taskId] = currentStatus === 'done' ? 'todo' : currentStatus;
+  }
+  // Refresh visual
+  const projectId = document.getElementById('daily-project').value;
+  if (projectId) loadDailyTasks(projectId);
+}
+
+function setTaskInProgress(taskId) {
+  DAILY_TASK_UPDATES[taskId] = 'in_progress';
+  const projectId = document.getElementById('daily-project').value;
+  if (projectId) loadDailyTasks(projectId);
+}
+
+// ── CREATE DAILY REPORT ──────────────────────────────────────
 async function createDailyReport(send=false) {
   const projectId = document.getElementById('daily-project').value;
   const date = document.getElementById('daily-date').value;
   if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
+
+  // Build entries from DAILY_ENTRIES
+  const entries = DAILY_ENTRIES.map(e => ({ entryTime: e.time, description: e.text }));
 
   const res = await api('POST', '/daily-reports', {
     projectId, reportDate: date,
     weather: document.getElementById('daily-weather').value,
     workersPresent: parseInt(document.getElementById('daily-workers').value)||0,
     generalNotes: document.getElementById('daily-notes').value || undefined,
+    entries,
   });
+
   if (res?.success) {
-    toast('Rapport sauvegardé 💾', 'success');
+    // Update task statuses
+    const taskUpdates = Object.entries(DAILY_TASK_UPDATES);
+    if (taskUpdates.length) {
+      toast(`Mise à jour de ${taskUpdates.length} tâche(s)...`, 'info');
+      await Promise.all(taskUpdates.map(([taskId, status]) =>
+        api('PATCH', `/tasks/${taskId}`, { status })
+      ));
+    }
+    toast(`Rapport sauvegardé ✅ ${taskUpdates.length?`· ${taskUpdates.length} tâche(s) mise(s) à jour`:''}`, 'success');
     closeModal('modal-daily');
+    resetDailyReport();
     if (send) sendDailyReport(res.data.id);
     loadDailyReports();
-  } else toast('Erreur', 'error');
+    if (CURRENT_PROJECT_ID) { loadProjTasks(CURRENT_PROJECT_ID); loadDetailDailyReports(CURRENT_PROJECT_ID); }
+  } else toast('Erreur création rapport', 'error');
 }
 
 async function createAndSendDailyReport() { await createDailyReport(true); }
@@ -1948,7 +2184,13 @@ function populateUserSelects() {
 function showModal(id) {
   document.getElementById(id).classList.add('open');
   const today = new Date().toISOString().split('T')[0];
-  if (id === 'modal-daily')   document.getElementById('daily-date').value = today;
+  if (id === 'modal-daily') {
+    document.getElementById('daily-date').value = today;
+    resetDailyReport();
+    // Load tasks if project already selected
+    const pid = document.getElementById('daily-project').value || CURRENT_PROJECT_ID;
+    if (pid) { document.getElementById('daily-project').value = pid; loadDailyTasks(pid); }
+  }
   if (id === 'modal-task')    document.getElementById('task-date').value  = today;
   if (id === 'modal-handover') {
     // Set today date
