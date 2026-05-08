@@ -1058,6 +1058,7 @@ function goto(page) {
   if (page === 'notifs')    loadNotifs();
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
+  if (page==='projects') { loadAll().then(() => { renderProjectsGrid(PROJECTS); }); }
 }
 
 function switchTab(el, tabId) {
