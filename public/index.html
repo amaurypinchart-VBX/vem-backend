@@ -968,7 +968,6 @@ function goto(page) {
   if (page === 'notifs')    loadNotifs();
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
-  if (page==='projects')  { loadAll().then(() => renderProjectsGrid(PROJECTS)); }
 }
 
 function switchTab(el, tabId) {
@@ -1063,7 +1062,7 @@ function projCardHTML(p) {
 }
 
 async function loadDashTickets() {
-  const res = await api('GET', `/tickets`);
+  const res = await api('GET', '/tickets?status=open&status=in_progress');
   const el = document.getElementById('dash-tickets');
   if (!res?.success || !res.data.length) {
     el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun ticket urgent</div>';
