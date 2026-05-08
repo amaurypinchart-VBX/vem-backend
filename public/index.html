@@ -1277,7 +1277,7 @@ async function updateTaskStatus(id, status) {
 // ═══ TICKETS ═══
 async function loadTickets() {
   const urgency = document.getElementById('ticket-urgency-filter')?.value || '';
-  const url = '/tickets' + (urgency ? `?urgency=${urgency}` : '');
+  const url = '/tickets' + (urgency ? `?urgency=${urgency}` : '') + (status ? `${urgency?'&':'?'}status=${status}` : '');
   const [ticketsRes, statsRes] = await Promise.all([api('GET', url), api('GET', '/tickets/stats')]);
 
   if (statsRes?.success) {
