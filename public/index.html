@@ -246,6 +246,19 @@ textarea.input{min-height:80px;resize:vertical;}
 .dropdown-item.danger:hover{background:rgba(230,57,70,.08);}
 .dropdown-sep{border:none;border-top:1px solid var(--border);margin:4px 0;}
 
+/* UPLOAD ZONE */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;cursor:pointer;transition:all .2s;color:var(--text3);font-size:13px;}
+.upload-zone:hover{border-color:var(--accent);color:var(--accent);}
+
+/* PHOTO GRID */
+.photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.photo-cell{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);}
+.photo-cell img{width:100%;height:100%;object-fit:cover;}
+
+/* TABS SCROLL */
+.tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.tabs::-webkit-scrollbar{display:none;}
+
 /* RESPONSIVE */
 @media(max-width:900px){
   .nav{transform:translateX(-100%);}
@@ -334,6 +347,7 @@ textarea.input{min-height:80px;resize:vertical;}
   </div>
   <div class="nav-section">
     <div class="nav-label">Admin</div>
+    <div class="nav-item" onclick="goto('clients')"><span class="ni">🏢</span>Clients</div>
     <div class="nav-item" onclick="goto('team')"><span class="ni">👥</span>Équipe</div>
     <div class="nav-item" onclick="goto('notifs')"><span class="ni">🔔</span>Notifications<span class="nav-badge" id="notifs-badge">0</span></div>
   </div>
@@ -453,14 +467,26 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
     </div>
   </div>
-  <div class="tabs">
+  <div class="tabs" id="proj-tabs" style="overflow-x:auto;white-space:nowrap;">
     <div class="tab active" onclick="switchTab(this,'dtab-info')">📋 Infos</div>
     <div class="tab" onclick="switchTab(this,'dtab-tasks')">✅ Tâches</div>
+    <div class="tab" onclick="switchTab(this,'dtab-daily')">📓 Daily Reports</div>
+    <div class="tab" onclick="switchTab(this,'dtab-handover')">🧾 Handover</div>
+    <div class="tab" onclick="switchTab(this,'dtab-remarks')">🔁 Suivi Client</div>
+    <div class="tab" onclick="switchTab(this,'dtab-tickets')">🛠️ Tickets</div>
+    <div class="tab" onclick="switchTab(this,'dtab-warehouse')">📦 Entrepôt</div>
+    <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
     <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
     <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
   </div>
   <div id="dtab-info"><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-tasks" style="display:none;"><div id="detail-tasks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-daily" style="display:none;"><div id="detail-daily-content"><div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport</div></div></div></div>
+  <div id="dtab-handover" style="display:none;"><div id="detail-handover-content"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div></div></div>
+  <div id="dtab-remarks" style="display:none;"><div id="detail-remarks-content"><div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucune remarque</div></div></div></div>
+  <div id="dtab-tickets" style="display:none;"><div id="detail-tickets-content"><div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket</div></div></div></div>
+  <div id="dtab-warehouse" style="display:none;"><div id="detail-warehouse-content"><div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div></div></div></div>
+  <div id="dtab-toolbox" style="display:none;"><div id="detail-toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div></div></div></div>
   <div id="dtab-team" style="display:none;"><div id="detail-team-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-trucks" style="display:none;"><div id="detail-trucks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
 </div>
@@ -590,25 +616,71 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- Nouveau Projet -->
 <div class="overlay" id="modal-proj">
-  <div class="modal">
+  <div class="modal" style="max-width:700px;">
     <div class="modal-head"><div class="modal-title">🏗️ Nouveau Projet</div><button class="modal-close" onclick="closeModal('modal-proj')">×</button></div>
     <div class="input-row">
       <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="proj-name" placeholder="ex: Salon Audi Paris"></div>
-      <div class="form-group2"><label class="form-label2">Client *</label><select class="input" id="proj-client"><option value="">— Sélectionner —</option></select></div>
+      <div class="form-group2">
+        <label class="form-label2">Client *</label>
+        <div style="display:flex;gap:6px;">
+          <select class="input" id="proj-client" style="flex:1;"><option value="">— Sélectionner —</option></select>
+          <button class="btn btn-ghost btn-sm" style="flex-shrink:0;" onclick="showModal('modal-new-client')" title="Créer un nouveau client">+ Client</button>
+        </div>
+      </div>
     </div>
     <div class="input-row">
       <div class="form-group2"><label class="form-label2">N° Interne</label><input class="input" id="proj-num" placeholder="VEM-2025-003"></div>
       <div class="form-group2"><label class="form-label2">Ouvriers</label><input class="input" type="number" id="proj-workers" value="5"></div>
     </div>
-    <div class="form-group2"><label class="form-label2">Adresse *</label><input class="input" id="proj-addr" placeholder="Adresse complète"></div>
+    <div class="form-group2"><label class="form-label2">Adresse *</label><input class="input" id="proj-addr" placeholder="Adresse complète, Ville"></div>
     <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Début installation</label><input class="input" type="date" id="proj-start"></div>
-      <div class="form-group2"><label class="form-label2">Fin installation</label><input class="input" type="date" id="proj-end"></div>
+      <div class="form-group2"><label class="form-label2">Début installation *</label><input class="input" type="date" id="proj-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin installation *</label><input class="input" type="date" id="proj-end"></div>
     </div>
-    <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="proj-desc" placeholder="Notes importantes..."></textarea></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Début démontage</label><input class="input" type="date" id="proj-dismantling-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin démontage</label><input class="input" type="date" id="proj-dismantling-end"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
       <button class="btn btn-outline" onclick="closeModal('modal-proj')">Annuler</button>
-      <button class="btn btn-primary" onclick="createProject()">✅ Créer le Projet</button>
+      <button class="btn btn-primary" id="proj-create-btn" onclick="createProject()">✅ Créer le Projet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouveau Client -->
+<div class="overlay" id="modal-new-client">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-head"><div class="modal-title">🏢 Nouveau Client</div><button class="modal-close" onclick="closeModal('modal-new-client')">×</button></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Nom de la société *</label><input class="input" id="client-name" placeholder="ex: Audi Belgium SA"></div>
+      <div class="form-group2"><label class="form-label2">N° TVA / VAT</label><input class="input" id="client-vat" placeholder="BE0123456789"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="client-address" placeholder="Rue, Code postal, Ville"></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Email société</label><input class="input" type="email" id="client-email" placeholder="info@société.com"></div>
+      <div class="form-group2"><label class="form-label2">Téléphone société</label><input class="input" id="client-phone" placeholder="+32 2 ..."></div>
+    </div>
+    <!-- Contacts -->
+    <div style="border-top:1px solid var(--border);margin:14px 0 12px;padding-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <label class="form-label2" style="margin:0;">Personnes de contact</label>
+        <button class="btn btn-ghost btn-xs" onclick="addClientContact()">+ Ajouter contact</button>
+      </div>
+      <div id="client-contacts-list">
+        <!-- Premier contact par défaut -->
+        <div class="client-contact-row" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;" id="contact-0">
+          <input class="input" placeholder="Prénom Nom" id="contact-0-name" style="font-size:12px;">
+          <input class="input" placeholder="Email" id="contact-0-email" type="email" style="font-size:12px;">
+          <input class="input" placeholder="Téléphone" id="contact-0-phone" style="font-size:12px;">
+          <div style="display:flex;align-items:center;padding:6px;font-size:12px;color:var(--text3);">Principal</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-new-client')">Annuler</button>
+      <button class="btn btn-primary" onclick="createClientAndReturn()">✅ Créer le client</button>
     </div>
   </div>
 </div>
@@ -778,6 +850,7 @@ let TOKEN = localStorage.getItem('vem_token') || '';
 let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || 'null');
 let PROJECTS = [];
 let USERS = [];
+let CLIENTS = [];
 let CURRENT_PROJECT_ID = null;
 
 // ═══ API HELPER ═══
@@ -899,10 +972,19 @@ function goto(page) {
 
 function switchTab(el, tabId) {
   document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display='none');
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#proj-tabs .tab, .tabs .tab').forEach(t => t.classList.remove('active'));
   const tab = document.getElementById(tabId);
   if (tab) tab.style.display='block';
   el.classList.add('active');
+  // Lazy-load tab content
+  if (!CURRENT_PROJECT_ID) return;
+  if (tabId==='dtab-tasks')     loadDetailTasks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-daily')     loadDetailDailyReports(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-handover')  loadDetailHandovers(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-remarks')   loadDetailRemarks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-tickets')   loadDetailTickets(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-warehouse') loadDetailWarehouse(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-toolbox')   loadDetailToolboxes(CURRENT_PROJECT_ID);
 }
 
 function openProject(id) {
@@ -910,7 +992,7 @@ function openProject(id) {
   goto('project-detail');
   document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display='none');
   document.getElementById('dtab-info').style.display='block';
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.querySelectorAll('#proj-tabs .tab').forEach((t,i) => t.classList.toggle('active', i===0));
   loadProjectDetail(id);
 }
 
@@ -1097,12 +1179,19 @@ async function loadProjectDetail(id) {
   const team = p.team || [];
   document.getElementById('detail-team-content').innerHTML = `
     <div class="card">
-      <div class="card-header"><span class="card-title">👥 Équipe du Projet</span></div>
+      <div class="card-header">
+        <span class="card-title">👥 Équipe du Projet</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="showModal('modal-user')">+ Créer membre</button>
+          <button class="btn btn-primary btn-sm" onclick="showAddToTeamModal('${p.id}')">+ Ajouter à l'équipe</button>
+        </div>
+      </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nom</th><th>Rôle</th><th>Lead</th></tr></thead>
+        <thead><tr><th>Nom</th><th>Rôle</th><th>Téléphone</th><th>Lead</th></tr></thead>
         <tbody>${team.map(m => `<tr>
-          <td><strong>${m.user.firstName} ${m.user.lastName}</strong></td>
+          <td><div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">${(m.user.firstName[0]+m.user.lastName[0]).toUpperCase()}</div><strong>${m.user.firstName} ${m.user.lastName}</strong></div></td>
           <td><span class="badge badge-blue">${m.role}</span></td>
+          <td style="color:var(--text3);">${m.user.phone||'—'}</td>
           <td>${m.isLead?'⭐ Lead':''}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -1111,6 +1200,9 @@ async function loadProjectDetail(id) {
   // Trucks tab
   const trucks = p.trucks || [];
   document.getElementById('detail-trucks-content').innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${p.id}')">+ Ajouter camion / machine</button>
+    </div>
     <div class="grid-2">${trucks.length?trucks.map(t => `
       <div class="card">
         <div class="card-header"><span class="card-title">🚛 Camion ${t.truckNumber||''}</span>
@@ -1590,23 +1682,47 @@ async function markAllRead() {
 
 // ═══ CREATE ACTIONS ═══
 async function createProject() {
-  const name  = document.getElementById('proj-name').value.trim();
+  const name     = document.getElementById('proj-name').value.trim();
   const clientId = document.getElementById('proj-client').value;
-  const address = document.getElementById('proj-addr').value.trim();
-  const start = document.getElementById('proj-start').value;
-  const end   = document.getElementById('proj-end').value;
-  if (!name || !clientId || !address || !start || !end) { toast('Remplis tous les champs obligatoires', 'error'); return; }
+  const address  = document.getElementById('proj-addr').value.trim();
+  const start    = document.getElementById('proj-start').value;
+  const end      = document.getElementById('proj-end').value;
+  const dismStart = document.getElementById('proj-dismantling-start')?.value || '';
+  const dismEnd   = document.getElementById('proj-dismantling-end')?.value || '';
+
+  if (!name || !clientId || !address || !start || !end) {
+    toast('Remplis les champs obligatoires (Nom, Client, Adresse, Dates installation)', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('proj-create-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
 
   const res = await api('POST', '/projects', {
     name, clientId, address,
     internalNumber: document.getElementById('proj-num').value || undefined,
     workersCount: parseInt(document.getElementById('proj-workers').value) || 0,
-    description: document.getElementById('proj-desc').value,
-    installationStart: start, installationEnd: end,
+    description: document.getElementById('proj-desc').value || undefined,
+    installationStart: start,
+    installationEnd: end,
+    dismantlingStart: dismStart || undefined,
+    dismantlingEnd: dismEnd || undefined,
     city: address.split(',').pop()?.trim() || '',
   });
-  if (res?.success) { toast('Projet créé ✅', 'success'); closeModal('modal-proj'); loadAll(); goto('projects'); }
-  else toast('Erreur création projet', 'error');
+
+  if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer le Projet'; }
+
+  if (res?.success) {
+    toast('Projet créé ✅', 'success');
+    closeModal('modal-proj');
+    // Reset form
+    ['proj-name','proj-num','proj-addr','proj-desc','proj-start','proj-end','proj-dismantling-start','proj-dismantling-end'].forEach(id => {
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+    document.getElementById('proj-workers').value = '5';
+    loadAll();
+    goto('projects');
+  } else toast('Erreur création projet', 'error');
 }
 
 async function createTicket() {
@@ -1670,19 +1786,35 @@ async function createHandover() {
   const projectId = document.getElementById('handover-project').value;
   if (!projectId) { toast('Sélectionne un projet', 'error'); return; }
 
+  const siteManagerId = document.getElementById('handover-site-manager')?.value || CURRENT_USER?.id;
+  const handoverDate  = document.getElementById('handover-date')?.value;
+  const responsible   = document.getElementById('handover-responsible')?.value;
+
+  // Build items from zones
+  const items = HANDOVER_ZONES.filter(z=>z.name.trim()).map((z,i) => ({
+    zoneName: z.name.trim(),
+    status: z.status,
+    comment: z.comment||undefined,
+    sortOrder: i,
+  }));
+  if (!items.length) items.push({ zoneName: 'Inspection générale', status: 'ok', sortOrder: 0 });
+
   const res = await api('POST', '/handover', {
     projectId,
-    clientName: document.getElementById('handover-client-name').value || undefined,
+    clientName: document.getElementById('handover-client-name').value || (responsible||undefined),
     clientEmail: document.getElementById('handover-client-email').value || undefined,
     generalNotes: document.getElementById('handover-notes').value || undefined,
-    siteManagerId: CURRENT_USER?.id,
-    items: [
-      { zoneName: 'Zone A', status: 'ok' },
-      { zoneName: 'Zone B', status: 'pending' },
-    ],
+    siteManagerId,
+    createdAt: handoverDate ? new Date(handoverDate).toISOString() : undefined,
+    items,
   });
-  if (res?.success) { toast('Handover créé ✅', 'success'); closeModal('modal-handover'); loadHandovers(); }
-  else toast('Erreur', 'error');
+  if (res?.success) {
+    toast('Handover créé ✅', 'success');
+    closeModal('modal-handover');
+    HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:''}]; // reset
+    loadHandovers();
+    if (CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID);
+  } else toast('Erreur création handover', 'error');
 }
 
 async function createBox() {
@@ -1706,7 +1838,7 @@ async function createUser() {
   if (!firstName || !lastName || !email) { toast('Remplis tous les champs', 'error'); return; }
 
   const res = await api('POST', '/users', { firstName, lastName, email, role, phone: document.getElementById('user-phone').value || undefined });
-  if (res?.success) { toast('Compte créé · Mot de passe : VEM2025! ✅', 'success'); closeModal('modal-user'); loadTeam(); }
+  if (res?.success) { toast('Compte créé · Mot de passe : VEM2025! ✅', 'success'); closeModal('modal-user'); loadTeam(); loadAll(); }
   else toast('Erreur création compte', 'error');
 }
 
@@ -1728,13 +1860,81 @@ function populateProjectSelects() {
 async function loadClients() {
   const res = await api('GET', '/clients');
   if (!res?.success) return;
-  const el = document.getElementById('proj-client');
-  if (!el) return;
-  el.innerHTML = '<option value="">— Sélectionner —</option>' + res.data.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  CLIENTS = res.data;
+  const opts = '<option value="">— Sélectionner —</option>' + res.data.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  ['proj-client'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = opts; if(cur) el.value = cur; }
+  });
+}
+
+// ── CLIENT CONTACTS ──
+let CLIENT_CONTACTS_COUNT = 1;
+
+function addClientContact() {
+  const idx = CLIENT_CONTACTS_COUNT++;
+  const list = document.getElementById('client-contacts-list');
+  const div = document.createElement('div');
+  div.className = 'client-contact-row';
+  div.id = `contact-${idx}`;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;';
+  div.innerHTML = `
+    <input class="input" placeholder="Prénom Nom" id="contact-${idx}-name" style="font-size:12px;">
+    <input class="input" placeholder="Email" id="contact-${idx}-email" type="email" style="font-size:12px;">
+    <input class="input" placeholder="Téléphone" id="contact-${idx}-phone" style="font-size:12px;">
+    <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="this.closest('.client-contact-row').remove()">✕</button>`;
+  list.appendChild(div);
+}
+
+async function createClientAndReturn() {
+  const name = document.getElementById('client-name').value.trim();
+  if (!name) { toast('Nom de société obligatoire', 'error'); return; }
+
+  // Collect contacts
+  const contacts = [];
+  document.querySelectorAll('.client-contact-row').forEach((row, i) => {
+    const cname  = document.getElementById(`contact-${i}-name`)?.value.trim();
+    const cemail = document.getElementById(`contact-${i}-email`)?.value.trim();
+    const cphone = document.getElementById(`contact-${i}-phone`)?.value.trim();
+    if (cname || cemail) contacts.push({ name: cname, email: cemail, phone: cphone, isPrimary: i===0 });
+  });
+
+  // Create client (use first contact as main contact for backward compat)
+  const primary = contacts[0] || {};
+  const res = await api('POST', '/clients', {
+    name,
+    contactName: primary.name || undefined,
+    email: document.getElementById('client-email').value || primary.email || undefined,
+    phone: document.getElementById('client-phone').value || primary.phone || undefined,
+    address: document.getElementById('client-address').value || undefined,
+  });
+
+  if (res?.success) {
+    toast(`Client "${name}" créé ✅`, 'success');
+    closeModal('modal-new-client');
+    // Reset form
+    ['client-name','client-vat','client-address','client-email','client-phone'].forEach(id => {
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+    CLIENT_CONTACTS_COUNT = 1;
+    const list = document.getElementById('client-contacts-list');
+    if (list) {
+      // Reset to single contact row
+      list.querySelectorAll('.client-contact-row:not(#contact-0)').forEach(r=>r.remove());
+      ['contact-0-name','contact-0-email','contact-0-phone'].forEach(id=>{
+        const el=document.getElementById(id); if(el) el.value='';
+      });
+    }
+    // Reload clients and select the new one
+    await loadClients();
+    const sel = document.getElementById('proj-client');
+    if (sel) sel.value = res.data.id;
+    toast('Client sélectionné dans le projet', 'success');
+  } else toast('Erreur création client', 'error');
 }
 
 function populateUserSelects() {
-  ['ticket-assign','task-assign'].forEach(id => {
+  ['ticket-assign','task-assign','remark-assign'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = '<option value="">— Non assigné —</option>' + USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
@@ -1744,10 +1944,26 @@ function populateUserSelects() {
 // ═══ MODAL HELPERS ═══
 function showModal(id) {
   document.getElementById(id).classList.add('open');
-  // Set default date for relevant modals
   const today = new Date().toISOString().split('T')[0];
-  if (id === 'modal-daily') document.getElementById('daily-date').value = today;
-  if (id === 'modal-task')  document.getElementById('task-date').value  = today;
+  if (id === 'modal-daily')   document.getElementById('daily-date').value = today;
+  if (id === 'modal-task')    document.getElementById('task-date').value  = today;
+  if (id === 'modal-handover') {
+    // Set today date
+    if (document.getElementById('handover-date')) document.getElementById('handover-date').value = today;
+    // Init zones
+    HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:''},{id:2,name:'',status:'ok',comment:''}];
+    renderHandoverZones();
+    // Populate site manager select with site_managers and managers
+    const smSel = document.getElementById('handover-site-manager');
+    if (smSel) {
+      const sms = USERS.filter(u=>['site_manager','technical_manager','project_manager','admin'].includes(u.role));
+      smSel.innerHTML = '<option value="">— Sélectionner —</option>' + sms.map(u=>`<option value="${u.id}" ${u.id===CURRENT_USER?.id?'selected':''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('');
+    }
+    // Pre-select project if in detail
+    if (CURRENT_PROJECT_ID && document.getElementById('handover-project')) {
+      document.getElementById('handover-project').value = CURRENT_PROJECT_ID;
+    }
+  }
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -1821,12 +2037,623 @@ function infoRow(label, value) {
   return `<div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">${label}</div><div style="font-weight:600;font-size:13px;">${value}</div></div>`;
 }
 
+// ═══ CLIENTS PAGE ═══
+async function loadClientsPage() {
+  const res = await api('GET', '/clients');
+  const el = document.getElementById('clients-grid');
+  if (!el) return;
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🏢</div><div class="empty-title">Aucun client</div><div class="empty-sub">Créez votre premier client</div></div>';
+    return;
+  }
+  CLIENTS = res.data;
+  el.innerHTML = res.data.map(c => `
+    <div class="card" style="cursor:pointer;" onclick="openClientDetail('${c.id}')">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🏢 ${c.name}</div>
+          ${c.contactName ? `<div style="font-size:12px;color:var(--text3);">👤 ${c.contactName}</div>` : ''}
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editClient('${c.id}')">✏️</button>
+      </div>
+      <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:4px;">
+        ${c.email ? `<div>✉️ ${c.email}</div>` : ''}
+        ${c.phone ? `<div>📞 ${c.phone}</div>` : ''}
+        ${c.address ? `<div style="color:var(--text3);">📍 ${c.address}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function openClientDetail(id) {
+  const client = CLIENTS.find(c => c.id === id);
+  if (!client) return;
+  // Find projects for this client
+  const projRes = await api('GET', '/projects');
+  const clientProjects = projRes?.data?.filter(p => p.clientId === id || p.client?.id === id) || [];
+
+  const el = document.createElement('div'); el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:620px;">
+      <div class="modal-head"><div class="modal-title">🏢 ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        ${client.email ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">EMAIL</div><div>✉️ ${client.email}</div></div>` : ''}
+        ${client.phone ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div>📞 ${client.phone}</div></div>` : ''}
+        ${client.contactName ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">CONTACT PRINCIPAL</div><div>👤 ${client.contactName}</div></div>` : ''}
+        ${client.address ? `<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">ADRESSE</div><div>📍 ${client.address}</div></div>` : ''}
+      </div>
+      ${clientProjects.length ? `
+        <div style="border-top:1px solid var(--border);padding-top:12px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Projets (${clientProjects.length})</div>
+          ${clientProjects.map(p => `
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.closest('.overlay').remove();openProject('${p.id}')">
+              <span style="font-weight:600;">${p.name}</span>
+              <span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span>
+            </div>`).join('')}
+        </div>` : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editClient('${client.id}')">✏️ Modifier</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+async function editClient(id) {
+  const client = CLIENTS.find(c => c.id === id);
+  if (!client) return;
+  const el = document.createElement('div'); el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:580px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier Client</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Nom société *</label><input class="input" id="edit-client-name" value="${client.name}"></div>
+        <div class="form-group2"><label class="form-label2">Contact principal</label><input class="input" id="edit-client-contact" value="${client.contactName||''}"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Email</label><input class="input" type="email" id="edit-client-email" value="${client.email||''}"></div>
+        <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="edit-client-phone" value="${client.phone||''}"></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="edit-client-addr" value="${client.address||''}"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveClientEdit('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+async function saveClientEdit(id, overlay) {
+  const res = await api('PATCH', `/clients/${id}`, {
+    name: document.getElementById('edit-client-name').value.trim(),
+    contactName: document.getElementById('edit-client-contact').value||undefined,
+    email: document.getElementById('edit-client-email').value||undefined,
+    phone: document.getElementById('edit-client-phone').value||undefined,
+    address: document.getElementById('edit-client-addr').value||undefined,
+  });
+  if (res?.success) { toast('Client mis à jour ✅','success'); overlay.remove(); loadClientsPage(); loadClients(); }
+  else toast('Erreur','error');
+}
+
+
+// ═══ CLIENTS PAGE ═══
+async function loadClientsPage() {
+  const res = await api('GET', '/clients');
+  const el = document.getElementById('clients-grid');
+  if (!el) return;
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🏢</div><div class="empty-title">Aucun client</div><div class="empty-sub">Créez votre premier client</div></div>';
+    return;
+  }
+  CLIENTS = res.data;
+  el.innerHTML = res.data.map(c => `
+    <div class="card" style="cursor:pointer;" onclick="openClientDetail('${c.id}')">
+      <div class="card-header">
+        <div><div class="card-title">🏢 ${c.name}</div>${c.contactName?`<div style="font-size:12px;color:var(--text3);">👤 ${c.contactName}</div>`:''}</div>
+        <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editClient('${c.id}')">✏️</button>
+      </div>
+      <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:4px;">
+        ${c.email?`<div>✉️ ${c.email}</div>`:''}
+        ${c.phone?`<div>📞 ${c.phone}</div>`:''}
+        ${c.address?`<div style="color:var(--text3);">📍 ${c.address}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function openClientDetail(id) {
+  const client = CLIENTS.find(c=>c.id===id);
+  if (!client) return;
+  const projRes = await api('GET', '/projects');
+  const clientProjects = projRes?.data?.filter(p=>p.clientId===id||p.client?.id===id)||[];
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML=`
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head"><div class="modal-title">🏢 ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        ${client.email?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">EMAIL</div><div>${client.email}</div></div>`:''}
+        ${client.phone?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div>${client.phone}</div></div>`:''}
+        ${client.contactName?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">CONTACT PRINCIPAL</div><div>👤 ${client.contactName}</div></div>`:''}
+        ${client.address?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">ADRESSE</div><div>${client.address}</div></div>`:''}
+      </div>
+      ${clientProjects.length?`<div style="border-top:1px solid var(--border);padding-top:12px;"><div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Projets (${clientProjects.length})</div>${clientProjects.map(p=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.closest('.overlay').remove();openProject('${p.id}')"><span style="font-weight:600;">${p.name}</span><span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span></div>`).join('')}</div>`:''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editClient('${client.id}')">✏️ Modifier</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+}
+
+async function editClient(id) {
+  const client = CLIENTS.find(c=>c.id===id);
+  if (!client) return;
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML=`
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Nom société *</label><input class="input" id="ec-name" value="${client.name}"></div>
+        <div class="form-group2"><label class="form-label2">Contact principal</label><input class="input" id="ec-contact" value="${client.contactName||''}"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Email</label><input class="input" type="email" id="ec-email" value="${client.email||''}"></div>
+        <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="ec-phone" value="${client.phone||''}"></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="ec-addr" value="${client.address||''}"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveClientEdit('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+}
+
+async function saveClientEdit(id, overlay) {
+  const res = await api('PATCH', `/clients/${id}`, {
+    name: document.getElementById('ec-name').value.trim(),
+    contactName: document.getElementById('ec-contact').value||undefined,
+    email: document.getElementById('ec-email').value||undefined,
+    phone: document.getElementById('ec-phone').value||undefined,
+    address: document.getElementById('ec-addr').value||undefined,
+  });
+  if (res?.success) { toast('Client mis à jour ✅','success'); overlay.remove(); loadClientsPage(); loadClients(); }
+  else toast('Erreur','error');
+}
+
+// ═══ TOOLBOX NEW MODAL ALIAS ═══
+// Toolbox creation is handled by creating a box with toolbox type
+// For now show the box modal as a substitute
+document.addEventListener('DOMContentLoaded', () => {
+  // Create alias modal element for toolbox
+});
+
+function showModal_toolboxNew() {
+  toast('Créez une boîte à outils depuis le menu Boîtes à outils global','info');
+  goto('toolbox');
+}
+
+// Override showModal to catch modal-toolbox-new
+const _origShowModal = showModal;
+
 // ═══ INIT ═══
 if (TOKEN && CURRENT_USER) {
   showApp();
 } else {
   document.getElementById('login-screen').style.display = 'flex';
 }
+
+
+// ═══ LOAD DETAIL TAB CONTENT ═══
+
+async function loadDetailDailyReports(projectId) {
+  const res = await api('GET', `/daily-reports?projectId=${projectId}`);
+  const el = document.getElementById('detail-daily-content');
+  if (!res?.success) return;
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>`;
+  if (!res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport journalier</div></div>'; return; }
+  el.innerHTML = btn + res.data.map(r => `
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-header">
+        <div><div class="card-title">📓 Rapport du ${fmtDate(r.reportDate)}</div>
+        <div style="font-size:12px;color:var(--text3);">${r.workersPresent} ouvriers · ${r.weather||''}</div></div>
+        <div style="display:flex;gap:8px;">
+          ${r.sentAt?'<span class="badge badge-green">✉️ Envoyé</span>':''}
+          <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
+          ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
+        </div>
+      </div>
+      ${r.generalNotes?`<div class="card-body" style="font-size:13px;color:var(--text2);padding:10px 18px;">${r.generalNotes}</div>`:''}
+    </div>`).join('');
+}
+
+async function loadDetailHandovers(projectId) {
+  const res = await api('GET', `/handover?projectId=${projectId}`);
+  const el = document.getElementById('detail-handover-content');
+  if (!res?.success) return;
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-handover')">+ Nouveau Handover</button></div>`;
+  if (!res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div>'; return; }
+  const statusColors = {draft:'badge-muted',signed:'badge-green',pending:'badge-amber'};
+  el.innerHTML = btn + res.data.map(h => `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🧾 ${h.clientName||'Handover'}</div>
+          <div style="font-size:12px;color:var(--text3);">${fmtDate(h.createdAt)} · ${h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge ${statusColors[h.status]||'badge-muted'}">${h.status}</span>
+          <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPDF('${h.id}')">📄 PDF</button>
+          <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Envoyer</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:10px 18px;display:flex;gap:6px;flex-wrap:wrap;">
+        ${(h.items||[]).map(i => `<span class="badge ${i.status==='ok'?'badge-green':i.status==='remark'?'badge-amber':'badge-red'}">${i.zoneName}</span>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+async function loadDetailRemarks(projectId) {
+  const el = document.getElementById('detail-remarks-content');
+  // Client remarks = todolist of things to do / seen with client
+  const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="font-size:13px;color:var(--text2);">Points à traiter avec le client</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="exportRemarksPDF('${projectId}')">📄 Export PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="showAddRemarkModal('${projectId}')">+ Ajouter un point</button>
+    </div>
+  </div>`;
+  
+  // Try to load from API
+  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+  if (!res?.success) {
+    // Fallback: show empty with add button
+    el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucun point de suivi</div><div class="empty-sub">Ajoutez des points vus avec le client</div></div>';
+    return;
+  }
+  
+  const open = res.data.filter(r => r.status !== 'resolved');
+  const resolved = res.data.filter(r => r.status === 'resolved');
+  
+  const renderCard = (r) => `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;border-left:3px solid ${r.priority==='critical'?'var(--accent)':r.priority==='high'?'var(--amber)':'var(--blue)'};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+        <div>
+          <span class="badge ${r.priority==='critical'?'badge-red':r.priority==='high'?'badge-amber':'badge-muted'}" style="margin-right:6px;">${r.priority}</span>
+          <strong>${r.title}</strong>
+          ${r.zone?`<span style="font-size:12px;color:var(--text3);margin-left:6px;">📍 ${r.zone}</span>`:''}
+        </div>
+        <div style="display:flex;gap:4px;">
+          ${r.status!=='resolved'?`<button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}')">✓ Fait</button>`:'<span class="badge badge-green">✅</span>'}
+          <button class="btn btn-ghost btn-xs" onclick="deleteRemark('${r.id}','${projectId}')">🗑</button>
+        </div>
+      </div>
+      ${r.description?`<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">${r.description}</div>`:''}
+      ${r.assignedToUser?`<div style="font-size:12px;color:var(--text3);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</div>`:''}
+      ${(r.photos||[]).length>0?`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p.photoUrl}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="openPhotoViewer('${p.photoUrl}')">`).join('')}</div>`:''}
+    </div>`;
+  
+  let content = btn;
+  if (open.length) {
+    content += `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">En cours (${open.length})</div>`;
+    content += open.map(renderCard).join('');
+  }
+  if (resolved.length) {
+    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 8px;">Traités (${resolved.length})</div>`;
+    content += resolved.map(renderCard).join('');
+  }
+  if (!open.length && !resolved.length) {
+    content += '<div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucun point de suivi</div></div>';
+  }
+  el.innerHTML = content;
+}
+
+async function resolveRemark(id) {
+  const res = await api('PATCH', `/client-remarks/${id}`, { status: 'resolved', resolvedAt: new Date().toISOString() });
+  if (res?.success) { toast('Marqué comme traité ✅', 'success'); loadDetailRemarks(CURRENT_PROJECT_ID); }
+  else toast('Erreur — API client-remarks non disponible', 'warning');
+}
+
+async function deleteRemark(id, projectId) {
+  if (!confirm('Supprimer ce point ?')) return;
+  const res = await api('DELETE', `/client-remarks/${id}`);
+  if (res?.success) { toast('Supprimé', 'warning'); loadDetailRemarks(projectId); }
+}
+
+function showAddRemarkModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><div class="modal-title">🔁 Nouveau point de suivi</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="rm-title" placeholder="ex: Réparer fissure façade Nord"></div>
+      <div class="form-group2"><label class="form-label2">Zone / Localisation</label><input class="input" id="rm-zone" placeholder="ex: Façade Nord — Section 3"></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="rm-priority">
+            <option value="low">🟢 Faible</option>
+            <option value="normal" selected>🟡 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+          </select>
+        </div>
+        <div class="form-group2"><label class="form-label2">Assigné à</label>
+          <select class="input" id="rm-assign">
+            <option value="">— Non assigné —</option>
+            ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="rm-desc" rows="3" placeholder="Détails..."></textarea></div>
+      <div class="form-group2">
+        <label class="form-label2">Photo(s)</label>
+        <div class="upload-zone" onclick="document.getElementById('rm-photo').click()">📸 Ajouter une photo<br><span style="font-size:11px;">Cliquez pour sélectionner</span></div>
+        <input type="file" id="rm-photo" accept="image/*" multiple style="display:none;" onchange="previewRmPhotos(this)">
+        <div id="rm-photos-preview" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveRemark('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+let PENDING_RM_PHOTOS = [];
+function previewRmPhotos(input) {
+  PENDING_RM_PHOTOS = Array.from(input.files);
+  const preview = document.getElementById('rm-photos-preview');
+  preview.innerHTML = PENDING_RM_PHOTOS.map(f => {
+    const url = URL.createObjectURL(f);
+    return `<img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;">`;
+  }).join('');
+}
+
+async function saveRemark(projectId, overlay) {
+  const title = document.getElementById('rm-title').value.trim();
+  if (!title) { toast('Titre obligatoire','error'); return; }
+  const res = await api('POST', '/client-remarks', {
+    projectId, title,
+    zone: document.getElementById('rm-zone').value||undefined,
+    priority: document.getElementById('rm-priority').value,
+    assignedTo: document.getElementById('rm-assign').value||undefined,
+    description: document.getElementById('rm-desc').value||undefined,
+  });
+  if (res?.success) {
+    // Upload photos if any
+    for (const file of PENDING_RM_PHOTOS) {
+      const fd = new FormData(); fd.append('file', file); fd.append('phase','problem');
+      await fetch(`${API}/client-remarks/${res.data.id}/photos`, { method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd });
+    }
+    PENDING_RM_PHOTOS = [];
+    toast('Point ajouté ✅','success');
+    overlay.remove();
+    loadDetailRemarks(projectId);
+  } else {
+    // Fallback: store locally if API not available
+    toast('Ajouté (mode local — API client-remarks à déployer)','warning');
+    overlay.remove();
+  }
+}
+
+async function exportRemarksPDF(projectId) {
+  toast('Génération PDF en cours...','info');
+  const r = await fetch(`${API}/client-remarks/project/${projectId}/pdf`, { headers:{'Authorization':`Bearer ${TOKEN}`} });
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `SuiviClient_${projectId}.pdf`; a.click();
+    toast('PDF téléchargé ✅','success');
+  } else toast('API PDF non disponible — déployer migration v3','warning');
+}
+
+async function loadDetailTickets(projectId) {
+  const res = await api('GET', `/tickets?projectId=${projectId}`);
+  const el = document.getElementById('detail-tickets-content');
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button></div>`;
+  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket</div></div>'; return; }
+  const ub = {critical:'badge-red',high:'badge-amber',medium:'badge-blue',low:'badge-green'};
+  el.innerHTML = btn + `<div class="table-wrap"><table>
+    <thead><tr><th>Titre</th><th>Urgence</th><th>Assigné</th><th>Statut</th><th>Date</th><th></th></tr></thead>
+    <tbody>${res.data.map(t=>`<tr>
+      <td><strong>${t.title}</strong>${t.locationOnSite?`<br><span style="font-size:11px;color:var(--text3);">${t.locationOnSite}</span>`:''}</td>
+      <td><span class="badge ${ub[t.urgency]||''}">${t.urgency}</span></td>
+      <td>${t.assignedTo?`${t.assignedTo.firstName} ${t.assignedTo.lastName}`:'—'}</td>
+      <td><span class="badge badge-muted">${t.status}</span></td>
+      <td style="color:var(--text3);">${fmtDate(t.createdAt)}</td>
+      <td><button class="btn btn-ghost btn-xs" onclick="openTicketDetail('${t.id}')">👁️</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+async function loadDetailWarehouse(projectId) {
+  const res = await api('GET', `/warehouse/boxes?projectId=${projectId}`);
+  const el = document.getElementById('detail-warehouse-content');
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-box')">+ Nouvelle Box</button></div>`;
+  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div></div>'; return; }
+  const sc = {preparing:'badge-amber',ready:'badge-green',loaded:'badge-blue',on_site:'badge-blue',returned:'badge-muted',incomplete:'badge-red'};
+  el.innerHTML = btn + res.data.map(b=>`
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-header">
+        <div><div class="card-title">📦 ${b.name}</div><div style="font-size:12px;color:var(--text3);">${b._count?.items||0} articles · QR: ${b.qrCode||'—'}</div></div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="badge ${sc[b.status]||'badge-muted'}">${b.status}</span>
+          <button class="btn btn-ghost btn-sm" onclick="openBoxDetail('${b.id}')">👁️ Checklist</button>
+          ${b.status==='preparing'?`<button class="btn btn-green btn-sm" onclick="validateBox('${b.id}')">✅ Valider</button>`:''}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function loadDetailToolboxes(projectId) {
+  const res = await api('GET', `/toolbox?projectId=${projectId}`);
+  const el = document.getElementById('detail-toolbox-content');
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-toolbox-new')">+ Nouvelle Boîte</button></div>`;
+  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte à outils</div></div>'; return; }
+  el.innerHTML = btn + res.data.map(tb => {
+    const allTools = (tb.drawers||[]).flatMap(d=>d.tools||[]);
+    const checked = allTools.filter(t=>t.isChecked).length;
+    const pct = allTools.length>0 ? Math.round(checked/allTools.length*100) : 0;
+    return `<div class="card" style="margin-bottom:10px;">
+      <div class="card-header">
+        <div><div class="card-title">🧰 ${tb.name}</div><div style="font-size:12px;color:var(--text3);">${(tb.drawers||[]).length} tiroirs · ${allTools.length} outils</div></div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="badge badge-muted">${pct}%</span>
+          <button class="btn btn-ghost btn-sm" onclick="openToolboxDetail('${tb.id}')">👁️ Voir</button>
+        </div>
+      </div>
+      <div style="padding:8px 18px;"><div class="prog" style="height:4px;"><div class="prog-bar" style="width:${pct}%;background:var(--green);"></div></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ═══ HANDOVER IMPROVEMENTS ═══
+// Zones dynamiques
+let HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:''}];
+
+function addHandoverZone() {
+  HANDOVER_ZONES.push({id:Date.now(),name:'',status:'ok',comment:''});
+  renderHandoverZones();
+}
+function removeHandoverZone(id) {
+  HANDOVER_ZONES = HANDOVER_ZONES.filter(z=>z.id!==id);
+  renderHandoverZones();
+}
+function renderHandoverZones() {
+  const el = document.getElementById('handover-zones-list');
+  if (!el) return;
+  el.innerHTML = HANDOVER_ZONES.map(z=>`
+    <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:6px;align-items:center;margin-bottom:6px;">
+      <input class="input" placeholder="Zone (ex: Façade Est)" value="${z.name}" oninput="updateZone(${z.id},'name',this.value)" style="font-size:13px;">
+      <select class="input" style="width:110px;padding:7px 8px;font-size:12px;" onchange="updateZone(${z.id},'status',this.value)">
+        <option value="ok" ${z.status==='ok'?'selected':''}>✅ OK</option>
+        <option value="remark" ${z.status==='remark'?'selected':''}>⚠️ Remarque</option>
+        <option value="defect" ${z.status==='defect'?'selected':''}>❌ Défaut</option>
+        <option value="pending" ${z.status==='pending'?'selected':''}>⏳ Attente</option>
+      </select>
+      <input class="input" placeholder="Commentaire..." value="${z.comment}" oninput="updateZone(${z.id},'comment',this.value)" style="font-size:13px;">
+      <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="removeHandoverZone(${z.id})">✕</button>
+    </div>`).join('');
+}
+function updateZone(id,key,val) {
+  const z = HANDOVER_ZONES.find(x=>x.id===id);
+  if (z) z[key]=val;
+}
+
+// ═══ ADD TO TEAM MODAL ═══
+function showAddToTeamModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><div class="modal-title">👥 Ajouter à l'équipe</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Membre</label>
+        <select class="input" id="team-add-user">
+          <option value="">— Sélectionner —</option>
+          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+        </select>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Rôle dans le projet</label>
+          <select class="input" id="team-add-role">
+            <option value="site_manager">Site Manager</option>
+            <option value="engineer">Engineer</option>
+            <option value="worker">Ouvrier</option>
+            <option value="technical_manager">Technical Manager</option>
+          </select>
+        </div>
+        <div class="form-group2"><label class="form-label2">Lead ?</label>
+          <select class="input" id="team-add-lead">
+            <option value="false">Non</option>
+            <option value="true">Oui — Lead</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="addToTeam('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function addToTeam(projectId, overlay) {
+  const userId = document.getElementById('team-add-user').value;
+  const role   = document.getElementById('team-add-role').value;
+  const isLead = document.getElementById('team-add-lead').value === 'true';
+  if (!userId) { toast('Sélectionne un membre','error'); return; }
+  const res = await api('POST', `/projects/${projectId}/team`, { userId, role, isLead });
+  if (res?.success) { toast('Membre ajouté ✅','success'); overlay.remove(); loadProjectDetail(projectId); }
+  else { toast('Erreur — ou déjà dans l\'équipe','warning'); overlay.remove(); }
+}
+
+// ═══ ADD TRUCK MODAL ═══
+function showAddTruckModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><div class="modal-title">🚛 Ajouter camion / machine</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Numéro / Nom</label><input class="input" id="truck-num" placeholder="ex: Camion 1 / Nacelle #3"></div>
+        <div class="form-group2"><label class="form-label2">Immatriculation</label><input class="input" id="truck-plate" placeholder="ex: BE-421-XYZ"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Chauffeur / Responsable</label><input class="input" id="truck-driver" placeholder="Nom"></div>
+        <div class="form-group2"><label class="form-label2">Statut</label>
+          <select class="input" id="truck-status">
+            <option value="planned">Planifié</option>
+            <option value="loading">En chargement</option>
+            <option value="in_transit">En transit</option>
+            <option value="delivered">Livré</option>
+            <option value="returned">Retourné</option>
+          </select>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Date chargement</label><input class="input" type="datetime-local" id="truck-loading"></div>
+        <div class="form-group2"><label class="form-label2">Date arrivée</label><input class="input" type="datetime-local" id="truck-arrival"></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Notes</label><textarea class="input" id="truck-notes" rows="2"></textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="addTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function addTruck(projectId, overlay) {
+  const res = await api('POST', `/projects/${projectId}/trucks`, {
+    truckNumber: document.getElementById('truck-num').value,
+    licensePlate: document.getElementById('truck-plate').value||undefined,
+    driverName: document.getElementById('truck-driver').value||undefined,
+    status: document.getElementById('truck-status').value,
+    loadingDate: document.getElementById('truck-loading').value||undefined,
+    arrivalDate: document.getElementById('truck-arrival').value||undefined,
+    notes: document.getElementById('truck-notes').value||undefined,
+  });
+  if (res?.success) { toast('Ajouté ✅','success'); overlay.remove(); loadProjectDetail(projectId); }
+  else toast('Erreur ajout','error');
+}
+
+// ═══ PHOTO VIEWER ═══
+function openPhotoViewer(url) {
+  const el = document.createElement('div');
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+  el.innerHTML=`<img src="${url}" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;">`;
+  el.onclick=()=>el.remove();
+  document.body.appendChild(el);
+}
+
+// ═══ MODAL TOOLBOX NEW ═══
+function showModal_toolbox_new() {
+  // Forward to existing modal
+  showModal('modal-box');
+}
+
 </script>
 </body>
 </html>
