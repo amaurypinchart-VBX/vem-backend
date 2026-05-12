@@ -337,7 +337,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="nav-item" onclick="goto('tasks')"><span class="ni">✅</span>Tâches</div>
     <div class="nav-item" onclick="goto('daily')"><span class="ni">📓</span>Daily Reports</div>
     <div class="nav-item" onclick="goto('handover')"><span class="ni">🧾</span>Handover</div>
-    <div class="nav-item" onclick="goto('remarks')"><span class="ni">🔁</span>Suivi Client</div>
+    <div class="nav-item" onclick="goto('remarks')"><span class="ni">📸</span>Visites Client</div>
   </div>
   <div class="nav-section">
     <div class="nav-label">SAV & Stock</div>
@@ -472,7 +472,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="tab" onclick="switchTab(this,'dtab-tasks')">✅ Tâches</div>
     <div class="tab" onclick="switchTab(this,'dtab-daily')">📓 Daily Reports</div>
     <div class="tab" onclick="switchTab(this,'dtab-handover')">🧾 Handover</div>
-    <div class="tab" onclick="switchTab(this,'dtab-remarks')">🔁 Suivi Client</div>
+    <div class="tab" onclick="switchTab(this,'dtab-remarks')">📸 Visites Client</div>
     <div class="tab" onclick="switchTab(this,'dtab-tickets')">🛠️ Tickets</div>
     <div class="tab" onclick="switchTab(this,'dtab-warehouse')">📦 Entrepôt</div>
     <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
@@ -526,10 +526,16 @@ textarea.input{min-height:80px;resize:vertical;}
 <!-- SUIVI CLIENT -->
 <div class="pg" id="pg-remarks">
   <div class="pg-head">
-    <div><div class="pg-title">Suivi Client</div><div class="pg-sub">Remarques post-visite</div></div>
-    <button class="btn btn-primary" onclick="showModal('modal-remark')">+ Nouvelle Remarque</button>
+    <div><div class="pg-title">📸 Visites Client</div><div class="pg-sub">Todo list terrain — points à régler par projet</div></div>
   </div>
-  <div class="card"><div class="card-body"><div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucune remarque</div><div class="empty-sub">Les remarques clients apparaîtront ici</div></div></div></div>
+  <div class="card">
+    <div class="card-body">
+      <div style="color:var(--text2);font-size:13px;text-align:center;padding:20px;">
+        Sélectionne un projet pour voir ses visites client.<br><br>
+        <button class="btn btn-primary" onclick="goto('projects')">→ Aller aux Projets</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- TICKETS -->
@@ -755,14 +761,14 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- Daily Report -->
 <div class="overlay" id="modal-daily">
-  <div class="modal" style="max-width:860px;">
+  <div class="modal" style="max-width:920px;">
     <div class="modal-head">
       <div><div class="modal-title">📓 Rapport Journalier</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Journal de chantier complet</div></div>
       <button class="modal-close" onclick="closeModal('modal-daily')">×</button>
     </div>
 
     <!-- INFOS GÉNÉRALES -->
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
         <div class="form-group2" style="margin:0;"><label class="form-label2">Projet *</label><select class="input" id="daily-project" onchange="loadDailyTasks(this.value)"><option value="">— Sélectionner —</option></select></div>
         <div class="form-group2" style="margin:0;"><label class="form-label2">Date *</label><input class="input" type="date" id="daily-date"></div>
@@ -771,36 +777,38 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <!-- TABS : Saisie manuelle / Import texte / Vocal -->
+    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0;">
+      <div class="tab active" id="tab-manual" onclick="switchDailyTab('manual')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px;">✏️ Saisie entrée par entrée</div>
+      <div class="tab" id="tab-import" onclick="switchDailyTab('import')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">📋 Import texte libre (IA)</div>
+      <div class="tab" id="tab-voice" onclick="switchDailyTab('voice')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">🎙️ Dictée vocale</div>
+    </div>
 
-      <!-- COLONNE GAUCHE : Journal chronologique -->
+    <!-- PANEL MANUEL -->
+    <div id="panel-manual" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <!-- Journal chronologique -->
       <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:13px;font-weight:700;color:var(--text);">⏱️ Journal de chantier</div>
-          <button class="btn btn-ghost btn-xs" onclick="addDailyEntry()">+ Entrée</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;">⏱️ Journal de chantier</div>
+          <span style="font-size:11px;color:var(--text3);" id="entry-count">0 entrée(s)</span>
         </div>
-        <div id="daily-entries-list" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
-
-        <!-- Nouvelle entrée rapide -->
-        <div style="margin-top:10px;background:var(--bg3);border-radius:var(--radius);padding:10px;">
-          <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <input class="input" type="time" id="new-entry-time" style="width:90px;padding:7px 8px;font-size:13px;">
-            <!-- Bouton vocal -->
-            <button class="btn btn-ghost btn-sm" id="voice-btn" onclick="toggleVoiceRecording()" style="flex-shrink:0;" title="Dicter par vocal">🎙️</button>
-            <span id="voice-status" style="font-size:11px;color:var(--text3);align-self:center;display:none;">● Écoute...</span>
+        <div id="daily-entries-list" style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input class="input" type="time" id="new-entry-time" style="width:86px;padding:7px 8px;font-size:13px;">
+            <input class="input" id="new-entry-task-ref" placeholder="Tâche liée (optionnel)" style="flex:1;font-size:12px;">
           </div>
           <div style="display:flex;gap:6px;">
-            <textarea class="input" id="new-entry-text" rows="2" placeholder="Décrivez ce qui a été fait... ou cliquez sur 🎙️ pour dicter" style="font-size:13px;resize:none;flex:1;"></textarea>
-            <button class="btn btn-primary btn-sm" onclick="addDailyEntry()" style="align-self:flex-end;flex-shrink:0;">Ajouter</button>
+            <textarea class="input" id="new-entry-text" rows="2" placeholder="Décrivez ce qui a été fait..." style="font-size:13px;resize:none;flex:1;"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="addDailyEntry()" style="align-self:flex-end;flex-shrink:0;">+ Ajouter</button>
           </div>
         </div>
       </div>
-
-      <!-- COLONNE DROITE : Tâches du projet -->
+      <!-- Tâches du projet -->
       <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:13px;font-weight:700;color:var(--text);">✅ Avancement des tâches</div>
-          <span style="font-size:11px;color:var(--text3);">Cocher = marquer terminé</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;">✅ Avancement tâches</div>
+          <span style="font-size:11px;color:var(--text3);">Cocher = terminé</span>
         </div>
         <div id="daily-tasks-list" style="max-height:340px;overflow-y:auto;">
           <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>
@@ -808,16 +816,59 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
 
-    <!-- NOTES GÉNÉRALES -->
-    <div class="form-group2" style="margin-top:14px;">
-      <label class="form-label2">Notes générales / Résumé de journée</label>
-      <textarea class="input" id="daily-notes" rows="3" placeholder="Résumé, incidents, points à noter..."></textarea>
+    <!-- PANEL IMPORT TEXTE -->
+    <div id="panel-import" style="display:none;">
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);">
+        💡 <strong>Collez votre rapport brut</strong> — l'IA va extraire automatiquement les heures, créer les entrées chronologiques et suggérer les tâches correspondantes. Format libre, bullet points, texte continu, tout fonctionne.
+      </div>
+      <textarea class="input" id="daily-raw-text" rows="12" placeholder="Exemple :&#10;* arrivée sur site 7h45, la team est prête&#10;* 9h15 démarrage avec la grue pour monter la 1ere box&#10;* 9h30 2eme box montée&#10;* 10h pause café&#10;* 12h15 début installation escalier&#10;..."></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;align-items:center;">
+        <span id="ai-status" style="font-size:12px;color:var(--text3);display:none;">🤖 Analyse en cours...</span>
+        <button class="btn btn-blue" onclick="parseRawTextWithAI()">🤖 Analyser avec l'IA → Extraire les entrées</button>
+      </div>
+      <!-- Résultat preview -->
+      <div id="ai-result-preview" style="display:none;margin-top:14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green);">✅ Entrées extraites — vérifie et valide :</div>
+        <div id="ai-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ai-result-preview').style.display='none'">Recommencer</button>
+          <button class="btn btn-green" onclick="validateAIEntries()">✅ Valider et ajouter au journal</button>
+        </div>
+      </div>
     </div>
 
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-daily')">Annuler</button>
-      <button class="btn btn-primary" onclick="createDailyReport()">💾 Sauvegarder</button>
-      <button class="btn btn-green" onclick="createDailyReport(true)">📤 Sauv. & Envoyer</button>
+    <!-- PANEL VOCAL -->
+    <div id="panel-voice" style="display:none;text-align:center;padding:24px;">
+      <div style="font-size:48px;margin-bottom:16px;" id="voice-icon">🎙️</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;" id="voice-main-status">Cliquez pour commencer la dictée</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;">Parlez naturellement — la transcription apparaît en temps réel</div>
+      <button class="btn btn-primary" id="voice-big-btn" onclick="toggleVoiceRecording()" style="font-size:16px;padding:14px 32px;">🎙️ Démarrer la dictée</button>
+      <div id="voice-transcript-box" style="display:none;margin-top:16px;background:var(--bg3);border-radius:var(--radius);padding:14px;text-align:left;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Transcription en direct</div>
+        <div id="voice-transcript-text" style="font-size:14px;color:var(--text);line-height:1.6;min-height:60px;"></div>
+      </div>
+      <div id="voice-actions" style="display:none;margin-top:14px;gap:10px;justify-content:center;flex-direction:column;align-items:center;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:6px;">Une fois la dictée terminée :</div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="addVoiceAsEntry()">+ Ajouter comme entrée manuelle</button>
+          <button class="btn btn-blue btn-sm" onclick="parseVoiceWithAI()">🤖 Analyser avec l'IA</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES GÉNÉRALES -->
+    <div class="form-group2" style="margin-top:14px;">
+      <label class="form-label2">Notes générales / Résumé</label>
+      <textarea class="input" id="daily-notes" rows="2" placeholder="Résumé, incidents, points importants..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;align-items:center;">
+      <div style="font-size:12px;color:var(--text3);" id="daily-summary-count"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" onclick="closeModal('modal-daily')">Annuler</button>
+        <button class="btn btn-primary" onclick="createDailyReport()">💾 Sauvegarder</button>
+        <button class="btn btn-green" onclick="createDailyReport(true)">📤 Sauv. & Envoyer</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1032,7 +1083,7 @@ function updateNavUser() {
 // ═══ NAVIGATION ═══
 const pgTitles = {
   dashboard:'Dashboard', projects:'Projets', tasks:'Tâches', daily:'Daily Reports',
-  handover:'Handover', remarks:'Suivi Client', tickets:'Tickets SAV',
+  handover:'Handover', remarks:'Visites Client', tickets:'Tickets SAV',
   warehouse:'Entrepôt / Box', toolbox:'Boîtes à Outils', team:'Équipe',
   notifs:'Notifications', 'project-detail':'Détail Projet'
 };
@@ -1058,7 +1109,6 @@ function goto(page) {
   if (page === 'notifs')    loadNotifs();
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
-  if (page==='projects') { loadAll().then(() => { renderProjectsGrid(PROJECTS); }); }
 }
 
 function switchTab(el, tabId) {
@@ -1905,10 +1955,11 @@ function renderDailyEntries() {
   }
   el.innerHTML = DAILY_ENTRIES.map(e => `
     <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
-      <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);min-width:40px;margin-top:1px;">${e.time}</div>
+      <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);min-width:40px;margin-top:1px;">${e.time||'--:--'}</div>
       <div style="flex:1;font-size:13px;color:var(--text2);line-height:1.4;">${e.text}</div>
       <button onclick="removeDailyEntry(${e.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
     </div>`).join('');
+  updateDailySummary();
 }
 
 // ── VOICE RECORDING ──────────────────────────────────────────
@@ -1933,11 +1984,20 @@ function startVoiceRecording() {
 
   voiceRecognition.onstart = () => {
     isRecording = true;
+    // Update small voice btn (manual tab)
     const btn = document.getElementById('voice-btn');
     const status = document.getElementById('voice-status');
     if (btn) { btn.style.background = 'rgba(230,57,70,.2)'; btn.style.color = 'var(--accent)'; }
     if (status) status.style.display = 'inline';
-    toast('🎙️ Écoute en cours... Parlez !', 'info');
+    // Update big voice btn (voice tab)
+    const bigBtn = document.getElementById('voice-big-btn');
+    const mainStatus = document.getElementById('voice-main-status');
+    const icon = document.getElementById('voice-icon');
+    const box = document.getElementById('voice-transcript-box');
+    if (bigBtn) bigBtn.innerHTML = '⏹️ Arrêter la dictée';
+    if (mainStatus) mainStatus.textContent = '🔴 Enregistrement en cours...';
+    if (icon) icon.textContent = '🔴';
+    if (box) box.style.display = 'block';
   };
 
   voiceRecognition.onresult = (event) => {
@@ -1945,8 +2005,12 @@ function startVoiceRecording() {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       transcript += event.results[i][0].transcript;
     }
+    // Update manual entry text
     const el = document.getElementById('new-entry-text');
     if (el) el.value = transcript;
+    // Update voice tab transcript
+    const vt = document.getElementById('voice-transcript-text');
+    if (vt) vt.textContent = transcript;
   };
 
   voiceRecognition.onerror = (event) => {
@@ -1964,13 +2028,22 @@ function startVoiceRecording() {
 function stopVoiceRecording() {
   isRecording = false;
   if (voiceRecognition) voiceRecognition.stop();
+  // Reset small btn
   const btn = document.getElementById('voice-btn');
   const status = document.getElementById('voice-status');
   if (btn) { btn.style.background = ''; btn.style.color = ''; }
   if (status) status.style.display = 'none';
-  // Auto-add entry if text is present
+  // Reset big btn
+  const bigBtn = document.getElementById('voice-big-btn');
+  const mainStatus = document.getElementById('voice-main-status');
+  const icon = document.getElementById('voice-icon');
+  const actions = document.getElementById('voice-actions');
+  if (bigBtn) bigBtn.innerHTML = '🎙️ Nouvelle dictée';
+  if (mainStatus) mainStatus.textContent = 'Dictée terminée';
+  if (icon) icon.textContent = '✅';
+  if (actions) actions.style.display = 'flex';
   const text = document.getElementById('new-entry-text')?.value.trim();
-  if (text) toast('✅ Transcription terminée — cliquez Ajouter', 'success');
+  if (text) toast('✅ Transcription terminée', 'success');
 }
 
 // ── LOAD TASKS FOR DAILY REPORT ──────────────────────────────
@@ -2237,6 +2310,15 @@ function showModal(id) {
     if (pid) { document.getElementById('daily-project').value = pid; loadDailyTasks(pid); }
   }
   if (id === 'modal-task')    document.getElementById('task-date').value  = today;
+  if (id === 'modal-new-visite') {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('visite-date').value = today;
+    // Populate selects
+    const psel = document.getElementById('visite-project');
+    if (psel) { psel.innerHTML = '<option value="">— Sélectionner —</option>' + PROJECTS.map(p=>`<option value="${p.id}">${p.name}</option>`).join(''); if(CURRENT_PROJECT_ID) psel.value=CURRENT_PROJECT_ID; }
+    const asel = document.getElementById('visite-assigned');
+    if (asel) { asel.innerHTML = '<option value="">— Non assigné —</option>' + USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join(''); }
+  }
   if (id === 'modal-handover') {
     // Set today date
     if (document.getElementById('handover-date')) document.getElementById('handover-date').value = today;
@@ -2623,6 +2705,157 @@ async function uploadHandoverZonePhoto(handoverId, itemId, input, previewEl) {
   } catch { toast('Erreur upload', 'error'); }
 }
 
+
+// ═══ DAILY REPORT — TABS ═══
+function switchDailyTab(tab) {
+  ['manual','import','voice'].forEach(t => {
+    document.getElementById('panel-'+t).style.display = t===tab?
+      (t==='manual'?'grid':'block'):'none';
+    const tabEl = document.getElementById('tab-'+t);
+    if (tabEl) {
+      tabEl.style.color = t===tab?'var(--accent)':'var(--text2)';
+      tabEl.style.borderBottomColor = t===tab?'var(--accent)':'transparent';
+    }
+  });
+}
+
+// ═══ DAILY REPORT — AI PARSE RAW TEXT ═══
+async function parseRawTextWithAI() {
+  const raw = document.getElementById('daily-raw-text')?.value.trim();
+  if (!raw) { toast('Colle ton texte de rapport dabord', 'error'); return; }
+
+  const status = document.getElementById('ai-status');
+  if (status) status.style.display = 'inline';
+  document.querySelector('[onclick="parseRawTextWithAI()"]').disabled = true;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{
+          role: 'user',
+          content: `Tu es un assistant pour des rapports de chantier. Analyse ce texte de rapport journalier et extrais UNIQUEMENT un tableau JSON d'entrées chronologiques.
+
+Pour chaque action/événement identifié, crée une entrée avec :
+- "time" : heure au format HH:MM (si pas d'heure précise, estime ou mets "")
+- "text" : description claire et concise en français (max 120 caractères)
+- "category" : une parmi : "arrivée", "installation", "transport", "pause", "départ", "travaux", "problème", "validation"
+
+Règles :
+- Si une heure est mentionnée (7h45, 9h15, 14h30...) utilise-la
+- Regroupe les petites actions similaires sans heure en une seule entrée
+- Garde l'ordre chronologique
+- Sois concis mais précis
+
+Réponds UNIQUEMENT avec le JSON, sans texte avant ou après, sans backticks.
+
+Texte du rapport :
+${raw}`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '[]';
+    
+    let entries;
+    try {
+      entries = JSON.parse(text.replace(/```json|```/g, '').trim());
+    } catch {
+      toast('Erreur parsing IA — réessayez', 'error');
+      return;
+    }
+
+    // Store AI entries
+    window.AI_PARSED_ENTRIES = entries;
+
+    // Show preview
+    const preview = document.getElementById('ai-result-preview');
+    const list = document.getElementById('ai-entries-list');
+    if (!preview || !list) return;
+
+    list.innerHTML = entries.map((e, i) => `
+      <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
+        <input class="input" type="time" value="${e.time}" id="ai-time-${i}" style="width:80px;padding:5px 6px;font-size:12px;flex-shrink:0;">
+        <textarea class="input" id="ai-text-${i}" rows="2" style="flex:1;font-size:12px;resize:none;">${e.text}</textarea>
+        <span style="font-size:10px;background:var(--bg4);color:var(--text3);padding:2px 6px;border-radius:4px;align-self:center;flex-shrink:0;">${e.category||''}</span>
+        <button onclick="this.closest('div').remove();window.AI_PARSED_ENTRIES.splice(${i},1);" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
+      </div>`).join('');
+
+    preview.style.display = 'block';
+    toast(`✅ ${entries.length} entrées extraites — vérifie et valide`, 'success');
+
+  } catch(e) {
+    toast('Erreur connexion IA', 'error');
+    console.error(e);
+  } finally {
+    if (status) status.style.display = 'none';
+    const btn = document.querySelector('[onclick="parseRawTextWithAI()"]');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function validateAIEntries() {
+  // Collect edited entries from the preview
+  const list = document.getElementById('ai-entries-list');
+  if (!list) return;
+  const rows = list.querySelectorAll('[id^="ai-time-"]');
+  rows.forEach((timeEl, i) => {
+    const textEl = document.getElementById(`ai-text-${i}`);
+    if (!textEl) return;
+    const time = timeEl.value || '';
+    const text = textEl.value.trim();
+    if (text) {
+      DAILY_ENTRIES.push({ id: Date.now() + i, time, text });
+    }
+  });
+  DAILY_ENTRIES.sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  renderDailyEntries();
+  updateDailySummary();
+  // Switch to manual tab to show result
+  switchDailyTab('manual');
+  document.getElementById('ai-result-preview').style.display = 'none';
+  document.getElementById('daily-raw-text').value = '';
+  toast(`${DAILY_ENTRIES.length} entrées ajoutées au journal ✅`, 'success');
+}
+
+// ═══ VOICE — ADD AS ENTRY OR SEND TO AI ═══
+function addVoiceAsEntry() {
+  const text = document.getElementById('voice-transcript-text')?.textContent.trim();
+  if (!text) return;
+  const time = document.getElementById('new-entry-time')?.value || '';
+  DAILY_ENTRIES.push({ id: Date.now(), time, text });
+  DAILY_ENTRIES.sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  renderDailyEntries();
+  updateDailySummary();
+  switchDailyTab('manual');
+  toast('Dictée ajoutée ✅', 'success');
+}
+
+async function parseVoiceWithAI() {
+  const text = document.getElementById('voice-transcript-text')?.textContent.trim();
+  if (!text) return;
+  // Move text to import panel and parse
+  document.getElementById('daily-raw-text').value = text;
+  switchDailyTab('import');
+  await parseRawTextWithAI();
+}
+
+function updateDailySummary() {
+  const el = document.getElementById('daily-summary-count');
+  if (el) {
+    const n = DAILY_ENTRIES.length;
+    const tasks = Object.keys(DAILY_TASK_UPDATES).length;
+    el.textContent = `${n} entrée(s)${tasks?` · ${tasks} tâche(s) à mettre à jour`:''}`;
+  }
+  // Also update entry count
+  const ec = document.getElementById('entry-count');
+  if (ec) ec.textContent = DAILY_ENTRIES.length + ' entrée(s)';
+}
+
 // ═══ LOAD DETAIL TAB CONTENT ═══
 
 async function loadDetailDailyReports(projectId) {
@@ -2674,63 +2907,312 @@ async function loadDetailHandovers(projectId) {
 
 async function loadDetailRemarks(projectId) {
   const el = document.getElementById('detail-remarks-content');
-  // Client remarks = todolist of things to do / seen with client
+  if (!el) return;
+
+  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+  
   const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-    <div style="font-size:13px;color:var(--text2);">Points à traiter avec le client</div>
+    <div style="font-size:13px;color:var(--text2);">Visites de chantier avec le client</div>
     <div style="display:flex;gap:8px;">
-      <button class="btn btn-ghost btn-sm" onclick="exportRemarksPDF('${projectId}')">📄 Export PDF</button>
-      <button class="btn btn-primary btn-sm" onclick="showAddRemarkModal('${projectId}')">+ Ajouter un point</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF dernière visite</button>
+      <button class="btn btn-primary btn-sm" onclick="openNewVisiteModal('${projectId}')">+ Nouvelle Visite</button>
     </div>
   </div>`;
-  
-  // Try to load from API
-  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
-  if (!res?.success) {
-    // Fallback: show empty with add button
-    el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucun point de suivi</div><div class="empty-sub">Ajoutez des points vus avec le client</div></div>';
+
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📸</div><div class="empty-title">Aucune visite</div><div class="empty-sub">Créez une visite pour ajouter des points terrain</div></div>';
     return;
   }
-  
+
+  // Group by visite (using createdAt date as grouping)
+  // Each remark = one point. We show them all with add point button.
   const open = res.data.filter(r => r.status !== 'resolved');
-  const resolved = res.data.filter(r => r.status === 'resolved');
-  
-  const renderCard = (r) => `
-    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;border-left:3px solid ${r.priority==='critical'?'var(--accent)':r.priority==='high'?'var(--amber)':'var(--blue)'};">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-        <div>
-          <span class="badge ${r.priority==='critical'?'badge-red':r.priority==='high'?'badge-amber':'badge-muted'}" style="margin-right:6px;">${r.priority}</span>
-          <strong>${r.title}</strong>
-          ${r.zone?`<span style="font-size:12px;color:var(--text3);margin-left:6px;">📍 ${r.zone}</span>`:''}
+  const done = res.data.filter(r => r.status === 'resolved');
+
+  const renderPoint = (r) => `
+    <div id="point-${r.id}" style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;border-left:4px solid ${r.priority==='critical'?'var(--accent)':r.priority==='high'?'var(--amber)':r.status==='resolved'?'var(--green)':'var(--blue)'};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
+            <span class="badge ${r.priority==='critical'?'badge-red':r.priority==='high'?'badge-amber':r.status==='resolved'?'badge-green':'badge-muted'}">${r.priority==='critical'?'🔴 Critique':r.priority==='high'?'🟠 Élevé':r.status==='resolved'?'✅ Fait':'🔵 Normal'}</span>
+            ${r.zone?`<span style="font-size:12px;color:var(--text3);">📍 ${r.zone}</span>`:''}
+            ${r.assignedToUser?`<span style="font-size:12px;color:var(--blue);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</span>`:''}
+          </div>
+          <div style="font-weight:600;font-size:14px;">${r.title}</div>
+          ${r.description?`<div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;">${r.description}</div>`:''}
         </div>
-        <div style="display:flex;gap:4px;">
-          ${r.status!=='resolved'?`<button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}')">✓ Fait</button>`:'<span class="badge badge-green">✅</span>'}
-          <button class="btn btn-ghost btn-xs" onclick="deleteRemark('${r.id}','${projectId}')">🗑</button>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          ${r.status!=='resolved'?`<button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}','${projectId}')">✓ Fait</button>`:''}
+          <button class="btn btn-ghost btn-xs" onclick="openPointDetail('${r.id}','${projectId}')">✏️</button>
+          <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteRemark('${r.id}','${projectId}')">🗑</button>
         </div>
       </div>
-      ${r.description?`<div style="font-size:13px;color:var(--text2);margin-bottom:6px;">${r.description}</div>`:''}
-      ${r.assignedToUser?`<div style="font-size:12px;color:var(--text3);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</div>`:''}
-      ${(r.photos||[]).length>0?`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p.photoUrl}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="openPhotoViewer('${p.photoUrl}')">`).join('')}</div>`:''}
+      <!-- Photos -->
+      ${(r.photos||[]).length>0?`
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        </div>`:''
+      }
+      <!-- Ajouter photo inline -->
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);cursor:pointer;padding:4px 8px;border:1px dashed var(--border);border-radius:6px;transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+        📸 Photo
+        <input type="file" accept="image/*" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
+      </label>
     </div>`;
-  
+
   let content = btn;
   if (open.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">En cours (${open.length})</div>`;
-    content += open.map(renderCard).join('');
+    content += `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">⏳ À traiter (${open.length})</div>`;
+    content += open.map(renderPoint).join('');
   }
-  if (resolved.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 8px;">Traités (${resolved.length})</div>`;
-    content += resolved.map(renderCard).join('');
+  if (done.length) {
+    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 10px;">✅ Traités (${done.length})</div>`;
+    content += done.map(renderPoint).join('');
   }
-  if (!open.length && !resolved.length) {
-    content += '<div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucun point de suivi</div></div>';
-  }
+  
+  // Add point button at bottom
+  content += `
+    <div style="border:2px dashed var(--border);border-radius:var(--radius);padding:14px;text-align:center;cursor:pointer;transition:all .2s;" onclick="openAddPointModal('${projectId}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <span style="font-size:13px;color:var(--text3);">+ Ajouter un point terrain</span>
+    </div>`;
+
   el.innerHTML = content;
 }
 
-async function resolveRemark(id) {
+function openNewVisiteModal(projectId) {
+  // Pre-fill project
+  showModal('modal-new-visite');
+  setTimeout(() => {
+    const sel = document.getElementById('visite-project');
+    if (sel && projectId) sel.value = projectId;
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('visite-date').value = today;
+  }, 50);
+}
+
+async function createVisite() {
+  const projectId = document.getElementById('visite-project').value;
+  const date = document.getElementById('visite-date').value;
+  const time = document.getElementById('visite-time').value || '09:00';
+  if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
+
+  const title = `Visite client du ${new Date(date).toLocaleDateString('fr-FR')} à ${time}`;
+  const assignedTo = document.getElementById('visite-assigned').value || undefined;
+  const desc = document.getElementById('visite-desc').value || undefined;
+  const clientRep = document.getElementById('visite-client-rep').value || undefined;
+
+  // Create a "parent" remark as the visite entry point
+  const res = await api('POST', '/client-remarks', {
+    projectId, title,
+    description: `${clientRep?`Représentant: ${clientRep}. `:''}${desc||''}`,
+    priority: 'normal', status: 'open',
+    assignedTo,
+  });
+
+  if (res?.success) {
+    // Also create a task in the project
+    const taskTitle = `📸 Visite client — ${new Date(date).toLocaleDateString('fr-FR')}`;
+    await api('POST', '/tasks', {
+      projectId, title: taskTitle,
+      description: `Visite client du ${date} à ${time}${clientRep?`. Représentant: ${clientRep}`:''}`,
+      taskDate: date, status: 'todo', priority: 'high',
+      assignedToId: assignedTo || undefined,
+      createdById: CURRENT_USER?.id,
+    });
+
+    toast('Visite créée ✅ — tâche ajoutée au projet', 'success');
+    closeModal('modal-new-visite');
+    ['visite-client-rep','visite-desc'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+    loadDetailRemarks(projectId);
+    loadProjTasks(projectId);
+  } else toast('Erreur création visite', 'error');
+}
+
+function openAddPointModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head"><div class="modal-title">📌 Nouveau Point Terrain</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Titre du point *</label><input class="input" id="pt-title" placeholder="ex: Fissure façade Nord, Joint manquant zone B..."></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Zone / Localisation</label><input class="input" id="pt-zone" placeholder="ex: Façade Nord, Zone B, Toiture..."></div>
+        <div class="form-group2"><label class="form-label2">Urgence</label>
+          <select class="input" id="pt-priority">
+            <option value="low">🟢 Faible</option>
+            <option value="normal" selected>🔵 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Description / Ce qui doit être fait</label><textarea class="input" id="pt-desc" rows="3" placeholder="Décrivez le problème et ce qui doit être corrigé..."></textarea></div>
+      <div class="form-group2"><label class="form-label2">Assigné à</label>
+        <select class="input" id="pt-assign">
+          <option value="">— Non assigné —</option>
+          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
+        </select>
+      </div>
+      <!-- Photo upload -->
+      <div class="form-group2">
+        <label class="form-label2">Photos du problème</label>
+        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;color:var(--text3);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+          📸 Cliquez pour prendre/ajouter des photos
+          <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="pt-photos" onchange="previewPointPhotos(this)">
+        </label>
+        <div id="pt-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="savePoint('${projectId}',this.closest('.overlay'))">✅ Ajouter le point</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+let PENDING_POINT_PHOTOS = [];
+function previewPointPhotos(input) {
+  PENDING_POINT_PHOTOS = Array.from(input.files);
+  const preview = document.getElementById('pt-photos-preview');
+  if (!preview) return;
+  preview.innerHTML = PENDING_POINT_PHOTOS.map(f => {
+    const url = URL.createObjectURL(f);
+    return `<img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">`;
+  }).join('');
+}
+
+async function savePoint(projectId, overlay) {
+  const title = document.getElementById('pt-title')?.value.trim();
+  if (!title) { toast('Titre obligatoire', 'error'); return; }
+
+  const res = await api('POST', '/client-remarks', {
+    projectId, title,
+    zone: document.getElementById('pt-zone')?.value || undefined,
+    priority: document.getElementById('pt-priority')?.value || 'normal',
+    assignedTo: document.getElementById('pt-assign')?.value || undefined,
+    description: document.getElementById('pt-desc')?.value || undefined,
+    status: 'open',
+  });
+
+  if (res?.success) {
+    // Upload photos
+    for (const file of PENDING_POINT_PHOTOS) {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('phase', 'problem');
+      try {
+        await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+        });
+      } catch {}
+    }
+    PENDING_POINT_PHOTOS = [];
+    toast('Point ajouté ✅', 'success');
+    overlay?.remove();
+    loadDetailRemarks(projectId);
+  } else toast('Erreur — vérifiez que le SQL client_remarks est bien exécuté', 'error');
+}
+
+async function uploadPointPhoto(remarkId, projectId, input) {
+  if (!input.files?.length) return;
+  toast('Upload photo...', 'info');
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('phase', 'problem');
+  try {
+    const r = await fetch(`${API}/client-remarks/${remarkId}/photos`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+    });
+    const data = await r.json();
+    if (data.success) { toast('Photo ajoutée ✅', 'success'); loadDetailRemarks(projectId); }
+    else toast('Erreur upload photo', 'error');
+  } catch { toast('Erreur upload', 'error'); }
+}
+
+async function openPointDetail(remarkId, projectId) {
+  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+  const r = res?.data?.find(x => x.id === remarkId);
+  if (!r) return;
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier le point</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="ep-title" value="${r.title}"></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Zone</label><input class="input" id="ep-zone" value="${r.zone||''}"></div>
+        <div class="form-group2"><label class="form-label2">Urgence</label>
+          <select class="input" id="ep-priority">
+            <option value="low" ${r.priority==='low'?'selected':''}>🟢 Faible</option>
+            <option value="normal" ${r.priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="high" ${r.priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="critical" ${r.priority==='critical'?'selected':''}>🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="ep-desc" rows="3">${r.description||''}</textarea></div>
+      <div class="form-group2"><label class="form-label2">Assigné à</label>
+        <select class="input" id="ep-assign">
+          <option value="">— Non assigné —</option>
+          ${USERS.map(u=>`<option value="${u.id}" ${r.assignedTo===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Statut</label>
+        <select class="input" id="ep-status">
+          <option value="open" ${r.status==='open'?'selected':''}>⏳ À traiter</option>
+          <option value="in_progress" ${r.status==='in_progress'?'selected':''}>🔨 En cours</option>
+          <option value="resolved" ${r.status==='resolved'?'selected':''}>✅ Traité</option>
+        </select>
+      </div>
+      ${(r.photos||[]).length>0?`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Photos</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:80px;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+          </div>
+        </div>`:''}
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="updatePoint('${remarkId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function updatePoint(remarkId, projectId, overlay) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, {
+    title: document.getElementById('ep-title')?.value.trim(),
+    zone: document.getElementById('ep-zone')?.value || undefined,
+    priority: document.getElementById('ep-priority')?.value,
+    description: document.getElementById('ep-desc')?.value || undefined,
+    assignedTo: document.getElementById('ep-assign')?.value || undefined,
+    status: document.getElementById('ep-status')?.value,
+  });
+  if (res?.success) { toast('Point mis à jour ✅', 'success'); overlay?.remove(); loadDetailRemarks(projectId); }
+  else toast('Erreur mise à jour', 'error');
+}
+
+async function exportVisitePDF(projectId) {
+  toast('Génération PDF visite...', 'info');
+  const r = await fetch(`${API}/client-remarks/project/${projectId}/pdf`, {
+    headers: { 'Authorization': `Bearer ${TOKEN}` }
+  });
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `VisiteClient_${projectId}.pdf`;
+    a.click();
+    toast('PDF téléchargé ✅', 'success');
+  } else toast('Erreur PDF — API non disponible', 'warning');
+}
+
+async function resolveRemark(id, projectId) {
+  const pid = projectId || CURRENT_PROJECT_ID;
   const res = await api('PATCH', `/client-remarks/${id}`, { status: 'resolved', resolvedAt: new Date().toISOString() });
-  if (res?.success) { toast('Marqué comme traité ✅', 'success'); loadDetailRemarks(CURRENT_PROJECT_ID); }
-  else toast('Erreur — API client-remarks non disponible', 'warning');
+  if (res?.success) { toast('Marqué comme traité ✅', 'success'); loadDetailRemarks(pid); }
+  else toast('Erreur — vérifiez que le SQL client_remarks est bien exécuté', 'warning');
 }
 
 async function deleteRemark(id, projectId) {
