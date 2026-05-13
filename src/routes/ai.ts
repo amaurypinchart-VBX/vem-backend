@@ -68,5 +68,10 @@ ${text}`,
     next(err);
   }
 });
-
+router.get('/test-key', async (req, res) => {
+  res.json({ 
+    hasKey: !!process.env.ANTHROPIC_API_KEY,
+    keyStart: process.env.ANTHROPIC_API_KEY?.substring(0, 10) || 'MISSING'
+  });
+});
 export default router;
