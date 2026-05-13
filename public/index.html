@@ -3018,13 +3018,13 @@ async function parseRawTextWithAI() {
 
   try {
     const response = await fetch(`${API}/ai/parse-daily`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TOKEN}`
-      },
-      body: JSON.stringify({ text: raw })
-    });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+  body: JSON.stringify({ text: raw })
+});
+const data = await response.json();
+if (!data.success) throw new Error(data.error || 'Erreur IA');
+const entries = data.data;
 
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Erreur IA');
