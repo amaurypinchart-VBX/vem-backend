@@ -1161,6 +1161,7 @@ function goto(page) {
   closeAllDropdowns();
   window.scrollTo(0,0);
 
+  if (page === 'projects')  { loadAll().then(() => renderProjectsGrid(PROJECTS)); }
   if (page === 'tasks')     loadTasks();
   if (page === 'tickets')   loadTickets();
   if (page === 'warehouse') loadWarehouse();
@@ -1169,6 +1170,13 @@ function goto(page) {
   if (page === 'notifs')    loadNotifs();
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
+  if (page === 'clients')   loadClientsPage();
+  if (page === 'remarks')   {} // loaded per project
+  // Update bottom nav
+  const bnMap = { dashboard:'bn-dashboard', projects:'bn-projects', tickets:'bn-tickets' };
+  if (bnMap[page]) setActiveBN(bnMap[page]);
+  updateMobileBadges();
+  closeFAB();
 }
 
 function switchTab(el, tabId) {
