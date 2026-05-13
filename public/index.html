@@ -314,6 +314,38 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- ═══ APP ═══ -->
 <div id="app-screen" style="display:none;">
+
+<!-- Mobile nav overlay -->
+<div class="nav-overlay" id="nav-overlay" onclick="closeMobileNav()"></div>
+
+<!-- Bottom Navigation Bar (mobile only) -->
+<nav class="bottom-nav">
+  <div class="bottom-nav-items">
+    <div class="bn-item active" id="bn-dashboard" onclick="goto('dashboard');setActiveBN('bn-dashboard')">
+      <span class="bn-icon">📊</span>Dashboard
+    </div>
+    <div class="bn-item" id="bn-projects" onclick="goto('projects');setActiveBN('bn-projects')">
+      <span class="bn-icon">🏗️</span>Projets
+    </div>
+    <div class="bn-item" id="bn-tickets" onclick="goto('tickets');setActiveBN('bn-tickets')">
+      <span class="bn-icon">🛠️</span>Tickets
+      <span class="bn-badge" id="bn-badge-tickets" style="display:none;">0</span>
+    </div>
+    <div class="bn-item" id="bn-more" onclick="toggleMobileMenu()">
+      <span class="bn-icon">☰</span>Menu
+    </div>
+  </div>
+</nav>
+
+<!-- FAB — Quick action button -->
+<button class="fab" id="fab-btn" onclick="toggleFAB()" title="Action rapide">＋</button>
+<div class="fab-menu" id="fab-menu">
+  <div class="fab-item" onclick="closeFAB();showModal('modal-daily')">📓 Daily Report</div>
+  <div class="fab-item" onclick="closeFAB();showModal('modal-ticket')">🛠️ Ticket SAV</div>
+  <div class="fab-item" onclick="closeFAB();showModal('modal-handover')">🧾 Handover</div>
+  <div class="fab-item" onclick="closeFAB();openAddPointModal(CURRENT_PROJECT_ID)">📸 Point visite</div>
+</div>
+
 <div class="shell">
 
 <!-- NAV -->
@@ -373,7 +405,7 @@ textarea.input{min-height:80px;resize:vertical;}
 <!-- MAIN -->
 <div class="main">
 <header class="topbar">
-  <button class="icon-btn menu-btn" onclick="document.getElementById('nav').classList.toggle('open')">☰</button>
+  <button class="icon-btn menu-btn" onclick="toggleMobileMenu()">☰</button>
   <div class="topbar-title" id="pg-title">Dashboard</div>
   <div style="display:flex;align-items:center;gap:8px;">
     <button class="icon-btn" onclick="goto('notifs')">🔔<span class="notif-pip" id="notif-pip" style="display:none;"></span></button>
@@ -648,7 +680,25 @@ textarea.input{min-height:80px;resize:vertical;}
       <div class="form-group2"><label class="form-label2">Fin démontage</label><input class="input" type="date" id="proj-dismantling-end"></div>
     </div>
     <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+    <!-- TEMPLATES DE TÂCHES -->
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">📋 Templates de tâches</div>
+          <div style="font-size:11px;color:var(--text3);">Sélectionne les tâches à créer automatiquement</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-xs" onclick="selectAllProjTemplates()">Tout</button>
+          <button class="btn btn-ghost btn-xs" onclick="deselectAllProjTemplates()">Aucun</button>
+        </div>
+      </div>
+      <div id="proj-templates-selector" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;">
+        <div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement des templates...</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="proj-tpl-count">0 tâche(s) sélectionnée(s)</div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-outline" onclick="closeModal('modal-proj')">Annuler</button>
       <button class="btn btn-primary" id="proj-create-btn" onclick="createProject()">✅ Créer le Projet</button>
     </div>
@@ -856,10 +906,20 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
 
-    <!-- NOTES GÉNÉRALES -->
-    <div class="form-group2" style="margin-top:14px;">
-      <label class="form-label2">Notes générales / Résumé</label>
-      <textarea class="input" id="daily-notes" rows="2" placeholder="Résumé, incidents, points importants..."></textarea>
+    <!-- NOTES + PHOTOS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+      <div class="form-group2" style="margin:0;">
+        <label class="form-label2">Notes générales / Résumé</label>
+        <textarea class="input" id="daily-notes" rows="3" placeholder="Résumé, incidents, points importants..."></textarea>
+      </div>
+      <div class="form-group2" style="margin:0;">
+        <label class="form-label2">📸 Photos de la journée</label>
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:var(--radius);padding:12px;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;min-height:68px;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📸 Ajouter photos
+          <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="daily-photos-input" onchange="previewDailyPhotos(this)">
+        </label>
+        <div id="daily-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+      </div>
     </div>
 
     <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;align-items:center;">
@@ -1109,7 +1169,6 @@ function goto(page) {
   if (page === 'notifs')    loadNotifs();
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
-  if (page==='projects') { loadAll().then(() => renderProjectsGrid(PROJECTS)); }
 }
 
 function switchTab(el, tabId) {
@@ -1345,9 +1404,12 @@ async function loadProjectDetail(id) {
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
       <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${p.id}')">+ Ajouter camion / machine</button>
     </div>
-    <div class="grid-2">${trucks.length?trucks.map(t => `
+    <div class="grid-2">${trucks.length?trucks.map(t => {
+      const typeIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
+      const icon = typeIcons[t.vehicleType]||'🚛';
+      return `
       <div class="card">
-        <div class="card-header"><span class="card-title">🚛 Camion ${t.truckNumber||''}</span>
+        <div class="card-header"><span class="card-title">${icon} ${t.truckNumber||''}</span>
           <span class="badge ${t.status==='delivered'?'badge-green':'badge-amber'}">${t.status}</span>
         </div>
         <div class="card-body" style="font-size:13px;display:grid;gap:6px;">
@@ -1356,7 +1418,7 @@ async function loadProjectDetail(id) {
           ${t.arrivalDate?`<div>✅ Arrivée : ${fmtDate(t.arrivalDate)}</div>`:'<div style="color:var(--amber);">⏳ En transit</div>'}
           ${t.notes?`<div style="color:var(--text3);">${t.notes}</div>`:''}
         </div>
-      </div>`).join(''):`<div class="empty" style="grid-column:1/-1;"><div class="empty-title">Aucun camion</div></div>`}
+      </div>`;}).join(''):`<div class="empty" style="grid-column:1/-1;"><div class="empty-title">Aucun véhicule / machine</div></div>`}
     </div>`;
 
   // Load tasks for detail
@@ -1858,15 +1920,38 @@ async function createProject() {
   if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer le Projet'; }
 
   if (res?.success) {
-    toast('Projet créé ✅', 'success');
+    const projectId = res.data.id;
+    // Apply selected templates
+    const selectedTpls = Array.from(document.querySelectorAll('.proj-tpl-check:checked')).map(cb => cb.value);
+    if (selectedTpls.length) {
+      toast(`Création de ${selectedTpls.length} tâche(s)...`, 'info');
+      await Promise.all(selectedTpls.map(tplId => {
+        const tpl = PROJ_TEMPLATES_FLAT.find(t => t.id === tplId);
+        if (!tpl) return Promise.resolve();
+        return api('POST', '/tasks', {
+          projectId,
+          title: tpl.title,
+          description: tpl.description || undefined,
+          status: 'todo',
+          priority: tpl.priority || 'normal',
+          estimatedHours: tpl.durationHours || undefined,
+          taskDate: document.getElementById('proj-start').value || undefined,
+          createdById: CURRENT_USER?.id,
+        });
+      }));
+      toast(`Projet créé ✅ · ${selectedTpls.length} tâche(s) ajoutée(s)`, 'success');
+    } else {
+      toast('Projet créé ✅', 'success');
+    }
     closeModal('modal-proj');
-    // Reset form
     ['proj-name','proj-num','proj-addr','proj-desc','proj-start','proj-end','proj-dismantling-start','proj-dismantling-end'].forEach(id => {
       const el = document.getElementById(id); if(el) el.value='';
     });
     document.getElementById('proj-workers').value = '5';
     loadAll();
     goto('projects');
+    // Open the new project
+    setTimeout(() => openProject(projectId), 800);
   } else toast('Erreur création projet', 'error');
 }
 
@@ -1920,6 +2005,11 @@ function resetDailyReport() {
   document.getElementById('new-entry-text').value = '';
   document.getElementById('daily-notes').value = '';
   document.getElementById('daily-workers').value = '0';
+  PENDING_DAILY_PHOTOS = [];
+  const preview = document.getElementById('daily-photos-preview');
+  if (preview) preview.innerHTML = '';
+  const input = document.getElementById('daily-photos-input');
+  if (input) input.value = '';
   // Set current time
   const now = new Date();
   document.getElementById('new-entry-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -2104,12 +2194,24 @@ function setTaskInProgress(taskId) {
 }
 
 // ── CREATE DAILY REPORT ──────────────────────────────────────
+let PENDING_DAILY_PHOTOS = [];
+
+function previewDailyPhotos(input) {
+  PENDING_DAILY_PHOTOS = Array.from(input.files);
+  const preview = document.getElementById('daily-photos-preview');
+  if (!preview) return;
+  preview.innerHTML = PENDING_DAILY_PHOTOS.map(f => {
+    const url = URL.createObjectURL(f);
+    return `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`;
+  }).join('');
+  updateDailySummary();
+}
+
 async function createDailyReport(send=false) {
   const projectId = document.getElementById('daily-project').value;
   const date = document.getElementById('daily-date').value;
   if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
 
-  // Build entries from DAILY_ENTRIES
   const entries = DAILY_ENTRIES.map(e => ({ entryTime: e.time, description: e.text }));
 
   const res = await api('POST', '/daily-reports', {
@@ -2121,15 +2223,28 @@ async function createDailyReport(send=false) {
   });
 
   if (res?.success) {
+    // Upload photos
+    if (PENDING_DAILY_PHOTOS.length) {
+      toast(`Upload ${PENDING_DAILY_PHOTOS.length} photo(s)...`, 'info');
+      for (const file of PENDING_DAILY_PHOTOS) {
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          await fetch(`${API}/upload/daily-photo/${res.data.id}`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+          });
+        } catch {}
+      }
+      PENDING_DAILY_PHOTOS = [];
+    }
     // Update task statuses
     const taskUpdates = Object.entries(DAILY_TASK_UPDATES);
     if (taskUpdates.length) {
-      toast(`Mise à jour de ${taskUpdates.length} tâche(s)...`, 'info');
       await Promise.all(taskUpdates.map(([taskId, status]) =>
         api('PATCH', `/tasks/${taskId}`, { status })
       ));
     }
-    toast(`Rapport sauvegardé ✅ ${taskUpdates.length?`· ${taskUpdates.length} tâche(s) mise(s) à jour`:''}`, 'success');
+    toast(`Rapport sauvegardé ✅${taskUpdates.length?` · ${taskUpdates.length} tâche(s) mises à jour`:''}${PENDING_DAILY_PHOTOS.length?` · photos ajoutées`:''}`, 'success');
     closeModal('modal-daily');
     resetDailyReport();
     if (send) sendDailyReport(res.data.id);
@@ -2311,6 +2426,9 @@ function showModal(id) {
     if (pid) { document.getElementById('daily-project').value = pid; loadDailyTasks(pid); }
   }
   if (id === 'modal-task')    document.getElementById('task-date').value  = today;
+  if (id === 'modal-proj') {
+    loadProjTemplateSelector();
+  }
   if (id === 'modal-new-visite') {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('visite-date').value = today;
@@ -2610,6 +2728,167 @@ function showModal_toolboxNew() {
 
 // Override showModal to catch modal-toolbox-new
 const _origShowModal = showModal;
+
+
+
+// ═══ PROJECT TEMPLATES SELECTOR ═══
+let PROJ_TEMPLATES_FLAT = [];
+let PROJ_CATEGORIES_DATA = [];
+
+async function loadProjTemplateSelector() {
+  const el = document.getElementById('proj-templates-selector');
+  if (!el) return;
+
+  // Load from API or use cached
+  if (!PROJ_CATEGORIES_DATA.length) {
+    const res = await api('GET', '/task-templates/categories');
+    if (res?.success) {
+      PROJ_CATEGORIES_DATA = res.data;
+      PROJ_TEMPLATES_FLAT = res.data.flatMap(c => (c.templates||[]).map(t => ({...t, categoryName: c.name, categoryIcon: c.icon, categoryColor: c.color})));
+    }
+  }
+
+  if (!PROJ_TEMPLATES_FLAT.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun template disponible — créez-en dans le menu Templates</div>';
+    return;
+  }
+
+  el.innerHTML = PROJ_CATEGORIES_DATA.map(cat => {
+    const tpls = cat.templates || [];
+    if (!tpls.length) return '';
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 4px;cursor:pointer;" onclick="toggleCatSection('cat-sec-${cat.id}')">
+          <span style="font-size:15px;">${cat.icon||'📋'}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--text);">${cat.name}</span>
+          <span style="font-size:10px;color:var(--text3);margin-left:4px;">(${tpls.length})</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--text3);" id="cat-chevron-${cat.id}">▼</span>
+        </div>
+        <div id="cat-sec-${cat.id}" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 4px;">
+          ${tpls.map(t => `
+            <label style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg3);border-radius:8px;cursor:pointer;font-size:12px;border:1px solid var(--border);" onmouseover="this.style.borderColor='${cat.color||'var(--accent)'}'" onmouseout="this.style.borderColor='var(--border)'">
+              <input type="checkbox" class="proj-tpl-check" value="${t.id}" onchange="updateProjTplCount()" style="accent-color:var(--accent);width:14px;height:14px;flex-shrink:0;">
+              <span style="flex:1;line-height:1.3;">${t.title}</span>
+              <span style="font-size:10px;color:var(--text3);flex-shrink:0;">${t.durationHours}h</span>
+            </label>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  updateProjTplCount();
+}
+
+function toggleCatSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isHidden = el.style.display === 'none';
+  el.style.display = isHidden ? 'grid' : 'none';
+}
+
+function updateProjTplCount() {
+  const count = document.querySelectorAll('.proj-tpl-check:checked').length;
+  const el = document.getElementById('proj-tpl-count');
+  if (el) el.textContent = count > 0 ? `${count} tâche(s) sélectionnée(s)` : '0 tâche sélectionnée';
+}
+
+function selectAllProjTemplates() {
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => cb.checked = true);
+  updateProjTplCount();
+}
+
+function deselectAllProjTemplates() {
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => cb.checked = false);
+  updateProjTplCount();
+}
+
+// ═══ MOBILE NAV ═══
+function setActiveBN(id) {
+  document.querySelectorAll('.bn-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function closeMobileNav() {
+  document.getElementById('nav')?.classList.remove('open');
+  document.getElementById('nav-overlay')?.classList.remove('open');
+}
+
+function toggleMobileMenu() {
+  const nav = document.getElementById('nav');
+  const overlay = document.getElementById('nav-overlay');
+  nav?.classList.toggle('open');
+  overlay?.classList.toggle('open');
+}
+
+function toggleFAB() {
+  const menu = document.getElementById('fab-menu');
+  const btn = document.getElementById('fab-btn');
+  if (!menu) return;
+  const isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open');
+  if (btn) btn.style.transform = isOpen ? '' : 'rotate(45deg)';
+}
+
+function closeFAB() {
+  document.getElementById('fab-menu')?.classList.remove('open');
+  const btn = document.getElementById('fab-btn');
+  if (btn) btn.style.transform = '';
+}
+
+// Close FAB when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#fab-btn') && !e.target.closest('#fab-menu')) closeFAB();
+});
+
+// Update badge on bottom nav
+function updateMobileBadges() {
+  const ticketBadge = document.getElementById('bn-badge-tickets');
+  const count = parseInt(document.getElementById('tickets-badge')?.textContent || '0');
+  if (ticketBadge) {
+    ticketBadge.textContent = count;
+    ticketBadge.style.display = count > 0 ? 'block' : 'none';
+  }
+}
+
+// Override goto to also update bottom nav
+const _origGoto = goto;
+
+// Patch mobile nav close on nav item click
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      closeMobileNav();
+      closeFAB();
+    });
+  });
+});
+
+// ═══ MOBILE — SWIPE TO CLOSE MODAL ═══
+let touchStartY = 0;
+document.addEventListener('touchstart', e => {
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  const modal = document.querySelector('.overlay.open .modal');
+  if (!modal) return;
+  const delta = e.touches[0].clientY - touchStartY;
+  if (delta > 80 && modal.scrollTop <= 0) {
+    // Swipe down to close
+    const overlay = document.querySelector('.overlay.open');
+    if (overlay) {
+      const id = overlay.id;
+      if (id) closeModal(id);
+      else overlay.remove();
+    }
+  }
+}, { passive: true });
+
+// ═══ MOBILE — BETTER DASHBOARD ═══
+function renderDashboardMobile() {
+  // Update bottom nav badges
+  updateMobileBadges();
+}
 
 // ═══ INIT ═══
 if (TOKEN && CURRENT_USER) {
@@ -3455,27 +3734,44 @@ function showAddTruckModal(projectId) {
   el.innerHTML = `
     <div class="modal">
       <div class="modal-head"><div class="modal-title">🚛 Ajouter camion / machine</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <!-- Type -->
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Numéro / Nom</label><input class="input" id="truck-num" placeholder="ex: Camion 1 / Nacelle #3"></div>
-        <div class="form-group2"><label class="form-label2">Immatriculation</label><input class="input" id="truck-plate" placeholder="ex: BE-421-XYZ"></div>
+        <div class="form-group2"><label class="form-label2">Type *</label>
+          <select class="input" id="truck-type" onchange="updateTruckIcon(this.value)">
+            <option value="truck">🚛 Camion</option>
+            <option value="van">🚐 Camionnette</option>
+            <option value="crane">🏗️ Grue</option>
+            <option value="lift">🔼 Nacelle / Élévateur</option>
+            <option value="forklift">🚜 Chariot élévateur</option>
+            <option value="generator">⚡ Groupe électrogène</option>
+            <option value="trailer">🚛 Remorque</option>
+            <option value="machine">⚙️ Machine spéciale</option>
+            <option value="other">📦 Autre</option>
+          </select>
+        </div>
+        <div class="form-group2"><label class="form-label2">Numéro / Nom *</label><input class="input" id="truck-num" placeholder="ex: Camion 1, Nacelle #3"></div>
       </div>
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Chauffeur / Responsable</label><input class="input" id="truck-driver" placeholder="Nom"></div>
+        <div class="form-group2"><label class="form-label2">Immatriculation / ID</label><input class="input" id="truck-plate" placeholder="ex: BE-421-XYZ"></div>
         <div class="form-group2"><label class="form-label2">Statut</label>
           <select class="input" id="truck-status">
             <option value="planned">Planifié</option>
             <option value="loading">En chargement</option>
             <option value="in_transit">En transit</option>
-            <option value="delivered">Livré</option>
+            <option value="delivered">Livré sur site</option>
             <option value="returned">Retourné</option>
           </select>
         </div>
       </div>
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Date chargement</label><input class="input" type="datetime-local" id="truck-loading"></div>
-        <div class="form-group2"><label class="form-label2">Date arrivée</label><input class="input" type="datetime-local" id="truck-arrival"></div>
+        <div class="form-group2"><label class="form-label2">Chauffeur / Responsable</label><input class="input" id="truck-driver" placeholder="Nom complet"></div>
+        <div class="form-group2"><label class="form-label2">📞 Téléphone</label><input class="input" type="tel" id="truck-phone" placeholder="+32 477 ..."></div>
       </div>
-      <div class="form-group2"><label class="form-label2">Notes</label><textarea class="input" id="truck-notes" rows="2"></textarea></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Date chargement / départ</label><input class="input" type="datetime-local" id="truck-loading"></div>
+        <div class="form-group2"><label class="form-label2">Date arrivée prévue</label><input class="input" type="datetime-local" id="truck-arrival"></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Notes / Contenu</label><textarea class="input" id="truck-notes" rows="2" placeholder="Matériel transporté, instructions spéciales..."></textarea></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="addTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
@@ -3485,18 +3781,28 @@ function showAddTruckModal(projectId) {
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
 }
 
+function updateTruckIcon(type) {
+  // Just for UX feedback
+}
+
 async function addTruck(projectId, overlay) {
+  const num = document.getElementById('truck-num').value.trim();
+  if (!num) { toast('Numéro/nom obligatoire', 'error'); return; }
+  const type = document.getElementById('truck-type').value;
+  const typeLabels = { truck:'Camion', van:'Camionnette', crane:'Grue', lift:'Nacelle', forklift:'Chariot élévateur', generator:'Groupe élec.', trailer:'Remorque', machine:'Machine', other:'Autre' };
   const res = await api('POST', `/projects/${projectId}/trucks`, {
-    truckNumber: document.getElementById('truck-num').value,
+    truckNumber: `${typeLabels[type]||''} — ${num}`,
     licensePlate: document.getElementById('truck-plate').value||undefined,
     driverName: document.getElementById('truck-driver').value||undefined,
+    driverPhone: document.getElementById('truck-phone').value||undefined,
     status: document.getElementById('truck-status').value,
     loadingDate: document.getElementById('truck-loading').value||undefined,
     arrivalDate: document.getElementById('truck-arrival').value||undefined,
     notes: document.getElementById('truck-notes').value||undefined,
+    vehicleType: type,
   });
   if (res?.success) { toast('Ajouté ✅','success'); overlay.remove(); loadProjectDetail(projectId); }
-  else toast('Erreur ajout','error');
+  else toast('Erreur ajout — vérifiez que la route /projects/:id/trucks existe','error');
 }
 
 // ═══ PHOTO VIEWER ═══
