@@ -26,6 +26,7 @@ import userRoutes          from './routes/users';
 import clientRoutes        from './routes/clients';
 import reportRoutes        from './routes/reports';
 import taskTemplatesRoutes from './routes/taskTemplates';
+import aiRoutes from './routes/ai';
 // import clientRemarksRoutes from './routes/clientRemarks';
 
 const app  = express();
@@ -69,6 +70,7 @@ app.use(`${API}/upload`,         authMiddleware, uploadRoutes);
 app.use(`${API}/notifications`,  authMiddleware, notifRoutes);
 app.use(`${API}/reports`,        authMiddleware, reportRoutes);
 app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
+app.use(`${API}/ai`, authMiddleware, aiRoutes);
 // app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
