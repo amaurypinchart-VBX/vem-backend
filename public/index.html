@@ -2257,7 +2257,7 @@ async function createDailyReport(send=false) {
     resetDailyReport();
     if (send) sendDailyReport(res.data.id);
     loadDailyReports();
-    if (CURRENT_PROJECT_ID) { loadProjTasks(CURRENT_PROJECT_ID); loadDetailDailyReports(CURRENT_PROJECT_ID); }
+    if (CURRENT_PROJECT_ID) { loadDetailTasks(CURRENT_PROJECT_ID); loadDetailDailyReports(CURRENT_PROJECT_ID); }
   } else toast('Erreur création rapport', 'error');
 }
 
@@ -3018,10 +3018,13 @@ async function parseRawTextWithAI() {
 
   try {
     const response = await fetch(`${API}/ai/parse-daily`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-  body: JSON.stringify({ text: raw })
-});
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TOKEN}`
+      },
+      body: JSON.stringify({ text: raw })
+    });
 
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Erreur IA');
