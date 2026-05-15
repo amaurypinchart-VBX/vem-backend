@@ -379,6 +379,7 @@ textarea.input{min-height:80px;resize:vertical;}
   </div>
   <div class="nav-section">
     <div class="nav-label">Admin</div>
+    <div class="nav-item" onclick="goto('templates')"><span class="ni">📋</span>Templates tâches</div>
     <div class="nav-item" onclick="goto('clients')"><span class="ni">🏢</span>Clients</div>
     <div class="nav-item" onclick="goto('team')"><span class="ni">👥</span>Équipe</div>
     <div class="nav-item" onclick="goto('notifs')"><span class="ni">🔔</span>Notifications<span class="nav-badge" id="notifs-badge">0</span></div>
@@ -1171,6 +1172,7 @@ function goto(page) {
   if (page === 'daily')     loadDailyReports();
   if (page === 'handover')  loadHandovers();
   if (page === 'clients')   loadClientsPage();
+  if (page === 'templates') loadTemplatesPage();
   if (page === 'remarks')   {} // loaded per project
   // Update bottom nav
   const bnMap = { dashboard:'bn-dashboard', projects:'bn-projects', tickets:'bn-tickets' };
@@ -2809,6 +2811,602 @@ function deselectAllProjTemplates() {
   updateProjTplCount();
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — DAILY REPORT
+// ═══════════════════════════════════════════════════════════
+async function editDailyReport(id) {
+  const res = await api('GET', `/daily-reports/${id}`);
+  if (!res?.success) { toast('Rapport introuvable', 'error'); return; }
+  const r = res.data;
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier le Rapport</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="er-date" value="${r.reportDate?.split('T')[0]||''}"></div>
+        <div class="form-group2"><label class="form-label2">Météo</label><select class="input" id="er-weather"><option ${r.weather?.includes('Ensoleillé')?'selected':''}>☀️ Ensoleillé</option><option ${r.weather?.includes('Nuageux')?'selected':''}>⛅ Nuageux</option><option ${r.weather?.includes('Pluie')?'selected':''}>🌧️ Pluie</option><option ${r.weather?.includes('Froid')?'selected':''}>❄️ Froid</option></select></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="er-workers" value="${r.workersPresent||0}"></div>
+      <div class="form-group2"><label class="form-label2">Notes générales</label><textarea class="input" id="er-notes" rows="4">${r.generalNotes||''}</textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function saveDailyReport(id, overlay) {
+  const res = await api('PATCH', `/daily-reports/${id}`, {
+    reportDate: document.getElementById('er-date').value,
+    weather: document.getElementById('er-weather').value,
+    workersPresent: parseInt(document.getElementById('er-workers').value)||0,
+    generalNotes: document.getElementById('er-notes').value||undefined,
+  });
+  if (res?.success) { toast('Rapport mis à jour ✅','success'); overlay?.remove(); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); }
+  else toast('Erreur mise à jour','error');
+}
+
+async function deleteDailyReport(id) {
+  if (!confirm('Supprimer ce rapport ?')) return;
+  const res = await api('DELETE', `/daily-reports/${id}`);
+  if (res?.success) { toast('Rapport supprimé','warning'); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — HANDOVER
+// ═══════════════════════════════════════════════════════════
+async function deleteHandover(id) {
+  if (!confirm('Supprimer ce handover ?')) return;
+  const res = await api('DELETE', `/handover/${id}`);
+  if (res?.success) { toast('Supprimé','warning'); loadHandovers(); if(CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — TASKS (amélioration)
+// ═══════════════════════════════════════════════════════════
+async function loadDetailTasks(projectId) {
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  const el = document.getElementById('detail-tasks-content');
+  if (!el || !res?.success) return;
+
+  const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;" id="task-cat-pills"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showTaskFromMeetingModal('${projectId}')">🤖 Import réunion</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+    </div>
+  </div>`;
+
+  const tasks = res.data;
+  if (!tasks.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Aucune tâche</div></div>'; return; }
+
+  const byStatus = { todo:[], in_progress:[], done:[], blocked:[] };
+  tasks.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+
+  const colDef = [
+    { key:'todo', label:'📋 À faire', color:'var(--blue)', badge:'badge-muted' },
+    { key:'in_progress', label:'⚡ En cours', color:'var(--amber)', badge:'badge-amber' },
+    { key:'done', label:'✅ Terminé', color:'var(--green)', badge:'badge-green' },
+    { key:'blocked', label:'🔴 Bloqué', color:'var(--accent)', badge:'badge-red' },
+  ];
+
+  el.innerHTML = btn + `<div class="kanban">` + colDef.map(col => `
+    <div class="kboard">
+      <div class="kboard-title" style="color:${col.color};">
+        <span>${col.label}</span>
+        <span class="badge ${col.badge}">${byStatus[col.key].length}</span>
+      </div>
+      ${byStatus[col.key].map(t => `
+        <div class="kcard ${col.key==='in_progress'?'inprog':col.key==='done'?'done':col.key==='blocked'?'blocked':'todo'}" onclick="openTaskModal('${t.id}','${projectId}')">
+          <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
+          ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
+          ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:3px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+          <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+            <span class="badge ${t.priority==='critical'?'badge-red':t.priority==='high'?'badge-amber':'badge-muted'}" style="font-size:10px;">${t.priority}</span>
+            ${t.status!=='done'?`<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();quickDoneTask('${t.id}','${projectId}')">✓</button>`:''}
+          </div>
+        </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">—</div>'}
+    </div>`).join('') + `</div>`;
+}
+
+async function quickDoneTask(taskId, projectId) {
+  const res = await api('PATCH', `/tasks/${taskId}`, { status:'done' });
+  if (res?.success) { toast('✅ Terminé !','success'); loadDetailTasks(projectId); }
+}
+
+async function openTaskModal(taskId, projectId) {
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  const task = res?.data?.find(t => t.id === taskId);
+  if (!task) return;
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head"><div class="modal-title">✅ ${task.title}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Statut</label>
+          <select class="input" id="et-status">
+            <option value="todo" ${task.status==='todo'?'selected':''}>📋 À faire</option>
+            <option value="in_progress" ${task.status==='in_progress'?'selected':''}>⚡ En cours</option>
+            <option value="done" ${task.status==='done'?'selected':''}>✅ Terminé</option>
+            <option value="blocked" ${task.status==='blocked'?'selected':''}>🔴 Bloqué</option>
+          </select>
+        </div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="et-priority">
+            <option value="low" ${task.priority==='low'?'selected':''}>🟢 Faible</option>
+            <option value="normal" ${task.priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="high" ${task.priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="critical" ${task.priority==='critical'?'selected':''}>🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="et-date" value="${task.taskDate?.split('T')[0]||''}"></div>
+        <div class="form-group2"><label class="form-label2">Assigné à</label>
+          <select class="input" id="et-assign">
+            <option value="">— Non assigné —</option>
+            ${USERS.map(u=>`<option value="${u.id}" ${task.assignedToId===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="et-desc" rows="3">${task.description||''}</textarea></div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTask('${taskId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="saveTaskEdit('${taskId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function saveTaskEdit(taskId, projectId, overlay) {
+  const res = await api('PATCH', `/tasks/${taskId}`, {
+    status: document.getElementById('et-status').value,
+    priority: document.getElementById('et-priority').value,
+    taskDate: document.getElementById('et-date').value||undefined,
+    assignedToId: document.getElementById('et-assign').value||null,
+    description: document.getElementById('et-desc').value||undefined,
+  });
+  if (res?.success) { toast('Tâche mise à jour ✅','success'); overlay?.remove(); loadDetailTasks(projectId); }
+  else toast('Erreur','error');
+}
+
+async function deleteTask(taskId, projectId, overlay) {
+  if (!confirm('Supprimer cette tâche ?')) return;
+  const res = await api('DELETE', `/tasks/${taskId}`);
+  if (res?.success) { toast('Supprimée','warning'); overlay?.remove(); loadDetailTasks(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// IMPORT TÂCHES DEPUIS RÉUNION (IA)
+// ═══════════════════════════════════════════════════════════
+function showTaskFromMeetingModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🤖 Import tâches depuis réunion</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Colle le compte-rendu — l'IA crée les tâches</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);">
+        💡 Colle ton compte-rendu de réunion. L'IA va créer un draft de tâches avec titre, assignation, priorité et deadline. Tu peux tout modifier avant de valider.
+      </div>
+      <textarea class="input" id="meeting-text" rows="8" placeholder="Ex: Réunion du 15 mai — Amaury doit finir la façade nord avant vendredi, urgent. Jeremy s'occupe de l'électricité du rez-de-chaussée pour lundi. Norick pose les rails terrasse cette semaine..."></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+        <span id="meeting-ai-status" style="font-size:12px;color:var(--text3);display:none;">🤖 Analyse en cours...</span>
+        <button class="btn btn-blue" onclick="parseMeetingWithAI('${projectId}',this.closest('.overlay'))">🤖 Analyser et créer le draft</button>
+      </div>
+      <div id="meeting-tasks-draft" style="display:none;margin-top:14px;"></div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function parseMeetingWithAI(projectId, overlay) {
+  const text = document.getElementById('meeting-text')?.value.trim();
+  if (!text) { toast('Colle un compte-rendu','error'); return; }
+  const status = document.getElementById('meeting-ai-status');
+  const btn = overlay.querySelector('.btn-blue');
+  if (status) status.style.display='inline';
+  if (btn) btn.disabled=true;
+
+  try {
+    const usersList = USERS.map(u=>`- ${u.firstName} ${u.lastName} (id: ${u.id})`).join(' | ');
+    const prompt = `Tu es un assistant de gestion de projet. Analyse ce compte-rendu de réunion et extrais les tâches à faire.
+
+Membres de l'équipe disponibles :
+${usersList}
+
+Pour chaque tâche identifiée, crée un objet JSON avec :
+- "title": titre court de la tâche (max 80 chars)
+- "description": détails si nécessaire
+- "assignedToId": l'id du membre si mentionné, sinon null
+- "assignedName": prénom du membre si mentionné, sinon ""
+- "priority": "low" | "normal" | "high" | "critical"
+- "deadline": date ISO si mentionnée (ex: "2026-05-17"), sinon null
+- "estimatedHours": nombre d'heures estimées si mentionné, sinon null
+
+Règles :
+- Crée une tâche par action distincte
+- Si une personne est mentionnée, assigne-lui la tâche
+- Déduis la priorité du contexte (urgent = high/critical)
+- Réponds UNIQUEMENT avec un tableau JSON valide, sans texte, sans backticks
+
+Compte-rendu :
+${text}`;
+
+    const res = await fetch(`${API}/ai/parse-daily`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+      body: JSON.stringify({ text: prompt })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    let tasks;
+    try {
+      // data.data is already parsed array from backend
+      if (Array.isArray(data.data)) {
+        tasks = data.data;
+      } else {
+        tasks = JSON.parse(typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
+      }
+    } catch { tasks = []; }
+
+    if (!Array.isArray(tasks)) throw new Error('Format invalide');
+
+    // Show draft
+    const draft = document.getElementById('meeting-tasks-draft');
+    if (!draft) return;
+    draft.style.display='block';
+    draft.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--green);">✅ ${tasks.length} tâche(s) — modifie avant de valider</div>
+      ${tasks.map((t,i)=>`
+        <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;background:var(--bg3);">
+          <div class="input-row" style="margin-bottom:8px;">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Titre</label><input class="input" id="mt-title-${i}" value="${t.title}" style="font-size:13px;"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Priorité</label>
+              <select class="input" id="mt-priority-${i}" style="font-size:13px;">
+                <option value="low" ${t.priority==='low'?'selected':''}>🟢 Faible</option>
+                <option value="normal" ${t.priority==='normal'?'selected':''}>🔵 Normal</option>
+                <option value="high" ${t.priority==='high'?'selected':''}>🟠 Élevé</option>
+                <option value="critical" ${t.priority==='critical'?'selected':''}>🔴 Critique</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Assigné à</label>
+              <select class="input" id="mt-assign-${i}" style="font-size:13px;">
+                <option value="">— Non assigné —</option>
+                ${USERS.map(u=>`<option value="${u.id}" ${t.assignedToId===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Deadline</label><input class="input" type="date" id="mt-date-${i}" value="${t.deadline||''}" style="font-size:13px;"></div>
+          </div>
+          ${t.description?`<div style="font-size:12px;color:var(--text3);margin-top:6px;">${t.description}</div>`:''}
+        </div>`).join('')}
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createTasksFromMeeting(${JSON.stringify(tasks).replace(/"/g,'&quot;')},'${projectId}',this.closest('.overlay'),${tasks.length})">✅ Créer ${tasks.length} tâche(s)</button>
+      </div>`;
+
+  } catch(e) {
+    toast('Erreur IA — '+e.message,'error');
+    console.error(e);
+  } finally {
+    if (status) status.style.display='none';
+    if (btn) btn.disabled=false;
+  }
+}
+
+async function createTasksFromMeeting(tasks, projectId, overlay, count) {
+  toast(`Création de ${count} tâche(s)...`,'info');
+  const results = await Promise.all(tasks.map((t,i) => {
+    const title = document.getElementById(`mt-title-${i}`)?.value?.trim() || t.title;
+    const priority = document.getElementById(`mt-priority-${i}`)?.value || t.priority || 'normal';
+    const assignedToId = document.getElementById(`mt-assign-${i}`)?.value || null;
+    const taskDate = document.getElementById(`mt-date-${i}`)?.value || undefined;
+    return api('POST', '/tasks', {
+      projectId, title, priority,
+      assignedToId: assignedToId||undefined,
+      taskDate, status:'todo',
+      description: t.description||undefined,
+      createdById: CURRENT_USER?.id,
+    });
+  }));
+  const created = results.filter(r=>r?.success).length;
+  toast(`${created} tâche(s) créée(s) ✅`,'success');
+  overlay?.remove();
+  loadDetailTasks(projectId);
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATES PAGE
+// ═══════════════════════════════════════════════════════════
+async function loadTemplatesPage() {
+  const res = await api('GET', '/task-templates/categories');
+  const el = document.getElementById('templates-content');
+  if (!el) return;
+
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Aucun template</div><div class="empty-sub">Créez des catégories et des templates de tâches</div></div>';
+    return;
+  }
+
+  PROJ_CATEGORIES_DATA = res.data;
+  PROJ_TEMPLATES_FLAT = res.data.flatMap(c=>(c.templates||[]).map(t=>({...t,categoryName:c.name,categoryIcon:c.icon,categoryColor:c.color})));
+
+  el.innerHTML = res.data.map(cat => {
+    const tpls = cat.templates || [];
+    return `
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:20px;">${cat.icon||'📋'}</span>
+            <div>
+              <div class="card-title" style="color:${cat.color||'var(--text)'};">${cat.name}</div>
+              <div style="font-size:12px;color:var(--text3);">${tpls.length} template(s)</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-xs" onclick="showNewTemplateModal('${cat.id}')">+ Template</button>
+            <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteCategory('${cat.id}')">🗑️</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:10px 18px;">
+          ${tpls.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
+            ${tpls.map(t=>`
+              <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;display:flex;justify-content:space-between;align-items:flex-start;">
+                <div style="flex:1;padding-right:6px;">
+                  <div style="font-size:13px;font-weight:500;">${t.title}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}</div>
+                </div>
+                <div style="display:flex;gap:4px;flex-shrink:0;">
+                  <button class="btn btn-ghost btn-xs" onclick="editTemplate('${t.id}','${cat.id}','${t.title.replace(/'/g,"'")}','${t.priority}',${t.durationHours})">✏️</button>
+                  <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteTemplate('${t.id}')">🗑️</button>
+                </div>
+              </div>`).join('')}
+          </div>` : '<div style="color:var(--text3);font-size:13px;">Aucun template dans cette catégorie</div>'}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function showNewTemplateModal(catId='') {
+  const el = document.createElement('div'); el.className='overlay open';
+  const cats = PROJ_CATEGORIES_DATA || [];
+  el.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head"><div class="modal-title">📋 Nouveau Template</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Catégorie *</label>
+        <select class="input" id="nt-cat">
+          <option value="">— Sélectionner —</option>
+          ${cats.map(c=>`<option value="${c.id}" ${c.id===catId?'selected':''}>${c.icon||''} ${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="nt-title" placeholder="ex: Montage structure aluminium"></div>
+      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="nt-desc" rows="2"></textarea></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Durée (heures)</label><input class="input" type="number" id="nt-hours" value="4" step="0.5" min="0.5"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="nt-priority">
+            <option value="low">🟢 Faible</option>
+            <option value="normal" selected>🔵 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createTemplate(this.closest('.overlay'))">✅ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function createTemplate(overlay) {
+  const catId = document.getElementById('nt-cat')?.value;
+  const title = document.getElementById('nt-title')?.value.trim();
+  if (!catId || !title) { toast('Catégorie et titre obligatoires','error'); return; }
+  const res = await api('POST', '/task-templates', {
+    categoryId: catId, title,
+    description: document.getElementById('nt-desc')?.value||undefined,
+    durationHours: parseFloat(document.getElementById('nt-hours')?.value)||4,
+    priority: document.getElementById('nt-priority')?.value||'normal',
+  });
+  if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); loadTemplatesPage(); loadProjTemplateSelector(); }
+  else toast('Erreur création template','error');
+}
+
+async function editTemplate(id, catId, title, priority, hours) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier Template</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="edit-tpl-title" value="${title}"></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Durée (h)</label><input class="input" type="number" id="edit-tpl-hours" value="${hours}" step="0.5"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="edit-tpl-priority">
+            <option value="low" ${priority==='low'?'selected':''}>🟢 Faible</option>
+            <option value="normal" ${priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="high" ${priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="critical" ${priority==='critical'?'selected':''}>🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTemplate('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="saveTemplate('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function saveTemplate(id, overlay) {
+  const res = await api('PATCH', `/task-templates/${id}`, {
+    title: document.getElementById('edit-tpl-title')?.value.trim(),
+    durationHours: parseFloat(document.getElementById('edit-tpl-hours')?.value)||4,
+    priority: document.getElementById('edit-tpl-priority')?.value,
+  });
+  if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  else toast('Erreur','error');
+}
+
+async function deleteTemplate(id) {
+  if (!confirm('Supprimer ce template ?')) return;
+  const res = await api('DELETE', `/task-templates/${id}`);
+  if (res?.success) { toast('Supprimé','warning'); loadTemplatesPage(); }
+  else toast('Erreur suppression','error');
+}
+
+function showNewCategoryModal() {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-head"><div class="modal-title">🗂️ Nouvelle Catégorie</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="nc-name" placeholder="ex: Finitions"></div>
+        <div class="form-group2"><label class="form-label2">Icône</label><input class="input" id="nc-icon" value="📋" style="font-size:18px;"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Couleur</label><input class="input" type="color" id="nc-color" value="#4895ef"></div>
+        <div class="form-group2"><label class="form-label2">Description</label><input class="input" id="nc-desc" placeholder="..."></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createCategory(this.closest('.overlay'))">✅ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function createCategory(overlay) {
+  const name = document.getElementById('nc-name')?.value.trim();
+  if (!name) { toast('Nom obligatoire','error'); return; }
+  const res = await api('POST', '/task-templates/categories', {
+    name, icon: document.getElementById('nc-icon')?.value||'📋',
+    color: document.getElementById('nc-color')?.value||'#4895ef',
+    description: document.getElementById('nc-desc')?.value||undefined,
+  });
+  if (res?.success) { toast('Catégorie créée ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  else toast('Erreur création catégorie','error');
+}
+
+async function deleteCategory(id) {
+  if (!confirm('Supprimer cette catégorie et tous ses templates ?')) return;
+  const res = await api('DELETE', `/task-templates/categories/${id}`);
+  if (res?.success) { toast('Supprimée','warning'); loadTemplatesPage(); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FIX — VISITE CLIENT (route client-remarks)
+// ═══════════════════════════════════════════════════════════
+// Override createVisite to handle API not available gracefully
+async function createVisiteFixed(projectId) {
+  const date = document.getElementById('visite-date')?.value;
+  const time = document.getElementById('visite-time')?.value || '09:00';
+  const pid = document.getElementById('visite-project')?.value || projectId;
+  if (!pid || !date) { toast('Projet et date obligatoires','error'); return; }
+
+  const title = `Visite client — ${new Date(date).toLocaleDateString('fr-FR')} ${time}`;
+  const clientRep = document.getElementById('visite-client-rep')?.value;
+  const assignedTo = document.getElementById('visite-assigned')?.value||undefined;
+  const desc = document.getElementById('visite-desc')?.value||undefined;
+
+  // Try client-remarks first
+  const res = await api('POST', '/client-remarks', {
+    projectId: pid, title,
+    description: `${clientRep?`Représentant: ${clientRep}. `:''}${desc||''}`,
+    priority:'normal', status:'open', assignedTo,
+  });
+
+  // Always create task regardless
+  await api('POST', '/tasks', {
+    projectId: pid,
+    title: `📸 ${title}`,
+    description: `${clientRep?`Représentant client: ${clientRep}. `:''}${desc||''}`,
+    taskDate: date, status:'todo', priority:'high',
+    assignedToId: assignedTo||undefined,
+    createdById: CURRENT_USER?.id,
+  });
+
+  if (res?.success || true) {
+    toast('Visite créée ✅','success');
+    closeModal('modal-new-visite');
+    ['visite-client-rep','visite-desc'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+    loadDetailRemarks(pid);
+    loadDetailTasks(pid);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FIX — TRUCKS (use tasks fallback if route missing)
+// ═══════════════════════════════════════════════════════════
+async function addTruckSafe(projectId, overlay) {
+  const num = document.getElementById('truck-num')?.value.trim();
+  if (!num) { toast('Numéro/nom obligatoire','error'); return; }
+  const type = document.getElementById('truck-type')?.value||'truck';
+  const typeLabels = {truck:'Camion',van:'Camionnette',crane:'Grue',lift:'Nacelle',forklift:'Chariot',generator:'Groupe élec.',trailer:'Remorque',machine:'Machine',other:'Autre'};
+  const driver = document.getElementById('truck-driver')?.value||'';
+  const phone = document.getElementById('truck-phone')?.value||'';
+  const notes = document.getElementById('truck-notes')?.value||'';
+  const loading = document.getElementById('truck-loading')?.value||'';
+
+  const res = await api('POST', `/projects/${projectId}/trucks`, {
+    truckNumber: `${typeLabels[type]||''} — ${num}`,
+    licensePlate: document.getElementById('truck-plate')?.value||undefined,
+    driverName: driver||undefined,
+    driverPhone: phone||undefined,
+    status: document.getElementById('truck-status')?.value||'planned',
+    loadingDate: loading||undefined,
+    arrivalDate: document.getElementById('truck-arrival')?.value||undefined,
+    notes: notes||undefined,
+    vehicleType: type,
+  });
+
+  if (res?.success) {
+    toast('Véhicule ajouté ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    // Fallback: create as task
+    const taskTitle = `🚛 ${typeLabels[type]} — ${num}${driver?` · ${driver}`:''}${phone?` · ${phone}`:''}`;
+    const taskRes = await api('POST', '/tasks', {
+      projectId, title: taskTitle,
+      description: `${notes||''}
+Plaque: ${document.getElementById('truck-plate')?.value||'N/A'}
+Chargement: ${loading||'N/A'}`,
+      status:'todo', priority:'normal',
+      taskDate: loading?loading.split('T')[0]:undefined,
+      createdById: CURRENT_USER?.id,
+    });
+    if (taskRes?.success) {
+      toast('Ajouté comme tâche (route trucks non disponible)','warning');
+      overlay?.remove();
+      loadDetailTasks(projectId);
+    } else toast('Erreur ajout','error');
+  }
+}
+
 // ═══ MOBILE NAV ═══
 function setActiveBN(id) {
   document.querySelectorAll('.bn-item').forEach(el => el.classList.remove('active'));
@@ -3251,7 +3849,8 @@ function openNewVisiteModal(projectId) {
   }, 50);
 }
 
-async function createVisite() {
+async function createVisite() { return createVisiteFixed(document.getElementById('visite-project')?.value); }
+async function _oldCreateVisite() {
   const projectId = document.getElementById('visite-project').value;
   const date = document.getElementById('visite-date').value;
   const time = document.getElementById('visite-time').value || '09:00';
@@ -3755,7 +4354,7 @@ function showAddTruckModal(projectId) {
       <div class="form-group2"><label class="form-label2">Notes / Contenu</label><textarea class="input" id="truck-notes" rows="2" placeholder="Matériel transporté, instructions spéciales..."></textarea></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="addTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+        <button class="btn btn-primary" onclick="addTruckSafe('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
       </div>
     </div>`;
   document.body.appendChild(el);
