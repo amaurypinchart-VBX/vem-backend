@@ -260,19 +260,83 @@ textarea.input{min-height:80px;resize:vertical;}
 .tabs::-webkit-scrollbar{display:none;}
 
 /* RESPONSIVE */
-@media(max-width:900px){
-  .nav{transform:translateX(-100%);}
-  .nav.open{transform:none;}
-  .main{margin-left:0;}
-  .menu-btn{display:flex;}
-  .stat-grid{grid-template-columns:1fr 1fr;}
-  .grid-2,.grid-2-1,.grid-3{grid-template-columns:1fr;}
-  .kanban{grid-template-columns:1fr 1fr;}
-  .input-row{grid-template-columns:1fr;}
+/* ══ DESKTOP ══ */
+@media(min-width:769px){
+  .bottom-nav,.fab,.fab-menu,.menu-btn{display:none!important;}
+  .nav-overlay{display:none!important;}
 }
-@media(max-width:540px){
-  .stat-grid,.kanban{grid-template-columns:1fr;}
-  .content{padding:14px;}
+
+/* ══ MOBILE ══ */
+@media(max-width:768px){
+  /* Sidebar masquée par défaut, slide depuis la gauche */
+  .nav{transform:translateX(-100%);transition:transform .3s;}
+  .nav.open{transform:none;z-index:400;}
+  .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:399;}
+  .nav-overlay.open{display:block;}
+
+  /* Main sans sidebar */
+  .main{margin-left:0!important;padding-bottom:72px;}
+  .content{padding:12px;}
+  .topbar{padding:0 12px;height:50px;}
+  .topbar-title{font-size:15px!important;}
+  .menu-btn{display:flex!important;}
+
+  /* Prevent iOS zoom on focus */
+  .input,.form-input,select.input,textarea.input{font-size:16px!important;}
+
+  /* Grids → single column */
+  .stat-grid{grid-template-columns:1fr 1fr!important;gap:8px;}
+  .grid-2,.grid-2-1,.grid-3,.input-row,.input-row-3{grid-template-columns:1fr!important;}
+  .kanban{grid-template-columns:1fr 1fr!important;gap:8px;}
+
+  /* Cards */
+  .card{border-radius:12px;margin-bottom:10px;}
+  .kcard{padding:12px;margin-bottom:8px;min-height:auto;}
+
+  /* Modals — bottom sheet */
+  .overlay{align-items:flex-end!important;}
+  .modal{
+    border-radius:20px 20px 0 0!important;
+    max-width:100%!important;
+    width:100%!important;
+    margin:0!important;
+    max-height:92vh;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom))!important;
+    animation:slideUp .25s ease!important;
+  }
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+
+  /* Tabs scroll horizontal */
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;white-space:nowrap;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{display:inline-block;}
+
+  /* Buttons touch-friendly */
+  .btn{min-height:40px;}
+  .btn-sm{min-height:36px;font-size:13px;}
+  .btn-xs{min-height:30px;font-size:11px;}
+
+  /* Stat cards bigger text */
+  .stat-val{font-size:26px!important;}
+
+  /* Hide non-essential desktop elements */
+  .pg-sub{font-size:12px;}
+  .pg-title{font-size:18px!important;}
+
+  /* Tables scrollable */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+  /* Kanban single col on very small */
+}
+@media(max-width:420px){
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .kanban{grid-template-columns:1fr!important;}
+  .content{padding:10px;}
+  .pg-head{flex-direction:column;gap:10px;}
+  .pg-actions{width:100%;justify-content:flex-end;}
+  .modal{padding:16px 12px calc(16px + env(safe-area-inset-bottom))!important;}
+  .bn-item{min-width:48px;padding:5px 4px;}
+  .bn-item .bn-icon{font-size:20px;}
 }
 </style>
 </head>
