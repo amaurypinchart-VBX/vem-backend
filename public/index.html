@@ -21,7 +21,7 @@
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;}
 
 /* LOGIN */
-.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;padding:20px;}
 .login-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 20% 50%,rgba(230,57,70,.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(72,149,239,.06) 0%,transparent 50%);}
 .login-card{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:48px;width:100%;max-width:420px;position:relative;z-index:1;box-shadow:0 32px 80px rgba(0,0,0,.6);}
 .login-logo{display:flex;align-items:center;gap:12px;margin-bottom:40px;justify-content:center;}
@@ -366,17 +366,8 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
       <button class="login-btn" id="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-error" id="login-error">Email ou mot de passe incorrect</div>
-      <div style="text-align:center;margin-top:16px;">
+      <div style="text-align:center;margin-top:18px;">
         <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showForgotPassword()" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">🔑 Mot de passe oublié ?</span>
-      </div>
-      <div style="text-align:center;margin-top:14px;">
-        <span style="font-size:13px;color:var(--text3);cursor:pointer;text-decoration:underline;" onclick="showForgotPassword()">Mot de passe oublié ?</span>
-      </div>
-      <div class="login-hint">
-        <strong>Comptes de test :</strong><br>
-        admin@vem.com / VEM2025!<br>
-        jeremy.berrutto@vem.com / VEM2025!<br>
-        norick.palm@vem.com / VEM2025!
       </div>
     </div>
   </div>
