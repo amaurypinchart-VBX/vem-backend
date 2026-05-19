@@ -358,14 +358,20 @@ textarea.input{min-height:80px;resize:vertical;}
       <div class="login-sub">Accédez à votre espace de gestion</div>
       <div class="form-group">
         <label class="form-label">Email</label>
-        <input class="form-input" id="login-email" type="email" placeholder="votre@email.com" value="admin@vem.com">
+        <input class="form-input" id="login-email" type="email" placeholder="votre@email.com" autocomplete="email">
       </div>
       <div class="form-group">
         <label class="form-label">Mot de passe</label>
-        <input class="form-input" id="login-pwd" type="password" placeholder="••••••••" value="VEM2025!">
+        <input class="form-input" id="login-pwd" type="password" placeholder="••••••••" >
       </div>
       <button class="login-btn" id="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-error" id="login-error">Email ou mot de passe incorrect</div>
+      <div style="text-align:center;margin-top:16px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showForgotPassword()" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">🔑 Mot de passe oublié ?</span>
+      </div>
+      <div style="text-align:center;margin-top:14px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;text-decoration:underline;" onclick="showForgotPassword()">Mot de passe oublié ?</span>
+      </div>
       <div class="login-hint">
         <strong>Comptes de test :</strong><br>
         admin@vem.com / VEM2025!<br>
@@ -4050,6 +4056,65 @@ document.addEventListener('touchmove', e => {
 function renderDashboardMobile() {
   // Update bottom nav badges
   updateMobileBadges();
+}
+
+// ═══ FORGOT PASSWORD ═══
+function showForgotPassword() {
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:32px;width:90%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px;">🔑 Réinitialiser le mot de passe</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:24px;">Entrez votre email — vous recevrez un lien de réinitialisation.</div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="forgot-email" placeholder="votre@email.com" autocomplete="email">
+      </div>
+      <div id="forgot-msg" style="display:none;margin-top:12px;padding:10px 14px;border-radius:var(--radius);font-size:13px;"></div>
+      <button class="login-btn" id="forgot-btn" onclick="sendForgotPassword()" style="margin-top:16px;">📤 Envoyer le lien</button>
+      <div style="text-align:center;margin-top:14px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="this.closest('.overlay').remove()" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">← Retour à la connexion</span>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  setTimeout(() => document.getElementById('forgot-email')?.focus(), 100);
+}
+
+async function sendForgotPassword() {
+  const email = document.getElementById('forgot-email')?.value.trim();
+  const msg   = document.getElementById('forgot-msg');
+  const btn   = document.getElementById('forgot-btn');
+  if (!email) { 
+    if(msg){ msg.style.display='block'; msg.style.background='rgba(230,57,70,.1)'; msg.style.color='var(--accent)'; msg.textContent='Entrez votre email.'; }
+    return; 
+  }
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="loader"></span> Envoi...'; }
+  try {
+    const res = await fetch(`${window.location.origin}/api/v1/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if(msg){ 
+      msg.style.display='block'; 
+      if(res.ok || res.status===200) {
+        msg.style.background='rgba(45,198,83,.1)'; 
+        msg.style.color='var(--green)'; 
+        msg.textContent='✅ Si cet email existe, vous recevrez un lien de réinitialisation dans quelques minutes.';
+        if(btn){ btn.disabled=true; btn.innerHTML='✅ Email envoyé'; }
+      } else {
+        msg.style.background='rgba(230,57,70,.1)'; 
+        msg.style.color='var(--accent)'; 
+        msg.textContent='Erreur — vérifiez votre email ou contactez un administrateur.';
+        if(btn){ btn.disabled=false; btn.innerHTML='📤 Renvoyer'; }
+      }
+    }
+  } catch {
+    if(msg){ msg.style.display='block'; msg.style.background='rgba(244,162,97,.1)'; msg.style.color='var(--amber)'; msg.textContent='Erreur réseau — réessayez.'; }
+    if(btn){ btn.disabled=false; btn.innerHTML='📤 Envoyer le lien'; }
+  }
 }
 
 // ═══ INIT ═══
