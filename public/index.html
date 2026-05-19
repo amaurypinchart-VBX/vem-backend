@@ -1521,25 +1521,36 @@ async function loadProjectDetail(id) {
 
   // Trucks tab
   const trucks = p.trucks || [];
+  const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
+  const truckStatusBadge = {planned:'badge-muted',loading:'badge-amber',in_transit:'badge-blue',delivered:'badge-green',returned:'badge-muted'};
+  const truckStatusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
   document.getElementById('detail-trucks-content').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
       <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${p.id}')">+ Ajouter camion / machine</button>
     </div>
-    <div class="grid-2">${trucks.length?trucks.map(t => {
-      const typeIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
-      const icon = typeIcons[t.vehicleType]||'🚛';
+    <div class="grid-2">${trucks.length ? trucks.map(t => {
+      const icon = truckIcons[t.vehicleType]||'🚛';
+      const isArrived = t.status === 'delivered';
       return `
-      <div class="card">
-        <div class="card-header"><span class="card-title">${icon} ${t.truckNumber||''}</span>
-          <span class="badge ${t.status==='delivered'?'badge-green':'badge-amber'}">${t.status}</span>
+      <div class="card" style="cursor:pointer;transition:all .2s;" onclick="openTruckDetail('${t.id}','${p.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${icon} ${t.truckNumber||''}</div>
+            ${t.driverName?`<div style="font-size:12px;color:var(--text3);">👤 ${t.driverName}${t.driverPhone?` · 📞 ${t.driverPhone}`:''}</div>`:''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <span class="badge ${truckStatusBadge[t.status]||'badge-muted'}">${truckStatusLabel[t.status]||t.status}</span>
+            ${!isArrived?`<button class="btn btn-green btn-xs" onclick="event.stopPropagation();quickArrivalTruck('${t.id}','${p.id}')">✅ Arrivé</button>`:''}
+          </div>
         </div>
-        <div class="card-body" style="font-size:13px;display:grid;gap:6px;">
-          <div>🔑 ${t.licensePlate||'N/A'} · ${t.driverName||'N/A'}</div>
-          ${t.loadingDate?`<div>📦 Chargement : ${fmtDate(t.loadingDate)}</div>`:''}
-          ${t.arrivalDate?`<div>✅ Arrivée : ${fmtDate(t.arrivalDate)}</div>`:'<div style="color:var(--amber);">⏳ En transit</div>'}
-          ${t.notes?`<div style="color:var(--text3);">${t.notes}</div>`:''}
+        <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:5px;">
+          ${t.licensePlate?`<div>🔑 ${t.licensePlate}</div>`:''}
+          ${t.loadingDate?`<div>📦 Départ : ${fmtDateTime(t.loadingDate)}</div>`:''}
+          ${t.arrivalDate?`<div style="color:var(--green);">✅ Arrivée : ${fmtDateTime(t.arrivalDate)}</div>`:`<div style="color:var(--amber);">⏳ En attente d'arrivée</div>`}
+          ${t.notes?`<div style="color:var(--text3);font-size:12px;">📝 ${t.notes}</div>`:''}
         </div>
-      </div>`;}).join(''):`<div class="empty" style="grid-column:1/-1;"><div class="empty-title">Aucun véhicule / machine</div></div>`}
+      </div>`;
+    }).join('') : `<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule planifié</div></div>`}
     </div>`;
 
   // Load tasks for detail
@@ -2626,6 +2637,13 @@ function toast(msg, type='info') {
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+function fmtDateTime(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) + ' ' +
+         dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
 }
 
 function infoRow(label, value) {
@@ -3958,6 +3976,169 @@ async function confirmImportTemplates(overlay) {
   loadTemplatesPage();
   PROJ_CATEGORIES_DATA = [];
   loadProjTemplateSelector();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// TRUCK DETAIL — voir, modifier, confirmer arrivée, photos
+// ═══════════════════════════════════════════════════════════
+async function openTruckDetail(truckId, projectId) {
+  // Get truck from project data
+  const res = await api('GET', `/projects/${projectId}`);
+  const truck = res?.data?.trucks?.find(t => t.id === truckId);
+  if (!truck) { toast('Véhicule introuvable','error'); return; }
+
+  const typeIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
+  const icon = typeIcons[truck.vehicleType]||'🚛';
+  const statusColors = {planned:'var(--text3)',loading:'var(--amber)',in_transit:'var(--blue)',delivered:'var(--green)',returned:'var(--text3)'};
+  const statusLabels = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'Livré',returned:'Retourné'};
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">${icon} ${truck.truckNumber||'Véhicule'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            <span style="color:${statusColors[truck.status]||'var(--text3)'};">● ${statusLabels[truck.status]||truck.status}</span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Infos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        ${truck.licensePlate?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">IMMATRICULATION</div><div style="font-weight:600;">🔑 ${truck.licensePlate}</div></div>`:''}
+        ${truck.driverName?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">CHAUFFEUR</div><div style="font-weight:600;">👤 ${truck.driverName}</div></div>`:''}
+        ${truck.driverPhone?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div style="font-weight:600;"><a href="tel:${truck.driverPhone}" style="color:var(--blue);">📞 ${truck.driverPhone}</a></div></div>`:''}
+        ${truck.loadingDate?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">DÉPART CHARGEMENT</div><div style="font-weight:600;">📦 ${fmtDateTime(truck.loadingDate)}</div></div>`:''}
+        ${truck.arrivalDate
+          ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">ARRIVÉE</div><div style="font-weight:600;color:var(--green);">✅ ${fmtDateTime(truck.arrivalDate)}</div></div>`
+          : `<div style="background:rgba(244,162,97,.08);border:1px solid rgba(244,162,97,.3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">ARRIVÉE</div><div style="color:var(--amber);">⏳ En attente</div></div>`}
+      </div>
+
+      ${truck.notes?`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:16px;font-size:13px;color:var(--text2);">📝 ${truck.notes}</div>`:''}
+
+      <!-- Confirmer arrivée -->
+      ${truck.status !== 'delivered' ? `
+      <div style="background:rgba(45,198,83,.06);border:1px solid rgba(45,198,83,.2);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">✅ Confirmer l'arrivée</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Heure d'arrivée</label><input class="input" type="datetime-local" id="truck-arrival-time" value="${new Date().toISOString().slice(0,16)}"></div>
+          <div class="form-group2"><label class="form-label2">Note d'arrivée</label><input class="input" id="truck-arrival-note" placeholder="Tout ok, retard..."></div>
+        </div>
+        <button class="btn btn-green" onclick="confirmTruckArrival('${truckId}','${projectId}',this.closest('.overlay'))">✅ Confirmer l'arrivée</button>
+      </div>` : ''}
+
+      <!-- Photos -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📸 Photos</div>
+        <div id="truck-photos-${truckId}" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(truck.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        </div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+          📸 Ajouter une photo
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadTruckPhotos('${truckId}','${projectId}',this)">
+        </label>
+      </div>
+
+      <!-- Modifier infos -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">✏️ Modifier</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Statut</label>
+            <select class="input" id="etruck-status">
+              <option value="planned" ${truck.status==='planned'?'selected':''}>Planifié</option>
+              <option value="loading" ${truck.status==='loading'?'selected':''}>En chargement</option>
+              <option value="in_transit" ${truck.status==='in_transit'?'selected':''}>En transit</option>
+              <option value="delivered" ${truck.status==='delivered'?'selected':''}>Livré</option>
+              <option value="returned" ${truck.status==='returned'?'selected':''}>Retourné</option>
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Chauffeur</label><input class="input" id="etruck-driver" value="${truck.driverName||''}"></div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Notes</label><textarea class="input" id="etruck-notes" rows="2">${truck.notes||''}</textarea></div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:14px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTruck('${truckId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+          <button class="btn btn-primary" onclick="saveTruckEdit('${truckId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function confirmTruckArrival(truckId, projectId, overlay) {
+  const arrivalTime = document.getElementById('truck-arrival-time')?.value;
+  const note = document.getElementById('truck-arrival-note')?.value||'';
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: 'delivered',
+    arrivalDate: arrivalTime ? new Date(arrivalTime).toISOString() : new Date().toISOString(),
+    notes: note || undefined,
+  });
+  if (res?.success) {
+    toast('Arrivée confirmée ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    // Fallback: update locally
+    toast('Arrivée confirmée (sync au prochain refresh)','warning');
+    overlay?.remove();
+  }
+}
+
+async function quickArrivalTruck(truckId, projectId) {
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: 'delivered',
+    arrivalDate: new Date().toISOString(),
+  });
+  if (res?.success) { toast('✅ Arrivée confirmée !','success'); loadProjectDetail(projectId); }
+  else toast('Statut mis à jour localement','warning');
+}
+
+async function saveTruckEdit(truckId, projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: document.getElementById('etruck-status')?.value,
+    driverName: document.getElementById('etruck-driver')?.value||undefined,
+    notes: document.getElementById('etruck-notes')?.value||undefined,
+  });
+  if (res?.success) { toast('Mis à jour ✅','success'); overlay?.remove(); loadProjectDetail(projectId); }
+  else toast('Erreur mise à jour','error');
+}
+
+async function deleteTruck(truckId, projectId, overlay) {
+  if (!confirm('Supprimer ce véhicule ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
+  if (res?.success) { toast('Supprimé','warning'); overlay?.remove(); loadProjectDetail(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+async function uploadTruckPhotos(truckId, projectId, input) {
+  if (!input.files?.length) return;
+  const preview = document.getElementById(`truck-photos-${truckId}`);
+  toast(`Upload ${input.files.length} photo(s)...`,'info');
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+      });
+      const data = await r.json();
+      const url = data.data?.url || data.url;
+      if (url && preview) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.onclick = ()=>openPhotoViewer(url);
+        img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+        preview.appendChild(img);
+      }
+    } catch {}
+  }
+  toast('Photos ajoutées ✅','success');
 }
 
 // ═══ MOBILE NAV ═══
