@@ -545,3 +545,33 @@ model Notification {
 
   @@map("notifications")
 }
+
+model TaskCategory {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  color       String         @default("#4895ef")
+  icon        String         @default("📋")
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  templates   TaskTemplate[]
+
+  @@map("task_categories")
+}
+
+model TaskTemplate {
+  id            String       @id @default(cuid())
+  categoryId    String
+  category      TaskCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  durationHours Float        @default(4)
+  priority      String       @default("normal")
+  sortOrder     Int          @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("task_templates")
+}
