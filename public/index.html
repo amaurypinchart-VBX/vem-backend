@@ -1459,7 +1459,20 @@ async function loadProjectDetail(id) {
   loadDetailTasks(id);
 }
 
-// loadDetailTasks — see full version below
+// ── taskCardHTML helper (used by global tasks view) ──
+function taskCardHTML(t) {
+  const cls = {todo:'todo',in_progress:'inprog',done:'done',blocked:'blocked'}[t.status]||'';
+  const prio = {critical:'badge-red',high:'badge-amber',normal:'badge-muted',low:'badge-muted'}[t.priority]||'badge-muted';
+  return `<div class="kcard ${cls}" onclick="openTaskModal('${t.id}','${t.projectId||''}')">
+    <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
+    ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
+    ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:2px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+    <div style="display:flex;gap:4px;margin-top:8px;align-items:center;">
+      <span class="badge ${prio}" style="font-size:10px;">${t.priority}</span>
+      ${t.status!=='done'?`<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();updateTaskStatus('${t.id}','done')">✓</button>`:''}
+    </div>
+  </div>`;
+}
 
 // ═══ TASKS ═══
 async function loadTasks() {
@@ -3397,6 +3410,302 @@ Chargement: ${loading||'N/A'}`,
       loadDetailTasks(projectId);
     } else toast('Erreur ajout','error');
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// HANDOVER FULL VIEW
+// ═══════════════════════════════════════════════════════════
+async function openHandoverFull(id) {
+  const res = await api('GET', `/handover/${id}`);
+  if (!res?.success) { toast('Handover introuvable','error'); return; }
+  const h = res.data;
+  const items = h.items || [];
+  const sc = {ok:'var(--green)',remark:'var(--amber)',defect:'var(--accent)',pending:'var(--text3)'};
+  const si = {ok:'✅',remark:'⚠️',defect:'❌',pending:'⏳'};
+  const sl = {ok:'OK',remark:'Remarque',defect:'Défaut',pending:'En attente'};
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:800px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">🧾 ${h.project?.name||'Handover'}</div>
+          <div style="font-size:12px;color:var(--text2);">${h.clientName||''} · ${fmtDate(h.createdAt)} · ${h.siteManager?h.siteManager.firstName+' '+h.siteManager.lastName:''}</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Stats -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <span class="badge badge-green">✅ ${items.filter(i=>i.status==='ok').length} OK</span>
+        <span class="badge badge-amber">⚠️ ${items.filter(i=>i.status==='remark').length} Remarques</span>
+        <span class="badge badge-red">❌ ${items.filter(i=>i.status==='defect').length} Défauts</span>
+        <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}" style="margin-left:auto;">${h.status==='signed'?'✅ Signé':'En attente de signature'}</span>
+      </div>
+
+      <!-- Zones -->
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">🔍 Zones inspectées</div>
+        ${items.map(item=>`
+          <div style="border:1px solid var(--border);border-left:4px solid ${sc[item.status]||'var(--text3)'};border-radius:var(--radius);padding:12px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+              <div style="flex:1;">
+                <strong style="font-size:14px;">${item.zoneName}</strong>
+                ${item.comment?`<div style="font-size:12px;color:var(--text2);margin-top:3px;">💬 ${item.comment}</div>`:''}
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span style="font-size:13px;">${si[item.status]||''}</span>
+                <select class="input" style="width:120px;padding:4px 8px;font-size:11px;" onchange="updateZoneStatus('${h.id}','${item.id}',this.value)">
+                  <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
+                  <option value="remark" ${item.status==='remark'?'selected':''}>⚠️ Remarque</option>
+                  <option value="defect" ${item.status==='defect'?'selected':''}>❌ Défaut</option>
+                  <option value="pending" ${item.status==='pending'?'selected':''}>⏳ En attente</option>
+                </select>
+              </div>
+            </div>
+            <!-- Zone photos -->
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;" id="zone-ph-${item.id}">
+              ${(item.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+              <label style="width:64px;height:64px;border:2px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:18px;" title="Ajouter photo">
+                📸
+                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,document.getElementById('zone-ph-${item.id}'))">
+              </label>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Notes -->
+      ${h.generalNotes?`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text2);margin-bottom:16px;">📝 ${h.generalNotes}</div>`:''}
+
+      <!-- Signatures -->
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">✍️ Signatures</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Site Manager — ${h.siteManager?h.siteManager.firstName+' '+h.siteManager.lastName:'N/A'}</div>
+            ${h.managerSignedAt
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);font-size:13px;">✅ Signé le ${fmtDate(h.managerSignedAt)}</div>`
+              : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
+                  <canvas id="sig-mgr-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;"></canvas>
+                  <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                    <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-mgr-${h.id}')">Effacer</button>
+                    <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','manager','sig-mgr-${h.id}',this.closest('.overlay'))">✅ Valider</button>
+                  </div>
+                </div>`}
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Client — ${h.clientName||'N/A'}</div>
+            ${h.clientSignedAt
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);font-size:13px;">✅ Signé le ${fmtDate(h.clientSignedAt)}</div>`
+              : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
+                  <canvas id="sig-cli-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;"></canvas>
+                  <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                    <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-cli-${h.id}')">Effacer</button>
+                    <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','client','sig-cli-${h.id}',this.closest('.overlay'))">✅ Valider</button>
+                  </div>
+                </div>`}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPDF('${h.id}')">📄 PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
+}
+
+async function updateZoneStatus(handoverId, itemId, status) {
+  await api('PATCH', `/handover/${handoverId}/items/${itemId}`, { status });
+  toast('Zone mise à jour ✅','success');
+}
+
+async function uploadHandoverZonePhoto(handoverId, itemId, input, previewEl) {
+  if (!input.files?.length) return;
+  toast('Upload photo...','info');
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('handoverId', handoverId);
+  fd.append('itemId', itemId);
+  try {
+    const r = await fetch(`${API}/upload/photo`, {
+      method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+    });
+    const data = await r.json();
+    if (data.success) {
+      const img = document.createElement('img');
+      img.src = data.data?.url || data.url;
+      img.onclick = ()=>openPhotoViewer(img.src);
+      img.style.cssText='width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
+      previewEl.insertBefore(img, previewEl.querySelector('label'));
+      toast('Photo ajoutée ✅','success');
+    } else toast('Erreur upload','error');
+  } catch { toast('Erreur upload','error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// TASK MODAL — with comments, progress, photos
+// ═══════════════════════════════════════════════════════════
+async function openTaskModal(taskId, projectId) {
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  const task = res?.data?.find(t => t.id === taskId);
+  if (!task) { toast('Tâche introuvable','error'); return; }
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">✅ ${task.title}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            ${task.taskDate?`📅 ${fmtDate(task.taskDate)}`:''}
+            ${task.assignedTo?` · 👤 ${task.assignedTo.firstName} ${task.assignedTo.lastName}`:''}
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px;">
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-edit')">✏️ Modifier</div>
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-progress')">📊 Avancement</div>
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-photos')">📸 Photos</div>
+      </div>
+
+      <!-- Tab: Edit -->
+      <div id="tt-edit">
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Statut</label>
+            <select class="input" id="et-status">
+              <option value="todo" ${task.status==='todo'?'selected':''}>📋 À faire</option>
+              <option value="in_progress" ${task.status==='in_progress'?'selected':''}>⚡ En cours</option>
+              <option value="done" ${task.status==='done'?'selected':''}>✅ Terminé</option>
+              <option value="blocked" ${task.status==='blocked'?'selected':''}>🔴 Bloqué</option>
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Priorité</label>
+            <select class="input" id="et-priority">
+              <option value="low" ${task.priority==='low'?'selected':''}>🟢 Faible</option>
+              <option value="normal" ${task.priority==='normal'?'selected':''}>🔵 Normal</option>
+              <option value="high" ${task.priority==='high'?'selected':''}>🟠 Élevé</option>
+              <option value="critical" ${task.priority==='critical'?'selected':''}>🔴 Critique</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="et-date" value="${task.taskDate?.split('T')[0]||''}"></div>
+          <div class="form-group2"><label class="form-label2">Assigné à</label>
+            <select class="input" id="et-assign">
+              <option value="">— Non assigné —</option>
+              ${USERS.map(u=>`<option value="${u.id}" ${task.assignedToId===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="et-desc" rows="3">${task.description||''}</textarea></div>
+      </div>
+
+      <!-- Tab: Avancement -->
+      <div id="tt-progress" style="display:none;">
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">Ajouter un point d'avancement</div>
+          <div style="display:flex;gap:8px;">
+            <textarea class="input" id="new-comment-text" rows="2" placeholder="Ex: Montage terminé niveau 1, problème avec les joints..."></textarea>
+            <button class="btn btn-primary btn-sm" style="align-self:flex-end;flex-shrink:0;" onclick="addTaskComment('${taskId}','${projectId}')">+ Ajouter</button>
+          </div>
+        </div>
+        <div id="task-comments-list" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:16px;">Cliquez + Ajouter pour documenter l'avancement</div>
+        </div>
+      </div>
+
+      <!-- Tab: Photos -->
+      <div id="tt-photos" style="display:none;">
+        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;margin-bottom:12px;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📸 Ajouter photos / fichiers
+          <input type="file" accept="image/*,application/pdf" multiple capture="environment" style="display:none;" onchange="uploadTaskPhotos('${taskId}','${projectId}',this)">
+        </label>
+        <div id="task-photos-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          <div style="grid-column:1/-1;color:var(--text3);font-size:13px;text-align:center;padding:20px;">Cliquez pour ajouter des photos</div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:16px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTask('${taskId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+          <button class="btn btn-primary" onclick="saveTaskEdit('${taskId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+function switchTaskTab(el, tabId) {
+  ['tt-edit','tt-progress','tt-photos'].forEach(id=>{
+    const t=document.getElementById(id); if(t) t.style.display='none';
+  });
+  const tab=document.getElementById(tabId); if(tab) tab.style.display='block';
+  el.closest('[style*="border-bottom"]').querySelectorAll('div').forEach(d=>{
+    d.style.color='var(--text2)'; d.style.borderBottomColor='transparent';
+  });
+  el.style.color='var(--accent)'; el.style.borderBottomColor='var(--accent)';
+}
+
+async function addTaskComment(taskId, projectId) {
+  const text = document.getElementById('new-comment-text')?.value.trim();
+  if (!text) { toast('Écris un commentaire','error'); return; }
+  const res = await api('POST', `/tasks/${taskId}/comments`, { content: text });
+  if (res?.success) {
+    document.getElementById('new-comment-text').value = '';
+    const list = document.getElementById('task-comments-list');
+    const div = document.createElement('div');
+    div.style.cssText='background:var(--bg3);border-radius:var(--radius);padding:10px;border-left:3px solid var(--green);';
+    div.innerHTML=`<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">${CURRENT_USER?.firstName||''} · maintenant</div><div style="font-size:13px;color:var(--text);">${text}</div>`;
+    if (list.querySelector('[style*="Aucun"]')) list.innerHTML='';
+    list.appendChild(div);
+    toast('Ajouté ✅','success');
+  } else {
+    // Fallback: show locally
+    const list = document.getElementById('task-comments-list');
+    const div = document.createElement('div');
+    div.style.cssText='background:var(--bg3);border-radius:var(--radius);padding:10px;border-left:3px solid var(--green);';
+    div.innerHTML=`<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">${CURRENT_USER?.firstName||''} · maintenant</div><div style="font-size:13px;color:var(--text);">${text}</div>`;
+    if (list.querySelector('[style*="Aucun"]')) list.innerHTML='';
+    list.appendChild(div);
+    document.getElementById('new-comment-text').value='';
+    toast('Commentaire ajouté (local)','warning');
+  }
+}
+
+async function uploadTaskPhotos(taskId, projectId, input) {
+  if (!input.files?.length) return;
+  toast(`Upload ${input.files.length} fichier(s)...`,'info');
+  const grid = document.getElementById('task-photos-grid');
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+      });
+      const data = await r.json();
+      if (data.success) {
+        const url = data.data?.url || data.url;
+        const img = document.createElement('img');
+        img.src = url;
+        img.onclick = ()=>openPhotoViewer(url);
+        img.style.cssText='width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+        if (grid.querySelector('[style*="Aucune"]')) grid.innerHTML='';
+        grid.appendChild(img);
+      }
+    } catch {}
+  }
+  toast('Photos ajoutées ✅','success');
 }
 
 // ═══ MOBILE NAV ═══
