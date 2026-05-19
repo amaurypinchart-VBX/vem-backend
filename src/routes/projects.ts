@@ -134,4 +134,34 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
     res.status(201).json({ success: true, data: truck });
   } catch (err) { next(err); }
 });
+
+// POST /projects/:id/trucks
+router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const truck = await prisma.truck.create({
+      data: {
+        projectId: req.params.id,
+        truckNumber: req.body.truckNumber,
+        licensePlate: req.body.licensePlate || null,
+        driverName: req.body.driverName || null,
+        status: req.body.status || 'planned',
+        loadingDate: req.body.loadingDate ? new Date(req.body.loadingDate) : null,
+        arrivalDate: req.body.arrivalDate ? new Date(req.body.arrivalDate) : null,
+        notes: req.body.notes || null,
+      },
+    });
+    res.status(201).json({ success: true, data: truck });
+  } catch (err) { next(err); }
+});
+
+// GET /projects/:id/trucks  
+router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const trucks = await prisma.truck.findMany({
+      where: { projectId: req.params.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, data: trucks });
+  } catch (err) { next(err); }
+});
 export default router;
