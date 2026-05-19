@@ -621,6 +621,32 @@ textarea.input{min-height:80px;resize:vertical;}
 </div>
 
 <!-- EQUIPE -->
+<!-- TEMPLATES -->
+<div class="pg" id="pg-templates">
+  <div class="pg-head">
+    <div><div class="pg-title">📋 Templates de Tâches</div><div class="pg-sub">Bibliothèque de tâches réutilisables par catégorie</div></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showNewCategoryModal()">+ Catégorie</button>
+      <button class="btn btn-ghost btn-sm" onclick="showImportTemplatesModal()">📥 Import Excel</button>
+      <button class="btn btn-primary" onclick="showNewTemplateModal()">+ Template</button>
+    </div>
+  </div>
+  <div id="templates-content">
+    <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Chargement...</div></div>
+  </div>
+</div>
+
+<!-- CLIENTS -->
+<div class="pg" id="pg-clients">
+  <div class="pg-head">
+    <div><div class="pg-title">🏢 Clients</div><div class="pg-sub">Sociétés et contacts</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-new-client')">+ Nouveau Client</button>
+  </div>
+  <div id="clients-grid" class="grid-3">
+    <div class="empty"><div class="empty-icon">🏢</div><div class="empty-title">Chargement...</div></div>
+  </div>
+</div>
+
 <div class="pg" id="pg-team">
   <div class="pg-head">
     <div><div class="pg-title">Équipe</div><div class="pg-sub">Membres actifs</div></div>
@@ -3706,6 +3732,166 @@ async function uploadTaskPhotos(taskId, projectId, input) {
     } catch {}
   }
   toast('Photos ajoutées ✅','success');
+}
+
+
+// ═══ IMPORT TEMPLATES DEPUIS EXCEL / CSV ═══
+function showImportTemplatesModal() {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:660px;">
+      <div class="modal-head">
+        <div><div class="modal-title">📥 Import Templates depuis Excel/CSV</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Importe une liste de tâches depuis un fichier Excel ou CSV</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px;color:var(--text2);">
+        💡 Format attendu : <strong>Colonne A = Catégorie</strong>, <strong>Colonne B = Titre de la tâche</strong>, Colonne C = Durée (h), Colonne D = Priorité (low/normal/high/critical)<br>
+        <span style="font-size:11px;opacity:.8;">Exemple : "Installation | Montage structure aluminium | 6 | high"</span>
+      </div>
+
+      <!-- Option 1: Upload fichier -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Option 1 — Importer un fichier</div>
+        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📁 Cliquez pour sélectionner un fichier Excel (.xlsx) ou CSV
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="parseTemplateFile(this)">
+        </label>
+      </div>
+
+      <!-- Option 2: Coller du texte -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Option 2 — Coller le contenu CSV</div>
+        <textarea class="input" id="import-csv-text" rows="8" placeholder="Catégorie;Titre;Durée(h);Priorité&#10;Installation;Montage structure aluminium;6;high&#10;Installation;Pose panneaux façade;4;normal&#10;Électricité;Câblage alimentation;3;high&#10;..."></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="previewImportedTemplates()">👁️ Prévisualiser</button>
+          <button class="btn btn-blue" onclick="importTemplatesFromText()">📥 Importer</button>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div id="import-preview" style="display:none;margin-top:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;" id="import-preview-title"></div>
+        <div id="import-preview-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;font-size:12px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" id="import-confirm-btn" onclick="confirmImportTemplates(this.closest('.overlay'))">✅ Confirmer l'import</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+let IMPORT_TEMPLATES_DATA = [];
+
+function parseTemplateFile(input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    // Simple CSV parse
+    const lines = text.split(/\r?\n/).filter(l=>l.trim());
+    const data = lines.map(line => {
+      const parts = line.split(/[;,\t]/);
+      return {
+        category: (parts[0]||'').trim(),
+        title: (parts[1]||'').trim(),
+        hours: parseFloat(parts[2])||4,
+        priority: (parts[3]||'normal').trim().toLowerCase(),
+      };
+    }).filter(d=>d.category&&d.title);
+    document.getElementById('import-csv-text').value = lines.join('\n');
+    IMPORT_TEMPLATES_DATA = data;
+    showImportPreview(data);
+  };
+  reader.readAsText(file);
+}
+
+function previewImportedTemplates() {
+  const text = document.getElementById('import-csv-text')?.value.trim();
+  if (!text) { toast('Colle du contenu CSV','error'); return; }
+  const lines = text.split(/\n/).filter(l=>l.trim());
+  const data = lines.map(line => {
+    const parts = line.split(/[;,\t]/);
+    return {
+      category: (parts[0]||'').trim().replace(/^["']|["']$/g,''),
+      title: (parts[1]||'').trim().replace(/^["']|["']$/g,''),
+      hours: parseFloat(parts[2])||4,
+      priority: (parts[3]||'normal').trim().toLowerCase().replace(/^["']|["']$/g,''),
+    };
+  }).filter(d=>d.category&&d.title);
+  IMPORT_TEMPLATES_DATA = data;
+  showImportPreview(data);
+}
+
+function showImportPreview(data) {
+  const preview = document.getElementById('import-preview');
+  const title = document.getElementById('import-preview-title');
+  const list = document.getElementById('import-preview-list');
+  if (!preview||!title||!list) return;
+  
+  const cats = [...new Set(data.map(d=>d.category))];
+  title.textContent = `${data.length} tâche(s) dans ${cats.length} catégorie(s)`;
+  
+  list.innerHTML = cats.map(cat => {
+    const items = data.filter(d=>d.category===cat);
+    return `<div style="margin-bottom:8px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:4px;">📁 ${cat} (${items.length})</div>
+      ${items.map(t=>`<div style="padding:3px 8px;color:var(--text2);">• ${t.title} <span style="color:var(--text3);">(${t.hours}h · ${t.priority})</span></div>`).join('')}
+    </div>`;
+  }).join('');
+  preview.style.display='block';
+}
+
+async function importTemplatesFromText() {
+  previewImportedTemplates();
+}
+
+async function confirmImportTemplates(overlay) {
+  if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
+  const btn = document.getElementById('import-confirm-btn');
+  if (btn) btn.disabled=true;
+  
+  toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
+  
+  // Get or create categories
+  const catRes = await api('GET', '/task-templates/categories');
+  const existingCats = catRes?.data||[];
+  const catMap = {};
+  existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
+  
+  // Create missing categories
+  const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
+  for (const catName of newCats) {
+    if (!catMap[catName.toLowerCase()]) {
+      const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
+      if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
+    }
+  }
+  
+  // Create templates
+  let created = 0;
+  for (const tpl of IMPORT_TEMPLATES_DATA) {
+    const catId = catMap[tpl.category.toLowerCase()];
+    if (!catId) continue;
+    const r = await api('POST', '/task-templates', {
+      categoryId: catId,
+      title: tpl.title,
+      durationHours: tpl.hours,
+      priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
+    });
+    if (r?.success) created++;
+  }
+  
+  toast(`${created} template(s) importé(s) ✅`,'success');
+  IMPORT_TEMPLATES_DATA = [];
+  overlay?.remove();
+  loadTemplatesPage();
+  PROJ_CATEGORIES_DATA = [];
+  loadProjTemplateSelector();
 }
 
 // ═══ MOBILE NAV ═══
