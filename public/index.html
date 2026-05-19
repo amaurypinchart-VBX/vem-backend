@@ -2035,16 +2035,18 @@ async function createProject() {
       await Promise.all(selectedTpls.map(tplId => {
         const tpl = PROJ_TEMPLATES_FLAT.find(t => t.id === tplId);
         if (!tpl) return Promise.resolve();
-        return api('POST', '/tasks', {
+        const tplBody = {
           projectId,
           title: tpl.title,
-          description: tpl.description || undefined,
           status: 'todo',
           priority: tpl.priority || 'normal',
-          estimatedHours: tpl.durationHours || undefined,
-          taskDate: document.getElementById('proj-start').value || undefined,
           createdById: CURRENT_USER?.id,
-        });
+        };
+        if (tpl.description) tplBody.description = tpl.description;
+        if (tpl.durationHours) tplBody.estimatedHours = tpl.durationHours;
+        const startVal = document.getElementById('proj-start')?.value;
+        if (startVal) tplBody.taskDate = startVal;
+        return api('POST', '/tasks', tplBody);
       }));
       toast(`Projet créé ✅ · ${selectedTpls.length} tâche(s) ajoutée(s)`, 'success');
     } else {
@@ -3211,13 +3213,15 @@ async function createTasksFromMeeting(tasks, projectId, overlay, count) {
     const priority = document.getElementById(`mt-priority-${i}`)?.value || t.priority || 'normal';
     const assignedToId = document.getElementById(`mt-assign-${i}`)?.value || null;
     const taskDate = document.getElementById(`mt-date-${i}`)?.value || undefined;
-    return api('POST', '/tasks', {
+    const taskBody = {
       projectId, title, priority,
-      assignedToId: assignedToId||undefined,
-      taskDate, status:'todo',
+      status:'todo',
       description: t.description||undefined,
       createdById: CURRENT_USER?.id,
-    });
+    };
+    if (assignedToId) taskBody.assignedToId = assignedToId;
+    if (taskDate) taskBody.taskDate = taskDate;
+    return api('POST', '/tasks', taskBody);
   }));
   const created = results.filter(r=>r?.success).length;
   toast(`${created} tâche(s) créée(s) ✅`,'success');
@@ -3466,17 +3470,18 @@ async function addTruckSafe(projectId, overlay) {
   const notes = document.getElementById('truck-notes')?.value||'';
   const loading = document.getElementById('truck-loading')?.value||'';
 
-  const res = await api('POST', `/projects/${projectId}/trucks`, {
+  const truckStatus = document.getElementById('truck-status')?.value||'planned';
+  const truckArrival = document.getElementById('truck-arrival')?.value||'';
+  const truckBody = {
     truckNumber: `${typeLabels[type]||''} — ${num}`,
-    licensePlate: document.getElementById('truck-plate')?.value||undefined,
-    driverName: driver||undefined,
-    driverPhone: phone||undefined,
-    status: document.getElementById('truck-status')?.value||'planned',
-    loadingDate: loading||undefined,
-    arrivalDate: document.getElementById('truck-arrival')?.value||undefined,
+    status: truckStatus,
     notes: notes||undefined,
-    vehicleType: type,
-  });
+  };
+  if (document.getElementById('truck-plate')?.value) truckBody.licensePlate = document.getElementById('truck-plate').value;
+  if (driver) truckBody.driverName = driver;
+  if (loading) truckBody.loadingDate = new Date(loading).toISOString();
+  if (truckArrival) truckBody.arrivalDate = new Date(truckArrival).toISOString();
+  const res = await api('POST', `/projects/${projectId}/trucks`, truckBody);
 
   if (res?.success) {
     toast('Véhicule ajouté ✅','success');
