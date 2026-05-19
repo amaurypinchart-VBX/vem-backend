@@ -13,7 +13,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     const { projectId, status, urgency, assignedToId } = req.query;
     const where: any = {};
     if (projectId)    where.projectId    = String(projectId);
-    if (status)       where.status       = String(status);
+    if (status)       where.status = { in: Array.isArray(status) ? status : [status] };
     if (urgency)      where.urgency      = String(urgency);
     if (assignedToId) where.assignedToId = String(assignedToId);
     if (req.user!.role === 'worker') where.assignedToId = req.user!.id;
