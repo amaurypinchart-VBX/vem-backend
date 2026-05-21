@@ -4141,6 +4141,502 @@ async function uploadTruckPhotos(truckId, projectId, input) {
   toast('Photos ajoutées ✅','success');
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// RAPPORT IA — MODULE COMPLET
+// ═══════════════════════════════════════════════════════════
+let REPORT_TYPE = 'full';
+
+function selectReportType(type) {
+  REPORT_TYPE = type;
+  document.getElementById('rtype-full').style.border = type==='full' ? '2px solid var(--accent)' : '2px solid var(--border)';
+  document.getElementById('rtype-full').style.background = type==='full' ? 'rgba(230,57,70,.06)' : '';
+  document.getElementById('rtype-client').style.border = type==='client' ? '2px solid var(--accent)' : '2px solid var(--border)';
+  document.getElementById('rtype-client').style.background = type==='client' ? 'rgba(230,57,70,.06)' : '';
+}
+
+function showReportModal() {
+  if (!CURRENT_PROJECT_ID) { toast('Ouvre un projet avant de générer un rapport','error'); return; }
+  showModal('modal-report');
+}
+
+// Toggle sections
+document.addEventListener('click', e => {
+  const toggle = e.target.closest('.report-section-toggle');
+  if (!toggle) return;
+  toggle.classList.toggle('active');
+  const cb = toggle.querySelector('input[type="checkbox"]');
+  if (cb) cb.checked = toggle.classList.contains('active');
+});
+
+function getSelectedSections() {
+  return Array.from(document.querySelectorAll('.report-section-toggle.active'))
+    .map(el => el.dataset.section).filter(Boolean);
+}
+
+function getReportLang() {
+  return document.querySelector('input[name="report-lang"]:checked')?.value || 'fr';
+}
+
+function setReportStatus(icon, text, sub='') {
+  const el = document.getElementById('report-status');
+  if (el) el.style.display = 'block';
+  const i = document.getElementById('report-status-icon');
+  const t = document.getElementById('report-status-text');
+  const s = document.getElementById('report-status-sub');
+  if (i) i.textContent = icon;
+  if (t) t.textContent = text;
+  if (s) s.textContent = sub;
+}
+
+async function generateReport(mode) {
+  if (!CURRENT_PROJECT_ID) { toast('Aucun projet sélectionné','error'); return; }
+  const sections = getSelectedSections();
+  if (!sections.length) { toast('Sélectionne au moins une section','error'); return; }
+
+  const pdfBtn = document.getElementById('report-pdf-btn');
+  const prevBtn = document.getElementById('report-preview-btn');
+  if (pdfBtn) pdfBtn.disabled=true;
+  if (prevBtn) prevBtn.disabled=true;
+
+  try {
+    // ── STEP 1: Collect all project data ──
+    setReportStatus('🔄','Collecte des données du projet...','Chargement en cours');
+
+    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes] = await Promise.all([
+      api('GET', `/projects/${CURRENT_PROJECT_ID}`),
+      sections.includes('tasks')    ? api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`)    : null,
+      sections.includes('daily')    ? api('GET', `/daily-reports?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('handover') ? api('GET', `/handover?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('tickets')  ? api('GET', `/tickets?projectId=${CURRENT_PROJECT_ID}`)  : null,
+      sections.includes('visite')   ? api('GET', `/client-remarks?projectId=${CURRENT_PROJECT_ID}`) : null,
+    ]);
+
+    const project = projRes?.data;
+    if (!project) { toast('Erreur chargement projet','error'); return; }
+
+    const tasks    = tasksRes?.data    || [];
+    const dailys   = dailyRes?.data    || [];
+    const handovers = handoverRes?.data || [];
+    const tickets  = ticketsRes?.data  || [];
+    const remarks  = remarksRes?.data  || [];
+    const trucks   = project.trucks    || [];
+
+    // ── STEP 2: AI Summary ──
+    let aiSummary = '';
+    if (sections.includes('ai_summary')) {
+      setReportStatus('🤖','Analyse IA en cours...','Génération du résumé exécutif');
+      const lang = getReportLang();
+      const langName = {fr:'français',en:'English',nl:'Nederlands'}[lang]||'français';
+
+      const taskDone  = tasks.filter(t=>t.status==='done').length;
+      const taskTotal = tasks.length;
+      const ticketOpen = tickets.filter(t=>['open','in_progress'].includes(t.status)).length;
+      const ticketCritical = tickets.filter(t=>t.urgency==='critical').length;
+      const lastDaily = dailys[0];
+
+      const prompt = `Tu es un chef de projet expert. Rédige un résumé exécutif ${langName} pour ce rapport de projet.
+
+PROJET : ${project.name} (${project.internalNumber})
+CLIENT : ${project.client?.name||'N/A'}
+STATUT : ${project.status}
+AVANCEMENT : ${project.progress||0}% (${taskDone}/${taskTotal} tâches)
+DATES : ${project.installationStart?.split('T')[0]||'N/A'} → ${project.installationEnd?.split('T')[0]||'N/A'}
+${project.dismantlingStart?`DÉMONTAGE : ${project.dismantlingStart?.split('T')[0]} → ${project.dismantlingEnd?.split('T')[0]}`:''}
+ÉQUIPE : ${(project.team||[]).map(m=>m.user?.firstName+' '+m.user?.lastName).join(', ')||'N/A'}
+OUVRIERS : ${project.workersCount}
+
+TICKETS : ${ticketOpen} ouverts, ${ticketCritical} critiques
+${lastDaily?`DERNIER DAILY : ${lastDaily.reportDate?.split('T')[0]} — ${lastDaily.generalNotes||'Pas de notes'}` : ''}
+${handovers.length?`HANDOVERS : ${handovers.filter(h=>h.status==='signed').length}/${handovers.length} signés`:''}
+${remarks.filter(r=>r.status!=='resolved').length?`POINTS VISITE EN COURS : ${remarks.filter(r=>r.status!=='resolved').length}`:''}
+
+Rédige un résumé de 3-4 paragraphes structurés :
+1. État général du projet et avancement
+2. Points forts et réalisations
+3. Points d'attention et risques
+4. Prochaines étapes recommandées
+
+Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du résumé, sans titre, sans markdown.`;
+
+      const aiRes = await fetch(`${API}/ai/parse-daily`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+        body: JSON.stringify({ text: prompt })
+      });
+      const aiData = await aiRes.json();
+      aiSummary = aiData.success ? (Array.isArray(aiData.data) ? aiData.data.map(e=>e.text||e).join(' ') : String(aiData.data)) : 'Résumé non disponible.';
+    }
+
+    // ── STEP 3: Generate HTML report ──
+    setReportStatus('📄','Mise en page du rapport...','Génération du document');
+
+    const lang = getReportLang();
+    const labels = {
+      fr: { report:'Rapport de Projet', client_report:'Rapport Client', date:'Date', status:'Statut',
+            progress:'Avancement', team:'Équipe', tasks:'Tâches', daily:'Journal', handover:'Handovers',
+            tickets:'Tickets SAV', visite:'Visites Client', logistics:'Logistique', summary:'Résumé Exécutif',
+            generated:'Généré le', by:'par VEM — ViewBox Event Manager', done:'Terminé', todo:'À faire',
+            in_progress:'En cours', blocked:'Bloqué', open:'Ouvert', resolved:'Résolu', signed:'Signé' },
+      en: { report:'Project Report', client_report:'Client Report', date:'Date', status:'Status',
+            progress:'Progress', team:'Team', tasks:'Tasks', daily:'Daily Reports', handover:'Handovers',
+            tickets:'SAV Tickets', visite:'Client Visits', logistics:'Logistics', summary:'Executive Summary',
+            generated:'Generated on', by:'by VEM — ViewBox Event Manager', done:'Done', todo:'To Do',
+            in_progress:'In Progress', blocked:'Blocked', open:'Open', resolved:'Resolved', signed:'Signed' },
+      nl: { report:'Projectrapport', client_report:'Klantrapport', date:'Datum', status:'Status',
+            progress:'Voortgang', team:'Team', tasks:'Taken', daily:'Dagraporten', handover:'Handovers',
+            tickets:'SAV Tickets', visite:'Klantbezoeken', logistics:'Logistiek', summary:'Samenvatting',
+            generated:'Gegenereerd op', by:'door VEM — ViewBox Event Manager', done:'Klaar', todo:'Te doen',
+            in_progress:'Bezig', blocked:'Geblokkeerd', open:'Open', resolved:'Opgelost', signed:'Getekend' },
+    };
+    const L = labels[lang]||labels.fr;
+    const isClient = REPORT_TYPE === 'client';
+    const reportTitle = isClient ? L.client_report : L.report;
+    const today = new Date().toLocaleDateString(lang==='nl'?'nl-BE':lang==='en'?'en-GB':'fr-FR', {day:'numeric',month:'long',year:'numeric'});
+
+    const statusColor = {draft:'#8892a4',in_preparation:'#f4a261',installation:'#e63946',completed:'#2dc653',cancelled:'#5a6275'}[project.status]||'#8892a4';
+
+    let reportHTML = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${reportTitle} — ${project.name}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f6f8;color:#1a1a2e;font-size:14px;}
+  .page{max-width:900px;margin:0 auto;background:#fff;}
+
+  /* HEADER */
+  .header{background:#1a1a2e;color:#fff;padding:36px 40px;display:flex;justify-content:space-between;align-items:flex-start;}
+  .header-brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{width:44px;height:44px;background:#e63946;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;flex-shrink:0;}
+  .brand-name{font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:1.5px;}
+  .header-right{text-align:right;}
+  .report-title{font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+  .report-meta{font-size:12px;color:#8892a4;margin-top:4px;}
+
+  /* PROJECT HERO */
+  .hero{padding:32px 40px;background:linear-gradient(135deg,#1a1a2e 0%,#22262f 100%);color:#fff;border-bottom:3px solid #e63946;}
+  .hero-name{font-size:28px;font-weight:800;margin-bottom:6px;}
+  .hero-sub{font-size:14px;color:#8892a4;margin-bottom:20px;}
+  .hero-stats{display:flex;gap:24px;flex-wrap:wrap;}
+  .hero-stat{text-align:center;}
+  .hero-stat-val{font-size:32px;font-weight:800;color:#e63946;}
+  .hero-stat-lbl{font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-top:2px;}
+  .progress-bar{background:rgba(255,255,255,.15);border-radius:99px;height:8px;margin-top:16px;overflow:hidden;}
+  .progress-fill{height:100%;background:#e63946;border-radius:99px;}
+  .status-pill{display:inline-block;background:${statusColor};color:#fff;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600;margin-top:8px;}
+
+  /* CONTENT */
+  .content{padding:0 40px 40px;}
+  .section{margin-top:32px;}
+  .section-title{font-size:16px;font-weight:800;border-bottom:2px solid #e63946;padding-bottom:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .section-icon{font-size:18px;}
+
+  /* INFO GRID */
+  .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .info-card{background:#f8f9fb;border-radius:8px;padding:14px;}
+  .info-label{font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;}
+  .info-value{font-weight:600;font-size:14px;}
+
+  /* AI SUMMARY */
+  .ai-box{background:#f0f7ff;border-left:4px solid #4895ef;border-radius:0 8px 8px 0;padding:20px 24px;font-size:14px;line-height:1.8;color:#2a3040;}
+  .ai-label{font-size:10px;font-weight:700;color:#4895ef;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+
+  /* TASKS */
+  .task-row{display:flex;align-items:center;padding:9px 14px;border-radius:6px;margin-bottom:4px;}
+  .task-row:nth-child(even){background:#f8f9fb;}
+  .task-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:10px;}
+  .task-title{flex:1;font-size:13px;}
+  .task-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;}
+  .badge-done{background:#e8faf0;color:#1da840;}
+  .badge-progress{background:#fff8e8;color:#d48806;}
+  .badge-todo{background:#f0f2f5;color:#5a6275;}
+  .badge-blocked{background:#fff0f0;color:#e63946;}
+  .task-assign{font-size:11px;color:#8892a4;margin-left:8px;}
+  .tasks-summary{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;}
+  .tasks-stat{text-align:center;padding:10px 16px;border-radius:8px;}
+  .tasks-stat-val{font-size:22px;font-weight:800;}
+  .tasks-stat-lbl{font-size:11px;color:#8892a4;margin-top:2px;}
+
+  /* DAILY */
+  .daily-entry{padding:12px 16px;border-left:3px solid #e63946;margin-bottom:10px;background:#f8f9fb;border-radius:0 6px 6px 0;}
+  .daily-date{font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:4px;}
+  .daily-meta{font-size:12px;color:#8892a4;margin-bottom:6px;}
+  .daily-notes{font-size:13px;color:#4a5568;line-height:1.6;}
+
+  /* TICKETS */
+  .ticket-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:6px;margin-bottom:6px;background:#f8f9fb;}
+  .ticket-urgency{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+  .ticket-title{flex:1;font-weight:600;font-size:13px;}
+  .ticket-desc{font-size:12px;color:#8892a4;margin-top:3px;}
+
+  /* HANDOVER */
+  .handover-card{border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:12px;}
+  .handover-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .zone-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .zone-pill{padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;}
+  .zone-ok{background:#e8faf0;color:#1da840;}
+  .zone-remark{background:#fff8e8;color:#d48806;}
+  .zone-defect{background:#fff0f0;color:#e63946;}
+
+  /* TEAM */
+  .team-grid{display:flex;gap:10px;flex-wrap:wrap;}
+  .team-card{background:#f8f9fb;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;}
+  .team-avatar{width:36px;height:36px;background:#e63946;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;}
+  .team-name{font-weight:600;font-size:13px;}
+  .team-role{font-size:11px;color:#8892a4;}
+
+  /* FOOTER */
+  .footer{background:#1a1a2e;color:#8892a4;padding:20px 40px;display:flex;justify-content:space-between;align-items:center;font-size:12px;}
+
+  @media print{
+    body{background:#fff;}
+    .page{max-width:100%;}
+    .no-print{display:none!important;}
+    .section{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- PRINT TOOLBAR -->
+  <div class="no-print" style="background:#1a1a2e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;">
+    <span style="color:#fff;font-weight:600;font-size:14px;">📄 ${reportTitle} — ${project.name}</span>
+    <div style="display:flex;gap:8px;">
+      <button onclick="window.print()" style="background:#e63946;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;">🖨️ Imprimer / PDF</button>
+      <button onclick="window.close()" style="background:#22262f;color:#8892a4;border:1px solid #2a2f3a;padding:8px 18px;border-radius:6px;cursor:pointer;">✕ Fermer</button>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-brand">
+      <div class="brand-mark">V</div>
+      <div>
+        <div style="font-weight:800;font-size:16px;">ViewBox</div>
+        <div class="brand-name">Event Manager</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="report-title">${reportTitle}</div>
+      <div class="report-meta">${L.generated} ${today}</div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-name">${project.name}</div>
+    <div class="hero-sub">${project.client?.name||''} ${project.city?'· '+project.city:''} ${project.internalNumber?'· '+project.internalNumber:''}</div>
+    <div class="status-pill">${project.status}</div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${project.progress||0}%"></div></div>
+    <div class="hero-stats" style="margin-top:16px;">
+      <div class="hero-stat"><div class="hero-stat-val">${project.progress||0}%</div><div class="hero-stat-lbl">${L.progress}</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">${tasks.filter(t=>t.status==='done').length}/${tasks.length}</div><div class="hero-stat-lbl">${L.tasks}</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">${project.workersCount||0}</div><div class="hero-stat-lbl">Ouvriers</div></div>
+      ${tickets.length?`<div class="hero-stat"><div class="hero-stat-val">${tickets.filter(t=>t.status!=='resolved').length}</div><div class="hero-stat-lbl">${L.tickets}</div></div>`:''}
+    </div>
+  </div>
+
+  <div class="content">`;
+
+    // ── Section: Overview ──
+    if (sections.includes('overview')) {
+      const team = project.team || [];
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📋</span>${lang === 'en' ? 'Project Overview' : 'Vue ensemble'}</div>
+      <div class="info-grid">
+        <div class="info-card"><div class="info-label">${L.date} début</div><div class="info-value">${project.installationStart?.split('T')[0]||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">${L.date} fin</div><div class="info-value">${project.installationEnd?.split('T')[0]||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">Client</div><div class="info-value">${project.client?.name||'N/A'}</div></div>
+        ${project.dismantlingStart?`<div class="info-card"><div class="info-label">Démontage</div><div class="info-value">${project.dismantlingStart?.split('T')[0]} → ${project.dismantlingEnd?.split('T')[0]||'?'}</div></div>`:''}
+        <div class="info-card"><div class="info-label">Adresse</div><div class="info-value">${project.address||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">Ouvriers</div><div class="info-value">${project.workersCount}</div></div>
+      </div>
+      ${team.length ? `
+      <div style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:10px;">${L.team}</div>
+        <div class="team-grid">
+          ${team.map(m=>`<div class="team-card"><div class="team-avatar">${(m.user?.firstName?.[0]||'?')+(m.user?.lastName?.[0]||'')}</div><div><div class="team-name">${m.user?.firstName||''} ${m.user?.lastName||''}</div><div class="team-role">${m.role}${m.isLead?' ⭐':''}</div></div></div>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>`;
+    }
+
+    // ── Section: AI Summary ──
+    if (sections.includes('ai_summary') && aiSummary) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🤖</span>${L.summary}</div>
+      <div class="ai-box">
+        <div class="ai-label">🤖 Analyse IA — ViewBox Event Manager</div>
+        ${aiSummary.split(' | ').filter(p=>p.trim()).map(p=>`<p style="margin-bottom:12px;">${p}</p>`).join('')}
+      </div>
+    </div>`;
+    }
+
+    // ── Section: Tasks ──
+    if (sections.includes('tasks') && tasks.length) {
+      const done     = tasks.filter(t=>t.status==='done');
+      const inprog   = tasks.filter(t=>t.status==='in_progress');
+      const todo     = tasks.filter(t=>t.status==='todo');
+      const blocked  = tasks.filter(t=>t.status==='blocked');
+      const dotColors = {done:'#2dc653',in_progress:'#f4a261',todo:'#8892a4',blocked:'#e63946'};
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">✅</span>${L.tasks}</div>
+      <div class="tasks-summary">
+        <div class="tasks-stat" style="background:#e8faf0;"><div class="tasks-stat-val" style="color:#1da840;">${done.length}</div><div class="tasks-stat-lbl">${L.done}</div></div>
+        <div class="tasks-stat" style="background:#fff8e8;"><div class="tasks-stat-val" style="color:#d48806;">${inprog.length}</div><div class="tasks-stat-lbl">${L.in_progress}</div></div>
+        <div class="tasks-stat" style="background:#f0f2f5;"><div class="tasks-stat-val" style="color:#5a6275;">${todo.length}</div><div class="tasks-stat-lbl">${L.todo}</div></div>
+        ${blocked.length?`<div class="tasks-stat" style="background:#fff0f0;"><div class="tasks-stat-val" style="color:#e63946;">${blocked.length}</div><div class="tasks-stat-lbl">${L.blocked}</div></div>`:''}
+      </div>
+      ${[...inprog,...todo,...blocked,...(isClient?[]:done)].map(t=>`
+      <div class="task-row">
+        <div class="task-dot" style="background:${dotColors[t.status]||'#8892a4'};"></div>
+        <div class="task-title">${t.title}</div>
+        ${t.taskDate?`<div style="font-size:11px;color:#8892a4;margin-right:8px;">${t.taskDate?.split('T')[0]||''}</div>`:''}
+        <span class="task-badge badge-${t.status==='done'?'done':t.status==='in_progress'?'progress':t.status==='blocked'?'blocked':'todo'}">${L[t.status]||t.status}</span>
+        ${t.assignedTo&&!isClient?`<span class="task-assign">👤 ${t.assignedTo.firstName}</span>`:''}
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Daily Reports ──
+    if (sections.includes('daily') && dailys.length && !isClient) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📓</span>${L.daily}</div>
+      ${dailys.slice(0,5).map(r=>`
+      <div class="daily-entry">
+        <div class="daily-date">${r.reportDate?.split('T')[0]||''}</div>
+        <div class="daily-meta">👷 ${r.workersPresent} ouvriers · ${r.weather||''}</div>
+        ${r.generalNotes?`<div class="daily-notes">${r.generalNotes}</div>`:''}
+      </div>`).join('')}
+      ${dailys.length>5?`<div style="text-align:center;color:#8892a4;font-size:12px;margin-top:8px;">... et ${dailys.length-5} rapport(s) supplémentaire(s)</div>`:''}
+    </div>`;
+    }
+
+    // ── Section: Handovers ──
+    if (sections.includes('handover') && handovers.length) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🧾</span>${L.handover}</div>
+      ${handovers.map(h=>`
+      <div class="handover-card">
+        <div class="handover-header">
+          <div><strong>${h.clientName||'Handover'}</strong> · ${h.createdAt?.split('T')[0]||''}</div>
+          <span class="task-badge ${h.status==='signed'?'badge-done':'badge-progress'}">${L[h.status]||h.status}</span>
+        </div>
+        <div class="zone-pills">
+          ${(h.items||[]).map(i=>`<span class="zone-pill ${i.status==='ok'?'zone-ok':i.status==='remark'?'zone-remark':'zone-defect'}">${i.zoneName}</span>`).join('')}
+        </div>
+        ${h.generalNotes?`<div style="font-size:12px;color:#8892a4;margin-top:10px;">📝 ${h.generalNotes}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Tickets ──
+    if (sections.includes('tickets') && tickets.length && !isClient) {
+      const urgColors = {critical:'#e63946',high:'#f4a261',medium:'#4895ef',low:'#2dc653'};
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🛠️</span>${L.tickets}</div>
+      ${tickets.map(t=>`
+      <div class="ticket-row">
+        <div class="ticket-urgency" style="background:${urgColors[t.urgency]||'#8892a4'};"></div>
+        <div style="flex:1;">
+          <div class="ticket-title">${t.title}</div>
+          ${t.locationOnSite?`<div class="ticket-desc">📍 ${t.locationOnSite}</div>`:''}
+        </div>
+        <span class="task-badge ${t.status==='resolved'?'badge-done':'badge-todo'}">${L[t.status]||t.status}</span>
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Visite Client ──
+    if (sections.includes('visite') && remarks.length) {
+      const open = remarks.filter(r=>r.status!=='resolved');
+      const done = remarks.filter(r=>r.status==='resolved');
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📸</span>${L.visite}</div>
+      ${open.length?`<div style="margin-bottom:10px;font-size:12px;font-weight:700;color:#e63946;">⏳ En cours (${open.length})</div>`:''}
+      ${remarks.slice(0,10).map(r=>`
+      <div class="ticket-row">
+        <div class="ticket-urgency" style="background:${r.priority==='critical'?'#e63946':r.priority==='high'?'#f4a261':'#8892a4'};"></div>
+        <div style="flex:1;">
+          <div class="ticket-title">${r.title}</div>
+          ${r.zone?`<div class="ticket-desc">📍 ${r.zone}</div>`:''}
+        </div>
+        <span class="task-badge ${r.status==='resolved'?'badge-done':'badge-todo'}">${r.status==='resolved'?L.resolved:'En cours'}</span>
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Logistics ──
+    if (sections.includes('logistics') && trucks.length) {
+      const icons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',machine:'⚙️',other:'📦'};
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🚛</span>${L.logistics}</div>
+      ${trucks.map(t=>`
+      <div class="ticket-row">
+        <span style="font-size:16px;">${icons[t.vehicleType]||'🚛'}</span>
+        <div style="flex:1;">
+          <div class="ticket-title">${t.truckNumber||''}</div>
+          ${t.driverName?`<div class="ticket-desc">👤 ${t.driverName}${t.loadingDate?' · 📦 '+t.loadingDate?.split('T')[0]:''}</div>`:''}
+        </div>
+        <span class="task-badge ${t.status==='delivered'?'badge-done':t.status==='in_transit'?'badge-progress':'badge-todo'}">${t.status}</span>
+      </div>`).join('')}
+    </div>`;
+    }
+
+    reportHTML += `
+  </div><!-- /content -->
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <span>${L.generated} ${today} ${L.by}</span>
+    <span>${project.internalNumber||''}</span>
+  </div>
+
+</div><!-- /page -->
+</body></html>`;
+
+    // ── STEP 4: Output ──
+    setReportStatus('✅','Rapport généré !','');
+
+    if (mode === 'preview') {
+      const win = window.open('', '_blank');
+      if (win) { win.document.write(reportHTML); win.document.close(); }
+      else toast('Autorisez les popups pour la prévisualisation','warning');
+    } else {
+      // PDF via print dialog
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(reportHTML);
+        win.document.close();
+        setTimeout(()=>win.print(), 800);
+      } else toast('Autorisez les popups pour le PDF','warning');
+    }
+
+    closeModal('modal-report');
+
+  } catch(err) {
+    console.error(err);
+    toast('Erreur génération rapport: '+err.message,'error');
+  } finally {
+    if (pdfBtn) pdfBtn.disabled=false;
+    if (prevBtn) prevBtn.disabled=false;
+    const statusEl = document.getElementById('report-status');
+    if (statusEl) statusEl.style.display='none';
+  }
+}
+
 // ═══ MOBILE NAV ═══
 function setActiveBN(id) {
   document.querySelectorAll('.bn-item').forEach(el => el.classList.remove('active'));
@@ -5302,5 +5798,129 @@ function showModal_toolbox_new() {
 }
 
 </script>
+
+<!-- ═══ RAPPORT IA MODAL ═══ -->
+<div class="overlay" id="modal-report">
+  <div class="modal" style="max-width:800px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">📊 Générer un Rapport</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Choisissez les sections à inclure — l'IA rédigera un résumé</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-report')">×</button>
+    </div>
+
+    <!-- Type de rapport -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+      <div id="rtype-full" onclick="selectReportType('full')" style="border:2px solid var(--accent);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;background:rgba(230,57,70,.06);">
+        <div style="font-size:22px;margin-bottom:6px;">📋</div>
+        <div style="font-weight:700;font-size:14px;">Rapport complet</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Toutes les données du projet</div>
+      </div>
+      <div id="rtype-client" onclick="selectReportType('client')" style="border:2px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;">
+        <div style="font-size:22px;margin-bottom:6px;">🤝</div>
+        <div style="font-weight:700;font-size:14px;">Présentation client</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Format soigné pour le client</div>
+      </div>
+    </div>
+
+    <!-- Sections à inclure -->
+    <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Sections à inclure</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;" id="report-sections">
+      <label class="report-section-toggle active" data-section="overview">
+        <input type="checkbox" checked style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">📋</span>
+          <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:var(--text2);">Infos projet, dates, équipe</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle active" data-section="tasks">
+        <input type="checkbox" checked style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">✅</span>
+          <div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:var(--text2);">Statut et avancement</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle active" data-section="daily">
+        <input type="checkbox" checked style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">📓</span>
+          <div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:var(--text2);">Journal journalier</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle" data-section="handover">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🧾</span>
+          <div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:var(--text2);">Rapport de réception</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle" data-section="tickets">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🛠️</span>
+          <div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:var(--text2);">Incidents et résolutions</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle" data-section="visite">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">📸</span>
+          <div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:var(--text2);">Points et remarques</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle" data-section="logistics">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🚛</span>
+          <div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:var(--text2);">Camions et machines</div></div>
+        </div>
+      </label>
+      <label class="report-section-toggle active" data-section="ai_summary">
+        <input type="checkbox" checked style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">🤖</span>
+          <div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:var(--text2);">Analyse et points clés</div></div>
+        </div>
+      </label>
+    </div>
+
+    <!-- Langue -->
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:18px;">
+      <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+        <input type="radio" name="report-lang" value="fr" checked> Français
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+        <input type="radio" name="report-lang" value="en"> English
+      </label>
+      <label style="display:flex;align-items:center;gap=6px;cursor:pointer;font-size:13px;">
+        <input type="radio" name="report-lang" value="nl"> Nederlands
+      </label>
+    </div>
+
+    <!-- Status -->
+    <div id="report-status" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;text-align:center;">
+      <div style="font-size:22px;margin-bottom:8px;" id="report-status-icon">🤖</div>
+      <div style="font-weight:600;" id="report-status-text">Collecte des données...</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="report-status-sub"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-report')">Annuler</button>
+      <button class="btn btn-ghost btn-sm" id="report-preview-btn" onclick="generateReport('preview')">👁️ Prévisualiser</button>
+      <button class="btn btn-primary" id="report-pdf-btn" onclick="generateReport('pdf')">📄 Générer PDF</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.report-section-toggle{
+  display:flex;align-items:center;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;
+}
+.report-section-toggle:hover{border-color:var(--border2);}
+.report-section-toggle.active{border-color:var(--accent);background:rgba(230,57,70,.06);}
+</style>
+
 </body>
 </html>
