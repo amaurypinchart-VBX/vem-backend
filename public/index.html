@@ -260,6 +260,49 @@ textarea.input{min-height:80px;resize:vertical;}
 .tabs::-webkit-scrollbar{display:none;}
 
 /* RESPONSIVE */
+/* ── TERRAIN POINT CARDS ── */
+.terrain-point{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:16px;overflow:hidden;transition:all .2s;}
+.terrain-point:hover{border-color:var(--border2);}
+.terrain-point.critical{border-left:4px solid var(--accent);}
+.terrain-point.high{border-left:4px solid var(--amber);}
+.terrain-point.normal{border-left:4px solid var(--blue);}
+.terrain-point.resolved{border-left:4px solid var(--green);opacity:.8;}
+.terrain-point-header{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;}
+.terrain-num{width:32px;height:32px;background:var(--bg3);border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;flex-shrink:0;}
+.terrain-point.critical .terrain-num{background:rgba(230,57,70,.15);border-color:var(--accent);color:var(--accent);}
+.terrain-point.high .terrain-num{background:rgba(244,162,97,.15);border-color:var(--amber);color:var(--amber);}
+.terrain-point.resolved .terrain-num{background:rgba(45,198,83,.15);border-color:var(--green);color:var(--green);}
+.terrain-title{flex:1;font-weight:700;font-size:14px;line-height:1.3;}
+.terrain-status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.terrain-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 12px;}
+.terrain-photo{aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--bg3);cursor:pointer;position:relative;}
+.terrain-photo img{width:100%;height:100%;object-fit:cover;}
+.terrain-photo-add{border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--text3);cursor:pointer;transition:all .2s;aspect-ratio:4/3;border-radius:10px;}
+.terrain-photo-add:hover{border-color:var(--accent);color:var(--accent);background:rgba(230,57,70,.04);}
+.terrain-desc{padding:0 16px 14px;font-size:13px;color:var(--text2);line-height:1.6;}
+.terrain-footer{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);background:var(--bg3);flex-wrap:wrap;}
+.terrain-add-btn{display:flex;align-items:center;gap:8px;padding:14px 16px;border:2px dashed var(--border);border-radius:14px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:500;transition:all .2s;background:transparent;width:100%;justify-content:center;}
+.terrain-add-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(230,57,70,.04);}
+
+/* ── TERRAIN POINT CARDS ── */
+.terrain-point{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:16px;overflow:hidden;transition:all .2s;}
+.terrain-point:hover{border-color:var(--border2);}
+.terrain-point.p-critical{border-left:4px solid var(--accent);}
+.terrain-point.p-high{border-left:4px solid var(--amber);}
+.terrain-point.p-normal{border-left:4px solid var(--blue);}
+.terrain-point.p-resolved{border-left:4px solid var(--green);opacity:.85;}
+.terrain-num{width:32px;height:32px;background:var(--bg3);border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
+.terrain-point.p-critical .terrain-num{background:rgba(230,57,70,.12);border-color:var(--accent);color:var(--accent);}
+.terrain-point.p-high .terrain-num{background:rgba(244,162,97,.12);border-color:var(--amber);color:var(--amber);}
+.terrain-point.p-resolved .terrain-num{background:rgba(45,198,83,.12);border-color:var(--green);color:var(--green);}
+.terrain-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 12px;}
+.terrain-photo{aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--bg3);cursor:pointer;}
+.terrain-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+.terrain-photo-add{border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text3);cursor:pointer;transition:all .2s;aspect-ratio:4/3;border-radius:10px;}
+.terrain-photo-add:hover,.terrain-photo-add:active{border-color:var(--accent);color:var(--accent);}
+.terrain-add-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:16px;border:2px dashed var(--border);border-radius:14px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;transition:all .2s;background:transparent;width:100%;margin-top:8px;}
+.terrain-add-btn:hover,.terrain-add-btn:active{border-color:var(--accent);color:var(--accent);}
+
 /* ══ DESKTOP ══ */
 @media(min-width:769px){
   .bottom-nav,.fab,.fab-menu,.menu-btn{display:none!important;}
@@ -3532,73 +3575,89 @@ async function openHandoverFull(id) {
   if (!res?.success) { toast('Handover introuvable','error'); return; }
   const h = res.data;
   const items = h.items || [];
-  const sc = {ok:'var(--green)',remark:'var(--amber)',defect:'var(--accent)',pending:'var(--text3)'};
-  const si = {ok:'✅',remark:'⚠️',defect:'❌',pending:'⏳'};
-  const sl = {ok:'OK',remark:'Remarque',defect:'Défaut',pending:'En attente'};
+
+  const sc = {ok:'p-resolved', remark:'p-high', defect:'p-critical', pending:'p-normal'};
+  const si = {ok:'✅', remark:'⚠️', defect:'❌', pending:'⏳'};
+  const sl = {ok:'OK', remark:'Remarque', defect:'Défaut', pending:'En attente'};
+  const sc2 = {ok:'var(--green)', remark:'var(--amber)', defect:'var(--accent)', pending:'var(--text3)'};
 
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML = `
-    <div class="modal" style="max-width:800px;">
+    <div class="modal" style="max-width:860px;">
       <div class="modal-head">
         <div>
-          <div class="modal-title">🧾 ${h.project?.name||'Handover'}</div>
-          <div style="font-size:12px;color:var(--text2);">${h.clientName||''} · ${fmtDate(h.createdAt)} · ${h.siteManager?h.siteManager.firstName+' '+h.siteManager.lastName:''}</div>
+          <div class="modal-title">🧾 ${h.project?.name || 'Handover'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            ${h.clientName||''} · ${fmtDate(h.createdAt)}
+            ${h.siteManager ? ' · ' + h.siteManager.firstName + ' ' + h.siteManager.lastName : ''}
+          </div>
         </div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
 
-      <!-- Stats -->
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <span class="badge badge-green">✅ ${items.filter(i=>i.status==='ok').length} OK</span>
-        <span class="badge badge-amber">⚠️ ${items.filter(i=>i.status==='remark').length} Remarques</span>
-        <span class="badge badge-red">❌ ${items.filter(i=>i.status==='defect').length} Défauts</span>
-        <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}" style="margin-left:auto;">${h.status==='signed'?'✅ Signé':'En attente de signature'}</span>
+      <!-- Stats bar -->
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+        <div style="background:rgba(45,198,83,.1);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--green);">${items.filter(i=>i.status==='ok').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">OK</div>
+        </div>
+        <div style="background:rgba(244,162,97,.1);border:1px solid rgba(244,162,97,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--amber);">${items.filter(i=>i.status==='remark').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Remarques</div>
+        </div>
+        <div style="background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--accent);">${items.filter(i=>i.status==='defect').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Défauts</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}">${h.status==='signed'?'✅ Signé':'En attente'}</span>
+        </div>
       </div>
 
-      <!-- Zones -->
-      <div style="margin-bottom:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">🔍 Zones inspectées</div>
-        ${items.map(item=>`
-          <div style="border:1px solid var(--border);border-left:4px solid ${sc[item.status]||'var(--text3)'};border-radius:var(--radius);padding:12px;margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+      <!-- Zones — terrain card format -->
+      <div style="max-height:50vh;overflow-y:auto;padding-right:4px;">
+        ${items.map((item, idx) => {
+          const photos = item.photos || [];
+          return `
+          <div class="terrain-point ${sc[item.status]||'p-normal'}" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px 8px;">
+              <div class="terrain-num">${idx+1}</div>
               <div style="flex:1;">
-                <strong style="font-size:14px;">${item.zoneName}</strong>
-                ${item.comment?`<div style="font-size:12px;color:var(--text2);margin-top:3px;">💬 ${item.comment}</div>`:''}
+                <div style="font-weight:700;font-size:14px;">${item.zoneName}</div>
+                ${item.comment ? `<div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;">${item.comment}</div>` : ''}
               </div>
-              <div style="display:flex;gap:6px;align-items:center;">
-                <span style="font-size:13px;">${si[item.status]||''}</span>
-                <select class="input" style="width:120px;padding:4px 8px;font-size:11px;" onchange="updateZoneStatus('${h.id}','${item.id}',this.value)">
-                  <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
-                  <option value="remark" ${item.status==='remark'?'selected':''}>⚠️ Remarque</option>
-                  <option value="defect" ${item.status==='defect'?'selected':''}>❌ Défaut</option>
-                  <option value="pending" ${item.status==='pending'?'selected':''}>⏳ En attente</option>
-                </select>
-              </div>
+              <select class="input" style="width:120px;padding:5px 8px;font-size:12px;flex-shrink:0;" onchange="updateZoneStatus('${h.id}','${item.id}',this.value)">
+                <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
+                <option value="remark" ${item.status==='remark'?'selected':''}>⚠️ Remarque</option>
+                <option value="defect" ${item.status==='defect'?'selected':''}>❌ Défaut</option>
+                <option value="pending" ${item.status==='pending'?'selected':''}>⏳ Attente</option>
+              </select>
             </div>
-            <!-- Zone photos -->
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;" id="zone-ph-${item.id}">
-              ${(item.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
-              <label style="width:64px;height:64px;border:2px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:18px;" title="Ajouter photo">
+            <!-- Photos -->
+            <div class="terrain-photos">
+              ${photos.map(p=>`<div class="terrain-photo" onclick="openPhotoViewer('${p.photoUrl}')"><img src="${p.photoUrl}" loading="lazy"></div>`).join('')}
+              <label class="terrain-photo-add" title="Ajouter photo">
                 📸
-                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,document.getElementById('zone-ph-${item.id}'))">
+                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,null)">
               </label>
             </div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>
 
       <!-- Notes -->
-      ${h.generalNotes?`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text2);margin-bottom:16px;">📝 ${h.generalNotes}</div>`:''}
+      ${h.generalNotes ? `<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text2);margin-bottom:14px;">📝 ${h.generalNotes}</div>` : ''}
 
       <!-- Signatures -->
-      <div style="margin-bottom:16px;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">✍️ Signatures</div>
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:12px;">✍️ Signatures</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Site Manager — ${h.siteManager?h.siteManager.firstName+' '+h.siteManager.lastName:'N/A'}</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Site Manager — ${h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : 'N/A'}</div>
             ${h.managerSignedAt
-              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);font-size:13px;">✅ Signé le ${fmtDate(h.managerSignedAt)}</div>`
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);">✅ Signé le ${fmtDate(h.managerSignedAt)}</div>`
               : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
-                  <canvas id="sig-mgr-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;"></canvas>
+                  <canvas id="sig-mgr-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;background:transparent;"></canvas>
                   <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
                     <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-mgr-${h.id}')">Effacer</button>
                     <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','manager','sig-mgr-${h.id}',this.closest('.overlay'))">✅ Valider</button>
@@ -3608,9 +3667,9 @@ async function openHandoverFull(id) {
           <div>
             <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Client — ${h.clientName||'N/A'}</div>
             ${h.clientSignedAt
-              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);font-size:13px;">✅ Signé le ${fmtDate(h.clientSignedAt)}</div>`
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);">✅ Signé le ${fmtDate(h.clientSignedAt)}</div>`
               : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
-                  <canvas id="sig-cli-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;"></canvas>
+                  <canvas id="sig-cli-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;background:transparent;"></canvas>
                   <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
                     <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-cli-${h.id}')">Effacer</button>
                     <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','client','sig-cli-${h.id}',this.closest('.overlay'))">✅ Valider</button>
@@ -3620,9 +3679,9 @@ async function openHandoverFull(id) {
         </div>
       </div>
 
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
-        <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPDF('${h.id}')">📄 PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="generateHandoverPDF('${h.id}')">📄 PDF Rapport</button>
         <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Envoyer</button>
       </div>
     </div>`;
@@ -3630,6 +3689,7 @@ async function openHandoverFull(id) {
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
   setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
 }
+
 
 async function updateZoneStatus(handoverId, itemId, status) {
   await api('PATCH', `/handover/${handoverId}/items/${itemId}`, { status });
@@ -4161,14 +4221,15 @@ function showReportModal() {
   showModal('modal-report');
 }
 
-// Toggle sections
-document.addEventListener('click', e => {
-  const toggle = e.target.closest('.report-section-toggle');
-  if (!toggle) return;
-  toggle.classList.toggle('active');
-  const cb = toggle.querySelector('input[type="checkbox"]');
-  if (cb) cb.checked = toggle.classList.contains('active');
-});
+// Toggle sections — direct function called from onclick
+function toggleReportSection(el) {
+  el.classList.toggle('active');
+  const cb = el.querySelector('input[type="checkbox"]');
+  if (cb) cb.checked = el.classList.contains('active');
+  // Visual feedback
+  el.style.transform = 'scale(0.97)';
+  setTimeout(() => el.style.transform = '', 100);
+}
 
 function getSelectedSections() {
   return Array.from(document.querySelectorAll('.report-section-toggle.active'))
@@ -4506,18 +4567,34 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
     </div>`;
     }
 
-    // ── Section: Daily Reports ──
+    // ── Section: Daily Reports — fetch entries detail ──
     if (sections.includes('daily') && dailys.length && !isClient) {
+      setReportStatus('📓','Chargement des daily reports...','');
+      // Fetch detail for each report to get entries
+      const dailysWithEntries = await Promise.all(
+        dailys.slice(0,7).map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
+      );
       reportHTML += `
     <div class="section">
       <div class="section-title"><span class="section-icon">📓</span>${L.daily}</div>
-      ${dailys.slice(0,5).map(r=>`
+      ${dailysWithEntries.map(r => {
+        const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+        return `
       <div class="daily-entry">
-        <div class="daily-date">${r.reportDate?.split('T')[0]||''}</div>
+        <div class="daily-date">${new Date(r.reportDate).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
         <div class="daily-meta">👷 ${r.workersPresent} ouvriers · ${r.weather||''}</div>
-        ${r.generalNotes?`<div class="daily-notes">${r.generalNotes}</div>`:''}
-      </div>`).join('')}
-      ${dailys.length>5?`<div style="text-align:center;color:#8892a4;font-size:12px;margin-top:8px;">... et ${dailys.length-5} rapport(s) supplémentaire(s)</div>`:''}
+        ${entries.length ? `
+        <div style="margin-top:10px;border-left:2px solid #e63946;padding-left:12px;">
+          ${entries.map(e=>`
+          <div style="display:flex;gap:10px;margin-bottom:6px;align-items:baseline;">
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#e63946;flex-shrink:0;min-width:40px;">${e.entryTime||''}</span>
+            <span style="font-size:13px;color:#4a5568;line-height:1.5;">${e.description}</span>
+          </div>`).join('')}
+        </div>` : ''}
+        ${r.generalNotes?`<div class="daily-notes" style="margin-top:8px;">${r.generalNotes}</div>`:''}
+      </div>`;
+      }).join('')}
+      ${dailys.length>7?`<div style="text-align:center;color:#8892a4;font-size:12px;margin-top:8px;">... et ${dailys.length-7} rapport(s) supplémentaire(s)</div>`:''}
     </div>`;
     }
 
@@ -4636,6 +4713,210 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
     const statusEl = document.getElementById('report-status');
     if (statusEl) statusEl.style.display='none';
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// PDF TERRAIN — Handover + Visite Client
+// Style rapport de réception avec photos et numérotation
+// ═══════════════════════════════════════════════════════════
+
+function buildTerrainPDFHeader(title, subtitle, date, project, client, nextMeeting='') {
+  return `
+  <div style="border-bottom:2px solid #1a1a2e;padding-bottom:16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:48px;height:48px;background:#e63946;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;">V</div>
+      <div>
+        <div style="font-weight:800;font-size:18px;">ViewBox Event Manager</div>
+        <div style="font-size:12px;color:#8892a4;">viewboxsitemanagement.up.railway.app</div>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-weight:700;font-size:15px;">${title}</div>
+      <div style="font-size:12px;color:#8892a4;">${date}</div>
+      ${nextMeeting ? `<div style="font-size:12px;color:#e63946;font-weight:600;">Prochaine réunion : ${nextMeeting}</div>` : ''}
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;padding:14px;background:#f8f9fb;border-radius:8px;">
+    <div>
+      <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Projet</div>
+      <div style="font-weight:700;font-size:15px;">${project.name}</div>
+      <div style="font-size:12px;color:#5a6275;">${project.internalNumber||''} ${project.address?'· '+project.address:''}</div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Client</div>
+      <div style="font-weight:700;font-size:15px;">${client}</div>
+    </div>
+  </div>`;
+}
+
+function buildTerrainPoint(num, title, description, status, photos, zone='') {
+  const statusColors = {ok:'#2dc653',remark:'#f4a261',defect:'#e63946',pending:'#8892a4',open:'#e63946',in_progress:'#f4a261',resolved:'#2dc653',critical:'#e63946',high:'#f4a261',normal:'#4895ef'};
+  const statusLabels = {ok:'✅ OK',remark:'⚠️ Remarque',defect:'❌ Défaut',pending:'⏳ En attente',open:'En cours',in_progress:'En traitement',resolved:'✅ Traité',critical:'🔴 Critique',high:'🟠 Élevé',normal:'🔵 Normal'};
+  const color = statusColors[status] || '#8892a4';
+  const label = statusLabels[status] || status;
+
+  return `
+  <div style="border:1px solid #e5e7eb;border-left:4px solid ${color};border-radius:8px;margin-bottom:14px;overflow:hidden;page-break-inside:avoid;">
+    <div style="padding:12px 16px;background:#fff;display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="display:flex;gap:10px;align-items:flex-start;flex:1;">
+        <div style="width:28px;height:28px;background:${color}20;border:2px solid ${color};border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:${color};flex-shrink:0;">${num}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:14px;margin-bottom:3px;">${title}</div>
+          ${zone ? `<div style="font-size:12px;color:#8892a4;margin-bottom:4px;">📍 ${zone}</div>` : ''}
+          ${description ? `<div style="font-size:13px;color:#4a5568;line-height:1.6;">${description}</div>` : ''}
+        </div>
+      </div>
+      <div style="background:${color}15;color:${color};font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;white-space:nowrap;margin-left:10px;">${label}</div>
+    </div>
+    ${photos && photos.length ? `
+    <div style="padding:0 12px 12px;background:#fafafa;display:grid;grid-template-columns:repeat(${Math.min(photos.length,3)},1fr);gap:8px;">
+      ${photos.map(p=>`<img src="${p.photoUrl||p}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;">`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+async function generateHandoverPDF(handoverId) {
+  const res = await api('GET', `/handover/${handoverId}`);
+  if (!res?.success) { toast('Handover introuvable','error'); return; }
+  const h = res.data;
+  const items = h.items || [];
+
+  const date = new Date(h.createdAt).toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric'});
+  const ok = items.filter(i=>i.status==='ok').length;
+  const rem = items.filter(i=>i.status==='remark').length;
+  const def = items.filter(i=>i.status==='defect').length;
+
+  // Get company config for CGV
+  const cfgRes = await api('GET', '/company-config');
+  const cgv = cfgRes?.data?.cgvText || '';
+  const companyName = cfgRes?.data?.companyName || 'ViewBox Events';
+
+  const doc = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Handover — ${h.project?.name||''}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1a1a2e;font-size:14px;background:#fff;padding:32px;}
+  .no-print{background:#1a1a2e;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;margin:-32px -32px 32px;position:sticky;top:0;z-index:10;}
+  .print-btn{background:#e63946;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;}
+  @media print{.no-print{display:none!important;}body{padding:20px;}}
+</style>
+</head>
+<body>
+<div class="no-print">
+  <span style="font-weight:600;">🧾 Rapport Handover — ${h.project?.name||''}</span>
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimer / PDF</button>
+</div>
+
+${buildTerrainPDFHeader('RAPPORT DE RÉCEPTION — HANDOVER', '', date, h.project||{name:'',internalNumber:''}, h.clientName||'N/A')}
+
+<!-- Résumé statuts -->
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  <div style="background:#e8faf0;border-radius:8px;padding:12px 20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#2dc653;">${ok}</div><div style="font-size:11px;color:#5a6275;text-transform:uppercase;">OK</div></div>
+  <div style="background:#fff8e8;border-radius:8px;padding:12px 20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#d48806;">${rem}</div><div style="font-size:11px;color:#5a6275;text-transform:uppercase;">Remarques</div></div>
+  <div style="background:#fff0f0;border-radius:8px;padding:12px 20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#e63946;">${def}</div><div style="font-size:11px;color:#5a6275;text-transform:uppercase;">Défauts</div></div>
+  ${h.siteManager?`<div style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:#5a6275;">👤 Site Manager : <strong>${h.siteManager.firstName} ${h.siteManager.lastName}</strong></div>`:''}
+</div>
+
+<!-- Zones -->
+<div style="margin-bottom:24px;">
+  <div style="font-weight:800;font-size:16px;border-bottom:2px solid #e63946;padding-bottom:8px;margin-bottom:14px;">🔍 Zones inspectées</div>
+  ${items.map((item, idx) => buildTerrainPoint(idx+1, item.zoneName, item.comment||'', item.status, item.photos||[])).join('')}
+</div>
+
+${h.generalNotes?`<div style="background:#f8f9fb;border-left:4px solid #4895ef;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:24px;"><div style="font-size:11px;color:#8892a4;text-transform:uppercase;margin-bottom:6px;">Notes générales</div><div style="font-size:13px;color:#4a5568;line-height:1.6;">${h.generalNotes}</div></div>`:''}
+
+<!-- Signatures -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+  <div>
+    <div style="font-size:11px;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">Site Manager — ${h.siteManager?h.siteManager.firstName+' '+h.siteManager.lastName:'N/A'}</div>
+    <div style="border:1px solid #e5e7eb;border-radius:8px;height:80px;display:flex;align-items:center;justify-content:center;color:${h.managerSignedAt?'#2dc653':'#8892a4'};font-size:13px;font-weight:600;">
+      ${h.managerSignedAt?`✅ Signé le ${fmtDate(h.managerSignedAt)}`:'Signature en attente'}
+    </div>
+  </div>
+  <div>
+    <div style="font-size:11px;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">Client — ${h.clientName||'N/A'}</div>
+    <div style="border:1px solid #e5e7eb;border-radius:8px;height:80px;display:flex;align-items:center;justify-content:center;color:${h.clientSignedAt?'#2dc653':'#8892a4'};font-size:13px;font-weight:600;">
+      ${h.clientSignedAt?`✅ Signé le ${fmtDate(h.clientSignedAt)}`:'Signature en attente'}
+    </div>
+  </div>
+</div>
+
+${cgv?`<div style="border-top:1px solid #e5e7eb;padding-top:16px;font-size:11px;color:#8892a4;line-height:1.6;">${cgv}</div>`:''}
+
+<div style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;display:flex;justify-content:space-between;font-size:11px;color:#8892a4;">
+  <span>Généré par VEM — ViewBox Event Manager · ${new Date().toLocaleString('fr-FR')}</span>
+  <span>${companyName}</span>
+</div>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(doc); win.document.close(); }
+  else toast('Autorisez les popups','warning');
+}
+
+async function exportVisitePDF(projectId) {
+  const [projRes, remarksRes] = await Promise.all([
+    api('GET', `/projects/${projectId}`),
+    api('GET', `/client-remarks?projectId=${projectId}`)
+  ]);
+  if (!projRes?.success) { toast('Erreur chargement projet','error'); return; }
+  const project = projRes.data;
+  const remarks = remarksRes?.data || [];
+  const open = remarks.filter(r => r.status !== 'resolved');
+  const done = remarks.filter(r => r.status === 'resolved');
+  const date = new Date().toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric'});
+
+  const doc = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Visite Client — ${project.name}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1a1a2e;font-size:14px;background:#fff;padding:32px;}
+  .no-print{background:#1a1a2e;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;margin:-32px -32px 32px;position:sticky;top:0;z-index:10;}
+  .print-btn{background:#e63946;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;}
+  @media print{.no-print{display:none!important;}body{padding:20px;}}
+</style>
+</head>
+<body>
+<div class="no-print">
+  <span style="font-weight:600;">📋 Rapport Visite Client — ${project.name}</span>
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimer / PDF</button>
+</div>
+
+${buildTerrainPDFHeader('REMARQUES — VISITE CLIENT', '', date, project, project.client?.name||'N/A')}
+
+<!-- Résumé -->
+<div style="display:flex;gap:12px;margin-bottom:20px;">
+  <div style="background:#fff0f0;border-radius:8px;padding:12px 20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#e63946;">${open.length}</div><div style="font-size:11px;color:#5a6275;text-transform:uppercase;">En cours</div></div>
+  <div style="background:#e8faf0;border-radius:8px;padding:12px 20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#2dc653;">${done.length}</div><div style="font-size:11px;color:#5a6275;text-transform:uppercase;">Traités</div></div>
+</div>
+
+${open.length ? `
+<div style="margin-bottom:24px;">
+  <div style="font-weight:800;font-size:16px;border-bottom:2px solid #e63946;padding-bottom:8px;margin-bottom:14px;">⏳ Points en cours (${open.length})</div>
+  ${open.map((r,i) => buildTerrainPoint(i+1, r.title, r.description||'', r.priority||'normal', r.photos||[], r.zone||'')).join('')}
+</div>` : ''}
+
+${done.length ? `
+<div style="margin-bottom:24px;">
+  <div style="font-weight:800;font-size:16px;border-bottom:2px solid #2dc653;padding-bottom:8px;margin-bottom:14px;color:#2dc653;">✅ Points traités (${done.length})</div>
+  ${done.map((r,i) => buildTerrainPoint(open.length+i+1, r.title, r.description||'', 'resolved', r.photos||[], r.zone||'')).join('')}
+</div>` : ''}
+
+<div style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;font-size:11px;color:#8892a4;">
+  Généré par VEM — ViewBox Event Manager · ${new Date().toLocaleString('fr-FR')}
+</div>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(doc); win.document.close(); }
+  else toast('Autorisez les popups','warning');
 }
 
 // ═══ MOBILE NAV ═══
@@ -5051,12 +5332,11 @@ async function openDailyDetail(id, projectId) {
       ${entries.length ? `
         <div style="margin-bottom:16px;">
           <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;">⏱️ Journal chronologique</div>
-          <div style="border-left:3px solid var(--accent);padding-left:14px;display:flex;flex-direction:column;gap:10px;">
+          <div style="border-left:3px solid var(--accent);padding-left:14px;display:flex;flex-direction:column;gap:8px;">
             ${entries.map(e=>`
-              <div style="position:relative;">
-                <div style="position:absolute;left:-20px;top:4px;width:8px;height:8px;background:var(--accent);border-radius:50%;"></div>
-                <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);">${e.entryTime||'--:--'}</div>
-                <div style="font-size:13px;color:var(--text);margin-top:2px;line-height:1.5;">${e.description}</div>
+              <div style="display:flex;gap:12px;align-items:baseline;">
+                <span style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);flex-shrink:0;min-width:44px;">${e.entryTime||'--:--'}</span>
+                <span style="font-size:13px;color:var(--text);line-height:1.5;flex:1;">${e.description}</span>
               </div>`).join('')}
           </div>
         </div>` : ''}
@@ -5167,74 +5447,107 @@ async function loadDetailRemarks(projectId) {
   if (!el) return;
 
   const res = await api('GET', `/client-remarks?projectId=${projectId}`);
-  
-  const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-    <div style="font-size:13px;color:var(--text2);">Visites de chantier avec le client</div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF dernière visite</button>
-      <button class="btn btn-primary btn-sm" onclick="openNewVisiteModal('${projectId}')">+ Nouvelle Visite</button>
-    </div>
-  </div>`;
+
+  const addBtn = `<button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')">
+    <span style="font-size:22px;">📸</span>
+    <span>Ajouter un point terrain</span>
+  </button>`;
 
   if (!res?.success || !res.data.length) {
-    el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📸</div><div class="empty-title">Aucune visite</div><div class="empty-sub">Créez une visite pour ajouter des points terrain</div></div>';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div>
+          <div style="font-size:16px;font-weight:700;">📋 Visite Client</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Aucun point enregistré</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF</button>
+      </div>
+      ${addBtn}`;
     return;
   }
 
-  // Group by visite (using createdAt date as grouping)
-  // Each remark = one point. We show them all with add point button.
-  const open = res.data.filter(r => r.status !== 'resolved');
-  const done = res.data.filter(r => r.status === 'resolved');
+  const points = res.data;
+  const open = points.filter(r => r.status !== 'resolved');
+  const done = points.filter(r => r.status === 'resolved');
 
-  const renderPoint = (r) => `
-    <div id="point-${r.id}" style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;border-left:4px solid ${r.priority==='critical'?'var(--accent)':r.priority==='high'?'var(--amber)':r.status==='resolved'?'var(--green)':'var(--blue)'};">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">
-        <div style="flex:1;">
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
-            <span class="badge ${r.priority==='critical'?'badge-red':r.priority==='high'?'badge-amber':r.status==='resolved'?'badge-green':'badge-muted'}">${r.priority==='critical'?'🔴 Critique':r.priority==='high'?'🟠 Élevé':r.status==='resolved'?'✅ Fait':'🔵 Normal'}</span>
-            ${r.zone?`<span style="font-size:12px;color:var(--text3);">📍 ${r.zone}</span>`:''}
-            ${r.assignedToUser?`<span style="font-size:12px;color:var(--blue);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</span>`:''}
+  const priorityClass = {critical:'p-critical', high:'p-high', normal:'p-normal', low:'p-normal'};
+  const priorityLabel = {critical:'🔴', high:'🟠', normal:'🔵', low:'🟢'};
+  const statusDot = {open:'var(--accent)', in_progress:'var(--amber)', resolved:'var(--green)'};
+
+  const renderPoint = (r, idx) => {
+    const pClass = r.status === 'resolved' ? 'p-resolved' : (priorityClass[r.priority] || 'p-normal');
+    const photos = r.photos || [];
+    return `
+    <div class="terrain-point ${pClass}" id="terrain-point-${r.id}">
+      <!-- Header -->
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:14px 14px 8px;">
+        <div class="terrain-num">${idx}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;line-height:1.3;">${r.title}</div>
+          <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center;">
+            ${r.zone ? `<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;color:var(--text3);">📍 ${r.zone}</span>` : ''}
+            ${r.assignedToUser ? `<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;color:var(--blue);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</span>` : ''}
+            <span style="font-size:11px;color:var(--text3);">${fmtDate(r.createdAt)}</span>
           </div>
-          <div style="font-weight:600;font-size:14px;">${r.title}</div>
-          ${r.description?`<div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;">${r.description}</div>`:''}
         </div>
-        <div style="display:flex;gap:4px;flex-shrink:0;">
-          ${r.status!=='resolved'?`<button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}','${projectId}')">✓ Fait</button>`:''}
-          <button class="btn btn-ghost btn-xs" onclick="openPointDetail('${r.id}','${projectId}')">✏️</button>
-          <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteRemark('${r.id}','${projectId}')">🗑</button>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+          <span style="font-size:16px;">${priorityLabel[r.priority] || '🔵'}</span>
+          ${r.status === 'resolved' ? '<span style="font-size:18px;">✅</span>' : ''}
         </div>
       </div>
+
+      <!-- Description -->
+      ${r.description ? `<div style="padding:0 14px 10px;font-size:13px;color:var(--text2);line-height:1.6;">${r.description}</div>` : ''}
+
       <!-- Photos -->
-      ${(r.photos||[]).length>0?`
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-          ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
-        </div>`:''
-      }
-      <!-- Ajouter photo inline -->
-      <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);cursor:pointer;padding:4px 8px;border:1px dashed var(--border);border-radius:6px;transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
-        📸 Photo
-        <input type="file" accept="image/*" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
-      </label>
+      ${photos.length > 0 || r.status !== 'resolved' ? `
+      <div class="terrain-photos">
+        ${photos.map(p => `
+          <div class="terrain-photo" onclick="openPhotoViewer('${p.photoUrl}')">
+            <img src="${p.photoUrl}" alt="" loading="lazy">
+          </div>`).join('')}
+        ${r.status !== 'resolved' ? `
+          <label class="terrain-photo-add" title="Ajouter photo">
+            📸
+            <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
+          </label>` : ''}
+      </div>` : ''}
+
+      <!-- Footer actions -->
+      <div style="display:flex;align-items:center;gap:6px;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg3);">
+        ${r.status !== 'resolved' ? `
+          <button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}','${projectId}')">✓ Traité</button>
+          <button class="btn btn-ghost btn-xs" onclick="openPointDetail('${r.id}','${projectId}')">✏️ Modifier</button>` :
+          `<span style="font-size:12px;color:var(--green);font-weight:600;">✅ Traité</span>
+           ${r.resolutionNotes ? `<span style="font-size:11px;color:var(--text3);">→ ${r.resolutionNotes}</span>` : ''}`}
+        <button class="btn btn-ghost btn-xs" style="margin-left:auto;color:var(--accent);" onclick="deleteRemark('${r.id}','${projectId}')">🗑️</button>
+      </div>
+    </div>`;
+  };
+
+  let content = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:16px;font-weight:700;">📋 Visite Client</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">${open.length} point(s) en cours · ${done.length} traité(s)</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF Rapport</button>
+      </div>
     </div>`;
 
-  let content = btn;
   if (open.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">⏳ À traiter (${open.length})</div>`;
-    content += open.map(renderPoint).join('');
+    content += open.map((r, i) => renderPoint(r, i + 1)).join('');
   }
   if (done.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 10px;">✅ Traités (${done.length})</div>`;
-    content += done.map(renderPoint).join('');
+    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:20px 0 10px;">✅ Points traités (${done.length})</div>`;
+    content += done.map((r, i) => renderPoint(r, open.length + i + 1)).join('');
   }
-  
-  // Add point button at bottom
-  content += `
-    <div style="border:2px dashed var(--border);border-radius:var(--radius);padding:14px;text-align:center;cursor:pointer;transition:all .2s;" onclick="openAddPointModal('${projectId}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-      <span style="font-size:13px;color:var(--text3);">+ Ajouter un point terrain</span>
-    </div>`;
 
+  content += addBtn;
   el.innerHTML = content;
 }
+
 
 function openNewVisiteModal(projectId) {
   // Pre-fill project
@@ -5828,56 +6141,56 @@ function showModal_toolbox_new() {
     <!-- Sections à inclure -->
     <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Sections à inclure</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;" id="report-sections">
-      <label class="report-section-toggle active" data-section="overview">
+      <label class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this)">
         <input type="checkbox" checked style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">📋</span>
           <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:var(--text2);">Infos projet, dates, équipe</div></div>
         </div>
       </label>
-      <label class="report-section-toggle active" data-section="tasks">
+      <label class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this)">
         <input type="checkbox" checked style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">✅</span>
           <div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:var(--text2);">Statut et avancement</div></div>
         </div>
       </label>
-      <label class="report-section-toggle active" data-section="daily">
+      <label class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this)">
         <input type="checkbox" checked style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">📓</span>
           <div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:var(--text2);">Journal journalier</div></div>
         </div>
       </label>
-      <label class="report-section-toggle" data-section="handover">
+      <label class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🧾</span>
           <div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:var(--text2);">Rapport de réception</div></div>
         </div>
       </label>
-      <label class="report-section-toggle" data-section="tickets">
+      <label class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🛠️</span>
           <div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:var(--text2);">Incidents et résolutions</div></div>
         </div>
       </label>
-      <label class="report-section-toggle" data-section="visite">
+      <label class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">📸</span>
           <div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:var(--text2);">Points et remarques</div></div>
         </div>
       </label>
-      <label class="report-section-toggle" data-section="logistics">
+      <label class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🚛</span>
           <div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:var(--text2);">Camions et machines</div></div>
         </div>
       </label>
-      <label class="report-section-toggle active" data-section="ai_summary">
+      <label class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this)">
         <input type="checkbox" checked style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">🤖</span>
@@ -5917,10 +6230,10 @@ function showModal_toolbox_new() {
 
 <style>
 .report-section-toggle{
-  display:flex;align-items:center;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;user-select:none;
 }
-.report-section-toggle:hover{border-color:var(--border2);}
-.report-section-toggle.active{border-color:var(--accent);background:rgba(230,57,70,.06);}
+.report-section-toggle:hover{border-color:var(--border2);background:var(--bg3);}
+.report-section-toggle.active{border-color:var(--accent)!important;background:rgba(230,57,70,.08)!important;}
 </style>
 
 </body>
