@@ -376,6 +376,12 @@ textarea.input{min-height:80px;resize:vertical;}
   .nav-overlay{display:none!important;}
 }
 
+/* FAB menu — hidden by default */
+.fab-menu{display:none!important;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9998;flex-direction:column;gap:10px;align-items:center;width:220px;}
+.fab-menu.open{display:flex!important;}
+.fab-item{display:flex;align-items:center;gap:12px;background:#111318;border:1px solid #2a2f3a;border-radius:14px;padding:12px 20px;cursor:pointer;font-size:14px;font-weight:600;color:#f0f2f5;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;width:100%;}
+.fab-item span{font-size:20px;}
+
 /* ══ MOBILE ══ */
 @media(max-width:768px){
   /* Sidebar complètement cachée sur mobile */
