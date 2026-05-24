@@ -303,22 +303,35 @@ textarea.input{min-height:80px;resize:vertical;}
 .terrain-add-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:16px;border:2px dashed var(--border);border-radius:14px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;transition:all .2s;background:transparent;width:100%;margin-top:8px;}
 .terrain-add-btn:hover,.terrain-add-btn:active{border-color:var(--accent);color:var(--accent);}
 
-/* ══ DESKTOP ══ */
+/* ── BOTTOM NAV BASE (always present, hidden on desktop) ── */
+.bottom-nav{
+  display:block;
+  position:fixed;bottom:0;left:0;right:0;
+  background:var(--bg2);
+  border-top:1px solid var(--border);
+  z-index:300;
+  padding-bottom:env(safe-area-inset-bottom);
+  box-shadow:0 -4px 20px rgba(0,0,0,.3);
+}
+
+/* ══ DESKTOP — hide mobile elements ══ */
 @media(min-width:769px){
-  .bottom-nav,.fab,.fab-menu,.menu-btn{display:none!important;}
+  .bottom-nav,.fab-menu,.menu-btn{display:none!important;}
+  .bn-fab-center{display:none!important;}
   .nav-overlay{display:none!important;}
 }
 
 /* ══ MOBILE ══ */
 @media(max-width:768px){
-  /* Sidebar masquée par défaut, slide depuis la gauche */
+  /* Sidebar masquée par défaut */
   .nav{transform:translateX(-100%);transition:transform .3s;}
   .nav.open{transform:none;z-index:400;}
   .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:399;}
   .nav-overlay.open{display:block;}
 
-  /* Main sans sidebar */
-  .main{margin-left:0!important;padding-bottom:72px;}
+  /* Main sans sidebar + espace pour bottom nav */
+  .main{margin-left:0!important;padding-bottom:80px;}
+  .bottom-nav{display:block!important;}
   .content{padding:12px;}
   .topbar{padding:0 12px;height:50px;}
   .topbar-title{font-size:15px!important;}
@@ -406,6 +419,10 @@ textarea.input{min-height:80px;resize:vertical;}
       <div class="form-group">
         <label class="form-label">Mot de passe</label>
         <input class="form-input" id="login-pwd" type="password" placeholder="••••••••" >
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer;" onclick="document.getElementById('remember-me').click()">
+        <input type="checkbox" id="remember-me" checked style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <span style="font-size:13px;color:var(--text2);">Rester connecté</span>
       </div>
       <button class="login-btn" id="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-error" id="login-error">Email ou mot de passe incorrect</div>
@@ -1212,8 +1229,8 @@ textarea.input{min-height:80px;resize:vertical;}
 const API = window.location.origin + '/api/v1';
 
 // ═══ STATE ═══
-let TOKEN = localStorage.getItem('vem_token') || '';
-let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || 'null');
+let TOKEN = localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
+let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || sessionStorage.getItem('vem_user') || 'null');
 let PROJECTS = [];
 let USERS = [];
 let CLIENTS = [];
