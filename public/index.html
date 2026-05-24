@@ -405,7 +405,7 @@ textarea.input{min-height:80px;resize:vertical;}
   .nav-overlay.open{display:block;}
 
   /* Main plein écran + espace bottom nav */
-  .main{margin-left:0!important;padding-bottom:80px;}
+  .main{margin-left:0!important;padding-bottom:90px!important;}
   .shell{display:block!important;}
   .bottom-nav{display:block!important;}
   
@@ -435,8 +435,9 @@ textarea.input{min-height:80px;resize:vertical;}
     max-width:100%!important;
     width:100%!important;
     margin:0!important;
-    max-height:92vh;
-    padding:20px 16px calc(20px + env(safe-area-inset-bottom))!important;
+    max-height:88vh;
+    overflow-y:auto;
+    padding:20px 16px calc(80px + env(safe-area-inset-bottom))!important;
     animation:slideUp .25s ease!important;
   }
   @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
@@ -1196,61 +1197,47 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- Handover -->
 <div class="overlay" id="modal-handover">
-  <div class="modal" style="max-width:780px;">
+  <div class="modal" style="max-width:680px;">
     <div class="modal-head">
-      <div><div class="modal-title">🧾 Rapport de Réception — Handover</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Inspection et validation avec le client</div></div>
+      <div><div class="modal-title">🧾 Nouveau Handover</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Rapport de réception terrain</div></div>
       <button class="modal-close" onclick="closeModal('modal-handover')">×</button>
     </div>
 
-    <!-- Infos générales -->
+    <!-- Step 1: Infos de base -->
     <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="input-row">
         <div class="form-group2" style="margin:0;"><label class="form-label2">Projet *</label><select class="input" id="handover-project"><option value="">— Sélectionner —</option></select></div>
-        <div class="form-group2" style="margin:0;"><label class="form-label2">Date de réception</label><input class="input" type="date" id="handover-date"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Date</label><input class="input" type="date" id="handover-date"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div class="form-group2" style="margin:0;"><label class="form-label2">Site Manager</label><select class="input" id="handover-site-manager"><option value="">— Sélectionner —</option></select></div>
-        <div class="form-group2" style="margin:0;"><label class="form-label2">Représentant client présent</label><input class="input" id="handover-responsible" placeholder="Nom de la personne présente"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-        <div class="form-group2" style="margin:0;"><label class="form-label2">Nom client / Société</label><input class="input" id="handover-client-name" placeholder="ex: Marc Dupont — Audi Belgium"></div>
-        <div class="form-group2" style="margin:0;"><label class="form-label2">Email client (pour envoi PDF)</label><input class="input" type="email" id="handover-client-email" placeholder="client@email.com"></div>
+      <div class="input-row" style="margin-top:10px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Client / Société</label><input class="input" id="handover-client-name" placeholder="ex: Audi Belgium"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Représentant client</label><input class="input" id="handover-responsible" placeholder="Nom de la personne"></div>
       </div>
     </div>
 
-    <!-- Zones d'inspection -->
+    <!-- Step 2: Zones terrain -->
     <div style="margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-size:13px;font-weight:700;">🔍 Zones inspectées</div>
-        <button class="btn btn-ghost btn-xs" onclick="addHandoverZone()">+ Ajouter zone</button>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:6px;padding:0 2px;">
-        <span>Zone / Emplacement</span><span>Statut</span><span>Commentaire</span><span></span>
-      </div>
-      <div id="handover-zones-list"></div>
-    </div>
-
-    <!-- Notes + Signature -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-      <div class="form-group2" style="margin:0;">
-        <label class="form-label2">Notes générales</label>
-        <textarea class="input" id="handover-notes" rows="4" placeholder="Observations, points à noter..."></textarea>
-      </div>
-      <div>
-        <label class="form-label2">Signature client (après création)</label>
-        <div style="background:var(--bg3);border:1px dashed var(--border);border-radius:var(--radius);padding:14px;font-size:12px;color:var(--text3);text-align:center;min-height:96px;display:flex;align-items:center;justify-content:center;">
-          ✍️ La signature sera disponible<br>après création du handover
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;">🔍 Points d'inspection</div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-xs" onclick="addHandoverZoneVoice()" title="Dicter un point">🎙️ Voix</button>
+          <button class="btn btn-ghost btn-xs" onclick="addHandoverZone()">+ Ajouter</button>
         </div>
       </div>
+      <div id="handover-zones-list" style="display:flex;flex-direction:column;gap:10px;max-height:40vh;overflow-y:auto;padding-right:2px;"></div>
+      <button class="terrain-add-btn" onclick="addHandoverZone()" style="margin-top:8px;">
+        <span style="font-size:20px;">＋</span> Ajouter un point terrain
+      </button>
     </div>
 
-    <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:10px;font-size:12px;color:var(--text2);margin-bottom:14px;">
-      📸 Les photos par zone et la signature se font après création via le bouton <strong>👁️ Ouvrir</strong>
+    <div class="form-group2">
+      <label class="form-label2">Notes générales</label>
+      <textarea class="input" id="handover-notes" rows="2" placeholder="Observations générales..."></textarea>
     </div>
 
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-outline" onclick="closeModal('modal-handover')">Annuler</button>
-      <button class="btn btn-primary" onclick="createHandover()">✅ Créer le Handover</button>
+      <button class="btn btn-primary" onclick="createHandover()">✅ Créer et signer</button>
     </div>
   </div>
 </div>
@@ -5171,8 +5158,148 @@ async function sendForgotPassword() {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// INVITATION SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+function showInviteModal() {
+  document.getElementById('invite-result').style.display = 'none';
+  document.getElementById('invite-link-input').value = '';
+  showModal('modal-invite');
+}
+
+async function generateInviteLink() {
+  const role = document.getElementById('invite-role').value;
+  const email = document.getElementById('invite-email').value || undefined;
+  const note = document.getElementById('invite-note').value || undefined;
+  const btn = document.getElementById('invite-gen-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span>'; }
+
+  const res = await api('POST', '/auth/invite', { role, email, note });
+
+  if (btn) { btn.disabled=false; btn.innerHTML='🔗 Générer le lien'; }
+
+  if (res?.success) {
+    const link = res.data.inviteUrl;
+    document.getElementById('invite-link-input').value = link;
+    document.getElementById('invite-result').style.display = 'block';
+    // Auto-copy
+    copyInviteLink();
+  } else {
+    // Fallback: generate client-side token for demo
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const link = `${window.location.origin}?invite=${token}&role=${role}`;
+    document.getElementById('invite-link-input').value = link;
+    document.getElementById('invite-result').style.display = 'block';
+    toast('Lien généré (API invite non déployée — fonctionne en mode démo)', 'warning');
+  }
+}
+
+function copyInviteLink() {
+  const input = document.getElementById('invite-link-input');
+  if (!input) return;
+  input.select();
+  navigator.clipboard?.writeText(input.value).then(()=>toast('Lien copié ✅','success')).catch(()=>{
+    document.execCommand('copy');
+    toast('Lien copié ✅','success');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// REGISTER PAGE — shown when ?invite=TOKEN in URL
+// ═══════════════════════════════════════════════════════════
+
+function checkInviteParam() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('invite');
+  const role = params.get('role');
+  if (!token) return false;
+
+  // Show register screen
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'none';
+  const regScreen = document.getElementById('register-screen');
+  if (regScreen) regScreen.style.display = 'flex';
+
+  // Pre-fill role if in URL
+  if (role) {
+    const roleLabels = {
+      worker:'👷 Installation Team',
+      engineer:'⚙️ Sales Engineer',
+      site_manager:'🏗️ Site Manager',
+      technical_manager:'🔧 Technical Manager',
+      warehouse:'📦 Warehouse Labour',
+    };
+    const sel = document.getElementById('reg-role');
+    if (sel) sel.value = role;
+    const lbl = document.getElementById('register-role-label');
+    if (lbl && roleLabels[role]) lbl.textContent = `Rôle : ${roleLabels[role]}`;
+  }
+
+  // Store invite token
+  window.INVITE_TOKEN = token;
+  return true;
+}
+
+async function submitRegister() {
+  const firstName = document.getElementById('reg-firstname')?.value.trim();
+  const lastName  = document.getElementById('reg-lastname')?.value.trim();
+  const email     = document.getElementById('reg-email')?.value.trim();
+  const role      = document.getElementById('reg-role')?.value;
+  const password  = document.getElementById('reg-password')?.value;
+  const password2 = document.getElementById('reg-password2')?.value;
+  const errEl     = document.getElementById('reg-error');
+  const btn       = document.getElementById('reg-btn');
+
+  const showErr = (msg) => {
+    if (errEl) { errEl.style.display='block'; errEl.textContent=msg; }
+  };
+
+  if (!firstName||!lastName||!email||!password) return showErr('Tous les champs obligatoires doivent être remplis.');
+  if (password.length < 8) return showErr('Le mot de passe doit contenir au moins 8 caractères.');
+  if (password !== password2) return showErr('Les mots de passe ne correspondent pas.');
+
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
+
+  // Try register via invite endpoint
+  const res = await fetch(`${window.location.origin}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      firstName, lastName, email, password, role,
+      inviteToken: window.INVITE_TOKEN,
+    }),
+  }).then(r=>r.json()).catch(()=>null);
+
+  if (res?.success) {
+    // Auto-login
+    TOKEN = res.data.token;
+    CURRENT_USER = res.data.user;
+    localStorage.setItem('vem_token', TOKEN);
+    localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER));
+    document.getElementById('register-screen').style.display = 'none';
+    // Clean URL
+    window.history.replaceState({}, '', window.location.pathname);
+    showApp();
+    toast(`Bienvenue ${firstName} ! 🎉`, 'success');
+  } else {
+    const msg = res?.error || 'Erreur création de compte';
+    showErr(msg);
+    if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer mon compte'; }
+  }
+}
+
+function showLoginFromRegister() {
+  document.getElementById('register-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  window.history.replaceState({}, '', window.location.pathname);
+}
+
 // ═══ INIT ═══
-if (TOKEN && CURRENT_USER) {
+if (checkInviteParam()) {
+  // Show register page — handled in checkInviteParam
+} else if (TOKEN && CURRENT_USER) {
   showApp();
 } else {
   document.getElementById('login-screen').style.display = 'flex';
@@ -5771,21 +5898,35 @@ async function savePoint(projectId, overlay) {
 
   if (res?.success) {
     // Upload photos
-    for (const file of PENDING_POINT_PHOTOS) {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('phase', 'problem');
-      try {
-        await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
-          method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
-        });
-      } catch {}
+    if (PENDING_POINT_PHOTOS.length) {
+      toast(`Upload ${PENDING_POINT_PHOTOS.length} photo(s)...`, 'info');
+      for (const file of PENDING_POINT_PHOTOS) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('phase', 'problem');
+        try {
+          await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+          });
+        } catch {}
+      }
     }
     PENDING_POINT_PHOTOS = [];
     toast('Point ajouté ✅', 'success');
     overlay?.remove();
     loadDetailRemarks(projectId);
-  } else toast('Erreur — vérifiez que le SQL client_remarks est bien exécuté', 'error');
+  } else {
+    // Show detailed error
+    const errMsg = res?.error || 'Erreur inconnue';
+    console.error('savePoint error:', res);
+    if (errMsg.includes('not found') || errMsg.includes('404')) {
+      toast('Route /client-remarks manquante — vérifie src/index.ts', 'error');
+    } else if (errMsg.includes('column') || errMsg.includes('table')) {
+      toast('Table SQL manquante — exécute le SQL client_remarks dans Railway', 'error');
+    } else {
+      toast('Erreur: ' + errMsg, 'error');
+    }
+  }
 }
 
 async function uploadPointPhoto(remarkId, projectId, input) {
@@ -6339,6 +6480,87 @@ function showModal_toolbox_new() {
 .report-section-toggle:hover{border-color:var(--border2);background:var(--bg3);}
 .report-section-toggle.active{border-color:var(--accent)!important;background:rgba(230,57,70,.08)!important;}
 </style>
+
+
+<!-- INVITE MODAL -->
+<div class="overlay" id="modal-invite">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head">
+      <div><div class="modal-title">🔗 Inviter un membre</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Génère un lien d'inscription unique</div></div>
+      <button class="modal-close" onclick="closeModal('modal-invite')">×</button>
+    </div>
+    <div class="form-group2">
+      <label class="form-label2">Rôle de la personne invitée</label>
+      <select class="input" id="invite-role">
+        <option value="worker">👷 Installation Team</option>
+        <option value="engineer">⚙️ Sales Engineer</option>
+        <option value="site_manager">🏗️ Site Manager</option>
+        <option value="technical_manager">🔧 Technical Manager</option>
+        <option value="warehouse">📦 Warehouse Labour</option>
+      </select>
+    </div>
+    <div class="form-group2">
+      <label class="form-label2">Email de la personne (optionnel)</label>
+      <input class="input" id="invite-email" type="email" placeholder="prenom@email.com">
+    </div>
+    <div class="form-group2">
+      <label class="form-label2">Note personnelle (optionnel)</label>
+      <input class="input" id="invite-note" placeholder="ex: Rejoint l'équipe pour le projet Audi">
+    </div>
+    <div id="invite-result" style="display:none;margin-top:14px;">
+      <div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;">✅ Lien d'invitation généré !</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="input" id="invite-link-input" readonly style="flex:1;font-size:12px;font-family:monospace;background:var(--bg3);">
+          <button class="btn btn-green btn-sm" onclick="copyInviteLink()">📋 Copier</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;">⏱️ Ce lien expire dans 48 heures</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-invite')">Fermer</button>
+      <button class="btn btn-primary" id="invite-gen-btn" onclick="generateInviteLink()">🔗 Générer le lien</button>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTER PAGE (shown when ?invite=TOKEN in URL) -->
+<div id="register-screen" style="display:none;min-height:100vh;background:var(--bg);"><div style="display:flex;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:460px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center;">
+      <div style="width:44px;height:44px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;">V</div>
+      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;">ViewBox Event Manager</div>
+    </div>
+    <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800;margin-bottom:6px;text-align:center;">Créer mon compte</div>
+    <div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:28px;" id="register-role-label">Vous avez été invité à rejoindre l'équipe</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+      <div class="form-group"><label class="form-label">Prénom *</label><input class="form-input" id="reg-firstname" placeholder="Prénom" autocomplete="given-name"></div>
+      <div class="form-group"><label class="form-label">Nom *</label><input class="form-input" id="reg-lastname" placeholder="Nom" autocomplete="family-name"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Email *</label><input class="form-input" id="reg-email" type="email" placeholder="votre@email.com" autocomplete="email"></div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label class="form-label">Rôle *</label>
+      <select class="form-input" id="reg-role" style="cursor:pointer;">
+        <option value="worker">👷 Installation Team</option>
+        <option value="engineer">⚙️ Sales Engineer</option>
+        <option value="site_manager">🏗️ Site Manager</option>
+        <option value="technical_manager">🔧 Technical Manager</option>
+        <option value="warehouse">📦 Warehouse Labour</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Mot de passe *</label><input class="form-input" id="reg-password" type="password" placeholder="Minimum 8 caractères" autocomplete="new-password"></div>
+    <div class="form-group" style="margin-bottom:20px;"><label class="form-label">Confirmer le mot de passe *</label><input class="form-input" id="reg-password2" type="password" placeholder="Répétez le mot de passe" autocomplete="new-password"></div>
+
+    <div id="reg-error" style="display:none;background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--accent);margin-bottom:14px;"></div>
+
+    <button class="login-btn" id="reg-btn" onclick="submitRegister()">✅ Créer mon compte</button>
+
+    <div style="text-align:center;margin-top:16px;">
+      <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showLoginFromRegister()">← Retour à la connexion</span>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
