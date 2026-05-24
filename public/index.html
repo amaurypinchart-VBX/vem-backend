@@ -323,15 +323,26 @@ textarea.input{min-height:80px;resize:vertical;}
 
 /* ══ MOBILE ══ */
 @media(max-width:768px){
-  /* Sidebar masquée par défaut */
-  .nav{transform:translateX(-100%);transition:transform .3s;}
-  .nav.open{transform:none;z-index:400;}
+  /* Sidebar complètement cachée sur mobile */
+  .nav{
+    display:none!important;
+    transform:translateX(-100%);
+    transition:transform .3s;
+  }
+  .nav.open{
+    display:flex!important;
+    transform:none;
+    z-index:400;
+  }
   .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:399;}
   .nav-overlay.open{display:block;}
 
-  /* Main sans sidebar + espace pour bottom nav */
+  /* Main plein écran + espace bottom nav */
   .main{margin-left:0!important;padding-bottom:80px;}
   .bottom-nav{display:block!important;}
+  
+  /* Cacher le menu burger dans la topbar — on utilise la bottom nav */
+  /* .menu-btn{display:flex!important;} */
   .content{padding:12px;}
   .topbar{padding:0 12px;height:50px;}
   .topbar-title{font-size:15px!important;}
