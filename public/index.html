@@ -3914,22 +3914,60 @@ async function uploadHandoverZonePhoto(handoverId, itemId, input, previewEl) {
   toast('Upload photo...','info');
   const fd = new FormData();
   fd.append('file', input.files[0]);
-  fd.append('handoverId', handoverId);
-  fd.append('itemId', itemId);
-  try {
-    const r = await fetch(`${API}/upload/photo`, {
-      method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
-    });
-    const data = await r.json();
-    if (data.success) {
+  // Try with handover context fields
+  if (handoverId) fd.append('handoverId', handoverId);
+  if (itemId) fd.append('itemId', itemId);
+
+  // Try multiple endpoints — fallback chain
+  const endpoints = [
+    `${API}/upload/photo`,
+    `${API}/upload`,
+    `${API}/handover/${handoverId}/items/${itemId}/photo`,
+  ];
+
+  let success = false;
+  for (const endpoint of endpoints) {
+    try {
+      const r = await fetch(endpoint, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const url = data.data?.url || data.url || data.photoUrl;
+      if (url) {
+        // Add to preview
+        const container = previewEl || document.getElementById(`zone-ph-${itemId}`);
+        if (container) {
+          const img = document.createElement('img');
+          img.src = url;
+          img.onclick = () => openPhotoViewer(url);
+          img.style.cssText = 'width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
+          const addBtn = container.querySelector('label');
+          if (addBtn) container.insertBefore(img, addBtn);
+          else container.appendChild(img);
+        }
+        toast('Photo ajoutée ✅','success');
+        success = true;
+        break;
+      }
+    } catch {}
+  }
+
+  if (!success) {
+    // Show locally anyway (preview without backend)
+    const url = URL.createObjectURL(input.files[0]);
+    const container = previewEl || document.getElementById(`zone-ph-${itemId}`);
+    if (container) {
       const img = document.createElement('img');
-      img.src = data.data?.url || data.url;
-      img.onclick = ()=>openPhotoViewer(img.src);
-      img.style.cssText='width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
-      previewEl.insertBefore(img, previewEl.querySelector('label'));
-      toast('Photo ajoutée ✅','success');
-    } else toast('Erreur upload','error');
-  } catch { toast('Erreur upload','error'); }
+      img.src = url;
+      img.onclick = () => openPhotoViewer(url);
+      img.style.cssText = 'width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
+      const addBtn = container.querySelector('label');
+      if (addBtn) container.insertBefore(img, addBtn);
+      else container.appendChild(img);
+    }
+    toast('Photo affichée (upload non disponible — vérifiez la route /upload/photo)','warning');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
