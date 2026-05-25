@@ -129,7 +129,16 @@ model Client {
 
   @@map("clients")
 }
+model HandoverItemPhoto {
+  id        String       @id @default(cuid())
+  itemId    String
+  item      HandoverItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  photoUrl  String
+  publicId  String?
+  createdAt DateTime     @default(now())
 
+  @@map("handover_item_photos")
+}
 model Project {
   id                  String        @id @default(uuid())
   internalNumber      String        @unique @map("internal_number")
