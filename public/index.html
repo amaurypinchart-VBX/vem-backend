@@ -3067,17 +3067,57 @@ async function editDailyReport(id) {
   const res = await api('GET', `/daily-reports/${id}`);
   if (!res?.success) { toast('Rapport introuvable', 'error'); return; }
   const r = res.data;
+  const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+
+  // Build editable entries
+  window._EDIT_ENTRIES = entries.map(e => ({...e}));
+
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML = `
-    <div class="modal" style="max-width:600px;">
-      <div class="modal-head"><div class="modal-title">✏️ Modifier le Rapport</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-head">
+        <div><div class="modal-title">✏️ Modifier le Rapport</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${fmtDate(r.reportDate)}</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Infos générales -->
       <div class="input-row">
         <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="er-date" value="${r.reportDate?.split('T')[0]||''}"></div>
-        <div class="form-group2"><label class="form-label2">Météo</label><select class="input" id="er-weather"><option ${r.weather?.includes('Ensoleillé')?'selected':''}>☀️ Ensoleillé</option><option ${r.weather?.includes('Nuageux')?'selected':''}>⛅ Nuageux</option><option ${r.weather?.includes('Pluie')?'selected':''}>🌧️ Pluie</option><option ${r.weather?.includes('Froid')?'selected':''}>❄️ Froid</option></select></div>
+        <div class="form-group2"><label class="form-label2">Météo</label>
+          <select class="input" id="er-weather">
+            <option ${r.weather?.includes('Ensoleillé')?'selected':''}>☀️ Ensoleillé</option>
+            <option ${r.weather?.includes('Nuageux')?'selected':''}>⛅ Nuageux</option>
+            <option ${r.weather?.includes('Pluie')?'selected':''}>🌧️ Pluie</option>
+            <option ${r.weather?.includes('Froid')?'selected':''}>❄️ Froid</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="er-workers" value="${r.workersPresent||0}"></div>
-      <div class="form-group2"><label class="form-label2">Notes générales</label><textarea class="input" id="er-notes" rows="4">${r.generalNotes||''}</textarea></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+      <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="er-workers" value="${r.workersPresent||0}" min="0"></div>
+
+      <!-- Entrées timeline modifiables -->
+      <div style="margin:14px 0 10px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">⏱️ Journal</div>
+        <button class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
+      </div>
+      <div id="edit-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:30vh;overflow-y:auto;padding-right:2px;"></div>
+
+      <!-- Notes -->
+      <div class="form-group2" style="margin-top:12px;"><label class="form-label2">Notes générales</label><textarea class="input" id="er-notes" rows="3">${r.generalNotes||''}</textarea></div>
+
+      <!-- Photos -->
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos</div>
+        <div id="er-photos-grid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(r.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        </div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📸 Ajouter photos
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadEditDailyPhotos('${id}',this)">
+        </label>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
@@ -3085,17 +3125,98 @@ async function editDailyReport(id) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  renderEditEntries();
+}
+
+function renderEditEntries() {
+  const list = document.getElementById('edit-entries-list');
+  if (!list) return;
+  if (!window._EDIT_ENTRIES.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune entrée — cliquez + Ajouter</div>';
+    return;
+  }
+  list.innerHTML = window._EDIT_ENTRIES.map((e, i) => `
+    <div style="display:flex;gap:8px;align-items:center;background:var(--bg3);border-radius:8px;padding:8px 10px;">
+      <input type="time" value="${e.entryTime||''}" onchange="window._EDIT_ENTRIES[${i}].entryTime=this.value"
+        style="width:80px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;flex-shrink:0;">
+      <input value="${(e.description||'').replace(/"/g,'&quot;')}" onchange="window._EDIT_ENTRIES[${i}].description=this.value"
+        style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border);padding:4px 2px;color:var(--text);font-size:13px;"
+        placeholder="Description...">
+      <button onclick="window._EDIT_ENTRIES.splice(${i},1);renderEditEntries()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:16px;flex-shrink:0;">✕</button>
+    </div>`).join('');
+}
+
+function addEditEntry() {
+  if (!window._EDIT_ENTRIES) window._EDIT_ENTRIES = [];
+  window._EDIT_ENTRIES.push({ entryTime: '', description: '' });
+  renderEditEntries();
+  // Focus last input
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#edit-entries-list input[placeholder]');
+    if (inputs.length) inputs[inputs.length-1].focus();
+  }, 50);
+}
+
+async function uploadEditDailyPhotos(reportId, input) {
+  if (!input.files?.length) return;
+  const grid = document.getElementById('er-photos-grid');
+  toast(`Upload ${input.files.length} photo(s)...`, 'info');
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await fetch(`${API}/upload/daily-photo/${reportId}`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+      });
+      const data = await r.json();
+      const url = data.data?.url || data.url;
+      if (url && grid) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.onclick = () => openPhotoViewer(url);
+        img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+        grid.appendChild(img);
+      }
+    } catch {}
+  }
+  toast('Photos ajoutées ✅', 'success');
 }
 
 async function saveDailyReport(id, overlay) {
-  const res = await api('PATCH', `/daily-reports/${id}`, {
+  // Collect current values from DOM before saving
+  const entriesEls = document.querySelectorAll('#edit-entries-list > div');
+  if (entriesEls.length && window._EDIT_ENTRIES) {
+    entriesEls.forEach((div, i) => {
+      const timeInput = div.querySelector('input[type="time"]');
+      const descInput = div.querySelector('input[placeholder]');
+      if (window._EDIT_ENTRIES[i]) {
+        if (timeInput) window._EDIT_ENTRIES[i].entryTime = timeInput.value;
+        if (descInput) window._EDIT_ENTRIES[i].description = descInput.value;
+      }
+    });
+  }
+
+  const body = {
     reportDate: document.getElementById('er-date').value,
     weather: document.getElementById('er-weather').value,
     workersPresent: parseInt(document.getElementById('er-workers').value)||0,
     generalNotes: document.getElementById('er-notes').value||undefined,
-  });
-  if (res?.success) { toast('Rapport mis à jour ✅','success'); overlay?.remove(); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); }
-  else toast('Erreur mise à jour','error');
+  };
+
+  // Include entries if modified
+  if (window._EDIT_ENTRIES?.length) {
+    body.entries = window._EDIT_ENTRIES
+      .filter(e => e.description?.trim())
+      .map(e => ({ entryTime: e.entryTime||null, description: e.description }));
+  }
+
+  const res = await api('PATCH', `/daily-reports/${id}`, body);
+  if (res?.success) {
+    toast('Rapport mis à jour ✅','success');
+    window._EDIT_ENTRIES = [];
+    overlay?.remove();
+    loadDailyReports();
+    if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);
+  } else toast('Erreur mise à jour','error');
 }
 
 async function deleteDailyReport(id) {
