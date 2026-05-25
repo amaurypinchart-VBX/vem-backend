@@ -123,5 +123,18 @@ router.post('/:id/generate-pdf', async (req: AuthRequest, res: Response, next: N
     res.send(pdfBuffer);
   } catch (err) { next(err); }
 });
-
+// POST /handover/:id/items/:itemId/photo
+router.post('/:id/items/:itemId/photo', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { photoUrl, publicId } = req.body;
+    const photo = await prisma.handoverItemPhoto.create({
+      data: {
+        itemId: req.params.itemId,
+        photoUrl,
+        publicId: publicId || null,
+      }
+    });
+    res.status(201).json({ success: true, data: photo });
+  } catch (err) { next(err); }
+});
 export default router;
