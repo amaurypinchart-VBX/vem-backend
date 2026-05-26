@@ -4474,21 +4474,19 @@ function showReportModal() {
 
 // Toggle sections — direct function called from onclick
 function toggleReportSection(el) {
-  // Stop event bubbling
-  event.stopPropagation();
   const wasActive = el.classList.contains('active');
   el.classList.toggle('active');
-  const cb = el.querySelector('input[type="checkbox"]');
-  if (cb) cb.checked = !wasActive;
-  // Visual feedback with hard colors
-  el.style.border = !wasActive ? '2px solid #e63946' : '2px solid #2a2f3a';
-  el.style.background = !wasActive ? 'rgba(230,57,70,.08)' : '';
-  el.style.transform = 'scale(0.97)';
-  setTimeout(() => el.style.transform = '', 100);
-  // Update count
+  // Hard color update directly on element
+  if (!wasActive) {
+    el.style.cssText = 'border:2px solid #e63946!important;background:rgba(230,57,70,.1)!important;';
+  } else {
+    el.style.cssText = 'border:2px solid #2a2f3a!important;background:transparent!important;';
+  }
+  // Update hint
   const count = document.querySelectorAll('.report-section-toggle.active').length;
   const hint = document.getElementById('report-sections-hint');
-  if (hint) hint.textContent = `${count} section(s) sélectionnée(s)`;
+  if (hint) hint.textContent = count + ' section(s) sélectionnée(s)';
+  return false; // prevent default
 }
 
 function getSelectedSections() {
@@ -6555,62 +6553,62 @@ function showModal_toolbox_new() {
     <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Sections à inclure</div>
     <div style="font-size:11px;color:#8892a4;margin-bottom:8px;" id="report-sections-hint">Appuyez pour sélectionner/désélectionner</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;" id="report-sections">
-      <label class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      <div class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;pointer-events:none;">
           <span style="font-size:18px;">📋</span>
           <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:#8892a4;">Infos projet, dates, équipe</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">✅</span>
           <div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:var(--text2);">Statut et avancement</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">📓</span>
           <div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:var(--text2);">Journal journalier</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🧾</span>
           <div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:var(--text2);">Rapport de réception</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🛠️</span>
           <div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:var(--text2);">Incidents et résolutions</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">📸</span>
           <div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:var(--text2);">Points et remarques</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🚛</span>
           <div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:var(--text2);">Camions et machines</div></div>
         </div>
-      </label>
-      <label class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this)">
-        <input type="checkbox" style="display:none;">
+      </div>
+      <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
+        
         <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🤖</span>
           <div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:var(--text2);">Analyse et points clés</div></div>
         </div>
-      </label>
+      </div>
     </div>
 
     <!-- Langue -->
@@ -6618,13 +6616,13 @@ function showModal_toolbox_new() {
       <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
         <input type="radio" name="report-lang" value="fr" checked> Français
-      </label>
+      </div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
         <input type="radio" name="report-lang" value="en"> English
-      </label>
+      </div>
       <label style="display:flex;align-items:center;gap=6px;cursor:pointer;font-size:13px;">
         <input type="radio" name="report-lang" value="nl"> Nederlands
-      </label>
+      </div>
     </div>
 
     <!-- Status -->
@@ -6659,7 +6657,7 @@ function showModal_toolbox_new() {
       <button class="modal-close" onclick="closeModal('modal-invite')">×</button>
     </div>
     <div class="form-group2">
-      <label class="form-label2">Rôle de la personne invitée</label>
+      <label class="form-label2">Rôle de la personne invitée</div>
       <select class="input" id="invite-role">
         <option value="worker">👷 Installation Team</option>
         <option value="engineer">⚙️ Sales Engineer</option>
@@ -6669,11 +6667,11 @@ function showModal_toolbox_new() {
       </select>
     </div>
     <div class="form-group2">
-      <label class="form-label2">Email de la personne (optionnel)</label>
+      <label class="form-label2">Email de la personne (optionnel)</div>
       <input class="input" id="invite-email" type="email" placeholder="prenom@email.com">
     </div>
     <div class="form-group2">
-      <label class="form-label2">Note personnelle (optionnel)</label>
+      <label class="form-label2">Note personnelle (optionnel)</div>
       <input class="input" id="invite-note" placeholder="ex: Rejoint l'équipe pour le projet Audi">
     </div>
     <div id="invite-result" style="display:none;margin-top:14px;">
@@ -6704,12 +6702,12 @@ function showModal_toolbox_new() {
     <div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:28px;" id="register-role-label">Vous avez été invité à rejoindre l'équipe</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
-      <div class="form-group"><label class="form-label">Prénom *</label><input class="form-input" id="reg-firstname" placeholder="Prénom" autocomplete="given-name"></div>
-      <div class="form-group"><label class="form-label">Nom *</label><input class="form-input" id="reg-lastname" placeholder="Nom" autocomplete="family-name"></div>
+      <div class="form-group"><label class="form-label">Prénom *</div><input class="form-input" id="reg-firstname" placeholder="Prénom" autocomplete="given-name"></div>
+      <div class="form-group"><label class="form-label">Nom *</div><input class="form-input" id="reg-lastname" placeholder="Nom" autocomplete="family-name"></div>
     </div>
-    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Email *</label><input class="form-input" id="reg-email" type="email" placeholder="votre@email.com" autocomplete="email"></div>
+    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Email *</div><input class="form-input" id="reg-email" type="email" placeholder="votre@email.com" autocomplete="email"></div>
     <div class="form-group" style="margin-bottom:14px;">
-      <label class="form-label">Rôle *</label>
+      <label class="form-label">Rôle *</div>
       <select class="form-input" id="reg-role" style="cursor:pointer;">
         <option value="worker">👷 Installation Team</option>
         <option value="engineer">⚙️ Sales Engineer</option>
@@ -6718,8 +6716,8 @@ function showModal_toolbox_new() {
         <option value="warehouse">📦 Warehouse Labour</option>
       </select>
     </div>
-    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Mot de passe *</label><input class="form-input" id="reg-password" type="password" placeholder="Minimum 8 caractères" autocomplete="new-password"></div>
-    <div class="form-group" style="margin-bottom:20px;"><label class="form-label">Confirmer le mot de passe *</label><input class="form-input" id="reg-password2" type="password" placeholder="Répétez le mot de passe" autocomplete="new-password"></div>
+    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Mot de passe *</div><input class="form-input" id="reg-password" type="password" placeholder="Minimum 8 caractères" autocomplete="new-password"></div>
+    <div class="form-group" style="margin-bottom:20px;"><label class="form-label">Confirmer le mot de passe *</div><input class="form-input" id="reg-password2" type="password" placeholder="Répétez le mot de passe" autocomplete="new-password"></div>
 
     <div id="reg-error" style="display:none;background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--accent);margin-bottom:14px;"></div>
 
