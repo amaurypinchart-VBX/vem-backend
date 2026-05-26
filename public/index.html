@@ -4474,12 +4474,21 @@ function showReportModal() {
 
 // Toggle sections — direct function called from onclick
 function toggleReportSection(el) {
+  // Stop event bubbling
+  event.stopPropagation();
+  const wasActive = el.classList.contains('active');
   el.classList.toggle('active');
   const cb = el.querySelector('input[type="checkbox"]');
-  if (cb) cb.checked = el.classList.contains('active');
-  // Visual feedback
+  if (cb) cb.checked = !wasActive;
+  // Visual feedback with hard colors
+  el.style.border = !wasActive ? '2px solid #e63946' : '2px solid #2a2f3a';
+  el.style.background = !wasActive ? 'rgba(230,57,70,.08)' : '';
   el.style.transform = 'scale(0.97)';
   setTimeout(() => el.style.transform = '', 100);
+  // Update count
+  const count = document.querySelectorAll('.report-section-toggle.active').length;
+  const hint = document.getElementById('report-sections-hint');
+  if (hint) hint.textContent = `${count} section(s) sélectionnée(s)`;
 }
 
 function getSelectedSections() {
@@ -6544,59 +6553,60 @@ function showModal_toolbox_new() {
 
     <!-- Sections à inclure -->
     <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Sections à inclure</div>
+    <div style="font-size:11px;color:#8892a4;margin-bottom:8px;" id="report-sections-hint">Appuyez pour sélectionner/désélectionner</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;" id="report-sections">
       <label class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this)">
-        <input type="checkbox" checked style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;pointer-events:none;">
           <span style="font-size:18px;">📋</span>
-          <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:var(--text2);">Infos projet, dates, équipe</div></div>
+          <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:#8892a4;">Infos projet, dates, équipe</div></div>
         </div>
       </label>
       <label class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this)">
-        <input type="checkbox" checked style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">✅</span>
           <div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:var(--text2);">Statut et avancement</div></div>
         </div>
       </label>
       <label class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this)">
-        <input type="checkbox" checked style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">📓</span>
           <div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:var(--text2);">Journal journalier</div></div>
         </div>
       </label>
       <label class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🧾</span>
           <div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:var(--text2);">Rapport de réception</div></div>
         </div>
       </label>
       <label class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🛠️</span>
           <div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:var(--text2);">Incidents et résolutions</div></div>
         </div>
       </label>
       <label class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">📸</span>
           <div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:var(--text2);">Points et remarques</div></div>
         </div>
       </label>
       <label class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this)">
         <input type="checkbox" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🚛</span>
           <div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:var(--text2);">Camions et machines</div></div>
         </div>
       </label>
       <label class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this)">
-        <input type="checkbox" checked style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" style="display:none;">
+        <div style="display:flex;pointer-events:none;;align-items:center;gap:8px;">
           <span style="font-size:18px;">🤖</span>
           <div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:var(--text2);">Analyse et points clés</div></div>
         </div>
@@ -6634,10 +6644,10 @@ function showModal_toolbox_new() {
 
 <style>
 .report-section-toggle{
-  display:flex;align-items:center;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;user-select:none;
+  display:flex;align-items:center;padding:12px 14px;border:2px solid #2a2f3a;border-radius:10px;cursor:pointer;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent;min-height:52px;
 }
-.report-section-toggle:hover{border-color:var(--border2);background:var(--bg3);}
-.report-section-toggle.active{border-color:var(--accent)!important;background:rgba(230,57,70,.08)!important;}
+.report-section-toggle:active{transform:scale(.97);}
+.report-section-toggle.active{border-color:#e63946!important;background:rgba(230,57,70,.08)!important;}
 </style>
 
 
