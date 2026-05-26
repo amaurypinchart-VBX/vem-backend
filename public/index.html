@@ -4468,8 +4468,25 @@ function selectReportType(type) {
 }
 
 function showReportModal() {
-  if (!CURRENT_PROJECT_ID) { toast('Ouvre un projet avant de générer un rapport','error'); return; }
   showModal('modal-report');
+  const row = document.getElementById('report-project-row');
+  const sel = document.getElementById('report-project-select');
+  if (!CURRENT_PROJECT_ID && PROJECTS?.length) {
+    // Show project selector
+    if (row) row.style.display = 'block';
+    if (sel) {
+      sel.innerHTML = '<option value="">— Sélectionner un projet —</option>' +
+        PROJECTS.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    }
+  } else {
+    if (row) row.style.display = 'none';
+    // Show current project name
+    const proj = PROJECTS?.find(p => p.id === CURRENT_PROJECT_ID);
+    if (proj) {
+      const hint = document.getElementById('report-sections-hint');
+      if (hint) hint.textContent = `Projet : ${proj.name}`;
+    }
+  }
 }
 
 // Toggle sections — direct function called from onclick
@@ -4510,7 +4527,23 @@ function setReportStatus(icon, text, sub='') {
 }
 
 async function generateReport(mode) {
-  if (!CURRENT_PROJECT_ID) { toast('Aucun projet sélectionné','error'); return; }
+  // If no project selected, ask user to pick one
+  let projectId = CURRENT_PROJECT_ID;
+  if (!projectId) {
+    // Try to get from report project selector
+    const sel = document.getElementById('report-project-select');
+    if (sel) projectId = sel.value;
+  }
+  if (!projectId) {
+    toast('Ouvre un projet avant de générer un rapport','error');
+    closeModal('modal-report');
+    goto('projects');
+    return;
+  }
+  // Update CURRENT_PROJECT_ID temporarily
+  const origProjectId = CURRENT_PROJECT_ID;
+  if (!CURRENT_PROJECT_ID) CURRENT_PROJECT_ID = projectId;
+
   const sections = getSelectedSections();
   if (!sections.length) { toast('Sélectionne au moins une section','error'); return; }
 
@@ -6551,6 +6584,11 @@ function showModal_toolbox_new() {
 
     <!-- Sections à inclure -->
     <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Sections à inclure</div>
+    <!-- Project selector if no project open -->
+    <div id="report-project-row" style="display:none;margin-bottom:14px;">
+      <label style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;display:block;margin-bottom:6px;">Projet</label>
+      <select class="input" id="report-project-select" style="width:100%;"></select>
+    </div>
     <div style="font-size:11px;color:#8892a4;margin-bottom:8px;" id="report-sections-hint">Appuyez pour sélectionner/désélectionner</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;" id="report-sections">
       <div class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this);return false;">
