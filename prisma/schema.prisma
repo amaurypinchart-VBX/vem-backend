@@ -15,6 +15,7 @@ enum UserRole {
   engineer
   worker
   client
+  warehouse
 }
 
 enum ProjectStatus {
@@ -85,22 +86,22 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  managedProjects    Project[]      @relation("TechnicalManager")
-  createdProjects    Project[]      @relation("CreatedBy")
-  projectTeam        ProjectTeam[]
-  assignedTasks      Task[]         @relation("AssignedTo")
-  createdTasks       Task[]         @relation("TaskCreatedBy")
-  taskComments       TaskComment[]
-  handovers          Handover[]     @relation("HandoverCreatedBy")
-  siteManagerHandover Handover[]    @relation("SiteManager")
-  dailyReports       DailyReport[]
-  reportedTickets    Ticket[]       @relation("ReportedBy")
-  assignedTickets    Ticket[]       @relation("TicketAssignedTo")
-  validatedTickets   Ticket[]       @relation("ValidatedBy")
-  preparedBoxes      WarehouseBox[] @relation("BoxPreparedBy")
-  validatedBoxes     WarehouseBox[] @relation("BoxValidatedBy")
-  notifications      Notification[]
-  refreshTokens      RefreshToken[]
+  managedProjects     Project[]      @relation("TechnicalManager")
+  createdProjects     Project[]      @relation("CreatedBy")
+  projectTeam         ProjectTeam[]
+  assignedTasks       Task[]         @relation("AssignedTo")
+  createdTasks        Task[]         @relation("TaskCreatedBy")
+  taskComments        TaskComment[]
+  handovers           Handover[]     @relation("HandoverCreatedBy")
+  siteManagerHandover Handover[]     @relation("SiteManager")
+  dailyReports        DailyReport[]
+  reportedTickets     Ticket[]       @relation("ReportedBy")
+  assignedTickets     Ticket[]       @relation("TicketAssignedTo")
+  validatedTickets    Ticket[]       @relation("ValidatedBy")
+  preparedBoxes       WarehouseBox[] @relation("BoxPreparedBy")
+  validatedBoxes      WarehouseBox[] @relation("BoxValidatedBy")
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
 
   @@map("users")
 }
@@ -129,23 +130,7 @@ model Client {
 
   @@map("clients")
 }
-model HandoverItem {
-  id         String   @id @default(cuid())
-  // ... tes champs existants ...
-  photos     HandoverItemPhoto[]  // ← AJOUTER CETTE LIGNE
 
-  @@map("handover_items")
-}
-model HandoverItemPhoto {
-  id        String       @id @default(cuid())
-  itemId    String
-  item      HandoverItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  photoUrl  String
-  publicId  String?
-  createdAt DateTime     @default(now())
-
-  @@map("handover_item_photos")
-}
 model Project {
   id                  String        @id @default(uuid())
   internalNumber      String        @unique @map("internal_number")
@@ -166,9 +151,9 @@ model Project {
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
-  client           Client          @relation(fields: [clientId], references: [id])
-  technicalManager User?           @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
-  createdBy        User?           @relation("CreatedBy", fields: [createdById], references: [id])
+  client           Client         @relation(fields: [clientId], references: [id])
+  technicalManager User?          @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
+  createdBy        User?          @relation("CreatedBy", fields: [createdById], references: [id])
   team             ProjectTeam[]
   trucks           Truck[]
   files            ProjectFile[]
@@ -202,6 +187,8 @@ model Truck {
   truckNumber   String?   @map("truck_number")
   licensePlate  String?   @map("license_plate")
   driverName    String?   @map("driver_name")
+  driverPhone   String?   @map("driver_phone")
+  vehicleType   String?   @map("vehicle_type") @default("truck")
   loadingDate   DateTime? @map("loading_date")
   departureDate DateTime? @map("departure_date")
   arrivalDate   DateTime? @map("arrival_date")
@@ -234,7 +221,7 @@ model Task {
   projectId      String     @map("project_id")
   title          String
   description    String?
-  taskDate       DateTime   @map("task_date")
+  taskDate       DateTime?  @map("task_date")
   startTime      String?    @map("start_time")
   endTime        String?    @map("end_time")
   status         TaskStatus @default(todo)
@@ -316,6 +303,7 @@ model HandoverItem {
   createdAt  DateTime       @default(now()) @map("created_at")
   handover   Handover       @relation(fields: [handoverId], references: [id], onDelete: Cascade)
   photos     HandoverPhoto[]
+  itemPhotos HandoverItemPhoto[]
 
   @@map("handover_items")
 }
@@ -335,33 +323,43 @@ model HandoverPhoto {
   @@map("handover_photos")
 }
 
-model DailyReport {
-  id             String                    @id @default(uuid())
-  projectId      String                    @map("project_id")
-  reportDate     DateTime                  @map("report_date")
-  createdById    String?                   @map("created_by")
-  weather        String?
-  workersPresent Int                       @default(0) @map("workers_present")
-  generalNotes   String?                   @map("general_notes")
-  sentAt         DateTime?                 @map("sent_at")
-  pdfUrl         String?                   @map("pdf_url")
-  createdAt      DateTime                  @default(now()) @map("created_at")
-  updatedAt      DateTime                  @updatedAt @map("updated_at")
+model HandoverItemPhoto {
+  id        String       @id @default(cuid())
+  itemId    String       @map("item_id")
+  item      HandoverItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  photoUrl  String       @map("photo_url")
+  publicId  String?      @map("public_id")
+  createdAt DateTime     @default(now()) @map("created_at")
 
-  project   Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User?                         @relation(fields: [createdById], references: [id])
+  @@map("handover_item_photos")
+}
+
+model DailyReport {
+  id             String   @id @default(uuid())
+  projectId      String   @map("project_id")
+  reportDate     DateTime @map("report_date")
+  createdById    String?  @map("created_by")
+  weather        String?
+  workersPresent Int      @default(0) @map("workers_present")
+  generalNotes   String?  @map("general_notes")
+  sentAt         DateTime? @map("sent_at")
+  pdfUrl         String?  @map("pdf_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  project   Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?                    @relation(fields: [createdById], references: [id])
   entries   DailyReportEntry[]
   checklist DailyReportChecklistItem[]
   photos    DailyReportPhoto[]
 
-  @@unique([projectId, reportDate])
   @@map("daily_reports")
 }
 
 model DailyReportEntry {
   id          String      @id @default(uuid())
   reportId    String      @map("report_id")
-  entryTime   String      @map("entry_time")
+  entryTime   String?     @map("entry_time")
   description String
   createdAt   DateTime    @default(now()) @map("created_at")
   report      DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
@@ -438,31 +436,31 @@ model TicketPhoto {
 }
 
 model TicketHistory {
-  id          String       @id @default(uuid())
-  ticketId    String       @map("ticket_id")
-  changedById String?      @map("changed_by")
+  id          String        @id @default(uuid())
+  ticketId    String        @map("ticket_id")
+  changedById String?       @map("changed_by")
   oldStatus   TicketStatus? @map("old_status")
   newStatus   TicketStatus? @map("new_status")
   comment     String?
-  createdAt   DateTime     @default(now()) @map("created_at")
-  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  ticket      Ticket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@map("ticket_history")
 }
 
 model WarehouseBox {
-  id           String    @id @default(uuid())
-  projectId    String    @map("project_id")
-  name         String
-  description  String?
-  status       BoxStatus @default(preparing)
-  qrCode       String?   @unique @map("qr_code")
-  preparedById String?   @map("prepared_by")
-  validatedById String?  @map("validated_by")
-  validatedAt  DateTime? @map("validated_at")
-  notes        String?
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  name          String
+  description   String?
+  status        BoxStatus @default(preparing)
+  qrCode        String?   @unique @map("qr_code")
+  preparedById  String?   @map("prepared_by")
+  validatedById String?   @map("validated_by")
+  validatedAt   DateTime? @map("validated_at")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   preparedBy  User?      @relation("BoxPreparedBy", fields: [preparedById], references: [id])
@@ -520,14 +518,14 @@ model Toolbox {
 }
 
 model ToolboxDrawer {
-  id          String       @id @default(uuid())
-  toolboxId   String       @map("toolbox_id")
+  id          String        @id @default(uuid())
+  toolboxId   String        @map("toolbox_id")
   name        String
-  sortOrder   Int          @default(0) @map("sort_order")
-  photoUrl    String?      @map("photo_url")
-  isValidated Boolean      @default(false) @map("is_validated")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  toolbox     Toolbox      @relation(fields: [toolboxId], references: [id], onDelete: Cascade)
+  sortOrder   Int           @default(0) @map("sort_order")
+  photoUrl    String?       @map("photo_url")
+  isValidated Boolean       @default(false) @map("is_validated")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  toolbox     Toolbox       @relation(fields: [toolboxId], references: [id], onDelete: Cascade)
   tools       ToolboxTool[]
 
   @@map("toolbox_drawers")
@@ -590,4 +588,18 @@ model TaskTemplate {
   updatedAt     DateTime     @updatedAt
 
   @@map("task_templates")
+}
+
+model InvitationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  role      String   @default("worker")
+  email     String?
+  note      String?
+  usedAt    DateTime? @map("used_at")
+  expiresAt DateTime  @map("expires_at")
+  createdBy String?   @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("invitation_tokens")
 }
