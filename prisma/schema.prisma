@@ -129,6 +129,13 @@ model Client {
 
   @@map("clients")
 }
+model HandoverItem {
+  id         String   @id @default(cuid())
+  // ... tes champs existants ...
+  photos     HandoverItemPhoto[]  // ← AJOUTER CETTE LIGNE
+
+  @@map("handover_items")
+}
 model HandoverItemPhoto {
   id        String       @id @default(cuid())
   itemId    String
