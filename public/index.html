@@ -5880,887 +5880,527 @@ async function saveHandoverInfo(id, projectId, overlay) {
 async function loadDetailRemarks(projectId) {
   const el = document.getElementById('detail-remarks-content');
   if (!el) return;
-
   const res = await api('GET', `/client-remarks?projectId=${projectId}`);
 
-  const addBtn = `<button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')">
-    <span style="font-size:22px;">📸</span>
-    <span>Ajouter un point terrain</span>
-  </button>`;
+  const headerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:16px;font-weight:700;">📋 Visite Terrain</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;" id="visite-stats-label">Chargement...</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddPointModal('${projectId}')">📸 + Point</button>
+      </div>
+    </div>`;
 
   if (!res?.success || !res.data.length) {
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    el.innerHTML = headerHTML.replace('Chargement...','Aucun point enregistré') + `
+      <button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')">
+        <span style="font-size:28px;">📸</span>
         <div>
-          <div style="font-size:16px;font-weight:700;">📋 Visite Client</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Aucun point enregistré</div>
+          <div style="font-weight:700;font-size:15px;">Ajouter le premier point</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Photo + description + assignation</div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF</button>
-      </div>
-      ${addBtn}`;
+      </button>`;
     return;
   }
 
   const points = res.data;
   const open = points.filter(r => r.status !== 'resolved');
   const done = points.filter(r => r.status === 'resolved');
+  const stats = `${open.length} point(s) en cours · ${done.length} traité(s)`;
 
-  const priorityClass = {critical:'p-critical', high:'p-high', normal:'p-normal', low:'p-normal'};
-  const priorityLabel = {critical:'🔴', high:'🟠', normal:'🔵', low:'🟢'};
-  const statusDot = {open:'var(--accent)', in_progress:'var(--amber)', resolved:'var(--green)'};
+  const prioColor = {critical:'var(--accent)',high:'var(--amber)',normal:'var(--blue)',low:'var(--green)'};
+  const prioLabel = {critical:'🔴 Critique',high:'🟠 Élevé',normal:'🔵 Normal',low:'🟢 Faible'};
 
   const renderPoint = (r, idx) => {
-    const pClass = r.status === 'resolved' ? 'p-resolved' : (priorityClass[r.priority] || 'p-normal');
+    const pClass = r.status==='resolved' ? 'p-resolved' : (r.priority==='critical'?'p-critical':r.priority==='high'?'p-high':'p-normal');
     const photos = r.photos || [];
     return `
-    <div class="terrain-point ${pClass}" id="terrain-point-${r.id}">
-      <!-- Header -->
-      <div style="display:flex;align-items:flex-start;gap:10px;padding:14px 14px 8px;">
-        <div class="terrain-num">${idx}</div>
+    <div class="terrain-point ${pClass}" id="tp-${r.id}">
+      <!-- Header du point -->
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px 8px;">
+        <div class="terrain-num" style="flex-shrink:0;">${idx}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:14px;line-height:1.3;">${r.title}</div>
+          <div style="font-weight:700;font-size:15px;line-height:1.3;">${r.title}</div>
           <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center;">
-            ${r.zone ? `<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;color:var(--text3);">📍 ${r.zone}</span>` : ''}
-            ${r.assignedToUser ? `<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;color:var(--blue);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</span>` : ''}
-            <span style="font-size:11px;color:var(--text3);">${fmtDate(r.createdAt)}</span>
+            <span style="font-size:11px;font-weight:600;color:${prioColor[r.priority]||'var(--blue)'};">${prioLabel[r.priority]||'Normal'}</span>
+            ${r.zone?`<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;">📍 ${r.zone}</span>`:''}
+            ${r.assignedToUser?`<span style="font-size:11px;background:var(--bg3);padding:2px 8px;border-radius:99px;color:var(--blue);">👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}</span>`:'<span style="font-size:11px;color:var(--text3);">Non assigné</span>'}
           </div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-          <span style="font-size:16px;">${priorityLabel[r.priority] || '🔵'}</span>
-          ${r.status === 'resolved' ? '<span style="font-size:18px;">✅</span>' : ''}
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end;">
+          ${r.status==='resolved'
+            ? '<span style="font-size:18px;">✅</span>'
+            : `<button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}','${projectId}')">✓ OK</button>`}
+          <button class="btn btn-ghost btn-xs" onclick="openPointDetail('${r.id}','${projectId}')">✏️</button>
         </div>
       </div>
 
       <!-- Description -->
-      ${r.description ? `<div style="padding:0 14px 10px;font-size:13px;color:var(--text2);line-height:1.6;">${r.description}</div>` : ''}
+      ${r.description?`<div style="padding:0 14px 10px;font-size:13px;color:var(--text2);line-height:1.6;border-left:3px solid var(--border);margin:0 14px 8px 52px;">${r.description}</div>`:''}
 
       <!-- Photos -->
-      ${photos.length > 0 || r.status !== 'resolved' ? `
-      <div class="terrain-photos">
-        ${photos.map(p => `
+      <div class="terrain-photos" style="padding:0 14px 10px;">
+        ${photos.map(p=>`
           <div class="terrain-photo" onclick="openPhotoViewer('${p.photoUrl}')">
-            <img src="${p.photoUrl}" alt="" loading="lazy">
+            <img src="${p.photoUrl}" loading="lazy">
           </div>`).join('')}
-        ${r.status !== 'resolved' ? `
-          <label class="terrain-photo-add" title="Ajouter photo">
+        ${r.status!=='resolved'?`
+          <label class="terrain-photo-add" title="📸 Ajouter photo" style="cursor:pointer;">
             📸
             <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
-          </label>` : ''}
-      </div>` : ''}
-
-      <!-- Footer actions -->
-      <div style="display:flex;align-items:center;gap:6px;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg3);">
-        ${r.status !== 'resolved' ? `
-          <button class="btn btn-green btn-xs" onclick="resolveRemark('${r.id}','${projectId}')">✓ Traité</button>
-          <button class="btn btn-ghost btn-xs" onclick="openPointDetail('${r.id}','${projectId}')">✏️ Modifier</button>` :
-          `<span style="font-size:12px;color:var(--green);font-weight:600;">✅ Traité</span>
-           ${r.resolutionNotes ? `<span style="font-size:11px;color:var(--text3);">→ ${r.resolutionNotes}</span>` : ''}`}
-        <button class="btn btn-ghost btn-xs" style="margin-left:auto;color:var(--accent);" onclick="deleteRemark('${r.id}','${projectId}')">🗑️</button>
+          </label>`:''}
       </div>
+
+      <!-- Footer -->
+      ${r.status==='resolved' && r.resolutionNotes?`
+        <div style="padding:6px 14px 10px;font-size:12px;color:var(--green);border-top:1px solid var(--border);">
+          ✅ ${r.resolutionNotes}
+        </div>`:`
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--border);background:var(--bg3);">
+          <span style="font-size:11px;color:var(--text3);">Assigner :</span>
+          <select class="input" style="flex:1;font-size:12px;padding:4px 8px;" onchange="assignPointQuick('${r.id}','${projectId}',this.value)">
+            <option value="">— Non assigné —</option>
+            ${USERS.map(u=>`<option value="${u.id}" ${r.assignedTo===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+          </select>
+          <button class="btn btn-ghost btn-xs" style="color:var(--accent);flex-shrink:0;" onclick="deleteRemark('${r.id}','${projectId}')">🗑️</button>
+        </div>`}
     </div>`;
   };
 
-  let content = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <div style="font-size:16px;font-weight:700;">📋 Visite Client</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px;">${open.length} point(s) en cours · ${done.length} traité(s)</div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF Rapport</button>
-      </div>
-    </div>`;
+  let content = headerHTML.replace('Chargement...', stats);
 
   if (open.length) {
-    content += open.map((r, i) => renderPoint(r, i + 1)).join('');
+    content += open.map((r,i) => renderPoint(r, i+1)).join('');
   }
   if (done.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:20px 0 10px;">✅ Points traités (${done.length})</div>`;
-    content += done.map((r, i) => renderPoint(r, open.length + i + 1)).join('');
+    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:20px 0 10px;padding-top:16px;border-top:1px solid var(--border);">✅ Points traités (${done.length})</div>`;
+    content += done.map((r,i) => renderPoint(r, open.length+i+1)).join('');
   }
 
-  content += addBtn;
+  content += `
+    <button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')" style="margin-top:12px;">
+      <span style="font-size:22px;">📸</span>
+      <span style="font-weight:600;">Ajouter un point terrain</span>
+    </button>`;
+
   el.innerHTML = content;
 }
 
-
-function openNewVisiteModal(projectId) {
-  // Pre-fill project
-  showModal('modal-new-visite');
-  setTimeout(() => {
-    const sel = document.getElementById('visite-project');
-    if (sel && projectId) sel.value = projectId;
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('visite-date').value = today;
-  }, 50);
+async function assignPointQuick(remarkId, projectId, userId) {
+  await api('PATCH', `/client-remarks/${remarkId}`, { assignedTo: userId||null });
+  toast('Assigné ✅','success');
 }
 
-async function createVisite() { return createVisiteFixed(document.getElementById('visite-project')?.value); }
-async function _oldCreateVisite() {
-  const projectId = document.getElementById('visite-project').value;
-  const date = document.getElementById('visite-date').value;
-  const time = document.getElementById('visite-time').value || '09:00';
-  if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
+// ═══════════════════════════════════════════
+// VISITE TERRAIN — MODULE COMPLET
+// ═══════════════════════════════════════════
 
-  const title = `Visite client du ${new Date(date).toLocaleDateString('fr-FR')} à ${time}`;
-  const assignedTo = document.getElementById('visite-assigned').value || undefined;
-  const desc = document.getElementById('visite-desc').value || undefined;
-  const clientRep = document.getElementById('visite-client-rep').value || undefined;
-
-  // Create a "parent" remark as the visite entry point
-  const res = await api('POST', '/client-remarks', {
-    projectId, title,
-    description: `${clientRep?`Représentant: ${clientRep}. `:''}${desc||''}`,
-    priority: 'normal', status: 'open',
-    assignedTo,
-  });
-
-  if (res?.success) {
-    // Also create a task in the project
-    const taskTitle = `📸 Visite client — ${new Date(date).toLocaleDateString('fr-FR')}`;
-    await api('POST', '/tasks', {
-      projectId, title: taskTitle,
-      description: `Visite client du ${date} à ${time}${clientRep?`. Représentant: ${clientRep}`:''}`,
-      taskDate: date, status: 'todo', priority: 'high',
-      assignedToId: assignedTo || undefined,
-      createdById: CURRENT_USER?.id,
-    });
-
-    toast('Visite créée ✅ — tâche ajoutée au projet', 'success');
-    closeModal('modal-new-visite');
-    ['visite-client-rep','visite-desc'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-    loadDetailRemarks(projectId);
-    loadProjTasks(projectId);
-  } else toast('Erreur création visite', 'error');
-}
-
+// ── Ouvrir modal ajout point terrain ──
 function openAddPointModal(projectId) {
-  const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML = `
+  PENDING_POINT_PHOTOS = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'modal-add-point';
+  overlay.innerHTML = `
     <div class="modal" style="max-width:600px;">
-      <div class="modal-head"><div class="modal-title">📌 Nouveau Point Terrain</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div class="form-group2"><label class="form-label2">Titre du point *</label><input class="input" id="pt-title" placeholder="ex: Fissure façade Nord, Joint manquant zone B..."></div>
+      <div class="modal-head">
+        <div><div class="modal-title">📍 Nouveau Point Terrain</div>
+        <div style="font-size:12px;color:var(--text2);">Avec le client sur site</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Photo en premier — priorité terrain -->
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photo du problème</label>
+        <div id="point-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;"></div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:20px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;background:var(--bg3);-webkit-tap-highlight-color:transparent;min-height:80px;" 
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          <span style="font-size:32px;">📸</span>
+          <div><div>Prendre une photo</div><div style="font-size:11px;font-weight:400;color:var(--text3);margin-top:2px;">Depuis la caméra ou la galerie</div></div>
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewPointPhotos(this)">
+        </label>
+      </div>
+
+      <!-- Titre / description -->
+      <div class="form-group2">
+        <label class="form-label2">Description du problème *</label>
+        <div style="display:flex;gap:6px;">
+          <input class="input" id="point-title" placeholder="ex: Éclairage défectueux zone B..." style="flex:1;">
+          <button class="btn btn-ghost btn-xs" style="flex-shrink:0;" onclick="voiceInputPoint('point-title')" title="Dicter">🎙️</button>
+        </div>
+      </div>
+
+      <!-- Localisation -->
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Zone / Localisation</label><input class="input" id="pt-zone" placeholder="ex: Façade Nord, Zone B, Toiture..."></div>
-        <div class="form-group2"><label class="form-label2">Urgence</label>
-          <select class="input" id="pt-priority">
-            <option value="low">🟢 Faible</option>
-            <option value="normal" selected>🔵 Normal</option>
-            <option value="high">🟠 Élevé</option>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">📍 Zone / Emplacement</label>
+          <input class="input" id="point-zone" placeholder="ex: Hall A, Stand 3...">
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">🔴 Priorité</label>
+          <select class="input" id="point-priority">
             <option value="critical">🔴 Critique</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="normal" selected>🔵 Normal</option>
+            <option value="low">🟢 Faible</option>
           </select>
         </div>
       </div>
-      <div class="form-group2"><label class="form-label2">Description / Ce qui doit être fait</label><textarea class="input" id="pt-desc" rows="3" placeholder="Décrivez le problème et ce qui doit être corrigé..."></textarea></div>
-      <div class="form-group2"><label class="form-label2">Assigné à</label>
-        <select class="input" id="pt-assign">
-          <option value="">— Non assigné —</option>
+
+      <!-- Action requise -->
+      <div class="form-group2">
+        <label class="form-label2">✅ Action requise</label>
+        <div style="display:flex;gap:6px;">
+          <textarea class="input" id="point-action" rows="2" placeholder="Ce qu'il faut faire..." style="flex:1;"></textarea>
+          <button class="btn btn-ghost btn-xs" style="flex-shrink:0;align-self:flex-start;" onclick="voiceInputPoint('point-action')" title="Dicter">🎙️</button>
+        </div>
+      </div>
+
+      <!-- Assignation -->
+      <div class="form-group2">
+        <label class="form-label2">👤 Assigner à</label>
+        <select class="input" id="point-assign">
+          <option value="">— À toute l'équipe —</option>
           ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
         </select>
       </div>
-      <!-- Photo upload -->
-      <div class="form-group2">
-        <label class="form-label2">Photos du problème</label>
-        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;color:var(--text3);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
-          📸 Cliquez pour prendre/ajouter des photos
-          <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="pt-photos" onchange="previewPointPhotos(this)">
-        </label>
-        <div id="pt-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="savePoint('${projectId}',this.closest('.overlay'))">✅ Ajouter le point</button>
+        <button class="btn btn-primary" onclick="savePoint('${projectId}')">📍 Enregistrer</button>
       </div>
     </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => document.getElementById('point-title')?.focus(), 100);
 }
 
-let PENDING_POINT_PHOTOS = [];
+// ── Preview photos avant sauvegarde ──
 function previewPointPhotos(input) {
-  PENDING_POINT_PHOTOS = Array.from(input.files);
-  const preview = document.getElementById('pt-photos-preview');
-  if (!preview) return;
-  preview.innerHTML = PENDING_POINT_PHOTOS.map(f => {
+  PENDING_POINT_PHOTOS = [...(PENDING_POINT_PHOTOS||[]), ...Array.from(input.files)];
+  const grid = document.getElementById('point-photos-preview');
+  if (!grid) return;
+  grid.innerHTML = PENDING_POINT_PHOTOS.map(f => {
     const url = URL.createObjectURL(f);
-    return `<img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">`;
+    return `<div style="aspect-ratio:1;border-radius:10px;overflow:hidden;border:2px solid var(--border);">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
+    </div>`;
   }).join('');
 }
 
-async function savePoint(projectId, overlay) {
-  const title = document.getElementById('pt-title')?.value.trim();
-  if (!title) { toast('Titre obligatoire', 'error'); return; }
+// ── Dictée vocale ──
+function voiceInputPoint(fieldId) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée sur ce navigateur','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = false;
+  const btn = event.target; btn.textContent = '🔴';
+  toast('🎙️ Parlez maintenant...','info');
+  rec.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    const field = document.getElementById(fieldId);
+    if (field) field.value = (field.value ? field.value + ' ' : '') + text;
+    btn.textContent = '🎙️';
+    toast('Enregistré ✅','success');
+  };
+  rec.onerror = () => { btn.textContent = '🎙️'; toast('Erreur dictée','error'); };
+  rec.onend = () => { btn.textContent = '🎙️'; };
+  rec.start();
+}
+
+// ── Sauvegarder un point ──
+async function savePoint(projectId) {
+  const title = document.getElementById('point-title')?.value?.trim();
+  if (!title) { toast('Décris le problème','error'); document.getElementById('point-title')?.focus(); return; }
+
+  const btn = event.target; btn.disabled = true; btn.textContent = '⏳ Sauvegarde...';
 
   const res = await api('POST', '/client-remarks', {
-    projectId, title,
-    zone: document.getElementById('pt-zone')?.value || undefined,
-    priority: document.getElementById('pt-priority')?.value || 'normal',
-    assignedTo: document.getElementById('pt-assign')?.value || undefined,
-    description: document.getElementById('pt-desc')?.value || undefined,
+    projectId,
+    title,
+    description: document.getElementById('point-action')?.value || undefined,
+    zone: document.getElementById('point-zone')?.value || undefined,
+    priority: document.getElementById('point-priority')?.value || 'normal',
+    assignedTo: document.getElementById('point-assign')?.value || undefined,
     status: 'open',
   });
 
   if (res?.success) {
     // Upload photos
-    if (PENDING_POINT_PHOTOS.length) {
-      toast(`Upload ${PENDING_POINT_PHOTOS.length} photo(s)...`, 'info');
+    if (PENDING_POINT_PHOTOS?.length) {
+      btn.textContent = `⏳ Upload ${PENDING_POINT_PHOTOS.length} photo(s)...`;
       for (const file of PENDING_POINT_PHOTOS) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('phase', 'problem');
+        const fd = new FormData(); fd.append('file', file);
         try {
-          await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
+          const r = await fetch(`${API}/upload/photo`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
           });
+          const data = await r.json();
+          const url = data.data?.url || data.url;
+          if (url) {
+            await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+              body: JSON.stringify({ photoUrl: url, publicId: data.data?.public_id || null, phase: 'problem' })
+            });
+          }
         } catch {}
       }
     }
     PENDING_POINT_PHOTOS = [];
-    toast('Point ajouté ✅', 'success');
-    overlay?.remove();
+    toast('Point enregistré ✅', 'success');
+    document.getElementById('modal-add-point')?.remove();
     loadDetailRemarks(projectId);
   } else {
-    // Show detailed error
-    const errMsg = res?.error || 'Erreur inconnue';
-    console.error('savePoint error:', res);
-    if (errMsg.includes('not found') || errMsg.includes('404')) {
-      toast('Route /client-remarks manquante — vérifie src/index.ts', 'error');
-    } else if (errMsg.includes('column') || errMsg.includes('table')) {
-      toast('Table SQL manquante — exécute le SQL client_remarks dans Railway', 'error');
-    } else {
-      toast('Erreur: ' + errMsg, 'error');
-    }
+    const err = res?.error || 'Erreur';
+    toast(err.includes('table') || err.includes('column') ? 'SQL client_remarks manquant dans Railway' : err, 'error');
+    btn.disabled = false; btn.textContent = '📍 Enregistrer';
   }
 }
 
+// ── Upload photo sur un point existant ──
 async function uploadPointPhoto(remarkId, projectId, input) {
   if (!input.files?.length) return;
   toast('Upload photo...', 'info');
-  const fd = new FormData();
-  fd.append('file', input.files[0]);
-  fd.append('phase', 'problem');
+  const fd = new FormData(); fd.append('file', input.files[0]);
   try {
-    const r = await fetch(`${API}/client-remarks/${remarkId}/photos`, {
+    const r = await fetch(`${API}/upload/photo`, {
       method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
     });
     const data = await r.json();
-    if (data.success) { toast('Photo ajoutée ✅', 'success'); loadDetailRemarks(projectId); }
-    else toast('Erreur upload photo', 'error');
+    const url = data.data?.url || data.url;
+    if (url) {
+      await fetch(`${API}/client-remarks/${remarkId}/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ photoUrl: url, publicId: data.data?.public_id || null, phase: 'problem' })
+      });
+      toast('Photo ajoutée ✅', 'success');
+      loadDetailRemarks(projectId);
+    } else toast('Upload échoué', 'error');
   } catch { toast('Erreur upload', 'error'); }
 }
 
+// ── Ouvrir détail / modifier un point ──
 async function openPointDetail(remarkId, projectId) {
-  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
-  const r = res?.data?.find(x => x.id === remarkId);
-  if (!r) return;
+  const res = await api('GET', `/client-remarks/${remarkId}`);
+  if (!res?.success) { toast('Point introuvable','error'); return; }
+  const r = res.data;
 
-  const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML = `
-    <div class="modal" style="max-width:640px;">
-      <div class="modal-head"><div class="modal-title">✏️ Modifier le point</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="ep-title" value="${r.title}"></div>
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head">
+        <div><div class="modal-title">✏️ Modifier le Point</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div class="form-group2">
+        <label class="form-label2">Description</label>
+        <input class="input" id="ep-title" value="${r.title||''}">
+      </div>
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Zone</label><input class="input" id="ep-zone" value="${r.zone||''}"></div>
-        <div class="form-group2"><label class="form-label2">Urgence</label>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Zone</label>
+          <input class="input" id="ep-zone" value="${r.zone||''}">
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Priorité</label>
           <select class="input" id="ep-priority">
-            <option value="low" ${r.priority==='low'?'selected':''}>🟢 Faible</option>
-            <option value="normal" ${r.priority==='normal'?'selected':''}>🔵 Normal</option>
-            <option value="high" ${r.priority==='high'?'selected':''}>🟠 Élevé</option>
             <option value="critical" ${r.priority==='critical'?'selected':''}>🔴 Critique</option>
+            <option value="high" ${r.priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="normal" ${r.priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="low" ${r.priority==='low'?'selected':''}>🟢 Faible</option>
           </select>
         </div>
       </div>
-      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="ep-desc" rows="3">${r.description||''}</textarea></div>
-      <div class="form-group2"><label class="form-label2">Assigné à</label>
+      <div class="form-group2">
+        <label class="form-label2">Action requise</label>
+        <textarea class="input" id="ep-desc" rows="3">${r.description||''}</textarea>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Assigner à</label>
         <select class="input" id="ep-assign">
-          <option value="">— Non assigné —</option>
+          <option value="">— À toute l'équipe —</option>
           ${USERS.map(u=>`<option value="${u.id}" ${r.assignedTo===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group2"><label class="form-label2">Statut</label>
+      <div class="form-group2">
+        <label class="form-label2">Statut</label>
         <select class="input" id="ep-status">
-          <option value="open" ${r.status==='open'?'selected':''}>⏳ À traiter</option>
-          <option value="in_progress" ${r.status==='in_progress'?'selected':''}>🔨 En cours</option>
-          <option value="resolved" ${r.status==='resolved'?'selected':''}>✅ Traité</option>
+          <option value="open" ${r.status==='open'?'selected':''}>🔴 Ouvert</option>
+          <option value="in_progress" ${r.status==='in_progress'?'selected':''}>🟡 En cours</option>
+          <option value="resolved" ${r.status==='resolved'?'selected':''}>✅ Résolu</option>
         </select>
       </div>
-      ${(r.photos||[]).length>0?`
-        <div style="margin-bottom:12px;">
-          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Photos</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:80px;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
-          </div>
-        </div>`:''}
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      ${document.getElementById('ep-status')?.value==='resolved'?`
+      <div class="form-group2">
+        <label class="form-label2">Note de résolution</label>
+        <textarea class="input" id="ep-resolution" rows="2">${r.resolutionNotes||''}</textarea>
+      </div>`:''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteRemark('${remarkId}','${projectId}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="updatePoint('${remarkId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
       </div>
     </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
+// ── Mettre à jour un point ──
 async function updatePoint(remarkId, projectId, overlay) {
-  const res = await api('PATCH', `/client-remarks/${remarkId}`, {
-    title: document.getElementById('ep-title')?.value.trim(),
+  const status = document.getElementById('ep-status')?.value;
+  const body = {
+    title: document.getElementById('ep-title')?.value,
     zone: document.getElementById('ep-zone')?.value || undefined,
     priority: document.getElementById('ep-priority')?.value,
     description: document.getElementById('ep-desc')?.value || undefined,
     assignedTo: document.getElementById('ep-assign')?.value || undefined,
-    status: document.getElementById('ep-status')?.value,
+    status,
+    resolutionNotes: status==='resolved' ? (document.getElementById('ep-resolution')?.value||undefined) : undefined,
+    resolvedAt: status==='resolved' ? new Date().toISOString() : undefined,
+  };
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, body);
+  if (res?.success) { toast('Point mis à jour ✅','success'); overlay?.remove(); loadDetailRemarks(projectId); }
+  else toast('Erreur mise à jour','error');
+}
+
+// ── Résoudre rapidement un point ──
+async function resolveRemark(remarkId, projectId) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, {
+    status: 'resolved', resolvedAt: new Date().toISOString()
   });
-  if (res?.success) { toast('Point mis à jour ✅', 'success'); overlay?.remove(); loadDetailRemarks(projectId); }
-  else toast('Erreur mise à jour', 'error');
+  if (res?.success) { toast('Point résolu ✅','success'); loadDetailRemarks(projectId); }
+  else toast('Erreur','error');
 }
 
-async function exportVisitePDF(projectId) {
-  toast('Génération PDF visite...', 'info');
-  const r = await fetch(`${API}/client-remarks/project/${projectId}/pdf`, {
-    headers: { 'Authorization': `Bearer ${TOKEN}` }
-  });
-  if (r.ok) {
-    const blob = await r.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `VisiteClient_${projectId}.pdf`;
-    a.click();
-    toast('PDF téléchargé ✅', 'success');
-  } else toast('Erreur PDF — API non disponible', 'warning');
-}
-
-async function resolveRemark(id, projectId) {
-  const pid = projectId || CURRENT_PROJECT_ID;
-  const res = await api('PATCH', `/client-remarks/${id}`, { status: 'resolved', resolvedAt: new Date().toISOString() });
-  if (res?.success) { toast('Marqué comme traité ✅', 'success'); loadDetailRemarks(pid); }
-  else toast('Erreur — vérifiez que le SQL client_remarks est bien exécuté', 'warning');
-}
-
-async function deleteRemark(id, projectId) {
+// ── Supprimer un point ──
+async function deleteRemark(remarkId, projectId) {
   if (!confirm('Supprimer ce point ?')) return;
-  const res = await api('DELETE', `/client-remarks/${id}`);
-  if (res?.success) { toast('Supprimé', 'warning'); loadDetailRemarks(projectId); }
+  const res = await api('DELETE', `/client-remarks/${remarkId}`);
+  if (res?.success) { toast('Point supprimé','success'); loadDetailRemarks(projectId); }
+  else toast('Erreur suppression','error');
 }
 
-function showAddRemarkModal(projectId) {
-  const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML = `
-    <div class="modal">
-      <div class="modal-head"><div class="modal-title">🔁 Nouveau point de suivi</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="rm-title" placeholder="ex: Réparer fissure façade Nord"></div>
-      <div class="form-group2"><label class="form-label2">Zone / Localisation</label><input class="input" id="rm-zone" placeholder="ex: Façade Nord — Section 3"></div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Priorité</label>
-          <select class="input" id="rm-priority">
-            <option value="low">🟢 Faible</option>
-            <option value="normal" selected>🟡 Normal</option>
-            <option value="high">🟠 Élevé</option>
-            <option value="critical">🔴 Critique</option>
-          </select>
+// ── Export PDF visite terrain ──
+async function exportVisitePDF(projectId) {
+  const proj = PROJECTS?.find(p => p.id === projectId);
+  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+  if (!res?.success) { toast('Erreur chargement','error'); return; }
+  const points = res.data;
+  const open = points.filter(r => r.status !== 'resolved');
+  const done = points.filter(r => r.status === 'resolved');
+  const now = new Date();
+
+  const prioColor = {critical:'#e63946',high:'#f4a261',normal:'#4895ef',low:'#2dc653'};
+  const prioLabel = {critical:'Critique',high:'Élevé',normal:'Normal',low:'Faible'};
+
+  const renderPDFPoint = (r, idx) => `
+    <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;page-break-inside:avoid;">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+        <div style="width:28px;height:28px;background:${prioColor[r.priority]||'#4895ef'};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${idx}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:14px;">${r.title}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+            ${r.zone?`📍 ${r.zone} · `:''}
+            <span style="color:${prioColor[r.priority]||'#4895ef'};font-weight:600;">${prioLabel[r.priority]||'Normal'}</span>
+            ${r.assignedToUser?` · 👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}`:''}
+          </div>
         </div>
-        <div class="form-group2"><label class="form-label2">Assigné à</label>
-          <select class="input" id="rm-assign">
-            <option value="">— Non assigné —</option>
-            ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
-          </select>
+        <div style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:${r.status==='resolved'?'#dcfce7':'#fee2e2'};color:${r.status==='resolved'?'#16a34a':'#dc2626'};">
+          ${r.status==='resolved'?'✅ Résolu':'🔴 Ouvert'}
         </div>
       </div>
-      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="rm-desc" rows="3" placeholder="Détails..."></textarea></div>
-      <div class="form-group2">
-        <label class="form-label2">Photo(s)</label>
-        <div class="upload-zone" onclick="document.getElementById('rm-photo').click()">📸 Ajouter une photo<br><span style="font-size:11px;">Cliquez pour sélectionner</span></div>
-        <input type="file" id="rm-photo" accept="image/*" multiple style="display:none;" onchange="previewRmPhotos(this)">
-        <div id="rm-photos-preview" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"></div>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveRemark('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
-      </div>
+      ${r.description?`<div style="padding:10px 14px;font-size:13px;color:#374151;background:#fff;border-bottom:1px solid #f3f4f6;">🔧 ${r.description}</div>`:''}
+      ${(r.photos||[]).length?`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 14px;background:#fff;">
+        ${r.photos.map(p=>`<img src="${p.photoUrl}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;">`).join('')}
+      </div>`:''}
+      ${r.resolutionNotes?`<div style="padding:8px 14px;font-size:12px;color:#16a34a;background:#f0fdf4;border-top:1px solid #dcfce7;">✅ ${r.resolutionNotes}</div>`:''}
     </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+
+  const pdfHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Visite Terrain — ${proj?.name||'Projet'}</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:24px;}
+    @media print{body{padding:0;}.no-print{display:none;}}
+    @page{margin:20mm;}
+  </style></head><body>
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #e63946;">
+    <div>
+      <div style="font-size:22px;font-weight:800;color:#111;">📋 RAPPORT DE VISITE TERRAIN</div>
+      <div style="font-size:16px;font-weight:600;color:#374151;margin-top:4px;">${proj?.name||'Projet'}</div>
+      <div style="font-size:13px;color:#6b7280;margin-top:4px;">${proj?.address||''}</div>
+    </div>
+    <div style="text-align:right;font-size:12px;color:#6b7280;">
+      <div style="font-size:14px;font-weight:700;color:#111;">ViewBox Event Manager</div>
+      <div>Date visite : ${now.toLocaleDateString('fr-BE',{day:'2-digit',month:'long',year:'numeric'})}</div>
+    </div>
+  </div>
+  <!-- Résumé -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
+    <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#dc2626;">${open.length}</div>
+      <div style="font-size:12px;color:#dc2626;font-weight:600;">Points ouverts</div>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#16a34a;">${done.length}</div>
+      <div style="font-size:12px;color:#16a34a;font-weight:600;">Points résolus</div>
+    </div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#2563eb;">${points.length}</div>
+      <div style="font-size:12px;color:#2563eb;font-weight:600;">Total points</div>
+    </div>
+  </div>
+  ${open.length?`
+  <div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#dc2626;margin-bottom:12px;">🔴 Points à traiter (${open.length})</div>
+  ${open.map((r,i)=>renderPDFPoint(r,i+1)).join('')}`:''}
+  ${done.length?`
+  <div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin:24px 0 12px;">✅ Points résolus (${done.length})</div>
+  ${done.map((r,i)=>renderPDFPoint(r,open.length+i+1)).join('')}`:''}
+  <!-- Signatures -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px;page-break-inside:avoid;">
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:8px;">Site Manager</div>
+      <div style="height:60px;border-bottom:1px solid #d1d5db;margin-bottom:6px;"></div>
+      <div style="font-size:11px;color:#9ca3af;">Nom + Signature</div>
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:8px;">Représentant Client</div>
+      <div style="height:60px;border-bottom:1px solid #d1d5db;margin-bottom:6px;"></div>
+      <div style="font-size:11px;color:#9ca3af;">Nom + Signature</div>
+    </div>
+  </div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`;
+
+  const win = window.open('','_blank');
+  win.document.write(pdfHTML);
+  win.document.close();
 }
 
-let PENDING_RM_PHOTOS = [];
-function previewRmPhotos(input) {
-  PENDING_RM_PHOTOS = Array.from(input.files);
-  const preview = document.getElementById('rm-photos-preview');
-  preview.innerHTML = PENDING_RM_PHOTOS.map(f => {
-    const url = URL.createObjectURL(f);
-    return `<img src="${url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;">`;
-  }).join('');
+// ── Créer une nouvelle visite (session) ──
+async function createVisite() {
+  const projectId = document.getElementById('visite-project')?.value;
+  return createVisiteFixed(projectId);
 }
 
-async function saveRemark(projectId, overlay) {
-  const title = document.getElementById('rm-title').value.trim();
-  if (!title) { toast('Titre obligatoire','error'); return; }
-  const res = await api('POST', '/client-remarks', {
-    projectId, title,
-    zone: document.getElementById('rm-zone').value||undefined,
-    priority: document.getElementById('rm-priority').value,
-    assignedTo: document.getElementById('rm-assign').value||undefined,
-    description: document.getElementById('rm-desc').value||undefined,
-  });
-  if (res?.success) {
-    // Upload photos if any
-    for (const file of PENDING_RM_PHOTOS) {
-      const fd = new FormData(); fd.append('file', file); fd.append('phase','problem');
-      await fetch(`${API}/client-remarks/${res.data.id}/photos`, { method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd });
-    }
-    PENDING_RM_PHOTOS = [];
-    toast('Point ajouté ✅','success');
-    overlay.remove();
-    loadDetailRemarks(projectId);
-  } else {
-    // Fallback: store locally if API not available
-    toast('Ajouté (mode local — API client-remarks à déployer)','warning');
-    overlay.remove();
-  }
-}
-
-async function exportRemarksPDF(projectId) {
-  toast('Génération PDF en cours...','info');
-  const r = await fetch(`${API}/client-remarks/project/${projectId}/pdf`, { headers:{'Authorization':`Bearer ${TOKEN}`} });
-  if (r.ok) {
-    const blob = await r.blob();
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `SuiviClient_${projectId}.pdf`; a.click();
-    toast('PDF téléchargé ✅','success');
-  } else toast('API PDF non disponible — déployer migration v3','warning');
-}
-
-async function loadDetailTickets(projectId) {
-  const res = await api('GET', `/tickets?projectId=${projectId}`);
-  const el = document.getElementById('detail-tickets-content');
-  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button></div>`;
-  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket</div></div>'; return; }
-  const ub = {critical:'badge-red',high:'badge-amber',medium:'badge-blue',low:'badge-green'};
-  el.innerHTML = btn + `<div class="table-wrap"><table>
-    <thead><tr><th>Titre</th><th>Urgence</th><th>Assigné</th><th>Statut</th><th>Date</th><th></th></tr></thead>
-    <tbody>${res.data.map(t=>`<tr>
-      <td><strong>${t.title}</strong>${t.locationOnSite?`<br><span style="font-size:11px;color:var(--text3);">${t.locationOnSite}</span>`:''}</td>
-      <td><span class="badge ${ub[t.urgency]||''}">${t.urgency}</span></td>
-      <td>${t.assignedTo?`${t.assignedTo.firstName} ${t.assignedTo.lastName}`:'—'}</td>
-      <td><span class="badge badge-muted">${t.status}</span></td>
-      <td style="color:var(--text3);">${fmtDate(t.createdAt)}</td>
-      <td><button class="btn btn-ghost btn-xs" onclick="openTicketDetail('${t.id}')">👁️</button></td>
-    </tr>`).join('')}</tbody>
-  </table></div>`;
-}
-
-async function loadDetailWarehouse(projectId) {
-  const res = await api('GET', `/warehouse/boxes?projectId=${projectId}`);
-  const el = document.getElementById('detail-warehouse-content');
-  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-box')">+ Nouvelle Box</button></div>`;
-  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div></div>'; return; }
-  const sc = {preparing:'badge-amber',ready:'badge-green',loaded:'badge-blue',on_site:'badge-blue',returned:'badge-muted',incomplete:'badge-red'};
-  el.innerHTML = btn + res.data.map(b=>`
-    <div class="card" style="margin-bottom:10px;">
-      <div class="card-header">
-        <div><div class="card-title">📦 ${b.name}</div><div style="font-size:12px;color:var(--text3);">${b._count?.items||0} articles · QR: ${b.qrCode||'—'}</div></div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <span class="badge ${sc[b.status]||'badge-muted'}">${b.status}</span>
-          <button class="btn btn-ghost btn-sm" onclick="openBoxDetail('${b.id}')">👁️ Checklist</button>
-          ${b.status==='preparing'?`<button class="btn btn-green btn-sm" onclick="validateBox('${b.id}')">✅ Valider</button>`:''}
-        </div>
-      </div>
-    </div>`).join('');
-}
-
-async function loadDetailToolboxes(projectId) {
-  const res = await api('GET', `/toolbox?projectId=${projectId}`);
-  const el = document.getElementById('detail-toolbox-content');
-  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-toolbox-new')">+ Nouvelle Boîte</button></div>`;
-  if (!res?.success || !res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte à outils</div></div>'; return; }
-  el.innerHTML = btn + res.data.map(tb => {
-    const allTools = (tb.drawers||[]).flatMap(d=>d.tools||[]);
-    const checked = allTools.filter(t=>t.isChecked).length;
-    const pct = allTools.length>0 ? Math.round(checked/allTools.length*100) : 0;
-    return `<div class="card" style="margin-bottom:10px;">
-      <div class="card-header">
-        <div><div class="card-title">🧰 ${tb.name}</div><div style="font-size:12px;color:var(--text3);">${(tb.drawers||[]).length} tiroirs · ${allTools.length} outils</div></div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <span class="badge badge-muted">${pct}%</span>
-          <button class="btn btn-ghost btn-sm" onclick="openToolboxDetail('${tb.id}')">👁️ Voir</button>
-        </div>
-      </div>
-      <div style="padding:8px 18px;"><div class="prog" style="height:4px;"><div class="prog-bar" style="width:${pct}%;background:var(--green);"></div></div></div>
-    </div>`;
-  }).join('');
-}
-
-// ═══ HANDOVER IMPROVEMENTS ═══
-// Zones dynamiques
-let HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:''}];
-
-function addHandoverZone() {
-  HANDOVER_ZONES.push({id:Date.now(),name:'',status:'ok',comment:''});
-  renderHandoverZones();
-}
-function removeHandoverZone(id) {
-  HANDOVER_ZONES = HANDOVER_ZONES.filter(z=>z.id!==id);
-  renderHandoverZones();
-}
-function renderHandoverZones() {
-  const el = document.getElementById('handover-zones-list');
-  if (!el) return;
-  el.innerHTML = HANDOVER_ZONES.map(z=>`
-    <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:6px;align-items:center;margin-bottom:6px;">
-      <input class="input" placeholder="Zone (ex: Façade Est)" value="${z.name}" oninput="updateZone(${z.id},'name',this.value)" style="font-size:13px;">
-      <select class="input" style="width:110px;padding:7px 8px;font-size:12px;" onchange="updateZone(${z.id},'status',this.value)">
-        <option value="ok" ${z.status==='ok'?'selected':''}>✅ OK</option>
-        <option value="remark" ${z.status==='remark'?'selected':''}>⚠️ Remarque</option>
-        <option value="defect" ${z.status==='defect'?'selected':''}>❌ Défaut</option>
-        <option value="pending" ${z.status==='pending'?'selected':''}>⏳ Attente</option>
-      </select>
-      <input class="input" placeholder="Commentaire..." value="${z.comment}" oninput="updateZone(${z.id},'comment',this.value)" style="font-size:13px;">
-      <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="removeHandoverZone(${z.id})">✕</button>
-    </div>`).join('');
-}
-function updateZone(id,key,val) {
-  const z = HANDOVER_ZONES.find(x=>x.id===id);
-  if (z) z[key]=val;
-}
-
-// ═══ ADD TO TEAM MODAL ═══
-function showAddToTeamModal(projectId) {
-  const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML = `
-    <div class="modal">
-      <div class="modal-head"><div class="modal-title">👥 Ajouter à l'équipe</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div class="form-group2"><label class="form-label2">Membre</label>
-        <select class="input" id="team-add-user">
-          <option value="">— Sélectionner —</option>
-          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
-        </select>
-      </div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Rôle dans le projet</label>
-          <select class="input" id="team-add-role">
-            <option value="site_manager">Site Manager</option>
-            <option value="engineer">Engineer</option>
-            <option value="worker">Ouvrier</option>
-            <option value="technical_manager">Technical Manager</option>
-          </select>
-        </div>
-        <div class="form-group2"><label class="form-label2">Lead ?</label>
-          <select class="input" id="team-add-lead">
-            <option value="false">Non</option>
-            <option value="true">Oui — Lead</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="addToTeam('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
-}
-
-async function addToTeam(projectId, overlay) {
-  const userId = document.getElementById('team-add-user').value;
-  const role   = document.getElementById('team-add-role').value;
-  const isLead = document.getElementById('team-add-lead').value === 'true';
-  if (!userId) { toast('Sélectionne un membre','error'); return; }
-  const res = await api('POST', `/projects/${projectId}/team`, { userId, role, isLead });
-  if (res?.success) { toast('Membre ajouté ✅','success'); overlay.remove(); loadProjectDetail(projectId); }
-  else { toast('Erreur — ou déjà dans l\'équipe','warning'); overlay.remove(); }
-}
-
-// ═══ ADD TRUCK MODAL ═══
-function showAddTruckModal(projectId) {
-  const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML = `
-    <div class="modal">
-      <div class="modal-head"><div class="modal-title">🚛 Ajouter camion / machine</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <!-- Type -->
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Type *</label>
-          <select class="input" id="truck-type" onchange="updateTruckIcon(this.value)">
-            <option value="truck">🚛 Camion</option>
-            <option value="van">🚐 Camionnette</option>
-            <option value="crane">🏗️ Grue</option>
-            <option value="lift">🔼 Nacelle / Élévateur</option>
-            <option value="forklift">🚜 Chariot élévateur</option>
-            <option value="generator">⚡ Groupe électrogène</option>
-            <option value="trailer">🚛 Remorque</option>
-            <option value="machine">⚙️ Machine spéciale</option>
-            <option value="other">📦 Autre</option>
-          </select>
-        </div>
-        <div class="form-group2"><label class="form-label2">Numéro / Nom *</label><input class="input" id="truck-num" placeholder="ex: Camion 1, Nacelle #3"></div>
-      </div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Immatriculation / ID</label><input class="input" id="truck-plate" placeholder="ex: BE-421-XYZ"></div>
-        <div class="form-group2"><label class="form-label2">Statut</label>
-          <select class="input" id="truck-status">
-            <option value="planned">Planifié</option>
-            <option value="loading">En chargement</option>
-            <option value="in_transit">En transit</option>
-            <option value="delivered">Livré sur site</option>
-            <option value="returned">Retourné</option>
-          </select>
-        </div>
-      </div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Chauffeur / Responsable</label><input class="input" id="truck-driver" placeholder="Nom complet"></div>
-        <div class="form-group2"><label class="form-label2">📞 Téléphone</label><input class="input" type="tel" id="truck-phone" placeholder="+32 477 ..."></div>
-      </div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Date chargement / départ</label><input class="input" type="datetime-local" id="truck-loading"></div>
-        <div class="form-group2"><label class="form-label2">Date arrivée prévue</label><input class="input" type="datetime-local" id="truck-arrival"></div>
-      </div>
-      <div class="form-group2"><label class="form-label2">Notes / Contenu</label><textarea class="input" id="truck-notes" rows="2" placeholder="Matériel transporté, instructions spéciales..."></textarea></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="addTruckSafe('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
-}
-
-function updateTruckIcon(type) {
-  // Just for UX feedback
-}
-
-async function addTruck(projectId, overlay) {
-  const num = document.getElementById('truck-num').value.trim();
-  if (!num) { toast('Numéro/nom obligatoire', 'error'); return; }
-  const type = document.getElementById('truck-type').value;
-  const typeLabels = { truck:'Camion', van:'Camionnette', crane:'Grue', lift:'Nacelle', forklift:'Chariot élévateur', generator:'Groupe élec.', trailer:'Remorque', machine:'Machine', other:'Autre' };
-  const res = await api('POST', `/projects/${projectId}/trucks`, {
-    truckNumber: `${typeLabels[type]||''} — ${num}`,
-    licensePlate: document.getElementById('truck-plate').value||undefined,
-    driverName: document.getElementById('truck-driver').value||undefined,
-    driverPhone: document.getElementById('truck-phone').value||undefined,
-    status: document.getElementById('truck-status').value,
-    loadingDate: document.getElementById('truck-loading').value||undefined,
-    arrivalDate: document.getElementById('truck-arrival').value||undefined,
-    notes: document.getElementById('truck-notes').value||undefined,
-    vehicleType: type,
-  });
-  if (res?.success) { toast('Ajouté ✅','success'); overlay.remove(); loadProjectDetail(projectId); }
-  else toast('Erreur ajout — vérifiez que la route /projects/:id/trucks existe','error');
-}
-
-// ═══ PHOTO VIEWER ═══
-function openPhotoViewer(url) {
-  const el = document.createElement('div');
-  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
-  el.innerHTML=`<img src="${url}" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;">`;
-  el.onclick=()=>el.remove();
-  document.body.appendChild(el);
-}
-
-// ═══ MODAL TOOLBOX NEW ═══
-function showModal_toolbox_new() {
-  // Forward to existing modal
-  showModal('modal-box');
+async function createVisiteFixed(projectId) {
+  if (!projectId) { toast('Sélectionne un projet','error'); return; }
+  toast('Visite démarrée — ajoutez des points ✅','success');
+  closeModal('modal-visite');
+  CURRENT_PROJECT_ID = projectId;
+  goto('project-detail');
+  setTimeout(() => openDetailTab('remarks'), 500);
 }
 
 </script>
-
-<!-- ═══ RAPPORT IA MODAL ═══ -->
-<div class="overlay" id="modal-report">
-  <div class="modal" style="max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
-
-    <!-- Header -->
-    <div class="modal-head" style="flex-shrink:0;">
-      <div>
-        <div class="modal-title">📊 Générer un Rapport</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Choisissez les sections à inclure</div>
-      </div>
-      <button class="modal-close" onclick="closeModal('modal-report')">×</button>
-    </div>
-
-    <!-- Scrollable content -->
-    <div style="flex:1;overflow-y:auto;padding:0 4px;">
-
-      <!-- Type de rapport -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
-        <div id="rtype-full" onclick="selectReportType('full')" style="border:2px solid var(--accent);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;background:rgba(230,57,70,.06);">
-          <div style="font-size:22px;margin-bottom:6px;">📋</div>
-          <div style="font-weight:700;font-size:14px;">Rapport complet</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Toutes les données du projet</div>
-        </div>
-        <div id="rtype-client" onclick="selectReportType('client')" style="border:2px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;">
-          <div style="font-size:22px;margin-bottom:6px;">🤝</div>
-          <div style="font-weight:700;font-size:14px;">Présentation client</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Format soigné pour le client</div>
-        </div>
-      </div>
-
-      <!-- Sections -->
-      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">Sections à inclure</div>
-      <div style="font-size:11px;color:#8892a4;margin-bottom:10px;" id="report-sections-hint">Cliquez pour sélectionner/désélectionner</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;" id="report-sections">
-        <div class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">📋</span>
-            <div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:#8892a4;">Infos projet, dates, équipe</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">✅</span>
-            <div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:#8892a4;">Statut et avancement</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">📓</span>
-            <div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:#8892a4;">Journal journalier</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">🧾</span>
-            <div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:#8892a4;">Rapport de réception</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">🛠️</span>
-            <div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:#8892a4;">Incidents et résolutions</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">📸</span>
-            <div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:#8892a4;">Points et remarques</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">🚛</span>
-            <div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:#8892a4;">Camions et machines</div></div>
-          </div>
-        </div>
-        <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;">
-            <span style="font-size:18px;">🤖</span>
-            <div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Langue -->
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-        <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="fr" checked> Français</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="en"> English</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="nl"> Nederlands</label>
-      </div>
-
-      <!-- Status -->
-      <div id="report-status" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:8px;text-align:center;">
-        <div style="font-size:22px;margin-bottom:8px;" id="report-status-icon">🤖</div>
-        <div style="font-weight:600;" id="report-status-text">Collecte des données...</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="report-status-sub"></div>
-      </div>
-
-    </div>
-
-    <!-- Buttons — always visible -->
-    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:14px;margin-top:8px;display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="closeModal('modal-report')">Annuler</button>
-      <button class="btn btn-ghost btn-sm" id="report-preview-btn" onclick="generateReport('preview')">👁️ Prévisualiser</button>
-      <button class="btn btn-primary" id="report-pdf-btn" onclick="generateReport('pdf')">📄 Générer PDF</button>
-    </div>
-
-  </div>
-</div>
-
-<style>
-.report-section-toggle{
-  display:flex;align-items:center;padding:12px 14px;border:2px solid #2a2f3a;border-radius:10px;cursor:pointer;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent;min-height:52px;
-}
-.report-section-toggle:active{transform:scale(.97);}
-.report-section-toggle.active{border-color:#e63946!important;background:rgba(230,57,70,.08)!important;}
-</style>
-
-
-<!-- INVITE MODAL -->
-<div class="overlay" id="modal-invite">
-  <div class="modal" style="max-width:520px;">
-    <div class="modal-head">
-      <div><div class="modal-title">🔗 Inviter un membre</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Génère un lien d'inscription unique</div></div>
-      <button class="modal-close" onclick="closeModal('modal-invite')">×</button>
-    </div>
-    <div class="form-group2">
-      <label class="form-label2">Rôle de la personne invitée</div>
-      <select class="input" id="invite-role">
-        <option value="worker">👷 Installation Team</option>
-        <option value="engineer">⚙️ Sales Engineer</option>
-        <option value="site_manager">🏗️ Site Manager</option>
-        <option value="technical_manager">🔧 Technical Manager</option>
-        <option value="warehouse">📦 Warehouse Labour</option>
-      </select>
-    </div>
-    <div class="form-group2">
-      <label class="form-label2">Email de la personne (optionnel)</div>
-      <input class="input" id="invite-email" type="email" placeholder="prenom@email.com">
-    </div>
-    <div class="form-group2">
-      <label class="form-label2">Note personnelle (optionnel)</div>
-      <input class="input" id="invite-note" placeholder="ex: Rejoint l'équipe pour le projet Audi">
-    </div>
-    <div id="invite-result" style="display:none;margin-top:14px;">
-      <div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:14px;">
-        <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;">✅ Lien d'invitation généré !</div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input class="input" id="invite-link-input" readonly style="flex:1;font-size:12px;font-family:monospace;background:var(--bg3);">
-          <button class="btn btn-green btn-sm" onclick="copyInviteLink()">📋 Copier</button>
-        </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px;">⏱️ Ce lien expire dans 48 heures</div>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-invite')">Fermer</button>
-      <button class="btn btn-primary" id="invite-gen-btn" onclick="generateInviteLink()">🔗 Générer le lien</button>
-    </div>
-  </div>
-</div>
-
-<!-- REGISTER PAGE (shown when ?invite=TOKEN in URL) -->
-<div id="register-screen" style="display:none;min-height:100vh;background:var(--bg);"><div style="display:flex;align-items:center;justify-content:center;padding:20px;">
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:460px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center;">
-      <div style="width:44px;height:44px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;">V</div>
-      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:800;">ViewBox Event Manager</div>
-    </div>
-    <div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:800;margin-bottom:6px;text-align:center;">Créer mon compte</div>
-    <div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:28px;" id="register-role-label">Vous avez été invité à rejoindre l'équipe</div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
-      <div class="form-group"><label class="form-label">Prénom *</div><input class="form-input" id="reg-firstname" placeholder="Prénom" autocomplete="given-name"></div>
-      <div class="form-group"><label class="form-label">Nom *</div><input class="form-input" id="reg-lastname" placeholder="Nom" autocomplete="family-name"></div>
-    </div>
-    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Email *</div><input class="form-input" id="reg-email" type="email" placeholder="votre@email.com" autocomplete="email"></div>
-    <div class="form-group" style="margin-bottom:14px;">
-      <label class="form-label">Rôle *</div>
-      <select class="form-input" id="reg-role" style="cursor:pointer;">
-        <option value="worker">👷 Installation Team</option>
-        <option value="engineer">⚙️ Sales Engineer</option>
-        <option value="site_manager">🏗️ Site Manager</option>
-        <option value="technical_manager">🔧 Technical Manager</option>
-        <option value="warehouse">📦 Warehouse Labour</option>
-      </select>
-    </div>
-    <div class="form-group" style="margin-bottom:14px;"><label class="form-label">Mot de passe *</div><input class="form-input" id="reg-password" type="password" placeholder="Minimum 8 caractères" autocomplete="new-password"></div>
-    <div class="form-group" style="margin-bottom:20px;"><label class="form-label">Confirmer le mot de passe *</div><input class="form-input" id="reg-password2" type="password" placeholder="Répétez le mot de passe" autocomplete="new-password"></div>
-
-    <div id="reg-error" style="display:none;background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--accent);margin-bottom:14px;"></div>
-
-    <button class="login-btn" id="reg-btn" onclick="submitRegister()">✅ Créer mon compte</button>
-
-    <div style="text-align:center;margin-top:16px;">
-      <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showLoginFromRegister()">← Retour à la connexion</span>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
