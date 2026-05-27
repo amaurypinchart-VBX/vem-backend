@@ -1176,11 +1176,12 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
       <div class="form-group2" style="margin:0;">
         <label class="form-label2">📸 Photos de la journée</label>
-        <label style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:var(--radius);padding:12px;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;min-height:68px;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-          📸 Ajouter photos
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;min-height:72px;-webkit-tap-highlight-color:transparent;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+          📸 Prendre / Ajouter photos
           <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="daily-photos-input" onchange="previewDailyPhotos(this)">
         </label>
-        <div id="daily-photos-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+        <div id="daily-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;"></div>
+        <div id="daily-photos-count" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
       </div>
     </div>
 
@@ -2452,12 +2453,16 @@ let PENDING_DAILY_PHOTOS = [];
 function previewDailyPhotos(input) {
   PENDING_DAILY_PHOTOS = Array.from(input.files);
   const preview = document.getElementById('daily-photos-preview');
+  const count = document.getElementById('daily-photos-count');
   if (!preview) return;
   preview.innerHTML = PENDING_DAILY_PHOTOS.map(f => {
     const url = URL.createObjectURL(f);
-    return `<img src="${url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`;
+    return `<div style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;">
+    </div>`;
   }).join('');
-  updateDailySummary();
+  if (count) count.textContent = PENDING_DAILY_PHOTOS.length > 0 ? `${PENDING_DAILY_PHOTOS.length} photo(s) sélectionnée(s)` : '';
+  if (typeof updateDailySummary === 'function') updateDailySummary();
 }
 
 async function createDailyReport(send=false) {
@@ -5732,12 +5737,12 @@ async function loadDetailDailyReports(projectId) {
           <div style="font-size:12px;color:var(--text3);">${r.workersPresent} ouvriers · ${r.weather||''} · ${r._count?.entries||0} entrée(s)</div>
           ${r.generalNotes?`<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px;">${r.generalNotes}</div>`:''}
         </div>
-        <div style="display:flex;gap:6px;align-items:center;" onclick="event.stopPropagation()">
-          ${r.sentAt?'<span class="badge badge-green">✉️</span>':''}
-          <button class="btn btn-ghost btn-xs" onclick="openDailyDetail('${r.id}','${projectId}')">👁️ Voir</button>
-          <button class="btn btn-ghost btn-xs" onclick="editDailyReport('${r.id}')">✏️</button>
-          <button class="btn btn-ghost btn-xs" onclick="downloadDailyPDF('${r.id}')">📄</button>
-          <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteDailyReport('${r.id}')">🗑️</button>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;" onclick="event.stopPropagation()">
+          ${r.sentAt?'<span class="badge badge-green" style="font-size:10px;">✉️</span>':''}
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();openDailyDetail('${r.id}','${projectId}')">👁️</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();editDailyReport('${r.id}')">✏️</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();downloadDailyPDF('${r.id}')">📄</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;color:var(--accent);" onclick="event.stopPropagation();deleteDailyReport('${r.id}')">🗑️</button>
         </div>
       </div>
     </div>`).join('');
