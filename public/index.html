@@ -922,6 +922,22 @@ textarea.input{min-height:80px;resize:vertical;}
       <div class="form-group2"><label class="form-label2">Fin démontage</label><input class="input" type="date" id="proj-dismantling-end"></div>
     </div>
     <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
+
+    <!-- ÉQUIPES D'INSTALLATION -->
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;margin-bottom:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">👷 Équipes & Membres</div>
+          <div style="font-size:11px;color:var(--text3);">Sélectionne les équipes et membres présents sur ce projet</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="createTeamGroup();loadProjTeamSelector()">+ Sous-équipe</button>
+      </div>
+      <div id="proj-team-selector" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;">
+        <div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="proj-team-count">0 membre(s) sélectionné(s)</div>
+    </div>
+
     <!-- TEMPLATES DE TÂCHES -->
     <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -7205,6 +7221,113 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+
+
+// ═══════════════════════════════════════════════════════════
+// SÉLECTEUR D'ÉQUIPE DANS LE MODAL PROJET
+// ═══════════════════════════════════════════════════════════
+
+function loadProjTeamSelector() {
+  const el = document.getElementById('proj-team-selector');
+  if (!el) return;
+  if (!USERS.length) { el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre — créez des membres dans l'onglet Équipe</div>'; return; }
+
+  const installers = USERS.filter(u => ['installer','worker','site_manager','technical_manager'].includes(u.role));
+  const others = USERS.filter(u => ['sales_engineer','project_manager','engineer','admin'].includes(u.role));
+
+  const renderMini = u => {
+    const initials = (u.firstName?.[0]||'?')+(u.lastName?.[0]||'');
+    const grp = TEAM_GROUPS.find(g => g.id === u.teamGroupId);
+    return `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all .15s;"
+        onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+        <input type="checkbox" class="proj-member-check" value="${u.id}"
+          data-name="${u.firstName} ${u.lastName}" data-role="${u.role}"
+          style="width:15px;height:15px;accent-color:var(--accent);flex-shrink:0;"
+          onchange="updateProjTeamCount()">
+        ${u.avatarUrl
+          ? `<img src="${u.avatarUrl}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+          : `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>`}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${u.firstName} ${u.lastName}</div>
+          <div style="font-size:10px;color:var(--text3);">${grp?'👷 '+grp.name:''} ${u.phone?'· 📞'+u.phone:''}</div>
+        </div>
+      </label>`;
+  };
+
+  let content = '';
+
+  // Installer subgroups
+  if (TEAM_GROUPS.length) {
+    TEAM_GROUPS.forEach(grp => {
+      const grpMembers = installers.filter(u => u.teamGroupId === grp.id);
+      if (!grpMembers.length) return;
+      content += `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:${grp.color}18;border-left:3px solid ${grp.color};border-radius:0 6px 6px 0;margin-bottom:4px;cursor:pointer;"
+            onclick="toggleProjTeamGroup('grp-${grp.id}',this)">
+            <span style="font-size:13px;font-weight:700;color:${grp.color};">👷 ${grp.name}</span>
+            <span style="font-size:10px;color:var(--text3);">${grpMembers.length} membres</span>
+            <button class="btn btn-ghost btn-xs" style="margin-left:auto;font-size:10px;" onclick="event.stopPropagation();checkAllGroup('grp-${grp.id}',true)">✅ Tout</button>
+            <span style="font-size:11px;color:var(--text3);">▼</span>
+          </div>
+          <div id="grp-${grp.id}" style="display:flex;flex-direction:column;gap:2px;padding-left:8px;">
+            ${grpMembers.map(renderMini).join('')}
+          </div>
+        </div>`;
+    });
+  }
+
+  // Installers without group
+  const noGroup = installers.filter(u => !u.teamGroupId);
+  if (noGroup.length) {
+    content += `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:4px 2px;margin-bottom:4px;">🔧 Installateurs sans équipe</div>
+        ${noGroup.map(renderMini).join('')}
+      </div>`;
+  }
+
+  // Other roles
+  if (others.length) {
+    content += `
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:4px 2px;margin-bottom:4px;">📋 Management</div>
+        ${others.map(renderMini).join('')}
+      </div>`;
+  }
+
+  el.innerHTML = content || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre</div>';
+  updateProjTeamCount();
+}
+
+function toggleProjTeamGroup(groupId, header) {
+  const el = document.getElementById(groupId);
+  if (!el) return;
+  const hidden = el.style.display === 'none';
+  el.style.display = hidden ? 'flex' : 'none';
+  const arrow = header.querySelector('span:last-child');
+  if (arrow) arrow.textContent = hidden ? '▼' : '▶';
+}
+
+function checkAllGroup(groupId, checked) {
+  document.querySelectorAll(`#${groupId} .proj-member-check`).forEach(cb => cb.checked = checked);
+  updateProjTeamCount();
+}
+
+function updateProjTeamCount() {
+  const count = document.querySelectorAll('.proj-member-check:checked').length;
+  const el = document.getElementById('proj-team-count');
+  if (el) el.textContent = count > 0 ? `${count} membre(s) sélectionné(s)` : '0 membre sélectionné';
+}
+
+function getSelectedProjMembers() {
+  return Array.from(document.querySelectorAll('.proj-member-check:checked')).map(cb => ({
+    userId: cb.value,
+    role: cb.dataset.role || 'worker',
+    name: cb.dataset.name,
+  }));
+}
 
 </script>
 </body>
