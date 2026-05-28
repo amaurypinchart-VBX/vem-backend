@@ -1272,39 +1272,111 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <!-- Nouveau membre -->
 <div class="overlay" id="modal-user">
-  <div class="modal">
-    <div class="modal-head"><div class="modal-title">👤 Nouveau Membre</div><button class="modal-close" onclick="closeModal('modal-user')">×</button></div>
-    <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Prénom *</label><input class="input" id="user-fname" placeholder="Prénom"></div>
-      <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="user-lname" placeholder="Nom"></div>
+  <div class="modal" style="max-width:680px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-head" style="flex-shrink:0;">
+      <div><div class="modal-title">👤 Nouveau Membre</div>
+      <div style="font-size:12px;color:var(--text2);">Fiche membre complète</div></div>
+      <button class="modal-close" onclick="closeModal('modal-user')">×</button>
     </div>
-    <div class="form-group2"><label class="form-label2">Email *</label><input class="input" id="user-email" type="email" placeholder="email@exemple.com"></div>
-    <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Rôle</label>
-        <select class="input" id="user-role">
-          <option value="sales_engineer">💼 Sales Engineer</option>
-          <option value="project_manager">📊 Project Manager</option>
-          <option value="technical_manager">⚙️ Technical Manager</option>
-          <option value="site_manager">🏗️ Site Manager</option>
-          <option value="installer">🔧 Installateur</option>
-          <option value="worker">👷 Ouvrier / Équipe</option>
-          <option value="warehouse">📦 Entrepôt</option>
-          <option value="engineer">🛠️ Engineer</option>
-          <option value="admin">🔑 Admin</option>
-          <option value="client">🤝 Client</option>
-        </select>
+
+    <div style="flex:1;overflow-y:auto;padding:0 2px 10px;">
+
+      <!-- OCR Carte d'identité -->
+      <div style="background:linear-gradient(135deg,#1a1f2e,#2a2f3a);border:1px solid #4895ef44;border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#4895ef;margin-bottom:8px;">🪪 Scan carte d'identité — remplissage automatique</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;background:#4895ef;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;-webkit-tap-highlight-color:transparent;">
+            📷 Scanner la carte
+            <input type="file" accept="image/*" capture="environment" style="display:none;" id="id-card-input" onchange="scanIDCard(this)">
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;background:var(--bg3);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid var(--border);">
+            🖼️ Depuis galerie
+            <input type="file" accept="image/*" style="display:none;" onchange="scanIDCard(this)">
+          </label>
+          <div id="ocr-status" style="font-size:12px;color:var(--text3);"></div>
+        </div>
+        <div id="id-card-preview" style="margin-top:10px;display:none;">
+          <img id="id-card-img" style="max-height:120px;border-radius:8px;border:1px solid var(--border);">
+        </div>
       </div>
-      <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="user-phone" placeholder="+32 477 ..."></div>
+
+      <!-- Photo de profil -->
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;">
+        <div>
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">Photo</label>
+          <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:80px;height:80px;border:2px dashed var(--border);border-radius:50%;cursor:pointer;overflow:hidden;position:relative;" id="profile-photo-label">
+            <img id="profile-photo-preview" style="width:100%;height:100%;object-fit:cover;display:none;border-radius:50%;">
+            <span id="profile-photo-placeholder" style="font-size:28px;">👤</span>
+            <input type="file" accept="image/*" capture="user" style="display:none;" id="profile-photo-input" onchange="previewProfilePhoto(this)">
+          </label>
+        </div>
+        <div style="flex:1;">
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Prénom *</label><input class="input" id="user-fname" placeholder="Prénom"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Nom *</label><input class="input" id="user-lname" placeholder="Nom"></div>
+          </div>
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Date de naissance</label><input class="input" type="date" id="user-birthdate"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Nationalité</label><input class="input" id="user-nationality" placeholder="ex: Belge, Français..."></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Identité officielle -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">N° Registre national</label><input class="input" id="user-national-nr" placeholder="XX.XX.XX-XXX.XX" maxlength="15"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">N° Carte d'identité</label><input class="input" id="user-id-number" placeholder="592-XXXXXXX-XX"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Validité carte d'identité</label><input class="input" type="date" id="user-id-expiry"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Lieu de naissance</label><input class="input" id="user-birthplace" placeholder="Ville, Pays"></div>
+      </div>
+
+      <!-- Contact -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Email *</label><input class="input" id="user-email" type="email" placeholder="email@exemple.com"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Téléphone</label><input class="input" id="user-phone" placeholder="+32 477 ..."></div>
+      </div>
+
+      <!-- Rôle + Équipe -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Rôle</label>
+          <select class="input" id="user-role" onchange="toggleTeamGroup(this.value)">
+            <option value="sales_engineer">💼 Sales Engineer</option>
+            <option value="project_manager">📊 Project Manager</option>
+            <option value="technical_manager">⚙️ Technical Manager</option>
+            <option value="site_manager">🏗️ Site Manager</option>
+            <option value="installer" selected>🔧 Installateur</option>
+            <option value="worker">👷 Ouvrier / Équipe</option>
+            <option value="warehouse">📦 Entrepôt</option>
+            <option value="engineer">🛠️ Engineer</option>
+            <option value="admin">🔑 Admin</option>
+            <option value="client">🤝 Client</option>
+          </select>
+        </div>
+        <div class="form-group2" style="margin:0;" id="team-group-row">
+          <label class="form-label2">Sous-équipe</label>
+          <div style="display:flex;gap:6px;">
+            <select class="input" id="user-team-group" style="flex:1;">
+              <option value="">— Aucune —</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" style="flex-shrink:0;" onclick="createTeamGroup()" title="Créer une sous-équipe">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;font-size:12px;color:var(--text3);margin-bottom:4px;">
+        Mot de passe par défaut : <strong style="color:var(--text2);">VEM2025!</strong> — à changer à la première connexion.
+      </div>
     </div>
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;font-size:12px;color:var(--text3);margin-bottom:12px;">
-      Le mot de passe par défaut sera <strong style="color:var(--text2);">VEM2025!</strong> — à changer à la première connexion.
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
+
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:6px;display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-outline" onclick="closeModal('modal-user')">Annuler</button>
       <button class="btn btn-primary" onclick="createUser()">✅ Créer le compte</button>
     </div>
   </div>
 </div>
+
 <!-- ═══ MODAL RAPPORT IA ═══ -->
 <div class="overlay" id="modal-report">
   <div class="modal" style="max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
@@ -6818,6 +6890,321 @@ async function deleteProjectFile(fileId, projectId) {
   if (res?.success) { toast('Fichier supprimé','success'); loadDetailFiles(projectId); }
   else toast('Erreur suppression','error');
 }
+
+
+// ═══════════════════════════════════════════════════════
+// SOUS-ÉQUIPES & GESTION MEMBRES
+// ═══════════════════════════════════════════════════════
+
+// Local storage for team groups (until backend ready)
+let TEAM_GROUPS = JSON.parse(localStorage.getItem('vem_team_groups') || '[]');
+// [{id, name, color, leaderId}]
+
+function saveTeamGroups() {
+  localStorage.setItem('vem_team_groups', JSON.stringify(TEAM_GROUPS));
+}
+
+function toggleTeamGroup(role) {
+  const row = document.getElementById('team-group-row');
+  if (!row) return;
+  const showGroup = ['installer','worker'].includes(role);
+  row.style.display = showGroup ? 'block' : 'none';
+  if (showGroup) loadTeamGroupSelect();
+}
+
+function loadTeamGroupSelect() {
+  const sel = document.getElementById('user-team-group');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Aucune sous-équipe —</option>' +
+    TEAM_GROUPS.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+}
+
+function createTeamGroup() {
+  const name = prompt('Nom de la sous-equipe ? ex: Equipe Ruslan');
+  if (!name?.trim()) return;
+  const colors = ['#e63946','#4895ef','#2dc653','#f4a261','#8b5cf6','#ec4899'];
+  const group = {
+    id: 'tg_' + Date.now(),
+    name: name.trim(),
+    color: colors[TEAM_GROUPS.length % colors.length]
+  };
+  TEAM_GROUPS.push(group);
+  saveTeamGroups();
+  loadTeamGroupSelect();
+  document.getElementById('user-team-group').value = group.id;
+  toast(`Sous-équipe "${name}" créée ✅`, 'success');
+}
+
+// ── OCR Carte d'identité via Claude IA ──
+async function scanIDCard(input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+
+  // Preview
+  const preview = document.getElementById('id-card-preview');
+  const img = document.getElementById('id-card-img');
+  const status = document.getElementById('ocr-status');
+  if (preview && img) {
+    img.src = URL.createObjectURL(file);
+    preview.style.display = 'block';
+  }
+  if (status) status.innerHTML = '⏳ Analyse en cours...';
+
+  // Convert to base64
+  const base64 = await new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result.split(',')[1]);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: file.type || 'image/jpeg', data: base64 }
+            },
+            {
+              type: 'text',
+              text: `Analyse cette carte d'identité et extrait les informations suivantes en JSON strict, sans texte autour :
+{
+  "firstName": "prénom",
+  "lastName": "nom de famille",
+  "birthDate": "YYYY-MM-DD ou vide",
+  "birthPlace": "ville de naissance ou vide",
+  "nationality": "nationalité ou vide",
+  "idNumber": "numéro de la carte ou vide",
+  "nationalNumber": "numéro de registre national ou vide",
+  "expiryDate": "YYYY-MM-DD ou vide"
+}
+Si une information n'est pas visible, mets une chaîne vide "". Réponds UNIQUEMENT avec le JSON.`
+            }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '';
+    
+    // Parse JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    } catch {
+      if (status) status.innerHTML = '⚠️ Impossible de lire la carte — remplissez manuellement';
+      return;
+    }
+
+    // Fill form fields
+    if (parsed.firstName) document.getElementById('user-fname').value = parsed.firstName;
+    if (parsed.lastName)  document.getElementById('user-lname').value = parsed.lastName;
+    if (parsed.birthDate) document.getElementById('user-birthdate').value = parsed.birthDate;
+    if (parsed.birthPlace) document.getElementById('user-birthplace').value = parsed.birthPlace;
+    if (parsed.nationality) document.getElementById('user-nationality').value = parsed.nationality;
+    if (parsed.idNumber) document.getElementById('user-id-number').value = parsed.idNumber;
+    if (parsed.nationalNumber) document.getElementById('user-national-nr').value = parsed.nationalNumber;
+    if (parsed.expiryDate) document.getElementById('user-id-expiry').value = parsed.expiryDate;
+
+    const filled = Object.values(parsed).filter(v => v).length;
+    if (status) status.innerHTML = `✅ ${filled} champ(s) rempli(s) automatiquement`;
+    toast('Carte scannée ✅', 'success');
+
+  } catch (err) {
+    console.error('OCR error:', err);
+    if (status) status.innerHTML = '❌ Erreur connexion IA — remplissez manuellement';
+  }
+}
+
+// ── Preview photo de profil ──
+function previewProfilePhoto(input) {
+  if (!input.files?.length) return;
+  const url = URL.createObjectURL(input.files[0]);
+  const preview = document.getElementById('profile-photo-preview');
+  const placeholder = document.getElementById('profile-photo-placeholder');
+  if (preview) { preview.src = url; preview.style.display = 'block'; }
+  if (placeholder) placeholder.style.display = 'none';
+}
+
+// ── Render team with subgroups ──
+async function loadTeam() {
+  const res = await api('GET', '/users');
+  if (!res?.success) return;
+  USERS = res.data;
+
+  const sub = document.getElementById('team-sub');
+  if (sub) sub.textContent = USERS.filter(u=>u.isActive).length + ' membres actifs';
+
+  const grouped = {};
+  USERS.forEach(u => {
+    const role = u.role || 'worker';
+    if (!grouped[role]) grouped[role] = [];
+    grouped[role].push(u);
+  });
+
+  const container = document.getElementById('team-groups-container');
+  if (!container) return;
+
+  let html = '';
+
+  TEAM_CATEGORIES.forEach(cat => {
+    const members = grouped[cat.key] || [];
+    if (!members.length) return;
+
+    // For installer/worker — show subgroups
+    if (['installer','worker'].includes(cat.key) && TEAM_GROUPS.length) {
+      html += `
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid ${cat.color}22;">
+            <span style="font-size:18px;">${cat.icon}</span>
+            <span style="font-size:14px;font-weight:700;color:${cat.color};">${cat.label}</span>
+            <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:99px;">${members.length}</span>
+            <button class="btn btn-ghost btn-xs" style="margin-left:auto;" onclick="createTeamGroup()">+ Sous-équipe</button>
+          </div>`;
+
+      // Members without group
+      const noGroup = members.filter(u => !u.teamGroupId);
+      const withGroup = {};
+      members.filter(u => u.teamGroupId).forEach(u => {
+        if (!withGroup[u.teamGroupId]) withGroup[u.teamGroupId] = [];
+        withGroup[u.teamGroupId].push(u);
+      });
+
+      // Render subgroups
+      TEAM_GROUPS.forEach(grp => {
+        const grpMembers = withGroup[grp.id] || [];
+        if (!grpMembers.length && !members.some(u => u.teamGroupId === grp.id)) return;
+        html += `
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${grp.color}15;border-left:3px solid ${grp.color};border-radius:0 8px 8px 0;margin-bottom:8px;">
+              <span style="font-size:13px;font-weight:700;color:${grp.color};">👷 ${grp.name}</span>
+              <span style="font-size:11px;color:var(--text3);">${grpMembers.length} membres</span>
+              <button class="btn btn-ghost btn-xs" style="margin-left:auto;color:var(--accent);" onclick="deleteTeamGroup('${grp.id}')">🗑️</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;padding-left:12px;">
+              ${grpMembers.map(u => renderMemberCard(u, grp.color)).join('')}
+            </div>
+          </div>`;
+      });
+
+      // Members without group
+      if (noGroup.length) {
+        html += `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Sans sous-équipe</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">
+              ${noGroup.map(u => renderMemberCard(u, cat.color)).join('')}
+            </div>
+          </div>`;
+      }
+      html += '</div>';
+
+    } else {
+      html += `
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${cat.color}22;">
+            <span style="font-size:18px;">${cat.icon}</span>
+            <span style="font-size:14px;font-weight:700;color:${cat.color};">${cat.label}</span>
+            <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:99px;">${members.length}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">
+            ${members.map(u => renderMemberCard(u, cat.color)).join('')}
+          </div>
+        </div>`;
+    }
+  });
+
+  container.innerHTML = html || '<div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Aucun membre</div></div>';
+}
+
+function renderMemberCard(u, color) {
+  const initials = (u.firstName?.[0]||'?') + (u.lastName?.[0]||'');
+  return `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s;"
+      onmouseover="this.style.borderColor='${color}'" onmouseout="this.style.borderColor='var(--border)'"
+      onclick="openUserDetail('${u.id}')">
+      ${u.avatarUrl
+        ? `<img src="${u.avatarUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid ${color};">`
+        : `<div style="width:40px;height:40px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0;">${initials}</div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${u.firstName} ${u.lastName}</div>
+        <div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email}</div>
+        ${u.phone ? `<div style="font-size:11px;color:var(--blue);"><a href="tel:${u.phone}" style="color:inherit;" onclick="event.stopPropagation()">📞 ${u.phone}</a></div>` : ''}
+        ${u.nationality ? `<div style="font-size:10px;color:var(--text3);">🌍 ${u.nationality}</div>` : ''}
+      </div>
+      <div style="width:8px;height:8px;border-radius:50%;background:${u.isActive?'#2dc653':'#6b7280'};flex-shrink:0;" title="${u.isActive?'Actif':'Inactif'}"></div>
+    </div>`;
+}
+
+function deleteTeamGroup(groupId) {
+  if (!confirm('Supprimer cette sous-équipe ? Les membres ne seront pas supprimés.')) return;
+  TEAM_GROUPS = TEAM_GROUPS.filter(g => g.id !== groupId);
+  saveTeamGroups();
+  loadTeam();
+  toast('Sous-équipe supprimée', 'success');
+}
+
+// ── Open user detail with full info ──
+async function openUserDetail(userId) {
+  const u = USERS.find(x => x.id === userId);
+  if (!u) return;
+  const cat = TEAM_CATEGORIES.find(c => c.key === u.role) || { label: u.role, color: '#4895ef', icon: '👤' };
+  const grp = TEAM_GROUPS.find(g => g.id === u.teamGroupId);
+  const initials = (u.firstName?.[0]||'?') + (u.lastName?.[0]||'');
+
+  const overlay = document.createElement('div'); overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${u.avatarUrl
+            ? `<img src="${u.avatarUrl}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid ${cat.color};">`
+            : `<div style="width:52px;height:52px;border-radius:50%;background:${cat.color};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;">${initials}</div>`}
+          <div>
+            <div class="modal-title" style="margin:0;">${u.firstName} ${u.lastName}</div>
+            <div style="font-size:12px;color:var(--text3);">${cat.icon} ${cat.label}${grp?` · 👷 ${grp.name}`:''}</div>
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${u.email?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📧</span><a href="mailto:${u.email}" style="color:var(--blue);font-size:13px;">${u.email}</a></div>`:''}
+        ${u.phone?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📞</span><a href="tel:${u.phone}" style="color:var(--blue);font-size:13px;">${u.phone}</a></div>`:''}
+        ${u.nationality?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🌍</span><span style="font-size:13px;">${u.nationality}</span></div>`:''}
+        ${u.nationalNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🪪</span><span style="font-size:13px;font-family:monospace;">${u.nationalNumber}</span></div>`:''}
+        ${u.idNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🆔</span><span style="font-size:13px;font-family:monospace;">${u.idNumber}${u.idExpiry?' · exp. '+u.idExpiry:''}</span></div>`:''}
+        ${u.birthDate?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🎂</span><span style="font-size:13px;">${u.birthDate}${u.birthPlace?' — '+u.birthPlace:''}</span></div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+// ── Init team group select on modal open ──
+const _origShowModal2 = showModal;
+// Already patched via _origShowModal — just ensure user modal loads groups
+document.addEventListener('DOMContentLoaded', () => {
+  // patch showModal once more for modal-user
+  const origSM = window.showModal;
+  window.showModal = function(id) {
+    origSM(id);
+    if (id === 'modal-user') {
+      loadTeamGroupSelect();
+      toggleTeamGroup(document.getElementById('user-role')?.value || 'installer');
+    }
+  };
+});
 
 </script>
 </body>
