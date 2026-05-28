@@ -7377,7 +7377,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadProjTeamSelector() {
   const el = document.getElementById('proj-team-selector');
   if (!el) return;
-  if (!USERS.length) { el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre — créez des membres dans l'onglet Équipe</div>'; return; }
+  if (!USERS.length) { el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre — créez des membres dans l\'onglet Équipe</div>'; return; }
 
   const installers = USERS.filter(u => ['installer','worker','site_manager','technical_manager'].includes(u.role));
   const others = USERS.filter(u => ['sales_engineer','project_manager','engineer','admin'].includes(u.role));
