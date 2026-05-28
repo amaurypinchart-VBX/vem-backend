@@ -1288,6 +1288,100 @@ textarea.input{min-height:80px;resize:vertical;}
     </div>
   </div>
 </div>
+<!-- ═══ MODAL RAPPORT IA ═══ -->
+<div class="overlay" id="modal-report">
+  <div class="modal" style="max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <div class="modal-head" style="flex-shrink:0;">
+      <div>
+        <div class="modal-title">📊 Générer un Rapport</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Choisissez les sections à inclure</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-report')">×</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div style="flex:1;overflow-y:auto;padding:0 2px 10px;">
+
+      <!-- Type -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <div id="rtype-full" onclick="selectReportType('full')" style="border:2px solid var(--accent);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;background:rgba(230,57,70,.06);">
+          <div style="font-size:22px;margin-bottom:6px;">📋</div>
+          <div style="font-weight:700;font-size:14px;">Rapport complet</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Toutes les données du projet</div>
+        </div>
+        <div id="rtype-client" onclick="selectReportType('client')" style="border:2px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;">
+          <div style="font-size:22px;margin-bottom:6px;">🤝</div>
+          <div style="font-weight:700;font-size:14px;">Présentation client</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Format soigné pour le client</div>
+        </div>
+      </div>
+
+      <!-- Sections -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">Sections à inclure</div>
+      <div style="font-size:11px;color:#8892a4;margin-bottom:10px;" id="report-sections-hint">Cliquez pour sélectionner / désélectionner</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;" id="report-sections">
+        <div class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📋</span><div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:#8892a4;">Infos projet, dates, équipe</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">✅</span><div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:#8892a4;">Statut et avancement</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📓</span><div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:#8892a4;">Journal journalier</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🧾</span><div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:#8892a4;">Rapport de réception</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🛠️</span><div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:#8892a4;">Incidents et résolutions</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📸</span><div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:#8892a4;">Points et remarques</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🚛</span><div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:#8892a4;">Camions et machines</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🤖</span><div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div></div>
+        </div>
+      </div>
+
+      <!-- Langue -->
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="fr" checked> Français</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="en"> English</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="nl"> Nederlands</label>
+      </div>
+
+      <!-- Status -->
+      <div id="report-status" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:8px;" id="report-status-icon">🤖</div>
+        <div style="font-weight:600;" id="report-status-text">Collecte des données...</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="report-status-sub"></div>
+      </div>
+
+    </div>
+
+    <!-- Boutons fixes en bas -->
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:14px;margin-top:8px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-report')">Annuler</button>
+      <button class="btn btn-ghost btn-sm" id="report-preview-btn" onclick="generateReport('preview')">👁️ Prévisualiser</button>
+      <button class="btn btn-primary" id="report-pdf-btn" onclick="generateReport('pdf')">📄 Générer PDF</button>
+    </div>
+
+  </div>
+</div>
+
+<style>
+.report-section-toggle{
+  display:flex;align-items:center;padding:12px 14px;border:2px solid #2a2f3a;border-radius:10px;cursor:pointer;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent;min-height:52px;
+}
+.report-section-toggle:active{transform:scale(.97);}
+.report-section-toggle.active{border-color:#e63946!important;background:rgba(230,57,70,.08)!important;}
+</style>
 
 <script>
 // ═══════════════════════════════════════════════════════
