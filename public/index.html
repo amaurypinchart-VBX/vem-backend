@@ -722,6 +722,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
     <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
     <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
+    <div class="tab" onclick="switchTab(this,'dtab-files');loadDetailFiles(CURRENT_PROJECT_ID)">📁 Fichiers</div>
   </div>
   <div id="dtab-info"><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-tasks" style="display:none;"><div id="detail-tasks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
@@ -733,6 +734,7 @@ textarea.input{min-height:80px;resize:vertical;}
   <div id="dtab-toolbox" style="display:none;"><div id="detail-toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div></div></div></div>
   <div id="dtab-team" style="display:none;"><div id="detail-team-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-trucks" style="display:none;"><div id="detail-trucks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
 </div>
 
 <!-- TACHES -->
@@ -860,15 +862,17 @@ textarea.input{min-height:80px;resize:vertical;}
 
 <div class="pg" id="pg-team">
   <div class="pg-head">
-    <div><div class="pg-title">Équipe</div><div class="pg-sub">Membres actifs</div></div>
-    <button class="btn btn-primary" onclick="showModal('modal-user')">+ Nouveau membre</button>
+    <div><div class="pg-title">Équipe</div><div class="pg-sub" id="team-sub">Membres actifs</div></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showModal('modal-invite')">🔗 Inviter</button>
+      <button class="btn btn-primary" onclick="showModal('modal-user')">+ Nouveau membre</button>
+    </div>
   </div>
-  <div class="card">
-    <div class="table-wrap"><table>
-      <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
-      <tbody id="team-tbody"><tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text3);">Chargement...</td></tr></tbody>
-    </table></div>
+  <div id="team-groups-container">
+    <div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Chargement...</div></div>
   </div>
+  <!-- Table cachée pour compatibilité -->
+  <table style="display:none"><tbody id="team-tbody"></tbody></table>
 </div>
 
 <!-- NOTIFS -->
@@ -1278,12 +1282,16 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="input-row">
       <div class="form-group2"><label class="form-label2">Rôle</label>
         <select class="input" id="user-role">
-          <option value="worker">Ouvrier</option>
-          <option value="engineer">Engineer</option>
-          <option value="site_manager">Site Manager</option>
-          <option value="technical_manager">Technical Manager</option>
-          <option value="project_manager">Project Manager</option>
-          <option value="admin">Admin</option>
+          <option value="sales_engineer">💼 Sales Engineer</option>
+          <option value="project_manager">📊 Project Manager</option>
+          <option value="technical_manager">⚙️ Technical Manager</option>
+          <option value="site_manager">🏗️ Site Manager</option>
+          <option value="installer">🔧 Installateur</option>
+          <option value="worker">👷 Ouvrier / Équipe</option>
+          <option value="warehouse">📦 Entrepôt</option>
+          <option value="engineer">🛠️ Engineer</option>
+          <option value="admin">🔑 Admin</option>
+          <option value="client">🤝 Client</option>
         </select>
       </div>
       <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="user-phone" placeholder="+32 477 ..."></div>
@@ -1348,6 +1356,12 @@ textarea.input{min-height:80px;resize:vertical;}
         </div>
         <div class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📸</span><div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:#8892a4;">Points et remarques</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
         </div>
         <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🚛</span><div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:#8892a4;">Camions et machines</div></div></div>
@@ -1936,20 +1950,119 @@ async function saveTicketTime(id) {
 }
 
 // ═══ TEAM ═══
+// Team categories — ordered display
+const TEAM_CATEGORIES = [
+  { key: 'sales_engineer',     label: 'Sales Engineer',      icon: '💼', color: '#8b5cf6' },
+  { key: 'project_manager',    label: 'Project Manager',     icon: '📊', color: '#4895ef' },
+  { key: 'technical_manager',  label: 'Technical Manager',   icon: '⚙️',  color: '#f4a261' },
+  { key: 'site_manager',       label: 'Site Manager',        icon: '🏗️', color: '#2dc653' },
+  { key: 'installer',          label: 'Installateur',        icon: '🔧', color: '#e63946' },
+  { key: 'worker',             label: 'Ouvrier / Équipe',    icon: '👷', color: '#6b7280' },
+  { key: 'admin',              label: 'Admin',               icon: '🔑', color: '#e63946' },
+  { key: 'engineer',           label: 'Engineer',            icon: '🛠️', color: '#4895ef' },
+  { key: 'warehouse',          label: 'Entrepôt',            icon: '📦', color: '#f4a261' },
+  { key: 'client',             label: 'Client',              icon: '🤝', color: '#6b7280' },
+];
+
 async function loadTeam() {
   const res = await api('GET', '/users');
   if (!res?.success) return;
   USERS = res.data;
-  const roles = { admin:'Admin', project_manager:'Chef Projet', site_manager:'Site Manager', technical_manager:'Tech. Manager', engineer:'Engineer', worker:'Ouvrier', client:'Client' };
-  document.getElementById('team-tbody').innerHTML = USERS.map(u => `<tr>
-    <td><div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">${(u.firstName[0]+u.lastName[0]).toUpperCase()}</div>
-      <strong>${u.firstName} ${u.lastName}</strong>
-    </div></td>
-    <td style="color:var(--text3);">${u.email}</td>
-    <td><span class="badge badge-blue">${roles[u.role]||u.role}</span></td>
-    <td><span class="badge badge-green">Actif</span></td>
-  </tr>`).join('');
+
+  const sub = document.getElementById('team-sub');
+  if (sub) sub.textContent = `${USERS.filter(u=>u.isActive).length} membres actifs`;
+
+  // Group by role
+  const grouped = {};
+  USERS.forEach(u => {
+    const role = u.role || 'worker';
+    if (!grouped[role]) grouped[role] = [];
+    grouped[role].push(u);
+  });
+
+  const container = document.getElementById('team-groups-container');
+  if (!container) return;
+
+  let html = '';
+  TEAM_CATEGORIES.forEach(cat => {
+    const members = grouped[cat.key] || [];
+    if (!members.length) return;
+    html += `
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${cat.color}22;">
+          <span style="font-size:18px;">${cat.icon}</span>
+          <span style="font-size:14px;font-weight:700;color:${cat.color};">${cat.label}</span>
+          <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:99px;">${members.length}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
+          ${members.map(u => `
+            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;transition:all .15s;cursor:pointer;" 
+              onmouseover="this.style.borderColor='${cat.color}'" onmouseout="this.style.borderColor='var(--border)'"
+              onclick="openUserDetail('${u.id}')">
+              <div style="width:42px;height:42px;border-radius:50%;background:${cat.color};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0;">
+                ${(u.firstName?.[0]||'?')}${(u.lastName?.[0]||'')}
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:14px;">${u.firstName} ${u.lastName}</div>
+                <div style="font-size:12px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email}</div>
+                ${u.phone?`<div style="font-size:11px;color:var(--blue);margin-top:2px;"><a href="tel:${u.phone}" style="color:inherit;">📞 ${u.phone}</a></div>`:''}
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${u.isActive?'#2dc653':'#6b7280'};display:block;" title="${u.isActive?'Actif':'Inactif'}"></span>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  });
+
+  // Uncategorized
+  const knownRoles = TEAM_CATEGORIES.map(c => c.key);
+  const others = USERS.filter(u => !knownRoles.includes(u.role));
+  if (others.length) {
+    html += `<div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:700;color:var(--text3);margin-bottom:8px;">Autres</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
+        ${others.map(u=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;">${u.firstName} ${u.lastName} — ${u.role}</div>`).join('')}
+      </div></div>`;
+  }
+
+  container.innerHTML = html || '<div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Aucun membre</div></div>';
+}
+
+async function openUserDetail(userId) {
+  const u = USERS.find(x => x.id === userId);
+  if (!u) return;
+  const cat = TEAM_CATEGORIES.find(c => c.key === u.role) || { label: u.role, color: '#4895ef', icon: '👤' };
+  const overlay = document.createElement('div'); overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:${cat.color};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;">
+            ${(u.firstName?.[0]||'?')}${(u.lastName?.[0]||'')}
+          </div>
+          <div>
+            <div class="modal-title" style="margin:0;">${u.firstName} ${u.lastName}</div>
+            <div style="font-size:12px;color:var(--text3);">${cat.icon} ${cat.label}</div>
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0;">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;">
+          <span>📧</span><a href="mailto:${u.email}" style="color:var(--blue);font-size:13px;">${u.email}</a>
+        </div>
+        ${u.phone?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📞</span><a href="tel:${u.phone}" style="color:var(--blue);font-size:13px;">${u.phone}</a></div>`:''}
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;">
+          <span>🟢</span><span style="font-size:13px;">${u.isActive?'Actif':'Inactif'}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
 }
 
 // ═══ DAILY REPORTS ═══
@@ -6576,6 +6689,134 @@ async function createVisiteFixed(projectId) {
   CURRENT_PROJECT_ID = projectId;
   goto('project-detail');
   setTimeout(() => openDetailTab('remarks'), 500);
+}
+
+
+// ═══════════════════════════════════════════
+// FICHIERS PROJET
+// ═══════════════════════════════════════════
+
+async function loadDetailFiles(projectId) {
+  const el = document.getElementById('detail-files-content');
+  if (!el) return;
+
+  const res = await api('GET', `/projects/${projectId}/files`);
+  const files = res?.data || [];
+
+  const ext = f => (f.fileName||f.fileUrl||'').split('.').pop().toLowerCase();
+  const isImage = f => ['jpg','jpeg','png','gif','webp'].includes(ext(f));
+  const isPDF   = f => ext(f) === 'pdf';
+  const isVideo = f => ['mp4','mov','avi'].includes(ext(f));
+
+  const fileIcon = f => {
+    if (isImage(f)) return '🖼️';
+    if (isPDF(f))   return '📄';
+    if (isVideo(f)) return '🎬';
+    if (['ppt','pptx'].includes(ext(f))) return '📊';
+    if (['xls','xlsx'].includes(ext(f))) return '📈';
+    if (['doc','docx'].includes(ext(f))) return '📝';
+    return '📎';
+  };
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
+      <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
+        ⬆️ Ajouter
+        <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
+      </label>
+    </div>
+
+    ${!files.length ? `
+      <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--border);border-radius:16px;padding:40px;cursor:pointer;color:var(--text3);">
+        <span style="font-size:48px;">📁</span>
+        <div style="text-align:center;">
+          <div style="font-weight:600;font-size:15px;">Glissez vos fichiers ici</div>
+          <div style="font-size:12px;margin-top:4px;">Photos, PDF, PowerPoint, Excel...</div>
+        </div>
+        <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
+      </label>` : `
+
+    <!-- Images grid -->
+    ${files.filter(isImage).length ? `
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🖼️ Photos (${files.filter(isImage).length})</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
+          ${files.filter(isImage).map(f=>`
+            <div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${f.fileUrl}')">
+              <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">
+              <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:6px 8px;">
+                <div style="font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Photo'}</div>
+              </div>
+              <button onclick="event.stopPropagation();deleteProjectFile('${f.id}','${projectId}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <!-- Other files list -->
+    ${files.filter(f=>!isImage(f)).length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📎 Documents (${files.filter(f=>!isImage(f)).length})</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${files.filter(f=>!isImage(f)).map(f=>`
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);">
+              <span style="font-size:28px;flex-shrink:0;">${fileIcon(f)}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.fileType||ext(f).toUpperCase()} · ${f.fileSize?Math.round(f.fileSize/1024)+'KB':''}</div>
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0;">
+                <a href="${f.fileUrl}" target="_blank" class="btn btn-ghost btn-xs">👁️ Voir</a>
+                <a href="${f.fileUrl}" download class="btn btn-ghost btn-xs">⬇️</a>
+                <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteProjectFile('${f.id}','${projectId}')">🗑️</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+    `}`;
+}
+
+async function uploadProjectFiles(projectId, input) {
+  if (!input.files?.length) return;
+  toast(`Upload ${input.files.length} fichier(s)...`, 'info');
+  let uploaded = 0;
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('category', 'project');
+    try {
+      const r = await fetch(`${API}/upload/project-file/${projectId}`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+      });
+      if (!r.ok) {
+        // Fallback to generic upload
+        const r2 = await fetch(`${API}/upload/photo`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+        });
+        const d2 = await r2.json();
+        const url = d2.data?.url || d2.url;
+        if (url) {
+          await api('POST', `/projects/${projectId}/files`, {
+            fileName: file.name, fileUrl: url,
+            fileType: file.type, fileSize: file.size,
+            publicId: d2.data?.public_id || null
+          });
+          uploaded++;
+        }
+      } else {
+        uploaded++;
+      }
+    } catch {}
+  }
+  toast(`${uploaded} fichier(s) uploadé(s) ✅`, 'success');
+  loadDetailFiles(projectId);
+}
+
+async function deleteProjectFile(fileId, projectId) {
+  if (!confirm('Supprimer ce fichier ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/files/${fileId}`);
+  if (res?.success) { toast('Fichier supprimé','success'); loadDetailFiles(projectId); }
+  else toast('Erreur suppression','error');
 }
 
 </script>
