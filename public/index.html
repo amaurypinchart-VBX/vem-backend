@@ -920,18 +920,27 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
     <!-- TEMPLATES DE TÂCHES -->
     <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
         <div>
-          <div style="font-size:13px;font-weight:700;">📋 Templates de tâches</div>
-          <div style="font-size:11px;color:var(--text3);">Sélectionne les tâches à créer automatiquement</div>
+          <div style="font-size:13px;font-weight:700;">📋 Tâches à créer</div>
+          <div style="font-size:11px;color:var(--text3);">Cochez, assignez et datez chaque tâche</div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-xs" onclick="selectAllProjTemplates()">Tout</button>
-          <button class="btn btn-ghost btn-xs" onclick="deselectAllProjTemplates()">Aucun</button>
+          <button class="btn btn-ghost btn-xs" onclick="selectAllProjTemplates()">✅ Tout</button>
+          <button class="btn btn-ghost btn-xs" onclick="deselectAllProjTemplates()">☐ Aucun</button>
         </div>
       </div>
-      <div id="proj-templates-selector" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;">
-        <div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement des templates...</div>
+
+      <!-- Date globale + assignation globale -->
+      <div style="background:var(--bg3);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;">Appliquer à tout :</span>
+        <input type="date" id="tmpl-global-date" style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" onchange="applyGlobalDate(this.value)">
+        <select id="tmpl-global-assign" style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;flex:1;" onchange="applyGlobalAssign(this.value)">
+          <option value="">— Assigner tout à... —</option>
+        </select>
+      </div>
+
+      <div id="proj-templates-selector" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px;">
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="proj-tpl-count">0 tâche(s) sélectionnée(s)</div>
     </div>
@@ -2543,6 +2552,8 @@ function setTaskInProgress(taskId) {
 
 // ── CREATE DAILY REPORT ──────────────────────────────────────
 let PENDING_DAILY_PHOTOS = [];
+const TASK_TEMPLATES_DATA = {"To Do": [{"title": "Team - Dismantling", "assignees": ["François Drijepondt", "Injas Goossens"]}, {"title": "Preparation material from delivery note", "assignees": ["Warehouse Viewbox"]}], "PRE-PROD": [{"title": "Briefing SHEET from SALES", "assignees": []}, {"title": "Preparation of all packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Packing list for warehouse team", "assignees": ["Amaury Pinchart", "Injas Goossens"]}, {"title": "Site Visit ( Verify faisability on site)", "assignees": []}, {"title": "Boarding solution", "assignees": []}, {"title": "Analyse packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Buy missing material", "assignees": []}, {"title": "Briefing team", "assignees": []}, {"title": "Briefing PP with all informations", "assignees": []}, {"title": "Create Whats app group", "assignees": []}], "Booking Supplier": [{"title": "Organise transport TRUCK", "assignees": []}, {"title": "Book SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book accomodation SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book Transport SM", "assignees": ["Amaury Pinchart"]}, {"title": "Rent Forklift", "assignees": []}, {"title": "Book team", "assignees": []}, {"title": "Rent Manitou ROTO", "assignees": []}, {"title": "Rent Scisor Lift", "assignees": []}, {"title": "Book CRANE", "assignees": []}, {"title": "Book Accomodation team", "assignees": ["Amaury Pinchart"]}], "Warehouse Preparation": [{"title": "Loading truck", "assignees": ["Warehouse Viewbox"]}], "Installation": [{"title": "GENERAL TASK", "assignees": ["Amaury Pinchart"]}, {"title": "TMPL - Electricity", "assignees": []}, {"title": "Unload Tautliner with Forklift On Site", "assignees": []}, {"title": "Levelling and Laser work on site", "assignees": []}, {"title": "Unload Flatbed truck on site with crane", "assignees": []}, {"title": "UNIT", "assignees": []}, {"title": "Placing Facade elements", "assignees": []}, {"title": "Placement of inner Ceilings", "assignees": []}, {"title": "Placement of vinyl floor", "assignees": []}, {"title": "Placement of Vinyl click hard floor", "assignees": []}, {"title": "Handover with the client", "assignees": []}, {"title": "Interior or exterior Staircase", "assignees": []}, {"title": "Terraces and Unit", "assignees": []}], "Dismantling": [{"title": "Unloading of rack and tools and reorganisation of racks", "assignees": ["Amaury Pinchart"]}, {"title": "Remove Decoration and interior material", "assignees": ["Amaury Pinchart"]}, {"title": "Remove facade Elements", "assignees": ["Amaury Pinchart"]}, {"title": "Remove external or internal staircase", "assignees": ["Amaury Pinchart"]}, {"title": "Flat Packing With crane UNIT", "assignees": ["Amaury Pinchart"]}, {"title": "Remove terraces Unit and Handrails", "assignees": ["Amaury Pinchart"]}, {"title": "Loading FlatBED", "assignees": ["Amaury Pinchart"]}, {"title": "Loading Tautliner", "assignees": ["Amaury Pinchart"]}, {"title": "Cleaning SITE", "assignees": ["Amaury Pinchart"]}, {"title": "HANDHOVER Client to end of event", "assignees": ["Amaury Pinchart"]}, {"title": "GENERAL DISMANTLING TASK", "assignees": ["Amaury Pinchart"]}], "Come Back Warehouse": [{"title": "Dismounting", "assignees": []}, {"title": "Unloading truck in warehouse", "assignees": []}, {"title": "Verification of return material", "assignees": []}]};
+
 
 function previewDailyPhotos(input) {
   PENDING_DAILY_PHOTOS = Array.from(input.files);
@@ -3088,74 +3099,146 @@ const _origShowModal = showModal;
 
 
 
-// ═══ PROJECT TEMPLATES SELECTOR ═══
-let PROJ_TEMPLATES_FLAT = [];
-let PROJ_CATEGORIES_DATA = [];
+// ═══ PROJECT TEMPLATES SELECTOR — Basé sur Excel ViewBox ═══
+const STAGE_ICONS = {
+  'To Do': '📋', 'PRE-PROD': '🔧', 'Booking Supplier': '📞',
+  'Warehouse Preparation': '📦', 'Installation': '🏗️',
+  'Dismantling': '🔨', 'Come Back Warehouse': '🏠'
+};
 
-async function loadProjTemplateSelector() {
+function loadProjTemplateSelector() {
   const el = document.getElementById('proj-templates-selector');
   if (!el) return;
 
-  // Load from API or use cached
-  if (!PROJ_CATEGORIES_DATA.length) {
-    const res = await api('GET', '/task-templates/categories');
-    if (res?.success) {
-      PROJ_CATEGORIES_DATA = res.data;
-      PROJ_TEMPLATES_FLAT = res.data.flatMap(c => (c.templates||[]).map(t => ({...t, categoryName: c.name, categoryIcon: c.icon, categoryColor: c.color})));
-    }
+  // Populate global assign dropdown
+  const globalAssign = document.getElementById('tmpl-global-assign');
+  if (globalAssign && USERS.length) {
+    globalAssign.innerHTML = '<option value="">— Assigner tout à... —</option>' +
+      USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
   }
 
-  if (!PROJ_TEMPLATES_FLAT.length) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun template disponible — créez-en dans le menu Templates</div>';
-    return;
-  }
-
-  el.innerHTML = PROJ_CATEGORIES_DATA.map(cat => {
-    const tpls = cat.templates || [];
-    if (!tpls.length) return '';
-    return `
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;align-items:center;gap:6px;padding:6px 4px;cursor:pointer;" onclick="toggleCatSection('cat-sec-${cat.id}')">
-          <span style="font-size:15px;">${cat.icon||'📋'}</span>
-          <span style="font-size:12px;font-weight:700;color:var(--text);">${cat.name}</span>
-          <span style="font-size:10px;color:var(--text3);margin-left:4px;">(${tpls.length})</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--text3);" id="cat-chevron-${cat.id}">▼</span>
+  let html = '';
+  Object.entries(TASK_TEMPLATES_DATA).forEach(([stage, tasks]) => {
+    const icon = STAGE_ICONS[stage] || '📋';
+    const stageId = 'stage-' + stage.replace(/[^a-z0-9]/gi,'_');
+    html += `
+      <div style="margin-bottom:6px;">
+        <!-- Stage header -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid var(--border);"
+          onclick="toggleStageSection('${stageId}')">
+          <span style="font-size:16px;">${icon}</span>
+          <span style="font-size:13px;font-weight:700;flex:1;">${stage}</span>
+          <span style="font-size:11px;color:var(--text3);">${tasks.length} tâches</span>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();toggleStageChecks('${stageId}',true)">✅</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();toggleStageChecks('${stageId}',false)">☐</button>
+          <span id="${stageId}-chevron" style="font-size:11px;color:var(--text3);">▼</span>
         </div>
-        <div id="cat-sec-${cat.id}" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 4px;">
-          ${tpls.map(t => `
-            <label style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg3);border-radius:8px;cursor:pointer;font-size:12px;border:1px solid var(--border);" onmouseover="this.style.borderColor='${cat.color||'var(--accent)'}'" onmouseout="this.style.borderColor='var(--border)'">
-              <input type="checkbox" class="proj-tpl-check" value="${t.id}" onchange="updateProjTplCount()" style="accent-color:var(--accent);width:14px;height:14px;flex-shrink:0;">
-              <span style="flex:1;line-height:1.3;">${t.title}</span>
-              <span style="font-size:10px;color:var(--text3);flex-shrink:0;">${t.durationHours}h</span>
-            </label>`).join('')}
+        <!-- Tasks list -->
+        <div id="${stageId}" style="display:flex;flex-direction:column;gap:3px;padding:0 2px 4px;">
+          ${tasks.map((t, idx) => {
+            const taskId = `tpl_${stageId}_${idx}`;
+            const defaultAssignee = t.assignees?.[0] || '';
+            return `
+            <div class="tpl-task-row" id="row-${taskId}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;border:1px solid transparent;transition:all .15s;">
+              <!-- Checkbox -->
+              <input type="checkbox" class="proj-tpl-check" id="${taskId}"
+                data-title="${t.title.replace(/"/g,'&quot;')}"
+                data-stage="${stage}"
+                data-default-assignee="${defaultAssignee}"
+                checked
+                style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;"
+                onchange="updateProjTplCount();highlightRow('row-${taskId}',this.checked)">
+              <!-- Title -->
+              <label for="${taskId}" style="flex:1;font-size:12px;line-height:1.4;cursor:pointer;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">${t.title}</label>
+              <!-- Date -->
+              <input type="date" class="tpl-date" data-task="${taskId}"
+                style="width:120px;padding:3px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;flex-shrink:0;"
+                onchange="updateProjTplCount()">
+              <!-- Assignee -->
+              <select class="tpl-assign" data-task="${taskId}"
+                style="width:130px;padding:3px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;flex-shrink:0;">
+                <option value="">— Équipe —</option>
+                ${(window.USERS||[]).map(u => `<option value="${u.id}" ${u.firstName+' '+u.lastName===defaultAssignee?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
-  }).join('');
+  });
 
+  el.innerHTML = html;
   updateProjTplCount();
 }
 
-function toggleCatSection(id) {
-  const el = document.getElementById(id);
+function highlightRow(rowId, checked) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.style.opacity = checked ? '1' : '0.4';
+  row.style.borderColor = checked ? 'var(--border)' : 'transparent';
+}
+
+function toggleStageSection(stageId) {
+  const el = document.getElementById(stageId);
+  const chevron = document.getElementById(stageId+'-chevron');
   if (!el) return;
-  const isHidden = el.style.display === 'none';
-  el.style.display = isHidden ? 'grid' : 'none';
+  const hidden = el.style.display === 'none';
+  el.style.display = hidden ? 'flex' : 'none';
+  if (chevron) chevron.textContent = hidden ? '▼' : '▶';
+}
+
+function toggleStageChecks(stageId, checked) {
+  document.querySelectorAll(`#${stageId} .proj-tpl-check`).forEach(cb => {
+    cb.checked = checked;
+    highlightRow('row-' + cb.id, checked);
+  });
+  updateProjTplCount();
+}
+
+function applyGlobalDate(date) {
+  document.querySelectorAll('.tpl-date').forEach(input => input.value = date);
+}
+
+function applyGlobalAssign(userId) {
+  if (!userId) return;
+  document.querySelectorAll('.tpl-assign').forEach(sel => sel.value = userId);
 }
 
 function updateProjTplCount() {
   const count = document.querySelectorAll('.proj-tpl-check:checked').length;
+  const total = document.querySelectorAll('.proj-tpl-check').length;
   const el = document.getElementById('proj-tpl-count');
-  if (el) el.textContent = count > 0 ? `${count} tâche(s) sélectionnée(s)` : '0 tâche sélectionnée';
+  if (el) el.textContent = `${count} / ${total} tâche(s) sélectionnée(s)`;
 }
 
 function selectAllProjTemplates() {
-  document.querySelectorAll('.proj-tpl-check').forEach(cb => cb.checked = true);
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => {
+    cb.checked = true;
+    highlightRow('row-' + cb.id, true);
+  });
   updateProjTplCount();
 }
 
 function deselectAllProjTemplates() {
-  document.querySelectorAll('.proj-tpl-check').forEach(cb => cb.checked = false);
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => {
+    cb.checked = false;
+    highlightRow('row-' + cb.id, false);
+  });
   updateProjTplCount();
+}
+
+function getSelectedProjTasks() {
+  const tasks = [];
+  document.querySelectorAll('.proj-tpl-check:checked').forEach(cb => {
+    const dateEl = document.querySelector(`.tpl-date[data-task="${cb.id}"]`);
+    const assignEl = document.querySelector(`.tpl-assign[data-task="${cb.id}"]`);
+    tasks.push({
+      title: cb.dataset.title,
+      stage: cb.dataset.stage,
+      taskDate: dateEl?.value || null,
+      assignedTo: assignEl?.value || null,
+    });
+  });
+  return tasks;
 }
 
 
