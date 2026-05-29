@@ -3,31 +3,43 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
-import { generateHandoverPdf } from '../services/pdfService';
-import { sendHandoverPdf } from '../services/emailService';
-import { uploadToCloudinary } from '../services/cloudinaryService';
 
 const router = Router();
 
+// GET /handover — liste tous les handovers (filtrés par projet si ?projectId=)
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const handovers = await prisma.handover.findMany({
       where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
-      include: { project: { select: { name:true, internalNumber:true } }, siteManager: { select: { firstName:true, lastName:true } }, items: true },
+      include: {
+        project: { select: { name: true, internalNumber: true } },
+        siteManager: { select: { firstName: true, lastName: true } },
+        items: { orderBy: { sortOrder: 'asc' } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, data: handovers });
   } catch (err) { next(err); }
 });
 
+// GET /handover/:id — détail complet
 router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const h = await prisma.handover.findUnique({
       where: { id: req.params.id },
       include: {
-        project: { include: { client: true, technicalManager: { select: { email:true } }, team: { include: { user: { select: { email:true } } } } } },
-        siteManager: { select: { id:true, firstName:true, lastName:true, email:true } },
-        items: { orderBy: { sortOrder: 'asc' }, include: { photos: true } },
+        project: {
+          include: {
+            client: true,
+            technicalManager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            team: { include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } } },
+          },
+        },
+        siteManager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        items: {
+          orderBy: { sortOrder: 'asc' },
+          include: { photos: true, itemPhotos: true },
+        },
         photos: true,
       },
     });
@@ -36,105 +48,151 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
+// POST /handover — créer un nouveau handover
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-   const { items, responsible, customFields, ...handoverData } = req.body;
+    // Extraire et ignorer les champs inconnus par Prisma
+    const {
+      items,
+      responsible,
+      customFields,
+      handoverDate,
+      ...handoverData
+    } = req.body;
+
     const h = await prisma.handover.create({
       data: {
-        ...data, createdById: req.user!.id,
-        items: { create: items.map((item: any, i: number) => ({ ...item, sortOrder: i })) },
+        ...handoverData,
+        createdById: req.user!.id,
+        items: items?.length
+          ? {
+              create: items.map((item: any, i: number) => ({
+                zoneName: item.zoneName || 'Zone ' + (i + 1),
+                status:   item.status   || 'ok',
+                comment:  item.comment  || null,
+                sortOrder: i,
+              })),
+            }
+          : {
+              create: [{ zoneName: 'Inspection générale', status: 'ok', sortOrder: 0 }],
+            },
       },
-      include: { items: true },
+      include: {
+        items: true,
+        siteManager: { select: { firstName: true, lastName: true } },
+      },
     });
+
     res.status(201).json({ success: true, data: h });
   } catch (err) { next(err); }
 });
 
+// PATCH /handover/:id — modifier un handover
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { items, ...data } = req.body;
-    const h = await prisma.handover.update({ where: { id: req.params.id }, data });
-    if (items) {
+    const {
+      items,
+      responsible,
+      customFields,
+      project,
+      createdBy,
+      siteManagerUser,
+      ...data
+    } = req.body;
+
+    const h = await prisma.handover.update({
+      where: { id: req.params.id },
+      data,
+    });
+
+    // Mettre à jour les items si fournis
+    if (items?.length) {
       for (const item of items) {
-        if (item.id) await prisma.handoverItem.update({ where: { id: item.id }, data: { status: item.status, comment: item.comment } });
+        if (item.id) {
+          await prisma.handoverItem.update({
+            where: { id: item.id },
+            data: {
+              zoneName: item.zoneName,
+              status:   item.status,
+              comment:  item.comment || null,
+            },
+          });
+        }
       }
     }
+
     res.json({ success: true, data: h });
   } catch (err) { next(err); }
 });
 
-// POST /handover/:id/sign
+// DELETE /handover/:id
+router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.handover.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// POST /handover/:id/sign — signer (client ou manager)
 router.post('/:id/sign', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { type, signatureBase64 } = req.body;
     const updateData: any = {};
-    if (type === 'manager') { updateData.managerSignatureUrl = signatureBase64; updateData.managerSignedAt = new Date(); }
-    else if (type === 'client') { updateData.clientSignatureUrl = signatureBase64; updateData.clientSignedAt = new Date(); }
-    const h = await prisma.handover.update({ where: { id: req.params.id }, data: updateData });
-    if (h.managerSignedAt && h.clientSignedAt) await prisma.handover.update({ where: { id: req.params.id }, data: { status: 'signed' } });
+
+    if (type === 'manager') {
+      updateData.managerSignatureUrl = signatureBase64;
+      updateData.managerSignedAt     = new Date();
+    } else if (type === 'client') {
+      updateData.clientSignatureUrl = signatureBase64;
+      updateData.clientSignedAt     = new Date();
+    } else {
+      throw new AppError('Type de signature invalide (manager ou client)', 400);
+    }
+
+    const h = await prisma.handover.update({
+      where: { id: req.params.id },
+      data: updateData,
+    });
+
+    // Si les deux ont signé → passer en signed
+    if (h.managerSignedAt && h.clientSignedAt) {
+      await prisma.handover.update({
+        where: { id: req.params.id },
+        data: { status: 'signed' },
+      });
+    }
+
     res.json({ success: true, data: h });
   } catch (err) { next(err); }
 });
 
-// POST /handover/:id/generate-pdf — generate PDF + send email
-router.post('/:id/generate-pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const h = await prisma.handover.findUnique({
-      where: { id: req.params.id },
-      include: {
-        project: { include: { client: true, technicalManager: true, team: { include: { user: true } } } },
-        siteManager: true,
-        items: { orderBy: { sortOrder: 'asc' } },
-      },
-    });
-    if (!h) throw new AppError('Handover introuvable', 404);
-
-    const pdfBuffer = await generateHandoverPdf({
-      project: { name: h.project.name, internalNumber: h.project.internalNumber, address: h.project.address },
-      clientName: h.clientName || h.project.client.name,
-      siteManagerName: h.siteManager ? `${h.siteManager.firstName} ${h.siteManager.lastName}` : 'N/A',
-      items: h.items,
-      generalNotes: h.generalNotes,
-      date: h.createdAt,
-    });
-
-    // Upload PDF to Cloudinary
-    let pdfUrl = '';
-    try {
-      const up = await uploadToCloudinary(pdfBuffer, 'handovers', { resource_type: 'raw', format: 'pdf' });
-      pdfUrl = up.url;
-      await prisma.handover.update({ where: { id: h.id }, data: { pdfUrl } });
-    } catch { /* continue even if upload fails */ }
-
-    // Collect recipients
-    const recipients = new Set<string>();
-    if (h.clientEmail) recipients.add(h.clientEmail);
-    if (h.project.client.email) recipients.add(h.project.client.email);
-    if (h.project.technicalManager?.email) recipients.add(h.project.technicalManager.email);
-    h.project.team.forEach((t: any) => { if (t.user.email) recipients.add(t.user.email); });
-    if (h.siteManager?.email) recipients.add(h.siteManager.email);
-
-    if (recipients.size > 0) {
-      await sendHandoverPdf({ to: Array.from(recipients), projectName: h.project.name, pdfBuffer });
-    }
-
-    // Stream PDF to client
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="Handover_${h.project.internalNumber}.pdf"` });
-    res.send(pdfBuffer);
-  } catch (err) { next(err); }
-});
-// POST /handover/:id/items/:itemId/photo
+// POST /handover/:id/items/:itemId/photo — ajouter une photo sur un item
 router.post('/:id/items/:itemId/photo', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { photoUrl, publicId } = req.body;
+    if (!photoUrl) throw new AppError('photoUrl requis', 400);
+
     const photo = await prisma.handoverItemPhoto.create({
       data: {
-        itemId: req.params.itemId,
+        itemId:   req.params.itemId,
         photoUrl,
         publicId: publicId || null,
-      }
+      },
     });
     res.status(201).json({ success: true, data: photo });
   } catch (err) { next(err); }
 });
+
+// PATCH /handover/:id/items/:itemId — modifier le statut d'un item
+router.patch('/:id/items/:itemId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { status, comment } = req.body;
+    const item = await prisma.handoverItem.update({
+      where: { id: req.params.itemId },
+      data: { status, comment },
+    });
+    res.json({ success: true, data: item });
+  } catch (err) { next(err); }
+});
+
 export default router;
