@@ -2753,6 +2753,114 @@ function setTaskInProgress(taskId) {
 
 // ── CREATE DAILY REPORT ──────────────────────────────────────
 let PENDING_DAILY_PHOTOS = [];
+let HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:'',photos:[],_photoFiles:[]}];
+
+// ═══════════════════════════════════════════════════════
+// HANDOVER — ZONES TERRAIN
+// ═══════════════════════════════════════════════════════
+
+function addHandoverZone(prefill='') {
+  const id = Date.now();
+  HANDOVER_ZONES.push({id, name:prefill, status:'ok', comment:'', photos:[], _photoFiles:[]});
+  renderHandoverZones();
+  setTimeout(() => {
+    const input = document.getElementById('hz-name-'+id);
+    if (input) { input.focus(); input.scrollIntoView({behavior:'smooth',block:'center'}); }
+  }, 80);
+}
+
+function addHandoverZoneVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée sur ce navigateur','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Parlez la zone...','info');
+  rec.onresult = e => { addHandoverZone(e.results[0][0].transcript); toast('Zone ajoutée ✅','success'); };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+function addZoneVoiceComment(zoneId) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Dictez le commentaire...','info');
+  rec.onresult = e => {
+    const text = e.results[0][0].transcript;
+    const zone = HANDOVER_ZONES.find(x=>x.id===zoneId);
+    if (zone) zone.comment = (zone.comment ? zone.comment+' ' : '')+text;
+    renderHandoverZones();
+    toast('Commentaire ajouté','success');
+  };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+function previewZonePhoto(zoneId, input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+  const url = URL.createObjectURL(file);
+  const zone = HANDOVER_ZONES.find(x=>x.id===zoneId);
+  if (zone) {
+    zone.photos = zone.photos || [];
+    zone.photos.push(url);
+    zone._photoFiles = zone._photoFiles || [];
+    zone._photoFiles.push(file);
+    renderHandoverZones();
+  }
+}
+
+function renderHandoverZones() {
+  const list = document.getElementById('handover-zones-list');
+  if (!list) return;
+  if (!HANDOVER_ZONES.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:16px;">Appuyez sur + pour ajouter un point</div>';
+    return;
+  }
+  const stColors = {ok:'var(--green)',remark:'var(--amber)',defect:'var(--accent)',pending:'var(--text3)'};
+  list.innerHTML = HANDOVER_ZONES.map((z,idx) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${stColors[z.status]||'var(--border)'};border-radius:10px;overflow:hidden;" id="hz-card-${z.id}">
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 6px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${idx+1}</div>
+        <input class="input" id="hz-name-${z.id}" placeholder="Zone / Emplacement..." value="${z.name}"
+          oninput="HANDOVER_ZONES.find(x=>x.id===${z.id}).name=this.value"
+          style="flex:1;font-size:14px;font-weight:600;background:transparent;border:none;padding:4px 0;border-bottom:1px solid var(--border);">
+        <button onclick="addZoneVoiceComment(${z.id})" style="background:none;border:none;cursor:pointer;font-size:16px;" title="Dicter commentaire">🎙️</button>
+        <button onclick="HANDOVER_ZONES=HANDOVER_ZONES.filter(x=>x.id!==${z.id});renderHandoverZones()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:18px;">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;padding:0 12px 8px;align-items:center;">
+        <select class="input" style="font-size:12px;padding:5px 8px;width:140px;flex-shrink:0;"
+          onchange="HANDOVER_ZONES.find(x=>x.id===${z.id}).status=this.value;renderHandoverZones()">
+          <option value="ok" ${z.status==='ok'?'selected':''}>✅ OK</option>
+          <option value="remark" ${z.status==='remark'?'selected':''}>⚠️ Remarque</option>
+          <option value="defect" ${z.status==='defect'?'selected':''}>❌ Défaut</option>
+          <option value="pending" ${z.status==='pending'?'selected':''}>⏳ En attente</option>
+        </select>
+        <input class="input" placeholder="Commentaire..." value="${z.comment}"
+          oninput="HANDOVER_ZONES.find(x=>x.id===${z.id}).comment=this.value"
+          style="flex:1;font-size:12px;">
+      </div>
+      <div style="padding:0 12px 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        ${(z.photos||[]).map(p=>`<img src="${p}" style="width:56px;height:56px;object-fit:cover;border-radius:7px;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${p}')">`).join('')}
+        <label style="width:56px;height:56px;border:2px dashed var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--text3);" title="Photo">
+          📸<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewZonePhoto(${z.id},this)">
+        </label>
+      </div>
+    </div>`).join('');
+}
+
+// Called when modal-handover opens
+function initHandoverModal() {
+  HANDOVER_ZONES = [{id:Date.now(),name:'',status:'ok',comment:'',photos:[],_photoFiles:[]}];
+  renderHandoverZones();
+  // Set today's date
+  const dateEl = document.getElementById('handover-date');
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+}
+
 const TASK_TEMPLATES_DATA = {"To Do": [{"title": "Team - Dismantling", "assignees": ["François Drijepondt", "Injas Goossens"]}, {"title": "Preparation material from delivery note", "assignees": ["Warehouse Viewbox"]}], "PRE-PROD": [{"title": "Briefing SHEET from SALES", "assignees": []}, {"title": "Preparation of all packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Packing list for warehouse team", "assignees": ["Amaury Pinchart", "Injas Goossens"]}, {"title": "Site Visit ( Verify faisability on site)", "assignees": []}, {"title": "Boarding solution", "assignees": []}, {"title": "Analyse packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Buy missing material", "assignees": []}, {"title": "Briefing team", "assignees": []}, {"title": "Briefing PP with all informations", "assignees": []}, {"title": "Create Whats app group", "assignees": []}], "Booking Supplier": [{"title": "Organise transport TRUCK", "assignees": []}, {"title": "Book SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book accomodation SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book Transport SM", "assignees": ["Amaury Pinchart"]}, {"title": "Rent Forklift", "assignees": []}, {"title": "Book team", "assignees": []}, {"title": "Rent Manitou ROTO", "assignees": []}, {"title": "Rent Scisor Lift", "assignees": []}, {"title": "Book CRANE", "assignees": []}, {"title": "Book Accomodation team", "assignees": ["Amaury Pinchart"]}], "Warehouse Preparation": [{"title": "Loading truck", "assignees": ["Warehouse Viewbox"]}], "Installation": [{"title": "GENERAL TASK", "assignees": ["Amaury Pinchart"]}, {"title": "TMPL - Electricity", "assignees": []}, {"title": "Unload Tautliner with Forklift On Site", "assignees": []}, {"title": "Levelling and Laser work on site", "assignees": []}, {"title": "Unload Flatbed truck on site with crane", "assignees": []}, {"title": "UNIT", "assignees": []}, {"title": "Placing Facade elements", "assignees": []}, {"title": "Placement of inner Ceilings", "assignees": []}, {"title": "Placement of vinyl floor", "assignees": []}, {"title": "Placement of Vinyl click hard floor", "assignees": []}, {"title": "Handover with the client", "assignees": []}, {"title": "Interior or exterior Staircase", "assignees": []}, {"title": "Terraces and Unit", "assignees": []}], "Dismantling": [{"title": "Unloading of rack and tools and reorganisation of racks", "assignees": ["Amaury Pinchart"]}, {"title": "Remove Decoration and interior material", "assignees": ["Amaury Pinchart"]}, {"title": "Remove facade Elements", "assignees": ["Amaury Pinchart"]}, {"title": "Remove external or internal staircase", "assignees": ["Amaury Pinchart"]}, {"title": "Flat Packing With crane UNIT", "assignees": ["Amaury Pinchart"]}, {"title": "Remove terraces Unit and Handrails", "assignees": ["Amaury Pinchart"]}, {"title": "Loading FlatBED", "assignees": ["Amaury Pinchart"]}, {"title": "Loading Tautliner", "assignees": ["Amaury Pinchart"]}, {"title": "Cleaning SITE", "assignees": ["Amaury Pinchart"]}, {"title": "HANDHOVER Client to end of event", "assignees": ["Amaury Pinchart"]}, {"title": "GENERAL DISMANTLING TASK", "assignees": ["Amaury Pinchart"]}], "Come Back Warehouse": [{"title": "Dismounting", "assignees": []}, {"title": "Unloading truck in warehouse", "assignees": []}, {"title": "Verification of return material", "assignees": []}]};
 
 
@@ -3544,24 +3652,33 @@ async function uploadEditDailyPhotos(reportId, input) {
   if (!input.files?.length) return;
   const grid = document.getElementById('er-photos-grid');
   toast(`Upload ${input.files.length} photo(s)...`, 'info');
+  let ok = 0;
   for (const file of Array.from(input.files)) {
-    const fd = new FormData(); fd.append('file', file);
     try {
-      const r = await fetch(`${API}/upload/daily-photo/${reportId}`, {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/upload/photo`, {
         method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
       });
+      if (!r.ok) { toast(`Erreur ${r.status}`, 'error'); continue; }
       const data = await r.json();
-      const url = data.data?.url || data.url;
-      if (url && grid) {
-        const img = document.createElement('img');
-        img.src = url;
-        img.onclick = () => openPhotoViewer(url);
-        img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
-        grid.appendChild(img);
+      const url = data.data?.url || data.url || data.secure_url;
+      if (url) {
+        // Save to DB
+        await api('POST', `/daily-reports/${reportId}/photos`, {
+          photoUrl: url, publicId: data.data?.public_id || null
+        });
+        // Add to preview
+        if (grid) {
+          const img = document.createElement('img');
+          img.src = url; img.onclick = () => openPhotoViewer(url);
+          img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+          grid.appendChild(img);
+        }
+        ok++;
       }
-    } catch {}
+    } catch(e) { console.error('photo upload error:', e); toast('Erreur réseau', 'error'); }
   }
-  toast('Photos ajoutées ✅', 'success');
+  if (ok) toast(`${ok} photo(s) ajoutée(s) ✅`, 'success');
 }
 
 async function saveDailyReport(id, overlay) {
@@ -6348,8 +6465,9 @@ async function loadDetailHandovers(projectId) {
           <span class="badge ${sc[h.status]||'badge-muted'}">${sl[h.status]||h.status}</span>
           <div style="display:flex;gap:4px;">
             <button class="btn btn-ghost btn-xs" onclick="openHandoverFull('${h.id}')">👁️ Ouvrir</button>
-            <button class="btn btn-ghost btn-xs" onclick="editHandoverInfo('${h.id}','${h.clientName||''}','${h.clientEmail||''}','${h.generalNotes||''}','${projectId}')">✏️</button>
-            <button class="btn btn-ghost btn-xs" onclick="downloadHandoverPDF('${h.id}')">📄</button>
+            <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${projectId}')">✏️ Modifier</button>
+            <button class="btn btn-ghost btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+            <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
             <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteHandover('${h.id}')">🗑️</button>
           </div>
         </div>
@@ -7013,37 +7131,57 @@ async function loadDetailFiles(projectId) {
 
 async function uploadProjectFiles(projectId, input) {
   if (!input.files?.length) return;
-  toast(`Upload ${input.files.length} fichier(s)...`, 'info');
+  const files = Array.from(input.files);
+  toast(`Upload ${files.length} fichier(s)...`, 'info');
   let uploaded = 0;
-  for (const file of Array.from(input.files)) {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('category', 'project');
+
+  for (const file of files) {
     try {
-      const r = await fetch(`${API}/upload/project-file/${projectId}`, {
-        method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+      // New FormData for each attempt
+      const fd = new FormData();
+      fd.append('file', file);
+
+      // Use /upload/photo — the only route that exists
+      const r = await fetch(`${API}/upload/photo`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${TOKEN}` },
+        body: fd
       });
+
       if (!r.ok) {
-        // Fallback to generic upload
-        const r2 = await fetch(`${API}/upload/photo`, {
-          method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
-        });
-        const d2 = await r2.json();
-        const url = d2.data?.url || d2.url;
-        if (url) {
-          await api('POST', `/projects/${projectId}/files`, {
-            fileName: file.name, fileUrl: url,
-            fileType: file.type, fileSize: file.size,
-            publicId: d2.data?.public_id || null
-          });
-          uploaded++;
-        }
-      } else {
-        uploaded++;
+        const errText = await r.text().catch(()=>'');
+        console.error('Upload failed:', r.status, errText);
+        toast(`Erreur upload ${file.name}: ${r.status}`, 'error');
+        continue;
       }
-    } catch {}
+
+      const data = await r.json();
+      const url = data.data?.url || data.url || data.secure_url;
+
+      if (!url) {
+        console.error('No URL in response:', data);
+        toast(`Pas d'URL retournée pour ${file.name}`, 'error');
+        continue;
+      }
+
+      // Save reference in DB
+      await api('POST', `/projects/${projectId}/files`, {
+        fileName: file.name,
+        fileUrl: url,
+        fileType: file.type || file.name.split('.').pop(),
+        fileSize: file.size,
+        publicId: data.data?.public_id || data.public_id || null,
+        category: 'project'
+      });
+
+      uploaded++;
+    } catch(e) {
+      console.error('Upload error:', e);
+      toast(`Erreur réseau pour ${file.name}`, 'error');
+    }
   }
-  toast(`${uploaded} fichier(s) uploadé(s) ✅`, 'success');
+
+  if (uploaded > 0) toast(`${uploaded} fichier(s) uploadé(s) ✅`, 'success');
   loadDetailFiles(projectId);
 }
 
