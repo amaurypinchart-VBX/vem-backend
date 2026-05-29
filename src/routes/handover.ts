@@ -38,7 +38,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { items = [], ...data } = req.body;
+   const { items, responsible, customFields, ...handoverData } = req.body;
     const h = await prisma.handover.create({
       data: {
         ...data, createdById: req.user!.id,
