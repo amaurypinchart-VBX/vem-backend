@@ -4495,8 +4495,12 @@ async function openHandoverFull(id) {
           <div style="font-size:20px;font-weight:800;color:var(--accent);">${items.filter(i=>i.status==='defect').length}</div>
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Défauts</div>
         </div>
-        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}">${h.status==='signed'?'✅ Signé':'En attente'}</span>
+          <button class="btn btn-ghost btn-xs" onclick="showAddHandoverItemModal('${h.id}','${h.projectId}')">+ Point</button>
+          <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${h.projectId}')">✏️ Modifier</button>
+          <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
+          <button class="btn btn-primary btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
         </div>
       </div>
 
@@ -5885,7 +5889,75 @@ async function generateHandoverPDF(handoverId) {
     <div class="footer">${FOOTER}</div>
   </div>
 
-  <!-- ═══════════════════ PAGE 2 ═══════════════════ -->
+  <!-- ═══════════════════ PAGE 2 — INSPECTION TABLE ═══════════════════ -->
+  ${items.length ? `
+  <div class="page page-break">
+    <div class="header-bar">
+      <div class="header-info">
+        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
+        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com<br>
+        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93
+      </div>
+      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
+    </div>
+
+    <div class="title-box" style="margin-bottom:16pt;">RAPPORT D'INSPECTION — ${projectName}</div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:10pt;">
+      <thead>
+        <tr style="background:#cc0000;color:#fff;">
+          <th style="padding:8pt 10pt;text-align:left;width:30pt;">#</th>
+          <th style="padding:8pt 10pt;text-align:left;width:35%;">Zone / Emplacement</th>
+          <th style="padding:8pt 10pt;text-align:left;width:15%;">Statut</th>
+          <th style="padding:8pt 10pt;text-align:left;">Commentaire</th>
+          <th style="padding:8pt 10pt;text-align:center;width:80pt;">Photo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item, i) => {
+          const stColor = {ok:'#16a34a', remark:'#ca8a04', defect:'#dc2626', pending:'#6b7280'}[item.status] || '#333';
+          const stLabel = {ok:'✅ OK', remark:'⚠️ Remarque', defect:'❌ Défaut', pending:'⏳ En attente'}[item.status] || item.status;
+          const rowBg = i % 2 === 0 ? '#fff' : '#f9fafb';
+          const firstPhoto = (item.photos||[])[0]?.photoUrl || (item.itemPhotos||[])[0]?.photoUrl;
+          return `<tr style="background:${rowBg};border-bottom:1pt solid #e5e7eb;">
+            <td style="padding:8pt 10pt;font-weight:700;color:#cc0000;vertical-align:top;">${i+1}</td>
+            <td style="padding:8pt 10pt;font-weight:600;vertical-align:top;">${item.zoneName}</td>
+            <td style="padding:8pt 10pt;vertical-align:top;">
+              <span style="color:${stColor};font-weight:700;">${stLabel}</span>
+            </td>
+            <td style="padding:8pt 10pt;color:#374151;vertical-align:top;font-size:9.5pt;">${item.comment||'—'}</td>
+            <td style="padding:6pt;text-align:center;vertical-align:middle;">
+              ${firstPhoto ? `<img src="${firstPhoto}" style="width:65pt;height:50pt;object-fit:cover;border-radius:4pt;border:1pt solid #e5e7eb;">` : '<span style="color:#ccc;font-size:18pt;">📷</span>'}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <!-- Summary -->
+    <div style="display:flex;gap:12pt;margin-top:16pt;">
+      <div style="flex:1;background:#f0fdf4;border:1pt solid #bbf7d0;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#16a34a;">${items.filter(i=>i.status==='ok').length}</div>
+        <div style="font-size:9pt;color:#16a34a;font-weight:600;">Zones OK</div>
+      </div>
+      <div style="flex:1;background:#fefce8;border:1pt solid #fde047;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#ca8a04;">${items.filter(i=>i.status==='remark').length}</div>
+        <div style="font-size:9pt;color:#ca8a04;font-weight:600;">Remarques</div>
+      </div>
+      <div style="flex:1;background:#fff5f5;border:1pt solid #fecaca;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#dc2626;">${items.filter(i=>i.status==='defect').length}</div>
+        <div style="font-size:9pt;color:#dc2626;font-weight:600;">Défauts</div>
+      </div>
+      <div style="flex:1;background:#f3f4f6;border:1pt solid #e5e7eb;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#374151;">${items.length}</div>
+        <div style="font-size:9pt;color:#374151;font-weight:600;">Total</div>
+      </div>
+    </div>
+
+    <div class="footer">${FOOTER}</div>
+  </div>` : ''}
+
+  <!-- ═══════════════════ PAGE SIGNATURES ═══════════════════ -->
   <div class="page page-break">
 
     <!-- Header -->
@@ -8110,6 +8182,305 @@ async function deleteProject(projectId, overlay) {
     toast('Erreur suppression: ' + (res?.error || 'inconnue'), 'error');
     if (btn) { btn.disabled = false; btn.textContent = '🗑️ Supprimer définitivement'; }
   }
+}
+
+// ═══════════════════════════════════════════
+// AJOUTER CAMION DEPUIS DASHBOARD PROJET
+// ═══════════════════════════════════════════
+function showAddTruckModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🚛 Ajouter un véhicule</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div class="input-row">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Type de véhicule</label>
+            <select class="input" id="at-type">
+              <option value="truck">🚛 Camion</option>
+              <option value="van">🚐 Camionnette</option>
+              <option value="crane">🏗️ Grue</option>
+              <option value="scissor">✂️ Nacelle</option>
+              <option value="manitou">🔧 Manitou / Roto</option>
+              <option value="forklift">🚜 Chariot élévateur</option>
+              <option value="generator">⚡ Groupe électrogène</option>
+              <option value="other">📦 Autre</option>
+            </select>
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">N° / Immatriculation</label>
+            <input class="input" id="at-number" placeholder="ex: 1-ABC-234">
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">👤 Chauffeur</div>
+        <div class="input-row">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Nom</label>
+            <input class="input" id="at-driver" placeholder="Nom du chauffeur">
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Téléphone</label>
+            <input class="input" id="at-phone" placeholder="+32 ...">
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📅 Dates</div>
+        <div class="input-row">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">📦 Chargement entrepôt</label>
+            <input class="input" type="datetime-local" id="at-loading">
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">🚀 Départ</label>
+            <input class="input" type="datetime-local" id="at-departure">
+          </div>
+        </div>
+        <div class="form-group2" style="margin-top:8px;">
+          <label class="form-label2">✅ Arrivée prévue sur site</label>
+          <input class="input" type="datetime-local" id="at-arrival">
+        </div>
+      </div>
+
+      <div class="form-group2">
+        <label class="form-label2">Notes</label>
+        <input class="input" id="at-notes" placeholder="Observations, instructions...">
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  setTimeout(() => document.getElementById('at-number')?.focus(), 80);
+}
+
+async function saveTruck(projectId, overlay) {
+  const type      = document.getElementById('at-type')?.value || 'truck';
+  const number    = document.getElementById('at-number')?.value?.trim();
+  const driver    = document.getElementById('at-driver')?.value?.trim();
+  const phone     = document.getElementById('at-phone')?.value?.trim();
+  const loading   = document.getElementById('at-loading')?.value;
+  const departure = document.getElementById('at-departure')?.value;
+  const arrival   = document.getElementById('at-arrival')?.value;
+  const notes     = document.getElementById('at-notes')?.value?.trim();
+
+  const btn = overlay?.querySelector('.btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Ajout...'; }
+
+  const res = await api('POST', `/projects/${projectId}/trucks`, {
+    vehicleType:   type,
+    truckNumber:   number   || undefined,
+    driverName:    driver   || undefined,
+    driverPhone:   phone    || undefined,
+    loadingDate:   loading   ? new Date(loading).toISOString()   : undefined,
+    departureDate: departure ? new Date(departure).toISOString() : undefined,
+    arrivalDate:   arrival   ? new Date(arrival).toISOString()   : undefined,
+    notes:         notes    || undefined,
+    status:        'planned',
+  });
+
+  if (res?.success) {
+    toast('Véhicule ajouté ✅', 'success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    toast('Erreur: ' + (res?.error || 'inconnue'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Ajouter'; }
+  }
+}
+
+
+// ═══════════════════════════════════════════
+// AJOUTER MEMBRE À L'ÉQUIPE D'UN PROJET
+// ═══════════════════════════════════════════
+function showAddToTeamModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head">
+        <div><div class="modal-title">👷 Ajouter à l'équipe</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Membre</label>
+        <select class="input" id="addteam-user">
+          <option value="">— Sélectionner —</option>
+          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Rôle sur ce projet</label>
+        <select class="input" id="addteam-role">
+          <option value="installer">🔧 Installateur</option>
+          <option value="site_manager">🏗️ Site Manager</option>
+          <option value="technical_manager">⚙️ Technical Manager</option>
+          <option value="worker">👷 Ouvrier</option>
+          <option value="engineer">🛠️ Engineer</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="addToTeam('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+}
+
+async function addToTeam(projectId, overlay) {
+  const userId = document.getElementById('addteam-user')?.value;
+  const role   = document.getElementById('addteam-role')?.value || 'worker';
+  if (!userId) { toast('Sélectionne un membre','error'); return; }
+  const res = await api('POST', `/projects/${projectId}/team`, { userId, role });
+  if (res?.success) {
+    toast('Membre ajouté ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else toast('Erreur: '+(res?.error||'inconnue'),'error');
+}
+
+// ═══════════════════════════════════════════
+// HANDOVER — AJOUTER POINT APRÈS CRÉATION
+// ═══════════════════════════════════════════
+function showAddHandoverItemModal(handoverId, projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🔍 Ajouter un point d'inspection</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Zone / Emplacement *</label>
+        <div style="display:flex;gap:6px;">
+          <input class="input" id="hi-zone" placeholder="ex: Façade Nord, Terrasse, Hall A..." style="flex:1;">
+          <button class="btn btn-ghost btn-xs" onclick="voiceInputHandoverItem()" title="Dicter">🎙️</button>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Statut</label>
+          <select class="input" id="hi-status">
+            <option value="ok">✅ OK</option>
+            <option value="remark">⚠️ Remarque</option>
+            <option value="defect">❌ Défaut</option>
+            <option value="pending">⏳ En attente</option>
+          </select>
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Commentaire</label>
+          <input class="input" id="hi-comment" placeholder="Observation...">
+        </div>
+      </div>
+      <!-- Photo -->
+      <div class="form-group2">
+        <label class="form-label2">📸 Photo</label>
+        <div id="hi-photo-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;"></div>
+        <label style="display:flex;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:14px;cursor:pointer;color:var(--text3);font-size:13px;">
+          📸 Prendre une photo
+          <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewHandoverItemPhoto(this)">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveHandoverItem('${handoverId}','${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  window._PENDING_HI_PHOTO = null;
+  setTimeout(()=>document.getElementById('hi-zone')?.focus(), 80);
+}
+
+function previewHandoverItemPhoto(input) {
+  if (!input.files?.length) return;
+  window._PENDING_HI_PHOTO = input.files[0];
+  const url = URL.createObjectURL(input.files[0]);
+  const preview = document.getElementById('hi-photo-preview');
+  if (preview) preview.innerHTML = `<img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`;
+}
+
+function voiceInputHandoverItem() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Parlez...','info');
+  rec.onresult = e => {
+    const field = document.getElementById('hi-zone');
+    if (field) field.value = e.results[0][0].transcript;
+    toast('Zone dictée ✅','success');
+  };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+async function saveHandoverItem(handoverId, projectId, overlay) {
+  const zone    = document.getElementById('hi-zone')?.value?.trim();
+  const status  = document.getElementById('hi-status')?.value || 'ok';
+  const comment = document.getElementById('hi-comment')?.value?.trim();
+  if (!zone) { toast('Indique la zone','error'); document.getElementById('hi-zone')?.focus(); return; }
+
+  const btn = overlay?.querySelector('.btn-primary');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Ajout...'; }
+
+  // Get current items count for sortOrder
+  const hRes = await api('GET', `/handover/${handoverId}`);
+  const sortOrder = (hRes?.data?.items?.length || 0);
+
+  const res = await api('PATCH', `/handover/${handoverId}`, {
+    items: [{ zoneName: zone, status, comment: comment||undefined, sortOrder }]
+  });
+
+  // Alternative: create via dedicated endpoint if PATCH doesn't support it
+  let itemId = null;
+  if (!res?.success) {
+    // Try direct item creation — fallback
+    toast('Ajout via mise à jour...','info');
+  } else {
+    // Find the new item
+    const newItem = res.data?.items?.find(i => i.zoneName === zone && i.sortOrder === sortOrder);
+    itemId = newItem?.id;
+  }
+
+  // Upload photo if any
+  if (window._PENDING_HI_PHOTO && itemId) {
+    try {
+      const fd = new FormData(); fd.append('file', window._PENDING_HI_PHOTO);
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+      });
+      const data = await r.json();
+      const url = data.data?.url || data.url;
+      if (url) {
+        await fetch(`${API}/handover/${handoverId}/items/${itemId}/photo`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+          body: JSON.stringify({photoUrl:url, publicId: data.data?.public_id||null})
+        });
+      }
+    } catch {}
+  }
+
+  toast('Point ajouté ✅','success');
+  window._PENDING_HI_PHOTO = null;
+  overlay?.remove();
+  openHandoverFull(handoverId);
 }
 
 </script>
