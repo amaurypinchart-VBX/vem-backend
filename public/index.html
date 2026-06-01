@@ -709,6 +709,7 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
       <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)">🗑️</button>
     </div>
   </div>
   <div class="tabs" id="proj-tabs" style="overflow-x:auto;white-space:nowrap;">
@@ -8063,6 +8064,52 @@ function renderProjTrucks() {
         style="width:100%;margin-top:6px;padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
         oninput="PROJ_TRUCKS[${idx}].notes=this.value">
     </div>`).join('');
+}
+
+async function confirmDeleteProject(projectId) {
+  if (!projectId) return;
+  const proj = PROJECTS.find(p => p.id === projectId);
+  const name = proj?.name || 'ce projet';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head">
+        <div class="modal-title" style="color:var(--accent);">🗑️ Supprimer le projet</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="padding:8px 0 16px;">
+        <p style="font-size:14px;margin-bottom:12px;">Voulez-vous vraiment supprimer <strong>${name}</strong> ?</p>
+        <div style="background:rgba(230,57,70,.08);border:1px solid rgba(230,57,70,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--accent);">
+          ⚠️ Cette action est irréversible. Toutes les tâches, daily reports, handovers et fichiers liés seront supprimés.
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" style="background:var(--accent);" onclick="deleteProject('${projectId}',this.closest('.overlay'))">🗑️ Supprimer définitivement</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+async function deleteProject(projectId, overlay) {
+  const btn = overlay.querySelector('button.btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Suppression...'; }
+
+  const res = await api('DELETE', `/projects/${projectId}`);
+  if (res?.success || res?.message) {
+    toast('Projet supprimé', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.filter(p => p.id !== projectId);
+    CURRENT_PROJECT_ID = null;
+    goto('projects');
+    loadProjects();
+  } else {
+    toast('Erreur suppression: ' + (res?.error || 'inconnue'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Supprimer définitivement'; }
+  }
 }
 
 </script>
