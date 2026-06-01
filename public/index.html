@@ -7732,8 +7732,7 @@ async function editHandoverFields(handoverId, projectId) {
 
           <div class="form-group2">
             <label class="form-label2">Comments / Reservations</label>
-            <textarea class="input" id="hf-comments" rows="3">${fv('comments', (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('
-')||'')}</textarea>
+            <textarea clasid="hf-comments" rows="3"></textarea>
           </div>
 
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:10px 0 8px;">CLIENT</div>
@@ -7790,6 +7789,13 @@ async function editHandoverFields(handoverId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  // Populate comments textarea safely
+  const commentsTA = document.getElementById('hf-comments-area');
+  if (commentsTA) {
+    const existingComments = f['comments'] !== undefined ? f['comments'] : 
+      (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('\n');
+    commentsTA.value = existingComments;
+  }
   overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
 }
 
