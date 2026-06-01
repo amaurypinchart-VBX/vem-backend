@@ -164,4 +164,44 @@ router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunc
     res.json({ success: true, data: trucks });
   } catch (err) { next(err); }
 });
+
+// GET /projects/:id/files
+router.get('/:id/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const files = await prisma.projectFile.findMany({
+      where: { projectId: req.params.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, data: files });
+  } catch (err) { next(err); }
+});
+
+// POST /projects/:id/files
+router.post('/:id/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { fileName, fileUrl, fileType, fileSize, publicId, category } = req.body;
+    if (!fileUrl) throw new AppError('fileUrl requis', 400);
+    const file = await prisma.projectFile.create({
+      data: {
+        projectId:  req.params.id,
+        uploadedBy: req.user!.id,
+        fileName:   fileName || 'fichier',
+        fileUrl,
+        fileType:   fileType  || null,
+        fileSize:   fileSize  || null,
+        publicId:   publicId  || null,
+        category:   category  || 'project',
+      },
+    });
+    res.status(201).json({ success: true, data: file });
+  } catch (err) { next(err); }
+});
+
+// DELETE /projects/:id/files/:fileId
+router.delete('/:id/files/:fileId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.projectFile.delete({ where: { id: req.params.fileId } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
 export default router;
