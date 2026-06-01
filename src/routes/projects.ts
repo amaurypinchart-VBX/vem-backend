@@ -204,4 +204,11 @@ router.delete('/:id/files/:fileId', async (req: AuthRequest, res: Response, next
     res.json({ success: true });
   } catch (err) { next(err); }
 });
+
+router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.project.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
 export default router;
