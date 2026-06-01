@@ -2502,26 +2502,23 @@ async function createProject() {
   if (res?.success) {
     const projectId = res.data.id;
     // Apply selected templates
-    const selectedTpls = Array.from(document.querySelectorAll('.proj-tpl-check:checked')).map(cb => cb.value);
-    if (selectedTpls.length) {
-      toast(`Création de ${selectedTpls.length} tâche(s)...`, 'info');
-      await Promise.all(selectedTpls.map(tplId => {
-        const tpl = PROJ_TEMPLATES_FLAT.find(t => t.id === tplId);
-        if (!tpl) return Promise.resolve();
-        const tplBody = {
-          projectId,
-          title: tpl.title,
-          status: 'todo',
-          priority: tpl.priority || 'normal',
-          createdById: CURRENT_USER?.id,
-        };
-        if (tpl.description) tplBody.description = tpl.description;
-        if (tpl.durationHours) tplBody.estimatedHours = tpl.durationHours;
-        const startVal = document.getElementById('proj-start')?.value;
-        if (startVal) tplBody.taskDate = startVal;
-        return api('POST', '/tasks', tplBody);
-      }));
-      toast(`Projet créé ✅ · ${selectedTpls.length} tâche(s) ajoutée(s)`, 'success');
+    // Créer les tâches sélectionnées (depuis TASK_TEMPLATES_DATA Excel)
+    const selectedTasks = typeof getSelectedProjTasks === 'function' ? getSelectedProjTasks() : [];
+    if (selectedTasks.length) {
+      toast(`Création de ${selectedTasks.length} tâche(s)...`, 'info');
+      const projStartDate = document.getElementById('proj-start')?.value || new Date().toISOString().split('T')[0];
+      await Promise.all(selectedTasks.map(task =>
+        api('POST', `/projects/${projectId}/tasks`, {
+          title:        task.title,
+          description:  task.stage ? `Stage: ${task.stage}` : undefined,
+          status:       'todo',
+          priority:     'normal',
+          taskDate:     task.taskDate || projStartDate,
+          assignedTo:   task.assignedTo || undefined,
+          createdById:  CURRENT_USER?.id,
+        })
+      ));
+      toast(`${selectedTasks.length} tâche(s) créée(s) ✅`, 'success');
     } else {
       toast('Projet créé ✅', 'success');
     }
