@@ -20,6 +20,21 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   } catch (err) { next(err); }
 });
 
+// GET /client-remarks/:id — détail d'un point
+router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const remark = await (prisma as any).clientRemark.findUnique({
+      where: { id: req.params.id },
+      include: {
+        assignedToUser: { select: { firstName: true, lastName: true } },
+        photos: true,
+      },
+    });
+    if (!remark) return res.status(404).json({ success: false, error: 'Point introuvable' });
+    res.json({ success: true, data: remark });
+  } catch (err) { next(err); }
+});
+
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const remark = await (prisma as any).clientRemark.create({
