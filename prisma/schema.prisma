@@ -102,6 +102,7 @@ model User {
   validatedBoxes      WarehouseBox[] @relation("BoxValidatedBy")
   notifications       Notification[]
   refreshTokens       RefreshToken[]
+  assignedRemarks     ClientRemark[] @relation("RemarkAssignee")
 
   @@map("users")
 }
@@ -163,6 +164,7 @@ model Project {
   tickets          Ticket[]
   warehouseBoxes   WarehouseBox[]
   toolboxes        Toolbox[]
+  clientRemarks    ClientRemark[]
 
   @@map("projects")
 }
@@ -602,4 +604,42 @@ model InvitationToken {
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("invitation_tokens")
+}
+
+// ─────────────────────────────────────────────
+// Remarques / visites client (points de suivi)
+// ─────────────────────────────────────────────
+model ClientRemark {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  title       String
+  description String?
+  zone        String?
+  status      String   @default("open")           // open | resolved | urgent | archived
+  priority    Priority @default(normal)
+  assignedTo  String?  @map("assigned_to")         // FK utilisateur (le front envoie "assignedTo")
+  createdBy   String?  @map("created_by")
+  resolvedBy  String?  @map("resolved_by")
+  resolvedAt  DateTime? @map("resolved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedToUser User?               @relation("RemarkAssignee", fields: [assignedTo], references: [id])
+  photos         ClientRemarkPhoto[]
+
+  @@map("client_remarks")
+}
+
+model ClientRemarkPhoto {
+  id        String   @id @default(cuid())
+  remarkId  String   @map("remark_id")
+  remark    ClientRemark @relation(fields: [remarkId], references: [id], onDelete: Cascade)
+  photoUrl  String   @map("photo_url")
+  publicId  String?  @map("public_id")
+  caption   String?
+  phase     String?  @default("problem")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("client_remark_photos")
 }
