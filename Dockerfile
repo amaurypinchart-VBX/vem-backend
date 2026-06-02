@@ -12,7 +12,9 @@ COPY tsconfig.json ./
 COPY src ./src/
 COPY public ./public/
 
-RUN npx prisma db pull --force || true
+# (supprimé) RUN npx prisma db pull --force || true
+# ^ Cette ligne écrasait schema.prisma avec la base à chaque build.
+#   schema.prisma est désormais la source de vérité.
 RUN npx prisma generate && npm run build
 
 EXPOSE 3000
