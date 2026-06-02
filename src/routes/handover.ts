@@ -109,13 +109,15 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     if (items?.length) {
       for (const item of items) {
         if (item.id) {
+          // On ne met à jour QUE les champs réellement transmis,
+          // pour ne pas écraser zoneName/comment quand le front n'envoie que le statut.
+          const itemData: any = {};
+          if (item.zoneName !== undefined) itemData.zoneName = item.zoneName;
+          if (item.status   !== undefined) itemData.status   = item.status;
+          if (item.comment  !== undefined) itemData.comment  = item.comment;
           await prisma.handoverItem.update({
             where: { id: item.id },
-            data: {
-              zoneName: item.zoneName,
-              status:   item.status,
-              comment:  item.comment || null,
-            },
+            data: itemData,
           });
         }
       }
