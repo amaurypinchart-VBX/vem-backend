@@ -16,6 +16,8 @@ enum UserRole {
   worker
   client
   warehouse
+  sales_engineer
+  installer
 }
 
 enum ProjectStatus {
