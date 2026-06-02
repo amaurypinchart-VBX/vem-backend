@@ -82,6 +82,13 @@ model User {
   phone        String?
   role         UserRole  @default(worker)
   avatarUrl    String?   @map("avatar_url")
+  birthDate      String?  @map("birth_date")
+  birthPlace     String?  @map("birth_place")
+  nationality    String?
+  idNumber       String?  @map("id_number")
+  nationalNumber String?  @map("national_number")
+  idExpiry       String?  @map("id_expiry")
+  teamGroupId    String?  @map("team_group_id")
   isActive     Boolean   @default(true) @map("is_active")
   lastLogin    DateTime? @map("last_login")
   pushToken    String?   @map("push_token")
