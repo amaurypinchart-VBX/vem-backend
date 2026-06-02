@@ -3063,7 +3063,19 @@ async function createUser() {
   const role      = document.getElementById('user-role').value;
   if (!firstName || !lastName || !email) { toast('Remplis tous les champs', 'error'); return; }
 
-  const res = await api('POST', '/users', { firstName, lastName, email, role, phone: document.getElementById('user-phone').value || undefined });
+  const payload = {
+    firstName, lastName, email, role,
+    phone:          document.getElementById('user-phone').value.trim()         || undefined,
+    birthDate:      document.getElementById('user-birthdate').value.trim()     || undefined,
+    birthPlace:     document.getElementById('user-birthplace').value.trim()    || undefined,
+    nationality:    document.getElementById('user-nationality').value.trim()   || undefined,
+    idNumber:       document.getElementById('user-id-number').value.trim()     || undefined,
+    nationalNumber: document.getElementById('user-national-nr').value.trim()   || undefined,
+    idExpiry:       document.getElementById('user-id-expiry').value.trim()     || undefined,
+    teamGroupId:    document.getElementById('user-team-group').value           || undefined,
+  };
+
+  const res = await api('POST', '/users', payload);
   if (res?.success) { toast('Compte créé · Mot de passe : VEM2025! ✅', 'success'); closeModal('modal-user'); loadTeam(); loadAll(); }
   else toast('Erreur création compte', 'error');
 }
@@ -7349,36 +7361,121 @@ async function openUserDetail(userId) {
   const cat = TEAM_CATEGORIES.find(c => c.key === u.role) || { label: u.role, color: '#4895ef', icon: '👤' };
   const grp = TEAM_GROUPS.find(g => g.id === u.teamGroupId);
   const initials = (u.firstName?.[0]||'?') + (u.lastName?.[0]||'');
+  const esc = s => (s ?? '').toString().replace(/"/g,'&quot;');
+
+  // Options pour le select des rôles (basées sur TEAM_CATEGORIES)
+  const roleOptions = TEAM_CATEGORIES.map(c =>
+    `<option value="${c.key}" ${c.key===u.role?'selected':''}>${c.icon} ${c.label}</option>`
+  ).join('');
+
+  // Options pour le select des groupes d'équipe
+  const groupOptions = '<option value="">— Aucune —</option>' +
+    TEAM_GROUPS.map(g => `<option value="${g.id}" ${g.id===u.teamGroupId?'selected':''}>${g.name}</option>`).join('');
 
   const overlay = document.createElement('div'); overlay.className = 'overlay open';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:520px;">
+    <div class="modal" style="max-width:560px;">
       <div class="modal-head">
         <div style="display:flex;align-items:center;gap:12px;">
           ${u.avatarUrl
             ? `<img src="${u.avatarUrl}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid ${cat.color};">`
             : `<div style="width:52px;height:52px;border-radius:50%;background:${cat.color};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;">${initials}</div>`}
           <div>
-            <div class="modal-title" style="margin:0;">${u.firstName} ${u.lastName}</div>
+            <div class="modal-title" id="user-detail-title" style="margin:0;">${u.firstName} ${u.lastName}</div>
             <div style="font-size:12px;color:var(--text3);">${cat.icon} ${cat.label}${grp?` · 👷 ${grp.name}`:''}</div>
           </div>
         </div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
+
+      <!-- MODE AFFICHAGE -->
+      <div id="user-detail-view" style="display:flex;flex-direction:column;gap:8px;">
         ${u.email?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📧</span><a href="mailto:${u.email}" style="color:var(--blue);font-size:13px;">${u.email}</a></div>`:''}
         ${u.phone?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📞</span><a href="tel:${u.phone}" style="color:var(--blue);font-size:13px;">${u.phone}</a></div>`:''}
         ${u.nationality?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🌍</span><span style="font-size:13px;">${u.nationality}</span></div>`:''}
         ${u.nationalNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🪪</span><span style="font-size:13px;font-family:monospace;">${u.nationalNumber}</span></div>`:''}
         ${u.idNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🆔</span><span style="font-size:13px;font-family:monospace;">${u.idNumber}${u.idExpiry?' · exp. '+u.idExpiry:''}</span></div>`:''}
         ${u.birthDate?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🎂</span><span style="font-size:13px;">${u.birthDate}${u.birthPlace?' — '+u.birthPlace:''}</span></div>`:''}
+        ${(!u.email && !u.phone && !u.nationality && !u.idNumber && !u.birthDate)
+          ? '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Aucune information renseignée — clique sur Modifier pour compléter la fiche.</div>'
+          : ''}
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+
+      <!-- MODE ÉDITION -->
+      <div id="user-detail-edit" style="display:none;flex-direction:column;gap:10px;">
+        <div style="display:flex;gap:8px;">
+          <div class="form-group" style="flex:1;"><label class="form-label">Prénom</label><input class="input" id="edit-fname" value="${esc(u.firstName)}"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Nom</label><input class="input" id="edit-lname" value="${esc(u.lastName)}"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Email</label><input class="input" id="edit-email" type="email" value="${esc(u.email)}"></div>
+        <div class="form-group"><label class="form-label">Téléphone</label><input class="input" id="edit-phone" value="${esc(u.phone)}"></div>
+        <div style="display:flex;gap:8px;">
+          <div class="form-group" style="flex:1;"><label class="form-label">Rôle</label><select class="input" id="edit-role">${roleOptions}</select></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Équipe</label><select class="input" id="edit-team-group">${groupOptions}</select></div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🪪 Carte d'identité</div>
+          <div style="display:flex;gap:8px;">
+            <div class="form-group" style="flex:1;"><label class="form-label">Date de naissance</label><input class="input" id="edit-birthdate" value="${esc(u.birthDate)}" placeholder="YYYY-MM-DD"></div>
+            <div class="form-group" style="flex:1;"><label class="form-label">Lieu de naissance</label><input class="input" id="edit-birthplace" value="${esc(u.birthPlace)}"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Nationalité</label><input class="input" id="edit-nationality" value="${esc(u.nationality)}"></div>
+          <div style="display:flex;gap:8px;">
+            <div class="form-group" style="flex:1;"><label class="form-label">N° de carte</label><input class="input" id="edit-id-number" value="${esc(u.idNumber)}"></div>
+            <div class="form-group" style="flex:1;"><label class="form-label">Expiration</label><input class="input" id="edit-id-expiry" value="${esc(u.idExpiry)}" placeholder="YYYY-MM-DD"></div>
+          </div>
+          <div class="form-group"><label class="form-label">N° registre national</label><input class="input" id="edit-national-nr" value="${esc(u.nationalNumber)}"></div>
+        </div>
+      </div>
+
+      <!-- BOUTONS -->
+      <div id="user-detail-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-primary" onclick="toggleUserEdit(true)">✏️ Modifier</button>
+      </div>
+      <div id="user-detail-actions-edit" style="display:none;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="toggleUserEdit(false)">Annuler</button>
+        <button class="btn btn-primary" onclick="saveUserEdit('${u.id}')">💾 Enregistrer</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+function toggleUserEdit(editing) {
+  document.getElementById('user-detail-view').style.display          = editing ? 'none' : 'flex';
+  document.getElementById('user-detail-edit').style.display          = editing ? 'flex' : 'none';
+  document.getElementById('user-detail-actions').style.display       = editing ? 'none' : 'flex';
+  document.getElementById('user-detail-actions-edit').style.display  = editing ? 'flex' : 'none';
+}
+
+async function saveUserEdit(userId) {
+  const val = id => document.getElementById(id).value.trim();
+  const payload = {
+    firstName:      val('edit-fname'),
+    lastName:       val('edit-lname'),
+    email:          val('edit-email'),
+    phone:          val('edit-phone')         || null,
+    role:           document.getElementById('edit-role').value,
+    teamGroupId:    document.getElementById('edit-team-group').value || null,
+    birthDate:      val('edit-birthdate')     || null,
+    birthPlace:     val('edit-birthplace')    || null,
+    nationality:    val('edit-nationality')   || null,
+    idNumber:       val('edit-id-number')     || null,
+    idExpiry:       val('edit-id-expiry')     || null,
+    nationalNumber: val('edit-national-nr')   || null,
+  };
+  if (!payload.firstName || !payload.lastName || !payload.email) { toast('Prénom, nom et email obligatoires', 'error'); return; }
+
+  const res = await api('PATCH', '/users/' + userId, payload);
+  if (res?.success) {
+    toast('Fiche mise à jour ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+    await loadTeam();
+    await loadAll();
+  } else {
+    toast(res?.error || 'Erreur de mise à jour', 'error');
+  }
 }
 
 // ── Init team group select on modal open ──
