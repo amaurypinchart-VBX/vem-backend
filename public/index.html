@@ -723,6 +723,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
     <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
     <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
+    <div class="tab" onclick="switchTab(this,'dtab-briefing')">📋 Briefing</div>
     <div class="tab" onclick="switchTab(this,'dtab-files');loadDetailFiles(CURRENT_PROJECT_ID)">📁 Fichiers</div>
   </div>
   <div id="dtab-info"><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
@@ -735,6 +736,7 @@ textarea.input{min-height:80px;resize:vertical;}
   <div id="dtab-toolbox" style="display:none;"><div id="detail-toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div></div></div></div>
   <div id="dtab-team" style="display:none;"><div id="detail-team-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-trucks" style="display:none;"><div id="detail-trucks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-briefing" style="display:none;"><div id="detail-briefing-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
 </div>
 
@@ -1689,6 +1691,8 @@ function switchTab(el, tabId) {
   if (tabId==='dtab-tickets')   loadDetailTickets(CURRENT_PROJECT_ID);
   if (tabId==='dtab-warehouse') loadDetailWarehouse(CURRENT_PROJECT_ID);
   if (tabId==='dtab-toolbox')   loadDetailToolboxes(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-trucks')    loadDetailTrucks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-briefing')  loadDetailBriefing(CURRENT_PROJECT_ID);
 }
 
 function openProject(id) {
@@ -2537,18 +2541,22 @@ async function createProject() {
     if (selectedTasks.length) {
       toast(`Création de ${selectedTasks.length} tâche(s)...`, 'info');
       const projStartDate = document.getElementById('proj-start')?.value || new Date().toISOString().split('T')[0];
-      await Promise.all(selectedTasks.map(task =>
-        api('POST', `/projects/${projectId}/tasks`, {
+      const results = await Promise.all(selectedTasks.map(task =>
+        api('POST', '/tasks', {
+          projectId,
           title:        task.title,
           description:  task.stage ? `Stage: ${task.stage}` : undefined,
           status:       'todo',
           priority:     'normal',
           taskDate:     task.taskDate || projStartDate,
-          assignedTo:   task.assignedTo || undefined,
-          createdById:  CURRENT_USER?.id,
+          assignedToId: task.assignedTo || undefined,
         })
       ));
-      toast(`${selectedTasks.length} tâche(s) créée(s) ✅`, 'success');
+      const ok = results.filter(r => r?.success).length;
+      const fail = results.length - ok;
+      if (fail === 0)      toast(`${ok} tâche(s) créée(s) ✅`, 'success');
+      else if (ok === 0)   toast(`Aucune tâche créée (${fail} échec(s))`, 'error');
+      else                 toast(`${ok} tâche(s) créée(s) — ${fail} échec(s)`, 'warning');
     } else {
       toast('Projet créé ✅', 'success');
     }
@@ -8453,6 +8461,428 @@ async function loadDetailToolboxes(projectId) {
             ${b.drawers?.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">${b.drawers.length} tiroir(s)</div>`:''}
           </div>`).join('')}
       </div>`}`;
+}// ═════════════════════════════════════════════
+// 🚛 LOGISTIQUE — Camions/Grues/Forklifts par projet
+// ═════════════════════════════════════════════
+async function loadDetailTrucks(projectId) {
+  const el = document.getElementById('detail-trucks-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+  const res = await api('GET', `/projects/${projectId}/trucks`);
+  const trucks = res?.data || [];
+
+  const VEHICLE_LABELS = { truck: '🚛 Camion', crane: '🏗️ Grue', forklift: '🛻 Forklift', manitou: '🚜 Manitou', scissor: '🪜 Nacelle', other: '🚗 Autre' };
+  const STATUS_BADGE = { planned:'#9b59b6', loading:'#f4a261', in_transit:'#4895ef', delivered:'#2dc653', returned:'#5a6275' };
+
+  let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text3);">${trucks.length} véhicule(s)</div>
+      <button class="btn btn-primary btn-sm" onclick="openTruckModal('${projectId}')">+ Ajouter</button>
+    </div>`;
+
+  if (!trucks.length) {
+    html += '<div class="empty"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule</div><div class="empty-sub">Ajoute un camion, une grue ou un forklift.</div></div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    for (const t of trucks) {
+      const vLabel = VEHICLE_LABELS[t.vehicleType] || VEHICLE_LABELS.truck;
+      const sColor = STATUS_BADGE[t.status] || '#5a6275';
+      const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+      html += `
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:700;">${vLabel} · ${t.truckNumber || 'Sans n°'}</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+                ${t.licensePlate?`🪪 ${t.licensePlate} · `:''}${t.driverName?`👤 ${t.driverName}`:''}${t.driverPhone?` · 📞 <a href="tel:${t.driverPhone}" style="color:var(--blue);">${t.driverPhone}</a>`:''}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span style="background:${sColor};color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">${t.status}</span>
+              <button class="btn btn-ghost btn-sm" onclick='openTruckModal("${projectId}", ${JSON.stringify(t).replace(/'/g,"&#39;")})'>✏️</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteTruck('${projectId}','${t.id}')">🗑️</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Chargement</div><div>${fmt(t.loadingDate)}</div></div>
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Arrivée sur site</div><div>${fmt(t.arrivalDate)}</div></div>
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Départ retour</div><div>${fmt(t.departureDate)}</div></div>
+          </div>
+          ${t.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:6px;">📝 ${t.notes}</div>`:''}
+        </div>`;
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function openTruckModal(projectId, existing) {
+  const t = existing || {};
+  const overlay = document.createElement('div'); overlay.className = 'overlay open';
+  const dateInput = d => d ? new Date(d).toISOString().slice(0,16) : '';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:540px;">
+      <div class="modal-head">
+        <div class="modal-title">${t.id?'Modifier':'Ajouter'} un véhicule</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group"><label class="form-label">Type</label>
+          <select class="input" id="tk-type">
+            ${['truck','crane','forklift','manitou','scissor','other'].map(v=>`<option value="${v}" ${t.vehicleType===v?'selected':''}>${v}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Numéro</label><input class="input" id="tk-num" value="${t.truckNumber||''}"></div>
+        <div class="form-group"><label class="form-label">Plaque</label><input class="input" id="tk-plate" value="${t.licensePlate||''}"></div>
+        <div class="form-group"><label class="form-label">Chauffeur</label><input class="input" id="tk-driver" value="${t.driverName||''}"></div>
+        <div class="form-group"><label class="form-label">Téléphone chauffeur</label><input class="input" id="tk-phone" value="${t.driverPhone||''}"></div>
+        <div class="form-group"><label class="form-label">Statut</label>
+          <select class="input" id="tk-status">
+            ${['planned','loading','in_transit','delivered','returned'].map(v=>`<option value="${v}" ${t.status===v?'selected':''}>${v}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Chargement</label><input class="input" type="datetime-local" id="tk-load" value="${dateInput(t.loadingDate)}"></div>
+        <div class="form-group"><label class="form-label">Arrivée sur site</label><input class="input" type="datetime-local" id="tk-arr" value="${dateInput(t.arrivalDate)}"></div>
+        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Départ retour</label><input class="input" type="datetime-local" id="tk-dep" value="${dateInput(t.departureDate)}"></div>
+        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Notes</label><textarea class="input" id="tk-notes" rows="2">${t.notes||''}</textarea></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}','${t.id||''}')">💾 Enregistrer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveTruck(projectId, truckId) {
+  const val = id => document.getElementById(id).value.trim();
+  const payload = {
+    vehicleType: document.getElementById('tk-type').value,
+    truckNumber: val('tk-num')   || null,
+    licensePlate: val('tk-plate')|| null,
+    driverName: val('tk-driver') || null,
+    driverPhone: val('tk-phone') || null,
+    status: document.getElementById('tk-status').value,
+    loadingDate:   val('tk-load') || null,
+    arrivalDate:   val('tk-arr')  || null,
+    departureDate: val('tk-dep')  || null,
+    notes: val('tk-notes') || null,
+  };
+  const res = truckId
+    ? await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, payload)
+    : await api('POST',  `/projects/${projectId}/trucks`,           payload);
+  if (res?.success) {
+    toast('Véhicule enregistré ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+    loadDetailTrucks(projectId);
+  } else {
+    toast('Erreur enregistrement', 'error');
+  }
+}
+
+async function deleteTruck(projectId, truckId) {
+  if (!confirm('Supprimer ce véhicule ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
+  if (res?.success) { toast('Supprimé', 'success'); loadDetailTrucks(projectId); }
+  else toast('Erreur suppression', 'error');
+}
+
+// ═════════════════════════════════════════════
+// 📋 BRIEFING — Document multi-slides par projet
+// ═════════════════════════════════════════════
+let CURRENT_BRIEFING = null;       // { id, projectId, title, slides: [...] }
+let CURRENT_SLIDE_IDX = 0;
+
+const SLIDE_TYPES = {
+  text:     { icon:'📝', label:'Texte / notes' },
+  contacts: { icon:'📞', label:'Contacts' },
+  tasks:    { icon:'✅', label:'Tâches (auto)' },
+  trucks:   { icon:'🚛', label:'Logistique (auto)' },
+  photos:   { icon:'📸', label:'Photos / PDF' },
+  location: { icon:'📍', label:'Localisation' },
+};
+
+async function loadDetailBriefing(projectId) {
+  const el = document.getElementById('detail-briefing-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+  const res = await api('GET', `/briefings/${projectId}`);
+  if (!res?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur</div></div>'; return; }
+  CURRENT_BRIEFING = res.data;
+  // S'assurer que slides est un tableau
+  if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
+  CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
+  renderBriefing();
+}
+
+function renderBriefing() {
+  const el = document.getElementById('detail-briefing-content');
+  if (!el || !CURRENT_BRIEFING) return;
+  const slides = CURRENT_BRIEFING.slides;
+  const cur = slides[CURRENT_SLIDE_IDX];
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+      <input class="input" id="brf-title" placeholder="Titre du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:320px;" onchange="CURRENT_BRIEFING.title=this.value">
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="printBriefing()">🖨️ Imprimer</button>
+        <button class="btn btn-primary btn-sm" onclick="saveBriefing()">💾 Enregistrer</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:flex-start;">
+      <!-- Sidebar slides -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Slides (${slides.length})</div>
+        <div id="brf-slides-list" style="display:flex;flex-direction:column;gap:4px;max-height:420px;overflow-y:auto;">
+          ${slides.map((s,i)=>`
+            <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${i===CURRENT_SLIDE_IDX?'var(--bg3)':'transparent'};border:1px solid ${i===CURRENT_SLIDE_IDX?'var(--accent)':'transparent'};" onclick="selectSlide(${i})">
+              <span style="font-size:14px;">${(SLIDE_TYPES[s.type]||{}).icon||'·'}</span>
+              <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(s.title||SLIDE_TYPES[s.type]?.label||'Slide')}</span>
+              <span style="display:flex;gap:2px;">
+                <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Monter" onclick="event.stopPropagation();moveSlide(${i},-1)">▲</button>
+                <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Descendre" onclick="event.stopPropagation();moveSlide(${i},1)">▼</button>
+                <button class="btn btn-ghost btn-sm" style="padding:0 4px;color:var(--accent);" title="Supprimer" onclick="event.stopPropagation();deleteSlide(${i})">×</button>
+              </span>
+            </div>`).join('') || '<div style="font-size:12px;color:var(--text3);padding:8px;">Aucune slide</div>'}
+        </div>
+        <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:4px;">+ Ajouter une slide</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+            ${Object.entries(SLIDE_TYPES).map(([k,v])=>`<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px;" onclick="addSlide('${k}')">${v.icon} ${v.label}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- Éditeur de la slide courante -->
+      <div id="brf-editor" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;min-height:300px;">
+        ${cur ? renderSlideEditor(cur, CURRENT_SLIDE_IDX) : '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Choisis ou ajoute une slide</div></div>'}
+      </div>
+    </div>`;
+}
+
+function renderSlideEditor(s, idx) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  let body = '';
+  if (s.type === 'text') {
+    body = `<textarea class="input" rows="12" placeholder="Notes, instructions, remarques..." onchange="CURRENT_BRIEFING.slides[${idx}].content=this.value">${s.content||''}</textarea>`;
+  }
+  else if (s.type === 'contacts') {
+    const contacts = s.contacts || [];
+    body = `
+      <div id="brf-contacts-${idx}" style="display:flex;flex-direction:column;gap:6px;">
+        ${contacts.map((c,ci)=>renderContactRow(idx, ci, c)).join('')}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="addContact(${idx})">+ Contact manuel</button>
+        <select class="input" id="brf-pick-user-${idx}" style="flex:1;min-width:160px;">
+          <option value="">+ Membre de l'équipe…</option>
+          ${(USERS||[]).map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} ${u.role?'('+u.role+')':''}</option>`).join('')}
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="addContactFromUser(${idx})">Ajouter</button>
+      </div>`;
+  }
+  else if (s.type === 'tasks') {
+    body = `<div style="color:var(--text3);font-size:12px;margin-bottom:8px;">📌 Liste auto des tâches du projet (mise à jour à l'impression).</div>
+      <div id="brf-tasks-preview"><div class="empty"><div class="empty-title">Aperçu chargé à l'impression</div></div></div>`;
+  }
+  else if (s.type === 'trucks') {
+    body = `<div style="color:var(--text3);font-size:12px;margin-bottom:8px;">🚛 Liste auto des véhicules (camions, grues, forklifts) du projet.</div>
+      <div id="brf-trucks-preview"><div class="empty"><div class="empty-title">Aperçu chargé à l'impression</div></div></div>`;
+  }
+  else if (s.type === 'photos') {
+    const photos = s.photos || [];
+    body = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:8px;">
+        ${photos.map((p,pi)=>`
+          <div style="position:relative;background:var(--bg3);border-radius:8px;padding:6px;">
+            ${p.url.match(/\\.pdf$/i) ? `<a href="${p.url}" target="_blank" style="display:block;text-align:center;padding:24px 0;font-size:24px;color:var(--blue);">📄</a>` : `<img src="${p.url}" style="width:100%;height:90px;object-fit:cover;border-radius:6px;">`}
+            <input class="input" style="font-size:11px;padding:4px;margin-top:4px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${idx}].photos[${pi}].caption=this.value">
+            <button class="btn btn-ghost btn-sm" style="position:absolute;top:2px;right:2px;color:var(--accent);" onclick="removeBriefPhoto(${idx},${pi})">×</button>
+          </div>`).join('') || '<div style="grid-column:1/-1;text-align:center;color:var(--text3);font-size:12px;padding:14px;">Aucun fichier</div>'}
+      </div>
+      <input type="file" id="brf-photo-input-${idx}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${idx}, this.files)">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${idx}').click()">📎 Ajouter des fichiers</button>`;
+  }
+  else if (s.type === 'location') {
+    const addr = s.address || '';
+    body = `
+      <div class="form-group"><label class="form-label">Adresse</label>
+        <input class="input" value="${esc(addr)}" placeholder="Adresse complète du site / stand" onchange="CURRENT_BRIEFING.slides[${idx}].address=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">N° de stand / hall</label>
+        <input class="input" value="${esc(s.stand)}" onchange="CURRENT_BRIEFING.slides[${idx}].stand=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">Notes (accès, parking, horaires)</label>
+        <textarea class="input" rows="4" onchange="CURRENT_BRIEFING.slides[${idx}].notes=this.value">${s.notes||''}</textarea>
+      </div>
+      ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Ouvrir dans Google Maps</a>` : ''}`;
+  }
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
+      <input class="input" placeholder="Titre de la slide…" value="${esc(s.title)}" onchange="CURRENT_BRIEFING.slides[${idx}].title=this.value;renderBriefing()" style="flex:1;">
+      <span style="font-size:12px;color:var(--text3);white-space:nowrap;">${(SLIDE_TYPES[s.type]||{}).icon} ${(SLIDE_TYPES[s.type]||{}).label}</span>
+    </div>
+    ${body}`;
+}
+
+function renderContactRow(idx, ci, c) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
+      <input class="input" placeholder="Nom" value="${esc(c.name)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].name=this.value">
+      <input class="input" placeholder="Rôle / fonction" value="${esc(c.role)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].role=this.value">
+      <input class="input" placeholder="Téléphone" value="${esc(c.phone)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].phone=this.value">
+      <input class="input" placeholder="Email" value="${esc(c.email)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].email=this.value">
+      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="removeContact(${idx},${ci})">×</button>
+    </div>`;
+}
+
+function selectSlide(i) { CURRENT_SLIDE_IDX = i; renderBriefing(); }
+
+function addSlide(type) {
+  if (!CURRENT_BRIEFING) return;
+  CURRENT_BRIEFING.slides.push({ type, title:'', ...(type==='contacts'?{contacts:[]}:{}), ...(type==='photos'?{photos:[]}:{}) });
+  CURRENT_SLIDE_IDX = CURRENT_BRIEFING.slides.length - 1;
+  renderBriefing();
+}
+
+function deleteSlide(i) {
+  if (!confirm('Supprimer cette slide ?')) return;
+  CURRENT_BRIEFING.slides.splice(i,1);
+  if (CURRENT_SLIDE_IDX >= CURRENT_BRIEFING.slides.length) CURRENT_SLIDE_IDX = Math.max(0, CURRENT_BRIEFING.slides.length-1);
+  renderBriefing();
+}
+
+function moveSlide(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= CURRENT_BRIEFING.slides.length) return;
+  const arr = CURRENT_BRIEFING.slides;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  if (CURRENT_SLIDE_IDX === i) CURRENT_SLIDE_IDX = j;
+  renderBriefing();
+}
+
+function addContact(idx) {
+  const s = CURRENT_BRIEFING.slides[idx];
+  s.contacts = s.contacts || [];
+  s.contacts.push({ name:'', role:'', phone:'', email:'' });
+  renderBriefing();
+}
+
+function addContactFromUser(idx) {
+  const sel = document.getElementById('brf-pick-user-'+idx);
+  const userId = sel?.value;
+  if (!userId) return;
+  const u = (USERS||[]).find(x=>x.id===userId);
+  if (!u) return;
+  const s = CURRENT_BRIEFING.slides[idx];
+  s.contacts = s.contacts || [];
+  s.contacts.push({ name: `${u.firstName} ${u.lastName}`, role: u.role||'', phone: u.phone||'', email: u.email||'' });
+  renderBriefing();
+}
+
+function removeContact(idx, ci) {
+  CURRENT_BRIEFING.slides[idx].contacts.splice(ci,1);
+  renderBriefing();
+}
+
+async function uploadBriefPhotos(idx, files) {
+  if (!files?.length) return;
+  toast(`Upload de ${files.length} fichier(s)...`, 'info');
+  const s = CURRENT_BRIEFING.slides[idx];
+  s.photos = s.photos || [];
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await fetch(API + '/upload/photo', { method:'POST', headers:{ 'Authorization': `Bearer ${TOKEN}` }, body: fd });
+      const j = await r.json();
+      if (j?.success && j.data?.url) s.photos.push({ url: j.data.url, caption: f.name });
+    } catch(e) { /* ignore single failure */ }
+  }
+  toast('Upload terminé', 'success');
+  renderBriefing();
+}
+
+function removeBriefPhoto(idx, pi) {
+  CURRENT_BRIEFING.slides[idx].photos.splice(pi,1);
+  renderBriefing();
+}
+
+async function saveBriefing() {
+  if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  // Récupérer le titre depuis l'input (au cas où le onchange n'a pas tiré)
+  const t = document.getElementById('brf-title'); if (t) CURRENT_BRIEFING.title = t.value;
+  const res = await api('PUT', `/briefings/${CURRENT_PROJECT_ID}`, { title: CURRENT_BRIEFING.title, slides: CURRENT_BRIEFING.slides });
+  if (res?.success) toast('Briefing enregistré ✅', 'success');
+  else toast('Erreur enregistrement', 'error');
+}
+
+// Vue impression : ouvre une fenêtre avec toutes les slides + tâches/camions résolus
+async function printBriefing() {
+  if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  await saveBriefing(); // s'assurer que tout est sauvé
+  // Récupérer données auto
+  const [tasksRes, trucksRes, projRes] = await Promise.all([
+    api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`),
+    api('GET', `/projects/${CURRENT_PROJECT_ID}/trucks`),
+    api('GET', `/projects/${CURRENT_PROJECT_ID}`),
+  ]);
+  const tasks  = tasksRes?.data || [];
+  const trucks = trucksRes?.data || [];
+  const proj   = projRes?.data  || {};
+
+  const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+  const esc = x => (x==null?'':String(x)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  const renderSlide = s => {
+    const title = `<h2 style="margin:0 0 12px;border-bottom:2px solid #333;padding-bottom:6px;">${(SLIDE_TYPES[s.type]||{}).icon||''} ${esc(s.title||SLIDE_TYPES[s.type]?.label)}</h2>`;
+    if (s.type === 'text') return title + `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5;">${esc(s.content)}</div>`;
+    if (s.type === 'contacts') {
+      const rows = (s.contacts||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.phone)}</td><td>${esc(c.email)}</td></tr>`).join('');
+      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Nom</th><th style="text-align:left;padding:6px;">Rôle</th><th style="text-align:left;padding:6px;">Téléphone</th><th style="text-align:left;padding:6px;">Email</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucun contact</td></tr>'}</tbody></table>`;
+    }
+    if (s.type === 'tasks') {
+      const rows = tasks.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.status)}</td><td>${esc(t.priority)}</td><td>${fmt(t.taskDate)}</td></tr>`).join('');
+      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Tâche</th><th style="text-align:left;padding:6px;">Statut</th><th style="text-align:left;padding:6px;">Priorité</th><th style="text-align:left;padding:6px;">Date</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucune tâche</td></tr>'}</tbody></table>`;
+    }
+    if (s.type === 'trucks') {
+      const rows = trucks.map(t=>`<tr><td>${esc(t.vehicleType)}</td><td>${esc(t.truckNumber)}</td><td>${esc(t.driverName)}${t.driverPhone?' · '+esc(t.driverPhone):''}</td><td>${fmt(t.loadingDate)}</td><td>${fmt(t.arrivalDate)}</td><td>${esc(t.status)}</td></tr>`).join('');
+      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">N°</th><th style="text-align:left;padding:6px;">Chauffeur</th><th style="text-align:left;padding:6px;">Chargement</th><th style="text-align:left;padding:6px;">Arrivée</th><th style="text-align:left;padding:6px;">Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:10px;color:#888;">Aucun véhicule</td></tr>'}</tbody></table>`;
+    }
+    if (s.type === 'photos') {
+      const items = (s.photos||[]).map(p => p.url.match(/\\.pdf$/i)
+        ? `<div style="margin:8px 0;"><a href="${p.url}">📄 ${esc(p.caption||p.url)}</a></div>`
+        : `<div style="margin:8px 0;text-align:center;"><img src="${p.url}" style="max-width:100%;max-height:380px;"><div style="font-size:12px;color:#666;margin-top:4px;">${esc(p.caption)}</div></div>`
+      ).join('');
+      return title + (items || '<div style="color:#888;text-align:center;padding:10px;">Aucun fichier</div>');
+    }
+    if (s.type === 'location') {
+      const mapsLink = s.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}" target="_blank">${esc(s.address)}</a>` : '—';
+      return title + `<div style="font-size:14px;line-height:1.6;"><div><strong>Adresse :</strong> ${mapsLink}</div>${s.stand?`<div><strong>Stand / hall :</strong> ${esc(s.stand)}</div>`:''}${s.notes?`<div style="margin-top:8px;white-space:pre-wrap;">${esc(s.notes)}</div>`:''}</div>`;
+    }
+    return title;
+  };
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Briefing — ${esc(proj.name||'')}</title>
+    <style>
+      @page { size: A4; margin: 18mm; }
+      body { font-family: -apple-system, sans-serif; color:#222; }
+      .slide { page-break-after: always; padding: 12px 0; }
+      .slide:last-child { page-break-after: auto; }
+      h1 { font-size: 26px; margin: 0 0 4px; }
+      h2 { font-size: 18px; }
+      table th, table td { border-bottom:1px solid #ddd; padding:6px; vertical-align:top; }
+      .meta { color:#666; font-size:13px; margin-bottom: 18px; }
+      .cover { text-align:center; padding-top: 80px; }
+    </style></head><body>
+    <div class="slide cover">
+      <h1>📋 ${esc(CURRENT_BRIEFING.title || 'Briefing')}</h1>
+      <div class="meta">${esc(proj.name||'')}${proj.city?' — '+esc(proj.city):''}<br>${proj.installationStart?fmt(proj.installationStart):''}</div>
+    </div>
+    ${(CURRENT_BRIEFING.slides||[]).map(s => `<div class="slide">${renderSlide(s)}</div>`).join('')}
+    <script>setTimeout(()=>window.print(), 400);<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 </script>
