@@ -709,7 +709,7 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
       <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)">🗑️</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--text3);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)" title="Archiver / Supprimer">📦</button>
     </div>
   </div>
   <div class="tabs" id="proj-tabs" style="overflow-x:auto;white-space:nowrap;">
@@ -1790,7 +1790,15 @@ async function loadProjects() {
   const res = await api('GET', '/projects');
   if (!res?.success) return;
   PROJECTS = res.data;
-  renderProjectsGrid(PROJECTS);
+  const showArchived = document.getElementById('show-archived')?.checked;
+  const visible = showArchived
+    ? PROJECTS.filter(p => p.status === 'cancelled')
+    : PROJECTS.filter(p => p.status !== 'cancelled');
+  const count = document.getElementById('proj-count');
+  if (count) count.textContent = showArchived
+    ? visible.length + ' projet(s) archivé(s)'
+    : visible.length + ' projet(s) actif(s)';
+  renderProjectsGrid(visible);
 }
 
 function renderProjectsGrid(projects) {
@@ -1802,7 +1810,7 @@ function renderProjectsGrid(projects) {
   el.innerHTML = projects.map(p => `
     <div class="proj-card" onclick="openProject('${p.id}')">
       <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
-        <span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span>
+        <span class="badge badge-${p.status==='cancelled'?'muted':p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status==='cancelled'?'📦 Archivé':p.status}</span>
         <span style="font-size:11px;color:var(--text3);">${p.internalNumber}</span>
       </div>
       <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:3px;">${p.name}</div>
@@ -2022,8 +2030,9 @@ async function loadProjectDetail(id) {
       <div class="card" style="cursor:pointer;transition:all .2s;" onclick="openTruckDetail('${t.id}','${p.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div class="card-header">
           <div>
-            <div class="card-title">${icon} ${t.truckNumber||''}</div>
-            ${t.driverName?`<div style="font-size:12px;color:var(--text3);">👤 ${t.driverName}${t.driverPhone?` · 📞 ${t.driverPhone}`:''}</div>`:''}
+            <div class="card-title">${icon} ${t.truckNumber||t.vehicleType||''}</div>
+            ${t.licensePlate?`<div style="font-size:11px;color:var(--text3);">🚘 ${t.licensePlate}</div>`:''}
+            ${t.driverName?`<div style="font-size:12px;color:var(--text3);">👤 ${t.driverName}${t.driverPhone?` · <a href="tel:${t.driverPhone}" style="color:var(--blue);">📞 ${t.driverPhone}</a>`:''}</div>`:''}
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
             <span class="badge ${truckStatusBadge[t.status]||'badge-muted'}">${truckStatusLabel[t.status]||t.status}</span>
@@ -2031,9 +2040,10 @@ async function loadProjectDetail(id) {
           </div>
         </div>
         <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:5px;">
-          ${t.licensePlate?`<div>🔑 ${t.licensePlate}</div>`:''}
-          ${t.loadingDate?`<div>📦 Départ : ${fmtDateTime(t.loadingDate)}</div>`:''}
-          ${t.arrivalDate?`<div style="color:var(--green);">✅ Arrivée : ${fmtDateTime(t.arrivalDate)}</div>`:`<div style="color:var(--amber);">⏳ En attente d'arrivée</div>`}
+          ${t.licensePlate?`<div>🚘 ${t.licensePlate}</div>`:''}
+          ${t.loadingDate?`<div>📦 Chargement : ${fmtDateTime(t.loadingDate)}</div>`:''}
+          ${t.departureDate?`<div>🚀 Départ : ${fmtDateTime(t.departureDate)}</div>`:''}
+          ${t.arrivalDate?`<div style="color:var(--green);">✅ Arrivée site : ${fmtDateTime(t.arrivalDate)}</div>`:`<div style="color:var(--amber);">⏳ Arrivée en attente</div>`}
           ${t.notes?`<div style="color:var(--text3);font-size:12px;">📝 ${t.notes}</div>`:''}
         </div>
       </div>`;
@@ -4911,13 +4921,14 @@ async function generateReport(mode) {
     // ── STEP 1: Collect all project data ──
     setReportStatus('🔄','Collecte des données du projet...','Chargement en cours');
 
-    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes] = await Promise.all([
+    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes, filesRes] = await Promise.all([
       api('GET', `/projects/${CURRENT_PROJECT_ID}`),
       sections.includes('tasks')    ? api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`)    : null,
       sections.includes('daily')    ? api('GET', `/daily-reports?projectId=${CURRENT_PROJECT_ID}`) : null,
       sections.includes('handover') ? api('GET', `/handover?projectId=${CURRENT_PROJECT_ID}`) : null,
       sections.includes('tickets')  ? api('GET', `/tickets?projectId=${CURRENT_PROJECT_ID}`)  : null,
       sections.includes('visite')   ? api('GET', `/client-remarks?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('files')    ? api('GET', `/projects/${CURRENT_PROJECT_ID}/files`)     : null,
     ]);
 
     const project = projRes?.data;
@@ -4929,6 +4940,7 @@ async function generateReport(mode) {
     const tickets  = ticketsRes?.data  || [];
     const remarks  = remarksRes?.data  || [];
     const trucks   = project.trucks    || [];
+    const files    = filesRes?.data    || [];
 
     // ── STEP 2: AI Summary ──
     let aiSummary = '';
@@ -5168,7 +5180,15 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
       <div style="margin-top:16px;">
         <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:10px;">${L.team}</div>
         <div class="team-grid">
-          ${team.map(m=>`<div class="team-card"><div class="team-avatar">${(m.user?.firstName?.[0]||'?')+(m.user?.lastName?.[0]||'')}</div><div><div class="team-name">${m.user?.firstName||''} ${m.user?.lastName||''}</div><div class="team-role">${m.role}${m.isLead?' ⭐':''}</div></div></div>`).join('')}
+          ${team.map(m=>`<div class="team-card">
+            <div class="team-avatar">${(m.user?.firstName?.[0]||'?')+(m.user?.lastName?.[0]||'')}</div>
+            <div>
+              <div class="team-name">${m.user?.firstName||''} ${m.user?.lastName||''}</div>
+              <div class="team-role">${m.role}${m.isLead?' ⭐':''}</div>
+              ${m.user?.email?`<div style="font-size:10px;color:#4895ef;">✉️ ${m.user.email}</div>`:''}
+              ${m.user?.phone?`<div style="font-size:10px;color:#2dc653;">📞 ${m.user.phone}</div>`:''}
+            </div>
+          </div>`).join('')}
         </div>
       </div>` : ''}
     </div>`;
@@ -5303,19 +5323,87 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
 
     // ── Section: Logistics ──
     if (sections.includes('logistics') && trucks.length) {
-      const icons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',machine:'⚙️',other:'📦'};
+      const icons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'✂️',manitou:'🔧',forklift:'🚜',generator:'⚡',machine:'⚙️',other:'📦'};
+      const statusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
+      const fmtDT = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
       reportHTML += `
     <div class="section">
       <div class="section-title"><span class="section-icon">🚛</span>${L.logistics}</div>
-      ${trucks.map(t=>`
-      <div class="ticket-row">
-        <span style="font-size:16px;">${icons[t.vehicleType]||'🚛'}</span>
-        <div style="flex:1;">
-          <div class="ticket-title">${t.truckNumber||''}</div>
-          ${t.driverName?`<div class="ticket-desc">👤 ${t.driverName}${t.loadingDate?' · 📦 '+t.loadingDate?.split('T')[0]:''}</div>`:''}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f2f5;">
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Véhicule</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Chauffeur</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">📦 Chargement entrepôt</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">🚀 Départ</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">✅ Arrivée site</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${trucks.map((t,i)=>`
+          <tr style="background:${i%2===0?'#fff':'#f8f9fb'};border-bottom:1px solid #e5e7eb;">
+            <td style="padding:8px 10px;font-weight:600;">${icons[t.vehicleType]||'🚛'} ${t.truckNumber||t.vehicleType||'Véhicule'}</td>
+            <td style="padding:8px 10px;color:#5a6275;">
+              ${t.driverName||'—'}
+              ${t.driverPhone?`<br><span style="font-size:11px;color:#4895ef;">📞 ${t.driverPhone}</span>`:''}
+            </td>
+            <td style="padding:8px 10px;color:#5a6275;font-size:12px;">${fmtDT(t.loadingDate)}</td>
+            <td style="padding:8px 10px;color:#5a6275;font-size:12px;">${fmtDT(t.departureDate)}</td>
+            <td style="padding:8px 10px;font-size:12px;${t.arrivalDate?'color:#16a34a;font-weight:600;':'color:#d48806;'}">${fmtDT(t.arrivalDate)}</td>
+            <td style="padding:8px 10px;">
+              <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:${t.status==='delivered'?'#e8faf0':t.status==='in_transit'?'#eff6ff':'#f0f2f5'};color:${t.status==='delivered'?'#1da840':t.status==='in_transit'?'#4895ef':'#5a6275'};">
+                ${statusLabel[t.status]||t.status}
+              </span>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+    }
+
+    // ── Section: Files ──
+    if (sections.includes('files') && files.length) {
+      const extOf  = f => (f.fileName||'').split('.').pop().toLowerCase();
+      const isImg  = f => ['jpg','jpeg','png','gif','webp'].includes(extOf(f));
+      const imgs   = files.filter(isImg);
+      const docs   = files.filter(f => !isImg(f));
+      const fileIcon = f => {
+        const e = extOf(f);
+        if (e==='pdf') return '📄';
+        if (['ppt','pptx'].includes(e)) return '📊';
+        if (['xls','xlsx'].includes(e)) return '📈';
+        if (['doc','docx'].includes(e)) return '📝';
+        if (['mp4','mov'].includes(e)) return '🎬';
+        return '📎';
+      };
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📁</span>Fichiers du projet</div>
+      ${imgs.length ? `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">🖼️ Photos (${imgs.length})</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
+          ${imgs.map(f=>`
+          <div style="text-align:center;">
+            <img src="${f.fileUrl}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;display:block;">
+            <div style="font-size:10px;color:#8892a4;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||''}</div>
+          </div>`).join('')}
         </div>
-        <span class="task-badge ${t.status==='delivered'?'badge-done':t.status==='in_transit'?'badge-progress':'badge-todo'}">${t.status}</span>
-      </div>`).join('')}
+      </div>` : ''}
+      ${docs.length ? `
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">📎 Documents (${docs.length})</div>
+        ${docs.map(f=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f8f9fb;border-radius:6px;margin-bottom:4px;">
+          <span style="font-size:20px;">${fileIcon(f)}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;">${f.fileName||'Fichier'}</div>
+            <div style="font-size:11px;color:#8892a4;">${extOf(f).toUpperCase()} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+'KB':''}</div>
+          </div>
+          <a href="${f.fileUrl}" target="_blank" style="font-size:12px;color:#4895ef;text-decoration:none;">Voir ↗</a>
+        </div>`).join('')}
+      </div>` : ''}
     </div>`;
     }
 
@@ -7736,34 +7824,98 @@ async function confirmDeleteProject(projectId) {
   if (!projectId) return;
   const proj = PROJECTS.find(p => p.id === projectId);
   const name = proj?.name || 'ce projet';
+  const isArchived = proj?.status === 'cancelled';
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay open';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:420px;">
+    <div class="modal" style="max-width:440px;">
       <div class="modal-head">
-        <div class="modal-title" style="color:var(--accent);">🗑️ Supprimer le projet</div>
+        <div class="modal-title">📦 Archiver le projet</div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
       <div style="padding:8px 0 16px;">
-        <p style="font-size:14px;margin-bottom:12px;">Voulez-vous vraiment supprimer <strong>${name}</strong> ?</p>
-        <div style="background:rgba(230,57,70,.08);border:1px solid rgba(230,57,70,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--accent);">
-          ⚠️ Cette action est irréversible. Toutes les tâches, daily reports, handovers et fichiers liés seront supprimés.
+        <p style="font-size:14px;margin-bottom:14px;">Que souhaitez-vous faire avec <strong>${name}</strong> ?</p>
+
+        <!-- Archive option -->
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="archiveProject('${projectId}',this.closest('.overlay'))">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">📦</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;">Archiver le projet</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Le projet est conservé mais masqué de la liste active. Récupérable à tout moment.</div>
+            </div>
+          </div>
         </div>
+
+        <!-- Restore option if already archived -->
+        ${isArchived ? `
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="restoreProject('${projectId}',this.closest('.overlay'))">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">♻️</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--green);">Restaurer le projet</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Remettre le projet en statut actif.</div>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- Delete option -->
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="this.nextElementSibling.style.display='flex'">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">🗑️</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--accent);">Supprimer définitivement</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Action irréversible — toutes les données seront perdues.</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:none;gap:8px;justify-content:flex-end;padding:10px 0 0;">
+          <span style="font-size:12px;color:var(--accent);align-self:center;">Confirmer la suppression ?</span>
+          <button class="btn btn-outline btn-sm" onclick="this.closest('[style*=flex]').style.display='none'">Non</button>
+          <button class="btn btn-primary btn-sm" style="background:var(--accent);" onclick="deleteProject('${projectId}',this.closest('.overlay'))">Oui, supprimer</button>
+        </div>
+
       </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <div style="display:flex;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" style="background:var(--accent);" onclick="deleteProject('${projectId}',this.closest('.overlay'))">🗑️ Supprimer définitivement</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
 }
 
-async function deleteProject(projectId, overlay) {
-  const btn = overlay.querySelector('button.btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Suppression...'; }
+async function archiveProject(projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}`, { status: 'cancelled' });
+  if (res?.success) {
+    toast('Projet archivé 📦', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.map(p => p.id === projectId ? {...p, status:'cancelled'} : p);
+    CURRENT_PROJECT_ID = null;
+    goto('projects');
+    loadProjects();
+  } else toast('Erreur archivage: ' + (res?.error||'inconnue'), 'error');
+}
 
+async function restoreProject(projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}`, { status: 'confirmed' });
+  if (res?.success) {
+    toast('Projet restauré ♻️', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.map(p => p.id === projectId ? {...p, status:'confirmed'} : p);
+    loadProjects();
+  } else toast('Erreur restauration', 'error');
+}
+
+async function deleteProject(projectId, overlay) {
+  const btn = overlay?.querySelector('.btn-primary[onclick*=deleteProject]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
   const res = await api('DELETE', `/projects/${projectId}`);
   if (res?.success || res?.message) {
     toast('Projet supprimé', 'success');
@@ -7773,8 +7925,8 @@ async function deleteProject(projectId, overlay) {
     goto('projects');
     loadProjects();
   } else {
-    toast('Erreur suppression: ' + (res?.error || 'inconnue'), 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Supprimer définitivement'; }
+    toast('Erreur: ' + (res?.error||'inconnue'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Oui, supprimer'; }
   }
 }
 
@@ -7785,103 +7937,165 @@ function showAddTruckModal(projectId) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay open';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:560px;">
-      <div class="modal-head">
+    <div class="modal" style="max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="modal-head" style="flex-shrink:0;">
         <div><div class="modal-title">🚛 Ajouter un véhicule</div></div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
 
-      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div class="input-row">
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Type de véhicule</label>
+      <div style="flex:1;overflow-y:auto;padding:0 2px 8px;">
+
+        <!-- Type + Plaques -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🚛 Véhicule</div>
+          <div class="form-group2">
+            <label class="form-label2">Type</label>
             <select class="input" id="at-type">
-              <option value="truck">🚛 Camion</option>
+              <option value="truck">🚛 Camion (Tautliner)</option>
+              <option value="flatbed">🚛 Camion (Flatbed)</option>
               <option value="van">🚐 Camionnette</option>
               <option value="crane">🏗️ Grue</option>
-              <option value="scissor">✂️ Nacelle</option>
+              <option value="scissor">✂️ Nacelle ciseaux</option>
               <option value="manitou">🔧 Manitou / Roto</option>
               <option value="forklift">🚜 Chariot élévateur</option>
               <option value="generator">⚡ Groupe électrogène</option>
               <option value="other">📦 Autre</option>
             </select>
           </div>
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">N° / Immatriculation</label>
-            <input class="input" id="at-number" placeholder="ex: 1-ABC-234">
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Plaque 1 (Tracteur)</label>
+              <input class="input" id="at-plate1" placeholder="ex: 1-ABC-234">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Plaque 2 (Remorque)</label>
+              <input class="input" id="at-plate2" placeholder="ex: O-123-456">
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">👤 Chauffeur</div>
-        <div class="input-row">
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Nom</label>
-            <input class="input" id="at-driver" placeholder="Nom du chauffeur">
-          </div>
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Téléphone</label>
-            <input class="input" id="at-phone" placeholder="+32 ...">
-          </div>
-        </div>
-      </div>
-
-      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📅 Dates</div>
-        <div class="input-row">
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">📦 Chargement entrepôt</label>
-            <input class="input" type="datetime-local" id="at-loading">
-          </div>
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">🚀 Départ</label>
-            <input class="input" type="datetime-local" id="at-departure">
+        <!-- Chauffeur -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">👤 Chauffeur</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Nom du chauffeur</label>
+              <input class="input" id="at-driver" placeholder="Prénom Nom">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📞 Téléphone</label>
+              <input class="input" id="at-phone" placeholder="+32 ..." type="tel">
+            </div>
           </div>
         </div>
-        <div class="form-group2" style="margin-top:8px;">
-          <label class="form-label2">✅ Arrivée prévue sur site</label>
-          <input class="input" type="datetime-local" id="at-arrival">
+
+        <!-- Chargement -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📦 Chargement</div>
+          <div class="form-group2">
+            <label class="form-label2">Lieu de chargement</label>
+            <select class="input" id="at-loading-place">
+              <option value="tubize">🏭 Entrepôt Tubize</option>
+              <option value="site">📍 Directement sur site événement</option>
+              <option value="other">📦 Autre lieu</option>
+            </select>
+          </div>
+          <div class="form-group2" style="margin-top:8px;" id="at-loading-other-wrap" style="display:none;">
+            <label class="form-label2">Préciser le lieu</label>
+            <input class="input" id="at-loading-other" placeholder="Adresse du lieu de chargement">
+          </div>
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📅 Date & heure de chargement</label>
+              <input class="input" type="datetime-local" id="at-loading">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">🚀 Date & heure de départ</label>
+              <input class="input" type="datetime-local" id="at-departure">
+            </div>
+          </div>
         </div>
+
+        <!-- Déchargement sur site -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🏗️ Déchargement sur site</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📅 Arrivée estimée sur site</label>
+              <input class="input" type="datetime-local" id="at-arrival">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">⏱️ Déchargement estimé</label>
+              <input class="input" type="datetime-local" id="at-unloading">
+            </div>
+          </div>
+          <div class="form-group2" style="margin-top:8px;">
+            <label class="form-label2">📍 Zone de déchargement</label>
+            <input class="input" id="at-unloading-zone" placeholder="ex: Entrée Est, Quai A, Parking Nord...">
+          </div>
+        </div>
+
+        <div class="form-group2">
+          <label class="form-label2">📝 Notes</label>
+          <textarea class="input" id="at-notes" rows="2" placeholder="Instructions spéciales, matériel transporté..."></textarea>
+        </div>
+
       </div>
 
-      <div class="form-group2">
-        <label class="form-label2">Notes</label>
-        <input class="input" id="at-notes" placeholder="Observations, instructions...">
-      </div>
-
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+      <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:10px;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter le véhicule</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
-  setTimeout(() => document.getElementById('at-number')?.focus(), 80);
+
+  // Show/hide "other place" field
+  document.getElementById('at-loading-place')?.addEventListener('change', function() {
+    const wrap = document.getElementById('at-loading-other-wrap');
+    if (wrap) wrap.style.display = this.value === 'other' ? 'block' : 'none';
+  });
+  setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
 }
 
 async function saveTruck(projectId, overlay) {
-  const type      = document.getElementById('at-type')?.value || 'truck';
-  const number    = document.getElementById('at-number')?.value?.trim();
-  const driver    = document.getElementById('at-driver')?.value?.trim();
-  const phone     = document.getElementById('at-phone')?.value?.trim();
-  const loading   = document.getElementById('at-loading')?.value;
-  const departure = document.getElementById('at-departure')?.value;
-  const arrival   = document.getElementById('at-arrival')?.value;
-  const notes     = document.getElementById('at-notes')?.value?.trim();
+  const type         = document.getElementById('at-type')?.value || 'truck';
+  const plate1       = document.getElementById('at-plate1')?.value?.trim();
+  const plate2       = document.getElementById('at-plate2')?.value?.trim();
+  const licensePlate = [plate1, plate2].filter(Boolean).join(' / ') || undefined;
+  const driver       = document.getElementById('at-driver')?.value?.trim();
+  const phone        = document.getElementById('at-phone')?.value?.trim();
+  const loadingPlace = document.getElementById('at-loading-place')?.value;
+  const loadingOther = document.getElementById('at-loading-other')?.value?.trim();
+  const loading      = document.getElementById('at-loading')?.value;
+  const departure    = document.getElementById('at-departure')?.value;
+  const arrival      = document.getElementById('at-arrival')?.value;
+  const unloading    = document.getElementById('at-unloading')?.value;
+  const unloadZone   = document.getElementById('at-unloading-zone')?.value?.trim();
+  const notesRaw     = document.getElementById('at-notes')?.value?.trim();
+
+  // Build location label
+  const placeLabel = {tubize:'Entrepôt Tubize', site:'Site événement', other: loadingOther||'Autre'}[loadingPlace] || loadingPlace;
+
+  // Combine notes
+  const notesParts = [];
+  if (notesRaw) notesParts.push(notesRaw);
+  if (unloadZone) notesParts.push(`Zone déchargement: ${unloadZone}`);
+  if (unloading) notesParts.push(`Déchargement estimé: ${new Date(unloading).toLocaleString('fr-BE')}`);
 
   const btn = overlay?.querySelector('.btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Ajout...'; }
 
   const res = await api('POST', `/projects/${projectId}/trucks`, {
     vehicleType:   type,
-    truckNumber:   number   || undefined,
+    truckNumber:   placeLabel,         // repurpose truckNumber for loading place
+    licensePlate:  licensePlate,
     driverName:    driver   || undefined,
     driverPhone:   phone    || undefined,
     loadingDate:   loading   ? new Date(loading).toISOString()   : undefined,
     departureDate: departure ? new Date(departure).toISOString() : undefined,
     arrivalDate:   arrival   ? new Date(arrival).toISOString()   : undefined,
-    notes:         notes    || undefined,
+    notes:         notesParts.join(' | ') || undefined,
     status:        'planned',
   });
 
@@ -7891,7 +8105,7 @@ async function saveTruck(projectId, overlay) {
     loadProjectDetail(projectId);
   } else {
     toast('Erreur: ' + (res?.error || 'inconnue'), 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '✅ Ajouter'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Ajouter le véhicule'; }
   }
 }
 
@@ -8074,6 +8288,108 @@ async function saveHandoverItem(handoverId, projectId, overlay) {
   window._PENDING_HI_PHOTO = null;
   overlay?.remove();
   openHandoverFull(handoverId);
+}
+
+// ═══════════════════════════════════════════
+// TABS PROJET — TICKETS / WAREHOUSE / TOOLBOX
+// ═══════════════════════════════════════════
+
+async function loadDetailTickets(projectId) {
+  const el = document.getElementById('detail-tickets-content');
+  if (!el) return;
+  const res = await api('GET', `/tickets?projectId=${projectId}`);
+  const tickets = res?.data || [];
+
+  const urgencyColor = {critical:'var(--accent)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+  const urgencyLabel = {critical:'🔴 Critique',high:'🟠 Élevé',medium:'🟡 Moyen',low:'🟢 Faible'};
+  const statusLabel  = {open:'Ouvert',assigned:'Assigné',in_progress:'En cours',resolved:'Résolu',validated:'Validé',closed:'Fermé'};
+  const statusBadge  = {open:'badge-red',assigned:'badge-amber',in_progress:'badge-blue',resolved:'badge-green',validated:'badge-green',closed:'badge-muted'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">🛠️ Tickets SAV (${tickets.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button>
+    </div>
+    ${!tickets.length ? `
+      <div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket sur ce projet</div></div>` : `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${tickets.map(t => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${urgencyColor[t.urgency]||'var(--blue)'};border-radius:10px;padding:12px 14px;cursor:pointer;"
+            onclick="openTicketDetail('${t.id}')">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="font-weight:700;font-size:13px;flex:1;">${t.title}</span>
+              <span class="badge ${statusBadge[t.status]||'badge-muted'}" style="font-size:10px;">${statusLabel[t.status]||t.status}</span>
+            </div>
+            <div style="display:flex;gap:10px;font-size:11px;color:var(--text3);">
+              <span style="color:${urgencyColor[t.urgency]};font-weight:600;">${urgencyLabel[t.urgency]||t.urgency}</span>
+              ${t.locationOnSite?`<span>📍 ${t.locationOnSite}</span>`:''}
+              ${t.assignedTo?`<span>👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</span>`:'<span>Non assigné</span>'}
+              <span>${fmtDate(t.createdAt)}</span>
+            </div>
+          </div>`).join('')}
+      </div>`}`;
+}
+
+async function loadDetailWarehouse(projectId) {
+  const el = document.getElementById('detail-warehouse-content');
+  if (!el) return;
+  const res = await api('GET', `/warehouse/boxes?projectId=${projectId}`);
+  const boxes = res?.data || [];
+
+  const statusColor = {preparing:'var(--amber)',ready:'var(--blue)',loaded:'var(--blue)',on_site:'var(--green)',returned:'var(--text3)',incomplete:'var(--accent)'};
+  const statusLabel = {preparing:'⏳ Préparation',ready:'✅ Prête',loaded:'📦 Chargée',on_site:'🏗️ Sur site',returned:'↩️ Retour',incomplete:'⚠️ Incomplète'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">📦 Boxes matériel (${boxes.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-box')">+ Nouvelle Box</button>
+    </div>
+    ${!boxes.length ? `
+      <div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box pour ce projet</div>
+        <button class="btn btn-primary" style="margin-top:12px;" onclick="showModal('modal-box')">+ Créer une box</button>
+      </div>` : `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${boxes.map(b => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+            onclick="goto('warehouse')">
+            <div style="font-size:20px;margin-bottom:6px;">📦</div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${b.name}</div>
+            <div style="font-size:11px;color:${statusColor[b.status]||'var(--text3)'};font-weight:600;">${statusLabel[b.status]||b.status}</div>
+            ${b.items?.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">${b.items.length} article(s)</div>`:''}
+          </div>`).join('')}
+      </div>`}`;
+}
+
+async function loadDetailToolboxes(projectId) {
+  const el = document.getElementById('detail-toolbox-content');
+  if (!el) return;
+  const res = await api('GET', `/toolbox?projectId=${projectId}`);
+  const boxes = res?.data || [];
+
+  const statusColor = {in_warehouse:'var(--text3)',ready:'var(--blue)',on_site:'var(--green)',returned:'var(--text3)'};
+  const statusLabel = {in_warehouse:'🏠 Entrepôt',ready:'✅ Prête',on_site:'🏗️ Sur site',returned:'↩️ Retour'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">🧰 Boîtes à outils (${boxes.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-toolbox')">+ Nouvelle Boîte</button>
+    </div>
+    ${!boxes.length ? `
+      <div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte à outils pour ce projet</div>
+        <button class="btn btn-primary" style="margin-top:12px;" onclick="showModal('modal-toolbox')">+ Créer une boîte</button>
+      </div>` : `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${boxes.map(b => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+            onclick="goto('toolbox')">
+            <div style="font-size:20px;margin-bottom:6px;">🧰</div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${b.name}</div>
+            <div style="font-size:11px;color:${statusColor[b.status]||'var(--text3)'};font-weight:600;">${statusLabel[b.status]||b.status}</div>
+            ${b.drawers?.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">${b.drawers.length} tiroir(s)</div>`:''}
+          </div>`).join('')}
+      </div>`}`;
 }
 
 </script>
