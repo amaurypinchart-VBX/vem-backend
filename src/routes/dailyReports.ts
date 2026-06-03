@@ -53,6 +53,34 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
+// POST /daily-reports/:id/photos — attacher une photo déjà uploadée (par URL)
+router.post('/:id/photos', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { photoUrl, publicId, caption } = req.body;
+    if (!photoUrl) return res.status(400).json({ success: false, error: 'photoUrl requis' });
+    const photo = await prisma.dailyReportPhoto.create({
+      data: { reportId: req.params.id, photoUrl, publicId: publicId || null, caption: caption || null },
+    });
+    res.status(201).json({ success: true, data: photo });
+  } catch (err) { next(err); }
+});
+
+// DELETE /daily-reports/:id/photos/:photoId
+router.delete('/:id/photos/:photoId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.dailyReportPhoto.delete({ where: { id: req.params.photoId } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// DELETE /daily-reports/:id — supprimer un rapport
+router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.dailyReport.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
 // POST /daily-reports/:id/send — generate PDF + email
 router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -76,6 +104,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       generalNotes: r.generalNotes,
       entries: r.entries,
       checklist: r.checklist,
+      photos: r.photos,
     });
 
     const recipients = new Set<string>();
