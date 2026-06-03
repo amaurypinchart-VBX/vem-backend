@@ -667,6 +667,14 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
   </div>
+  <!-- Calendrier projets (Gantt 12 semaines) -->
+  <div class="card" style="margin-top:14px;">
+    <div class="card-header">
+      <span class="card-title">📅 Calendrier projets (12 semaines)</span>
+      <button class="btn btn-ghost btn-sm" onclick="goto('projects')">Voir tous →</button>
+    </div>
+    <div class="card-body" id="dash-calendar"><div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Chargement...</div></div>
+  </div>
 </div>
 
 <!-- PROJETS -->
@@ -1710,6 +1718,7 @@ async function loadAll() {
   if (projRes?.success) {
     PROJECTS = projRes.data;
     renderDashProjects();
+    renderDashCalendar();
     populateProjectSelects();
     document.getElementById('stat-projects').textContent = PROJECTS.filter(p => ['installation','on_site','in_preparation'].includes(p.status)).length;
   }
@@ -1761,6 +1770,90 @@ function projCardHTML(p) {
       <span style="font-size:12px;font-weight:600;color:var(--text2);">${progress}%</span>
     </div>
   </div>`;
+}
+
+// Calendrier Gantt 12 semaines pour la page d'accueil
+function renderDashCalendar() {
+  const el = document.getElementById('dash-calendar');
+  if (!el) return;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  // Démarrer au lundi de la semaine courante
+  const start = new Date(today);
+  start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const NUM_WEEKS = 12;
+  const totalDays = NUM_WEEKS * 7;
+  const end = new Date(start.getTime() + totalDays * 86400000);
+
+  const overlap = (a, b) => a && b && b >= start && a <= end;
+  const inWindow = (p) => {
+    const insS = p.installationStart ? new Date(p.installationStart) : null;
+    const insE = p.installationEnd   ? new Date(p.installationEnd)   : null;
+    const disS = p.dismantlingStart  ? new Date(p.dismantlingStart)  : null;
+    const disE = p.dismantlingEnd    ? new Date(p.dismantlingEnd)    : null;
+    return overlap(insS, insE) || overlap(disS, disE);
+  };
+
+  const list = (PROJECTS || [])
+    .filter(p => p.installationStart && inWindow(p))
+    .sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
+
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet planifié dans les 12 prochaines semaines</div>';
+    return;
+  }
+
+  const posPct = d => {
+    const dt = new Date(d);
+    const days = (dt - start) / 86400000;
+    return Math.max(0, Math.min(100, (days / totalDays) * 100));
+  };
+  const todayPct = posPct(today);
+
+  // En-tête : 12 labels de semaine (lundi de chaque semaine)
+  const weeks = [];
+  for (let i = 0; i < NUM_WEEKS; i++) {
+    const d = new Date(start.getTime() + i * 7 * 86400000);
+    const isCurrent = i === 0;
+    weeks.push(`<div style="text-align:center;padding:3px 0;font-size:10px;color:var(--text3);${isCurrent?'background:var(--bg3);border-radius:4px;color:var(--text2);font-weight:600;':''}">${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}</div>`);
+  }
+
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+
+  el.innerHTML = `
+    <div style="padding:12px;">
+      <!-- En-tête -->
+      <div style="display:grid;grid-template-columns:180px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;">Projet</div>
+        <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:1px;">${weeks.join('')}</div>
+      </div>
+      <!-- Lignes -->
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+        ${list.map(p => {
+          const insS = p.installationStart ? posPct(p.installationStart) : null;
+          const insE = p.installationEnd   ? posPct(p.installationEnd)   : null;
+          const disS = p.dismantlingStart  ? posPct(p.dismantlingStart)  : null;
+          const disE = p.dismantlingEnd    ? posPct(p.dismantlingEnd)    : null;
+          return `<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center;cursor:pointer;padding:4px 0;" onclick="openProject('${p.id}')">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <div style="font-size:13px;font-weight:600;">${p.name}</div>
+              <div style="font-size:11px;color:var(--text3);">${p.client?.name||''}</div>
+            </div>
+            <div style="position:relative;height:26px;background:var(--bg3);border-radius:6px;">
+              ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📐</div>` : ''}
+              ${disS != null && disE != null ? `<div title="Démontage : ${fmtD(p.dismantlingStart)} → ${fmtD(p.dismantlingEnd)}" style="position:absolute;left:${disS}%;width:${Math.max(1.5, disE-disS)}%;height:100%;background:#f4a261;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📦</div>` : ''}
+              <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:32px;background:var(--accent);pointer-events:none;"></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <!-- Légende -->
+      <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
+        <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>
+        <span><span style="display:inline-block;width:2px;height:10px;background:var(--accent);vertical-align:middle;margin-right:4px;"></span>Aujourd'hui</span>
+      </div>
+    </div>`;
 }
 
 async function loadDashTickets() {
