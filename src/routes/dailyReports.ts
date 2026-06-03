@@ -33,11 +33,37 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { entries = [], checklist = [], ...data } = req.body;
+    const reportDate = new Date(data.reportDate);
+
+    // Existe-t-il déjà un rapport pour ce projet à cette date ?
+    const existing = await prisma.dailyReport.findFirst({
+      where: { projectId: data.projectId, reportDate },
+    });
+
+    if (existing) {
+      // Remplace les entrées et la checklist, met à jour les champs principaux
+      await prisma.dailyReportEntry.deleteMany({ where: { reportId: existing.id } });
+      await prisma.dailyReportChecklistItem.deleteMany({ where: { reportId: existing.id } });
+      const updated = await prisma.dailyReport.update({
+        where: { id: existing.id },
+        data: {
+          weather:        data.weather,
+          workersPresent: data.workersPresent,
+          generalNotes:   data.generalNotes,
+          entries:   entries.length   ? { create: entries }   : undefined,
+          checklist: checklist.length ? { create: checklist } : undefined,
+        },
+        include: { entries: true, checklist: true, photos: true },
+      });
+      return res.json({ success: true, data: updated });
+    }
+
+    // Pas de rapport existant : on en crée un
     const report = await prisma.dailyReport.create({
       data: {
         ...data, createdById: req.user!.id,
-        reportDate: new Date(data.reportDate),
-        entries: { create: entries },
+        reportDate,
+        entries:   { create: entries },
         checklist: { create: checklist },
       },
       include: { entries: true, checklist: true },
