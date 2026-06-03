@@ -8586,12 +8586,13 @@ async function deleteTruck(projectId, truckId) {
 }
 
 // ═════════════════════════════════════════════
-// 📋 BRIEFING — Document multi-slides par projet
+// 📋 BRIEFING — Document multi-slides, slides multi-blocs
 // ═════════════════════════════════════════════
-let CURRENT_BRIEFING = null;       // { id, projectId, title, slides: [...] }
+let CURRENT_BRIEFING = null;          // { id, projectId, title, slides: [{title, blocks:[{type, ...}]}] }
 let CURRENT_SLIDE_IDX = 0;
+let BRIEFING_AUTO = { tasks: [], trucks: [] };  // cache des données auto
 
-const SLIDE_TYPES = {
+const BLOCK_TYPES = {
   text:     { icon:'📝', label:'Texte / notes' },
   contacts: { icon:'📞', label:'Contacts' },
   tasks:    { icon:'✅', label:'Tâches (auto)' },
@@ -8600,15 +8601,33 @@ const SLIDE_TYPES = {
   location: { icon:'📍', label:'Localisation' },
 };
 
+// Migration silencieuse : ancien format (slide.type) → nouveau (slide.blocks[])
+function migrateSlide(s) {
+  if (Array.isArray(s.blocks)) return s;
+  const { type, title, ...rest } = s;
+  return { title: title || '', blocks: type ? [{ type, ...rest }] : [] };
+}
+
 async function loadDetailBriefing(projectId) {
   const el = document.getElementById('detail-briefing-content');
   if (!el) return;
   el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
-  const res = await api('GET', `/briefings/${projectId}`);
-  if (!res?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur</div></div>'; return; }
-  CURRENT_BRIEFING = res.data;
-  // S'assurer que slides est un tableau
+
+  const [briefRes, tasksRes, trucksRes] = await Promise.all([
+    api('GET', `/briefings/${projectId}`),
+    api('GET', `/tasks?projectId=${projectId}`),
+    api('GET', `/projects/${projectId}/trucks`),
+  ]);
+
+  if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
+
+  CURRENT_BRIEFING = briefRes.data;
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
+  CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
+
+  BRIEFING_AUTO.tasks  = tasksRes?.data || [];
+  BRIEFING_AUTO.trucks = trucksRes?.data || [];
+
   CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
   renderBriefing();
 }
@@ -8629,26 +8648,27 @@ function renderBriefing() {
     </div>
 
     <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:flex-start;">
-      <!-- Sidebar slides -->
+      <!-- Sidebar : liste des slides -->
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Slides (${slides.length})</div>
-        <div id="brf-slides-list" style="display:flex;flex-direction:column;gap:4px;max-height:420px;overflow-y:auto;">
-          ${slides.map((s,i)=>`
-            <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${i===CURRENT_SLIDE_IDX?'var(--bg3)':'transparent'};border:1px solid ${i===CURRENT_SLIDE_IDX?'var(--accent)':'transparent'};" onclick="selectSlide(${i})">
-              <span style="font-size:14px;">${(SLIDE_TYPES[s.type]||{}).icon||'·'}</span>
-              <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(s.title||SLIDE_TYPES[s.type]?.label||'Slide')}</span>
-              <span style="display:flex;gap:2px;">
-                <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Monter" onclick="event.stopPropagation();moveSlide(${i},-1)">▲</button>
-                <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Descendre" onclick="event.stopPropagation();moveSlide(${i},1)">▼</button>
-                <button class="btn btn-ghost btn-sm" style="padding:0 4px;color:var(--accent);" title="Supprimer" onclick="event.stopPropagation();deleteSlide(${i})">×</button>
-              </span>
-            </div>`).join('') || '<div style="font-size:12px;color:var(--text3);padding:8px;">Aucune slide</div>'}
+        <div id="brf-slides-list" style="display:flex;flex-direction:column;gap:4px;max-height:480px;overflow-y:auto;">
+          ${slides.map((s,i)=>{
+            const label = s.title || `Slide ${i+1}`;
+            const icons = (s.blocks||[]).map(b=>(BLOCK_TYPES[b.type]||{}).icon||'·').slice(0,4).join('');
+            return `
+              <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${i===CURRENT_SLIDE_IDX?'var(--bg3)':'transparent'};border:1px solid ${i===CURRENT_SLIDE_IDX?'var(--accent)':'transparent'};" onclick="selectSlide(${i})">
+                <span style="font-size:13px;min-width:40px;">${icons||'·'}</span>
+                <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+                <span style="display:flex;gap:2px;">
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Monter" onclick="event.stopPropagation();moveSlide(${i},-1)">▲</button>
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Descendre" onclick="event.stopPropagation();moveSlide(${i},1)">▼</button>
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;color:var(--accent);" title="Supprimer" onclick="event.stopPropagation();deleteSlide(${i})">×</button>
+                </span>
+              </div>`;
+          }).join('') || '<div style="font-size:12px;color:var(--text3);padding:8px;">Aucune slide</div>'}
         </div>
         <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:4px;">+ Ajouter une slide</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-            ${Object.entries(SLIDE_TYPES).map(([k,v])=>`<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px;" onclick="addSlide('${k}')">${v.icon} ${v.label}</button>`).join('')}
-          </div>
+          <button class="btn btn-primary btn-sm" style="width:100%;" onclick="addSlide()">+ Nouvelle slide</button>
         </div>
       </div>
 
@@ -8661,86 +8681,120 @@ function renderBriefing() {
 
 function renderSlideEditor(s, idx) {
   const esc = x => (x||'').toString().replace(/"/g,'&quot;');
-  let body = '';
-  if (s.type === 'text') {
-    body = `<textarea class="input" rows="12" placeholder="Notes, instructions, remarques..." onchange="CURRENT_BRIEFING.slides[${idx}].content=this.value">${s.content||''}</textarea>`;
-  }
-  else if (s.type === 'contacts') {
-    const contacts = s.contacts || [];
-    body = `
-      <div id="brf-contacts-${idx}" style="display:flex;flex-direction:column;gap:6px;">
-        ${contacts.map((c,ci)=>renderContactRow(idx, ci, c)).join('')}
-      </div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-        <button class="btn btn-outline btn-sm" onclick="addContact(${idx})">+ Contact manuel</button>
-        <select class="input" id="brf-pick-user-${idx}" style="flex:1;min-width:160px;">
-          <option value="">+ Membre de l'équipe…</option>
-          ${(USERS||[]).map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} ${u.role?'('+u.role+')':''}</option>`).join('')}
-        </select>
-        <button class="btn btn-outline btn-sm" onclick="addContactFromUser(${idx})">Ajouter</button>
-      </div>`;
-  }
-  else if (s.type === 'tasks') {
-    body = `<div style="color:var(--text3);font-size:12px;margin-bottom:8px;">📌 Liste auto des tâches du projet (mise à jour à l'impression).</div>
-      <div id="brf-tasks-preview"><div class="empty"><div class="empty-title">Aperçu chargé à l'impression</div></div></div>`;
-  }
-  else if (s.type === 'trucks') {
-    body = `<div style="color:var(--text3);font-size:12px;margin-bottom:8px;">🚛 Liste auto des véhicules (camions, grues, forklifts) du projet.</div>
-      <div id="brf-trucks-preview"><div class="empty"><div class="empty-title">Aperçu chargé à l'impression</div></div></div>`;
-  }
-  else if (s.type === 'photos') {
-    const photos = s.photos || [];
-    body = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:8px;">
-        ${photos.map((p,pi)=>`
-          <div style="position:relative;background:var(--bg3);border-radius:8px;padding:6px;">
-            ${p.url.match(/\\.pdf$/i) ? `<a href="${p.url}" target="_blank" style="display:block;text-align:center;padding:24px 0;font-size:24px;color:var(--blue);">📄</a>` : `<img src="${p.url}" style="width:100%;height:90px;object-fit:cover;border-radius:6px;">`}
-            <input class="input" style="font-size:11px;padding:4px;margin-top:4px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${idx}].photos[${pi}].caption=this.value">
-            <button class="btn btn-ghost btn-sm" style="position:absolute;top:2px;right:2px;color:var(--accent);" onclick="removeBriefPhoto(${idx},${pi})">×</button>
-          </div>`).join('') || '<div style="grid-column:1/-1;text-align:center;color:var(--text3);font-size:12px;padding:14px;">Aucun fichier</div>'}
-      </div>
-      <input type="file" id="brf-photo-input-${idx}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${idx}, this.files)">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${idx}').click()">📎 Ajouter des fichiers</button>`;
-  }
-  else if (s.type === 'location') {
-    const addr = s.address || '';
-    body = `
-      <div class="form-group"><label class="form-label">Adresse</label>
-        <input class="input" value="${esc(addr)}" placeholder="Adresse complète du site / stand" onchange="CURRENT_BRIEFING.slides[${idx}].address=this.value">
-      </div>
-      <div class="form-group"><label class="form-label">N° de stand / hall</label>
-        <input class="input" value="${esc(s.stand)}" onchange="CURRENT_BRIEFING.slides[${idx}].stand=this.value">
-      </div>
-      <div class="form-group"><label class="form-label">Notes (accès, parking, horaires)</label>
-        <textarea class="input" rows="4" onchange="CURRENT_BRIEFING.slides[${idx}].notes=this.value">${s.notes||''}</textarea>
-      </div>
-      ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Ouvrir dans Google Maps</a>` : ''}`;
-  }
+  const blocks = s.blocks || [];
   return `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
-      <input class="input" placeholder="Titre de la slide…" value="${esc(s.title)}" onchange="CURRENT_BRIEFING.slides[${idx}].title=this.value;renderBriefing()" style="flex:1;">
-      <span style="font-size:12px;color:var(--text3);white-space:nowrap;">${(SLIDE_TYPES[s.type]||{}).icon} ${(SLIDE_TYPES[s.type]||{}).label}</span>
-    </div>
-    ${body}`;
-}
+    <input class="input" placeholder="Titre de la slide…" value="${esc(s.title)}" onchange="CURRENT_BRIEFING.slides[${idx}].title=this.value;renderBriefing()" style="margin-bottom:14px;">
 
-function renderContactRow(idx, ci, c) {
-  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
-  return `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
-      <input class="input" placeholder="Nom" value="${esc(c.name)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].name=this.value">
-      <input class="input" placeholder="Rôle / fonction" value="${esc(c.role)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].role=this.value">
-      <input class="input" placeholder="Téléphone" value="${esc(c.phone)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].phone=this.value">
-      <input class="input" placeholder="Email" value="${esc(c.email)}" onchange="CURRENT_BRIEFING.slides[${idx}].contacts[${ci}].email=this.value">
-      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="removeContact(${idx},${ci})">×</button>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${blocks.map((b, bi) => renderBlockEditor(idx, bi, b)).join('') || '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;border:1px dashed var(--border);border-radius:8px;">Cette slide est vide — ajoute un bloc ci-dessous</div>'}
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">+ Ajouter un bloc à cette slide</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        ${Object.entries(BLOCK_TYPES).map(([k,v])=>`<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 8px;" onclick="addBlock(${idx},'${k}')">${v.icon} ${v.label}</button>`).join('')}
+      </div>
     </div>`;
 }
 
+function renderBlockEditor(slideIdx, bi, b) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  const meta = BLOCK_TYPES[b.type] || { icon:'·', label:b.type };
+
+  let body = '';
+  if (b.type === 'text') {
+    body = `<textarea class="input" rows="6" placeholder="Notes, instructions, remarques..." onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].content=this.value">${b.content||''}</textarea>`;
+  }
+  else if (b.type === 'contacts') {
+    const contacts = b.contacts || [];
+    body = `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${contacts.map((c,ci)=>renderContactRow(slideIdx, bi, ci, c)).join('') || '<div style="font-size:12px;color:var(--text3);">Aucun contact — ajoute en ci-dessous.</div>'}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="addContact(${slideIdx},${bi})">+ Contact manuel</button>
+        <select class="input" id="brf-pick-user-${slideIdx}-${bi}" style="flex:1;min-width:160px;">
+          <option value="">+ Membre de l'équipe…</option>
+          ${(USERS||[]).map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} ${u.role?'('+u.role+')':''}</option>`).join('')}
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="addContactFromUser(${slideIdx},${bi})">Ajouter</button>
+      </div>`;
+  }
+  else if (b.type === 'tasks') {
+    const tasks = BRIEFING_AUTO.tasks || [];
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Liste extraite automatiquement (${tasks.length} tâche${tasks.length>1?'s':''}). Mise à jour à chaque ouverture du briefing.</div>
+      ${tasks.length ? `<div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:6px;padding:6px;">
+        ${tasks.map(t=>`<div style="font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border);">${t.taskDate?new Date(t.taskDate).toLocaleDateString('fr-FR')+' · ':''}<strong>${esc(t.title)}</strong> <span style="color:var(--text3);">— ${t.status}</span></div>`).join('')}
+      </div>` : '<div style="color:var(--text3);font-size:12px;font-style:italic;">Aucune tâche pour ce projet.</div>'}`;
+  }
+  else if (b.type === 'trucks') {
+    const trucks = BRIEFING_AUTO.trucks || [];
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Liste extraite automatiquement (${trucks.length} véhicule${trucks.length>1?'s':''}).</div>
+      ${trucks.length ? `<div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:6px;padding:6px;">
+        ${trucks.map(t=>`<div style="font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border);">${esc(t.vehicleType||'truck')} ${esc(t.truckNumber||'')} ${t.driverName?'· 👤 '+esc(t.driverName):''} ${t.driverPhone?'· 📞 '+esc(t.driverPhone):''} ${t.arrivalDate?'<br><span style="color:var(--text3);">Arrivée : '+new Date(t.arrivalDate).toLocaleString('fr-FR')+'</span>':''}</div>`).join('')}
+      </div>` : '<div style="color:var(--text3);font-size:12px;font-style:italic;">Aucun véhicule pour ce projet.</div>'}`;
+  }
+  else if (b.type === 'photos') {
+    const photos = b.photos || [];
+    body = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:8px;">
+        ${photos.map((p,pi)=>`
+          <div style="position:relative;background:var(--bg3);border-radius:8px;padding:6px;">
+            ${p.url.match(/\\.pdf$/i) ? `<a href="${p.url}" target="_blank" style="display:block;text-align:center;padding:20px 0;font-size:24px;color:var(--blue);">📄</a>` : `<img src="${p.url}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;">`}
+            <input class="input" style="font-size:11px;padding:4px;margin-top:4px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+            <button class="btn btn-ghost btn-sm" style="position:absolute;top:2px;right:2px;color:var(--accent);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+          </div>`).join('') || '<div style="grid-column:1/-1;text-align:center;color:var(--text3);font-size:12px;padding:14px;">Aucun fichier</div>'}
+      </div>
+      <input type="file" id="brf-photo-input-${slideIdx}-${bi}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${slideIdx},${bi},this.files)">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Ajouter des fichiers</button>`;
+  }
+  else if (b.type === 'location') {
+    const addr = b.address || '';
+    body = `
+      <div class="form-group"><label class="form-label">Adresse</label>
+        <input class="input" value="${esc(addr)}" placeholder="Adresse complète" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].address=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">N° de stand / hall</label>
+        <input class="input" value="${esc(b.stand)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].stand=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">Notes (accès, parking, horaires)</label>
+        <textarea class="input" rows="3" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].notes=this.value">${b.notes||''}</textarea>
+      </div>
+      ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Google Maps</a>` : ''}`;
+  }
+
+  return `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);">${meta.icon} ${meta.label}</div>
+        <div style="display:flex;gap:2px;">
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;" title="Monter" onclick="moveBlock(${slideIdx},${bi},-1)">▲</button>
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;" title="Descendre" onclick="moveBlock(${slideIdx},${bi},1)">▼</button>
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;color:var(--accent);" title="Supprimer ce bloc" onclick="removeBlock(${slideIdx},${bi})">×</button>
+        </div>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function renderContactRow(slideIdx, bi, ci, c) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
+      <input class="input" placeholder="Nom" value="${esc(c.name)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].name=this.value">
+      <input class="input" placeholder="Rôle" value="${esc(c.role)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].role=this.value">
+      <input class="input" placeholder="Téléphone" value="${esc(c.phone)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].phone=this.value">
+      <input class="input" placeholder="Email" value="${esc(c.email)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].email=this.value">
+      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="removeContact(${slideIdx},${bi},${ci})">×</button>
+    </div>`;
+}
+
+// ─── Manipulations slides ───
 function selectSlide(i) { CURRENT_SLIDE_IDX = i; renderBriefing(); }
 
-function addSlide(type) {
+function addSlide() {
   if (!CURRENT_BRIEFING) return;
-  CURRENT_BRIEFING.slides.push({ type, title:'', ...(type==='contacts'?{contacts:[]}:{}), ...(type==='photos'?{photos:[]}:{}) });
+  CURRENT_BRIEFING.slides.push({ title:'', blocks:[] });
   CURRENT_SLIDE_IDX = CURRENT_BRIEFING.slides.length - 1;
   renderBriefing();
 }
@@ -8761,105 +8815,133 @@ function moveSlide(i, dir) {
   renderBriefing();
 }
 
-function addContact(idx) {
-  const s = CURRENT_BRIEFING.slides[idx];
-  s.contacts = s.contacts || [];
-  s.contacts.push({ name:'', role:'', phone:'', email:'' });
+// ─── Manipulations blocs ───
+function addBlock(slideIdx, type) {
+  const s = CURRENT_BRIEFING.slides[slideIdx];
+  s.blocks = s.blocks || [];
+  const fresh = { type };
+  if (type === 'contacts') fresh.contacts = [];
+  if (type === 'photos')   fresh.photos   = [];
+  s.blocks.push(fresh);
   renderBriefing();
 }
 
-function addContactFromUser(idx) {
-  const sel = document.getElementById('brf-pick-user-'+idx);
+function removeBlock(slideIdx, bi) {
+  if (!confirm('Supprimer ce bloc ?')) return;
+  CURRENT_BRIEFING.slides[slideIdx].blocks.splice(bi, 1);
+  renderBriefing();
+}
+
+function moveBlock(slideIdx, bi, dir) {
+  const arr = CURRENT_BRIEFING.slides[slideIdx].blocks;
+  const j = bi + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[bi], arr[j]] = [arr[j], arr[bi]];
+  renderBriefing();
+}
+
+// ─── Contacts ───
+function addContact(slideIdx, bi) {
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.contacts = b.contacts || [];
+  b.contacts.push({ name:'', role:'', phone:'', email:'' });
+  renderBriefing();
+}
+
+function addContactFromUser(slideIdx, bi) {
+  const sel = document.getElementById(`brf-pick-user-${slideIdx}-${bi}`);
   const userId = sel?.value;
   if (!userId) return;
   const u = (USERS||[]).find(x=>x.id===userId);
   if (!u) return;
-  const s = CURRENT_BRIEFING.slides[idx];
-  s.contacts = s.contacts || [];
-  s.contacts.push({ name: `${u.firstName} ${u.lastName}`, role: u.role||'', phone: u.phone||'', email: u.email||'' });
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.contacts = b.contacts || [];
+  b.contacts.push({ name: `${u.firstName} ${u.lastName}`, role: u.role||'', phone: u.phone||'', email: u.email||'' });
   renderBriefing();
 }
 
-function removeContact(idx, ci) {
-  CURRENT_BRIEFING.slides[idx].contacts.splice(ci,1);
+function removeContact(slideIdx, bi, ci) {
+  CURRENT_BRIEFING.slides[slideIdx].blocks[bi].contacts.splice(ci, 1);
   renderBriefing();
 }
 
-async function uploadBriefPhotos(idx, files) {
+// ─── Photos / PDF ───
+async function uploadBriefPhotos(slideIdx, bi, files) {
   if (!files?.length) return;
   toast(`Upload de ${files.length} fichier(s)...`, 'info');
-  const s = CURRENT_BRIEFING.slides[idx];
-  s.photos = s.photos || [];
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.photos = b.photos || [];
   for (const f of files) {
     const fd = new FormData(); fd.append('file', f);
     try {
       const r = await fetch(API + '/upload/photo', { method:'POST', headers:{ 'Authorization': `Bearer ${TOKEN}` }, body: fd });
       const j = await r.json();
-      if (j?.success && j.data?.url) s.photos.push({ url: j.data.url, caption: f.name });
-    } catch(e) { /* ignore single failure */ }
+      if (j?.success && j.data?.url) b.photos.push({ url: j.data.url, caption: f.name });
+    } catch(e) { /* fichier ignoré */ }
   }
   toast('Upload terminé', 'success');
   renderBriefing();
 }
 
-function removeBriefPhoto(idx, pi) {
-  CURRENT_BRIEFING.slides[idx].photos.splice(pi,1);
+function removeBriefPhoto(slideIdx, bi, pi) {
+  CURRENT_BRIEFING.slides[slideIdx].blocks[bi].photos.splice(pi, 1);
   renderBriefing();
 }
 
+// ─── Enregistrement ───
 async function saveBriefing() {
   if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
-  // Récupérer le titre depuis l'input (au cas où le onchange n'a pas tiré)
   const t = document.getElementById('brf-title'); if (t) CURRENT_BRIEFING.title = t.value;
   const res = await api('PUT', `/briefings/${CURRENT_PROJECT_ID}`, { title: CURRENT_BRIEFING.title, slides: CURRENT_BRIEFING.slides });
   if (res?.success) toast('Briefing enregistré ✅', 'success');
   else toast('Erreur enregistrement', 'error');
 }
 
-// Vue impression : ouvre une fenêtre avec toutes les slides + tâches/camions résolus
+// ─── Impression ───
 async function printBriefing() {
   if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
-  await saveBriefing(); // s'assurer que tout est sauvé
-  // Récupérer données auto
-  const [tasksRes, trucksRes, projRes] = await Promise.all([
-    api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`),
-    api('GET', `/projects/${CURRENT_PROJECT_ID}/trucks`),
-    api('GET', `/projects/${CURRENT_PROJECT_ID}`),
-  ]);
-  const tasks  = tasksRes?.data || [];
-  const trucks = trucksRes?.data || [];
-  const proj   = projRes?.data  || {};
+  await saveBriefing();
+  const projRes = await api('GET', `/projects/${CURRENT_PROJECT_ID}`);
+  const proj = projRes?.data || {};
 
   const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
   const esc = x => (x==null?'':String(x)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
-  const renderSlide = s => {
-    const title = `<h2 style="margin:0 0 12px;border-bottom:2px solid #333;padding-bottom:6px;">${(SLIDE_TYPES[s.type]||{}).icon||''} ${esc(s.title||SLIDE_TYPES[s.type]?.label)}</h2>`;
-    if (s.type === 'text') return title + `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5;">${esc(s.content)}</div>`;
-    if (s.type === 'contacts') {
-      const rows = (s.contacts||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.phone)}</td><td>${esc(c.email)}</td></tr>`).join('');
-      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Nom</th><th style="text-align:left;padding:6px;">Rôle</th><th style="text-align:left;padding:6px;">Téléphone</th><th style="text-align:left;padding:6px;">Email</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucun contact</td></tr>'}</tbody></table>`;
+  const renderBlockPrint = b => {
+    if (b.type === 'text') {
+      return `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5;margin:8px 0;">${esc(b.content)}</div>`;
     }
-    if (s.type === 'tasks') {
-      const rows = tasks.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.status)}</td><td>${esc(t.priority)}</td><td>${fmt(t.taskDate)}</td></tr>`).join('');
-      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Tâche</th><th style="text-align:left;padding:6px;">Statut</th><th style="text-align:left;padding:6px;">Priorité</th><th style="text-align:left;padding:6px;">Date</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucune tâche</td></tr>'}</tbody></table>`;
+    if (b.type === 'contacts') {
+      const rows = (b.contacts||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.phone)}</td><td>${esc(c.email)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Nom</th><th style="text-align:left;padding:6px;">Rôle</th><th style="text-align:left;padding:6px;">Téléphone</th><th style="text-align:left;padding:6px;">Email</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucun contact</td></tr>'}</tbody></table>`;
     }
-    if (s.type === 'trucks') {
-      const rows = trucks.map(t=>`<tr><td>${esc(t.vehicleType)}</td><td>${esc(t.truckNumber)}</td><td>${esc(t.driverName)}${t.driverPhone?' · '+esc(t.driverPhone):''}</td><td>${fmt(t.loadingDate)}</td><td>${fmt(t.arrivalDate)}</td><td>${esc(t.status)}</td></tr>`).join('');
-      return title + `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">N°</th><th style="text-align:left;padding:6px;">Chauffeur</th><th style="text-align:left;padding:6px;">Chargement</th><th style="text-align:left;padding:6px;">Arrivée</th><th style="text-align:left;padding:6px;">Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:10px;color:#888;">Aucun véhicule</td></tr>'}</tbody></table>`;
+    if (b.type === 'tasks') {
+      const rows = (BRIEFING_AUTO.tasks||[]).map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.status)}</td><td>${esc(t.priority)}</td><td>${fmtDate(t.taskDate)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Tâche</th><th style="text-align:left;padding:6px;">Statut</th><th style="text-align:left;padding:6px;">Priorité</th><th style="text-align:left;padding:6px;">Date</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucune tâche</td></tr>'}</tbody></table>`;
     }
-    if (s.type === 'photos') {
-      const items = (s.photos||[]).map(p => p.url.match(/\\.pdf$/i)
+    if (b.type === 'trucks') {
+      const rows = (BRIEFING_AUTO.trucks||[]).map(t=>`<tr><td>${esc(t.vehicleType||'truck')}</td><td>${esc(t.truckNumber)}</td><td>${esc(t.driverName)}${t.driverPhone?' · '+esc(t.driverPhone):''}</td><td>${fmt(t.loadingDate)}</td><td>${fmt(t.arrivalDate)}</td><td>${esc(t.status)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">N°</th><th style="text-align:left;padding:6px;">Chauffeur</th><th style="text-align:left;padding:6px;">Chargement</th><th style="text-align:left;padding:6px;">Arrivée</th><th style="text-align:left;padding:6px;">Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:10px;color:#888;">Aucun véhicule</td></tr>'}</tbody></table>`;
+    }
+    if (b.type === 'photos') {
+      const items = (b.photos||[]).map(p => p.url.match(/\.pdf$/i)
         ? `<div style="margin:8px 0;"><a href="${p.url}">📄 ${esc(p.caption||p.url)}</a></div>`
-        : `<div style="margin:8px 0;text-align:center;"><img src="${p.url}" style="max-width:100%;max-height:380px;"><div style="font-size:12px;color:#666;margin-top:4px;">${esc(p.caption)}</div></div>`
+        : `<div style="margin:8px 0;text-align:center;"><img src="${p.url}" style="max-width:100%;max-height:340px;"><div style="font-size:12px;color:#666;margin-top:4px;">${esc(p.caption)}</div></div>`
       ).join('');
-      return title + (items || '<div style="color:#888;text-align:center;padding:10px;">Aucun fichier</div>');
+      return items || '<div style="color:#888;text-align:center;padding:10px;">Aucun fichier</div>';
     }
-    if (s.type === 'location') {
-      const mapsLink = s.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}" target="_blank">${esc(s.address)}</a>` : '—';
-      return title + `<div style="font-size:14px;line-height:1.6;"><div><strong>Adresse :</strong> ${mapsLink}</div>${s.stand?`<div><strong>Stand / hall :</strong> ${esc(s.stand)}</div>`:''}${s.notes?`<div style="margin-top:8px;white-space:pre-wrap;">${esc(s.notes)}</div>`:''}</div>`;
+    if (b.type === 'location') {
+      const mapsLink = b.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}" target="_blank">${esc(b.address)}</a>` : '—';
+      return `<div style="font-size:14px;line-height:1.6;margin:8px 0;"><div><strong>Adresse :</strong> ${mapsLink}</div>${b.stand?`<div><strong>Stand / hall :</strong> ${esc(b.stand)}</div>`:''}${b.notes?`<div style="margin-top:8px;white-space:pre-wrap;">${esc(b.notes)}</div>`:''}</div>`;
     }
-    return title;
+    return '';
+  };
+
+  const renderSlide = s => {
+    const title = s.title ? `<h2 style="margin:0 0 12px;border-bottom:2px solid #333;padding-bottom:6px;">${esc(s.title)}</h2>` : '';
+    const blocksHtml = (s.blocks||[]).map(renderBlockPrint).join('');
+    return title + (blocksHtml || '<div style="color:#888;text-align:center;padding:20px;">Slide vide</div>');
   };
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Briefing — ${esc(proj.name||'')}</title>
@@ -8884,6 +8966,7 @@ async function printBriefing() {
   const w = window.open('', '_blank');
   w.document.open(); w.document.write(html); w.document.close();
 }
+
 
 </script>
 </body>
