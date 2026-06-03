@@ -1,6 +1,7 @@
 // src/routes/ai.ts
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -78,6 +79,10 @@ router.post('/scan-id', async (req: AuthRequest, res: Response, next: NextFuncti
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ success: false, error: 'Clé API Anthropic non configurée' });
 
+    // Diagnostic : taille de l'image (base64) en Mo
+    const imgSizeMB = (imageBase64.length * 0.75 / 1024 / 1024).toFixed(2);
+    logger.info(`[scan-id] image ${imgSizeMB} Mo, media_type=${mediaType || 'image/jpeg'}`);
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -87,7 +92,7 @@ router.post('/scan-id', async (req: AuthRequest, res: Response, next: NextFuncti
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
+        max_tokens: 800,
         messages: [{
           role: 'user',
           content: [
@@ -97,18 +102,21 @@ router.post('/scan-id', async (req: AuthRequest, res: Response, next: NextFuncti
             },
             {
               type: 'text',
-              text: `Analyse cette carte d'identité et extrait les informations suivantes en JSON strict, sans texte autour :
+              text: `Tu vois une carte d'identité, un passeport ou un permis de conduire. Extrait ce que tu peux lire en JSON strict, sans aucun texte autour, sans backticks :
 {
-  "firstName": "prénom",
-  "lastName": "nom de famille",
-  "birthDate": "YYYY-MM-DD ou vide",
-  "birthPlace": "ville de naissance ou vide",
-  "nationality": "nationalité ou vide",
-  "idNumber": "numéro de la carte ou vide",
-  "nationalNumber": "numéro de registre national ou vide",
-  "expiryDate": "YYYY-MM-DD ou vide"
+  "firstName": "prénom (ou vide)",
+  "lastName": "nom de famille (ou vide)",
+  "birthDate": "YYYY-MM-DD (ou vide)",
+  "birthPlace": "lieu de naissance (ou vide)",
+  "nationality": "nationalité (ou vide)",
+  "idNumber": "numéro du document (ou vide)",
+  "nationalNumber": "numéro de registre national / NISS / NIE (ou vide)",
+  "expiryDate": "YYYY-MM-DD (ou vide)"
 }
-Si une information n'est pas visible, mets une chaîne vide "". Réponds UNIQUEMENT avec le JSON.`,
+Règles :
+- Si une information n'est pas visible ou pas lisible, mets "" (chaîne vide).
+- Pour les dates, convertis toujours au format YYYY-MM-DD.
+- Réponds UNIQUEMENT avec le JSON, rien d'autre.`,
             },
           ],
         }],
@@ -117,21 +125,33 @@ Si une information n'est pas visible, mets une chaîne vide "". Réponds UNIQUEM
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} — ${err}`);
+      logger.error(`[scan-id] Anthropic ${response.status}: ${err.slice(0, 500)}`);
+      throw new Error(`Anthropic API error: ${response.status} — ${err.slice(0, 200)}`);
     }
 
     const data = await response.json() as any;
-    const content = data.content?.[0]?.text || '{}';
+    const content = data.content?.[0]?.text || '';
+    logger.info(`[scan-id] Réponse IA brute (${content.length} car) : ${content.slice(0, 200)}`);
 
-    let parsed;
+    // Extraction JSON robuste : on cherche le premier { ... } équilibré dans la réponse
+    let parsed: any = {};
     try {
-      parsed = JSON.parse(content.replace(/```json|```/g, '').trim());
-    } catch {
-      throw new Error('Impossible de parser la réponse IA');
+      const cleaned = content.replace(/```json|```/g, '').trim();
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace  = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      } else {
+        // L'IA n'a pas renvoyé de JSON : on log mais on n'échoue pas
+        logger.warn('[scan-id] Pas de JSON dans la réponse IA, champs vides renvoyés');
+      }
+    } catch (e: any) {
+      logger.warn(`[scan-id] JSON.parse échoué (${e.message}), champs vides renvoyés`);
     }
 
     res.json({ success: true, data: parsed });
   } catch (err: any) {
+    logger.error(`[scan-id] Échec : ${err.message}`);
     next(err);
   }
 });
