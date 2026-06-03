@@ -483,12 +483,9 @@ textarea.input{min-height:80px;resize:vertical;}
   <div class="login-wrap">
     <div class="login-bg"></div>
     <div class="login-card">
-      <div class="login-logo">
-        <div class="login-mark">V</div>
-        <div>
-          <div class="login-brand">VIEW<span>BOX</span></div>
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Event Manager</div>
-        </div>
+      <div class="login-logo" style="flex-direction:column;gap:6px;">
+        <img src="/logo_light.png" alt="VIEWBOX" style="width:200px;height:auto;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:2px;">Event Manager</div>
       </div>
       <div class="login-title">Connexion</div>
       <div class="login-sub">Accédez à votre espace de gestion</div>
@@ -561,12 +558,9 @@ textarea.input{min-height:80px;resize:vertical;}
 <!-- NAV -->
 <nav class="nav" id="nav">
   <div class="nav-top">
-    <div class="nav-logo">
-      <div class="nav-mark">V</div>
-      <div>
-        <div class="nav-name">ViewBox</div>
-        <div class="nav-ver">Event Manager</div>
-      </div>
+    <div class="nav-logo" style="flex-direction:column;gap:4px;align-items:flex-start;">
+      <img src="/logo_light.png" alt="VIEWBOX" style="width:160px;height:auto;">
+      <div class="nav-ver" style="margin-left:2px;">Event Manager</div>
     </div>
   </div>
   <div class="nav-section">
@@ -8957,6 +8951,7 @@ async function printBriefing() {
       .cover { text-align:center; padding-top: 80px; }
     </style></head><body>
     <div class="slide cover">
+      <img src="/logo.png" alt="VIEWBOX" style="width:280px;height:auto;margin-bottom:30px;">
       <h1>📋 ${esc(CURRENT_BRIEFING.title || 'Briefing')}</h1>
       <div class="meta">${esc(proj.name||'')}${proj.city?' — '+esc(proj.city):''}<br>${proj.installationStart?fmt(proj.installationStart):''}</div>
     </div>
