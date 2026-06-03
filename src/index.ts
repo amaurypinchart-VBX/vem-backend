@@ -29,6 +29,7 @@ import taskTemplatesRoutes from './routes/taskTemplates';
 import aiRoutes from './routes/ai';
 import clientRemarksRoutes from './routes/clientRemarks';
 import briefingRoutes from './routes/briefing';
+import { runStartupMigrations } from './utils/migrations';
 
 const app  = express();
 const http = createServer(app);
@@ -80,8 +81,9 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'inde
 app.use(errorHandler);
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-http.listen(PORT, '0.0.0.0', () => {
+http.listen(PORT, '0.0.0.0', async () => {
   logger.info(`🚀 VEM running on port ${PORT}`);
+  await runStartupMigrations();
 });
 
 export default app;
