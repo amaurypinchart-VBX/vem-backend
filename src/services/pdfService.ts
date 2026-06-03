@@ -1,6 +1,8 @@
 // src/services/pdfService.ts
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PDFDocument = require('pdfkit');
+import * as path from 'path';
+import * as fs from 'fs';
 
 const RED    = '#e63946';
 const DARK   = '#1a1a2e';
@@ -8,10 +10,24 @@ const MUTED  = '#8892a4';
 const GREEN  = '#2dc653';
 const AMBER  = '#f4a261';
 
+// Chemin du logo (version claire pour fond sombre du header).
+// Chargé une seule fois en buffer pour éviter les I/O à chaque PDF.
+const LOGO_LIGHT_PATH = path.join(__dirname, '..', '..', 'public', 'logo_light.png');
+let LOGO_LIGHT_BUFFER: Buffer | null = null;
+try {
+  if (fs.existsSync(LOGO_LIGHT_PATH)) LOGO_LIGHT_BUFFER = fs.readFileSync(LOGO_LIGHT_PATH);
+} catch { /* logo absent : on retombe sur le texte */ }
+
 function header(doc: any, subtitle: string) {
-  doc.rect(0,0,595,70).fill(DARK);
-  doc.fillColor(RED).font('Helvetica-Bold').fontSize(26).text('VEM', 40, 22);
-  doc.fillColor('white').font('Helvetica').fontSize(11).text('ViewBox Event Manager', 82, 28);
+  doc.rect(0, 0, 595, 70).fill(DARK);
+  if (LOGO_LIGHT_BUFFER) {
+    // Logo VIEWBOX en version blanche (sur fond sombre)
+    doc.image(LOGO_LIGHT_BUFFER, 40, 22, { fit: [150, 30] });
+  } else {
+    // Fallback si le logo n'est pas trouvé sur le serveur
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(22).text('VIEWBOX', 40, 24);
+  }
+  doc.fillColor('white').font('Helvetica').fontSize(11).text('Event Manager', 200, 30);
   doc.fillColor(RED).font('Helvetica-Bold').fontSize(13).text(subtitle, 420, 28, { align: 'right', width: 135 });
   doc.moveDown(2.5);
 }
@@ -19,7 +35,7 @@ function header(doc: any, subtitle: string) {
 function footer(doc: any) {
   doc.rect(0, 810, 595, 30).fill('#f8f8f8');
   doc.fillColor(MUTED).fontSize(8).font('Helvetica')
-    .text(`Généré par VEM · ${new Date().toLocaleString('fr-FR')}`, 40, 817, { align: 'center', width: 515 });
+    .text(`Généré par VIEWBOX Event Manager · ${new Date().toLocaleString('fr-FR')}`, 40, 817, { align: 'center', width: 515 });
 }
 
 function sectionTitle(doc: any, title: string) {
@@ -109,7 +125,27 @@ export async function generateDailyReportPdf(data: {
   generalNotes?: string | null;
   entries: Array<{ entryTime: string; description: string }>;
   checklist: Array<{ item: string; checked: boolean; notes?: string | null }>;
+  photos?: Array<{ photoUrl: string; caption?: string | null }>;
 }): Promise<Buffer> {
+  // Pré-télécharger les photos AVANT d'instancier PDFDocument (pour gérer les erreurs proprement)
+  const photoBuffers: Array<{ buffer: Buffer; caption?: string | null }> = [];
+  if (data.photos && data.photos.length) {
+    for (const p of data.photos) {
+      try {
+        // Cloudinary : on demande une version JPEG redimensionnée (PDFKit ne gère pas WebP)
+        const optimized = p.photoUrl.includes('/upload/')
+          ? p.photoUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_900,q_auto:good/')
+          : p.photoUrl;
+        const r = await fetch(optimized);
+        if (!r.ok) continue;
+        const ab = await r.arrayBuffer();
+        photoBuffers.push({ buffer: Buffer.from(ab), caption: p.caption });
+      } catch {
+        // photo inaccessible : on ignore silencieusement plutôt que de planter tout le PDF
+      }
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
@@ -155,6 +191,45 @@ export async function generateDailyReportPdf(data: {
       doc.moveDown(0.8);
       sectionTitle(doc, '📝 Notes');
       doc.fillColor(MUTED).font('Helvetica').fontSize(11).text(data.generalNotes, 40, doc.y, { width: 515 });
+    }
+
+    // ─── Section Photos (page dédiée, 2 par ligne) ───
+    if (photoBuffers.length > 0) {
+      doc.addPage();
+      header(doc, 'DAILY REPORT — PHOTOS');
+      sectionTitle(doc, `📸 Photos (${photoBuffers.length})`);
+
+      const cellW = 250;        // largeur par photo
+      const cellH = 180;        // hauteur max par photo
+      const gap = 15;
+      const colX = [40, 40 + cellW + gap];
+      let col = 0;
+      let rowTopY = doc.y + 4;
+
+      for (let i = 0; i < photoBuffers.length; i++) {
+        const p = photoBuffers[i];
+        // Saut de page si on dépasse en bas
+        if (rowTopY + cellH + 30 > 800) {
+          doc.addPage();
+          header(doc, 'DAILY REPORT — PHOTOS (suite)');
+          rowTopY = doc.y + 4;
+          col = 0;
+        }
+        try {
+          doc.image(p.buffer, colX[col], rowTopY, { fit: [cellW, cellH], align: 'center' });
+          if (p.caption) {
+            doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9)
+               .text(p.caption, colX[col], rowTopY + cellH + 2, { width: cellW, align: 'center' });
+          }
+        } catch {
+          // image corrompue ou format non supporté → on saute
+        }
+        col++;
+        if (col >= 2) {
+          col = 0;
+          rowTopY += cellH + 28;
+        }
+      }
     }
 
     footer(doc);
