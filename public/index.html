@@ -7188,22 +7188,44 @@ async function scanIDCard(input) {
   }
   if (status) status.innerHTML = '⏳ Analyse en cours...';
 
-  // Convert to base64
-  const base64 = await new Promise((res, rej) => {
+  // Lecture + redimensionnement automatique (max 1500px) pour respecter
+  // la limite Anthropic de 5 Mo en base64. Une carte d'identité de 8 Mo
+  // devient ~300 Ko après resize, ce qui passe sans problème.
+  const base64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => res(reader.result.split(',')[1]);
-    reader.onerror = rej;
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const tmpImg = new Image();
+      tmpImg.onload = () => {
+        const MAX = 1500;
+        let { width: w, height: h } = tmpImg;
+        if (w > MAX || h > MAX) {
+          const ratio = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(tmpImg, 0, 0, w, h);
+        // JPEG qualité 0.85 — bon compromis netteté/poids pour la lecture OCR
+        const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        resolve(jpegDataUrl.split(',')[1]);
+      };
+      tmpImg.onerror = () => reject(new Error('Image illisible'));
+      tmpImg.src = dataUrl;
+    };
+    reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 
   try {
     const res = await api('POST', '/ai/scan-id', {
       imageBase64: base64,
-      mediaType: file.type || 'image/jpeg',
+      mediaType: 'image/jpeg',  // toujours JPEG après le canvas
     });
 
     if (!res || !res.success) {
-      if (status) status.innerHTML = '❌ Erreur connexion IA — remplissez manuellement';
+      if (status) status.innerHTML = `❌ ${res?.error || 'Erreur connexion IA'} — remplissez manuellement`;
       return;
     }
 
