@@ -74,7 +74,27 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const report = await prisma.dailyReport.update({ where: { id: req.params.id }, data: req.body });
+    const { entries, checklist, ...scalars } = req.body;
+    const id = req.params.id;
+
+    // Si on reçoit des entries ou une checklist, on les remplace (delete + create)
+    if (Array.isArray(entries)) {
+      await prisma.dailyReportEntry.deleteMany({ where: { reportId: id } });
+    }
+    if (Array.isArray(checklist)) {
+      await prisma.dailyReportChecklistItem.deleteMany({ where: { reportId: id } });
+    }
+
+    const data: any = { ...scalars };
+    if (scalars.reportDate) data.reportDate = new Date(scalars.reportDate);
+    if (Array.isArray(entries)   && entries.length)   data.entries   = { create: entries };
+    if (Array.isArray(checklist) && checklist.length) data.checklist = { create: checklist };
+
+    const report = await prisma.dailyReport.update({
+      where: { id },
+      data,
+      include: { entries: true, checklist: true, photos: true },
+    });
     res.json({ success: true, data: report });
   } catch (err) { next(err); }
 });
