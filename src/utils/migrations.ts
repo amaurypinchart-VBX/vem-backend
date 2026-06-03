@@ -68,6 +68,17 @@ export async function runStartupMigrations() {
       }
     }
 
+    // ─── Corriger contraintes NOT NULL incohérentes avec le schéma Prisma ───
+    // entry_time de daily_report_entries : le schéma dit nullable mais la DB
+    // a été créée avec NOT NULL → DROP NOT NULL (no-op si déjà nullable).
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "daily_report_entries" ALTER COLUMN "entry_time" DROP NOT NULL;`
+      );
+    } catch (e: any) {
+      logger.warn(`[migration] daily_report_entries.entry_time : ${e.message}`);
+    }
+
     logger.info('✅ Migrations de démarrage OK');
   } catch (err) {
     logger.error('❌ Erreur lors des migrations de démarrage :', err);
