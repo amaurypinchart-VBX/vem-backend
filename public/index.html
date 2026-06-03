@@ -8616,11 +8616,12 @@ async function deleteTruck(projectId, truckId) {
 // ═════════════════════════════════════════════
 let CURRENT_BRIEFING = null;          // { id, projectId, title, slides: [{title, blocks:[{type, ...}]}] }
 let CURRENT_SLIDE_IDX = 0;
-let BRIEFING_AUTO = { tasks: [], trucks: [] };  // cache des données auto
+let BRIEFING_AUTO = { tasks: [], trucks: [], project: {} };  // cache des données auto
 
 const BLOCK_TYPES = {
   text:     { icon:'📝', label:'Texte / notes' },
   contacts: { icon:'📞', label:'Contacts' },
+  project:  { icon:'🏷️', label:'Infos projet (auto)' },
   tasks:    { icon:'✅', label:'Tâches (auto)' },
   trucks:   { icon:'🚛', label:'Logistique (auto)' },
   photos:   { icon:'📸', label:'Photos / PDF' },
@@ -8639,10 +8640,11 @@ async function loadDetailBriefing(projectId) {
   if (!el) return;
   el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
 
-  const [briefRes, tasksRes, trucksRes] = await Promise.all([
+  const [briefRes, tasksRes, trucksRes, projRes] = await Promise.all([
     api('GET', `/briefings/${projectId}`),
     api('GET', `/tasks?projectId=${projectId}`),
     api('GET', `/projects/${projectId}/trucks`),
+    api('GET', `/projects/${projectId}`),
   ]);
 
   if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
@@ -8651,8 +8653,9 @@ async function loadDetailBriefing(projectId) {
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
   CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
 
-  BRIEFING_AUTO.tasks  = tasksRes?.data || [];
-  BRIEFING_AUTO.trucks = trucksRes?.data || [];
+  BRIEFING_AUTO.tasks   = tasksRes?.data  || [];
+  BRIEFING_AUTO.trucks  = trucksRes?.data || [];
+  BRIEFING_AUTO.project = projRes?.data   || {};
 
   CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
   renderBriefing();
@@ -8760,19 +8763,56 @@ function renderBlockEditor(slideIdx, bi, b) {
         ${trucks.map(t=>`<div style="font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border);">${esc(t.vehicleType||'truck')} ${esc(t.truckNumber||'')} ${t.driverName?'· 👤 '+esc(t.driverName):''} ${t.driverPhone?'· 📞 '+esc(t.driverPhone):''} ${t.arrivalDate?'<br><span style="color:var(--text3);">Arrivée : '+new Date(t.arrivalDate).toLocaleString('fr-FR')+'</span>':''}</div>`).join('')}
       </div>` : '<div style="color:var(--text3);font-size:12px;font-style:italic;">Aucun véhicule pour ce projet.</div>'}`;
   }
+  else if (b.type === 'project') {
+    const p = BRIEFING_AUTO.project || {};
+    const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+    const row = (lbl, val) => `<div style="display:grid;grid-template-columns:140px 1fr;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text3);">${lbl}</span><span>${val||'—'}</span></div>`;
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Infos extraites automatiquement de la fiche projet (mises à jour à chaque ouverture du briefing).</div>
+      <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
+        ${row('Projet',          esc(p.name))}
+        ${row('N° interne',      esc(p.internalNumber))}
+        ${row('Statut',          esc(p.status))}
+        ${row('Client',          esc(p.client?.name))}
+        ${(p.client?.contactName || p.client?.phone || p.client?.email) ? row('Contact client', `${esc(p.client?.contactName)||''} ${p.client?.phone?'· '+esc(p.client.phone):''} ${p.client?.email?'· '+esc(p.client.email):''}`) : ''}
+        ${row('Adresse',         `${esc(p.address)}${p.city?', '+esc(p.city):''}`)}
+        ${row('Installation',    `${fmt(p.installationStart)} → ${fmt(p.installationEnd)}`)}
+        ${p.dismantlingStart ? row('Démontage', `${fmt(p.dismantlingStart)} → ${fmt(p.dismantlingEnd)}`) : ''}
+        ${row('Ouvriers prévus', esc(String(p.workersCount || 0)))}
+        ${p.technicalManager ? row('Chef technique', esc(`${p.technicalManager.firstName} ${p.technicalManager.lastName}`)) : ''}
+        ${p.description ? row('Description', esc(p.description)) : ''}
+        ${p.specialInstructions ? row('Instructions spéciales', esc(p.specialInstructions)) : ''}
+      </div>`;
+  }
   else if (b.type === 'photos') {
     const photos = b.photos || [];
+    // Helper : page N d'un PDF Cloudinary → URL JPG (pour l'impression)
+    const isPdf = u => /\\.pdf($|\\?)/i.test(u);
     body = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:8px;">
-        ${photos.map((p,pi)=>`
-          <div style="position:relative;background:var(--bg3);border-radius:8px;padding:6px;">
-            ${p.url.match(/\\.pdf$/i) ? `<a href="${p.url}" target="_blank" style="display:block;text-align:center;padding:20px 0;font-size:24px;color:var(--blue);">📄</a>` : `<img src="${p.url}" style="width:100%;height:80px;object-fit:cover;border-radius:6px;">`}
-            <input class="input" style="font-size:11px;padding:4px;margin-top:4px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
-            <button class="btn btn-ghost btn-sm" style="position:absolute;top:2px;right:2px;color:var(--accent);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
-          </div>`).join('') || '<div style="grid-column:1/-1;text-align:center;color:var(--text3);font-size:12px;padding:14px;">Aucun fichier</div>'}
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:8px;">
+        ${photos.map((p,pi)=>{
+          if (isPdf(p.url)) {
+            // PDF : intégration via iframe (le navigateur affiche le PDF nativement)
+            return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
+                <span>📄 PDF intégré</span>
+                <a href="${p.url}" target="_blank" style="color:var(--blue);font-size:11px;">↗ Ouvrir dans un onglet</a>
+              </div>
+              <iframe src="${p.url}#toolbar=0&navpanes=0" style="width:100%;height:460px;border:1px solid var(--border);border-radius:6px;background:white;"></iframe>
+              <input class="input" style="font-size:11px;padding:4px;margin-top:6px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+              <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+            </div>`;
+          }
+          return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;display:grid;grid-template-columns:280px 1fr;gap:10px;align-items:start;">
+            <img src="${p.url}" style="width:280px;max-height:200px;object-fit:cover;border-radius:6px;">
+            <div>
+              <input class="input" style="font-size:12px;" placeholder="Légende (ex: vue d'ensemble du stand)" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+            </div>
+            <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+          </div>`;
+        }).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:14px;border:1px dashed var(--border);border-radius:8px;">Aucun fichier</div>'}
       </div>
       <input type="file" id="brf-photo-input-${slideIdx}-${bi}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${slideIdx},${bi},this.files)">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Ajouter des fichiers</button>`;
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Ajouter photos ou PDF</button>`;
   }
   else if (b.type === 'location') {
     const addr = b.address || '';
@@ -8950,11 +8990,47 @@ async function printBriefing() {
       const rows = (BRIEFING_AUTO.trucks||[]).map(t=>`<tr><td>${esc(t.vehicleType||'truck')}</td><td>${esc(t.truckNumber)}</td><td>${esc(t.driverName)}${t.driverPhone?' · '+esc(t.driverPhone):''}</td><td>${fmt(t.loadingDate)}</td><td>${fmt(t.arrivalDate)}</td><td>${esc(t.status)}</td></tr>`).join('');
       return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">N°</th><th style="text-align:left;padding:6px;">Chauffeur</th><th style="text-align:left;padding:6px;">Chargement</th><th style="text-align:left;padding:6px;">Arrivée</th><th style="text-align:left;padding:6px;">Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:10px;color:#888;">Aucun véhicule</td></tr>'}</tbody></table>`;
     }
+    if (b.type === 'project') {
+      const p = BRIEFING_AUTO.project || {};
+      const row = (lbl, val) => val ? `<tr><th style="text-align:left;padding:6px;background:#f8f9fa;color:#666;width:160px;">${lbl}</th><td style="padding:6px;">${val}</td></tr>` : '';
+      const contact = (p.client?.contactName || p.client?.phone || p.client?.email)
+        ? `${esc(p.client?.contactName)||''}${p.client?.phone?' · '+esc(p.client.phone):''}${p.client?.email?' · '+esc(p.client.email):''}` : '';
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;border:1px solid #e5e7eb;">
+        ${row('Projet',          esc(p.name))}
+        ${row('N° interne',      esc(p.internalNumber))}
+        ${row('Statut',          esc(p.status))}
+        ${row('Client',          esc(p.client?.name))}
+        ${row('Contact client',  contact)}
+        ${row('Adresse',         `${esc(p.address)}${p.city?', '+esc(p.city):''}`)}
+        ${row('Installation',    `${fmt(p.installationStart)} → ${fmt(p.installationEnd)}`)}
+        ${p.dismantlingStart ? row('Démontage', `${fmt(p.dismantlingStart)} → ${fmt(p.dismantlingEnd)}`) : ''}
+        ${row('Ouvriers prévus', esc(String(p.workersCount || 0)))}
+        ${p.technicalManager ? row('Chef technique', esc(`${p.technicalManager.firstName} ${p.technicalManager.lastName}`)) : ''}
+        ${row('Description',          esc(p.description))}
+        ${row('Instructions spéciales', esc(p.specialInstructions))}
+      </table>`;
+    }
     if (b.type === 'photos') {
-      const items = (b.photos||[]).map(p => p.url.match(/\.pdf$/i)
-        ? `<div style="margin:8px 0;"><a href="${p.url}">📄 ${esc(p.caption||p.url)}</a></div>`
-        : `<div style="margin:8px 0;text-align:center;"><img src="${p.url}" style="max-width:100%;max-height:340px;"><div style="font-size:12px;color:#666;margin-top:4px;">${esc(p.caption)}</div></div>`
-      ).join('');
+      // Pour chaque fichier : si PDF → on extrait jusqu'à 5 pages via Cloudinary en JPG
+      const pdfPageUrl = (url, n) => url.includes('/upload/')
+        ? url.replace('/upload/', `/upload/f_jpg,c_limit,w_1100,pg_${n}/`).replace(/\.pdf($|\?)/i, '.jpg$1')
+        : url;
+      const isPdf = u => /\.pdf($|\?)/i.test(u);
+      const items = (b.photos||[]).map(p => {
+        if (isPdf(p.url)) {
+          // On rend les pages 1 à 5 en images. Les pages inexistantes échouent silencieusement (img cassée).
+          // onerror cache l'image qui n'a pas pu être chargée (page au-delà du nombre de pages réelles).
+          const pages = [1,2,3,4,5].map(n => `<img src="${pdfPageUrl(p.url, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:8px auto;border:1px solid #ddd;">`).join('');
+          return `<div style="margin:12px 0;page-break-inside:avoid;">
+            ${p.caption ? `<div style="font-size:12px;color:#666;margin-bottom:4px;"><strong>📄 ${esc(p.caption)}</strong></div>` : ''}
+            ${pages}
+          </div>`;
+        }
+        return `<div style="margin:12px 0;text-align:center;page-break-inside:avoid;">
+          <img src="${p.url}" style="max-width:100%;max-height:520px;">
+          ${p.caption ? `<div style="font-size:12px;color:#666;margin-top:6px;">${esc(p.caption)}</div>` : ''}
+        </div>`;
+      }).join('');
       return items || '<div style="color:#888;text-align:center;padding:10px;">Aucun fichier</div>';
     }
     if (b.type === 'location') {
