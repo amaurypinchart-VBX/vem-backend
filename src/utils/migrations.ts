@@ -46,6 +46,28 @@ export async function runStartupMigrations() {
       END $$;
     `);
 
+    // ─── Colonnes "carte d'identité" sur users ───
+    for (const col of [
+      'birth_date', 'birth_place', 'nationality',
+      'id_number', 'national_number', 'id_expiry', 'team_group_id'
+    ]) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "${col}" TEXT;`
+      );
+    }
+
+    // ─── Valeurs d'enum UserRole manquantes ───
+    // ALTER TYPE ADD VALUE doit être hors transaction → on tente une par une et on log les échecs.
+    for (const val of ['sales_engineer', 'installer']) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TYPE "UserRole" ADD VALUE IF NOT EXISTS '${val}';`
+        );
+      } catch (e: any) {
+        logger.warn(`[migration] enum value "${val}" : ${e.message}`);
+      }
+    }
+
     logger.info('✅ Migrations de démarrage OK');
   } catch (err) {
     logger.error('❌ Erreur lors des migrations de démarrage :', err);
