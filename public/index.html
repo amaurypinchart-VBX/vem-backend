@@ -1887,6 +1887,16 @@ async function loadProjectDetail(id) {
           <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
           ${infoRow('Adresse', p.address)}
           ${p.description ? '<div style="margin-top:10px;font-size:13px;color:var(--text2);">'+p.description+'</div>' : ''}
+
+          ${(p.client?.contactName || p.client?.phone || p.client?.email) ? `
+          <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📞 Contact client</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${p.client?.contactName ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>👤</span><span>${p.client.contactName}</span></div>` : ''}
+            ${p.client?.phone       ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>📞</span><a href="tel:${p.client.phone}" style="color:var(--blue);text-decoration:none;">${p.client.phone}</a></div>` : ''}
+            ${p.client?.email       ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>✉️</span><a href="mailto:${p.client.email}" style="color:var(--blue);text-decoration:none;">${p.client.email}</a></div>` : ''}
+          </div>
+          ` : ''}
         </div>
       </div>
 
@@ -2214,21 +2224,31 @@ async function loadDailyReports() {
     el.innerHTML = '<div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport</div><div class="empty-sub">Créez votre premier rapport journalier</div></div>';
     return;
   }
-  el.innerHTML = res.data.map(r => `
-    <div class="card" style="margin-bottom:12px;">
+  el.innerHTML = res.data.map(r => {
+    const nbEntries = r._count?.entries || 0;
+    const nbPhotos  = r._count?.photos  || 0;
+    return `
+    <div class="card" style="margin-bottom:12px;cursor:pointer;" onclick="editDailyReport('${r.id}')">
       <div class="card-header">
         <div>
           <div class="card-title">📓 Rapport du ${fmtDate(r.reportDate)}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Par ${r.createdBy?`${r.createdBy.firstName} ${r.createdBy.lastName}`:'N/A'} · ${r.workersPresent} ouvriers · ${r.weather||''}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+            Par ${r.createdBy?`${r.createdBy.firstName} ${r.createdBy.lastName}`:'N/A'} · ${r.workersPresent} ouvriers ${r.weather?' · '+r.weather:''}
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;font-size:12px;">
+            <span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">⏱️ ${nbEntries} entrée${nbEntries>1?'s':''}</span>
+            ${nbPhotos>0?`<span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">📸 ${nbPhotos} photo${nbPhotos>1?'s':''}</span>`:''}
+          </div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:flex-start;" onclick="event.stopPropagation();">
           ${r.sentAt?'<span class="badge badge-green">✉️ Envoyé</span>':''}
           <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
           ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
         </div>
       </div>
       ${r.generalNotes?`<div class="card-body" style="font-size:13px;color:var(--text2);">${r.generalNotes}</div>`:''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function downloadDailyPDF(id) {
@@ -5864,20 +5884,10 @@ document.addEventListener('touchstart', e => {
   touchStartY = e.touches[0].clientY;
 }, { passive: true });
 
-document.addEventListener('touchmove', e => {
-  const modal = document.querySelector('.overlay.open .modal');
-  if (!modal) return;
-  const delta = e.touches[0].clientY - touchStartY;
-  if (delta > 80 && modal.scrollTop <= 0) {
-    // Swipe down to close
-    const overlay = document.querySelector('.overlay.open');
-    if (overlay) {
-      const id = overlay.id;
-      if (id) closeModal(id);
-      else overlay.remove();
-    }
-  }
-}, { passive: true });
+// (Désactivé) Le swipe-to-close fermait par erreur les modals longs (handover, daily report)
+// dès que l'utilisateur faisait défiler le contenu vers le bas. L'utilisateur peut toujours
+// fermer via la croix × du modal.
+// document.addEventListener('touchmove', e => { ... });
 
 // ═══ MOBILE — BETTER DASHBOARD ═══
 function renderDashboardMobile() {
