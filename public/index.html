@@ -2320,26 +2320,36 @@ async function loadDailyReports() {
   el.innerHTML = res.data.map(r => {
     const nbEntries = r._count?.entries || 0;
     const nbPhotos  = r._count?.photos  || 0;
+    const preview   = (r.entries || []).slice(0, 3);
+    const updatedAt = r.updatedAt ? new Date(r.updatedAt) : null;
+    const updatedAgo = updatedAt ? `Modifié ${updatedAt.toLocaleDateString('fr-FR')} ${updatedAt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}` : '';
     return `
     <div class="card" style="margin-bottom:12px;cursor:pointer;" onclick="editDailyReport('${r.id}')">
       <div class="card-header">
-        <div>
+        <div style="flex:1;min-width:0;">
           <div class="card-title">📓 Rapport du ${fmtDate(r.reportDate)}</div>
           <div style="font-size:12px;color:var(--text3);margin-top:2px;">
             Par ${r.createdBy?`${r.createdBy.firstName} ${r.createdBy.lastName}`:'N/A'} · ${r.workersPresent} ouvriers ${r.weather?' · '+r.weather:''}
           </div>
-          <div style="display:flex;gap:10px;margin-top:6px;font-size:12px;">
+          <div style="display:flex;gap:10px;margin-top:6px;font-size:12px;flex-wrap:wrap;align-items:center;">
             <span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">⏱️ ${nbEntries} entrée${nbEntries>1?'s':''}</span>
             ${nbPhotos>0?`<span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">📸 ${nbPhotos} photo${nbPhotos>1?'s':''}</span>`:''}
+            ${updatedAgo?`<span style="color:var(--text3);font-size:11px;">· ${updatedAgo}</span>`:''}
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:flex-start;" onclick="event.stopPropagation();">
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-shrink:0;" onclick="event.stopPropagation();">
           ${r.sentAt?'<span class="badge badge-green">✉️ Envoyé</span>':''}
           <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
           ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
         </div>
       </div>
-      ${r.generalNotes?`<div class="card-body" style="font-size:13px;color:var(--text2);">${r.generalNotes}</div>`:''}
+      ${preview.length ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;display:flex;flex-direction:column;gap:3px;">
+          ${preview.map(e => `<div style="display:flex;gap:8px;"><span style="font-family:monospace;font-weight:600;color:var(--accent);min-width:42px;flex-shrink:0;">${e.entryTime||'--:--'}</span><span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.description||''}</span></div>`).join('')}
+          ${nbEntries > 3 ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;">+ ${nbEntries-3} autre${nbEntries-3>1?'s':''}…</div>` : ''}
+        </div>
+      ` : ''}
+      ${r.generalNotes?`<div class="card-body" style="font-size:13px;color:var(--text2);margin-top:6px;">${r.generalNotes}</div>`:''}
     </div>`;
   }).join('');
 }
