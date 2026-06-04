@@ -86,14 +86,14 @@ export async function runStartupMigrations() {
     // la table users (et avec quels types), et quelles valeurs sont actuellement
     // dans l'enum UserRole. Indispensable pour cibler une erreur 22P03.
     try {
-      const cols = await prisma.$queryRawUnsafe<Array<{ column_name: string; data_type: string }>>(
+      const cols = await prisma.$queryRawUnsafe(
         `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position;`
-      );
+      ) as Array<{ column_name: string; data_type: string }>;
       logger.info(`[diag] colonnes users : ${cols.map(c => `${c.column_name}=${c.data_type}`).join(', ')}`);
 
-      const enumVals = await prisma.$queryRawUnsafe<Array<{ enumlabel: string }>>(
+      const enumVals = await prisma.$queryRawUnsafe(
         `SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'UserRole') ORDER BY enumsortorder;`
-      );
+      ) as Array<{ enumlabel: string }>;
       logger.info(`[diag] UserRole enum : ${enumVals.map(e => e.enumlabel).join(', ')}`);
     } catch (e: any) {
       logger.warn(`[diag] échec lecture méta : ${e.message}`);
