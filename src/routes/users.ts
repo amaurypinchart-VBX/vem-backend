@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -46,11 +47,21 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     }
     if (typeof data.email === 'string') data.email = data.email.toLowerCase();
 
-    const user = await prisma.user.create({
-      data,
-      select: USER_SELECT,
-    });
-    res.status(201).json({ success: true, data: { user, tempPassword: password } });
+    // Log diagnostic : on log les champs envoyés (sans le passwordHash)
+    const { passwordHash: _ph, ...safe } = data;
+    logger.info(`[create-user] champs envoyés : ${JSON.stringify(safe)}`);
+
+    try {
+      const user = await prisma.user.create({
+        data,
+        select: USER_SELECT,
+      });
+      res.status(201).json({ success: true, data: { user, tempPassword: password } });
+    } catch (createErr: any) {
+      // Log explicite de la cause Prisma pour faciliter le diagnostic
+      logger.error(`[create-user] échec Prisma : code=${createErr.code || '?'} | meta=${JSON.stringify(createErr.meta || {})} | msg=${createErr.message?.slice(0, 300)}`);
+      throw createErr;
+    }
   } catch (err) { next(err); }
 });
 
