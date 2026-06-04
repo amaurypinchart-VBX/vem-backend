@@ -80,6 +80,18 @@ export async function runStartupMigrations() {
     }
 
     logger.info('✅ Migrations de démarrage OK');
+
+    // Forcer Prisma à rafraîchir ses métadonnées internes (notamment les enums
+    // qu'on vient potentiellement d'enrichir). Sans ça, Prisma garde en cache
+    // les valeurs d'enum connues à la connexion initiale et envoie un format
+    // binaire obsolète → erreur 22P03 "incorrect binary data format" sur les
+    // nouvelles valeurs (ex: sales_engineer / installer).
+    try {
+      await prisma.$disconnect();
+      logger.info('🔄 Prisma reconnecté pour rafraîchir les métadonnées');
+    } catch (e: any) {
+      logger.warn(`[migration] reconnexion Prisma échouée : ${e.message}`);
+    }
   } catch (err) {
     logger.error('❌ Erreur lors des migrations de démarrage :', err);
     // On ne plante pas le serveur pour autant — il pourra démarrer même si la migration échoue.
