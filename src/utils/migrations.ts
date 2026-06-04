@@ -96,6 +96,56 @@ export async function runStartupMigrations() {
       logger.warn(`[migration] daily_report_entries.entry_time : ${e.message}`);
     }
 
+    // ─── Table "client_visits" (rapport de visite client = contenant de N points) ───
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "client_visits" (
+        "id"            TEXT         NOT NULL,
+        "project_id"    TEXT         NOT NULL,
+        "client_id"     TEXT,
+        "title"         TEXT         NOT NULL,
+        "visit_date"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "notes"         TEXT,
+        "created_by_id" TEXT,
+        "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "client_visits_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    // Clé étrangère vers projects
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_visits_project_id_fkey') THEN
+          ALTER TABLE "client_visits"
+            ADD CONSTRAINT "client_visits_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_visits_client_id_fkey') THEN
+          ALTER TABLE "client_visits"
+            ADD CONSTRAINT "client_visits_client_id_fkey"
+            FOREIGN KEY ("client_id") REFERENCES "clients"("id")
+            ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+
+    // Colonne visit_id sur client_remarks (pour rattacher à une visite)
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "client_remarks" ADD COLUMN IF NOT EXISTS "visit_id" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'client_remarks_visit_id_fkey') THEN
+          ALTER TABLE "client_remarks"
+            ADD CONSTRAINT "client_remarks_visit_id_fkey"
+            FOREIGN KEY ("visit_id") REFERENCES "client_visits"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+
     // ─── Supprimer la contrainte unique sur (project_id, report_date) ───
     // Le métier permet désormais plusieurs rapports par projet et par date.
     // On supprime dynamiquement n'importe quelle contrainte unique sur ces deux
