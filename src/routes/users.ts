@@ -60,6 +60,23 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     } catch (createErr: any) {
       // Log explicite de la cause Prisma pour faciliter le diagnostic
       logger.error(`[create-user] échec Prisma : code=${createErr.code || '?'} | meta=${JSON.stringify(createErr.meta || {})} | msg=${createErr.message?.slice(0, 300)}`);
+
+      // Diagnostic à la volée : on inspecte la structure réelle de la table users
+      // et l'enum UserRole pour comprendre où est la divergence avec le schéma Prisma.
+      try {
+        const cols = await prisma.$queryRawUnsafe(
+          `SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position;`
+        ) as Array<{ column_name: string; data_type: string; udt_name: string }>;
+        logger.error(`[diag-on-error] colonnes users : ${cols.map(c => `${c.column_name}:${c.data_type}/${c.udt_name}`).join(' | ')}`);
+
+        const enumVals = await prisma.$queryRawUnsafe(
+          `SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'UserRole') ORDER BY enumsortorder;`
+        ) as Array<{ enumlabel: string }>;
+        logger.error(`[diag-on-error] UserRole : ${enumVals.map(e => e.enumlabel).join(', ')}`);
+      } catch (diagErr: any) {
+        logger.error(`[diag-on-error] échec lecture méta : ${diagErr.message}`);
+      }
+
       throw createErr;
     }
   } catch (err) { next(err); }
