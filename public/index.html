@@ -722,6 +722,7 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
+      <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()">📋 Template</button>
       <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--text3);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)" title="Archiver / Supprimer">📦</button>
     </div>
@@ -3717,6 +3718,190 @@ const STAGE_ICONS = {
   'Warehouse Preparation': '📦', 'Installation': '🏗️',
   'Dismantling': '🔨', 'Come Back Warehouse': '🏠'
 };
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATE DE TÂCHES — APPLIQUER À UN PROJET EXISTANT
+// ═══════════════════════════════════════════════════════════
+// Ouvre un modal contenant le même sélecteur que celui de la création de
+// projet. L'utilisateur coche les tâches qu'il veut, choisit (optionnellement)
+// une date et un assigné par ligne, puis on les pousse toutes en POST /tasks
+// pour le projet courant.
+function openTemplateTasksModal() {
+  if (!CURRENT_PROJECT_ID) { toast('Ouvre un projet avant', 'error'); return; }
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.id = 'overlay-tpl-tasks';
+  el.innerHTML = `
+    <div class="modal" style="max-width:880px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">📋 Ajouter des tâches depuis le template</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Coche les tâches que tu veux ajouter au projet. La date et l'assigné sont optionnels.</div>
+        </div>
+        <button class="modal-close" onclick="closeTemplateTasksModal()">×</button>
+      </div>
+
+      <!-- Bouton assignation globale -->
+      <div style="display:flex;gap:10px;align-items:center;background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <select id="tpl-modal-global-assign" class="input" style="flex:1;min-width:180px;font-size:13px;">
+          <option value="">— Assigner toutes les tâches cochées à... —</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="tplModalApplyGlobalAssign()">Appliquer</button>
+        <div style="flex-basis:100%;font-size:11px;color:var(--text3);">L'assignation par tâche reste libre — celle-ci est juste un raccourci.</div>
+      </div>
+
+      <!-- Le sélecteur lui-même (rempli à l'ouverture) -->
+      <div id="tpl-modal-selector" style="max-height:50vh;overflow-y:auto;padding-right:4px;"></div>
+
+      <!-- Compteur -->
+      <div id="tpl-modal-count" style="font-size:12px;color:var(--text3);margin-top:10px;"></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="closeTemplateTasksModal()">Annuler</button>
+        <button class="btn btn-primary" id="tpl-modal-submit-btn" onclick="submitTemplateTasksToCurrent()">➕ Ajouter les tâches cochées</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) closeTemplateTasksModal(); });
+
+  // On greffe le sélecteur HTML dans le modal en réutilisant la même logique
+  // que loadProjTemplateSelector, mais en remplaçant les IDs pour ne pas
+  // entrer en conflit avec celui de la création de projet (qui peut coexister
+  // dans le DOM si modal-proj a déjà été ouvert dans la session).
+  buildTemplateSelectorInto('tpl-modal-selector', 'tpl-modal-global-assign');
+
+  // Préselectionner : aucune par défaut, l'utilisateur choisit
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check').forEach(cb => {
+    cb.checked = false;
+  });
+  updateTplModalCount();
+}
+
+function closeTemplateTasksModal() {
+  document.getElementById('overlay-tpl-tasks')?.remove();
+}
+
+function buildTemplateSelectorInto(containerId, globalAssignId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Remplir le select d'assignation globale
+  const globalAssign = document.getElementById(globalAssignId);
+  if (globalAssign && USERS.length) {
+    globalAssign.innerHTML = '<option value="">— Assigner toutes les tâches cochées à... —</option>' +
+      USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
+  }
+
+  let html = '';
+  Object.entries(TASK_TEMPLATES_DATA).forEach(([stage, tasks]) => {
+    const icon = STAGE_ICONS[stage] || '📋';
+    const stageId = 'tplmod-stage-' + stage.replace(/[^a-z0-9]/gi,'_');
+    html += `
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid var(--border);" onclick="toggleStageSection('${stageId}')">
+          <span style="font-size:16px;">${icon}</span>
+          <span style="font-size:13px;font-weight:700;flex:1;">${stage}</span>
+          <span style="font-size:11px;color:var(--text3);">${tasks.length} tâches</span>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();tplModalToggleStage('${stageId}',true)">✅</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();tplModalToggleStage('${stageId}',false)">☐</button>
+          <span id="${stageId}-chevron" style="font-size:11px;color:var(--text3);">▼</span>
+        </div>
+        <div id="${stageId}" style="display:flex;flex-direction:column;gap:3px;padding:0 2px 4px;">
+          ${tasks.map((t, idx) => {
+            const taskId = `tplmod_${stageId}_${idx}`;
+            return `
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;">
+              <input type="checkbox" class="proj-tpl-check" id="${taskId}"
+                data-title="${t.title.replace(/"/g,'&quot;')}"
+                data-stage="${stage}"
+                onchange="updateTplModalCount()"
+                style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;">
+              <label for="${taskId}" style="flex:1;font-size:12px;cursor:pointer;">${t.title}</label>
+              <input type="date" class="tpl-date input" data-task="${taskId}"
+                style="font-size:11px;padding:4px 6px;width:130px;flex-shrink:0;" title="Date (optionnel)">
+              <select class="tpl-assign input" data-task="${taskId}"
+                style="font-size:11px;padding:4px 6px;width:140px;flex-shrink:0;" title="Assigné (optionnel)">
+                <option value="">— Aucun —</option>
+                ${USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function tplModalToggleStage(stageId, checked) {
+  document.querySelectorAll(`#${stageId} .proj-tpl-check`).forEach(cb => { cb.checked = checked; });
+  updateTplModalCount();
+}
+
+function tplModalApplyGlobalAssign() {
+  const userId = document.getElementById('tpl-modal-global-assign').value;
+  if (!userId) { toast('Choisis d\'abord une personne', 'warning'); return; }
+  let count = 0;
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').forEach(cb => {
+    const sel = document.querySelector(`#tpl-modal-selector .tpl-assign[data-task="${cb.id}"]`);
+    if (sel) { sel.value = userId; count++; }
+  });
+  toast(count ? `${count} tâche(s) assignée(s)` : 'Aucune tâche cochée', count ? 'success' : 'warning');
+}
+
+function updateTplModalCount() {
+  const count = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').length;
+  const total = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check').length;
+  const el = document.getElementById('tpl-modal-count');
+  if (el) el.textContent = `${count} / ${total} tâche(s) cochée(s)`;
+  const btn = document.getElementById('tpl-modal-submit-btn');
+  if (btn) btn.disabled = count === 0;
+}
+
+async function submitTemplateTasksToCurrent() {
+  const projectId = CURRENT_PROJECT_ID;
+  if (!projectId) { toast('Aucun projet courant', 'error'); return; }
+
+  // Collecte
+  const tasks = [];
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').forEach(cb => {
+    const dateEl   = document.querySelector(`#tpl-modal-selector .tpl-date[data-task="${cb.id}"]`);
+    const assignEl = document.querySelector(`#tpl-modal-selector .tpl-assign[data-task="${cb.id}"]`);
+    tasks.push({
+      title:    cb.dataset.title,
+      stage:    cb.dataset.stage,
+      taskDate: dateEl?.value || null,
+      assignedTo: assignEl?.value || null,
+    });
+  });
+  if (!tasks.length) { toast('Coche au moins une tâche', 'error'); return; }
+
+  const btn = document.getElementById('tpl-modal-submit-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Création...'; }
+
+  toast(`Création de ${tasks.length} tâche(s)...`, 'info');
+  const results = await Promise.all(tasks.map(t =>
+    api('POST', '/tasks', {
+      projectId,
+      title:        t.title,
+      description:  t.stage ? `Stage: ${t.stage}` : undefined,
+      status:       'todo',
+      priority:     'normal',
+      taskDate:     t.taskDate || undefined,
+      assignedToId: t.assignedTo || undefined,
+    })
+  ));
+  const ok = results.filter(r => r?.success).length;
+  const fail = results.length - ok;
+
+  if (fail === 0)     toast(`${ok} tâche(s) ajoutée(s) au projet ✅`, 'success');
+  else if (ok === 0)  toast(`Aucune tâche créée (${fail} échec(s))`, 'error');
+  else                toast(`${ok} créée(s) — ${fail} échec(s)`, 'warning');
+
+  closeTemplateTasksModal();
+  loadDetailTasks(projectId);
+}
 
 function loadProjTemplateSelector() {
   const el = document.getElementById('proj-templates-selector');
@@ -6779,117 +6964,382 @@ async function saveHandoverInfo(id, projectId, overlay) {
   else toast('Erreur mise à jour','error');
 }
 
+// ═══════════════════════════════════════════
+// VISITES CLIENT — Niveau 1 : LISTE des visites du projet
+// ═══════════════════════════════════════════
 async function loadDetailRemarks(projectId) {
   const el = document.getElementById('detail-remarks-content');
   if (!el) return;
-  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+
+  const res = await api('GET', `/client-visits?projectId=${projectId}`);
+  const visits = res?.success ? res.data : [];
 
   const headerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
       <div>
-        <div style="font-size:16px;font-weight:700;">📋 Visite Terrain</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px;" id="visite-stats-label">Chargement...</div>
+        <div style="font-size:16px;font-weight:700;">📋 Visites terrain</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">${visits.length} visite${visits.length>1?'s':''} enregistrée${visits.length>1?'s':''}</div>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-ghost btn-sm" onclick="exportVisitePDF('${projectId}')">📄 PDF</button>
-        <button class="btn btn-primary btn-sm" onclick="openAddPointModal('${projectId}')">📸 + Point</button>
-      </div>
+      <button class="btn btn-primary btn-sm" onclick="openNewVisitModal('${projectId}')">➕ Nouvelle visite</button>
     </div>`;
 
-  if (!res?.success || !res.data.length) {
-    el.innerHTML = headerHTML.replace('Chargement...','Aucun point enregistré') + `
-      <button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')">
-        <span style="font-size:28px;">📸</span>
+  if (!visits.length) {
+    el.innerHTML = headerHTML + `
+      <button class="terrain-add-btn" onclick="openNewVisitModal('${projectId}')">
+        <span style="font-size:28px;">📋</span>
         <div>
-          <div style="font-weight:700;font-size:15px;">Ajouter le premier point</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Photo + description + assignation</div>
+          <div style="font-weight:700;font-size:15px;">Créer la première visite</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Un rapport de visite contient plusieurs points avec photos</div>
         </div>
       </button>`;
     return;
   }
 
-  const points = res.data;
-  const open = points.filter(r => r.status !== 'resolved');
-  const done = points.filter(r => r.status === 'resolved');
-  const stats = `${open.length} point(s) en cours · ${done.length} traité(s)`;
+  el.innerHTML = headerHTML + visits.map(v => {
+    const dt = new Date(v.visitDate).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+    const nbPts = v._count?.remarks || 0;
+    const clientName = v.client?.name || '';
+    return `
+    <div class="card" style="margin-bottom:10px;cursor:pointer;border-left:4px solid var(--blue);" onclick="openVisitDetail('${v.id}','${projectId}')">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${esc(v.title)}</div>
+          <div style="font-size:12px;color:var(--text3);">📅 ${dt}${clientName?` · 🤝 ${esc(clientName)}`:''}</div>
+          ${v.notes?`<div style="font-size:12px;color:var(--text2);margin-top:6px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${esc(v.notes)}</div>`:''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+          <span style="background:var(--bg3);padding:3px 10px;border-radius:10px;font-size:12px;font-weight:600;">📸 ${nbPts} point${nbPts>1?'s':''}</span>
+          <button class="btn btn-ghost btn-xs" onclick="deleteVisit('${v.id}','${projectId}')" title="Supprimer">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  const prioColor = {critical:'var(--accent)',high:'var(--amber)',normal:'var(--blue)',low:'var(--green)'};
-  const prioLabel = {critical:'🔴 Critique',high:'🟠 Élevé',normal:'🔵 Normal',low:'🟢 Faible'};
+// Modal "Nouvelle visite" : titre + client (optionnel)
+function openNewVisitModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">➕ Nouvelle visite terrain</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2"><label class="form-label2">Titre de la visite *</label>
+        <input class="input" id="nv-title" placeholder="Ex: Visite client du 4 juin — point d'avancement"></div>
+      <div class="form-group2"><label class="form-label2">Date</label>
+        <input class="input" type="date" id="nv-date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group2"><label class="form-label2">Client (optionnel)</label>
+        <select class="input" id="nv-client">
+          <option value="">— Aucun —</option>
+          ${(CLIENTS||[]).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Notes (optionnel)</label>
+        <textarea class="input" id="nv-notes" rows="2" placeholder="Contexte de la visite, personnes présentes..."></textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitNewVisit('${projectId}',this.closest('.overlay'))">➕ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
 
+async function submitNewVisit(projectId, overlay) {
+  const title = document.getElementById('nv-title').value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
+  const body = {
+    projectId,
+    title,
+    visitDate: document.getElementById('nv-date').value || undefined,
+    clientId:  document.getElementById('nv-client').value || undefined,
+    notes:     document.getElementById('nv-notes').value || undefined,
+  };
+  const res = await api('POST', '/client-visits', body);
+  if (res?.success) {
+    toast('Visite créée ✅', 'success');
+    overlay.remove();
+    loadDetailRemarks(projectId);
+    // Ouvre directement la visite pour commencer à ajouter des points
+    setTimeout(() => openVisitDetail(res.data.id, projectId), 300);
+  } else {
+    toast(res?.error || 'Erreur création visite', 'error');
+  }
+}
+
+async function deleteVisit(visitId, projectId) {
+  if (!confirm('Supprimer cette visite et tous ses points ?')) return;
+  const res = await api('DELETE', `/client-visits/${visitId}`);
+  if (res?.success) { toast('Visite supprimée', 'success'); loadDetailRemarks(projectId); }
+  else toast('Erreur suppression', 'error');
+}
+
+// ═══════════════════════════════════════════
+// VISITES CLIENT — Niveau 2 : DÉTAIL d'une visite avec ses points
+// ═══════════════════════════════════════════
+async function openVisitDetail(visitId, projectId) {
+  const res = await api('GET', `/client-visits/${visitId}`);
+  if (!res?.success) { toast('Visite introuvable', 'error'); return; }
+  const v = res.data;
+  const points = v.remarks || [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'overlay-visit-detail';
+  overlay.dataset.visitId = visitId;
+  overlay.dataset.projectId = projectId;
+
+  const dt = new Date(v.visitDate).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
   const statusBg  = {open:'#fee2e2',in_progress:'#fef9c3',resolved:'#dcfce7',archived:'#f3f4f6',urgent:'#fff1f2'};
   const statusClr = {open:'#dc2626',in_progress:'#ca8a04',resolved:'#16a34a',archived:'#6b7280',urgent:'#e63946'};
   const statusLbl = {open:'Ouvert',in_progress:'En cours',resolved:'Résolu',archived:'Archivé',urgent:'⚡ URGENT'};
 
-  const renderPoint = (r, idx) => {
-    const photos = r.photos || [];
-    const firstPhoto = photos[0]?.photoUrl;
-    const prio = r.priority || 'normal';
+  const pointHTML = points.map((r, idx) => {
     const st = r.status || 'open';
-    const bg = statusBg[st] || '#fee2e2';
     const clr = statusClr[st] || '#dc2626';
-    const assignee = r.assignedToUser ? r.assignedToUser.firstName+' '+r.assignedToUser.lastName : null;
-
+    const bg  = statusBg[st]  || '#fee2e2';
+    const photos = r.photos || [];
     return `
-    <div id="tp-${r.id}" style="background:var(--bg2);border:1px solid ${clr}44;border-left:4px solid ${clr};border-radius:12px;overflow:hidden;margin-bottom:8px;transition:all .2s;">
-      <div style="display:flex;align-items:stretch;gap:0;">
-
-        <!-- Photo thumbnail -->
-        <div style="width:72px;flex-shrink:0;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="${firstPhoto?`openPhotoViewer('${firstPhoto}')`:`openAddPointModal('${projectId}')`}">
-          ${firstPhoto
-            ? `<img src="${firstPhoto}" style="width:72px;height:72px;object-fit:cover;display:block;">`
-            : `<label style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:8px;text-align:center;">
-                <span style="font-size:22px;">📸</span>
-                <span style="font-size:9px;color:var(--text3);">Photo</span>
-                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
-               </label>`}
-        </div>
-
-        <!-- Content -->
-        <div style="flex:1;min-width:0;padding:10px 12px;">
-          <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px;">
-            <span style="width:20px;height:20px;border-radius:50%;background:${clr};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${idx}</span>
-            <div style="font-weight:700;font-size:13px;line-height:1.3;flex:1;">${r.title}</div>
-            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${bg};color:${clr};flex-shrink:0;white-space:nowrap;">${statusLbl[st]||st}</span>
+      <div style="background:var(--bg2);border:1px solid ${clr}44;border-left:4px solid ${clr};border-radius:10px;padding:10px;margin-bottom:8px;">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+          <span style="width:22px;height:22px;border-radius:50%;background:${clr};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${idx+1}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13px;">${esc(r.title)}</div>
+            ${r.description?`<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4;">${esc(r.description)}</div>`:''}
           </div>
-          ${r.description?`<div style="font-size:12px;color:var(--text2);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.description}</div>`:''}
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            ${r.zone?`<span style="font-size:10px;color:var(--text3);">📍 ${r.zone}</span>`:''}
-            ${assignee?`<span style="font-size:10px;color:var(--blue);">👤 ${assignee}</span>`:''}
-            ${photos.length>1?`<span style="font-size:10px;color:var(--text3);">📸 ${photos.length}</span>`:''}
-          </div>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${bg};color:${clr};flex-shrink:0;white-space:nowrap;">${statusLbl[st]||st}</span>
         </div>
+        ${photos.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:8px;">
+          ${photos.map(p => `<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;cursor:pointer;">`).join('')}
+        </div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          ${st !== 'resolved' ? `<button class="btn btn-ghost btn-xs" onclick="updatePointStatusVisit('${r.id}','${visitId}','${projectId}','resolved')">✅ Marquer OK</button>` : ''}
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;">📸 + photo<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhotoVisit('${r.id}','${visitId}','${projectId}',this)"></label>
+          <button class="btn btn-ghost btn-xs" onclick="deletePointVisit('${r.id}','${visitId}','${projectId}')" style="color:var(--accent);margin-left:auto;">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
 
-        <!-- Actions -->
-        <div style="display:flex;flex-direction:column;padding:6px 8px;gap:4px;align-items:center;justify-content:center;flex-shrink:0;border-left:1px solid var(--border);">
-          ${st!=='resolved'?`<button style="background:#dcfce7;color:#16a34a;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;" onclick="event.stopPropagation();updatePointStatus('${r.id}','${projectId}','resolved')" title="Marquer OK">✅</button>`:''}
-          ${st!=='urgent'?`<button style="background:#fff1f2;color:#e63946;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;" onclick="event.stopPropagation();updatePointStatus('${r.id}','${projectId}','urgent')" title="Urgent">⚡</button>`:''}
-          ${st!=='archived'?`<button style="background:var(--bg3);color:var(--text3);border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;" onclick="event.stopPropagation();updatePointStatus('${r.id}','${projectId}','archived')" title="Archiver">📦</button>`:''}
-          <button style="background:var(--bg3);color:var(--text3);border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;" onclick="event.stopPropagation();openPointDetail('${r.id}','${projectId}')" title="Modifier">✏️</button>
-          <label style="background:var(--bg3);color:var(--text3);border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;" title="Photo">
-            📸<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhoto('${r.id}','${projectId}',this)">
-          </label>
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title">📋 ${esc(v.title)}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">📅 ${dt}${v.client?` · 🤝 ${esc(v.client.name)}`:''}</div>
+          ${v.notes?`<div style="font-size:12px;color:var(--text3);margin-top:4px;font-style:italic;">${esc(v.notes)}</div>`:''}
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Liste des points -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Points (${points.length})</div>
+        <div id="visit-points-list">${pointHTML || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;border:1px dashed var(--border);border-radius:8px;">Aucun point pour le moment</div>'}</div>
+      </div>
+
+      <button class="terrain-add-btn" onclick="openAddPointToVisitModal('${visitId}','${projectId}')">
+        <span style="font-size:22px;">➕</span>
+        <span style="font-weight:600;">Ajouter un point</span>
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ═══════════════════════════════════════════
+// Ajout d'un point DANS une visite — avec dictée vocale
+// ═══════════════════════════════════════════
+function openAddPointToVisitModal(visitId, projectId) {
+  PENDING_POINT_PHOTOS = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div class="modal-title">📍 Nouveau point</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Photo -->
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">📸 Photo(s)</label>
+        <div id="vpt-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;"></div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:16px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:600;background:var(--bg3);">
+          <span style="font-size:24px;">📸</span>
+          <span>Ajouter photo(s)</span>
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewVisitPointPhotos(this)">
+        </label>
+      </div>
+
+      <!-- Titre -->
+      <div class="form-group2"><label class="form-label2">Titre du point *</label>
+        <input class="input" id="vpt-title" placeholder="Ex: Trace au mur côté entrée"></div>
+
+      <!-- Description avec dictée -->
+      <div class="form-group2">
+        <label class="form-label2" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Description (optionnel)</span>
+          <button id="vpt-mic-btn" type="button" onclick="toggleVisitPointDictation()" class="btn btn-ghost btn-xs" style="font-size:11px;">🎤 Dicter</button>
+        </label>
+        <textarea class="input" id="vpt-desc" rows="3" placeholder="Détails du point — ou clic 🎤 Dicter pour parler"></textarea>
+        <div id="vpt-mic-status" style="display:none;font-size:11px;color:var(--accent);margin-top:4px;">🔴 Enregistrement en cours...</div>
+      </div>
+
+      <!-- Zone + priorité -->
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Zone</label>
+          <input class="input" id="vpt-zone" placeholder="Ex: Salle principale, façade nord"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="vpt-prio">
+            <option value="normal">🔵 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+            <option value="low">🟢 Faible</option>
+          </select>
         </div>
       </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitVisitPoint('${visitId}','${projectId}',this.closest('.overlay'))">➕ Ajouter</button>
+      </div>
     </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function previewVisitPointPhotos(input) {
+  const preview = document.getElementById('vpt-photos-preview');
+  if (!preview) return;
+  for (const file of input.files) {
+    PENDING_POINT_PHOTOS.push(file);
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;';
+      preview.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+// Dictée vocale pour la description du point
+let _visitPointRecognition = null;
+let _visitPointIsRecording = false;
+function toggleVisitPointDictation() {
+  if (_visitPointIsRecording) {
+    _visitPointIsRecording = false;
+    _visitPointRecognition?.stop();
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Reconnaissance vocale non supportée sur ce navigateur', 'error'); return; }
+  _visitPointRecognition = new SR();
+  _visitPointRecognition.lang = 'fr-FR';
+  _visitPointRecognition.continuous = true;
+  _visitPointRecognition.interimResults = true;
+  let finalText = '';
+
+  _visitPointRecognition.onstart = () => {
+    _visitPointIsRecording = true;
+    document.getElementById('vpt-mic-btn').textContent = '⏹️ Stop';
+    document.getElementById('vpt-mic-status').style.display = 'block';
+    finalText = document.getElementById('vpt-desc').value;
+    if (finalText && !finalText.endsWith(' ')) finalText += ' ';
   };
+  _visitPointRecognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) finalText += r[0].transcript + ' ';
+      else interim += r[0].transcript;
+    }
+    document.getElementById('vpt-desc').value = (finalText + interim).trim();
+  };
+  _visitPointRecognition.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    toast('Micro : ' + e.error, 'error');
+  };
+  _visitPointRecognition.onend = () => {
+    if (_visitPointIsRecording) {
+      try { _visitPointRecognition.start(); } catch (e) {}
+    } else {
+      const btn = document.getElementById('vpt-mic-btn');
+      const st = document.getElementById('vpt-mic-status');
+      if (btn) btn.textContent = '🎤 Dicter';
+      if (st) st.style.display = 'none';
+    }
+  };
+  _visitPointRecognition.start();
+}
 
-  let content = headerHTML.replace('Chargement...', stats);
+async function submitVisitPoint(visitId, projectId, overlay) {
+  const title = document.getElementById('vpt-title').value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
 
-  if (open.length) {
-    content += open.map((r,i) => renderPoint(r, i+1)).join('');
+  // Stopper la dictée si encore active
+  if (_visitPointIsRecording) { _visitPointIsRecording = false; _visitPointRecognition?.stop(); }
+
+  const res = await api('POST', '/client-remarks', {
+    projectId,
+    visitId,
+    title,
+    description: document.getElementById('vpt-desc').value || undefined,
+    zone:        document.getElementById('vpt-zone').value || undefined,
+    priority:    document.getElementById('vpt-prio').value,
+    status:      'open',
+  });
+  if (!res?.success) { toast('Erreur création du point', 'error'); return; }
+
+  // Upload des photos liées au point fraîchement créé
+  for (const file of PENDING_POINT_PHOTOS) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const up = await fetch(`${API}/upload/photo`, { method:'POST', headers:{ 'Authorization':`Bearer ${TOKEN}` }, body: fd });
+      const upJson = await up.json();
+      if (upJson?.success) {
+        await api('POST', `/client-remarks/${res.data.id}/photos`, {
+          photoUrl: upJson.data.url, publicId: upJson.data.publicId, phase: 'problem',
+        });
+      }
+    } catch {}
   }
-  if (done.length) {
-    content += `<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.7px;margin:20px 0 10px;padding-top:16px;border-top:1px solid var(--border);">✅ Points traités (${done.length})</div>`;
-    content += done.map((r,i) => renderPoint(r, open.length+i+1)).join('');
+  PENDING_POINT_PHOTOS = [];
+
+  toast('Point ajouté ✅', 'success');
+  overlay.remove();
+  // Rouvrir la visite pour voir le nouveau point en haut
+  openVisitDetail(visitId, projectId);
+}
+
+async function updatePointStatusVisit(remarkId, visitId, projectId, status) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, { status });
+  if (res?.success) { toast('Statut mis à jour', 'success'); openVisitDetail(visitId, projectId); }
+}
+
+async function deletePointVisit(remarkId, visitId, projectId) {
+  if (!confirm('Supprimer ce point ?')) return;
+  const res = await api('DELETE', `/client-remarks/${remarkId}`);
+  if (res?.success) { toast('Point supprimé', 'success'); openVisitDetail(visitId, projectId); }
+}
+
+async function uploadPointPhotoVisit(remarkId, visitId, projectId, input) {
+  if (!input.files?.length) return;
+  for (const file of input.files) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const up = await fetch(`${API}/upload/photo`, { method:'POST', headers:{ 'Authorization':`Bearer ${TOKEN}` }, body: fd });
+      const upJson = await up.json();
+      if (upJson?.success) {
+        await api('POST', `/client-remarks/${remarkId}/photos`, { photoUrl: upJson.data.url, publicId: upJson.data.publicId, phase: 'problem' });
+      }
+    } catch {}
   }
-
-  content += `
-    <button class="terrain-add-btn" onclick="openAddPointModal('${projectId}')" style="margin-top:12px;">
-      <span style="font-size:22px;">📸</span>
-      <span style="font-weight:600;">Ajouter un point terrain</span>
-    </button>`;
-
-  el.innerHTML = content;
+  toast('Photo(s) ajoutée(s)', 'success');
+  openVisitDetail(visitId, projectId);
 }
 
 async function assignPointQuick(remarkId, projectId, userId) {
