@@ -53,38 +53,19 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     const { entries = [], checklist = [], ...data } = req.body;
     const reportDate = new Date(data.reportDate);
 
-    // Existe-t-il déjà un rapport pour ce projet à cette date ?
-    const existing = await prisma.dailyReport.findFirst({
-      where: { projectId: data.projectId, reportDate },
-    });
-
-    if (existing) {
-      // Remplace les entrées et la checklist, met à jour les champs principaux
-      await prisma.dailyReportEntry.deleteMany({ where: { reportId: existing.id } });
-      await prisma.dailyReportChecklistItem.deleteMany({ where: { reportId: existing.id } });
-      const updated = await prisma.dailyReport.update({
-        where: { id: existing.id },
-        data: {
-          weather:        data.weather,
-          workersPresent: data.workersPresent,
-          generalNotes:   data.generalNotes,
-          entries:   entries.length   ? { create: entries }   : undefined,
-          checklist: checklist.length ? { create: checklist } : undefined,
-        },
-        include: { entries: true, checklist: true, photos: true },
-      });
-      return res.json({ success: true, data: updated });
-    }
-
-    // Pas de rapport existant : on en crée un
+    // Le métier autorise plusieurs rapports par projet pour la même date
+    // (ex: rapport matin + rapport soir, ou différents équipiers). On crée
+    // donc systématiquement un nouveau rapport. Pour modifier un rapport
+    // existant, le front utilise PATCH /:id depuis la carte de la liste.
     const report = await prisma.dailyReport.create({
       data: {
-        ...data, createdById: req.user!.id,
+        ...data,
+        createdById: req.user!.id,
         reportDate,
         entries:   { create: entries },
         checklist: { create: checklist },
       },
-      include: { entries: true, checklist: true },
+      include: { entries: true, checklist: true, photos: true },
     });
     res.status(201).json({ success: true, data: report });
   } catch (err) { next(err); }
@@ -146,6 +127,9 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 });
 
 // POST /daily-reports/:id/send — generate PDF + email
+// Body optionnel : { recipients?: string[] }
+// Si recipients est fourni : envoie à cette liste précise.
+// Sinon : fallback à l'envoi automatique (client + manager technique + équipe).
 router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const r = await prisma.dailyReport.findUnique({
@@ -171,10 +155,24 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       photos: r.photos,
     });
 
+    // Construction de la liste finale de destinataires
     const recipients = new Set<string>();
-    if (r.project.client?.email) recipients.add(r.project.client.email);
-    if (r.project.technicalManager?.email) recipients.add(r.project.technicalManager.email);
-    r.project.team.forEach((t: any) => { if (t.user.email) recipients.add(t.user.email); });
+    const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+
+    if (customList.length > 0) {
+      // Liste fournie explicitement : on n'ajoute que ce qui est dedans
+      customList
+        .map(e => String(e).trim().toLowerCase())
+        .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        .forEach(e => recipients.add(e));
+    } else {
+      // Comportement par défaut (rétrocompatible)
+      if (r.project.client?.email) recipients.add(r.project.client.email);
+      if (r.project.technicalManager?.email) recipients.add(r.project.technicalManager.email);
+      r.project.team.forEach((t: any) => { if (t.user.email) recipients.add(t.user.email); });
+    }
+
+    if (recipients.size === 0) throw new AppError('Aucun destinataire valide', 400);
 
     await sendDailyReport({
       to: Array.from(recipients),
@@ -186,7 +184,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     });
 
     await prisma.dailyReport.update({ where: { id: r.id }, data: { sentAt: new Date() } });
-    res.json({ success: true, data: { sentTo: recipients.size } });
+    res.json({ success: true, data: { sentTo: recipients.size, recipients: Array.from(recipients) } });
   } catch (err) { next(err); }
 });
 
