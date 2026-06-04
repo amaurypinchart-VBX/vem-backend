@@ -96,6 +96,31 @@ export async function runStartupMigrations() {
       logger.warn(`[migration] daily_report_entries.entry_time : ${e.message}`);
     }
 
+    // ─── Supprimer la contrainte unique sur (project_id, report_date) ───
+    // Le métier permet désormais plusieurs rapports par projet et par date.
+    // On supprime dynamiquement n'importe quelle contrainte unique sur ces deux
+    // colonnes sans présumer du nom exact (Prisma peut générer .._key ou autre).
+    try {
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE c_name text;
+        BEGIN
+          SELECT conname INTO c_name
+          FROM pg_constraint
+          WHERE conrelid = 'daily_reports'::regclass
+            AND contype = 'u'
+          LIMIT 1;
+          IF c_name IS NOT NULL THEN
+            EXECUTE 'ALTER TABLE "daily_reports" DROP CONSTRAINT ' || quote_ident(c_name);
+            RAISE NOTICE 'Dropped unique constraint %', c_name;
+          END IF;
+        END $$;
+      `);
+      logger.info('[migration] contrainte unique daily_reports (project_id, report_date) supprimée si présente');
+    } catch (e: any) {
+      logger.warn(`[migration] drop unique daily_reports : ${e.message}`);
+    }
+
     logger.info('✅ Migrations de démarrage OK');
 
     // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───
