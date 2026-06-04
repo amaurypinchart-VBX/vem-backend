@@ -200,4 +200,30 @@ router.post('/reset-password', async (req: Request, res: Response, next: NextFun
     res.json({ success: true, message: 'Mot de passe réinitialisé avec succès.' });
   } catch (err) { next(err); }
 });
+
+// POST /api/v1/auth/change-password — changement depuis le compte connecté
+// Requiert l'ancien mot de passe pour vérifier l'identité.
+router.post('/change-password', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) throw new AppError('Ancien et nouveau mot de passe requis', 400);
+    if (newPassword.length < 8) throw new AppError('Nouveau mot de passe trop court (min 8 caractères)', 400);
+    if (currentPassword === newPassword) throw new AppError('Le nouveau mot de passe doit être différent', 400);
+
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) throw new AppError('Utilisateur introuvable', 404);
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new AppError('Ancien mot de passe incorrect', 401);
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+
+    // Révoque les autres sessions pour forcer une reconnexion ailleurs
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+    res.json({ success: true, message: 'Mot de passe modifié avec succès' });
+  } catch (err) { next(err); }
+});
+
 export default router;
