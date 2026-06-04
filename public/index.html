@@ -2797,14 +2797,18 @@ function startVoiceRecording() {
   voiceRecognition.continuous = true;
   voiceRecognition.interimResults = true;
 
+  // Texte déjà finalisé (accumulé entre les appels onresult successifs)
+  let finalTranscript = '';
+
   voiceRecognition.onstart = () => {
     isRecording = true;
-    // Update small voice btn (manual tab)
+    finalTranscript = '';
+    // Petit bouton dans la tab manuelle
     const btn = document.getElementById('voice-btn');
     const status = document.getElementById('voice-status');
     if (btn) { btn.style.background = 'rgba(230,57,70,.2)'; btn.style.color = 'var(--accent)'; }
     if (status) status.style.display = 'inline';
-    // Update big voice btn (voice tab)
+    // Gros bouton dans la tab vocale
     const bigBtn = document.getElementById('voice-big-btn');
     const mainStatus = document.getElementById('voice-main-status');
     const icon = document.getElementById('voice-icon');
@@ -2816,25 +2820,44 @@ function startVoiceRecording() {
   };
 
   voiceRecognition.onresult = (event) => {
-    let transcript = '';
+    let interim = '';
+    // On parcourt tous les résultats depuis l'index courant : ceux marqués isFinal
+    // sont définitivement acquis et s'ajoutent au texte final accumulé. Les autres
+    // restent en "interim" et s'affichent en attendant validation.
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+      const res = event.results[i];
+      if (res.isFinal) {
+        finalTranscript += res[0].transcript + ' ';
+      } else {
+        interim += res[0].transcript;
+      }
     }
-    // Update manual entry text
+    const fullText = (finalTranscript + interim).trim();
+    // Champ saisie manuelle
     const el = document.getElementById('new-entry-text');
-    if (el) el.value = transcript;
-    // Update voice tab transcript
+    if (el) el.value = fullText;
+    // Aperçu vocal
     const vt = document.getElementById('voice-transcript-text');
-    if (vt) vt.textContent = transcript;
+    if (vt) vt.textContent = fullText;
+    // Aperçu import (si l'utilisateur dicte directement vers la zone IA)
+    const raw = document.getElementById('daily-raw-text');
+    if (raw && document.getElementById('panel-import')?.style.display !== 'none') raw.value = fullText;
   };
 
   voiceRecognition.onerror = (event) => {
-    toast('Erreur micro: ' + event.error, 'error');
+    // 'no-speech' n'est pas une vraie erreur, juste un silence → on relance
+    if (event.error === 'no-speech' || event.error === 'aborted') return;
+    toast('Erreur micro : ' + event.error, 'error');
     stopVoiceRecording();
   };
 
   voiceRecognition.onend = () => {
-    if (isRecording) stopVoiceRecording();
+    // Si l'utilisateur n'a pas explicitement arrêté, on relance automatiquement
+    // (Chrome coupe seul après ~60s ou en cas de silence prolongé).
+    if (isRecording) {
+      try { voiceRecognition.start(); }
+      catch (e) { /* déjà démarré : on ignore */ }
+    }
   };
 
   voiceRecognition.start();
