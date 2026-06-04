@@ -81,6 +81,24 @@ export async function runStartupMigrations() {
 
     logger.info('✅ Migrations de démarrage OK');
 
+    // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───
+    // Ces logs nous montreront sans ambiguïté quelles colonnes existent sur
+    // la table users (et avec quels types), et quelles valeurs sont actuellement
+    // dans l'enum UserRole. Indispensable pour cibler une erreur 22P03.
+    try {
+      const cols = await prisma.$queryRawUnsafe<Array<{ column_name: string; data_type: string }>>(
+        `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position;`
+      );
+      logger.info(`[diag] colonnes users : ${cols.map(c => `${c.column_name}=${c.data_type}`).join(', ')}`);
+
+      const enumVals = await prisma.$queryRawUnsafe<Array<{ enumlabel: string }>>(
+        `SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'UserRole') ORDER BY enumsortorder;`
+      );
+      logger.info(`[diag] UserRole enum : ${enumVals.map(e => e.enumlabel).join(', ')}`);
+    } catch (e: any) {
+      logger.warn(`[diag] échec lecture méta : ${e.message}`);
+    }
+
     // Forcer Prisma à rafraîchir ses métadonnées internes (notamment les enums
     // qu'on vient potentiellement d'enrichir). Sans ça, Prisma garde en cache
     // les valeurs d'enum connues à la connexion initiale et envoie un format
