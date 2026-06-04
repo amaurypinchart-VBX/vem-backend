@@ -8,12 +8,30 @@ import { sendDailyReport } from '../services/emailService';
 
 const router = Router();
 
+// Désactive le cache HTTP sur tout ce module : les daily reports changent à
+// chaque sauvegarde et il faut que les listes/détails affichent la version la
+// plus récente. Sans ça, le navigateur tient à sa version cachée (304) et l'UI
+// semble "ne pas se rafraîchir" malgré la sauvegarde réussie côté serveur.
+router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  next();
+});
+
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const reports = await prisma.dailyReport.findMany({
       where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
       orderBy: { reportDate: 'desc' },
-      include: { createdBy: { select: { firstName:true, lastName:true } }, _count: { select: { entries:true, photos:true } } },
+      include: {
+        createdBy: { select: { firstName:true, lastName:true } },
+        _count: { select: { entries:true, photos:true } },
+        // Aperçu : on remonte les 3 premières entrées pour que la carte montre
+        // un extrait concret au lieu d'un simple compteur. Ça rend toute modif visible.
+        entries: { take: 3, orderBy: { entryTime: 'asc' } },
+      },
     });
     res.json({ success: true, data: reports });
   } catch (err) { next(err); }
