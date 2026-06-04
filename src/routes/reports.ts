@@ -4,6 +4,7 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateDailyReportPdf, generateHandoverPdf } from '../services/pdfService';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -12,9 +13,11 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
   try {
     const r = await prisma.dailyReport.findUnique({
       where: { id: req.params.id },
-      include: { entries: true, checklist: true, createdBy: { select: { firstName:true, lastName:true } }, project: { select: { name:true, internalNumber:true } } },
+      include: { entries: true, checklist: true, photos: true, createdBy: { select: { firstName:true, lastName:true } }, project: { select: { name:true, internalNumber:true } } },
     });
     if (!r) throw new AppError('Rapport introuvable', 404);
+
+    logger.info(`[pdf-daily] Génération pour ${r.id} — ${r.entries.length} entrées, ${r.photos.length} photos`);
 
     const pdf = await generateDailyReportPdf({
       project: r.project,
@@ -25,6 +28,7 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
       generalNotes: r.generalNotes,
       entries: r.entries,
       checklist: r.checklist,
+      photos: r.photos,
     });
 
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="DailyReport_${r.project.internalNumber}_${new Date(r.reportDate).toISOString().slice(0,10)}.pdf"` });
