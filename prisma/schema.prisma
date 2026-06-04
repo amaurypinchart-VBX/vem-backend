@@ -137,6 +137,7 @@ model Client {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   projects    Project[]
+  clientVisits ClientVisit[]
 
   @@map("clients")
 }
@@ -174,6 +175,7 @@ model Project {
   warehouseBoxes   WarehouseBox[]
   toolboxes        Toolbox[]
   clientRemarks    ClientRemark[]
+  clientVisits     ClientVisit[]
   briefing         Briefing?
 
   @@map("projects")
@@ -622,6 +624,7 @@ model InvitationToken {
 model ClientRemark {
   id          String   @id @default(uuid())
   projectId   String   @map("project_id")
+  visitId     String?  @map("visit_id")            // FK optionnelle vers ClientVisit
   title       String
   description String?
   zone        String?
@@ -635,10 +638,30 @@ model ClientRemark {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visit          ClientVisit?        @relation(fields: [visitId], references: [id], onDelete: Cascade)
   assignedToUser User?               @relation("RemarkAssignee", fields: [assignedTo], references: [id])
   photos         ClientRemarkPhoto[]
 
   @@map("client_remarks")
+}
+
+// Une "visite client" = rapport de visite contenant N points (ClientRemark)
+model ClientVisit {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  clientId    String?  @map("client_id")
+  title       String
+  visitDate   DateTime @default(now()) @map("visit_date")
+  notes       String?
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  client   Client?        @relation(fields: [clientId], references: [id])
+  remarks  ClientRemark[]
+
+  @@map("client_visits")
 }
 
 model ClientRemarkPhoto {
