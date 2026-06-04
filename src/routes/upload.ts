@@ -84,4 +84,16 @@ router.post('/handover-photo/:handoverId', upload.single('file'), async (req: Au
   } catch (err) { next(err); }
 });
 
+// POST /upload/daily-photo/:reportId
+router.post('/daily-photo/:reportId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'daily-reports');
+    const photo = await prisma.dailyReportPhoto.create({
+      data: { reportId: req.params.reportId, photoUrl: url, publicId, caption: req.body.caption || null },
+    });
+    res.status(201).json({ success: true, data: photo });
+  } catch (err) { next(err); }
+});
+
 export default router;
