@@ -3366,24 +3366,77 @@ function showProfile() {
   const el = document.createElement('div');
   el.className = 'overlay open';
   el.innerHTML = `
-    <div class="modal" style="max-width:440px;">
+    <div class="modal" style="max-width:460px;">
       <div class="modal-head"><div class="modal-title">👤 Mon Profil</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div style="text-align:center;margin-bottom:20px;">
+      <div style="text-align:center;margin-bottom:18px;">
         <div style="width:64px;height:64px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;margin:0 auto 12px;">${(CURRENT_USER.firstName[0]+CURRENT_USER.lastName[0]).toUpperCase()}</div>
         <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700;">${CURRENT_USER.firstName} ${CURRENT_USER.lastName}</div>
         <div style="color:var(--text3);font-size:13px;margin-top:4px;">${CURRENT_USER.role}</div>
       </div>
-      <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;font-size:13px;display:grid;gap:8px;">
+
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;font-size:13px;display:grid;gap:8px;margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text3);">Email</span><span>${CURRENT_USER.email}</span></div>
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text3);">Rôle</span><span>${CURRENT_USER.role}</span></div>
       </div>
-      <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end;">
+
+      <!-- Toggle changement mot de passe -->
+      <div id="pwd-section">
+        <button class="btn btn-outline" style="width:100%;" onclick="togglePasswordPanel(true)">🔑 Changer mon mot de passe</button>
+      </div>
+
+      <!-- Panneau de changement (caché par défaut) -->
+      <div id="pwd-panel" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:10px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🔑 Changer le mot de passe</div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label" style="font-size:11px;">Ancien mot de passe</label>
+          <input class="input" type="password" id="pwd-current" autocomplete="current-password">
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label" style="font-size:11px;">Nouveau mot de passe (8 caractères min)</label>
+          <input class="input" type="password" id="pwd-new" autocomplete="new-password">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label" style="font-size:11px;">Confirmer le nouveau mot de passe</label>
+          <input class="input" type="password" id="pwd-confirm" autocomplete="new-password">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-ghost btn-sm" onclick="togglePasswordPanel(false)">Annuler</button>
+          <button class="btn btn-primary btn-sm" onclick="submitPasswordChange()">💾 Valider</button>
+        </div>
+      </div>
+
+      <div style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
         <button class="btn btn-primary btn-sm" style="background:var(--accent);" onclick="doLogout()">🚪 Déconnexion</button>
       </div>
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+function togglePasswordPanel(show) {
+  document.getElementById('pwd-section').style.display = show ? 'none' : 'block';
+  document.getElementById('pwd-panel').style.display   = show ? 'block' : 'none';
+  if (show) setTimeout(() => document.getElementById('pwd-current')?.focus(), 50);
+}
+
+async function submitPasswordChange() {
+  const current = document.getElementById('pwd-current').value;
+  const next    = document.getElementById('pwd-new').value;
+  const confirm = document.getElementById('pwd-confirm').value;
+
+  if (!current || !next || !confirm) { toast('Remplis tous les champs', 'error'); return; }
+  if (next.length < 8)               { toast('Le nouveau mot de passe doit faire au moins 8 caractères', 'error'); return; }
+  if (next !== confirm)              { toast('Les deux nouveaux mots de passe ne correspondent pas', 'error'); return; }
+  if (current === next)              { toast("Le nouveau doit être différent de l'ancien", 'error'); return; }
+
+  const res = await api('POST', '/auth/change-password', { currentPassword: current, newPassword: next });
+  if (res?.success) {
+    toast('Mot de passe modifié ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+  } else {
+    toast(res?.error || 'Erreur lors du changement', 'error');
+  }
 }
 
 // ═══ TOAST ═══
