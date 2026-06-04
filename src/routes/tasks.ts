@@ -2,6 +2,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -27,12 +28,29 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const body = { ...req.body };
+
+    // Date de tâche tolérante : si manquante, invalide, ou vide → aujourd'hui.
+    let parsedDate = new Date();
+    if (body.taskDate) {
+      const d = new Date(body.taskDate);
+      if (!isNaN(d.getTime())) parsedDate = d;
+    }
+    body.taskDate = parsedDate;
+
+    // Nettoyage : retirer les champs qui ne sont pas dans le modèle Task
+    delete body.stage;
+    delete body.assignedTo; // on n'accepte que assignedToId
+
     const task = await prisma.task.create({
-      data: { ...req.body, taskDate: new Date(req.body.taskDate), createdById: req.user!.id },
+      data: { ...body, createdById: req.user!.id },
       include: { assignedTo: { select: { id:true, firstName:true, lastName:true } } },
     });
     res.status(201).json({ success: true, data: task });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    logger.error(`[create-task] échec : code=${err.code || '?'} | meta=${JSON.stringify(err.meta || {})} | msg=${err.message?.slice(0,300)} | body=${JSON.stringify(req.body).slice(0,300)}`);
+    next(err);
+  }
 });
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
