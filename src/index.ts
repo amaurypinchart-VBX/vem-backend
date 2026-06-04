@@ -28,6 +28,7 @@ import reportRoutes        from './routes/reports';
 import taskTemplatesRoutes from './routes/taskTemplates';
 import aiRoutes from './routes/ai';
 import clientRemarksRoutes from './routes/clientRemarks';
+import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
 import { runStartupMigrations } from './utils/migrations';
 
@@ -74,6 +75,7 @@ app.use(`${API}/reports`,        authMiddleware, reportRoutes);
 app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
 app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
+app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
