@@ -248,36 +248,44 @@ export async function generateDailyReportPdf(data: {
     }
 
     // ─── Photos (nouvelle page) ───
+    // Taille demandée : 10 × 15 cm. PDFKit travaille en points (1 cm ≈ 28.35 pt).
+    // 10 cm = 283 pt, 15 cm = 425 pt. Orientation paysage (15 cm de large × 10 cm de haut).
+    // Une photo par ligne pour qu'elles soient bien visibles dans le rapport.
     if (photoBuffers.length > 0) {
       doc.addPage();
       header(doc, 'DAILY REPORT — PHOTOS');
       sectionTitle(doc, `Photos (${photoBuffers.length})`);
-      const cellW = 250;
-      const cellH = 180;
-      const gap = 15;
-      const cols = [40, 40 + cellW + gap];
-      let col = 0;
-      let rowTopY = doc.y + 4;
+
+      const cellW = 425;  // 15 cm
+      const cellH = 283;  // 10 cm
+      const x = (595 - cellW) / 2;  // centré horizontalement sur la page A4
+
+      let y = doc.y + 6;
 
       for (let i = 0; i < photoBuffers.length; i++) {
         const p = photoBuffers[i];
-        if (rowTopY + cellH + 30 > 800) {
+
+        // Nouvelle page si la photo + sa légende ne tient pas
+        if (y + cellH + 30 > 800) {
           doc.addPage();
           header(doc, 'DAILY REPORT — PHOTOS (suite)');
-          rowTopY = doc.y + 4;
-          col = 0;
+          y = doc.y + 6;
         }
+
         try {
-          // Fond légèrement gris pour encadrer l'image
-          doc.rect(cols[col] - 4, rowTopY - 4, cellW + 8, cellH + 8).fill('#f8f9fa');
-          doc.image(p.buffer, cols[col], rowTopY, { fit: [cellW, cellH], align: 'center' });
+          // Fond gris clair pour encadrer
+          doc.rect(x - 4, y - 4, cellW + 8, cellH + 8).fill('#f8f9fa');
+          // Image centrée dans la cellule, ratio préservé (PDFKit fit)
+          doc.image(p.buffer, x, y, { fit: [cellW, cellH], align: 'center', valign: 'center' });
+          // Légende sous la photo
           if (p.caption) {
-            doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9)
-              .text(p.caption, cols[col], rowTopY + cellH + 4, { width: cellW, align: 'center' });
+            doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(10)
+              .text(p.caption, x, y + cellH + 6, { width: cellW, align: 'center' });
           }
         } catch { /* image illisible : on saute */ }
-        col++;
-        if (col >= 2) { col = 0; rowTopY += cellH + 28; }
+
+        // Avancer pour la prochaine photo (cellule + marge sous-légende + espace)
+        y += cellH + (p.caption ? 28 : 18);
       }
     }
 
