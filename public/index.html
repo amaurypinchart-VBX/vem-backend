@@ -703,7 +703,19 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-outline btn-sm" onclick="goto('projects')">← Retour</button>
       <div>
         <div class="pg-title" id="detail-name">Projet</div>
-        <div class="pg-sub" id="detail-sub">...</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <span class="pg-sub" id="detail-sub">...</span>
+          <select id="detail-status" onchange="updateProjectStatus(CURRENT_PROJECT_ID, this.value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">
+            <option value="quote_to_validate">📝 Devis à valider</option>
+            <option value="quote_validated">✅ Devis validé</option>
+            <option value="in_preparation">🔧 En préparation</option>
+            <option value="installation">🏗️ En installation</option>
+            <option value="on_site">📍 Sur site</option>
+            <option value="dismantling">🔨 Démontage</option>
+            <option value="completed">🎉 Terminé</option>
+            <option value="cancelled">❌ Annulé</option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="pg-actions">
@@ -1931,6 +1943,23 @@ function filterProjects() {
 }
 
 // ═══ PROJECT DETAIL ═══
+async function updateProjectStatus(projectId, status) {
+  if (!projectId) return;
+  const res = await api('PATCH', `/projects/${projectId}`, { status });
+  if (res?.success) {
+    toast('Statut du projet mis à jour ✅', 'success');
+    // Rafraîchir le dashboard et les listes
+    if (typeof renderDashCalendar === 'function') {
+      // PROJECTS est en cache global — on met à jour la valeur locale
+      const proj = PROJECTS?.find(p => p.id === projectId);
+      if (proj) proj.status = status;
+      renderDashCalendar();
+    }
+  } else {
+    toast('Erreur changement de statut', 'error');
+  }
+}
+
 async function loadProjectDetail(id) {
   const res = await api('GET', `/projects/${id}`);
   if (!res?.success) return;
@@ -1938,6 +1967,8 @@ async function loadProjectDetail(id) {
 
   document.getElementById('detail-name').textContent = p.name;
   document.getElementById('detail-sub').textContent = `${p.internalNumber} · ${p.client?.name||''}`;
+  const statusSel = document.getElementById('detail-status');
+  if (statusSel) statusSel.value = p.status || 'in_preparation';
 
   // Info tab — avec camions + fichiers
   const infoTrucks = p.trucks || [];
@@ -2369,9 +2400,89 @@ async function downloadDailyPDF(id) {
 }
 
 async function sendDailyReport(id) {
-  const res = await api('POST', `/daily-reports/${id}/send`);
-  if (res?.success) { toast(`Rapport envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success'); loadDailyReports(); }
-  else toast('Erreur envoi', 'error');
+  // Construit la liste d'emails de l'équipe pour le picker
+  const teamOptions = (USERS || [])
+    .filter(u => u.email && u.isActive !== false)
+    .map(u => ({ id: u.id, email: u.email, name: `${u.firstName} ${u.lastName}`, role: u.role }));
+
+  // Récupère le rapport pour avoir le contexte projet (et son client)
+  const repRes = await api('GET', `/daily-reports/${id}`);
+  if (!repRes?.success) { toast('Rapport introuvable', 'error'); return; }
+  const r = repRes.data;
+  const clientEmail = r.project?.client?.email || null;
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">📤 Envoyer le rapport</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+        Rapport du ${fmtDate(r.reportDate)} — ${r.project?.name || ''}
+      </div>
+
+      <!-- Équipe (cases à cocher) -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
+      <div id="send-team-list" style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
+        ${teamOptions.length ? teamOptions.map(u => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+            <input type="checkbox" class="send-team-cb" value="${u.email}" style="accent-color:var(--accent);">
+            <span style="font-size:13px;flex:1;">${u.name}</span>
+            <span style="font-size:11px;color:var(--text3);">${u.email}</span>
+          </label>
+        `).join('') : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;">Aucun membre avec email</div>'}
+      </div>
+
+      ${clientEmail ? `
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🤝 Client</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="send-client-cb" value="${clientEmail}" checked style="accent-color:var(--accent);">
+          <span style="font-size:13px;flex:1;">${esc(r.project.client.name||'Client')}</span>
+          <span style="font-size:11px;color:var(--text3);">${clientEmail}</span>
+        </label>
+      ` : ''}
+
+      <!-- Emails manuels -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">✉️ Adresses manuelles</div>
+      <textarea class="input" id="send-manual-emails" rows="3" placeholder="Une adresse par ligne ou séparées par des virgules&#10;ex : contact@viewbox.be, jean@example.com" style="font-size:13px;margin-bottom:14px;"></textarea>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitSendDaily('${id}',this.closest('.overlay'))">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+async function submitSendDaily(id, overlay) {
+  const list = new Set();
+  // Équipe cochée
+  document.querySelectorAll('.send-team-cb:checked').forEach(cb => list.add(cb.value));
+  // Client
+  const cli = document.getElementById('send-client-cb');
+  if (cli && cli.checked) list.add(cli.value);
+  // Manuels
+  const raw = (document.getElementById('send-manual-emails').value || '').trim();
+  raw.split(/[\s,;]+/).forEach(e => {
+    const s = e.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
+  });
+
+  if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
+
+  toast(`Envoi en cours à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/daily-reports/${id}/send`, { recipients: Array.from(list) });
+  if (res?.success) {
+    toast(`Rapport envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
+    overlay?.remove();
+    loadDailyReports();
+    if (CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);
+  } else {
+    toast(res?.error || 'Erreur envoi', 'error');
+  }
 }
 
 // ═══ HANDOVERS ═══
