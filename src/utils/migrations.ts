@@ -56,6 +56,23 @@ export async function runStartupMigrations() {
       );
     }
 
+    // ─── Forcer le type TEXT sur les colonnes de date carte d'identité ───
+    // Le schéma Prisma déclare ces champs en String?, mais en base elles peuvent
+    // exister en type "date" (issu d'une ancienne version du schéma). Prisma envoie
+    // alors un format binaire incompatible → erreur 22P03 sur bind parameter N.
+    // ALTER TYPE TEXT USING ::text fonctionne pour DATE → TEXT et est un no-op si
+    // la colonne est déjà TEXT.
+    for (const col of ['birth_date', 'id_expiry']) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "users" ALTER COLUMN "${col}" TYPE TEXT USING "${col}"::text;`
+        );
+        logger.info(`[migration] users.${col} forcé en TEXT`);
+      } catch (e: any) {
+        logger.warn(`[migration] conversion ${col} : ${e.message}`);
+      }
+    }
+
     // ─── Valeurs d'enum UserRole manquantes ───
     // ALTER TYPE ADD VALUE doit être hors transaction → on tente une par une et on log les échecs.
     for (const val of ['sales_engineer', 'installer']) {
