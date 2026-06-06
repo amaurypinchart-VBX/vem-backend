@@ -37,7 +37,7 @@ const http = createServer(app);
 
 export const io = new SocketServer(http, {
   cors: { origin: '*', credentials: true },
-});
+} as any);
 
 io.on('connection', (socket) => {
   const userId = socket.handshake.auth.userId;
