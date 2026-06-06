@@ -1240,7 +1240,7 @@ textarea.input{min-height:80px;resize:vertical;}
         <label class="form-label2">📸 Photos de la journée</label>
         <label style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;min-height:72px;-webkit-tap-highlight-color:transparent;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
           📸 Prendre / Ajouter photos
-          <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="daily-photos-input" onchange="previewDailyPhotos(this)">
+          <input type="file" accept="image/*" multiple style="display:none;" id="daily-photos-input" onchange="previewDailyPhotos(this)">
         </label>
         <div id="daily-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;"></div>
         <div id="daily-photos-count" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
@@ -1373,7 +1373,7 @@ textarea.input{min-height:80px;resize:vertical;}
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:8px;background:#4895ef;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;-webkit-tap-highlight-color:transparent;">
             📷 Scanner la carte
-            <input type="file" accept="image/*" capture="environment" style="display:none;" id="id-card-input" onchange="scanIDCard(this)">
+            <input type="file" accept="image/*" style="display:none;" id="id-card-input" onchange="scanIDCard(this)">
           </label>
           <label style="display:flex;align-items:center;gap:8px;background:var(--bg3);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid var(--border);">
             🖼️ Depuis galerie
@@ -3170,7 +3170,7 @@ function renderHandoverZones() {
       <div style="padding:0 12px 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
         ${(z.photos||[]).map(p=>`<img src="${p}" style="width:56px;height:56px;object-fit:cover;border-radius:7px;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${p}')">`).join('')}
         <label style="width:56px;height:56px;border:2px dashed var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--text3);" title="Photo">
-          📸<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewZonePhoto(${z.id},this)">
+          📸<input type="file" accept="image/*" style="display:none;" onchange="previewZonePhoto(${z.id},this)">
         </label>
       </div>
     </div>`).join('');
@@ -4188,7 +4188,7 @@ async function editDailyReport(id) {
         </div>
         <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           📸 Ajouter photos
-          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadEditDailyPhotos('${id}',this)">
+          <input type="file" accept="image/*" multiple style="display:none;" onchange="uploadEditDailyPhotos('${id}',this)">
         </label>
       </div>
 
@@ -4969,7 +4969,7 @@ async function openHandoverFull(id) {
               ${photos.map(p=>`<div class="terrain-photo" onclick="openPhotoViewer('${p.photoUrl}')"><img src="${p.photoUrl}" loading="lazy"></div>`).join('')}
               <label class="terrain-photo-add" title="Ajouter photo">
                 📸
-                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,null)">
+                <input type="file" accept="image/*" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,null)">
               </label>
             </div>
           </div>`;
@@ -5102,7 +5102,7 @@ async function openTaskModal(taskId, projectId) {
       <div id="tt-photos" style="display:none;">
         <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;margin-bottom:12px;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           📸 Ajouter photos / fichiers
-          <input type="file" accept="image/*,application/pdf" multiple capture="environment" style="display:none;" onchange="uploadTaskPhotos('${taskId}','${projectId}',this)">
+          <input type="file" accept="image/*,application/pdf" multiple style="display:none;" onchange="uploadTaskPhotos('${taskId}','${projectId}',this)">
         </label>
         <div id="task-photos-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
           <div style="grid-column:1/-1;color:var(--text3);font-size:13px;text-align:center;padding:20px;">Cliquez pour ajouter des photos</div>
@@ -5401,7 +5401,7 @@ async function openTruckDetail(truckId, projectId) {
         </div>
         <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
           📸 Ajouter une photo
-          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadTruckPhotos('${truckId}','${projectId}',this)">
+          <input type="file" accept="image/*" multiple style="display:none;" onchange="uploadTruckPhotos('${truckId}','${projectId}',this)">
         </label>
       </div>
 
@@ -7299,7 +7299,7 @@ async function openVisitDetail(visitId, projectId) {
         </div>` : ''}
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
           ${st !== 'resolved' ? `<button class="btn btn-ghost btn-xs" onclick="updatePointStatusVisit('${r.id}','${visitId}','${projectId}','resolved')">✅ Marquer OK</button>` : ''}
-          <label class="btn btn-ghost btn-xs" style="cursor:pointer;">📸 + photo<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhotoVisit('${r.id}','${visitId}','${projectId}',this)"></label>
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;">📸 + photo<input type="file" accept="image/*" style="display:none;" onchange="uploadPointPhotoVisit('${r.id}','${visitId}','${projectId}',this)"></label>
           <button class="btn btn-ghost btn-xs" onclick="deletePointVisit('${r.id}','${visitId}','${projectId}')" style="color:var(--accent);margin-left:auto;">🗑️</button>
         </div>
       </div>`;
@@ -7352,7 +7352,7 @@ function openAddPointToVisitModal(visitId, projectId) {
         <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:16px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:600;background:var(--bg3);">
           <span style="font-size:24px;">📸</span>
           <span>Ajouter photo(s)</span>
-          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewVisitPointPhotos(this)">
+          <input type="file" accept="image/*" multiple style="display:none;" onchange="previewVisitPointPhotos(this)">
         </label>
       </div>
 
@@ -7555,8 +7555,8 @@ function openAddPointModal(projectId) {
         <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:20px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;background:var(--bg3);-webkit-tap-highlight-color:transparent;min-height:80px;" 
           onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           <span style="font-size:32px;">📸</span>
-          <div><div>Prendre une photo</div><div style="font-size:11px;font-weight:400;color:var(--text3);margin-top:2px;">Depuis la caméra ou la galerie</div></div>
-          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewPointPhotos(this)">
+          <div><div>Ajouter une photo</div><div style="font-size:11px;font-weight:400;color:var(--text3);margin-top:2px;">Caméra, galerie ou fichier</div></div>
+          <input type="file" accept="image/*" multiple style="display:none;" onchange="previewPointPhotos(this)">
         </label>
       </div>
 
@@ -9242,7 +9242,7 @@ function showAddHandoverItemModal(handoverId, projectId) {
         <div id="hi-photo-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;"></div>
         <label style="display:flex;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:14px;cursor:pointer;color:var(--text3);font-size:13px;">
           📸 Prendre une photo
-          <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewHandoverItemPhoto(this)">
+          <input type="file" accept="image/*" style="display:none;" onchange="previewHandoverItemPhoto(this)">
         </label>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
