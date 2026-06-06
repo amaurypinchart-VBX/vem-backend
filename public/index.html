@@ -4316,6 +4316,34 @@ async function editDailyPhotoCaption(reportId, photoId, currentCaption) {
   }
 }
 
+// Supprime une photo depuis le modal de VUE openDailyDetail
+// (ferme et rouvre le modal pour rafraîchir l'affichage)
+async function deleteDailyPhotoFromView(reportId, photoId, projectId, btnEl) {
+  if (!confirm('Supprimer cette photo ?')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '…'; }
+  const res = await api('DELETE', `/daily-reports/${reportId}/photos/${photoId}`);
+  if (res?.success) {
+    toast('Photo supprimée', 'success');
+    // Retirer la vignette du DOM immédiatement (UX réactive)
+    document.querySelector(`[data-photo-id="${photoId}"]`)?.remove();
+    // Mettre à jour le compteur visuellement
+    const counter = document.querySelector('.overlay.open .modal');
+    const remaining = counter ? counter.querySelectorAll('[data-photo-id]').length : 0;
+    const titles = counter?.querySelectorAll('div');
+    titles?.forEach(t => {
+      if (t.textContent && /^📸 Photos/.test(t.textContent.trim())) {
+        t.textContent = `📸 Photos (${remaining})`;
+      }
+    });
+    // Mettre à jour la liste des cartes en arrière-plan
+    loadDailyReports();
+    if (projectId) loadDetailDailyReports(projectId);
+  } else {
+    toast(res?.error || 'Erreur suppression', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '✕'; }
+  }
+}
+
 async function saveDailyReport(id, overlay) {
   // Collect current values from DOM before saving
   const entriesEls = document.querySelectorAll('#edit-entries-list > div');
@@ -7018,9 +7046,16 @@ async function openDailyDetail(id, projectId) {
 
       ${(r.photos||[]).length ? `
         <div style="margin-bottom:14px;">
-          <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:8px;text-transform:uppercase;">📸 Photos</div>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-            ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+          <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:8px;text-transform:uppercase;">📸 Photos (${r.photos.length})</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;">
+            ${r.photos.map(p=>`
+              <div data-photo-id="${p.id}" style="position:relative;">
+                <img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);display:block;">
+                <button onclick="deleteDailyPhotoFromView('${r.id}','${p.id}','${projectId}',this)" title="Supprimer cette photo"
+                  style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;border:2px solid var(--bg);cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;z-index:5;">✕</button>
+                ${p.caption?`<div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.caption)}</div>`:''}
+              </div>
+            `).join('')}
           </div>
         </div>` : ''}
 
