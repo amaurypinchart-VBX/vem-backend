@@ -4158,9 +4158,18 @@ async function editDailyReport(id) {
 
       <!-- Photos -->
       <div style="margin-top:12px;">
-        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos</div>
-        <div id="er-photos-grid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-          ${(r.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos (${(r.photos||[]).length})</div>
+        <div id="er-photos-grid" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(r.photos||[]).map(p=>`
+            <div data-photo-id="${p.id}" style="position:relative;width:96px;flex-shrink:0;">
+              <img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:96px;height:96px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);display:block;">
+              <button onclick="deleteDailyPhoto('${id}','${p.id}',this)" title="Supprimer cette photo"
+                style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;border:2px solid var(--bg);cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;">✕</button>
+              <button onclick="editDailyPhotoCaption('${id}','${p.id}',${JSON.stringify(p.caption||'').replace(/"/g,'&quot;')})" title="Modifier la légende"
+                style="position:absolute;bottom:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);color:white;border:none;cursor:pointer;font-size:11px;padding:0;">✏️</button>
+              ${p.caption?`<div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.caption)}</div>`:''}
+            </div>
+          `).join('') || '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>'}
         </div>
         <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           📸 Ajouter photos
@@ -4210,7 +4219,6 @@ function addEditEntry() {
 
 async function uploadEditDailyPhotos(reportId, input) {
   if (!input.files?.length) return;
-  const grid = document.getElementById('er-photos-grid');
   toast(`Upload ${input.files.length} photo(s)...`, 'info');
   let ok = 0;
   for (const file of Array.from(input.files)) {
@@ -4223,22 +4231,74 @@ async function uploadEditDailyPhotos(reportId, input) {
       const data = await r.json();
       const url = data.data?.url || data.url || data.secure_url;
       if (url) {
-        // Save to DB
         await api('POST', `/daily-reports/${reportId}/photos`, {
           photoUrl: url, publicId: data.data?.public_id || null
         });
-        // Add to preview
-        if (grid) {
-          const img = document.createElement('img');
-          img.src = url; img.onclick = () => openPhotoViewer(url);
-          img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
-          grid.appendChild(img);
-        }
         ok++;
       }
     } catch(e) { console.error('photo upload error:', e); toast('Erreur réseau', 'error'); }
   }
   if (ok) toast(`${ok} photo(s) ajoutée(s) ✅`, 'success');
+  // Re-rendre la grille photos depuis la base pour que les boutons ✕/✏️ apparaissent
+  await refreshDailyEditPhotosGrid(reportId);
+}
+
+// Rebuild de la grille photos du modal d'édition daily report
+async function refreshDailyEditPhotosGrid(reportId) {
+  const res = await api('GET', `/daily-reports/${reportId}`);
+  if (!res?.success) return;
+  const photos = res.data.photos || [];
+  const grid = document.getElementById('er-photos-grid');
+  if (!grid) return;
+  grid.innerHTML = photos.length ? photos.map(p => `
+    <div data-photo-id="${p.id}" style="position:relative;width:96px;flex-shrink:0;">
+      <img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:96px;height:96px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);display:block;">
+      <button onclick="deleteDailyPhoto('${reportId}','${p.id}',this)" title="Supprimer cette photo"
+        style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;border:2px solid var(--bg);cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;">✕</button>
+      <button onclick="editDailyPhotoCaption('${reportId}','${p.id}',${JSON.stringify(p.caption||'').replace(/"/g,'&quot;')})" title="Modifier la légende"
+        style="position:absolute;bottom:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);color:white;border:none;cursor:pointer;font-size:11px;padding:0;">✏️</button>
+      ${p.caption?`<div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.caption)}</div>`:''}
+    </div>
+  `).join('') : '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>';
+
+  // Met à jour aussi le compteur dans le titre de section
+  const titleEl = grid.parentElement?.querySelector('div');
+  if (titleEl && titleEl.textContent.includes('Photos')) titleEl.textContent = `📸 Photos (${photos.length})`;
+}
+
+// Supprime une photo d'un daily report (avec confirmation)
+async function deleteDailyPhoto(reportId, photoId, btnEl) {
+  if (!confirm('Supprimer cette photo ?')) return;
+  // Spinner sur le bouton pendant la requête
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '…'; }
+  const res = await api('DELETE', `/daily-reports/${reportId}/photos/${photoId}`);
+  if (res?.success) {
+    toast('Photo supprimée', 'success');
+    // Retirer la vignette du DOM tout de suite (UX réactive)
+    document.querySelector(`[data-photo-id="${photoId}"]`)?.remove();
+    // Rafraîchir le compteur en haut de la grille
+    const grid = document.getElementById('er-photos-grid');
+    const count = grid?.querySelectorAll('[data-photo-id]').length || 0;
+    const titleEl = grid?.parentElement?.querySelector('div');
+    if (titleEl && titleEl.textContent.includes('Photos')) titleEl.textContent = `📸 Photos (${count})`;
+    if (count === 0 && grid) grid.innerHTML = '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>';
+  } else {
+    toast(res?.error || 'Erreur suppression', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '✕'; }
+  }
+}
+
+// Modifie la légende d'une photo via prompt simple
+async function editDailyPhotoCaption(reportId, photoId, currentCaption) {
+  const newCaption = prompt('Légende de la photo :', currentCaption || '');
+  if (newCaption === null) return;  // annulé
+  const res = await api('PATCH', `/daily-reports/${reportId}/photos/${photoId}`, { caption: newCaption });
+  if (res?.success) {
+    toast('Légende mise à jour ✅', 'success');
+    await refreshDailyEditPhotosGrid(reportId);
+  } else {
+    toast(res?.error || 'Erreur modification', 'error');
+  }
 }
 
 async function saveDailyReport(id, overlay) {

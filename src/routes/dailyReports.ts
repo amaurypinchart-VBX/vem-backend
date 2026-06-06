@@ -118,6 +118,17 @@ router.delete('/:id/photos/:photoId', async (req: AuthRequest, res: Response, ne
   } catch (err) { next(err); }
 });
 
+// PATCH /daily-reports/:id/photos/:photoId — modifier la légende
+router.patch('/:id/photos/:photoId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const photo = await prisma.dailyReportPhoto.update({
+      where: { id: req.params.photoId },
+      data: { caption: req.body.caption ?? null },
+    });
+    res.json({ success: true, data: photo });
+  } catch (err) { next(err); }
+});
+
 // DELETE /daily-reports/:id — supprimer un rapport
 router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
