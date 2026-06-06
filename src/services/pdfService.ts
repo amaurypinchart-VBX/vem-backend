@@ -100,7 +100,7 @@ export async function generateHandoverPdf(data: {
         const optimized = ph.photoUrl.includes('/upload/')
           ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_400,h_400,q_auto:good/')
           : ph.photoUrl;
-        const r = await fetch(optimized);
+        const r = await fetch(optimized) as any;
         if (!r.ok) continue;
         const ab = await r.arrayBuffer();
         buffers.push(Buffer.from(ab));
@@ -243,7 +243,7 @@ export async function generateDailyReportPdf(data: {
         const optimized = p.photoUrl.includes('/upload/')
           ? p.photoUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_900,q_auto:good/')
           : p.photoUrl;
-        const r = await fetch(optimized);
+        const r = await fetch(optimized) as any;
         if (!r.ok) continue;
         const ab = await r.arrayBuffer();
         photoBuffers.push({ buffer: Buffer.from(ab), caption: p.caption });
