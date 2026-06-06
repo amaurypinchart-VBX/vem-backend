@@ -1284,19 +1284,32 @@ textarea.input{min-height:80px;resize:vertical;}
             <input class="input" type="date" id="handover-date">
           </div>
         </div>
-        <div class="input-row" style="margin-top:8px;">
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Client / Société</label>
-            <input class="input" id="handover-client-name" placeholder="ex: Audi Belgium">
-          </div>
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Représentant présent</label>
-            <input class="input" id="handover-responsible" placeholder="Nom de la personne">
+        <!-- Client : choix dans la base OU saisie libre -->
+        <div class="form-group2" style="margin-top:8px;">
+          <label class="form-label2">Client / Société</label>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;">
+            <select class="input" id="handover-client-select" onchange="onHandoverClientPick(this.value)">
+              <option value="">— Choisir dans la base —</option>
+            </select>
+            <span style="font-size:11px;color:var(--text3);">ou</span>
+            <input class="input" id="handover-client-name" placeholder="Saisie libre">
           </div>
         </div>
-        <div class="form-group2" style="margin-top:8px;">
-          <label class="form-label2">Email client (pour envoi PDF)</label>
-          <input class="input" type="email" id="handover-client-email" placeholder="client@email.com">
+
+        <div class="input-row" style="margin-top:8px;">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Représentant présent</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select class="input" id="handover-contact-select" onchange="onHandoverContactPick(this.value)" style="flex:1;">
+                <option value="">— Choix base —</option>
+              </select>
+            </div>
+            <input class="input" id="handover-responsible" placeholder="ou Saisie libre" style="margin-top:4px;">
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Email client (pour envoi PDF)</label>
+            <input class="input" type="email" id="handover-client-email" placeholder="auto-rempli ou saisie libre">
+          </div>
         </div>
       </div>
 
@@ -3267,30 +3280,45 @@ async function createHandover() {
   });
 
   if (res?.success) {
-    // Upload zone photos
     const handoverId = res.data.id;
-    for (const zone of HANDOVER_ZONES) {
-      if (!zone._photoFiles?.length) continue;
-      const item = res.data.items?.find(i => i.zoneName === zone.name);
-      if (!item) continue;
+    // Items renvoyés par le backend dans l'ordre de création (sortOrder).
+    // On match les photos par INDEX de la zone filtrée (même filtre qu'on a
+    // utilisé pour construire items) — c'est plus robuste qu'un match par
+    // zoneName, qui plante dès qu'il y a une espace en trop ou deux zones
+    // homonymes.
+    const filteredZones = HANDOVER_ZONES.filter(z => z.name?.trim());
+    const items = (res.data.items || []).slice().sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
+
+    let totalUploaded = 0, totalFailed = 0;
+    for (let i = 0; i < filteredZones.length; i++) {
+      const zone = filteredZones[i];
+      const item = items[i];
+      if (!item || !zone._photoFiles?.length) continue;
       for (const file of zone._photoFiles) {
         try {
           const fd = new FormData(); fd.append('file', file);
-          const r = await fetch(`${API}/upload/photo`, {
+          const up = await fetch(`${API}/upload/photo`, {
             method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
           });
-          const data = await r.json();
+          if (!up.ok) { console.error('handover upload failed', up.status); totalFailed++; continue; }
+          const data = await up.json();
           const url = data.data?.url || data.url;
-          if (url) {
-            await fetch(`${API}/handover/${handoverId}/items/${item.id}/photo`, {
-              method:'POST',
-              headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
-              body: JSON.stringify({photoUrl: url, publicId: data.data?.public_id || null})
-            });
-          }
-        } catch {}
+          if (!url) { totalFailed++; continue; }
+          const link = await fetch(`${API}/handover/${handoverId}/items/${item.id}/photo`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+            body: JSON.stringify({photoUrl: url, publicId: data.data?.public_id || null})
+          });
+          if (link.ok) totalUploaded++;
+          else { console.error('handover link photo failed', link.status); totalFailed++; }
+        } catch (e) {
+          console.error('handover upload error', e);
+          totalFailed++;
+        }
       }
     }
+    if (totalUploaded > 0) toast(`${totalUploaded} photo(s) uploadée(s)`, 'success');
+    if (totalFailed  > 0) toast(`${totalFailed} photo(s) en échec — voir console`, 'error');
 
     toast('Handover créé ✅', 'success');
     closeModal('modal-handover');
@@ -3477,7 +3505,67 @@ function showModal(id) {
     if (CURRENT_PROJECT_ID && document.getElementById('handover-project')) {
       document.getElementById('handover-project').value = CURRENT_PROJECT_ID;
     }
+    // Populate client select (base de données)
+    const cliSel = document.getElementById('handover-client-select');
+    if (cliSel && CLIENTS?.length) {
+      cliSel.innerHTML = '<option value="">— Choisir dans la base —</option>' +
+        CLIENTS.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+    // Si projet pré-sélectionné, pré-remplir avec son client
+    if (CURRENT_PROJECT_ID) {
+      const proj = PROJECTS.find(p => p.id === CURRENT_PROJECT_ID);
+      if (proj?.client?.id && cliSel) {
+        cliSel.value = proj.client.id;
+        onHandoverClientPick(proj.client.id);
+      }
+    }
+    // Vider les champs manuels pour repartir propre
+    const nameEl = document.getElementById('handover-client-name');
+    const respEl = document.getElementById('handover-responsible');
+    const mailEl = document.getElementById('handover-client-email');
+    const ctSel  = document.getElementById('handover-contact-select');
+    if (nameEl && !nameEl.value) nameEl.value = '';
+    if (respEl && !respEl.value) respEl.value = '';
+    if (mailEl && !mailEl.value) mailEl.value = '';
+    if (ctSel)  ctSel.innerHTML = '<option value="">— Choix base —</option>';
   }
+}
+
+// Quand l'utilisateur choisit un client dans la liste base, on auto-remplit le nom
+// et l'email s'ils sont vides. On peuple aussi le select de contact (s'il y a un
+// contactName en base, on le propose en option). L'utilisateur peut ensuite
+// surcharger les champs libres en dessous.
+function onHandoverClientPick(clientId) {
+  const c = (CLIENTS || []).find(x => x.id === clientId);
+  if (!c) return;
+  const nameEl = document.getElementById('handover-client-name');
+  const respEl = document.getElementById('handover-responsible');
+  const mailEl = document.getElementById('handover-client-email');
+  const ctSel  = document.getElementById('handover-contact-select');
+
+  // Nom client : on remplace s'il était vide
+  if (nameEl && !nameEl.value.trim()) nameEl.value = c.name || '';
+  // Email : pareil
+  if (mailEl && !mailEl.value.trim()) mailEl.value = c.email || '';
+  // Select contact : on propose ce qu'on a en base
+  if (ctSel) {
+    const opts = ['<option value="">— Choix base —</option>'];
+    if (c.contactName) opts.push(`<option value="${esc(c.contactName)}">${esc(c.contactName)}</option>`);
+    ctSel.innerHTML = opts.join('');
+    // Auto-sélectionner le contact si c'est le seul
+    if (c.contactName) {
+      ctSel.value = c.contactName;
+      if (respEl && !respEl.value.trim()) respEl.value = c.contactName;
+    }
+  }
+}
+
+// Quand l'utilisateur choisit un contact dans la liste, on rebascule la valeur
+// dans le champ libre (qui sert de source de vérité finale au moment du submit).
+function onHandoverContactPick(name) {
+  if (!name) return;
+  const respEl = document.getElementById('handover-responsible');
+  if (respEl) respEl.value = name;
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -4085,9 +4173,18 @@ async function editDailyReport(id) {
 
       <!-- Photos -->
       <div style="margin-top:12px;">
-        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos</div>
-        <div id="er-photos-grid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-          ${(r.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos (${(r.photos||[]).length})</div>
+        <div id="er-photos-grid" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(r.photos||[]).map(p=>`
+            <div data-photo-id="${p.id}" style="position:relative;width:96px;flex-shrink:0;">
+              <img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:96px;height:96px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);display:block;">
+              <button onclick="deleteDailyPhoto('${id}','${p.id}',this)" title="Supprimer cette photo"
+                style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;border:2px solid var(--bg);cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;">✕</button>
+              <button onclick="editDailyPhotoCaption('${id}','${p.id}',${JSON.stringify(p.caption||'').replace(/"/g,'&quot;')})" title="Modifier la légende"
+                style="position:absolute;bottom:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);color:white;border:none;cursor:pointer;font-size:11px;padding:0;">✏️</button>
+              ${p.caption?`<div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.caption)}</div>`:''}
+            </div>
+          `).join('') || '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>'}
         </div>
         <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           📸 Ajouter photos
@@ -4137,7 +4234,6 @@ function addEditEntry() {
 
 async function uploadEditDailyPhotos(reportId, input) {
   if (!input.files?.length) return;
-  const grid = document.getElementById('er-photos-grid');
   toast(`Upload ${input.files.length} photo(s)...`, 'info');
   let ok = 0;
   for (const file of Array.from(input.files)) {
@@ -4150,22 +4246,74 @@ async function uploadEditDailyPhotos(reportId, input) {
       const data = await r.json();
       const url = data.data?.url || data.url || data.secure_url;
       if (url) {
-        // Save to DB
         await api('POST', `/daily-reports/${reportId}/photos`, {
           photoUrl: url, publicId: data.data?.public_id || null
         });
-        // Add to preview
-        if (grid) {
-          const img = document.createElement('img');
-          img.src = url; img.onclick = () => openPhotoViewer(url);
-          img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
-          grid.appendChild(img);
-        }
         ok++;
       }
     } catch(e) { console.error('photo upload error:', e); toast('Erreur réseau', 'error'); }
   }
   if (ok) toast(`${ok} photo(s) ajoutée(s) ✅`, 'success');
+  // Re-rendre la grille photos depuis la base pour que les boutons ✕/✏️ apparaissent
+  await refreshDailyEditPhotosGrid(reportId);
+}
+
+// Rebuild de la grille photos du modal d'édition daily report
+async function refreshDailyEditPhotosGrid(reportId) {
+  const res = await api('GET', `/daily-reports/${reportId}`);
+  if (!res?.success) return;
+  const photos = res.data.photos || [];
+  const grid = document.getElementById('er-photos-grid');
+  if (!grid) return;
+  grid.innerHTML = photos.length ? photos.map(p => `
+    <div data-photo-id="${p.id}" style="position:relative;width:96px;flex-shrink:0;">
+      <img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:96px;height:96px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);display:block;">
+      <button onclick="deleteDailyPhoto('${reportId}','${p.id}',this)" title="Supprimer cette photo"
+        style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;border:2px solid var(--bg);cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;">✕</button>
+      <button onclick="editDailyPhotoCaption('${reportId}','${p.id}',${JSON.stringify(p.caption||'').replace(/"/g,'&quot;')})" title="Modifier la légende"
+        style="position:absolute;bottom:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);color:white;border:none;cursor:pointer;font-size:11px;padding:0;">✏️</button>
+      ${p.caption?`<div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.caption)}</div>`:''}
+    </div>
+  `).join('') : '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>';
+
+  // Met à jour aussi le compteur dans le titre de section
+  const titleEl = grid.parentElement?.querySelector('div');
+  if (titleEl && titleEl.textContent.includes('Photos')) titleEl.textContent = `📸 Photos (${photos.length})`;
+}
+
+// Supprime une photo d'un daily report (avec confirmation)
+async function deleteDailyPhoto(reportId, photoId, btnEl) {
+  if (!confirm('Supprimer cette photo ?')) return;
+  // Spinner sur le bouton pendant la requête
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '…'; }
+  const res = await api('DELETE', `/daily-reports/${reportId}/photos/${photoId}`);
+  if (res?.success) {
+    toast('Photo supprimée', 'success');
+    // Retirer la vignette du DOM tout de suite (UX réactive)
+    document.querySelector(`[data-photo-id="${photoId}"]`)?.remove();
+    // Rafraîchir le compteur en haut de la grille
+    const grid = document.getElementById('er-photos-grid');
+    const count = grid?.querySelectorAll('[data-photo-id]').length || 0;
+    const titleEl = grid?.parentElement?.querySelector('div');
+    if (titleEl && titleEl.textContent.includes('Photos')) titleEl.textContent = `📸 Photos (${count})`;
+    if (count === 0 && grid) grid.innerHTML = '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Aucune photo</div>';
+  } else {
+    toast(res?.error || 'Erreur suppression', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '✕'; }
+  }
+}
+
+// Modifie la légende d'une photo via prompt simple
+async function editDailyPhotoCaption(reportId, photoId, currentCaption) {
+  const newCaption = prompt('Légende de la photo :', currentCaption || '');
+  if (newCaption === null) return;  // annulé
+  const res = await api('PATCH', `/daily-reports/${reportId}/photos/${photoId}`, { caption: newCaption });
+  if (res?.success) {
+    toast('Légende mise à jour ✅', 'success');
+    await refreshDailyEditPhotosGrid(reportId);
+  } else {
+    toast(res?.error || 'Erreur modification', 'error');
+  }
 }
 
 async function saveDailyReport(id, overlay) {

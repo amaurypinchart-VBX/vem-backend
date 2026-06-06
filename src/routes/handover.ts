@@ -78,7 +78,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
             },
       },
       include: {
-        items: true,
+        items: { orderBy: { sortOrder: 'asc' } },
         siteManager: { select: { firstName: true, lastName: true } },
       },
     });
