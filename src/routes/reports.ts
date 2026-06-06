@@ -22,6 +22,7 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
     const pdf = await generateDailyReportPdf({
       project: r.project,
       reportDate: r.reportDate,
+      reportId: r.id,
       createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,
       weather: r.weather,
       workersPresent: r.workersPresent,

@@ -18,18 +18,41 @@ try {
   if (fs.existsSync(LOGO_LIGHT_PATH)) LOGO_LIGHT_BUFFER = fs.readFileSync(LOGO_LIGHT_PATH);
 } catch { /* logo absent : on retombe sur le texte */ }
 
-function header(doc: any, subtitle: string) {
+function header(doc: any, subtitle: string, info?: { projectName?: string; projectRef?: string; reportNum?: string; reportDate?: string }) {
   doc.rect(0, 0, 595, 70).fill(DARK);
   if (LOGO_LIGHT_BUFFER) {
     // Logo VIEWBOX en version blanche (sur fond sombre)
-    doc.image(LOGO_LIGHT_BUFFER, 40, 22, { fit: [150, 30] });
+    doc.image(LOGO_LIGHT_BUFFER, 40, 22, { fit: [120, 24] });
   } else {
     // Fallback si le logo n'est pas trouvé sur le serveur
-    doc.fillColor('white').font('Helvetica-Bold').fontSize(22).text('VIEWBOX', 40, 24);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(20).text('VIEWBOX', 40, 26);
   }
-  doc.fillColor('white').font('Helvetica').fontSize(11).text('Event Manager', 200, 30);
-  doc.fillColor(RED).font('Helvetica-Bold').fontSize(13).text(subtitle, 420, 28, { align: 'right', width: 135 });
+  doc.fillColor('white').font('Helvetica').fontSize(9).text('Event Manager', 40, 50);
+
+  if (info && (info.projectName || info.projectRef)) {
+    // Mode "rapport" : info projet à droite dans la bande noire
+    const rightX = 380;
+    const rightW = 175;
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(11)
+      .text(info.projectName || '', rightX, 12, { width: rightW, align: 'right', ellipsis: true });
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(9)
+      .text(info.projectRef || '', rightX, 28, { width: rightW, align: 'right' });
+    doc.fillColor('white').font('Helvetica').fontSize(9)
+      .text(subtitle, rightX, 42, { width: rightW, align: 'right' });
+    if (info.reportNum || info.reportDate) {
+      doc.fillColor('#bbbbbb').font('Helvetica').fontSize(8)
+        .text(
+          [info.reportNum, info.reportDate].filter(Boolean).join(' · '),
+          rightX, 56, { width: rightW, align: 'right' }
+        );
+    }
+  } else {
+    // Mode "simple" (handover, etc.) : juste le subtitle en rouge
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(13).text(subtitle, 420, 28, { align: 'right', width: 135 });
+  }
+
   doc.moveDown(2.5);
+  doc.y = 90;
 }
 
 function footer(doc: any) {
@@ -130,6 +153,7 @@ export async function generateDailyReportPdf(data: {
   entries: Array<{ entryTime: string; description: string }>;
   checklist: Array<{ item: string; checked: boolean; notes?: string | null }>;
   photos?: Array<{ photoUrl: string; caption?: string | null }>;
+  reportId?: string;
 }): Promise<Buffer> {
   // Pré-téléchargement des photos (Cloudinary → JPEG optimisé)
   const photoBuffers: Array<{ buffer: Buffer; caption?: string | null }> = [];
@@ -154,13 +178,22 @@ export async function generateDailyReportPdf(data: {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    header(doc, 'DAILY REPORT');
-
-    // ─── Bloc de titre projet (gros nom + date) ───
+    // Numéro court de rapport : 8 premiers caractères de l'UUID en majuscules
+    const reportNum = data.reportId ? `N° REP-${data.reportId.slice(0, 8).toUpperCase()}` : '';
     const reportDateStr = new Date(data.reportDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(20).text(data.project.name, 40, doc.y);
-    doc.fillColor(MUTED).font('Helvetica').fontSize(11).text(`N° ${data.project.internalNumber}  ·  ${reportDateStr}`, 40, doc.y + 2);
-    doc.moveDown(1.2);
+    const reportDateShort = new Date(data.reportDate).toLocaleDateString('fr-FR');
+
+    // Header enrichi : nom + référence du projet + numéro + date du rapport
+    header(doc, 'DAILY REPORT', {
+      projectName: data.project.name,
+      projectRef:  `N° ${data.project.internalNumber}`,
+      reportNum,
+      reportDate:  reportDateShort,
+    });
+
+    // ─── Titre simplifié (les détails sont déjà dans le header) ───
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16).text(`Rapport du ${reportDateStr}`, 40, doc.y);
+    doc.moveDown(0.5);
 
     // ─── Carte d'infos en 2 colonnes ───
     sectionTitle(doc, 'Informations');

@@ -42,21 +42,25 @@ function base(title: string, content: string): string {
 }
 
 export async function sendMail(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
-  if (!process.env.SMTP_USER) {
-    logger.warn('SMTP not configured — email skipped');
-    return;
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    const msg = 'SMTP non configuré : SMTP_USER ou SMTP_PASS manquant dans les variables d\'environnement Railway';
+    logger.error(msg);
+    throw new Error(msg);
   }
   try {
-    await transporter.sendMail({
+    const result = await transporter.sendMail({
       from: FROM,
       to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
       subject: opts.subject,
       html: opts.html,
       attachments: opts.attachments,
     });
-    logger.info(`Email sent to ${opts.to}`);
-  } catch (err) {
-    logger.error(`Email failed: ${err}`);
+    logger.info(`Email envoyé à ${Array.isArray(opts.to) ? opts.to.join(', ') : opts.to} — messageId=${result.messageId}`);
+    return result;
+  } catch (err: any) {
+    logger.error(`[email] échec d'envoi : ${err.message || err}`);
+    // On propage pour que la route appelante reçoive une vraie erreur
+    throw new Error(`Envoi mail échoué : ${err.message || err}`);
   }
 }
 

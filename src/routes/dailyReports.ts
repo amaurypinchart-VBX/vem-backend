@@ -146,6 +146,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     const pdfBuffer = await generateDailyReportPdf({
       project: { name: r.project.name, internalNumber: r.project.internalNumber },
       reportDate: r.reportDate,
+      reportId: r.id,
       createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,
       weather: r.weather,
       workersPresent: r.workersPresent,
