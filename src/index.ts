@@ -1,91 +1,9912 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import morgan from 'morgan';
-import path from 'path';
-import { createServer } from 'http';
-import { Server as SocketServer } from 'socket.io';
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>VEM — ViewBox Event Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a0c10;--bg2:#111318;--bg3:#1a1d24;--bg4:#22262f;
+  --border:#2a2f3a;--border2:#353b48;
+  --accent:#e63946;--accent2:#ff6b6b;
+  --green:#2dc653;--amber:#f4a261;--blue:#4895ef;--purple:#9b59b6;
+  --text:#f0f2f5;--text2:#9ba3b2;--text3:#5a6275;
+  --radius:10px;--radius2:14px;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+  --nav-w:240px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;}
 
-import { errorHandler } from './middleware/errorHandler';
-import { authMiddleware } from './middleware/auth';
-import { logger } from './utils/logger';
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;padding:20px;}
+.login-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 20% 50%,rgba(230,57,70,.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(72,149,239,.06) 0%,transparent 50%);}
+.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:48px;width:100%;max-width:420px;position:relative;z-index:1;box-shadow:0 32px 80px rgba(0,0,0,.6);}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:40px;justify-content:center;}
+.login-mark{width:44px;height:44px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:20px;color:#fff;}
+.login-brand{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--text);}
+.login-brand span{color:var(--accent);}
+.login-title{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;margin-bottom:6px;text-align:center;}
+.login-sub{font-size:14px;color:var(--text2);text-align:center;margin-bottom:32px;}
+.form-group{margin-bottom:16px;}
+.form-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.8px;}
+.form-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;font-size:14px;color:var(--text);font-family:'Inter',sans-serif;outline:none;transition:border .2s;}
+.form-input:focus{border-color:var(--accent);}
+.form-input::placeholder{color:var(--text3);}
+.login-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:14px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;margin-top:8px;}
+.login-btn:hover{background:#c62736;transform:translateY(-1px);}
+.login-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+.login-error{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--accent2);margin-top:12px;display:none;}
+.login-hint{margin-top:20px;padding:12px;background:var(--bg3);border-radius:var(--radius);font-size:12px;color:var(--text3);border:1px solid var(--border);}
+.login-hint strong{color:var(--text2);}
 
-import authRoutes          from './routes/auth';
-import projectRoutes       from './routes/projects';
-import taskRoutes          from './routes/tasks';
-import ticketRoutes        from './routes/tickets';
-import handoverRoutes      from './routes/handover';
-import dailyRoutes         from './routes/dailyReports';
-import warehouseRoutes     from './routes/warehouse';
-import toolboxRoutes       from './routes/toolbox';
-import uploadRoutes        from './routes/upload';
-import notifRoutes         from './routes/notifications';
-import userRoutes          from './routes/users';
-import clientRoutes        from './routes/clients';
-import reportRoutes        from './routes/reports';
-import taskTemplatesRoutes from './routes/taskTemplates';
-import aiRoutes from './routes/ai';
-import clientRemarksRoutes from './routes/clientRemarks';
-import clientVisitsRoutes from './routes/clientVisits';
-import briefingRoutes from './routes/briefing';
-import { runStartupMigrations } from './utils/migrations';
+/* SHELL */
+.shell{display:flex;min-height:100vh;}
+.nav{width:var(--nav-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;overflow-y:auto;transition:transform .3s;}
+.main{margin-left:var(--nav-w);flex:1;display:flex;flex-direction:column;}
 
-const app  = express();
-const http = createServer(app);
+/* NAV */
+.nav-top{padding:20px 16px;border-bottom:1px solid var(--border);}
+.nav-logo{display:flex;align-items:center;gap:10px;}
+.nav-mark{width:36px;height:36px;background:var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:#fff;flex-shrink:0;}
+.nav-name{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;}
+.nav-ver{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;}
+.nav-section{padding:12px 0;}
+.nav-label{padding:6px 16px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text2);transition:all .15s;border-left:2px solid transparent;margin:1px 0;}
+.nav-item:hover{color:var(--text);background:var(--bg3);}
+.nav-item.active{color:var(--accent);background:rgba(230,57,70,.08);border-left-color:var(--accent);}
+.nav-item .ni{font-size:15px;width:20px;text-align:center;flex-shrink:0;}
+.nav-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;}
+.nav-bottom{margin-top:auto;padding:16px;border-top:1px solid var(--border);}
+.nav-user{display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--radius);cursor:pointer;transition:background .15s;}
+.nav-user:hover{background:var(--bg3);}
+.nav-avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff;flex-shrink:0;}
+.nav-user-name{font-size:13px;font-weight:600;color:var(--text);}
+.nav-user-role{font-size:11px;color:var(--text3);}
+.nav-logout{font-size:12px;color:var(--text3);margin-top:4px;cursor:pointer;text-align:center;padding:6px;border-radius:var(--radius);transition:all .15s;}
+.nav-logout:hover{color:var(--accent);background:rgba(230,57,70,.08);}
 
-export const io = new SocketServer(http, {
-  cors: { origin: '*', credentials: true },
+/* TOPBAR */
+.topbar{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100;}
+.topbar-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;flex:1;}
+.icon-btn{width:34px;height:34px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;position:relative;transition:all .15s;}
+.icon-btn:hover{border-color:var(--border2);background:var(--bg4);}
+.notif-pip{position:absolute;top:5px;right:5px;width:7px;height:7px;background:var(--accent);border-radius:50%;border:1.5px solid var(--bg2);}
+.menu-btn{display:none;}
+
+/* CONTENT */
+.content{padding:24px;flex:1;}
+.pg{display:none;}.pg.active{display:block;}
+
+/* PAGE HEADER */
+.pg-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:16px;flex-wrap:wrap;}
+.pg-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;}
+.pg-sub{font-size:13px;color:var(--text2);margin-top:3px;}
+.pg-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* STATS */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:18px;border-left:3px solid transparent;transition:transform .15s;}
+.stat-card:hover{transform:translateY(-2px);}
+.stat-card.red{border-left-color:var(--accent);}
+.stat-card.green{border-left-color:var(--green);}
+.stat-card.amber{border-left-color:var(--amber);}
+.stat-card.blue{border-left-color:var(--blue);}
+.stat-val{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;letter-spacing:-1px;}
+.stat-lbl{font-size:11px;color:var(--text2);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+
+/* CARDS */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);margin-bottom:18px;}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;}
+.card-body{padding:18px;}
+
+/* GRID */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.grid-2-1{display:grid;grid-template-columns:2fr 1fr;gap:18px;}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;white-space:nowrap;}
+.badge-red{background:rgba(230,57,70,.15);color:#ff6b6b;}
+.badge-green{background:rgba(45,198,83,.15);color:#2dc653;}
+.badge-amber{background:rgba(244,162,97,.15);color:#f4a261;}
+.badge-blue{background:rgba(72,149,239,.15);color:#4895ef;}
+.badge-purple{background:rgba(155,89,182,.15);color:#b07cc6;}
+.badge-muted{background:var(--bg3);color:var(--text2);}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:'Inter',sans-serif;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:#c62736;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-green:hover{background:#1da840;}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text2);}
+.btn-outline:hover{border-color:var(--border2);color:var(--text);}
+.btn-ghost{background:var(--bg3);color:var(--text2);}
+.btn-ghost:hover{background:var(--bg4);color:var(--text);}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:10px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);}
+td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--text2);}
+td strong{color:var(--text);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,.02);}
+
+/* FORM */
+.form-group2{margin-bottom:14px;}
+.form-label2{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.7px;}
+.input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px;font-size:13px;color:var(--text);font-family:'Inter',sans-serif;outline:none;transition:border .15s;}
+.input:focus{border-color:var(--accent);}
+.input::placeholder{color:var(--text3);}
+select.input{cursor:pointer;}
+textarea.input{min-height:80px;resize:vertical;}
+.input-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+/* MODAL */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.overlay.open{display:flex;}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:26px;width:90%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.6);animation:mIn .2s ease;}
+@keyframes mIn{from{transform:scale(.96) translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+.modal-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;}
+.modal-close{background:var(--bg3);border:1px solid var(--border);width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:16px;}
+.modal-close:hover{color:var(--accent);}
+
+/* PROGRESS */
+.prog{background:var(--bg3);border-radius:99px;overflow:hidden;}
+.prog-bar{height:100%;border-radius:99px;transition:width .4s;}
+
+/* PROJECT CARD */
+.proj-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:18px;cursor:pointer;transition:all .2s;}
+.proj-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 32px rgba(230,57,70,.1);}
+
+/* TABS */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;}
+.tab{padding:9px 16px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.tab:hover:not(.active){color:var(--text);}
+
+/* TOAST */
+.toasts{position:fixed;top:68px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:11px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;min-width:240px;animation:tIn .25s ease;box-shadow:var(--shadow);}
+.toast.success{border-color:rgba(45,198,83,.4);background:rgba(45,198,83,.1);color:var(--green);}
+.toast.error{border-color:rgba(230,57,70,.4);background:rgba(230,57,70,.1);color:var(--accent2);}
+.toast.warning{border-color:rgba(244,162,97,.4);background:rgba(244,162,97,.1);color:var(--amber);}
+@keyframes tIn{from{transform:translateX(50px);opacity:0}to{transform:none;opacity:1}}
+
+/* SEARCH */
+.sbar{display:flex;gap:10px;margin-bottom:18px;}
+.sbar-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px 9px 36px;font-size:13px;color:var(--text);font-family:'Inter',sans-serif;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a6275' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:12px center;transition:border .15s;}
+.sbar-input:focus{border-color:var(--accent);}
+.sbar-input::placeholder{color:var(--text3);}
+
+/* TIMELINE */
+.timeline{padding-left:18px;position:relative;}
+.timeline::before{content:'';position:absolute;left:5px;top:6px;bottom:0;width:1px;background:var(--border);}
+.tl-item{position:relative;margin-bottom:14px;}
+.tl-dot{position:absolute;left:-17px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg2);}
+.tl-dot.green{background:var(--green);}
+.tl-dot.amber{background:var(--amber);}
+.tl-content{background:var(--bg3);border-radius:var(--radius);padding:9px 12px;}
+.tl-time{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;}
+.tl-text{font-size:13px;color:var(--text2);margin-top:2px;line-height:1.5;}
+
+/* EMPTY */
+.empty{text-align:center;padding:48px 20px;}
+.empty-icon{font-size:44px;margin-bottom:12px;}
+.empty-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;}
+.empty-sub{font-size:13px;color:var(--text2);margin-top:6px;}
+
+/* CHECKLIST */
+.check-item{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;transition:all .15s;}
+.check-item.checked{background:rgba(45,198,83,.06);border-color:rgba(45,198,83,.3);}
+.check-cb{width:16px;height:16px;cursor:pointer;accent-color:var(--green);flex-shrink:0;}
+
+/* LOADER */
+.loader{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* SIG */
+.sig-zone{border:1px dashed var(--border);border-radius:var(--radius);min-height:100px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;color:var(--text3);font-size:13px;}
+.sig-zone:hover{border-color:var(--accent);color:var(--accent);}
+.sig-zone.signed{border-style:solid;border-color:var(--green);background:rgba(45,198,83,.06);color:var(--green);}
+
+/* PHOTO */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.photo-cell{aspect-ratio:1;border-radius:var(--radius);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;border:1px solid var(--border);transition:border .15s;overflow:hidden;}
+.photo-cell:hover{border-color:var(--accent);}
+.photo-cell img{width:100%;height:100%;object-fit:cover;}
+
+/* KANBAN */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.kboard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:14px;}
+.kboard-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:12px;}
+.kcard{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;cursor:pointer;transition:all .15s;border-left:2px solid transparent;}
+.kcard:hover{border-color:var(--border2);}
+.kcard.todo{border-left-color:var(--blue);}
+.kcard.inprog{border-left-color:var(--amber);}
+.kcard.done{border-left-color:var(--green);opacity:.65;}
+.kcard.blocked{border-left-color:var(--accent);}
+
+/* DROPDOWN MENU */
+.dropdown{position:relative;}
+.dropdown-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:6px;min-width:180px;box-shadow:var(--shadow);z-index:300;}
+.dropdown-menu.open{display:block;}
+.dropdown-item{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;color:var(--text2);cursor:pointer;border-radius:var(--radius);transition:all .15s;}
+.dropdown-item:hover{background:var(--bg3);color:var(--text);}
+.dropdown-item.danger{color:var(--accent);}
+.dropdown-item.danger:hover{background:rgba(230,57,70,.08);}
+.dropdown-sep{border:none;border-top:1px solid var(--border);margin:4px 0;}
+
+/* UPLOAD ZONE */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;cursor:pointer;transition:all .2s;color:var(--text3);font-size:13px;}
+.upload-zone:hover{border-color:var(--accent);color:var(--accent);}
+
+/* PHOTO GRID */
+.photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.photo-cell{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);}
+.photo-cell img{width:100%;height:100%;object-fit:cover;}
+
+/* TABS SCROLL */
+.tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.tabs::-webkit-scrollbar{display:none;}
+
+/* RESPONSIVE */
+/* ── TERRAIN POINT CARDS ── */
+.terrain-point{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:16px;overflow:hidden;transition:all .2s;}
+.terrain-point:hover{border-color:var(--border2);}
+.terrain-point.critical{border-left:4px solid var(--accent);}
+.terrain-point.high{border-left:4px solid var(--amber);}
+.terrain-point.normal{border-left:4px solid var(--blue);}
+.terrain-point.resolved{border-left:4px solid var(--green);opacity:.8;}
+.terrain-point-header{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;}
+.terrain-num{width:32px;height:32px;background:var(--bg3);border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;flex-shrink:0;}
+.terrain-point.critical .terrain-num{background:rgba(230,57,70,.15);border-color:var(--accent);color:var(--accent);}
+.terrain-point.high .terrain-num{background:rgba(244,162,97,.15);border-color:var(--amber);color:var(--amber);}
+.terrain-point.resolved .terrain-num{background:rgba(45,198,83,.15);border-color:var(--green);color:var(--green);}
+.terrain-title{flex:1;font-weight:700;font-size:14px;line-height:1.3;}
+.terrain-status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.terrain-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 12px;}
+.terrain-photo{aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--bg3);cursor:pointer;position:relative;}
+.terrain-photo img{width:100%;height:100%;object-fit:cover;}
+.terrain-photo-add{border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--text3);cursor:pointer;transition:all .2s;aspect-ratio:4/3;border-radius:10px;}
+.terrain-photo-add:hover{border-color:var(--accent);color:var(--accent);background:rgba(230,57,70,.04);}
+.terrain-desc{padding:0 16px 14px;font-size:13px;color:var(--text2);line-height:1.6;}
+.terrain-footer{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);background:var(--bg3);flex-wrap:wrap;}
+.terrain-add-btn{display:flex;align-items:center;gap:8px;padding:14px 16px;border:2px dashed var(--border);border-radius:14px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:500;transition:all .2s;background:transparent;width:100%;justify-content:center;}
+.terrain-add-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(230,57,70,.04);}
+
+/* ── TERRAIN POINT CARDS ── */
+.terrain-point{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:16px;overflow:hidden;transition:all .2s;}
+.terrain-point:hover{border-color:var(--border2);}
+.terrain-point.p-critical{border-left:4px solid var(--accent);}
+.terrain-point.p-high{border-left:4px solid var(--amber);}
+.terrain-point.p-normal{border-left:4px solid var(--blue);}
+.terrain-point.p-resolved{border-left:4px solid var(--green);opacity:.85;}
+.terrain-num{width:32px;height:32px;background:var(--bg3);border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;}
+.terrain-point.p-critical .terrain-num{background:rgba(230,57,70,.12);border-color:var(--accent);color:var(--accent);}
+.terrain-point.p-high .terrain-num{background:rgba(244,162,97,.12);border-color:var(--amber);color:var(--amber);}
+.terrain-point.p-resolved .terrain-num{background:rgba(45,198,83,.12);border-color:var(--green);color:var(--green);}
+.terrain-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 12px;}
+.terrain-photo{aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--bg3);cursor:pointer;}
+.terrain-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+.terrain-photo-add{border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text3);cursor:pointer;transition:all .2s;aspect-ratio:4/3;border-radius:10px;}
+.terrain-photo-add:hover,.terrain-photo-add:active{border-color:var(--accent);color:var(--accent);}
+.terrain-add-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:16px;border:2px dashed var(--border);border-radius:14px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;transition:all .2s;background:transparent;width:100%;margin-top:8px;}
+.terrain-add-btn:hover,.terrain-add-btn:active{border-color:var(--accent);color:var(--accent);}
+
+/* ── BOTTOM NAV BASE (always present, hidden on desktop) ── */
+.bottom-nav{
+  display:block;
+  position:fixed;bottom:0;left:0;right:0;
+  background:#111318;
+  border-top:1px solid #2a2f3a;
+  z-index:9999;
+  padding-bottom:env(safe-area-inset-bottom);
+  box-shadow:0 -4px 20px rgba(0,0,0,.5);
+  width:100%;
+}
+.bottom-nav-items{
+  display:flex!important;
+  justify-content:space-around;
+  align-items:flex-end;
+  height:60px;
+  padding:0 4px;
+}
+.bn-item{
+  display:flex!important;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  padding:6px 8px;
+  cursor:pointer;
+  color:#5a6275;
+  font-size:10px;
+  font-weight:600;
+  border-radius:12px;
+  min-width:60px;
+  flex:1;
+  max-width:80px;
+}
+.bn-item.active{color:#e63946;}
+.bn-icon-wrap{
+  font-size:22px;
+  line-height:1;
+  width:40px;height:30px;
+  display:flex!important;
+  align-items:center;
+  justify-content:center;
+  border-radius:10px;
+}
+.bn-label{font-size:10px;font-weight:600;}
+.bn-fab-center{
+  display:flex!important;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  padding-bottom:2px;
+  cursor:pointer;
+}
+.bn-fab-circle{
+  width:52px;height:52px;
+  background:#e63946;
+  border-radius:50%;
+  display:flex!important;
+  align-items:center;
+  justify-content:center;
+  font-size:28px;
+  color:#fff;
+  box-shadow:0 4px 16px rgba(230,57,70,.5);
+  transform:translateY(-10px);
+}
+
+/* ══ DESKTOP — hide mobile elements ══ */
+@media(min-width:769px){
+  .bottom-nav,.fab-menu,.menu-btn{display:none!important;}
+  .bn-fab-center{display:none!important;}
+  .nav-overlay{display:none!important;}
+}
+
+/* FAB menu — hidden by default */
+.fab-menu{display:none!important;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9998;flex-direction:column;gap:10px;align-items:center;width:220px;}
+.fab-menu.open{display:flex!important;}
+.fab-item{display:flex;align-items:center;gap:12px;background:#111318;border:1px solid #2a2f3a;border-radius:14px;padding:12px 20px;cursor:pointer;font-size:14px;font-weight:600;color:#f0f2f5;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;width:100%;}
+.fab-item span{font-size:20px;}
+
+/* ══ MOBILE ══ */
+@media(max-width:768px){
+  /* Sidebar complètement cachée sur mobile */
+  .nav{
+    display:none!important;
+    visibility:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+    transform:translateX(-100%);
+    transition:transform .3s;
+  }
+  .nav.open{
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    transform:none!important;
+    z-index:400;
+  }
+  .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:399;}
+  .nav-overlay.open{display:block;}
+
+  /* Main plein écran + espace bottom nav */
+  .main{margin-left:0!important;padding-bottom:90px!important;}
+  .shell{display:block!important;}
+  .bottom-nav{display:block!important;}
+  
+  /* Cacher le menu burger dans la topbar — on utilise la bottom nav */
+  /* .menu-btn{display:flex!important;} */
+  .content{padding:12px;}
+  .topbar{padding:0 12px;height:50px;}
+  .topbar-title{font-size:15px!important;}
+  .menu-btn{display:flex!important;}
+
+  /* Prevent iOS zoom on focus */
+  .input,.form-input,select.input,textarea.input{font-size:16px!important;}
+
+  /* Grids → single column */
+  .stat-grid{grid-template-columns:1fr 1fr!important;gap:8px;}
+  .grid-2,.grid-2-1,.grid-3,.input-row,.input-row-3{grid-template-columns:1fr!important;}
+  .kanban{grid-template-columns:1fr 1fr!important;gap:8px;}
+
+  /* Cards */
+  .card{border-radius:12px;margin-bottom:10px;}
+  .kcard{padding:12px;margin-bottom:8px;min-height:auto;}
+
+  /* Modals — bottom sheet */
+  .overlay{align-items:flex-end!important;}
+  .modal{
+    border-radius:20px 20px 0 0!important;
+    max-width:100%!important;
+    width:100%!important;
+    margin:0!important;
+    max-height:88vh;
+    overflow-y:auto;
+    padding:20px 16px calc(80px + env(safe-area-inset-bottom))!important;
+    animation:slideUp .25s ease!important;
+  }
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+
+  /* Tabs scroll horizontal */
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;white-space:nowrap;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{display:inline-block;}
+
+  /* Buttons touch-friendly */
+  .btn{min-height:40px;}
+  .btn-sm{min-height:36px;font-size:13px;}
+  .btn-xs{min-height:30px;font-size:11px;}
+
+  /* Stat cards bigger text */
+  .stat-val{font-size:26px!important;}
+
+  /* Hide non-essential desktop elements */
+  .pg-sub{font-size:12px;}
+  .pg-title{font-size:18px!important;}
+
+  /* Tables scrollable */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+  /* Kanban single col on very small */
+}
+@media(max-width:420px){
+  .stat-grid{grid-template-columns:1fr 1fr;}
+  .kanban{grid-template-columns:1fr!important;}
+  .content{padding:10px;}
+  .pg-head{flex-direction:column;gap:10px;}
+  .pg-actions{width:100%;justify-content:flex-end;}
+  .modal{padding:16px 12px calc(16px + env(safe-area-inset-bottom))!important;}
+  .bn-item{min-width:48px;padding:5px 4px;}
+  .bn-item .bn-icon{font-size:20px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="login-screen">
+  <div class="login-wrap">
+    <div class="login-bg"></div>
+    <div class="login-card">
+      <div class="login-logo" style="flex-direction:column;gap:6px;">
+        <img src="/logo_light.png" alt="VIEWBOX" style="width:200px;height:auto;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:2px;">Event Manager</div>
+      </div>
+      <div class="login-title">Connexion</div>
+      <div class="login-sub">Accédez à votre espace de gestion</div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="login-email" type="email" placeholder="votre@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <input class="form-input" id="login-pwd" type="password" placeholder="••••••••" >
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer;" onclick="document.getElementById('remember-me').click()">
+        <input type="checkbox" id="remember-me" checked style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;">
+        <span style="font-size:13px;color:var(--text2);">Rester connecté</span>
+      </div>
+      <button class="login-btn" id="login-btn" onclick="doLogin()">Se connecter</button>
+      <div class="login-error" id="login-error">Email ou mot de passe incorrect</div>
+      <div style="text-align:center;margin-top:18px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showForgotPassword()" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">🔑 Mot de passe oublié ?</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app-screen" style="display:none;">
+
+<!-- Mobile nav overlay -->
+<div class="nav-overlay" id="nav-overlay" onclick="closeMobileNav()"></div>
+
+<!-- Bottom Navigation Bar (mobile only) -->
+<nav class="bottom-nav">
+  <div class="bottom-nav-items">
+    <div class="bn-item active" id="bn-dashboard" onclick="goto('dashboard');setActiveBN('bn-dashboard')">
+      <div class="bn-icon-wrap">📊</div>
+      <span class="bn-label">Dashboard</span>
+    </div>
+    <div class="bn-item" id="bn-projects" onclick="goto('projects');setActiveBN('bn-projects')">
+      <div class="bn-icon-wrap">🏗️</div>
+      <span class="bn-label">Projets</span>
+    </div>
+    <!-- FAB central -->
+    <div class="bn-fab-center" onclick="toggleFAB()">
+      <div class="bn-fab-circle" id="fab-circle">＋</div>
+    </div>
+    <div class="bn-item" id="bn-tickets" onclick="goto('tickets');setActiveBN('bn-tickets')">
+      <div class="bn-icon-wrap" style="position:relative;">
+        🛠️
+        <span class="bn-badge" id="bn-badge-tickets" style="display:none;">0</span>
+      </div>
+      <span class="bn-label">Tickets</span>
+    </div>
+    <div class="bn-item" id="bn-more" onclick="toggleMobileMenu()">
+      <div class="bn-icon-wrap">☰</div>
+      <span class="bn-label">Menu</span>
+    </div>
+  </div>
+</nav>
+
+<!-- FAB menu popup -->
+<div class="fab-menu" id="fab-menu">
+  <div class="fab-item" onclick="closeFAB();showModal('modal-daily')"><span>📓</span> Daily Report</div>
+  <div class="fab-item" onclick="closeFAB();showModal('modal-ticket')"><span>🛠️</span> Ticket SAV</div>
+  <div class="fab-item" onclick="closeFAB();showModal('modal-handover')"><span>🧾</span> Handover</div>
+  <div class="fab-item" onclick="closeFAB();openAddPointModal(CURRENT_PROJECT_ID)"><span>📸</span> Point visite</div>
+</div>
+
+<div class="shell">
+
+<!-- NAV -->
+<nav class="nav" id="nav">
+  <div class="nav-top">
+    <div class="nav-logo" style="flex-direction:column;gap:4px;align-items:flex-start;">
+      <img src="/logo_light.png" alt="VIEWBOX" style="width:160px;height:auto;">
+      <div class="nav-ver" style="margin-left:2px;">Event Manager</div>
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Principal</div>
+    <div class="nav-item active" onclick="goto('dashboard')"><span class="ni">📊</span>Dashboard</div>
+    <div class="nav-item" onclick="goto('projects')"><span class="ni">🏗️</span>Projets</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Terrain</div>
+    <div class="nav-item" onclick="goto('tasks')"><span class="ni">✅</span>Tâches</div>
+    <div class="nav-item" onclick="goto('daily')"><span class="ni">📓</span>Daily Reports</div>
+    <div class="nav-item" onclick="goto('handover')"><span class="ni">🧾</span>Handover</div>
+    <div class="nav-item" onclick="goto('remarks')"><span class="ni">📸</span>Visites Client</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">SAV & Stock</div>
+    <div class="nav-item" onclick="goto('tickets')"><span class="ni">🛠️</span>Tickets SAV<span class="nav-badge" id="tickets-badge">0</span></div>
+    <div class="nav-item" onclick="goto('warehouse')"><span class="ni">📦</span>Entrepôt</div>
+    <div class="nav-item" onclick="goto('toolbox')"><span class="ni">🧰</span>Boîtes à outils</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Admin</div>
+    <div class="nav-item" onclick="goto('templates')"><span class="ni">📋</span>Templates tâches</div>
+    <div class="nav-item" onclick="goto('clients')"><span class="ni">🏢</span>Clients</div>
+    <div class="nav-item" onclick="goto('team')"><span class="ni">👥</span>Équipe</div>
+    <div class="nav-item" onclick="goto('notifs')"><span class="ni">🔔</span>Notifications<span class="nav-badge" id="notifs-badge">0</span></div>
+  </div>
+  <div class="nav-bottom">
+    <div class="nav-user" onclick="toggleDropdown('user-menu')">
+      <div class="nav-avatar" id="nav-avatar-initials">AP</div>
+      <div>
+        <div class="nav-user-name" id="nav-user-name">Chargement...</div>
+        <div class="nav-user-role" id="nav-user-role">...</div>
+      </div>
+    </div>
+    <div class="dropdown">
+      <div class="dropdown-menu" id="user-menu">
+        <div class="dropdown-item" onclick="showProfile()">👤 Mon profil</div>
+        <hr class="dropdown-sep">
+        <div class="dropdown-item danger" onclick="doLogout()">🚪 Se déconnecter</div>
+      </div>
+    </div>
+    <div class="nav-logout" onclick="doLogout()">🚪 Déconnexion</div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+<header class="topbar">
+  <button class="icon-btn menu-btn" onclick="toggleMobileMenu()">☰</button>
+  <div class="topbar-title" id="pg-title">Dashboard</div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button class="icon-btn" onclick="goto('notifs')">🔔<span class="notif-pip" id="notif-pip" style="display:none;"></span></button>
+    <div class="icon-btn" id="topbar-avatar" onclick="toggleDropdown('topbar-menu')" style="font-size:12px;font-weight:700;">AP</div>
+    <div class="dropdown">
+      <div class="dropdown-menu" id="topbar-menu">
+        <div class="dropdown-item" onclick="showProfile()">👤 Mon profil</div>
+        <hr class="dropdown-sep">
+        <div class="dropdown-item danger" onclick="doLogout()">🚪 Se déconnecter</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- DASHBOARD -->
+<div class="pg active" id="pg-dashboard">
+  <div class="pg-head">
+    <div>
+      <div class="pg-title" id="dash-greeting">Bonjour 👋</div>
+      <div class="pg-sub" id="dash-date">Chargement...</div>
+    </div>
+    <div class="pg-actions">
+      <button class="btn btn-primary" onclick="showModal('modal-proj')">+ Nouveau Projet</button>
+    </div>
+  </div>
+  <div class="stat-grid" id="dash-stats">
+    <div class="stat-card red"><div class="stat-val" id="stat-projects">—</div><div class="stat-lbl">Projets actifs</div></div>
+    <div class="stat-card green"><div class="stat-val" id="stat-tasks">—</div><div class="stat-lbl">Tâches terminées</div></div>
+    <div class="stat-card amber"><div class="stat-val" id="stat-tickets">—</div><div class="stat-lbl">Tickets ouverts</div></div>
+    <div class="stat-card blue"><div class="stat-val" id="stat-team">—</div><div class="stat-lbl">Membres équipe</div></div>
+  </div>
+  <div class="grid-2-1">
+    <div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🏗️ Projets en cours</span><button class="btn btn-ghost btn-sm" onclick="goto('projects')">Voir tout →</button></div>
+        <div class="card-body" id="dash-projects"><div class="empty"><div class="empty-icon">🏗️</div><div class="empty-title">Chargement...</div></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚨 Tickets urgents</span><button class="btn btn-ghost btn-sm" onclick="goto('tickets')">Voir →</button></div>
+        <div class="card-body" id="dash-tickets" style="padding:12px;"><div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Chargement...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚡ Actions rapides</span></div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;">
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="showModal('modal-ticket')">🛠️ Ticket SAV</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('daily')">📓 Daily report</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('handover')">🧾 Handover</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('warehouse')">📦 Entrepôt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Calendrier projets (Gantt 12 semaines) -->
+  <div class="card" style="margin-top:14px;">
+    <div class="card-header">
+      <span class="card-title">📅 Calendrier projets (12 semaines)</span>
+      <button class="btn btn-ghost btn-sm" onclick="goto('projects')">Voir tous →</button>
+    </div>
+    <div class="card-body" id="dash-calendar"><div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Chargement...</div></div>
+  </div>
+</div>
+
+<!-- PROJETS -->
+<div class="pg" id="pg-projects">
+  <div class="pg-head">
+    <div><div class="pg-title">Projets</div><div class="pg-sub">Gestion des installations</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-proj')">+ Nouveau Projet</button>
+  </div>
+  <div class="sbar">
+    <input class="sbar-input" id="proj-search" placeholder="Rechercher un projet..." oninput="filterProjects()">
+    <select class="input" style="width:160px;padding:8px 12px;" id="proj-status-filter" onchange="filterProjects()">
+      <option value="">Tous les statuts</option>
+      <option value="draft">Brouillon</option>
+      <option value="in_preparation">Préparation</option>
+      <option value="installation">Installation</option>
+      <option value="completed">Terminé</option>
+    </select>
+  </div>
+  <div id="projects-grid" class="grid-3"><div class="empty"><div class="empty-icon">🏗️</div><div class="empty-title">Chargement...</div></div></div>
+</div>
+
+<!-- DETAIL PROJET -->
+<div class="pg" id="pg-project-detail">
+  <div class="pg-head">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="btn btn-outline btn-sm" onclick="goto('projects')">← Retour</button>
+      <div>
+        <div class="pg-title" id="detail-name">Projet</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <span class="pg-sub" id="detail-sub">...</span>
+          <select id="detail-status" onchange="updateProjectStatus(CURRENT_PROJECT_ID, this.value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">
+            <option value="quote_to_validate">📝 Devis à valider</option>
+            <option value="quote_validated">✅ Devis validé</option>
+            <option value="in_preparation">🔧 En préparation</option>
+            <option value="installation">🏗️ En installation</option>
+            <option value="on_site">📍 Sur site</option>
+            <option value="dismantling">🔨 Démontage</option>
+            <option value="completed">🎉 Terminé</option>
+            <option value="cancelled">❌ Annulé</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="pg-actions">
+      <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
+      <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
+      <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
+      <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()">📋 Template</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--text3);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)" title="Archiver / Supprimer">📦</button>
+    </div>
+  </div>
+  <div class="tabs" id="proj-tabs" style="overflow-x:auto;white-space:nowrap;">
+    <div class="tab active" onclick="switchTab(this,'dtab-info')">📋 Infos</div>
+    <div class="tab" onclick="switchTab(this,'dtab-tasks')">✅ Tâches</div>
+    <div class="tab" onclick="switchTab(this,'dtab-daily')">📓 Daily Reports</div>
+    <div class="tab" onclick="switchTab(this,'dtab-handover')">🧾 Handover</div>
+    <div class="tab" onclick="switchTab(this,'dtab-remarks')">📸 Visites Client</div>
+    <div class="tab" onclick="switchTab(this,'dtab-tickets')">🛠️ Tickets</div>
+    <div class="tab" onclick="switchTab(this,'dtab-warehouse')">📦 Entrepôt</div>
+    <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
+    <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
+    <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
+    <div class="tab" onclick="switchTab(this,'dtab-briefing')">📋 Briefing</div>
+    <div class="tab" onclick="switchTab(this,'dtab-files');loadDetailFiles(CURRENT_PROJECT_ID)">📁 Fichiers</div>
+  </div>
+  <div id="dtab-info"><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-tasks" style="display:none;"><div id="detail-tasks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-daily" style="display:none;"><div id="detail-daily-content"><div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport</div></div></div></div>
+  <div id="dtab-handover" style="display:none;"><div id="detail-handover-content"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div></div></div>
+  <div id="dtab-remarks" style="display:none;"><div id="detail-remarks-content"><div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucune remarque</div></div></div></div>
+  <div id="dtab-tickets" style="display:none;"><div id="detail-tickets-content"><div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket</div></div></div></div>
+  <div id="dtab-warehouse" style="display:none;"><div id="detail-warehouse-content"><div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div></div></div></div>
+  <div id="dtab-toolbox" style="display:none;"><div id="detail-toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div></div></div></div>
+  <div id="dtab-team" style="display:none;"><div id="detail-team-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-trucks" style="display:none;"><div id="detail-trucks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-briefing" style="display:none;"><div id="detail-briefing-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
+</div>
+
+<!-- TACHES -->
+<div class="pg" id="pg-tasks">
+  <div class="pg-head">
+    <div><div class="pg-title">Tâches</div><div class="pg-sub">Kanban de toutes les tâches</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-task')">+ Nouvelle Tâche</button>
+  </div>
+  <div class="kanban" id="tasks-kanban">
+    <div class="kboard"><div class="kboard-title">📋 À faire</div><div id="col-todo"></div></div>
+    <div class="kboard"><div class="kboard-title" style="color:var(--amber);">⚡ En cours</div><div id="col-inprog"></div></div>
+    <div class="kboard"><div class="kboard-title" style="color:var(--green);">✅ Terminé</div><div id="col-done"></div></div>
+    <div class="kboard"><div class="kboard-title" style="color:var(--accent);">🔴 Bloqué</div><div id="col-blocked"></div></div>
+  </div>
+</div>
+
+<!-- DAILY REPORT -->
+<div class="pg" id="pg-daily">
+  <div class="pg-head">
+    <div><div class="pg-title">Daily Reports</div><div class="pg-sub">Rapports journaliers</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-daily')">+ Nouveau Rapport</button>
+  </div>
+  <div id="daily-list"><div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Chargement...</div></div></div>
+</div>
+
+<!-- HANDOVER -->
+<div class="pg" id="pg-handover">
+  <div class="pg-head">
+    <div><div class="pg-title">Handover</div><div class="pg-sub">Rapports de réception</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-handover')">+ Nouveau Handover</button>
+  </div>
+  <div id="handover-list"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Chargement...</div></div></div>
+</div>
+
+<!-- SUIVI CLIENT -->
+<div class="pg" id="pg-remarks">
+  <div class="pg-head">
+    <div><div class="pg-title">📸 Visites Client</div><div class="pg-sub">Todo list terrain — points à régler par projet</div></div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <div style="color:var(--text2);font-size:13px;text-align:center;padding:20px;">
+        Sélectionne un projet pour voir ses visites client.<br><br>
+        <button class="btn btn-primary" onclick="goto('projects')">→ Aller aux Projets</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TICKETS -->
+<div class="pg" id="pg-tickets">
+  <div class="pg-head">
+    <div><div class="pg-title">Tickets SAV</div><div class="pg-sub">Interventions post-installation</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card red"><div class="stat-val" id="tstat-open">—</div><div class="stat-lbl">Ouverts</div></div>
+    <div class="stat-card amber"><div class="stat-val" id="tstat-inprog">—</div><div class="stat-lbl">En cours</div></div>
+    <div class="stat-card green"><div class="stat-val" id="tstat-resolved">—</div><div class="stat-lbl">Résolus</div></div>
+    <div class="stat-card blue"><div class="stat-val" id="tstat-critical">—</div><div class="stat-lbl">Critiques</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">🎫 Tous les tickets</span></div>
+    <div class="sbar" style="padding:14px 14px 0;">
+      <input class="sbar-input" placeholder="Rechercher..." oninput="loadTickets()">
+      <select class="input" style="width:130px;padding:8px 10px;" id="ticket-urgency-filter" onchange="loadTickets()">
+        <option value="">Toutes urgences</option>
+        <option value="critical">Critique</option>
+        <option value="high">Élevé</option>
+        <option value="medium">Moyen</option>
+        <option value="low">Faible</option>
+      </select>
+    </div>
+    <div class="table-wrap"><table id="tickets-table">
+      <thead><tr><th>Titre</th><th>Projet</th><th>Urgence</th><th>Assigné</th><th>Statut</th><th>Date</th><th></th></tr></thead>
+      <tbody id="tickets-tbody"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text3);">Chargement...</td></tr></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ENTREPOT -->
+<div class="pg" id="pg-warehouse">
+  <div class="pg-head">
+    <div><div class="pg-title">Entrepôt / Box</div><div class="pg-sub">Préparation matériel</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-box')">+ Nouvelle Box</button>
+  </div>
+  <div id="warehouse-content"><div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Chargement...</div></div></div>
+</div>
+
+<!-- TOOLBOX -->
+<div class="pg" id="pg-toolbox">
+  <div class="pg-head">
+    <div><div class="pg-title">Boîtes à Outils</div><div class="pg-sub">Checklist avant départ</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-toolbox')">+ Nouvelle Boîte</button>
+  </div>
+  <div id="toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Chargement...</div></div></div>
+</div>
+
+<!-- EQUIPE -->
+<!-- TEMPLATES -->
+<div class="pg" id="pg-templates">
+  <div class="pg-head">
+    <div><div class="pg-title">📋 Templates de Tâches</div><div class="pg-sub">Bibliothèque de tâches réutilisables par catégorie</div></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showNewCategoryModal()">+ Catégorie</button>
+      <button class="btn btn-ghost btn-sm" onclick="showImportTemplatesModal()">📥 Import Excel</button>
+      <button class="btn btn-primary" onclick="showNewTemplateModal()">+ Template</button>
+    </div>
+  </div>
+  <div id="templates-content">
+    <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Chargement...</div></div>
+  </div>
+</div>
+
+<!-- CLIENTS -->
+<div class="pg" id="pg-clients">
+  <div class="pg-head">
+    <div><div class="pg-title">🏢 Clients</div><div class="pg-sub">Sociétés et contacts</div></div>
+    <button class="btn btn-primary" onclick="showModal('modal-new-client')">+ Nouveau Client</button>
+  </div>
+  <div id="clients-grid" class="grid-3">
+    <div class="empty"><div class="empty-icon">🏢</div><div class="empty-title">Chargement...</div></div>
+  </div>
+</div>
+
+<div class="pg" id="pg-team">
+  <div class="pg-head">
+    <div><div class="pg-title">Équipe</div><div class="pg-sub" id="team-sub">Membres actifs</div></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showModal('modal-invite')">🔗 Inviter</button>
+      <button class="btn btn-primary" onclick="showModal('modal-user')">+ Nouveau membre</button>
+    </div>
+  </div>
+  <div id="team-groups-container">
+    <div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Chargement...</div></div>
+  </div>
+  <!-- Table cachée pour compatibilité -->
+  <table style="display:none"><tbody id="team-tbody"></tbody></table>
+</div>
+
+<!-- NOTIFS -->
+<div class="pg" id="pg-notifs">
+  <div class="pg-head">
+    <div><div class="pg-title">Notifications</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="markAllRead()">Tout lire</button>
+  </div>
+  <div class="card"><div id="notifs-list"><div class="empty"><div class="empty-icon">🔔</div><div class="empty-title">Chargement...</div></div></div></div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /shell -->
+</div><!-- /app -->
+
+<!-- TOASTS -->
+<div class="toasts" id="toasts"></div>
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- Nouveau Projet -->
+<div class="overlay" id="modal-proj">
+  <div class="modal" style="max-width:700px;">
+    <div class="modal-head"><div class="modal-title">🏗️ Nouveau Projet</div><button class="modal-close" onclick="closeModal('modal-proj')">×</button></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="proj-name" placeholder="ex: Salon Audi Paris"></div>
+      <div class="form-group2">
+        <label class="form-label2">Client *</label>
+        <div style="display:flex;gap:6px;">
+          <select class="input" id="proj-client" style="flex:1;"><option value="">— Sélectionner —</option></select>
+          <button class="btn btn-ghost btn-sm" style="flex-shrink:0;" onclick="showModal('modal-new-client')" title="Créer un nouveau client">+ Client</button>
+        </div>
+      </div>
+    </div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">N° Interne</label><input class="input" id="proj-num" placeholder="VEM-2025-003"></div>
+      <div class="form-group2"><label class="form-label2">Ouvriers</label><input class="input" type="number" id="proj-workers" value="5"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Adresse *</label><input class="input" id="proj-addr" placeholder="Adresse complète, Ville"></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Début installation *</label><input class="input" type="date" id="proj-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin installation *</label><input class="input" type="date" id="proj-end"></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Début démontage</label><input class="input" type="date" id="proj-dismantling-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin démontage</label><input class="input" type="date" id="proj-dismantling-end"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
+
+    <!-- ÉQUIPES D'INSTALLATION -->
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;margin-bottom:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">👷 Équipes & Membres</div>
+          <div style="font-size:11px;color:var(--text3);">Sélectionne les équipes et membres présents sur ce projet</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="createTeamGroup();loadProjTeamSelector()">+ Sous-équipe</button>
+      </div>
+      <div id="proj-team-selector" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;">
+        <div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="proj-team-count">0 membre(s) sélectionné(s)</div>
+    </div>
+
+    <!-- TEMPLATES DE TÂCHES -->
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">📋 Tâches à créer</div>
+          <div style="font-size:11px;color:var(--text3);">Cochez, assignez et datez chaque tâche</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-xs" onclick="selectAllProjTemplates()">✅ Tout</button>
+          <button class="btn btn-ghost btn-xs" onclick="deselectAllProjTemplates()">☐ Aucun</button>
+        </div>
+      </div>
+
+      <!-- Date globale + assignation globale -->
+      <div style="background:var(--bg3);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;">Appliquer à tout :</span>
+        <input type="date" id="tmpl-global-date" style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" onchange="applyGlobalDate(this.value)">
+        <select id="tmpl-global-assign" style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;flex:1;" onchange="applyGlobalAssign(this.value)">
+          <option value="">— Assigner tout à... —</option>
+        </select>
+      </div>
+
+      <div id="proj-templates-selector" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px;">
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="proj-tpl-count">0 tâche(s) sélectionnée(s)</div>
+    </div>
+
+    <!-- CAMIONS / LOGISTIQUE -->
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">🚛 Logistique</div>
+          <div style="font-size:11px;color:var(--text3);">Camions, machines et véhicules prévus</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="addProjTruck()">+ Ajouter</button>
+      </div>
+      <div id="proj-trucks-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <button class="terrain-add-btn" onclick="addProjTruck()" style="margin-top:6px;">
+        <span style="font-size:18px;">🚛</span> Ajouter un camion / véhicule
+      </button>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-proj')">Annuler</button>
+      <button class="btn btn-primary" id="proj-create-btn" onclick="createProject()">✅ Créer le Projet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouveau Client -->
+<div class="overlay" id="modal-new-client">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-head"><div class="modal-title">🏢 Nouveau Client</div><button class="modal-close" onclick="closeModal('modal-new-client')">×</button></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Nom de la société *</label><input class="input" id="client-name" placeholder="ex: Audi Belgium SA"></div>
+      <div class="form-group2"><label class="form-label2">N° TVA / VAT</label><input class="input" id="client-vat" placeholder="BE0123456789"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="client-address" placeholder="Rue, Code postal, Ville"></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Email société</label><input class="input" type="email" id="client-email" placeholder="info@société.com"></div>
+      <div class="form-group2"><label class="form-label2">Téléphone société</label><input class="input" id="client-phone" placeholder="+32 2 ..."></div>
+    </div>
+    <!-- Contacts -->
+    <div style="border-top:1px solid var(--border);margin:14px 0 12px;padding-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <label class="form-label2" style="margin:0;">Personnes de contact</label>
+        <button class="btn btn-ghost btn-xs" onclick="addClientContact()">+ Ajouter contact</button>
+      </div>
+      <div id="client-contacts-list">
+        <!-- Premier contact par défaut -->
+        <div class="client-contact-row" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;" id="contact-0">
+          <input class="input" placeholder="Prénom Nom" id="contact-0-name" style="font-size:12px;">
+          <input class="input" placeholder="Email" id="contact-0-email" type="email" style="font-size:12px;">
+          <input class="input" placeholder="Téléphone" id="contact-0-phone" style="font-size:12px;">
+          <div style="display:flex;align-items:center;padding:6px;font-size:12px;color:var(--text3);">Principal</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-new-client')">Annuler</button>
+      <button class="btn btn-primary" onclick="createClientAndReturn()">✅ Créer le client</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOUVELLE VISITE CLIENT -->
+<div class="overlay" id="modal-new-visite">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-head">
+      <div><div class="modal-title">📸 Nouvelle Visite Client</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Crée une visite et ajoute des points terrain</div></div>
+      <button class="modal-close" onclick="closeModal('modal-new-visite')">×</button>
+    </div>
+    <div class="form-group2"><label class="form-label2">Projet *</label><select class="input" id="visite-project"><option value="">— Sélectionner —</option></select></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Date *</label><input class="input" type="date" id="visite-date"></div>
+      <div class="form-group2"><label class="form-label2">Heure</label><input class="input" type="time" id="visite-time" value="09:00"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Représentant client présent</label><input class="input" id="visite-client-rep" placeholder="Nom de la personne"></div>
+    <div class="form-group2"><label class="form-label2">Assigné à</label>
+      <select class="input" id="visite-assigned"><option value="">— Non assigné —</option></select>
+    </div>
+    <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="visite-desc" rows="2" placeholder="Contexte de la visite..."></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-new-visite')">Annuler</button>
+      <button class="btn btn-primary" onclick="createVisite()">✅ Créer la Visite</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouveau Ticket -->
+<div class="overlay" id="modal-ticket">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">🛠️ Nouveau Ticket SAV</div><button class="modal-close" onclick="closeModal('modal-ticket')">×</button></div>
+    <div class="form-group2"><label class="form-label2">Projet</label><select class="input" id="ticket-project"><option value="">— Sélectionner —</option></select></div>
+    <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="ticket-title" placeholder="Description courte du problème"></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Urgence</label>
+        <select class="input" id="ticket-urgency">
+          <option value="low">🟢 Faible</option>
+          <option value="medium" selected>🟡 Moyen</option>
+          <option value="high">🟠 Élevé</option>
+          <option value="critical">🔴 Critique</option>
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Localisation</label><input class="input" id="ticket-location" placeholder="ex: Façade Nord, Zone B"></div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Description *</label><textarea class="input" id="ticket-desc" placeholder="Décrivez le problème en détail..."></textarea></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Assigné à</label><select class="input" id="ticket-assign"><option value="">— Non assigné —</option></select></div>
+      <div class="form-group2"><label class="form-label2">Date prévue</label><input class="input" type="date" id="ticket-date"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-ticket')">Annuler</button>
+      <button class="btn btn-primary" onclick="createTicket()">🚀 Créer & Notifier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouvelle Tâche -->
+<div class="overlay" id="modal-task">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">✅ Nouvelle Tâche</div><button class="modal-close" onclick="closeModal('modal-task')">×</button></div>
+    <div class="form-group2"><label class="form-label2">Projet</label><select class="input" id="task-project"><option value="">— Sélectionner —</option></select></div>
+    <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="task-title" placeholder="ex: Montage structure section B"></div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="task-date"></div>
+      <div class="form-group2"><label class="form-label2">Assigné à</label><select class="input" id="task-assign"><option value="">— Sélectionner —</option></select></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Heure début</label><input class="input" type="time" id="task-start" value="08:00"></div>
+      <div class="form-group2"><label class="form-label2">Heure fin</label><input class="input" type="time" id="task-end" value="12:00"></div>
+    </div>
+    <div class="input-row">
+      <div class="form-group2"><label class="form-label2">Priorité</label>
+        <select class="input" id="task-priority">
+          <option value="low">Faible</option>
+          <option value="normal" selected>Normal</option>
+          <option value="high">Haute</option>
+          <option value="critical">Critique</option>
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Statut</label>
+        <select class="input" id="task-status">
+          <option value="todo">À faire</option>
+          <option value="in_progress">En cours</option>
+          <option value="done">Terminé</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="task-desc" placeholder="Détails..."></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-task')">Annuler</button>
+      <button class="btn btn-primary" onclick="createTask()">✅ Créer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Daily Report -->
+<div class="overlay" id="modal-daily">
+  <div class="modal" style="max-width:920px;">
+    <div class="modal-head">
+      <div><div class="modal-title">📓 Rapport Journalier</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Journal de chantier complet</div></div>
+      <button class="modal-close" onclick="closeModal('modal-daily')">×</button>
+    </div>
+
+    <!-- INFOS GÉNÉRALES -->
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Projet *</label><select class="input" id="daily-project" onchange="loadDailyTasks(this.value)"><option value="">— Sélectionner —</option></select></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Date *</label><input class="input" type="date" id="daily-date"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Météo</label><select class="input" id="daily-weather"><option>☀️ Ensoleillé</option><option>⛅ Nuageux</option><option>🌧️ Pluie</option><option>❄️ Froid</option><option>🌩️ Orage</option></select></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="daily-workers" value="0" min="0"></div>
+      </div>
+    </div>
+
+    <!-- TABS : Saisie manuelle / Import texte / Vocal -->
+    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0;">
+      <div class="tab active" id="tab-manual" onclick="switchDailyTab('manual')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px;">✏️ Saisie entrée par entrée</div>
+      <div class="tab" id="tab-import" onclick="switchDailyTab('import')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">📋 Import texte libre (IA)</div>
+      <div class="tab" id="tab-voice" onclick="switchDailyTab('voice')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;">🎙️ Dictée vocale</div>
+    </div>
+
+    <!-- PANEL MANUEL -->
+    <div id="panel-manual" class="grid-2">
+      <!-- Journal chronologique -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;">⏱️ Journal de chantier</div>
+          <span style="font-size:11px;color:var(--text3);" id="entry-count">0 entrée(s)</span>
+        </div>
+        <div id="daily-entries-list" style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input class="input" type="time" id="new-entry-time" style="width:86px;padding:7px 8px;font-size:13px;">
+            <input class="input" id="new-entry-task-ref" placeholder="Tâche liée (optionnel)" style="flex:1;font-size:12px;">
+          </div>
+          <div style="display:flex;gap:6px;">
+            <textarea class="input" id="new-entry-text" rows="2" placeholder="Décrivez ce qui a été fait..." style="font-size:13px;resize:none;flex:1;"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="addDailyEntry()" style="align-self:flex-end;flex-shrink:0;">+ Ajouter</button>
+          </div>
+        </div>
+      </div>
+      <!-- Tâches du projet -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:700;">✅ Avancement tâches</div>
+          <span style="font-size:11px;color:var(--text3);">Cocher = terminé</span>
+        </div>
+        <div id="daily-tasks-list" style="max-height:340px;overflow-y:auto;">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL IMPORT TEXTE -->
+    <div id="panel-import" style="display:none;">
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);">
+        💡 <strong>Collez votre rapport brut</strong> — l'IA va extraire automatiquement les heures, créer les entrées chronologiques et suggérer les tâches correspondantes. Format libre, bullet points, texte continu, tout fonctionne.
+      </div>
+      <textarea class="input" id="daily-raw-text" rows="12" placeholder="Exemple :&#10;* arrivée sur site 7h45, la team est prête&#10;* 9h15 démarrage avec la grue pour monter la 1ere box&#10;* 9h30 2eme box montée&#10;* 10h pause café&#10;* 12h15 début installation escalier&#10;..."></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;align-items:center;">
+        <span id="ai-status" style="font-size:12px;color:var(--text3);display:none;">🤖 Analyse en cours...</span>
+        <button class="btn btn-blue" onclick="parseRawTextWithAI()">🤖 Analyser avec l'IA → Extraire les entrées</button>
+      </div>
+      <!-- Résultat preview -->
+      <div id="ai-result-preview" style="display:none;margin-top:14px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green);">✅ Entrées extraites — vérifie et valide :</div>
+        <div id="ai-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ai-result-preview').style.display='none'">Recommencer</button>
+          <button class="btn btn-green" onclick="validateAIEntries()">✅ Valider et ajouter au journal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL VOCAL -->
+    <div id="panel-voice" style="display:none;text-align:center;padding:24px;">
+      <div style="font-size:48px;margin-bottom:16px;" id="voice-icon">🎙️</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;" id="voice-main-status">Cliquez pour commencer la dictée</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;">Parlez naturellement — la transcription apparaît en temps réel</div>
+      <button class="btn btn-primary" id="voice-big-btn" onclick="toggleVoiceRecording()" style="font-size:16px;padding:14px 32px;">🎙️ Démarrer la dictée</button>
+      <div id="voice-transcript-box" style="display:none;margin-top:16px;background:var(--bg3);border-radius:var(--radius);padding:14px;text-align:left;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Transcription en direct</div>
+        <div id="voice-transcript-text" style="font-size:14px;color:var(--text);line-height:1.6;min-height:60px;"></div>
+      </div>
+      <div id="voice-actions" style="display:none;margin-top:14px;gap:10px;justify-content:center;flex-direction:column;align-items:center;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:6px;">Une fois la dictée terminée :</div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="addVoiceAsEntry()">+ Ajouter comme entrée manuelle</button>
+          <button class="btn btn-blue btn-sm" onclick="parseVoiceWithAI()">🤖 Analyser avec l'IA</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES + PHOTOS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+      <div class="form-group2" style="margin:0;">
+        <label class="form-label2">Notes générales / Résumé</label>
+        <textarea class="input" id="daily-notes" rows="3" placeholder="Résumé, incidents, points importants..."></textarea>
+      </div>
+      <div class="form-group2" style="margin:0;">
+        <label class="form-label2">📸 Photos de la journée</label>
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;min-height:72px;-webkit-tap-highlight-color:transparent;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+          📸 Prendre / Ajouter photos
+          <input type="file" accept="image/*" multiple capture="environment" style="display:none;" id="daily-photos-input" onchange="previewDailyPhotos(this)">
+        </label>
+        <div id="daily-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;"></div>
+        <div id="daily-photos-count" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;align-items:center;">
+      <div style="font-size:12px;color:var(--text3);" id="daily-summary-count"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" onclick="closeModal('modal-daily')">Annuler</button>
+        <button class="btn btn-primary" onclick="createDailyReport()">💾 Sauvegarder</button>
+        <button class="btn btn-green" onclick="createDailyReport(true)">📤 Sauv. & Envoyer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Handover -->
+<div class="overlay" id="modal-handover">
+  <div class="modal" style="max-width:680px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-head" style="flex-shrink:0;">
+      <div>
+        <div class="modal-title">🧾 Nouveau Handover</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Rapport de réception — SPANTECH</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-handover')">×</button>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:0 2px 8px;">
+
+      <!-- Infos projet -->
+      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📋 Infos générales</div>
+        <div class="input-row">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Projet *</label>
+            <select class="input" id="handover-project"><option value="">— Sélectionner —</option></select>
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Date de réception</label>
+            <input class="input" type="date" id="handover-date">
+          </div>
+        </div>
+        <!-- Client : choix dans la base OU saisie libre -->
+        <div class="form-group2" style="margin-top:8px;">
+          <label class="form-label2">Client / Société</label>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;">
+            <select class="input" id="handover-client-select" onchange="onHandoverClientPick(this.value)">
+              <option value="">— Choisir dans la base —</option>
+            </select>
+            <span style="font-size:11px;color:var(--text3);">ou</span>
+            <input class="input" id="handover-client-name" placeholder="Saisie libre">
+          </div>
+        </div>
+
+        <div class="input-row" style="margin-top:8px;">
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Représentant présent</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select class="input" id="handover-contact-select" onchange="onHandoverContactPick(this.value)" style="flex:1;">
+                <option value="">— Choix base —</option>
+              </select>
+            </div>
+            <input class="input" id="handover-responsible" placeholder="ou Saisie libre" style="margin-top:4px;">
+          </div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Email client (pour envoi PDF)</label>
+            <input class="input" type="email" id="handover-client-email" placeholder="auto-rempli ou saisie libre">
+          </div>
+        </div>
+      </div>
+
+      <!-- Points d'inspection -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:700;">🔍 Points d'inspection</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-xs" onclick="addHandoverZoneVoice()">🎙️ Voix</button>
+            <button class="btn btn-ghost btn-xs" onclick="addHandoverZone()">+ Ajouter</button>
+          </div>
+        </div>
+        <div id="handover-zones-list" style="display:flex;flex-direction:column;gap:8px;max-height:35vh;overflow-y:auto;padding-right:2px;"></div>
+        <button class="terrain-add-btn" onclick="addHandoverZone()" style="margin-top:8px;">
+          <span style="font-size:20px;">＋</span> Ajouter un point terrain
+        </button>
+      </div>
+
+      <div class="form-group2">
+        <label class="form-label2">Notes générales</label>
+        <textarea class="input" id="handover-notes" rows="2" placeholder="Observations générales..."></textarea>
+      </div>
+
+    </div>
+
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-handover')">Annuler</button>
+      <button class="btn btn-primary" onclick="createHandover()">✅ Créer le Handover</button>
+    </div>
+  </div>
+</div>
+
+<!-- Box -->
+<div class="overlay" id="modal-box">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">📦 Nouvelle Box</div><button class="modal-close" onclick="closeModal('modal-box')">×</button></div>
+    <div class="form-group2"><label class="form-label2">Projet</label><select class="input" id="box-project"><option value="">— Sélectionner —</option></select></div>
+    <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="box-name" placeholder="ex: BOX 1 — Structure"></div>
+    <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="box-desc" placeholder="Contenu général..."></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-box')">Annuler</button>
+      <button class="btn btn-primary" onclick="createBox()">✅ Créer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nouveau membre -->
+<div class="overlay" id="modal-user">
+  <div class="modal" style="max-width:680px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-head" style="flex-shrink:0;">
+      <div><div class="modal-title">👤 Nouveau Membre</div>
+      <div style="font-size:12px;color:var(--text2);">Fiche membre complète</div></div>
+      <button class="modal-close" onclick="closeModal('modal-user')">×</button>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:0 2px 10px;">
+
+      <!-- OCR Carte d'identité -->
+      <div style="background:linear-gradient(135deg,#1a1f2e,#2a2f3a);border:1px solid #4895ef44;border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#4895ef;margin-bottom:8px;">🪪 Scan carte d'identité — remplissage automatique</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;background:#4895ef;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;-webkit-tap-highlight-color:transparent;">
+            📷 Scanner la carte
+            <input type="file" accept="image/*" capture="environment" style="display:none;" id="id-card-input" onchange="scanIDCard(this)">
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;background:var(--bg3);color:var(--text);padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid var(--border);">
+            🖼️ Depuis galerie
+            <input type="file" accept="image/*" style="display:none;" onchange="scanIDCard(this)">
+          </label>
+          <div id="ocr-status" style="font-size:12px;color:var(--text3);"></div>
+        </div>
+        <div id="id-card-preview" style="margin-top:10px;display:none;">
+          <img id="id-card-img" style="max-height:120px;border-radius:8px;border:1px solid var(--border);">
+        </div>
+      </div>
+
+      <!-- Photo de profil -->
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;">
+        <div>
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">Photo</label>
+          <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:80px;height:80px;border:2px dashed var(--border);border-radius:50%;cursor:pointer;overflow:hidden;position:relative;" id="profile-photo-label">
+            <img id="profile-photo-preview" style="width:100%;height:100%;object-fit:cover;display:none;border-radius:50%;">
+            <span id="profile-photo-placeholder" style="font-size:28px;">👤</span>
+            <input type="file" accept="image/*" capture="user" style="display:none;" id="profile-photo-input" onchange="previewProfilePhoto(this)">
+          </label>
+        </div>
+        <div style="flex:1;">
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Prénom *</label><input class="input" id="user-fname" placeholder="Prénom"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Nom *</label><input class="input" id="user-lname" placeholder="Nom"></div>
+          </div>
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Date de naissance</label><input class="input" type="date" id="user-birthdate"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Nationalité</label><input class="input" id="user-nationality" placeholder="ex: Belge, Français..."></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Identité officielle -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">N° Registre national</label><input class="input" id="user-national-nr" placeholder="XX.XX.XX-XXX.XX" maxlength="15"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">N° Carte d'identité</label><input class="input" id="user-id-number" placeholder="592-XXXXXXX-XX"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Validité carte d'identité</label><input class="input" type="date" id="user-id-expiry"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Lieu de naissance</label><input class="input" id="user-birthplace" placeholder="Ville, Pays"></div>
+      </div>
+
+      <!-- Contact -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Email *</label><input class="input" id="user-email" type="email" placeholder="email@exemple.com"></div>
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Téléphone</label><input class="input" id="user-phone" placeholder="+32 477 ..."></div>
+      </div>
+
+      <!-- Rôle + Équipe -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div class="form-group2" style="margin:0;"><label class="form-label2">Rôle</label>
+          <select class="input" id="user-role" onchange="toggleTeamGroup(this.value)">
+            <option value="sales_engineer">💼 Sales Engineer</option>
+            <option value="project_manager">📊 Project Manager</option>
+            <option value="technical_manager">⚙️ Technical Manager</option>
+            <option value="site_manager">🏗️ Site Manager</option>
+            <option value="installer" selected>🔧 Installateur</option>
+            <option value="worker">👷 Ouvrier / Équipe</option>
+            <option value="warehouse">📦 Entrepôt</option>
+            <option value="engineer">🛠️ Engineer</option>
+            <option value="admin">🔑 Admin</option>
+            <option value="client">🤝 Client</option>
+          </select>
+        </div>
+        <div class="form-group2" style="margin:0;" id="team-group-row">
+          <label class="form-label2">Sous-équipe</label>
+          <div style="display:flex;gap:6px;">
+            <select class="input" id="user-team-group" style="flex:1;">
+              <option value="">— Aucune —</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" style="flex-shrink:0;" onclick="createTeamGroup()" title="Créer une sous-équipe">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;font-size:12px;color:var(--text3);margin-bottom:4px;">
+        Mot de passe par défaut : <strong style="color:var(--text2);">VEM2025!</strong> — à changer à la première connexion.
+      </div>
+    </div>
+
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:6px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-user')">Annuler</button>
+      <button class="btn btn-primary" onclick="createUser()">✅ Créer le compte</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL RAPPORT IA ═══ -->
+<div class="overlay" id="modal-report">
+  <div class="modal" style="max-width:800px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <div class="modal-head" style="flex-shrink:0;">
+      <div>
+        <div class="modal-title">📊 Générer un Rapport</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Choisissez les sections à inclure</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-report')">×</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div style="flex:1;overflow-y:auto;padding:0 2px 10px;">
+
+      <!-- Type -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <div id="rtype-full" onclick="selectReportType('full')" style="border:2px solid var(--accent);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;background:rgba(230,57,70,.06);">
+          <div style="font-size:22px;margin-bottom:6px;">📋</div>
+          <div style="font-weight:700;font-size:14px;">Rapport complet</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Toutes les données du projet</div>
+        </div>
+        <div id="rtype-client" onclick="selectReportType('client')" style="border:2px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;text-align:center;">
+          <div style="font-size:22px;margin-bottom:6px;">🤝</div>
+          <div style="font-weight:700;font-size:14px;">Présentation client</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">Format soigné pour le client</div>
+        </div>
+      </div>
+
+      <!-- Sections -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">Sections à inclure</div>
+      <div style="font-size:11px;color:#8892a4;margin-bottom:10px;" id="report-sections-hint">Cliquez pour sélectionner / désélectionner</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;" id="report-sections">
+        <div class="report-section-toggle active" data-section="overview" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📋</span><div><div style="font-weight:600;font-size:13px;">Vue d'ensemble</div><div style="font-size:11px;color:#8892a4;">Infos projet, dates, équipe</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="tasks" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">✅</span><div><div style="font-weight:600;font-size:13px;">Tâches</div><div style="font-size:11px;color:#8892a4;">Statut et avancement</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="daily" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📓</span><div><div style="font-weight:600;font-size:13px;">Daily Reports</div><div style="font-size:11px;color:#8892a4;">Journal journalier</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="handover" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🧾</span><div><div style="font-weight:600;font-size:13px;">Handover</div><div style="font-size:11px;color:#8892a4;">Rapport de réception</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="tickets" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🛠️</span><div><div style="font-weight:600;font-size:13px;">Tickets SAV</div><div style="font-size:11px;color:#8892a4;">Incidents et résolutions</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="visite" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📸</span><div><div style="font-weight:600;font-size:13px;">Visites client</div><div style="font-size:11px;color:#8892a4;">Points et remarques</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🚛</span><div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:#8892a4;">Camions et machines</div></div></div>
+        </div>
+        <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🤖</span><div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div></div>
+        </div>
+      </div>
+
+      <!-- Langue -->
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="fr" checked> Français</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="en"> English</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;"><input type="radio" name="report-lang" value="nl"> Nederlands</label>
+      </div>
+
+      <!-- Status -->
+      <div id="report-status" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:8px;" id="report-status-icon">🤖</div>
+        <div style="font-weight:600;" id="report-status-text">Collecte des données...</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="report-status-sub"></div>
+      </div>
+
+    </div>
+
+    <!-- Boutons fixes en bas -->
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:14px;margin-top:8px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-report')">Annuler</button>
+      <button class="btn btn-ghost btn-sm" id="report-preview-btn" onclick="generateReport('preview')">👁️ Prévisualiser</button>
+      <button class="btn btn-primary" id="report-pdf-btn" onclick="generateReport('pdf')">📄 Générer PDF</button>
+    </div>
+
+  </div>
+</div>
+
+<style>
+.report-section-toggle{
+  display:flex;align-items:center;padding:12px 14px;border:2px solid #2a2f3a;border-radius:10px;cursor:pointer;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent;min-height:52px;
+}
+.report-section-toggle:active{transform:scale(.97);}
+.report-section-toggle.active{border-color:#e63946!important;background:rgba(230,57,70,.08)!important;}
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// CONFIG — change cette URL si ton domaine Railway change
+// ═══════════════════════════════════════════════════════
+const API = window.location.origin + '/api/v1';
+
+// ═══ STATE ═══
+let TOKEN = localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
+let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || sessionStorage.getItem('vem_user') || 'null');
+let PROJECTS = [];
+let USERS = [];
+let CLIENTS = [];
+let CURRENT_PROJECT_ID = null;
+
+// ═══ API HELPER ═══
+async function api(method, path, body) {
+  try {
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(API + path, opts);
+    const data = await r.json();
+    if (r.status === 401) { doLogout(); return null; }
+    return data;
+  } catch(e) {
+    toast('Erreur réseau', 'error');
+    return null;
+  }
+}
+
+// ═══ LOGIN ═══
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pwd   = document.getElementById('login-pwd').value;
+  const btn   = document.getElementById('login-btn');
+  const err   = document.getElementById('login-error');
+
+  if (!email || !pwd) { err.style.display='block'; err.textContent='Remplis tous les champs'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span> Connexion...';
+  err.style.display = 'none';
+
+  const res = await api('POST', '/auth/login', { email, password: pwd });
+
+  if (res && res.success) {
+    TOKEN = res.data.token;
+    CURRENT_USER = res.data.user;
+    localStorage.setItem('vem_token', TOKEN);
+    localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER));
+    showApp();
+  } else {
+    err.style.display = 'block';
+    err.textContent = 'Email ou mot de passe incorrect';
+    btn.disabled = false;
+    btn.innerHTML = 'Se connecter';
+  }
+}
+
+document.getElementById('login-pwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+  updateNavUser();
+  loadAll();
+  goto('dashboard');
+}
+
+function doLogout() {
+  TOKEN = '';
+  CURRENT_USER = null;
+  localStorage.removeItem('vem_token');
+  localStorage.removeItem('vem_user');
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'block';
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-btn').disabled = false;
+  document.getElementById('login-btn').innerHTML = 'Se connecter';
+  closeAllDropdowns();
+}
+
+function updateNavUser() {
+  if (!CURRENT_USER) return;
+  const name = `${CURRENT_USER.firstName} ${CURRENT_USER.lastName}`;
+  const initials = (CURRENT_USER.firstName[0] + CURRENT_USER.lastName[0]).toUpperCase();
+  const roles = { admin:'Admin', project_manager:'Chef Projet', site_manager:'Site Manager', technical_manager:'Tech. Manager', engineer:'Engineer', worker:'Ouvrier', client:'Client' };
+
+  document.getElementById('nav-user-name').textContent = name;
+  document.getElementById('nav-user-role').textContent = roles[CURRENT_USER.role] || CURRENT_USER.role;
+  document.getElementById('nav-avatar-initials').textContent = initials;
+  document.getElementById('topbar-avatar').textContent = initials;
+  document.getElementById('dash-greeting').textContent = `Bonjour, ${CURRENT_USER.firstName} 👋`;
+
+  const now = new Date();
+  document.getElementById('dash-date').textContent = now.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+
+// ═══ NAVIGATION ═══
+const pgTitles = {
+  dashboard:'Dashboard', projects:'Projets', tasks:'Tâches', daily:'Daily Reports',
+  handover:'Handover', remarks:'Visites Client', tickets:'Tickets SAV',
+  warehouse:'Entrepôt / Box', toolbox:'Boîtes à Outils', team:'Équipe',
+  notifs:'Notifications', 'project-detail':'Détail Projet'
+};
+
+function goto(page) {
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('pg-' + page);
+  if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(item => {
+    if (item.getAttribute('onclick')?.includes("'" + page + "'")) item.classList.add('active');
+  });
+  document.getElementById('pg-title').textContent = pgTitles[page] || page;
+  document.getElementById('nav').classList.remove('open');
+  closeAllDropdowns();
+  window.scrollTo(0,0);
+
+  if (page === 'projects')  { loadAll().then(() => renderProjectsGrid(PROJECTS)); }
+  if (page === 'tasks')     loadTasks();
+  if (page === 'tickets')   loadTickets();
+  if (page === 'warehouse') loadWarehouse();
+  if (page === 'toolbox')   loadToolboxes();
+  if (page === 'team')      loadTeam();
+  if (page === 'notifs')    loadNotifs();
+  if (page === 'daily')     loadDailyReports();
+  if (page === 'handover')  loadHandovers();
+  if (page === 'clients')   loadClientsPage();
+  if (page === 'templates') loadTemplatesPage();
+  if (page === 'remarks')   {} // loaded per project
+  // Update bottom nav
+  const bnMap = { dashboard:'bn-dashboard', projects:'bn-projects', tickets:'bn-tickets' };
+  if (bnMap[page]) setActiveBN(bnMap[page]);
+  updateMobileBadges();
+  closeFAB();
+}
+
+function switchTab(el, tabId) {
+  document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display='none');
+  document.querySelectorAll('#proj-tabs .tab, .tabs .tab').forEach(t => t.classList.remove('active'));
+  const tab = document.getElementById(tabId);
+  if (tab) tab.style.display='block';
+  el.classList.add('active');
+  // Lazy-load tab content
+  if (!CURRENT_PROJECT_ID) return;
+  if (tabId==='dtab-tasks')     loadDetailTasks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-daily')     loadDetailDailyReports(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-handover')  loadDetailHandovers(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-remarks')   loadDetailRemarks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-tickets')   loadDetailTickets(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-warehouse') loadDetailWarehouse(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-toolbox')   loadDetailToolboxes(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-trucks')    loadDetailTrucks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-briefing')  loadDetailBriefing(CURRENT_PROJECT_ID);
+}
+
+function openProject(id) {
+  CURRENT_PROJECT_ID = id;
+  goto('project-detail');
+  document.querySelectorAll('[id^="dtab-"]').forEach(t => t.style.display='none');
+  document.getElementById('dtab-info').style.display='block';
+  document.querySelectorAll('#proj-tabs .tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  loadProjectDetail(id);
+}
+
+// ═══ LOAD ALL ═══
+async function loadAll() {
+  const [projRes, usersRes, ticketStats, notifRes] = await Promise.all([
+    api('GET', '/projects'),
+    api('GET', '/users'),
+    api('GET', '/tickets/stats'),
+    api('GET', '/notifications'),
+  ]);
+
+  if (projRes?.success) {
+    PROJECTS = projRes.data;
+    renderDashProjects();
+    renderDashCalendar();
+    populateProjectSelects();
+    document.getElementById('stat-projects').textContent = PROJECTS.filter(p => ['installation','on_site','in_preparation'].includes(p.status)).length;
+  }
+  if (usersRes?.success) {
+    USERS = usersRes.data;
+    populateUserSelects();
+    document.getElementById('stat-team').textContent = USERS.length;
+  }
+  if (ticketStats?.success) {
+    const s = ticketStats.data;
+    document.getElementById('stat-tickets').textContent = s.open + s.inProgress;
+    document.getElementById('tstat-open').textContent = s.open;
+    document.getElementById('tstat-inprog').textContent = s.inProgress;
+    document.getElementById('tstat-resolved').textContent = s.resolved;
+    document.getElementById('tstat-critical').textContent = s.critical;
+    const total = s.open + s.inProgress;
+    document.getElementById('tickets-badge').textContent = total;
+    if (total > 0) document.getElementById('notif-pip').style.display = 'block';
+  }
+  if (notifRes?.success) {
+    document.getElementById('notifs-badge').textContent = notifRes.meta.unread;
+  }
+
+  loadDashTickets();
+  document.getElementById('stat-tasks').textContent = '—';
+}
+
+// ═══ DASHBOARD ═══
+function renderDashProjects() {
+  const el = document.getElementById('dash-projects');
+  const active = PROJECTS.filter(p => ['installation','on_site','in_preparation','loading'].includes(p.status)).slice(0,3);
+  if (!active.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">🏗️</div><div class="empty-title">Aucun projet actif</div></div>'; return; }
+  el.innerHTML = active.map(p => projCardHTML(p)).join('');
+}
+
+function projCardHTML(p) {
+  const statusColors = { draft:'badge-muted', confirmed:'badge-blue', in_preparation:'badge-amber', loading:'badge-amber', on_site:'badge-blue', installation:'badge-red', handover:'badge-purple', dismantling:'badge-amber', completed:'badge-green', cancelled:'badge-muted' };
+  const statusLabels = { draft:'Brouillon', confirmed:'Confirmé', in_preparation:'Préparation', loading:'Chargement', on_site:'Sur site', installation:'Installation', handover:'Handover', dismantling:'Démontage', completed:'Terminé', cancelled:'Annulé' };
+  const progress = p.progress || 0;
+  return `<div class="proj-card" onclick="openProject('${p.id}')" style="margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+      <span class="badge ${statusColors[p.status]||'badge-muted'}">${statusLabels[p.status]||p.status}</span>
+      <span style="font-size:11px;color:var(--text3);">${p.internalNumber}</span>
+    </div>
+    <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:2px;">${p.name}</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">📍 ${p.city||p.address} · ${p.client?.name||''}</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="prog" style="flex:1;height:5px;"><div class="prog-bar" style="width:${progress}%;background:var(--accent);"></div></div>
+      <span style="font-size:12px;font-weight:600;color:var(--text2);">${progress}%</span>
+    </div>
+  </div>`;
+}
+
+// Calendrier Gantt 12 semaines pour la page d'accueil
+function renderDashCalendar() {
+  const el = document.getElementById('dash-calendar');
+  if (!el) return;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  // Démarrer au lundi de la semaine courante
+  const start = new Date(today);
+  start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const NUM_WEEKS = 12;
+  const totalDays = NUM_WEEKS * 7;
+  const end = new Date(start.getTime() + totalDays * 86400000);
+
+  const overlap = (a, b) => a && b && b >= start && a <= end;
+  const inWindow = (p) => {
+    const insS = p.installationStart ? new Date(p.installationStart) : null;
+    const insE = p.installationEnd   ? new Date(p.installationEnd)   : null;
+    const disS = p.dismantlingStart  ? new Date(p.dismantlingStart)  : null;
+    const disE = p.dismantlingEnd    ? new Date(p.dismantlingEnd)    : null;
+    return overlap(insS, insE) || overlap(disS, disE);
+  };
+
+  const list = (PROJECTS || [])
+    .filter(p => p.installationStart && inWindow(p))
+    .sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
+
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet planifié dans les 12 prochaines semaines</div>';
+    return;
+  }
+
+  const posPct = d => {
+    const dt = new Date(d);
+    const days = (dt - start) / 86400000;
+    return Math.max(0, Math.min(100, (days / totalDays) * 100));
+  };
+  const todayPct = posPct(today);
+
+  // En-tête : 12 labels de semaine (lundi de chaque semaine)
+  const weeks = [];
+  for (let i = 0; i < NUM_WEEKS; i++) {
+    const d = new Date(start.getTime() + i * 7 * 86400000);
+    const isCurrent = i === 0;
+    weeks.push(`<div style="text-align:center;padding:3px 0;font-size:10px;color:var(--text3);${isCurrent?'background:var(--bg3);border-radius:4px;color:var(--text2);font-weight:600;':''}">${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}</div>`);
+  }
+
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+
+  el.innerHTML = `
+    <div style="padding:12px;">
+      <!-- En-tête -->
+      <div style="display:grid;grid-template-columns:180px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;">Projet</div>
+        <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:1px;">${weeks.join('')}</div>
+      </div>
+      <!-- Lignes -->
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+        ${list.map(p => {
+          const insS = p.installationStart ? posPct(p.installationStart) : null;
+          const insE = p.installationEnd   ? posPct(p.installationEnd)   : null;
+          const disS = p.dismantlingStart  ? posPct(p.dismantlingStart)  : null;
+          const disE = p.dismantlingEnd    ? posPct(p.dismantlingEnd)    : null;
+          return `<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center;cursor:pointer;padding:4px 0;" onclick="openProject('${p.id}')">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <div style="font-size:13px;font-weight:600;">${p.name}</div>
+              <div style="font-size:11px;color:var(--text3);">${p.client?.name||''}</div>
+            </div>
+            <div style="position:relative;height:26px;background:var(--bg3);border-radius:6px;">
+              ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📐</div>` : ''}
+              ${disS != null && disE != null ? `<div title="Démontage : ${fmtD(p.dismantlingStart)} → ${fmtD(p.dismantlingEnd)}" style="position:absolute;left:${disS}%;width:${Math.max(1.5, disE-disS)}%;height:100%;background:#f4a261;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📦</div>` : ''}
+              <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:32px;background:var(--accent);pointer-events:none;"></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <!-- Légende -->
+      <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
+        <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>
+        <span><span style="display:inline-block;width:2px;height:10px;background:var(--accent);vertical-align:middle;margin-right:4px;"></span>Aujourd'hui</span>
+      </div>
+    </div>`;
+}
+
+async function loadDashTickets() {
+  const res = await api('GET', '/tickets?status=open&status=in_progress');
+  const el = document.getElementById('dash-tickets');
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun ticket urgent</div>';
+    return;
+  }
+  const urgent = res.data.filter(t => ['critical','high'].includes(t.urgency)).slice(0,3);
+  if (!urgent.length) { el.innerHTML = '<div style="color:var(--green);font-size:13px;text-align:center;padding:20px;">✅ Aucun ticket critique</div>'; return; }
+  el.innerHTML = urgent.map(t => `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;cursor:pointer;border-left:3px solid ${t.urgency==='critical'?'var(--accent)':'var(--amber)'};" onclick="goto('tickets')">
+      <div style="display:flex;gap:6px;margin-bottom:4px;">
+        <span class="badge ${t.urgency==='critical'?'badge-red':'badge-amber'}">${t.urgency==='critical'?'🔴 Critique':'🟠 Élevé'}</span>
+        <span style="font-size:11px;color:var(--text3);">${t.project?.name||''}</span>
+      </div>
+      <div style="font-weight:600;font-size:13px;">${t.title}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px;">${t.assignedTo?`${t.assignedTo.firstName} ${t.assignedTo.lastName}`:'Non assigné'}</div>
+    </div>`).join('');
+}
+
+// ═══ PROJECTS ═══
+async function loadProjects() {
+  const res = await api('GET', '/projects');
+  if (!res?.success) return;
+  PROJECTS = res.data;
+  const showArchived = document.getElementById('show-archived')?.checked;
+  const visible = showArchived
+    ? PROJECTS.filter(p => p.status === 'cancelled')
+    : PROJECTS.filter(p => p.status !== 'cancelled');
+  const count = document.getElementById('proj-count');
+  if (count) count.textContent = showArchived
+    ? visible.length + ' projet(s) archivé(s)'
+    : visible.length + ' projet(s) actif(s)';
+  renderProjectsGrid(visible);
+}
+
+function renderProjectsGrid(projects) {
+  const el = document.getElementById('projects-grid');
+  if (!projects.length) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🏗️</div><div class="empty-title">Aucun projet</div><div class="empty-sub">Créez votre premier projet</div></div>';
+    return;
+  }
+  el.innerHTML = projects.map(p => `
+    <div class="proj-card" onclick="openProject('${p.id}')">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+        <span class="badge badge-${p.status==='cancelled'?'muted':p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status==='cancelled'?'📦 Archivé':p.status}</span>
+        <span style="font-size:11px;color:var(--text3);">${p.internalNumber}</span>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:3px;">${p.name}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:4px;">${p.client?.name||''}</div>
+      <div style="font-size:13px;margin-bottom:12px;">📍 ${p.city||''}</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:var(--bg3);padding:2px 8px;border-radius:6px;">👷 ${p.workersCount}</span>
+        ${p._count?.tickets>0?`<span class="badge badge-red">🛠️ ${p._count.tickets}</span>`:''}
+      </div>
+      <div class="prog" style="height:5px;"><div class="prog-bar" style="width:${p.progress||0}%;background:var(--accent);"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--text3);">
+        <span>${p.technicalManager?`${p.technicalManager.firstName} ${p.technicalManager.lastName}`:''}</span>
+        <span style="font-weight:600;">${p.progress||0}%</span>
+      </div>
+    </div>`).join('');
+}
+
+function filterProjects() {
+  const search = document.getElementById('proj-search').value.toLowerCase();
+  const status = document.getElementById('proj-status-filter').value;
+  const filtered = PROJECTS.filter(p => {
+    const matchSearch = !search || p.name.toLowerCase().includes(search) || p.internalNumber.toLowerCase().includes(search);
+    const matchStatus = !status || p.status === status;
+    return matchSearch && matchStatus;
+  });
+  renderProjectsGrid(filtered);
+}
+
+// ═══ PROJECT DETAIL ═══
+async function updateProjectStatus(projectId, status) {
+  if (!projectId) return;
+  const res = await api('PATCH', `/projects/${projectId}`, { status });
+  if (res?.success) {
+    toast('Statut du projet mis à jour ✅', 'success');
+    // Rafraîchir le dashboard et les listes
+    if (typeof renderDashCalendar === 'function') {
+      // PROJECTS est en cache global — on met à jour la valeur locale
+      const proj = PROJECTS?.find(p => p.id === projectId);
+      if (proj) proj.status = status;
+      renderDashCalendar();
+    }
+  } else {
+    toast('Erreur changement de statut', 'error');
+  }
+}
+
+async function loadProjectDetail(id) {
+  const res = await api('GET', `/projects/${id}`);
+  if (!res?.success) return;
+  const p = res.data;
+
+  document.getElementById('detail-name').textContent = p.name;
+  document.getElementById('detail-sub').textContent = `${p.internalNumber} · ${p.client?.name||''}`;
+  const statusSel = document.getElementById('detail-status');
+  if (statusSel) statusSel.value = p.status || 'in_preparation';
+
+  // Info tab — avec camions + fichiers
+  const infoTrucks = p.trucks || [];
+  const filesRes = await api('GET', `/projects/${id}/files`);
+  const files = filesRes?.data || [];
+
+  const extOf  = f => (f.fileName||f.fileUrl||'').split('.').pop().toLowerCase();
+  const isImg  = f => ['jpg','jpeg','png','gif','webp'].includes(extOf(f));
+  const isPDF  = f => extOf(f) === 'pdf';
+  const fileIcon = f => {
+    if (isImg(f))  return '🖼️';
+    if (isPDF(f))  return '📄';
+    if (['ppt','pptx'].includes(extOf(f))) return '📊';
+    if (['xls','xlsx'].includes(extOf(f))) return '📈';
+    if (['doc','docx'].includes(extOf(f))) return '📝';
+    if (['mp4','mov'].includes(extOf(f)))  return '🎬';
+    return '📎';
+  };
+
+  // Truck loading + arrival dates sorted
+  const truckDates = infoTrucks
+    .filter(t => t.loadingDate || t.arrivalDate || t.departureDate)
+    .sort((a,b) => new Date(a.loadingDate||a.departureDate||0) - new Date(b.loadingDate||b.departureDate||0));
+
+  document.getElementById('detail-info-content').innerHTML = `
+    <div class="grid-2">
+
+      <!-- INFOS PROJET -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">📋 Informations</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            ${infoRow('Client', p.client?.name||'N/A')}
+            ${infoRow('N° Interne', p.internalNumber)}
+            ${infoRow('Installation', fmtDate(p.installationStart)+' → '+fmtDate(p.installationEnd))}
+            ${infoRow('Démontage', p.dismantlingStart ? fmtDate(p.dismantlingStart)+' → '+fmtDate(p.dismantlingEnd) : 'Non défini')}
+            ${infoRow('Ouvriers', p.workersCount+' personnes')}
+            ${infoRow('Statut', '<span class="badge badge-amber">'+p.status+'</span>')}
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
+          ${infoRow('Adresse', p.address)}
+          ${p.description ? '<div style="margin-top:10px;font-size:13px;color:var(--text2);">'+p.description+'</div>' : ''}
+
+          ${(p.client?.contactName || p.client?.phone || p.client?.email) ? `
+          <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📞 Contact client</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${p.client?.contactName ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>👤</span><span>${p.client.contactName}</span></div>` : ''}
+            ${p.client?.phone       ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>📞</span><a href="tel:${p.client.phone}" style="color:var(--blue);text-decoration:none;">${p.client.phone}</a></div>` : ''}
+            ${p.client?.email       ? `<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span>✉️</span><a href="mailto:${p.client.email}" style="color:var(--blue);text-decoration:none;">${p.client.email}</a></div>` : ''}
+          </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- PROGRESSION -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">📊 Progression</span></div>
+        <div class="card-body" style="text-align:center;padding:24px 20px;">
+          <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--accent);">${p.progress||0}%</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Tâches complétées</div>
+          <div class="prog" style="height:10px;margin-bottom:14px;"><div class="prog-bar" style="width:${p.progress||0}%;background:var(--accent);"></div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;">
+              <div style="font-weight:700;font-size:18px;">${p.tasksTotal||0}</div>
+              <div style="font-size:11px;color:var(--text3);">Tâches totales</div>
+            </div>
+            <div style="background:rgba(45,198,83,.1);border-radius:var(--radius);padding:10px;">
+              <div style="font-weight:700;font-size:18px;color:var(--green);">${p.tasksDone||0}</div>
+              <div style="font-size:11px;color:var(--text3);">Terminées</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- DATES LOGISTIQUE CAMIONS -->
+    ${truckDates.length ? `
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header">
+        <span class="card-title">🚛 Logistique — Dates clés</span>
+        <button class="btn btn-ghost btn-sm" onclick="switchTab(document.querySelector('[onclick*=dtab-trucks]'),'dtab-trucks')">Voir tous</button>
+      </div>
+      <div class="card-body" style="padding:10px 18px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">
+          ${truckDates.map(t => {
+            const icon = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'🔧',manitou:'🔧',forklift:'🚜',generator:'⚡'}[t.vehicleType]||'🚛';
+            const arrived = t.status === 'delivered' || !!t.arrivalDate;
+            return `<div style="background:var(--bg3);border-radius:10px;padding:12px;border-left:3px solid ${arrived?'var(--green)':'var(--amber)'};display:flex;flex-direction:column;gap:4px;">
+              <div style="font-weight:700;font-size:13px;">${icon} ${t.truckNumber||t.vehicleType||'Camion'}</div>
+              ${t.driverName ? `<div style="font-size:11px;color:var(--text3);">👤 ${t.driverName}${t.driverPhone?' · 📞'+t.driverPhone:''}</div>` : ''}
+              ${t.loadingDate  ? `<div style="font-size:12px;">📦 <strong>Chargement entrepôt :</strong> ${fmtDateTime(t.loadingDate)}</div>`  : ''}
+              ${t.departureDate? `<div style="font-size:12px;">🚀 <strong>Départ :</strong> ${fmtDateTime(t.departureDate)}</div>` : ''}
+              ${t.arrivalDate  ? `<div style="font-size:12px;color:var(--green);">✅ <strong>Arrivée site :</strong> ${fmtDateTime(t.arrivalDate)}</div>` : `<div style="font-size:12px;color:var(--amber);">⏳ En attente d'arrivée sur site</div>`}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>` : ''}
+
+    <!-- FICHIERS DU PROJET -->
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header">
+        <span class="card-title">📁 Fichiers</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="switchTab(document.querySelector('[onclick*=dtab-files]'),'dtab-files');loadDetailFiles('${id}')">Gérer</button>
+          <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
+            ⬆️ Ajouter
+            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+          </label>
+        </div>
+      </div>
+      <div class="card-body" style="padding:12px 18px;">
+        ${!files.length ? `
+          <label style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:12px;padding:24px;cursor:pointer;color:var(--text3);">
+            <span style="font-size:36px;">📁</span>
+            <div style="font-weight:600;">Ajouter des fichiers</div>
+            <div style="font-size:11px;">Photos, PDF, PowerPoint, Excel...</div>
+            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+          </label>` : `
+          <!-- Images -->
+          ${files.filter(isImg).length ? `
+          <div style="margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🖼️ Photos (${files.filter(isImg).length})</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;">
+              ${files.filter(isImg).map(f=>`
+                <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;cursor:pointer;border:1px solid var(--border);position:relative;" onclick="openPhotoViewer('${f.fileUrl}')">
+                  <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy">
+                  <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:3px 5px;">
+                    <div style="font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||''}</div>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>` : ''}
+          <!-- Docs -->
+          ${files.filter(f=>!isImg(f)).length ? `
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📎 Documents (${files.filter(f=>!isImg(f)).length})</div>
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              ${files.filter(f=>!isImg(f)).map(f=>`
+                <a href="${f.fileUrl}" target="_blank" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);text-decoration:none;color:var(--text);transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                  <span style="font-size:24px;flex-shrink:0;">${fileIcon(f)}</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
+                    <div style="font-size:11px;color:var(--text3);">${extOf(f).toUpperCase()} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+'KB':''}</div>
+                  </div>
+                  <span style="font-size:18px;color:var(--text3);">↗</span>
+                </a>`).join('')}
+            </div>
+          </div>` : ''}
+        `}
+      </div>
+    </div>`;
+
+  // Team tab
+  const team = p.team || [];
+  document.getElementById('detail-team-content').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">👥 Équipe du Projet</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="showModal('modal-user')">+ Créer membre</button>
+          <button class="btn btn-primary btn-sm" onclick="showAddToTeamModal('${p.id}')">+ Ajouter à l'équipe</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nom</th><th>Rôle</th><th>Téléphone</th><th>Lead</th></tr></thead>
+        <tbody>${team.map(m => `<tr>
+          <td><div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">${(m.user.firstName[0]+m.user.lastName[0]).toUpperCase()}</div><strong>${m.user.firstName} ${m.user.lastName}</strong></div></td>
+          <td><span class="badge badge-blue">${m.role}</span></td>
+          <td style="color:var(--text3);">${m.user.phone||'—'}</td>
+          <td>${m.isLead?'⭐ Lead':''}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  // Trucks tab
+  const trucks = p.trucks || [];
+  const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
+  const truckStatusBadge = {planned:'badge-muted',loading:'badge-amber',in_transit:'badge-blue',delivered:'badge-green',returned:'badge-muted'};
+  const truckStatusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
+  document.getElementById('detail-trucks-content').innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${p.id}')">+ Ajouter camion / machine</button>
+    </div>
+    <div class="grid-2">${trucks.length ? trucks.map(t => {
+      const icon = truckIcons[t.vehicleType]||'🚛';
+      const isArrived = t.status === 'delivered';
+      return `
+      <div class="card" style="cursor:pointer;transition:all .2s;" onclick="openTruckDetail('${t.id}','${p.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${icon} ${t.truckNumber||t.vehicleType||''}</div>
+            ${t.licensePlate?`<div style="font-size:11px;color:var(--text3);">🚘 ${t.licensePlate}</div>`:''}
+            ${t.driverName?`<div style="font-size:12px;color:var(--text3);">👤 ${t.driverName}${t.driverPhone?` · <a href="tel:${t.driverPhone}" style="color:var(--blue);">📞 ${t.driverPhone}</a>`:''}</div>`:''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <span class="badge ${truckStatusBadge[t.status]||'badge-muted'}">${truckStatusLabel[t.status]||t.status}</span>
+            ${!isArrived?`<button class="btn btn-green btn-xs" onclick="event.stopPropagation();quickArrivalTruck('${t.id}','${p.id}')">✅ Arrivé</button>`:''}
+          </div>
+        </div>
+        <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:5px;">
+          ${t.licensePlate?`<div>🚘 ${t.licensePlate}</div>`:''}
+          ${t.loadingDate?`<div>📦 Chargement : ${fmtDateTime(t.loadingDate)}</div>`:''}
+          ${t.departureDate?`<div>🚀 Départ : ${fmtDateTime(t.departureDate)}</div>`:''}
+          ${t.arrivalDate?`<div style="color:var(--green);">✅ Arrivée site : ${fmtDateTime(t.arrivalDate)}</div>`:`<div style="color:var(--amber);">⏳ Arrivée en attente</div>`}
+          ${t.notes?`<div style="color:var(--text3);font-size:12px;">📝 ${t.notes}</div>`:''}
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule planifié</div></div>`}
+    </div>`;
+
+  // Load tasks for detail
+  loadDetailTasks(id);
+}
+
+// ── taskCardHTML helper (used by global tasks view) ──
+function taskCardHTML(t) {
+  const cls = {todo:'todo',in_progress:'inprog',done:'done',blocked:'blocked'}[t.status]||'';
+  const prio = {critical:'badge-red',high:'badge-amber',normal:'badge-muted',low:'badge-muted'}[t.priority]||'badge-muted';
+  return `<div class="kcard ${cls}" onclick="openTaskModal('${t.id}','${t.projectId||''}')">
+    <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
+    ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
+    ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:2px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+    <div style="display:flex;gap:4px;margin-top:8px;align-items:center;">
+      <span class="badge ${prio}" style="font-size:10px;">${t.priority}</span>
+      ${t.status!=='done'?`<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();updateTaskStatus('${t.id}','done')">✓</button>`:''}
+    </div>
+  </div>`;
+}
+
+// ═══ TASKS ═══
+async function loadTasks() {
+  const res = await api('GET', '/tasks');
+  if (!res?.success) return;
+  const tasks = res.data;
+  const cols = { todo:'col-todo', in_progress:'col-inprog', done:'col-done', blocked:'col-blocked' };
+  Object.values(cols).forEach(c => document.getElementById(c).innerHTML = '');
+  tasks.forEach(t => {
+    const colId = cols[t.status];
+    if (colId) document.getElementById(colId).innerHTML += taskCardHTML(t);
+  });
+  if (!tasks.length) {
+    document.getElementById('col-todo').innerHTML = '<div style="color:var(--text3);font-size:12px;padding:10px;">Aucune tâche</div>';
+  }
+}
+
+async function updateTaskStatus(id, status) {
+  const res = await api('PATCH', `/tasks/${id}`, { status });
+  if (res?.success) { toast('Tâche mise à jour ✅', 'success'); loadTasks(); if(CURRENT_PROJECT_ID) loadDetailTasks(CURRENT_PROJECT_ID); }
+}
+
+// ═══ TICKETS ═══
+async function loadTickets() {
+  const urgency = document.getElementById('ticket-urgency-filter')?.value || '';
+  const url = '/tickets' + (urgency ? `?urgency=${urgency}` : '') + (status ? `${urgency?'&':'?'}status=${status}` : '');
+  const [ticketsRes, statsRes] = await Promise.all([api('GET', url), api('GET', '/tickets/stats')]);
+
+  if (statsRes?.success) {
+    const s = statsRes.data;
+    document.getElementById('tstat-open').textContent = s.open;
+    document.getElementById('tstat-inprog').textContent = s.inProgress;
+    document.getElementById('tstat-resolved').textContent = s.resolved;
+    document.getElementById('tstat-critical').textContent = s.critical;
+  }
+
+  if (!ticketsRes?.success) return;
+  const urgencyBadge = { critical:'badge-red', high:'badge-amber', medium:'badge-blue', low:'badge-green' };
+  const urgencyLabel = { critical:'🔴 Critique', high:'🟠 Élevé', medium:'🟡 Moyen', low:'🟢 Faible' };
+  const statusBadge = { open:'badge-red', assigned:'badge-amber', in_progress:'badge-amber', resolved:'badge-green', validated:'badge-green', closed:'badge-muted' };
+
+  document.getElementById('tickets-tbody').innerHTML = ticketsRes.data.length
+    ? ticketsRes.data.map(t => `<tr style="cursor:pointer;" onclick="openTicketDetail('${t.id}')">
+        <td><strong>${t.title}</strong>${t.locationOnSite?`<br><span style="font-size:11px;color:var(--text3);">${t.locationOnSite}</span>`:''}</td>
+        <td>${t.project?.name||'—'}</td>
+        <td><span class="badge ${urgencyBadge[t.urgency]||''}">${urgencyLabel[t.urgency]||t.urgency}</span></td>
+        <td>${t.assignedTo?`${t.assignedTo.firstName} ${t.assignedTo.lastName}`:'<span style="color:var(--text3);">Non assigné</span>'}</td>
+        <td><span class="badge ${statusBadge[t.status]||''}">${t.status}</span></td>
+        <td style="color:var(--text3);">${fmtDate(t.createdAt)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTicketDetail('${t.id}')">👁️</button></td>
+      </tr>`).join('')
+    : '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text3);">Aucun ticket</td></tr>';
+}
+
+async function openTicketDetail(id) {
+  const res = await api('GET', `/tickets/${id}`);
+  if (!res?.success) return;
+  const t = res.data;
+  const urgencyLabel = { critical:'🔴 Critique', high:'🟠 Élevé', medium:'🟡 Moyen', low:'🟢 Faible' };
+  const urgencyColor = { critical:'var(--accent)', high:'var(--amber)', medium:'var(--blue)', low:'var(--green)' };
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <div class="modal-title">🛠️ ${t.title}</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <span class="badge badge-${t.urgency==='critical'?'red':'amber'}">${urgencyLabel[t.urgency]||t.urgency}</span>
+        <span class="badge badge-muted">${t.status}</span>
+        ${t.project?`<span style="font-size:12px;color:var(--text3);align-self:center;">${t.project.name}</span>`:''}
+      </div>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;">${t.description}</div>
+          ${t.locationOnSite?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;font-size:13px;margin-bottom:14px;">📍 ${t.locationOnSite}</div>`:''}
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Changer le statut</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="updateTicket('${t.id}','in_progress');this.closest('.overlay').remove()">⚡ En cours</button>
+            <button class="btn btn-green btn-sm" onclick="updateTicket('${t.id}','resolved');this.closest('.overlay').remove()">✅ Résolu</button>
+            <button class="btn btn-outline btn-sm" onclick="updateTicket('${t.id}','closed');this.closest('.overlay').remove()">🔒 Clôturer</button>
+          </div>
+          <div style="margin-top:14px;">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Temps passé (heures)</div>
+            <div style="display:flex;gap:8px;">
+              <input class="input" type="number" id="ticket-time-${t.id}" step="0.5" value="${t.timeSpent||''}" placeholder="0.0" style="width:100px;">
+              <button class="btn btn-ghost btn-sm" onclick="saveTicketTime('${t.id}')">Sauvegarder</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:12px;font-size:13px;">
+            <div style="color:var(--text3);margin-bottom:4px;">Assigné à</div>
+            <div style="font-weight:600;">${t.assignedTo?`${t.assignedTo.firstName} ${t.assignedTo.lastName}`:'Non assigné'}</div>
+            ${t.plannedDate?`<div style="color:var(--text3);margin-top:8px;margin-bottom:4px;">Date prévue</div><div style="font-weight:600;">${fmtDate(t.plannedDate)}</div>`:''}
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Historique</div>
+          <div style="border-left:1px solid var(--border);padding-left:10px;font-size:12px;display:flex;flex-direction:column;gap:8px;">
+            ${(t.history||[]).map(h => `<div>
+              <div style="color:var(--text3);">${fmtDate(h.createdAt)}</div>
+              <div style="color:var(--text2);">${h.comment||`${h.oldStatus||''} → ${h.newStatus||''}`}</div>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+async function updateTicket(id, status) {
+  const res = await api('PATCH', `/tickets/${id}`, { status });
+  if (res?.success) { toast('Ticket mis à jour ✅', 'success'); loadTickets(); }
+}
+
+async function saveTicketTime(id) {
+  const val = parseFloat(document.getElementById(`ticket-time-${id}`)?.value);
+  if (isNaN(val)) return;
+  const res = await api('PATCH', `/tickets/${id}`, { timeSpent: val });
+  if (res?.success) toast('Temps sauvegardé ✅', 'success');
+}
+
+// ═══ TEAM ═══
+// Team categories — ordered display
+const TEAM_CATEGORIES = [
+  { key: 'sales_engineer',     label: 'Sales Engineer',      icon: '💼', color: '#8b5cf6' },
+  { key: 'project_manager',    label: 'Project Manager',     icon: '📊', color: '#4895ef' },
+  { key: 'technical_manager',  label: 'Technical Manager',   icon: '⚙️',  color: '#f4a261' },
+  { key: 'site_manager',       label: 'Site Manager',        icon: '🏗️', color: '#2dc653' },
+  { key: 'installer',          label: 'Installateur',        icon: '🔧', color: '#e63946' },
+  { key: 'worker',             label: 'Ouvrier / Équipe',    icon: '👷', color: '#6b7280' },
+  { key: 'admin',              label: 'Admin',               icon: '🔑', color: '#e63946' },
+  { key: 'engineer',           label: 'Engineer',            icon: '🛠️', color: '#4895ef' },
+  { key: 'warehouse',          label: 'Entrepôt',            icon: '📦', color: '#f4a261' },
+  { key: 'client',             label: 'Client',              icon: '🤝', color: '#6b7280' },
+];
+
+// ═══ DAILY REPORTS ═══
+async function loadDailyReports() {
+  const res = await api('GET', '/daily-reports');
+  if (!res?.success) return;
+  const el = document.getElementById('daily-list');
+  if (!res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport</div><div class="empty-sub">Créez votre premier rapport journalier</div></div>';
+    return;
+  }
+  el.innerHTML = res.data.map(r => {
+    const nbEntries = r._count?.entries || 0;
+    const nbPhotos  = r._count?.photos  || 0;
+    const preview   = (r.entries || []).slice(0, 3);
+    const updatedAt = r.updatedAt ? new Date(r.updatedAt) : null;
+    const updatedAgo = updatedAt ? `Modifié ${updatedAt.toLocaleDateString('fr-FR')} ${updatedAt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}` : '';
+    return `
+    <div class="card" style="margin-bottom:12px;cursor:pointer;" onclick="editDailyReport('${r.id}')">
+      <div class="card-header">
+        <div style="flex:1;min-width:0;">
+          <div class="card-title">📓 Rapport du ${fmtDate(r.reportDate)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+            Par ${r.createdBy?`${r.createdBy.firstName} ${r.createdBy.lastName}`:'N/A'} · ${r.workersPresent} ouvriers ${r.weather?' · '+r.weather:''}
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;font-size:12px;flex-wrap:wrap;align-items:center;">
+            <span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">⏱️ ${nbEntries} entrée${nbEntries>1?'s':''}</span>
+            ${nbPhotos>0?`<span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">📸 ${nbPhotos} photo${nbPhotos>1?'s':''}</span>`:''}
+            ${updatedAgo?`<span style="color:var(--text3);font-size:11px;">· ${updatedAgo}</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-shrink:0;" onclick="event.stopPropagation();">
+          ${r.sentAt?'<span class="badge badge-green">✉️ Envoyé</span>':''}
+          <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
+          ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
+        </div>
+      </div>
+      ${preview.length ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;display:flex;flex-direction:column;gap:3px;">
+          ${preview.map(e => `<div style="display:flex;gap:8px;"><span style="font-family:monospace;font-weight:600;color:var(--accent);min-width:42px;flex-shrink:0;">${e.entryTime||'--:--'}</span><span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.description||''}</span></div>`).join('')}
+          ${nbEntries > 3 ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;">+ ${nbEntries-3} autre${nbEntries-3>1?'s':''}…</div>` : ''}
+        </div>
+      ` : ''}
+      ${r.generalNotes?`<div class="card-body" style="font-size:13px;color:var(--text2);margin-top:6px;">${r.generalNotes}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function downloadDailyPDF(id) {
+  toast('Génération PDF...', 'info');
+  const url = `${API}/reports/daily/${id}`;
+  const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `DailyReport_${id}.pdf`;
+    a.click();
+    toast('PDF téléchargé ✅', 'success');
+  } else toast('Erreur PDF', 'error');
+}
+
+async function sendDailyReport(id) {
+  // Construit la liste d'emails de l'équipe pour le picker
+  const teamOptions = (USERS || [])
+    .filter(u => u.email && u.isActive !== false)
+    .map(u => ({ id: u.id, email: u.email, name: `${u.firstName} ${u.lastName}`, role: u.role }));
+
+  // Récupère le rapport pour avoir le contexte projet (et son client)
+  const repRes = await api('GET', `/daily-reports/${id}`);
+  if (!repRes?.success) { toast('Rapport introuvable', 'error'); return; }
+  const r = repRes.data;
+  const clientEmail = r.project?.client?.email || null;
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">📤 Envoyer le rapport</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+        Rapport du ${fmtDate(r.reportDate)} — ${r.project?.name || ''}
+      </div>
+
+      <!-- Équipe (cases à cocher) -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
+      <div id="send-team-list" style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
+        ${teamOptions.length ? teamOptions.map(u => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+            <input type="checkbox" class="send-team-cb" value="${u.email}" style="accent-color:var(--accent);">
+            <span style="font-size:13px;flex:1;">${u.name}</span>
+            <span style="font-size:11px;color:var(--text3);">${u.email}</span>
+          </label>
+        `).join('') : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;">Aucun membre avec email</div>'}
+      </div>
+
+      ${clientEmail ? `
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🤝 Client</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="send-client-cb" value="${clientEmail}" checked style="accent-color:var(--accent);">
+          <span style="font-size:13px;flex:1;">${esc(r.project.client.name||'Client')}</span>
+          <span style="font-size:11px;color:var(--text3);">${clientEmail}</span>
+        </label>
+      ` : ''}
+
+      <!-- Emails manuels -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">✉️ Adresses manuelles</div>
+      <textarea class="input" id="send-manual-emails" rows="3" placeholder="Une adresse par ligne ou séparées par des virgules&#10;ex : contact@viewbox.be, jean@example.com" style="font-size:13px;margin-bottom:14px;"></textarea>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitSendDaily('${id}',this.closest('.overlay'))">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+async function submitSendDaily(id, overlay) {
+  const list = new Set();
+  // Équipe cochée
+  document.querySelectorAll('.send-team-cb:checked').forEach(cb => list.add(cb.value));
+  // Client
+  const cli = document.getElementById('send-client-cb');
+  if (cli && cli.checked) list.add(cli.value);
+  // Manuels
+  const raw = (document.getElementById('send-manual-emails').value || '').trim();
+  raw.split(/[\s,;]+/).forEach(e => {
+    const s = e.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
+  });
+
+  if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
+
+  toast(`Envoi en cours à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/daily-reports/${id}/send`, { recipients: Array.from(list) });
+  if (res?.success) {
+    toast(`Rapport envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
+    overlay?.remove();
+    loadDailyReports();
+    if (CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);
+  } else {
+    toast(res?.error || 'Erreur envoi', 'error');
+  }
+}
+
+// ═══ HANDOVERS ═══
+async function loadHandovers() {
+  const res = await api('GET', '/handover');
+  if (!res?.success) return;
+  const el = document.getElementById('handover-list');
+  if (!res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div><div class="empty-sub">Créez votre premier rapport de réception</div></div>';
+    return;
+  }
+  el.innerHTML = res.data.map(h => `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🧾 ${h.project?.name||'Handover'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${h.clientName||''} · ${fmtDate(h.createdAt)}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}">${h.status}</span>
+          <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPDF('${h.id}')">📄 PDF</button>
+          <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Générer & Envoyer</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:12px 18px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${(h.items||[]).map(i => `<span class="badge ${i.status==='ok'?'badge-green':i.status==='remark'?'badge-amber':'badge-red'}">${i.zoneName}</span>`).join('')}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function downloadHandoverPDF(id) {
+  toast('Génération PDF...', 'info');
+  const r = await fetch(`${API}/reports/handover/${id}`, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Handover_${id}.pdf`;
+    a.click();
+    toast('PDF téléchargé ✅', 'success');
+  } else toast('Erreur PDF', 'error');
+}
+
+async function generateAndSendHandover(id) {
+  toast('Génération et envoi...', 'info');
+  const r = await fetch(`${API}/handover/${id}/generate-pdf`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }
+  });
+  if (r.ok) {
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Handover_${id}.pdf`;
+    a.click();
+    toast('PDF généré et envoyé par email ✅', 'success');
+  } else toast('Erreur', 'error');
+}
+
+// ═══ WAREHOUSE ═══
+async function loadWarehouse() {
+  const res = await api('GET', '/warehouse/boxes');
+  if (!res?.success) return;
+  const el = document.getElementById('warehouse-content');
+  if (!res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div><div class="empty-sub">Créez votre première box de matériel</div></div>';
+    return;
+  }
+  const statusColors = { preparing:'badge-amber', ready:'badge-green', loaded:'badge-blue', on_site:'badge-blue', returned:'badge-muted', incomplete:'badge-red' };
+  el.innerHTML = res.data.map(b => `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📦 ${b.name}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">${b._count?.items||0} articles · ${b.preparedBy?`${b.preparedBy.firstName} ${b.preparedBy.lastName}`:''}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge ${statusColors[b.status]||'badge-muted'}">${b.status}</span>
+          <button class="btn btn-ghost btn-sm" onclick="openBoxDetail('${b.id}')">👁️ Voir</button>
+          ${b.status==='preparing'?`<button class="btn btn-green btn-sm" onclick="validateBox('${b.id}')">✅ Valider</button>`:''}
+        </div>
+      </div>
+      ${b.qrCode?`<div class="card-body" style="padding:8px 18px;"><span style="font-size:11px;background:var(--bg3);padding:3px 8px;border-radius:6px;font-family:monospace;">🔲 ${b.qrCode}</span></div>`:''}
+    </div>`).join('');
+}
+
+async function openBoxDetail(id) {
+  const res = await api('GET', `/warehouse/boxes/${id}`);
+  if (!res?.success) return;
+  const b = res.data;
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head"><div class="modal-title">📦 ${b.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="margin-bottom:16px;">
+        <span class="badge badge-muted">${b.status}</span>
+        ${b.qrCode?`<span style="font-size:11px;background:var(--bg3);padding:3px 8px;border-radius:6px;font-family:monospace;margin-left:8px;">🔲 ${b.qrCode}</span>`:''}
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Article</th><th>Quantité</th><th>Unité</th><th>Présent</th><th>Notes</th></tr></thead>
+        <tbody>${(b.items||[]).map(i => `<tr>
+          <td><strong>${i.productName}</strong></td>
+          <td>${i.quantity}</td>
+          <td>${i.unit}</td>
+          <td>${i.isPresent===true?'✅':i.isPresent===false?'❌':'—'}</td>
+          <td style="color:var(--text3);">${i.notes||''}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <input class="input" id="new-item-name" placeholder="Nouveau article..." style="flex:1;">
+        <input class="input" id="new-item-qty" type="number" value="1" style="width:70px;">
+        <button class="btn btn-primary btn-sm" onclick="addBoxItem('${b.id}')">+ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+async function addBoxItem(boxId) {
+  const name = document.getElementById('new-item-name').value.trim();
+  const qty = parseFloat(document.getElementById('new-item-qty').value);
+  if (!name) return;
+  const res = await api('POST', `/warehouse/boxes/${boxId}/items`, { productName: name, quantity: qty });
+  if (res?.success) { toast('Article ajouté ✅', 'success'); document.querySelector('.overlay.open')?.remove(); loadWarehouse(); }
+}
+
+async function validateBox(id) {
+  const res = await api('PATCH', `/warehouse/boxes/${id}`, { status: 'ready', validatedAt: new Date().toISOString() });
+  if (res?.success) { toast('Box validée ✅', 'success'); loadWarehouse(); }
+}
+
+// ═══ TOOLBOXES ═══
+async function loadToolboxes() {
+  const res = await api('GET', '/toolbox');
+  if (!res?.success) return;
+  const el = document.getElementById('toolbox-content');
+  if (!res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div><div class="empty-sub">Créez votre première boîte à outils</div></div>';
+    return;
+  }
+  el.innerHTML = res.data.map(tb => {
+    const drawers = tb.drawers || [];
+    const allTools = drawers.flatMap(d => d.tools || []);
+    const checked = allTools.filter(t => t.isChecked).length;
+    const pct = allTools.length > 0 ? Math.round(checked/allTools.length*100) : 0;
+    return `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🧰 ${tb.name}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">${drawers.length} tiroirs · ${allTools.length} outils · ${checked} vérifiés</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="badge badge-muted">${pct}%</span>
+            <button class="btn btn-ghost btn-sm" onclick="openToolboxDetail('${tb.id}')">👁️ Voir</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:8px 18px;">
+          <div class="prog" style="height:5px;"><div class="prog-bar" style="width:${pct}%;background:var(--green);"></div></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function openToolboxDetail(id) {
+  const res = await api('GET', `/toolbox/${id}`);
+  if (!res?.success) return;
+  const tb = res.data;
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head"><div class="modal-title">🧰 ${tb.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;">
+        <span>${tb.stats?.checked||0}/${tb.stats?.total||0} outils vérifiés</span>
+        ${tb.stats?.missing>0?`<span class="badge badge-red">${tb.stats.missing} manquant(s)</span>`:''}
+      </div>
+      ${(tb.drawers||[]).map(d => `
+        <div class="card" style="margin-bottom:10px;">
+          <div class="card-header">
+            <span class="card-title">${d.name}</span>
+            <span class="badge ${d.isValidated?'badge-green':'badge-amber'}">${d.isValidated?'✅ Validé':'En attente'}</span>
+          </div>
+          <div class="card-body" style="padding:10px 18px;">
+            ${(d.tools||[]).map(t => `
+              <div class="check-item ${t.isChecked?'checked':''}">
+                <input type="checkbox" class="check-cb" ${t.isChecked?'checked':''} onchange="checkTool('${t.id}',this.checked)">
+                <div style="flex:1;font-size:13px;">${t.name}</div>
+                <span style="font-size:12px;background:var(--bg3);padding:2px 8px;border-radius:6px;">×${t.expectedQty}</span>
+                <span class="badge ${t.status==='ok'?'badge-green':t.status==='missing'?'badge-red':'badge-amber'}">${t.status}</span>
+              </div>`).join('')}
+            ${!d.isValidated?`<button class="btn btn-green btn-sm" style="margin-top:8px;" onclick="validateDrawer('${d.id}')">✅ Valider le tiroir</button>`:''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
+
+async function checkTool(id, isChecked) {
+  await api('PATCH', `/toolbox/tools/${id}`, { isChecked, status: isChecked ? 'ok' : 'missing' });
+}
+
+async function validateDrawer(id) {
+  const res = await api('POST', `/toolbox/drawers/${id}/validate`);
+  if (res?.success) { toast('Tiroir validé ✅', 'success'); document.querySelector('.overlay.open')?.remove(); loadToolboxes(); }
+}
+
+// ═══ NOTIFICATIONS ═══
+async function loadNotifs() {
+  const res = await api('GET', '/notifications');
+  if (!res?.success) return;
+  const el = document.getElementById('notifs-list');
+  document.getElementById('notifs-badge').textContent = res.meta.unread;
+  if (!res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🔔</div><div class="empty-title">Aucune notification</div></div>';
+    return;
+  }
+  el.innerHTML = res.data.map(n => `
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);${!n.isRead?'background:rgba(230,57,70,.03);':''}" onclick="markRead('${n.id}')">
+      <div style="font-size:22px;">${n.type.includes('ticket')?'🛠️':n.type.includes('task')?'✅':n.type.includes('daily')?'📓':'🔔'}</div>
+      <div style="flex:1;">
+        <div style="font-weight:${n.isRead?'400':'600'};font-size:14px;">${n.title}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">${n.body||''} · ${fmtDate(n.createdAt)}</div>
+      </div>
+      ${!n.isRead?'<span class="badge badge-red">Nouveau</span>':'<span class="badge badge-muted">Lu</span>'}
+    </div>`).join('');
+}
+
+async function markRead(id) {
+  await api('PATCH', `/notifications/${id}/read`);
+  loadNotifs();
+}
+
+async function markAllRead() {
+  await api('PATCH', '/notifications/read-all');
+  toast('Tout marqué comme lu ✅', 'success');
+  loadNotifs();
+}
+
+// ═══ CREATE ACTIONS ═══
+async function createProject() {
+  const name     = document.getElementById('proj-name').value.trim();
+  const clientId = document.getElementById('proj-client').value;
+  const address  = document.getElementById('proj-addr').value.trim();
+  const start    = document.getElementById('proj-start').value;
+  const end      = document.getElementById('proj-end').value;
+  const dismStart = document.getElementById('proj-dismantling-start')?.value || '';
+  const dismEnd   = document.getElementById('proj-dismantling-end')?.value || '';
+
+  if (!name || !clientId || !address || !start || !end) {
+    toast('Remplis les champs obligatoires (Nom, Client, Adresse, Dates installation)', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('proj-create-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
+
+  // Build body — only include dismantling if filled
+  const body = {
+    name, clientId, address,
+    internalNumber: document.getElementById('proj-num').value.trim() || undefined,
+    workersCount: parseInt(document.getElementById('proj-workers').value) || 0,
+    description: document.getElementById('proj-desc').value.trim() || undefined,
+    installationStart: start,
+    installationEnd: end,
+    city: address.split(',').pop()?.trim() || '',
+  };
+  if (dismStart) body.dismantlingStart = dismStart;
+  if (dismEnd)   body.dismantlingEnd   = dismEnd;
+
+  const res = await api('POST', '/projects', body);
+
+  if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer le Projet'; }
+
+  if (res?.success) {
+    const projectId = res.data.id;
+    // Apply selected templates
+    // Créer les tâches sélectionnées (depuis TASK_TEMPLATES_DATA Excel)
+    const selectedTasks = typeof getSelectedProjTasks === 'function' ? getSelectedProjTasks() : [];
+    if (selectedTasks.length) {
+      toast(`Création de ${selectedTasks.length} tâche(s)...`, 'info');
+      const projStartDate = document.getElementById('proj-start')?.value || new Date().toISOString().split('T')[0];
+      const results = await Promise.all(selectedTasks.map(task =>
+        api('POST', '/tasks', {
+          projectId,
+          title:        task.title,
+          description:  task.stage ? `Stage: ${task.stage}` : undefined,
+          status:       'todo',
+          priority:     'normal',
+          taskDate:     task.taskDate || projStartDate,
+          assignedToId: task.assignedTo || undefined,
+        })
+      ));
+      const ok = results.filter(r => r?.success).length;
+      const fail = results.length - ok;
+      if (fail === 0)      toast(`${ok} tâche(s) créée(s) ✅`, 'success');
+      else if (ok === 0)   toast(`Aucune tâche créée (${fail} échec(s))`, 'error');
+      else                 toast(`${ok} tâche(s) créée(s) — ${fail} échec(s)`, 'warning');
+    } else {
+      toast('Projet créé ✅', 'success');
+    }
+    closeModal('modal-proj');
+    ['proj-name','proj-num','proj-addr','proj-desc','proj-start','proj-end','proj-dismantling-start','proj-dismantling-end'].forEach(id => {
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+    document.getElementById('proj-workers').value = '5';
+    loadAll();
+    goto('projects');
+    // Open the new project
+    setTimeout(() => openProject(projectId), 800);
+  } else toast('Erreur création projet', 'error');
+}
+
+async function createTicket() {
+  const title = document.getElementById('ticket-title').value.trim();
+  const desc  = document.getElementById('ticket-desc').value.trim();
+  if (!title || !desc) { toast('Titre et description obligatoires', 'error'); return; }
+
+  const res = await api('POST', '/tickets', {
+    title, description: desc,
+    projectId: document.getElementById('ticket-project').value || undefined,
+    urgency: document.getElementById('ticket-urgency').value,
+    locationOnSite: document.getElementById('ticket-location').value || undefined,
+    assignedToId: document.getElementById('ticket-assign').value || undefined,
+    plannedDate: document.getElementById('ticket-date').value || undefined,
+  });
+  if (res?.success) { toast('Ticket créé · Email envoyé 📧', 'success'); closeModal('modal-ticket'); loadAll(); loadTickets(); }
+  else toast('Erreur création ticket', 'error');
+}
+
+async function createTask() {
+  const title = document.getElementById('task-title').value.trim();
+  const date  = document.getElementById('task-date').value;
+  const projectId = document.getElementById('task-project').value;
+  if (!title || !date || !projectId) { toast('Titre, projet et date obligatoires', 'error'); return; }
+
+  const res = await api('POST', '/tasks', {
+    title, taskDate: date, projectId,
+    assignedToId: document.getElementById('task-assign').value || undefined,
+    startTime: document.getElementById('task-start').value || undefined,
+    endTime: document.getElementById('task-end').value || undefined,
+    priority: document.getElementById('task-priority').value,
+    status: document.getElementById('task-status').value,
+    description: document.getElementById('task-desc').value || undefined,
+  });
+  if (res?.success) { toast('Tâche créée ✅', 'success'); closeModal('modal-task'); loadTasks(); if(CURRENT_PROJECT_ID) loadDetailTasks(CURRENT_PROJECT_ID); }
+  else toast('Erreur création tâche', 'error');
+}
+
+// ═══ DAILY REPORT STATE ═══
+let DAILY_ENTRIES = []; // {id, time, text}
+let DAILY_TASK_UPDATES = {}; // {taskId: newStatus}
+let voiceRecognition = null;
+let isRecording = false;
+
+function resetDailyReport() {
+  DAILY_ENTRIES = [];
+  DAILY_TASK_UPDATES = {};
+  renderDailyEntries();
+  document.getElementById('daily-tasks-list').innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>';
+  document.getElementById('new-entry-text').value = '';
+  document.getElementById('daily-notes').value = '';
+  document.getElementById('daily-workers').value = '0';
+  PENDING_DAILY_PHOTOS = [];
+  const preview = document.getElementById('daily-photos-preview');
+  if (preview) preview.innerHTML = '';
+  const input = document.getElementById('daily-photos-input');
+  if (input) input.value = '';
+  // Set current time
+  const now = new Date();
+  document.getElementById('new-entry-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
+function addDailyEntry() {
+  const time = document.getElementById('new-entry-time').value;
+  const text = document.getElementById('new-entry-text').value.trim();
+  if (!text) { toast('Décrivez ce qui a été fait','error'); return; }
+  const entry = { id: Date.now(), time: time || '00:00', text };
+  DAILY_ENTRIES.push(entry);
+  DAILY_ENTRIES.sort((a,b) => a.time.localeCompare(b.time));
+  renderDailyEntries();
+  document.getElementById('new-entry-text').value = '';
+  // Auto-advance time by 30min
+  if (time) {
+    const [h,m] = time.split(':').map(Number);
+    const next = new Date(2000,0,1,h,m+30);
+    document.getElementById('new-entry-time').value = `${String(next.getHours()).padStart(2,'0')}:${String(next.getMinutes()).padStart(2,'0')}`;
+  }
+}
+
+function removeDailyEntry(id) {
+  DAILY_ENTRIES = DAILY_ENTRIES.filter(e => e.id !== id);
+  renderDailyEntries();
+}
+
+function renderDailyEntries() {
+  const el = document.getElementById('daily-entries-list');
+  if (!el) return;
+  if (!DAILY_ENTRIES.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:16px;">Aucune entrée — ajoutez des activités ci-dessous</div>';
+    return;
+  }
+  el.innerHTML = DAILY_ENTRIES.map(e => `
+    <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
+      <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);min-width:40px;margin-top:1px;">${e.time||'--:--'}</div>
+      <div style="flex:1;font-size:13px;color:var(--text2);line-height:1.4;">${e.text}</div>
+      <button onclick="removeDailyEntry(${e.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px;">✕</button>
+    </div>`).join('');
+  updateDailySummary();
+}
+
+// ── VOICE RECORDING ──────────────────────────────────────────
+function toggleVoiceRecording() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Vocal non supporté sur ce navigateur — essayez Chrome','warning');
+    return;
+  }
+  if (isRecording) {
+    stopVoiceRecording();
+  } else {
+    startVoiceRecording();
+  }
+}
+
+function startVoiceRecording() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.lang = 'fr-FR';
+  voiceRecognition.continuous = true;
+  voiceRecognition.interimResults = true;
+
+  // Texte déjà finalisé (accumulé entre les appels onresult successifs)
+  let finalTranscript = '';
+
+  voiceRecognition.onstart = () => {
+    isRecording = true;
+    finalTranscript = '';
+    // Petit bouton dans la tab manuelle
+    const btn = document.getElementById('voice-btn');
+    const status = document.getElementById('voice-status');
+    if (btn) { btn.style.background = 'rgba(230,57,70,.2)'; btn.style.color = 'var(--accent)'; }
+    if (status) status.style.display = 'inline';
+    // Gros bouton dans la tab vocale
+    const bigBtn = document.getElementById('voice-big-btn');
+    const mainStatus = document.getElementById('voice-main-status');
+    const icon = document.getElementById('voice-icon');
+    const box = document.getElementById('voice-transcript-box');
+    if (bigBtn) bigBtn.innerHTML = '⏹️ Arrêter la dictée';
+    if (mainStatus) mainStatus.textContent = '🔴 Enregistrement en cours...';
+    if (icon) icon.textContent = '🔴';
+    if (box) box.style.display = 'block';
+  };
+
+  voiceRecognition.onresult = (event) => {
+    let interim = '';
+    // On parcourt tous les résultats depuis l'index courant : ceux marqués isFinal
+    // sont définitivement acquis et s'ajoutent au texte final accumulé. Les autres
+    // restent en "interim" et s'affichent en attendant validation.
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      if (res.isFinal) {
+        finalTranscript += res[0].transcript + ' ';
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+    const fullText = (finalTranscript + interim).trim();
+    // Champ saisie manuelle
+    const el = document.getElementById('new-entry-text');
+    if (el) el.value = fullText;
+    // Aperçu vocal
+    const vt = document.getElementById('voice-transcript-text');
+    if (vt) vt.textContent = fullText;
+    // Aperçu import (si l'utilisateur dicte directement vers la zone IA)
+    const raw = document.getElementById('daily-raw-text');
+    if (raw && document.getElementById('panel-import')?.style.display !== 'none') raw.value = fullText;
+  };
+
+  voiceRecognition.onerror = (event) => {
+    // 'no-speech' n'est pas une vraie erreur, juste un silence → on relance
+    if (event.error === 'no-speech' || event.error === 'aborted') return;
+    toast('Erreur micro : ' + event.error, 'error');
+    stopVoiceRecording();
+  };
+
+  voiceRecognition.onend = () => {
+    // Si l'utilisateur n'a pas explicitement arrêté, on relance automatiquement
+    // (Chrome coupe seul après ~60s ou en cas de silence prolongé).
+    if (isRecording) {
+      try { voiceRecognition.start(); }
+      catch (e) { /* déjà démarré : on ignore */ }
+    }
+  };
+
+  voiceRecognition.start();
+}
+
+function stopVoiceRecording() {
+  isRecording = false;
+  if (voiceRecognition) voiceRecognition.stop();
+  // Reset small btn
+  const btn = document.getElementById('voice-btn');
+  const status = document.getElementById('voice-status');
+  if (btn) { btn.style.background = ''; btn.style.color = ''; }
+  if (status) status.style.display = 'none';
+  // Reset big btn
+  const bigBtn = document.getElementById('voice-big-btn');
+  const mainStatus = document.getElementById('voice-main-status');
+  const icon = document.getElementById('voice-icon');
+  const actions = document.getElementById('voice-actions');
+  if (bigBtn) bigBtn.innerHTML = '🎙️ Nouvelle dictée';
+  if (mainStatus) mainStatus.textContent = 'Dictée terminée';
+  if (icon) icon.textContent = '✅';
+  if (actions) actions.style.display = 'flex';
+  const text = document.getElementById('new-entry-text')?.value.trim();
+  if (text) toast('✅ Transcription terminée', 'success');
+}
+
+// ── LOAD TASKS FOR DAILY REPORT ──────────────────────────────
+async function loadDailyTasks(projectId) {
+  const el = document.getElementById('daily-tasks-list');
+  if (!el || !projectId) return;
+  el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>';
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucune tâche dans ce projet</div>';
+    return;
+  }
+  const active = res.data.filter(t => t.status !== 'cancelled');
+  const byStatus = { todo: [], in_progress: [], done: [], blocked: [] };
+  active.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+
+  const statusColor = { todo:'var(--blue)', in_progress:'var(--amber)', done:'var(--green)', blocked:'var(--accent)' };
+  const statusLabel = { todo:'À faire', in_progress:'En cours', done:'Terminé', blocked:'Bloqué' };
+
+  let html = '';
+  ['in_progress','todo','blocked','done'].forEach(s => {
+    if (!byStatus[s].length) return;
+    html += `<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin:8px 0 4px;">${statusLabel[s]}</div>`;
+    byStatus[s].forEach(t => {
+      const isDone = DAILY_TASK_UPDATES[t.id] === 'done' || t.status === 'done';
+      const isInProg = DAILY_TASK_UPDATES[t.id] === 'in_progress' || (t.status === 'in_progress' && !DAILY_TASK_UPDATES[t.id]);
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:var(--radius);margin-bottom:3px;background:var(--bg3);border:1px solid ${isDone?'rgba(45,198,83,.3)':'var(--border)'};">
+        <input type="checkbox" ${isDone?'checked':''} onchange="toggleTaskDone('${t.id}','${t.status}',this.checked)" style="accent-color:var(--green);width:15px;height:15px;flex-shrink:0;cursor:pointer;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:${isDone?'400':'500'};color:${isDone?'var(--text3)':'var(--text)'};${isDone?'text-decoration:line-through;':''}white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.title}</div>
+          ${t.assignedTo?`<div style="font-size:10px;color:var(--text3);">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+        </div>
+        <div style="display:flex;gap:3px;flex-shrink:0;">
+          ${t.status!=='in_progress'&&!isDone?`<button onclick="setTaskInProgress('${t.id}')" style="background:rgba(244,162,97,.15);color:var(--amber);border:none;border-radius:5px;padding:2px 6px;font-size:10px;cursor:pointer;">▶ En cours</button>`:''}
+        </div>
+      </div>`;
+    });
+  });
+  el.innerHTML = html;
+}
+
+function toggleTaskDone(taskId, currentStatus, checked) {
+  if (checked) {
+    DAILY_TASK_UPDATES[taskId] = 'done';
+  } else {
+    DAILY_TASK_UPDATES[taskId] = currentStatus === 'done' ? 'todo' : currentStatus;
+  }
+  // Refresh visual
+  const projectId = document.getElementById('daily-project').value;
+  if (projectId) loadDailyTasks(projectId);
+}
+
+function setTaskInProgress(taskId) {
+  DAILY_TASK_UPDATES[taskId] = 'in_progress';
+  const projectId = document.getElementById('daily-project').value;
+  if (projectId) loadDailyTasks(projectId);
+}
+
+// ── CREATE DAILY REPORT ──────────────────────────────────────
+let PENDING_DAILY_PHOTOS = [];
+let HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:'',photos:[],_photoFiles:[]}];
+
+// ═══════════════════════════════════════════════════════
+// HANDOVER — ZONES TERRAIN
+// ═══════════════════════════════════════════════════════
+
+function addHandoverZone(prefill='') {
+  const id = Date.now();
+  HANDOVER_ZONES.push({id, name:prefill, status:'ok', comment:'', photos:[], _photoFiles:[]});
+  renderHandoverZones();
+  setTimeout(() => {
+    const input = document.getElementById('hz-name-'+id);
+    if (input) { input.focus(); input.scrollIntoView({behavior:'smooth',block:'center'}); }
+  }, 80);
+}
+
+function addHandoverZoneVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée sur ce navigateur','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Parlez la zone...','info');
+  rec.onresult = e => { addHandoverZone(e.results[0][0].transcript); toast('Zone ajoutée ✅','success'); };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+function addZoneVoiceComment(zoneId) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Dictez le commentaire...','info');
+  rec.onresult = e => {
+    const text = e.results[0][0].transcript;
+    const zone = HANDOVER_ZONES.find(x=>x.id===zoneId);
+    if (zone) zone.comment = (zone.comment ? zone.comment+' ' : '')+text;
+    renderHandoverZones();
+    toast('Commentaire ajouté','success');
+  };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+function previewZonePhoto(zoneId, input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+  const url = URL.createObjectURL(file);
+  const zone = HANDOVER_ZONES.find(x=>x.id===zoneId);
+  if (zone) {
+    zone.photos = zone.photos || [];
+    zone.photos.push(url);
+    zone._photoFiles = zone._photoFiles || [];
+    zone._photoFiles.push(file);
+    renderHandoverZones();
+  }
+}
+
+function renderHandoverZones() {
+  const list = document.getElementById('handover-zones-list');
+  if (!list) return;
+  if (!HANDOVER_ZONES.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:16px;">Appuyez sur + pour ajouter un point</div>';
+    return;
+  }
+  const stColors = {ok:'var(--green)',remark:'var(--amber)',defect:'var(--accent)',pending:'var(--text3)'};
+  list.innerHTML = HANDOVER_ZONES.map((z,idx) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid ${stColors[z.status]||'var(--border)'};border-radius:10px;overflow:hidden;" id="hz-card-${z.id}">
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 6px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${idx+1}</div>
+        <input class="input" id="hz-name-${z.id}" placeholder="Zone / Emplacement..." value="${z.name}"
+          oninput="HANDOVER_ZONES.find(x=>x.id===${z.id}).name=this.value"
+          style="flex:1;font-size:14px;font-weight:600;background:transparent;border:none;padding:4px 0;border-bottom:1px solid var(--border);">
+        <button onclick="addZoneVoiceComment(${z.id})" style="background:none;border:none;cursor:pointer;font-size:16px;" title="Dicter commentaire">🎙️</button>
+        <button onclick="HANDOVER_ZONES=HANDOVER_ZONES.filter(x=>x.id!==${z.id});renderHandoverZones()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:18px;">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;padding:0 12px 8px;align-items:center;">
+        <select class="input" style="font-size:12px;padding:5px 8px;width:140px;flex-shrink:0;"
+          onchange="HANDOVER_ZONES.find(x=>x.id===${z.id}).status=this.value;renderHandoverZones()">
+          <option value="ok" ${z.status==='ok'?'selected':''}>✅ OK</option>
+          <option value="remark" ${z.status==='remark'?'selected':''}>⚠️ Remarque</option>
+          <option value="defect" ${z.status==='defect'?'selected':''}>❌ Défaut</option>
+          <option value="pending" ${z.status==='pending'?'selected':''}>⏳ En attente</option>
+        </select>
+        <input class="input" placeholder="Commentaire..." value="${z.comment}"
+          oninput="HANDOVER_ZONES.find(x=>x.id===${z.id}).comment=this.value"
+          style="flex:1;font-size:12px;">
+      </div>
+      <div style="padding:0 12px 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        ${(z.photos||[]).map(p=>`<img src="${p}" style="width:56px;height:56px;object-fit:cover;border-radius:7px;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${p}')">`).join('')}
+        <label style="width:56px;height:56px;border:2px dashed var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:var(--text3);" title="Photo">
+          📸<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewZonePhoto(${z.id},this)">
+        </label>
+      </div>
+    </div>`).join('');
+}
+
+// Called when modal-handover opens
+function initHandoverModal() {
+  HANDOVER_ZONES = [{id:Date.now(),name:'',status:'ok',comment:'',photos:[],_photoFiles:[]}];
+  renderHandoverZones();
+  // Set today's date
+  const dateEl = document.getElementById('handover-date');
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+}
+
+const TASK_TEMPLATES_DATA = {"To Do": [{"title": "Team - Dismantling", "assignees": ["François Drijepondt", "Injas Goossens"]}, {"title": "Preparation material from delivery note", "assignees": ["Warehouse Viewbox"]}], "PRE-PROD": [{"title": "Briefing SHEET from SALES", "assignees": []}, {"title": "Preparation of all packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Packing list for warehouse team", "assignees": ["Amaury Pinchart", "Injas Goossens"]}, {"title": "Site Visit ( Verify faisability on site)", "assignees": []}, {"title": "Boarding solution", "assignees": []}, {"title": "Analyse packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Buy missing material", "assignees": []}, {"title": "Briefing team", "assignees": []}, {"title": "Briefing PP with all informations", "assignees": []}, {"title": "Create Whats app group", "assignees": []}], "Booking Supplier": [{"title": "Organise transport TRUCK", "assignees": []}, {"title": "Book SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book accomodation SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book Transport SM", "assignees": ["Amaury Pinchart"]}, {"title": "Rent Forklift", "assignees": []}, {"title": "Book team", "assignees": []}, {"title": "Rent Manitou ROTO", "assignees": []}, {"title": "Rent Scisor Lift", "assignees": []}, {"title": "Book CRANE", "assignees": []}, {"title": "Book Accomodation team", "assignees": ["Amaury Pinchart"]}], "Warehouse Preparation": [{"title": "Loading truck", "assignees": ["Warehouse Viewbox"]}], "Installation": [{"title": "GENERAL TASK", "assignees": ["Amaury Pinchart"]}, {"title": "TMPL - Electricity", "assignees": []}, {"title": "Unload Tautliner with Forklift On Site", "assignees": []}, {"title": "Levelling and Laser work on site", "assignees": []}, {"title": "Unload Flatbed truck on site with crane", "assignees": []}, {"title": "UNIT", "assignees": []}, {"title": "Placing Facade elements", "assignees": []}, {"title": "Placement of inner Ceilings", "assignees": []}, {"title": "Placement of vinyl floor", "assignees": []}, {"title": "Placement of Vinyl click hard floor", "assignees": []}, {"title": "Handover with the client", "assignees": []}, {"title": "Interior or exterior Staircase", "assignees": []}, {"title": "Terraces and Unit", "assignees": []}], "Dismantling": [{"title": "Unloading of rack and tools and reorganisation of racks", "assignees": ["Amaury Pinchart"]}, {"title": "Remove Decoration and interior material", "assignees": ["Amaury Pinchart"]}, {"title": "Remove facade Elements", "assignees": ["Amaury Pinchart"]}, {"title": "Remove external or internal staircase", "assignees": ["Amaury Pinchart"]}, {"title": "Flat Packing With crane UNIT", "assignees": ["Amaury Pinchart"]}, {"title": "Remove terraces Unit and Handrails", "assignees": ["Amaury Pinchart"]}, {"title": "Loading FlatBED", "assignees": ["Amaury Pinchart"]}, {"title": "Loading Tautliner", "assignees": ["Amaury Pinchart"]}, {"title": "Cleaning SITE", "assignees": ["Amaury Pinchart"]}, {"title": "HANDHOVER Client to end of event", "assignees": ["Amaury Pinchart"]}, {"title": "GENERAL DISMANTLING TASK", "assignees": ["Amaury Pinchart"]}], "Come Back Warehouse": [{"title": "Dismounting", "assignees": []}, {"title": "Unloading truck in warehouse", "assignees": []}, {"title": "Verification of return material", "assignees": []}]};
+
+function previewDailyPhotos(input) {
+  PENDING_DAILY_PHOTOS = Array.from(input.files);
+  const preview = document.getElementById('daily-photos-preview');
+  const count = document.getElementById('daily-photos-count');
+  if (!preview) return;
+  preview.innerHTML = PENDING_DAILY_PHOTOS.map(f => {
+    const url = URL.createObjectURL(f);
+    return `<div style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;">
+    </div>`;
+  }).join('');
+  if (count) count.textContent = PENDING_DAILY_PHOTOS.length > 0 ? `${PENDING_DAILY_PHOTOS.length} photo(s) sélectionnée(s)` : '';
+  if (typeof updateDailySummary === 'function') updateDailySummary();
+}
+
+async function createDailyReport(send=false) {
+  const projectId = document.getElementById('daily-project').value;
+  const date = document.getElementById('daily-date').value;
+  if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
+
+  const entries = DAILY_ENTRIES.map(e => ({ entryTime: e.time, description: e.text }));
+
+  const res = await api('POST', '/daily-reports', {
+    projectId, reportDate: date,
+    weather: document.getElementById('daily-weather').value,
+    workersPresent: parseInt(document.getElementById('daily-workers').value)||0,
+    generalNotes: document.getElementById('daily-notes').value || undefined,
+    entries,
+  });
+
+  if (res?.success) {
+    // Upload photos
+    if (PENDING_DAILY_PHOTOS.length) {
+      toast(`Upload ${PENDING_DAILY_PHOTOS.length} photo(s)...`, 'info');
+      for (const file of PENDING_DAILY_PHOTOS) {
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          await fetch(`${API}/upload/daily-photo/${res.data.id}`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+          });
+        } catch {}
+      }
+      PENDING_DAILY_PHOTOS = [];
+    }
+    // Update task statuses
+    const taskUpdates = Object.entries(DAILY_TASK_UPDATES);
+    if (taskUpdates.length) {
+      await Promise.all(taskUpdates.map(([taskId, status]) =>
+        api('PATCH', `/tasks/${taskId}`, { status })
+      ));
+    }
+    toast(`Rapport sauvegardé ✅${taskUpdates.length?` · ${taskUpdates.length} tâche(s) mises à jour`:''}${PENDING_DAILY_PHOTOS.length?` · photos ajoutées`:''}`, 'success');
+    closeModal('modal-daily');
+    resetDailyReport();
+    if (send) sendDailyReport(res.data.id);
+    loadDailyReports();
+    if (CURRENT_PROJECT_ID) { loadDetailTasks(CURRENT_PROJECT_ID); loadDetailDailyReports(CURRENT_PROJECT_ID); }
+  } else toast('Erreur création rapport', 'error');
+}
+
+async function createAndSendDailyReport() { await createDailyReport(true); }
+
+async function createHandover() {
+  const projectId = document.getElementById('handover-project')?.value;
+  if (!projectId) { toast('Sélectionne un projet', 'error'); return; }
+
+  const handoverDate = document.getElementById('handover-date')?.value;
+  const clientName   = document.getElementById('handover-client-name')?.value || '';
+  const responsible  = document.getElementById('handover-responsible')?.value || '';
+  const notes        = document.getElementById('handover-notes')?.value || '';
+
+  // Build items from zones
+  const items = HANDOVER_ZONES.filter(z => z.name?.trim()).map((z, i) => ({
+    zoneName: z.name.trim(),
+    status:   z.status || 'ok',
+    comment:  z.comment || undefined,
+    sortOrder: i,
+  }));
+  if (!items.length) items.push({ zoneName: 'Inspection générale', status: 'ok', sortOrder: 0 });
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Création...'; }
+
+  const res = await api('POST', '/handover', {
+    projectId,
+    clientName:    clientName || responsible || undefined,
+    generalNotes:  notes || undefined,
+    siteManagerId: CURRENT_USER?.id,
+    items,
+  });
+
+  if (res?.success) {
+    // Upload zone photos
+    const handoverId = res.data.id;
+    for (const zone of HANDOVER_ZONES) {
+      if (!zone._photoFiles?.length) continue;
+      const item = res.data.items?.find(i => i.zoneName === zone.name);
+      if (!item) continue;
+      for (const file of zone._photoFiles) {
+        try {
+          const fd = new FormData(); fd.append('file', file);
+          const r = await fetch(`${API}/upload/photo`, {
+            method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+          });
+          const data = await r.json();
+          const url = data.data?.url || data.url;
+          if (url) {
+            await fetch(`${API}/handover/${handoverId}/items/${item.id}/photo`, {
+              method:'POST',
+              headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+              body: JSON.stringify({photoUrl: url, publicId: data.data?.public_id || null})
+            });
+          }
+        } catch {}
+      }
+    }
+
+    toast('Handover créé ✅', 'success');
+    closeModal('modal-handover');
+    HANDOVER_ZONES = [{id: Date.now(), name:'', status:'ok', comment:'', photos:[], _photoFiles:[]}];
+    if (CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID);
+    loadHandovers();
+  } else {
+    toast('Erreur création: ' + (res?.error || 'vérifiez la console'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Créer et signer'; }
+  }
+}
+
+async function createBox() {
+  const name = document.getElementById('box-name').value.trim();
+  const projectId = document.getElementById('box-project').value;
+  if (!name || !projectId) { toast('Nom et projet obligatoires', 'error'); return; }
+
+  const res = await api('POST', '/warehouse/boxes', {
+    name, projectId,
+    description: document.getElementById('box-desc').value || undefined,
+  });
+  if (res?.success) { toast('Box créée 📦', 'success'); closeModal('modal-box'); loadWarehouse(); }
+  else toast('Erreur', 'error');
+}
+
+async function createUser() {
+  const firstName = document.getElementById('user-fname').value.trim();
+  const lastName  = document.getElementById('user-lname').value.trim();
+  const email     = document.getElementById('user-email').value.trim();
+  const role      = document.getElementById('user-role').value;
+  if (!firstName || !lastName || !email) { toast('Remplis tous les champs', 'error'); return; }
+
+  const payload = {
+    firstName, lastName, email, role,
+    phone:          document.getElementById('user-phone').value.trim()         || undefined,
+    birthDate:      document.getElementById('user-birthdate').value.trim()     || undefined,
+    birthPlace:     document.getElementById('user-birthplace').value.trim()    || undefined,
+    nationality:    document.getElementById('user-nationality').value.trim()   || undefined,
+    idNumber:       document.getElementById('user-id-number').value.trim()     || undefined,
+    nationalNumber: document.getElementById('user-national-nr').value.trim()   || undefined,
+    idExpiry:       document.getElementById('user-id-expiry').value.trim()     || undefined,
+    teamGroupId:    document.getElementById('user-team-group').value           || undefined,
+  };
+
+  const res = await api('POST', '/users', payload);
+  if (res?.success) { toast('Compte créé · Mot de passe : VEM2025! ✅', 'success'); closeModal('modal-user'); loadTeam(); loadAll(); }
+  else toast('Erreur création compte', 'error');
+}
+
+// ═══ POPULATE SELECTS ═══
+function populateProjectSelects() {
+  const selects = ['proj-client','ticket-project','task-project','daily-project','handover-project','box-project'];
+  // Load clients for proj-client
+  loadClients();
+  // Other project selects
+  ['ticket-project','task-project','daily-project','handover-project','box-project'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">— Sélectionner —</option>' + PROJECTS.map(p => `<option value="${p.id}">${p.name} (${p.internalNumber})</option>`).join('');
+    if (cur) el.value = cur;
+  });
+}
+
+async function loadClients() {
+  const res = await api('GET', '/clients');
+  if (!res?.success) return;
+  CLIENTS = res.data;
+  const opts = '<option value="">— Sélectionner —</option>' + res.data.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  ['proj-client'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const cur = el.value; el.innerHTML = opts; if(cur) el.value = cur; }
+  });
+}
+
+// ── CLIENT CONTACTS ──
+let CLIENT_CONTACTS_COUNT = 1;
+
+function addClientContact() {
+  const idx = CLIENT_CONTACTS_COUNT++;
+  const list = document.getElementById('client-contacts-list');
+  const div = document.createElement('div');
+  div.className = 'client-contact-row';
+  div.id = `contact-${idx}`;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;';
+  div.innerHTML = `
+    <input class="input" placeholder="Prénom Nom" id="contact-${idx}-name" style="font-size:12px;">
+    <input class="input" placeholder="Email" id="contact-${idx}-email" type="email" style="font-size:12px;">
+    <input class="input" placeholder="Téléphone" id="contact-${idx}-phone" style="font-size:12px;">
+    <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="this.closest('.client-contact-row').remove()">✕</button>`;
+  list.appendChild(div);
+}
+
+async function createClientAndReturn() {
+  const name = document.getElementById('client-name').value.trim();
+  if (!name) { toast('Nom de société obligatoire', 'error'); return; }
+
+  // Collect contacts
+  const contacts = [];
+  document.querySelectorAll('.client-contact-row').forEach((row, i) => {
+    const cname  = document.getElementById(`contact-${i}-name`)?.value.trim();
+    const cemail = document.getElementById(`contact-${i}-email`)?.value.trim();
+    const cphone = document.getElementById(`contact-${i}-phone`)?.value.trim();
+    if (cname || cemail) contacts.push({ name: cname, email: cemail, phone: cphone, isPrimary: i===0 });
+  });
+
+  // Create client (use first contact as main contact for backward compat)
+  const primary = contacts[0] || {};
+  const res = await api('POST', '/clients', {
+    name,
+    contactName: primary.name || undefined,
+    email: document.getElementById('client-email').value || primary.email || undefined,
+    phone: document.getElementById('client-phone').value || primary.phone || undefined,
+    address: document.getElementById('client-address').value || undefined,
+  });
+
+  if (res?.success) {
+    toast(`Client "${name}" créé ✅`, 'success');
+    closeModal('modal-new-client');
+    // Reset form
+    ['client-name','client-vat','client-address','client-email','client-phone'].forEach(id => {
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+    CLIENT_CONTACTS_COUNT = 1;
+    const list = document.getElementById('client-contacts-list');
+    if (list) {
+      // Reset to single contact row
+      list.querySelectorAll('.client-contact-row:not(#contact-0)').forEach(r=>r.remove());
+      ['contact-0-name','contact-0-email','contact-0-phone'].forEach(id=>{
+        const el=document.getElementById(id); if(el) el.value='';
+      });
+    }
+    // Reload clients and select the new one
+    await loadClients();
+    const sel = document.getElementById('proj-client');
+    if (sel) sel.value = res.data.id;
+    toast('Client sélectionné dans le projet', 'success');
+  } else toast('Erreur création client', 'error');
+}
+
+function populateUserSelects() {
+  ['ticket-assign','task-assign','remark-assign'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">— Non assigné —</option>' + USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
+  });
+}
+
+// ═══ MODAL HELPERS ═══
+function showModal(id) {
+  document.getElementById(id).classList.add('open');
+  const today = new Date().toISOString().split('T')[0];
+  if (id === 'modal-daily') {
+    document.getElementById('daily-date').value = today;
+    resetDailyReport();
+    // Load tasks if project already selected
+    const pid = document.getElementById('daily-project').value || CURRENT_PROJECT_ID;
+    if (pid) { document.getElementById('daily-project').value = pid; loadDailyTasks(pid); }
+  }
+  if (id === 'modal-task')    document.getElementById('task-date').value  = today;
+  if (id === 'modal-proj') {
+    loadProjTemplateSelector();
+  }
+  if (id === 'modal-new-visite') {
+    const vd = document.getElementById('visite-date'); if(vd) vd.value = today;
+    const vps = document.getElementById('visite-project');
+    if(vps) { vps.innerHTML = '<option value="">— Sélectionner —</option>' + PROJECTS.map(p=>`<option value="${p.id}">${p.name}</option>`).join(''); if(CURRENT_PROJECT_ID) vps.value=CURRENT_PROJECT_ID; }
+    const vas = document.getElementById('visite-assigned');
+    if(vas) { vas.innerHTML = '<option value="">— Non assigné —</option>' + USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join(''); }
+  }
+  if (id === 'modal-handover') {
+    // Set today date
+    if (document.getElementById('handover-date')) document.getElementById('handover-date').value = today;
+    // Init zones
+    HANDOVER_ZONES = [{id:1,name:'',status:'ok',comment:''},{id:2,name:'',status:'ok',comment:''}];
+    renderHandoverZones();
+    // Populate site manager select with site_managers and managers
+    const smSel = document.getElementById('handover-site-manager');
+    if (smSel) {
+      const sms = USERS.filter(u=>['site_manager','technical_manager','project_manager','admin'].includes(u.role));
+      smSel.innerHTML = '<option value="">— Sélectionner —</option>' + sms.map(u=>`<option value="${u.id}" ${u.id===CURRENT_USER?.id?'selected':''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('');
+    }
+    // Pre-select project if in detail
+    if (CURRENT_PROJECT_ID && document.getElementById('handover-project')) {
+      document.getElementById('handover-project').value = CURRENT_PROJECT_ID;
+    }
+    // Populate client select (base de données)
+    const cliSel = document.getElementById('handover-client-select');
+    if (cliSel && CLIENTS?.length) {
+      cliSel.innerHTML = '<option value="">— Choisir dans la base —</option>' +
+        CLIENTS.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+    // Si projet pré-sélectionné, pré-remplir avec son client
+    if (CURRENT_PROJECT_ID) {
+      const proj = PROJECTS.find(p => p.id === CURRENT_PROJECT_ID);
+      if (proj?.client?.id && cliSel) {
+        cliSel.value = proj.client.id;
+        onHandoverClientPick(proj.client.id);
+      }
+    }
+    // Vider les champs manuels pour repartir propre
+    const nameEl = document.getElementById('handover-client-name');
+    const respEl = document.getElementById('handover-responsible');
+    const mailEl = document.getElementById('handover-client-email');
+    const ctSel  = document.getElementById('handover-contact-select');
+    if (nameEl && !nameEl.value) nameEl.value = '';
+    if (respEl && !respEl.value) respEl.value = '';
+    if (mailEl && !mailEl.value) mailEl.value = '';
+    if (ctSel)  ctSel.innerHTML = '<option value="">— Choix base —</option>';
+  }
+}
+
+// Quand l'utilisateur choisit un client dans la liste base, on auto-remplit le nom
+// et l'email s'ils sont vides. On peuple aussi le select de contact (s'il y a un
+// contactName en base, on le propose en option). L'utilisateur peut ensuite
+// surcharger les champs libres en dessous.
+function onHandoverClientPick(clientId) {
+  const c = (CLIENTS || []).find(x => x.id === clientId);
+  if (!c) return;
+  const nameEl = document.getElementById('handover-client-name');
+  const respEl = document.getElementById('handover-responsible');
+  const mailEl = document.getElementById('handover-client-email');
+  const ctSel  = document.getElementById('handover-contact-select');
+
+  // Nom client : on remplace s'il était vide
+  if (nameEl && !nameEl.value.trim()) nameEl.value = c.name || '';
+  // Email : pareil
+  if (mailEl && !mailEl.value.trim()) mailEl.value = c.email || '';
+  // Select contact : on propose ce qu'on a en base
+  if (ctSel) {
+    const opts = ['<option value="">— Choix base —</option>'];
+    if (c.contactName) opts.push(`<option value="${esc(c.contactName)}">${esc(c.contactName)}</option>`);
+    ctSel.innerHTML = opts.join('');
+    // Auto-sélectionner le contact si c'est le seul
+    if (c.contactName) {
+      ctSel.value = c.contactName;
+      if (respEl && !respEl.value.trim()) respEl.value = c.contactName;
+    }
+  }
+}
+
+// Quand l'utilisateur choisit un contact dans la liste, on rebascule la valeur
+// dans le champ libre (qui sert de source de vérité finale au moment du submit).
+function onHandoverContactPick(name) {
+  if (!name) return;
+  const respEl = document.getElementById('handover-responsible');
+  if (respEl) respEl.value = name;
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if(e.target===o) closeModal(o.id); });
 });
 
-io.on('connection', (socket) => {
-  const userId = socket.handshake.auth.userId;
-  if (userId) socket.join(`user:${userId}`);
-  socket.on('project:join', (pid: string) => socket.join(`project:${pid}`));
-  socket.on('disconnect', () => {});
+// ═══ DROPDOWN ═══
+function toggleDropdown(id) {
+  const menu = document.getElementById(id);
+  const wasOpen = menu.classList.contains('open');
+  closeAllDropdowns();
+  if (!wasOpen) menu.classList.add('open');
+}
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dropdown') && !e.target.closest('#topbar-avatar') && !e.target.closest('.nav-user')) {
+    closeAllDropdowns();
+  }
 });
 
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*', credentials: true }));
-app.use(compression());
-app.use(morgan('tiny'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// ═══ PROFILE MODAL ═══
+function showProfile() {
+  closeAllDropdowns();
+  if (!CURRENT_USER) return;
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:460px;">
+      <div class="modal-head"><div class="modal-title">👤 Mon Profil</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="text-align:center;margin-bottom:18px;">
+        <div style="width:64px;height:64px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;margin:0 auto 12px;">${(CURRENT_USER.firstName[0]+CURRENT_USER.lastName[0]).toUpperCase()}</div>
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700;">${CURRENT_USER.firstName} ${CURRENT_USER.lastName}</div>
+        <div style="color:var(--text3);font-size:13px;margin-top:4px;">${CURRENT_USER.role}</div>
+      </div>
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;font-size:13px;display:grid;gap:8px;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text3);">Email</span><span>${CURRENT_USER.email}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text3);">Rôle</span><span>${CURRENT_USER.role}</span></div>
+      </div>
 
-app.get('/health', (_, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+      <!-- Toggle changement mot de passe -->
+      <div id="pwd-section">
+        <button class="btn btn-outline" style="width:100%;" onclick="togglePasswordPanel(true)">🔑 Changer mon mot de passe</button>
+      </div>
 
-const API = '/api/v1';
+      <!-- Panneau de changement (caché par défaut) -->
+      <div id="pwd-panel" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:14px;margin-top:10px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🔑 Changer le mot de passe</div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label" style="font-size:11px;">Ancien mot de passe</label>
+          <input class="input" type="password" id="pwd-current" autocomplete="current-password">
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label" style="font-size:11px;">Nouveau mot de passe (8 caractères min)</label>
+          <input class="input" type="password" id="pwd-new" autocomplete="new-password">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label" style="font-size:11px;">Confirmer le nouveau mot de passe</label>
+          <input class="input" type="password" id="pwd-confirm" autocomplete="new-password">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-ghost btn-sm" onclick="togglePasswordPanel(false)">Annuler</button>
+          <button class="btn btn-primary btn-sm" onclick="submitPasswordChange()">💾 Valider</button>
+        </div>
+      </div>
 
-app.use(`${API}/auth`,           authRoutes);
-app.use(`${API}/users`,          authMiddleware, userRoutes);
-app.use(`${API}/clients`,        authMiddleware, clientRoutes);
-app.use(`${API}/projects`,       authMiddleware, projectRoutes);
-app.use(`${API}/tasks`,          authMiddleware, taskRoutes);
-app.use(`${API}/tickets`,        authMiddleware, ticketRoutes);
-app.use(`${API}/handover`,       authMiddleware, handoverRoutes);
-app.use(`${API}/daily-reports`,  authMiddleware, dailyRoutes);
-app.use(`${API}/warehouse`,      authMiddleware, warehouseRoutes);
-app.use(`${API}/toolbox`,        authMiddleware, toolboxRoutes);
-app.use(`${API}/upload`,         authMiddleware, uploadRoutes);
-app.use(`${API}/notifications`,  authMiddleware, notifRoutes);
-app.use(`${API}/reports`,        authMiddleware, reportRoutes);
-app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
-app.use(`${API}/ai`, authMiddleware, aiRoutes);
-app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
-app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
-app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
+      <div style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-primary btn-sm" style="background:var(--accent);" onclick="doLogout()">🚪 Déconnexion</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+}
 
-app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
+function togglePasswordPanel(show) {
+  document.getElementById('pwd-section').style.display = show ? 'none' : 'block';
+  document.getElementById('pwd-panel').style.display   = show ? 'block' : 'none';
+  if (show) setTimeout(() => document.getElementById('pwd-current')?.focus(), 50);
+}
 
-app.use(errorHandler);
+async function submitPasswordChange() {
+  const current = document.getElementById('pwd-current').value;
+  const next    = document.getElementById('pwd-new').value;
+  const confirm = document.getElementById('pwd-confirm').value;
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-http.listen(PORT, '0.0.0.0', async () => {
-  logger.info(`🚀 VEM running on port ${PORT}`);
-  await runStartupMigrations();
+  if (!current || !next || !confirm) { toast('Remplis tous les champs', 'error'); return; }
+  if (next.length < 8)               { toast('Le nouveau mot de passe doit faire au moins 8 caractères', 'error'); return; }
+  if (next !== confirm)              { toast('Les deux nouveaux mots de passe ne correspondent pas', 'error'); return; }
+  if (current === next)              { toast("Le nouveau doit être différent de l'ancien", 'error'); return; }
+
+  const res = await api('POST', '/auth/change-password', { currentPassword: current, newPassword: next });
+  if (res?.success) {
+    toast('Mot de passe modifié ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+  } else {
+    toast(res?.error || 'Erreur lors du changement', 'error');
+  }
+}
+
+// ═══ TOAST ═══
+function toast(msg, type='info') {
+  const c = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ═══ UTILS ═══
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+function fmtDateTime(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) + ' ' +
+         dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+}
+
+function infoRow(label, value) {
+  return `<div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">${label}</div><div style="font-weight:600;font-size:13px;">${value}</div></div>`;
+}
+
+// ═══ CLIENTS PAGE ═══
+async function loadClientsPage() {
+  const res = await api('GET', '/clients');
+  const el = document.getElementById('clients-grid');
+  if (!el) return;
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🏢</div><div class="empty-title">Aucun client</div><div class="empty-sub">Créez votre premier client</div></div>';
+    return;
+  }
+  CLIENTS = res.data;
+  el.innerHTML = res.data.map(c => `
+    <div class="card" style="cursor:pointer;" onclick="openClientDetail('${c.id}')">
+      <div class="card-header">
+        <div><div class="card-title">🏢 ${c.name}</div>${c.contactName?`<div style="font-size:12px;color:var(--text3);">👤 ${c.contactName}</div>`:''}</div>
+        <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();editClient('${c.id}')">✏️</button>
+      </div>
+      <div class="card-body" style="padding:10px 18px;font-size:13px;display:grid;gap:4px;">
+        ${c.email?`<div>✉️ ${c.email}</div>`:''}
+        ${c.phone?`<div>📞 ${c.phone}</div>`:''}
+        ${c.address?`<div style="color:var(--text3);">📍 ${c.address}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function openClientDetail(id) {
+  const client = CLIENTS.find(c=>c.id===id);
+  if (!client) return;
+  const projRes = await api('GET', '/projects');
+  const clientProjects = projRes?.data?.filter(p=>p.clientId===id||p.client?.id===id)||[];
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML=`
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head"><div class="modal-title">🏢 ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        ${client.email?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">EMAIL</div><div>${client.email}</div></div>`:''}
+        ${client.phone?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div>${client.phone}</div></div>`:''}
+        ${client.contactName?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">CONTACT PRINCIPAL</div><div>👤 ${client.contactName}</div></div>`:''}
+        ${client.address?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">ADRESSE</div><div>${client.address}</div></div>`:''}
+      </div>
+      ${clientProjects.length?`<div style="border-top:1px solid var(--border);padding-top:12px;"><div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Projets (${clientProjects.length})</div>${clientProjects.map(p=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.closest('.overlay').remove();openProject('${p.id}')"><span style="font-weight:600;">${p.name}</span><span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span></div>`).join('')}</div>`:''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editClient('${client.id}')">✏️ Modifier</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+}
+
+async function editClient(id) {
+  const client = CLIENTS.find(c=>c.id===id);
+  if (!client) return;
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML=`
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Nom société *</label><input class="input" id="ec-name" value="${client.name}"></div>
+        <div class="form-group2"><label class="form-label2">Contact principal</label><input class="input" id="ec-contact" value="${client.contactName||''}"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Email</label><input class="input" type="email" id="ec-email" value="${client.email||''}"></div>
+        <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="ec-phone" value="${client.phone||''}"></div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="ec-addr" value="${client.address||''}"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveClientEdit('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+}
+
+async function saveClientEdit(id, overlay) {
+  const res = await api('PATCH', `/clients/${id}`, {
+    name: document.getElementById('ec-name').value.trim(),
+    contactName: document.getElementById('ec-contact').value||undefined,
+    email: document.getElementById('ec-email').value||undefined,
+    phone: document.getElementById('ec-phone').value||undefined,
+    address: document.getElementById('ec-addr').value||undefined,
+  });
+  if (res?.success) { toast('Client mis à jour ✅','success'); overlay.remove(); loadClientsPage(); loadClients(); }
+  else toast('Erreur','error');
+}
+
+// ═══ TOOLBOX NEW MODAL ALIAS ═══
+// Toolbox creation is handled by creating a box with toolbox type
+// For now show the box modal as a substitute
+document.addEventListener('DOMContentLoaded', () => {
+  // Create alias modal element for toolbox
 });
 
-export default app;
+function showModal_toolboxNew() {
+  toast('Créez une boîte à outils depuis le menu Boîtes à outils global','info');
+  goto('toolbox');
+}
+
+// Override showModal to catch modal-toolbox-new
+const _origShowModal = showModal;
+
+// ═══ PROJECT TEMPLATES SELECTOR — Basé sur Excel ViewBox ═══
+const STAGE_ICONS = {
+  'To Do': '📋', 'PRE-PROD': '🔧', 'Booking Supplier': '📞',
+  'Warehouse Preparation': '📦', 'Installation': '🏗️',
+  'Dismantling': '🔨', 'Come Back Warehouse': '🏠'
+};
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATE DE TÂCHES — APPLIQUER À UN PROJET EXISTANT
+// ═══════════════════════════════════════════════════════════
+// Ouvre un modal contenant le même sélecteur que celui de la création de
+// projet. L'utilisateur coche les tâches qu'il veut, choisit (optionnellement)
+// une date et un assigné par ligne, puis on les pousse toutes en POST /tasks
+// pour le projet courant.
+function openTemplateTasksModal() {
+  if (!CURRENT_PROJECT_ID) { toast('Ouvre un projet avant', 'error'); return; }
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.id = 'overlay-tpl-tasks';
+  el.innerHTML = `
+    <div class="modal" style="max-width:880px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">📋 Ajouter des tâches depuis le template</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Coche les tâches que tu veux ajouter au projet. La date et l'assigné sont optionnels.</div>
+        </div>
+        <button class="modal-close" onclick="closeTemplateTasksModal()">×</button>
+      </div>
+
+      <!-- Bouton assignation globale -->
+      <div style="display:flex;gap:10px;align-items:center;background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <select id="tpl-modal-global-assign" class="input" style="flex:1;min-width:180px;font-size:13px;">
+          <option value="">— Assigner toutes les tâches cochées à... —</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="tplModalApplyGlobalAssign()">Appliquer</button>
+        <div style="flex-basis:100%;font-size:11px;color:var(--text3);">L'assignation par tâche reste libre — celle-ci est juste un raccourci.</div>
+      </div>
+
+      <!-- Le sélecteur lui-même (rempli à l'ouverture) -->
+      <div id="tpl-modal-selector" style="max-height:50vh;overflow-y:auto;padding-right:4px;"></div>
+
+      <!-- Compteur -->
+      <div id="tpl-modal-count" style="font-size:12px;color:var(--text3);margin-top:10px;"></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="closeTemplateTasksModal()">Annuler</button>
+        <button class="btn btn-primary" id="tpl-modal-submit-btn" onclick="submitTemplateTasksToCurrent()">➕ Ajouter les tâches cochées</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) closeTemplateTasksModal(); });
+
+  // On greffe le sélecteur HTML dans le modal en réutilisant la même logique
+  // que loadProjTemplateSelector, mais en remplaçant les IDs pour ne pas
+  // entrer en conflit avec celui de la création de projet (qui peut coexister
+  // dans le DOM si modal-proj a déjà été ouvert dans la session).
+  buildTemplateSelectorInto('tpl-modal-selector', 'tpl-modal-global-assign');
+
+  // Préselectionner : aucune par défaut, l'utilisateur choisit
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check').forEach(cb => {
+    cb.checked = false;
+  });
+  updateTplModalCount();
+}
+
+function closeTemplateTasksModal() {
+  document.getElementById('overlay-tpl-tasks')?.remove();
+}
+
+function buildTemplateSelectorInto(containerId, globalAssignId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Remplir le select d'assignation globale
+  const globalAssign = document.getElementById(globalAssignId);
+  if (globalAssign && USERS.length) {
+    globalAssign.innerHTML = '<option value="">— Assigner toutes les tâches cochées à... —</option>' +
+      USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
+  }
+
+  let html = '';
+  Object.entries(TASK_TEMPLATES_DATA).forEach(([stage, tasks]) => {
+    const icon = STAGE_ICONS[stage] || '📋';
+    const stageId = 'tplmod-stage-' + stage.replace(/[^a-z0-9]/gi,'_');
+    html += `
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid var(--border);" onclick="toggleStageSection('${stageId}')">
+          <span style="font-size:16px;">${icon}</span>
+          <span style="font-size:13px;font-weight:700;flex:1;">${stage}</span>
+          <span style="font-size:11px;color:var(--text3);">${tasks.length} tâches</span>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();tplModalToggleStage('${stageId}',true)">✅</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();tplModalToggleStage('${stageId}',false)">☐</button>
+          <span id="${stageId}-chevron" style="font-size:11px;color:var(--text3);">▼</span>
+        </div>
+        <div id="${stageId}" style="display:flex;flex-direction:column;gap:3px;padding:0 2px 4px;">
+          ${tasks.map((t, idx) => {
+            const taskId = `tplmod_${stageId}_${idx}`;
+            return `
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;">
+              <input type="checkbox" class="proj-tpl-check" id="${taskId}"
+                data-title="${t.title.replace(/"/g,'&quot;')}"
+                data-stage="${stage}"
+                onchange="updateTplModalCount()"
+                style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;">
+              <label for="${taskId}" style="flex:1;font-size:12px;cursor:pointer;">${t.title}</label>
+              <input type="date" class="tpl-date input" data-task="${taskId}"
+                style="font-size:11px;padding:4px 6px;width:130px;flex-shrink:0;" title="Date (optionnel)">
+              <select class="tpl-assign input" data-task="${taskId}"
+                style="font-size:11px;padding:4px 6px;width:140px;flex-shrink:0;" title="Assigné (optionnel)">
+                <option value="">— Aucun —</option>
+                ${USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function tplModalToggleStage(stageId, checked) {
+  document.querySelectorAll(`#${stageId} .proj-tpl-check`).forEach(cb => { cb.checked = checked; });
+  updateTplModalCount();
+}
+
+function tplModalApplyGlobalAssign() {
+  const userId = document.getElementById('tpl-modal-global-assign').value;
+  if (!userId) { toast('Choisis d\'abord une personne', 'warning'); return; }
+  let count = 0;
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').forEach(cb => {
+    const sel = document.querySelector(`#tpl-modal-selector .tpl-assign[data-task="${cb.id}"]`);
+    if (sel) { sel.value = userId; count++; }
+  });
+  toast(count ? `${count} tâche(s) assignée(s)` : 'Aucune tâche cochée', count ? 'success' : 'warning');
+}
+
+function updateTplModalCount() {
+  const count = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').length;
+  const total = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check').length;
+  const el = document.getElementById('tpl-modal-count');
+  if (el) el.textContent = `${count} / ${total} tâche(s) cochée(s)`;
+  const btn = document.getElementById('tpl-modal-submit-btn');
+  if (btn) btn.disabled = count === 0;
+}
+
+async function submitTemplateTasksToCurrent() {
+  const projectId = CURRENT_PROJECT_ID;
+  if (!projectId) { toast('Aucun projet courant', 'error'); return; }
+
+  // Collecte
+  const tasks = [];
+  document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').forEach(cb => {
+    const dateEl   = document.querySelector(`#tpl-modal-selector .tpl-date[data-task="${cb.id}"]`);
+    const assignEl = document.querySelector(`#tpl-modal-selector .tpl-assign[data-task="${cb.id}"]`);
+    tasks.push({
+      title:    cb.dataset.title,
+      stage:    cb.dataset.stage,
+      taskDate: dateEl?.value || null,
+      assignedTo: assignEl?.value || null,
+    });
+  });
+  if (!tasks.length) { toast('Coche au moins une tâche', 'error'); return; }
+
+  const btn = document.getElementById('tpl-modal-submit-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Création...'; }
+
+  toast(`Création de ${tasks.length} tâche(s)...`, 'info');
+  const results = await Promise.all(tasks.map(t =>
+    api('POST', '/tasks', {
+      projectId,
+      title:        t.title,
+      description:  t.stage ? `Stage: ${t.stage}` : undefined,
+      status:       'todo',
+      priority:     'normal',
+      taskDate:     t.taskDate || undefined,
+      assignedToId: t.assignedTo || undefined,
+    })
+  ));
+  const ok = results.filter(r => r?.success).length;
+  const fail = results.length - ok;
+
+  if (fail === 0)     toast(`${ok} tâche(s) ajoutée(s) au projet ✅`, 'success');
+  else if (ok === 0)  toast(`Aucune tâche créée (${fail} échec(s))`, 'error');
+  else                toast(`${ok} créée(s) — ${fail} échec(s)`, 'warning');
+
+  closeTemplateTasksModal();
+  loadDetailTasks(projectId);
+}
+
+function loadProjTemplateSelector() {
+  const el = document.getElementById('proj-templates-selector');
+  if (!el) return;
+
+  // Populate global assign dropdown
+  const globalAssign = document.getElementById('tmpl-global-assign');
+  if (globalAssign && USERS.length) {
+    globalAssign.innerHTML = '<option value="">— Assigner tout à... —</option>' +
+      USERS.map(u => `<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('');
+  }
+
+  let html = '';
+  Object.entries(TASK_TEMPLATES_DATA).forEach(([stage, tasks]) => {
+    const icon = STAGE_ICONS[stage] || '📋';
+    const stageId = 'stage-' + stage.replace(/[^a-z0-9]/gi,'_');
+    html += `
+      <div style="margin-bottom:6px;">
+        <!-- Stage header -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid var(--border);"
+          onclick="toggleStageSection('${stageId}')">
+          <span style="font-size:16px;">${icon}</span>
+          <span style="font-size:13px;font-weight:700;flex:1;">${stage}</span>
+          <span style="font-size:11px;color:var(--text3);">${tasks.length} tâches</span>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();toggleStageChecks('${stageId}',true)">✅</button>
+          <button class="btn btn-ghost btn-xs" style="font-size:10px;" onclick="event.stopPropagation();toggleStageChecks('${stageId}',false)">☐</button>
+          <span id="${stageId}-chevron" style="font-size:11px;color:var(--text3);">▼</span>
+        </div>
+        <!-- Tasks list -->
+        <div id="${stageId}" style="display:flex;flex-direction:column;gap:3px;padding:0 2px 4px;">
+          ${tasks.map((t, idx) => {
+            const taskId = `tpl_${stageId}_${idx}`;
+            const defaultAssignee = t.assignees?.[0] || '';
+            return `
+            <div class="tpl-task-row" id="row-${taskId}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;border:1px solid transparent;transition:all .15s;">
+              <!-- Checkbox -->
+              <input type="checkbox" class="proj-tpl-check" id="${taskId}"
+                data-title="${t.title.replace(/"/g,'&quot;')}"
+                data-stage="${stage}"
+                data-default-assignee="${defaultAssignee}"
+                checked
+                style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;"
+                onchange="updateProjTplCount();highlightRow('row-${taskId}',this.checked)">
+              <!-- Title -->
+              <label for="${taskId}" style="flex:1;font-size:12px;line-height:1.4;cursor:pointer;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">${t.title}</label>
+              <!-- Date -->
+              <input type="date" class="tpl-date" data-task="${taskId}"
+                style="width:120px;padding:3px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;flex-shrink:0;"
+                onchange="updateProjTplCount()">
+              <!-- Assignee -->
+              <select class="tpl-assign" data-task="${taskId}"
+                style="width:130px;padding:3px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;flex-shrink:0;">
+                <option value="">— Équipe —</option>
+                ${(window.USERS||[]).map(u => `<option value="${u.id}" ${u.firstName+' '+u.lastName===defaultAssignee?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  });
+
+  el.innerHTML = html;
+  updateProjTplCount();
+}
+
+function highlightRow(rowId, checked) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.style.opacity = checked ? '1' : '0.4';
+  row.style.borderColor = checked ? 'var(--border)' : 'transparent';
+}
+
+function toggleStageSection(stageId) {
+  const el = document.getElementById(stageId);
+  const chevron = document.getElementById(stageId+'-chevron');
+  if (!el) return;
+  const hidden = el.style.display === 'none';
+  el.style.display = hidden ? 'flex' : 'none';
+  if (chevron) chevron.textContent = hidden ? '▼' : '▶';
+}
+
+function toggleStageChecks(stageId, checked) {
+  document.querySelectorAll(`#${stageId} .proj-tpl-check`).forEach(cb => {
+    cb.checked = checked;
+    highlightRow('row-' + cb.id, checked);
+  });
+  updateProjTplCount();
+}
+
+function applyGlobalDate(date) {
+  document.querySelectorAll('.tpl-date').forEach(input => input.value = date);
+}
+
+function applyGlobalAssign(userId) {
+  if (!userId) return;
+  document.querySelectorAll('.tpl-assign').forEach(sel => sel.value = userId);
+}
+
+function updateProjTplCount() {
+  const count = document.querySelectorAll('.proj-tpl-check:checked').length;
+  const total = document.querySelectorAll('.proj-tpl-check').length;
+  const el = document.getElementById('proj-tpl-count');
+  if (el) el.textContent = `${count} / ${total} tâche(s) sélectionnée(s)`;
+}
+
+function selectAllProjTemplates() {
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => {
+    cb.checked = true;
+    highlightRow('row-' + cb.id, true);
+  });
+  updateProjTplCount();
+}
+
+function deselectAllProjTemplates() {
+  document.querySelectorAll('.proj-tpl-check').forEach(cb => {
+    cb.checked = false;
+    highlightRow('row-' + cb.id, false);
+  });
+  updateProjTplCount();
+}
+
+function getSelectedProjTasks() {
+  const tasks = [];
+  document.querySelectorAll('.proj-tpl-check:checked').forEach(cb => {
+    const dateEl = document.querySelector(`.tpl-date[data-task="${cb.id}"]`);
+    const assignEl = document.querySelector(`.tpl-assign[data-task="${cb.id}"]`);
+    tasks.push({
+      title: cb.dataset.title,
+      stage: cb.dataset.stage,
+      taskDate: dateEl?.value || null,
+      assignedTo: assignEl?.value || null,
+    });
+  });
+  return tasks;
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — DAILY REPORT
+// ═══════════════════════════════════════════════════════════
+async function editDailyReport(id) {
+  const res = await api('GET', `/daily-reports/${id}`);
+  if (!res?.success) { toast('Rapport introuvable', 'error'); return; }
+  const r = res.data;
+  const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+
+  // Build editable entries
+  window._EDIT_ENTRIES = entries.map(e => ({...e}));
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-head">
+        <div><div class="modal-title">✏️ Modifier le Rapport</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${fmtDate(r.reportDate)}</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Infos générales -->
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="er-date" value="${r.reportDate?.split('T')[0]||''}"></div>
+        <div class="form-group2"><label class="form-label2">Météo</label>
+          <select class="input" id="er-weather">
+            <option ${r.weather?.includes('Ensoleillé')?'selected':''}>☀️ Ensoleillé</option>
+            <option ${r.weather?.includes('Nuageux')?'selected':''}>⛅ Nuageux</option>
+            <option ${r.weather?.includes('Pluie')?'selected':''}>🌧️ Pluie</option>
+            <option ${r.weather?.includes('Froid')?'selected':''}>❄️ Froid</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="er-workers" value="${r.workersPresent||0}" min="0"></div>
+
+      <!-- Entrées timeline modifiables -->
+      <div style="margin:14px 0 10px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">⏱️ Journal</div>
+        <button class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
+      </div>
+      <div id="edit-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:30vh;overflow-y:auto;padding-right:2px;"></div>
+
+      <!-- Notes -->
+      <div class="form-group2" style="margin-top:12px;"><label class="form-label2">Notes générales</label><textarea class="input" id="er-notes" rows="3">${r.generalNotes||''}</textarea></div>
+
+      <!-- Photos -->
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photos</div>
+        <div id="er-photos-grid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(r.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        </div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📸 Ajouter photos
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadEditDailyPhotos('${id}',this)">
+        </label>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  renderEditEntries();
+}
+
+function renderEditEntries() {
+  const list = document.getElementById('edit-entries-list');
+  if (!list) return;
+  if (!window._EDIT_ENTRIES.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune entrée — cliquez + Ajouter</div>';
+    return;
+  }
+  list.innerHTML = window._EDIT_ENTRIES.map((e, i) => `
+    <div style="display:flex;gap:8px;align-items:center;background:var(--bg3);border-radius:8px;padding:8px 10px;">
+      <input type="time" value="${e.entryTime||''}" onchange="window._EDIT_ENTRIES[${i}].entryTime=this.value"
+        style="width:80px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;flex-shrink:0;">
+      <input value="${(e.description||'').replace(/"/g,'&quot;')}" onchange="window._EDIT_ENTRIES[${i}].description=this.value"
+        style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border);padding:4px 2px;color:var(--text);font-size:13px;"
+        placeholder="Description...">
+      <button onclick="window._EDIT_ENTRIES.splice(${i},1);renderEditEntries()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:16px;flex-shrink:0;">✕</button>
+    </div>`).join('');
+}
+
+function addEditEntry() {
+  if (!window._EDIT_ENTRIES) window._EDIT_ENTRIES = [];
+  window._EDIT_ENTRIES.push({ entryTime: '', description: '' });
+  renderEditEntries();
+  // Focus last input
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#edit-entries-list input[placeholder]');
+    if (inputs.length) inputs[inputs.length-1].focus();
+  }, 50);
+}
+
+async function uploadEditDailyPhotos(reportId, input) {
+  if (!input.files?.length) return;
+  const grid = document.getElementById('er-photos-grid');
+  toast(`Upload ${input.files.length} photo(s)...`, 'info');
+  let ok = 0;
+  for (const file of Array.from(input.files)) {
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+      });
+      if (!r.ok) { toast(`Erreur ${r.status}`, 'error'); continue; }
+      const data = await r.json();
+      const url = data.data?.url || data.url || data.secure_url;
+      if (url) {
+        // Save to DB
+        await api('POST', `/daily-reports/${reportId}/photos`, {
+          photoUrl: url, publicId: data.data?.public_id || null
+        });
+        // Add to preview
+        if (grid) {
+          const img = document.createElement('img');
+          img.src = url; img.onclick = () => openPhotoViewer(url);
+          img.style.cssText = 'width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+          grid.appendChild(img);
+        }
+        ok++;
+      }
+    } catch(e) { console.error('photo upload error:', e); toast('Erreur réseau', 'error'); }
+  }
+  if (ok) toast(`${ok} photo(s) ajoutée(s) ✅`, 'success');
+}
+
+async function saveDailyReport(id, overlay) {
+  // Collect current values from DOM before saving
+  const entriesEls = document.querySelectorAll('#edit-entries-list > div');
+  if (entriesEls.length && window._EDIT_ENTRIES) {
+    entriesEls.forEach((div, i) => {
+      const timeInput = div.querySelector('input[type="time"]');
+      const descInput = div.querySelector('input[placeholder]');
+      if (window._EDIT_ENTRIES[i]) {
+        if (timeInput) window._EDIT_ENTRIES[i].entryTime = timeInput.value;
+        if (descInput) window._EDIT_ENTRIES[i].description = descInput.value;
+      }
+    });
+  }
+
+  const body = {
+    reportDate: document.getElementById('er-date').value,
+    weather: document.getElementById('er-weather').value,
+    workersPresent: parseInt(document.getElementById('er-workers').value)||0,
+    generalNotes: document.getElementById('er-notes').value||undefined,
+  };
+
+  // Include entries if modified
+  if (window._EDIT_ENTRIES?.length) {
+    body.entries = window._EDIT_ENTRIES
+      .filter(e => e.description?.trim())
+      .map(e => ({ entryTime: e.entryTime||null, description: e.description }));
+  }
+
+  const res = await api('PATCH', `/daily-reports/${id}`, body);
+  if (res?.success) {
+    toast('Rapport mis à jour ✅','success');
+    window._EDIT_ENTRIES = [];
+    overlay?.remove();
+    loadDailyReports();
+    if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);
+  } else toast('Erreur mise à jour','error');
+}
+
+async function deleteDailyReport(id) {
+  if (!confirm('Supprimer ce rapport ?')) return;
+  const res = await api('DELETE', `/daily-reports/${id}`);
+  if (res?.success) { toast('Rapport supprimé','warning'); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — HANDOVER
+// ═══════════════════════════════════════════════════════════
+async function deleteHandover(id) {
+  if (!confirm('Supprimer ce handover ?')) return;
+  const res = await api('DELETE', `/handover/${id}`);
+  if (res?.success) { toast('Supprimé','warning'); loadHandovers(); if(CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT / DELETE — TASKS (amélioration)
+// ═══════════════════════════════════════════════════════════
+async function loadDetailTasks(projectId) {
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  const el = document.getElementById('detail-tasks-content');
+  if (!el || !res?.success) return;
+
+  const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;" id="task-cat-pills"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="showTaskFromMeetingModal('${projectId}')">🤖 Import réunion</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+    </div>
+  </div>`;
+
+  const tasks = res.data;
+  if (!tasks.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Aucune tâche</div></div>'; return; }
+
+  const byStatus = { todo:[], in_progress:[], done:[], blocked:[] };
+  tasks.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+
+  const colDef = [
+    { key:'todo', label:'📋 À faire', color:'var(--blue)', badge:'badge-muted' },
+    { key:'in_progress', label:'⚡ En cours', color:'var(--amber)', badge:'badge-amber' },
+    { key:'done', label:'✅ Terminé', color:'var(--green)', badge:'badge-green' },
+    { key:'blocked', label:'🔴 Bloqué', color:'var(--accent)', badge:'badge-red' },
+  ];
+
+  el.innerHTML = btn + `<div class="kanban">` + colDef.map(col => `
+    <div class="kboard">
+      <div class="kboard-title" style="color:${col.color};">
+        <span>${col.label}</span>
+        <span class="badge ${col.badge}">${byStatus[col.key].length}</span>
+      </div>
+      ${byStatus[col.key].map(t => `
+        <div class="kcard ${col.key==='in_progress'?'inprog':col.key==='done'?'done':col.key==='blocked'?'blocked':'todo'}" onclick="openTaskModal('${t.id}','${projectId}')">
+          <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
+          ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
+          ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:3px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
+          <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+            <span class="badge ${t.priority==='critical'?'badge-red':t.priority==='high'?'badge-amber':'badge-muted'}" style="font-size:10px;">${t.priority}</span>
+            ${t.status!=='done'?`<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();quickDoneTask('${t.id}','${projectId}')">✓</button>`:''}
+          </div>
+        </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">—</div>'}
+    </div>`).join('') + `</div>`;
+}
+
+async function quickDoneTask(taskId, projectId) {
+  const res = await api('PATCH', `/tasks/${taskId}`, { status:'done' });
+  if (res?.success) { toast('✅ Terminé !','success'); loadDetailTasks(projectId); }
+}
+
+async function saveTaskEdit(taskId, projectId, overlay) {
+  const res = await api('PATCH', `/tasks/${taskId}`, {
+    status: document.getElementById('et-status').value,
+    priority: document.getElementById('et-priority').value,
+    taskDate: document.getElementById('et-date').value||undefined,
+    assignedToId: document.getElementById('et-assign').value||null,
+    description: document.getElementById('et-desc').value||undefined,
+  });
+  if (res?.success) { toast('Tâche mise à jour ✅','success'); overlay?.remove(); loadDetailTasks(projectId); }
+  else toast('Erreur','error');
+}
+
+async function deleteTask(taskId, projectId, overlay) {
+  if (!confirm('Supprimer cette tâche ?')) return;
+  const res = await api('DELETE', `/tasks/${taskId}`);
+  if (res?.success) { toast('Supprimée','warning'); overlay?.remove(); loadDetailTasks(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// IMPORT TÂCHES DEPUIS RÉUNION (IA)
+// ═══════════════════════════════════════════════════════════
+function showTaskFromMeetingModal(projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🤖 Import tâches depuis réunion</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Colle le compte-rendu — l'IA crée les tâches</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);">
+        💡 Colle ton compte-rendu de réunion. L'IA va créer un draft de tâches avec titre, assignation, priorité et deadline. Tu peux tout modifier avant de valider.
+      </div>
+      <textarea class="input" id="meeting-text" rows="8" placeholder="Ex: Réunion du 15 mai — Amaury doit finir la façade nord avant vendredi, urgent. Jeremy s'occupe de l'électricité du rez-de-chaussée pour lundi. Norick pose les rails terrasse cette semaine..."></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+        <span id="meeting-ai-status" style="font-size:12px;color:var(--text3);display:none;">🤖 Analyse en cours...</span>
+        <button class="btn btn-blue" onclick="parseMeetingWithAI('${projectId}',this.closest('.overlay'))">🤖 Analyser et créer le draft</button>
+      </div>
+      <div id="meeting-tasks-draft" style="display:none;margin-top:14px;"></div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function parseMeetingWithAI(projectId, overlay) {
+  const text = document.getElementById('meeting-text')?.value.trim();
+  if (!text) { toast('Colle un compte-rendu','error'); return; }
+  const status = document.getElementById('meeting-ai-status');
+  const btn = overlay.querySelector('.btn-blue');
+  if (status) status.style.display='inline';
+  if (btn) btn.disabled=true;
+
+  try {
+    const usersList = USERS.map(u=>`- ${u.firstName} ${u.lastName} (id: ${u.id})`).join(' | ');
+    const prompt = `Tu es un assistant de gestion de projet. Analyse ce compte-rendu de réunion et extrais les tâches à faire.
+
+Membres de l'équipe disponibles :
+${usersList}
+
+Pour chaque tâche identifiée, crée un objet JSON avec :
+- "title": titre court de la tâche (max 80 chars)
+- "description": détails si nécessaire
+- "assignedToId": l'id du membre si mentionné, sinon null
+- "assignedName": prénom du membre si mentionné, sinon ""
+- "priority": "low" | "normal" | "high" | "critical"
+- "deadline": date ISO si mentionnée (ex: "2026-05-17"), sinon null
+- "estimatedHours": nombre d'heures estimées si mentionné, sinon null
+
+Règles :
+- Crée une tâche par action distincte
+- Si une personne est mentionnée, assigne-lui la tâche
+- Déduis la priorité du contexte (urgent = high/critical)
+- Réponds UNIQUEMENT avec un tableau JSON valide, sans texte, sans backticks
+
+Compte-rendu :
+${text}`;
+
+    const res = await fetch(`${API}/ai/parse-daily`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+      body: JSON.stringify({ text: prompt })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    let tasks;
+    try {
+      // data.data is already parsed array from backend
+      if (Array.isArray(data.data)) {
+        tasks = data.data;
+      } else {
+        tasks = JSON.parse(typeof data.data === 'string' ? data.data : JSON.stringify(data.data));
+      }
+    } catch { tasks = []; }
+
+    if (!Array.isArray(tasks)) throw new Error('Format invalide');
+
+    // Show draft
+    const draft = document.getElementById('meeting-tasks-draft');
+    if (!draft) return;
+    draft.style.display='block';
+    draft.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--green);">✅ ${tasks.length} tâche(s) — modifie avant de valider</div>
+      ${tasks.map((t,i)=>`
+        <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;background:var(--bg3);">
+          <div class="input-row" style="margin-bottom:8px;">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Titre</label><input class="input" id="mt-title-${i}" value="${t.title}" style="font-size:13px;"></div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Priorité</label>
+              <select class="input" id="mt-priority-${i}" style="font-size:13px;">
+                <option value="low" ${t.priority==='low'?'selected':''}>🟢 Faible</option>
+                <option value="normal" ${t.priority==='normal'?'selected':''}>🔵 Normal</option>
+                <option value="high" ${t.priority==='high'?'selected':''}>🟠 Élevé</option>
+                <option value="critical" ${t.priority==='critical'?'selected':''}>🔴 Critique</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Assigné à</label>
+              <select class="input" id="mt-assign-${i}" style="font-size:13px;">
+                <option value="">— Non assigné —</option>
+                ${USERS.map(u=>`<option value="${u.id}" ${t.assignedToId===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group2" style="margin:0;"><label class="form-label2">Deadline</label><input class="input" type="date" id="mt-date-${i}" value="${t.deadline||''}" style="font-size:13px;"></div>
+          </div>
+          ${t.description?`<div style="font-size:12px;color:var(--text3);margin-top:6px;">${t.description}</div>`:''}
+        </div>`).join('')}
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createTasksFromMeeting(${JSON.stringify(tasks).replace(/"/g,'&quot;')},'${projectId}',this.closest('.overlay'),${tasks.length})">✅ Créer ${tasks.length} tâche(s)</button>
+      </div>`;
+
+  } catch(e) {
+    toast('Erreur IA — '+e.message,'error');
+    console.error(e);
+  } finally {
+    if (status) status.style.display='none';
+    if (btn) btn.disabled=false;
+  }
+}
+
+async function createTasksFromMeeting(tasks, projectId, overlay, count) {
+  toast(`Création de ${count} tâche(s)...`,'info');
+  const results = await Promise.all(tasks.map((t,i) => {
+    const title = document.getElementById(`mt-title-${i}`)?.value?.trim() || t.title;
+    const priority = document.getElementById(`mt-priority-${i}`)?.value || t.priority || 'normal';
+    const assignedToId = document.getElementById(`mt-assign-${i}`)?.value || null;
+    const taskDate = document.getElementById(`mt-date-${i}`)?.value || undefined;
+    const taskBody = {
+      projectId, title, priority,
+      status:'todo',
+      description: t.description||undefined,
+      createdById: CURRENT_USER?.id,
+    };
+    if (assignedToId) taskBody.assignedToId = assignedToId;
+    if (taskDate) taskBody.taskDate = taskDate;
+    return api('POST', '/tasks', taskBody);
+  }));
+  const created = results.filter(r=>r?.success).length;
+  toast(`${created} tâche(s) créée(s) ✅`,'success');
+  overlay?.remove();
+  loadDetailTasks(projectId);
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATES PAGE
+// ═══════════════════════════════════════════════════════════
+async function loadTemplatesPage() {
+  const res = await api('GET', '/task-templates/categories');
+  const el = document.getElementById('templates-content');
+  if (!el) return;
+
+  if (!res?.success || !res.data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Aucun template</div><div class="empty-sub">Créez des catégories et des templates de tâches</div></div>';
+    return;
+  }
+
+  PROJ_CATEGORIES_DATA = res.data;
+  PROJ_TEMPLATES_FLAT = res.data.flatMap(c=>(c.templates||[]).map(t=>({...t,categoryName:c.name,categoryIcon:c.icon,categoryColor:c.color})));
+
+  el.innerHTML = res.data.map(cat => {
+    const tpls = cat.templates || [];
+    return `
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:20px;">${cat.icon||'📋'}</span>
+            <div>
+              <div class="card-title" style="color:${cat.color||'var(--text)'};">${cat.name}</div>
+              <div style="font-size:12px;color:var(--text3);">${tpls.length} template(s)</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-xs" onclick="showNewTemplateModal('${cat.id}')">+ Template</button>
+            <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteCategory('${cat.id}')">🗑️</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:10px 18px;">
+          ${tpls.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
+            ${tpls.map(t=>`
+              <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;display:flex;justify-content:space-between;align-items:flex-start;">
+                <div style="flex:1;padding-right:6px;">
+                  <div style="font-size:13px;font-weight:500;">${t.title}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}</div>
+                </div>
+                <div style="display:flex;gap:4px;flex-shrink:0;">
+                  <button class="btn btn-ghost btn-xs" onclick="editTemplate('${t.id}','${cat.id}','${t.title.replace(/'/g,"'")}','${t.priority}',${t.durationHours})">✏️</button>
+                  <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteTemplate('${t.id}')">🗑️</button>
+                </div>
+              </div>`).join('')}
+          </div>` : '<div style="color:var(--text3);font-size:13px;">Aucun template dans cette catégorie</div>'}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function showNewTemplateModal(catId='') {
+  const el = document.createElement('div'); el.className='overlay open';
+  const cats = PROJ_CATEGORIES_DATA || [];
+  el.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head"><div class="modal-title">📋 Nouveau Template</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Catégorie *</label>
+        <select class="input" id="nt-cat">
+          <option value="">— Sélectionner —</option>
+          ${cats.map(c=>`<option value="${c.id}" ${c.id===catId?'selected':''}>${c.icon||''} ${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="nt-title" placeholder="ex: Montage structure aluminium"></div>
+      <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="nt-desc" rows="2"></textarea></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Durée (heures)</label><input class="input" type="number" id="nt-hours" value="4" step="0.5" min="0.5"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="nt-priority">
+            <option value="low">🟢 Faible</option>
+            <option value="normal" selected>🔵 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createTemplate(this.closest('.overlay'))">✅ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function createTemplate(overlay) {
+  const catId = document.getElementById('nt-cat')?.value;
+  const title = document.getElementById('nt-title')?.value.trim();
+  if (!catId || !title) { toast('Catégorie et titre obligatoires','error'); return; }
+  const res = await api('POST', '/task-templates', {
+    categoryId: catId, title,
+    description: document.getElementById('nt-desc')?.value||undefined,
+    durationHours: parseFloat(document.getElementById('nt-hours')?.value)||4,
+    priority: document.getElementById('nt-priority')?.value||'normal',
+  });
+  if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); loadTemplatesPage(); loadProjTemplateSelector(); }
+  else toast('Erreur création template','error');
+}
+
+async function editTemplate(id, catId, title, priority, hours) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier Template</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Titre *</label><input class="input" id="edit-tpl-title" value="${title}"></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Durée (h)</label><input class="input" type="number" id="edit-tpl-hours" value="${hours}" step="0.5"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="edit-tpl-priority">
+            <option value="low" ${priority==='low'?'selected':''}>🟢 Faible</option>
+            <option value="normal" ${priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="high" ${priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="critical" ${priority==='critical'?'selected':''}>🔴 Critique</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTemplate('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="saveTemplate('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function saveTemplate(id, overlay) {
+  const res = await api('PATCH', `/task-templates/${id}`, {
+    title: document.getElementById('edit-tpl-title')?.value.trim(),
+    durationHours: parseFloat(document.getElementById('edit-tpl-hours')?.value)||4,
+    priority: document.getElementById('edit-tpl-priority')?.value,
+  });
+  if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  else toast('Erreur','error');
+}
+
+async function deleteTemplate(id) {
+  if (!confirm('Supprimer ce template ?')) return;
+  const res = await api('DELETE', `/task-templates/${id}`);
+  if (res?.success) { toast('Supprimé','warning'); loadTemplatesPage(); }
+  else toast('Erreur suppression','error');
+}
+
+function showNewCategoryModal() {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-head"><div class="modal-title">🗂️ Nouvelle Catégorie</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Nom *</label><input class="input" id="nc-name" placeholder="ex: Finitions"></div>
+        <div class="form-group2"><label class="form-label2">Icône</label><input class="input" id="nc-icon" value="📋" style="font-size:18px;"></div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Couleur</label><input class="input" type="color" id="nc-color" value="#4895ef"></div>
+        <div class="form-group2"><label class="form-label2">Description</label><input class="input" id="nc-desc" placeholder="..."></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="createCategory(this.closest('.overlay'))">✅ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function createCategory(overlay) {
+  const name = document.getElementById('nc-name')?.value.trim();
+  if (!name) { toast('Nom obligatoire','error'); return; }
+  const res = await api('POST', '/task-templates/categories', {
+    name, icon: document.getElementById('nc-icon')?.value||'📋',
+    color: document.getElementById('nc-color')?.value||'#4895ef',
+    description: document.getElementById('nc-desc')?.value||undefined,
+  });
+  if (res?.success) { toast('Catégorie créée ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  else toast('Erreur création catégorie','error');
+}
+
+async function deleteCategory(id) {
+  if (!confirm('Supprimer cette catégorie et tous ses templates ?')) return;
+  const res = await api('DELETE', `/task-templates/categories/${id}`);
+  if (res?.success) { toast('Supprimée','warning'); loadTemplatesPage(); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FIX — VISITE CLIENT (route client-remarks)
+// ═══════════════════════════════════════════════════════════
+// Override createVisite to handle API not available gracefully
+async function createVisiteFixed(projectId) {
+  const date = document.getElementById('visite-date')?.value;
+  const time = document.getElementById('visite-time')?.value || '09:00';
+  const pid = document.getElementById('visite-project')?.value || projectId;
+  if (!pid || !date) { toast('Projet et date obligatoires','error'); return; }
+
+  const title = `Visite client — ${new Date(date).toLocaleDateString('fr-FR')} ${time}`;
+  const clientRep = document.getElementById('visite-client-rep')?.value;
+  const assignedTo = document.getElementById('visite-assigned')?.value||undefined;
+  const desc = document.getElementById('visite-desc')?.value||undefined;
+
+  // Try client-remarks first
+  const res = await api('POST', '/client-remarks', {
+    projectId: pid, title,
+    description: `${clientRep?`Représentant: ${clientRep}. `:''}${desc||''}`,
+    priority:'normal', status:'open', assignedTo,
+  });
+
+  // Always create task regardless
+  await api('POST', '/tasks', {
+    projectId: pid,
+    title: `📸 ${title}`,
+    description: `${clientRep?`Représentant client: ${clientRep}. `:''}${desc||''}`,
+    taskDate: date, status:'todo', priority:'high',
+    assignedToId: assignedTo||undefined,
+    createdById: CURRENT_USER?.id,
+  });
+
+  if (res?.success || true) {
+    toast('Visite créée ✅','success');
+    closeModal('modal-new-visite');
+    ['visite-client-rep','visite-desc'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+    loadDetailRemarks(pid);
+    loadDetailTasks(pid);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FIX — TRUCKS (use tasks fallback if route missing)
+// ═══════════════════════════════════════════════════════════
+async function addTruckSafe(projectId, overlay) {
+  const num = document.getElementById('truck-num')?.value.trim();
+  if (!num) { toast('Numéro/nom obligatoire','error'); return; }
+  const type = document.getElementById('truck-type')?.value||'truck';
+  const typeLabels = {truck:'Camion',van:'Camionnette',crane:'Grue',lift:'Nacelle',forklift:'Chariot',generator:'Groupe élec.',trailer:'Remorque',machine:'Machine',other:'Autre'};
+  const driver = document.getElementById('truck-driver')?.value||'';
+  const phone = document.getElementById('truck-phone')?.value||'';
+  const notes = document.getElementById('truck-notes')?.value||'';
+  const loading = document.getElementById('truck-loading')?.value||'';
+
+  const truckStatus = document.getElementById('truck-status')?.value||'planned';
+  const truckArrival = document.getElementById('truck-arrival')?.value||'';
+  const truckBody = {
+    truckNumber: `${typeLabels[type]||''} — ${num}`,
+    status: truckStatus,
+    notes: notes||undefined,
+  };
+  if (document.getElementById('truck-plate')?.value) truckBody.licensePlate = document.getElementById('truck-plate').value;
+  if (driver) truckBody.driverName = driver;
+  if (loading) truckBody.loadingDate = new Date(loading).toISOString();
+  if (truckArrival) truckBody.arrivalDate = new Date(truckArrival).toISOString();
+  const res = await api('POST', `/projects/${projectId}/trucks`, truckBody);
+
+  if (res?.success) {
+    toast('Véhicule ajouté ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    // Fallback: create as task
+    const taskTitle = `🚛 ${typeLabels[type]} — ${num}${driver?` · ${driver}`:''}${phone?` · ${phone}`:''}`;
+    const taskRes = await api('POST', '/tasks', {
+      projectId, title: taskTitle,
+      description: `${notes||''}
+Plaque: ${document.getElementById('truck-plate')?.value||'N/A'}
+Chargement: ${loading||'N/A'}`,
+      status:'todo', priority:'normal',
+      taskDate: loading?loading.split('T')[0]:undefined,
+      createdById: CURRENT_USER?.id,
+    });
+    if (taskRes?.success) {
+      toast('Ajouté comme tâche (route trucks non disponible)','warning');
+      overlay?.remove();
+      loadDetailTasks(projectId);
+    } else toast('Erreur ajout','error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// HANDOVER FULL VIEW
+// ═══════════════════════════════════════════════════════════
+async function openHandoverFull(id) {
+  const res = await api('GET', `/handover/${id}`);
+  if (!res?.success) { toast('Handover introuvable','error'); return; }
+  const h = res.data;
+  const items = h.items || [];
+
+  const sc = {ok:'p-resolved', remark:'p-high', defect:'p-critical', pending:'p-normal'};
+  const si = {ok:'✅', remark:'⚠️', defect:'❌', pending:'⏳'};
+  const sl = {ok:'OK', remark:'Remarque', defect:'Défaut', pending:'En attente'};
+  const sc2 = {ok:'var(--green)', remark:'var(--amber)', defect:'var(--accent)', pending:'var(--text3)'};
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:860px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">🧾 ${h.project?.name || 'Handover'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            ${h.clientName||''} · ${fmtDate(h.createdAt)}
+            ${h.siteManager ? ' · ' + h.siteManager.firstName + ' ' + h.siteManager.lastName : ''}
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Stats bar -->
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+        <div style="background:rgba(45,198,83,.1);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--green);">${items.filter(i=>i.status==='ok').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">OK</div>
+        </div>
+        <div style="background:rgba(244,162,97,.1);border:1px solid rgba(244,162,97,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--amber);">${items.filter(i=>i.status==='remark').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Remarques</div>
+        </div>
+        <div style="background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:var(--radius);padding:8px 14px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:var(--accent);">${items.filter(i=>i.status==='defect').length}</div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Défauts</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}">${h.status==='signed'?'✅ Signé':'En attente'}</span>
+          <button class="btn btn-ghost btn-xs" onclick="showAddHandoverItemModal('${h.id}','${h.projectId}')">+ Point</button>
+          <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${h.projectId}')">✏️ Modifier</button>
+          <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
+          <button class="btn btn-primary btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+        </div>
+      </div>
+
+      <!-- Zones — terrain card format -->
+      <div style="max-height:50vh;overflow-y:auto;padding-right:4px;">
+        ${items.map((item, idx) => {
+          const photos = item.photos || [];
+          return `
+          <div class="terrain-point ${sc[item.status]||'p-normal'}" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px 8px;">
+              <div class="terrain-num">${idx+1}</div>
+              <div style="flex:1;">
+                <div style="font-weight:700;font-size:14px;">${item.zoneName}</div>
+                ${item.comment ? `<div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;">${item.comment}</div>` : ''}
+              </div>
+              <select class="input" style="width:120px;padding:5px 8px;font-size:12px;flex-shrink:0;" onchange="updateZoneStatus('${h.id}','${item.id}',this.value)">
+                <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
+                <option value="remark" ${item.status==='remark'?'selected':''}>⚠️ Remarque</option>
+                <option value="defect" ${item.status==='defect'?'selected':''}>❌ Défaut</option>
+                <option value="pending" ${item.status==='pending'?'selected':''}>⏳ Attente</option>
+              </select>
+            </div>
+            <!-- Photos -->
+            <div class="terrain-photos">
+              ${photos.map(p=>`<div class="terrain-photo" onclick="openPhotoViewer('${p.photoUrl}')"><img src="${p.photoUrl}" loading="lazy"></div>`).join('')}
+              <label class="terrain-photo-add" title="Ajouter photo">
+                📸
+                <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadHandoverZonePhoto('${h.id}','${item.id}',this,null)">
+              </label>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <!-- Notes -->
+      ${h.generalNotes ? `<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text2);margin-bottom:14px;">📝 ${h.generalNotes}</div>` : ''}
+
+      <!-- Signatures -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:12px;">✍️ Signatures</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Site Manager — ${h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : 'N/A'}</div>
+            ${h.managerSignedAt
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);">✅ Signé le ${fmtDate(h.managerSignedAt)}</div>`
+              : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
+                  <canvas id="sig-mgr-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;background:transparent;"></canvas>
+                  <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                    <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-mgr-${h.id}')">Effacer</button>
+                    <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','manager','sig-mgr-${h.id}',this.closest('.overlay'))">✅ Valider</button>
+                  </div>
+                </div>`}
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Client — ${h.clientName||'N/A'}</div>
+            ${h.clientSignedAt
+              ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:12px;text-align:center;color:var(--green);">✅ Signé le ${fmtDate(h.clientSignedAt)}</div>`
+              : `<div style="background:var(--bg3);border:2px dashed var(--border);border-radius:var(--radius);padding:6px;">
+                  <canvas id="sig-cli-${h.id}" width="260" height="100" style="display:block;margin:0 auto;cursor:crosshair;touch-action:none;background:transparent;"></canvas>
+                  <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                    <button class="btn btn-ghost btn-xs" onclick="clearSig('sig-cli-${h.id}')">Effacer</button>
+                    <button class="btn btn-green btn-xs" onclick="saveSig('${h.id}','client','sig-cli-${h.id}',this.closest('.overlay'))">✅ Valider</button>
+                  </div>
+                </div>`}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="editHandoverFields('${h.id}','${h.projectId||CURRENT_PROJECT_ID}')">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
+        <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
+}
+
+// ═══════════════════════════════════════════════════════════
+// TASK MODAL — with comments, progress, photos
+// ═══════════════════════════════════════════════════════════
+async function openTaskModal(taskId, projectId) {
+  const res = await api('GET', `/tasks?projectId=${projectId}`);
+  const task = res?.data?.find(t => t.id === taskId);
+  if (!task) { toast('Tâche introuvable','error'); return; }
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">✅ ${task.title}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            ${task.taskDate?`📅 ${fmtDate(task.taskDate)}`:''}
+            ${task.assignedTo?` · 👤 ${task.assignedTo.firstName} ${task.assignedTo.lastName}`:''}
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px;">
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-edit')">✏️ Modifier</div>
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-progress')">📊 Avancement</div>
+        <div style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;" onclick="switchTaskTab(this,'tt-photos')">📸 Photos</div>
+      </div>
+
+      <!-- Tab: Edit -->
+      <div id="tt-edit">
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Statut</label>
+            <select class="input" id="et-status">
+              <option value="todo" ${task.status==='todo'?'selected':''}>📋 À faire</option>
+              <option value="in_progress" ${task.status==='in_progress'?'selected':''}>⚡ En cours</option>
+              <option value="done" ${task.status==='done'?'selected':''}>✅ Terminé</option>
+              <option value="blocked" ${task.status==='blocked'?'selected':''}>🔴 Bloqué</option>
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Priorité</label>
+            <select class="input" id="et-priority">
+              <option value="low" ${task.priority==='low'?'selected':''}>🟢 Faible</option>
+              <option value="normal" ${task.priority==='normal'?'selected':''}>🔵 Normal</option>
+              <option value="high" ${task.priority==='high'?'selected':''}>🟠 Élevé</option>
+              <option value="critical" ${task.priority==='critical'?'selected':''}>🔴 Critique</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Date</label><input class="input" type="date" id="et-date" value="${task.taskDate?.split('T')[0]||''}"></div>
+          <div class="form-group2"><label class="form-label2">Assigné à</label>
+            <select class="input" id="et-assign">
+              <option value="">— Non assigné —</option>
+              ${USERS.map(u=>`<option value="${u.id}" ${task.assignedToId===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Description</label><textarea class="input" id="et-desc" rows="3">${task.description||''}</textarea></div>
+      </div>
+
+      <!-- Tab: Avancement -->
+      <div id="tt-progress" style="display:none;">
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">Ajouter un point d'avancement</div>
+          <div style="display:flex;gap:8px;">
+            <textarea class="input" id="new-comment-text" rows="2" placeholder="Ex: Montage terminé niveau 1, problème avec les joints..."></textarea>
+            <button class="btn btn-primary btn-sm" style="align-self:flex-end;flex-shrink:0;" onclick="addTaskComment('${taskId}','${projectId}')">+ Ajouter</button>
+          </div>
+        </div>
+        <div id="task-comments-list" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:16px;">Cliquez + Ajouter pour documenter l'avancement</div>
+        </div>
+      </div>
+
+      <!-- Tab: Photos -->
+      <div id="tt-photos" style="display:none;">
+        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;margin-bottom:12px;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📸 Ajouter photos / fichiers
+          <input type="file" accept="image/*,application/pdf" multiple capture="environment" style="display:none;" onchange="uploadTaskPhotos('${taskId}','${projectId}',this)">
+        </label>
+        <div id="task-photos-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          <div style="grid-column:1/-1;color:var(--text3);font-size:13px;text-align:center;padding:20px;">Cliquez pour ajouter des photos</div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:16px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTask('${taskId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+          <button class="btn btn-primary" onclick="saveTaskEdit('${taskId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+function switchTaskTab(el, tabId) {
+  ['tt-edit','tt-progress','tt-photos'].forEach(id=>{
+    const t=document.getElementById(id); if(t) t.style.display='none';
+  });
+  const tab=document.getElementById(tabId); if(tab) tab.style.display='block';
+  el.closest('[style*="border-bottom"]').querySelectorAll('div').forEach(d=>{
+    d.style.color='var(--text2)'; d.style.borderBottomColor='transparent';
+  });
+  el.style.color='var(--accent)'; el.style.borderBottomColor='var(--accent)';
+}
+
+async function addTaskComment(taskId, projectId) {
+  const text = document.getElementById('new-comment-text')?.value.trim();
+  if (!text) { toast('Écris un commentaire','error'); return; }
+  const res = await api('POST', `/tasks/${taskId}/comments`, { content: text });
+  if (res?.success) {
+    document.getElementById('new-comment-text').value = '';
+    const list = document.getElementById('task-comments-list');
+    const div = document.createElement('div');
+    div.style.cssText='background:var(--bg3);border-radius:var(--radius);padding:10px;border-left:3px solid var(--green);';
+    div.innerHTML=`<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">${CURRENT_USER?.firstName||''} · maintenant</div><div style="font-size:13px;color:var(--text);">${text}</div>`;
+    if (list.querySelector('[style*="Aucun"]')) list.innerHTML='';
+    list.appendChild(div);
+    toast('Ajouté ✅','success');
+  } else {
+    // Fallback: show locally
+    const list = document.getElementById('task-comments-list');
+    const div = document.createElement('div');
+    div.style.cssText='background:var(--bg3);border-radius:var(--radius);padding:10px;border-left:3px solid var(--green);';
+    div.innerHTML=`<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">${CURRENT_USER?.firstName||''} · maintenant</div><div style="font-size:13px;color:var(--text);">${text}</div>`;
+    if (list.querySelector('[style*="Aucun"]')) list.innerHTML='';
+    list.appendChild(div);
+    document.getElementById('new-comment-text').value='';
+    toast('Commentaire ajouté (local)','warning');
+  }
+}
+
+async function uploadTaskPhotos(taskId, projectId, input) {
+  if (!input.files?.length) return;
+  toast(`Upload ${input.files.length} fichier(s)...`,'info');
+  const grid = document.getElementById('task-photos-grid');
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+      });
+      const data = await r.json();
+      if (data.success) {
+        const url = data.data?.url || data.url;
+        const img = document.createElement('img');
+        img.src = url;
+        img.onclick = ()=>openPhotoViewer(url);
+        img.style.cssText='width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+        if (grid.querySelector('[style*="Aucune"]')) grid.innerHTML='';
+        grid.appendChild(img);
+      }
+    } catch {}
+  }
+  toast('Photos ajoutées ✅','success');
+}
+
+// ═══ IMPORT TEMPLATES DEPUIS EXCEL / CSV ═══
+function showImportTemplatesModal() {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:660px;">
+      <div class="modal-head">
+        <div><div class="modal-title">📥 Import Templates depuis Excel/CSV</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">Importe une liste de tâches depuis un fichier Excel ou CSV</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="background:rgba(72,149,239,.08);border:1px solid rgba(72,149,239,.2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px;color:var(--text2);">
+        💡 Format attendu : <strong>Colonne A = Catégorie</strong>, <strong>Colonne B = Titre de la tâche</strong>, Colonne C = Durée (h), Colonne D = Priorité (low/normal/high/critical)<br>
+        <span style="font-size:11px;opacity:.8;">Exemple : "Installation | Montage structure aluminium | 6 | high"</span>
+      </div>
+
+      <!-- Option 1: Upload fichier -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Option 1 — Importer un fichier</div>
+        <label style="display:block;border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📁 Cliquez pour sélectionner un fichier Excel (.xlsx) ou CSV
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="parseTemplateFile(this)">
+        </label>
+      </div>
+
+      <!-- Option 2: Coller du texte -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Option 2 — Coller le contenu CSV</div>
+        <textarea class="input" id="import-csv-text" rows="8" placeholder="Catégorie;Titre;Durée(h);Priorité&#10;Installation;Montage structure aluminium;6;high&#10;Installation;Pose panneaux façade;4;normal&#10;Électricité;Câblage alimentation;3;high&#10;..."></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="previewImportedTemplates()">👁️ Prévisualiser</button>
+          <button class="btn btn-blue" onclick="importTemplatesFromText()">📥 Importer</button>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div id="import-preview" style="display:none;margin-top:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;" id="import-preview-title"></div>
+        <div id="import-preview-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;font-size:12px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" id="import-confirm-btn" onclick="confirmImportTemplates(this.closest('.overlay'))">✅ Confirmer l'import</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+let IMPORT_TEMPLATES_DATA = [];
+
+function parseTemplateFile(input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    // Simple CSV parse
+    const lines = text.split(/\r?\n/).filter(l=>l.trim());
+    const data = lines.map(line => {
+      const parts = line.split(/[;,\t]/);
+      return {
+        category: (parts[0]||'').trim(),
+        title: (parts[1]||'').trim(),
+        hours: parseFloat(parts[2])||4,
+        priority: (parts[3]||'normal').trim().toLowerCase(),
+      };
+    }).filter(d=>d.category&&d.title);
+    document.getElementById('import-csv-text').value = lines.join('\n');
+    IMPORT_TEMPLATES_DATA = data;
+    showImportPreview(data);
+  };
+  reader.readAsText(file);
+}
+
+function previewImportedTemplates() {
+  const text = document.getElementById('import-csv-text')?.value.trim();
+  if (!text) { toast('Colle du contenu CSV','error'); return; }
+  const lines = text.split(/\n/).filter(l=>l.trim());
+  const data = lines.map(line => {
+    const parts = line.split(/[;,\t]/);
+    return {
+      category: (parts[0]||'').trim().replace(/^["']|["']$/g,''),
+      title: (parts[1]||'').trim().replace(/^["']|["']$/g,''),
+      hours: parseFloat(parts[2])||4,
+      priority: (parts[3]||'normal').trim().toLowerCase().replace(/^["']|["']$/g,''),
+    };
+  }).filter(d=>d.category&&d.title);
+  IMPORT_TEMPLATES_DATA = data;
+  showImportPreview(data);
+}
+
+function showImportPreview(data) {
+  const preview = document.getElementById('import-preview');
+  const title = document.getElementById('import-preview-title');
+  const list = document.getElementById('import-preview-list');
+  if (!preview||!title||!list) return;
+  
+  const cats = [...new Set(data.map(d=>d.category))];
+  title.textContent = `${data.length} tâche(s) dans ${cats.length} catégorie(s)`;
+  
+  list.innerHTML = cats.map(cat => {
+    const items = data.filter(d=>d.category===cat);
+    return `<div style="margin-bottom:8px;">
+      <div style="font-weight:700;color:var(--text);margin-bottom:4px;">📁 ${cat} (${items.length})</div>
+      ${items.map(t=>`<div style="padding:3px 8px;color:var(--text2);">• ${t.title} <span style="color:var(--text3);">(${t.hours}h · ${t.priority})</span></div>`).join('')}
+    </div>`;
+  }).join('');
+  preview.style.display='block';
+}
+
+async function importTemplatesFromText() {
+  previewImportedTemplates();
+}
+
+async function confirmImportTemplates(overlay) {
+  if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
+  const btn = document.getElementById('import-confirm-btn');
+  if (btn) btn.disabled=true;
+  
+  toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
+  
+  // Get or create categories
+  const catRes = await api('GET', '/task-templates/categories');
+  const existingCats = catRes?.data||[];
+  const catMap = {};
+  existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
+  
+  // Create missing categories
+  const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
+  for (const catName of newCats) {
+    if (!catMap[catName.toLowerCase()]) {
+      const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
+      if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
+    }
+  }
+  
+  // Create templates
+  let created = 0;
+  for (const tpl of IMPORT_TEMPLATES_DATA) {
+    const catId = catMap[tpl.category.toLowerCase()];
+    if (!catId) continue;
+    const r = await api('POST', '/task-templates', {
+      categoryId: catId,
+      title: tpl.title,
+      durationHours: tpl.hours,
+      priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
+    });
+    if (r?.success) created++;
+  }
+  
+  toast(`${created} template(s) importé(s) ✅`,'success');
+  IMPORT_TEMPLATES_DATA = [];
+  overlay?.remove();
+  loadTemplatesPage();
+  PROJ_CATEGORIES_DATA = [];
+  loadProjTemplateSelector();
+}
+
+// ═══════════════════════════════════════════════════════════
+// TRUCK DETAIL — voir, modifier, confirmer arrivée, photos
+// ═══════════════════════════════════════════════════════════
+async function openTruckDetail(truckId, projectId) {
+  // Get truck from project data
+  const res = await api('GET', `/projects/${projectId}`);
+  const truck = res?.data?.trucks?.find(t => t.id === truckId);
+  if (!truck) { toast('Véhicule introuvable','error'); return; }
+
+  const typeIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
+  const icon = typeIcons[truck.vehicleType]||'🚛';
+  const statusColors = {planned:'var(--text3)',loading:'var(--amber)',in_transit:'var(--blue)',delivered:'var(--green)',returned:'var(--text3)'};
+  const statusLabels = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'Livré',returned:'Retourné'};
+
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">${icon} ${truck.truckNumber||'Véhicule'}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+            <span style="color:${statusColors[truck.status]||'var(--text3)'};">● ${statusLabels[truck.status]||truck.status}</span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Infos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        ${truck.licensePlate?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">IMMATRICULATION</div><div style="font-weight:600;">🔑 ${truck.licensePlate}</div></div>`:''}
+        ${truck.driverName?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">CHAUFFEUR</div><div style="font-weight:600;">👤 ${truck.driverName}</div></div>`:''}
+        ${truck.driverPhone?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div style="font-weight:600;"><a href="tel:${truck.driverPhone}" style="color:var(--blue);">📞 ${truck.driverPhone}</a></div></div>`:''}
+        ${truck.loadingDate?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">DÉPART CHARGEMENT</div><div style="font-weight:600;">📦 ${fmtDateTime(truck.loadingDate)}</div></div>`:''}
+        ${truck.arrivalDate
+          ? `<div style="background:rgba(45,198,83,.08);border:1px solid rgba(45,198,83,.3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">ARRIVÉE</div><div style="font-weight:600;color:var(--green);">✅ ${fmtDateTime(truck.arrivalDate)}</div></div>`
+          : `<div style="background:rgba(244,162,97,.08);border:1px solid rgba(244,162,97,.3);border-radius:var(--radius);padding:10px;"><div style="font-size:10px;color:var(--text3);margin-bottom:3px;">ARRIVÉE</div><div style="color:var(--amber);">⏳ En attente</div></div>`}
+      </div>
+
+      ${truck.notes?`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:16px;font-size:13px;color:var(--text2);">📝 ${truck.notes}</div>`:''}
+
+      <!-- Confirmer arrivée -->
+      ${truck.status !== 'delivered' ? `
+      <div style="background:rgba(45,198,83,.06);border:1px solid rgba(45,198,83,.2);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">✅ Confirmer l'arrivée</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Heure d'arrivée</label><input class="input" type="datetime-local" id="truck-arrival-time" value="${new Date().toISOString().slice(0,16)}"></div>
+          <div class="form-group2"><label class="form-label2">Note d'arrivée</label><input class="input" id="truck-arrival-note" placeholder="Tout ok, retard..."></div>
+        </div>
+        <button class="btn btn-green" onclick="confirmTruckArrival('${truckId}','${projectId}',this.closest('.overlay'))">✅ Confirmer l'arrivée</button>
+      </div>` : ''}
+
+      <!-- Photos -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📸 Photos</div>
+        <div id="truck-photos-${truckId}" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          ${(truck.photos||[]).map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+        </div>
+        <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);transition:all .2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+          📸 Ajouter une photo
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="uploadTruckPhotos('${truckId}','${projectId}',this)">
+        </label>
+      </div>
+
+      <!-- Modifier infos -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">✏️ Modifier</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Statut</label>
+            <select class="input" id="etruck-status">
+              <option value="planned" ${truck.status==='planned'?'selected':''}>Planifié</option>
+              <option value="loading" ${truck.status==='loading'?'selected':''}>En chargement</option>
+              <option value="in_transit" ${truck.status==='in_transit'?'selected':''}>En transit</option>
+              <option value="delivered" ${truck.status==='delivered'?'selected':''}>Livré</option>
+              <option value="returned" ${truck.status==='returned'?'selected':''}>Retourné</option>
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Chauffeur</label><input class="input" id="etruck-driver" value="${truck.driverName||''}"></div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Notes</label><textarea class="input" id="etruck-notes" rows="2">${truck.notes||''}</textarea></div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:14px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTruck('${truckId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+          <button class="btn btn-primary" onclick="saveTruckEdit('${truckId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function confirmTruckArrival(truckId, projectId, overlay) {
+  const arrivalTime = document.getElementById('truck-arrival-time')?.value;
+  const note = document.getElementById('truck-arrival-note')?.value||'';
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: 'delivered',
+    arrivalDate: arrivalTime ? new Date(arrivalTime).toISOString() : new Date().toISOString(),
+    notes: note || undefined,
+  });
+  if (res?.success) {
+    toast('Arrivée confirmée ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    // Fallback: update locally
+    toast('Arrivée confirmée (sync au prochain refresh)','warning');
+    overlay?.remove();
+  }
+}
+
+async function quickArrivalTruck(truckId, projectId) {
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: 'delivered',
+    arrivalDate: new Date().toISOString(),
+  });
+  if (res?.success) { toast('✅ Arrivée confirmée !','success'); loadProjectDetail(projectId); }
+  else toast('Statut mis à jour localement','warning');
+}
+
+async function saveTruckEdit(truckId, projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, {
+    status: document.getElementById('etruck-status')?.value,
+    driverName: document.getElementById('etruck-driver')?.value||undefined,
+    notes: document.getElementById('etruck-notes')?.value||undefined,
+  });
+  if (res?.success) { toast('Mis à jour ✅','success'); overlay?.remove(); loadProjectDetail(projectId); }
+  else toast('Erreur mise à jour','error');
+}
+
+async function deleteTruck(truckId, projectId, overlay) {
+  if (!confirm('Supprimer ce véhicule ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
+  if (res?.success) { toast('Supprimé','warning'); overlay?.remove(); loadProjectDetail(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+async function uploadTruckPhotos(truckId, projectId, input) {
+  if (!input.files?.length) return;
+  const preview = document.getElementById(`truck-photos-${truckId}`);
+  toast(`Upload ${input.files.length} photo(s)...`,'info');
+  for (const file of Array.from(input.files)) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+      });
+      const data = await r.json();
+      const url = data.data?.url || data.url;
+      if (url && preview) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.onclick = ()=>openPhotoViewer(url);
+        img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);';
+        preview.appendChild(img);
+      }
+    } catch {}
+  }
+  toast('Photos ajoutées ✅','success');
+}
+
+// ═══════════════════════════════════════════════════════════
+// RAPPORT IA — MODULE COMPLET
+// ═══════════════════════════════════════════════════════════
+let REPORT_TYPE = 'full';
+
+function selectReportType(type) {
+  REPORT_TYPE = type;
+  document.getElementById('rtype-full').style.border = type==='full' ? '2px solid var(--accent)' : '2px solid var(--border)';
+  document.getElementById('rtype-full').style.background = type==='full' ? 'rgba(230,57,70,.06)' : '';
+  document.getElementById('rtype-client').style.border = type==='client' ? '2px solid var(--accent)' : '2px solid var(--border)';
+  document.getElementById('rtype-client').style.background = type==='client' ? 'rgba(230,57,70,.06)' : '';
+}
+
+function showReportModal() {
+  showModal('modal-report');
+  const row = document.getElementById('report-project-row');
+  const sel = document.getElementById('report-project-select');
+  if (!CURRENT_PROJECT_ID && PROJECTS?.length) {
+    // Show project selector
+    if (row) row.style.display = 'block';
+    if (sel) {
+      sel.innerHTML = '<option value="">— Sélectionner un projet —</option>' +
+        PROJECTS.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    }
+  } else {
+    if (row) row.style.display = 'none';
+    // Show current project name
+    const proj = PROJECTS?.find(p => p.id === CURRENT_PROJECT_ID);
+    if (proj) {
+      const hint = document.getElementById('report-sections-hint');
+      if (hint) hint.textContent = `Projet : ${proj.name}`;
+    }
+  }
+}
+
+// Toggle sections — direct function called from onclick
+function toggleReportSection(el) {
+  const wasActive = el.classList.contains('active');
+  el.classList.toggle('active');
+  // Hard color update directly on element
+  if (!wasActive) {
+    el.style.cssText = 'border:2px solid #e63946!important;background:rgba(230,57,70,.1)!important;';
+  } else {
+    el.style.cssText = 'border:2px solid #2a2f3a!important;background:transparent!important;';
+  }
+  // Update hint
+  const count = document.querySelectorAll('.report-section-toggle.active').length;
+  const hint = document.getElementById('report-sections-hint');
+  if (hint) hint.textContent = count + ' section(s) sélectionnée(s)';
+  return false; // prevent default
+}
+
+function getSelectedSections() {
+  return Array.from(document.querySelectorAll('.report-section-toggle.active'))
+    .map(el => el.dataset.section).filter(Boolean);
+}
+
+function getReportLang() {
+  return document.querySelector('input[name="report-lang"]:checked')?.value || 'fr';
+}
+
+function setReportStatus(icon, text, sub='') {
+  const el = document.getElementById('report-status');
+  if (el) el.style.display = 'block';
+  const i = document.getElementById('report-status-icon');
+  const t = document.getElementById('report-status-text');
+  const s = document.getElementById('report-status-sub');
+  if (i) i.textContent = icon;
+  if (t) t.textContent = text;
+  if (s) s.textContent = sub;
+}
+
+async function generateReport(mode) {
+  // If no project selected, ask user to pick one
+  let projectId = CURRENT_PROJECT_ID;
+  if (!projectId) {
+    // Try to get from report project selector
+    const sel = document.getElementById('report-project-select');
+    if (sel) projectId = sel.value;
+  }
+  if (!projectId) {
+    toast('Ouvre un projet avant de générer un rapport','error');
+    closeModal('modal-report');
+    goto('projects');
+    return;
+  }
+  // Update CURRENT_PROJECT_ID temporarily
+  const origProjectId = CURRENT_PROJECT_ID;
+  if (!CURRENT_PROJECT_ID) CURRENT_PROJECT_ID = projectId;
+
+  const sections = getSelectedSections();
+  if (!sections.length) { toast('Sélectionne au moins une section','error'); return; }
+
+  const pdfBtn = document.getElementById('report-pdf-btn');
+  const prevBtn = document.getElementById('report-preview-btn');
+  if (pdfBtn) pdfBtn.disabled=true;
+  if (prevBtn) prevBtn.disabled=true;
+
+  try {
+    // ── STEP 1: Collect all project data ──
+    setReportStatus('🔄','Collecte des données du projet...','Chargement en cours');
+
+    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes, filesRes] = await Promise.all([
+      api('GET', `/projects/${CURRENT_PROJECT_ID}`),
+      sections.includes('tasks')    ? api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`)    : null,
+      sections.includes('daily')    ? api('GET', `/daily-reports?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('handover') ? api('GET', `/handover?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('tickets')  ? api('GET', `/tickets?projectId=${CURRENT_PROJECT_ID}`)  : null,
+      sections.includes('visite')   ? api('GET', `/client-remarks?projectId=${CURRENT_PROJECT_ID}`) : null,
+      sections.includes('files')    ? api('GET', `/projects/${CURRENT_PROJECT_ID}/files`)     : null,
+    ]);
+
+    const project = projRes?.data;
+    if (!project) { toast('Erreur chargement projet','error'); return; }
+
+    const tasks    = tasksRes?.data    || [];
+    const dailys   = dailyRes?.data    || [];
+    const handovers = handoverRes?.data || [];
+    const tickets  = ticketsRes?.data  || [];
+    const remarks  = remarksRes?.data  || [];
+    const trucks   = project.trucks    || [];
+    const files    = filesRes?.data    || [];
+
+    // ── STEP 2: AI Summary ──
+    let aiSummary = '';
+    if (sections.includes('ai_summary')) {
+      setReportStatus('🤖','Analyse IA en cours...','Génération du résumé exécutif');
+      const lang = getReportLang();
+      const langName = {fr:'français',en:'English',nl:'Nederlands'}[lang]||'français';
+
+      const taskDone  = tasks.filter(t=>t.status==='done').length;
+      const taskTotal = tasks.length;
+      const ticketOpen = tickets.filter(t=>['open','in_progress'].includes(t.status)).length;
+      const ticketCritical = tickets.filter(t=>t.urgency==='critical').length;
+      const lastDaily = dailys[0];
+
+      const prompt = `Tu es un chef de projet expert. Rédige un résumé exécutif ${langName} pour ce rapport de projet.
+
+PROJET : ${project.name} (${project.internalNumber})
+CLIENT : ${project.client?.name||'N/A'}
+STATUT : ${project.status}
+AVANCEMENT : ${project.progress||0}% (${taskDone}/${taskTotal} tâches)
+DATES : ${project.installationStart?.split('T')[0]||'N/A'} → ${project.installationEnd?.split('T')[0]||'N/A'}
+${project.dismantlingStart?`DÉMONTAGE : ${project.dismantlingStart?.split('T')[0]} → ${project.dismantlingEnd?.split('T')[0]}`:''}
+ÉQUIPE : ${(project.team||[]).map(m=>m.user?.firstName+' '+m.user?.lastName).join(', ')||'N/A'}
+OUVRIERS : ${project.workersCount}
+
+TICKETS : ${ticketOpen} ouverts, ${ticketCritical} critiques
+${lastDaily?`DERNIER DAILY : ${lastDaily.reportDate?.split('T')[0]} — ${lastDaily.generalNotes||'Pas de notes'}` : ''}
+${handovers.length?`HANDOVERS : ${handovers.filter(h=>h.status==='signed').length}/${handovers.length} signés`:''}
+${remarks.filter(r=>r.status!=='resolved').length?`POINTS VISITE EN COURS : ${remarks.filter(r=>r.status!=='resolved').length}`:''}
+
+Rédige un résumé de 3-4 paragraphes structurés :
+1. État général du projet et avancement
+2. Points forts et réalisations
+3. Points d'attention et risques
+4. Prochaines étapes recommandées
+
+Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du résumé, sans titre, sans markdown.`;
+
+      const aiRes = await fetch(`${API}/ai/parse-daily`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+        body: JSON.stringify({ text: prompt })
+      });
+      const aiData = await aiRes.json();
+      aiSummary = aiData.success ? (Array.isArray(aiData.data) ? aiData.data.map(e=>e.text||e).join(' ') : String(aiData.data)) : 'Résumé non disponible.';
+    }
+
+    // ── STEP 3: Generate HTML report ──
+    setReportStatus('📄','Mise en page du rapport...','Génération du document');
+
+    const lang = getReportLang();
+    const labels = {
+      fr: { report:'Rapport de Projet', client_report:'Rapport Client', date:'Date', status:'Statut',
+            progress:'Avancement', team:'Équipe', tasks:'Tâches', daily:'Journal', handover:'Handovers',
+            tickets:'Tickets SAV', visite:'Visites Client', logistics:'Logistique', summary:'Résumé Exécutif',
+            generated:'Généré le', by:'par VEM — ViewBox Event Manager', done:'Terminé', todo:'À faire',
+            in_progress:'En cours', blocked:'Bloqué', open:'Ouvert', resolved:'Résolu', signed:'Signé' },
+      en: { report:'Project Report', client_report:'Client Report', date:'Date', status:'Status',
+            progress:'Progress', team:'Team', tasks:'Tasks', daily:'Daily Reports', handover:'Handovers',
+            tickets:'SAV Tickets', visite:'Client Visits', logistics:'Logistics', summary:'Executive Summary',
+            generated:'Generated on', by:'by VEM — ViewBox Event Manager', done:'Done', todo:'To Do',
+            in_progress:'In Progress', blocked:'Blocked', open:'Open', resolved:'Resolved', signed:'Signed' },
+      nl: { report:'Projectrapport', client_report:'Klantrapport', date:'Datum', status:'Status',
+            progress:'Voortgang', team:'Team', tasks:'Taken', daily:'Dagraporten', handover:'Handovers',
+            tickets:'SAV Tickets', visite:'Klantbezoeken', logistics:'Logistiek', summary:'Samenvatting',
+            generated:'Gegenereerd op', by:'door VEM — ViewBox Event Manager', done:'Klaar', todo:'Te doen',
+            in_progress:'Bezig', blocked:'Geblokkeerd', open:'Open', resolved:'Opgelost', signed:'Getekend' },
+    };
+    const L = labels[lang]||labels.fr;
+    const isClient = REPORT_TYPE === 'client';
+    const reportTitle = isClient ? L.client_report : L.report;
+    const today = new Date().toLocaleDateString(lang==='nl'?'nl-BE':lang==='en'?'en-GB':'fr-FR', {day:'numeric',month:'long',year:'numeric'});
+
+    const statusColor = {draft:'#8892a4',in_preparation:'#f4a261',installation:'#e63946',completed:'#2dc653',cancelled:'#5a6275'}[project.status]||'#8892a4';
+
+    let reportHTML = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${reportTitle} — ${project.name}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f6f8;color:#1a1a2e;font-size:14px;}
+  .page{max-width:900px;margin:0 auto;background:#fff;}
+
+  /* HEADER */
+  .header{background:#1a1a2e;color:#fff;padding:36px 40px;display:flex;justify-content:space-between;align-items:flex-start;}
+  .header-brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{width:44px;height:44px;background:#e63946;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;flex-shrink:0;}
+  .brand-name{font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:1.5px;}
+  .header-right{text-align:right;}
+  .report-title{font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+  .report-meta{font-size:12px;color:#8892a4;margin-top:4px;}
+
+  /* PROJECT HERO */
+  .hero{padding:32px 40px;background:linear-gradient(135deg,#1a1a2e 0%,#22262f 100%);color:#fff;border-bottom:3px solid #e63946;}
+  .hero-name{font-size:28px;font-weight:800;margin-bottom:6px;}
+  .hero-sub{font-size:14px;color:#8892a4;margin-bottom:20px;}
+  .hero-stats{display:flex;gap:24px;flex-wrap:wrap;}
+  .hero-stat{text-align:center;}
+  .hero-stat-val{font-size:32px;font-weight:800;color:#e63946;}
+  .hero-stat-lbl{font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-top:2px;}
+  .progress-bar{background:rgba(255,255,255,.15);border-radius:99px;height:8px;margin-top:16px;overflow:hidden;}
+  .progress-fill{height:100%;background:#e63946;border-radius:99px;}
+  .status-pill{display:inline-block;background:${statusColor};color:#fff;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600;margin-top:8px;}
+
+  /* CONTENT */
+  .content{padding:0 40px 40px;}
+  .section{margin-top:32px;}
+  .section-title{font-size:16px;font-weight:800;border-bottom:2px solid #e63946;padding-bottom:8px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .section-icon{font-size:18px;}
+
+  /* INFO GRID */
+  .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .info-card{background:#f8f9fb;border-radius:8px;padding:14px;}
+  .info-label{font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;}
+  .info-value{font-weight:600;font-size:14px;}
+
+  /* AI SUMMARY */
+  .ai-box{background:#f0f7ff;border-left:4px solid #4895ef;border-radius:0 8px 8px 0;padding:20px 24px;font-size:14px;line-height:1.8;color:#2a3040;}
+  .ai-label{font-size:10px;font-weight:700;color:#4895ef;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+
+  /* TASKS */
+  .task-row{display:flex;align-items:center;padding:9px 14px;border-radius:6px;margin-bottom:4px;}
+  .task-row:nth-child(even){background:#f8f9fb;}
+  .task-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:10px;}
+  .task-title{flex:1;font-size:13px;}
+  .task-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;}
+  .badge-done{background:#e8faf0;color:#1da840;}
+  .badge-progress{background:#fff8e8;color:#d48806;}
+  .badge-todo{background:#f0f2f5;color:#5a6275;}
+  .badge-blocked{background:#fff0f0;color:#e63946;}
+  .task-assign{font-size:11px;color:#8892a4;margin-left:8px;}
+  .tasks-summary{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;}
+  .tasks-stat{text-align:center;padding:10px 16px;border-radius:8px;}
+  .tasks-stat-val{font-size:22px;font-weight:800;}
+  .tasks-stat-lbl{font-size:11px;color:#8892a4;margin-top:2px;}
+
+  /* DAILY */
+  .daily-entry{padding:12px 16px;border-left:3px solid #e63946;margin-bottom:10px;background:#f8f9fb;border-radius:0 6px 6px 0;}
+  .daily-date{font-weight:700;font-size:13px;color:#1a1a2e;margin-bottom:4px;}
+  .daily-meta{font-size:12px;color:#8892a4;margin-bottom:6px;}
+  .daily-notes{font-size:13px;color:#4a5568;line-height:1.6;}
+
+  /* TICKETS */
+  .ticket-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:6px;margin-bottom:6px;background:#f8f9fb;}
+  .ticket-urgency{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+  .ticket-title{flex:1;font-weight:600;font-size:13px;}
+  .ticket-desc{font-size:12px;color:#8892a4;margin-top:3px;}
+
+  /* HANDOVER */
+  .handover-card{border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:12px;}
+  .handover-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .zone-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .zone-pill{padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;}
+  .zone-ok{background:#e8faf0;color:#1da840;}
+  .zone-remark{background:#fff8e8;color:#d48806;}
+  .zone-defect{background:#fff0f0;color:#e63946;}
+
+  /* TEAM */
+  .team-grid{display:flex;gap:10px;flex-wrap:wrap;}
+  .team-card{background:#f8f9fb;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;}
+  .team-avatar{width:36px;height:36px;background:#e63946;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;}
+  .team-name{font-weight:600;font-size:13px;}
+  .team-role{font-size:11px;color:#8892a4;}
+
+  /* FOOTER */
+  .footer{background:#1a1a2e;color:#8892a4;padding:20px 40px;display:flex;justify-content:space-between;align-items:center;font-size:12px;}
+
+  @media print{
+    body{background:#fff;}
+    .page{max-width:100%;}
+    .no-print{display:none!important;}
+    .section{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- PRINT TOOLBAR -->
+  <div class="no-print" style="background:#1a1a2e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;">
+    <span style="color:#fff;font-weight:600;font-size:14px;">📄 ${reportTitle} — ${project.name}</span>
+    <div style="display:flex;gap:8px;">
+      <button onclick="window.print()" style="background:#e63946;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;">🖨️ Imprimer / PDF</button>
+      <button onclick="window.close()" style="background:#22262f;color:#8892a4;border:1px solid #2a2f3a;padding:8px 18px;border-radius:6px;cursor:pointer;">✕ Fermer</button>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-brand">
+      <div class="brand-mark">V</div>
+      <div>
+        <div style="font-weight:800;font-size:16px;">ViewBox</div>
+        <div class="brand-name">Event Manager</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="report-title">${reportTitle}</div>
+      <div class="report-meta">${L.generated} ${today}</div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-name">${project.name}</div>
+    <div class="hero-sub">${project.client?.name||''} ${project.city?'· '+project.city:''} ${project.internalNumber?'· '+project.internalNumber:''}</div>
+    <div class="status-pill">${project.status}</div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${project.progress||0}%"></div></div>
+    <div class="hero-stats" style="margin-top:16px;">
+      <div class="hero-stat"><div class="hero-stat-val">${project.progress||0}%</div><div class="hero-stat-lbl">${L.progress}</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">${tasks.filter(t=>t.status==='done').length}/${tasks.length}</div><div class="hero-stat-lbl">${L.tasks}</div></div>
+      <div class="hero-stat"><div class="hero-stat-val">${project.workersCount||0}</div><div class="hero-stat-lbl">Ouvriers</div></div>
+      ${tickets.length?`<div class="hero-stat"><div class="hero-stat-val">${tickets.filter(t=>t.status!=='resolved').length}</div><div class="hero-stat-lbl">${L.tickets}</div></div>`:''}
+    </div>
+  </div>
+
+  <div class="content">`;
+
+    // ── Section: Overview ──
+    if (sections.includes('overview')) {
+      const team = project.team || [];
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📋</span>${lang === 'en' ? 'Project Overview' : 'Vue ensemble'}</div>
+      <div class="info-grid">
+        <div class="info-card"><div class="info-label">${L.date} début</div><div class="info-value">${project.installationStart?.split('T')[0]||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">${L.date} fin</div><div class="info-value">${project.installationEnd?.split('T')[0]||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">Client</div><div class="info-value">${project.client?.name||'N/A'}</div></div>
+        ${project.dismantlingStart?`<div class="info-card"><div class="info-label">Démontage</div><div class="info-value">${project.dismantlingStart?.split('T')[0]} → ${project.dismantlingEnd?.split('T')[0]||'?'}</div></div>`:''}
+        <div class="info-card"><div class="info-label">Adresse</div><div class="info-value">${project.address||'N/A'}</div></div>
+        <div class="info-card"><div class="info-label">Ouvriers</div><div class="info-value">${project.workersCount}</div></div>
+      </div>
+      ${team.length ? `
+      <div style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:10px;">${L.team}</div>
+        <div class="team-grid">
+          ${team.map(m=>`<div class="team-card">
+            <div class="team-avatar">${(m.user?.firstName?.[0]||'?')+(m.user?.lastName?.[0]||'')}</div>
+            <div>
+              <div class="team-name">${m.user?.firstName||''} ${m.user?.lastName||''}</div>
+              <div class="team-role">${m.role}${m.isLead?' ⭐':''}</div>
+              ${m.user?.email?`<div style="font-size:10px;color:#4895ef;">✉️ ${m.user.email}</div>`:''}
+              ${m.user?.phone?`<div style="font-size:10px;color:#2dc653;">📞 ${m.user.phone}</div>`:''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>`;
+    }
+
+    // ── Section: AI Summary ──
+    if (sections.includes('ai_summary') && aiSummary) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🤖</span>${L.summary}</div>
+      <div class="ai-box">
+        <div class="ai-label">🤖 Analyse IA — ViewBox Event Manager</div>
+        ${aiSummary.split(' | ').filter(p=>p.trim()).map(p=>`<p style="margin-bottom:12px;">${p}</p>`).join('')}
+      </div>
+    </div>`;
+    }
+
+    // ── Section: Tasks ──
+    if (sections.includes('tasks') && tasks.length) {
+      const done     = tasks.filter(t=>t.status==='done');
+      const inprog   = tasks.filter(t=>t.status==='in_progress');
+      const todo     = tasks.filter(t=>t.status==='todo');
+      const blocked  = tasks.filter(t=>t.status==='blocked');
+      const dotColors = {done:'#2dc653',in_progress:'#f4a261',todo:'#8892a4',blocked:'#e63946'};
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">✅</span>${L.tasks}</div>
+      <div class="tasks-summary">
+        <div class="tasks-stat" style="background:#e8faf0;"><div class="tasks-stat-val" style="color:#1da840;">${done.length}</div><div class="tasks-stat-lbl">${L.done}</div></div>
+        <div class="tasks-stat" style="background:#fff8e8;"><div class="tasks-stat-val" style="color:#d48806;">${inprog.length}</div><div class="tasks-stat-lbl">${L.in_progress}</div></div>
+        <div class="tasks-stat" style="background:#f0f2f5;"><div class="tasks-stat-val" style="color:#5a6275;">${todo.length}</div><div class="tasks-stat-lbl">${L.todo}</div></div>
+        ${blocked.length?`<div class="tasks-stat" style="background:#fff0f0;"><div class="tasks-stat-val" style="color:#e63946;">${blocked.length}</div><div class="tasks-stat-lbl">${L.blocked}</div></div>`:''}
+      </div>
+      ${[...inprog,...todo,...blocked,...(isClient?[]:done)].map(t=>`
+      <div class="task-row">
+        <div class="task-dot" style="background:${dotColors[t.status]||'#8892a4'};"></div>
+        <div class="task-title">${t.title}</div>
+        ${t.taskDate?`<div style="font-size:11px;color:#8892a4;margin-right:8px;">${t.taskDate?.split('T')[0]||''}</div>`:''}
+        <span class="task-badge badge-${t.status==='done'?'done':t.status==='in_progress'?'progress':t.status==='blocked'?'blocked':'todo'}">${L[t.status]||t.status}</span>
+        ${t.assignedTo&&!isClient?`<span class="task-assign">👤 ${t.assignedTo.firstName}</span>`:''}
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Daily Reports — fetch entries detail ──
+    if (sections.includes('daily') && dailys.length && !isClient) {
+      setReportStatus('📓','Chargement des daily reports...','');
+      // Fetch detail for each report to get entries
+      const dailysWithEntries = await Promise.all(
+        dailys.slice(0,7).map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
+      );
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📓</span>${L.daily}</div>
+      ${dailysWithEntries.map(r => {
+        const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+        return `
+      <div class="daily-entry">
+        <div class="daily-date">${new Date(r.reportDate).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+        <div class="daily-meta">👷 ${r.workersPresent} ouvriers · ${r.weather||''}</div>
+        ${entries.length ? `
+        <div style="margin-top:10px;border-left:2px solid #e63946;padding-left:12px;">
+          ${entries.map(e=>`
+          <div style="display:flex;gap:10px;margin-bottom:6px;align-items:baseline;">
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#e63946;flex-shrink:0;min-width:40px;">${e.entryTime||''}</span>
+            <span style="font-size:13px;color:#4a5568;line-height:1.5;">${e.description}</span>
+          </div>`).join('')}
+        </div>` : ''}
+        ${r.generalNotes?`<div class="daily-notes" style="margin-top:8px;">${r.generalNotes}</div>`:''}
+      </div>`;
+      }).join('')}
+      ${dailys.length>7?`<div style="text-align:center;color:#8892a4;font-size:12px;margin-top:8px;">... et ${dailys.length-7} rapport(s) supplémentaire(s)</div>`:''}
+    </div>`;
+    }
+
+    // ── Section: Handovers ──
+    if (sections.includes('handover') && handovers.length) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🧾</span>${L.handover}</div>
+      ${handovers.map(h=>`
+      <div class="handover-card">
+        <div class="handover-header">
+          <div><strong>${h.clientName||'Handover'}</strong> · ${h.createdAt?.split('T')[0]||''}</div>
+          <span class="task-badge ${h.status==='signed'?'badge-done':'badge-progress'}">${L[h.status]||h.status}</span>
+        </div>
+        <div class="zone-pills">
+          ${(h.items||[]).map(i=>`<span class="zone-pill ${i.status==='ok'?'zone-ok':i.status==='remark'?'zone-remark':'zone-defect'}">${i.zoneName}</span>`).join('')}
+        </div>
+        ${h.generalNotes?`<div style="font-size:12px;color:#8892a4;margin-top:10px;">📝 ${h.generalNotes}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Tickets ──
+    if (sections.includes('tickets') && tickets.length && !isClient) {
+      const urgColors = {critical:'#e63946',high:'#f4a261',medium:'#4895ef',low:'#2dc653'};
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🛠️</span>${L.tickets}</div>
+      ${tickets.map(t=>`
+      <div class="ticket-row">
+        <div class="ticket-urgency" style="background:${urgColors[t.urgency]||'#8892a4'};"></div>
+        <div style="flex:1;">
+          <div class="ticket-title">${t.title}</div>
+          ${t.locationOnSite?`<div class="ticket-desc">📍 ${t.locationOnSite}</div>`:''}
+        </div>
+        <span class="task-badge ${t.status==='resolved'?'badge-done':'badge-todo'}">${L[t.status]||t.status}</span>
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Visite Client ──
+    if (sections.includes('visite') && remarks.length) {
+      const open = remarks.filter(r=>r.status!=='resolved');
+      const done = remarks.filter(r=>r.status==='resolved');
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📸</span>${L.visite}</div>
+      ${open.length?`<div style="margin-bottom:10px;font-size:12px;font-weight:700;color:#e63946;">⏳ En cours (${open.length})</div>`:''}
+      ${remarks.slice(0,10).map(r=>`
+      <div class="ticket-row">
+        <div class="ticket-urgency" style="background:${r.priority==='critical'?'#e63946':r.priority==='high'?'#f4a261':'#8892a4'};"></div>
+        <div style="flex:1;">
+          <div class="ticket-title">${r.title}</div>
+          ${r.zone?`<div class="ticket-desc">📍 ${r.zone}</div>`:''}
+        </div>
+        <span class="task-badge ${r.status==='resolved'?'badge-done':'badge-todo'}">${r.status==='resolved'?L.resolved:'En cours'}</span>
+      </div>`).join('')}
+    </div>`;
+    }
+
+    // ── Section: Logistics ──
+    if (sections.includes('logistics') && trucks.length) {
+      const icons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'✂️',manitou:'🔧',forklift:'🚜',generator:'⚡',machine:'⚙️',other:'📦'};
+      const statusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
+      const fmtDT = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">🚛</span>${L.logistics}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f0f2f5;">
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Véhicule</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Chauffeur</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">📦 Chargement entrepôt</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">🚀 Départ</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">✅ Arrivée site</th>
+            <th style="padding:8px 10px;text-align:left;font-weight:700;color:#5a6275;text-transform:uppercase;font-size:11px;">Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${trucks.map((t,i)=>`
+          <tr style="background:${i%2===0?'#fff':'#f8f9fb'};border-bottom:1px solid #e5e7eb;">
+            <td style="padding:8px 10px;font-weight:600;">${icons[t.vehicleType]||'🚛'} ${t.truckNumber||t.vehicleType||'Véhicule'}</td>
+            <td style="padding:8px 10px;color:#5a6275;">
+              ${t.driverName||'—'}
+              ${t.driverPhone?`<br><span style="font-size:11px;color:#4895ef;">📞 ${t.driverPhone}</span>`:''}
+            </td>
+            <td style="padding:8px 10px;color:#5a6275;font-size:12px;">${fmtDT(t.loadingDate)}</td>
+            <td style="padding:8px 10px;color:#5a6275;font-size:12px;">${fmtDT(t.departureDate)}</td>
+            <td style="padding:8px 10px;font-size:12px;${t.arrivalDate?'color:#16a34a;font-weight:600;':'color:#d48806;'}">${fmtDT(t.arrivalDate)}</td>
+            <td style="padding:8px 10px;">
+              <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:${t.status==='delivered'?'#e8faf0':t.status==='in_transit'?'#eff6ff':'#f0f2f5'};color:${t.status==='delivered'?'#1da840':t.status==='in_transit'?'#4895ef':'#5a6275'};">
+                ${statusLabel[t.status]||t.status}
+              </span>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+    }
+
+    // ── Section: Files ──
+    if (sections.includes('files') && files.length) {
+      const extOf  = f => (f.fileName||'').split('.').pop().toLowerCase();
+      const isImg  = f => ['jpg','jpeg','png','gif','webp'].includes(extOf(f));
+      const isPdf  = f => extOf(f) === 'pdf';
+      const imgs   = files.filter(isImg);
+      const pdfs   = files.filter(isPdf);
+      const otherDocs = files.filter(f => !isImg(f) && !isPdf(f));
+      const fileIcon = f => {
+        const e = extOf(f);
+        if (['ppt','pptx'].includes(e)) return '📊';
+        if (['xls','xlsx'].includes(e)) return '📈';
+        if (['doc','docx'].includes(e)) return '📝';
+        if (['mp4','mov'].includes(e)) return '🎬';
+        return '📎';
+      };
+      // Helper Cloudinary : page N d'un PDF → URL JPG
+      const pdfPageUrl = (url, n) => url.includes('/upload/')
+        ? url.replace('/upload/', `/upload/f_jpg,c_limit,w_1100,pg_${n}/`).replace(/\.pdf($|\?)/i, '.jpg$1')
+        : url;
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">📁</span>Fichiers du projet</div>
+      ${imgs.length ? `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">🖼️ Photos (${imgs.length})</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
+          ${imgs.map(f=>`
+          <div style="text-align:center;page-break-inside:avoid;">
+            <img src="${f.fileUrl}" style="width:100%;max-height:240px;object-fit:contain;border-radius:6px;border:1px solid #e5e7eb;display:block;">
+            <div style="font-size:10px;color:#8892a4;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||''}</div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+      ${pdfs.length ? `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">📄 Documents PDF (${pdfs.length})</div>
+        ${pdfs.map(f => `
+          <div style="margin-bottom:20px;page-break-inside:avoid;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f8f9fb;border-radius:6px 6px 0 0;border:1px solid #e5e7eb;border-bottom:none;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:20px;">📄</span>
+                <div style="font-weight:600;font-size:13px;">${f.fileName||'Document'}</div>
+              </div>
+              <a href="${f.fileUrl}" target="_blank" style="font-size:11px;color:#4895ef;text-decoration:none;">Original ↗</a>
+            </div>
+            <div style="padding:8px;border:1px solid #e5e7eb;border-radius:0 0 6px 6px;background:white;">
+              ${[1,2,3,4,5,6,7,8,9,10].map(n => `<img src="${pdfPageUrl(f.fileUrl, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:6px auto;border:1px solid #e5e7eb;page-break-inside:avoid;">`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+      ${otherDocs.length ? `
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:8px;">📎 Autres documents (${otherDocs.length})</div>
+        ${otherDocs.map(f=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f8f9fb;border-radius:6px;margin-bottom:4px;">
+          <span style="font-size:20px;">${fileIcon(f)}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:13px;">${f.fileName||'Fichier'}</div>
+            <div style="font-size:11px;color:#8892a4;">${extOf(f).toUpperCase()} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+'KB':''}</div>
+          </div>
+          <a href="${f.fileUrl}" target="_blank" style="font-size:12px;color:#4895ef;text-decoration:none;">Voir ↗</a>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+    }
+
+    reportHTML += `
+  </div><!-- /content -->
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <span>${L.generated} ${today} ${L.by}</span>
+    <span>${project.internalNumber||''}</span>
+  </div>
+
+</div><!-- /page -->
+</body></html>`;
+
+    // ── STEP 4: Output ──
+    setReportStatus('✅','Rapport généré !','');
+
+    if (mode === 'preview') {
+      const win = window.open('', '_blank');
+      if (win) { win.document.write(reportHTML); win.document.close(); }
+      else toast('Autorisez les popups pour la prévisualisation','warning');
+    } else {
+      // PDF via print dialog
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(reportHTML);
+        win.document.close();
+        setTimeout(()=>win.print(), 800);
+      } else toast('Autorisez les popups pour le PDF','warning');
+    }
+
+    closeModal('modal-report');
+
+  } catch(err) {
+    console.error(err);
+    toast('Erreur génération rapport: '+err.message,'error');
+  } finally {
+    if (pdfBtn) pdfBtn.disabled=false;
+    if (prevBtn) prevBtn.disabled=false;
+    const statusEl = document.getElementById('report-status');
+    if (statusEl) statusEl.style.display='none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PDF TERRAIN — Handover + Visite Client
+// Style rapport de réception avec photos et numérotation
+// ═══════════════════════════════════════════════════════════
+
+function buildTerrainPDFHeader(title, subtitle, date, project, client, nextMeeting='') {
+  return `
+  <div style="border-bottom:2px solid #1a1a2e;padding-bottom:16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:48px;height:48px;background:#e63946;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;">V</div>
+      <div>
+        <div style="font-weight:800;font-size:18px;">ViewBox Event Manager</div>
+        <div style="font-size:12px;color:#8892a4;">viewboxsitemanagement.up.railway.app</div>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-weight:700;font-size:15px;">${title}</div>
+      <div style="font-size:12px;color:#8892a4;">${date}</div>
+      ${nextMeeting ? `<div style="font-size:12px;color:#e63946;font-weight:600;">Prochaine réunion : ${nextMeeting}</div>` : ''}
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;padding:14px;background:#f8f9fb;border-radius:8px;">
+    <div>
+      <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Projet</div>
+      <div style="font-weight:700;font-size:15px;">${project.name}</div>
+      <div style="font-size:12px;color:#5a6275;">${project.internalNumber||''} ${project.address?'· '+project.address:''}</div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Client</div>
+      <div style="font-weight:700;font-size:15px;">${client}</div>
+    </div>
+  </div>`;
+}
+
+function buildTerrainPoint(num, title, description, status, photos, zone='') {
+  const statusColors = {ok:'#2dc653',remark:'#f4a261',defect:'#e63946',pending:'#8892a4',open:'#e63946',in_progress:'#f4a261',resolved:'#2dc653',critical:'#e63946',high:'#f4a261',normal:'#4895ef'};
+  const statusLabels = {ok:'✅ OK',remark:'⚠️ Remarque',defect:'❌ Défaut',pending:'⏳ En attente',open:'En cours',in_progress:'En traitement',resolved:'✅ Traité',critical:'🔴 Critique',high:'🟠 Élevé',normal:'🔵 Normal'};
+  const color = statusColors[status] || '#8892a4';
+  const label = statusLabels[status] || status;
+
+  return `
+  <div style="border:1px solid #e5e7eb;border-left:4px solid ${color};border-radius:8px;margin-bottom:14px;overflow:hidden;page-break-inside:avoid;">
+    <div style="padding:12px 16px;background:#fff;display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="display:flex;gap:10px;align-items:flex-start;flex:1;">
+        <div style="width:28px;height:28px;background:${color}20;border:2px solid ${color};border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:${color};flex-shrink:0;">${num}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:14px;margin-bottom:3px;">${title}</div>
+          ${zone ? `<div style="font-size:12px;color:#8892a4;margin-bottom:4px;">📍 ${zone}</div>` : ''}
+          ${description ? `<div style="font-size:13px;color:#4a5568;line-height:1.6;">${description}</div>` : ''}
+        </div>
+      </div>
+      <div style="background:${color}15;color:${color};font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;white-space:nowrap;margin-left:10px;">${label}</div>
+    </div>
+    ${photos && photos.length ? `
+    <div style="padding:0 12px 12px;background:#fafafa;display:grid;grid-template-columns:repeat(${Math.min(photos.length,3)},1fr);gap:8px;">
+      ${photos.map(p=>`<img src="${p.photoUrl||p}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;">`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+async function generateHandoverPDF(handoverId) {
+  const res = await api('GET', `/handover/${handoverId}`);
+  if (!res?.success) { toast('Handover introuvable','error'); return; }
+  const h   = res.data;
+  const proj = h.project || PROJECTS?.find(p => p.id === h.projectId) || {};
+  const items = h.items || [];
+  const now  = new Date();
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'long',year:'numeric'}) : '';
+
+  // Custom fields (from editHandoverFields)
+  const f  = h.customFields || {};
+  const fv = (key, fallback='') => f[key] !== undefined ? f[key] : (fallback || '');
+
+  // Auto-fill from project data
+  const projectName  = fv('projectName',  proj.name || '');
+  const clientName   = fv('clientName',   h.clientName || proj.client?.name || '');
+  const siteAddress  = fv('siteAddress',  proj.address || '');
+  const scopeOfWork  = fv('scopeOfWork',  proj.description || '');
+  const handoverDate = fv('handoverDate', fmtD(h.createdAt || now));
+  const comments     = fv('comments',     (items.filter(i=>i.status!=='ok').map(i=>`• ${i.zoneName}${i.comment?' — '+i.comment:''}`).join('\n')) || '');
+
+  const clientTitle  = fv('clientTitle',  '');
+  const clientRep    = fv('clientRep',    h.clientName || '');
+  const spantechTitle= fv('spantechTitle','Site Manager');
+  const spantechRep  = fv('spantechRep',  h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : '');
+
+  const LOGO_B64 = '` + LOGO + `';
+
+  const FOOTER = `
+    <table style="width:100%;border-top:4px solid;border-image:linear-gradient(to right,#cc0000 25%,#f4a261 25% 50%,#4895ef 50% 75%,#2dc653 75%) 1;padding-top:8pt;font-size:8.5pt;color:#333;">
+      <tr>
+        <td style="width:25%;vertical-align:top;"><strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA<br>Avenue du Diamant 156<br>1030 Bruxelles<br>Belgique</td>
+        <td style="width:40%;vertical-align:top;">E-Mail: <a href="mailto:info@span-tech.com" style="color:#4895ef;">info@span-tech.com</a><br>Internet: <a href="http://www.span-tech.com" style="color:#4895ef;">www.span-tech.com</a><br>Téléphone: +32 (0) 2 732 57 93<br>Telefax: +32 (0) 67 55 53 05</td>
+        <td style="width:35%;vertical-align:top;">TVA: BE0849280728<br>Numéro d'entreprise : 0849280728</td>
+      </tr>
+    </table>`;
+
+  const pdfHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Handover Certificate — ${projectName}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Arial',sans-serif;font-size:11pt;color:#1a1a1a;background:#fff;}
+    @media print{
+      body{margin:0;}
+      .page{padding:20mm 25mm;min-height:297mm;position:relative;}
+      .page-break{page-break-before:always;}
+      .no-print{display:none!important;}
+      @page{margin:0;size:A4;}
+    }
+    @media screen{
+      .page{max-width:210mm;margin:0 auto;padding:20mm 25mm;background:#fff;box-shadow:0 0 20px rgba(0,0,0,.1);min-height:297mm;position:relative;}
+      .page-break{margin-top:40px;}
+      body{background:#f0f0f0;padding:20px;}
+    }
+    .header-bar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30pt;font-size:8.5pt;color:#333;}
+    .header-info{line-height:1.6;}
+    .logo{height:60pt;width:auto;}
+    .title-box{border:1px solid #333;background:#e8e8e8;text-align:center;padding:8pt 20pt;margin:20pt 0;font-weight:700;font-size:13pt;letter-spacing:1px;}
+    .project-name{font-weight:700;font-size:13pt;text-align:center;margin-bottom:20pt;}
+    .field-row{margin-bottom:12pt;font-size:11pt;}
+    .field-label{display:inline;}
+    .field-value{display:inline;border-bottom:1px solid #333;min-width:200pt;padding-bottom:1pt;}
+    .underline-label{text-decoration:underline;font-weight:400;}
+    .address-block{margin:16pt 0;font-size:11pt;}
+    .address-line{border-bottom:1px solid #333;margin-bottom:8pt;min-height:16pt;padding-bottom:2pt;}
+    .legal-text{margin-top:30pt;font-size:11pt;line-height:1.7;}
+    .footer{position:absolute;bottom:15mm;left:25mm;right:25mm;}
+    .sign-section{margin-top:20pt;}
+    .sign-title{font-weight:700;text-decoration:underline;margin-bottom:10pt;font-size:11pt;}
+    .sign-row{margin-bottom:16pt;font-size:11pt;}
+    .sign-value{display:inline-block;border-bottom:1px solid #333;min-width:250pt;padding-bottom:2pt;margin-left:6pt;}
+    .sig-box{border-bottom:1px solid #333;min-height:60pt;width:200pt;margin:10pt 0 4pt;}
+    .comments-box{min-height:120pt;border-bottom:1px solid #ccc;margin-bottom:8pt;font-size:11pt;line-height:1.6;white-space:pre-wrap;}
+  </style></head>
+  <body>
+
+  <!-- Print button -->
+  <div class="no-print" style="position:fixed;top:16px;right:16px;z-index:999;display:flex;gap:8px;">
+    <button onclick="window.print()" style="background:#cc0000;color:#fff;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.2);">🖨️ Imprimer / PDF</button>
+    <button onclick="window.close()" style="background:#eee;color:#333;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;">Fermer</button>
+  </div>
+
+  <!-- ═══════════════════ PAGE 1 ═══════════════════ -->
+  <div class="page">
+
+    <!-- Header -->
+    <div class="header-bar">
+      <div class="header-info">
+        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
+        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com &nbsp;&nbsp; Numéro d'entreprise : 0849280728<br>
+        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93<br>
+        Belgique &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Telefax: +32 (0) 67 55 53 05
+      </div>
+      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
+    </div>
+
+    <!-- Title -->
+    <div class="title-box">HANDOVER CERTIFICATE</div>
+
+    <!-- Project -->
+    <div class="project-name">PROJECT : ${projectName || '…………………………………………………………………'}</div>
+
+    <!-- Date -->
+    <div class="field-row">
+      <span class="field-label"><span class="underline-label">Date:</span> </span>
+      <span class="field-value">${handoverDate || '………………………………………………'}</span>
+    </div>
+
+    <!-- Contractor -->
+    <div class="field-row">Contractor : Spantech International SA</div>
+
+    <!-- Client -->
+    <div class="field-row">
+      <span class="field-label">Client : </span>
+      <span class="field-value">${clientName || '………………………………………………'}</span>
+    </div>
+
+    <!-- Site address -->
+    <div class="address-block">
+      <div class="underline-label" style="margin-bottom:8pt;">Site address:</div>
+      ${siteAddress
+        ? siteAddress.split(',').map(line => `<div class="address-line">${line.trim()}</div>`).join('')
+        : `<div class="address-line">………………………………………………</div>
+           <div class="address-line">………………………………………………</div>
+           <div class="address-line">………………………………………………</div>`}
+    </div>
+
+    <!-- Scope of work -->
+    <div class="field-row">
+      <div class="underline-label" style="margin-bottom:4pt;">Scope of work:</div>
+      <div>Supply of a <span style="border-bottom:1px solid #333;display:inline-block;min-width:350pt;">${scopeOfWork || '…………………………………………………………………………………………………………………………………………'}</span></div>
+    </div>
+
+    <!-- Legal text -->
+    <div class="legal-text">
+      <p style="margin-bottom:10pt;">We hereby confirm that the structures comply to manufacturer recommendations, to best practices and to statics calculations supplied with the product.</p>
+      <p>The structure was manufactured in accordance with international code of practice and design standards. We confirm the structure complies to the original drawings and as-built drawings and calculations.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">${FOOTER}</div>
+  </div>
+
+  <!-- ═══════════════════ PAGE 2 — INSPECTION TABLE ═══════════════════ -->
+  ${items.length ? `
+  <div class="page page-break">
+    <div class="header-bar">
+      <div class="header-info">
+        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
+        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com<br>
+        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93
+      </div>
+      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
+    </div>
+
+    <div class="title-box" style="margin-bottom:16pt;">RAPPORT D'INSPECTION — ${projectName}</div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:10pt;">
+      <thead>
+        <tr style="background:#cc0000;color:#fff;">
+          <th style="padding:8pt 10pt;text-align:left;width:30pt;">#</th>
+          <th style="padding:8pt 10pt;text-align:left;width:35%;">Zone / Emplacement</th>
+          <th style="padding:8pt 10pt;text-align:left;width:15%;">Statut</th>
+          <th style="padding:8pt 10pt;text-align:left;">Commentaire</th>
+          <th style="padding:8pt 10pt;text-align:center;width:80pt;">Photo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item, i) => {
+          const stColor = {ok:'#16a34a', remark:'#ca8a04', defect:'#dc2626', pending:'#6b7280'}[item.status] || '#333';
+          const stLabel = {ok:'✅ OK', remark:'⚠️ Remarque', defect:'❌ Défaut', pending:'⏳ En attente'}[item.status] || item.status;
+          const rowBg = i % 2 === 0 ? '#fff' : '#f9fafb';
+          const firstPhoto = (item.photos||[])[0]?.photoUrl || (item.itemPhotos||[])[0]?.photoUrl;
+          return `<tr style="background:${rowBg};border-bottom:1pt solid #e5e7eb;">
+            <td style="padding:8pt 10pt;font-weight:700;color:#cc0000;vertical-align:top;">${i+1}</td>
+            <td style="padding:8pt 10pt;font-weight:600;vertical-align:top;">${item.zoneName}</td>
+            <td style="padding:8pt 10pt;vertical-align:top;">
+              <span style="color:${stColor};font-weight:700;">${stLabel}</span>
+            </td>
+            <td style="padding:8pt 10pt;color:#374151;vertical-align:top;font-size:9.5pt;">${item.comment||'—'}</td>
+            <td style="padding:6pt;text-align:center;vertical-align:middle;">
+              ${firstPhoto ? `<img src="${firstPhoto}" style="width:65pt;height:50pt;object-fit:cover;border-radius:4pt;border:1pt solid #e5e7eb;">` : '<span style="color:#ccc;font-size:18pt;">📷</span>'}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <!-- Summary -->
+    <div style="display:flex;gap:12pt;margin-top:16pt;">
+      <div style="flex:1;background:#f0fdf4;border:1pt solid #bbf7d0;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#16a34a;">${items.filter(i=>i.status==='ok').length}</div>
+        <div style="font-size:9pt;color:#16a34a;font-weight:600;">Zones OK</div>
+      </div>
+      <div style="flex:1;background:#fefce8;border:1pt solid #fde047;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#ca8a04;">${items.filter(i=>i.status==='remark').length}</div>
+        <div style="font-size:9pt;color:#ca8a04;font-weight:600;">Remarques</div>
+      </div>
+      <div style="flex:1;background:#fff5f5;border:1pt solid #fecaca;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#dc2626;">${items.filter(i=>i.status==='defect').length}</div>
+        <div style="font-size:9pt;color:#dc2626;font-weight:600;">Défauts</div>
+      </div>
+      <div style="flex:1;background:#f3f4f6;border:1pt solid #e5e7eb;border-radius:6pt;padding:10pt;text-align:center;">
+        <div style="font-size:22pt;font-weight:800;color:#374151;">${items.length}</div>
+        <div style="font-size:9pt;color:#374151;font-weight:600;">Total</div>
+      </div>
+    </div>
+
+    <div class="footer">${FOOTER}</div>
+  </div>` : ''}
+
+  <!-- ═══════════════════ PAGE SIGNATURES ═══════════════════ -->
+  <div class="page page-break">
+
+    <!-- Header -->
+    <div class="header-bar">
+      <div class="header-info">
+        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
+        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com &nbsp;&nbsp; Numéro d'entreprise : 0849280728<br>
+        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93<br>
+        Belgique &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Telefax: +32 (0) 67 55 53 05
+      </div>
+      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
+    </div>
+
+    <!-- Comments -->
+    <div style="margin-bottom:30pt;">
+      <div class="underline-label" style="margin-bottom:10pt;font-size:11pt;">Comments/reservations:</div>
+      <div class="comments-box">${comments}</div>
+    </div>
+
+    <!-- Date -->
+    <div class="field-row" style="margin-bottom:20pt;">
+      DATE: <span class="field-value">${handoverDate}</span>
+    </div>
+
+    <!-- CLIENT sign -->
+    <div class="sign-section" style="margin-bottom:30pt;">
+      <div class="sign-title">CLIENT</div>
+      <div class="sign-row">Title: <span class="sign-value">${clientTitle}</span></div>
+      <div class="sign-row">Name: <span class="sign-value">${clientRep}</span></div>
+      <div class="sign-row">
+        Signature:
+        ${h.clientSignatureUrl
+          ? `<img src="${h.clientSignatureUrl}" style="max-height:60pt;max-width:200pt;border-bottom:1px solid #333;vertical-align:bottom;">`
+          : `<div class="sig-box"></div>`}
+      </div>
+    </div>
+
+    <!-- SPANTECH sign -->
+    <div class="sign-section">
+      <div class="sign-title">SPANTECH INTERNATIONAL SA</div>
+      <div class="sign-row">Title: <span class="sign-value">${spantechTitle}</span></div>
+      <div class="sign-row">Name: <span class="sign-value">${spantechRep}</span></div>
+      <div class="sign-row">
+        Signature:
+        ${h.managerSignatureUrl
+          ? `<img src="${h.managerSignatureUrl}" style="max-height:60pt;max-width:200pt;border-bottom:1px solid #333;vertical-align:bottom;">`
+          : `<div class="sig-box"></div>`}
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">${FOOTER}</div>
+  </div>
+
+  </body></html>`;
+
+  const win = window.open('','_blank');
+  if (!win) { toast('Autorisez les popups pour générer le PDF','error'); return; }
+  win.document.write(pdfHTML);
+  win.document.close();
+}
+
+// ═══ MOBILE NAV ═══
+function setActiveBN(id) {
+  document.querySelectorAll('.bn-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function closeMobileNav() {
+  document.getElementById('nav')?.classList.remove('open');
+  document.getElementById('nav-overlay')?.classList.remove('open');
+}
+
+function toggleMobileMenu() {
+  const nav = document.getElementById('nav');
+  const overlay = document.getElementById('nav-overlay');
+  nav?.classList.toggle('open');
+  overlay?.classList.toggle('open');
+}
+
+function toggleFAB() {
+  const menu = document.getElementById('fab-menu');
+  const circle = document.getElementById('fab-circle');
+  if (!menu) return;
+  const isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open');
+  if (circle) circle.classList.toggle('open', !isOpen);
+}
+
+function closeFAB() {
+  document.getElementById('fab-menu')?.classList.remove('open');
+  document.getElementById('fab-circle')?.classList.remove('open');
+}
+
+// Close FAB when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#fab-btn') && !e.target.closest('#fab-menu')) closeFAB();
+});
+
+// Update badge on bottom nav
+function updateMobileBadges() {
+  const ticketBadge = document.getElementById('bn-badge-tickets');
+  const count = parseInt(document.getElementById('tickets-badge')?.textContent || '0');
+  if (ticketBadge) {
+    ticketBadge.textContent = count;
+    ticketBadge.style.display = count > 0 ? 'block' : 'none';
+  }
+}
+
+// Override goto to also update bottom nav
+const _origGoto = goto;
+
+// Patch mobile nav close on nav item click
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      closeMobileNav();
+      closeFAB();
+    });
+  });
+});
+
+// ═══ MOBILE — SWIPE TO CLOSE MODAL ═══
+let touchStartY = 0;
+document.addEventListener('touchstart', e => {
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+// (Désactivé) Le swipe-to-close fermait par erreur les modals longs (handover, daily report)
+// dès que l'utilisateur faisait défiler le contenu vers le bas. L'utilisateur peut toujours
+// fermer via la croix × du modal.
+// document.addEventListener('touchmove', e => { ... });
+
+// ═══ MOBILE — BETTER DASHBOARD ═══
+function renderDashboardMobile() {
+  // Update bottom nav badges
+  updateMobileBadges();
+}
+
+// ═══ FORGOT PASSWORD ═══
+function showForgotPassword() {
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:32px;width:90%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px;">🔑 Réinitialiser le mot de passe</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:24px;">Entrez votre email — vous recevrez un lien de réinitialisation.</div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="forgot-email" placeholder="votre@email.com" autocomplete="email">
+      </div>
+      <div id="forgot-msg" style="display:none;margin-top:12px;padding:10px 14px;border-radius:var(--radius);font-size:13px;"></div>
+      <button class="login-btn" id="forgot-btn" onclick="sendForgotPassword()" style="margin-top:16px;">📤 Envoyer le lien</button>
+      <div style="text-align:center;margin-top:14px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="this.closest('.overlay').remove()" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text3)'">← Retour à la connexion</span>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  setTimeout(() => document.getElementById('forgot-email')?.focus(), 100);
+}
+
+async function sendForgotPassword() {
+  const email = document.getElementById('forgot-email')?.value.trim();
+  const msg   = document.getElementById('forgot-msg');
+  const btn   = document.getElementById('forgot-btn');
+  if (!email) { 
+    if(msg){ msg.style.display='block'; msg.style.background='rgba(230,57,70,.1)'; msg.style.color='var(--accent)'; msg.textContent='Entrez votre email.'; }
+    return; 
+  }
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="loader"></span> Envoi...'; }
+  try {
+    const res = await fetch(`${window.location.origin}/api/v1/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if(msg){ 
+      msg.style.display='block'; 
+      if(res.ok || res.status===200) {
+        msg.style.background='rgba(45,198,83,.1)'; 
+        msg.style.color='var(--green)'; 
+        msg.textContent='✅ Si cet email existe, vous recevrez un lien de réinitialisation dans quelques minutes.';
+        if(btn){ btn.disabled=true; btn.innerHTML='✅ Email envoyé'; }
+      } else {
+        msg.style.background='rgba(230,57,70,.1)'; 
+        msg.style.color='var(--accent)'; 
+        msg.textContent='Erreur — vérifiez votre email ou contactez un administrateur.';
+        if(btn){ btn.disabled=false; btn.innerHTML='📤 Renvoyer'; }
+      }
+    }
+  } catch {
+    if(msg){ msg.style.display='block'; msg.style.background='rgba(244,162,97,.1)'; msg.style.color='var(--amber)'; msg.textContent='Erreur réseau — réessayez.'; }
+    if(btn){ btn.disabled=false; btn.innerHTML='📤 Envoyer le lien'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// INVITATION SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+function showInviteModal() {
+  document.getElementById('invite-result').style.display = 'none';
+  document.getElementById('invite-link-input').value = '';
+  showModal('modal-invite');
+}
+
+async function generateInviteLink() {
+  const role = document.getElementById('invite-role').value;
+  const email = document.getElementById('invite-email').value || undefined;
+  const note = document.getElementById('invite-note').value || undefined;
+  const btn = document.getElementById('invite-gen-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span>'; }
+
+  const res = await api('POST', '/auth/invite', { role, email, note });
+
+  if (btn) { btn.disabled=false; btn.innerHTML='🔗 Générer le lien'; }
+
+  if (res?.success) {
+    const link = res.data.inviteUrl;
+    document.getElementById('invite-link-input').value = link;
+    document.getElementById('invite-result').style.display = 'block';
+    // Auto-copy
+    copyInviteLink();
+  } else {
+    // Fallback: generate client-side token for demo
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const link = `${window.location.origin}?invite=${token}&role=${role}`;
+    document.getElementById('invite-link-input').value = link;
+    document.getElementById('invite-result').style.display = 'block';
+    toast('Lien généré (API invite non déployée — fonctionne en mode démo)', 'warning');
+  }
+}
+
+function copyInviteLink() {
+  const input = document.getElementById('invite-link-input');
+  if (!input) return;
+  input.select();
+  navigator.clipboard?.writeText(input.value).then(()=>toast('Lien copié ✅','success')).catch(()=>{
+    document.execCommand('copy');
+    toast('Lien copié ✅','success');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// REGISTER PAGE — shown when ?invite=TOKEN in URL
+// ═══════════════════════════════════════════════════════════
+
+function checkInviteParam() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('invite');
+  const role = params.get('role');
+  if (!token) return false;
+
+  // Show register screen
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'none';
+  const regScreen = document.getElementById('register-screen');
+  if (regScreen) regScreen.style.display = 'flex';
+
+  // Pre-fill role if in URL
+  if (role) {
+    const roleLabels = {
+      worker:'👷 Installation Team',
+      engineer:'⚙️ Sales Engineer',
+      site_manager:'🏗️ Site Manager',
+      technical_manager:'🔧 Technical Manager',
+      warehouse:'📦 Warehouse Labour',
+    };
+    const sel = document.getElementById('reg-role');
+    if (sel) sel.value = role;
+    const lbl = document.getElementById('register-role-label');
+    if (lbl && roleLabels[role]) lbl.textContent = `Rôle : ${roleLabels[role]}`;
+  }
+
+  // Store invite token
+  window.INVITE_TOKEN = token;
+  return true;
+}
+
+async function submitRegister() {
+  const firstName = document.getElementById('reg-firstname')?.value.trim();
+  const lastName  = document.getElementById('reg-lastname')?.value.trim();
+  const email     = document.getElementById('reg-email')?.value.trim();
+  const role      = document.getElementById('reg-role')?.value;
+  const password  = document.getElementById('reg-password')?.value;
+  const password2 = document.getElementById('reg-password2')?.value;
+  const errEl     = document.getElementById('reg-error');
+  const btn       = document.getElementById('reg-btn');
+
+  const showErr = (msg) => {
+    if (errEl) { errEl.style.display='block'; errEl.textContent=msg; }
+  };
+
+  if (!firstName||!lastName||!email||!password) return showErr('Tous les champs obligatoires doivent être remplis.');
+  if (password.length < 8) return showErr('Le mot de passe doit contenir au moins 8 caractères.');
+  if (password !== password2) return showErr('Les mots de passe ne correspondent pas.');
+
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
+
+  // Try register via invite endpoint
+  const res = await fetch(`${window.location.origin}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      firstName, lastName, email, password, role,
+      inviteToken: window.INVITE_TOKEN,
+    }),
+  }).then(r=>r.json()).catch(()=>null);
+
+  if (res?.success) {
+    // Auto-login
+    TOKEN = res.data.token;
+    CURRENT_USER = res.data.user;
+    localStorage.setItem('vem_token', TOKEN);
+    localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER));
+    document.getElementById('register-screen').style.display = 'none';
+    // Clean URL
+    window.history.replaceState({}, '', window.location.pathname);
+    showApp();
+    toast(`Bienvenue ${firstName} ! 🎉`, 'success');
+  } else {
+    const msg = res?.error || 'Erreur création de compte';
+    showErr(msg);
+    if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer mon compte'; }
+  }
+}
+
+function showLoginFromRegister() {
+  document.getElementById('register-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  window.history.replaceState({}, '', window.location.pathname);
+}
+
+// ═══ INIT ═══
+if (checkInviteParam()) {
+  // Show register page — handled in checkInviteParam
+} else if (TOKEN && CURRENT_USER) {
+  showApp();
+} else {
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+// ═══ HANDOVER — SIGNATURE PAD ═══
+function initSigPad(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+  ctx.strokeStyle = '#e63946';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+
+  const getPos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  };
+
+  canvas.addEventListener('mousedown',  (e) => { drawing=true; const p=getPos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+  canvas.addEventListener('mousemove',  (e) => { if(!drawing) return; const p=getPos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); });
+  canvas.addEventListener('mouseup',    () => drawing=false);
+  canvas.addEventListener('mouseleave', () => drawing=false);
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); drawing=true; const p=getPos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); });
+  canvas.addEventListener('touchmove',  (e) => { e.preventDefault(); if(!drawing) return; const p=getPos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); });
+  canvas.addEventListener('touchend',   () => drawing=false);
+}
+
+function clearSig(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function isSigEmpty(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return true;
+  const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+  return !data.some(x => x !== 0);
+}
+
+async function saveSig(handoverId, type, canvasId, overlay) {
+  if (isSigEmpty(canvasId)) { toast('Signez dans le cadre avant de valider', 'error'); return; }
+  const canvas = document.getElementById(canvasId);
+  const sigData = canvas.toDataURL('image/png');
+  const res = await api('POST', `/handover/${handoverId}/sign`, { type, signatureBase64: sigData });
+  if (res?.success) {
+    toast(`Signature ${type==='manager'?'Site Manager':'client'} enregistrée ✅`, 'success');
+    overlay?.remove();
+    loadHandovers();
+    if (CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID);
+  } else toast('Erreur signature', 'error');
+}
+
+// ── HANDOVER — UPDATE ZONE STATUS ──
+async function updateZoneStatus(handoverId, itemId, newStatus) {
+  const res = await api('PATCH', `/handover/${handoverId}`, {
+    items: [{ id: itemId, status: newStatus }]
+  });
+  if (res?.success) toast('Zone mise à jour ✅', 'success');
+}
+
+// ── HANDOVER — UPLOAD ZONE PHOTO ──
+async function uploadHandoverZonePhoto(handoverId, itemId, input, previewEl) {
+  if (!input.files?.length) return;
+  toast('Upload photo...', 'info');
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('handoverId', handoverId);
+  fd.append('itemId', itemId);
+  try {
+    const r = await fetch(`${API}/upload/handover-photo/${handoverId}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd
+    });
+    const data = await r.json();
+    if (data.success) {
+      // Add photo preview
+      const img = document.createElement('img');
+      img.src = data.data.photoUrl;
+      img.onclick = () => openPhotoViewer(data.data.photoUrl);
+      img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
+      previewEl.insertBefore(img, previewEl.querySelector('label'));
+      toast('Photo ajoutée ✅', 'success');
+    } else toast('Erreur upload', 'error');
+  } catch { toast('Erreur upload', 'error'); }
+}
+
+// ═══ DAILY REPORT — TABS ═══
+function switchDailyTab(tab) {
+  ['manual','import','voice'].forEach(t => {
+    document.getElementById('panel-'+t).style.display = t===tab?
+      (t==='manual'?'grid':'block'):'none';
+    const tabEl = document.getElementById('tab-'+t);
+    if (tabEl) {
+      tabEl.style.color = t===tab?'var(--accent)':'var(--text2)';
+      tabEl.style.borderBottomColor = t===tab?'var(--accent)':'transparent';
+    }
+  });
+}
+
+// ═══ DAILY REPORT — AI PARSE RAW TEXT ═══
+async function parseRawTextWithAI() {
+  const raw = document.getElementById('daily-raw-text')?.value.trim();
+  if (!raw) { toast('Colle ton texte de rapport dabord', 'error'); return; }
+
+  const status = document.getElementById('ai-status');
+  if (status) status.style.display = 'inline';
+  document.querySelector('[onclick="parseRawTextWithAI()"]').disabled = true;
+
+  try {
+    const response = await fetch(`${API}/ai/parse-daily`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TOKEN}`
+      },
+      body: JSON.stringify({ text: raw })
+    });
+
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Erreur IA');
+    const entries = data.data;
+
+    // Store AI entries
+    window.AI_PARSED_ENTRIES = entries;
+
+    // Show preview
+    const preview = document.getElementById('ai-result-preview');
+    const list = document.getElementById('ai-entries-list');
+    if (!preview || !list) return;
+
+    list.innerHTML = entries.map((e, i) => `
+      <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
+        <input class="input" type="time" value="${e.time}" id="ai-time-${i}" style="width:80px;padding:5px 6px;font-size:12px;flex-shrink:0;">
+        <textarea class="input" id="ai-text-${i}" rows="2" style="flex:1;font-size:12px;resize:none;">${e.text}</textarea>
+        <span style="font-size:10px;background:var(--bg4);color:var(--text3);padding:2px 6px;border-radius:4px;align-self:center;flex-shrink:0;">${e.category||''}</span>
+        <button onclick="this.closest('div').remove();window.AI_PARSED_ENTRIES.splice(${i},1);" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
+      </div>`).join('');
+
+    preview.style.display = 'block';
+    toast(`✅ ${entries.length} entrées extraites — vérifie et valide`, 'success');
+
+  } catch(e) {
+    toast('Erreur connexion IA', 'error');
+    console.error(e);
+  } finally {
+    if (status) status.style.display = 'none';
+    const btn = document.querySelector('[onclick="parseRawTextWithAI()"]');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function validateAIEntries() {
+  // Collect edited entries from the preview
+  const list = document.getElementById('ai-entries-list');
+  if (!list) return;
+  const rows = list.querySelectorAll('[id^="ai-time-"]');
+  rows.forEach((timeEl, i) => {
+    const textEl = document.getElementById(`ai-text-${i}`);
+    if (!textEl) return;
+    const time = timeEl.value || '';
+    const text = textEl.value.trim();
+    if (text) {
+      DAILY_ENTRIES.push({ id: Date.now() + i, time, text });
+    }
+  });
+  DAILY_ENTRIES.sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  renderDailyEntries();
+  updateDailySummary();
+  // Switch to manual tab to show result
+  switchDailyTab('manual');
+  document.getElementById('ai-result-preview').style.display = 'none';
+  document.getElementById('daily-raw-text').value = '';
+  toast(`${DAILY_ENTRIES.length} entrées ajoutées au journal ✅`, 'success');
+}
+
+// ═══ VOICE — ADD AS ENTRY OR SEND TO AI ═══
+function addVoiceAsEntry() {
+  const text = document.getElementById('voice-transcript-text')?.textContent.trim();
+  if (!text) return;
+  const time = document.getElementById('new-entry-time')?.value || '';
+  DAILY_ENTRIES.push({ id: Date.now(), time, text });
+  DAILY_ENTRIES.sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  renderDailyEntries();
+  updateDailySummary();
+  switchDailyTab('manual');
+  toast('Dictée ajoutée ✅', 'success');
+}
+
+async function parseVoiceWithAI() {
+  const text = document.getElementById('voice-transcript-text')?.textContent.trim();
+  if (!text) return;
+  // Move text to import panel and parse
+  document.getElementById('daily-raw-text').value = text;
+  switchDailyTab('import');
+  await parseRawTextWithAI();
+}
+
+function updateDailySummary() {
+  const el = document.getElementById('daily-summary-count');
+  if (el) {
+    const n = DAILY_ENTRIES.length;
+    const tasks = Object.keys(DAILY_TASK_UPDATES).length;
+    el.textContent = `${n} entrée(s)${tasks?` · ${tasks} tâche(s) à mettre à jour`:''}`;
+  }
+  // Also update entry count
+  const ec = document.getElementById('entry-count');
+  if (ec) ec.textContent = DAILY_ENTRIES.length + ' entrée(s)';
+}
+
+// ═══ LOAD DETAIL TAB CONTENT ═══
+
+async function loadDetailDailyReports(projectId) {
+  const res = await api('GET', `/daily-reports?projectId=${projectId}`);
+  const el = document.getElementById('detail-daily-content');
+  if (!res?.success) return;
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>`;
+  if (!res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport journalier</div></div>'; return; }
+  el.innerHTML = btn + res.data.map(r => `
+    <div class="card" style="margin-bottom:10px;cursor:pointer;" onclick="openDailyDetail('${r.id}','${projectId}')">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📓 ${fmtDate(r.reportDate)}</div>
+          <div style="font-size:12px;color:var(--text3);">${r.workersPresent} ouvriers · ${r.weather||''} · ${r._count?.entries||0} entrée(s)</div>
+          ${r.generalNotes?`<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px;">${r.generalNotes}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;" onclick="event.stopPropagation()">
+          ${r.sentAt?'<span class="badge badge-green" style="font-size:10px;">✉️</span>':''}
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();openDailyDetail('${r.id}','${projectId}')">👁️</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();editDailyReport('${r.id}')">✏️</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;" onclick="event.stopPropagation();downloadDailyPDF('${r.id}')">📄</button>
+          <button class="btn btn-ghost btn-xs" style="min-height:36px;min-width:36px;padding:6px;color:var(--accent);" onclick="event.stopPropagation();deleteDailyReport('${r.id}')">🗑️</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function openDailyDetail(id, projectId) {
+  const res = await api('GET', `/daily-reports/${id}`);
+  if (!res?.success) { toast('Rapport introuvable','error'); return; }
+  const r = res.data;
+  const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">📓 Daily Report — ${fmtDate(r.reportDate)}</div>
+          <div style="font-size:12px;color:var(--text2);">${r.project?.name||''} · ${r.workersPresent} ouvriers · ${r.weather||''}</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      ${entries.length ? `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;">⏱️ Journal chronologique</div>
+          <div style="border-left:3px solid var(--accent);padding-left:14px;display:flex;flex-direction:column;gap:8px;">
+            ${entries.map(e=>`
+              <div style="display:flex;gap:12px;align-items:baseline;">
+                <span style="font-family:monospace;font-size:12px;font-weight:700;color:var(--accent);flex-shrink:0;min-width:44px;">${e.entryTime||'--:--'}</span>
+                <span style="font-size:13px;color:var(--text);line-height:1.5;flex:1;">${e.description}</span>
+              </div>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${r.generalNotes ? `
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;">📝 Notes</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.5;">${r.generalNotes}</div>
+        </div>` : ''}
+
+      ${(r.photos||[]).length ? `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:8px;text-transform:uppercase;">📸 Photos</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+            ${r.photos.map(p=>`<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+          </div>
+        </div>` : ''}
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${r.id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editDailyReport('${r.id}')">✏️ Modifier</button>
+        <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
+        ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function loadDetailHandovers(projectId) {
+  const res = await api('GET', `/handover?projectId=${projectId}`);
+  const el = document.getElementById('detail-handover-content');
+  if (!res?.success) return;
+  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-handover')">+ Nouveau Handover</button></div>`;
+  if (!res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div>'; return; }
+  const sc = {draft:'badge-amber',signed:'badge-green',pending:'badge-amber'};
+  const sl = {draft:'En cours',signed:'✅ Signé',pending:'En attente'};
+  el.innerHTML = btn + res.data.map(h => {
+    const items = h.items||[];
+    const ok = items.filter(i=>i.status==='ok').length;
+    const rem = items.filter(i=>i.status==='remark').length;
+    const def = items.filter(i=>i.status==='defect').length;
+    return `
+    <div class="card" style="margin-bottom:12px;cursor:pointer;" onclick="openHandoverFull('${h.id}')">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🧾 ${h.clientName||'Handover'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+            ${fmtDate(h.createdAt)}
+            ${h.siteManager?` · ${h.siteManager.firstName} ${h.siteManager.lastName}`:''}
+            ${items.length?` · ${items.length} zone(s)`:''}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+            ${ok?`<span style="font-size:11px;color:var(--green);">✅ ${ok} OK</span>`:''}
+            ${rem?`<span style="font-size:11px;color:var(--amber);">⚠️ ${rem} remarque(s)</span>`:''}
+            ${def?`<span style="font-size:11px;color:var(--accent);">❌ ${def} défaut(s)</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;" onclick="event.stopPropagation()">
+          <span class="badge ${sc[h.status]||'badge-muted'}">${sl[h.status]||h.status}</span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-ghost btn-xs" onclick="openHandoverFull('${h.id}')">👁️ Ouvrir</button>
+            <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${projectId}')">✏️ Modifier</button>
+            <button class="btn btn-ghost btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+            <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
+            <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteHandover('${h.id}')">🗑️</button>
+          </div>
+        </div>
+      </div>
+      ${items.length?`<div class="card-body" style="padding:8px 18px;display:flex;gap:5px;flex-wrap:wrap;">
+        ${items.map(i=>`<span class="badge ${i.status==='ok'?'badge-green':i.status==='remark'?'badge-amber':'badge-red'}" style="font-size:11px;">${i.zoneName}</span>`).join('')}
+      </div>`:''}
+    </div>`}).join('');
+}
+
+async function editHandoverInfo(id, clientName, clientEmail, notes, projectId) {
+  const el = document.createElement('div'); el.className='overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head"><div class="modal-title">✏️ Modifier Handover</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="form-group2"><label class="form-label2">Nom client</label><input class="input" id="eh-client" value="${clientName}"></div>
+      <div class="form-group2"><label class="form-label2">Email client</label><input class="input" type="email" id="eh-email" value="${clientEmail}"></div>
+      <div class="form-group2"><label class="form-label2">Notes générales</label><textarea class="input" id="eh-notes" rows="4">${notes}</textarea></div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteHandover('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="saveHandoverInfo('${id}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+}
+
+async function saveHandoverInfo(id, projectId, overlay) {
+  const res = await api('PATCH', `/handover/${id}`, {
+    clientName: document.getElementById('eh-client')?.value||undefined,
+    clientEmail: document.getElementById('eh-email')?.value||undefined,
+    generalNotes: document.getElementById('eh-notes')?.value||undefined,
+  });
+  if (res?.success) { toast('Handover mis à jour ✅','success'); overlay?.remove(); loadDetailHandovers(projectId); }
+  else toast('Erreur mise à jour','error');
+}
+
+// ═══════════════════════════════════════════
+// VISITES CLIENT — Niveau 1 : LISTE des visites du projet
+// ═══════════════════════════════════════════
+async function loadDetailRemarks(projectId) {
+  const el = document.getElementById('detail-remarks-content');
+  if (!el) return;
+
+  const res = await api('GET', `/client-visits?projectId=${projectId}`);
+  const visits = res?.success ? res.data : [];
+
+  const headerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:16px;font-weight:700;">📋 Visites terrain</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">${visits.length} visite${visits.length>1?'s':''} enregistrée${visits.length>1?'s':''}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openNewVisitModal('${projectId}')">➕ Nouvelle visite</button>
+    </div>`;
+
+  if (!visits.length) {
+    el.innerHTML = headerHTML + `
+      <button class="terrain-add-btn" onclick="openNewVisitModal('${projectId}')">
+        <span style="font-size:28px;">📋</span>
+        <div>
+          <div style="font-weight:700;font-size:15px;">Créer la première visite</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px;">Un rapport de visite contient plusieurs points avec photos</div>
+        </div>
+      </button>`;
+    return;
+  }
+
+  el.innerHTML = headerHTML + visits.map(v => {
+    const dt = new Date(v.visitDate).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+    const nbPts = v._count?.remarks || 0;
+    const clientName = v.client?.name || '';
+    return `
+    <div class="card" style="margin-bottom:10px;cursor:pointer;border-left:4px solid var(--blue);" onclick="openVisitDetail('${v.id}','${projectId}')">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${esc(v.title)}</div>
+          <div style="font-size:12px;color:var(--text3);">📅 ${dt}${clientName?` · 🤝 ${esc(clientName)}`:''}</div>
+          ${v.notes?`<div style="font-size:12px;color:var(--text2);margin-top:6px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${esc(v.notes)}</div>`:''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+          <span style="background:var(--bg3);padding:3px 10px;border-radius:10px;font-size:12px;font-weight:600;">📸 ${nbPts} point${nbPts>1?'s':''}</span>
+          <button class="btn btn-ghost btn-xs" onclick="deleteVisit('${v.id}','${projectId}')" title="Supprimer">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Modal "Nouvelle visite" : titre + client (optionnel)
+function openNewVisitModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">➕ Nouvelle visite terrain</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2"><label class="form-label2">Titre de la visite *</label>
+        <input class="input" id="nv-title" placeholder="Ex: Visite client du 4 juin — point d'avancement"></div>
+      <div class="form-group2"><label class="form-label2">Date</label>
+        <input class="input" type="date" id="nv-date" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group2"><label class="form-label2">Client (optionnel)</label>
+        <select class="input" id="nv-client">
+          <option value="">— Aucun —</option>
+          ${(CLIENTS||[]).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2"><label class="form-label2">Notes (optionnel)</label>
+        <textarea class="input" id="nv-notes" rows="2" placeholder="Contexte de la visite, personnes présentes..."></textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitNewVisit('${projectId}',this.closest('.overlay'))">➕ Créer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function submitNewVisit(projectId, overlay) {
+  const title = document.getElementById('nv-title').value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
+  const body = {
+    projectId,
+    title,
+    visitDate: document.getElementById('nv-date').value || undefined,
+    clientId:  document.getElementById('nv-client').value || undefined,
+    notes:     document.getElementById('nv-notes').value || undefined,
+  };
+  const res = await api('POST', '/client-visits', body);
+  if (res?.success) {
+    toast('Visite créée ✅', 'success');
+    overlay.remove();
+    loadDetailRemarks(projectId);
+    // Ouvre directement la visite pour commencer à ajouter des points
+    setTimeout(() => openVisitDetail(res.data.id, projectId), 300);
+  } else {
+    toast(res?.error || 'Erreur création visite', 'error');
+  }
+}
+
+async function deleteVisit(visitId, projectId) {
+  if (!confirm('Supprimer cette visite et tous ses points ?')) return;
+  const res = await api('DELETE', `/client-visits/${visitId}`);
+  if (res?.success) { toast('Visite supprimée', 'success'); loadDetailRemarks(projectId); }
+  else toast('Erreur suppression', 'error');
+}
+
+// ═══════════════════════════════════════════
+// VISITES CLIENT — Niveau 2 : DÉTAIL d'une visite avec ses points
+// ═══════════════════════════════════════════
+async function openVisitDetail(visitId, projectId) {
+  const res = await api('GET', `/client-visits/${visitId}`);
+  if (!res?.success) { toast('Visite introuvable', 'error'); return; }
+  const v = res.data;
+  const points = v.remarks || [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'overlay-visit-detail';
+  overlay.dataset.visitId = visitId;
+  overlay.dataset.projectId = projectId;
+
+  const dt = new Date(v.visitDate).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+  const statusBg  = {open:'#fee2e2',in_progress:'#fef9c3',resolved:'#dcfce7',archived:'#f3f4f6',urgent:'#fff1f2'};
+  const statusClr = {open:'#dc2626',in_progress:'#ca8a04',resolved:'#16a34a',archived:'#6b7280',urgent:'#e63946'};
+  const statusLbl = {open:'Ouvert',in_progress:'En cours',resolved:'Résolu',archived:'Archivé',urgent:'⚡ URGENT'};
+
+  const pointHTML = points.map((r, idx) => {
+    const st = r.status || 'open';
+    const clr = statusClr[st] || '#dc2626';
+    const bg  = statusBg[st]  || '#fee2e2';
+    const photos = r.photos || [];
+    return `
+      <div style="background:var(--bg2);border:1px solid ${clr}44;border-left:4px solid ${clr};border-radius:10px;padding:10px;margin-bottom:8px;">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
+          <span style="width:22px;height:22px;border-radius:50%;background:${clr};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${idx+1}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13px;">${esc(r.title)}</div>
+            ${r.description?`<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4;">${esc(r.description)}</div>`:''}
+          </div>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${bg};color:${clr};flex-shrink:0;white-space:nowrap;">${statusLbl[st]||st}</span>
+        </div>
+        ${photos.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:8px;">
+          ${photos.map(p => `<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;cursor:pointer;">`).join('')}
+        </div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          ${st !== 'resolved' ? `<button class="btn btn-ghost btn-xs" onclick="updatePointStatusVisit('${r.id}','${visitId}','${projectId}','resolved')">✅ Marquer OK</button>` : ''}
+          <label class="btn btn-ghost btn-xs" style="cursor:pointer;">📸 + photo<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadPointPhotoVisit('${r.id}','${visitId}','${projectId}',this)"></label>
+          <button class="btn btn-ghost btn-xs" onclick="deletePointVisit('${r.id}','${visitId}','${projectId}')" style="color:var(--accent);margin-left:auto;">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title">📋 ${esc(v.title)}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">📅 ${dt}${v.client?` · 🤝 ${esc(v.client.name)}`:''}</div>
+          ${v.notes?`<div style="font-size:12px;color:var(--text3);margin-top:4px;font-style:italic;">${esc(v.notes)}</div>`:''}
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Liste des points -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Points (${points.length})</div>
+        <div id="visit-points-list">${pointHTML || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;border:1px dashed var(--border);border-radius:8px;">Aucun point pour le moment</div>'}</div>
+      </div>
+
+      <button class="terrain-add-btn" onclick="openAddPointToVisitModal('${visitId}','${projectId}')">
+        <span style="font-size:22px;">➕</span>
+        <span style="font-weight:600;">Ajouter un point</span>
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ═══════════════════════════════════════════
+// Ajout d'un point DANS une visite — avec dictée vocale
+// ═══════════════════════════════════════════
+function openAddPointToVisitModal(visitId, projectId) {
+  PENDING_POINT_PHOTOS = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div class="modal-title">📍 Nouveau point</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Photo -->
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">📸 Photo(s)</label>
+        <div id="vpt-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;"></div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:16px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:600;background:var(--bg3);">
+          <span style="font-size:24px;">📸</span>
+          <span>Ajouter photo(s)</span>
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewVisitPointPhotos(this)">
+        </label>
+      </div>
+
+      <!-- Titre -->
+      <div class="form-group2"><label class="form-label2">Titre du point *</label>
+        <input class="input" id="vpt-title" placeholder="Ex: Trace au mur côté entrée"></div>
+
+      <!-- Description avec dictée -->
+      <div class="form-group2">
+        <label class="form-label2" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Description (optionnel)</span>
+          <button id="vpt-mic-btn" type="button" onclick="toggleVisitPointDictation()" class="btn btn-ghost btn-xs" style="font-size:11px;">🎤 Dicter</button>
+        </label>
+        <textarea class="input" id="vpt-desc" rows="3" placeholder="Détails du point — ou clic 🎤 Dicter pour parler"></textarea>
+        <div id="vpt-mic-status" style="display:none;font-size:11px;color:var(--accent);margin-top:4px;">🔴 Enregistrement en cours...</div>
+      </div>
+
+      <!-- Zone + priorité -->
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Zone</label>
+          <input class="input" id="vpt-zone" placeholder="Ex: Salle principale, façade nord"></div>
+        <div class="form-group2"><label class="form-label2">Priorité</label>
+          <select class="input" id="vpt-prio">
+            <option value="normal">🔵 Normal</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="critical">🔴 Critique</option>
+            <option value="low">🟢 Faible</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitVisitPoint('${visitId}','${projectId}',this.closest('.overlay'))">➕ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function previewVisitPointPhotos(input) {
+  const preview = document.getElementById('vpt-photos-preview');
+  if (!preview) return;
+  for (const file of input.files) {
+    PENDING_POINT_PHOTOS.push(file);
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;';
+      preview.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+// Dictée vocale pour la description du point
+let _visitPointRecognition = null;
+let _visitPointIsRecording = false;
+function toggleVisitPointDictation() {
+  if (_visitPointIsRecording) {
+    _visitPointIsRecording = false;
+    _visitPointRecognition?.stop();
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Reconnaissance vocale non supportée sur ce navigateur', 'error'); return; }
+  _visitPointRecognition = new SR();
+  _visitPointRecognition.lang = 'fr-FR';
+  _visitPointRecognition.continuous = true;
+  _visitPointRecognition.interimResults = true;
+  let finalText = '';
+
+  _visitPointRecognition.onstart = () => {
+    _visitPointIsRecording = true;
+    document.getElementById('vpt-mic-btn').textContent = '⏹️ Stop';
+    document.getElementById('vpt-mic-status').style.display = 'block';
+    finalText = document.getElementById('vpt-desc').value;
+    if (finalText && !finalText.endsWith(' ')) finalText += ' ';
+  };
+  _visitPointRecognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) finalText += r[0].transcript + ' ';
+      else interim += r[0].transcript;
+    }
+    document.getElementById('vpt-desc').value = (finalText + interim).trim();
+  };
+  _visitPointRecognition.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    toast('Micro : ' + e.error, 'error');
+  };
+  _visitPointRecognition.onend = () => {
+    if (_visitPointIsRecording) {
+      try { _visitPointRecognition.start(); } catch (e) {}
+    } else {
+      const btn = document.getElementById('vpt-mic-btn');
+      const st = document.getElementById('vpt-mic-status');
+      if (btn) btn.textContent = '🎤 Dicter';
+      if (st) st.style.display = 'none';
+    }
+  };
+  _visitPointRecognition.start();
+}
+
+async function submitVisitPoint(visitId, projectId, overlay) {
+  const title = document.getElementById('vpt-title').value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
+
+  // Stopper la dictée si encore active
+  if (_visitPointIsRecording) { _visitPointIsRecording = false; _visitPointRecognition?.stop(); }
+
+  const res = await api('POST', '/client-remarks', {
+    projectId,
+    visitId,
+    title,
+    description: document.getElementById('vpt-desc').value || undefined,
+    zone:        document.getElementById('vpt-zone').value || undefined,
+    priority:    document.getElementById('vpt-prio').value,
+    status:      'open',
+  });
+  if (!res?.success) { toast('Erreur création du point', 'error'); return; }
+
+  // Upload des photos liées au point fraîchement créé
+  for (const file of PENDING_POINT_PHOTOS) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const up = await fetch(`${API}/upload/photo`, { method:'POST', headers:{ 'Authorization':`Bearer ${TOKEN}` }, body: fd });
+      const upJson = await up.json();
+      if (upJson?.success) {
+        await api('POST', `/client-remarks/${res.data.id}/photos`, {
+          photoUrl: upJson.data.url, publicId: upJson.data.publicId, phase: 'problem',
+        });
+      }
+    } catch {}
+  }
+  PENDING_POINT_PHOTOS = [];
+
+  toast('Point ajouté ✅', 'success');
+  overlay.remove();
+  // Rouvrir la visite pour voir le nouveau point en haut
+  openVisitDetail(visitId, projectId);
+}
+
+async function updatePointStatusVisit(remarkId, visitId, projectId, status) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, { status });
+  if (res?.success) { toast('Statut mis à jour', 'success'); openVisitDetail(visitId, projectId); }
+}
+
+async function deletePointVisit(remarkId, visitId, projectId) {
+  if (!confirm('Supprimer ce point ?')) return;
+  const res = await api('DELETE', `/client-remarks/${remarkId}`);
+  if (res?.success) { toast('Point supprimé', 'success'); openVisitDetail(visitId, projectId); }
+}
+
+async function uploadPointPhotoVisit(remarkId, visitId, projectId, input) {
+  if (!input.files?.length) return;
+  for (const file of input.files) {
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const up = await fetch(`${API}/upload/photo`, { method:'POST', headers:{ 'Authorization':`Bearer ${TOKEN}` }, body: fd });
+      const upJson = await up.json();
+      if (upJson?.success) {
+        await api('POST', `/client-remarks/${remarkId}/photos`, { photoUrl: upJson.data.url, publicId: upJson.data.publicId, phase: 'problem' });
+      }
+    } catch {}
+  }
+  toast('Photo(s) ajoutée(s)', 'success');
+  openVisitDetail(visitId, projectId);
+}
+
+async function assignPointQuick(remarkId, projectId, userId) {
+  await api('PATCH', `/client-remarks/${remarkId}`, { assignedTo: userId||null });
+  toast('Assigné ✅','success');
+}
+
+// ═══════════════════════════════════════════
+// VISITE TERRAIN — MODULE COMPLET
+// ═══════════════════════════════════════════
+
+// ── Ouvrir modal ajout point terrain ──
+function openAddPointModal(projectId) {
+  PENDING_POINT_PHOTOS = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.id = 'modal-add-point';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head">
+        <div><div class="modal-title">📍 Nouveau Point Terrain</div>
+        <div style="font-size:12px;color:var(--text2);">Avec le client sur site</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Photo en premier — priorité terrain -->
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📸 Photo du problème</label>
+        <div id="point-photos-preview" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;"></div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--border);border-radius:12px;padding:20px;cursor:pointer;color:var(--text3);font-size:14px;font-weight:600;background:var(--bg3);-webkit-tap-highlight-color:transparent;min-height:80px;" 
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          <span style="font-size:32px;">📸</span>
+          <div><div>Prendre une photo</div><div style="font-size:11px;font-weight:400;color:var(--text3);margin-top:2px;">Depuis la caméra ou la galerie</div></div>
+          <input type="file" accept="image/*" capture="environment" multiple style="display:none;" onchange="previewPointPhotos(this)">
+        </label>
+      </div>
+
+      <!-- Titre / description -->
+      <div class="form-group2">
+        <label class="form-label2">Description du problème *</label>
+        <div style="display:flex;gap:6px;">
+          <input class="input" id="point-title" placeholder="ex: Éclairage défectueux zone B..." style="flex:1;">
+          <button class="btn btn-ghost btn-xs" style="flex-shrink:0;" onclick="voiceInputPoint('point-title')" title="Dicter">🎙️</button>
+        </div>
+      </div>
+
+      <!-- Localisation -->
+      <div class="input-row">
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">📍 Zone / Emplacement</label>
+          <input class="input" id="point-zone" placeholder="ex: Hall A, Stand 3...">
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">🔴 Priorité</label>
+          <select class="input" id="point-priority">
+            <option value="critical">🔴 Critique</option>
+            <option value="high">🟠 Élevé</option>
+            <option value="normal" selected>🔵 Normal</option>
+            <option value="low">🟢 Faible</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Action requise -->
+      <div class="form-group2">
+        <label class="form-label2">✅ Action requise</label>
+        <div style="display:flex;gap:6px;">
+          <textarea class="input" id="point-action" rows="2" placeholder="Ce qu'il faut faire..." style="flex:1;"></textarea>
+          <button class="btn btn-ghost btn-xs" style="flex-shrink:0;align-self:flex-start;" onclick="voiceInputPoint('point-action')" title="Dicter">🎙️</button>
+        </div>
+      </div>
+
+      <!-- Assignation -->
+      <div class="form-group2">
+        <label class="form-label2">👤 Assigner à</label>
+        <select class="input" id="point-assign">
+          <option value="">— À toute l'équipe —</option>
+          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName}</option>`).join('')}
+        </select>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="savePoint('${projectId}')">📍 Enregistrer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => document.getElementById('point-title')?.focus(), 100);
+}
+
+// ── Preview photos avant sauvegarde ──
+function previewPointPhotos(input) {
+  PENDING_POINT_PHOTOS = [...(PENDING_POINT_PHOTOS||[]), ...Array.from(input.files)];
+  const grid = document.getElementById('point-photos-preview');
+  if (!grid) return;
+  grid.innerHTML = PENDING_POINT_PHOTOS.map(f => {
+    const url = URL.createObjectURL(f);
+    return `<div style="aspect-ratio:1;border-radius:10px;overflow:hidden;border:2px solid var(--border);">
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
+    </div>`;
+  }).join('');
+}
+
+// ── Dictée vocale ──
+function voiceInputPoint(fieldId) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée sur ce navigateur','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = false;
+  const btn = event.target; btn.textContent = '🔴';
+  toast('🎙️ Parlez maintenant...','info');
+  rec.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    const field = document.getElementById(fieldId);
+    if (field) field.value = (field.value ? field.value + ' ' : '') + text;
+    btn.textContent = '🎙️';
+    toast('Enregistré ✅','success');
+  };
+  rec.onerror = () => { btn.textContent = '🎙️'; toast('Erreur dictée','error'); };
+  rec.onend = () => { btn.textContent = '🎙️'; };
+  rec.start();
+}
+
+// ── Sauvegarder un point ──
+async function savePoint(projectId) {
+  const title = document.getElementById('point-title')?.value?.trim();
+  if (!title) { toast('Décris le problème','error'); document.getElementById('point-title')?.focus(); return; }
+
+  const btn = event.target; btn.disabled = true; btn.textContent = '⏳ Sauvegarde...';
+
+  let res = null;
+  // Retry up to 2 times on network error
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      res = await api('POST', '/client-remarks', {
+        projectId,
+        title,
+        description: document.getElementById('point-action')?.value || undefined,
+        zone: document.getElementById('point-zone')?.value || undefined,
+        priority: document.getElementById('point-priority')?.value || 'normal',
+        assignedTo: document.getElementById('point-assign')?.value || undefined,
+        status: 'open',
+      });
+      if (res?.success) break;
+      if (attempt === 0) { await new Promise(r => setTimeout(r, 800)); btn.textContent = '⏳ Nouvel essai...'; }
+    } catch(e) {
+      console.error('savePoint attempt', attempt, e);
+      if (attempt === 0) { await new Promise(r => setTimeout(r, 800)); btn.textContent = '⏳ Reconnexion...'; }
+    }
+  }
+
+  if (res?.success) {
+    // Upload photos
+    if (PENDING_POINT_PHOTOS?.length) {
+      btn.textContent = `⏳ Upload ${PENDING_POINT_PHOTOS.length} photo(s)...`;
+      for (const file of PENDING_POINT_PHOTOS) {
+        const fd = new FormData(); fd.append('file', file);
+        try {
+          const r = await fetch(`${API}/upload/photo`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+          });
+          const data = await r.json();
+          const url = data.data?.url || data.url;
+          if (url) {
+            await fetch(`${API}/client-remarks/${res.data.id}/photos`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+              body: JSON.stringify({ photoUrl: url, publicId: data.data?.public_id || null, phase: 'problem' })
+            });
+          }
+        } catch {}
+      }
+    }
+    PENDING_POINT_PHOTOS = [];
+    toast('Point enregistré ✅', 'success');
+    document.getElementById('modal-add-point')?.remove();
+    loadDetailRemarks(projectId);
+  } else {
+    const err = res?.error || 'Erreur';
+    toast(err.includes('table') || err.includes('column') ? 'SQL client_remarks manquant dans Railway' : err, 'error');
+    btn.disabled = false; btn.textContent = '📍 Enregistrer';
+  }
+}
+
+// ── Upload photo sur un point existant ──
+async function uploadPointPhoto(remarkId, projectId, input) {
+  if (!input.files?.length) return;
+  toast('Upload photo...', 'info');
+  const fd = new FormData(); fd.append('file', input.files[0]);
+  try {
+    const r = await fetch(`${API}/upload/photo`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
+    });
+    const data = await r.json();
+    const url = data.data?.url || data.url;
+    if (url) {
+      await fetch(`${API}/client-remarks/${remarkId}/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ photoUrl: url, publicId: data.data?.public_id || null, phase: 'problem' })
+      });
+      toast('Photo ajoutée ✅', 'success');
+      loadDetailRemarks(projectId);
+    } else toast('Upload échoué', 'error');
+  } catch { toast('Erreur upload', 'error'); }
+}
+
+// ── Ouvrir détail / modifier un point ──
+async function openPointDetail(remarkId, projectId) {
+  const res = await api('GET', `/client-remarks/${remarkId}`);
+  if (!res?.success) { toast('Point introuvable','error'); return; }
+  const r = res.data;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <div class="modal-head">
+        <div><div class="modal-title">✏️ Modifier le Point</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div class="form-group2">
+        <label class="form-label2">Description</label>
+        <input class="input" id="ep-title" value="${r.title||''}">
+      </div>
+      <div class="input-row">
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Zone</label>
+          <input class="input" id="ep-zone" value="${r.zone||''}">
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Priorité</label>
+          <select class="input" id="ep-priority">
+            <option value="critical" ${r.priority==='critical'?'selected':''}>🔴 Critique</option>
+            <option value="high" ${r.priority==='high'?'selected':''}>🟠 Élevé</option>
+            <option value="normal" ${r.priority==='normal'?'selected':''}>🔵 Normal</option>
+            <option value="low" ${r.priority==='low'?'selected':''}>🟢 Faible</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Action requise</label>
+        <textarea class="input" id="ep-desc" rows="3">${r.description||''}</textarea>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Assigner à</label>
+        <select class="input" id="ep-assign">
+          <option value="">— À toute l'équipe —</option>
+          ${USERS.map(u=>`<option value="${u.id}" ${r.assignedTo===u.id?'selected':''}>${u.firstName} ${u.lastName}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Statut</label>
+        <select class="input" id="ep-status">
+          <option value="open" ${r.status==='open'?'selected':''}>🔴 Ouvert</option>
+          <option value="in_progress" ${r.status==='in_progress'?'selected':''}>🟡 En cours</option>
+          <option value="resolved" ${r.status==='resolved'?'selected':''}>✅ Résolu</option>
+        </select>
+      </div>
+      ${document.getElementById('ep-status')?.value==='resolved'?`
+      <div class="form-group2">
+        <label class="form-label2">Note de résolution</label>
+        <textarea class="input" id="ep-resolution" rows="2">${r.resolutionNotes||''}</textarea>
+      </div>`:''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteRemark('${remarkId}','${projectId}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="updatePoint('${remarkId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── Mettre à jour un point ──
+async function updatePoint(remarkId, projectId, overlay) {
+  const status = document.getElementById('ep-status')?.value;
+  const body = {
+    title: document.getElementById('ep-title')?.value,
+    zone: document.getElementById('ep-zone')?.value || undefined,
+    priority: document.getElementById('ep-priority')?.value,
+    description: document.getElementById('ep-desc')?.value || undefined,
+    assignedTo: document.getElementById('ep-assign')?.value || undefined,
+    status,
+    resolutionNotes: status==='resolved' ? (document.getElementById('ep-resolution')?.value||undefined) : undefined,
+    resolvedAt: status==='resolved' ? new Date().toISOString() : undefined,
+  };
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, body);
+  if (res?.success) { toast('Point mis à jour ✅','success'); overlay?.remove(); loadDetailRemarks(projectId); }
+  else toast('Erreur mise à jour','error');
+}
+
+// ── Résoudre rapidement un point ──
+async function resolveRemark(remarkId, projectId) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, {
+    status: 'resolved', resolvedAt: new Date().toISOString()
+  });
+  if (res?.success) { toast('Point résolu ✅','success'); loadDetailRemarks(projectId); }
+  else toast('Erreur','error');
+}
+
+// ── Supprimer un point ──
+async function deleteRemark(remarkId, projectId) {
+  if (!confirm('Supprimer ce point ?')) return;
+  const res = await api('DELETE', `/client-remarks/${remarkId}`);
+  if (res?.success) { toast('Point supprimé','success'); loadDetailRemarks(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+// ── Export PDF visite terrain ──
+async function exportVisitePDF(projectId) {
+  const proj = PROJECTS?.find(p => p.id === projectId);
+  const res = await api('GET', `/client-remarks?projectId=${projectId}`);
+  if (!res?.success) { toast('Erreur chargement','error'); return; }
+  const points = res.data;
+  const open = points.filter(r => r.status !== 'resolved');
+  const done = points.filter(r => r.status === 'resolved');
+  const now = new Date();
+
+  const prioColor = {critical:'#e63946',high:'#f4a261',normal:'#4895ef',low:'#2dc653'};
+  const prioLabel = {critical:'Critique',high:'Élevé',normal:'Normal',low:'Faible'};
+
+  const renderPDFPoint = (r, idx) => `
+    <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;page-break-inside:avoid;">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+        <div style="width:28px;height:28px;background:${prioColor[r.priority]||'#4895ef'};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${idx}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:14px;">${r.title}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+            ${r.zone?`📍 ${r.zone} · `:''}
+            <span style="color:${prioColor[r.priority]||'#4895ef'};font-weight:600;">${prioLabel[r.priority]||'Normal'}</span>
+            ${r.assignedToUser?` · 👤 ${r.assignedToUser.firstName} ${r.assignedToUser.lastName}`:''}
+          </div>
+        </div>
+        <div style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;background:${r.status==='resolved'?'#dcfce7':'#fee2e2'};color:${r.status==='resolved'?'#16a34a':'#dc2626'};">
+          ${r.status==='resolved'?'✅ Résolu':'🔴 Ouvert'}
+        </div>
+      </div>
+      ${r.description?`<div style="padding:10px 14px;font-size:13px;color:#374151;background:#fff;border-bottom:1px solid #f3f4f6;">🔧 ${r.description}</div>`:''}
+      ${(r.photos||[]).length?`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 14px;background:#fff;">
+        ${r.photos.map(p=>`<img src="${p.photoUrl}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;">`).join('')}
+      </div>`:''}
+      ${r.resolutionNotes?`<div style="padding:8px 14px;font-size:12px;color:#16a34a;background:#f0fdf4;border-top:1px solid #dcfce7;">✅ ${r.resolutionNotes}</div>`:''}
+    </div>`;
+
+  const pdfHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Visite Terrain — ${proj?.name||'Projet'}</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:24px;}
+    @media print{body{padding:0;}.no-print{display:none;}}
+    @page{margin:20mm;}
+  </style></head><body>
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #e63946;">
+    <div>
+      <div style="font-size:22px;font-weight:800;color:#111;">📋 RAPPORT DE VISITE TERRAIN</div>
+      <div style="font-size:16px;font-weight:600;color:#374151;margin-top:4px;">${proj?.name||'Projet'}</div>
+      <div style="font-size:13px;color:#6b7280;margin-top:4px;">${proj?.address||''}</div>
+    </div>
+    <div style="text-align:right;font-size:12px;color:#6b7280;">
+      <div style="font-size:14px;font-weight:700;color:#111;">ViewBox Event Manager</div>
+      <div>Date visite : ${now.toLocaleDateString('fr-BE',{day:'2-digit',month:'long',year:'numeric'})}</div>
+    </div>
+  </div>
+  <!-- Résumé -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
+    <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#dc2626;">${open.length}</div>
+      <div style="font-size:12px;color:#dc2626;font-weight:600;">Points ouverts</div>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#16a34a;">${done.length}</div>
+      <div style="font-size:12px;color:#16a34a;font-weight:600;">Points résolus</div>
+    </div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center;">
+      <div style="font-size:28px;font-weight:800;color:#2563eb;">${points.length}</div>
+      <div style="font-size:12px;color:#2563eb;font-weight:600;">Total points</div>
+    </div>
+  </div>
+  ${open.length?`
+  <div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#dc2626;margin-bottom:12px;">🔴 Points à traiter (${open.length})</div>
+  ${open.map((r,i)=>renderPDFPoint(r,i+1)).join('')}`:''}
+  ${done.length?`
+  <div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin:24px 0 12px;">✅ Points résolus (${done.length})</div>
+  ${done.map((r,i)=>renderPDFPoint(r,open.length+i+1)).join('')}`:''}
+  <!-- Signatures -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px;page-break-inside:avoid;">
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:8px;">Site Manager</div>
+      <div style="height:60px;border-bottom:1px solid #d1d5db;margin-bottom:6px;"></div>
+      <div style="font-size:11px;color:#9ca3af;">Nom + Signature</div>
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:8px;">Représentant Client</div>
+      <div style="height:60px;border-bottom:1px solid #d1d5db;margin-bottom:6px;"></div>
+      <div style="font-size:11px;color:#9ca3af;">Nom + Signature</div>
+    </div>
+  </div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`;
+
+  const win = window.open('','_blank');
+  win.document.write(pdfHTML);
+  win.document.close();
+}
+
+// ── Créer une nouvelle visite (session) ──
+async function createVisite() {
+  const projectId = document.getElementById('visite-project')?.value;
+  return createVisiteFixed(projectId);
+}
+
+// ═══════════════════════════════════════════
+// FICHIERS PROJET
+// ═══════════════════════════════════════════
+
+async function loadDetailFiles(projectId) {
+  const el = document.getElementById('detail-files-content');
+  if (!el) return;
+
+  const res = await api('GET', `/projects/${projectId}/files`);
+  const files = res?.data || [];
+
+  const ext = f => (f.fileName||f.fileUrl||'').split('.').pop().toLowerCase();
+  const isImage = f => ['jpg','jpeg','png','gif','webp'].includes(ext(f));
+  const isPDF   = f => ext(f) === 'pdf';
+  const isVideo = f => ['mp4','mov','avi'].includes(ext(f));
+
+  const fileIcon = f => {
+    if (isImage(f)) return '🖼️';
+    if (isPDF(f))   return '📄';
+    if (isVideo(f)) return '🎬';
+    if (['ppt','pptx'].includes(ext(f))) return '📊';
+    if (['xls','xlsx'].includes(ext(f))) return '📈';
+    if (['doc','docx'].includes(ext(f))) return '📝';
+    return '📎';
+  };
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
+      <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
+        ⬆️ Ajouter
+        <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
+      </label>
+    </div>
+
+    ${!files.length ? `
+      <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--border);border-radius:16px;padding:40px;cursor:pointer;color:var(--text3);">
+        <span style="font-size:48px;">📁</span>
+        <div style="text-align:center;">
+          <div style="font-weight:600;font-size:15px;">Glissez vos fichiers ici</div>
+          <div style="font-size:12px;margin-top:4px;">Photos, PDF, PowerPoint, Excel...</div>
+        </div>
+        <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
+      </label>` : `
+
+    <!-- Images grid -->
+    ${files.filter(isImage).length ? `
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🖼️ Photos (${files.filter(isImage).length})</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
+          ${files.filter(isImage).map(f=>`
+            <div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${f.fileUrl}')">
+              <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">
+              <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:6px 8px;">
+                <div style="font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Photo'}</div>
+              </div>
+              <button onclick="event.stopPropagation();deleteProjectFile('${f.id}','${projectId}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <!-- Other files list -->
+    ${files.filter(f=>!isImage(f)).length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📎 Documents (${files.filter(f=>!isImage(f)).length})</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${files.filter(f=>!isImage(f)).map(f=>`
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);">
+              <span style="font-size:28px;flex-shrink:0;">${fileIcon(f)}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.fileType||ext(f).toUpperCase()} · ${f.fileSize?Math.round(f.fileSize/1024)+'KB':''}</div>
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0;">
+                <a href="${f.fileUrl}" target="_blank" class="btn btn-ghost btn-xs">👁️ Voir</a>
+                <a href="${f.fileUrl}" download class="btn btn-ghost btn-xs">⬇️</a>
+                <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteProjectFile('${f.id}','${projectId}')">🗑️</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+    `}`;
+}
+
+async function uploadProjectFiles(projectId, input) {
+  if (!input.files?.length) return;
+  const files = Array.from(input.files);
+  toast(`Upload ${files.length} fichier(s)...`, 'info');
+  let uploaded = 0;
+
+  for (const file of files) {
+    try {
+      // New FormData for each attempt
+      const fd = new FormData();
+      fd.append('file', file);
+
+      // Use /upload/photo — the only route that exists
+      const r = await fetch(`${API}/upload/photo`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${TOKEN}` },
+        body: fd
+      });
+
+      if (!r.ok) {
+        const errText = await r.text().catch(()=>'');
+        console.error('Upload failed:', r.status, errText);
+        toast(`Erreur upload ${file.name}: ${r.status}`, 'error');
+        continue;
+      }
+
+      const data = await r.json();
+      const url = data.data?.url || data.url || data.secure_url;
+
+      if (!url) {
+        console.error('No URL in response:', data);
+        toast(`Pas d'URL retournée pour ${file.name}`, 'error');
+        continue;
+      }
+
+      // Save reference in DB
+      await api('POST', `/projects/${projectId}/files`, {
+        fileName: file.name,
+        fileUrl: url,
+        fileType: file.type || file.name.split('.').pop(),
+        fileSize: file.size,
+        publicId: data.data?.public_id || data.public_id || null,
+        category: 'project'
+      });
+
+      uploaded++;
+    } catch(e) {
+      console.error('Upload error:', e);
+      toast(`Erreur réseau pour ${file.name}`, 'error');
+    }
+  }
+
+  if (uploaded > 0) toast(`${uploaded} fichier(s) uploadé(s) ✅`, 'success');
+  loadDetailFiles(projectId);
+}
+
+async function deleteProjectFile(fileId, projectId) {
+  if (!confirm('Supprimer ce fichier ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/files/${fileId}`);
+  if (res?.success) { toast('Fichier supprimé','success'); loadDetailFiles(projectId); }
+  else toast('Erreur suppression','error');
+}
+
+// ═══════════════════════════════════════════════════════
+// SOUS-ÉQUIPES & GESTION MEMBRES
+// ═══════════════════════════════════════════════════════
+
+// Local storage for team groups (until backend ready)
+let TEAM_GROUPS = JSON.parse(localStorage.getItem('vem_team_groups') || '[]');
+// [{id, name, color, leaderId}]
+
+function saveTeamGroups() {
+  localStorage.setItem('vem_team_groups', JSON.stringify(TEAM_GROUPS));
+}
+
+function toggleTeamGroup(role) {
+  const row = document.getElementById('team-group-row');
+  if (!row) return;
+  const showGroup = ['installer','worker'].includes(role);
+  row.style.display = showGroup ? 'block' : 'none';
+  if (showGroup) loadTeamGroupSelect();
+}
+
+function loadTeamGroupSelect() {
+  const sel = document.getElementById('user-team-group');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Aucune sous-équipe —</option>' +
+    TEAM_GROUPS.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+}
+
+function createTeamGroup() {
+  const name = prompt('Nom de la sous-equipe ? ex: Equipe Ruslan');
+  if (!name?.trim()) return;
+  const colors = ['#e63946','#4895ef','#2dc653','#f4a261','#8b5cf6','#ec4899'];
+  const group = {
+    id: 'tg_' + Date.now(),
+    name: name.trim(),
+    color: colors[TEAM_GROUPS.length % colors.length]
+  };
+  TEAM_GROUPS.push(group);
+  saveTeamGroups();
+  loadTeamGroupSelect();
+  document.getElementById('user-team-group').value = group.id;
+  toast(`Sous-équipe "${name}" créée ✅`, 'success');
+}
+
+// ── OCR Carte d'identité via Claude IA ──
+async function scanIDCard(input) {
+  if (!input.files?.length) return;
+  const file = input.files[0];
+
+  // Preview
+  const preview = document.getElementById('id-card-preview');
+  const img = document.getElementById('id-card-img');
+  const status = document.getElementById('ocr-status');
+  if (preview && img) {
+    img.src = URL.createObjectURL(file);
+    preview.style.display = 'block';
+  }
+  if (status) status.innerHTML = '⏳ Analyse en cours...';
+
+  // Lecture + redimensionnement automatique (max 1500px) pour respecter
+  // la limite Anthropic de 5 Mo en base64. Une carte d'identité de 8 Mo
+  // devient ~300 Ko après resize, ce qui passe sans problème.
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const tmpImg = new Image();
+      tmpImg.onload = () => {
+        const MAX = 1500;
+        let { width: w, height: h } = tmpImg;
+        if (w > MAX || h > MAX) {
+          const ratio = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(tmpImg, 0, 0, w, h);
+        // JPEG qualité 0.85 — bon compromis netteté/poids pour la lecture OCR
+        const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        resolve(jpegDataUrl.split(',')[1]);
+      };
+      tmpImg.onerror = () => reject(new Error('Image illisible'));
+      tmpImg.src = dataUrl;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  try {
+    const res = await api('POST', '/ai/scan-id', {
+      imageBase64: base64,
+      mediaType: 'image/jpeg',  // toujours JPEG après le canvas
+    });
+
+    if (!res || !res.success) {
+      if (status) status.innerHTML = `❌ ${res?.error || 'Erreur connexion IA'} — remplissez manuellement`;
+      return;
+    }
+
+    const parsed = res.data || {};
+    // Fill form fields
+    if (parsed.firstName) document.getElementById('user-fname').value = parsed.firstName;
+    if (parsed.lastName)  document.getElementById('user-lname').value = parsed.lastName;
+    if (parsed.birthDate) document.getElementById('user-birthdate').value = parsed.birthDate;
+    if (parsed.birthPlace) document.getElementById('user-birthplace').value = parsed.birthPlace;
+    if (parsed.nationality) document.getElementById('user-nationality').value = parsed.nationality;
+    if (parsed.idNumber) document.getElementById('user-id-number').value = parsed.idNumber;
+    if (parsed.nationalNumber) document.getElementById('user-national-nr').value = parsed.nationalNumber;
+    if (parsed.expiryDate) document.getElementById('user-id-expiry').value = parsed.expiryDate;
+
+    const filled = Object.values(parsed).filter(v => v).length;
+    if (status) status.innerHTML = `✅ ${filled} champ(s) rempli(s) automatiquement`;
+    toast('Carte scannée ✅', 'success');
+
+  } catch (err) {
+    console.error('OCR error:', err);
+    if (status) status.innerHTML = '❌ Erreur connexion IA — remplissez manuellement';
+  }
+}
+
+// ── Preview photo de profil ──
+function previewProfilePhoto(input) {
+  if (!input.files?.length) return;
+  const url = URL.createObjectURL(input.files[0]);
+  const preview = document.getElementById('profile-photo-preview');
+  const placeholder = document.getElementById('profile-photo-placeholder');
+  if (preview) { preview.src = url; preview.style.display = 'block'; }
+  if (placeholder) placeholder.style.display = 'none';
+}
+
+// ── Render team with subgroups ──
+async function loadTeam() {
+  const res = await api('GET', '/users');
+  if (!res?.success) return;
+  USERS = res.data;
+
+  const sub = document.getElementById('team-sub');
+  if (sub) sub.textContent = USERS.filter(u=>u.isActive).length + ' membres actifs';
+
+  const grouped = {};
+  USERS.forEach(u => {
+    const role = u.role || 'worker';
+    if (!grouped[role]) grouped[role] = [];
+    grouped[role].push(u);
+  });
+
+  const container = document.getElementById('team-groups-container');
+  if (!container) return;
+
+  let html = '';
+
+  TEAM_CATEGORIES.forEach(cat => {
+    const members = grouped[cat.key] || [];
+    if (!members.length) return;
+
+    // For installer/worker — show subgroups
+    if (['installer','worker'].includes(cat.key) && TEAM_GROUPS.length) {
+      html += `
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid ${cat.color}22;">
+            <span style="font-size:18px;">${cat.icon}</span>
+            <span style="font-size:14px;font-weight:700;color:${cat.color};">${cat.label}</span>
+            <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:99px;">${members.length}</span>
+            <button class="btn btn-ghost btn-xs" style="margin-left:auto;" onclick="createTeamGroup()">+ Sous-équipe</button>
+          </div>`;
+
+      // Members without group
+      const noGroup = members.filter(u => !u.teamGroupId);
+      const withGroup = {};
+      members.filter(u => u.teamGroupId).forEach(u => {
+        if (!withGroup[u.teamGroupId]) withGroup[u.teamGroupId] = [];
+        withGroup[u.teamGroupId].push(u);
+      });
+
+      // Render subgroups
+      TEAM_GROUPS.forEach(grp => {
+        const grpMembers = withGroup[grp.id] || [];
+        if (!grpMembers.length && !members.some(u => u.teamGroupId === grp.id)) return;
+        html += `
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:${grp.color}15;border-left:3px solid ${grp.color};border-radius:0 8px 8px 0;margin-bottom:8px;">
+              <span style="font-size:13px;font-weight:700;color:${grp.color};">👷 ${grp.name}</span>
+              <span style="font-size:11px;color:var(--text3);">${grpMembers.length} membres</span>
+              <button class="btn btn-ghost btn-xs" style="margin-left:auto;color:var(--accent);" onclick="deleteTeamGroup('${grp.id}')">🗑️</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;padding-left:12px;">
+              ${grpMembers.map(u => renderMemberCard(u, grp.color)).join('')}
+            </div>
+          </div>`;
+      });
+
+      // Members without group
+      if (noGroup.length) {
+        html += `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Sans sous-équipe</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">
+              ${noGroup.map(u => renderMemberCard(u, cat.color)).join('')}
+            </div>
+          </div>`;
+      }
+      html += '</div>';
+
+    } else {
+      html += `
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${cat.color}22;">
+            <span style="font-size:18px;">${cat.icon}</span>
+            <span style="font-size:14px;font-weight:700;color:${cat.color};">${cat.label}</span>
+            <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:2px 8px;border-radius:99px;">${members.length}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">
+            ${members.map(u => renderMemberCard(u, cat.color)).join('')}
+          </div>
+        </div>`;
+    }
+  });
+
+  container.innerHTML = html || '<div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Aucun membre</div></div>';
+}
+
+function renderMemberCard(u, color) {
+  const initials = (u.firstName?.[0]||'?') + (u.lastName?.[0]||'');
+  return `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s;"
+      onmouseover="this.style.borderColor='${color}'" onmouseout="this.style.borderColor='var(--border)'"
+      onclick="openUserDetail('${u.id}')">
+      ${u.avatarUrl
+        ? `<img src="${u.avatarUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid ${color};">`
+        : `<div style="width:40px;height:40px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0;">${initials}</div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${u.firstName} ${u.lastName}</div>
+        <div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email}</div>
+        ${u.phone ? `<div style="font-size:11px;color:var(--blue);"><a href="tel:${u.phone}" style="color:inherit;" onclick="event.stopPropagation()">📞 ${u.phone}</a></div>` : ''}
+        ${u.nationality ? `<div style="font-size:10px;color:var(--text3);">🌍 ${u.nationality}</div>` : ''}
+      </div>
+      <div style="width:8px;height:8px;border-radius:50%;background:${u.isActive?'#2dc653':'#6b7280'};flex-shrink:0;" title="${u.isActive?'Actif':'Inactif'}"></div>
+    </div>`;
+}
+
+function deleteTeamGroup(groupId) {
+  if (!confirm('Supprimer cette sous-équipe ? Les membres ne seront pas supprimés.')) return;
+  TEAM_GROUPS = TEAM_GROUPS.filter(g => g.id !== groupId);
+  saveTeamGroups();
+  loadTeam();
+  toast('Sous-équipe supprimée', 'success');
+}
+
+// ── Open user detail with full info ──
+async function openUserDetail(userId) {
+  const u = USERS.find(x => x.id === userId);
+  if (!u) return;
+  const cat = TEAM_CATEGORIES.find(c => c.key === u.role) || { label: u.role, color: '#4895ef', icon: '👤' };
+  const grp = TEAM_GROUPS.find(g => g.id === u.teamGroupId);
+  const initials = (u.firstName?.[0]||'?') + (u.lastName?.[0]||'');
+  const esc = s => (s ?? '').toString().replace(/"/g,'&quot;');
+
+  // Options pour le select des rôles (basées sur TEAM_CATEGORIES)
+  const roleOptions = TEAM_CATEGORIES.map(c =>
+    `<option value="${c.key}" ${c.key===u.role?'selected':''}>${c.icon} ${c.label}</option>`
+  ).join('');
+
+  // Options pour le select des groupes d'équipe
+  const groupOptions = '<option value="">— Aucune —</option>' +
+    TEAM_GROUPS.map(g => `<option value="${g.id}" ${g.id===u.teamGroupId?'selected':''}>${g.name}</option>`).join('');
+
+  const overlay = document.createElement('div'); overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${u.avatarUrl
+            ? `<img src="${u.avatarUrl}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid ${cat.color};">`
+            : `<div style="width:52px;height:52px;border-radius:50%;background:${cat.color};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;">${initials}</div>`}
+          <div>
+            <div class="modal-title" id="user-detail-title" style="margin:0;">${u.firstName} ${u.lastName}</div>
+            <div style="font-size:12px;color:var(--text3);">${cat.icon} ${cat.label}${grp?` · 👷 ${grp.name}`:''}</div>
+          </div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- MODE AFFICHAGE -->
+      <div id="user-detail-view" style="display:flex;flex-direction:column;gap:8px;">
+        ${u.email?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📧</span><a href="mailto:${u.email}" style="color:var(--blue);font-size:13px;">${u.email}</a></div>`:''}
+        ${u.phone?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>📞</span><a href="tel:${u.phone}" style="color:var(--blue);font-size:13px;">${u.phone}</a></div>`:''}
+        ${u.nationality?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🌍</span><span style="font-size:13px;">${u.nationality}</span></div>`:''}
+        ${u.nationalNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🪪</span><span style="font-size:13px;font-family:monospace;">${u.nationalNumber}</span></div>`:''}
+        ${u.idNumber?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🆔</span><span style="font-size:13px;font-family:monospace;">${u.idNumber}${u.idExpiry?' · exp. '+u.idExpiry:''}</span></div>`:''}
+        ${u.birthDate?`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;"><span>🎂</span><span style="font-size:13px;">${u.birthDate}${u.birthPlace?' — '+u.birthPlace:''}</span></div>`:''}
+        ${(!u.email && !u.phone && !u.nationality && !u.idNumber && !u.birthDate)
+          ? '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Aucune information renseignée — clique sur Modifier pour compléter la fiche.</div>'
+          : ''}
+      </div>
+
+      <!-- MODE ÉDITION -->
+      <div id="user-detail-edit" style="display:none;flex-direction:column;gap:10px;">
+        <div style="display:flex;gap:8px;">
+          <div class="form-group" style="flex:1;"><label class="form-label">Prénom</label><input class="input" id="edit-fname" value="${esc(u.firstName)}"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Nom</label><input class="input" id="edit-lname" value="${esc(u.lastName)}"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Email</label><input class="input" id="edit-email" type="email" value="${esc(u.email)}"></div>
+        <div class="form-group"><label class="form-label">Téléphone</label><input class="input" id="edit-phone" value="${esc(u.phone)}"></div>
+        <div style="display:flex;gap:8px;">
+          <div class="form-group" style="flex:1;"><label class="form-label">Rôle</label><select class="input" id="edit-role">${roleOptions}</select></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Équipe</label><select class="input" id="edit-team-group">${groupOptions}</select></div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🪪 Carte d'identité</div>
+          <div style="display:flex;gap:8px;">
+            <div class="form-group" style="flex:1;"><label class="form-label">Date de naissance</label><input class="input" id="edit-birthdate" value="${esc(u.birthDate)}" placeholder="YYYY-MM-DD"></div>
+            <div class="form-group" style="flex:1;"><label class="form-label">Lieu de naissance</label><input class="input" id="edit-birthplace" value="${esc(u.birthPlace)}"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Nationalité</label><input class="input" id="edit-nationality" value="${esc(u.nationality)}"></div>
+          <div style="display:flex;gap:8px;">
+            <div class="form-group" style="flex:1;"><label class="form-label">N° de carte</label><input class="input" id="edit-id-number" value="${esc(u.idNumber)}"></div>
+            <div class="form-group" style="flex:1;"><label class="form-label">Expiration</label><input class="input" id="edit-id-expiry" value="${esc(u.idExpiry)}" placeholder="YYYY-MM-DD"></div>
+          </div>
+          <div class="form-group"><label class="form-label">N° registre national</label><input class="input" id="edit-national-nr" value="${esc(u.nationalNumber)}"></div>
+        </div>
+      </div>
+
+      <!-- BOUTONS -->
+      <div id="user-detail-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-primary" onclick="toggleUserEdit(true)">✏️ Modifier</button>
+      </div>
+      <div id="user-detail-actions-edit" style="display:none;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="toggleUserEdit(false)">Annuler</button>
+        <button class="btn btn-primary" onclick="saveUserEdit('${u.id}')">💾 Enregistrer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+function toggleUserEdit(editing) {
+  document.getElementById('user-detail-view').style.display          = editing ? 'none' : 'flex';
+  document.getElementById('user-detail-edit').style.display          = editing ? 'flex' : 'none';
+  document.getElementById('user-detail-actions').style.display       = editing ? 'none' : 'flex';
+  document.getElementById('user-detail-actions-edit').style.display  = editing ? 'flex' : 'none';
+}
+
+async function saveUserEdit(userId) {
+  const val = id => document.getElementById(id).value.trim();
+  const payload = {
+    firstName:      val('edit-fname'),
+    lastName:       val('edit-lname'),
+    email:          val('edit-email'),
+    phone:          val('edit-phone')         || null,
+    role:           document.getElementById('edit-role').value,
+    teamGroupId:    document.getElementById('edit-team-group').value || null,
+    birthDate:      val('edit-birthdate')     || null,
+    birthPlace:     val('edit-birthplace')    || null,
+    nationality:    val('edit-nationality')   || null,
+    idNumber:       val('edit-id-number')     || null,
+    idExpiry:       val('edit-id-expiry')     || null,
+    nationalNumber: val('edit-national-nr')   || null,
+  };
+  if (!payload.firstName || !payload.lastName || !payload.email) { toast('Prénom, nom et email obligatoires', 'error'); return; }
+
+  const res = await api('PATCH', '/users/' + userId, payload);
+  if (res?.success) {
+    toast('Fiche mise à jour ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+    await loadTeam();
+    await loadAll();
+  } else {
+    toast(res?.error || 'Erreur de mise à jour', 'error');
+  }
+}
+
+// ── Init team group select on modal open ──
+const _origShowModal2 = showModal;
+// Already patched via _origShowModal — just ensure user modal loads groups
+document.addEventListener('DOMContentLoaded', () => {
+  // patch showModal once more for modal-user
+  const origSM = window.showModal;
+  window.showModal = function(id) {
+    origSM(id);
+    if (id === 'modal-user') {
+      loadTeamGroupSelect();
+      toggleTeamGroup(document.getElementById('user-role')?.value || 'installer');
+    }
+  };
+});
+
+// ═══════════════════════════════════════════════════════════
+// SÉLECTEUR D'ÉQUIPE DANS LE MODAL PROJET
+// ═══════════════════════════════════════════════════════════
+
+function loadProjTeamSelector() {
+  const el = document.getElementById('proj-team-selector');
+  if (!el) return;
+  if (!USERS.length) { el.innerHTML = `<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre disponible</div>`; return; }
+
+  const installers = USERS.filter(u => ['installer','worker','site_manager','technical_manager'].includes(u.role));
+  const others = USERS.filter(u => ['sales_engineer','project_manager','engineer','admin'].includes(u.role));
+
+  const renderMini = u => {
+    const initials = (u.firstName?.[0]||'?')+(u.lastName?.[0]||'');
+    const grp = TEAM_GROUPS.find(g => g.id === u.teamGroupId);
+    return `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all .15s;"
+        onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+        <input type="checkbox" class="proj-member-check" value="${u.id}"
+          data-name="${u.firstName} ${u.lastName}" data-role="${u.role}"
+          style="width:15px;height:15px;accent-color:var(--accent);flex-shrink:0;"
+          onchange="updateProjTeamCount()">
+        ${u.avatarUrl
+          ? `<img src="${u.avatarUrl}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+          : `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>`}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${u.firstName} ${u.lastName}</div>
+          <div style="font-size:10px;color:var(--text3);">${grp?'👷 '+grp.name:''} ${u.phone?'· 📞'+u.phone:''}</div>
+        </div>
+      </label>`;
+  };
+
+  let content = '';
+
+  // Installer subgroups
+  if (TEAM_GROUPS.length) {
+    TEAM_GROUPS.forEach(grp => {
+      const grpMembers = installers.filter(u => u.teamGroupId === grp.id);
+      if (!grpMembers.length) return;
+      content += `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:${grp.color}18;border-left:3px solid ${grp.color};border-radius:0 6px 6px 0;margin-bottom:4px;cursor:pointer;"
+            onclick="toggleProjTeamGroup('grp-${grp.id}',this)">
+            <span style="font-size:13px;font-weight:700;color:${grp.color};">👷 ${grp.name}</span>
+            <span style="font-size:10px;color:var(--text3);">${grpMembers.length} membres</span>
+            <button class="btn btn-ghost btn-xs" style="margin-left:auto;font-size:10px;" onclick="event.stopPropagation();checkAllGroup('grp-${grp.id}',true)">✅ Tout</button>
+            <span style="font-size:11px;color:var(--text3);">▼</span>
+          </div>
+          <div id="grp-${grp.id}" style="display:flex;flex-direction:column;gap:2px;padding-left:8px;">
+            ${grpMembers.map(renderMini).join('')}
+          </div>
+        </div>`;
+    });
+  }
+
+  // Installers without group
+  const noGroup = installers.filter(u => !u.teamGroupId);
+  if (noGroup.length) {
+    content += `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:4px 2px;margin-bottom:4px;">🔧 Installateurs sans équipe</div>
+        ${noGroup.map(renderMini).join('')}
+      </div>`;
+  }
+
+  // Other roles
+  if (others.length) {
+    content += `
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;padding:4px 2px;margin-bottom:4px;">📋 Management</div>
+        ${others.map(renderMini).join('')}
+      </div>`;
+  }
+
+  el.innerHTML = content || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucun membre</div>';
+  updateProjTeamCount();
+}
+
+function toggleProjTeamGroup(groupId, header) {
+  const el = document.getElementById(groupId);
+  if (!el) return;
+  const hidden = el.style.display === 'none';
+  el.style.display = hidden ? 'flex' : 'none';
+  const arrow = header.querySelector('span:last-child');
+  if (arrow) arrow.textContent = hidden ? '▼' : '▶';
+}
+
+function checkAllGroup(groupId, checked) {
+  document.querySelectorAll(`#${groupId} .proj-member-check`).forEach(cb => cb.checked = checked);
+  updateProjTeamCount();
+}
+
+function updateProjTeamCount() {
+  const count = document.querySelectorAll('.proj-member-check:checked').length;
+  const el = document.getElementById('proj-team-count');
+  if (el) el.textContent = count > 0 ? `${count} membre(s) sélectionné(s)` : '0 membre sélectionné';
+}
+
+function getSelectedProjMembers() {
+  return Array.from(document.querySelectorAll('.proj-member-check:checked')).map(cb => ({
+    userId: cb.value,
+    role: cb.dataset.role || 'worker',
+    name: cb.dataset.name,
+  }));
+}
+
+async function updatePointStatus(remarkId, projectId, newStatus) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, {
+    status: newStatus,
+    resolvedAt: newStatus === 'resolved' ? new Date().toISOString() : undefined,
+  });
+  if (res?.success) {
+    const labels = {resolved:'Résolu ✅', urgent:'⚡ Urgent', archived:'Archivé 📦', open:'Rouvert'};
+    toast(labels[newStatus] || 'Mis à jour', 'success');
+    loadDetailRemarks(projectId);
+  } else toast('Erreur mise à jour', 'error');
+}
+
+// ── Editeur des champs handover (template SPANTECH) ──
+async function editHandoverFields(handoverId, projectId) {
+  const res = await api('GET', `/handover/${handoverId}`);
+  if (!res?.success) { toast('Handover introuvable','error'); return; }
+  const h    = res.data;
+  const proj = h.project || PROJECTS?.find(p => p.id === (projectId || h.projectId)) || {};
+  const f    = h.customFields || {};
+  const fv   = (key, fallback='') => f[key] !== undefined ? f[key] : (fallback || '');
+  const fmtISO = d => d ? new Date(d).toISOString().split('T')[0] : '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:640px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="modal-head" style="flex-shrink:0;">
+        <div>
+          <div class="modal-title">📝 Handover Certificate — Champs</div>
+          <div style="font-size:12px;color:var(--text2);">Prérempli depuis le projet — modifiez si besoin</div>
+        </div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:0 2px 8px;">
+
+        <!-- Page 1 -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">📄 Page 1 — Infos projet</div>
+
+          <div class="form-group2">
+            <label class="form-label2">PROJECT (nom affiché)</label>
+            <input class="input" id="hf-projectName" value="${fv('projectName', proj.name||'')}">
+          </div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Date de réception</label>
+              <input class="input" type="date" id="hf-handoverDate" value="${fv('handoverDate', fmtISO(h.createdAt))}">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Client</label>
+              <input class="input" id="hf-clientName" value="${fv('clientName', h.clientName||proj.client?.name||'')}">
+            </div>
+          </div>
+          <div class="form-group2">
+            <label class="form-label2">Site address (séparée par virgules)</label>
+            <input class="input" id="hf-siteAddress" value="${fv('siteAddress', proj.address||'')}">
+          </div>
+          <div class="form-group2">
+            <label class="form-label2">Scope of work — Supply of a...</label>
+            <textarea class="input" id="hf-scopeOfWork" rows="2">${fv('scopeOfWork', proj.description||'')}</textarea>
+          </div>
+        </div>
+
+        <!-- Page 2 -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">✍️ Page 2 — Signatures</div>
+
+          <div class="form-group2">
+            <label class="form-label2">Comments / Reservations</label>
+            <textarea clasid="hf-comments" rows="3"></textarea>
+          </div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:10px 0 8px;">CLIENT</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Title</label>
+              <input class="input" id="hf-clientTitle" value="${fv('clientTitle','')}">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Name</label>
+              <input class="input" id="hf-clientRep" value="${fv('clientRep', h.clientName||'')}">
+            </div>
+          </div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:10px 0 8px;">SPANTECH INTERNATIONAL SA</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Title</label>
+              <input class="input" id="hf-spantechTitle" value="${fv('spantechTitle','Site Manager')}">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Name</label>
+              <input class="input" id="hf-spantechRep" value="${fv('spantechRep', h.siteManager?(h.siteManager.firstName+' '+h.siteManager.lastName):(CURRENT_USER?.firstName+' '+CURRENT_USER?.lastName)||'')}">
+            </div>
+          </div>
+        </div>
+
+        <!-- Zones d'inspection -->
+        ${(h.items||[]).length ? `
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">🔍 Points d'inspection (${h.items.length})</div>
+          ${h.items.map(item => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;">
+              <select style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;width:130px;flex-shrink:0;"
+                onchange="updateHandoverItemStatus('${item.id}','${handoverId}',this.value)">
+                <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
+                <option value="remark" ${item.status==='remark'?'selected':''}>⚠️ Remarque</option>
+                <option value="defect" ${item.status==='defect'?'selected':''}>❌ Défaut</option>
+                <option value="pending" ${item.status==='pending'?'selected':''}>⏳ En attente</option>
+              </select>
+              <span style="flex:1;font-size:13px;font-weight:600;">${item.zoneName}</span>
+              <input style="flex:1;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+                placeholder="Commentaire..." value="${item.comment||''}"
+                onchange="updateHandoverItemComment('${item.id}','${handoverId}',this.value)">
+            </div>`).join('')}
+        </div>` : ''}
+
+      </div>
+
+      <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-ghost btn-sm" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',null).then(()=>generateHandoverPDF('${handoverId}'))">💾 Sauv. & PDF</button>
+        <button class="btn btn-primary" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // Populate comments textarea safely
+  const commentsTA = document.getElementById('hf-comments-area');
+  if (commentsTA) {
+    const existingComments = f['comments'] !== undefined ? f['comments'] : 
+      (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('\n');
+    commentsTA.value = existingComments;
+  }
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+}
+
+async function updateHandoverItemStatus(itemId, handoverId, status) {
+  await api('PATCH', `/handover/${handoverId}/items/${itemId}`, { status });
+}
+
+async function updateHandoverItemComment(itemId, handoverId, comment) {
+  await api('PATCH', `/handover/${handoverId}/items/${itemId}`, { comment });
+}
+
+async function saveHandoverFields(handoverId, projectId, overlay) {
+  const fields = {};
+  ['projectName','projectLocation','clientName','contractor','startDate','completionDate','projectSummary',
+   'clientContactName','clientContactPosition','clientContactEmail','clientContactPhone',
+   'spantechContactName','spantechContactPosition','spantechContactEmail','spantechContactPhone',
+   'handoverDate','attendees','clientRepName','clientFunction','spantechRepName','spantechFunction'
+  ].forEach(k => {
+    const el = document.getElementById('hf-'+k);
+    if (el) fields[k] = el.value;
+  });
+
+  const res = await api('PATCH', `/handover/${handoverId}`, {
+    customFields: fields,
+    clientName: fields.clientName || undefined,
+    clientEmail: fields.clientContactEmail || undefined,
+    generalNotes: document.getElementById('hf-projectSummary')?.value || undefined,
+  });
+  if (res?.success) {
+    toast('Handover mis à jour ✅','success');
+    overlay?.remove();
+    loadDetailHandovers(projectId);
+  } else toast('Erreur sauvegarde','error');
+}
+
+// ── Lien de signature client (sans compte) ──
+function generateSignatureLink(handoverId) {
+  const baseUrl = window.location.origin;
+  const link = `${baseUrl}?sign=${handoverId}`;
+  const overlay = document.createElement('div'); overlay.className='overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head"><div class="modal-title">🔗 Lien de Signature Client</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="background:var(--bg3);border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Envoyez ce lien au client pour qu'il signe sans créer de compte :</div>
+        <div style="display:flex;gap:8px;">
+          <input class="input" value="${link}" id="sig-link-input" readonly style="flex:1;font-size:12px;">
+          <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText('${link}');toast('Lien copié ✅','success')">📋 Copier</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);">
+        ✅ Le client peut signer directement depuis son téléphone<br>
+        ✅ Aucun compte nécessaire<br>
+        ✅ La signature est sauvegardée automatiquement
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-primary" onclick="window.open('mailto:?subject=Handover Signature&body=Please sign the handover document: ${link}')">📧 Envoyer par email</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+// ═══════════════════════════════════════════
+// CAMIONS DANS CRÉATION PROJET
+// ═══════════════════════════════════════════
+let PROJ_TRUCKS = [];
+
+function addProjTruck() {
+  const id = Date.now();
+  PROJ_TRUCKS.push({
+    id,
+    vehicleType: 'truck',
+    truckNumber: '',
+    licensePlate: '',
+    driverName: '',
+    driverPhone: '',
+    loadingDate: '',
+    departureDate: '',
+    notes: '',
+  });
+  renderProjTrucks();
+  setTimeout(() => {
+    const el = document.getElementById('pt-driver-' + id);
+    if (el) el.focus();
+  }, 80);
+}
+
+function renderProjTrucks() {
+  const list = document.getElementById('proj-trucks-list');
+  if (!list) return;
+  if (!PROJ_TRUCKS.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  const typeIcons = {
+    truck:'🚛', van:'🚐', crane:'🏗️', scissor:'🔧',
+    manitou:'🔧', forklift:'🏗️', generator:'⚡', other:'🚗'
+  };
+  const typeLabels = {
+    truck:'Camion', van:'Camionnette', crane:'Grue',
+    scissor:'Nacelle', manitou:'Manitou', forklift:'Chariot élév.',
+    generator:'Groupe élec.', other:'Autre'
+  };
+
+  list.innerHTML = PROJ_TRUCKS.map((t, idx) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;position:relative;">
+      <!-- Header ligne -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:20px;">${typeIcons[t.vehicleType]||'🚛'}</span>
+        <select style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+          onchange="PROJ_TRUCKS[${idx}].vehicleType=this.value;renderProjTrucks()">
+          ${Object.entries(typeLabels).map(([v,l])=>`<option value="${v}" ${t.vehicleType===v?'selected':''}>${l}</option>`).join('')}
+        </select>
+        <input placeholder="N° camion / immat..." value="${t.truckNumber}"
+          style="flex:1;padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+          oninput="PROJ_TRUCKS[${idx}].truckNumber=this.value">
+        <button onclick="PROJ_TRUCKS.splice(${idx},1);renderProjTrucks()"
+          style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:18px;flex-shrink:0;">✕</button>
+      </div>
+      <!-- Détails -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <input id="pt-driver-${t.id}" placeholder="👤 Chauffeur" value="${t.driverName}"
+          style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+          oninput="PROJ_TRUCKS[${idx}].driverName=this.value">
+        <input placeholder="📞 Téléphone" value="${t.driverPhone}"
+          style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+          oninput="PROJ_TRUCKS[${idx}].driverPhone=this.value">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:10px;color:var(--text3);white-space:nowrap;">📦 Chargement</span>
+          <input type="date" value="${t.loadingDate}"
+            style="flex:1;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
+            onchange="PROJ_TRUCKS[${idx}].loadingDate=this.value">
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:10px;color:var(--text3);white-space:nowrap;">🚀 Départ</span>
+          <input type="date" value="${t.departureDate}"
+            style="flex:1;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
+            onchange="PROJ_TRUCKS[${idx}].departureDate=this.value">
+        </div>
+      </div>
+      <input placeholder="Notes..." value="${t.notes}"
+        style="width:100%;margin-top:6px;padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+        oninput="PROJ_TRUCKS[${idx}].notes=this.value">
+    </div>`).join('');
+}
+
+async function confirmDeleteProject(projectId) {
+  if (!projectId) return;
+  const proj = PROJECTS.find(p => p.id === projectId);
+  const name = proj?.name || 'ce projet';
+  const isArchived = proj?.status === 'cancelled';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-head">
+        <div class="modal-title">📦 Archiver le projet</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="padding:8px 0 16px;">
+        <p style="font-size:14px;margin-bottom:14px;">Que souhaitez-vous faire avec <strong>${name}</strong> ?</p>
+
+        <!-- Archive option -->
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="archiveProject('${projectId}',this.closest('.overlay'))">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">📦</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;">Archiver le projet</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Le projet est conservé mais masqué de la liste active. Récupérable à tout moment.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restore option if already archived -->
+        ${isArchived ? `
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="restoreProject('${projectId}',this.closest('.overlay'))">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">♻️</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--green);">Restaurer le projet</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Remettre le projet en statut actif.</div>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- Delete option -->
+        <div style="border:2px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+          onclick="this.nextElementSibling.style.display='flex'">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:24px;">🗑️</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--accent);">Supprimer définitivement</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">Action irréversible — toutes les données seront perdues.</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:none;gap:8px;justify-content:flex-end;padding:10px 0 0;">
+          <span style="font-size:12px;color:var(--accent);align-self:center;">Confirmer la suppression ?</span>
+          <button class="btn btn-outline btn-sm" onclick="this.closest('[style*=flex]').style.display='none'">Non</button>
+          <button class="btn btn-primary btn-sm" style="background:var(--accent);" onclick="deleteProject('${projectId}',this.closest('.overlay'))">Oui, supprimer</button>
+        </div>
+
+      </div>
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+}
+
+async function archiveProject(projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}`, { status: 'cancelled' });
+  if (res?.success) {
+    toast('Projet archivé 📦', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.map(p => p.id === projectId ? {...p, status:'cancelled'} : p);
+    CURRENT_PROJECT_ID = null;
+    goto('projects');
+    loadProjects();
+  } else toast('Erreur archivage: ' + (res?.error||'inconnue'), 'error');
+}
+
+async function restoreProject(projectId, overlay) {
+  const res = await api('PATCH', `/projects/${projectId}`, { status: 'confirmed' });
+  if (res?.success) {
+    toast('Projet restauré ♻️', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.map(p => p.id === projectId ? {...p, status:'confirmed'} : p);
+    loadProjects();
+  } else toast('Erreur restauration', 'error');
+}
+
+async function deleteProject(projectId, overlay) {
+  const btn = overlay?.querySelector('.btn-primary[onclick*=deleteProject]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  const res = await api('DELETE', `/projects/${projectId}`);
+  if (res?.success || res?.message) {
+    toast('Projet supprimé', 'success');
+    overlay?.remove();
+    PROJECTS = PROJECTS.filter(p => p.id !== projectId);
+    CURRENT_PROJECT_ID = null;
+    goto('projects');
+    loadProjects();
+  } else {
+    toast('Erreur: ' + (res?.error||'inconnue'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Oui, supprimer'; }
+  }
+}
+
+// ═══════════════════════════════════════════
+// AJOUTER CAMION DEPUIS DASHBOARD PROJET
+// ═══════════════════════════════════════════
+function showAddTruckModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="modal-head" style="flex-shrink:0;">
+        <div><div class="modal-title">🚛 Ajouter un véhicule</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:0 2px 8px;">
+
+        <!-- Type + Plaques -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🚛 Véhicule</div>
+          <div class="form-group2">
+            <label class="form-label2">Type</label>
+            <select class="input" id="at-type">
+              <option value="truck">🚛 Camion (Tautliner)</option>
+              <option value="flatbed">🚛 Camion (Flatbed)</option>
+              <option value="van">🚐 Camionnette</option>
+              <option value="crane">🏗️ Grue</option>
+              <option value="scissor">✂️ Nacelle ciseaux</option>
+              <option value="manitou">🔧 Manitou / Roto</option>
+              <option value="forklift">🚜 Chariot élévateur</option>
+              <option value="generator">⚡ Groupe électrogène</option>
+              <option value="other">📦 Autre</option>
+            </select>
+          </div>
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Plaque 1 (Tracteur)</label>
+              <input class="input" id="at-plate1" placeholder="ex: 1-ABC-234">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Plaque 2 (Remorque)</label>
+              <input class="input" id="at-plate2" placeholder="ex: O-123-456">
+            </div>
+          </div>
+        </div>
+
+        <!-- Chauffeur -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">👤 Chauffeur</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">Nom du chauffeur</label>
+              <input class="input" id="at-driver" placeholder="Prénom Nom">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📞 Téléphone</label>
+              <input class="input" id="at-phone" placeholder="+32 ..." type="tel">
+            </div>
+          </div>
+        </div>
+
+        <!-- Chargement -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📦 Chargement</div>
+          <div class="form-group2">
+            <label class="form-label2">Lieu de chargement</label>
+            <select class="input" id="at-loading-place">
+              <option value="tubize">🏭 Entrepôt Tubize</option>
+              <option value="site">📍 Directement sur site événement</option>
+              <option value="other">📦 Autre lieu</option>
+            </select>
+          </div>
+          <div class="form-group2" style="margin-top:8px;" id="at-loading-other-wrap" style="display:none;">
+            <label class="form-label2">Préciser le lieu</label>
+            <input class="input" id="at-loading-other" placeholder="Adresse du lieu de chargement">
+          </div>
+          <div class="input-row" style="margin-top:8px;">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📅 Date & heure de chargement</label>
+              <input class="input" type="datetime-local" id="at-loading">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">🚀 Date & heure de départ</label>
+              <input class="input" type="datetime-local" id="at-departure">
+            </div>
+          </div>
+        </div>
+
+        <!-- Déchargement sur site -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🏗️ Déchargement sur site</div>
+          <div class="input-row">
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">📅 Arrivée estimée sur site</label>
+              <input class="input" type="datetime-local" id="at-arrival">
+            </div>
+            <div class="form-group2" style="margin:0;">
+              <label class="form-label2">⏱️ Déchargement estimé</label>
+              <input class="input" type="datetime-local" id="at-unloading">
+            </div>
+          </div>
+          <div class="form-group2" style="margin-top:8px;">
+            <label class="form-label2">📍 Zone de déchargement</label>
+            <input class="input" id="at-unloading-zone" placeholder="ex: Entrée Est, Quai A, Parking Nord...">
+          </div>
+        </div>
+
+        <div class="form-group2">
+          <label class="form-label2">📝 Notes</label>
+          <textarea class="input" id="at-notes" rows="2" placeholder="Instructions spéciales, matériel transporté..."></textarea>
+        </div>
+
+      </div>
+
+      <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter le véhicule</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+
+  // Show/hide "other place" field
+  document.getElementById('at-loading-place')?.addEventListener('change', function() {
+    const wrap = document.getElementById('at-loading-other-wrap');
+    if (wrap) wrap.style.display = this.value === 'other' ? 'block' : 'none';
+  });
+  setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
+}
+
+async function saveTruck(projectId, overlay) {
+  const type         = document.getElementById('at-type')?.value || 'truck';
+  const plate1       = document.getElementById('at-plate1')?.value?.trim();
+  const plate2       = document.getElementById('at-plate2')?.value?.trim();
+  const licensePlate = [plate1, plate2].filter(Boolean).join(' / ') || undefined;
+  const driver       = document.getElementById('at-driver')?.value?.trim();
+  const phone        = document.getElementById('at-phone')?.value?.trim();
+  const loadingPlace = document.getElementById('at-loading-place')?.value;
+  const loadingOther = document.getElementById('at-loading-other')?.value?.trim();
+  const loading      = document.getElementById('at-loading')?.value;
+  const departure    = document.getElementById('at-departure')?.value;
+  const arrival      = document.getElementById('at-arrival')?.value;
+  const unloading    = document.getElementById('at-unloading')?.value;
+  const unloadZone   = document.getElementById('at-unloading-zone')?.value?.trim();
+  const notesRaw     = document.getElementById('at-notes')?.value?.trim();
+
+  // Build location label
+  const placeLabel = {tubize:'Entrepôt Tubize', site:'Site événement', other: loadingOther||'Autre'}[loadingPlace] || loadingPlace;
+
+  // Combine notes
+  const notesParts = [];
+  if (notesRaw) notesParts.push(notesRaw);
+  if (unloadZone) notesParts.push(`Zone déchargement: ${unloadZone}`);
+  if (unloading) notesParts.push(`Déchargement estimé: ${new Date(unloading).toLocaleString('fr-BE')}`);
+
+  const btn = overlay?.querySelector('.btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Ajout...'; }
+
+  const res = await api('POST', `/projects/${projectId}/trucks`, {
+    vehicleType:   type,
+    truckNumber:   placeLabel,         // repurpose truckNumber for loading place
+    licensePlate:  licensePlate,
+    driverName:    driver   || undefined,
+    driverPhone:   phone    || undefined,
+    loadingDate:   loading   ? new Date(loading).toISOString()   : undefined,
+    departureDate: departure ? new Date(departure).toISOString() : undefined,
+    arrivalDate:   arrival   ? new Date(arrival).toISOString()   : undefined,
+    notes:         notesParts.join(' | ') || undefined,
+    status:        'planned',
+  });
+
+  if (res?.success) {
+    toast('Véhicule ajouté ✅', 'success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    toast('Erreur: ' + (res?.error || 'inconnue'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Ajouter le véhicule'; }
+  }
+}
+
+// ═══════════════════════════════════════════
+// AJOUTER MEMBRE À L'ÉQUIPE D'UN PROJET
+// ═══════════════════════════════════════════
+function showAddToTeamModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-head">
+        <div><div class="modal-title">👷 Ajouter à l'équipe</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Membre</label>
+        <select class="input" id="addteam-user">
+          <option value="">— Sélectionner —</option>
+          ${USERS.map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Rôle sur ce projet</label>
+        <select class="input" id="addteam-role">
+          <option value="installer">🔧 Installateur</option>
+          <option value="site_manager">🏗️ Site Manager</option>
+          <option value="technical_manager">⚙️ Technical Manager</option>
+          <option value="worker">👷 Ouvrier</option>
+          <option value="engineer">🛠️ Engineer</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="addToTeam('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+}
+
+async function addToTeam(projectId, overlay) {
+  const userId = document.getElementById('addteam-user')?.value;
+  const role   = document.getElementById('addteam-role')?.value || 'worker';
+  if (!userId) { toast('Sélectionne un membre','error'); return; }
+  const res = await api('POST', `/projects/${projectId}/team`, { userId, role });
+  if (res?.success) {
+    toast('Membre ajouté ✅','success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else toast('Erreur: '+(res?.error||'inconnue'),'error');
+}
+
+// ═══════════════════════════════════════════
+// HANDOVER — AJOUTER POINT APRÈS CRÉATION
+// ═══════════════════════════════════════════
+function showAddHandoverItemModal(handoverId, projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🔍 Ajouter un point d'inspection</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Zone / Emplacement *</label>
+        <div style="display:flex;gap:6px;">
+          <input class="input" id="hi-zone" placeholder="ex: Façade Nord, Terrasse, Hall A..." style="flex:1;">
+          <button class="btn btn-ghost btn-xs" onclick="voiceInputHandoverItem()" title="Dicter">🎙️</button>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Statut</label>
+          <select class="input" id="hi-status">
+            <option value="ok">✅ OK</option>
+            <option value="remark">⚠️ Remarque</option>
+            <option value="defect">❌ Défaut</option>
+            <option value="pending">⏳ En attente</option>
+          </select>
+        </div>
+        <div class="form-group2" style="margin:0;">
+          <label class="form-label2">Commentaire</label>
+          <input class="input" id="hi-comment" placeholder="Observation...">
+        </div>
+      </div>
+      <!-- Photo -->
+      <div class="form-group2">
+        <label class="form-label2">📸 Photo</label>
+        <div id="hi-photo-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;"></div>
+        <label style="display:flex;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:14px;cursor:pointer;color:var(--text3);font-size:13px;">
+          📸 Prendre une photo
+          <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="previewHandoverItemPhoto(this)">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveHandoverItem('${handoverId}','${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  window._PENDING_HI_PHOTO = null;
+  setTimeout(()=>document.getElementById('hi-zone')?.focus(), 80);
+}
+
+function previewHandoverItemPhoto(input) {
+  if (!input.files?.length) return;
+  window._PENDING_HI_PHOTO = input.files[0];
+  const url = URL.createObjectURL(input.files[0]);
+  const preview = document.getElementById('hi-photo-preview');
+  if (preview) preview.innerHTML = `<img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`;
+}
+
+function voiceInputHandoverItem() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Dictée non supportée','error'); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR(); rec.lang='fr-FR'; rec.interimResults=false;
+  toast('🎙️ Parlez...','info');
+  rec.onresult = e => {
+    const field = document.getElementById('hi-zone');
+    if (field) field.value = e.results[0][0].transcript;
+    toast('Zone dictée ✅','success');
+  };
+  rec.onerror = () => toast('Erreur dictée','error');
+  rec.start();
+}
+
+async function saveHandoverItem(handoverId, projectId, overlay) {
+  const zone    = document.getElementById('hi-zone')?.value?.trim();
+  const status  = document.getElementById('hi-status')?.value || 'ok';
+  const comment = document.getElementById('hi-comment')?.value?.trim();
+  if (!zone) { toast('Indique la zone','error'); document.getElementById('hi-zone')?.focus(); return; }
+
+  const btn = overlay?.querySelector('.btn-primary');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ Ajout...'; }
+
+  // Get current items count for sortOrder
+  const hRes = await api('GET', `/handover/${handoverId}`);
+  const sortOrder = (hRes?.data?.items?.length || 0);
+
+  const res = await api('PATCH', `/handover/${handoverId}`, {
+    items: [{ zoneName: zone, status, comment: comment||undefined, sortOrder }]
+  });
+
+  // Alternative: create via dedicated endpoint if PATCH doesn't support it
+  let itemId = null;
+  if (!res?.success) {
+    // Try direct item creation — fallback
+    toast('Ajout via mise à jour...','info');
+  } else {
+    // Find the new item
+    const newItem = res.data?.items?.find(i => i.zoneName === zone && i.sortOrder === sortOrder);
+    itemId = newItem?.id;
+  }
+
+  // Upload photo if any
+  if (window._PENDING_HI_PHOTO && itemId) {
+    try {
+      const fd = new FormData(); fd.append('file', window._PENDING_HI_PHOTO);
+      const r = await fetch(`${API}/upload/photo`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd
+      });
+      const data = await r.json();
+      const url = data.data?.url || data.url;
+      if (url) {
+        await fetch(`${API}/handover/${handoverId}/items/${itemId}/photo`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+          body: JSON.stringify({photoUrl:url, publicId: data.data?.public_id||null})
+        });
+      }
+    } catch {}
+  }
+
+  toast('Point ajouté ✅','success');
+  window._PENDING_HI_PHOTO = null;
+  overlay?.remove();
+  openHandoverFull(handoverId);
+}
+
+// ═══════════════════════════════════════════
+// TABS PROJET — TICKETS / WAREHOUSE / TOOLBOX
+// ═══════════════════════════════════════════
+
+async function loadDetailTickets(projectId) {
+  const el = document.getElementById('detail-tickets-content');
+  if (!el) return;
+  const res = await api('GET', `/tickets?projectId=${projectId}`);
+  const tickets = res?.data || [];
+
+  const urgencyColor = {critical:'var(--accent)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+  const urgencyLabel = {critical:'🔴 Critique',high:'🟠 Élevé',medium:'🟡 Moyen',low:'🟢 Faible'};
+  const statusLabel  = {open:'Ouvert',assigned:'Assigné',in_progress:'En cours',resolved:'Résolu',validated:'Validé',closed:'Fermé'};
+  const statusBadge  = {open:'badge-red',assigned:'badge-amber',in_progress:'badge-blue',resolved:'badge-green',validated:'badge-green',closed:'badge-muted'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">🛠️ Tickets SAV (${tickets.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-ticket')">+ Nouveau Ticket</button>
+    </div>
+    ${!tickets.length ? `
+      <div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket sur ce projet</div></div>` : `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${tickets.map(t => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${urgencyColor[t.urgency]||'var(--blue)'};border-radius:10px;padding:12px 14px;cursor:pointer;"
+            onclick="openTicketDetail('${t.id}')">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="font-weight:700;font-size:13px;flex:1;">${t.title}</span>
+              <span class="badge ${statusBadge[t.status]||'badge-muted'}" style="font-size:10px;">${statusLabel[t.status]||t.status}</span>
+            </div>
+            <div style="display:flex;gap:10px;font-size:11px;color:var(--text3);">
+              <span style="color:${urgencyColor[t.urgency]};font-weight:600;">${urgencyLabel[t.urgency]||t.urgency}</span>
+              ${t.locationOnSite?`<span>📍 ${t.locationOnSite}</span>`:''}
+              ${t.assignedTo?`<span>👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</span>`:'<span>Non assigné</span>'}
+              <span>${fmtDate(t.createdAt)}</span>
+            </div>
+          </div>`).join('')}
+      </div>`}`;
+}
+
+async function loadDetailWarehouse(projectId) {
+  const el = document.getElementById('detail-warehouse-content');
+  if (!el) return;
+  const res = await api('GET', `/warehouse/boxes?projectId=${projectId}`);
+  const boxes = res?.data || [];
+
+  const statusColor = {preparing:'var(--amber)',ready:'var(--blue)',loaded:'var(--blue)',on_site:'var(--green)',returned:'var(--text3)',incomplete:'var(--accent)'};
+  const statusLabel = {preparing:'⏳ Préparation',ready:'✅ Prête',loaded:'📦 Chargée',on_site:'🏗️ Sur site',returned:'↩️ Retour',incomplete:'⚠️ Incomplète'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">📦 Boxes matériel (${boxes.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-box')">+ Nouvelle Box</button>
+    </div>
+    ${!boxes.length ? `
+      <div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box pour ce projet</div>
+        <button class="btn btn-primary" style="margin-top:12px;" onclick="showModal('modal-box')">+ Créer une box</button>
+      </div>` : `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${boxes.map(b => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+            onclick="goto('warehouse')">
+            <div style="font-size:20px;margin-bottom:6px;">📦</div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${b.name}</div>
+            <div style="font-size:11px;color:${statusColor[b.status]||'var(--text3)'};font-weight:600;">${statusLabel[b.status]||b.status}</div>
+            ${b.items?.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">${b.items.length} article(s)</div>`:''}
+          </div>`).join('')}
+      </div>`}`;
+}
+
+async function loadDetailToolboxes(projectId) {
+  const el = document.getElementById('detail-toolbox-content');
+  if (!el) return;
+  const res = await api('GET', `/toolbox?projectId=${projectId}`);
+  const boxes = res?.data || [];
+
+  const statusColor = {in_warehouse:'var(--text3)',ready:'var(--blue)',on_site:'var(--green)',returned:'var(--text3)'};
+  const statusLabel = {in_warehouse:'🏠 Entrepôt',ready:'✅ Prête',on_site:'🏗️ Sur site',returned:'↩️ Retour'};
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;">🧰 Boîtes à outils (${boxes.length})</div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-toolbox')">+ Nouvelle Boîte</button>
+    </div>
+    ${!boxes.length ? `
+      <div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte à outils pour ce projet</div>
+        <button class="btn btn-primary" style="margin-top:12px;" onclick="showModal('modal-toolbox')">+ Créer une boîte</button>
+      </div>` : `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+        ${boxes.map(b => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+            onclick="goto('toolbox')">
+            <div style="font-size:20px;margin-bottom:6px;">🧰</div>
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${b.name}</div>
+            <div style="font-size:11px;color:${statusColor[b.status]||'var(--text3)'};font-weight:600;">${statusLabel[b.status]||b.status}</div>
+            ${b.drawers?.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;">${b.drawers.length} tiroir(s)</div>`:''}
+          </div>`).join('')}
+      </div>`}`;
+}// ═════════════════════════════════════════════
+// 🚛 LOGISTIQUE — Camions/Grues/Forklifts par projet
+// ═════════════════════════════════════════════
+async function loadDetailTrucks(projectId) {
+  const el = document.getElementById('detail-trucks-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+  const res = await api('GET', `/projects/${projectId}/trucks`);
+  const trucks = res?.data || [];
+
+  const VEHICLE_LABELS = { truck: '🚛 Camion', crane: '🏗️ Grue', forklift: '🛻 Forklift', manitou: '🚜 Manitou', scissor: '🪜 Nacelle', other: '🚗 Autre' };
+  const STATUS_BADGE = { planned:'#9b59b6', loading:'#f4a261', in_transit:'#4895ef', delivered:'#2dc653', returned:'#5a6275' };
+
+  let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:13px;color:var(--text3);">${trucks.length} véhicule(s)</div>
+      <button class="btn btn-primary btn-sm" onclick="openTruckModal('${projectId}')">+ Ajouter</button>
+    </div>`;
+
+  if (!trucks.length) {
+    html += '<div class="empty"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule</div><div class="empty-sub">Ajoute un camion, une grue ou un forklift.</div></div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    for (const t of trucks) {
+      const vLabel = VEHICLE_LABELS[t.vehicleType] || VEHICLE_LABELS.truck;
+      const sColor = STATUS_BADGE[t.status] || '#5a6275';
+      const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+      html += `
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:700;">${vLabel} · ${t.truckNumber || 'Sans n°'}</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+                ${t.licensePlate?`🪪 ${t.licensePlate} · `:''}${t.driverName?`👤 ${t.driverName}`:''}${t.driverPhone?` · 📞 <a href="tel:${t.driverPhone}" style="color:var(--blue);">${t.driverPhone}</a>`:''}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span style="background:${sColor};color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">${t.status}</span>
+              <button class="btn btn-ghost btn-sm" onclick='openTruckModal("${projectId}", ${JSON.stringify(t).replace(/'/g,"&#39;")})'>✏️</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteTruck('${projectId}','${t.id}')">🗑️</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Chargement</div><div>${fmt(t.loadingDate)}</div></div>
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Arrivée sur site</div><div>${fmt(t.arrivalDate)}</div></div>
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Départ retour</div><div>${fmt(t.departureDate)}</div></div>
+          </div>
+          ${t.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:6px;">📝 ${t.notes}</div>`:''}
+        </div>`;
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function openTruckModal(projectId, existing) {
+  const t = existing || {};
+  const overlay = document.createElement('div'); overlay.className = 'overlay open';
+  const dateInput = d => d ? new Date(d).toISOString().slice(0,16) : '';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:540px;">
+      <div class="modal-head">
+        <div class="modal-title">${t.id?'Modifier':'Ajouter'} un véhicule</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group"><label class="form-label">Type</label>
+          <select class="input" id="tk-type">
+            ${['truck','crane','forklift','manitou','scissor','other'].map(v=>`<option value="${v}" ${t.vehicleType===v?'selected':''}>${v}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Numéro</label><input class="input" id="tk-num" value="${t.truckNumber||''}"></div>
+        <div class="form-group"><label class="form-label">Plaque</label><input class="input" id="tk-plate" value="${t.licensePlate||''}"></div>
+        <div class="form-group"><label class="form-label">Chauffeur</label><input class="input" id="tk-driver" value="${t.driverName||''}"></div>
+        <div class="form-group"><label class="form-label">Téléphone chauffeur</label><input class="input" id="tk-phone" value="${t.driverPhone||''}"></div>
+        <div class="form-group"><label class="form-label">Statut</label>
+          <select class="input" id="tk-status">
+            ${['planned','loading','in_transit','delivered','returned'].map(v=>`<option value="${v}" ${t.status===v?'selected':''}>${v}</option>`).join('')}
+          </select></div>
+        <div class="form-group"><label class="form-label">Chargement</label><input class="input" type="datetime-local" id="tk-load" value="${dateInput(t.loadingDate)}"></div>
+        <div class="form-group"><label class="form-label">Arrivée sur site</label><input class="input" type="datetime-local" id="tk-arr" value="${dateInput(t.arrivalDate)}"></div>
+        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Départ retour</label><input class="input" type="datetime-local" id="tk-dep" value="${dateInput(t.departureDate)}"></div>
+        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Notes</label><textarea class="input" id="tk-notes" rows="2">${t.notes||''}</textarea></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}','${t.id||''}')">💾 Enregistrer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveTruck(projectId, truckId) {
+  const val = id => document.getElementById(id).value.trim();
+  const payload = {
+    vehicleType: document.getElementById('tk-type').value,
+    truckNumber: val('tk-num')   || null,
+    licensePlate: val('tk-plate')|| null,
+    driverName: val('tk-driver') || null,
+    driverPhone: val('tk-phone') || null,
+    status: document.getElementById('tk-status').value,
+    loadingDate:   val('tk-load') || null,
+    arrivalDate:   val('tk-arr')  || null,
+    departureDate: val('tk-dep')  || null,
+    notes: val('tk-notes') || null,
+  };
+  const res = truckId
+    ? await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, payload)
+    : await api('POST',  `/projects/${projectId}/trucks`,           payload);
+  if (res?.success) {
+    toast('Véhicule enregistré ✅', 'success');
+    document.querySelector('.overlay.open')?.remove();
+    loadDetailTrucks(projectId);
+  } else {
+    toast('Erreur enregistrement', 'error');
+  }
+}
+
+async function deleteTruck(projectId, truckId) {
+  if (!confirm('Supprimer ce véhicule ?')) return;
+  const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
+  if (res?.success) { toast('Supprimé', 'success'); loadDetailTrucks(projectId); }
+  else toast('Erreur suppression', 'error');
+}
+
+// ═════════════════════════════════════════════
+// 📋 BRIEFING — Document multi-slides, slides multi-blocs
+// ═════════════════════════════════════════════
+let CURRENT_BRIEFING = null;          // { id, projectId, title, slides: [{title, blocks:[{type, ...}]}] }
+let CURRENT_SLIDE_IDX = 0;
+let BRIEFING_AUTO = { tasks: [], trucks: [], project: {} };  // cache des données auto
+
+const BLOCK_TYPES = {
+  text:     { icon:'📝', label:'Texte / notes' },
+  contacts: { icon:'📞', label:'Contacts' },
+  project:  { icon:'🏷️', label:'Infos projet (auto)' },
+  tasks:    { icon:'✅', label:'Tâches (auto)' },
+  trucks:   { icon:'🚛', label:'Logistique (auto)' },
+  photos:   { icon:'📸', label:'Photos / PDF' },
+  location: { icon:'📍', label:'Localisation' },
+};
+
+// Migration silencieuse : ancien format (slide.type) → nouveau (slide.blocks[])
+function migrateSlide(s) {
+  if (Array.isArray(s.blocks)) return s;
+  const { type, title, ...rest } = s;
+  return { title: title || '', blocks: type ? [{ type, ...rest }] : [] };
+}
+
+async function loadDetailBriefing(projectId) {
+  const el = document.getElementById('detail-briefing-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+
+  const [briefRes, tasksRes, trucksRes, projRes] = await Promise.all([
+    api('GET', `/briefings/${projectId}`),
+    api('GET', `/tasks?projectId=${projectId}`),
+    api('GET', `/projects/${projectId}/trucks`),
+    api('GET', `/projects/${projectId}`),
+  ]);
+
+  if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
+
+  CURRENT_BRIEFING = briefRes.data;
+  if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
+  CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
+
+  BRIEFING_AUTO.tasks   = tasksRes?.data  || [];
+  BRIEFING_AUTO.trucks  = trucksRes?.data || [];
+  BRIEFING_AUTO.project = projRes?.data   || {};
+
+  CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
+  renderBriefing();
+}
+
+function renderBriefing() {
+  const el = document.getElementById('detail-briefing-content');
+  if (!el || !CURRENT_BRIEFING) return;
+  const slides = CURRENT_BRIEFING.slides;
+  const cur = slides[CURRENT_SLIDE_IDX];
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+      <input class="input" id="brf-title" placeholder="Titre du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:320px;" onchange="CURRENT_BRIEFING.title=this.value">
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="printBriefing()">🖨️ Imprimer</button>
+        <button class="btn btn-primary btn-sm" onclick="saveBriefing()">💾 Enregistrer</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:flex-start;">
+      <!-- Sidebar : liste des slides -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Slides (${slides.length})</div>
+        <div id="brf-slides-list" style="display:flex;flex-direction:column;gap:4px;max-height:480px;overflow-y:auto;">
+          ${slides.map((s,i)=>{
+            const label = s.title || `Slide ${i+1}`;
+            const icons = (s.blocks||[]).map(b=>(BLOCK_TYPES[b.type]||{}).icon||'·').slice(0,4).join('');
+            return `
+              <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;background:${i===CURRENT_SLIDE_IDX?'var(--bg3)':'transparent'};border:1px solid ${i===CURRENT_SLIDE_IDX?'var(--accent)':'transparent'};" onclick="selectSlide(${i})">
+                <span style="font-size:13px;min-width:40px;">${icons||'·'}</span>
+                <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+                <span style="display:flex;gap:2px;">
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Monter" onclick="event.stopPropagation();moveSlide(${i},-1)">▲</button>
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;" title="Descendre" onclick="event.stopPropagation();moveSlide(${i},1)">▼</button>
+                  <button class="btn btn-ghost btn-sm" style="padding:0 4px;color:var(--accent);" title="Supprimer" onclick="event.stopPropagation();deleteSlide(${i})">×</button>
+                </span>
+              </div>`;
+          }).join('') || '<div style="font-size:12px;color:var(--text3);padding:8px;">Aucune slide</div>'}
+        </div>
+        <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+          <button class="btn btn-primary btn-sm" style="width:100%;" onclick="addSlide()">+ Nouvelle slide</button>
+        </div>
+      </div>
+
+      <!-- Éditeur de la slide courante -->
+      <div id="brf-editor" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;min-height:300px;">
+        ${cur ? renderSlideEditor(cur, CURRENT_SLIDE_IDX) : '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Choisis ou ajoute une slide</div></div>'}
+      </div>
+    </div>`;
+}
+
+function renderSlideEditor(s, idx) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  const blocks = s.blocks || [];
+  return `
+    <input class="input" placeholder="Titre de la slide…" value="${esc(s.title)}" onchange="CURRENT_BRIEFING.slides[${idx}].title=this.value;renderBriefing()" style="margin-bottom:14px;">
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${blocks.map((b, bi) => renderBlockEditor(idx, bi, b)).join('') || '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;border:1px dashed var(--border);border-radius:8px;">Cette slide est vide — ajoute un bloc ci-dessous</div>'}
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">+ Ajouter un bloc à cette slide</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        ${Object.entries(BLOCK_TYPES).map(([k,v])=>`<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 8px;" onclick="addBlock(${idx},'${k}')">${v.icon} ${v.label}</button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderBlockEditor(slideIdx, bi, b) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  const meta = BLOCK_TYPES[b.type] || { icon:'·', label:b.type };
+
+  let body = '';
+  if (b.type === 'text') {
+    body = `<textarea class="input" rows="6" placeholder="Notes, instructions, remarques..." onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].content=this.value">${b.content||''}</textarea>`;
+  }
+  else if (b.type === 'contacts') {
+    const contacts = b.contacts || [];
+    body = `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${contacts.map((c,ci)=>renderContactRow(slideIdx, bi, ci, c)).join('') || '<div style="font-size:12px;color:var(--text3);">Aucun contact — ajoute en ci-dessous.</div>'}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="addContact(${slideIdx},${bi})">+ Contact manuel</button>
+        <select class="input" id="brf-pick-user-${slideIdx}-${bi}" style="flex:1;min-width:160px;">
+          <option value="">+ Membre de l'équipe…</option>
+          ${(USERS||[]).map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} ${u.role?'('+u.role+')':''}</option>`).join('')}
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="addContactFromUser(${slideIdx},${bi})">Ajouter</button>
+      </div>`;
+  }
+  else if (b.type === 'tasks') {
+    const tasks = BRIEFING_AUTO.tasks || [];
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Liste extraite automatiquement (${tasks.length} tâche${tasks.length>1?'s':''}). Mise à jour à chaque ouverture du briefing.</div>
+      ${tasks.length ? `<div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:6px;padding:6px;">
+        ${tasks.map(t=>`<div style="font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border);">${t.taskDate?new Date(t.taskDate).toLocaleDateString('fr-FR')+' · ':''}<strong>${esc(t.title)}</strong> <span style="color:var(--text3);">— ${t.status}</span></div>`).join('')}
+      </div>` : '<div style="color:var(--text3);font-size:12px;font-style:italic;">Aucune tâche pour ce projet.</div>'}`;
+  }
+  else if (b.type === 'trucks') {
+    const trucks = BRIEFING_AUTO.trucks || [];
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Liste extraite automatiquement (${trucks.length} véhicule${trucks.length>1?'s':''}).</div>
+      ${trucks.length ? `<div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:6px;padding:6px;">
+        ${trucks.map(t=>`<div style="font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border);">${esc(t.vehicleType||'truck')} ${esc(t.truckNumber||'')} ${t.driverName?'· 👤 '+esc(t.driverName):''} ${t.driverPhone?'· 📞 '+esc(t.driverPhone):''} ${t.arrivalDate?'<br><span style="color:var(--text3);">Arrivée : '+new Date(t.arrivalDate).toLocaleString('fr-FR')+'</span>':''}</div>`).join('')}
+      </div>` : '<div style="color:var(--text3);font-size:12px;font-style:italic;">Aucun véhicule pour ce projet.</div>'}`;
+  }
+  else if (b.type === 'project') {
+    const p = BRIEFING_AUTO.project || {};
+    const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+    const row = (lbl, val) => `<div style="display:grid;grid-template-columns:140px 1fr;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);"><span style="color:var(--text3);">${lbl}</span><span>${val||'—'}</span></div>`;
+    body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Infos extraites automatiquement de la fiche projet (mises à jour à chaque ouverture du briefing).</div>
+      <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
+        ${row('Projet',          esc(p.name))}
+        ${row('N° interne',      esc(p.internalNumber))}
+        ${row('Statut',          esc(p.status))}
+        ${row('Client',          esc(p.client?.name))}
+        ${(p.client?.contactName || p.client?.phone || p.client?.email) ? row('Contact client', `${esc(p.client?.contactName)||''} ${p.client?.phone?'· '+esc(p.client.phone):''} ${p.client?.email?'· '+esc(p.client.email):''}`) : ''}
+        ${row('Adresse',         `${esc(p.address)}${p.city?', '+esc(p.city):''}`)}
+        ${row('Installation',    `${fmt(p.installationStart)} → ${fmt(p.installationEnd)}`)}
+        ${p.dismantlingStart ? row('Démontage', `${fmt(p.dismantlingStart)} → ${fmt(p.dismantlingEnd)}`) : ''}
+        ${row('Ouvriers prévus', esc(String(p.workersCount || 0)))}
+        ${p.technicalManager ? row('Chef technique', esc(`${p.technicalManager.firstName} ${p.technicalManager.lastName}`)) : ''}
+        ${p.description ? row('Description', esc(p.description)) : ''}
+        ${p.specialInstructions ? row('Instructions spéciales', esc(p.specialInstructions)) : ''}
+      </div>`;
+  }
+  else if (b.type === 'photos') {
+    const photos = b.photos || [];
+    // Helper : page N d'un PDF Cloudinary → URL JPG (pour l'impression)
+    const isPdf = u => /\\.pdf($|\\?)/i.test(u);
+    body = `
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:8px;">
+        ${photos.map((p,pi)=>{
+          if (isPdf(p.url)) {
+            // PDF : intégration via iframe (le navigateur affiche le PDF nativement)
+            return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
+                <span>📄 PDF intégré</span>
+                <a href="${p.url}" target="_blank" style="color:var(--blue);font-size:11px;">↗ Ouvrir dans un onglet</a>
+              </div>
+              <iframe src="${p.url}#toolbar=0&navpanes=0" style="width:100%;height:460px;border:1px solid var(--border);border-radius:6px;background:white;"></iframe>
+              <input class="input" style="font-size:11px;padding:4px;margin-top:6px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+              <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+            </div>`;
+          }
+          return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;display:grid;grid-template-columns:280px 1fr;gap:10px;align-items:start;">
+            <img src="${p.url}" style="width:280px;max-height:200px;object-fit:cover;border-radius:6px;">
+            <div>
+              <input class="input" style="font-size:12px;" placeholder="Légende (ex: vue d'ensemble du stand)" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+            </div>
+            <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+          </div>`;
+        }).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:14px;border:1px dashed var(--border);border-radius:8px;">Aucun fichier</div>'}
+      </div>
+      <input type="file" id="brf-photo-input-${slideIdx}-${bi}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${slideIdx},${bi},this.files)">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Ajouter photos ou PDF</button>`;
+  }
+  else if (b.type === 'location') {
+    const addr = b.address || '';
+    body = `
+      <div class="form-group"><label class="form-label">Adresse</label>
+        <input class="input" value="${esc(addr)}" placeholder="Adresse complète" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].address=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">N° de stand / hall</label>
+        <input class="input" value="${esc(b.stand)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].stand=this.value">
+      </div>
+      <div class="form-group"><label class="form-label">Notes (accès, parking, horaires)</label>
+        <textarea class="input" rows="3" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].notes=this.value">${b.notes||''}</textarea>
+      </div>
+      ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Google Maps</a>` : ''}`;
+  }
+
+  return `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);">${meta.icon} ${meta.label}</div>
+        <div style="display:flex;gap:2px;">
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;" title="Monter" onclick="moveBlock(${slideIdx},${bi},-1)">▲</button>
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;" title="Descendre" onclick="moveBlock(${slideIdx},${bi},1)">▼</button>
+          <button class="btn btn-ghost btn-sm" style="padding:0 6px;color:var(--accent);" title="Supprimer ce bloc" onclick="removeBlock(${slideIdx},${bi})">×</button>
+        </div>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function renderContactRow(slideIdx, bi, ci, c) {
+  const esc = x => (x||'').toString().replace(/"/g,'&quot;');
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:center;">
+      <input class="input" placeholder="Nom" value="${esc(c.name)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].name=this.value">
+      <input class="input" placeholder="Rôle" value="${esc(c.role)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].role=this.value">
+      <input class="input" placeholder="Téléphone" value="${esc(c.phone)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].phone=this.value">
+      <input class="input" placeholder="Email" value="${esc(c.email)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].contacts[${ci}].email=this.value">
+      <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="removeContact(${slideIdx},${bi},${ci})">×</button>
+    </div>`;
+}
+
+// ─── Manipulations slides ───
+function selectSlide(i) { CURRENT_SLIDE_IDX = i; renderBriefing(); }
+
+function addSlide() {
+  if (!CURRENT_BRIEFING) return;
+  CURRENT_BRIEFING.slides.push({ title:'', blocks:[] });
+  CURRENT_SLIDE_IDX = CURRENT_BRIEFING.slides.length - 1;
+  renderBriefing();
+}
+
+function deleteSlide(i) {
+  if (!confirm('Supprimer cette slide ?')) return;
+  CURRENT_BRIEFING.slides.splice(i,1);
+  if (CURRENT_SLIDE_IDX >= CURRENT_BRIEFING.slides.length) CURRENT_SLIDE_IDX = Math.max(0, CURRENT_BRIEFING.slides.length-1);
+  renderBriefing();
+}
+
+function moveSlide(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= CURRENT_BRIEFING.slides.length) return;
+  const arr = CURRENT_BRIEFING.slides;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  if (CURRENT_SLIDE_IDX === i) CURRENT_SLIDE_IDX = j;
+  renderBriefing();
+}
+
+// ─── Manipulations blocs ───
+function addBlock(slideIdx, type) {
+  const s = CURRENT_BRIEFING.slides[slideIdx];
+  s.blocks = s.blocks || [];
+  const fresh = { type };
+  if (type === 'contacts') fresh.contacts = [];
+  if (type === 'photos')   fresh.photos   = [];
+  s.blocks.push(fresh);
+  renderBriefing();
+}
+
+function removeBlock(slideIdx, bi) {
+  if (!confirm('Supprimer ce bloc ?')) return;
+  CURRENT_BRIEFING.slides[slideIdx].blocks.splice(bi, 1);
+  renderBriefing();
+}
+
+function moveBlock(slideIdx, bi, dir) {
+  const arr = CURRENT_BRIEFING.slides[slideIdx].blocks;
+  const j = bi + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[bi], arr[j]] = [arr[j], arr[bi]];
+  renderBriefing();
+}
+
+// ─── Contacts ───
+function addContact(slideIdx, bi) {
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.contacts = b.contacts || [];
+  b.contacts.push({ name:'', role:'', phone:'', email:'' });
+  renderBriefing();
+}
+
+function addContactFromUser(slideIdx, bi) {
+  const sel = document.getElementById(`brf-pick-user-${slideIdx}-${bi}`);
+  const userId = sel?.value;
+  if (!userId) return;
+  const u = (USERS||[]).find(x=>x.id===userId);
+  if (!u) return;
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.contacts = b.contacts || [];
+  b.contacts.push({ name: `${u.firstName} ${u.lastName}`, role: u.role||'', phone: u.phone||'', email: u.email||'' });
+  renderBriefing();
+}
+
+function removeContact(slideIdx, bi, ci) {
+  CURRENT_BRIEFING.slides[slideIdx].blocks[bi].contacts.splice(ci, 1);
+  renderBriefing();
+}
+
+// ─── Photos / PDF ───
+async function uploadBriefPhotos(slideIdx, bi, files) {
+  if (!files?.length) return;
+  toast(`Upload de ${files.length} fichier(s)...`, 'info');
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  b.photos = b.photos || [];
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await fetch(API + '/upload/photo', { method:'POST', headers:{ 'Authorization': `Bearer ${TOKEN}` }, body: fd });
+      const j = await r.json();
+      if (j?.success && j.data?.url) b.photos.push({ url: j.data.url, caption: f.name });
+    } catch(e) { /* fichier ignoré */ }
+  }
+  toast('Upload terminé', 'success');
+  renderBriefing();
+}
+
+function removeBriefPhoto(slideIdx, bi, pi) {
+  CURRENT_BRIEFING.slides[slideIdx].blocks[bi].photos.splice(pi, 1);
+  renderBriefing();
+}
+
+// ─── Enregistrement ───
+async function saveBriefing() {
+  if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  const t = document.getElementById('brf-title'); if (t) CURRENT_BRIEFING.title = t.value;
+  const res = await api('PUT', `/briefings/${CURRENT_PROJECT_ID}`, { title: CURRENT_BRIEFING.title, slides: CURRENT_BRIEFING.slides });
+  if (res?.success) toast('Briefing enregistré ✅', 'success');
+  else toast('Erreur enregistrement', 'error');
+}
+
+// ─── Impression ───
+async function printBriefing() {
+  if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  await saveBriefing();
+  const projRes = await api('GET', `/projects/${CURRENT_PROJECT_ID}`);
+  const proj = projRes?.data || {};
+
+  const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+  const esc = x => (x==null?'':String(x)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  const renderBlockPrint = b => {
+    if (b.type === 'text') {
+      return `<div style="white-space:pre-wrap;font-size:14px;line-height:1.5;margin:8px 0;">${esc(b.content)}</div>`;
+    }
+    if (b.type === 'contacts') {
+      const rows = (b.contacts||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.role)}</td><td>${esc(c.phone)}</td><td>${esc(c.email)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Nom</th><th style="text-align:left;padding:6px;">Rôle</th><th style="text-align:left;padding:6px;">Téléphone</th><th style="text-align:left;padding:6px;">Email</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucun contact</td></tr>'}</tbody></table>`;
+    }
+    if (b.type === 'tasks') {
+      const rows = (BRIEFING_AUTO.tasks||[]).map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.status)}</td><td>${esc(t.priority)}</td><td>${fmtDate(t.taskDate)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Tâche</th><th style="text-align:left;padding:6px;">Statut</th><th style="text-align:left;padding:6px;">Priorité</th><th style="text-align:left;padding:6px;">Date</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:10px;color:#888;">Aucune tâche</td></tr>'}</tbody></table>`;
+    }
+    if (b.type === 'trucks') {
+      const rows = (BRIEFING_AUTO.trucks||[]).map(t=>`<tr><td>${esc(t.vehicleType||'truck')}</td><td>${esc(t.truckNumber)}</td><td>${esc(t.driverName)}${t.driverPhone?' · '+esc(t.driverPhone):''}</td><td>${fmt(t.loadingDate)}</td><td>${fmt(t.arrivalDate)}</td><td>${esc(t.status)}</td></tr>`).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Type</th><th style="text-align:left;padding:6px;">N°</th><th style="text-align:left;padding:6px;">Chauffeur</th><th style="text-align:left;padding:6px;">Chargement</th><th style="text-align:left;padding:6px;">Arrivée</th><th style="text-align:left;padding:6px;">Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:10px;color:#888;">Aucun véhicule</td></tr>'}</tbody></table>`;
+    }
+    if (b.type === 'project') {
+      const p = BRIEFING_AUTO.project || {};
+      const row = (lbl, val) => val ? `<tr><th style="text-align:left;padding:6px;background:#f8f9fa;color:#666;width:160px;">${lbl}</th><td style="padding:6px;">${val}</td></tr>` : '';
+      const contact = (p.client?.contactName || p.client?.phone || p.client?.email)
+        ? `${esc(p.client?.contactName)||''}${p.client?.phone?' · '+esc(p.client.phone):''}${p.client?.email?' · '+esc(p.client.email):''}` : '';
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;border:1px solid #e5e7eb;">
+        ${row('Projet',          esc(p.name))}
+        ${row('N° interne',      esc(p.internalNumber))}
+        ${row('Statut',          esc(p.status))}
+        ${row('Client',          esc(p.client?.name))}
+        ${row('Contact client',  contact)}
+        ${row('Adresse',         `${esc(p.address)}${p.city?', '+esc(p.city):''}`)}
+        ${row('Installation',    `${fmt(p.installationStart)} → ${fmt(p.installationEnd)}`)}
+        ${p.dismantlingStart ? row('Démontage', `${fmt(p.dismantlingStart)} → ${fmt(p.dismantlingEnd)}`) : ''}
+        ${row('Ouvriers prévus', esc(String(p.workersCount || 0)))}
+        ${p.technicalManager ? row('Chef technique', esc(`${p.technicalManager.firstName} ${p.technicalManager.lastName}`)) : ''}
+        ${row('Description',          esc(p.description))}
+        ${row('Instructions spéciales', esc(p.specialInstructions))}
+      </table>`;
+    }
+    if (b.type === 'photos') {
+      // Pour chaque fichier : si PDF → on extrait jusqu'à 5 pages via Cloudinary en JPG
+      const pdfPageUrl = (url, n) => url.includes('/upload/')
+        ? url.replace('/upload/', `/upload/f_jpg,c_limit,w_1100,pg_${n}/`).replace(/\.pdf($|\?)/i, '.jpg$1')
+        : url;
+      const isPdf = u => /\.pdf($|\?)/i.test(u);
+      const items = (b.photos||[]).map(p => {
+        if (isPdf(p.url)) {
+          // On rend les pages 1 à 5 en images. Les pages inexistantes échouent silencieusement (img cassée).
+          // onerror cache l'image qui n'a pas pu être chargée (page au-delà du nombre de pages réelles).
+          const pages = [1,2,3,4,5].map(n => `<img src="${pdfPageUrl(p.url, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:8px auto;border:1px solid #ddd;">`).join('');
+          return `<div style="margin:12px 0;page-break-inside:avoid;">
+            ${p.caption ? `<div style="font-size:12px;color:#666;margin-bottom:4px;"><strong>📄 ${esc(p.caption)}</strong></div>` : ''}
+            ${pages}
+          </div>`;
+        }
+        return `<div style="margin:12px 0;text-align:center;page-break-inside:avoid;">
+          <img src="${p.url}" style="max-width:100%;max-height:520px;">
+          ${p.caption ? `<div style="font-size:12px;color:#666;margin-top:6px;">${esc(p.caption)}</div>` : ''}
+        </div>`;
+      }).join('');
+      return items || '<div style="color:#888;text-align:center;padding:10px;">Aucun fichier</div>';
+    }
+    if (b.type === 'location') {
+      const mapsLink = b.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}" target="_blank">${esc(b.address)}</a>` : '—';
+      return `<div style="font-size:14px;line-height:1.6;margin:8px 0;"><div><strong>Adresse :</strong> ${mapsLink}</div>${b.stand?`<div><strong>Stand / hall :</strong> ${esc(b.stand)}</div>`:''}${b.notes?`<div style="margin-top:8px;white-space:pre-wrap;">${esc(b.notes)}</div>`:''}</div>`;
+    }
+    return '';
+  };
+
+  const renderSlide = s => {
+    const title = s.title ? `<h2 style="margin:0 0 12px;border-bottom:2px solid #333;padding-bottom:6px;">${esc(s.title)}</h2>` : '';
+    const blocksHtml = (s.blocks||[]).map(renderBlockPrint).join('');
+    return title + (blocksHtml || '<div style="color:#888;text-align:center;padding:20px;">Slide vide</div>');
+  };
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Briefing — ${esc(proj.name||'')}</title>
+    <style>
+      @page { size: A4; margin: 18mm; }
+      body { font-family: -apple-system, sans-serif; color:#222; }
+      .slide { page-break-after: always; padding: 12px 0; }
+      .slide:last-child { page-break-after: auto; }
+      h1 { font-size: 26px; margin: 0 0 4px; }
+      h2 { font-size: 18px; }
+      table th, table td { border-bottom:1px solid #ddd; padding:6px; vertical-align:top; }
+      .meta { color:#666; font-size:13px; margin-bottom: 18px; }
+      .cover { text-align:center; padding-top: 80px; }
+    </style></head><body>
+    <div class="slide cover">
+      <img src="/logo.png" alt="VIEWBOX" style="width:280px;height:auto;margin-bottom:30px;">
+      <h1>📋 ${esc(CURRENT_BRIEFING.title || 'Briefing')}</h1>
+      <div class="meta">${esc(proj.name||'')}${proj.city?' — '+esc(proj.city):''}<br>${proj.installationStart?fmt(proj.installationStart):''}</div>
+    </div>
+    ${(CURRENT_BRIEFING.slides||[]).map(s => `<div class="slide">${renderSlide(s)}</div>`).join('')}
+    <script>setTimeout(()=>window.print(), 400);<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+
+</script>
+</body>
+</html>

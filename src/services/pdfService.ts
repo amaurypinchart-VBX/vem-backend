@@ -80,12 +80,35 @@ export async function generateHandoverPdf(data: {
   project: { name: string; internalNumber: string; address: string };
   clientName: string;
   siteManagerName: string;
-  items: Array<{ zoneName: string; status: string; comment?: string | null }>;
+  items: Array<{ zoneName: string; status: string; comment?: string | null; photos?: Array<{ photoUrl: string }> }>;
   generalNotes?: string | null;
   clientSignatureUrl?: string | null;
   managerSignatureUrl?: string | null;
   date: Date;
 }): Promise<Buffer> {
+  // Pré-télécharge toutes les photos des items en parallèle (Cloudinary → JPEG optimisé)
+  const itemsWithBuffers: Array<{
+    zoneName: string;
+    status: string;
+    comment?: string | null;
+    photoBuffers: Buffer[];
+  }> = [];
+  for (const item of data.items) {
+    const buffers: Buffer[] = [];
+    for (const ph of (item.photos || [])) {
+      try {
+        const optimized = ph.photoUrl.includes('/upload/')
+          ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_400,h_400,q_auto:good/')
+          : ph.photoUrl;
+        const r = await fetch(optimized);
+        if (!r.ok) continue;
+        const ab = await r.arrayBuffer();
+        buffers.push(Buffer.from(ab));
+      } catch { /* ignorée */ }
+    }
+    itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
+  }
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
@@ -93,7 +116,12 @@ export async function generateHandoverPdf(data: {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    header(doc, 'HANDOVER REPORT');
+    header(doc, 'HANDOVER REPORT', {
+      projectName: data.project.name,
+      projectRef:  `N° ${data.project.internalNumber}`,
+      reportDate:  new Date(data.date).toLocaleDateString('fr-FR'),
+    });
+
     sectionTitle(doc, 'Informations Projet');
     infoRow(doc, 'Projet',         data.project.name);
     infoRow(doc, 'N° Interne',     data.project.internalNumber);
@@ -108,20 +136,71 @@ export async function generateHandoverPdf(data: {
     const statusColor: Record<string,string> = { ok: GREEN, remark: AMBER, defect: RED, pending: MUTED };
     const statusLabel: Record<string,string> = { ok: 'OK', remark: 'Remarque', defect: 'Défaut', pending: 'En attente' };
 
-    for (const item of data.items) {
+    // ─── Mise en page : texte à gauche, photos 5×5 cm à droite ───
+    // 5 cm = 142 pt. On met 2 colonnes de photos (2 × 142 = 284 pt) à droite,
+    // le texte prend la largeur restante (515 - 284 - 8 = 223 pt min).
+    const PHOTO_SIZE = 142;            // 5 cm
+    const PHOTO_GAP = 6;
+    const PHOTOS_W  = 2 * PHOTO_SIZE + PHOTO_GAP; // bloc photos (2 par ligne max)
+    const TEXT_X    = 40;
+    const TEXT_W    = 515 - PHOTOS_W - 14; // ≈ 217 pt
+    const PHOTOS_X  = TEXT_X + TEXT_W + 14;
+
+    for (const item of itemsWithBuffers) {
+      // Saut de page si plus assez de place
+      if (doc.y > 700) doc.addPage();
+
+      const rowTop = doc.y;
       const color = statusColor[item.status] || MUTED;
       const label = statusLabel[item.status] || item.status;
-      const y = doc.y;
-      doc.circle(50, y + 5, 5).fill(color);
-      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(item.zoneName, 65, y, { width: 320 });
-      // Pastille de statut colorée à droite
-      doc.roundedRect(400, y - 1, 80, 16, 3).fill(color);
-      doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text(label, 400, y + 3, { width: 80, align: 'center' });
+
+      // — Bloc texte à gauche —
+      doc.circle(TEXT_X + 10, rowTop + 5, 5).fill(color);
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
+        .text(item.zoneName, TEXT_X + 25, rowTop, { width: TEXT_W - 110 });
+      const titleEnd = doc.y;
+      // Pastille de statut (au-dessus du texte, alignée à droite du bloc texte)
+      doc.roundedRect(TEXT_X + TEXT_W - 75, rowTop - 1, 75, 16, 3).fill(color);
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(9)
+        .text(label, TEXT_X + TEXT_W - 75, rowTop + 3, { width: 75, align: 'center' });
+      let textY = Math.max(titleEnd, rowTop + 20);
       if (item.comment) {
-        doc.moveDown(0.1);
-        doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(item.comment, 65, doc.y, { width: 480 });
+        doc.fillColor('#3a3a3a').font('Helvetica').fontSize(10)
+          .text(item.comment, TEXT_X + 25, textY + 2, { width: TEXT_W - 30, lineGap: 1 });
+        textY = doc.y;
       }
-      doc.moveDown(0.5);
+      const textBottomY = textY;
+
+      // — Bloc photos à droite (5×5 cm chacune) —
+      let photoBottomY = rowTop;
+      const photos = item.photoBuffers || [];
+      if (photos.length > 0) {
+        let col = 0, row = 0;
+        for (let i = 0; i < photos.length; i++) {
+          const x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
+          const y = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+          // Saut de page si une photo déborde
+          if (y + PHOTO_SIZE > 800) {
+            doc.addPage();
+            // On ne réimprime pas le texte, juste les photos restantes en haut de la nouvelle page
+            row = 0;
+            col = 0;
+          }
+          const realY = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+          try {
+            doc.image(photos[i], x, realY, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
+          } catch { /* image illisible */ }
+          photoBottomY = realY + PHOTO_SIZE;
+          col++;
+          if (col >= 2) { col = 0; row++; }
+        }
+      }
+
+      // Avancer Y au plus bas des deux blocs + une marge
+      const rowBottom = Math.max(textBottomY, photoBottomY) + 12;
+      // Trait de séparation léger entre items
+      doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
+      doc.y = rowBottom;
     }
 
     if (data.generalNotes) {
@@ -131,6 +210,7 @@ export async function generateHandoverPdf(data: {
     }
 
     doc.moveDown(1);
+    if (doc.y > 700) doc.addPage();
     sectionTitle(doc, 'Signatures');
     const sigY = doc.y + 10;
     doc.rect(40, sigY, 220, 70).stroke('#ccc');
