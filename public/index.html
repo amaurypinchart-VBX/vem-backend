@@ -1202,8 +1202,20 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
       <!-- Résultat preview -->
       <div id="ai-result-preview" style="display:none;margin-top:14px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green);">✅ Entrées extraites — vérifie et valide :</div>
-        <div id="ai-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--green);">✅ Entrées extraites — vérifie, ajuste et valide :</div>
+          <button class="btn btn-ghost btn-xs" onclick="toggleAISourceText()" id="ai-source-toggle">📄 Voir texte source</button>
+        </div>
+        <!-- Texte source repliable pour vérifier que rien n'a été perdu -->
+        <div id="ai-source-box" style="display:none;background:var(--bg3);border-left:3px solid var(--text3);border-radius:8px;padding:10px 12px;margin-bottom:10px;max-height:140px;overflow-y:auto;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">Texte d'origine (référence)</div>
+          <div id="ai-source-text" style="font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.5;font-family:monospace;"></div>
+        </div>
+        <div id="ai-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;"></div>
+        <!-- Bouton d'ajout manuel d'un point après analyse -->
+        <button class="btn btn-ghost btn-sm" onclick="addAIEntryManually()" style="margin-top:8px;width:100%;border:2px dashed var(--border);">
+          ➕ Ajouter un point manuellement
+        </button>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ai-result-preview').style.display='none'">Recommencer</button>
           <button class="btn btn-green" onclick="validateAIEntries()">✅ Valider et ajouter au journal</button>
@@ -6898,22 +6910,21 @@ async function parseRawTextWithAI() {
 
     // Store AI entries
     window.AI_PARSED_ENTRIES = entries;
+    window.AI_SOURCE_TEXT = raw;
 
     // Show preview
     const preview = document.getElementById('ai-result-preview');
     const list = document.getElementById('ai-entries-list');
     if (!preview || !list) return;
 
-    list.innerHTML = entries.map((e, i) => `
-      <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
-        <input class="input" type="time" value="${e.time}" id="ai-time-${i}" style="width:80px;padding:5px 6px;font-size:12px;flex-shrink:0;">
-        <textarea class="input" id="ai-text-${i}" rows="2" style="flex:1;font-size:12px;resize:none;">${e.text}</textarea>
-        <span style="font-size:10px;background:var(--bg4);color:var(--text3);padding:2px 6px;border-radius:4px;align-self:center;flex-shrink:0;">${e.category||''}</span>
-        <button onclick="this.closest('div').remove();window.AI_PARSED_ENTRIES.splice(${i},1);" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;">✕</button>
-      </div>`).join('');
+    // Affichage du texte source dans la zone repliable (pour vérification)
+    const srcBox = document.getElementById('ai-source-text');
+    if (srcBox) srcBox.textContent = raw;
+
+    renderAIEntriesList();
 
     preview.style.display = 'block';
-    toast(`✅ ${entries.length} entrées extraites — vérifie et valide`, 'success');
+    toast(`✅ ${entries.length} entrée(s) extraite(s) — vérifie, complète et valide`, 'success');
 
   } catch(e) {
     toast('Erreur connexion IA', 'error');
@@ -6922,6 +6933,73 @@ async function parseRawTextWithAI() {
     if (status) status.style.display = 'none';
     const btn = document.querySelector('[onclick="parseRawTextWithAI()"]');
     if (btn) btn.disabled = false;
+  }
+}
+
+// Re-rend la liste des entrées IA (utilisé après chaque modif : suppression, ajout manuel)
+// Lit dans window.AI_PARSED_ENTRIES qui est la source de vérité.
+function renderAIEntriesList() {
+  const list = document.getElementById('ai-entries-list');
+  if (!list) return;
+  const entries = window.AI_PARSED_ENTRIES || [];
+  list.innerHTML = entries.map((e, i) => `
+    <div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;border-left:3px solid var(--accent);">
+      <input class="input" type="time" value="${e.time||''}" id="ai-time-${i}" style="width:80px;padding:5px 6px;font-size:12px;flex-shrink:0;">
+      <textarea class="input" id="ai-text-${i}" rows="2" style="flex:1;font-size:12px;resize:vertical;min-height:36px;">${esc(e.text||'')}</textarea>
+      <span style="font-size:10px;background:var(--bg4);color:var(--text3);padding:2px 6px;border-radius:4px;align-self:center;flex-shrink:0;">${e.category||''}</span>
+      <button onclick="removeAIEntry(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;flex-shrink:0;" title="Supprimer">✕</button>
+    </div>`).join('');
+}
+
+// Suppression propre d'une entrée (collecte avant suppr pour ne pas perdre les édits)
+function removeAIEntry(idx) {
+  // On collecte les valeurs actuelles pour ne pas écraser des modifs en cours
+  const list = document.getElementById('ai-entries-list');
+  if (list && window.AI_PARSED_ENTRIES) {
+    window.AI_PARSED_ENTRIES.forEach((e, i) => {
+      const t = document.getElementById(`ai-time-${i}`);
+      const x = document.getElementById(`ai-text-${i}`);
+      if (t) e.time = t.value;
+      if (x) e.text = x.value;
+    });
+  }
+  window.AI_PARSED_ENTRIES.splice(idx, 1);
+  renderAIEntriesList();
+}
+
+// Ajout d'un point manuel après analyse IA (au cas où l'IA aurait raté quelque chose)
+function addAIEntryManually() {
+  if (!window.AI_PARSED_ENTRIES) window.AI_PARSED_ENTRIES = [];
+  // On préserve les modifs en cours avant le re-render
+  const list = document.getElementById('ai-entries-list');
+  if (list) {
+    window.AI_PARSED_ENTRIES.forEach((e, i) => {
+      const t = document.getElementById(`ai-time-${i}`);
+      const x = document.getElementById(`ai-text-${i}`);
+      if (t) e.time = t.value;
+      if (x) e.text = x.value;
+    });
+  }
+  window.AI_PARSED_ENTRIES.push({ time: '', text: '', category: '' });
+  renderAIEntriesList();
+  // Met le focus sur le nouveau textarea
+  setTimeout(() => {
+    const newIdx = window.AI_PARSED_ENTRIES.length - 1;
+    document.getElementById(`ai-text-${newIdx}`)?.focus();
+  }, 50);
+}
+
+// Affiche/masque la boîte du texte source d'origine (pour vérifier la fidélité de l'IA)
+function toggleAISourceText() {
+  const box = document.getElementById('ai-source-box');
+  const btn = document.getElementById('ai-source-toggle');
+  if (!box) return;
+  if (box.style.display === 'none') {
+    box.style.display = 'block';
+    if (btn) btn.textContent = '📄 Masquer texte source';
+  } else {
+    box.style.display = 'none';
+    if (btn) btn.textContent = '📄 Voir texte source';
   }
 }
 

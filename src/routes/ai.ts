@@ -15,7 +15,7 @@ router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFu
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ success: false, error: 'Clé API Anthropic non configurée' });
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response: any = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -24,22 +24,25 @@ router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFu
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `Tu es un assistant pour des rapports de chantier. Analyse ce texte de rapport journalier et extrais UNIQUEMENT un tableau JSON d'entrées chronologiques.
+          content: `Tu es un assistant pour des rapports de chantier. Analyse ce texte de rapport journalier et extrais UN tableau JSON d'entrées chronologiques.
 
-Pour chaque action/événement identifié, crée une entrée avec :
-- "time" : heure au format HH:MM (si pas d'heure précise, laisse "" — n'invente pas)
-- "text" : description claire et concise en français (max 150 caractères)
+OBJECTIF : préserver fidèlement chaque action ou observation du texte original. NE PAS RÉSUMER NI CONDENSER plusieurs actions en une seule entrée. Un point dans le texte = une entrée dans le tableau.
+
+Pour chaque action/événement, crée une entrée avec :
+- "time" : heure au format HH:MM (si aucune heure précise n'est mentionnée pour ce point, laisse "" — n'invente jamais une heure)
+- "text" : description fidèle au texte source, en français. Garde tous les détails techniques mentionnés (noms de pièces, quantités, problèmes spécifiques). Tu peux corriger la grammaire et clarifier mais NE PAS résumer. Pas de limite stricte de caractères.
 - "category" : une parmi : "arrivée", "installation", "transport", "pause", "départ", "travaux", "problème", "validation"
 
 Règles importantes :
-- Si une heure est mentionnée (7h45, 9h15, 14h30, 16h...) utilise-la au format HH:MM
-- Garde l'ordre chronologique strict
-- Regroupe les descriptions sans heure en une entrée résumée avec time=""
-- Sois précis et concis
-- Ne crée pas d'entrées vides
+- Crée AUTANT d'entrées qu'il y a de points distincts dans le texte. Si l'utilisateur a écrit 8 lignes, tu dois rendre 8 entrées (ou plus s'il y a plusieurs actions par ligne).
+- Si une heure est mentionnée (7h45, 9h15, 14h30, 16h...), utilise-la au format HH:MM.
+- Garde l'ordre chronologique du texte d'origine.
+- Ne fusionne JAMAIS deux actions distinctes, même si elles se suivent (ex: "9h arrivée et installation" → DEUX entrées : une "arrivée" + une "installation").
+- Ne crée pas d'entrées vides.
+- Si l'utilisateur fait des fautes d'orthographe, corrige-les mais garde le sens exact.
 
 Réponds UNIQUEMENT avec le tableau JSON valide, sans texte avant ou après, sans backticks markdown.
 
@@ -83,7 +86,7 @@ router.post('/scan-id', async (req: AuthRequest, res: Response, next: NextFuncti
     const imgSizeMB = (imageBase64.length * 0.75 / 1024 / 1024).toFixed(2);
     logger.info(`[scan-id] image ${imgSizeMB} Mo, media_type=${mediaType || 'image/jpeg'}`);
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response: any = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -162,4 +165,4 @@ router.get('/test-key', async (req, res) => {
     keyStart: process.env.ANTHROPIC_API_KEY?.substring(0, 10) || 'MISSING'
   });
 });
-export default router;
+export default router; 
