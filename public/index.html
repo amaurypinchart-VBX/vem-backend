@@ -1984,16 +1984,37 @@ async function updateProjectStatus(projectId, status) {
   const res = await api('PATCH', `/projects/${projectId}`, { status });
   if (res?.success) {
     toast('Statut du projet mis à jour ✅', 'success');
-    // Rafraîchir le dashboard et les listes
-    if (typeof renderDashCalendar === 'function') {
-      // PROJECTS est en cache global — on met à jour la valeur locale
-      const proj = PROJECTS?.find(p => p.id === projectId);
-      if (proj) proj.status = status;
-      renderDashCalendar();
-    }
+    // Mettre à jour le cache global
+    const proj = PROJECTS?.find(p => p.id === projectId);
+    if (proj) proj.status = status;
+    // Rafraîchir tous les endroits où le statut est affiché : badge dans la carte
+    // Infos, le calendrier dashboard, la liste des projets.
+    if (typeof renderDashCalendar === 'function') renderDashCalendar();
+    // Recharger le détail projet complet pour que le badge "Statut" dans la carte Infos
+    // affiche la nouvelle valeur (avec son libellé lisible et sa couleur correcte).
+    loadProjectDetail(projectId);
   } else {
     toast('Erreur changement de statut', 'error');
   }
+}
+
+// Mapping statut projet → libellé lisible + couleur badge (utilisé dans loadProjectDetail)
+function projectStatusLabel(status) {
+  const map = {
+    draft:             { lbl: '📄 Brouillon',       cls: 'badge-muted' },
+    confirmed:         { lbl: '✔️ Confirmé',         cls: 'badge-blue'  },
+    quote_to_validate: { lbl: '📝 Devis à valider',  cls: 'badge-amber' },
+    quote_validated:   { lbl: '✅ Devis validé',     cls: 'badge-blue'  },
+    in_preparation:    { lbl: '🔧 En préparation',   cls: 'badge-amber' },
+    loading:           { lbl: '📦 Chargement',       cls: 'badge-amber' },
+    installation:      { lbl: '🏗️ En installation',  cls: 'badge-red'   },
+    on_site:           { lbl: '📍 Sur site',         cls: 'badge-red'   },
+    handover:          { lbl: '🧾 Handover',         cls: 'badge-blue'  },
+    dismantling:       { lbl: '🔨 Démontage',        cls: 'badge-amber' },
+    completed:         { lbl: '🎉 Terminé',          cls: 'badge-green' },
+    cancelled:         { lbl: '❌ Annulé',            cls: 'badge-muted' },
+  };
+  return map[status] || { lbl: status, cls: 'badge-muted' };
 }
 
 async function loadProjectDetail(id) {
@@ -2042,7 +2063,7 @@ async function loadProjectDetail(id) {
             ${infoRow('Installation', fmtDate(p.installationStart)+' → '+fmtDate(p.installationEnd))}
             ${infoRow('Démontage', p.dismantlingStart ? fmtDate(p.dismantlingStart)+' → '+fmtDate(p.dismantlingEnd) : 'Non défini')}
             ${infoRow('Ouvriers', p.workersCount+' personnes')}
-            ${infoRow('Statut', '<span class="badge badge-amber">'+p.status+'</span>')}
+            ${(() => { const s = projectStatusLabel(p.status); return infoRow('Statut', `<span class="badge ${s.cls}">${s.lbl}</span>`); })()}
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
           ${infoRow('Adresse', p.address)}
