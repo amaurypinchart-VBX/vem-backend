@@ -9377,26 +9377,21 @@ async function saveHandoverItem(handoverId, projectId, overlay) {
   const btn = overlay?.querySelector('.btn-primary');
   if (btn) { btn.disabled=true; btn.textContent='⏳ Ajout...'; }
 
-  // Get current items count for sortOrder
-  const hRes = await api('GET', `/handover/${handoverId}`);
-  const sortOrder = (hRes?.data?.items?.length || 0);
-
-  const res = await api('PATCH', `/handover/${handoverId}`, {
-    items: [{ zoneName: zone, status, comment: comment||undefined, sortOrder }]
+  // Création de l'item via la vraie route POST dédiée (le PATCH ignorait les nouveaux items)
+  const res = await api('POST', `/handover/${handoverId}/items`, {
+    zoneName: zone,
+    status,
+    comment: comment || undefined,
   });
 
-  // Alternative: create via dedicated endpoint if PATCH doesn't support it
-  let itemId = null;
   if (!res?.success) {
-    // Try direct item creation — fallback
-    toast('Ajout via mise à jour...','info');
-  } else {
-    // Find the new item
-    const newItem = res.data?.items?.find(i => i.zoneName === zone && i.sortOrder === sortOrder);
-    itemId = newItem?.id;
+    toast(res?.error || 'Erreur ajout point', 'error');
+    if (btn) { btn.disabled=false; btn.textContent='✅ Ajouter'; }
+    return;
   }
+  const itemId = res.data.id;
 
-  // Upload photo if any
+  // Upload de la photo (s'il y en a) liée au nouvel item
   if (window._PENDING_HI_PHOTO && itemId) {
     try {
       const fd = new FormData(); fd.append('file', window._PENDING_HI_PHOTO);
@@ -9412,12 +9407,15 @@ async function saveHandoverItem(handoverId, projectId, overlay) {
           body: JSON.stringify({photoUrl:url, publicId: data.data?.public_id||null})
         });
       }
-    } catch {}
+    } catch (e) { console.error('upload photo échoué', e); }
   }
 
   toast('Point ajouté ✅','success');
   window._PENDING_HI_PHOTO = null;
   overlay?.remove();
+  // Fermer aussi le modal de détail du handover (s'il était ouvert au-dessus)
+  // puis le rouvrir pour rafraîchir la liste des points
+  document.querySelectorAll('.overlay.open').forEach(o => o.remove());
   openHandoverFull(handoverId);
 }
 

@@ -23,6 +23,8 @@ enum UserRole {
 enum ProjectStatus {
   draft
   confirmed
+  quote_to_validate
+  quote_validated
   in_preparation
   loading
   on_site

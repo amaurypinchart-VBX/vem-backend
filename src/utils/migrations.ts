@@ -85,6 +85,17 @@ export async function runStartupMigrations() {
       }
     }
 
+    // ─── Valeurs d'enum ProjectStatus manquantes (workflow devis/préparation/...) ───
+    for (const val of ['quote_to_validate', 'quote_validated']) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TYPE "ProjectStatus" ADD VALUE IF NOT EXISTS '${val}';`
+        );
+      } catch (e: any) {
+        logger.warn(`[migration] ProjectStatus value "${val}" : ${e.message}`);
+      }
+    }
+
     // ─── Corriger contraintes NOT NULL incohérentes avec le schéma Prisma ───
     // entry_time de daily_report_entries : le schéma dit nullable mais la DB
     // a été créée avec NOT NULL → DROP NOT NULL (no-op si déjà nullable).

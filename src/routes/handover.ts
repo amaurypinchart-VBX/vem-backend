@@ -127,6 +127,29 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
+// POST /handover/:id/items — ajouter un nouveau point d'inspection à un handover existant
+router.post('/:id/items', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { zoneName, status, comment } = req.body;
+    if (!zoneName?.trim()) throw new AppError('zoneName requis', 400);
+
+    // sortOrder = position après les items existants
+    const count = await prisma.handoverItem.count({ where: { handoverId: req.params.id } });
+
+    const item = await prisma.handoverItem.create({
+      data: {
+        handoverId: req.params.id,
+        zoneName:   zoneName.trim(),
+        status:     status || 'ok',
+        comment:    comment || null,
+        sortOrder:  count,
+      },
+      include: { photos: true, itemPhotos: true },
+    });
+    res.status(201).json({ success: true, data: item });
+  } catch (err) { next(err); }
+});
+
 // DELETE /handover/:id
 router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
