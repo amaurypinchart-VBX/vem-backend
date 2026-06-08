@@ -151,14 +151,24 @@ textarea.input{min-height:80px;resize:vertical;}
 .input-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 
 /* MODAL */
-.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .overlay.open{display:flex;}
-.modal{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:26px;width:90%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.6);animation:mIn .2s ease;}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:26px;width:100%;max-width:640px;max-height:calc(100dvh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 32px 80px rgba(0,0,0,.6);animation:mIn .2s ease;}
+/* Sur petit écran : modal aligné en haut (pas centré), pleine hauteur dispo,
+   et padding-bottom pour que les boutons "Sauvegarder/Envoyer" en bas restent atteignables
+   même quand la barre Chrome / le clavier réduisent la zone visible. */
+@media (max-width:640px){
+  .overlay{align-items:flex-start;padding:8px;}
+  .modal{max-height:calc(100dvh - 16px);padding:18px;padding-bottom:max(60px, env(safe-area-inset-bottom));border-radius:14px;}
+}
 @keyframes mIn{from{transform:scale(.96) translateY(8px);opacity:0}to{transform:none;opacity:1}}
-.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin:-26px -26px 14px;padding:18px 26px 12px;position:sticky;top:-26px;background:var(--bg2);z-index:5;border-bottom:1px solid var(--border);}
 .modal-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;}
 .modal-close{background:var(--bg3);border:1px solid var(--border);width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:16px;}
 .modal-close:hover{color:var(--accent);}
+@media (max-width:640px){
+  .modal-head{margin:-18px -18px 12px;padding:14px 18px 10px;top:-18px;}
+}
 
 /* PROGRESS */
 .prog{background:var(--bg3);border-radius:99px;overflow:hidden;}

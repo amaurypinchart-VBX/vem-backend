@@ -165,4 +165,4 @@ router.get('/test-key', async (req, res) => {
     keyStart: process.env.ANTHROPIC_API_KEY?.substring(0, 10) || 'MISSING'
   });
 });
-export default router; 
+export default router;
