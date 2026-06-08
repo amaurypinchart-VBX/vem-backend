@@ -79,18 +79,26 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     // History
     await prisma.ticketHistory.create({ data: { ticketId: ticket.id, changedById: req.user!.id, newStatus: ticket.status as any, comment: 'Ticket créé' } });
 
-    // Email notification
+    // Email notification — non bloquant. Le ticket est créé même si l'envoi mail échoue
+    // (SMTP mal configuré, destinataire invalide, etc.). L'utilisateur voit ses tickets
+    // en base même si la notif n'est pas partie.
     if (ticket.assignedTo?.email) {
-      await sendTicketAssigned({
-        to: ticket.assignedTo.email,
-        ticketTitle: ticket.title,
-        urgency: ticket.urgency,
-        project: ticket.project?.name || '',
-        location: ticket.locationOnSite || undefined,
-        assignee: `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`,
-        description: ticket.description,
-        appUrl: `${APP_URL}/tickets/${ticket.id}`,
-      });
+      try {
+        await sendTicketAssigned({
+          to: ticket.assignedTo.email,
+          ticketTitle: ticket.title,
+          urgency: ticket.urgency,
+          project: ticket.project?.name || '',
+          location: ticket.locationOnSite || undefined,
+          assignee: `${ticket.assignedTo.firstName} ${ticket.assignedTo.lastName}`,
+          description: ticket.description,
+          appUrl: `${APP_URL}/tickets/${ticket.id}`,
+        });
+      } catch (e: any) {
+        // On log mais on n'échoue pas le ticket
+        // eslint-disable-next-line no-console
+        console.warn('[ticket-email] échec envoi notification :', e.message || e);
+      }
     }
 
     res.status(201).json({ success: true, data: ticket });

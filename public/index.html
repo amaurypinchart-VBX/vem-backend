@@ -2586,19 +2586,75 @@ async function downloadHandoverPDF(id) {
 }
 
 async function generateAndSendHandover(id) {
-  toast('Génération et envoi...', 'info');
-  const r = await fetch(`${API}/handover/${id}/generate-pdf`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }
+  // Récupère le handover pour avoir le contexte (client, etc.)
+  const hRes = await api('GET', `/handover/${id}`);
+  if (!hRes?.success) { toast('Handover introuvable', 'error'); return; }
+  const h = hRes.data;
+  const clientEmail = h.project?.client?.email || null;
+
+  // Picker d'emails simple (équipe + client + manuel) — comme pour daily report
+  const teamOptions = (USERS || [])
+    .filter(u => u.email && u.isActive !== false)
+    .map(u => ({ id: u.id, email: u.email, name: `${u.firstName} ${u.lastName}` }));
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">📤 Envoyer le handover</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+        ${h.project?.name || ''} · ${fmtDate(h.createdAt)}
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
+      <div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
+        ${teamOptions.length ? teamOptions.map(u => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;">
+            <input type="checkbox" class="hsend-team-cb" value="${u.email}" style="accent-color:var(--accent);">
+            <span style="font-size:13px;flex:1;">${u.name}</span>
+            <span style="font-size:11px;color:var(--text3);">${u.email}</span>
+          </label>
+        `).join('') : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;">Aucun membre avec email</div>'}
+      </div>
+      ${clientEmail ? `
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🤝 Client</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="hsend-client-cb" value="${clientEmail}" checked style="accent-color:var(--accent);">
+          <span style="font-size:13px;flex:1;">${esc(h.project.client.name||'Client')}</span>
+          <span style="font-size:11px;color:var(--text3);">${clientEmail}</span>
+        </label>
+      ` : ''}
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">✉️ Adresses manuelles</div>
+      <textarea class="input" id="hsend-manual" rows="3" placeholder="Une adresse par ligne ou séparées par des virgules" style="font-size:13px;margin-bottom:14px;"></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitSendHandover('${id}',this.closest('.overlay'))">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+async function submitSendHandover(id, overlay) {
+  const list = new Set();
+  document.querySelectorAll('.hsend-team-cb:checked').forEach(cb => list.add(cb.value));
+  const cli = document.getElementById('hsend-client-cb');
+  if (cli && cli.checked) list.add(cli.value);
+  (document.getElementById('hsend-manual')?.value || '').split(/[\s,;]+/).forEach(e => {
+    const s = e.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
   });
-  if (r.ok) {
-    const blob = await r.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Handover_${id}.pdf`;
-    a.click();
-    toast('PDF généré et envoyé par email ✅', 'success');
-  } else toast('Erreur', 'error');
+  if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
+  toast(`Envoi en cours à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/handover/${id}/send`, { recipients: Array.from(list) });
+  if (res?.success) {
+    toast(`Handover envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
+    overlay?.remove();
+  } else {
+    toast(res?.error || 'Erreur envoi', 'error');
+  }
 }
 
 // ═══ WAREHOUSE ═══
@@ -6892,15 +6948,30 @@ async function uploadHandoverZonePhoto(handoverId, itemId, input, previewEl) {
     });
     const data = await r.json();
     if (data.success) {
-      // Add photo preview
-      const img = document.createElement('img');
-      img.src = data.data.photoUrl;
-      img.onclick = () => openPhotoViewer(data.data.photoUrl);
-      img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
-      previewEl.insertBefore(img, previewEl.querySelector('label'));
+      // Si on a un previewEl, on ajoute l'image en preview locale
+      if (previewEl) {
+        const img = document.createElement('img');
+        img.src = data.data.photoUrl;
+        img.onclick = () => openPhotoViewer(data.data.photoUrl);
+        img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);';
+        const labelEl = previewEl.querySelector('label');
+        if (labelEl) previewEl.insertBefore(img, labelEl);
+        else previewEl.appendChild(img);
+      }
       toast('Photo ajoutée ✅', 'success');
-    } else toast('Erreur upload', 'error');
-  } catch { toast('Erreur upload', 'error'); }
+      // On rafraîchit la modal du handover pour que la photo apparaisse dans la liste des items
+      // (elle n'apparaissait pas avant car la liste est statique tant qu'on ne recharge pas).
+      if (document.querySelector('.overlay.open')) {
+        document.querySelectorAll('.overlay.open').forEach(o => o.remove());
+        openHandoverFull(handoverId);
+      }
+    } else {
+      toast(data.error || 'Erreur upload', 'error');
+    }
+  } catch (e) {
+    console.error('uploadHandoverZonePhoto', e);
+    toast('Erreur upload', 'error');
+  }
 }
 
 // ═══ DAILY REPORT — TABS ═══
@@ -7255,6 +7326,9 @@ async function saveHandoverInfo(id, projectId, overlay) {
   if (res?.success) { toast('Handover mis à jour ✅','success'); overlay?.remove(); loadDetailHandovers(projectId); }
   else toast('Erreur mise à jour','error');
 }
+
+// État global des photos en attente pour le formulaire d'ajout de point de visite
+let PENDING_POINT_PHOTOS = [];
 
 // ═══════════════════════════════════════════
 // VISITES CLIENT — Niveau 1 : LISTE des visites du projet

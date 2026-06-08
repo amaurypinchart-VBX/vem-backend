@@ -3,6 +3,8 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { generateHandoverPdf } from '../services/pdfService';
+import { sendMail } from '../services/emailService';
 
 const router = Router();
 
@@ -217,6 +219,75 @@ router.patch('/:id/items/:itemId', async (req: AuthRequest, res: Response, next:
       data: { status, comment },
     });
     res.json({ success: true, data: item });
+  } catch (err) { next(err); }
+});
+
+// POST /handover/:id/send — génère le PDF et l'envoie par email
+// Body optionnel : { recipients?: string[] } — sinon utilise l'email du client du projet
+router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const h = await prisma.handover.findUnique({
+      where: { id: req.params.id },
+      include: {
+        project: { include: { client: true } },
+        siteManager: { select: { firstName: true, lastName: true } },
+        items: {
+          orderBy: { sortOrder: 'asc' },
+          include: { photos: true, itemPhotos: true },
+        },
+      },
+    });
+    if (!h) throw new AppError('Handover introuvable', 404);
+
+    // Fusion des photos pour le PDF
+    const items = h.items.map((it: any) => ({
+      zoneName: it.zoneName,
+      status:   it.status,
+      comment:  it.comment,
+      photos:   [
+        ...(it.photos     || []).map((p: any) => ({ photoUrl: p.photoUrl })),
+        ...(it.itemPhotos || []).map((p: any) => ({ photoUrl: p.photoUrl })),
+      ],
+    }));
+
+    const pdfBuffer = await generateHandoverPdf({
+      project: { name: h.project.name, internalNumber: h.project.internalNumber, address: h.project.address },
+      clientName: h.clientName || h.project.client?.name || 'Client',
+      siteManagerName: h.siteManager ? `${h.siteManager.firstName} ${h.siteManager.lastName}` : 'N/A',
+      items,
+      generalNotes: h.generalNotes,
+      date: h.createdAt,
+    });
+
+    // Destinataires : liste explicite ou client par défaut
+    const recipients = new Set<string>();
+    const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+    if (customList.length > 0) {
+      customList
+        .map(e => String(e).trim().toLowerCase())
+        .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        .forEach(e => recipients.add(e));
+    } else if (h.project.client?.email) {
+      recipients.add(h.project.client.email);
+    }
+
+    if (recipients.size === 0) throw new AppError('Aucun destinataire valide (client sans email et aucun email manuel)', 400);
+
+    await sendMail({
+      to: Array.from(recipients),
+      subject: `[VEM] Handover Report — ${h.project.name} (${h.project.internalNumber})`,
+      html: `<p>Bonjour,</p>
+<p>Veuillez trouver ci-joint le rapport de handover pour le projet <strong>${h.project.name}</strong> (réf. ${h.project.internalNumber}).</p>
+<p>Date : ${new Date(h.createdAt).toLocaleDateString('fr-FR')}</p>
+<p>Cordialement,<br>L'équipe VIEWBOX</p>`,
+      attachments: [{
+        filename: `Handover_${h.project.internalNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      }],
+    });
+
+    res.json({ success: true, data: { sentTo: recipients.size, recipients: Array.from(recipients) } });
   } catch (err) { next(err); }
 });
 
