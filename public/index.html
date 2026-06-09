@@ -3232,7 +3232,10 @@ async function createProject() {
     goto('projects');
     // Open the new project
     setTimeout(() => openProject(projectId), 800);
-  } else toast('Erreur création projet', 'error');
+  } else {
+    console.error('[createProject/edit] échec :', res);
+    toast(res?.error || (isEdit ? 'Erreur lors de la modification' : 'Erreur création projet'), 'error');
+  }
 }
 
 async function createTicket() {

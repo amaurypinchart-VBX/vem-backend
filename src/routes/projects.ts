@@ -89,13 +89,37 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { siteManagerIds, engineerIds, ...data } = req.body;
-    if (data.installationStart) data.installationStart = new Date(data.installationStart);
-    if (data.installationEnd)   data.installationEnd   = new Date(data.installationEnd);
-    const project = await prisma.project.update({ where: { id: req.params.id }, data });
+    const { siteManagerIds, engineerIds, trucks, tasks, ...data } = req.body;
+
+    // Convertir toutes les colonnes de type DateTime — sinon Prisma rejette
+    // les strings ISO comme entrées invalides
+    for (const k of ['installationStart','installationEnd','dismantlingStart','dismantlingEnd']) {
+      if (data[k]) data[k] = new Date(data[k]);
+      else if (data[k] === '' || data[k] === null) data[k] = null;
+    }
+
+    // Nettoyage : on retire les champs qui ne sont pas dans le modèle Project
+    // pour éviter une erreur P2009 ("unknown argument") sur les updates
+    const allowed = [
+      'name','internalNumber','clientId','technicalManagerId',
+      'address','city','description','specialInstructions',
+      'workersCount','status',
+      'installationStart','installationEnd','dismantlingStart','dismantlingEnd',
+    ];
+    const cleanData: any = {};
+    for (const k of allowed) if (data[k] !== undefined) cleanData[k] = data[k];
+
+    const project = await prisma.project.update({
+      where: { id: req.params.id },
+      data: cleanData,
+      include: { client: true, technicalManager: { select: { id:true, firstName:true, lastName:true } } },
+    });
     io.to(`project:${req.params.id}`).emit('project:updated', project);
     res.json({ success: true, data: project });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    // On expose le vrai message au front pour debugger plus vite (ex: clientId invalide, date pourrie)
+    next(err);
+  }
 });
 
 router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -125,32 +149,37 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
     const truck = await prisma.truck.create({
       data: {
         projectId: req.params.id,
-        ...req.body,
+        truckNumber: req.body.truckNumber,
+        licensePlate: req.body.licensePlate || null,
+        driverName: req.body.driverName || null,
+        status: req.body.status || 'planned',
         loadingDate:  req.body.loadingDate  ? new Date(req.body.loadingDate)  : null,
         arrivalDate:  req.body.arrivalDate  ? new Date(req.body.arrivalDate)  : null,
         departureDate: req.body.departureDate ? new Date(req.body.departureDate) : null,
+        notes: req.body.notes || null,
       },
     });
     res.status(201).json({ success: true, data: truck });
   } catch (err) { next(err); }
 });
 
-// POST /projects/:id/trucks
-router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// PATCH /projects/:id/trucks/:truckId — mise à jour d'un véhicule
+router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const truck = await prisma.truck.create({
-      data: {
-        projectId: req.params.id,
-        truckNumber: req.body.truckNumber,
-        licensePlate: req.body.licensePlate || null,
-        driverName: req.body.driverName || null,
-        status: req.body.status || 'planned',
-        loadingDate: req.body.loadingDate ? new Date(req.body.loadingDate) : null,
-        arrivalDate: req.body.arrivalDate ? new Date(req.body.arrivalDate) : null,
-        notes: req.body.notes || null,
-      },
-    });
-    res.status(201).json({ success: true, data: truck });
+    const data: any = { ...req.body };
+    if (req.body.loadingDate   !== undefined) data.loadingDate   = req.body.loadingDate   ? new Date(req.body.loadingDate)   : null;
+    if (req.body.arrivalDate   !== undefined) data.arrivalDate   = req.body.arrivalDate   ? new Date(req.body.arrivalDate)   : null;
+    if (req.body.departureDate !== undefined) data.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
+    const truck = await prisma.truck.update({ where: { id: req.params.truckId }, data });
+    res.json({ success: true, data: truck });
+  } catch (err) { next(err); }
+});
+
+// DELETE /projects/:id/trucks/:truckId
+router.delete('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.truck.delete({ where: { id: req.params.truckId } });
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
@@ -205,10 +234,4 @@ router.delete('/:id/files/:fileId', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    await prisma.project.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch (err) { next(err); }
-});
 export default router;
