@@ -10491,8 +10491,9 @@ function renderBlockEditor(slideIdx, bi, b) {
       <div style="display:flex;flex-direction:column;gap:6px;">
         ${contacts.map((c,ci)=>renderContactRow(slideIdx, bi, ci, c)).join('') || '<div style="font-size:12px;color:var(--text3);">Aucun contact — ajoute en ci-dessous.</div>'}
       </div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-outline btn-sm" onclick="addContact(${slideIdx},${bi})">+ Contact manuel</button>
+        <button class="btn btn-outline btn-sm" onclick="openPickContactFromClients(${slideIdx},${bi})">🤝 Depuis les clients</button>
         <select class="input" id="brf-pick-user-${slideIdx}-${bi}" style="flex:1;min-width:160px;">
           <option value="">+ Membre de l'équipe…</option>
           ${(USERS||[]).map(u=>`<option value="${u.id}">${u.firstName} ${u.lastName} ${u.role?'('+u.role+')':''}</option>`).join('')}
@@ -10563,7 +10564,10 @@ function renderBlockEditor(slideIdx, bi, b) {
         }).join('') || '<div style="text-align:center;color:var(--text3);font-size:12px;padding:14px;border:1px dashed var(--border);border-radius:8px;">Aucun fichier</div>'}
       </div>
       <input type="file" id="brf-photo-input-${slideIdx}-${bi}" multiple accept="image/*,application/pdf" style="display:none;" onchange="uploadBriefPhotos(${slideIdx},${bi},this.files)">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Ajouter photos ou PDF</button>`;
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('brf-photo-input-${slideIdx}-${bi}').click()">📎 Importer photos / PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="openPickFromProjectFiles(${slideIdx},${bi})">📁 Choisir parmi les fichiers du projet</button>
+      </div>`;
   }
   else if (b.type === 'location') {
     const addr = b.address || '';
@@ -10769,10 +10773,14 @@ async function printBriefing() {
       const isPdf = u => /\.pdf($|\?)/i.test(u);
       const items = (b.photos||[]).map(p => {
         if (isPdf(p.url)) {
-          // On rend les pages 1 à 5 en images. Les pages inexistantes échouent silencieusement (img cassée).
-          // onerror cache l'image qui n'a pas pu être chargée (page au-delà du nombre de pages réelles).
-          const pages = [1,2,3,4,5].map(n => `<img src="${pdfPageUrl(p.url, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:8px auto;border:1px solid #ddd;">`).join('');
-          return `<div style="margin:12px 0;page-break-inside:avoid;">
+          // On rend les pages 1 à 15 en images (Cloudinary `pg_N/` transform).
+          // Les pages au-delà du nombre réel produisent une img 404 qu'on masque via onerror.
+          // 15 pages couvre la quasi-totalité des briefings techniques sans alourdir le PDF.
+          const PAGES_TO_TRY = 15;
+          const pages = Array.from({length: PAGES_TO_TRY}, (_, i) => i + 1)
+            .map(n => `<img src="${pdfPageUrl(p.url, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:8px auto;border:1px solid #ddd;page-break-inside:avoid;">`)
+            .join('');
+          return `<div style="margin:12px 0;">
             ${p.caption ? `<div style="font-size:12px;color:#666;margin-bottom:4px;"><strong>📄 ${esc(p.caption)}</strong></div>` : ''}
             ${pages}
           </div>`;
@@ -10819,6 +10827,175 @@ async function printBriefing() {
     </body></html>`;
   const w = window.open('', '_blank');
   w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ─── Bloc Photos : piocher dans les fichiers déjà uploadés dans le projet ───
+// Évite de re-uploader un PDF/image qui existe déjà dans /projects/:id/files
+async function openPickFromProjectFiles(slideIdx, bi) {
+  if (!CURRENT_PROJECT_ID) return;
+  const res = await api('GET', `/projects/${CURRENT_PROJECT_ID}/files`);
+  if (!res?.success) { toast('Impossible de récupérer les fichiers du projet', 'error'); return; }
+  // On ne propose que photos + PDF (les autres formats n'ont pas leur place dans le briefing)
+  const files = (res.data || []).filter(f => {
+    const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+    return ['jpg','jpeg','png','gif','webp','heic','pdf'].includes(ext);
+  });
+
+  // IDs déjà sélectionnés dans le bloc (pour éviter les doublons)
+  const already = new Set(((CURRENT_BRIEFING.slides[slideIdx].blocks[bi].photos) || []).map(p => p.url));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-head">
+        <div class="modal-title">📁 Fichiers du projet — Sélectionner pour le briefing</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <input id="pkf-search" class="input" placeholder="🔎 Rechercher par nom..." style="margin-bottom:10px;" oninput="filterPickFilesList(this.value)">
+
+      <div id="pkf-files-list" style="max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg3);">
+        ${files.length === 0 ? '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Aucun fichier image ou PDF dans ce projet.<br>Uploade d\'abord des fichiers dans l\'onglet Infos.</div>' : ''}
+        ${files.map((f, i) => {
+          const isImage = !(f.fileName||'').toLowerCase().endsWith('.pdf');
+          const checked = already.has(f.fileUrl) ? 'checked disabled' : '';
+          const note = already.has(f.fileUrl) ? '<span style="color:var(--green);font-size:11px;">déjà ajouté</span>' : '';
+          return `
+            <label class="pkf-row" data-name="${esc(f.fileName||'')}" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border-bottom:1px solid var(--border);">
+              <input type="checkbox" class="pkf-cb" value="${i}" data-url="${esc(f.fileUrl)}" data-name="${esc(f.fileName||'')}" ${checked} style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0;">
+              ${isImage
+                ? `<img src="${f.fileUrl}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
+                : `<div style="width:48px;height:48px;background:var(--bg2);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">📄</div>`}
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Fichier')}</div>
+                <div style="font-size:11px;color:var(--text3);">${isImage?'Image':'PDF'} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+' KB':''}</div>
+              </div>
+              ${note}
+            </label>`;
+        }).join('')}
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap;">
+        <div id="pkf-count" style="font-size:12px;color:var(--text3);">0 sélectionné(s)</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="submitPickFiles(${slideIdx},${bi},this.closest('.overlay'))">✅ Ajouter au briefing</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Compteur live
+  overlay.querySelectorAll('.pkf-cb').forEach(cb => cb.addEventListener('change', () => {
+    const n = overlay.querySelectorAll('.pkf-cb:checked:not(:disabled)').length;
+    overlay.querySelector('#pkf-count').textContent = `${n} fichier(s) à ajouter`;
+  }));
+}
+
+// Filtre live dans la modal de sélection des fichiers projet
+function filterPickFilesList(q) {
+  q = (q || '').toLowerCase().trim();
+  document.querySelectorAll('.pkf-row').forEach(row => {
+    const name = (row.dataset.name || '').toLowerCase();
+    row.style.display = !q || name.includes(q) ? '' : 'none';
+  });
+}
+
+// Submit : ajoute les fichiers cochés au bloc photos du briefing
+function submitPickFiles(slideIdx, bi, overlay) {
+  const block = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  if (!block.photos) block.photos = [];
+  let added = 0;
+  overlay.querySelectorAll('.pkf-cb:checked:not(:disabled)').forEach(cb => {
+    block.photos.push({ url: cb.dataset.url, caption: cb.dataset.name || '' });
+    added++;
+  });
+  if (added === 0) { toast('Aucun fichier sélectionné', 'warning'); return; }
+  toast(`${added} fichier(s) ajouté(s)`, 'success');
+  overlay.remove();
+  renderBriefing();
+}
+
+// ─── Bloc Contacts : piocher dans les clients enregistrés ───
+// Permet d'ajouter rapidement un contact client (nom du contact, email, téléphone)
+// sans avoir à les taper à la main.
+async function openPickContactFromClients(slideIdx, bi) {
+  const res = await api('GET', '/clients');
+  if (!res?.success) { toast('Impossible de récupérer les clients', 'error'); return; }
+  const clients = res.data || [];
+  // Le client du projet courant en premier, le reste après
+  const currentClientId = BRIEFING_AUTO.project?.clientId;
+  const sorted = [...clients].sort((a, b) => {
+    if (a.id === currentClientId) return -1;
+    if (b.id === currentClientId) return 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-head">
+        <div class="modal-title">🤝 Choisir un contact client</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <input id="pkc-search" class="input" placeholder="🔎 Rechercher un client ou un contact..." style="margin-bottom:10px;" oninput="filterPickContactsList(this.value)">
+
+      <div style="max-height:55vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--bg3);">
+        ${sorted.length === 0 ? '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Aucun client en base.</div>' : ''}
+        ${sorted.map(c => {
+          const isProjectClient = c.id === currentClientId;
+          // On ne propose le contact que si on a au moins email OU téléphone OU nom de contact
+          if (!c.contactName && !c.email && !c.phone) return `
+            <div class="pkc-row" data-search="${esc((c.name||'').toLowerCase())}" style="padding:10px;opacity:.5;border-bottom:1px solid var(--border);font-size:13px;">
+              ${esc(c.name||'Client sans nom')} <span style="color:var(--text3);font-size:11px;">(pas de coordonnées renseignées)</span>
+            </div>`;
+          return `
+            <div class="pkc-row" data-search="${esc(((c.name||'')+' '+(c.contactName||'')+' '+(c.email||'')).toLowerCase())}" style="padding:10px;border-bottom:1px solid var(--border);border-left:3px solid ${isProjectClient?'var(--accent)':'transparent'};">
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">
+                ${esc(c.name||'—')}${isProjectClient?' <span style="font-size:10px;color:var(--accent);background:var(--accent)20;padding:1px 6px;border-radius:99px;font-weight:600;">CLIENT DU PROJET</span>':''}
+              </div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">
+                ${c.contactName?`👤 ${esc(c.contactName)}`:''}
+                ${c.phone?`  📞 ${esc(c.phone)}`:''}
+                ${c.email?`  ✉️ ${esc(c.email)}`:''}
+              </div>
+              <button class="btn btn-primary btn-sm" onclick='pickThisContact(${slideIdx},${bi},${JSON.stringify({
+                name: c.contactName || c.name || '',
+                role: c.contactName ? `Contact (${c.name||''})` : 'Société cliente',
+                phone: c.phone || '',
+                email: c.email || ''
+              }).replace(/"/g,"&quot;")})'>+ Ajouter ce contact</button>
+            </div>`;
+        }).join('')}
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function filterPickContactsList(q) {
+  q = (q || '').toLowerCase().trim();
+  document.querySelectorAll('.pkc-row').forEach(row => {
+    const s = row.dataset.search || '';
+    row.style.display = !q || s.includes(q) ? '' : 'none';
+  });
+}
+
+function pickThisContact(slideIdx, bi, contactData) {
+  const block = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  if (!block.contacts) block.contacts = [];
+  block.contacts.push(contactData);
+  toast(`${contactData.name} ajouté`, 'success');
+  // Fermer la modal et rafraîchir
+  document.querySelector('.overlay.open')?.remove();
+  renderBriefing();
 }
 
 
