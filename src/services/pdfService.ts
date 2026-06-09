@@ -225,6 +225,13 @@ export async function generateHandoverPdf(data: {
 
 export async function generateDailyReportPdf(data: {
   project: { name: string; internalNumber: string };
+  client?: {
+    name?: string | null;
+    contactName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  } | null;
   reportDate: Date;
   createdBy?: string;
   weather?: string | null;
@@ -287,6 +294,31 @@ export async function generateDailyReportPdf(data: {
     labelStyle('Ouvriers',   370, infoY + 12); valueStyle(String(data.workersPresent),   370, infoY + 26);
     labelStyle('Date',       56, infoY + 46);  valueStyle(new Date(data.reportDate).toLocaleDateString('fr-FR'), 56, infoY + 60);
     doc.y = infoY + infoH + 12;
+
+    // ─── Bloc Contact Client (si fourni) ───
+    if (data.client && (data.client.name || data.client.contactName || data.client.email || data.client.phone)) {
+      sectionTitle(doc, 'Contact Client');
+      const cY = doc.y;
+      const cH = 60;
+      doc.rect(40, cY, 515, cH).fillAndStroke('#fafbfc', '#e5e7eb');
+      // Petite icône (cercle rouge avec C)
+      doc.circle(60, cY + 30, 12).fill('#e63946');
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(11).text('C', 55, cY + 24);
+      // Société + contact
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(12).text(data.client.name || '—', 84, cY + 10);
+      if (data.client.contactName) {
+        doc.fillColor('#555').font('Helvetica').fontSize(10).text(`Contact : ${data.client.contactName}`, 84, cY + 28);
+      }
+      // Email + tel sur la droite
+      const rightX = 320;
+      doc.fillColor(MUTED).font('Helvetica').fontSize(9);
+      if (data.client.email) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Email : ${data.client.email}`, rightX, cY + 12);
+      if (data.client.phone) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Tél. : ${data.client.phone}`,  rightX, cY + 28);
+      if (data.client.address) {
+        doc.fillColor('#555').font('Helvetica-Oblique').fontSize(9).text(data.client.address, 84, cY + 44, { width: 460 });
+      }
+      doc.y = cY + cH + 12;
+    }
 
     // ─── Timeline / Journal ───
     if (data.entries.length > 0) {

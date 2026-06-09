@@ -13,7 +13,22 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
   try {
     const r = await prisma.dailyReport.findUnique({
       where: { id: req.params.id },
-      include: { entries: true, checklist: true, photos: true, createdBy: { select: { firstName:true, lastName:true } }, project: { select: { name:true, internalNumber:true } } },
+      include: {
+        entries: true,
+        checklist: true,
+        photos: true,
+        createdBy: { select: { firstName:true, lastName:true } },
+        project: {
+          select: {
+            name: true,
+            internalNumber: true,
+            address: true,
+            client: {
+              select: { name: true, contactName: true, email: true, phone: true, address: true },
+            },
+          },
+        },
+      },
     });
     if (!r) throw new AppError('Rapport introuvable', 404);
 
@@ -21,6 +36,7 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
 
     const pdf = await generateDailyReportPdf({
       project: r.project,
+      client: r.project.client || null,        // ← coordonnées du contact client transmises au PDF
       reportDate: r.reportDate,
       reportId: r.id,
       createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,

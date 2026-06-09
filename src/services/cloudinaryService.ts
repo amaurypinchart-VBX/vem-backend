@@ -12,10 +12,31 @@ cloudinary.config({
 // Use memory storage — we'll upload buffer to Cloudinary manually
 export const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB (les modèles 3D peuvent être lourds)
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg','image/png','image/webp','image/gif','application/pdf','video/mp4'];
-    cb(null, allowed.includes(file.mimetype));
+    // Liste blanche par mime-type
+    const allowedMimes = [
+      'image/jpeg','image/png','image/webp','image/gif','image/heic','image/bmp','image/svg+xml',
+      'application/pdf',
+      'video/mp4','video/webm','video/quicktime',
+      // Documents Office
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Modèles 3D — Cloudinary stocke en raw, donc les mime peuvent être génériques
+      'model/gltf-binary', 'model/gltf+json', 'model/obj', 'model/stl', 'model/vnd.usdz+zip',
+      'application/octet-stream', // fallback fréquent pour les .glb / .skp / .fbx / etc.
+      'application/zip',          // .usdz est un zip déguisé
+      'text/plain',               // .obj est parfois servi en text/plain
+    ];
+    // En complément, on accepte les extensions 3D même si le mime est tordu
+    const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
+    const allowedExts = ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend'];
+    const ok = allowedMimes.includes(file.mimetype) || allowedExts.includes(ext);
+    cb(null, ok);
   },
 });
 

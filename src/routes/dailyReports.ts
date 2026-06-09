@@ -146,7 +146,15 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     const r = await prisma.dailyReport.findUnique({
       where: { id: req.params.id },
       include: {
-        project: { include: { client: { select: { email:true } }, technicalManager: { select: { email:true } }, team: { include: { user: { select: { email:true } } } } } },
+        project: {
+          include: {
+            // On garde l'email du client pour le destinataire mais on récupère
+            // aussi nom, contact, phone, address pour les afficher dans le PDF
+            client: { select: { name:true, contactName:true, email:true, phone:true, address:true } },
+            technicalManager: { select: { email:true } },
+            team: { include: { user: { select: { email:true } } } },
+          },
+        },
         entries: { orderBy: { entryTime: 'asc' } },
         checklist: true, photos: true,
         createdBy: { select: { firstName:true, lastName:true } },
@@ -156,6 +164,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
 
     const pdfBuffer = await generateDailyReportPdf({
       project: { name: r.project.name, internalNumber: r.project.internalNumber },
+      client: r.project.client || null,
       reportDate: r.reportDate,
       reportId: r.id,
       createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,
