@@ -211,6 +211,41 @@ export async function runStartupMigrations() {
       ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "stage" TEXT;
     `);
 
+    // ─── Colonnes manquantes sur task_categories ───
+    // Prisma s'attend à ces colonnes mais elles n'avaient jamais été créées en base.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT TRUE;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "description" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "icon" TEXT NOT NULL DEFAULT '📋';
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "color" TEXT NOT NULL DEFAULT '#4895ef';
+    `);
+
+    // ─── Colonnes manquantes sur task_templates ───
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT TRUE;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "durationHours" DOUBLE PRECISION NOT NULL DEFAULT 4;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "priority" TEXT NOT NULL DEFAULT 'normal';
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "description" TEXT;
+    `);
+
     // ─── Table "client_visits" (rapport de visite client = contenant de N points) ───
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "client_visits" (

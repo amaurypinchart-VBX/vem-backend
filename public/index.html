@@ -705,6 +705,10 @@ textarea.input{min-height:80px;resize:vertical;}
       <option value="installation">Installation</option>
       <option value="completed">Terminé</option>
     </select>
+    <label style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:13px;cursor:pointer;white-space:nowrap;padding:0 4px;">
+      <input type="checkbox" id="show-archived" onchange="renderProjects()" style="accent-color:var(--accent);">
+      📦 Voir archivés
+    </label>
   </div>
   <div id="projects-grid" class="grid-3"><div class="empty"><div class="empty-icon">🏗️</div><div class="empty-title">Chargement...</div></div></div>
 </div>
@@ -1610,6 +1614,134 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// ═══ VIEWER FICHIER UNIVERSEL ═══════════════════════════════════════
+// Ouvre une modale pleine taille avec le visualiseur adapté au type de fichier :
+//   - Image (jpg, png, webp, gif...) → affichage plein écran avec fond noir
+//   - PDF                            → iframe avec contrôles du navigateur
+//   - 3D (glb, gltf, usdz)           → composant <model-viewer> de Google (charge auto)
+//   - SketchUp (.skp)                → message expliquant qu'il faut exporter en GLB
+//   - Autre                          → téléchargement
+//
+// Utilisé par openPhotoViewer (alias) et appelé au clic sur les cartes
+// de fichiers dans la page Infos du projet.
+async function openFileViewer(url, filename) {
+  filename = filename || url.split('/').pop() || 'Fichier';
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp','heic'].includes(ext);
+  const isPDF = ext === 'pdf';
+  const is3DSupported   = ['glb','gltf','usdz'].includes(ext);
+  const is3DUnsupported = ['skp','fbx','obj','stl','dae','3ds','blend'].includes(ext);
+
+  // Supprimer un éventuel viewer ouvert (évite l'accumulation)
+  document.querySelectorAll('.overlay.file-viewer-overlay').forEach(o => o.remove());
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open file-viewer-overlay';
+  overlay.style.padding = '0';
+
+  // ─── IMAGE ───
+  if (isImg) {
+    overlay.innerHTML = `
+      <div style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000;">
+        <img src="${url}" style="max-width:96vw;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6);">
+        <button onclick="this.closest('.overlay').remove()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,.6);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
+        <a href="${url}" download="${esc(filename)}" target="_blank" style="position:absolute;bottom:14px;right:14px;background:rgba(0,0,0,.6);color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;">⬇️ Télécharger</a>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    return;
+  }
+
+  // ─── PDF ───
+  if (isPDF) {
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:1100px;width:96vw;height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);">
+          <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;"><span>📄</span><span>${esc(filename)}</span></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <a href="${url}" download="${esc(filename)}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:12px;">⬇️ Télécharger</a>
+            <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+          </div>
+        </div>
+        <iframe src="${url}#toolbar=1&view=FitH" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    return;
+  }
+
+  // ─── 3D — formats supportés par model-viewer (GLB / glTF / USDZ) ───
+  if (is3DSupported) {
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:1100px;width:96vw;height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);">
+          <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;"><span>🎨</span><span>${esc(filename)}</span></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-size:11px;color:var(--text3);">Pinçer/Molette : zoom · Glisser : tourner</span>
+            <a href="${url}" download="${esc(filename)}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:12px;">⬇️ Télécharger</a>
+            <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+          </div>
+        </div>
+        <div id="mv-container" style="flex:1;background:linear-gradient(180deg,#3a3a44,#1a1a22);display:flex;align-items:center;justify-content:center;color:#888;">
+          <span>Chargement du visualiseur 3D...</span>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    // Chargement lazy de model-viewer (≈ 130 KB, on l'évite tant qu'on n'en a pas besoin)
+    if (!window._mvLoaded) {
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
+      document.head.appendChild(s);
+      window._mvLoaded = true;
+    }
+    try { await customElements.whenDefined('model-viewer'); } catch (e) {}
+    const container = overlay.querySelector('#mv-container');
+    if (container) {
+      container.innerHTML = `
+        <model-viewer src="${url}" style="width:100%;height:100%;background:transparent;"
+          camera-controls touch-action="pan-y" auto-rotate auto-rotate-delay="2000"
+          shadow-intensity="1" exposure="1" environment-image="neutral"
+          ar ar-modes="webxr scene-viewer quick-look">
+          <div slot="poster" style="display:flex;align-items:center;justify-content:center;color:#aaa;">Chargement du modèle...</div>
+        </model-viewer>`;
+    }
+    return;
+  }
+
+  // ─── 3D non supporté nativement (SketchUp, OBJ, FBX, STL, etc.) ───
+  if (is3DUnsupported) {
+    const help = ext === 'skp'
+      ? 'Pour visualiser ce fichier SketchUp ici, exporte-le en <strong>glTF / GLB</strong> depuis SketchUp :<br>1. Ouvre le fichier dans SketchUp<br>2. Menu <em>Fichier → Exporter → 3D Model</em><br>3. Choisis le format <strong>glTF (.glb)</strong><br>4. Reupload ici → visualisation instantanée'
+      : `Le format <strong>.${ext.toUpperCase()}</strong> n'est pas visualisable directement dans le navigateur.<br>Convertis-le en <strong>GLB / glTF</strong> (ex. via <a href="https://anyconv.com/${ext}-to-glb-converter/" target="_blank" style="color:var(--blue);">anyconv.com</a> ou <a href="https://www.makesweet.com/cards/3d-cards/converter" target="_blank" style="color:var(--blue);">makesweet</a>) puis reupload.`;
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:560px;width:90vw;">
+        <div class="modal-head">
+          <div class="modal-title">🎨 Fichier 3D — ${esc(filename)}</div>
+          <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+        </div>
+        <div style="background:var(--bg3);border-radius:10px;padding:18px;font-size:13px;line-height:1.6;">
+          ${help}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <a href="${url}" download="${esc(filename)}" target="_blank" class="btn btn-outline">⬇️ Télécharger</a>
+          <button class="btn btn-primary" onclick="this.closest('.overlay').remove()">OK</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    return;
+  }
+
+  // ─── Tout autre type : on ouvre dans un nouvel onglet (téléchargement implicite) ───
+  window.open(url, '_blank');
+}
+
+// Alias rétrocompatible — beaucoup d'endroits dans l'app appellent openPhotoViewer
+function openPhotoViewer(url, filename) { return openFileViewer(url, filename); }
+
 // ═══ STATE ═══
 let TOKEN = localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
 let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || sessionStorage.getItem('vem_user') || 'null');
@@ -1991,13 +2123,19 @@ function renderProjectsGrid(projects) {
 function filterProjects() {
   const search = document.getElementById('proj-search').value.toLowerCase();
   const status = document.getElementById('proj-status-filter').value;
+  const showArchived = document.getElementById('show-archived')?.checked;
   const filtered = PROJECTS.filter(p => {
     const matchSearch = !search || p.name.toLowerCase().includes(search) || p.internalNumber.toLowerCase().includes(search);
     const matchStatus = !status || p.status === status;
-    return matchSearch && matchStatus;
+    // Par défaut on cache les projets archivés/annulés. Si checkbox cochée, on ne montre QUE eux.
+    const archived = p.status === 'cancelled' || p.status === 'completed';
+    const matchArch = showArchived ? archived : !archived;
+    return matchSearch && matchStatus && matchArch;
   });
   renderProjectsGrid(filtered);
 }
+// Alias pour le onchange du checkbox
+function renderProjects() { filterProjects(); }
 
 // ═══ PROJECT DETAIL ═══
 async function updateProjectStatus(projectId, status) {
@@ -2157,7 +2295,7 @@ async function loadProjectDetail(id) {
           <button class="btn btn-ghost btn-sm" onclick="switchTab(document.querySelector('[onclick*=dtab-files]'),'dtab-files');loadDetailFiles('${id}')">Gérer</button>
           <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
             ⬆️ Ajouter
-            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>
         </div>
       </div>
@@ -2166,40 +2304,88 @@ async function loadProjectDetail(id) {
           <label style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2px dashed var(--border);border-radius:12px;padding:24px;cursor:pointer;color:var(--text3);">
             <span style="font-size:36px;">📁</span>
             <div style="font-weight:600;">Ajouter des fichiers</div>
-            <div style="font-size:11px;">Photos, PDF, PowerPoint, Excel...</div>
-            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
-          </label>` : `
-          <!-- Images -->
-          ${files.filter(isImg).length ? `
-          <div style="margin-bottom:14px;">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🖼️ Photos (${files.filter(isImg).length})</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;">
-              ${files.filter(isImg).map(f=>`
-                <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;cursor:pointer;border:1px solid var(--border);position:relative;" onclick="openPhotoViewer('${f.fileUrl}')">
-                  <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy">
-                  <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:3px 5px;">
-                    <div style="font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||''}</div>
-                  </div>
-                </div>`).join('')}
-            </div>
-          </div>` : ''}
-          <!-- Docs -->
-          ${files.filter(f=>!isImg(f)).length ? `
-          <div>
-            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📎 Documents (${files.filter(f=>!isImg(f)).length})</div>
-            <div style="display:flex;flex-direction:column;gap:5px;">
-              ${files.filter(f=>!isImg(f)).map(f=>`
-                <a href="${f.fileUrl}" target="_blank" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);text-decoration:none;color:var(--text);transition:all .15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-                  <span style="font-size:24px;flex-shrink:0;">${fileIcon(f)}</span>
-                  <div style="flex:1;min-width:0;">
-                    <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
-                    <div style="font-size:11px;color:var(--text3);">${extOf(f).toUpperCase()} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+'KB':''}</div>
-                  </div>
-                  <span style="font-size:18px;color:var(--text3);">↗</span>
-                </a>`).join('')}
-            </div>
-          </div>` : ''}
-        `}
+            <div style="font-size:11px;">Photos, PDF, Office, modèles 3D (GLB/glTF/SketchUp)...</div>
+            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+          </label>` : (() => {
+            // Catégorisation : images / PDF / modèles 3D / autres
+            const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend'].includes(extOf(f));
+            const isPDF = f => extOf(f) === 'pdf';
+            const imgs    = files.filter(f => isImg(f));
+            const pdfs    = files.filter(f => isPDF(f));
+            const models  = files.filter(f => is3D(f));
+            const others  = files.filter(f => !isImg(f) && !isPDF(f) && !is3D(f));
+            let html = '';
+
+            // ── Photos
+            if (imgs.length) {
+              html += `<div style="margin-bottom:14px;">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🖼️ Photos (${imgs.length})</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;">
+                  ${imgs.map(f=>`
+                    <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;cursor:pointer;border:1px solid var(--border);position:relative;" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
+                      <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy">
+                      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:3px 5px;">
+                        <div style="font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'')}</div>
+                      </div>
+                    </div>`).join('')}
+                </div></div>`;
+            }
+
+            // ── PDF avec preview iframe inline (1 par ligne)
+            if (pdfs.length) {
+              html += `<div style="margin-bottom:14px;">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📄 PDF (${pdfs.length})</div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  ${pdfs.map(f=>`
+                    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg3);">
+                      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--border);">
+                        <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;overflow:hidden;"><span>📄</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'PDF')}</span></div>
+                        <div style="display:flex;gap:6px;flex-shrink:0;">
+                          <button class="btn btn-ghost btn-xs" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">🔍 Plein écran</button>
+                          <a href="${f.fileUrl}" download="${esc(f.fileName||'')}" target="_blank" class="btn btn-ghost btn-xs">⬇️</a>
+                        </div>
+                      </div>
+                      <iframe src="${f.fileUrl}#toolbar=0&view=FitH" style="width:100%;height:340px;border:none;display:block;background:#525659;"></iframe>
+                    </div>`).join('')}
+                </div></div>`;
+            }
+
+            // ── Modèles 3D
+            if (models.length) {
+              html += `<div style="margin-bottom:14px;">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🎨 Modèles 3D (${models.length})</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;">
+                  ${models.map(f=>{
+                    const e = extOf(f);
+                    const supported = ['glb','gltf','usdz'].includes(e);
+                    return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
+                      <div style="font-size:42px;line-height:1;">🎨</div>
+                      <div style="font-weight:700;font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Modèle')}</div>
+                      <div style="font-size:10px;color:var(--text3);margin-top:2px;">.${e.toUpperCase()}${supported?' · Visualisable':' · Aperçu indispo'}</div>
+                    </div>`;
+                  }).join('')}
+                </div></div>`;
+            }
+
+            // ── Autres documents
+            if (others.length) {
+              html += `<div>
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">📎 Documents (${others.length})</div>
+                <div style="display:flex;flex-direction:column;gap:5px;">
+                  ${others.map(f=>`
+                    <a href="${f.fileUrl}" target="_blank" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);text-decoration:none;color:var(--text);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                      <span style="font-size:24px;flex-shrink:0;">${fileIcon(f)}</span>
+                      <div style="flex:1;min-width:0;">
+                        <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Fichier')}</div>
+                        <div style="font-size:11px;color:var(--text3);">${extOf(f).toUpperCase()} ${f.fileSize?'· '+Math.round(f.fileSize/1024)+'KB':''}</div>
+                      </div>
+                      <span style="font-size:18px;color:var(--text3);">↗</span>
+                    </a>`).join('')}
+                </div></div>`;
+            }
+
+            return html;
+          })()}
       </div>
     </div>`;
 
@@ -3659,6 +3845,22 @@ function showModal(id) {
   }
   if (id === 'modal-task')    document.getElementById('task-date').value  = today;
   if (id === 'modal-proj') {
+    // Reset complet du formulaire — sinon les valeurs du projet précédent
+    // restent visibles et l'utilisateur doit tout effacer à la main
+    const modal = document.getElementById('modal-proj');
+    if (modal) {
+      modal.querySelectorAll('input').forEach(i => {
+        if (i.type === 'date' || i.type === 'datetime-local') i.value = '';
+        else if (i.type === 'checkbox' || i.type === 'radio') i.checked = false;
+        else if (i.type === 'file') i.value = '';
+        else i.value = '';
+      });
+      modal.querySelectorAll('textarea').forEach(t => t.value = '');
+      modal.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
+    }
+    // Reset des camions saisis (était la source du formulaire pollué)
+    PROJ_TRUCKS = [];
+    if (typeof renderProjTrucks === 'function') renderProjTrucks();
     loadProjTemplateSelector();
   }
   if (id === 'modal-new-visite') {
@@ -10060,7 +10262,8 @@ async function saveTruck(projectId, truckId) {
     document.querySelector('.overlay.open')?.remove();
     loadDetailTrucks(projectId);
   } else {
-    toast('Erreur enregistrement', 'error');
+    console.error('[saveTruck] échec :', res);
+    toast(res?.error || 'Erreur enregistrement', 'error');
   }
 }
 
