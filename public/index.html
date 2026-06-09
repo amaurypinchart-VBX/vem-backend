@@ -4628,16 +4628,22 @@ async function loadDetailTasks(projectId) {
   if (!el || !res?.success) return;
 
   const tasks = res.data;
-  // Liste des stages uniques présents pour proposer un filtre (préserve la hiérarchie template)
-  const stages = Array.from(new Set(tasks.map(t => t.stage).filter(Boolean))).sort();
+
+  // ─── On groupe par ÉTAPE (stage) — l'ordre est celui des catégories du template ───
+  // Si des catégories sont chargées via TASK_TEMPLATES_DATA on respecte cet ordre.
+  // Les tâches sans stage tombent dans "(Sans étape)".
+  const tplStages = Object.keys(TASK_TEMPLATES_DATA || {});
+  const usedStages = new Set(tasks.map(t => t.stage).filter(Boolean));
+  // Étapes connues dans l'ordre template + celles inconnues à la fin
+  const allStages = [
+    ...tplStages.filter(s => usedStages.has(s)),
+    ...[...usedStages].filter(s => !tplStages.includes(s)),
+  ];
+  const ungrouped = tasks.filter(t => !t.stage);
+  if (ungrouped.length) allStages.push('(Sans étape)');
 
   const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-      ${stages.length ? `<select id="task-stage-filter" class="input" style="font-size:12px;padding:4px 8px;width:auto;" onchange="loadDetailTasks('${projectId}')">
-        <option value="">Toutes étapes (${tasks.length})</option>
-        ${stages.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
-      </select>` : ''}
-    </div>
+    <div style="font-size:13px;color:var(--text3);">${tasks.length} tâche(s) · groupées par étape</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="showTaskFromMeetingModal('${projectId}')">🤖 Import réunion</button>
       <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()" title="Ajouter plusieurs tâches en une fois depuis le template">📋 Plusieurs tâches (template)</button>
@@ -4647,43 +4653,60 @@ async function loadDetailTasks(projectId) {
 
   if (!tasks.length) { el.innerHTML = headerHtml + '<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Aucune tâche</div></div>'; return; }
 
-  // Appliquer le filtre de stage si activé
-  const activeStage = document.getElementById('task-stage-filter')?.value || '';
-  const filteredTasks = activeStage ? tasks.filter(t => t.stage === activeStage) : tasks;
+  // ─── Couleurs et icônes des statuts (affichés en badge sur chaque carte) ───
+  const statusInfo = {
+    todo:        { lbl: '📋 À faire',    bg:'#fee2e2', clr:'#dc2626' },
+    in_progress: { lbl: '⚡ En cours',    bg:'#fef9c3', clr:'#ca8a04' },
+    done:        { lbl: '✅ Terminé',    bg:'#dcfce7', clr:'#16a34a' },
+    blocked:     { lbl: '🔴 Bloqué',     bg:'#fff1f2', clr:'#e63946' },
+    cancelled:   { lbl: '❌ Annulé',     bg:'#f3f4f6', clr:'#6b7280' },
+  };
 
-  const byStatus = { todo:[], in_progress:[], done:[], blocked:[] };
-  filteredTasks.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+  // Une "colonne" du kanban = une étape (stage)
+  const STAGE_ICONS_LOCAL = { 'To Do':'📋','PRE-PROD':'📐','Booking Supplier':'📞','Warehouse Preparation':'📦','Installation':'🏗️','Dismantling':'🔨','Come Back Warehouse':'🏠','(Sans étape)':'❔' };
 
-  const colDef = [
-    { key:'todo', label:'📋 À faire', color:'var(--blue)', badge:'badge-muted' },
-    { key:'in_progress', label:'⚡ En cours', color:'var(--amber)', badge:'badge-amber' },
-    { key:'done', label:'✅ Terminé', color:'var(--green)', badge:'badge-green' },
-    { key:'blocked', label:'🔴 Bloqué', color:'var(--accent)', badge:'badge-red' },
-  ];
-
-  el.innerHTML = headerHtml + `<div class="kanban">` + colDef.map(col => `
+  el.innerHTML = headerHtml + `<div class="kanban">` + allStages.map(stage => {
+    const stageTasks = stage === '(Sans étape)' ? ungrouped : tasks.filter(t => t.stage === stage);
+    const icon = STAGE_ICONS_LOCAL[stage] || '📋';
+    return `
     <div class="kboard">
-      <div class="kboard-title" style="color:${col.color};">
-        <span>${col.label}</span>
-        <span class="badge ${col.badge}">${byStatus[col.key].length}</span>
+      <div class="kboard-title">
+        <span>${icon} ${esc(stage)}</span>
+        <span class="badge badge-muted">${stageTasks.length}</span>
       </div>
-      ${byStatus[col.key].map(t => `
-        <div class="kcard ${col.key==='in_progress'?'inprog':col.key==='done'?'done':col.key==='blocked'?'blocked':'todo'}" onclick="openTaskModal('${t.id}','${projectId}')">
-          ${t.stage?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700;">${esc(t.stage)}</div>`:''}
-          <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
+      ${stageTasks.map(t => {
+        const si = statusInfo[t.status] || statusInfo.todo;
+        return `
+        <div class="kcard" onclick="openTaskModal('${t.id}','${projectId}')" style="cursor:pointer;">
+          <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${esc(t.title)}</div>
           ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
-          ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:3px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
-          <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+          ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:3px;">👤 ${esc(t.assignedTo.firstName)} ${esc(t.assignedTo.lastName)}</div>`:''}
+          <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+            <span style="background:${si.bg};color:${si.clr};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;white-space:nowrap;">${si.lbl}</span>
             <span class="badge ${t.priority==='critical'?'badge-red':t.priority==='high'?'badge-amber':'badge-muted'}" style="font-size:10px;">${t.priority}</span>
-            ${t.status!=='done'?`<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();quickDoneTask('${t.id}','${projectId}')">✓</button>`:''}
+            ${t.status!=='done' && t.status!=='cancelled' ? `<button class="btn btn-green" style="font-size:10px;padding:2px 7px;margin-left:auto;" onclick="event.stopPropagation();quickDoneTask('${t.id}','${projectId}')" title="Marquer terminé">✓</button>` : ''}
           </div>
-        </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">—</div>'}
-    </div>`).join('') + `</div>`;
+          <!-- Mini select de statut pour changer rapidement -->
+          <select onclick="event.stopPropagation();" onchange="changeTaskStatus('${t.id}','${projectId}',this.value)" style="margin-top:6px;width:100%;font-size:10px;padding:2px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+            <option value="todo"        ${t.status==='todo'?'selected':''}>📋 À faire</option>
+            <option value="in_progress" ${t.status==='in_progress'?'selected':''}>⚡ En cours</option>
+            <option value="done"        ${t.status==='done'?'selected':''}>✅ Terminé</option>
+            <option value="cancelled"   ${t.status==='cancelled'?'selected':''}>❌ Annulé</option>
+          </select>
+        </div>`;
+      }).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">—</div>'}
+    </div>`;
+  }).join('') + `</div>`;
+}
 
-  // Préserver la sélection du filtre après re-render
-  if (activeStage) {
-    const sel = document.getElementById('task-stage-filter');
-    if (sel) sel.value = activeStage;
+// Changement rapide du statut d'une tâche depuis le kanban
+async function changeTaskStatus(taskId, projectId, status) {
+  const res = await api('PATCH', `/tasks/${taskId}`, { status });
+  if (res?.success) {
+    toast('Statut mis à jour', 'success');
+    loadDetailTasks(projectId);
+  } else {
+    toast(res?.error || 'Erreur', 'error');
   }
 }
 

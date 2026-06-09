@@ -23,8 +23,8 @@ const transporter = nodemailer.createTransport({
   greetingTimeout:   10000,    // 10 s pour le hello SMTP
   socketTimeout:     20000,    // 20 s pour la transaction complète
   // Forcer IPv4 — Railway a souvent un IPv6 outbound capricieux
-  family: 4 as any,
-});
+  family: 4,
+} as any);
 
 const FROM = `"${process.env.EMAIL_FROM_NAME || 'VEM'}" <${process.env.SMTP_USER}>`;
 
