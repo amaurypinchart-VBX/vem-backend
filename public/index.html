@@ -732,8 +732,8 @@ textarea.input{min-height:80px;resize:vertical;}
       <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
-      <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()">📋 Template</button>
-      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+      <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()" title="Ajouter plusieurs tâches d'un coup depuis le template">📋 Plusieurs tâches</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')" title="Ajouter une seule tâche libre">➕ 1 tâche</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--text3);" onclick="confirmDeleteProject(CURRENT_PROJECT_ID)" title="Archiver / Supprimer">📦</button>
     </div>
   </div>
@@ -3938,6 +3938,17 @@ function openTemplateTasksModal() {
         <div style="flex-basis:100%;font-size:11px;color:var(--text3);">L'assignation par tâche reste libre — celle-ci est juste un raccourci.</div>
       </div>
 
+      <!-- Barre de recherche (filtre live des tâches du template) -->
+      <div style="position:relative;margin-bottom:10px;">
+        <input id="tpl-modal-search" class="input" placeholder="🔍 Rechercher une tâche (titre ou étape)..."
+          style="padding-left:32px;padding-right:34px;font-size:13px;"
+          oninput="filterTemplateTasksModal(this.value)">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none;">🔎</span>
+        <button onclick="document.getElementById('tpl-modal-search').value='';filterTemplateTasksModal('')"
+          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px;" title="Effacer">✕</button>
+      </div>
+      <div id="tpl-modal-search-info" style="font-size:11px;color:var(--text3);margin-bottom:6px;display:none;"></div>
+
       <!-- Le sélecteur lui-même (rempli à l'ouverture) -->
       <div id="tpl-modal-selector" style="max-height:50vh;overflow-y:auto;padding-right:4px;"></div>
 
@@ -4037,6 +4048,50 @@ function tplModalApplyGlobalAssign() {
   toast(count ? `${count} tâche(s) assignée(s)` : 'Aucune tâche cochée', count ? 'success' : 'warning');
 }
 
+// Recherche live dans le modal template : filtre les tâches selon leur titre OU
+// le nom de leur étape (case insensible, sans accent).
+function filterTemplateTasksModal(query) {
+  const q = (query || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,''); // strip diacritics
+  const container = document.getElementById('tpl-modal-selector');
+  if (!container) return;
+
+  const allRows = container.querySelectorAll('.proj-tpl-check');
+  let visibleCount = 0, totalCount = allRows.length;
+
+  // Pour chaque ligne de tâche, on regarde si titre ou stage matche
+  allRows.forEach(cb => {
+    const title = (cb.dataset.title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const stage = (cb.dataset.stage || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const match = !q || title.includes(q) || stage.includes(q);
+    const row = cb.closest('div');
+    if (row) row.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+
+  // Masquer aussi les sections d'étape qui n'ont plus aucune tâche visible
+  container.querySelectorAll('[id^="tplmod-stage-"]').forEach(stageDiv => {
+    const sectionWrapper = stageDiv.parentElement;
+    if (!sectionWrapper) return;
+    const hasVisible = stageDiv.querySelector('.proj-tpl-check:not([style*="display: none"])');
+    // Comme on a appliqué style sur le row parent, on vérifie autrement :
+    const visibleChildren = Array.from(stageDiv.querySelectorAll('.proj-tpl-check'))
+      .filter(c => c.closest('div').style.display !== 'none');
+    sectionWrapper.style.display = visibleChildren.length > 0 ? '' : 'none';
+  });
+
+  // Affichage du compteur de recherche
+  const info = document.getElementById('tpl-modal-search-info');
+  if (info) {
+    if (q) {
+      info.style.display = 'block';
+      info.textContent = `${visibleCount} / ${totalCount} tâche(s) correspondent à "${query}"`;
+    } else {
+      info.style.display = 'none';
+    }
+  }
+}
+
 function updateTplModalCount() {
   const count = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check:checked').length;
   const total = document.querySelectorAll('#tpl-modal-selector .proj-tpl-check').length;
@@ -4072,7 +4127,7 @@ async function submitTemplateTasksToCurrent() {
     api('POST', '/tasks', {
       projectId,
       title:        t.title,
-      description:  t.stage ? `Stage: ${t.stage}` : undefined,
+      stage:        t.stage || undefined,    // VRAI champ — préserve l'arborescence template
       status:       'todo',
       priority:     'normal',
       taskDate:     t.taskDate || undefined,
@@ -4506,19 +4561,32 @@ async function loadDetailTasks(projectId) {
   const el = document.getElementById('detail-tasks-content');
   if (!el || !res?.success) return;
 
-  const btn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;" id="task-cat-pills"></div>
-    <div style="display:flex;gap:8px;">
+  const tasks = res.data;
+  // Liste des stages uniques présents pour proposer un filtre (préserve la hiérarchie template)
+  const stages = Array.from(new Set(tasks.map(t => t.stage).filter(Boolean))).sort();
+
+  const headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      ${stages.length ? `<select id="task-stage-filter" class="input" style="font-size:12px;padding:4px 8px;width:auto;" onchange="loadDetailTasks('${projectId}')">
+        <option value="">Toutes étapes (${tasks.length})</option>
+        ${stages.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
+      </select>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="showTaskFromMeetingModal('${projectId}')">🤖 Import réunion</button>
-      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')">+ Tâche</button>
+      <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()" title="Ajouter plusieurs tâches en une fois depuis le template">📋 Plusieurs tâches (template)</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('modal-task')" title="Ajouter une seule tâche libre">➕ 1 tâche</button>
     </div>
   </div>`;
 
-  const tasks = res.data;
-  if (!tasks.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Aucune tâche</div></div>'; return; }
+  if (!tasks.length) { el.innerHTML = headerHtml + '<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Aucune tâche</div></div>'; return; }
+
+  // Appliquer le filtre de stage si activé
+  const activeStage = document.getElementById('task-stage-filter')?.value || '';
+  const filteredTasks = activeStage ? tasks.filter(t => t.stage === activeStage) : tasks;
 
   const byStatus = { todo:[], in_progress:[], done:[], blocked:[] };
-  tasks.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
+  filteredTasks.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
 
   const colDef = [
     { key:'todo', label:'📋 À faire', color:'var(--blue)', badge:'badge-muted' },
@@ -4527,7 +4595,7 @@ async function loadDetailTasks(projectId) {
     { key:'blocked', label:'🔴 Bloqué', color:'var(--accent)', badge:'badge-red' },
   ];
 
-  el.innerHTML = btn + `<div class="kanban">` + colDef.map(col => `
+  el.innerHTML = headerHtml + `<div class="kanban">` + colDef.map(col => `
     <div class="kboard">
       <div class="kboard-title" style="color:${col.color};">
         <span>${col.label}</span>
@@ -4535,6 +4603,7 @@ async function loadDetailTasks(projectId) {
       </div>
       ${byStatus[col.key].map(t => `
         <div class="kcard ${col.key==='in_progress'?'inprog':col.key==='done'?'done':col.key==='blocked'?'blocked':'todo'}" onclick="openTaskModal('${t.id}','${projectId}')">
+          ${t.stage?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700;">${esc(t.stage)}</div>`:''}
           <div style="font-weight:600;font-size:12px;margin-bottom:5px;line-height:1.3;">${t.title}</div>
           ${t.taskDate?`<div style="font-size:11px;color:var(--text3);">📅 ${fmtDate(t.taskDate)}</div>`:''}
           ${t.assignedTo?`<div style="font-size:11px;color:var(--blue);margin-top:3px;">👤 ${t.assignedTo.firstName} ${t.assignedTo.lastName}</div>`:''}
@@ -4544,6 +4613,12 @@ async function loadDetailTasks(projectId) {
           </div>
         </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">—</div>'}
     </div>`).join('') + `</div>`;
+
+  // Préserver la sélection du filtre après re-render
+  if (activeStage) {
+    const sel = document.getElementById('task-stage-filter');
+    if (sel) sel.value = activeStage;
+  }
 }
 
 async function quickDoneTask(taskId, projectId) {

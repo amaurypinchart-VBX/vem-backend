@@ -39,8 +39,8 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     body.taskDate = parsedDate;
 
     // Nettoyage : retirer les champs qui ne sont pas dans le modèle Task
-    delete body.stage;
     delete body.assignedTo; // on n'accepte que assignedToId
+    // body.stage est maintenant un VRAI champ du modèle (préserve l'arborescence template)
 
     const task = await prisma.task.create({
       data: { ...body, createdById: req.user!.id },

@@ -237,6 +237,7 @@ model Task {
   projectId      String     @map("project_id")
   title          String
   description    String?
+  stage          String?    // catégorie/étape (template) — préserve l'arborescence
   taskDate       DateTime?  @map("task_date")
   startTime      String?    @map("start_time")
   endTime        String?    @map("end_time")

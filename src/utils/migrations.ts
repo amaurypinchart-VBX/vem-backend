@@ -107,6 +107,11 @@ export async function runStartupMigrations() {
       logger.warn(`[migration] daily_report_entries.entry_time : ${e.message}`);
     }
 
+    // ─── Colonne "stage" sur tasks (catégorie/étape héritée du template) ───
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "stage" TEXT;
+    `);
+
     // ─── Table "client_visits" (rapport de visite client = contenant de N points) ───
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "client_visits" (
