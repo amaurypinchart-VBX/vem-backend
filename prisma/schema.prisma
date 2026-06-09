@@ -115,6 +115,7 @@ model User {
   notifications       Notification[]
   refreshTokens       RefreshToken[]
   assignedRemarks     ClientRemark[] @relation("RemarkAssignee")
+  teamBookings        TeamBooking[]
 
   @@map("users")
 }
@@ -180,8 +181,54 @@ model Project {
   clientRemarks    ClientRemark[]
   clientVisits     ClientVisit[]
   briefing         Briefing?
+  teamBookings     TeamBooking[]
 
   @@map("projects")
+}
+
+// Booking de transport + hôtel pour un membre d'équipe sur un projet.
+// On peut avoir plusieurs lignes par membre+projet pour modéliser :
+//   - phase = "installation" (aller pour installer, retour après installation)
+//   - phase = "dismantling"  (aller pour démonter, retour après démontage)
+// Les dates de présence sur site (onSiteStart/End) sont les jours où la
+// personne travaille effectivement. Les jours de trajet aller/retour sont
+// modélisés via outboundDate / returnDate (datetime) — ils peuvent précéder
+// ou suivre la période on-site.
+model TeamBooking {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  userId          String    @map("user_id")
+  phase           String    // 'installation' | 'dismantling'
+
+  // Présence effective sur le chantier
+  onSiteStart     DateTime  @map("on_site_start")
+  onSiteEnd       DateTime  @map("on_site_end")
+
+  // Trajet aller (vers le chantier)
+  outboundMode    String?   @map("outbound_mode")     // 'plane'|'train'|'car'|'bus'|'other'
+  outboundDate    DateTime? @map("outbound_date")
+  outboundDetails String?   @map("outbound_details")  // n° vol, horaire, etc.
+
+  // Trajet retour (depuis le chantier)
+  returnMode      String?   @map("return_mode")
+  returnDate      DateTime? @map("return_date")
+  returnDetails   String?   @map("return_details")
+
+  // Hébergement
+  hotelName       String?   @map("hotel_name")
+  hotelAddress    String?   @map("hotel_address")
+  hotelCheckin    DateTime? @map("hotel_checkin")
+  hotelCheckout   DateTime? @map("hotel_checkout")
+  hotelNotes      String?   @map("hotel_notes")
+
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("team_bookings")
 }
 
 model ProjectTeam {

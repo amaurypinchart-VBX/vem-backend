@@ -30,6 +30,7 @@ import aiRoutes from './routes/ai';
 import clientRemarksRoutes from './routes/clientRemarks';
 import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
+import teamBookingsRoutes from './routes/teamBookings';
 import { runStartupMigrations } from './utils/migrations';
 
 const app  = express();
@@ -77,6 +78,9 @@ app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
+// Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
+// /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
+app.use(API,                     authMiddleware, teamBookingsRoutes);
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

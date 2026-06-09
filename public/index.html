@@ -757,6 +757,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
     <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
     <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
+    <div class="tab" onclick="switchTab(this,'dtab-bookings')">✈️ Bookings</div>
     <div class="tab" onclick="switchTab(this,'dtab-briefing')">📋 Briefing</div>
     <div class="tab" onclick="switchTab(this,'dtab-files');loadDetailFiles(CURRENT_PROJECT_ID)">📁 Fichiers</div>
   </div>
@@ -770,6 +771,7 @@ textarea.input{min-height:80px;resize:vertical;}
   <div id="dtab-toolbox" style="display:none;"><div id="detail-toolbox-content"><div class="empty"><div class="empty-icon">🧰</div><div class="empty-title">Aucune boîte</div></div></div></div>
   <div id="dtab-team" style="display:none;"><div id="detail-team-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-trucks" style="display:none;"><div id="detail-trucks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-bookings" style="display:none;"><div id="detail-bookings-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-briefing" style="display:none;"><div id="detail-briefing-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
 </div>
@@ -1895,6 +1897,7 @@ function switchTab(el, tabId) {
   if (tabId==='dtab-warehouse') loadDetailWarehouse(CURRENT_PROJECT_ID);
   if (tabId==='dtab-toolbox')   loadDetailToolboxes(CURRENT_PROJECT_ID);
   if (tabId==='dtab-trucks')    loadDetailTrucks(CURRENT_PROJECT_ID);
+  if (tabId==='dtab-bookings')  loadDetailBookings(CURRENT_PROJECT_ID);
   if (tabId==='dtab-briefing')  loadDetailBriefing(CURRENT_PROJECT_ID);
 }
 
@@ -10240,6 +10243,295 @@ async function loadDetailToolboxes(projectId) {
 }// ═════════════════════════════════════════════
 // 🚛 LOGISTIQUE — Camions/Grues/Forklifts par projet
 // ═════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// MODULE BOOKINGS — Transport + hébergement par membre d'équipe
+// ═══════════════════════════════════════════════════════════════════
+
+const TRANSPORT_MODES = {
+  plane: { icon: '✈️',  label: 'Avion' },
+  train: { icon: '🚄',  label: 'Train' },
+  car:   { icon: '🚗',  label: 'Voiture' },
+  bus:   { icon: '🚌',  label: 'Bus / Car' },
+  other: { icon: '🛫',  label: 'Autre' },
+};
+const PHASE_LABELS = {
+  installation: { icon: '🏗️', label: 'Installation', color: 'var(--blue)' },
+  dismantling:  { icon: '🔨', label: 'Démontage',    color: 'var(--amber)' },
+};
+
+async function loadDetailBookings(projectId) {
+  const el = document.getElementById('detail-bookings-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+
+  const res = await api('GET', `/projects/${projectId}/bookings`);
+  if (!res?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
+  const bookings = res.data || [];
+
+  // Header avec compteurs par phase
+  const installCount   = bookings.filter(b => b.phase === 'installation').length;
+  const dismantleCount = bookings.filter(b => b.phase === 'dismantling').length;
+
+  let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:16px;font-weight:700;">✈️ Bookings transport + hôtel</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+          ${bookings.length} booking(s) — ${installCount} pour l'installation, ${dismantleCount} pour le démontage
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="openBookingModal('${projectId}',null,'dismantling')">+ Démontage</button>
+        <button class="btn btn-primary btn-sm" onclick="openBookingModal('${projectId}',null,'installation')">+ Installation</button>
+      </div>
+    </div>`;
+
+  if (!bookings.length) {
+    html += `<div class="empty"><div class="empty-icon">✈️</div><div class="empty-title">Aucun booking pour le moment</div><div class="empty-sub">Crée un booking pour chaque membre d'équipe afin de tracer ses trajets et hôtels.</div></div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  // Regroupement par phase puis par membre
+  ['installation', 'dismantling'].forEach(phase => {
+    const list = bookings.filter(b => b.phase === phase);
+    if (!list.length) return;
+    const ph = PHASE_LABELS[phase];
+    html += `<div style="margin-top:18px;">
+      <div style="font-size:13px;font-weight:700;color:${ph.color};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
+        ${ph.icon} Phase : ${ph.label} (${list.length})
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;">
+        ${list.map(b => renderBookingCard(projectId, b)).join('')}
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+function renderBookingCard(projectId, b) {
+  const u = b.user || {};
+  const fmtD  = d => d ? new Date(d).toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) : '—';
+  const fmtDT = d => d ? new Date(d).toLocaleString('fr-FR', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+  const tOut  = TRANSPORT_MODES[b.outboundMode] || null;
+  const tRet  = TRANSPORT_MODES[b.returnMode]   || null;
+
+  // Affichage compact de la durée on-site
+  const onSiteStr = `${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)}`;
+
+  return `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+      <!-- Header : membre + actions -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">
+          ${esc((u.firstName||'?').charAt(0) + (u.lastName||'').charAt(0))}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.firstName)} ${esc(u.lastName)}</div>
+          <div style="font-size:11px;color:var(--text3);">${esc(u.role||'')}</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="openBookingModal('${projectId}','${b.id}','${b.phase}')" title="Modifier">✏️</button>
+        <button class="btn btn-ghost btn-xs" onclick="deleteBooking('${projectId}','${b.id}')" style="color:var(--accent);" title="Supprimer">🗑️</button>
+      </div>
+
+      <!-- Présence on-site -->
+      <div style="background:var(--bg3);border-radius:6px;padding:8px;margin-bottom:8px;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:2px;">📍 Sur site</div>
+        <div style="font-size:13px;font-weight:600;">${onSiteStr}</div>
+      </div>
+
+      <!-- Aller -->
+      <div style="display:flex;gap:6px;margin-bottom:6px;font-size:12px;align-items:flex-start;">
+        <span style="font-size:16px;flex-shrink:0;">${tOut?tOut.icon:'❔'}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="color:var(--text3);font-size:10px;font-weight:700;text-transform:uppercase;">Aller${tOut?` · ${tOut.label}`:''}</div>
+          <div>${b.outboundDate ? fmtDT(b.outboundDate) : '<span style="color:var(--text3);">Non renseigné</span>'}</div>
+          ${b.outboundDetails ? `<div style="font-size:11px;color:var(--text2);font-style:italic;">${esc(b.outboundDetails)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- Retour -->
+      <div style="display:flex;gap:6px;margin-bottom:8px;font-size:12px;align-items:flex-start;">
+        <span style="font-size:16px;flex-shrink:0;">${tRet?tRet.icon:'❔'}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="color:var(--text3);font-size:10px;font-weight:700;text-transform:uppercase;">Retour${tRet?` · ${tRet.label}`:''}</div>
+          <div>${b.returnDate ? fmtDT(b.returnDate) : '<span style="color:var(--text3);">Non renseigné</span>'}</div>
+          ${b.returnDetails ? `<div style="font-size:11px;color:var(--text2);font-style:italic;">${esc(b.returnDetails)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- Hôtel -->
+      ${b.hotelName ? `
+        <div style="background:#fef3c7;border-radius:6px;padding:8px;font-size:12px;">
+          <div style="font-size:10px;color:#92400e;text-transform:uppercase;font-weight:700;margin-bottom:2px;">🏨 Hôtel</div>
+          <div style="font-weight:600;color:#78350f;">${esc(b.hotelName)}</div>
+          ${b.hotelCheckin || b.hotelCheckout ? `<div style="font-size:11px;color:#78350f;">${fmtD(b.hotelCheckin)} → ${fmtD(b.hotelCheckout)}</div>` : ''}
+        </div>` : ''}
+      ${b.notes ? `<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:6px;">📝 ${esc(b.notes)}</div>` : ''}
+    </div>`;
+}
+
+// Modal pour créer ou modifier un booking
+async function openBookingModal(projectId, bookingId, defaultPhase) {
+  // Si c'est une édition, on récupère le booking existant
+  let b = null;
+  if (bookingId) {
+    const res = await api('GET', `/projects/${projectId}/bookings`);
+    if (res?.success) b = (res.data || []).find(x => x.id === bookingId);
+  }
+
+  const phase = b?.phase || defaultPhase || 'installation';
+  const isEdit = !!b;
+
+  // Helper de conversion pour les inputs datetime-local
+  const toDTLocal = d => d ? new Date(d).toISOString().slice(0,16) : '';
+  const toDate    = d => d ? new Date(d).toISOString().slice(0,10) : '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <div class="modal-title">${isEdit?'✏️ Modifier':'➕ Nouveau'} booking — ${PHASE_LABELS[phase].icon} ${PHASE_LABELS[phase].label}</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <!-- Membre + phase -->
+      <div class="input-row">
+        <div class="form-group2">
+          <label class="form-label2">Membre *</label>
+          <select class="input" id="bk-user" ${isEdit?'disabled':''}>
+            <option value="">— Sélectionner —</option>
+            ${(USERS||[]).filter(u=>u.isActive!==false).map(u=>`<option value="${u.id}" ${b&&b.userId===u.id?'selected':''}>${esc(u.firstName)} ${esc(u.lastName)} (${esc(u.role||'')})</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group2">
+          <label class="form-label2">Phase *</label>
+          <select class="input" id="bk-phase">
+            <option value="installation" ${phase==='installation'?'selected':''}>🏗️ Installation</option>
+            <option value="dismantling"  ${phase==='dismantling'?'selected':''}>🔨 Démontage</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Présence on-site -->
+      <div style="background:var(--bg3);border-radius:8px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">📍 Présence effective sur site</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Du *</label><input class="input" type="date" id="bk-on-start" value="${toDate(b?.onSiteStart)}"></div>
+          <div class="form-group2"><label class="form-label2">Au *</label><input class="input" type="date" id="bk-on-end" value="${toDate(b?.onSiteEnd)}"></div>
+        </div>
+      </div>
+
+      <!-- Trajet aller -->
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;margin-bottom:6px;">✈️ Trajet aller (vers le site)</div>
+        <div class="input-row">
+          <div class="form-group2">
+            <label class="form-label2">Moyen de transport</label>
+            <select class="input" id="bk-out-mode">
+              <option value="">— Non renseigné —</option>
+              ${Object.entries(TRANSPORT_MODES).map(([k,v])=>`<option value="${k}" ${b?.outboundMode===k?'selected':''}>${v.icon} ${v.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Date + heure de départ</label><input class="input" type="datetime-local" id="bk-out-date" value="${toDTLocal(b?.outboundDate)}"></div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Détails (n° de vol, point de RV, etc.)</label><input class="input" id="bk-out-det" value="${esc(b?.outboundDetails||'')}" placeholder="Ex: AF1234 dép. 14h35 - CDG T2E"></div>
+      </div>
+
+      <!-- Trajet retour -->
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:#9a3412;text-transform:uppercase;margin-bottom:6px;">🛬 Trajet retour (depuis le site)</div>
+        <div class="input-row">
+          <div class="form-group2">
+            <label class="form-label2">Moyen de transport</label>
+            <select class="input" id="bk-ret-mode">
+              <option value="">— Non renseigné —</option>
+              ${Object.entries(TRANSPORT_MODES).map(([k,v])=>`<option value="${k}" ${b?.returnMode===k?'selected':''}>${v.icon} ${v.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group2"><label class="form-label2">Date + heure de départ</label><input class="input" type="datetime-local" id="bk-ret-date" value="${toDTLocal(b?.returnDate)}"></div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Détails (n° de vol, etc.)</label><input class="input" id="bk-ret-det" value="${esc(b?.returnDetails||'')}"></div>
+      </div>
+
+      <!-- Hôtel -->
+      <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:6px;">🏨 Hébergement</div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Nom de l'hôtel</label><input class="input" id="bk-hotel-name" value="${esc(b?.hotelName||'')}" placeholder="Ex: Mercure Centre"></div>
+          <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="bk-hotel-addr" value="${esc(b?.hotelAddress||'')}"></div>
+        </div>
+        <div class="input-row">
+          <div class="form-group2"><label class="form-label2">Check-in</label><input class="input" type="date" id="bk-hotel-in" value="${toDate(b?.hotelCheckin)}"></div>
+          <div class="form-group2"><label class="form-label2">Check-out</label><input class="input" type="date" id="bk-hotel-out" value="${toDate(b?.hotelCheckout)}"></div>
+        </div>
+        <div class="form-group2"><label class="form-label2">Notes (référence réservation, contact, etc.)</label><input class="input" id="bk-hotel-notes" value="${esc(b?.hotelNotes||'')}"></div>
+      </div>
+
+      <div class="form-group2"><label class="form-label2">Notes générales</label><textarea class="input" id="bk-notes" rows="2" placeholder="Information spécifique...">${esc(b?.notes||'')}</textarea></div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveBooking('${projectId}','${bookingId||''}',this.closest('.overlay'))">💾 ${isEdit?'Enregistrer':'Créer le booking'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function saveBooking(projectId, bookingId, overlay) {
+  const val = id => document.getElementById(id)?.value || '';
+  const userId      = val('bk-user');
+  const phase       = val('bk-phase');
+  const onSiteStart = val('bk-on-start');
+  const onSiteEnd   = val('bk-on-end');
+
+  if (!userId)      { toast('Sélectionne un membre', 'error'); return; }
+  if (!onSiteStart || !onSiteEnd) { toast('Les dates de présence sur site sont requises', 'error'); return; }
+
+  const body = {
+    userId, phase, onSiteStart, onSiteEnd,
+    outboundMode:    val('bk-out-mode')  || null,
+    outboundDate:    val('bk-out-date')  || null,
+    outboundDetails: val('bk-out-det')   || null,
+    returnMode:      val('bk-ret-mode')  || null,
+    returnDate:      val('bk-ret-date')  || null,
+    returnDetails:   val('bk-ret-det')   || null,
+    hotelName:       val('bk-hotel-name')|| null,
+    hotelAddress:    val('bk-hotel-addr')|| null,
+    hotelCheckin:    val('bk-hotel-in')  || null,
+    hotelCheckout:   val('bk-hotel-out') || null,
+    hotelNotes:      val('bk-hotel-notes')|| null,
+    notes:           val('bk-notes')     || null,
+  };
+
+  const res = bookingId
+    ? await api('PATCH', `/bookings/${bookingId}`, body)
+    : await api('POST',  `/projects/${projectId}/bookings`, body);
+
+  if (res?.success) {
+    toast(bookingId?'Booking mis à jour ✅':'Booking créé ✅', 'success');
+    overlay?.remove();
+    loadDetailBookings(projectId);
+  } else {
+    toast(res?.error || 'Erreur enregistrement', 'error');
+    console.error('[saveBooking] échec :', res);
+  }
+}
+
+async function deleteBooking(projectId, bookingId) {
+  if (!confirm('Supprimer ce booking ?')) return;
+  const res = await api('DELETE', `/bookings/${bookingId}`);
+  if (res?.success) {
+    toast('Booking supprimé', 'success');
+    loadDetailBookings(projectId);
+  } else {
+    toast(res?.error || 'Erreur suppression', 'error');
+  }
+}
+
 async function loadDetailTrucks(projectId) {
   const el = document.getElementById('detail-trucks-content');
   if (!el) return;

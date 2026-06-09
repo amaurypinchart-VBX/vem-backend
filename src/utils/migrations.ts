@@ -184,6 +184,52 @@ export async function runStartupMigrations() {
       }
     }
 
+    // ─── Table "team_bookings" (transport + hôtel par membre+projet) ───
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "team_bookings" (
+        "id"                TEXT NOT NULL PRIMARY KEY,
+        "project_id"        TEXT NOT NULL,
+        "user_id"           TEXT NOT NULL,
+        "phase"             TEXT NOT NULL,
+        "on_site_start"     TIMESTAMP NOT NULL,
+        "on_site_end"       TIMESTAMP NOT NULL,
+        "outbound_mode"     TEXT,
+        "outbound_date"     TIMESTAMP,
+        "outbound_details"  TEXT,
+        "return_mode"       TEXT,
+        "return_date"       TIMESTAMP,
+        "return_details"    TEXT,
+        "hotel_name"        TEXT,
+        "hotel_address"     TEXT,
+        "hotel_checkin"     TIMESTAMP,
+        "hotel_checkout"    TIMESTAMP,
+        "hotel_notes"       TEXT,
+        "notes"             TEXT,
+        "created_at"        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    // FK avec CASCADE pour bien nettoyer si on supprime un projet ou un user
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'team_bookings_project_id_fkey') THEN
+          ALTER TABLE "team_bookings" ADD CONSTRAINT "team_bookings_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'team_bookings_user_id_fkey') THEN
+          ALTER TABLE "team_bookings" ADD CONSTRAINT "team_bookings_user_id_fkey"
+            FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+    // Index pour les lookups par date (dashboard calendrier)
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "team_bookings_on_site_idx" ON "team_bookings" ("on_site_start", "on_site_end");
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "team_bookings_project_idx" ON "team_bookings" ("project_id");
+    `);
+
     // ─── Valeurs d'enum ProjectStatus manquantes (workflow devis/préparation/...) ───
     for (const val of ['quote_to_validate', 'quote_validated', 'handover_ok']) {
       try {
