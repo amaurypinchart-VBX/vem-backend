@@ -737,6 +737,7 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
     <div class="pg-actions">
+      <button class="btn btn-ghost btn-sm" onclick="openEditProjectModal(CURRENT_PROJECT_ID)" title="Modifier les infos du projet">✏️ Modifier</button>
       <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
@@ -1749,6 +1750,8 @@ let PROJECTS = [];
 let USERS = [];
 let CLIENTS = [];
 let CURRENT_PROJECT_ID = null;
+// Mode édition du modal de projet : null = création, string = ID du projet en cours d'édition
+let EDITING_PROJECT_ID = null;
 
 // ═══ API HELPER ═══
 async function api(method, path, body) {
@@ -3048,6 +3051,54 @@ async function markAllRead() {
 }
 
 // ═══ CREATE ACTIONS ═══
+// ═══════════════════════════════════════════
+// Édition d'un projet existant — ouvre le modal "modal-proj" pré-rempli
+// ═══════════════════════════════════════════
+async function openEditProjectModal(projectId) {
+  // 1) Récupérer le projet complet (avec camions, équipe, etc.)
+  const res = await api('GET', `/projects/${projectId}`);
+  if (!res?.success) { toast('Projet introuvable', 'error'); return; }
+  const p = res.data;
+
+  // 2) Activer le mode édition (intercepté par showModal et createProject)
+  EDITING_PROJECT_ID = projectId;
+
+  // 3) Pré-remplir les inputs simples
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  set('proj-name',              p.name);
+  set('proj-num',               p.internalNumber);
+  set('proj-workers',           p.workersCount || 5);
+  set('proj-addr',              p.address);
+  set('proj-desc',              p.description || p.notes || '');
+  // Les dates ISO doivent être tronquées en YYYY-MM-DD pour les inputs type="date"
+  const toDate = d => d ? new Date(d).toISOString().split('T')[0] : '';
+  set('proj-start',             toDate(p.installationStart));
+  set('proj-end',               toDate(p.installationEnd));
+  set('proj-dismantling-start', toDate(p.dismantlingStart));
+  set('proj-dismantling-end',   toDate(p.dismantlingEnd));
+
+  // 4) Pré-sélectionner le client (le select existant a déjà ses options chargées)
+  const cliSel = document.getElementById('proj-client');
+  if (cliSel) cliSel.value = p.clientId || '';
+
+  // 5) Pré-remplir la liste des camions/véhicules avec ceux déjà en base
+  PROJ_TRUCKS = (p.trucks || []).map(t => ({
+    id:           t.id,           // ⚠️ On garde l'ID pour pouvoir distinguer ajout / mise à jour au submit
+    vehicleType:  t.vehicleType || 'truck',
+    truckNumber:  t.truckNumber  || '',
+    licensePlate: t.licensePlate || '',
+    driverName:   t.driverName   || '',
+    driverPhone:  t.driverPhone  || '',
+    loadingDate:  t.loadingDate ? new Date(t.loadingDate).toISOString().slice(0,16) : '',
+    arrivalDate:  t.arrivalDate ? new Date(t.arrivalDate).toISOString().slice(0,16) : '',
+    notes:        t.notes        || '',
+  }));
+  if (typeof renderProjTrucks === 'function') renderProjTrucks();
+
+  // 6) Ouvrir le modal (showModal va voir EDITING_PROJECT_ID et passer en mode édition)
+  showModal('modal-proj');
+}
+
 async function createProject() {
   const name     = document.getElementById('proj-name').value.trim();
   const clientId = document.getElementById('proj-client').value;
@@ -3063,7 +3114,8 @@ async function createProject() {
   }
 
   const btn = document.getElementById('proj-create-btn');
-  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> Création...'; }
+  const isEdit = !!EDITING_PROJECT_ID;
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> ' + (isEdit?'Enregistrement...':'Création...'); }
 
   // Build body — only include dismantling if filled
   const body = {
@@ -3078,12 +3130,36 @@ async function createProject() {
   if (dismStart) body.dismantlingStart = dismStart;
   if (dismEnd)   body.dismantlingEnd   = dismEnd;
 
-  const res = await api('POST', '/projects', body);
+  // En mode édition : PATCH ; sinon POST
+  const res = isEdit
+    ? await api('PATCH', `/projects/${EDITING_PROJECT_ID}`, body)
+    : await api('POST',  '/projects', body);
 
-  if (btn) { btn.disabled=false; btn.innerHTML='✅ Créer le Projet'; }
+  if (btn) {
+    btn.disabled=false;
+    btn.innerHTML = isEdit ? '💾 Enregistrer les modifications' : '✅ Créer le Projet';
+  }
 
   if (res?.success) {
     const projectId = res.data.id;
+
+    // ─── Mode ÉDITION : on saute la création de tâches/camions par template ───
+    // (Les tâches existent déjà, les camions ont leur propre flux d'édition via
+    // l'onglet Logistique. On ferme juste le modal et on recharge.)
+    if (isEdit) {
+      toast('Projet mis à jour ✅', 'success');
+      EDITING_PROJECT_ID = null;
+      PROJ_TRUCKS = [];
+      closeModal('modal-proj');
+      // Rafraîchir l'affichage
+      const idx = PROJECTS.findIndex(x => x.id === projectId);
+      if (idx >= 0) PROJECTS[idx] = { ...PROJECTS[idx], ...res.data };
+      loadProjectDetail(projectId);
+      filterProjects();
+      return;
+    }
+
+    // ─── Mode CRÉATION : on continue avec la création tâches + camions ───
     // Apply selected templates
     // Créer les tâches sélectionnées (depuis TASK_TEMPLATES_DATA Excel)
     const selectedTasks = typeof getSelectedProjTasks === 'function' ? getSelectedProjTasks() : [];
@@ -3846,21 +3922,28 @@ function showModal(id) {
   if (id === 'modal-task')    document.getElementById('task-date').value  = today;
   if (id === 'modal-proj') {
     // Reset complet du formulaire — sinon les valeurs du projet précédent
-    // restent visibles et l'utilisateur doit tout effacer à la main
-    const modal = document.getElementById('modal-proj');
-    if (modal) {
-      modal.querySelectorAll('input').forEach(i => {
-        if (i.type === 'date' || i.type === 'datetime-local') i.value = '';
-        else if (i.type === 'checkbox' || i.type === 'radio') i.checked = false;
-        else if (i.type === 'file') i.value = '';
-        else i.value = '';
-      });
-      modal.querySelectorAll('textarea').forEach(t => t.value = '');
-      modal.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
+    // restent visibles et l'utilisateur doit tout effacer à la main.
+    // On NE reset PAS si on est en mode édition (les champs ont été pré-remplis).
+    if (!EDITING_PROJECT_ID) {
+      const modal = document.getElementById('modal-proj');
+      if (modal) {
+        modal.querySelectorAll('input').forEach(i => {
+          if (i.type === 'date' || i.type === 'datetime-local') i.value = '';
+          else if (i.type === 'checkbox' || i.type === 'radio') i.checked = false;
+          else if (i.type === 'file') i.value = '';
+          else i.value = '';
+        });
+        modal.querySelectorAll('textarea').forEach(t => t.value = '');
+        modal.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
+      }
+      PROJ_TRUCKS = [];
+      if (typeof renderProjTrucks === 'function') renderProjTrucks();
     }
-    // Reset des camions saisis (était la source du formulaire pollué)
-    PROJ_TRUCKS = [];
-    if (typeof renderProjTrucks === 'function') renderProjTrucks();
+    // Titre + bouton selon le mode
+    const titleEl = document.querySelector('#modal-proj .modal-title');
+    const btnEl   = document.getElementById('proj-create-btn');
+    if (titleEl) titleEl.innerHTML = EDITING_PROJECT_ID ? '✏️ Modifier le projet' : '🏗️ Nouveau Projet';
+    if (btnEl)   btnEl.innerHTML   = EDITING_PROJECT_ID ? '💾 Enregistrer les modifications' : '✅ Créer le Projet';
     loadProjTemplateSelector();
   }
   if (id === 'modal-new-visite') {
@@ -3949,7 +4032,12 @@ function onHandoverContactPick(name) {
   if (respEl) respEl.value = name;
 }
 
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  // Si on ferme le modal projet, on sort du mode édition pour ne pas le réutiliser
+  // par erreur si l'utilisateur ouvre ensuite "+ Nouveau Projet"
+  if (id === 'modal-proj') EDITING_PROJECT_ID = null;
+}
 
 document.querySelectorAll('.overlay').forEach(o => {
   o.addEventListener('click', e => { if(e.target===o) closeModal(o.id); });
