@@ -406,3 +406,150 @@ export async function generateDailyReportPdf(data: {
     doc.end();
   });
 }
+
+// ─── Rapport PDF d'une visite client (style aligné sur les autres rapports) ───
+export async function generateVisitReportPdf(data: {
+  project: { name: string; internalNumber: string };
+  visit: { id: string; title: string; visitDate: Date; notes?: string | null; client?: { name: string } | null };
+  points: Array<{
+    title: string;
+    description?: string | null;
+    zone?: string | null;
+    status?: string | null;
+    priority?: string | null;
+    assignedToUser?: { firstName: string; lastName: string } | null;
+    photos?: Array<{ photoUrl: string; caption?: string | null }>;
+  }>;
+}): Promise<Buffer> {
+  // Pré-téléchargement des photos
+  const pointsWithBuffers: Array<{ point: any; photoBuffers: Buffer[] }> = [];
+  for (const pt of data.points) {
+    const buffers: Buffer[] = [];
+    for (const ph of (pt.photos || [])) {
+      try {
+        const optimized = ph.photoUrl.includes('/upload/')
+          ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_400,h_400,q_auto:good/')
+          : ph.photoUrl;
+        const r = await fetch(optimized) as any;
+        if (!r.ok) continue;
+        const ab = await r.arrayBuffer();
+        buffers.push(Buffer.from(ab));
+      } catch { /* ignorée */ }
+    }
+    pointsWithBuffers.push({ point: pt, photoBuffers: buffers });
+  }
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const reportNum = `N° VIS-${data.visit.id.slice(0, 8).toUpperCase()}`;
+    const visitDateStr = new Date(data.visit.visitDate).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+
+    header(doc, 'VISITE CLIENT', {
+      projectName: data.project.name,
+      projectRef:  `N° ${data.project.internalNumber}`,
+      reportNum,
+      reportDate:  new Date(data.visit.visitDate).toLocaleDateString('fr-FR'),
+    });
+
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16).text(data.visit.title, 40, doc.y);
+    doc.moveDown(0.2);
+    doc.fillColor(MUTED).font('Helvetica').fontSize(11)
+      .text(`${visitDateStr}${data.visit.client?.name ? `  ·  Client : ${data.visit.client.name}` : ''}`, 40, doc.y);
+    if (data.visit.notes) {
+      doc.moveDown(0.4);
+      doc.fillColor('#444').font('Helvetica-Oblique').fontSize(10).text(data.visit.notes, 40, doc.y, { width: 515 });
+    }
+    doc.moveDown(0.8);
+
+    sectionTitle(doc, `Points (${pointsWithBuffers.length})`);
+
+    const statusInfo: Record<string, { bg:string; clr:string; lbl:string }> = {
+      open:        { bg:'#fee2e2', clr:'#c0392b', lbl:'OUVERT' },
+      in_progress: { bg:'#fef9c3', clr:'#ca8a04', lbl:'EN COURS' },
+      resolved:    { bg:'#dcfce7', clr:'#16a34a', lbl:'RÉSOLU' },
+      urgent:      { bg:'#fff1f2', clr:'#e63946', lbl:'URGENT' },
+      archived:    { bg:'#f3f4f6', clr:'#6b7280', lbl:'ARCHIVÉ' },
+    };
+    const prioInfo: Record<string, { lbl:string }> = {
+      critical: { lbl:'Priorite Critique' },
+      high:     { lbl:'Priorite Elevee' },
+      normal:   { lbl:'Priorite Normale' },
+      low:      { lbl:'Priorite Faible' },
+    };
+
+    // Texte à gauche, photos 4×4 cm à droite (2 colonnes max)
+    const PHOTO_SIZE = 113;            // ≈ 4 cm
+    const PHOTO_GAP = 6;
+    const PHOTOS_W  = 2 * PHOTO_SIZE + PHOTO_GAP;
+    const TEXT_X    = 40;
+    const TEXT_W    = 515 - PHOTOS_W - 14;
+    const PHOTOS_X  = TEXT_X + TEXT_W + 14;
+
+    pointsWithBuffers.forEach((item, idx) => {
+      const pt = item.point;
+      if (doc.y > 720) doc.addPage();
+      const rowTop = doc.y;
+      const sInfo = statusInfo[pt.status || 'open'] || statusInfo.open;
+      const pInfo = prioInfo[pt.priority || 'normal'] || prioInfo.normal;
+
+      // Numéro en pastille rouge
+      doc.circle(TEXT_X + 10, rowTop + 6, 8).fill('#e63946');
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text(String(idx+1), TEXT_X + 3, rowTop + 2, { width: 14, align: 'center' });
+
+      // Titre
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
+        .text(pt.title || 'Sans titre', TEXT_X + 25, rowTop, { width: TEXT_W - 110 });
+      let curY = doc.y + 2;
+
+      // Pastille de statut en haut à droite du bloc texte
+      doc.roundedRect(TEXT_X + TEXT_W - 75, rowTop - 1, 75, 14, 3).fill(sInfo.clr);
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(8)
+        .text(sInfo.lbl, TEXT_X + TEXT_W - 75, rowTop + 2, { width: 75, align: 'center' });
+
+      if (pt.description) {
+        doc.fillColor('#3a3a3a').font('Helvetica').fontSize(10)
+          .text(pt.description, TEXT_X + 25, curY, { width: TEXT_W - 30, lineGap: 1 });
+        curY = doc.y + 2;
+      }
+
+      doc.fillColor(MUTED).font('Helvetica').fontSize(9);
+      const metaLines: string[] = [];
+      if (pt.zone) metaLines.push(`Zone : ${pt.zone}`);
+      if (pt.assignedToUser) metaLines.push(`Assigne a ${pt.assignedToUser.firstName} ${pt.assignedToUser.lastName}`);
+      metaLines.push(pInfo.lbl);
+      if (metaLines.length) {
+        doc.text(metaLines.join('   |   '), TEXT_X + 25, curY, { width: TEXT_W - 30 });
+        curY = doc.y + 4;
+      }
+
+      const textBottomY = curY;
+
+      // Photos à droite
+      let photoBottomY = rowTop;
+      const photos = item.photoBuffers || [];
+      photos.forEach((buf, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
+        const y = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+        if (y + PHOTO_SIZE > 810) return;
+        try {
+          doc.image(buf, x, y, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
+        } catch {}
+        photoBottomY = Math.max(photoBottomY, y + PHOTO_SIZE);
+      });
+
+      const rowBottom = Math.max(textBottomY, photoBottomY) + 10;
+      doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
+      doc.y = rowBottom;
+    });
+
+    footer(doc);
+    doc.end();
+  });
+}

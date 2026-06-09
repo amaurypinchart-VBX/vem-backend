@@ -7632,12 +7632,23 @@ async function openVisitDetail(visitId, projectId) {
   const statusBg  = {open:'#fee2e2',in_progress:'#fef9c3',resolved:'#dcfce7',archived:'#f3f4f6',urgent:'#fff1f2'};
   const statusClr = {open:'#dc2626',in_progress:'#ca8a04',resolved:'#16a34a',archived:'#6b7280',urgent:'#e63946'};
   const statusLbl = {open:'Ouvert',in_progress:'En cours',resolved:'Résolu',archived:'Archivé',urgent:'⚡ URGENT'};
+  const prioBg    = {critical:'#fff1f2',high:'#fff7ed',normal:'#eff6ff',low:'#f0fdf4'};
+  const prioClr   = {critical:'#e63946',high:'#f4a261',normal:'#4895ef',low:'#2dc653'};
+  const prioLbl   = {critical:'🔴 Critique',high:'🟠 Élevé',normal:'🔵 Normal',low:'🟢 Faible'};
+
+  // Options assignation HTML (réutilisé par chaque point)
+  const assignOptionsHTML = (currentAssignId) => `<option value="">— Non assigné —</option>` +
+    (USERS||[]).filter(u => u.isActive !== false).map(u =>
+      `<option value="${u.id}" ${currentAssignId===u.id?'selected':''}>${esc(u.firstName)} ${esc(u.lastName)}</option>`
+    ).join('');
 
   const pointHTML = points.map((r, idx) => {
     const st = r.status || 'open';
+    const prio = r.priority || 'normal';
     const clr = statusClr[st] || '#dc2626';
     const bg  = statusBg[st]  || '#fee2e2';
     const photos = r.photos || [];
+    const assignee = r.assignedToUser ? `${r.assignedToUser.firstName} ${r.assignedToUser.lastName}` : null;
     return `
       <div style="background:var(--bg2);border:1px solid ${clr}44;border-left:4px solid ${clr};border-radius:10px;padding:10px;margin-bottom:8px;">
         <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;">
@@ -7646,7 +7657,31 @@ async function openVisitDetail(visitId, projectId) {
             <div style="font-weight:700;font-size:13px;">${esc(r.title)}</div>
             ${r.description?`<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4;">${esc(r.description)}</div>`:''}
           </div>
-          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${bg};color:${clr};flex-shrink:0;white-space:nowrap;">${statusLbl[st]||st}</span>
+          <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0;">
+            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${bg};color:${clr};white-space:nowrap;">${statusLbl[st]||st}</span>
+            <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:99px;background:${prioBg[prio]};color:${prioClr[prio]};white-space:nowrap;">${prioLbl[prio]||prio}</span>
+          </div>
+        </div>
+        <!-- Métadonnées : zone + assignation -->
+        <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text3);margin-bottom:6px;flex-wrap:wrap;">
+          ${r.zone?`<span>📍 ${esc(r.zone)}</span>`:''}
+          <span style="display:flex;align-items:center;gap:4px;">
+            👤
+            <select onchange="changePointAssignee('${r.id}','${visitId}','${projectId}',this.value)"
+              style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;">
+              ${assignOptionsHTML(r.assignedTo)}
+            </select>
+          </span>
+          <span style="display:flex;align-items:center;gap:4px;">
+            Priorité :
+            <select onchange="changePointPriority('${r.id}','${visitId}','${projectId}',this.value)"
+              style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:11px;cursor:pointer;">
+              <option value="low"      ${prio==='low'?'selected':''}>🟢 Faible</option>
+              <option value="normal"   ${prio==='normal'?'selected':''}>🔵 Normal</option>
+              <option value="high"     ${prio==='high'?'selected':''}>🟠 Élevé</option>
+              <option value="critical" ${prio==='critical'?'selected':''}>🔴 Critique</option>
+            </select>
+          </span>
         </div>
         ${photos.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:8px;">
           ${photos.map(p => `<img src="${p.photoUrl}" onclick="openPhotoViewer('${p.photoUrl}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;cursor:pointer;">`).join('')}
@@ -7660,7 +7695,7 @@ async function openVisitDetail(visitId, projectId) {
   }).join('');
 
   overlay.innerHTML = `
-    <div class="modal" style="max-width:720px;">
+    <div class="modal" style="max-width:780px;">
       <div class="modal-head">
         <div style="flex:1;min-width:0;">
           <div class="modal-title">📋 ${esc(v.title)}</div>
@@ -7680,9 +7715,123 @@ async function openVisitDetail(visitId, projectId) {
         <span style="font-size:22px;">➕</span>
         <span style="font-weight:600;">Ajouter un point</span>
       </button>
+
+      <!-- Barre d'actions du bas : PDF / Envoyer / Terminer -->
+      <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap;">
+        <div style="font-size:11px;color:var(--text3);font-style:italic;">
+          ✓ Visite sauvegardée automatiquement après chaque ajout — tu peux fermer et revenir plus tard
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="downloadVisitPDF('${visitId}')">📄 PDF</button>
+          <button class="btn btn-ghost btn-sm" onclick="sendVisitReport('${visitId}','${projectId}')">📤 Envoyer</button>
+          <button class="btn btn-primary btn-sm" onclick="this.closest('.overlay').remove()">✅ Terminer</button>
+        </div>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// Changer l'assignation d'un point depuis le modal
+async function changePointAssignee(remarkId, visitId, projectId, userId) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, { assignedTo: userId || null });
+  if (res?.success) toast('Assigné mis à jour', 'success');
+  else toast(res?.error || 'Erreur assignation', 'error');
+}
+
+// Changer la priorité d'un point
+async function changePointPriority(remarkId, visitId, projectId, priority) {
+  const res = await api('PATCH', `/client-remarks/${remarkId}`, { priority });
+  if (res?.success) toast('Priorité mise à jour', 'success');
+  else toast(res?.error || 'Erreur priorité', 'error');
+}
+
+// Télécharger le PDF de la visite
+async function downloadVisitPDF(visitId) {
+  toast('Génération du PDF...', 'info');
+  try {
+    const r = await fetch(`${API}/client-visits/${visitId}/pdf`, {
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+    });
+    if (!r.ok) { toast('Erreur génération PDF', 'error'); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Visite_${visitId.slice(0,8)}.pdf`;
+    a.click();
+    toast('PDF téléchargé ✅', 'success');
+  } catch (e) {
+    toast('Erreur réseau', 'error');
+  }
+}
+
+// Envoyer le PDF par email (avec picker)
+async function sendVisitReport(visitId, projectId) {
+  const vRes = await api('GET', `/client-visits/${visitId}`);
+  if (!vRes?.success) { toast('Visite introuvable', 'error'); return; }
+  const v = vRes.data;
+  const clientEmail = v.client?.email || null;
+  const teamOptions = (USERS||[]).filter(u => u.email && u.isActive !== false)
+    .map(u => ({ email: u.email, name: `${u.firstName} ${u.lastName}` }));
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">📤 Envoyer le rapport de visite</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+        ${esc(v.title)} · ${fmtDate(v.visitDate)}
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
+      <div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
+        ${teamOptions.length ? teamOptions.map(u => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;">
+            <input type="checkbox" class="vsend-team-cb" value="${u.email}" style="accent-color:var(--accent);">
+            <span style="font-size:13px;flex:1;">${esc(u.name)}</span>
+            <span style="font-size:11px;color:var(--text3);">${u.email}</span>
+          </label>
+        `).join('') : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;">Aucun membre avec email</div>'}
+      </div>
+      ${clientEmail ? `
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🤝 Client</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="vsend-client-cb" value="${clientEmail}" checked style="accent-color:var(--accent);">
+          <span style="font-size:13px;flex:1;">${esc(v.client.name||'Client')}</span>
+          <span style="font-size:11px;color:var(--text3);">${clientEmail}</span>
+        </label>
+      ` : ''}
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">✉️ Adresses manuelles</div>
+      <textarea class="input" id="vsend-manual" rows="3" placeholder="Une adresse par ligne ou séparées par des virgules" style="font-size:13px;margin-bottom:14px;"></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitSendVisit('${visitId}',this.closest('.overlay'))">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+async function submitSendVisit(visitId, overlay) {
+  const list = new Set();
+  document.querySelectorAll('.vsend-team-cb:checked').forEach(cb => list.add(cb.value));
+  const cli = document.getElementById('vsend-client-cb');
+  if (cli && cli.checked) list.add(cli.value);
+  (document.getElementById('vsend-manual')?.value || '').split(/[\s,;]+/).forEach(e => {
+    const s = e.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
+  });
+  if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
+  toast(`Envoi à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/client-visits/${visitId}/send`, { recipients: Array.from(list) });
+  if (res?.success) {
+    toast(`Visite envoyée à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
+    overlay?.remove();
+  } else {
+    toast(res?.error || 'Erreur envoi', 'error');
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -7724,7 +7873,7 @@ function openAddPointToVisitModal(visitId, projectId) {
         <div id="vpt-mic-status" style="display:none;font-size:11px;color:var(--accent);margin-top:4px;">🔴 Enregistrement en cours...</div>
       </div>
 
-      <!-- Zone + priorité -->
+      <!-- Zone + priorité + assignation -->
       <div class="input-row">
         <div class="form-group2"><label class="form-label2">Zone</label>
           <input class="input" id="vpt-zone" placeholder="Ex: Salle principale, façade nord"></div>
@@ -7736,6 +7885,12 @@ function openAddPointToVisitModal(visitId, projectId) {
             <option value="low">🟢 Faible</option>
           </select>
         </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Assigner à (optionnel)</label>
+        <select class="input" id="vpt-assign">
+          <option value="">— Personne (non assigné) —</option>
+          ${(USERS||[]).filter(u => u.isActive !== false).map(u => `<option value="${u.id}">${esc(u.firstName)} ${esc(u.lastName)}</option>`).join('')}
+        </select>
       </div>
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
@@ -7827,6 +7982,7 @@ async function submitVisitPoint(visitId, projectId, overlay) {
     description: document.getElementById('vpt-desc').value || undefined,
     zone:        document.getElementById('vpt-zone').value || undefined,
     priority:    document.getElementById('vpt-prio').value,
+    assignedTo:  document.getElementById('vpt-assign')?.value || undefined,
     status:      'open',
   });
   if (!res?.success) { toast('Erreur création du point', 'error'); return; }
