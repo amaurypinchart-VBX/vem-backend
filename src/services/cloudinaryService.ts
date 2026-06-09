@@ -1,5 +1,8 @@
 // src/services/cloudinaryService.ts
-import { v2 as cloudinary } from 'cloudinary';
+// Import compatible toutes versions de cloudinary (v1 et v2) — certains setups
+// TypeScript voient `v2` comme non exporté ; le require fonctionne à coup sûr.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const cloudinary: any = require('cloudinary').v2;
 import multer from 'multer';
 import { logger } from '../utils/logger';
 
