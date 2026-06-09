@@ -30,6 +30,7 @@ enum ProjectStatus {
   on_site
   installation
   handover
+  handover_ok
   dismantling
   completed
   cancelled

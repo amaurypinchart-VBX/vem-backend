@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>VEM — ViewBox Event Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -721,6 +724,7 @@ textarea.input{min-height:80px;resize:vertical;}
             <option value="in_preparation">🔧 En préparation</option>
             <option value="installation">🏗️ En installation</option>
             <option value="on_site">📍 Sur site</option>
+            <option value="handover_ok">🧾 Handover OK</option>
             <option value="dismantling">🔨 Démontage</option>
             <option value="completed">🎉 Terminé</option>
             <option value="cancelled">❌ Annulé</option>
@@ -1763,6 +1767,9 @@ async function loadAll() {
     api('GET', '/notifications'),
   ]);
 
+  // Charger les templates de tâches depuis la base (source de vérité)
+  loadTaskTemplatesFromAPI();
+
   if (projRes?.success) {
     PROJECTS = projRes.data;
     renderDashProjects();
@@ -2010,6 +2017,7 @@ function projectStatusLabel(status) {
     installation:      { lbl: '🏗️ En installation',  cls: 'badge-red'   },
     on_site:           { lbl: '📍 Sur site',         cls: 'badge-red'   },
     handover:          { lbl: '🧾 Handover',         cls: 'badge-blue'  },
+    handover_ok:       { lbl: '🧾 Handover OK',      cls: 'badge-green' },
     dismantling:       { lbl: '🔨 Démontage',        cls: 'badge-amber' },
     completed:         { lbl: '🎉 Terminé',          cls: 'badge-green' },
     cancelled:         { lbl: '❌ Annulé',            cls: 'badge-muted' },
@@ -2904,12 +2912,16 @@ async function createProject() {
 
     // Création des camions/véhicules saisis dans le formulaire
     // (avant cette correction, PROJ_TRUCKS étaient saisis mais jamais persistés !)
+    console.log('[createProject] PROJ_TRUCKS contient', PROJ_TRUCKS.length, 'véhicule(s) à enregistrer', PROJ_TRUCKS);
     if (PROJ_TRUCKS.length > 0) {
       toast(`Enregistrement de ${PROJ_TRUCKS.length} véhicule(s)...`, 'info');
       let truckOk = 0, truckFail = 0;
       for (const t of PROJ_TRUCKS) {
-        if (!t.truckNumber?.trim() && !t.licensePlate?.trim()) continue; // ignore lignes vides
-        const r = await api('POST', `/projects/${projectId}/trucks`, {
+        if (!t.truckNumber?.trim() && !t.licensePlate?.trim()) {
+          console.log('[createProject] véhicule ignoré (vide)', t);
+          continue;
+        }
+        const payload = {
           vehicleType:  t.vehicleType || 'truck',
           truckNumber:  t.truckNumber?.trim() || null,
           licensePlate: t.licensePlate?.trim() || null,
@@ -2919,12 +2931,17 @@ async function createProject() {
           arrivalDate:  t.arrivalDate || null,
           notes:        t.notes?.trim() || null,
           status:       'planned',
-        });
-        if (r?.success) truckOk++; else truckFail++;
+        };
+        console.log('[createProject] POST /projects/' + projectId + '/trucks ←', payload);
+        const r = await api('POST', `/projects/${projectId}/trucks`, payload);
+        console.log('[createProject] réponse :', r);
+        if (r?.success) truckOk++; else { truckFail++; console.error('[createProject] échec :', r?.error); }
       }
       if (truckOk)   toast(`${truckOk} véhicule(s) ajouté(s) 🚛`, 'success');
-      if (truckFail) toast(`${truckFail} véhicule(s) en échec`, 'error');
+      if (truckFail) toast(`${truckFail} véhicule(s) en échec — voir console F12`, 'error');
       PROJ_TRUCKS = []; // reset pour le prochain projet
+    } else {
+      console.log('[createProject] aucun véhicule à enregistrer (PROJ_TRUCKS vide)');
     }
 
     closeModal('modal-proj');
@@ -3310,7 +3327,30 @@ function initHandoverModal() {
   if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
 }
 
-const TASK_TEMPLATES_DATA = {"To Do": [{"title": "Team - Dismantling", "assignees": ["François Drijepondt", "Injas Goossens"]}, {"title": "Preparation material from delivery note", "assignees": ["Warehouse Viewbox"]}], "PRE-PROD": [{"title": "Briefing SHEET from SALES", "assignees": []}, {"title": "Preparation of all packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Packing list for warehouse team", "assignees": ["Amaury Pinchart", "Injas Goossens"]}, {"title": "Site Visit ( Verify faisability on site)", "assignees": []}, {"title": "Boarding solution", "assignees": []}, {"title": "Analyse packing list", "assignees": ["Amaury Pinchart"]}, {"title": "Buy missing material", "assignees": []}, {"title": "Briefing team", "assignees": []}, {"title": "Briefing PP with all informations", "assignees": []}, {"title": "Create Whats app group", "assignees": []}], "Booking Supplier": [{"title": "Organise transport TRUCK", "assignees": []}, {"title": "Book SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book accomodation SM", "assignees": ["Amaury Pinchart"]}, {"title": "Book Transport SM", "assignees": ["Amaury Pinchart"]}, {"title": "Rent Forklift", "assignees": []}, {"title": "Book team", "assignees": []}, {"title": "Rent Manitou ROTO", "assignees": []}, {"title": "Rent Scisor Lift", "assignees": []}, {"title": "Book CRANE", "assignees": []}, {"title": "Book Accomodation team", "assignees": ["Amaury Pinchart"]}], "Warehouse Preparation": [{"title": "Loading truck", "assignees": ["Warehouse Viewbox"]}], "Installation": [{"title": "GENERAL TASK", "assignees": ["Amaury Pinchart"]}, {"title": "TMPL - Electricity", "assignees": []}, {"title": "Unload Tautliner with Forklift On Site", "assignees": []}, {"title": "Levelling and Laser work on site", "assignees": []}, {"title": "Unload Flatbed truck on site with crane", "assignees": []}, {"title": "UNIT", "assignees": []}, {"title": "Placing Facade elements", "assignees": []}, {"title": "Placement of inner Ceilings", "assignees": []}, {"title": "Placement of vinyl floor", "assignees": []}, {"title": "Placement of Vinyl click hard floor", "assignees": []}, {"title": "Handover with the client", "assignees": []}, {"title": "Interior or exterior Staircase", "assignees": []}, {"title": "Terraces and Unit", "assignees": []}], "Dismantling": [{"title": "Unloading of rack and tools and reorganisation of racks", "assignees": ["Amaury Pinchart"]}, {"title": "Remove Decoration and interior material", "assignees": ["Amaury Pinchart"]}, {"title": "Remove facade Elements", "assignees": ["Amaury Pinchart"]}, {"title": "Remove external or internal staircase", "assignees": ["Amaury Pinchart"]}, {"title": "Flat Packing With crane UNIT", "assignees": ["Amaury Pinchart"]}, {"title": "Remove terraces Unit and Handrails", "assignees": ["Amaury Pinchart"]}, {"title": "Loading FlatBED", "assignees": ["Amaury Pinchart"]}, {"title": "Loading Tautliner", "assignees": ["Amaury Pinchart"]}, {"title": "Cleaning SITE", "assignees": ["Amaury Pinchart"]}, {"title": "HANDHOVER Client to end of event", "assignees": ["Amaury Pinchart"]}, {"title": "GENERAL DISMANTLING TASK", "assignees": ["Amaury Pinchart"]}], "Come Back Warehouse": [{"title": "Dismounting", "assignees": []}, {"title": "Unloading truck in warehouse", "assignees": []}, {"title": "Verification of return material", "assignees": []}]};
+// Cache des templates de tâches — rempli au démarrage depuis l'API.
+// La source de vérité est désormais la base de données (table task_categories
+// + task_templates). L'admin peut modifier dans l'onglet "Templates Tâches"
+// et tout est synchronisé sur tous les écrans.
+let TASK_TEMPLATES_DATA = {};
+
+// Charge les catégories + templates depuis l'API et alimente TASK_TEMPLATES_DATA
+// au format { "Nom catégorie": [{ title, assignees: [] }, ...], ... }.
+// Appelé une fois au démarrage et à chaque modification dans l'admin.
+async function loadTaskTemplatesFromAPI() {
+  const res = await api('GET', '/task-templates/categories');
+  if (!res?.success) return;
+  const data = {};
+  // Tri stable par sortOrder (le backend le renvoie déjà trié)
+  for (const cat of res.data || []) {
+    data[cat.name] = (cat.templates || []).map(t => ({
+      title: t.title,
+      assignees: [],   // pas d'assignation par défaut depuis la DB
+      _id: t.id,
+      _categoryId: cat.id,
+    }));
+  }
+  TASK_TEMPLATES_DATA = data;
+}
 
 function previewDailyPhotos(input) {
   PENDING_DAILY_PHOTOS = Array.from(input.files);
@@ -4912,7 +4952,7 @@ async function createTemplate(overlay) {
     durationHours: parseFloat(document.getElementById('nt-hours')?.value)||4,
     priority: document.getElementById('nt-priority')?.value||'normal',
   });
-  if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); loadTemplatesPage(); loadProjTemplateSelector(); }
+  if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); loadProjTemplateSelector(); }
   else toast('Erreur création template','error');
 }
 
@@ -4951,14 +4991,14 @@ async function saveTemplate(id, overlay) {
     durationHours: parseFloat(document.getElementById('edit-tpl-hours')?.value)||4,
     priority: document.getElementById('edit-tpl-priority')?.value,
   });
-  if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur','error');
 }
 
 async function deleteTemplate(id) {
   if (!confirm('Supprimer ce template ?')) return;
   const res = await api('DELETE', `/task-templates/${id}`);
-  if (res?.success) { toast('Supprimé','warning'); loadTemplatesPage(); }
+  if (res?.success) { toast('Supprimé','warning'); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur suppression','error');
 }
 
@@ -4992,14 +5032,14 @@ async function createCategory(overlay) {
     color: document.getElementById('nc-color')?.value||'#4895ef',
     description: document.getElementById('nc-desc')?.value||undefined,
   });
-  if (res?.success) { toast('Catégorie créée ✅','success'); overlay?.remove(); loadTemplatesPage(); }
+  if (res?.success) { toast('Catégorie créée ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur création catégorie','error');
 }
 
 async function deleteCategory(id) {
   if (!confirm('Supprimer cette catégorie et tous ses templates ?')) return;
   const res = await api('DELETE', `/task-templates/categories/${id}`);
-  if (res?.success) { toast('Supprimée','warning'); loadTemplatesPage(); }
+  if (res?.success) { toast('Supprimée','warning'); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur suppression','error');
 }
 
@@ -5624,7 +5664,7 @@ async function openTruckDetail(truckId, projectId) {
       </div>
 
       <div style="display:flex;justify-content:space-between;margin-top:14px;">
-        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTruck('${truckId}','${projectId}',this.closest('.overlay'))">🗑️ Supprimer</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTruck('${projectId}','${truckId}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
           <button class="btn btn-primary" onclick="saveTruckEdit('${truckId}','${projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
@@ -5671,13 +5711,6 @@ async function saveTruckEdit(truckId, projectId, overlay) {
   });
   if (res?.success) { toast('Mis à jour ✅','success'); overlay?.remove(); loadProjectDetail(projectId); }
   else toast('Erreur mise à jour','error');
-}
-
-async function deleteTruck(truckId, projectId, overlay) {
-  if (!confirm('Supprimer ce véhicule ?')) return;
-  const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
-  if (res?.success) { toast('Supprimé','warning'); overlay?.remove(); loadProjectDetail(projectId); }
-  else toast('Erreur suppression','error');
 }
 
 async function uploadTruckPhotos(truckId, projectId, input) {
@@ -9841,8 +9874,8 @@ async function saveTruck(projectId, truckId) {
 async function deleteTruck(projectId, truckId) {
   if (!confirm('Supprimer ce véhicule ?')) return;
   const res = await api('DELETE', `/projects/${projectId}/trucks/${truckId}`);
-  if (res?.success) { toast('Supprimé', 'success'); loadDetailTrucks(projectId); }
-  else toast('Erreur suppression', 'error');
+  if (res?.success) { toast('Supprimé', 'success'); loadDetailTrucks(projectId); loadProjectDetail(projectId); }
+  else toast(res?.error || 'Erreur suppression — non trouvé en base', 'error');
 }
 
 // ═════════════════════════════════════════════

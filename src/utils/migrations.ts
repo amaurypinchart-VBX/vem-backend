@@ -6,6 +6,7 @@
 
 import { prisma } from '../config/database';
 import { logger } from './logger';
+import { seedTaskTemplatesIfEmpty } from './taskTemplatesSeed';
 
 export async function runStartupMigrations() {
   try {
@@ -86,7 +87,7 @@ export async function runStartupMigrations() {
     }
 
     // ─── Valeurs d'enum ProjectStatus manquantes (workflow devis/préparation/...) ───
-    for (const val of ['quote_to_validate', 'quote_validated']) {
+    for (const val of ['quote_to_validate', 'quote_validated', 'handover_ok']) {
       try {
         await prisma.$executeRawUnsafe(
           `ALTER TYPE "ProjectStatus" ADD VALUE IF NOT EXISTS '${val}';`
@@ -218,6 +219,11 @@ export async function runStartupMigrations() {
     } catch (e: any) {
       logger.warn(`[migration] reconnexion Prisma échouée : ${e.message}`);
     }
+
+    // Seed des templates de tâches Viewbox (idempotent : ne s'exécute que si la
+    // table task_categories est vide). Permet à l'admin de modifier/ajouter des
+    // catégories et des tâches depuis l'onglet Templates Tâches.
+    await seedTaskTemplatesIfEmpty();
   } catch (err) {
     logger.error('❌ Erreur lors des migrations de démarrage :', err);
     // On ne plante pas le serveur pour autant — il pourra démarrer même si la migration échoue.

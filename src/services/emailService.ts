@@ -2,14 +2,28 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger';
 
+// Configuration SMTP. Sur Railway le port 587 (STARTTLS) souffre régulièrement
+// de timeouts à cause de l'IPv6 / firewall sortant. Port 465 (TLS direct) est
+// plus fiable. On choisit "secure" automatiquement selon le port :
+//   - 465 → secure: true (TLS direct, recommandé sur Railway)
+//   - 587 → secure: false (STARTTLS)
+// On force aussi des timeouts courts (15s au lieu de 120s par défaut) pour
+// échouer vite sans bloquer la requête.
+const PORT = Number(process.env.SMTP_PORT) || 465;
 const transporter = nodemailer.createTransport({
   host:   process.env.SMTP_HOST || 'smtp.gmail.com',
-  port:   Number(process.env.SMTP_PORT) || 587,
-  secure: false,
+  port:   PORT,
+  secure: PORT === 465,        // true uniquement pour TLS direct
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  // Timeouts agressifs — Gmail répond en < 5s normalement
+  connectionTimeout: 15000,    // 15 s pour établir la connexion
+  greetingTimeout:   10000,    // 10 s pour le hello SMTP
+  socketTimeout:     20000,    // 20 s pour la transaction complète
+  // Forcer IPv4 — Railway a souvent un IPv6 outbound capricieux
+  family: 4 as any,
 });
 
 const FROM = `"${process.env.EMAIL_FROM_NAME || 'VEM'}" <${process.env.SMTP_USER}>`;
