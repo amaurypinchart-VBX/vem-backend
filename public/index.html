@@ -2901,6 +2901,32 @@ async function createProject() {
     } else {
       toast('Projet créé ✅', 'success');
     }
+
+    // Création des camions/véhicules saisis dans le formulaire
+    // (avant cette correction, PROJ_TRUCKS étaient saisis mais jamais persistés !)
+    if (PROJ_TRUCKS.length > 0) {
+      toast(`Enregistrement de ${PROJ_TRUCKS.length} véhicule(s)...`, 'info');
+      let truckOk = 0, truckFail = 0;
+      for (const t of PROJ_TRUCKS) {
+        if (!t.truckNumber?.trim() && !t.licensePlate?.trim()) continue; // ignore lignes vides
+        const r = await api('POST', `/projects/${projectId}/trucks`, {
+          vehicleType:  t.vehicleType || 'truck',
+          truckNumber:  t.truckNumber?.trim() || null,
+          licensePlate: t.licensePlate?.trim() || null,
+          driverName:   t.driverName?.trim() || null,
+          driverPhone:  t.driverPhone?.trim() || null,
+          loadingDate:  t.loadingDate || null,
+          arrivalDate:  t.arrivalDate || null,
+          notes:        t.notes?.trim() || null,
+          status:       'planned',
+        });
+        if (r?.success) truckOk++; else truckFail++;
+      }
+      if (truckOk)   toast(`${truckOk} véhicule(s) ajouté(s) 🚛`, 'success');
+      if (truckFail) toast(`${truckFail} véhicule(s) en échec`, 'error');
+      PROJ_TRUCKS = []; // reset pour le prochain projet
+    }
+
     closeModal('modal-proj');
     ['proj-name','proj-num','proj-addr','proj-desc','proj-start','proj-end','proj-dismantling-start','proj-dismantling-end'].forEach(id => {
       const el = document.getElementById(id); if(el) el.value='';
@@ -9050,8 +9076,8 @@ function addProjTruck() {
     licensePlate: '',
     driverName: '',
     driverPhone: '',
-    loadingDate: '',
-    departureDate: '',
+    loadingDate: '',   // datetime-local
+    arrivalDate: '',   // datetime-local (arrivée sur site)
     notes: '',
   });
   renderProjTrucks();
@@ -9094,25 +9120,31 @@ function renderProjTrucks() {
         <button onclick="PROJ_TRUCKS.splice(${idx},1);renderProjTrucks()"
           style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:18px;flex-shrink:0;">✕</button>
       </div>
-      <!-- Détails -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <!-- Plaque + chauffeur + téléphone (sur une ligne) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
+        <input placeholder="🪪 Immatriculation" value="${t.licensePlate||''}"
+          style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
+          oninput="PROJ_TRUCKS[${idx}].licensePlate=this.value">
         <input id="pt-driver-${t.id}" placeholder="👤 Chauffeur" value="${t.driverName}"
           style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
           oninput="PROJ_TRUCKS[${idx}].driverName=this.value">
         <input placeholder="📞 Téléphone" value="${t.driverPhone}"
           style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
           oninput="PROJ_TRUCKS[${idx}].driverPhone=this.value">
-        <div style="display:flex;align-items:center;gap:4px;">
-          <span style="font-size:10px;color:var(--text3);white-space:nowrap;">📦 Chargement</span>
-          <input type="date" value="${t.loadingDate}"
-            style="flex:1;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
+      </div>
+      <!-- Dates et heures -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:2px;">📦 Chargement (date + heure)</div>
+          <input type="datetime-local" value="${t.loadingDate||''}"
+            style="width:100%;padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
             onchange="PROJ_TRUCKS[${idx}].loadingDate=this.value">
         </div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <span style="font-size:10px;color:var(--text3);white-space:nowrap;">🚀 Départ</span>
-          <input type="date" value="${t.departureDate}"
-            style="flex:1;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
-            onchange="PROJ_TRUCKS[${idx}].departureDate=this.value">
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:2px;">📍 Arrivée sur site (date + heure)</div>
+          <input type="datetime-local" value="${t.arrivalDate||''}"
+            style="width:100%;padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;"
+            onchange="PROJ_TRUCKS[${idx}].arrivalDate=this.value">
         </div>
       </div>
       <input placeholder="Notes..." value="${t.notes}"
