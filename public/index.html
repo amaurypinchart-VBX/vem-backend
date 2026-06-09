@@ -1596,6 +1596,20 @@ textarea.input{min-height:80px;resize:vertical;}
 // ═══════════════════════════════════════════════════════
 const API = window.location.origin + '/api/v1';
 
+// ═══ HELPER UTILITAIRE — échappement HTML ═══
+// Utilisé partout dans le code pour empêcher l'injection XSS depuis les noms
+// d'utilisateurs/clients/projets (innerHTML accepte du HTML brut, donc tout
+// caractère < > & " ' qui vient d'une saisie utilisateur doit être encodé).
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ═══ STATE ═══
 let TOKEN = localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
 let CURRENT_USER = JSON.parse(localStorage.getItem('vem_user') || sessionStorage.getItem('vem_user') || 'null');
