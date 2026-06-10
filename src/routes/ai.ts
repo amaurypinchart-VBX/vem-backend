@@ -165,4 +165,48 @@ router.get('/test-key', async (req, res) => {
     keyStart: process.env.ANTHROPIC_API_KEY?.substring(0, 10) || 'MISSING'
   });
 });
+// POST /api/v1/ai/transcribe
+// Transcrit un fichier audio (mp3, m4a, wav, ogg, webm) via OpenAI Whisper.
+// Nécessite la variable d'env OPENAI_API_KEY.
+import { upload } from '../services/cloudinaryService';
+router.post('/transcribe', upload.single('audio'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Aucun fichier audio reçu' });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(500).json({
+      success: false,
+      error: 'OPENAI_API_KEY non configuré sur Railway — ajoute cette variable d\'environnement pour activer la transcription audio',
+    });
+
+    // Construire un FormData multipart pour l'API OpenAI Whisper
+    // Note : Node 18+ a un FormData / Blob natif, on l'utilise sans dépendance externe.
+    const fd: any = new (globalThis as any).FormData();
+    fd.append('file', new (globalThis as any).Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname || 'audio.m4a');
+    fd.append('model', 'whisper-1');
+    // Langue forcée en français pour de meilleurs résultats sur nos cas d'usage typiques
+    fd.append('language', 'fr');
+    fd.append('response_format', 'json');
+
+    logger.info(`[transcribe] envoi à Whisper : ${req.file.originalname} (${Math.round(req.file.size/1024)} KB)`);
+    const r: any = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: fd,
+    });
+
+    if (!r.ok) {
+      const errText = await r.text();
+      logger.error(`[transcribe] Whisper a renvoyé ${r.status} : ${errText}`);
+      return res.status(500).json({ success: false, error: `Whisper API : ${r.status} — ${errText.slice(0, 200)}` });
+    }
+
+    const data: any = await r.json();
+    logger.info(`[transcribe] transcription OK (${(data.text||'').length} caractères)`);
+    res.json({ success: true, data: { text: data.text || '' } });
+  } catch (err: any) {
+    logger.error(`[transcribe] erreur : ${err.message || err}`);
+    next(err);
+  }
+});
+
 export default router;

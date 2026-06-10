@@ -29,6 +29,10 @@ export const upload = multer({
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Audio (pour la transcription Whisper des dictées vocales importées)
+      'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
+      'audio/wav', 'audio/wave', 'audio/x-wav', 'audio/ogg', 'audio/webm',
+      'audio/aac', 'audio/flac',
       // Modèles 3D — Cloudinary stocke en raw, donc les mime peuvent être génériques
       'model/gltf-binary', 'model/gltf+json', 'model/obj', 'model/stl', 'model/vnd.usdz+zip',
       'application/octet-stream', // fallback fréquent pour les .glb / .skp / .fbx / etc.
@@ -37,7 +41,7 @@ export const upload = multer({
     ];
     // En complément, on accepte les extensions 3D même si le mime est tordu
     const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
-    const allowedExts = ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend'];
+    const allowedExts = ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','mp3','m4a','wav','ogg','webm','aac','flac'];
     const ok = allowedMimes.includes(file.mimetype) || allowedExts.includes(ext);
     cb(null, ok);
   },
