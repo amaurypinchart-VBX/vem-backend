@@ -230,6 +230,54 @@ export async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS "team_bookings_project_idx" ON "team_bookings" ("project_id");
     `);
 
+    // ─── Table "hotel_bookings" + lien N-N avec users ───
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "hotel_bookings" (
+        "id"            TEXT NOT NULL PRIMARY KEY,
+        "project_id"    TEXT NOT NULL,
+        "phase"         TEXT NOT NULL,
+        "hotel_name"    TEXT NOT NULL,
+        "hotel_address" TEXT,
+        "checkin"       TIMESTAMP NOT NULL,
+        "checkout"      TIMESTAMP NOT NULL,
+        "reference"     TEXT,
+        "notes"         TEXT,
+        "created_at"    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "hotel_booking_occupants" (
+        "id"               TEXT NOT NULL PRIMARY KEY,
+        "hotel_booking_id" TEXT NOT NULL,
+        "user_id"          TEXT NOT NULL,
+        "created_at"       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "hotel_booking_occupants_unique" UNIQUE ("hotel_booking_id", "user_id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'hotel_bookings_project_id_fkey') THEN
+          ALTER TABLE "hotel_bookings" ADD CONSTRAINT "hotel_bookings_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'hotel_booking_occupants_hotel_booking_id_fkey') THEN
+          ALTER TABLE "hotel_booking_occupants" ADD CONSTRAINT "hotel_booking_occupants_hotel_booking_id_fkey"
+            FOREIGN KEY ("hotel_booking_id") REFERENCES "hotel_bookings"("id") ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'hotel_booking_occupants_user_id_fkey') THEN
+          ALTER TABLE "hotel_booking_occupants" ADD CONSTRAINT "hotel_booking_occupants_user_id_fkey"
+            FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "hotel_bookings_dates_idx" ON "hotel_bookings" ("checkin", "checkout");
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "hotel_bookings_project_idx" ON "hotel_bookings" ("project_id");
+    `);
+
     // ─── Valeurs d'enum ProjectStatus manquantes (workflow devis/préparation/...) ───
     for (const val of ['quote_to_validate', 'quote_validated', 'handover_ok']) {
       try {

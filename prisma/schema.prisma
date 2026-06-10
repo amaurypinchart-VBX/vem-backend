@@ -116,6 +116,7 @@ model User {
   refreshTokens       RefreshToken[]
   assignedRemarks     ClientRemark[] @relation("RemarkAssignee")
   teamBookings        TeamBooking[]
+  hotelOccupations    HotelBookingOccupant[]
 
   @@map("users")
 }
@@ -182,18 +183,15 @@ model Project {
   clientVisits     ClientVisit[]
   briefing         Briefing?
   teamBookings     TeamBooking[]
+  hotelBookings    HotelBooking[]
 
   @@map("projects")
 }
 
-// Booking de transport + hôtel pour un membre d'équipe sur un projet.
-// On peut avoir plusieurs lignes par membre+projet pour modéliser :
-//   - phase = "installation" (aller pour installer, retour après installation)
-//   - phase = "dismantling"  (aller pour démonter, retour après démontage)
-// Les dates de présence sur site (onSiteStart/End) sont les jours où la
-// personne travaille effectivement. Les jours de trajet aller/retour sont
-// modélisés via outboundDate / returnDate (datetime) — ils peuvent précéder
-// ou suivre la période on-site.
+// Booking de transport pour un membre d'équipe sur un projet.
+// Un booking = un membre, une phase (installation OU démontage), avec trajets
+// aller et retour. Les hôtels sont gérés séparément (modèle HotelBooking)
+// car ils sont souvent partagés entre plusieurs membres.
 model TeamBooking {
   id              String    @id @default(uuid())
   projectId       String    @map("project_id")
@@ -205,21 +203,14 @@ model TeamBooking {
   onSiteEnd       DateTime  @map("on_site_end")
 
   // Trajet aller (vers le chantier)
-  outboundMode    String?   @map("outbound_mode")     // 'plane'|'train'|'car'|'bus'|'other'
+  outboundMode    String?   @map("outbound_mode")
   outboundDate    DateTime? @map("outbound_date")
-  outboundDetails String?   @map("outbound_details")  // n° vol, horaire, etc.
+  outboundDetails String?   @map("outbound_details")
 
   // Trajet retour (depuis le chantier)
   returnMode      String?   @map("return_mode")
   returnDate      DateTime? @map("return_date")
   returnDetails   String?   @map("return_details")
-
-  // Hébergement
-  hotelName       String?   @map("hotel_name")
-  hotelAddress    String?   @map("hotel_address")
-  hotelCheckin    DateTime? @map("hotel_checkin")
-  hotelCheckout   DateTime? @map("hotel_checkout")
-  hotelNotes      String?   @map("hotel_notes")
 
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -229,6 +220,43 @@ model TeamBooking {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("team_bookings")
+}
+
+// Réservation d'hôtel — séparée des bookings transport car typiquement
+// partagée entre plusieurs membres (chambre double, équipe entière, etc.).
+// Un occupant = un membre lié à cette réservation via HotelBookingOccupant.
+model HotelBooking {
+  id           String                  @id @default(uuid())
+  projectId    String                  @map("project_id")
+  phase        String                  // 'installation' | 'dismantling'
+  hotelName    String                  @map("hotel_name")
+  hotelAddress String?                 @map("hotel_address")
+  checkin      DateTime
+  checkout     DateTime
+  reference    String?                 // n° de réservation
+  notes        String?
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  project      Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  occupants    HotelBookingOccupant[]
+
+  @@map("hotel_bookings")
+}
+
+// Lien N-N : un hôtel a plusieurs occupants, un membre peut être dans
+// plusieurs hôtels (différentes phases ou nuits dispatchées).
+model HotelBookingOccupant {
+  id             String       @id @default(uuid())
+  hotelBookingId String       @map("hotel_booking_id")
+  userId         String       @map("user_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  hotelBooking   HotelBooking @relation(fields: [hotelBookingId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelBookingId, userId])
+  @@map("hotel_booking_occupants")
 }
 
 model ProjectTeam {
