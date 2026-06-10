@@ -31,6 +31,7 @@ import clientRemarksRoutes from './routes/clientRemarks';
 import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
 import teamBookingsRoutes from './routes/teamBookings';
+import emailWebhookRoutes from './routes/emailWebhook';
 import { runStartupMigrations } from './utils/migrations';
 
 const app  = express();
@@ -54,7 +55,22 @@ app.use(morgan('tiny'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  // ETag + lastModified activés par défaut, on les confirme ici pour clarté.
+  // Le navigateur garde les fichiers en cache mais REVALIDE à chaque fois :
+  // - HTML : 'no-cache' = vérifie systématiquement, mais retourne 304 (vide) si inchangé
+  //   → plus de re-téléchargement complet du 620 KB inutilement
+  // - Assets (images, logo) : max-age=300 = cache 5 min sans appel serveur
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, p) => {
+    if (p.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, no-cache, must-revalidate');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+  },
+}));
 
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
@@ -81,6 +97,9 @@ app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
 app.use(API,                     authMiddleware, teamBookingsRoutes);
+// Webhook public Brevo Inbound (PAS de authMiddleware — Brevo ne peut pas s'authentifier).
+// La sécurité passe par le token partagé BREVO_WEBHOOK_SECRET vérifié dans la route.
+app.use('/webhooks',             emailWebhookRoutes);
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

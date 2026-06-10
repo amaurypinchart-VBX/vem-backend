@@ -1,32 +1,36 @@
 // src/services/emailService.ts
+// Envoi d'emails — utilise Brevo en priorité (plus fiable que SMTP Gmail sur Railway),
+// avec fallback automatique vers SMTP si BREVO_API_KEY n'est pas configurée.
+//
+// Variables d'env :
+//   - BREVO_API_KEY     : si présente, on utilise l'API transactionnelle Brevo
+//   - EMAIL_FROM_NAME   : nom expéditeur (défaut "VEM")
+//   - EMAIL_FROM_ADDR   : adresse expéditeur Brevo (ex: noreply@viewbox-event.com)
+//                        — ATTENTION : DOIT être un domaine vérifié dans Brevo
+//   - SMTP_HOST/PORT/USER/PASS : fallback si pas de Brevo
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger';
 
-// Configuration SMTP. Sur Railway le port 587 (STARTTLS) souffre régulièrement
-// de timeouts à cause de l'IPv6 / firewall sortant. Port 465 (TLS direct) est
-// plus fiable. On choisit "secure" automatiquement selon le port :
-//   - 465 → secure: true (TLS direct, recommandé sur Railway)
-//   - 587 → secure: false (STARTTLS)
-// On force aussi des timeouts courts (15s au lieu de 120s par défaut) pour
-// échouer vite sans bloquer la requête.
+// ─── Fallback SMTP (Gmail/autre) ───
 const PORT = Number(process.env.SMTP_PORT) || 465;
 const transporter = nodemailer.createTransport({
   host:   process.env.SMTP_HOST || 'smtp.gmail.com',
   port:   PORT,
-  secure: PORT === 465,        // true uniquement pour TLS direct
+  secure: PORT === 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-  // Timeouts agressifs — Gmail répond en < 5s normalement
-  connectionTimeout: 15000,    // 15 s pour établir la connexion
-  greetingTimeout:   10000,    // 10 s pour le hello SMTP
-  socketTimeout:     20000,    // 20 s pour la transaction complète
-  // Forcer IPv4 — Railway a souvent un IPv6 outbound capricieux
+  connectionTimeout: 15000,
+  greetingTimeout:   10000,
+  socketTimeout:     20000,
   family: 4,
 } as any);
 
-const FROM = `"${process.env.EMAIL_FROM_NAME || 'VEM'}" <${process.env.SMTP_USER}>`;
+// Pour le From : nom + adresse. Si EMAIL_FROM_ADDR pas défini, on utilise SMTP_USER.
+const FROM_NAME = process.env.EMAIL_FROM_NAME || 'VEM';
+const FROM_ADDR = process.env.EMAIL_FROM_ADDR || process.env.SMTP_USER || 'noreply@viewbox-event.com';
+const FROM      = `"${FROM_NAME}" <${FROM_ADDR}>`;
 
 function base(title: string, content: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
@@ -55,13 +59,75 @@ function base(title: string, content: string): string {
   </div></body></html>`;
 }
 
+// ─── Envoi via API Brevo (préféré sur Railway) ───
+// Doc : https://developers.brevo.com/reference/sendtransacemail
+async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+  const toList = (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: e }));
+  const body: any = {
+    sender:      { name: FROM_NAME, email: FROM_ADDR },
+    to:          toList,
+    subject:     opts.subject,
+    htmlContent: opts.html,
+  };
+  // Convertir les attachments nodemailer-like vers le format Brevo (name + base64 content)
+  if (opts.attachments && opts.attachments.length > 0) {
+    body.attachment = opts.attachments.map((a: any) => {
+      let content: string;
+      if (Buffer.isBuffer(a.content))           content = a.content.toString('base64');
+      else if (typeof a.content === 'string')   content = Buffer.from(a.content).toString('base64');
+      else                                       content = '';
+      return { name: a.filename || a.name || 'attachment', content };
+    });
+  }
+  const r: any = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key':      process.env.BREVO_API_KEY!,
+      'Content-Type': 'application/json',
+      'Accept':       'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const txt = await r.text();
+  if (!r.ok) {
+    logger.error(`[email/brevo] HTTP ${r.status} : ${txt}`);
+    throw new Error(`Brevo API ${r.status} : ${txt.slice(0, 250)}`);
+  }
+  let json: any = {};
+  try { json = JSON.parse(txt); } catch (_) { /* ok pour 204 No Content */ }
+  return { messageId: json.messageId || `brevo-${Date.now()}` };
+}
+
 export async function sendMail(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+  // Choix du provider : par défaut SMTP (Gmail), Brevo uniquement si demandé explicitement.
+  // L'ancien code utilisait Brevo dès que BREVO_API_KEY était définie, mais ça créait
+  // des problèmes pour les comptes qui n'ont configuré Brevo QUE pour l'inbound.
+  const provider = (process.env.EMAIL_PROVIDER || 'smtp').toLowerCase();
+
+  if (provider === 'brevo') {
+    if (!process.env.BREVO_API_KEY) {
+      throw new Error('EMAIL_PROVIDER=brevo mais BREVO_API_KEY non configurée');
+    }
+    try {
+      const result = await sendViaBrevo(opts);
+      const toStr = Array.isArray(opts.to) ? opts.to.join(', ') : opts.to;
+      logger.info(`[email/brevo] ✅ envoyé à ${toStr} (messageId=${result.messageId})`);
+      return result;
+    } catch (brevoErr: any) {
+      logger.error(`[email/brevo] ❌ échec : ${brevoErr.message}`);
+      throw new Error(`Envoi mail échoué (Brevo) : ${brevoErr.message}`);
+    }
+  }
+
+  // Par défaut : SMTP nodemailer (Gmail/autre)
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    const msg = 'SMTP non configuré : SMTP_USER ou SMTP_PASS manquant dans les variables d\'environnement Railway';
+    const msg = 'SMTP non configuré : SMTP_USER ou SMTP_PASS manquant dans Railway. ' +
+                'Voir https://support.google.com/accounts/answer/185833 pour générer un App Password Gmail.';
     logger.error(msg);
     throw new Error(msg);
   }
   try {
+    logger.info(`[email/smtp] tentative d'envoi via ${process.env.SMTP_HOST || 'smtp.gmail.com'}:${PORT} (user=${process.env.SMTP_USER})`);
     const result = await transporter.sendMail({
       from: FROM,
       to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
@@ -69,13 +135,34 @@ export async function sendMail(opts: { to: string|string[]; subject: string; htm
       html: opts.html,
       attachments: opts.attachments,
     });
-    logger.info(`Email envoyé à ${Array.isArray(opts.to) ? opts.to.join(', ') : opts.to} — messageId=${result.messageId}`);
+    const toStr = Array.isArray(opts.to) ? opts.to.join(', ') : opts.to;
+    logger.info(`[email/smtp] ✅ envoyé à ${toStr} (messageId=${result.messageId})`);
     return result;
   } catch (err: any) {
-    logger.error(`[email] échec d'envoi : ${err.message || err}`);
-    // On propage pour que la route appelante reçoive une vraie erreur
-    throw new Error(`Envoi mail échoué : ${err.message || err}`);
+    // Détection des erreurs Gmail typiques pour aider au diagnostic
+    let hint = '';
+    const msg = String(err.message || err);
+    if (msg.includes('Invalid login') || msg.includes('Username and Password not accepted')) {
+      hint = ' — Gmail refuse la connexion. Tu DOIS utiliser un App Password (pas ton mot de passe Gmail normal). ' +
+             'Génère-le sur https://myaccount.google.com/apppasswords (nécessite 2FA activé).';
+    } else if (msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED')) {
+      hint = ' — Timeout réseau. Essaye SMTP_PORT=465 (au lieu de 587) sur Railway.';
+    } else if (msg.includes('self signed certificate')) {
+      hint = ' — Problème de certificat TLS.';
+    }
+    logger.error(`[email/smtp] ❌ échec : ${msg}${hint}`);
+    throw new Error(`Envoi mail échoué : ${msg}${hint}`);
   }
+}
+
+// Route de test : POST /api/v1/admin/test-email avec { to: "...." } pour diagnostiquer
+// Cette fonction est exportée pour pouvoir être appelée depuis une route admin.
+export async function sendTestEmail(to: string) {
+  return sendMail({
+    to,
+    subject: '[VEM] Test d\'envoi email',
+    html: base('Test SMTP', '<p>Si vous lisez ce mail, la configuration SMTP fonctionne ✅</p><p>Envoyé depuis ' + (process.env.SMTP_USER || 'inconnu') + '</p>'),
+  });
 }
 
 export async function sendTicketAssigned(opts: { to: string; ticketTitle: string; urgency: string; project: string; location?: string; assignee: string; description: string; appUrl: string }) {

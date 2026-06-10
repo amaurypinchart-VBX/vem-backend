@@ -209,4 +209,17 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
   } catch (err) { next(err); }
 });
 
+// POST /daily-reports/test-email — utilitaire de diagnostic SMTP
+// Envoie un mail de test à l'adresse fournie (ou l'email de l'utilisateur connecté)
+// Permet de vérifier que la config Gmail/Brevo fonctionne sans avoir à créer un rapport.
+router.post('/test-email', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const to = req.body?.to || req.user?.email;
+    if (!to) throw new AppError('Adresse "to" requise', 400);
+    const { sendTestEmail } = await import('../services/emailService');
+    const result = await sendTestEmail(to);
+    res.json({ success: true, data: { sentTo: to, messageId: result?.messageId } });
+  } catch (err) { next(err); }
+});
+
 export default router;

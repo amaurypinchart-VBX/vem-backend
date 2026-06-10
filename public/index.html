@@ -731,6 +731,13 @@ textarea.input{min-height:80px;resize:vertical;}
           <input type="checkbox" id="cal-show-teams" onchange="renderDashCalendar()" style="accent-color:var(--accent);">
           👥 Équipes
         </label>
+        <!-- Bouton filtre projets : ouvre un mini-popup avec checkboxes -->
+        <div style="position:relative;">
+          <button class="btn btn-ghost btn-sm" onclick="toggleProjectsFilter()" style="font-size:12px;padding:4px 10px;" id="cal-filter-btn">🎯 Filtrer projets</button>
+          <div id="cal-filter-dropdown" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:280px;max-height:380px;overflow-y:auto;z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.18);">
+            <!-- Contenu rempli dynamiquement par buildProjectsFilter() -->
+          </div>
+        </div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="goto('projects')">Voir tous →</button>
     </div>
@@ -2070,9 +2077,90 @@ function projCardHTML(p) {
   </div>`;
 }
 
-// Calendrier Gantt projets — période ajustable (2 à 26 semaines) avec
-// camions et équipes affichés en sous-lignes sous chaque projet pour
-// faciliter la lecture (toutes les ressources d'un projet groupées).
+// État global des projets décochés dans le calendrier (persisté en localStorage)
+let HIDDEN_CAL_PROJECTS = new Set(JSON.parse(localStorage.getItem('vem_hidden_cal_projects') || '[]'));
+
+function saveHiddenCalProjects() {
+  localStorage.setItem('vem_hidden_cal_projects', JSON.stringify(Array.from(HIDDEN_CAL_PROJECTS)));
+}
+
+// Construit le popup avec une checkbox par projet (visible dans le calendrier)
+function buildProjectsFilter() {
+  const dropdown = document.getElementById('cal-filter-dropdown');
+  if (!dropdown) return;
+
+  // On ne propose que les projets qui sont éligibles à l'affichage (non archivés + avec dates)
+  const candidates = (PROJECTS || []).filter(p => {
+    if (p.status === 'cancelled') return false;
+    return p.installationStart;
+  }).sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
+
+  const visibleCount = candidates.filter(p => !HIDDEN_CAL_PROJECTS.has(p.id)).length;
+
+  // MAJ du label du bouton avec compteur visible/total
+  const btn = document.getElementById('cal-filter-btn');
+  if (btn) btn.innerHTML = `🎯 Filtrer projets (${visibleCount}/${candidates.length})`;
+
+  dropdown.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;">
+      <span>Projets visibles</span>
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn-ghost btn-xs" onclick="setAllProjectsCalVisible(true)" style="font-size:10px;padding:2px 6px;">Tout cocher</button>
+        <button class="btn btn-ghost btn-xs" onclick="setAllProjectsCalVisible(false)" style="font-size:10px;padding:2px 6px;">Tout décocher</button>
+      </div>
+    </div>
+    ${candidates.map(p => `
+      <label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;border-radius:4px;font-size:12px;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+        <input type="checkbox" ${HIDDEN_CAL_PROJECTS.has(p.id) ? '' : 'checked'} onchange="toggleProjectCalVisibility('${p.id}')" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0;">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          <span style="font-weight:600;">${esc(p.name)}</span>
+          <span style="color:var(--text3);font-size:11px;"> · ${esc(p.client?.name||'')}</span>
+        </span>
+      </label>`).join('')}
+    ${candidates.length === 0 ? '<div style="text-align:center;color:var(--text3);font-size:12px;padding:12px;">Aucun projet planifié</div>' : ''}`;
+}
+
+function toggleProjectsFilter() {
+  const dropdown = document.getElementById('cal-filter-dropdown');
+  if (!dropdown) return;
+  if (dropdown.style.display === 'none') {
+    buildProjectsFilter();
+    dropdown.style.display = 'block';
+    // Fermeture sur clic extérieur (un seul handler attaché)
+    setTimeout(() => {
+      const closer = (e) => {
+        if (!dropdown.contains(e.target) && e.target.id !== 'cal-filter-btn') {
+          dropdown.style.display = 'none';
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 50);
+  } else {
+    dropdown.style.display = 'none';
+  }
+}
+
+function toggleProjectCalVisibility(projectId) {
+  if (HIDDEN_CAL_PROJECTS.has(projectId)) HIDDEN_CAL_PROJECTS.delete(projectId);
+  else HIDDEN_CAL_PROJECTS.add(projectId);
+  saveHiddenCalProjects();
+  buildProjectsFilter();    // refresh du compteur
+  renderDashCalendar();
+}
+
+function setAllProjectsCalVisible(visible) {
+  if (visible) {
+    HIDDEN_CAL_PROJECTS.clear();
+  } else {
+    (PROJECTS || []).forEach(p => HIDDEN_CAL_PROJECTS.add(p.id));
+  }
+  saveHiddenCalProjects();
+  buildProjectsFilter();
+  renderDashCalendar();
+}
+
+// Calendrier Gantt projets — période ajustable + groupage des ressources par projet
 async function renderDashCalendar() {
   const el = document.getElementById('dash-calendar');
   if (!el) return;
@@ -2096,12 +2184,13 @@ async function renderDashCalendar() {
     return overlap(insS, insE) || overlap(disS, disE);
   };
 
+  // Filtre : visible ET non décoché manuellement
   const list = (PROJECTS || [])
-    .filter(p => p.installationStart && inWindow(p))
+    .filter(p => p.installationStart && inWindow(p) && !HIDDEN_CAL_PROJECTS.has(p.id))
     .sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
 
   if (!list.length) {
-    el.innerHTML = `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet planifié sur ${NUM_WEEKS} semaines</div>`;
+    el.innerHTML = `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet visible sur ${NUM_WEEKS} semaines.<br>Vérifie le filtre "🎯 Filtrer projets" si tu as décoché des projets.</div>`;
     return;
   }
 
@@ -2111,21 +2200,43 @@ async function renderDashCalendar() {
     return Math.max(0, Math.min(100, (days / totalDays) * 100));
   };
   const todayPct = posPct(today);
-  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
 
-  // ─── En-tête : labels des semaines ───
+  // Formats de date
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+  const shortD = d => {
+    if (!d) return '';
+    const dt = new Date(d);
+    return `${dt.getDate()}/${String(dt.getMonth()+1).padStart(2,'0')}`;
+  };
+  const MOIS = ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
+  const DAYS = ['L','M','M','J','V','S','D'];
+
+  // ─── En-tête : labels de semaine plus visibles (jour de début → fin) ───
+  // Si > 12 semaines on condense, sinon on affiche "DD-DD mois"
   const weeks = [];
   for (let i = 0; i < NUM_WEEKS; i++) {
-    const d = new Date(start.getTime() + i * 7 * 86400000);
+    const dStart = new Date(start.getTime() + i * 7 * 86400000);
+    const dEnd   = new Date(start.getTime() + (i * 7 + 6) * 86400000);
     const isCurrent = i === 0;
-    const lbl = NUM_WEEKS > 12
-      ? `S${getWeekNum(d)}`
-      : `${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}`;
-    weeks.push(`<div style="text-align:center;padding:3px 0;font-size:10px;color:var(--text3);${isCurrent?'background:var(--bg3);border-radius:4px;color:var(--text2);font-weight:600;':''}">${lbl}</div>`);
+    const sameMonth = dStart.getMonth() === dEnd.getMonth();
+    let mainLbl, subLbl;
+    if (NUM_WEEKS > 12) {
+      mainLbl = `S${getWeekNum(dStart)}`;
+      subLbl  = `${dStart.getDate()}/${String(dStart.getMonth()+1).padStart(2,'0')}`;
+    } else if (sameMonth) {
+      mainLbl = `${dStart.getDate()}-${dEnd.getDate()}`;
+      subLbl  = MOIS[dStart.getMonth()];
+    } else {
+      mainLbl = `${dStart.getDate()} ${MOIS[dStart.getMonth()].slice(0,3)} → ${dEnd.getDate()} ${MOIS[dEnd.getMonth()].slice(0,3)}`;
+      subLbl  = '';
+    }
+    weeks.push(`<div title="Semaine du ${fmtD(dStart)} au ${fmtD(dEnd)}" style="text-align:center;padding:5px 2px;border-radius:5px;${isCurrent?'background:rgba(230,57,70,.1);border:1px solid var(--accent);':'background:var(--bg3);'}">
+      <div style="font-size:${NUM_WEEKS>12?'10':'12'}px;font-weight:700;color:${isCurrent?'var(--accent)':'var(--text)'};line-height:1.1;">${mainLbl}</div>
+      ${subLbl ? `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;line-height:1.1;margin-top:1px;">${subLbl}</div>` : ''}
+    </div>`);
   }
 
-  // ─── Pre-fetch : camions + bookings pour TOUS les projets visibles ───
-  // On fait tout en parallèle pour éviter une cascade lente.
+  // ─── Pre-fetch en parallèle : camions + bookings de chaque projet ───
   const trucksByProject = {};
   const bookingsByProject = {};
   if (showTrucks) {
@@ -2141,67 +2252,68 @@ async function renderDashCalendar() {
     bookingsFetches.forEach(b => bookingsByProject[b.pid] = b.bks);
   }
 
-  // ─── Construction des lignes : projet + sous-lignes (camions, équipes) ───
   const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'🔧',manitou:'🔧',forklift:'🚜',generator:'⚡',other:'🚗'};
 
+  // ─── Construction des lignes ───
   const rows = list.map(p => {
     const insS = p.installationStart ? posPct(p.installationStart) : null;
     const insE = p.installationEnd   ? posPct(p.installationEnd)   : null;
     const disS = p.dismantlingStart  ? posPct(p.dismantlingStart)  : null;
     const disE = p.dismantlingEnd    ? posPct(p.dismantlingEnd)    : null;
 
-    // Ligne principale du projet (cliquable pour ouvrir le projet)
-    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;cursor:pointer;padding:4px 0;background:var(--bg2);border-radius:6px;padding:6px;" onclick="openProject('${p.id}')">
+    // Pour afficher les dates DANS la barre si elle est assez large (> 7% de l'axe)
+    const insLabel = (insE-insS) > 7 ? `${shortD(p.installationStart)} → ${shortD(p.installationEnd)}` : '📐';
+    const disLabel = (disE != null && disE-disS > 7) ? `${shortD(p.dismantlingStart)} → ${shortD(p.dismantlingEnd)}` : '📦';
+
+    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;cursor:pointer;background:var(--bg2);border-radius:6px;padding:6px;" onclick="openProject('${p.id}')">
       <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         <div style="font-size:13px;font-weight:700;">${esc(p.name)}</div>
-        <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')} ${p.internalNumber?'· '+esc(p.internalNumber):''}</div>
+        <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')}${p.internalNumber?' · '+esc(p.internalNumber):''}</div>
       </div>
-      <div style="position:relative;height:26px;background:var(--bg3);border-radius:6px;">
-        ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📐</div>` : ''}
-        ${disS != null && disE != null ? `<div title="Démontage : ${fmtD(p.dismantlingStart)} → ${fmtD(p.dismantlingEnd)}" style="position:absolute;left:${disS}%;width:${Math.max(1.5, disE-disS)}%;height:100%;background:#f4a261;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📦</div>` : ''}
-        <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:32px;background:var(--accent);pointer-events:none;"></div>
+      <div style="position:relative;height:28px;background:var(--bg3);border-radius:6px;">
+        ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:700;overflow:hidden;padding:0 4px;">${esc(insLabel)}</div>` : ''}
+        ${disS != null && disE != null ? `<div title="Démontage : ${fmtD(p.dismantlingStart)} → ${fmtD(p.dismantlingEnd)}" style="position:absolute;left:${disS}%;width:${Math.max(1.5, disE-disS)}%;height:100%;background:#f4a261;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:700;overflow:hidden;padding:0 4px;">${esc(disLabel)}</div>` : ''}
+        <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:34px;background:var(--accent);pointer-events:none;"></div>
       </div>
     </div>`;
 
-    // ─── Sous-lignes : camions de ce projet ───
+    // ─── Sous-lignes : camions ───
     if (showTrucks) {
-      const trucks = trucksByProject[p.id] || [];
-      const filtered = trucks.filter(t => {
+      const trucks = (trucksByProject[p.id] || []).filter(t => {
         const tStart = t.loadingDate || p.installationStart;
         const tEnd   = t.arrivalDate || t.departureDate || p.installationEnd;
         if (!tStart || !tEnd) return false;
         const sD = new Date(tStart), eD = new Date(tEnd);
         return !(eD < start || sD > end);
       });
-      filtered.forEach(t => {
+      trucks.forEach(t => {
         const tStart = t.loadingDate || p.installationStart;
         const tEnd   = t.arrivalDate || t.departureDate || p.installationEnd;
         const sP = posPct(tStart);
         const eP = posPct(tEnd);
         const icon = truckIcons[t.vehicleType] || '🚛';
-        const label = `${icon} ${t.truckNumber || t.licensePlate || 'Véhicule'}`;
+        const lbl = (eP - sP) > 5 ? `${shortD(tStart)}→${shortD(tEnd)}` : '';
         html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${esc(label)}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${icon} ${esc(t.truckNumber||t.licensePlate||'Véhicule')}</div>
             ${t.driverName ? `<div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(t.driverName)}</div>` : ''}
           </div>
-          <div style="position:relative;height:14px;background:var(--bg3);border-radius:3px;">
-            <div title="${fmtD(tStart)} → ${fmtD(tEnd)}" style="position:absolute;left:${sP}%;width:${Math.max(1.5, eP-sP)}%;height:100%;background:#22c55e;border-radius:3px;"></div>
-            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:18px;background:var(--accent);pointer-events:none;"></div>
+          <div style="position:relative;height:16px;background:var(--bg3);border-radius:3px;">
+            <div title="${fmtD(tStart)} → ${fmtD(tEnd)}" style="position:absolute;left:${sP}%;width:${Math.max(1.5, eP-sP)}%;height:100%;background:#22c55e;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:600;overflow:hidden;padding:0 3px;">${lbl}</div>
+            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:20px;background:var(--accent);pointer-events:none;"></div>
           </div>
         </div>`;
       });
     }
 
-    // ─── Sous-lignes : équipes de ce projet ───
+    // ─── Sous-lignes : équipes ───
     if (showTeams) {
-      const bookings = bookingsByProject[p.id] || [];
-      const filtered = bookings.filter(b => {
+      const bookings = (bookingsByProject[p.id] || []).filter(b => {
         const sD = new Date(b.outboundDate || b.onSiteStart);
         const eD = new Date(b.returnDate   || b.onSiteEnd);
         return !(eD < start || sD > end);
       });
-      filtered.forEach(b => {
+      bookings.forEach(b => {
         const u = b.user || {};
         const onS = posPct(b.onSiteStart);
         const onE = posPct(b.onSiteEnd);
@@ -2209,21 +2321,21 @@ async function renderDashCalendar() {
         const reE = b.returnDate   ? posPct(b.returnDate)   : onE;
         const color = b.phase === 'installation' ? 'var(--blue)' : '#f4a261';
         const phaseIcon = b.phase === 'installation' ? '🏗️' : '🔨';
+        const lbl = (onE - onS) > 5 ? `${shortD(b.onSiteStart)}→${shortD(b.onSiteEnd)}` : '';
         html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${phaseIcon} ${esc(u.firstName||'')} ${esc(u.lastName||'')}</div>
             <div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(u.role||'')}</div>
           </div>
-          <div style="position:relative;height:14px;background:var(--bg3);border-radius:3px;">
-            ${ouS < onS ? `<div title="Trajet aller" style="position:absolute;left:${ouS}%;width:${onS-ouS}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.4;border-radius:3px;"></div>` : ''}
-            <div title="${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)}" style="position:absolute;left:${onS}%;width:${Math.max(1.5, onE-onS)}%;height:100%;background:${color};border-radius:3px;"></div>
-            ${reE > onE ? `<div title="Trajet retour" style="position:absolute;left:${onE}%;width:${reE-onE}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.4;border-radius:3px;"></div>` : ''}
-            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:18px;background:var(--accent);pointer-events:none;"></div>
+          <div style="position:relative;height:16px;background:var(--bg3);border-radius:3px;">
+            ${ouS < onS ? `<div title="Trajet aller" style="position:absolute;left:${ouS}%;width:${onS-ouS}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.5;border-radius:3px;"></div>` : ''}
+            <div title="${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)}" style="position:absolute;left:${onS}%;width:${Math.max(1.5, onE-onS)}%;height:100%;background:${color};border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:600;overflow:hidden;padding:0 3px;">${lbl}</div>
+            ${reE > onE ? `<div title="Trajet retour" style="position:absolute;left:${onE}%;width:${reE-onE}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.5;border-radius:3px;"></div>` : ''}
+            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:20px;background:var(--accent);pointer-events:none;"></div>
           </div>
         </div>`;
       });
-      if (filtered.length === 0 && bookings.length === 0) {
-        // Aucun booking créé pour ce projet → discret hint
+      if (bookings.length === 0) {
         html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;font-size:10px;color:var(--text3);font-style:italic;">
           <div>└ Aucun booking équipe</div><div></div>
         </div>`;
@@ -2235,19 +2347,28 @@ async function renderDashCalendar() {
 
   el.innerHTML = `
     <div style="padding:12px;">
-      <div style="display:grid;grid-template-columns:200px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;">Projet / Ressource</div>
-        <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:1px;">${weeks.join('')}</div>
+      <!-- Header semaines : taille augmentée pour lisibilité -->
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:600;">Projet / Ressource</div>
+        <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:3px;">${weeks.join('')}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${rows}</div>
       <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
         <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
         <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>
         ${showTrucks ? '<span><span style="display:inline-block;width:12px;height:8px;background:#22c55e;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>🚛 Camion</span>' : ''}
-        ${showTeams ? '<span style="opacity:.8;">Pointillés = jours de trajet</span>' : ''}
+        ${showTeams ? '<span style="opacity:.8;">Pointillés = trajets</span>' : ''}
         <span><span style="display:inline-block;width:2px;height:10px;background:var(--accent);vertical-align:middle;margin-right:4px;"></span>Aujourd'hui</span>
       </div>
     </div>`;
+
+  // Met à jour le compteur du bouton filtre (au cas où c'est la première fois)
+  const btn = document.getElementById('cal-filter-btn');
+  if (btn && !btn.innerHTML.includes('/')) {
+    const totalCandidates = (PROJECTS || []).filter(p => p.status !== 'cancelled' && p.installationStart).length;
+    const visible = totalCandidates - HIDDEN_CAL_PROJECTS.size;
+    btn.innerHTML = `🎯 Filtrer projets (${visible}/${totalCandidates})`;
+  }
 }
 
 // Helper : numéro de semaine ISO (utilisé pour les labels condensés en >12 sem.)
