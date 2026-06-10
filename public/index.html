@@ -1927,6 +1927,19 @@ function toggleNav() {
   }
 })();
 
+// Copie dans le presse-papiers les instructions d'envoi par mail pour un projet
+function copyEmailInstructions(internalNumber) {
+  const text = `À: files@viewbox-event.com\nSujet: ${internalNumber}\n\n(Joindre les fichiers à envoyer dans le projet ${internalNumber})`;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(
+      () => toast('Instructions copiées 📋', 'success'),
+      () => toast('Impossible de copier — copie manuelle nécessaire', 'error'),
+    );
+  } else {
+    toast('Sujet à mettre : ' + internalNumber, 'info');
+  }
+}
+
 function goto(page) {
   document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2057,13 +2070,13 @@ function projCardHTML(p) {
   </div>`;
 }
 
-// Calendrier Gantt projets — période ajustable (2 à 26 semaines) + filtres
-// optionnels pour ajouter des lignes "camions" et "équipes" en plus des projets.
+// Calendrier Gantt projets — période ajustable (2 à 26 semaines) avec
+// camions et équipes affichés en sous-lignes sous chaque projet pour
+// faciliter la lecture (toutes les ressources d'un projet groupées).
 async function renderDashCalendar() {
   const el = document.getElementById('dash-calendar');
   if (!el) return;
 
-  // Zoom courant : 6 semaines par défaut
   const NUM_WEEKS = parseInt(document.getElementById('cal-zoom')?.value || '6');
   const showTrucks = document.getElementById('cal-show-trucks')?.checked || false;
   const showTeams  = document.getElementById('cal-show-teams')?.checked  || false;
@@ -2087,7 +2100,7 @@ async function renderDashCalendar() {
     .filter(p => p.installationStart && inWindow(p))
     .sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
 
-  if (!list.length && !showTrucks && !showTeams) {
+  if (!list.length) {
     el.innerHTML = `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet planifié sur ${NUM_WEEKS} semaines</div>`;
     return;
   }
@@ -2098,9 +2111,9 @@ async function renderDashCalendar() {
     return Math.max(0, Math.min(100, (days / totalDays) * 100));
   };
   const todayPct = posPct(today);
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
 
   // ─── En-tête : labels des semaines ───
-  // Si beaucoup de semaines, on raccourcit en M-S (mois-jour) ou S-Sem
   const weeks = [];
   for (let i = 0; i < NUM_WEEKS; i++) {
     const d = new Date(start.getTime() + i * 7 * 86400000);
@@ -2111,18 +2124,37 @@ async function renderDashCalendar() {
     weeks.push(`<div style="text-align:center;padding:3px 0;font-size:10px;color:var(--text3);${isCurrent?'background:var(--bg3);border-radius:4px;color:var(--text2);font-weight:600;':''}">${lbl}</div>`);
   }
 
-  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '';
+  // ─── Pre-fetch : camions + bookings pour TOUS les projets visibles ───
+  // On fait tout en parallèle pour éviter une cascade lente.
+  const trucksByProject = {};
+  const bookingsByProject = {};
+  if (showTrucks) {
+    const trucksFetches = await Promise.all(list.map(p =>
+      api('GET', `/projects/${p.id}/trucks`).then(r => ({ pid: p.id, trucks: r?.success ? r.data : [] })).catch(() => ({ pid: p.id, trucks: [] }))
+    ));
+    trucksFetches.forEach(t => trucksByProject[t.pid] = t.trucks);
+  }
+  if (showTeams) {
+    const bookingsFetches = await Promise.all(list.map(p =>
+      api('GET', `/projects/${p.id}/bookings`).then(r => ({ pid: p.id, bks: r?.success ? r.data : [] })).catch(() => ({ pid: p.id, bks: [] }))
+    ));
+    bookingsFetches.forEach(b => bookingsByProject[b.pid] = b.bks);
+  }
 
-  // ─── Lignes : projets ───
-  const projectsRows = list.map(p => {
+  // ─── Construction des lignes : projet + sous-lignes (camions, équipes) ───
+  const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'🔧',manitou:'🔧',forklift:'🚜',generator:'⚡',other:'🚗'};
+
+  const rows = list.map(p => {
     const insS = p.installationStart ? posPct(p.installationStart) : null;
     const insE = p.installationEnd   ? posPct(p.installationEnd)   : null;
     const disS = p.dismantlingStart  ? posPct(p.dismantlingStart)  : null;
     const disE = p.dismantlingEnd    ? posPct(p.dismantlingEnd)    : null;
-    return `<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center;cursor:pointer;padding:4px 0;" onclick="openProject('${p.id}')">
+
+    // Ligne principale du projet (cliquable pour ouvrir le projet)
+    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;cursor:pointer;padding:4px 0;background:var(--bg2);border-radius:6px;padding:6px;" onclick="openProject('${p.id}')">
       <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-        <div style="font-size:13px;font-weight:600;">${esc(p.name)}</div>
-        <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')}</div>
+        <div style="font-size:13px;font-weight:700;">${esc(p.name)}</div>
+        <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')} ${p.internalNumber?'· '+esc(p.internalNumber):''}</div>
       </div>
       <div style="position:relative;height:26px;background:var(--bg3);border-radius:6px;">
         ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:600;">📐</div>` : ''}
@@ -2130,120 +2162,89 @@ async function renderDashCalendar() {
         <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:32px;background:var(--accent);pointer-events:none;"></div>
       </div>
     </div>`;
-  }).join('');
 
-  // ─── Section CAMIONS (chargée à la volée si la case est cochée) ───
-  let trucksHtml = '';
-  if (showTrucks) {
-    const truckBars = [];
-    for (const p of list) {
-      try {
-        const tr = await api('GET', `/projects/${p.id}/trucks`);
-        if (tr?.success) {
-          for (const t of tr.data || []) {
-            // On utilise loadingDate → arrivalDate si présents, sinon installationStart→End
-            const tStart = t.loadingDate || p.installationStart;
-            const tEnd   = t.arrivalDate || t.departureDate || p.installationEnd;
-            if (!tStart || !tEnd) continue;
-            const sD = new Date(tStart), eD = new Date(tEnd);
-            if (eD < start || sD > end) continue;
-            const sP = posPct(sD), eP = posPct(eD);
-            const icon = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'🔧',manitou:'🔧',forklift:'🚜',generator:'⚡',other:'🚗'}[t.vehicleType] || '🚛';
-            truckBars.push({
-              projectName: p.name,
-              label: `${icon} ${t.truckNumber || t.licensePlate || 'Véhicule'}`,
-              driver: t.driverName || '',
-              sP, eP,
-              dateRange: `${fmtD(tStart)} → ${fmtD(tEnd)}`,
-            });
-          }
-        }
-      } catch (e) { /* skip */ }
-    }
-    if (truckBars.length) {
-      trucksHtml = `
-        <div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);">
-          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px;">🚛 Camions / Véhicules (${truckBars.length})</div>
-          ${truckBars.map(t => `<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center;padding:3px 0;">
-            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              <div style="font-size:12px;font-weight:600;">${esc(t.label)}</div>
-              <div style="font-size:10px;color:var(--text3);">${esc(t.driver || t.projectName)}</div>
-            </div>
-            <div style="position:relative;height:18px;background:var(--bg3);border-radius:4px;">
-              <div title="${t.dateRange}" style="position:absolute;left:${t.sP}%;width:${Math.max(1.5, t.eP-t.sP)}%;height:100%;background:#22c55e;border-radius:4px;"></div>
-              <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:22px;background:var(--accent);pointer-events:none;"></div>
-            </div>
-          </div>`).join('')}
+    // ─── Sous-lignes : camions de ce projet ───
+    if (showTrucks) {
+      const trucks = trucksByProject[p.id] || [];
+      const filtered = trucks.filter(t => {
+        const tStart = t.loadingDate || p.installationStart;
+        const tEnd   = t.arrivalDate || t.departureDate || p.installationEnd;
+        if (!tStart || !tEnd) return false;
+        const sD = new Date(tStart), eD = new Date(tEnd);
+        return !(eD < start || sD > end);
+      });
+      filtered.forEach(t => {
+        const tStart = t.loadingDate || p.installationStart;
+        const tEnd   = t.arrivalDate || t.departureDate || p.installationEnd;
+        const sP = posPct(tStart);
+        const eP = posPct(tEnd);
+        const icon = truckIcons[t.vehicleType] || '🚛';
+        const label = `${icon} ${t.truckNumber || t.licensePlate || 'Véhicule'}`;
+        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${esc(label)}</div>
+            ${t.driverName ? `<div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(t.driverName)}</div>` : ''}
+          </div>
+          <div style="position:relative;height:14px;background:var(--bg3);border-radius:3px;">
+            <div title="${fmtD(tStart)} → ${fmtD(tEnd)}" style="position:absolute;left:${sP}%;width:${Math.max(1.5, eP-sP)}%;height:100%;background:#22c55e;border-radius:3px;"></div>
+            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:18px;background:var(--accent);pointer-events:none;"></div>
+          </div>
         </div>`;
+      });
     }
-  }
 
-  // ─── Section ÉQUIPES (bookings transport on-site) ───
-  let teamsHtml = '';
-  if (showTeams) {
-    try {
-      const fromStr = start.toISOString().slice(0, 10);
-      const toStr   = end.toISOString().slice(0, 10);
-      const bRes = await api('GET', `/bookings/calendar?from=${fromStr}&to=${toStr}`);
-      if (bRes?.success && (bRes.data || []).length) {
-        // Regroupement par membre
-        const byUser = {};
-        for (const b of bRes.data) {
-          const k = b.userId;
-          if (!byUser[k]) byUser[k] = { user: b.user, bookings: [] };
-          byUser[k].bookings.push(b);
-        }
-        const memberBars = Object.values(byUser).map(g => {
-          const segments = g.bookings.map(b => {
-            // Bloc principal = présence on-site. Bordures dégradées = trajets
-            const onS = posPct(b.onSiteStart);
-            const onE = posPct(b.onSiteEnd);
-            const ouS = b.outboundDate ? posPct(b.outboundDate) : onS;
-            const reE = b.returnDate   ? posPct(b.returnDate)   : onE;
-            const color = b.phase === 'installation' ? 'var(--blue)' : '#f4a261';
-            return `
-              <!-- Trajet aller en pointillés -->
-              ${ouS < onS ? `<div title="Trajet aller ${b.project?.name||''}" style="position:absolute;left:${ouS}%;width:${onS-ouS}%;height:100%;background:repeating-linear-gradient(45deg,var(--text3) 0,var(--text3) 3px,transparent 3px,transparent 6px);opacity:.5;border-radius:4px;"></div>` : ''}
-              <!-- Bloc on-site -->
-              <div title="${esc(b.project?.name||'')} (on-site ${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)})" style="position:absolute;left:${onS}%;width:${Math.max(1.5, onE-onS)}%;height:100%;background:${color};border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:600;overflow:hidden;">${esc(b.project?.internalNumber || '')}</div>
-              <!-- Trajet retour en pointillés -->
-              ${reE > onE ? `<div title="Trajet retour" style="position:absolute;left:${onE}%;width:${reE-onE}%;height:100%;background:repeating-linear-gradient(45deg,var(--text3) 0,var(--text3) 3px,transparent 3px,transparent 6px);opacity:.5;border-radius:4px;"></div>` : ''}`;
-          }).join('');
-          return `<div style="display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:center;padding:3px 0;">
-            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              <div style="font-size:12px;font-weight:600;">${esc(g.user.firstName)} ${esc(g.user.lastName)}</div>
-              <div style="font-size:10px;color:var(--text3);">${esc(g.user.role||'')}</div>
-            </div>
-            <div style="position:relative;height:18px;background:var(--bg3);border-radius:4px;">
-              ${segments}
-              <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:22px;background:var(--accent);pointer-events:none;"></div>
-            </div>
-          </div>`;
-        }).join('');
-        teamsHtml = `
-          <div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px;">👥 Équipes — installation (bleu) / démontage (orange) — pointillés = trajets</div>
-            ${memberBars}
-          </div>`;
-      } else {
-        teamsHtml = `<div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);font-size:11px;color:var(--text3);text-align:center;">Aucun booking équipe sur la période — ajoute des bookings dans l'onglet "✈️ Bookings" du projet</div>`;
+    // ─── Sous-lignes : équipes de ce projet ───
+    if (showTeams) {
+      const bookings = bookingsByProject[p.id] || [];
+      const filtered = bookings.filter(b => {
+        const sD = new Date(b.outboundDate || b.onSiteStart);
+        const eD = new Date(b.returnDate   || b.onSiteEnd);
+        return !(eD < start || sD > end);
+      });
+      filtered.forEach(b => {
+        const u = b.user || {};
+        const onS = posPct(b.onSiteStart);
+        const onE = posPct(b.onSiteEnd);
+        const ouS = b.outboundDate ? posPct(b.outboundDate) : onS;
+        const reE = b.returnDate   ? posPct(b.returnDate)   : onE;
+        const color = b.phase === 'installation' ? 'var(--blue)' : '#f4a261';
+        const phaseIcon = b.phase === 'installation' ? '🏗️' : '🔨';
+        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${phaseIcon} ${esc(u.firstName||'')} ${esc(u.lastName||'')}</div>
+            <div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(u.role||'')}</div>
+          </div>
+          <div style="position:relative;height:14px;background:var(--bg3);border-radius:3px;">
+            ${ouS < onS ? `<div title="Trajet aller" style="position:absolute;left:${ouS}%;width:${onS-ouS}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.4;border-radius:3px;"></div>` : ''}
+            <div title="${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)}" style="position:absolute;left:${onS}%;width:${Math.max(1.5, onE-onS)}%;height:100%;background:${color};border-radius:3px;"></div>
+            ${reE > onE ? `<div title="Trajet retour" style="position:absolute;left:${onE}%;width:${reE-onE}%;height:100%;background:repeating-linear-gradient(45deg,${color} 0,${color} 3px,transparent 3px,transparent 6px);opacity:.4;border-radius:3px;"></div>` : ''}
+            <div style="position:absolute;left:${todayPct}%;top:-2px;width:2px;height:18px;background:var(--accent);pointer-events:none;"></div>
+          </div>
+        </div>`;
+      });
+      if (filtered.length === 0 && bookings.length === 0) {
+        // Aucun booking créé pour ce projet → discret hint
+        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;font-size:10px;color:var(--text3);font-style:italic;">
+          <div>└ Aucun booking équipe</div><div></div>
+        </div>`;
       }
-    } catch (e) { console.error('[calendar] bookings load error', e); }
-  }
+    }
+
+    return html;
+  }).join('<div style="height:6px;"></div>');
 
   el.innerHTML = `
     <div style="padding:12px;">
-      <div style="display:grid;grid-template-columns:180px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;">Ligne</div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;">Projet / Ressource</div>
         <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:1px;">${weeks.join('')}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${projectsRows || '<div style="color:var(--text3);font-size:13px;text-align:center;padding:14px;">Aucun projet sur la période</div>'}</div>
-      ${trucksHtml}
-      ${teamsHtml}
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${rows}</div>
       <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
         <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
         <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>
         ${showTrucks ? '<span><span style="display:inline-block;width:12px;height:8px;background:#22c55e;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>🚛 Camion</span>' : ''}
+        ${showTeams ? '<span style="opacity:.8;">Pointillés = jours de trajet</span>' : ''}
         <span><span style="display:inline-block;width:2px;height:10px;background:var(--accent);vertical-align:middle;margin-right:4px;"></span>Aujourd'hui</span>
       </div>
     </div>`;
@@ -2502,6 +2503,15 @@ async function loadProjectDetail(id) {
             <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>
         </div>
+      </div>
+      <!-- Encart : envoyer des fichiers par mail (Brevo Inbound) -->
+      <div style="margin:0 18px 8px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;">
+        <span style="font-size:18px;">📧</span>
+        <div style="flex:1;min-width:200px;">
+          <div style="font-weight:600;color:#92400e;">Envoyer des fichiers par email</div>
+          <div style="color:#9a3412;">Mail à <strong>files@viewbox-event.com</strong> avec <strong>${esc(p.internalNumber||'N/A')}</strong> dans le sujet</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="copyEmailInstructions('${esc(p.internalNumber||'')}');event.stopPropagation();" style="color:#92400e;border-color:#fed7aa;">📋 Copier</button>
       </div>
       <div class="card-body" style="padding:12px 18px;">
         ${!files.length ? `
