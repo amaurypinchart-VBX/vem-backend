@@ -149,15 +149,19 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
     const truck = await prisma.truck.create({
       data: {
         projectId: req.params.id,
-        truckNumber: req.body.truckNumber,
+        vehicleType: req.body.vehicleType || 'truck',
+        truckNumber: req.body.truckNumber || null,
         licensePlate: req.body.licensePlate || null,
         driverName: req.body.driverName || null,
+        driverPhone: req.body.driverPhone || null,
         status: req.body.status || 'planned',
         loadingDate:  req.body.loadingDate  ? new Date(req.body.loadingDate)  : null,
         arrivalDate:  req.body.arrivalDate  ? new Date(req.body.arrivalDate)  : null,
         departureDate: req.body.departureDate ? new Date(req.body.departureDate) : null,
+        loadingLocation:   req.body.loadingLocation   || null,
+        unloadingLocation: req.body.unloadingLocation || null,
         notes: req.body.notes || null,
-      },
+      } as any,
     });
     res.status(201).json({ success: true, data: truck });
   } catch (err) { next(err); }
@@ -166,10 +170,15 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
 // PATCH /projects/:id/trucks/:truckId — mise à jour d'un véhicule
 router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const data: any = { ...req.body };
-    if (req.body.loadingDate   !== undefined) data.loadingDate   = req.body.loadingDate   ? new Date(req.body.loadingDate)   : null;
-    if (req.body.arrivalDate   !== undefined) data.arrivalDate   = req.body.arrivalDate   ? new Date(req.body.arrivalDate)   : null;
-    if (req.body.departureDate !== undefined) data.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
+    const data: any = {};
+    // Champs scalaires : on n'écrit que ceux explicitement fournis
+    for (const k of ['vehicleType','truckNumber','licensePlate','driverName','driverPhone','status','loadingLocation','unloadingLocation','notes']) {
+      if (req.body[k] !== undefined) data[k] = req.body[k] || null;
+    }
+    // Champs date
+    for (const k of ['loadingDate','arrivalDate','departureDate']) {
+      if (req.body[k] !== undefined) data[k] = req.body[k] ? new Date(req.body[k]) : null;
+    }
     const truck = await prisma.truck.update({ where: { id: req.params.truckId }, data });
     res.json({ success: true, data: truck });
   } catch (err) { next(err); }

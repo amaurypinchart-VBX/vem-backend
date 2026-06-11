@@ -2236,6 +2236,28 @@ async function renderDashCalendar() {
     </div>`);
   }
 
+  // ─── Sous-header : ligne jour-par-jour avec week-end visible ───
+  // Affiché seulement jusqu'à 12 semaines (84 jours) — au-delà ça devient trop dense
+  let daysHeader = '';
+  if (NUM_WEEKS <= 12) {
+    const dayCells = [];
+    for (let d = 0; d < totalDays; d++) {
+      const day = new Date(start.getTime() + d * 86400000);
+      const dow = day.getDay();           // 0=dim, 6=sam
+      const isWeekend = dow === 0 || dow === 6;
+      const isToday = day.toDateString() === today.toDateString();
+      const dayLetter = DAYS[(dow + 6) % 7];  // DAYS = ['L','M','M','J','V','S','D']
+      dayCells.push(`<div title="${day.toLocaleDateString('fr-FR', {weekday:'long', day:'2-digit', month:'short'})}" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 0;${isWeekend?'background:rgba(244,162,97,.15);color:var(--amber);font-weight:700;':isToday?'background:var(--accent);color:#fff;font-weight:700;border-radius:3px;':'color:var(--text3);'}">
+        <div>${dayLetter}</div>
+        <div style="font-size:8px;${isToday?'':'opacity:.7;'}">${day.getDate()}</div>
+      </div>`);
+    }
+    daysHeader = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;margin-top:6px;padding-bottom:6px;border-bottom:1px solid var(--border);">
+      <div></div>
+      <div style="display:grid;grid-template-columns:repeat(${totalDays}, 1fr);gap:1px;">${dayCells.join('')}</div>
+    </div>`;
+  }
+
   // ─── Pre-fetch en parallèle : camions + bookings de chaque projet ───
   const trucksByProject = {};
   const bookingsByProject = {};
@@ -2352,12 +2374,14 @@ async function renderDashCalendar() {
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:600;">Projet / Ressource</div>
         <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:3px;">${weeks.join('')}</div>
       </div>
+      ${daysHeader}
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${rows}</div>
       <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
         <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
         <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>
         ${showTrucks ? '<span><span style="display:inline-block;width:12px;height:8px;background:#22c55e;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>🚛 Camion</span>' : ''}
         ${showTeams ? '<span style="opacity:.8;">Pointillés = trajets</span>' : ''}
+        <span><span style="display:inline-block;width:12px;height:8px;background:rgba(244,162,97,.3);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Week-end</span>
         <span><span style="display:inline-block;width:2px;height:10px;background:var(--accent);vertical-align:middle;margin-right:4px;"></span>Aujourd'hui</span>
       </div>
     </div>`;
@@ -2514,7 +2538,8 @@ async function loadProjectDetail(id) {
   if (statusSel) statusSel.value = p.status || 'in_preparation';
 
   // Info tab — avec camions + fichiers
-  const infoTrucks = p.trucks || [];
+  // On exclut les camions archivés (livrés ou retournés) du décompte / liste Infos
+  const infoTrucks = (p.trucks || []).filter(t => t.status !== 'delivered' && t.status !== 'returned');
   const filesRes = await api('GET', `/projects/${id}/files`);
   const files = filesRes?.data || [];
 
@@ -10191,45 +10216,52 @@ async function deleteProject(projectId, overlay) {
 }
 
 // ═══════════════════════════════════════════
-// AJOUTER CAMION DEPUIS DASHBOARD PROJET
+// MODAL VÉHICULE — création ET édition
 // ═══════════════════════════════════════════
-function showAddTruckModal(projectId) {
+// Si "existing" est fourni, on est en mode édition (PATCH avec id), sinon création (POST).
+function showAddTruckModal(projectId, existing) {
+  const t = existing || {};
+  const isEdit = !!t.id;
   const overlay = document.createElement('div');
   overlay.className = 'overlay open';
   overlay.innerHTML = `
     <div class="modal" style="max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
       <div class="modal-head" style="flex-shrink:0;">
-        <div><div class="modal-title">🚛 Ajouter un véhicule</div></div>
+        <div><div class="modal-title">🚛 ${isEdit ? 'Modifier' : 'Ajouter'} un véhicule</div></div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
 
       <div style="flex:1;overflow-y:auto;padding:0 2px 8px;">
 
-        <!-- Type + Plaques -->
+        <!-- Type + Nom personnalisé + Plaques -->
         <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🚛 Véhicule</div>
           <div class="form-group2">
-            <label class="form-label2">Type</label>
+            <label class="form-label2">Type *</label>
             <select class="input" id="at-type">
-              <option value="truck">🚛 Camion (Tautliner)</option>
-              <option value="flatbed">🚛 Camion (Flatbed)</option>
-              <option value="van">🚐 Camionnette</option>
-              <option value="crane">🏗️ Grue</option>
-              <option value="scissor">✂️ Nacelle ciseaux</option>
-              <option value="manitou">🔧 Manitou / Roto</option>
-              <option value="forklift">🚜 Chariot élévateur</option>
-              <option value="generator">⚡ Groupe électrogène</option>
-              <option value="other">📦 Autre</option>
+              <option value="truck"      ${t.vehicleType==='truck'?'selected':''}>🚛 Camion (Tautliner)</option>
+              <option value="flatbed"    ${t.vehicleType==='flatbed'?'selected':''}>🚛 Camion (Flatbed)</option>
+              <option value="van"        ${t.vehicleType==='van'?'selected':''}>🚐 Camionnette</option>
+              <option value="crane"      ${t.vehicleType==='crane'?'selected':''}>🏗️ Grue</option>
+              <option value="scissor"    ${t.vehicleType==='scissor'?'selected':''}>✂️ Nacelle ciseaux</option>
+              <option value="manitou"    ${t.vehicleType==='manitou'?'selected':''}>🔧 Manitou / Roto</option>
+              <option value="forklift"   ${t.vehicleType==='forklift'?'selected':''}>🚜 Chariot élévateur</option>
+              <option value="generator"  ${t.vehicleType==='generator'?'selected':''}>⚡ Groupe électrogène</option>
+              <option value="other"      ${t.vehicleType==='other'?'selected':''}>📦 Autre</option>
             </select>
+          </div>
+          <div class="form-group2" style="margin-top:8px;">
+            <label class="form-label2">Nom / référence supplémentaire <span style="color:var(--text3);font-size:11px;font-weight:400;">(optionnel)</span></label>
+            <input class="input" id="at-name" value="${esc(t.truckNumber||'')}" placeholder="Ex: Camion Volvo n°2, Grue Liebherr 70T">
           </div>
           <div class="input-row" style="margin-top:8px;">
             <div class="form-group2" style="margin:0;">
               <label class="form-label2">Plaque 1 (Tracteur)</label>
-              <input class="input" id="at-plate1" placeholder="ex: 1-ABC-234">
+              <input class="input" id="at-plate1" value="${esc((t.licensePlate||'').split(' / ')[0]||'')}" placeholder="ex: 1-ABC-234">
             </div>
             <div class="form-group2" style="margin:0;">
               <label class="form-label2">Plaque 2 (Remorque)</label>
-              <input class="input" id="at-plate2" placeholder="ex: O-123-456">
+              <input class="input" id="at-plate2" value="${esc((t.licensePlate||'').split(' / ')[1]||'')}" placeholder="ex: O-123-456">
             </div>
           </div>
         </div>
@@ -10240,11 +10272,11 @@ function showAddTruckModal(projectId) {
           <div class="input-row">
             <div class="form-group2" style="margin:0;">
               <label class="form-label2">Nom du chauffeur</label>
-              <input class="input" id="at-driver" placeholder="Prénom Nom">
+              <input class="input" id="at-driver" value="${esc(t.driverName||'')}" placeholder="Prénom Nom">
             </div>
             <div class="form-group2" style="margin:0;">
               <label class="form-label2">📞 Téléphone</label>
-              <input class="input" id="at-phone" placeholder="+32 ..." type="tel">
+              <input class="input" id="at-phone" value="${esc(t.driverPhone||'')}" placeholder="+32 ..." type="tel">
             </div>
           </div>
         </div>
@@ -10255,18 +10287,18 @@ function showAddTruckModal(projectId) {
           <div class="form-group2">
             <label class="form-label2">Lieu de chargement</label>
             <select class="input" id="at-loading-place">
-              <option value="tubize">🏭 Entrepôt Tubize</option>
-              <option value="site">📍 Directement sur site événement</option>
-              <option value="other">📦 Autre lieu (adresse spéciale)</option>
+              <option value="tubize" ${(t.loadingLocation||'').includes('Tubize')?'selected':''}>🏭 Entrepôt Tubize</option>
+              <option value="site"   ${(t.loadingLocation||'')==='Site événement'?'selected':''}>📍 Directement sur site événement</option>
+              <option value="other"  ${t.loadingLocation && !((t.loadingLocation||'').includes('Tubize')) && t.loadingLocation!=='Site événement'?'selected':''}>📦 Autre lieu (adresse spéciale)</option>
             </select>
           </div>
-          <div class="form-group2" style="margin-top:8px;display:none;" id="at-loading-other-wrap">
+          <div class="form-group2" style="margin-top:8px;${t.loadingLocation && !((t.loadingLocation||'').includes('Tubize')) && t.loadingLocation!=='Site événement'?'':'display:none;'}" id="at-loading-other-wrap">
             <label class="form-label2">Adresse du lieu de chargement</label>
-            <input class="input" id="at-loading-other" placeholder="Ex: Rue de la Forge 12, 7180 Seneffe">
+            <input class="input" id="at-loading-other" value="${esc(t.loadingLocation && !((t.loadingLocation||'').includes('Tubize')) && t.loadingLocation!=='Site événement' ? t.loadingLocation : '')}" placeholder="Ex: Rue de la Forge 12, 7180 Seneffe">
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📅 Date & heure de chargement</label>
-            <input class="input" type="datetime-local" id="at-loading">
+            <input class="input" type="datetime-local" id="at-loading" value="${t.loadingDate ? new Date(t.loadingDate).toISOString().slice(0,16) : ''}">
           </div>
         </div>
 
@@ -10276,18 +10308,18 @@ function showAddTruckModal(projectId) {
           <div class="form-group2">
             <label class="form-label2">Lieu de déchargement</label>
             <select class="input" id="at-unloading-place">
-              <option value="site">📍 Site événement</option>
-              <option value="tubize">🏭 Entrepôt Tubize</option>
-              <option value="other">📦 Autre lieu (adresse spéciale)</option>
+              <option value="site"   ${(t.unloadingLocation||'')==='Site événement' || !t.unloadingLocation?'selected':''}>📍 Site événement</option>
+              <option value="tubize" ${(t.unloadingLocation||'').includes('Tubize')?'selected':''}>🏭 Entrepôt Tubize</option>
+              <option value="other"  ${t.unloadingLocation && !((t.unloadingLocation||'').includes('Tubize')) && t.unloadingLocation!=='Site événement'?'selected':''}>📦 Autre lieu (adresse spéciale)</option>
             </select>
           </div>
-          <div class="form-group2" style="margin-top:8px;display:none;" id="at-unloading-other-wrap">
+          <div class="form-group2" style="margin-top:8px;${t.unloadingLocation && !((t.unloadingLocation||'').includes('Tubize')) && t.unloadingLocation!=='Site événement'?'':'display:none;'}" id="at-unloading-other-wrap">
             <label class="form-label2">Adresse du lieu de déchargement</label>
-            <input class="input" id="at-unloading-other" placeholder="Ex: Brussels Expo, Place de Belgique 1">
+            <input class="input" id="at-unloading-other" value="${esc(t.unloadingLocation && !((t.unloadingLocation||'').includes('Tubize')) && t.unloadingLocation!=='Site événement' ? t.unloadingLocation : '')}" placeholder="Ex: Brussels Expo, Place de Belgique 1">
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📅 Arrivée estimée</label>
-            <input class="input" type="datetime-local" id="at-arrival">
+            <input class="input" type="datetime-local" id="at-arrival" value="${t.arrivalDate ? new Date(t.arrivalDate).toISOString().slice(0,16) : ''}">
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📍 Zone de déchargement</label>
@@ -10295,16 +10327,33 @@ function showAddTruckModal(projectId) {
           </div>
         </div>
 
+        <!-- Statut (visible surtout en édition pour archiver) -->
+        ${isEdit ? `
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">⚙️ Statut</div>
+          <div class="form-group2">
+            <label class="form-label2">État du véhicule</label>
+            <select class="input" id="at-status">
+              <option value="planned"    ${t.status==='planned'?'selected':''}>🟣 Planifié</option>
+              <option value="loading"    ${t.status==='loading'?'selected':''}>🟠 En chargement</option>
+              <option value="in_transit" ${t.status==='in_transit'?'selected':''}>🔵 En route</option>
+              <option value="delivered"  ${t.status==='delivered'?'selected':''}>🟢 Livré (= archivé)</option>
+              <option value="returned"   ${t.status==='returned'?'selected':''}>⚫ Retour entrepôt (= archivé)</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px;font-style:italic;">Les véhicules "Livré" ou "Retour entrepôt" sont automatiquement masqués des vues principales</div>
+          </div>
+        </div>` : ''}
+
         <div class="form-group2">
           <label class="form-label2">📝 Notes</label>
-          <textarea class="input" id="at-notes" rows="2" placeholder="Instructions spéciales, matériel transporté..."></textarea>
+          <textarea class="input" id="at-notes" rows="2" placeholder="Instructions spéciales, matériel transporté...">${esc(t.notes||'')}</textarea>
         </div>
 
       </div>
 
       <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:10px;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'))">✅ Ajouter le véhicule</button>
+        <button class="btn btn-primary" onclick="saveTruck('${projectId}',this.closest('.overlay'),'${t.id||''}')">${isEdit ? '💾 Enregistrer' : '✅ Ajouter le véhicule'}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -10323,69 +10372,74 @@ function showAddTruckModal(projectId) {
   setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
 }
 
-async function saveTruck(projectId, overlay) {
+async function saveTruck(projectId, overlay, truckId) {
+  const isEdit = !!truckId;
   const v = id => document.getElementById(id)?.value?.trim();
   const sel = id => document.getElementById(id)?.value;
 
   const type         = sel('at-type') || 'truck';
   const plate1       = v('at-plate1');
   const plate2       = v('at-plate2');
-  const licensePlate = [plate1, plate2].filter(Boolean).join(' / ') || undefined;
+  const licensePlate = [plate1, plate2].filter(Boolean).join(' / ') || null;
+  const customName   = v('at-name');   // nom optionnel saisi par l'utilisateur
   const driver       = v('at-driver');
   const phone        = v('at-phone');
 
+  // Construction des libellés de lieu propres
   const loadingPlace   = sel('at-loading-place');
   const loadingOther   = v('at-loading-other');
   const unloadingPlace = sel('at-unloading-place');
   const unloadingOther = v('at-unloading-other');
-  const loading        = sel('at-loading');
-  const arrival        = sel('at-arrival');
-  const unloadZone     = v('at-unloading-zone');
-  const notesRaw       = v('at-notes');
 
-  // Construction du libellé du lieu de chargement
-  const placeLabel = ({
+  const buildPlaceLabel = (kind, other) => ({
     tubize: 'Entrepôt Tubize',
     site:   'Site événement',
-    other:  loadingOther || 'Autre lieu',
-  })[loadingPlace] || loadingPlace;
+    other:  other || 'Autre lieu',
+  })[kind] || null;
 
-  // Construction du libellé du lieu de déchargement
-  const unloadPlaceLabel = ({
-    tubize: 'Entrepôt Tubize',
-    site:   'Site événement',
-    other:  unloadingOther || 'Autre lieu',
-  })[unloadingPlace] || unloadingPlace;
+  const loadingLocation   = buildPlaceLabel(loadingPlace,   loadingOther);
+  const unloadingLocation = buildPlaceLabel(unloadingPlace, unloadingOther);
 
-  // Concaténation des infos additionnelles dans les notes (le modèle backend
-  // ne distingue pas explicitement le lieu déchargement, donc on le met en notes)
+  const loading    = sel('at-loading');
+  const arrival    = sel('at-arrival');
+  const unloadZone = v('at-unloading-zone');
+  const notesRaw   = v('at-notes');
+  const status     = isEdit ? (sel('at-status') || 'planned') : 'planned';
+
+  // Notes : on garde uniquement les notes saisies + zone de déchargement si présente
   const notesParts = [];
-  if (notesRaw)        notesParts.push(notesRaw);
-  if (unloadPlaceLabel)notesParts.push(`Déchargement: ${unloadPlaceLabel}`);
-  if (unloadZone)      notesParts.push(`Zone: ${unloadZone}`);
+  if (notesRaw)   notesParts.push(notesRaw);
+  if (unloadZone) notesParts.push(`Zone: ${unloadZone}`);
 
   const btn = overlay?.querySelector('.btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Ajout...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
 
-  const res = await api('POST', `/projects/${projectId}/trucks`, {
-    vehicleType:  type,
-    truckNumber:  placeLabel,         // sert d'étiquette de lieu de chargement
-    licensePlate: licensePlate,
-    driverName:   driver  || undefined,
-    driverPhone:  phone   || undefined,
-    loadingDate:  loading ? new Date(loading).toISOString() : undefined,
-    arrivalDate:  arrival ? new Date(arrival).toISOString() : undefined,
-    notes:        notesParts.join(' | ') || undefined,
-    status:       'planned',
-  });
+  const body = {
+    vehicleType:       type,
+    truckNumber:       customName || null,     // nom optionnel saisi
+    licensePlate:      licensePlate,
+    driverName:        driver  || null,
+    driverPhone:       phone   || null,
+    loadingDate:       loading ? new Date(loading).toISOString() : null,
+    arrivalDate:       arrival ? new Date(arrival).toISOString() : null,
+    loadingLocation:   loadingLocation,
+    unloadingLocation: unloadingLocation,
+    notes:             notesParts.join(' | ') || null,
+    status:            status,
+  };
+
+  const res = isEdit
+    ? await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, body)
+    : await api('POST',  `/projects/${projectId}/trucks`, body);
 
   if (res?.success) {
-    toast('Véhicule ajouté ✅', 'success');
+    toast(isEdit ? 'Véhicule modifié ✅' : 'Véhicule ajouté ✅', 'success');
     overlay?.remove();
     loadProjectDetail(projectId);
+    if (typeof loadDetailTrucks === 'function') loadDetailTrucks(projectId);
   } else {
     toast('Erreur: ' + (res?.error || 'inconnue'), 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '✅ Ajouter le véhicule'; }
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? '💾 Enregistrer' : '✅ Ajouter le véhicule'; }
   }
 }
 
@@ -11110,6 +11164,36 @@ async function deleteHotel(projectId, hotelId) {
   else toast(res?.error || 'Erreur suppression', 'error');
 }
 
+// Libellés complets des types de véhicules pour l'affichage des cartes
+const TRUCK_VEHICLE_LABELS = {
+  truck:     'Camion Tautliner',
+  flatbed:   'Camion Flatbed',
+  van:       'Camionnette',
+  crane:     'Grue',
+  scissor:   'Nacelle ciseaux',
+  manitou:   'Manitou / Roto',
+  forklift:  'Chariot élévateur',
+  generator: 'Groupe électrogène',
+  other:     'Autre véhicule',
+};
+const TRUCK_VEHICLE_ICONS = {
+  truck:'🚛', flatbed:'🚛', van:'🚐', crane:'🏗️', scissor:'✂️',
+  manitou:'🔧', forklift:'🚜', generator:'⚡', other:'📦',
+};
+const TRUCK_STATUS_LABELS = {
+  planned:'🟣 Planifié', loading:'🟠 En chargement', in_transit:'🔵 En route',
+  delivered:'🟢 Livré', returned:'⚫ Retour entrepôt',
+};
+const TRUCK_STATUS_COLORS = {
+  planned:'#9b59b6', loading:'#f4a261', in_transit:'#4895ef',
+  delivered:'#2dc653', returned:'#5a6275',
+};
+
+// Un véhicule est "archivé" si livré ou de retour à l'entrepôt (= plus actif)
+function isTruckArchived(t) { return t?.status === 'delivered' || t?.status === 'returned'; }
+
+let SHOW_ARCHIVED_TRUCKS = false;
+
 async function loadDetailTrucks(projectId) {
   const el = document.getElementById('detail-trucks-content');
   if (!el) return;
@@ -11117,46 +11201,73 @@ async function loadDetailTrucks(projectId) {
   const res = await api('GET', `/projects/${projectId}/trucks`);
   const trucks = res?.data || [];
 
-  const VEHICLE_LABELS = { truck: '🚛 Camion', crane: '🏗️ Grue', forklift: '🛻 Forklift', manitou: '🚜 Manitou', scissor: '🪜 Nacelle', other: '🚗 Autre' };
-  const STATUS_BADGE = { planned:'#9b59b6', loading:'#f4a261', in_transit:'#4895ef', delivered:'#2dc653', returned:'#5a6275' };
+  const archivedCount = trucks.filter(isTruckArchived).length;
+  const visible = SHOW_ARCHIVED_TRUCKS ? trucks : trucks.filter(t => !isTruckArchived(t));
 
   let html = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <div style="font-size:13px;color:var(--text3);">${trucks.length} véhicule(s)</div>
-      <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${projectId}')">+ Ajouter</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;color:var(--text3);">
+        ${visible.length} véhicule(s) actif(s)
+        ${archivedCount > 0 ? `<span style="margin-left:8px;color:var(--text3);font-size:11px;">· ${archivedCount} archivé(s)</span>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        ${archivedCount > 0 ? `
+        <label style="display:flex;gap:4px;align-items:center;font-size:12px;color:var(--text2);cursor:pointer;">
+          <input type="checkbox" ${SHOW_ARCHIVED_TRUCKS?'checked':''} onchange="SHOW_ARCHIVED_TRUCKS=this.checked;loadDetailTrucks('${projectId}')" style="accent-color:var(--accent);">
+          Voir archivés
+        </label>` : ''}
+        <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${projectId}')">+ Ajouter</button>
+      </div>
     </div>`;
 
-  if (!trucks.length) {
-    html += '<div class="empty"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule</div><div class="empty-sub">Ajoute un camion, une grue ou un forklift.</div></div>';
-  } else {
-    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
-    for (const t of trucks) {
-      const vLabel = VEHICLE_LABELS[t.vehicleType] || VEHICLE_LABELS.truck;
-      const sColor = STATUS_BADGE[t.status] || '#5a6275';
-      const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
-      html += `
-        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-            <div>
-              <div style="font-weight:700;">${vLabel} · ${t.truckNumber || 'Sans n°'}</div>
-              <div style="font-size:12px;color:var(--text3);margin-top:2px;">
-                ${t.licensePlate?`🪪 ${t.licensePlate} · `:''}${t.driverName?`👤 ${t.driverName}`:''}${t.driverPhone?` · 📞 <a href="tel:${t.driverPhone}" style="color:var(--blue);">${t.driverPhone}</a>`:''}
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span style="background:${sColor};color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">${t.status}</span>
-              <button class="btn btn-ghost btn-sm" onclick="deleteTruck('${projectId}','${t.id}')">🗑️</button>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
-            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Chargement</div><div>${fmt(t.loadingDate)}</div></div>
-            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Arrivée</div><div>${fmt(t.arrivalDate)}</div></div>
-          </div>
-          ${t.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:6px;">📝 ${t.notes}</div>`:''}
-        </div>`;
-    }
-    html += '</div>';
+  if (!visible.length) {
+    html += '<div class="empty"><div class="empty-icon">🚛</div><div class="empty-title">Aucun véhicule actif</div><div class="empty-sub">' +
+      (archivedCount > 0 ? `${archivedCount} véhicule(s) archivé(s) — coche "Voir archivés" pour les afficher` : 'Ajoute un camion, une grue ou un forklift.') +
+      '</div></div>';
+    el.innerHTML = html;
+    return;
   }
+
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  for (const t of visible) {
+    const icon    = TRUCK_VEHICLE_ICONS[t.vehicleType] || '🚛';
+    const typeLbl = TRUCK_VEHICLE_LABELS[t.vehicleType] || 'Véhicule';
+    const sLbl    = TRUCK_STATUS_LABELS[t.status] || t.status;
+    const sColor  = TRUCK_STATUS_COLORS[t.status] || '#5a6275';
+    const archived = isTruckArchived(t);
+    const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+
+    // Nom affiché : type + nom custom optionnel
+    const displayName = t.truckNumber ? `${icon} ${typeLbl} — ${esc(t.truckNumber)}` : `${icon} ${typeLbl}`;
+
+    html += `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;${archived?'opacity:.65;':''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:14px;">${displayName}${archived?' <span style="font-size:10px;color:var(--text3);font-weight:400;">(archivé)</span>':''}</div>
+            <!-- Lieux chargement / déchargement sous le nom -->
+            <div style="font-size:12px;color:var(--text2);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;">
+              ${t.loadingLocation ? `<span>📦 <strong>Chargement :</strong> ${esc(t.loadingLocation)}</span>` : ''}
+              ${t.unloadingLocation ? `<span>🏗️ <strong>Déchargement :</strong> ${esc(t.unloadingLocation)}</span>` : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-top:3px;">
+              ${t.licensePlate?`🪪 ${esc(t.licensePlate)} · `:''}${t.driverName?`👤 ${esc(t.driverName)}`:''}${t.driverPhone?` · 📞 <a href="tel:${esc(t.driverPhone)}" style="color:var(--blue);">${esc(t.driverPhone)}</a>`:''}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+            <span style="background:${sColor};color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">${sLbl}</span>
+            <button class="btn btn-ghost btn-sm" onclick='showAddTruckModal("${projectId}", ${JSON.stringify(t).replace(/'/g,"&#39;")})' title="Modifier">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="deleteTruck('${projectId}','${t.id}')" title="Supprimer">🗑️</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+          <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">📅 Chargement</div><div>${fmt(t.loadingDate)}</div></div>
+          <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">📅 Arrivée</div><div>${fmt(t.arrivalDate)}</div></div>
+        </div>
+        ${t.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:6px;">📝 ${esc(t.notes)}</div>`:''}
+      </div>`;
+  }
+  html += '</div>';
   el.innerHTML = html;
 }
 

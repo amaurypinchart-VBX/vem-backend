@@ -278,6 +278,15 @@ export async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS "hotel_bookings_project_idx" ON "hotel_bookings" ("project_id");
     `);
 
+    // ─── Colonnes "lieu de chargement / déchargement" sur trucks ───
+    // Stockent le libellé final affiché (ex: "Entrepôt Tubize", "Brussels Expo, ...")
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "trucks" ADD COLUMN IF NOT EXISTS "loading_location" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "trucks" ADD COLUMN IF NOT EXISTS "unloading_location" TEXT;
+    `);
+
     // ─── Valeurs d'enum ProjectStatus manquantes (workflow devis/préparation/...) ───
     for (const val of ['quote_to_validate', 'quote_validated', 'handover_ok']) {
       try {
