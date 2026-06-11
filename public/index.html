@@ -10249,37 +10249,37 @@ function showAddTruckModal(projectId) {
             <select class="input" id="at-loading-place">
               <option value="tubize">🏭 Entrepôt Tubize</option>
               <option value="site">📍 Directement sur site événement</option>
-              <option value="other">📦 Autre lieu</option>
+              <option value="other">📦 Autre lieu (adresse spéciale)</option>
             </select>
           </div>
-          <div class="form-group2" style="margin-top:8px;" id="at-loading-other-wrap" style="display:none;">
-            <label class="form-label2">Préciser le lieu</label>
-            <input class="input" id="at-loading-other" placeholder="Adresse du lieu de chargement">
+          <div class="form-group2" style="margin-top:8px;display:none;" id="at-loading-other-wrap">
+            <label class="form-label2">Adresse du lieu de chargement</label>
+            <input class="input" id="at-loading-other" placeholder="Ex: Rue de la Forge 12, 7180 Seneffe">
           </div>
-          <div class="input-row" style="margin-top:8px;">
-            <div class="form-group2" style="margin:0;">
-              <label class="form-label2">📅 Date & heure de chargement</label>
-              <input class="input" type="datetime-local" id="at-loading">
-            </div>
-            <div class="form-group2" style="margin:0;">
-              <label class="form-label2">🚀 Date & heure de départ</label>
-              <input class="input" type="datetime-local" id="at-departure">
-            </div>
+          <div class="form-group2" style="margin-top:8px;">
+            <label class="form-label2">📅 Date & heure de chargement</label>
+            <input class="input" type="datetime-local" id="at-loading">
           </div>
         </div>
 
-        <!-- Déchargement sur site -->
+        <!-- Déchargement -->
         <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
-          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🏗️ Déchargement sur site</div>
-          <div class="input-row">
-            <div class="form-group2" style="margin:0;">
-              <label class="form-label2">📅 Arrivée estimée sur site</label>
-              <input class="input" type="datetime-local" id="at-arrival">
-            </div>
-            <div class="form-group2" style="margin:0;">
-              <label class="form-label2">⏱️ Déchargement estimé</label>
-              <input class="input" type="datetime-local" id="at-unloading">
-            </div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🏗️ Déchargement</div>
+          <div class="form-group2">
+            <label class="form-label2">Lieu de déchargement</label>
+            <select class="input" id="at-unloading-place">
+              <option value="site">📍 Site événement</option>
+              <option value="tubize">🏭 Entrepôt Tubize</option>
+              <option value="other">📦 Autre lieu (adresse spéciale)</option>
+            </select>
+          </div>
+          <div class="form-group2" style="margin-top:8px;display:none;" id="at-unloading-other-wrap">
+            <label class="form-label2">Adresse du lieu de déchargement</label>
+            <input class="input" id="at-unloading-other" placeholder="Ex: Brussels Expo, Place de Belgique 1">
+          </div>
+          <div class="form-group2" style="margin-top:8px;">
+            <label class="form-label2">📅 Arrivée estimée</label>
+            <input class="input" type="datetime-local" id="at-arrival">
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📍 Zone de déchargement</label>
@@ -10302,53 +10302,73 @@ function showAddTruckModal(projectId) {
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
 
-  // Show/hide "other place" field
+  // Show/hide "autre lieu" pour chargement
   document.getElementById('at-loading-place')?.addEventListener('change', function() {
     const wrap = document.getElementById('at-loading-other-wrap');
+    if (wrap) wrap.style.display = this.value === 'other' ? 'block' : 'none';
+  });
+  // Show/hide "autre lieu" pour déchargement
+  document.getElementById('at-unloading-place')?.addEventListener('change', function() {
+    const wrap = document.getElementById('at-unloading-other-wrap');
     if (wrap) wrap.style.display = this.value === 'other' ? 'block' : 'none';
   });
   setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
 }
 
 async function saveTruck(projectId, overlay) {
-  const type         = document.getElementById('at-type')?.value || 'truck';
-  const plate1       = document.getElementById('at-plate1')?.value?.trim();
-  const plate2       = document.getElementById('at-plate2')?.value?.trim();
+  const v = id => document.getElementById(id)?.value?.trim();
+  const sel = id => document.getElementById(id)?.value;
+
+  const type         = sel('at-type') || 'truck';
+  const plate1       = v('at-plate1');
+  const plate2       = v('at-plate2');
   const licensePlate = [plate1, plate2].filter(Boolean).join(' / ') || undefined;
-  const driver       = document.getElementById('at-driver')?.value?.trim();
-  const phone        = document.getElementById('at-phone')?.value?.trim();
-  const loadingPlace = document.getElementById('at-loading-place')?.value;
-  const loadingOther = document.getElementById('at-loading-other')?.value?.trim();
-  const loading      = document.getElementById('at-loading')?.value;
-  const departure    = document.getElementById('at-departure')?.value;
-  const arrival      = document.getElementById('at-arrival')?.value;
-  const unloading    = document.getElementById('at-unloading')?.value;
-  const unloadZone   = document.getElementById('at-unloading-zone')?.value?.trim();
-  const notesRaw     = document.getElementById('at-notes')?.value?.trim();
+  const driver       = v('at-driver');
+  const phone        = v('at-phone');
 
-  // Build location label
-  const placeLabel = {tubize:'Entrepôt Tubize', site:'Site événement', other: loadingOther||'Autre'}[loadingPlace] || loadingPlace;
+  const loadingPlace   = sel('at-loading-place');
+  const loadingOther   = v('at-loading-other');
+  const unloadingPlace = sel('at-unloading-place');
+  const unloadingOther = v('at-unloading-other');
+  const loading        = sel('at-loading');
+  const arrival        = sel('at-arrival');
+  const unloadZone     = v('at-unloading-zone');
+  const notesRaw       = v('at-notes');
 
-  // Combine notes
+  // Construction du libellé du lieu de chargement
+  const placeLabel = ({
+    tubize: 'Entrepôt Tubize',
+    site:   'Site événement',
+    other:  loadingOther || 'Autre lieu',
+  })[loadingPlace] || loadingPlace;
+
+  // Construction du libellé du lieu de déchargement
+  const unloadPlaceLabel = ({
+    tubize: 'Entrepôt Tubize',
+    site:   'Site événement',
+    other:  unloadingOther || 'Autre lieu',
+  })[unloadingPlace] || unloadingPlace;
+
+  // Concaténation des infos additionnelles dans les notes (le modèle backend
+  // ne distingue pas explicitement le lieu déchargement, donc on le met en notes)
   const notesParts = [];
-  if (notesRaw) notesParts.push(notesRaw);
-  if (unloadZone) notesParts.push(`Zone déchargement: ${unloadZone}`);
-  if (unloading) notesParts.push(`Déchargement estimé: ${new Date(unloading).toLocaleString('fr-BE')}`);
+  if (notesRaw)        notesParts.push(notesRaw);
+  if (unloadPlaceLabel)notesParts.push(`Déchargement: ${unloadPlaceLabel}`);
+  if (unloadZone)      notesParts.push(`Zone: ${unloadZone}`);
 
   const btn = overlay?.querySelector('.btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Ajout...'; }
 
   const res = await api('POST', `/projects/${projectId}/trucks`, {
-    vehicleType:   type,
-    truckNumber:   placeLabel,         // repurpose truckNumber for loading place
-    licensePlate:  licensePlate,
-    driverName:    driver   || undefined,
-    driverPhone:   phone    || undefined,
-    loadingDate:   loading   ? new Date(loading).toISOString()   : undefined,
-    departureDate: departure ? new Date(departure).toISOString() : undefined,
-    arrivalDate:   arrival   ? new Date(arrival).toISOString()   : undefined,
-    notes:         notesParts.join(' | ') || undefined,
-    status:        'planned',
+    vehicleType:  type,
+    truckNumber:  placeLabel,         // sert d'étiquette de lieu de chargement
+    licensePlate: licensePlate,
+    driverName:   driver  || undefined,
+    driverPhone:  phone   || undefined,
+    loadingDate:  loading ? new Date(loading).toISOString() : undefined,
+    arrivalDate:  arrival ? new Date(arrival).toISOString() : undefined,
+    notes:        notesParts.join(' | ') || undefined,
+    status:       'planned',
   });
 
   if (res?.success) {
@@ -11095,7 +11115,7 @@ async function loadDetailTrucks(projectId) {
   let html = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div style="font-size:13px;color:var(--text3);">${trucks.length} véhicule(s)</div>
-      <button class="btn btn-primary btn-sm" onclick="openTruckModal('${projectId}')">+ Ajouter</button>
+      <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${projectId}')">+ Ajouter</button>
     </div>`;
 
   if (!trucks.length) {
@@ -11117,14 +11137,12 @@ async function loadDetailTrucks(projectId) {
             </div>
             <div style="display:flex;gap:6px;align-items:center;">
               <span style="background:${sColor};color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;">${t.status}</span>
-              <button class="btn btn-ghost btn-sm" onclick='openTruckModal("${projectId}", ${JSON.stringify(t).replace(/'/g,"&#39;")})'>✏️</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteTruck('${projectId}','${t.id}')">🗑️</button>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
             <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Chargement</div><div>${fmt(t.loadingDate)}</div></div>
-            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Arrivée sur site</div><div>${fmt(t.arrivalDate)}</div></div>
-            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Départ retour</div><div>${fmt(t.departureDate)}</div></div>
+            <div><div style="color:var(--text3);font-size:10px;text-transform:uppercase;">Arrivée</div><div>${fmt(t.arrivalDate)}</div></div>
           </div>
           ${t.notes?`<div style="margin-top:8px;font-size:12px;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:6px;">📝 ${t.notes}</div>`:''}
         </div>`;
@@ -11134,68 +11152,6 @@ async function loadDetailTrucks(projectId) {
   el.innerHTML = html;
 }
 
-function openTruckModal(projectId, existing) {
-  const t = existing || {};
-  const overlay = document.createElement('div'); overlay.className = 'overlay open';
-  const dateInput = d => d ? new Date(d).toISOString().slice(0,16) : '';
-  overlay.innerHTML = `
-    <div class="modal" style="max-width:540px;">
-      <div class="modal-head">
-        <div class="modal-title">${t.id?'Modifier':'Ajouter'} un véhicule</div>
-        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div class="form-group"><label class="form-label">Type</label>
-          <select class="input" id="tk-type">
-            ${['truck','crane','forklift','manitou','scissor','other'].map(v=>`<option value="${v}" ${t.vehicleType===v?'selected':''}>${v}</option>`).join('')}
-          </select></div>
-        <div class="form-group"><label class="form-label">Numéro</label><input class="input" id="tk-num" value="${t.truckNumber||''}"></div>
-        <div class="form-group"><label class="form-label">Plaque</label><input class="input" id="tk-plate" value="${t.licensePlate||''}"></div>
-        <div class="form-group"><label class="form-label">Chauffeur</label><input class="input" id="tk-driver" value="${t.driverName||''}"></div>
-        <div class="form-group"><label class="form-label">Téléphone chauffeur</label><input class="input" id="tk-phone" value="${t.driverPhone||''}"></div>
-        <div class="form-group"><label class="form-label">Statut</label>
-          <select class="input" id="tk-status">
-            ${['planned','loading','in_transit','delivered','returned'].map(v=>`<option value="${v}" ${t.status===v?'selected':''}>${v}</option>`).join('')}
-          </select></div>
-        <div class="form-group"><label class="form-label">Chargement</label><input class="input" type="datetime-local" id="tk-load" value="${dateInput(t.loadingDate)}"></div>
-        <div class="form-group"><label class="form-label">Arrivée sur site</label><input class="input" type="datetime-local" id="tk-arr" value="${dateInput(t.arrivalDate)}"></div>
-        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Départ retour</label><input class="input" type="datetime-local" id="tk-dep" value="${dateInput(t.departureDate)}"></div>
-        <div class="form-group" style="grid-column:1/-1;"><label class="form-label">Notes</label><textarea class="input" id="tk-notes" rows="2">${t.notes||''}</textarea></div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveTruck('${projectId}','${t.id||''}')">💾 Enregistrer</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-}
-
-async function saveTruck(projectId, truckId) {
-  const val = id => document.getElementById(id).value.trim();
-  const payload = {
-    vehicleType: document.getElementById('tk-type').value,
-    truckNumber: val('tk-num')   || null,
-    licensePlate: val('tk-plate')|| null,
-    driverName: val('tk-driver') || null,
-    driverPhone: val('tk-phone') || null,
-    status: document.getElementById('tk-status').value,
-    loadingDate:   val('tk-load') || null,
-    arrivalDate:   val('tk-arr')  || null,
-    departureDate: val('tk-dep')  || null,
-    notes: val('tk-notes') || null,
-  };
-  const res = truckId
-    ? await api('PATCH', `/projects/${projectId}/trucks/${truckId}`, payload)
-    : await api('POST',  `/projects/${projectId}/trucks`,           payload);
-  if (res?.success) {
-    toast('Véhicule enregistré ✅', 'success');
-    document.querySelector('.overlay.open')?.remove();
-    loadDetailTrucks(projectId);
-  } else {
-    console.error('[saveTruck] échec :', res);
-    toast(res?.error || 'Erreur enregistrement', 'error');
-  }
-}
 
 async function deleteTruck(projectId, truckId) {
   if (!confirm('Supprimer ce véhicule ?')) return;
