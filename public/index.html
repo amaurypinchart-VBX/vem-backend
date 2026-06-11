@@ -1936,7 +1936,7 @@ function toggleNav() {
 
 // Copie dans le presse-papiers les instructions d'envoi par mail pour un projet
 function copyEmailInstructions(internalNumber) {
-  const text = `À: files@viewbox-event.com\nSujet: ${internalNumber}\n\n(Joindre les fichiers à envoyer dans le projet ${internalNumber})`;
+  const text = `À: warehouseviewbox@gmail.com\nSujet: ${internalNumber}\n\n(Joindre les fichiers à envoyer dans le projet ${internalNumber})`;
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(
       () => toast('Instructions copiées 📋', 'success'),
@@ -2625,12 +2625,13 @@ async function loadProjectDetail(id) {
           </label>
         </div>
       </div>
-      <!-- Encart : envoyer des fichiers par mail (Brevo Inbound) -->
+      <!-- Encart : envoyer des fichiers par mail (Gmail IMAP polling) -->
       <div style="margin:0 18px 8px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;">
         <span style="font-size:18px;">📧</span>
         <div style="flex:1;min-width:200px;">
           <div style="font-weight:600;color:#92400e;">Envoyer des fichiers par email</div>
-          <div style="color:#9a3412;">Mail à <strong>files@viewbox-event.com</strong> avec <strong>${esc(p.internalNumber||'N/A')}</strong> dans le sujet</div>
+          <div style="color:#9a3412;">Mail à <strong>warehouseviewbox@gmail.com</strong> avec <strong>${esc(p.internalNumber||'N/A')}</strong> dans le sujet</div>
+          <div style="font-size:10px;color:#9a3412;opacity:.85;margin-top:2px;">⏱ Les fichiers apparaîtront dans les 5 minutes</div>
         </div>
         <button class="btn btn-ghost btn-xs" onclick="copyEmailInstructions('${esc(p.internalNumber||'')}');event.stopPropagation();" style="color:#92400e;border-color:#fed7aa;">📋 Copier</button>
       </div>

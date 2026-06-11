@@ -32,6 +32,7 @@ import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
 import teamBookingsRoutes from './routes/teamBookings';
 import emailWebhookRoutes from './routes/emailWebhook';
+import { startImapPoller } from './services/imapPoller';
 import { runStartupMigrations } from './utils/migrations';
 
 const app  = express();
@@ -101,6 +102,17 @@ app.use(API,                     authMiddleware, teamBookingsRoutes);
 // La sécurité passe par le token partagé BREVO_WEBHOOK_SECRET vérifié dans la route.
 app.use('/webhooks',             emailWebhookRoutes);
 
+// Route admin pour déclencher manuellement le polling IMAP (pratique pour tester
+// sans attendre l'intervalle de 5 minutes). À appeler depuis la console F12 :
+//   await fetch(`${API}/imap-poll`, { method:'POST', headers:{Authorization:`Bearer ${TOKEN}`} }).then(r=>r.json())
+app.post(`${API}/imap-poll`, authMiddleware, async (_req, res, next) => {
+  try {
+    const { pollImapOnce } = await import('./services/imapPoller');
+    const result = await pollImapOnce();
+    res.json({ success: true, data: result });
+  } catch (err) { next(err); }
+});
+
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
 app.use(errorHandler);
@@ -109,6 +121,9 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 http.listen(PORT, '0.0.0.0', async () => {
   logger.info(`🚀 VEM running on port ${PORT}`);
   await runStartupMigrations();
+  // Démarre le polling IMAP pour récupérer les emails entrants → projets.
+  // Ne fait rien si IMAP_USER/IMAP_PASS ne sont pas configurés.
+  startImapPoller();
 });
 
 export default app;
