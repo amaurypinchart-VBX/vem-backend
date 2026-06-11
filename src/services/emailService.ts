@@ -98,10 +98,72 @@ async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: 
   return { messageId: json.messageId || `brevo-${Date.now()}` };
 }
 
+// ─── Envoi via Google Apps Script (HTTPS, contourne le blocage SMTP) ───
+// L'utilisateur déploie un script Google qui appelle GmailApp.sendEmail().
+// Notre backend POST vers l'URL du script, en JSON avec attachements en base64.
+async function sendViaAppsScript(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+  const url   = process.env.GMAIL_APPS_SCRIPT_URL;
+  const token = process.env.GMAIL_APPS_SCRIPT_TOKEN;
+  if (!url || !token) throw new Error('GMAIL_APPS_SCRIPT_URL ou GMAIL_APPS_SCRIPT_TOKEN manquant');
+
+  const body: any = {
+    token,
+    to:       opts.to,
+    subject:  opts.subject,
+    html:     opts.html,
+    fromName: FROM_NAME,
+  };
+  if (opts.attachments && opts.attachments.length > 0) {
+    body.attachments = opts.attachments.map((a: any) => {
+      let content: string;
+      if (Buffer.isBuffer(a.content))         content = a.content.toString('base64');
+      else if (typeof a.content === 'string') content = Buffer.from(a.content).toString('base64');
+      else                                     content = '';
+      return {
+        filename:    a.filename || a.name || 'attachment',
+        contentType: a.contentType || 'application/octet-stream',
+        content,
+      };
+    });
+  }
+
+  // Google Apps Script peut rediriger une fois (302), il faut suivre la redirection.
+  const r: any = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+    redirect: 'follow' as any,
+  });
+  const txt = await r.text();
+  if (!r.ok) {
+    logger.error(`[email/apps-script] HTTP ${r.status} : ${txt.slice(0, 300)}`);
+    throw new Error(`Apps Script HTTP ${r.status}`);
+  }
+  let json: any;
+  try { json = JSON.parse(txt); } catch (_) {
+    throw new Error(`Apps Script a renvoyé une réponse non-JSON : ${txt.slice(0, 200)}`);
+  }
+  if (!json.success) {
+    throw new Error(`Apps Script : ${json.error || 'erreur inconnue'}`);
+  }
+  return { messageId: `apps-script-${Date.now()}` };
+}
+
 export async function sendMail(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
-  // Choix du provider : par défaut SMTP (Gmail), Brevo uniquement si demandé explicitement.
-  // L'ancien code utilisait Brevo dès que BREVO_API_KEY était définie, mais ça créait
-  // des problèmes pour les comptes qui n'ont configuré Brevo QUE pour l'inbound.
+  // Priorité 1 : Google Apps Script si configuré (la solution Gmail-only via HTTPS)
+  if (process.env.GMAIL_APPS_SCRIPT_URL && process.env.GMAIL_APPS_SCRIPT_TOKEN) {
+    try {
+      const result = await sendViaAppsScript(opts);
+      const toStr = Array.isArray(opts.to) ? opts.to.join(', ') : opts.to;
+      logger.info(`[email/apps-script] ✅ envoyé à ${toStr} (via Gmail)`);
+      return result;
+    } catch (e: any) {
+      logger.error(`[email/apps-script] ❌ échec : ${e.message}`);
+      throw new Error(`Envoi mail échoué (Apps Script) : ${e.message}`);
+    }
+  }
+
+  // Priorité 2 : Brevo si EMAIL_PROVIDER=brevo
   const provider = (process.env.EMAIL_PROVIDER || 'smtp').toLowerCase();
 
   if (provider === 'brevo') {
