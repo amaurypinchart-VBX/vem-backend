@@ -131,12 +131,17 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
       };
     });
   }
-  const bodyStr = JSON.stringify(body);
+  const bodyStr = JSON.stringify(body).replace(
+    // Échappe tous les caractères non-ASCII en \uXXXX pour garantir un transit propre
+    // à travers Apps Script (qui peut mal interpréter le charset des emojis UTF-8 brut)
+    /[\u007F-\uFFFF]/g,
+    (c) => '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4),
+  );
 
-  // POST initial avec redirect manuel
+  // POST initial avec redirect manuel + charset explicite
   let r: any = await fetch(url, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body:    bodyStr,
     redirect: 'manual' as any,
   });
@@ -150,7 +155,7 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
     logger.info(`[email/apps-script] Redirect ${r.status} → ${location.slice(0, 80)}...`);
     r = await fetch(location, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body:    bodyStr,
       redirect: 'manual' as any,
     });
