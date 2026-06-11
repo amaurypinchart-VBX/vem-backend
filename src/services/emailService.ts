@@ -101,6 +101,11 @@ async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: 
 // ─── Envoi via Google Apps Script (HTTPS, contourne le blocage SMTP) ───
 // L'utilisateur déploie un script Google qui appelle GmailApp.sendEmail().
 // Notre backend POST vers l'URL du script, en JSON avec attachements en base64.
+//
+// ⚠️ Apps Script renvoie un 302 redirect vers script.googleusercontent.com.
+// Node fetch convertirait automatiquement POST → GET en suivant ce redirect
+// (ce qui causerait un 405 Method Not Allowed). On gère donc le redirect
+// manuellement en re-postant le body sur la nouvelle URL.
 async function sendViaAppsScript(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
   const url   = process.env.GMAIL_APPS_SCRIPT_URL;
   const token = process.env.GMAIL_APPS_SCRIPT_TOKEN;
@@ -126,14 +131,31 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
       };
     });
   }
+  const bodyStr = JSON.stringify(body);
 
-  // Google Apps Script peut rediriger une fois (302), il faut suivre la redirection.
-  const r: any = await fetch(url, {
+  // POST initial avec redirect manuel
+  let r: any = await fetch(url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
-    redirect: 'follow' as any,
+    body:    bodyStr,
+    redirect: 'manual' as any,
   });
+
+  // Suivre jusqu'à 5 redirections en re-postant le body à chaque fois
+  let redirects = 0;
+  while ((r.status === 301 || r.status === 302 || r.status === 303 || r.status === 307 || r.status === 308) && redirects < 5) {
+    const location = r.headers.get('location');
+    if (!location) break;
+    redirects++;
+    logger.info(`[email/apps-script] Redirect ${r.status} → ${location.slice(0, 80)}...`);
+    r = await fetch(location, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    bodyStr,
+      redirect: 'manual' as any,
+    });
+  }
+
   const txt = await r.text();
   if (!r.ok) {
     logger.error(`[email/apps-script] HTTP ${r.status} : ${txt.slice(0, 300)}`);
