@@ -1008,12 +1008,12 @@ textarea.input{min-height:80px;resize:vertical;}
     </div>
     <div class="form-group2"><label class="form-label2">Adresse *</label><input class="input" id="proj-addr" placeholder="Adresse complète, Ville"></div>
     <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Début installation *</label><input class="input" type="date" id="proj-start"></div>
-      <div class="form-group2"><label class="form-label2">Fin installation *</label><input class="input" type="date" id="proj-end"></div>
+      <div class="form-group2"><label class="form-label2">Début installation * <span style="color:var(--text3);font-weight:400;font-size:11px;">(date + heure)</span></label><input class="input" type="datetime-local" id="proj-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin installation * <span style="color:var(--text3);font-weight:400;font-size:11px;">(date + heure)</span></label><input class="input" type="datetime-local" id="proj-end"></div>
     </div>
     <div class="input-row">
-      <div class="form-group2"><label class="form-label2">Début démontage</label><input class="input" type="date" id="proj-dismantling-start"></div>
-      <div class="form-group2"><label class="form-label2">Fin démontage</label><input class="input" type="date" id="proj-dismantling-end"></div>
+      <div class="form-group2"><label class="form-label2">Début démontage <span style="color:var(--text3);font-weight:400;font-size:11px;">(date + heure)</span></label><input class="input" type="datetime-local" id="proj-dismantling-start"></div>
+      <div class="form-group2"><label class="form-label2">Fin démontage <span style="color:var(--text3);font-weight:400;font-size:11px;">(date + heure)</span></label><input class="input" type="datetime-local" id="proj-dismantling-end"></div>
     </div>
     <div class="form-group2"><label class="form-label2">Description / Instructions spéciales</label><textarea class="input" id="proj-desc" placeholder="Notes importantes, instructions..."></textarea></div>
 
@@ -3403,12 +3403,12 @@ async function openEditProjectModal(projectId) {
   set('proj-workers',           p.workersCount || 5);
   set('proj-addr',              p.address);
   set('proj-desc',              p.description || p.notes || '');
-  // Les dates ISO doivent être tronquées en YYYY-MM-DD pour les inputs type="date"
-  const toDate = d => d ? new Date(d).toISOString().split('T')[0] : '';
-  set('proj-start',             toDate(p.installationStart));
-  set('proj-end',               toDate(p.installationEnd));
-  set('proj-dismantling-start', toDate(p.dismantlingStart));
-  set('proj-dismantling-end',   toDate(p.dismantlingEnd));
+  // Les dates ISO doivent être tronquées en YYYY-MM-DDTHH:mm pour les inputs type="datetime-local"
+  const toDT = d => d ? new Date(d).toISOString().slice(0, 16) : '';
+  set('proj-start',             toDT(p.installationStart));
+  set('proj-end',               toDT(p.installationEnd));
+  set('proj-dismantling-start', toDT(p.dismantlingStart));
+  set('proj-dismantling-end',   toDT(p.dismantlingEnd));
 
   // 4) Pré-sélectionner le client (le select existant a déjà ses options chargées)
   const cliSel = document.getElementById('proj-client');
@@ -4490,7 +4490,15 @@ function toast(msg, type='info') {
 // ═══ UTILS ═══
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const dt = new Date(d);
+  // Si l'heure est différente de minuit (= heure réellement renseignée),
+  // on affiche date + heure. Sinon on affiche juste la date.
+  const hasTime = dt.getHours() !== 0 || dt.getMinutes() !== 0;
+  if (hasTime) {
+    return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' }) +
+           ' à ' + dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+  }
+  return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
 
 function fmtDateTime(d) {
@@ -11175,6 +11183,7 @@ const BLOCK_TYPES = {
   trucks:   { icon:'🚛', label:'Logistique (auto)' },
   photos:   { icon:'📸', label:'Photos / PDF' },
   location: { icon:'📍', label:'Localisation' },
+  planning: { icon:'📅', label:'Planning installation / démontage' },
 };
 
 // Migration silencieuse : ancien format (slide.type) → nouveau (slide.blocks[])
@@ -11381,6 +11390,61 @@ function renderBlockEditor(slideIdx, bi, b) {
       </div>
       ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Google Maps</a>` : ''}`;
   }
+  else if (b.type === 'planning') {
+    // Bloc Planning : sélection du type (installation/démontage/jour spécifique) + liste d'étapes horaires
+    // Chaque étape = { time: "HH:mm", duration: "Xh", description: "...", responsible: "..." }
+    if (!Array.isArray(b.steps)) b.steps = [];
+    if (!b.phase) b.phase = 'installation';
+    if (!b.dateLabel) b.dateLabel = '';
+
+    const phaseOptions = [
+      { v: 'installation', l: '🏗️ Installation' },
+      { v: 'dismantling',  l: '🔨 Démontage' },
+      { v: 'event',        l: '🎉 Jour de l\'événement' },
+      { v: 'preprod',      l: '📦 Pré-production / Atelier' },
+      { v: 'custom',       l: '📅 Autre' },
+    ];
+
+    body = `
+      <div class="input-row">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Phase concernée</label>
+          <select class="input" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].phase=this.value">
+            ${phaseOptions.map(p => `<option value="${p.v}" ${b.phase===p.v?'selected':''}>${p.l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Date / Libellé (optionnel)</label>
+          <input class="input" placeholder="Ex: Jour 1 — 17 juin" value="${esc(b.dateLabel||'')}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].dateLabel=this.value">
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:700;margin:10px 0 6px;">📋 Étapes du planning</div>
+      <div id="planning-steps-${slideIdx}-${bi}" style="display:flex;flex-direction:column;gap:6px;">
+        ${b.steps.map((s, si) => `
+          <div style="display:grid;grid-template-columns:90px 70px 1fr 1fr 28px;gap:6px;align-items:center;background:var(--bg2);padding:6px;border-radius:6px;">
+            <input class="input" type="time" value="${esc(s.time||'')}" placeholder="HH:mm"
+              style="font-size:12px;padding:4px 6px;"
+              onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].steps[${si}].time=this.value">
+            <input class="input" value="${esc(s.duration||'')}" placeholder="durée"
+              style="font-size:12px;padding:4px 6px;"
+              onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].steps[${si}].duration=this.value">
+            <input class="input" value="${esc(s.description||'')}" placeholder="Description de l'étape (ex: Montage structure scène)"
+              style="font-size:12px;padding:4px 6px;"
+              onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].steps[${si}].description=this.value">
+            <input class="input" value="${esc(s.responsible||'')}" placeholder="Responsable"
+              style="font-size:12px;padding:4px 6px;"
+              onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].steps[${si}].responsible=this.value">
+            <button class="btn btn-ghost btn-xs" onclick="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].steps.splice(${si},1);renderBriefing()" title="Supprimer cette étape" style="color:var(--accent);">×</button>
+          </div>`).join('')}
+        ${b.steps.length === 0 ? '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:8px;">Aucune étape. Clique sur "+ Ajouter une étape" ci-dessous.</div>' : ''}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="addPlanningStep(${slideIdx},${bi})">+ Ajouter une étape</button>
+        <button class="btn btn-ghost btn-sm" onclick="addPlanningStepsFromProject(${slideIdx},${bi})" title="Pré-remplir avec les heures du projet">⚡ Générer depuis le projet</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;font-style:italic;">💡 Astuce : laisser un champ vide pour le masquer (heure, durée, responsable)</div>`;
+  }
 
   return `
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;">
@@ -11457,6 +11521,70 @@ function moveBlock(slideIdx, bi, dir) {
   if (j < 0 || j >= arr.length) return;
   [arr[bi], arr[j]] = [arr[j], arr[bi]];
   renderBriefing();
+}
+
+// ─── Planning installation / démontage ───
+function addPlanningStep(slideIdx, bi) {
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  if (!Array.isArray(b.steps)) b.steps = [];
+  b.steps.push({ time: '', duration: '', description: '', responsible: '' });
+  renderBriefing();
+}
+
+// Pré-remplit le planning à partir des dates du projet courant
+// Génère un template d'étapes standard selon la phase (installation/démontage)
+function addPlanningStepsFromProject(slideIdx, bi) {
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  const p = BRIEFING_AUTO?.project || {};
+  if (!Array.isArray(b.steps)) b.steps = [];
+
+  // Format date+heure de la phase concernée
+  const phaseDates = b.phase === 'dismantling'
+    ? { start: p.dismantlingStart, end: p.dismantlingEnd, label: 'Démontage' }
+    : { start: p.installationStart, end: p.installationEnd, label: 'Installation' };
+
+  if (!phaseDates.start) {
+    toast(`Pas de date de ${phaseDates.label.toLowerCase()} renseignée sur le projet`, 'warning');
+    return;
+  }
+
+  const startDt = new Date(phaseDates.start);
+  const dateLabel = startDt.toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long' });
+  const startTime = startDt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+
+  // On pré-remplit le libellé de date s'il est vide
+  if (!b.dateLabel) b.dateLabel = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
+
+  // Template d'étapes selon la phase
+  const templates = {
+    installation: [
+      { time: startTime, duration: '30 min', description: 'Arrivée sur site, briefing équipe', responsible: '' },
+      { time: '',        duration: '1h',     description: 'Déchargement camions', responsible: '' },
+      { time: '',        duration: '4h',     description: 'Montage structure principale', responsible: '' },
+      { time: '',        duration: '1h',     description: 'Pause déjeuner', responsible: '' },
+      { time: '',        duration: '3h',     description: 'Installation équipements / habillage', responsible: '' },
+      { time: '',        duration: '1h',     description: 'Tests + ajustements', responsible: '' },
+      { time: '',        duration: '30 min', description: 'Nettoyage chantier + briefing fin de journée', responsible: '' },
+    ],
+    dismantling: [
+      { time: startTime, duration: '30 min', description: 'Arrivée sur site, briefing équipe', responsible: '' },
+      { time: '',        duration: '2h',     description: 'Démontage équipements', responsible: '' },
+      { time: '',        duration: '3h',     description: 'Démontage structure principale', responsible: '' },
+      { time: '',        duration: '1h',     description: 'Pause déjeuner', responsible: '' },
+      { time: '',        duration: '2h',     description: 'Chargement camions', responsible: '' },
+      { time: '',        duration: '30 min', description: 'Nettoyage final + état des lieux', responsible: '' },
+    ],
+    event: [
+      { time: startTime, duration: '',       description: 'Ouverture événement', responsible: '' },
+      { time: '',        duration: '',       description: 'Surveillance technique', responsible: '' },
+      { time: '',        duration: '',       description: 'Fermeture événement', responsible: '' },
+    ],
+  };
+
+  const template = templates[b.phase] || templates.installation;
+  b.steps = template;
+  renderBriefing();
+  toast(`Planning ${phaseDates.label} pré-rempli — adapte les horaires à ton chantier`, 'success');
 }
 
 // ─── Contacts ───
@@ -11593,6 +11721,44 @@ async function printBriefing() {
     if (b.type === 'location') {
       const mapsLink = b.address ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.address)}" target="_blank">${esc(b.address)}</a>` : '—';
       return `<div style="font-size:14px;line-height:1.6;margin:8px 0;"><div><strong>Adresse :</strong> ${mapsLink}</div>${b.stand?`<div><strong>Stand / hall :</strong> ${esc(b.stand)}</div>`:''}${b.notes?`<div style="margin-top:8px;white-space:pre-wrap;">${esc(b.notes)}</div>`:''}</div>`;
+    }
+    if (b.type === 'planning') {
+      const phaseLabels = {
+        installation: '🏗️ Planning d\'installation',
+        dismantling:  '🔨 Planning de démontage',
+        event:        '🎉 Jour de l\'événement',
+        preprod:      '📦 Pré-production / Atelier',
+        custom:       '📅 Planning',
+      };
+      const phaseLabel = phaseLabels[b.phase] || phaseLabels.custom;
+      const steps = (b.steps || []).filter(s => s.time || s.description);
+      if (steps.length === 0) {
+        return `<div style="margin:8px 0;font-size:13px;color:#666;font-style:italic;">${phaseLabel}${b.dateLabel?' — '+esc(b.dateLabel):''} : aucune étape renseignée</div>`;
+      }
+      const rows = steps.map(s => `
+        <tr>
+          <td style="font-weight:700;font-family:monospace;color:#1a1a2e;width:80px;">${esc(s.time||'')}</td>
+          <td style="color:#666;font-size:12px;width:70px;">${esc(s.duration||'')}</td>
+          <td>${esc(s.description||'')}</td>
+          <td style="color:#888;font-size:12px;">${esc(s.responsible||'')}</td>
+        </tr>`).join('');
+      return `
+        <div style="margin:14px 0;">
+          <div style="font-weight:700;color:#1a1a2e;font-size:14px;margin-bottom:8px;">
+            ${phaseLabel}${b.dateLabel?` — <span style="color:#666;font-weight:400;">${esc(b.dateLabel)}</span>`:''}
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#f8f8f8;">
+                <th style="text-align:left;">Heure</th>
+                <th style="text-align:left;">Durée</th>
+                <th style="text-align:left;">Étape</th>
+                <th style="text-align:left;">Responsable</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
     }
     return '';
   };
