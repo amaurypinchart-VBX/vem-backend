@@ -167,23 +167,24 @@ model Project {
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
-  client           Client         @relation(fields: [clientId], references: [id])
-  technicalManager User?          @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
-  createdBy        User?          @relation("CreatedBy", fields: [createdById], references: [id])
-  team             ProjectTeam[]
-  trucks           Truck[]
-  files            ProjectFile[]
-  tasks            Task[]
-  handovers        Handover[]
-  dailyReports     DailyReport[]
-  tickets          Ticket[]
-  warehouseBoxes   WarehouseBox[]
-  toolboxes        Toolbox[]
-  clientRemarks    ClientRemark[]
-  clientVisits     ClientVisit[]
-  briefing         Briefing?
-  teamBookings     TeamBooking[]
-  hotelBookings    HotelBooking[]
+  client              Client               @relation(fields: [clientId], references: [id])
+  technicalManager    User?                @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
+  createdBy           User?                @relation("CreatedBy", fields: [createdById], references: [id])
+  team                ProjectTeam[]
+  trucks              Truck[]
+  files               ProjectFile[]
+  tasks               Task[]
+  handovers           Handover[]
+  dailyReports        DailyReport[]
+  tickets             Ticket[]
+  warehouseBoxes      WarehouseBox[]
+  toolboxes           Toolbox[]
+  clientRemarks       ClientRemark[]
+  clientVisits        ClientVisit[]
+  briefing            Briefing?
+  teamBookings        TeamBooking[]
+  hotelBookings       HotelBooking[]
+  productReservations ProductReservation[]
 
   @@map("projects")
 }
@@ -772,4 +773,73 @@ model Briefing {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("briefings")
+}
+
+// ─────────────────────────────────────────────
+// PRODUITS / STOCK — Catalogue + réservations
+// ─────────────────────────────────────────────
+// Catalogue produit (importable depuis Odoo via CSV) :
+//   - Product            : un article du catalogue avec quantité totale en stock
+//   - ProductCategory    : regroupement (Modules Viewbox, Terrasses, Handrails…)
+//   - ProductReservation : un produit réservé pour un projet, avec dates calculées
+//                          automatiquement (J-3/J-5 avant install, J+3/J+5 après démontage)
+// ─────────────────────────────────────────────
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  color       String    @default("#4895ef")
+  icon        String    @default("📦")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  products    Product[]
+
+  @@map("product_categories")
+}
+
+model Product {
+  id                String    @id @default(uuid())
+  internalReference String    @unique @map("internal_reference")   // ex: 7-962-035
+  name              String                                          // ex: VIEWBOX STANDARD M16...
+  description       String?
+  categoryId        String?   @map("category_id")
+  totalQuantity     Float     @default(1) @map("total_quantity")
+  unit              String    @default("pcs")                       // pcs, m, m², kg
+  photoUrl          String?   @map("photo_url")
+  publicId          String?   @map("public_id")
+  notes             String?
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  category          ProductCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  reservations      ProductReservation[]
+
+  @@map("products")
+}
+
+// Réservation d'un produit pour un projet.
+// Les dates de réservation sont calculées côté backend lors du POST/PUT
+// pour rester cohérentes même si les dates du projet changent.
+// Règle : start = installStart - 3j (-5j si lundi),
+//         end   = dismantleEnd + 3j (+5j si vendredi)
+model ProductReservation {
+  id                String    @id @default(uuid())
+  projectId         String    @map("project_id")
+  productId         String    @map("product_id")
+  quantity          Float     @default(1)
+  reservationStart  DateTime  @map("reservation_start")
+  reservationEnd    DateTime  @map("reservation_end")
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, productId])
+  @@map("product_reservations")
 }

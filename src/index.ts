@@ -32,6 +32,7 @@ import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
 import teamBookingsRoutes from './routes/teamBookings';
 import emailWebhookRoutes from './routes/emailWebhook';
+import productsRoutes from './routes/products';
 import { startImapPoller } from './services/imapPoller';
 import { runStartupMigrations } from './utils/migrations';
 
@@ -91,6 +92,7 @@ app.use(`${API}/upload`,         authMiddleware, uploadRoutes);
 app.use(`${API}/notifications`,  authMiddleware, notifRoutes);
 app.use(`${API}/reports`,        authMiddleware, reportRoutes);
 app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
+app.use(`${API}/products`,       authMiddleware, productsRoutes);
 app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
