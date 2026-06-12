@@ -2785,7 +2785,7 @@ async function loadProjectDetail(id) {
       const icon = truckIcons[t.vehicleType]||'🚛';
       const isArrived = t.status === 'delivered';
       return `
-      <div class="card" style="cursor:pointer;transition:all .2s;" onclick="openTruckDetail('${t.id}','${p.id}')" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div class="card" style="cursor:pointer;transition:all .2s;" onclick='showAddTruckModal("${p.id}", ${JSON.stringify(t).replace(/'/g,"&#39;")})' onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div class="card-header">
           <div>
             <div class="card-title">${icon} ${t.truckNumber||t.vehicleType||''}</div>
