@@ -64,7 +64,27 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { siteManagerIds = [], engineerIds = [], ...data } = req.body;
+    const {
+      siteManagerIds = [],
+      engineerIds = [],
+      // POINT 4 — Ids des équipes par phase (optionnel, alternative aux siteManager/engineer ids)
+      installTeamIds = [],
+      dismantleTeamIds = [],
+      ...data
+    } = req.body;
+
+    // Construction de l'équipe :
+    //  - siteManagerIds / engineerIds → phase 'both' (compat existant)
+    //  - installTeamIds              → phase 'installation'
+    //  - dismantleTeamIds            → phase 'dismantling'
+    // Un même userId peut être référencé plusieurs fois (ex: site_manager
+    // ET dans installTeam) — on dédoublonne au passage, dernière phase gagne.
+    const teamMap = new Map<string, { userId: string; role: string; isLead: boolean; phase: string }>();
+    for (const uid of siteManagerIds) teamMap.set(uid, { userId: uid, role: 'site_manager', isLead: true, phase: 'both' });
+    for (const uid of engineerIds)    teamMap.set(uid, { userId: uid, role: 'engineer',     isLead: false, phase: 'both' });
+    for (const uid of installTeamIds) teamMap.set(uid, { userId: uid, role: teamMap.get(uid)?.role || 'worker', isLead: teamMap.get(uid)?.isLead || false, phase: 'installation' });
+    for (const uid of dismantleTeamIds) teamMap.set(uid, { userId: uid, role: teamMap.get(uid)?.role || 'worker', isLead: teamMap.get(uid)?.isLead || false, phase: 'dismantling' });
+
     const project = await prisma.project.create({
       data: {
         ...data,
@@ -74,12 +94,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
         dismantlingStart:  data.dismantlingStart ? new Date(data.dismantlingStart) : null,
         dismantlingEnd:    data.dismantlingEnd   ? new Date(data.dismantlingEnd)   : null,
         createdById: req.user!.id,
-        team: {
-          create: [
-            ...siteManagerIds.map((uid: string) => ({ userId: uid, role: 'site_manager', isLead: true })),
-            ...engineerIds.map((uid: string) => ({ userId: uid, role: 'engineer' })),
-          ],
-        },
+        team: { create: Array.from(teamMap.values()) },
       },
       include: { client: true },
     });
@@ -89,7 +104,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { siteManagerIds, engineerIds, trucks, tasks, ...data } = req.body;
+    const { siteManagerIds, engineerIds, trucks, tasks, installTeamIds, dismantleTeamIds, ...data } = req.body;
 
     // Convertir toutes les colonnes de type DateTime — sinon Prisma rejette
     // les strings ISO comme entrées invalides
@@ -100,9 +115,12 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
 
     // Nettoyage : on retire les champs qui ne sont pas dans le modèle Project
     // pour éviter une erreur P2009 ("unknown argument") sur les updates
+    // POINT 3 — Ajout de scope, installNotes, dismantleNotes
     const allowed = [
       'name','internalNumber','clientId','technicalManagerId',
-      'address','city','description','specialInstructions',
+      'address','city',
+      'scope','installNotes','dismantleNotes',           // POINT 3 — nouveaux champs structurés
+      'description','specialInstructions',                // anciens — conservés pour compat
       'workersCount','status',
       'installationStart','installationEnd','dismantlingStart','dismantlingEnd',
     ];
@@ -128,12 +146,24 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
     res.json({ success: true });
   } catch (err) { next(err); }
 });
+
+// ═══════════════════════════════════════════════════════════
+// ÉQUIPE PROJET
+// ═══════════════════════════════════════════════════════════
+
 // POST /projects/:id/team — ajouter un membre
+// POINT 4 — Phase optionnelle ('installation' | 'dismantling' | 'both')
 router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { userId, role, isLead } = req.body;
+    const { userId, role, isLead, phase } = req.body;
     const member = await prisma.projectTeam.create({
-      data: { projectId: req.params.id, userId, role, isLead: isLead||false },
+      data: {
+        projectId: req.params.id,
+        userId,
+        role,
+        isLead: isLead || false,
+        phase: phase && ['installation','dismantling','both'].includes(phase) ? phase : 'both',
+      },
       include: { user: { select: { firstName:true, lastName:true, email:true } } },
     });
     res.status(201).json({ success: true, data: member });
@@ -142,6 +172,36 @@ router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunct
     next(err);
   }
 });
+
+// PATCH /projects/:id/team/:memberId — modifier rôle / phase / lead d'un membre existant
+// POINT 4 — Permet de changer la phase (installation/démontage/both) d'un membre
+router.patch('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { role, isLead, phase } = req.body;
+    const data: any = {};
+    if (role !== undefined) data.role = role;
+    if (isLead !== undefined) data.isLead = !!isLead;
+    if (phase !== undefined && ['installation','dismantling','both'].includes(phase)) data.phase = phase;
+    const member = await prisma.projectTeam.update({
+      where: { id: req.params.memberId },
+      data,
+      include: { user: { select: { firstName:true, lastName:true, email:true } } },
+    });
+    res.json({ success: true, data: member });
+  } catch (err) { next(err); }
+});
+
+// DELETE /projects/:id/team/:memberId — retirer un membre
+router.delete('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.projectTeam.delete({ where: { id: req.params.memberId } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// CAMIONS / VÉHICULES
+// ═══════════════════════════════════════════════════════════
 
 // POST /projects/:id/trucks — ajouter camion/machine
 router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -192,7 +252,7 @@ router.delete('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, ne
   } catch (err) { next(err); }
 });
 
-// GET /projects/:id/trucks  
+// GET /projects/:id/trucks
 router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const trucks = await prisma.truck.findMany({
@@ -202,6 +262,10 @@ router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunc
     res.json({ success: true, data: trucks });
   } catch (err) { next(err); }
 });
+
+// ═══════════════════════════════════════════════════════════
+// FICHIERS PROJET
+// ═══════════════════════════════════════════════════════════
 
 // GET /projects/:id/files
 router.get('/:id/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
