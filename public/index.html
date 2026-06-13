@@ -2632,6 +2632,7 @@ async function loadProjectDetail(id) {
               ${t.loadingDate  ? `<div style="font-size:12px;">📦 <strong>Chargement entrepôt :</strong> ${fmtDateTime(t.loadingDate)}</div>`  : ''}
               ${t.departureDate? `<div style="font-size:12px;">🚀 <strong>Départ :</strong> ${fmtDateTime(t.departureDate)}</div>` : ''}
               ${t.arrivalDate  ? `<div style="font-size:12px;color:var(--green);">✅ <strong>Arrivée site :</strong> ${fmtDateTime(t.arrivalDate)}</div>` : `<div style="font-size:12px;color:var(--amber);">⏳ En attente d'arrivée sur site</div>`}
+            
             </div>`;
           }).join('')}
         </div>
@@ -4532,6 +4533,41 @@ function fmtDateTime(d) {
   return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) + ' ' +
          dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
 }
+/**
+ * Convertit un ISO UTC (depuis la BD) en chaîne pour input type="date".
+ * Renvoie une string au format "YYYY-MM-DD" en DATE LOCALE.
+ */
+function toLocalDateInput(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+ 
+/**
+ * Convertit la valeur d'un input datetime-local (heure locale) en ISO UTC
+ * pour l'envoi au backend. La conversion est correcte par défaut :
+ * `new Date("2025-06-23T08:00")` est interprété comme heure locale.
+ *
+ * À utiliser à la place de `input.value + 'Z'` qui est BUGGÉ.
+ */
+function fromLocalDatetimeInput(localString) {
+  if (!localString) return null;
+  return new Date(localString).toISOString();
+}
+ 
+/**
+ * Idem pour les inputs type="date" : on garde la date au format "YYYY-MM-DD"
+ * mais on s'assure qu'elle est interprétée à 00:00 LOCAL et pas 00:00 UTC.
+ */
+function fromLocalDateInput(localString) {
+  if (!localString) return null;
+  // Force midi (12:00) local pour éviter les bascules de jour dues au décalage
+  const d = new Date(localString + 'T12:00:00');
+  return d.toISOString();
+}
+ 
 
 function infoRow(label, value) {
   return `<div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">${label}</div><div style="font-weight:600;font-size:13px;">${value}</div></div>`;

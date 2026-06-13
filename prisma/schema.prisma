@@ -160,8 +160,20 @@ model Project {
   dismantlingStart    DateTime?     @map("dismantling_start")
   dismantlingEnd      DateTime?     @map("dismantling_end")
   workersCount        Int           @default(0) @map("workers_count")
-  description         String?
-  specialInstructions String?       @map("special_instructions")
+
+  // ─────────────────────────────────────────────
+  // POINT 3 — Infos structurées (analysables IA)
+  // ─────────────────────────────────────────────
+  // scope         : brève explication du projet ("Pavillon VIP 300m² + terrasse")
+  // installNotes  : notes pour l'équipe de montage
+  // dismantleNotes: notes pour l'équipe de démontage
+  // description / specialInstructions : conservés pour rétrocompat
+  scope               String?       // Bref scope du projet (analysable IA)
+  installNotes        String?       @map("install_notes")    // Notes équipe montage
+  dismantleNotes      String?       @map("dismantle_notes")  // Notes équipe démontage
+  description         String?       // (ancien — gardé pour compat)
+  specialInstructions String?       @map("special_instructions") // (ancien — gardé pour compat)
+
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
   createdAt           DateTime      @default(now()) @map("created_at")
@@ -190,9 +202,7 @@ model Project {
 }
 
 // Booking de transport pour un membre d'équipe sur un projet.
-// Un booking = un membre, une phase (installation OU démontage), avec trajets
-// aller et retour. Les hôtels sont gérés séparément (modèle HotelBooking)
-// car ils sont souvent partagés entre plusieurs membres.
+// POINT 2 — pièce jointe (billet, justificatif…) ajoutée.
 model TeamBooking {
   id              String    @id @default(uuid())
   projectId       String    @map("project_id")
@@ -213,6 +223,11 @@ model TeamBooking {
   returnDate      DateTime? @map("return_date")
   returnDetails   String?   @map("return_details")
 
+  // POINT 2 — Pièce jointe (PDF billet, capture confirmation, etc.)
+  attachmentUrl      String? @map("attachment_url")
+  attachmentName     String? @map("attachment_name")
+  attachmentPublicId String? @map("attachment_public_id")
+
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -223,9 +238,8 @@ model TeamBooking {
   @@map("team_bookings")
 }
 
-// Réservation d'hôtel — séparée des bookings transport car typiquement
-// partagée entre plusieurs membres (chambre double, équipe entière, etc.).
-// Un occupant = un membre lié à cette réservation via HotelBookingOccupant.
+// Réservation d'hôtel — partagée entre plusieurs membres.
+// POINT 2 — pièce jointe (confirmation hôtel) ajoutée.
 model HotelBooking {
   id           String                  @id @default(uuid())
   projectId    String                  @map("project_id")
@@ -236,6 +250,12 @@ model HotelBooking {
   checkout     DateTime
   reference    String?                 // n° de réservation
   notes        String?
+
+  // POINT 2 — Pièce jointe (PDF confirmation)
+  attachmentUrl      String? @map("attachment_url")
+  attachmentName     String? @map("attachment_name")
+  attachmentPublicId String? @map("attachment_public_id")
+
   createdAt    DateTime                @default(now()) @map("created_at")
   updatedAt    DateTime                @updatedAt @map("updated_at")
 
@@ -245,8 +265,7 @@ model HotelBooking {
   @@map("hotel_bookings")
 }
 
-// Lien N-N : un hôtel a plusieurs occupants, un membre peut être dans
-// plusieurs hôtels (différentes phases ou nuits dispatchées).
+// Lien N-N entre HotelBooking et User.
 model HotelBookingOccupant {
   id             String       @id @default(uuid())
   hotelBookingId String       @map("hotel_booking_id")
@@ -260,11 +279,19 @@ model HotelBookingOccupant {
   @@map("hotel_booking_occupants")
 }
 
+// ProjectTeam — équipe assignée à un projet.
+// POINT 4 — Phase ajoutée pour distinguer équipe MONTAGE vs DÉMONTAGE.
+// Valeurs possibles : 'installation' | 'dismantling' | 'both'
+// 'both' = membre présent sur les deux phases (valeur par défaut, compat data existante).
+// Au front, filtrer pour afficher 2 listes :
+//   - Équipe installation : phase IN ('installation', 'both')
+//   - Équipe démontage    : phase IN ('dismantling',  'both')
 model ProjectTeam {
   id        String   @id @default(uuid())
   projectId String   @map("project_id")
   userId    String   @map("user_id")
   role      String
+  phase     String   @default("both")   // 'installation' | 'dismantling' | 'both'
   isLead    Boolean  @default(false) @map("is_lead")
   createdAt DateTime @default(now()) @map("created_at")
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -316,7 +343,7 @@ model Task {
   projectId      String     @map("project_id")
   title          String
   description    String?
-  stage          String?    // catégorie/étape (template) — préserve l'arborescence
+  stage          String?
   taskDate       DateTime?  @map("task_date")
   startTime      String?    @map("start_time")
   endTime        String?    @map("end_time")
@@ -700,19 +727,16 @@ model InvitationToken {
   @@map("invitation_tokens")
 }
 
-// ─────────────────────────────────────────────
-// Remarques / visites client (points de suivi)
-// ─────────────────────────────────────────────
 model ClientRemark {
   id          String   @id @default(uuid())
   projectId   String   @map("project_id")
-  visitId     String?  @map("visit_id")            // FK optionnelle vers ClientVisit
+  visitId     String?  @map("visit_id")
   title       String
   description String?
   zone        String?
-  status      String   @default("open")           // open | resolved | urgent | archived
+  status      String   @default("open")
   priority    Priority @default(normal)
-  assignedTo  String?  @map("assigned_to")         // FK utilisateur (le front envoie "assignedTo")
+  assignedTo  String?  @map("assigned_to")
   createdBy   String?  @map("created_by")
   resolvedBy  String?  @map("resolved_by")
   resolvedAt  DateTime? @map("resolved_at")
@@ -727,7 +751,6 @@ model ClientRemark {
   @@map("client_remarks")
 }
 
-// Une "visite client" = rapport de visite contenant N points (ClientRemark)
 model ClientVisit {
   id          String   @id @default(uuid())
   projectId   String   @map("project_id")
@@ -759,9 +782,6 @@ model ClientRemarkPhoto {
   @@map("client_remark_photos")
 }
 
-// ─────────────────────────────────────────────
-// Briefing — document d'avant-événement par projet
-// ─────────────────────────────────────────────
 model Briefing {
   id        String   @id @default(uuid())
   projectId String   @unique @map("project_id")
@@ -776,13 +796,7 @@ model Briefing {
 }
 
 // ─────────────────────────────────────────────
-// PRODUITS / STOCK — Catalogue + réservations
-// ─────────────────────────────────────────────
-// Catalogue produit (importable depuis Odoo via CSV) :
-//   - Product            : un article du catalogue avec quantité totale en stock
-//   - ProductCategory    : regroupement (Modules Viewbox, Terrasses, Handrails…)
-//   - ProductReservation : un produit réservé pour un projet, avec dates calculées
-//                          automatiquement (J-3/J-5 avant install, J+3/J+5 après démontage)
+// PRODUITS / STOCK (Session B en pause)
 // ─────────────────────────────────────────────
 model ProductCategory {
   id          String    @id @default(uuid())
@@ -802,12 +816,12 @@ model ProductCategory {
 
 model Product {
   id                String    @id @default(uuid())
-  internalReference String    @unique @map("internal_reference")   // ex: 7-962-035
-  name              String                                          // ex: VIEWBOX STANDARD M16...
+  internalReference String    @unique @map("internal_reference")
+  name              String
   description       String?
   categoryId        String?   @map("category_id")
   totalQuantity     Float     @default(1) @map("total_quantity")
-  unit              String    @default("pcs")                       // pcs, m, m², kg
+  unit              String    @default("pcs")
   photoUrl          String?   @map("photo_url")
   publicId          String?   @map("public_id")
   notes             String?
@@ -821,11 +835,6 @@ model Product {
   @@map("products")
 }
 
-// Réservation d'un produit pour un projet.
-// Les dates de réservation sont calculées côté backend lors du POST/PUT
-// pour rester cohérentes même si les dates du projet changent.
-// Règle : start = installStart - 3j (-5j si lundi),
-//         end   = dismantleEnd + 3j (+5j si vendredi)
 model ProductReservation {
   id                String    @id @default(uuid())
   projectId         String    @map("project_id")
