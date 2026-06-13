@@ -7,6 +7,8 @@ import { io } from '../index';
 
 const router = Router();
 
+// GET /projects — liste tous les projets, triés par sortOrder puis installationStart
+// POINT 6 — tri par sortOrder en premier (ordre custom drag-and-drop)
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { status, search } = req.query;
@@ -18,7 +20,8 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     ];
 
     const projects = await prisma.project.findMany({
-      where, orderBy: { installationStart: 'asc' },
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { installationStart: 'asc' }],   // POINT 6
       include: {
         client: { select: { id:true, name:true } },
         technicalManager: { select: { id:true, firstName:true, lastName:true } },
@@ -27,7 +30,6 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       },
     });
 
-    // Attach progress
     const enriched = await Promise.all(projects.map(async p => {
       const [total, done] = await Promise.all([
         prisma.task.count({ where: { projectId: p.id } }),
@@ -37,6 +39,33 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     }));
 
     res.json({ success: true, data: enriched });
+  } catch (err) { next(err); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// POINT 6 — Réordonnement custom des projets (drag-and-drop)
+// ═══════════════════════════════════════════════════════════
+// ⚠️ Cette route DOIT être déclarée AVANT /:id pour ne pas être
+// interceptée comme un id.
+//
+// PATCH /projects/reorder
+// Body : { projectIds: string[] }  → tableau d'IDs dans l'ordre désiré
+// Pour chaque projet, sortOrder = index dans le tableau.
+router.patch('/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const ids: string[] = Array.isArray(req.body.projectIds) ? req.body.projectIds : [];
+    if (ids.length === 0) return res.json({ success: true, updated: 0 });
+
+    // Transaction pour garantir la cohérence (si une update échoue, tout est rollback)
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.project.update({
+          where: { id },
+          data: { sortOrder: index },
+        })
+      )
+    );
+    res.json({ success: true, updated: ids.length });
   } catch (err) { next(err); }
 });
 
@@ -67,18 +96,11 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
     const {
       siteManagerIds = [],
       engineerIds = [],
-      // POINT 4 — Ids des équipes par phase (optionnel, alternative aux siteManager/engineer ids)
       installTeamIds = [],
       dismantleTeamIds = [],
       ...data
     } = req.body;
 
-    // Construction de l'équipe :
-    //  - siteManagerIds / engineerIds → phase 'both' (compat existant)
-    //  - installTeamIds              → phase 'installation'
-    //  - dismantleTeamIds            → phase 'dismantling'
-    // Un même userId peut être référencé plusieurs fois (ex: site_manager
-    // ET dans installTeam) — on dédoublonne au passage, dernière phase gagne.
     const teamMap = new Map<string, { userId: string; role: string; isLead: boolean; phase: string }>();
     for (const uid of siteManagerIds) teamMap.set(uid, { userId: uid, role: 'site_manager', isLead: true, phase: 'both' });
     for (const uid of engineerIds)    teamMap.set(uid, { userId: uid, role: 'engineer',     isLead: false, phase: 'both' });
@@ -106,22 +128,19 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   try {
     const { siteManagerIds, engineerIds, trucks, tasks, installTeamIds, dismantleTeamIds, ...data } = req.body;
 
-    // Convertir toutes les colonnes de type DateTime — sinon Prisma rejette
-    // les strings ISO comme entrées invalides
     for (const k of ['installationStart','installationEnd','dismantlingStart','dismantlingEnd']) {
       if (data[k]) data[k] = new Date(data[k]);
       else if (data[k] === '' || data[k] === null) data[k] = null;
     }
 
-    // Nettoyage : on retire les champs qui ne sont pas dans le modèle Project
-    // pour éviter une erreur P2009 ("unknown argument") sur les updates
     // POINT 3 — Ajout de scope, installNotes, dismantleNotes
+    // POINT 6 — Ajout de sortOrder (modifiable aussi via /reorder)
     const allowed = [
       'name','internalNumber','clientId','technicalManagerId',
       'address','city',
-      'scope','installNotes','dismantleNotes',           // POINT 3 — nouveaux champs structurés
-      'description','specialInstructions',                // anciens — conservés pour compat
-      'workersCount','status',
+      'scope','installNotes','dismantleNotes',
+      'description','specialInstructions',
+      'workersCount','status','sortOrder',
       'installationStart','installationEnd','dismantlingStart','dismantlingEnd',
     ];
     const cleanData: any = {};
@@ -135,7 +154,6 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     io.to(`project:${req.params.id}`).emit('project:updated', project);
     res.json({ success: true, data: project });
   } catch (err: any) {
-    // On expose le vrai message au front pour debugger plus vite (ex: clientId invalide, date pourrie)
     next(err);
   }
 });
@@ -151,8 +169,6 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 // ÉQUIPE PROJET
 // ═══════════════════════════════════════════════════════════
 
-// POST /projects/:id/team — ajouter un membre
-// POINT 4 — Phase optionnelle ('installation' | 'dismantling' | 'both')
 router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { userId, role, isLead, phase } = req.body;
@@ -173,8 +189,6 @@ router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunct
   }
 });
 
-// PATCH /projects/:id/team/:memberId — modifier rôle / phase / lead d'un membre existant
-// POINT 4 — Permet de changer la phase (installation/démontage/both) d'un membre
 router.patch('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { role, isLead, phase } = req.body;
@@ -191,7 +205,6 @@ router.patch('/:id/team/:memberId', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err); }
 });
 
-// DELETE /projects/:id/team/:memberId — retirer un membre
 router.delete('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await prisma.projectTeam.delete({ where: { id: req.params.memberId } });
@@ -203,7 +216,6 @@ router.delete('/:id/team/:memberId', async (req: AuthRequest, res: Response, nex
 // CAMIONS / VÉHICULES
 // ═══════════════════════════════════════════════════════════
 
-// POST /projects/:id/trucks — ajouter camion/machine
 router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const truck = await prisma.truck.create({
@@ -227,15 +239,12 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
   } catch (err) { next(err); }
 });
 
-// PATCH /projects/:id/trucks/:truckId — mise à jour d'un véhicule
 router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const data: any = {};
-    // Champs scalaires : on n'écrit que ceux explicitement fournis
     for (const k of ['vehicleType','truckNumber','licensePlate','driverName','driverPhone','status','loadingLocation','unloadingLocation','notes']) {
       if (req.body[k] !== undefined) data[k] = req.body[k] || null;
     }
-    // Champs date
     for (const k of ['loadingDate','arrivalDate','departureDate']) {
       if (req.body[k] !== undefined) data[k] = req.body[k] ? new Date(req.body[k]) : null;
     }
@@ -244,7 +253,6 @@ router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, nex
   } catch (err) { next(err); }
 });
 
-// DELETE /projects/:id/trucks/:truckId
 router.delete('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await prisma.truck.delete({ where: { id: req.params.truckId } });
@@ -252,7 +260,6 @@ router.delete('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, ne
   } catch (err) { next(err); }
 });
 
-// GET /projects/:id/trucks
 router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const trucks = await prisma.truck.findMany({
@@ -267,7 +274,6 @@ router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunc
 // FICHIERS PROJET
 // ═══════════════════════════════════════════════════════════
 
-// GET /projects/:id/files
 router.get('/:id/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const files = await prisma.projectFile.findMany({
@@ -278,7 +284,6 @@ router.get('/:id/files', async (req: AuthRequest, res: Response, next: NextFunct
   } catch (err) { next(err); }
 });
 
-// POST /projects/:id/files
 router.post('/:id/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { fileName, fileUrl, fileType, fileSize, publicId, category } = req.body;
@@ -299,7 +304,6 @@ router.post('/:id/files', async (req: AuthRequest, res: Response, next: NextFunc
   } catch (err) { next(err); }
 });
 
-// DELETE /projects/:id/files/:fileId
 router.delete('/:id/files/:fileId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await prisma.projectFile.delete({ where: { id: req.params.fileId } });

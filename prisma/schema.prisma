@@ -161,18 +161,17 @@ model Project {
   dismantlingEnd      DateTime?     @map("dismantling_end")
   workersCount        Int           @default(0) @map("workers_count")
 
-  // ─────────────────────────────────────────────
   // POINT 3 — Infos structurées (analysables IA)
-  // ─────────────────────────────────────────────
-  // scope         : brève explication du projet ("Pavillon VIP 300m² + terrasse")
-  // installNotes  : notes pour l'équipe de montage
-  // dismantleNotes: notes pour l'équipe de démontage
-  // description / specialInstructions : conservés pour rétrocompat
   scope               String?       // Bref scope du projet (analysable IA)
   installNotes        String?       @map("install_notes")    // Notes équipe montage
   dismantleNotes      String?       @map("dismantle_notes")  // Notes équipe démontage
   description         String?       // (ancien — gardé pour compat)
   specialInstructions String?       @map("special_instructions") // (ancien — gardé pour compat)
+
+  // POINT 6 — Ordre custom dans le calendrier (drag-and-drop)
+  // 0 = ordre par défaut (tri par installationStart si tous à 0)
+  // Plus le nombre est petit, plus le projet est affiché en haut/à gauche
+  sortOrder           Int           @default(0) @map("sort_order")
 
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
@@ -201,29 +200,24 @@ model Project {
   @@map("projects")
 }
 
-// Booking de transport pour un membre d'équipe sur un projet.
-// POINT 2 — pièce jointe (billet, justificatif…) ajoutée.
+// POINT 2 — Pièces jointes ajoutées
 model TeamBooking {
   id              String    @id @default(uuid())
   projectId       String    @map("project_id")
   userId          String    @map("user_id")
-  phase           String    // 'installation' | 'dismantling'
+  phase           String
 
-  // Présence effective sur le chantier
   onSiteStart     DateTime  @map("on_site_start")
   onSiteEnd       DateTime  @map("on_site_end")
 
-  // Trajet aller (vers le chantier)
   outboundMode    String?   @map("outbound_mode")
   outboundDate    DateTime? @map("outbound_date")
   outboundDetails String?   @map("outbound_details")
 
-  // Trajet retour (depuis le chantier)
   returnMode      String?   @map("return_mode")
   returnDate      DateTime? @map("return_date")
   returnDetails   String?   @map("return_details")
 
-  // POINT 2 — Pièce jointe (PDF billet, capture confirmation, etc.)
   attachmentUrl      String? @map("attachment_url")
   attachmentName     String? @map("attachment_name")
   attachmentPublicId String? @map("attachment_public_id")
@@ -238,20 +232,17 @@ model TeamBooking {
   @@map("team_bookings")
 }
 
-// Réservation d'hôtel — partagée entre plusieurs membres.
-// POINT 2 — pièce jointe (confirmation hôtel) ajoutée.
 model HotelBooking {
   id           String                  @id @default(uuid())
   projectId    String                  @map("project_id")
-  phase        String                  // 'installation' | 'dismantling'
+  phase        String
   hotelName    String                  @map("hotel_name")
   hotelAddress String?                 @map("hotel_address")
   checkin      DateTime
   checkout     DateTime
-  reference    String?                 // n° de réservation
+  reference    String?
   notes        String?
 
-  // POINT 2 — Pièce jointe (PDF confirmation)
   attachmentUrl      String? @map("attachment_url")
   attachmentName     String? @map("attachment_name")
   attachmentPublicId String? @map("attachment_public_id")
@@ -265,7 +256,6 @@ model HotelBooking {
   @@map("hotel_bookings")
 }
 
-// Lien N-N entre HotelBooking et User.
 model HotelBookingOccupant {
   id             String       @id @default(uuid())
   hotelBookingId String       @map("hotel_booking_id")
@@ -279,19 +269,13 @@ model HotelBookingOccupant {
   @@map("hotel_booking_occupants")
 }
 
-// ProjectTeam — équipe assignée à un projet.
-// POINT 4 — Phase ajoutée pour distinguer équipe MONTAGE vs DÉMONTAGE.
-// Valeurs possibles : 'installation' | 'dismantling' | 'both'
-// 'both' = membre présent sur les deux phases (valeur par défaut, compat data existante).
-// Au front, filtrer pour afficher 2 listes :
-//   - Équipe installation : phase IN ('installation', 'both')
-//   - Équipe démontage    : phase IN ('dismantling',  'both')
+// POINT 4 — Phase ajoutée pour distinguer équipe MONTAGE vs DÉMONTAGE
 model ProjectTeam {
   id        String   @id @default(uuid())
   projectId String   @map("project_id")
   userId    String   @map("user_id")
   role      String
-  phase     String   @default("both")   // 'installation' | 'dismantling' | 'both'
+  phase     String   @default("both")
   isLead    Boolean  @default(false) @map("is_lead")
   createdAt DateTime @default(now()) @map("created_at")
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
