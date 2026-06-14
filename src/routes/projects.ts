@@ -21,7 +21,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
     const projects = await prisma.project.findMany({
       where,
-      orderBy: [{ sortOrder: 'asc' }, { installationStart: 'asc' }],   // POINT 6
+     orderBy: { installationStart: 'asc' },
       include: {
         client: { select: { id:true, name:true } },
         technicalManager: { select: { id:true, firstName:true, lastName:true } },
