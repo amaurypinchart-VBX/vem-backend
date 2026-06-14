@@ -5,7 +5,6 @@
 //   - moyen de transport aller + détails (n° de vol, etc.)
 //   - moyen de transport retour
 //   - hôtel et dates de séjour
-//   - POINT 2 — pièce jointe optionnelle (billet, justificatif…)
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
@@ -18,10 +17,6 @@ router.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   next();
 });
-
-// ═══════════════════════════════════════════════════════════════════
-// TEAM BOOKINGS — transport individuel par membre
-// ═══════════════════════════════════════════════════════════════════
 
 // GET /projects/:projectId/bookings — tous les bookings d'un projet
 router.get('/projects/:projectId/bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -36,7 +31,6 @@ router.get('/projects/:projectId/bookings', async (req: AuthRequest, res: Respon
 });
 
 // POST /projects/:projectId/bookings — créer un booking transport
-// POINT 2 — Accepte attachmentUrl / attachmentName / attachmentPublicId
 router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
@@ -48,22 +42,18 @@ router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Respo
 
     const booking = await (prisma as any).teamBooking.create({
       data: {
-        projectId:          req.params.projectId,
-        userId:             body.userId,
-        phase:              body.phase,
-        onSiteStart:        new Date(body.onSiteStart),
-        onSiteEnd:          new Date(body.onSiteEnd),
-        outboundMode:       body.outboundMode    || null,
-        outboundDate:       body.outboundDate    ? new Date(body.outboundDate)    : null,
-        outboundDetails:    body.outboundDetails || null,
-        returnMode:         body.returnMode      || null,
-        returnDate:         body.returnDate      ? new Date(body.returnDate)      : null,
-        returnDetails:      body.returnDetails   || null,
-        // POINT 2 — Pièce jointe
-        attachmentUrl:      body.attachmentUrl      || null,
-        attachmentName:     body.attachmentName     || null,
-        attachmentPublicId: body.attachmentPublicId || null,
-        notes:              body.notes           || null,
+        projectId:       req.params.projectId,
+        userId:          body.userId,
+        phase:           body.phase,
+        onSiteStart:     new Date(body.onSiteStart),
+        onSiteEnd:       new Date(body.onSiteEnd),
+        outboundMode:    body.outboundMode    || null,
+        outboundDate:    body.outboundDate    ? new Date(body.outboundDate)    : null,
+        outboundDetails: body.outboundDetails || null,
+        returnMode:      body.returnMode      || null,
+        returnDate:      body.returnDate      ? new Date(body.returnDate)      : null,
+        returnDetails:   body.returnDetails   || null,
+        notes:           body.notes           || null,
       },
       include: { user: { select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true } } },
     });
@@ -72,19 +62,13 @@ router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Respo
 });
 
 // PATCH /bookings/:id — modifier un booking transport
-// POINT 2 — Accepte aussi les 3 champs de pièce jointe
 router.patch('/bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
     const data: any = {};
-    // Champs scalaires : on n'écrit que ceux explicitement fournis
-    for (const k of [
-      'phase','outboundMode','outboundDetails','returnMode','returnDetails','notes',
-      'attachmentUrl','attachmentName','attachmentPublicId',   // POINT 2
-    ]) {
+    for (const k of ['phase','outboundMode','outboundDetails','returnMode','returnDetails','notes']) {
       if (body[k] !== undefined) data[k] = body[k] || null;
     }
-    // Champs date
     for (const k of ['onSiteStart','onSiteEnd','outboundDate','returnDate']) {
       if (body[k] !== undefined) data[k] = body[k] ? new Date(body[k]) : null;
     }
@@ -126,9 +110,7 @@ router.get('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res: 
 });
 
 // POST /projects/:projectId/hotel-bookings — créer un hôtel avec N occupants
-// Body : { phase, hotelName, hotelAddress?, checkin, checkout, reference?, notes?, userIds: string[],
-//          attachmentUrl?, attachmentName?, attachmentPublicId? }
-// POINT 2 — Accepte aussi les pièces jointes
+// Body : { phase, hotelName, hotelAddress?, checkin, checkout, reference?, notes?, userIds: string[] }
 router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
@@ -142,19 +124,15 @@ router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res:
 
     const hotel = await (prisma as any).hotelBooking.create({
       data: {
-        projectId:          req.params.projectId,
-        phase:              body.phase,
-        hotelName:          body.hotelName,
-        hotelAddress:       body.hotelAddress || null,
-        checkin:            new Date(body.checkin),
-        checkout:           new Date(body.checkout),
-        reference:          body.reference || null,
-        notes:              body.notes || null,
-        // POINT 2 — Pièce jointe
-        attachmentUrl:      body.attachmentUrl      || null,
-        attachmentName:     body.attachmentName     || null,
-        attachmentPublicId: body.attachmentPublicId || null,
-        occupants:          { create: userIds.map(uid => ({ userId: uid })) },
+        projectId:    req.params.projectId,
+        phase:        body.phase,
+        hotelName:    body.hotelName,
+        hotelAddress: body.hotelAddress || null,
+        checkin:      new Date(body.checkin),
+        checkout:     new Date(body.checkout),
+        reference:    body.reference || null,
+        notes:        body.notes || null,
+        occupants:    { create: userIds.map(uid => ({ userId: uid })) },
       },
       include: {
         occupants: {
@@ -167,15 +145,11 @@ router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res:
 });
 
 // PATCH /hotel-bookings/:id — modifier un hôtel (et optionnellement remplacer la liste des occupants)
-// POINT 2 — Accepte aussi les 3 champs de pièce jointe
 router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
     const data: any = {};
-    for (const k of [
-      'phase','hotelName','hotelAddress','reference','notes',
-      'attachmentUrl','attachmentName','attachmentPublicId',   // POINT 2
-    ]) {
+    for (const k of ['phase','hotelName','hotelAddress','reference','notes']) {
       if (body[k] !== undefined) data[k] = body[k] || null;
     }
     for (const k of ['checkin','checkout']) {

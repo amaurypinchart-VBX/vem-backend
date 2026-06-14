@@ -160,67 +160,57 @@ model Project {
   dismantlingStart    DateTime?     @map("dismantling_start")
   dismantlingEnd      DateTime?     @map("dismantling_end")
   workersCount        Int           @default(0) @map("workers_count")
-
-  // POINT 3 — Infos structurées (analysables IA)
-  scope               String?       // Bref scope du projet (analysable IA)
-  installNotes        String?       @map("install_notes")    // Notes équipe montage
-  dismantleNotes      String?       @map("dismantle_notes")  // Notes équipe démontage
-  description         String?       // (ancien — gardé pour compat)
-  specialInstructions String?       @map("special_instructions") // (ancien — gardé pour compat)
-
-  // POINT 6 — Ordre custom dans le calendrier (drag-and-drop)
-  // 0 = ordre par défaut (tri par installationStart si tous à 0)
-  // Plus le nombre est petit, plus le projet est affiché en haut/à gauche
-  sortOrder           Int           @default(0) @map("sort_order")
-
+  description         String?
+  specialInstructions String?       @map("special_instructions")
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
-  client              Client               @relation(fields: [clientId], references: [id])
-  technicalManager    User?                @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
-  createdBy           User?                @relation("CreatedBy", fields: [createdById], references: [id])
-  team                ProjectTeam[]
-  trucks              Truck[]
-  files               ProjectFile[]
-  tasks               Task[]
-  handovers           Handover[]
-  dailyReports        DailyReport[]
-  tickets             Ticket[]
-  warehouseBoxes      WarehouseBox[]
-  toolboxes           Toolbox[]
-  clientRemarks       ClientRemark[]
-  clientVisits        ClientVisit[]
-  briefing            Briefing?
-  teamBookings        TeamBooking[]
-  hotelBookings       HotelBooking[]
-  productReservations ProductReservation[]
+  client           Client         @relation(fields: [clientId], references: [id])
+  technicalManager User?          @relation("TechnicalManager", fields: [technicalManagerId], references: [id])
+  createdBy        User?          @relation("CreatedBy", fields: [createdById], references: [id])
+  team             ProjectTeam[]
+  trucks           Truck[]
+  files            ProjectFile[]
+  tasks            Task[]
+  handovers        Handover[]
+  dailyReports     DailyReport[]
+  tickets          Ticket[]
+  warehouseBoxes   WarehouseBox[]
+  toolboxes        Toolbox[]
+  clientRemarks    ClientRemark[]
+  clientVisits     ClientVisit[]
+  briefing         Briefing?
+  teamBookings     TeamBooking[]
+  hotelBookings    HotelBooking[]
 
   @@map("projects")
 }
 
-// POINT 2 — Pièces jointes ajoutées
+// Booking de transport pour un membre d'équipe sur un projet.
+// Un booking = un membre, une phase (installation OU démontage), avec trajets
+// aller et retour. Les hôtels sont gérés séparément (modèle HotelBooking)
+// car ils sont souvent partagés entre plusieurs membres.
 model TeamBooking {
   id              String    @id @default(uuid())
   projectId       String    @map("project_id")
   userId          String    @map("user_id")
-  phase           String
+  phase           String    // 'installation' | 'dismantling'
 
+  // Présence effective sur le chantier
   onSiteStart     DateTime  @map("on_site_start")
   onSiteEnd       DateTime  @map("on_site_end")
 
+  // Trajet aller (vers le chantier)
   outboundMode    String?   @map("outbound_mode")
   outboundDate    DateTime? @map("outbound_date")
   outboundDetails String?   @map("outbound_details")
 
+  // Trajet retour (depuis le chantier)
   returnMode      String?   @map("return_mode")
   returnDate      DateTime? @map("return_date")
   returnDetails   String?   @map("return_details")
-
-  attachmentUrl      String? @map("attachment_url")
-  attachmentName     String? @map("attachment_name")
-  attachmentPublicId String? @map("attachment_public_id")
 
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -232,21 +222,19 @@ model TeamBooking {
   @@map("team_bookings")
 }
 
+// Réservation d'hôtel — séparée des bookings transport car typiquement
+// partagée entre plusieurs membres (chambre double, équipe entière, etc.).
+// Un occupant = un membre lié à cette réservation via HotelBookingOccupant.
 model HotelBooking {
   id           String                  @id @default(uuid())
   projectId    String                  @map("project_id")
-  phase        String
+  phase        String                  // 'installation' | 'dismantling'
   hotelName    String                  @map("hotel_name")
   hotelAddress String?                 @map("hotel_address")
   checkin      DateTime
   checkout     DateTime
-  reference    String?
+  reference    String?                 // n° de réservation
   notes        String?
-
-  attachmentUrl      String? @map("attachment_url")
-  attachmentName     String? @map("attachment_name")
-  attachmentPublicId String? @map("attachment_public_id")
-
   createdAt    DateTime                @default(now()) @map("created_at")
   updatedAt    DateTime                @updatedAt @map("updated_at")
 
@@ -256,6 +244,8 @@ model HotelBooking {
   @@map("hotel_bookings")
 }
 
+// Lien N-N : un hôtel a plusieurs occupants, un membre peut être dans
+// plusieurs hôtels (différentes phases ou nuits dispatchées).
 model HotelBookingOccupant {
   id             String       @id @default(uuid())
   hotelBookingId String       @map("hotel_booking_id")
@@ -269,13 +259,11 @@ model HotelBookingOccupant {
   @@map("hotel_booking_occupants")
 }
 
-// POINT 4 — Phase ajoutée pour distinguer équipe MONTAGE vs DÉMONTAGE
 model ProjectTeam {
   id        String   @id @default(uuid())
   projectId String   @map("project_id")
   userId    String   @map("user_id")
   role      String
-  phase     String   @default("both")
   isLead    Boolean  @default(false) @map("is_lead")
   createdAt DateTime @default(now()) @map("created_at")
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -327,7 +315,7 @@ model Task {
   projectId      String     @map("project_id")
   title          String
   description    String?
-  stage          String?
+  stage          String?    // catégorie/étape (template) — préserve l'arborescence
   taskDate       DateTime?  @map("task_date")
   startTime      String?    @map("start_time")
   endTime        String?    @map("end_time")
@@ -711,16 +699,19 @@ model InvitationToken {
   @@map("invitation_tokens")
 }
 
+// ─────────────────────────────────────────────
+// Remarques / visites client (points de suivi)
+// ─────────────────────────────────────────────
 model ClientRemark {
   id          String   @id @default(uuid())
   projectId   String   @map("project_id")
-  visitId     String?  @map("visit_id")
+  visitId     String?  @map("visit_id")            // FK optionnelle vers ClientVisit
   title       String
   description String?
   zone        String?
-  status      String   @default("open")
+  status      String   @default("open")           // open | resolved | urgent | archived
   priority    Priority @default(normal)
-  assignedTo  String?  @map("assigned_to")
+  assignedTo  String?  @map("assigned_to")         // FK utilisateur (le front envoie "assignedTo")
   createdBy   String?  @map("created_by")
   resolvedBy  String?  @map("resolved_by")
   resolvedAt  DateTime? @map("resolved_at")
@@ -735,6 +726,7 @@ model ClientRemark {
   @@map("client_remarks")
 }
 
+// Une "visite client" = rapport de visite contenant N points (ClientRemark)
 model ClientVisit {
   id          String   @id @default(uuid())
   projectId   String   @map("project_id")
@@ -766,6 +758,9 @@ model ClientRemarkPhoto {
   @@map("client_remark_photos")
 }
 
+// ─────────────────────────────────────────────
+// Briefing — document d'avant-événement par projet
+// ─────────────────────────────────────────────
 model Briefing {
   id        String   @id @default(uuid())
   projectId String   @unique @map("project_id")
@@ -777,62 +772,4 @@ model Briefing {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("briefings")
-}
-
-// ─────────────────────────────────────────────
-// PRODUITS / STOCK (Session B en pause)
-// ─────────────────────────────────────────────
-model ProductCategory {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  color       String    @default("#4895ef")
-  icon        String    @default("📦")
-  sortOrder   Int       @default(0) @map("sort_order")
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  products    Product[]
-
-  @@map("product_categories")
-}
-
-model Product {
-  id                String    @id @default(uuid())
-  internalReference String    @unique @map("internal_reference")
-  name              String
-  description       String?
-  categoryId        String?   @map("category_id")
-  totalQuantity     Float     @default(1) @map("total_quantity")
-  unit              String    @default("pcs")
-  photoUrl          String?   @map("photo_url")
-  publicId          String?   @map("public_id")
-  notes             String?
-  isActive          Boolean   @default(true) @map("is_active")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-
-  category          ProductCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  reservations      ProductReservation[]
-
-  @@map("products")
-}
-
-model ProductReservation {
-  id                String    @id @default(uuid())
-  projectId         String    @map("project_id")
-  productId         String    @map("product_id")
-  quantity          Float     @default(1)
-  reservationStart  DateTime  @map("reservation_start")
-  reservationEnd    DateTime  @map("reservation_end")
-  notes             String?
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-
-  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, productId])
-  @@map("product_reservations")
 }
