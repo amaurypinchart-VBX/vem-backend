@@ -13,4 +13,8 @@ COPY public ./public/
 #   schema.prisma est désormais la source de vérité.
 RUN npx prisma generate && npm run build
 EXPOSE 3000
+# Au démarrage : on synchronise d'abord la BD avec le schema.prisma
+# (ajoute/retire les colonnes nécessaires), PUIS on lance le serveur.
+# --accept-data-loss permet à Prisma de modifier la structure sans
+# demander de confirmation interactive (impossible en prod).
 CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
