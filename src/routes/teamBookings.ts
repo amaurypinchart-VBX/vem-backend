@@ -1,10 +1,6 @@
 // src/routes/teamBookings.ts
 // Gestion des bookings transport + hôtel pour chaque membre d'équipe sur un projet.
-// Un booking représente une "phase" (installation OU démontage) pour un membre :
-//   - dates de présence sur site
-//   - moyen de transport aller + détails (n° de vol, etc.)
-//   - moyen de transport retour
-//   - hôtel et dates de séjour
+// POINT 2 — Pièces jointes (billet, justificatif…) ajoutées sur les 2 modèles.
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
@@ -12,13 +8,15 @@ import { AppError } from '../utils/AppError';
 
 const router = Router();
 
-// Désactiver le cache HTTP pour ce module — les bookings changent souvent.
 router.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   next();
 });
 
-// GET /projects/:projectId/bookings — tous les bookings d'un projet
+// ═══════════════════════════════════════════════════════════════════
+// TEAM BOOKINGS — transport individuel par membre
+// ═══════════════════════════════════════════════════════════════════
+
 router.get('/projects/:projectId/bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const bookings = await (prisma as any).teamBooking.findMany({
@@ -30,7 +28,7 @@ router.get('/projects/:projectId/bookings', async (req: AuthRequest, res: Respon
   } catch (err) { next(err); }
 });
 
-// POST /projects/:projectId/bookings — créer un booking transport
+// POINT 2 — Accepte attachmentUrl/Name/PublicId
 router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
@@ -42,18 +40,22 @@ router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Respo
 
     const booking = await (prisma as any).teamBooking.create({
       data: {
-        projectId:       req.params.projectId,
-        userId:          body.userId,
-        phase:           body.phase,
-        onSiteStart:     new Date(body.onSiteStart),
-        onSiteEnd:       new Date(body.onSiteEnd),
-        outboundMode:    body.outboundMode    || null,
-        outboundDate:    body.outboundDate    ? new Date(body.outboundDate)    : null,
-        outboundDetails: body.outboundDetails || null,
-        returnMode:      body.returnMode      || null,
-        returnDate:      body.returnDate      ? new Date(body.returnDate)      : null,
-        returnDetails:   body.returnDetails   || null,
-        notes:           body.notes           || null,
+        projectId:          req.params.projectId,
+        userId:             body.userId,
+        phase:              body.phase,
+        onSiteStart:        new Date(body.onSiteStart),
+        onSiteEnd:          new Date(body.onSiteEnd),
+        outboundMode:       body.outboundMode    || null,
+        outboundDate:       body.outboundDate    ? new Date(body.outboundDate)    : null,
+        outboundDetails:    body.outboundDetails || null,
+        returnMode:         body.returnMode      || null,
+        returnDate:         body.returnDate      ? new Date(body.returnDate)      : null,
+        returnDetails:      body.returnDetails   || null,
+        // POINT 2 — Pièce jointe
+        attachmentUrl:      body.attachmentUrl      || null,
+        attachmentName:     body.attachmentName     || null,
+        attachmentPublicId: body.attachmentPublicId || null,
+        notes:              body.notes           || null,
       },
       include: { user: { select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true } } },
     });
@@ -61,12 +63,14 @@ router.post('/projects/:projectId/bookings', async (req: AuthRequest, res: Respo
   } catch (err) { next(err); }
 });
 
-// PATCH /bookings/:id — modifier un booking transport
 router.patch('/bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
     const data: any = {};
-    for (const k of ['phase','outboundMode','outboundDetails','returnMode','returnDetails','notes']) {
+    for (const k of [
+      'phase','outboundMode','outboundDetails','returnMode','returnDetails','notes',
+      'attachmentUrl','attachmentName','attachmentPublicId',   // POINT 2
+    ]) {
       if (body[k] !== undefined) data[k] = body[k] || null;
     }
     for (const k of ['onSiteStart','onSiteEnd','outboundDate','returnDate']) {
@@ -81,7 +85,6 @@ router.patch('/bookings/:id', async (req: AuthRequest, res: Response, next: Next
   } catch (err) { next(err); }
 });
 
-// DELETE /bookings/:id
 router.delete('/bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await (prisma as any).teamBooking.delete({ where: { id: req.params.id } });
@@ -93,7 +96,6 @@ router.delete('/bookings/:id', async (req: AuthRequest, res: Response, next: Nex
 // HOTEL BOOKINGS — un seul hôtel pour N occupants
 // ═══════════════════════════════════════════════════════════════════
 
-// GET /projects/:projectId/hotel-bookings
 router.get('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const hotels = await (prisma as any).hotelBooking.findMany({
@@ -109,8 +111,7 @@ router.get('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res: 
   } catch (err) { next(err); }
 });
 
-// POST /projects/:projectId/hotel-bookings — créer un hôtel avec N occupants
-// Body : { phase, hotelName, hotelAddress?, checkin, checkout, reference?, notes?, userIds: string[] }
+// POINT 2 — Accepte attachmentUrl/Name/PublicId
 router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
@@ -124,15 +125,19 @@ router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res:
 
     const hotel = await (prisma as any).hotelBooking.create({
       data: {
-        projectId:    req.params.projectId,
-        phase:        body.phase,
-        hotelName:    body.hotelName,
-        hotelAddress: body.hotelAddress || null,
-        checkin:      new Date(body.checkin),
-        checkout:     new Date(body.checkout),
-        reference:    body.reference || null,
-        notes:        body.notes || null,
-        occupants:    { create: userIds.map(uid => ({ userId: uid })) },
+        projectId:          req.params.projectId,
+        phase:              body.phase,
+        hotelName:          body.hotelName,
+        hotelAddress:       body.hotelAddress || null,
+        checkin:            new Date(body.checkin),
+        checkout:           new Date(body.checkout),
+        reference:          body.reference || null,
+        notes:              body.notes || null,
+        // POINT 2 — Pièce jointe
+        attachmentUrl:      body.attachmentUrl      || null,
+        attachmentName:     body.attachmentName     || null,
+        attachmentPublicId: body.attachmentPublicId || null,
+        occupants:          { create: userIds.map(uid => ({ userId: uid })) },
       },
       include: {
         occupants: {
@@ -144,18 +149,19 @@ router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res:
   } catch (err) { next(err); }
 });
 
-// PATCH /hotel-bookings/:id — modifier un hôtel (et optionnellement remplacer la liste des occupants)
 router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
     const data: any = {};
-    for (const k of ['phase','hotelName','hotelAddress','reference','notes']) {
+    for (const k of [
+      'phase','hotelName','hotelAddress','reference','notes',
+      'attachmentUrl','attachmentName','attachmentPublicId',   // POINT 2
+    ]) {
       if (body[k] !== undefined) data[k] = body[k] || null;
     }
     for (const k of ['checkin','checkout']) {
       if (body[k] !== undefined) data[k] = body[k] ? new Date(body[k]) : null;
     }
-    // Si userIds fourni, on remplace toute la liste d'occupants (delete + create)
     if (Array.isArray(body.userIds)) {
       await (prisma as any).hotelBookingOccupant.deleteMany({ where: { hotelBookingId: req.params.id } });
       data.occupants = { create: body.userIds.filter((u: any) => !!u).map((uid: string) => ({ userId: uid })) };
@@ -173,7 +179,6 @@ router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err); }
 });
 
-// DELETE /hotel-bookings/:id
 router.delete('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     await (prisma as any).hotelBooking.delete({ where: { id: req.params.id } });
@@ -181,7 +186,6 @@ router.delete('/hotel-bookings/:id', async (req: AuthRequest, res: Response, nex
   } catch (err) { next(err); }
 });
 
-// GET /bookings/calendar (les hôtels seront ajoutés au tour suivant)
 router.get('/bookings/calendar', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const from = req.query.from ? new Date(String(req.query.from)) : new Date();
