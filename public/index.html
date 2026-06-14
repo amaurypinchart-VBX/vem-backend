@@ -6589,7 +6589,7 @@ async function generateReport(mode) {
     const handovers = handoverRes?.data || [];
     const tickets  = ticketsRes?.data  || [];
     const remarks  = remarksRes?.data  || [];
-    const trucks   = project.trucks    || [];
+    const trucks   = (project.trucks || []).filter(t => t.status !== 'delivered' && t.status !== 'returned');
     const files    = filesRes?.data    || [];
 
     // ── STEP 2: AI Summary ──
