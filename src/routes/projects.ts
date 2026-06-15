@@ -103,6 +103,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     const allowed = [
       'name','internalNumber','clientId','technicalManagerId',
       'address','city','description','specialInstructions',
+      'scope','installNotes','dismantleNotes',
       'workersCount','status',
       'installationStart','installationEnd','dismantlingStart','dismantlingEnd',
     ];
