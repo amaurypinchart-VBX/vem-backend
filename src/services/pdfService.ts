@@ -10,6 +10,24 @@ const MUTED  = '#8892a4';
 const GREEN  = '#2dc653';
 const AMBER  = '#f4a261';
 
+// PDFKit + Helvetica ne supporte que WinAnsi/Latin-1 ; certains caractères Unicode
+// "exotiques" (apostrophes courbes, em-dash, etc.) sortent en charabia ou s'affichent
+// comme des cases vides. On les remplace par leurs équivalents ASCII.
+// Les caractères Latin-1 standards (é, è, à, ç, ü, ö, ä, ß) sont supportés et passent inchangés.
+function s(text: any): string {
+  if (text === null || text === undefined) return '';
+  const str = String(text);
+  return str
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")    // ' ' ‚ ‛  → '
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')    // " " „ ‟  → "
+    .replace(/[\u2013\u2014\u2015]/g, '-')          // – — ―    → -
+    .replace(/\u2026/g, '...')                       // …        → ...
+    .replace(/\u00A0/g, ' ')                         // nbsp     → espace
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')           // zero-width spaces → rien
+    .replace(/[\u2022\u2023\u25E6\u2043]/g, '-')    // • ‣ ◦ ⁃   → -
+    .replace(/[^\x00-\xFF]/g, '?');                  // tout caractère non Latin-1 → ?
+}
+
 // Chemin du logo (version claire pour fond sombre du header).
 // Chargé une seule fois en buffer pour éviter les I/O à chaque PDF.
 const LOGO_LIGHT_PATH = path.join(__dirname, '..', '..', 'public', 'logo_light.png');
@@ -242,6 +260,18 @@ export async function generateDailyReportPdf(data: {
   photos?: Array<{ photoUrl: string; caption?: string | null }>;
   reportId?: string;
 }): Promise<Buffer> {
+  // Tri chronologique des entries par horaire (entrées sans heure renvoyées en fin)
+  // Évite que des entrées du matin (08:30) apparaissent après celles du soir (17:45)
+  // quand l'utilisateur les a ajoutées dans le désordre.
+  data.entries = [...(data.entries || [])].sort((a, b) => {
+    const ta = (a.entryTime || '').trim();
+    const tb = (b.entryTime || '').trim();
+    if (!ta && !tb) return 0;
+    if (!ta) return 1;
+    if (!tb) return -1;
+    return ta.localeCompare(tb);
+  });
+
   // Pré-téléchargement des photos (Cloudinary → JPEG optimisé)
   const photoBuffers: Array<{ buffer: Buffer; caption?: string | null }> = [];
   if (data.photos && data.photos.length) {
@@ -272,8 +302,8 @@ export async function generateDailyReportPdf(data: {
 
     // Header enrichi : nom + référence du projet + numéro + date du rapport
     header(doc, 'DAILY REPORT', {
-      projectName: data.project.name,
-      projectRef:  `N° ${data.project.internalNumber}`,
+      projectName: s(data.project.name),
+      projectRef:  `N° ${s(data.project.internalNumber)}`,
       reportNum,
       reportDate:  reportDateShort,
     });
@@ -289,9 +319,9 @@ export async function generateDailyReportPdf(data: {
     doc.rect(40, infoY, 515, infoH).fillAndStroke('#fafbfc', '#e5e7eb');
     const labelStyle = (txt: string, x: number, y: number) => doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(txt.toUpperCase(), x, y, { characterSpacing: 0.5 });
     const valueStyle = (txt: string, x: number, y: number) => doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(txt || '—', x, y);
-    labelStyle('Rédigé par', 56, infoY + 12);  valueStyle(data.createdBy || 'N/A',       56, infoY + 26);
-    labelStyle('Météo',      210, infoY + 12); valueStyle(data.weather || 'N/A',         210, infoY + 26);
-    labelStyle('Ouvriers',   370, infoY + 12); valueStyle(String(data.workersPresent),   370, infoY + 26);
+    labelStyle('Rédigé par', 56, infoY + 12);  valueStyle(s(data.createdBy) || 'N/A',     56, infoY + 26);
+    labelStyle('Météo',      210, infoY + 12); valueStyle(s(data.weather) || 'N/A',       210, infoY + 26);
+    labelStyle('Ouvriers',   370, infoY + 12); valueStyle(String(data.workersPresent),    370, infoY + 26);
     labelStyle('Date',       56, infoY + 46);  valueStyle(new Date(data.reportDate).toLocaleDateString('fr-FR'), 56, infoY + 60);
     doc.y = infoY + infoH + 12;
 
@@ -305,17 +335,17 @@ export async function generateDailyReportPdf(data: {
       doc.circle(60, cY + 30, 12).fill('#e63946');
       doc.fillColor('white').font('Helvetica-Bold').fontSize(11).text('C', 55, cY + 24);
       // Société + contact
-      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(12).text(data.client.name || '—', 84, cY + 10);
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(12).text(s(data.client.name) || '—', 84, cY + 10);
       if (data.client.contactName) {
-        doc.fillColor('#555').font('Helvetica').fontSize(10).text(`Contact : ${data.client.contactName}`, 84, cY + 28);
+        doc.fillColor('#555').font('Helvetica').fontSize(10).text(`Contact : ${s(data.client.contactName)}`, 84, cY + 28);
       }
       // Email + tel sur la droite
       const rightX = 320;
       doc.fillColor(MUTED).font('Helvetica').fontSize(9);
-      if (data.client.email) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Email : ${data.client.email}`, rightX, cY + 12);
-      if (data.client.phone) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Tél. : ${data.client.phone}`,  rightX, cY + 28);
+      if (data.client.email) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Email : ${s(data.client.email)}`, rightX, cY + 12);
+      if (data.client.phone) doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`Tél. : ${s(data.client.phone)}`,  rightX, cY + 28);
       if (data.client.address) {
-        doc.fillColor('#555').font('Helvetica-Oblique').fontSize(9).text(data.client.address, 84, cY + 44, { width: 460 });
+        doc.fillColor('#555').font('Helvetica-Oblique').fontSize(9).text(s(data.client.address), 84, cY + 44, { width: 460 });
       }
       doc.y = cY + cH + 12;
     }
@@ -346,7 +376,7 @@ export async function generateDailyReportPdf(data: {
         // Petit point sur la ligne timeline
         doc.circle(LINE_X + 5, rowY + 7, 3).fill(RED);
         // Description à droite
-        doc.fillColor(DARK).font('Helvetica').fontSize(11).text(entry.description, DESC_X, rowY, { width: DESC_W });
+        doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(entry.description), DESC_X, rowY, { width: DESC_W });
         // Avancer doc.y selon la hauteur réelle de la description
         const after = doc.y;
         doc.y = Math.max(after, rowY + 20);
@@ -373,9 +403,9 @@ export async function generateDailyReportPdf(data: {
           doc.roundedRect(40, rowY, 14, 14, 2).fill('#fff').stroke(MUTED);
           doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('x', 44, rowY + 1);
         }
-        doc.fillColor(DARK).font('Helvetica').fontSize(11).text(item.item, 64, rowY, { width: 491 });
+        doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(item.item), 64, rowY, { width: 491 });
         if (item.notes) {
-          doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9).text(item.notes, 64, doc.y, { width: 491 });
+          doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9).text(s(item.notes), 64, doc.y, { width: 491 });
         }
         doc.moveDown(0.4);
       }
@@ -388,7 +418,7 @@ export async function generateDailyReportPdf(data: {
       sectionTitle(doc, 'Notes générales');
       const noteY = doc.y;
       doc.rect(40, noteY, 515, 4).fill(AMBER);
-      doc.fillColor(DARK).font('Helvetica').fontSize(11).text(data.generalNotes, 40, noteY + 12, { width: 515, lineGap: 2 });
+      doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(data.generalNotes), 40, noteY + 12, { width: 515, lineGap: 2 });
       doc.moveDown(0.8);
     }
 
@@ -425,7 +455,7 @@ export async function generateDailyReportPdf(data: {
           // Légende sous la photo
           if (p.caption) {
             doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(10)
-              .text(p.caption, x, y + cellH + 6, { width: cellW, align: 'center' });
+              .text(s(p.caption), x, y + cellH + 6, { width: cellW, align: 'center' });
           }
         } catch { /* image illisible : on saute */ }
 
