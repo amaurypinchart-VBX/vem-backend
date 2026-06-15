@@ -519,7 +519,7 @@ export async function runStartupMigrations() {
       await prisma.$disconnect();
       logger.info('🔄 Prisma reconnecté pour rafraîchir les métadonnées');
     } catch (e: any) {
-      logger.warn(`[migration] reconnexion Prisma échouée : ${e.message}`);
+      logger.warn(`[mgration] reconnexion Prisma échouée : ${e.message}`);
     }
 
     // Seed des templates de tâches Viewbox (idempotent : ne s'exécute que si la
