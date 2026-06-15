@@ -1,0 +1,2088 @@
+<style>
+:root {
+  --bg: #0f1115; --bg-2: #161a22; --bg-3: #1d222c; --border: #2a313f;
+  --text: #e6e9ef; --text-dim: #8b94a7;
+  --accent: #ff8a3d; --accent-2: #ffb074;
+  --success: #4ade80; --danger: #f87171; --info: #a78bfa;
+  --shadow: 0 8px 24px rgba(0,0,0,0.4);
+  --canvas-bg: #1a1f29;
+}
+[data-theme="light"] {
+  --bg: #f5f6f8; --bg-2: #ffffff; --bg-3: #eef0f4; --border: #d8dce4;
+  --text: #1a1f29; --text-dim: #6a7280;
+  --accent: #d65a14; --accent-2: #f08249;
+  --success: #16a34a; --danger: #dc2626; --info: #7c3aed;
+  --shadow: 0 4px 16px rgba(0,0,0,0.08);
+  --canvas-bg: #e9ecf1;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.4;
+}
+#app { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--bg-2);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
+.brand-logo {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center; color: white;
+  font-weight: 700; font-size: 13px;
+}
+.brand-sub { color: var(--text-dim); font-weight: 400; font-size: 12px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn {
+  background: var(--bg-3); color: var(--text); border: 1px solid var(--border);
+  padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; transition: all 0.15s;
+}
+.btn:hover:not(:disabled) { background: var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+.btn-ai { background: var(--info); color: white; border-color: var(--info); }
+.btn-ai:hover:not(:disabled) { filter: brightness(1.15); }
+.btn-icon { padding: 7px; width: 30px; height: 30px; justify-content: center; }
+
+#main { display: flex; flex: 1; overflow: hidden; min-height: 0; position: relative; }
+aside { background: var(--bg-2); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; transition: width 0.25s; }
+#sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  border-right: 1px solid var(--border);
+}
+#sidebar.collapsed {
+  width: 0 !important;
+  flex: 0 0 0 !important;
+  min-width: 0 !important;
+  border-right-width: 0 !important;
+}
+#info-panel { width: 230px; border-left: 1px solid var(--border); }
+
+.panel-head {
+  padding: 10px 14px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim);
+  border-bottom: 1px solid var(--border); display: flex;
+  align-items: center; justify-content: space-between; gap: 6px;
+}
+.panel-head-btn {
+  background: transparent; border: none; color: var(--text-dim);
+  cursor: pointer; padding: 2px 4px; border-radius: 3px;
+  font-size: 14px; line-height: 1;
+}
+.panel-head-btn:hover { color: var(--text); background: var(--bg-3); }
+.panel-body { overflow-y: auto; flex: 1; padding: 8px 0; }
+.panel-body::-webkit-scrollbar { width: 8px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+#canvas-container {
+  flex: 1; position: relative; background: var(--canvas-bg);
+  overflow: hidden; min-width: 0; min-height: 0;
+}
+#canvas-container.measure-mode canvas { cursor: crosshair; }
+canvas {
+  position: absolute; top: 0; left: 0;
+  width: 100% !important; height: 100% !important;
+  display: block;
+}
+
+#expand-sidebar {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 50px; background: var(--bg-2);
+  border: 1px solid var(--border); border-left: none;
+  border-radius: 0 6px 6px 0; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  color: var(--text-dim); z-index: 7; box-shadow: var(--shadow);
+}
+#expand-sidebar:hover { color: var(--accent); }
+#sidebar.collapsed ~ #canvas-container #expand-sidebar,
+#main:has(#sidebar.collapsed) #expand-sidebar { display: flex; }
+
+#drop-zone {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; pointer-events: none; transition: all 0.2s; z-index: 5;
+}
+#drop-zone.empty { pointer-events: auto; }
+#drop-zone.dragover .drop-card {
+  border-color: var(--accent); background: rgba(255, 138, 61, 0.08);
+  transform: scale(1.02);
+}
+.drop-card {
+  background: var(--bg-2); border: 2px dashed var(--border);
+  border-radius: 12px; padding: 32px 48px; text-align: center;
+  box-shadow: var(--shadow); max-width: 440px;
+}
+.drop-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.6; }
+.drop-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.drop-sub { color: var(--text-dim); margin-bottom: 18px; font-size: 12px; }
+.drop-actions { display: flex; gap: 8px; justify-content: center; }
+.drop-formats {
+  display: flex; gap: 6px; justify-content: center; margin-top: 14px; flex-wrap: wrap;
+}
+.format-chip {
+  font-size: 10px; padding: 3px 8px; border-radius: 10px;
+  background: var(--bg-3); color: var(--text-dim);
+  font-family: 'SF Mono', Monaco, monospace; font-weight: 600;
+}
+
+#overlay-controls {
+  position: absolute; top: 12px; left: 12px;
+  display: flex; flex-direction: column; gap: 6px; z-index: 4;
+}
+.overlay-btn {
+  width: 34px; height: 34px; background: var(--bg-2);
+  border: 1px solid var(--border); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text); transition: all 0.15s;
+  box-shadow: var(--shadow);
+}
+.overlay-btn:hover { background: var(--bg-3); }
+.overlay-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.overlay-btn svg { width: 16px; height: 16px; }
+
+#view-info {
+  position: absolute; bottom: 12px; left: 12px; z-index: 4;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 11px;
+  color: var(--text-dim); font-family: 'SF Mono', Monaco, monospace;
+  box-shadow: var(--shadow);
+}
+#status-banner {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 6px;
+  padding: 8px 14px; font-size: 12px; box-shadow: var(--shadow);
+  z-index: 6; max-width: 80%; display: none;
+}
+#status-banner.error { border-left-color: var(--danger); color: var(--danger); }
+#status-banner.success { border-left-color: var(--success); }
+#status-banner.show { display: block; }
+#loading-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px; z-index: 100;
+}
+#loading-overlay.show { display: flex; }
+.spinner {
+  width: 36px; height: 36px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { color: white; font-size: 13px; font-weight: 500; }
+
+/* Measure layer */
+#measure-layer {
+  position: absolute; inset: 0; pointer-events: none;
+  z-index: 5; overflow: hidden;
+}
+.measure-label {
+  position: absolute; transform: translate(-50%, -50%);
+  background: rgba(22, 26, 34, 0.92); color: white;
+  border: 1px solid var(--accent); border-radius: 4px;
+  padding: 3px 7px; font-size: 11px; font-weight: 600;
+  font-family: 'SF Mono', Monaco, monospace;
+  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.measure-label.dim {
+  background: rgba(255, 138, 61, 0.95); color: white; border: none;
+}
+.measure-label .axis { font-size: 9px; opacity: 0.7; margin-right: 3px; }
+
+#measure-hint {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: white; padding: 6px 14px;
+  border-radius: 6px; font-size: 12px; font-weight: 500;
+  box-shadow: var(--shadow); z-index: 6; display: none;
+}
+#measure-hint.show { display: block; }
+
+/* Tree */
+.tree-node {
+  padding: 5px 12px 5px 8px; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+}
+.tree-node:hover { background: var(--bg-3); }
+.tree-node.selected { background: rgba(255, 138, 61, 0.18); color: var(--accent); font-weight: 500; }
+.tree-arrow {
+  display: inline-block; width: 12px; font-size: 8px;
+  color: var(--text-dim); flex-shrink: 0; text-align: center;
+}
+.tree-icon-em { font-size: 12px; flex-shrink: 0; }
+.tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-count {
+  font-size: 10px; color: var(--text-dim);
+  background: var(--bg-3); padding: 1px 7px; border-radius: 9px;
+  font-family: 'SF Mono', Monaco, monospace; flex-shrink: 0;
+}
+.tree-node.selected .tree-count { background: rgba(255, 138, 61, 0.25); color: var(--accent); }
+.tree-visibility { width: 16px; height: 16px; opacity: 0.4; flex-shrink: 0; }
+.tree-visibility svg { width: 100%; height: 100%; }
+.tree-visibility:hover { opacity: 1; }
+.tree-visibility.hidden-item { opacity: 1; color: var(--danger); }
+
+/* Right panel sections */
+.info-section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.info-section:last-child { border-bottom: none; }
+.info-section h4 {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 8px;
+}
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 12px;
+}
+.switch {
+  position: relative; width: 32px; height: 18px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: 10px; cursor: pointer; transition: background 0.15s;
+}
+.switch::after {
+  content: ''; position: absolute; top: 1px; left: 1px;
+  width: 14px; height: 14px; background: var(--text-dim);
+  border-radius: 50%; transition: all 0.15s;
+}
+.switch.on { background: var(--accent); border-color: var(--accent); }
+.switch.on::after { left: 15px; background: white; }
+.slider-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; }
+.slider-label { display: flex; justify-content: space-between; font-size: 12px; }
+.slider-value { color: var(--accent); font-family: 'SF Mono', Monaco, monospace; }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; background: var(--bg-3); border-radius: 2px; outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; background: var(--accent);
+  border-radius: 50%; cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; background: var(--accent);
+  border-radius: 50%; cursor: pointer; border: none;
+}
+.empty-state {
+  padding: 24px 16px; text-align: center; color: var(--text-dim);
+  font-size: 12px; font-style: italic;
+}
+
+.measurement-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.measurement-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; background: var(--bg-3); border-radius: 4px;
+  font-size: 11px; font-family: 'SF Mono', Monaco, monospace;
+}
+.measurement-item .del {
+  cursor: pointer; color: var(--text-dim); padding: 0 4px;
+}
+.measurement-item .del:hover { color: var(--danger); }
+.btn-sm {
+  padding: 4px 8px; font-size: 11px; width: 100%;
+  justify-content: center;
+}
+
+/* Loading List Modal */
+#ll-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
+}
+#ll-modal.show { display: flex; }
+.modal-content {
+  background: var(--bg-2); border-radius: 12px;
+  width: 92%; max-width: 1100px; height: 88%; max-height: 800px;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title { font-size: 16px; font-weight: 600; }
+.modal-tabs { display: flex; gap: 4px; }
+.modal-tab {
+  padding: 8px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--text-dim);
+  border: 1px solid transparent; transition: all 0.15s;
+}
+.modal-tab:hover { color: var(--text); background: var(--bg-3); }
+.modal-tab.active { color: var(--text); background: var(--bg-3); border-color: var(--border); }
+.modal-close {
+  background: var(--bg-3); border: 1px solid var(--border);
+  width: 32px; height: 32px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text); font-size: 16px;
+}
+.modal-close:hover { background: var(--border); }
+.modal-body { flex: 1; overflow: auto; padding: 18px; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+.modal-footer {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0; gap: 12px;
+}
+.ll-controls {
+  display: flex; gap: 10px; margin-bottom: 14px;
+  align-items: center; flex-wrap: wrap;
+}
+.depth-selector { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.depth-selector select {
+  background: var(--bg-3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 8px; font-size: 12px; font-family: inherit;
+}
+#ll-ai-status {
+  flex: 1; font-size: 12px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 8px;
+}
+.ai-spinner-sm {
+  width: 12px; height: 12px; border: 2px solid var(--border);
+  border-top-color: var(--info); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.product-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.product-table th {
+  text-align: left; padding: 10px 12px; font-weight: 600;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-dim); border-bottom: 1px solid var(--border);
+  background: var(--bg-3); position: sticky; top: 0; z-index: 1;
+}
+.product-table td {
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+}
+.product-table tr:hover td { background: var(--bg-3); }
+.product-table .qty { font-family: 'SF Mono', Monaco, monospace; font-weight: 600; color: var(--accent); }
+.source-tag {
+  display: inline-block; font-size: 10px; padding: 2px 8px;
+  border-radius: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.source-3d { background: rgba(74, 222, 128, 0.18); color: var(--success); }
+.source-ai { background: rgba(167, 139, 250, 0.18); color: var(--info); }
+.empty-table { padding: 40px; text-align: center; color: var(--text-dim); font-style: italic; }
+.rules-editor {
+  width: 100%; min-height: 320px; padding: 12px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px; background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); resize: vertical; line-height: 1.6;
+}
+.rules-editor:focus { outline: none; border-color: var(--accent); }
+.rule-help {
+  background: var(--bg-3); padding: 12px 14px; border-radius: 6px;
+  margin-bottom: 12px; font-size: 12px; color: var(--text-dim);
+  border-left: 3px solid var(--accent);
+}
+.rule-help strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 13px; }
+.rule-help ul { margin-top: 6px; padding-left: 18px; line-height: 1.7; }
+.rule-help code {
+  background: var(--bg-2); padding: 1px 5px; border-radius: 3px;
+  font-family: monospace; color: var(--accent);
+}
+
+/* Photo Gallery */
+.badge {
+  background: var(--accent); color: white;
+  border-radius: 10px; padding: 1px 7px;
+  font-size: 10px; font-weight: 700; margin-left: 6px;
+  display: inline-block; min-width: 18px; text-align: center;
+}
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.gallery-item {
+  background: var(--bg-3); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border); transition: transform 0.15s;
+}
+.gallery-item:hover { transform: translateY(-2px); border-color: var(--accent); }
+.gallery-thumb {
+  width: 100%; aspect-ratio: 4/3; object-fit: cover; cursor: pointer;
+  background: var(--bg-2); display: block;
+}
+.gallery-meta { padding: 8px 10px; }
+.gallery-meta .name { font-weight: 600; font-size: 12px; }
+.gallery-meta .date { color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+.gallery-actions {
+  display: flex; gap: 4px; padding: 0 10px 10px;
+}
+.gallery-actions .btn { flex: 1; padding: 5px 8px; font-size: 11px; }
+.gallery-actions .btn-del { flex: 0 0 32px; color: var(--danger); }
+.gallery-empty {
+  padding: 60px 20px; text-align: center; color: var(--text-dim);
+  font-size: 13px; line-height: 1.7;
+}
+.gallery-empty .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="brand-logo">3D</div>
+      <div>
+        <div>Lecteur 3D Chantier</div>
+        <div class="brand-sub">Visualisation · mesures · loading list</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-icon" id="btn-toggle-sidebar" title="Afficher/Masquer l'arborescence">≡</button>
+      <button class="btn" id="btn-gallery" disabled>📷 Galerie<span class="badge" id="gallery-count" style="display:none;">0</span></button>
+      <button class="btn" id="btn-ll" disabled>📋 Loading List</button>
+      <button class="btn btn-icon" id="btn-theme" title="Thème">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <button class="btn btn-primary" id="btn-open">📁 Ouvrir un fichier</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="panel-head">
+        <span>Arborescence</span>
+        <span id="component-count" style="color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0">—</span>
+      </div>
+      <div class="panel-body" id="tree-container">
+        <div class="empty-state">Aucun modèle chargé.</div>
+      </div>
+    </aside>
+
+    <div id="canvas-container">
+      <canvas id="canvas"></canvas>
+      <div id="measure-layer"></div>
+
+      <button id="expand-sidebar" title="Afficher l'arborescence">▶</button>
+
+      <div id="overlay-controls">
+        <button class="overlay-btn" id="ov-reset" title="Recadrer (F)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>
+        </button>
+        <button class="overlay-btn" id="ov-wireframe" title="Wireframe (W)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </button>
+        <button class="overlay-btn active" id="ov-grid" title="Grille (G)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+        </button>
+        <button class="overlay-btn active" id="ov-axes" title="Axes (A)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L20 4M4 20V8M4 20h12"/></svg>
+        </button>
+        <button class="overlay-btn" id="ov-explode" title="Vue éclatée (E)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/></svg>
+        </button>
+        <button class="overlay-btn" id="ov-measure" title="Mesurer (M) — clique 2 points">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12l3-3 1 2 2-2 1 2 2-2 1 2 2-2 1 2 2-2 1 2 3-3M2 12v6h20v-6"/></svg>
+        </button>
+        <button class="overlay-btn" id="ov-capture" title="Prendre une photo (P)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+      </div>
+
+      <div id="status-banner"></div>
+      <div id="measure-hint">📏 Clique sur 2 points du modèle pour mesurer · Échap pour quitter</div>
+      <div id="view-info">Initialisation...</div>
+
+      <div id="drop-zone" class="empty">
+        <div class="drop-card">
+          <div class="drop-icon">📐</div>
+          <div class="drop-title">Charge un modèle 3D</div>
+          <div class="drop-sub">Glisse-dépose ou clique</div>
+          <div class="drop-actions">
+            <button class="btn btn-primary" id="btn-open-2">Parcourir...</button>
+            <button class="btn" id="btn-test-cube">🧪 Cube de test</button>
+          </div>
+          <div class="drop-formats">
+            <span class="format-chip">.STL</span>
+            <span class="format-chip">.OBJ</span>
+            <span class="format-chip">.GLTF</span>
+            <span class="format-chip">.GLB</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loading-text">Chargement...</div>
+      </div>
+    </div>
+
+    <aside id="info-panel">
+      <div class="panel-head"><span>Outils</span></div>
+      <div class="panel-body">
+
+        <div class="info-section">
+          <h4>📏 Mesures</h4>
+          <div class="toggle-row">
+            <span>Dimensions auto<br><span style="font-size:10px;color:var(--text-dim);">du composant sélectionné</span></span>
+            <div class="switch on" id="sw-auto-dim"></div>
+          </div>
+          <button class="btn btn-sm" id="btn-measure-start" style="margin-top:8px;">📏 Activer la règle</button>
+          <div id="measurement-list-container" style="margin-top:10px;"></div>
+          <button class="btn btn-sm" id="btn-clear-measures" style="margin-top:6px; display:none;">🗑 Effacer les mesures</button>
+        </div>
+
+        <div class="info-section">
+          <h4>🎛 Affichage</h4>
+          <div class="slider-row">
+            <div class="slider-label"><span>Vue éclatée</span><span class="slider-value" id="explode-val">0%</span></div>
+            <input type="range" id="explode-slider" min="0" max="100" value="0">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Opacité</span><span class="slider-value" id="opacity-val">100%</span></div>
+            <input type="range" id="opacity-slider" min="10" max="100" value="100">
+          </div>
+          <div class="toggle-row">
+            <span>Rotation auto</span>
+            <div class="switch" id="sw-auto-rotate"></div>
+          </div>
+          <div class="toggle-row">
+            <span>Grille</span>
+            <div class="switch on" id="sw-grid"></div>
+          </div>
+          <div class="toggle-row">
+            <span>Axes</span>
+            <div class="switch on" id="sw-axes"></div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Loading List Modal -->
+<div id="ll-modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div class="modal-title">📋 Loading List</div>
+        <div class="modal-tabs">
+          <div class="modal-tab active" data-tab="products">Produits</div>
+          <div class="modal-tab" data-tab="rules">⚙️ Règles métier</div>
+        </div>
+      </div>
+      <button class="modal-close" id="ll-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="tab-pane active" data-pane="products">
+        <div class="ll-controls">
+          <div class="depth-selector">
+            <label>Agréger au niveau :</label>
+            <select id="ll-depth">
+              <option value="1" selected>Niveau 1 (composants principaux)</option>
+              <option value="2">Niveau 2</option>
+              <option value="3">Niveau 3</option>
+              <option value="0">Feuilles (détaillé)</option>
+            </select>
+          </div>
+          <button class="btn btn-ai" id="ll-ai">🤖 Compléter avec IA</button>
+          <button class="btn" id="ll-clear-ai">🧹 Effacer inférences IA</button>
+          <div id="ll-ai-status"></div>
+        </div>
+        <table class="product-table">
+          <thead>
+            <tr>
+              <th>Composant</th>
+              <th style="width:80px;">Quantité</th>
+              <th style="width:80px;">Unité</th>
+              <th style="width:90px;">Source</th>
+              <th>Localisation / Raison</th>
+            </tr>
+          </thead>
+          <tbody id="ll-tbody"></tbody>
+        </table>
+      </div>
+      <div class="tab-pane" data-pane="rules">
+        <div class="rule-help">
+          <strong>📝 Règles métier (sauvegardées localement)</strong>
+          Écris en langage naturel ce qu'il faut ajouter à la loading list. L'IA appliquera ces règles aux composants détectés.
+          <ul>
+            <li><code>Pour chaque fenêtre alu, prévoir 4 équerres + 8 vis M5x40</code></li>
+            <li><code>Pour chaque mètre linéaire de profilé, ajouter 0.5L de colle PU</code></li>
+          </ul>
+        </div>
+        <textarea class="rules-editor" id="ll-rules" placeholder="# Mes règles métier&#10;&#10;Pour chaque fenêtre alu, prévoir..."></textarea>
+        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-primary" id="ll-save-rules">💾 Sauvegarder</button>
+          <span id="ll-rules-status" style="font-size:12px; color:var(--text-dim);"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div style="color: var(--text-dim); font-size: 12px;" id="ll-footer-info">—</div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" id="ll-csv">📄 Export CSV</button>
+        <button class="btn btn-primary" id="ll-xlsx">📊 Export Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".stl,.obj,.gltf,.glb" style="display:none">
+
+<!-- Photo Gallery Modal -->
+<div id="gallery-modal" class="ll-modal-like" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">📷 Galerie photos</div>
+      <button class="modal-close" id="gallery-close">✕</button>
+    </div>
+    <div class="modal-body" id="gallery-body"></div>
+    <div class="modal-footer">
+      <div style="color: var(--text-dim); font-size: 12px;" id="gallery-info">—</div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" id="gallery-clear-all">🗑 Tout supprimer</button>
+        <button class="btn btn-primary" id="gallery-download-all">📥 Tout télécharger</button>
+      </div>
+    </div>
+  </div>
+</div>
+<style>#gallery-modal.show { display: flex !important; }</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ============================================================================
+// HELPERS
+// ============================================================================
+function setStatus(msg, type) {
+  const el = document.getElementById('status-banner');
+  if (!msg) { el.classList.remove('show'); return; }
+  el.className = 'status-banner show ' + (type || '');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (type !== 'error') setTimeout(() => el.classList.remove('show'), 4000);
+}
+function fmtNum(n) { return Number(n).toLocaleString('fr-FR'); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtDim(v) {
+  // Smart dimension formatter: show 2 decimals if small, 1 if medium, 0 if large
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+// ============================================================================
+// STATE
+// ============================================================================
+const state = {
+  theme: 'dark', showGrid: true, showAxes: true,
+  wireframe: false, autoRotate: false,
+  opacity: 1, hiddenComponents: new Set(),
+  selectedTreeNode: null,
+  currentModel: null, modelInfo: null,
+  tree: null,
+  rules: '', aiProducts: [],
+  // measurements
+  measureMode: false,
+  pendingPoint: null,        // first clicked point waiting for second
+  measurements: [],          // [{ p1, p2, distance, line, sphere1, sphere2, labelEl }]
+  autoDim: true,
+  dimOverlay: null,          // { box, edges, labels: { x, y, z } }
+};
+
+// ============================================================================
+// THREE.JS
+// ============================================================================
+let scene, camera, renderer, controls;
+let modelGroup, gridHelper, axesHelper;
+let ambientLight, dirLight1, dirLight2;
+const canvas = document.getElementById('canvas');
+const container = document.getElementById('canvas-container');
+const measureLayer = document.getElementById('measure-layer');
+
+function initThree() {
+  const w = Math.max(container.clientWidth, 1);
+  const h = Math.max(container.clientHeight, 1);
+  if (w < 10 || h < 10) { requestAnimationFrame(initThree); return; }
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 100000);
+  camera.position.set(50, 40, 50);
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h, false);
+  renderer.setClearColor(0x1a1f29, 1);
+  ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
+  dirLight1 = new THREE.DirectionalLight(0xffffff, 0.9); dirLight1.position.set(10, 20, 10); scene.add(dirLight1);
+  dirLight2 = new THREE.DirectionalLight(0xffffff, 0.4); dirLight2.position.set(-10, 5, -10); scene.add(dirLight2);
+  gridHelper = new THREE.GridHelper(100, 20, 0x2a313f, 0x2a313f);
+  gridHelper.material.transparent = true; gridHelper.material.opacity = 0.6;
+  scene.add(gridHelper);
+  axesHelper = new THREE.AxesHelper(10); scene.add(axesHelper);
+  modelGroup = new THREE.Group(); scene.add(modelGroup);
+  controls = new OrbitController(camera, canvas);
+  document.getElementById('view-info').textContent = 'Prêt — charge un modèle';
+  animate();
+}
+
+function resize() {
+  if (!renderer) return;
+  const w = Math.max(container.clientWidth, 1);
+  const h = Math.max(container.clientHeight, 1);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (!renderer || !scene || !camera) return;
+  if (state.autoRotate && state.currentModel) controls.targetAzimuth -= 0.005;
+  controls.damp();
+  renderer.render(scene, camera);
+  updateAllLabels();
+}
+
+// ============================================================================
+// ORBIT CONTROLLER
+// ============================================================================
+function OrbitController(cam, dom) {
+  this.cam = cam; this.dom = dom;
+  this.target = new THREE.Vector3(0, 0, 0);
+  this.distance = 80; this.azimuth = Math.PI / 4; this.polar = Math.PI / 3;
+  this.targetAzimuth = this.azimuth; this.targetPolar = this.polar;
+  this.targetDistance = this.distance; this.targetTarget = this.target.clone();
+  let dragging = false, panning = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+
+  dom.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    downX = e.clientX; downY = e.clientY;
+    if (e.button === 0) dragging = true;
+    else if (e.button === 2 || e.button === 1) panning = true;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  dom.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging && !panning) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (dragging) {
+      this.targetAzimuth -= dx * 0.01;
+      this.targetPolar -= dy * 0.01;
+      this.targetPolar = Math.max(0.01, Math.min(Math.PI - 0.01, this.targetPolar));
+    } else if (panning) {
+      const sp = this.distance * 0.0015;
+      const r = new THREE.Vector3(), u = new THREE.Vector3();
+      this.cam.matrix.extractBasis(r, u, new THREE.Vector3());
+      this.targetTarget.addScaledVector(r, -dx * sp);
+      this.targetTarget.addScaledVector(u, dy * sp);
+    }
+  });
+  window.addEventListener('mouseup', (e) => {
+    const wasDragging = dragging;
+    dragging = false; panning = false;
+    // Detect "click" (not drag) in measure mode
+    if (wasDragging && state.measureMode && e.button === 0) {
+      const moved = Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY);
+      if (moved < 5) handleMeasureClick(e);
+    }
+  });
+  dom.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    this.targetDistance *= (e.deltaY > 0 ? 1.1 : 0.9);
+    this.targetDistance = Math.max(0.001, Math.min(50000, this.targetDistance));
+  }, { passive: false });
+
+  this.update = () => {
+    const sp = Math.sin(this.polar);
+    this.cam.position.x = this.target.x + this.distance * sp * Math.sin(this.azimuth);
+    this.cam.position.y = this.target.y + this.distance * Math.cos(this.polar);
+    this.cam.position.z = this.target.z + this.distance * sp * Math.cos(this.azimuth);
+    this.cam.lookAt(this.target);
+  };
+  this.damp = () => {
+    const k = 0.18;
+    this.azimuth += (this.targetAzimuth - this.azimuth) * k;
+    this.polar += (this.targetPolar - this.polar) * k;
+    this.distance += (this.targetDistance - this.distance) * k;
+    this.target.x += (this.targetTarget.x - this.target.x) * k;
+    this.target.y += (this.targetTarget.y - this.target.y) * k;
+    this.target.z += (this.targetTarget.z - this.target.z) * k;
+    this.update();
+  };
+  this.frame = (box) => {
+    const c = new THREE.Vector3(); box.getCenter(c);
+    const sz = new THREE.Vector3(); box.getSize(sz);
+    const max = Math.max(sz.x, sz.y, sz.z, 0.1);
+    this.target.copy(c); this.targetTarget.copy(c);
+    this.distance = this.targetDistance = max * 2.2;
+    this.azimuth = this.targetAzimuth = Math.PI / 4;
+    this.polar = this.targetPolar = Math.PI / 3;
+    this.update();
+  };
+  this.update();
+}
+
+// ============================================================================
+// PARSERS (STL / OBJ / GLB) — unchanged from previous version
+// ============================================================================
+function parseSTL(buffer) {
+  if (buffer.byteLength < 84) return parseSTLAscii(buffer);
+  const dv = new DataView(buffer);
+  const n = dv.getUint32(80, true);
+  if (84 + n * 50 === buffer.byteLength) return parseSTLBinary(buffer, n);
+  return parseSTLAscii(buffer);
+}
+function parseSTLBinary(buffer, n) {
+  const dv = new DataView(buffer);
+  const positions = new Float32Array(n * 9), normals = new Float32Array(n * 9);
+  let p = 84;
+  for (let i = 0; i < n; i++) {
+    const nx = dv.getFloat32(p, true), ny = dv.getFloat32(p + 4, true), nz = dv.getFloat32(p + 8, true);
+    p += 12;
+    for (let v = 0; v < 3; v++) {
+      const ix = i * 9 + v * 3;
+      positions[ix] = dv.getFloat32(p, true);
+      positions[ix + 1] = dv.getFloat32(p + 4, true);
+      positions[ix + 2] = dv.getFloat32(p + 8, true);
+      normals[ix] = nx; normals[ix + 1] = ny; normals[ix + 2] = nz;
+      p += 12;
+    }
+    p += 2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  return [{ name: 'Model', path: ['Model'], geometry: g }];
+}
+function parseSTLAscii(buffer) {
+  const txt = new TextDecoder().decode(buffer);
+  const positions = [], normals = [];
+  let curNormal = [0, 0, 1];
+  for (const line of txt.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('facet normal')) {
+      const p = t.split(/\s+/); curNormal = [+p[2], +p[3], +p[4]];
+    } else if (t.startsWith('vertex')) {
+      const p = t.split(/\s+/);
+      positions.push(+p[1], +p[2], +p[3]);
+      normals.push(curNormal[0], curNormal[1], curNormal[2]);
+    }
+  }
+  if (positions.length === 0) throw new Error('STL ASCII : aucun triangle');
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+  return [{ name: 'Model', path: ['Model'], geometry: g }];
+}
+
+function parseOBJ(text) {
+  const verts = [], norms = [];
+  const groups = [];
+  let cur = { name: 'default', positions: [], normals: [], hasNormals: false };
+  groups.push(cur);
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim(); if (!t || t[0] === '#') continue;
+    const parts = t.split(/\s+/), c = parts[0];
+    if (c === 'v') verts.push(+parts[1], +parts[2], +parts[3]);
+    else if (c === 'vn') norms.push(+parts[1], +parts[2], +parts[3]);
+    else if (c === 'g' || c === 'o') {
+      const name = parts.slice(1).join(' ') || ('group_' + groups.length);
+      if (cur.positions.length === 0) cur.name = name;
+      else { cur = { name, positions: [], normals: [], hasNormals: false }; groups.push(cur); }
+    } else if (c === 'f') {
+      const face = [];
+      for (let i = 1; i < parts.length; i++) {
+        const tok = parts[i].split('/');
+        const vi = parseInt(tok[0]); const ni = tok[2] ? parseInt(tok[2]) : 0;
+        if (!isNaN(vi)) face.push({ v: vi, n: ni });
+      }
+      if (face.length < 3) continue;
+      for (let i = 1; i < face.length - 1; i++) {
+        const f = [face[0], face[i], face[i + 1]];
+        for (let k = 0; k < 3; k++) {
+          const vi = (f[k].v > 0 ? f[k].v - 1 : verts.length / 3 + f[k].v);
+          if (vi < 0 || vi * 3 + 2 >= verts.length) continue;
+          cur.positions.push(verts[vi * 3], verts[vi * 3 + 1], verts[vi * 3 + 2]);
+          if (f[k].n && norms.length > 0) {
+            const ni = (f[k].n > 0 ? f[k].n - 1 : norms.length / 3 + f[k].n);
+            if (ni >= 0 && ni * 3 + 2 < norms.length) {
+              cur.normals.push(norms[ni * 3], norms[ni * 3 + 1], norms[ni * 3 + 2]);
+              cur.hasNormals = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  const out = [];
+  for (const g of groups) {
+    if (g.positions.length === 0) continue;
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(g.positions), 3));
+    if (g.hasNormals && g.normals.length === g.positions.length) {
+      bg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(g.normals), 3));
+    } else bg.computeVertexNormals();
+    out.push({ name: g.name, path: [g.name], geometry: bg });
+  }
+  if (out.length === 0) throw new Error('OBJ : aucun composant valide');
+  return out;
+}
+
+function parseGLB(buffer) {
+  const dv = new DataView(buffer);
+  if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('Magic GLB invalide');
+  if (dv.getUint32(4, true) !== 2) throw new Error('Version GLB non supportée');
+  let off = 12, json = null, bin = null;
+  while (off < buffer.byteLength) {
+    const len = dv.getUint32(off, true);
+    const type = dv.getUint32(off + 4, true);
+    off += 8;
+    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, off, len)));
+    else if (type === 0x004E4942) bin = buffer.slice(off, off + len);
+    off += len;
+  }
+  if (!json) throw new Error('Pas de chunk JSON');
+  return processGLTF(json, bin);
+}
+
+function processGLTF(json, bin) {
+  const components = [];
+  const CT = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
+  const TS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
+  function getAccessor(idx) {
+    const a = json.accessors[idx], bv = json.bufferViews[a.bufferView];
+    const Ctor = CT[a.componentType], compSize = TS[a.type];
+    const elBytes = Ctor.BYTES_PER_ELEMENT, totalEl = a.count * compSize;
+    const start = (bv.byteOffset || 0) + (a.byteOffset || 0);
+    const stride = bv.byteStride || (elBytes * compSize);
+    const tight = (stride === elBytes * compSize) && (start % elBytes === 0);
+    if (tight) { try { return new Ctor(bin, start, totalEl); } catch (e) {} }
+    const out = new Ctor(totalEl);
+    const dv = new DataView(bin);
+    const r = {
+      5120: (o) => dv.getInt8(o), 5121: (o) => dv.getUint8(o),
+      5122: (o) => dv.getInt16(o, true), 5123: (o) => dv.getUint16(o, true),
+      5125: (o) => dv.getUint32(o, true), 5126: (o) => dv.getFloat32(o, true)
+    }[a.componentType];
+    for (let i = 0; i < a.count; i++) for (let j = 0; j < compSize; j++)
+      out[i * compSize + j] = r(start + i * stride + j * elBytes);
+    return out;
+  }
+  function buildPrim(prim) {
+    const g = new THREE.BufferGeometry();
+    if (prim.attributes.POSITION !== undefined) {
+      const p = getAccessor(prim.attributes.POSITION);
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+    }
+    if (prim.attributes.NORMAL !== undefined) {
+      const n = getAccessor(prim.attributes.NORMAL);
+      g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n), 3));
+    } else g.computeVertexNormals();
+    if (prim.indices !== undefined) {
+      const ix = getAccessor(prim.indices);
+      g.setIndex(new THREE.BufferAttribute(new Uint32Array(ix), 1));
+    }
+    let color = null;
+    if (prim.material !== undefined && json.materials) {
+      const m = json.materials[prim.material];
+      if (m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorFactor) {
+        const c = m.pbrMetallicRoughness.baseColorFactor;
+        color = new THREE.Color(c[0], c[1], c[2]);
+      }
+    }
+    return { geometry: g, color };
+  }
+  function processNode(idx, parentMat, ancestorPath, depth) {
+    const node = json.nodes[idx];
+    const lm = new THREE.Matrix4();
+    if (node.matrix) lm.fromArray(node.matrix);
+    else {
+      const t = new THREE.Vector3().fromArray(node.translation || [0, 0, 0]);
+      const r = new THREE.Quaternion().fromArray(node.rotation || [0, 0, 0, 1]);
+      const s = new THREE.Vector3().fromArray(node.scale || [1, 1, 1]);
+      lm.compose(t, r, s);
+    }
+    const wm = new THREE.Matrix4().multiplyMatrices(parentMat, lm);
+    const myName = node.name || ('Node_' + idx);
+    const myPath = [...ancestorPath, myName];
+    if (node.mesh !== undefined) {
+      const mesh = json.meshes[node.mesh];
+      mesh.primitives.forEach((prim, pi) => {
+        const built = buildPrim(prim);
+        built.geometry.applyMatrix4(wm);
+        const cn = mesh.primitives.length > 1 ? `${myName} (#${pi + 1})` : myName;
+        components.push({ name: cn, path: myPath, depth, geometry: built.geometry, color: built.color });
+      });
+    }
+    if (node.children) node.children.forEach(ci => processNode(ci, wm, myPath, depth + 1));
+  }
+  const scIdx = json.scene || 0;
+  const sc = json.scenes && json.scenes[scIdx];
+  if (sc && sc.nodes) sc.nodes.forEach(ni => processNode(ni, new THREE.Matrix4(), [], 0));
+  if (components.length === 0) throw new Error('glTF : aucun mesh trouvé');
+  return components;
+}
+
+// ============================================================================
+// LOAD FILE / DISPLAY
+// ============================================================================
+async function loadFile(file) {
+  showLoading(true, `Lecture de ${file.name}...`);
+  setStatus('');
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let components;
+    const t0 = performance.now();
+    if (ext === 'stl') components = parseSTL(await file.arrayBuffer());
+    else if (ext === 'obj') components = parseOBJ(await file.text());
+    else if (ext === 'glb') components = parseGLB(await file.arrayBuffer());
+    else if (ext === 'gltf') {
+      const json = JSON.parse(await file.text());
+      if (json.buffers && json.buffers[0] && json.buffers[0].uri && json.buffers[0].uri.startsWith('data:')) {
+        const b64 = json.buffers[0].uri.split(',')[1];
+        const bs = atob(b64);
+        const bin = new ArrayBuffer(bs.length);
+        const view = new Uint8Array(bin);
+        for (let i = 0; i < bs.length; i++) view[i] = bs.charCodeAt(i);
+        components = processGLTF(json, bin);
+      } else throw new Error('.gltf avec buffer externe non supporté. Utilise .glb');
+    } else throw new Error('Format non supporté: .' + ext);
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+    displayModel(components, file, ext, elapsed);
+    showLoading(false);
+    setStatus(`✓ ${file.name} chargé en ${elapsed}s`, 'success');
+    state.aiProducts = [];
+  } catch (err) {
+    console.error(err);
+    showLoading(false);
+    setStatus('Erreur : ' + err.message, 'error');
+  }
+}
+
+function displayModel(components, file, ext, elapsed) {
+  // Clear measurements when loading new model
+  clearMeasurements();
+  removeDimOverlay();
+
+  while (modelGroup.children.length) {
+    const c = modelGroup.children[0];
+    modelGroup.remove(c);
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) c.material.dispose();
+  }
+  state.hiddenComponents.clear();
+  const meshes = [];
+  let totalTris = 0, totalVerts = 0;
+  const palette = [0xff8a3d, 0x4ade80, 0x60a5fa, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb7185, 0x38bdf8, 0xfcd34d];
+  components.forEach((comp, idx) => {
+    const geom = comp.geometry;
+    if (!geom.attributes.normal) geom.computeVertexNormals();
+    geom.computeBoundingBox();
+    const color = comp.color || new THREE.Color(palette[idx % palette.length]);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.compIndex = idx;
+    const center = new THREE.Vector3();
+    if (geom.boundingBox) geom.boundingBox.getCenter(center);
+    mesh.userData.center = center.clone();
+    mesh.userData.originalPosition = mesh.position.clone();
+    modelGroup.add(mesh);
+    meshes.push(mesh);
+    const pA = geom.attributes.position, iA = geom.index;
+    totalVerts += pA.count;
+    totalTris += iA ? iA.count / 3 : pA.count / 3;
+  });
+  const globalBox = new THREE.Box3();
+  meshes.forEach(m => globalBox.expandByObject(m));
+  const center = new THREE.Vector3(); globalBox.getCenter(center);
+  const size = new THREE.Vector3(); globalBox.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+  meshes.forEach(m => {
+    m.position.sub(center);
+    m.userData.center.sub(center);
+    m.userData.originalPosition.copy(m.position);
+  });
+  scene.remove(gridHelper);
+  const gcolor = state.theme === 'dark' ? 0x2a313f : 0xc8cdd6;
+  gridHelper = new THREE.GridHelper(Math.max(maxDim * 1.5, 2), 20, gcolor, gcolor);
+  gridHelper.material.transparent = true; gridHelper.material.opacity = 0.6;
+  gridHelper.position.y = -size.y / 2 - maxDim * 0.001;
+  gridHelper.visible = state.showGrid;
+  scene.add(gridHelper);
+  scene.remove(axesHelper);
+  axesHelper = new THREE.AxesHelper(maxDim * 0.4);
+  axesHelper.position.y = -size.y / 2;
+  axesHelper.visible = state.showAxes;
+  scene.add(axesHelper);
+  controls.frame(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(0, 0, 0), size));
+  camera.near = Math.max(maxDim * 0.001, 0.001);
+  camera.far = Math.max(maxDim * 100, 1000);
+  camera.updateProjectionMatrix();
+  state.currentModel = { components, meshes, maxDim };
+  state.modelInfo = {
+    name: file.name, size: file.size, ext: ext.toUpperCase(),
+    components: components.length, triangles: Math.round(totalTris),
+    vertices: totalVerts, dimensions: size, elapsed
+  };
+  state.tree = buildHierarchy(components);
+  state.selectedTreeNode = null;
+  buildTree();
+  document.getElementById('component-count').textContent = `${components.length} pièces`;
+  document.getElementById('view-info').textContent =
+    `${components.length} composants · ${fmtNum(Math.round(totalTris))} tri · ${fmtDim(size.x)}×${fmtDim(size.y)}×${fmtDim(size.z)}`;
+  document.getElementById('drop-zone').classList.remove('empty');
+  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('btn-ll').disabled = false;
+}
+
+// ============================================================================
+// HIERARCHY & TREE
+// ============================================================================
+function buildHierarchy(components) {
+  const root = { name: '_root', meshIndices: [], children: new Map(), totalMeshes: 0, expanded: true, depth: 0 };
+  components.forEach((comp, idx) => {
+    const path = comp.path && comp.path.length ? comp.path : [comp.name];
+    let node = root;
+    for (let i = 0; i < path.length; i++) {
+      const seg = path[i];
+      if (!node.children.has(seg)) {
+        node.children.set(seg, { name: seg, meshIndices: [], children: new Map(), totalMeshes: 0, expanded: false, depth: i + 1 });
+      }
+      node = node.children.get(seg);
+    }
+    node.meshIndices.push(idx);
+  });
+  (function count(n) {
+    let t = n.meshIndices.length;
+    n.children.forEach(c => { t += count(c); });
+    n.totalMeshes = t; return t;
+  })(root);
+  (function autoExpand(n) {
+    if (n.children.size === 1 && n.meshIndices.length === 0) {
+      const child = [...n.children.values()][0];
+      child.expanded = true;
+      autoExpand(child);
+    }
+    n.children.forEach(c => { if (c.children.size === 1 && c.meshIndices.length === 0) autoExpand(c); });
+  })(root);
+  return root;
+}
+
+function collectMeshIndices(node, out) {
+  out = out || [];
+  node.meshIndices.forEach(i => out.push(i));
+  node.children.forEach(c => collectMeshIndices(c, out));
+  return out;
+}
+
+function selectTreeNode(node) {
+  state.selectedTreeNode = (state.selectedTreeNode === node) ? null : node;
+  applySelection();
+  updateDimOverlay();
+  buildTree();
+}
+
+function applySelection() {
+  if (!state.currentModel) return;
+  const indices = state.selectedTreeNode ? collectMeshIndices(state.selectedTreeNode) : null;
+  const indexSet = indices ? new Set(indices) : null;
+  state.currentModel.meshes.forEach((m, i) => {
+    if (state.hiddenComponents.has(i)) return;
+    if (!indexSet) {
+      m.material.emissive = new THREE.Color(0x000000);
+      m.material.emissiveIntensity = 0;
+      m.material.opacity = state.opacity;
+      m.material.transparent = state.opacity < 1;
+    } else if (indexSet.has(i)) {
+      m.material.emissive = new THREE.Color(0x553311);
+      m.material.emissiveIntensity = 0.4;
+      m.material.opacity = state.opacity;
+      m.material.transparent = state.opacity < 1;
+    } else {
+      m.material.emissive = new THREE.Color(0x000000);
+      m.material.emissiveIntensity = 0;
+      m.material.opacity = state.opacity * 0.2;
+      m.material.transparent = true;
+    }
+  });
+}
+
+function toggleNodeVisibility(node) {
+  const indices = collectMeshIndices(node);
+  const anyVisible = indices.some(i => !state.hiddenComponents.has(i));
+  indices.forEach(i => {
+    const mesh = state.currentModel.meshes[i];
+    if (anyVisible) { state.hiddenComponents.add(i); mesh.visible = false; }
+    else { state.hiddenComponents.delete(i); mesh.visible = true; }
+  });
+  buildTree();
+}
+
+function buildTree() {
+  const tc = document.getElementById('tree-container');
+  tc.innerHTML = '';
+  if (!state.tree) {
+    tc.innerHTML = '<div class="empty-state">Aucun modèle chargé.</div>';
+    return;
+  }
+  function renderNode(node, depth, container) {
+    const hasChildren = node.children.size > 0;
+    const indices = collectMeshIndices(node);
+    const allHidden = indices.length > 0 && indices.every(i => state.hiddenComponents.has(i));
+    const isSelected = state.selectedTreeNode === node;
+    const el = document.createElement('div');
+    el.className = 'tree-node' + (isSelected ? ' selected' : '');
+    el.style.paddingLeft = (8 + depth * 14) + 'px';
+    const iconChar = hasChildren ? (node.expanded ? '📂' : '📁') : '🔹';
+    const arrowChar = hasChildren ? (node.expanded ? '▼' : '▶') : '';
+    el.innerHTML = `
+      <span class="tree-arrow">${arrowChar}</span>
+      <span class="tree-icon-em">${iconChar}</span>
+      <span class="tree-label">${escapeHtml(node.name)}</span>
+      ${hasChildren ? `<span class="tree-count">${node.totalMeshes}</span>` : ''}
+      <span class="tree-visibility ${allHidden ? 'hidden-item' : ''}" title="Masquer/Afficher">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          ${allHidden
+            ? '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+            : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'}
+        </svg>
+      </span>`;
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.target.closest('.tree-visibility')) { toggleNodeVisibility(node); return; }
+      if (e.target.closest('.tree-arrow') && hasChildren) { node.expanded = !node.expanded; buildTree(); return; }
+      if (hasChildren && e.detail === 2) { node.expanded = !node.expanded; buildTree(); return; }
+      selectTreeNode(node);
+    });
+    container.appendChild(el);
+    if (hasChildren && node.expanded) {
+      const sorted = [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      sorted.forEach(c => renderNode(c, depth + 1, container));
+    }
+  }
+  const sorted = [...state.tree.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  sorted.forEach(c => renderNode(c, 0, tc));
+}
+
+// ============================================================================
+// MEASUREMENTS — manual ruler & auto-dimensions
+// ============================================================================
+function projectToScreen(worldPos) {
+  const v = worldPos.clone();
+  v.project(camera);
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((v.x + 1) / 2) * rect.width,
+    y: ((-v.y + 1) / 2) * rect.height,
+    z: v.z,
+    visible: v.z > -1 && v.z < 1
+  };
+}
+
+function updateAllLabels() {
+  // Update measurement labels
+  state.measurements.forEach(m => {
+    if (!m.labelEl) return;
+    const mid = m.p1.clone().add(m.p2).multiplyScalar(0.5);
+    const s = projectToScreen(mid);
+    m.labelEl.style.left = s.x + 'px';
+    m.labelEl.style.top = s.y + 'px';
+    m.labelEl.style.display = s.visible ? '' : 'none';
+  });
+  // Update dimension overlay labels
+  if (state.dimOverlay && state.dimOverlay.labels) {
+    Object.values(state.dimOverlay.labels).forEach(({ el, world }) => {
+      const s = projectToScreen(world);
+      el.style.left = s.x + 'px';
+      el.style.top = s.y + 'px';
+      el.style.display = s.visible ? '' : 'none';
+    });
+  }
+}
+
+function setMeasureMode(on) {
+  state.measureMode = on;
+  container.classList.toggle('measure-mode', on);
+  document.getElementById('ov-measure').classList.toggle('active', on);
+  document.getElementById('measure-hint').classList.toggle('show', on);
+  document.getElementById('btn-measure-start').textContent = on ? '✕ Désactiver la règle' : '📏 Activer la règle';
+  if (!on) {
+    state.pendingPoint = null;
+    if (state.pendingPointSphere) {
+      scene.remove(state.pendingPointSphere);
+      state.pendingPointSphere = null;
+    }
+  }
+}
+
+function handleMeasureClick(e) {
+  if (!state.currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+  const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
+  const hits = raycaster.intersectObjects(visibleMeshes, false);
+  if (hits.length === 0) {
+    setStatus('Clique sur la surface du modèle', 'error');
+    return;
+  }
+  const point = hits[0].point.clone();
+  if (state.pendingPoint === null) {
+    state.pendingPoint = point;
+    // Show a small temporary marker
+    const sphereSize = state.currentModel.maxDim * 0.008;
+    const sg = new THREE.SphereGeometry(sphereSize, 12, 12);
+    const sm = new THREE.MeshBasicMaterial({ color: 0xff8a3d });
+    const sphere = new THREE.Mesh(sg, sm);
+    sphere.position.copy(point);
+    scene.add(sphere);
+    state.pendingPointSphere = sphere;
+  } else {
+    addMeasurement(state.pendingPoint, point);
+    state.pendingPoint = null;
+    if (state.pendingPointSphere) {
+      scene.remove(state.pendingPointSphere);
+      state.pendingPointSphere = null;
+    }
+  }
+}
+
+function addMeasurement(p1, p2) {
+  const distance = p1.distanceTo(p2);
+  const sphereSize = state.currentModel.maxDim * 0.008;
+  // Line
+  const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xff8a3d, depthTest: false });
+  const line = new THREE.Line(lineGeom, lineMat);
+  line.renderOrder = 999;
+  scene.add(line);
+  // Spheres
+  const sg = new THREE.SphereGeometry(sphereSize, 12, 12);
+  const sm = new THREE.MeshBasicMaterial({ color: 0xff8a3d, depthTest: false });
+  const s1 = new THREE.Mesh(sg, sm); s1.position.copy(p1); s1.renderOrder = 999; scene.add(s1);
+  const s2 = new THREE.Mesh(sg.clone(), sm.clone()); s2.position.copy(p2); s2.renderOrder = 999; scene.add(s2);
+  // Label
+  const labelEl = document.createElement('div');
+  labelEl.className = 'measure-label';
+  labelEl.textContent = fmtDim(distance);
+  measureLayer.appendChild(labelEl);
+  const m = { p1, p2, distance, line, s1, s2, labelEl };
+  state.measurements.push(m);
+  updateMeasurementList();
+}
+
+function clearMeasurements() {
+  state.measurements.forEach(m => {
+    scene.remove(m.line); scene.remove(m.s1); scene.remove(m.s2);
+    if (m.line.geometry) m.line.geometry.dispose();
+    if (m.s1.geometry) m.s1.geometry.dispose();
+    if (m.s2.geometry) m.s2.geometry.dispose();
+    if (m.labelEl) m.labelEl.remove();
+  });
+  state.measurements = [];
+  if (state.pendingPointSphere) { scene.remove(state.pendingPointSphere); state.pendingPointSphere = null; }
+  state.pendingPoint = null;
+  updateMeasurementList();
+}
+
+function deleteMeasurement(idx) {
+  const m = state.measurements[idx];
+  if (!m) return;
+  scene.remove(m.line); scene.remove(m.s1); scene.remove(m.s2);
+  if (m.labelEl) m.labelEl.remove();
+  state.measurements.splice(idx, 1);
+  updateMeasurementList();
+}
+
+function updateMeasurementList() {
+  const c = document.getElementById('measurement-list-container');
+  const clearBtn = document.getElementById('btn-clear-measures');
+  if (state.measurements.length === 0) {
+    c.innerHTML = '';
+    clearBtn.style.display = 'none';
+    return;
+  }
+  c.innerHTML = '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Mesures :</div>'
+    + '<div class="measurement-list">' + state.measurements.map((m, i) =>
+      `<div class="measurement-item"><span>📐 ${fmtDim(m.distance)}</span><span class="del" data-idx="${i}">✕</span></div>`
+    ).join('') + '</div>';
+  clearBtn.style.display = '';
+  c.querySelectorAll('.del').forEach(el => {
+    el.addEventListener('click', () => deleteMeasurement(+el.dataset.idx));
+  });
+}
+
+// Auto-dimensions overlay
+function removeDimOverlay() {
+  if (state.dimOverlay) {
+    if (state.dimOverlay.box) scene.remove(state.dimOverlay.box);
+    if (state.dimOverlay.box && state.dimOverlay.box.geometry) state.dimOverlay.box.geometry.dispose();
+    if (state.dimOverlay.labels) {
+      Object.values(state.dimOverlay.labels).forEach(({ el }) => el.remove());
+    }
+    state.dimOverlay = null;
+  }
+}
+
+function updateDimOverlay() {
+  removeDimOverlay();
+  if (!state.autoDim || !state.selectedTreeNode || !state.currentModel) return;
+  // Compute bounding box of selected node's meshes
+  const indices = collectMeshIndices(state.selectedTreeNode);
+  if (indices.length === 0) return;
+  const box = new THREE.Box3();
+  indices.forEach(i => {
+    const m = state.currentModel.meshes[i];
+    if (m.visible) box.expandByObject(m);
+  });
+  if (box.isEmpty()) return;
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  // Draw wireframe box
+  const boxGeom = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const edges = new THREE.EdgesGeometry(boxGeom);
+  const mat = new THREE.LineBasicMaterial({ color: 0xff8a3d, depthTest: false, transparent: true, opacity: 0.7 });
+  const wireBox = new THREE.LineSegments(edges, mat);
+  wireBox.position.copy(center);
+  wireBox.renderOrder = 998;
+  scene.add(wireBox);
+  boxGeom.dispose();
+  // Three labels for W, H, D
+  const min = box.min, max = box.max;
+  const labels = {};
+  const addLabel = (axisName, text, worldPos) => {
+    const el = document.createElement('div');
+    el.className = 'measure-label dim';
+    el.innerHTML = `<span class="axis">${axisName}</span>${text}`;
+    measureLayer.appendChild(el);
+    labels[axisName] = { el, world: worldPos };
+  };
+  addLabel('L', fmtDim(size.x), new THREE.Vector3((min.x + max.x) / 2, min.y, max.z));
+  addLabel('H', fmtDim(size.y), new THREE.Vector3(max.x, (min.y + max.y) / 2, max.z));
+  addLabel('P', fmtDim(size.z), new THREE.Vector3(max.x, min.y, (min.z + max.z) / 2));
+  state.dimOverlay = { box: wireBox, labels };
+}
+
+// ============================================================================
+// LOADING LIST (aggregation, AI, export) — same as before
+// ============================================================================
+function aggregateAtDepth(tree, depth) {
+  const agg = new Map();
+  function walk(node, currentDepth, path) {
+    const reached = depth === 0
+      ? node.children.size === 0
+      : currentDepth >= depth || node.children.size === 0;
+    if (reached) {
+      const key = node.name;
+      if (!agg.has(key)) agg.set(key, { name: key, qty: 0, locations: new Set(), unit: 'pcs', source: '3D' });
+      const a = agg.get(key);
+      const cnt = node.children.size === 0 ? Math.max(node.meshIndices.length, 1) : 1;
+      a.qty += cnt;
+      a.locations.add(path.length ? path.join(' › ') : '(racine)');
+    } else {
+      const newPath = [...path, node.name];
+      node.children.forEach(c => walk(c, currentDepth + 1, newPath));
+    }
+  }
+  tree.children.forEach(c => walk(c, 1, []));
+  return [...agg.values()].map(a => ({ ...a, locations: [...a.locations] }))
+    .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name, 'fr'));
+}
+
+function getCombinedProducts() {
+  const depth = +document.getElementById('ll-depth').value;
+  const fromModel = state.tree ? aggregateAtDepth(state.tree, depth) : [];
+  return [...fromModel, ...state.aiProducts];
+}
+
+function renderLLTable() {
+  const tbody = document.getElementById('ll-tbody');
+  const products = getCombinedProducts();
+  if (products.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-table">Aucun produit à afficher</td></tr>';
+    document.getElementById('ll-footer-info').textContent = '—';
+    return;
+  }
+  tbody.innerHTML = products.map(p => `
+    <tr>
+      <td><strong>${escapeHtml(p.name)}</strong></td>
+      <td class="qty">${p.qty}</td>
+      <td>${escapeHtml(p.unit || 'pcs')}</td>
+      <td><span class="source-tag source-${p.source === 'AI' ? 'ai' : '3d'}">${p.source === 'AI' ? '🤖 IA' : '📐 3D'}</span></td>
+      <td style="color:var(--text-dim); font-size:12px;">${escapeHtml((p.locations || []).join(' · ') || p.reason || '')}</td>
+    </tr>
+  `).join('');
+  const t3 = products.filter(p => p.source !== 'AI').reduce((s, p) => s + p.qty, 0);
+  const tA = products.filter(p => p.source === 'AI').reduce((s, p) => s + p.qty, 0);
+  document.getElementById('ll-footer-info').textContent =
+    `${products.length} lignes · ${t3} unités 3D` + (tA ? ` · ${tA} unités IA` : '');
+}
+
+async function analyzeWithAI() {
+  if (!state.tree) { setStatus('Charge un modèle d\'abord', 'error'); return; }
+  const products = aggregateAtDepth(state.tree, +document.getElementById('ll-depth').value);
+  if (products.length === 0) return;
+  const btn = document.getElementById('ll-ai');
+  const statusEl = document.getElementById('ll-ai-status');
+  btn.disabled = true;
+  statusEl.innerHTML = '<div class="ai-spinner-sm"></div> Analyse en cours...';
+  const prompt = `Tu es un expert en gestion de chantier (BTP, menuiserie, second œuvre). À partir de la liste de produits visibles dans un modèle 3D et des règles métier fournies, identifie les produits ADDITIONNELS nécessaires pour le montage qui ne sont PAS visibles dans le modèle 3D (quincaillerie, consommables, joints, fixations, colles, etc.).
+
+PRODUITS VISIBLES DANS LE MODÈLE 3D :
+${products.map(p => `- ${p.name} : ${p.qty} ${p.unit}${p.locations.length ? ' (loc: ' + p.locations.slice(0, 3).join(', ') + ')' : ''}`).join('\n')}
+
+RÈGLES MÉTIER DÉFINIES PAR L'UTILISATEUR :
+${state.rules.trim() || '(aucune règle définie - utilise les bonnes pratiques BTP standard avec prudence)'}
+
+INSTRUCTIONS :
+1. Applique strictement les règles métier fournies aux produits visibles
+2. Si aucune règle ne s'applique, utilise les bonnes pratiques BTP standard avec PRUDENCE
+3. Ne propose QUE des produits dont tu es raisonnablement certain
+4. Pour chaque produit additionnel : nom précis, quantité, unité, et la raison
+
+RÉPONSE : Retourne UNIQUEMENT un objet JSON valide, sans aucun texte avant ou après, au format strict suivant :
+{
+  "additional_products": [
+    { "name": "string", "quantity": number, "unit": "string", "reason": "string" }
+  ]
+}`;
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6", max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    if (!resp.ok) throw new Error('API ' + resp.status);
+    const data = await resp.json();
+    const text = data.content.map(b => b.text || '').join('').trim();
+    const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(clean);
+    const additions = parsed.additional_products || [];
+    state.aiProducts = additions.map(a => ({
+      name: a.name, qty: a.quantity, unit: a.unit || 'pcs',
+      reason: a.reason || '', locations: [], source: 'AI'
+    }));
+    renderLLTable();
+    statusEl.textContent = `✓ ${additions.length} produit(s) inféré(s)`;
+    statusEl.style.color = 'var(--success)';
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = '✗ Erreur : ' + err.message;
+    statusEl.style.color = 'var(--danger)';
+  } finally { btn.disabled = false; }
+}
+
+function buildExportData() {
+  return getCombinedProducts().map(p => ({
+    'Composant': p.name, 'Quantité': p.qty, 'Unité': p.unit || 'pcs',
+    'Source': p.source === 'AI' ? 'IA inférée' : 'Modèle 3D',
+    'Localisation / Raison': (p.locations || []).join(' · ') || p.reason || ''
+  }));
+}
+function exportXLSX() {
+  if (typeof XLSX === 'undefined') { setStatus('SheetJS non chargé', 'error'); return; }
+  const data = buildExportData();
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{ wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 40 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Loading List');
+  const fname = (state.modelInfo ? state.modelInfo.name.replace(/\.[^.]+$/, '') : 'loading_list')
+    + '_loading_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, fname);
+  setStatus('✓ Excel exporté', 'success');
+}
+function exportCSV() {
+  const data = buildExportData(); if (data.length === 0) return;
+  const headers = Object.keys(data[0]);
+  const rows = [headers].concat(data.map(d => headers.map(h => d[h])));
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (state.modelInfo ? state.modelInfo.name.replace(/\.[^.]+$/, '') : 'loading_list') + '_loading.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('✓ CSV exporté', 'success');
+}
+
+// Rules persistence
+async function loadRules() {
+  try {
+    if (window.storage && window.storage.get) {
+      const r = await window.storage.get('rules');
+      if (r && r.value) { state.rules = r.value; document.getElementById('ll-rules').value = r.value; }
+    }
+  } catch (e) {}
+}
+async function saveRules() {
+  const txt = document.getElementById('ll-rules').value;
+  state.rules = txt;
+  const s = document.getElementById('ll-rules-status');
+  try {
+    if (window.storage && window.storage.set) {
+      await window.storage.set('rules', txt);
+      s.textContent = '✓ Sauvegardé'; s.style.color = 'var(--success)';
+    } else {
+      s.textContent = '✓ Conservé pour cette session'; s.style.color = 'var(--text-dim)';
+    }
+    setTimeout(() => { s.textContent = ''; }, 3000);
+  } catch (e) { s.textContent = '✗ ' + e.message; s.style.color = 'var(--danger)'; }
+}
+
+// ============================================================================
+// PHOTO CAPTURE & GALLERY
+// ============================================================================
+state.captureCount = 0;
+state.captures = []; // [{ id, url, timestamp, modelName }]
+
+function flashCapture() {
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:absolute;inset:0;background:white;opacity:0;pointer-events:none;z-index:999;transition:opacity 0.15s;';
+  container.appendChild(flash);
+  requestAnimationFrame(() => {
+    flash.style.opacity = '0.6';
+    setTimeout(() => {
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 200);
+    }, 80);
+  });
+}
+
+function drawLabelsToCanvas(ctx) {
+  const cw = canvas.width, ch = canvas.height;
+  const cRect = canvas.getBoundingClientRect();
+  const scaleX = cw / cRect.width;
+  const scaleY = ch / cRect.height;
+  document.querySelectorAll('.measure-label').forEach(label => {
+    if (window.getComputedStyle(label).display === 'none') return;
+    const lRect = label.getBoundingClientRect();
+    const cx = (lRect.left + lRect.width / 2 - cRect.left) * scaleX;
+    const cy = (lRect.top + lRect.height / 2 - cRect.top) * scaleY;
+    const isDim = label.classList.contains('dim');
+    const text = label.textContent.trim().replace(/\s+/g, ' ');
+    const fontSize = Math.round(12 * scaleY);
+    ctx.font = `bold ${fontSize}px monospace`;
+    const metrics = ctx.measureText(text);
+    const padX = 8 * scaleX, padY = 5 * scaleY;
+    const boxW = metrics.width + padX * 2;
+    const boxH = fontSize + padY * 2;
+    ctx.fillStyle = isDim ? 'rgba(255, 138, 61, 0.95)' : 'rgba(22, 26, 34, 0.92)';
+    ctx.fillRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
+    if (!isDim) {
+      ctx.strokeStyle = '#ff8a3d';
+      ctx.lineWidth = Math.max(1, scaleY);
+      ctx.strokeRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
+    }
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy);
+  });
+}
+
+function drawFooterToCanvas(ctx) {
+  const cw = canvas.width, ch = canvas.height;
+  const scaleY = ch / canvas.getBoundingClientRect().height;
+  const fontSize = Math.round(14 * scaleY);
+  const padY = 10 * scaleY;
+  const padX = 16 * scaleY;
+  const footerH = fontSize + padY * 2;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, ch - footerH, cw, footerH);
+  ctx.font = `${fontSize}px -apple-system, sans-serif`;
+  ctx.fillStyle = 'white';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const modelName = state.modelInfo ? state.modelInfo.name : 'Modèle 3D';
+  ctx.fillText('📐 ' + modelName, padX, ch - footerH / 2);
+  let rightText = new Date().toLocaleString('fr-FR');
+  if (state.modelInfo) rightText = `${state.modelInfo.components} composants · ${rightText}`;
+  ctx.textAlign = 'right';
+  ctx.fillText(rightText, cw - padX, ch - footerH / 2);
+}
+
+function formatTimestampForFilename(d) {
+  d = d || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}h${p(d.getMinutes())}m${p(d.getSeconds())}`;
+}
+
+function captureView() {
+  if (!state.currentModel) {
+    setStatus('Charge un modèle d\'abord', 'error');
+    return;
+  }
+  renderer.render(scene, camera);
+  const offscreen = document.createElement('canvas');
+  offscreen.width = canvas.width;
+  offscreen.height = canvas.height;
+  const ctx = offscreen.getContext('2d');
+  ctx.drawImage(canvas, 0, 0);
+  drawLabelsToCanvas(ctx);
+  drawFooterToCanvas(ctx);
+  flashCapture();
+  offscreen.toBlob((blob) => {
+    if (!blob) { setStatus('Erreur de capture', 'error'); return; }
+    state.captureCount++;
+    const capture = {
+      id: 'cap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      url: URL.createObjectURL(blob),
+      timestamp: new Date(),
+      modelName: state.modelInfo ? state.modelInfo.name : 'Modèle'
+    };
+    state.captures.push(capture);
+    updateGalleryBadge();
+    setStatus(`✓ Photo #${state.captureCount} ajoutée à la galerie — clique "📷 Galerie" en haut pour la voir`, 'success');
+  }, 'image/png');
+}
+
+function updateGalleryBadge() {
+  const badge = document.getElementById('gallery-count');
+  const btn = document.getElementById('btn-gallery');
+  badge.textContent = state.captures.length;
+  badge.style.display = state.captures.length > 0 ? 'inline-block' : 'none';
+  btn.disabled = state.captures.length === 0;
+}
+
+function downloadCapture(cap) {
+  const a = document.createElement('a');
+  a.href = cap.url;
+  const baseName = cap.modelName.replace(/\.[^.]+$/, '');
+  a.download = `${baseName}_photo_${formatTimestampForFilename(cap.timestamp)}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function deleteCapture(id) {
+  const cap = state.captures.find(c => c.id === id);
+  if (cap) URL.revokeObjectURL(cap.url);
+  state.captures = state.captures.filter(c => c.id !== id);
+  updateGalleryBadge();
+  renderGallery();
+}
+
+function downloadAllCaptures() {
+  if (state.captures.length === 0) return;
+  state.captures.forEach((cap, i) => setTimeout(() => downloadCapture(cap), i * 200));
+  setStatus(`✓ ${state.captures.length} photo${state.captures.length > 1 ? 's' : ''} téléchargée${state.captures.length > 1 ? 's' : ''}`, 'success');
+}
+
+function clearAllCaptures() {
+  if (state.captures.length === 0) return;
+  if (!confirm(`Supprimer toutes les ${state.captures.length} photos de la galerie ?\n(les fichiers déjà téléchargés restent sur ton disque)`)) return;
+  state.captures.forEach(c => URL.revokeObjectURL(c.url));
+  state.captures = [];
+  updateGalleryBadge();
+  renderGallery();
+}
+
+function renderGallery() {
+  const body = document.getElementById('gallery-body');
+  const info = document.getElementById('gallery-info');
+  if (state.captures.length === 0) {
+    body.innerHTML = '<div class="gallery-empty"><div class="icon">📷</div>Aucune photo dans la galerie.<br><br>Sélectionne une vue intéressante du modèle 3D, puis clique sur le bouton caméra à gauche du canvas (ou tape <strong>P</strong>) pour prendre une photo.<br><br>Les mesures et dimensions affichées seront incluses dans la photo.</div>';
+    info.textContent = '—';
+    return;
+  }
+  body.innerHTML = '<div class="gallery-grid">' + state.captures.map((c, i) => `
+    <div class="gallery-item" data-id="${c.id}">
+      <img src="${c.url}" class="gallery-thumb" data-id="${c.id}" alt="Photo ${i + 1}" title="Cliquer pour voir en grand">
+      <div class="gallery-meta">
+        <div class="name">Photo #${i + 1}</div>
+        <div class="date">${c.timestamp.toLocaleString('fr-FR')}</div>
+      </div>
+      <div class="gallery-actions">
+        <button class="btn" data-action="download" data-id="${c.id}">📥 Télécharger</button>
+        <button class="btn btn-del" data-action="delete" data-id="${c.id}" title="Supprimer">🗑</button>
+      </div>
+    </div>`).join('') + '</div>';
+  info.textContent = `${state.captures.length} photo${state.captures.length > 1 ? 's' : ''} dans la galerie`;
+  body.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const cap = state.captures.find(c => c.id === id);
+      if (!cap) return;
+      if (btn.dataset.action === 'download') downloadCapture(cap);
+      else if (btn.dataset.action === 'delete') deleteCapture(id);
+    });
+  });
+  body.querySelectorAll('.gallery-thumb').forEach(img => {
+    img.addEventListener('click', () => window.open(img.src, '_blank'));
+  });
+}
+
+document.getElementById('ov-capture').onclick = captureView;
+document.getElementById('btn-gallery').onclick = () => {
+  document.getElementById('gallery-modal').classList.add('show');
+  renderGallery();
+};
+document.getElementById('gallery-close').onclick = () => {
+  document.getElementById('gallery-modal').classList.remove('show');
+};
+document.getElementById('gallery-clear-all').onclick = clearAllCaptures;
+document.getElementById('gallery-download-all').onclick = downloadAllCaptures;
+
+// ============================================================================
+// UI HELPERS
+// ============================================================================
+function applyExplode(val) {
+  if (!state.currentModel) return;
+  const factor = val / 100 * 1.5;
+  state.currentModel.meshes.forEach(m => {
+    const dir = m.userData.center.clone();
+    if (dir.lengthSq() < 0.001) return;
+    const len = dir.length();
+    dir.normalize();
+    m.position.copy(m.userData.originalPosition);
+    m.position.addScaledVector(dir, len * factor);
+  });
+  updateDimOverlay();
+}
+function applyOpacity(val) {
+  state.opacity = val;
+  if (!state.currentModel) return;
+  state.currentModel.meshes.forEach((m) => {
+    if (state.selectedTreeNode !== null) return;
+    m.material.opacity = val;
+    m.material.transparent = val < 1;
+  });
+}
+function applyWireframe(on) {
+  if (!state.currentModel) return;
+  state.currentModel.meshes.forEach(m => { m.material.wireframe = on; });
+}
+function showLoading(on, msg) {
+  const el = document.getElementById('loading-overlay');
+  if (on) { el.classList.add('show'); if (msg) document.getElementById('loading-text').textContent = msg; }
+  else el.classList.remove('show');
+}
+function applyTheme(t) {
+  state.theme = t;
+  document.documentElement.setAttribute('data-theme', t);
+  if (renderer) {
+    renderer.setClearColor(t === 'dark' ? 0x1a1f29 : 0xe9ecf1, 1);
+    if (gridHelper) gridHelper.material.color.setHex(t === 'dark' ? 0x2a313f : 0xc8cdd6);
+  }
+}
+
+// Sidebar toggle
+function toggleSidebar(show) {
+  const sb = document.getElementById('sidebar');
+  const expandBtn = document.getElementById('expand-sidebar');
+  const collapsed = show === undefined ? !sb.classList.contains('collapsed') : !show;
+  sb.classList.toggle('collapsed', collapsed);
+  expandBtn.style.display = collapsed ? 'flex' : 'none';
+}
+
+// ============================================================================
+// EVENTS
+// ============================================================================
+const fileInput = document.getElementById('file-input');
+document.getElementById('btn-open').onclick = () => fileInput.click();
+document.getElementById('btn-open-2').onclick = () => fileInput.click();
+document.getElementById('btn-test-cube').onclick = () => {
+  const comps = [];
+  const mk = (w, h, d, x, y, z, path) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(x, y, z); g.computeVertexNormals();
+    return { name: path[path.length - 1], path, geometry: g };
+  };
+  comps.push(mk(2, 0.1, 1.2, -3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_1', 'Cadre_alu']));
+  comps.push(mk(1.8, 0.05, 1.0, -3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_1', 'Vitre_double_4-16-4']));
+  comps.push(mk(1.9, 0.08, 1.1, -3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_1', 'Joint_caoutchouc_EPDM']));
+  comps.push(mk(2, 0.1, 1.2, 3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_2', 'Cadre_alu']));
+  comps.push(mk(1.8, 0.05, 1.0, 3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_2', 'Vitre_double_4-16-4']));
+  comps.push(mk(1.9, 0.08, 1.1, 3, 1, 0, ['Mur_Sud', 'Fenêtre_120x80_2', 'Joint_caoutchouc_EPDM']));
+  comps.push(mk(1, 0.1, 2.1, 0, 0, 2, ['Mur_Sud', 'Porte_simple']));
+  displayModel(comps, { name: 'maison_test.synthetic', size: 0 }, 'TEST', '0.00');
+};
+fileInput.addEventListener('change', (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+document.getElementById('btn-theme').onclick = () => applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+document.getElementById('btn-toggle-sidebar').onclick = () => toggleSidebar();
+document.getElementById('expand-sidebar').onclick = () => toggleSidebar(true);
+
+// Overlay buttons
+document.getElementById('ov-reset').onclick = () => {
+  if (state.currentModel) {
+    const box = new THREE.Box3();
+    state.currentModel.meshes.forEach(m => box.expandByObject(m));
+    controls.frame(box);
+  }
+};
+document.getElementById('ov-wireframe').onclick = (e) => {
+  state.wireframe = !state.wireframe;
+  e.currentTarget.classList.toggle('active', state.wireframe);
+  applyWireframe(state.wireframe);
+};
+document.getElementById('ov-grid').onclick = (e) => {
+  state.showGrid = !state.showGrid;
+  e.currentTarget.classList.toggle('active', state.showGrid);
+  if (gridHelper) gridHelper.visible = state.showGrid;
+  document.getElementById('sw-grid').classList.toggle('on', state.showGrid);
+};
+document.getElementById('ov-axes').onclick = (e) => {
+  state.showAxes = !state.showAxes;
+  e.currentTarget.classList.toggle('active', state.showAxes);
+  if (axesHelper) axesHelper.visible = state.showAxes;
+  document.getElementById('sw-axes').classList.toggle('on', state.showAxes);
+};
+document.getElementById('ov-explode').onclick = (e) => {
+  const sl = document.getElementById('explode-slider');
+  const v = +sl.value > 0 ? 0 : 50;
+  sl.value = v;
+  document.getElementById('explode-val').textContent = v + '%';
+  applyExplode(v);
+  e.currentTarget.classList.toggle('active', v > 0);
+};
+document.getElementById('ov-measure').onclick = () => setMeasureMode(!state.measureMode);
+document.getElementById('btn-measure-start').onclick = () => setMeasureMode(!state.measureMode);
+document.getElementById('btn-clear-measures').onclick = clearMeasurements;
+
+// Sliders
+document.getElementById('explode-slider').addEventListener('input', (e) => {
+  const v = +e.target.value;
+  document.getElementById('explode-val').textContent = v + '%';
+  applyExplode(v);
+  document.getElementById('ov-explode').classList.toggle('active', v > 0);
+});
+document.getElementById('opacity-slider').addEventListener('input', (e) => {
+  const v = +e.target.value / 100;
+  document.getElementById('opacity-val').textContent = e.target.value + '%';
+  applyOpacity(v);
+});
+
+// Switches
+function setupSwitch(id, callback) {
+  const el = document.getElementById(id);
+  el.addEventListener('click', () => {
+    const on = !el.classList.contains('on');
+    el.classList.toggle('on', on);
+    callback(on);
+  });
+}
+setupSwitch('sw-auto-rotate', (on) => { state.autoRotate = on; });
+setupSwitch('sw-auto-dim', (on) => {
+  state.autoDim = on;
+  updateDimOverlay();
+});
+setupSwitch('sw-grid', (on) => {
+  state.showGrid = on;
+  if (gridHelper) gridHelper.visible = on;
+  document.getElementById('ov-grid').classList.toggle('active', on);
+});
+setupSwitch('sw-axes', (on) => {
+  state.showAxes = on;
+  if (axesHelper) axesHelper.visible = on;
+  document.getElementById('ov-axes').classList.toggle('active', on);
+});
+
+// Loading list modal
+document.getElementById('btn-ll').onclick = () => {
+  document.getElementById('ll-modal').classList.add('show');
+  renderLLTable();
+};
+document.getElementById('ll-close').onclick = () => {
+  document.getElementById('ll-modal').classList.remove('show');
+};
+document.querySelectorAll('.modal-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelector('[data-pane="' + tab.dataset.tab + '"]').classList.add('active');
+  });
+});
+document.getElementById('ll-depth').addEventListener('change', renderLLTable);
+document.getElementById('ll-ai').addEventListener('click', analyzeWithAI);
+document.getElementById('ll-clear-ai').addEventListener('click', () => {
+  state.aiProducts = []; renderLLTable();
+  document.getElementById('ll-ai-status').textContent = '';
+});
+document.getElementById('ll-csv').addEventListener('click', exportCSV);
+document.getElementById('ll-xlsx').addEventListener('click', exportXLSX);
+document.getElementById('ll-save-rules').addEventListener('click', saveRules);
+
+// Drag & drop
+const dropZone = document.getElementById('drop-zone');
+container.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+  dropZone.style.display = 'flex';
+  dropZone.classList.add('empty');
+});
+container.addEventListener('dragleave', (e) => {
+  if (e.target === container || !container.contains(e.relatedTarget)) {
+    dropZone.classList.remove('dragover');
+    if (state.currentModel) {
+      dropZone.style.display = 'none';
+      dropZone.classList.remove('empty');
+    }
+  }
+});
+container.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') document.getElementById('ov-reset').click();
+  else if (k === 'w') document.getElementById('ov-wireframe').click();
+  else if (k === 'g') document.getElementById('ov-grid').click();
+  else if (k === 'a') document.getElementById('ov-axes').click();
+  else if (k === 'e') document.getElementById('ov-explode').click();
+  else if (k === 'm') document.getElementById('ov-measure').click();
+  else if (k === 'p') document.getElementById('ov-capture').click();
+  else if (k === 'escape') {
+    if (document.getElementById('ll-modal').classList.contains('show')) {
+      document.getElementById('ll-modal').classList.remove('show');
+    } else if (state.measureMode) {
+      setMeasureMode(false);
+    } else if (state.selectedTreeNode) {
+      state.selectedTreeNode = null;
+      applySelection();
+      updateDimOverlay();
+      buildTree();
+    }
+  }
+});
+
+window.addEventListener('resize', resize);
+try { new ResizeObserver(resize).observe(container); } catch (e) {}
+
+// ============================================================================
+// INIT
+// ============================================================================
+applyTheme('dark');
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    initThree();
+    setTimeout(resize, 100);
+    setTimeout(resize, 500);
+  });
+});
+loadRules();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     VEM INTEGRATION — NE PAS RETIRER cette ligne, elle ajoute :
+     - Chargement automatique du modèle depuis ?modelUrl=...
+     - Bouton "💾 Enregistrer sur le projet" dans la galerie
+     Si tu modifies ce viewer ailleurs et le ré-envoies, garde cette ligne.
+     ════════════════════════════════════════════════════════════════════════ -->
+<script src="vem-3d-integration.js"></script>

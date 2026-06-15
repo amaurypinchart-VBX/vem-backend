@@ -1732,6 +1732,24 @@ function esc(s) {
 //
 // Utilisé par openPhotoViewer (alias) et appelé au clic sur les cartes
 // de fichiers dans la page Infos du projet.
+// ─────────────────────────────────────────────────────────────────
+// Ouvrir un fichier 3D dans le viewer dédié (avec mesures + photos)
+// Le viewer est servi à /viewer3d.html et accepte les params :
+//   modelUrl, projectId, projectName, token
+// Les photos prises dans le viewer peuvent être sauvegardées sur le projet
+// via le bouton "💾 Sauver sur VEM" (intégration par vem-3d-integration.js).
+// ─────────────────────────────────────────────────────────────────
+function openIn3DViewer(modelUrl, fileName, projectId) {
+  const proj = PROJECTS?.find(p => p.id === projectId);
+  const projectName = proj?.name || '';
+  const url = '/viewer3d.html'
+    + '?modelUrl='    + encodeURIComponent(modelUrl)
+    + '&projectId='   + encodeURIComponent(projectId || '')
+    + '&projectName=' + encodeURIComponent(projectName)
+    + '&token='       + encodeURIComponent(TOKEN || '');
+  window.open(url, '_blank');
+}
+
 async function openFileViewer(url, filename) {
   filename = filename || url.split('/').pop() || 'Fichier';
   const ext = (filename.split('.').pop() || '').toLowerCase();
@@ -2831,14 +2849,20 @@ async function loadProjectDetail(id) {
             if (models.length) {
               html += `<div style="margin-bottom:14px;">
                 <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🎨 Modèles 3D (${models.length})</div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
                   ${models.map(f=>{
                     const e = extOf(f);
-                    const supported = ['glb','gltf','usdz'].includes(e);
-                    return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
-                      <div style="font-size:42px;line-height:1;">🎨</div>
-                      <div style="font-weight:700;font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Modèle')}</div>
-                      <div style="font-size:10px;color:var(--text3);margin-top:2px;">.${e.toUpperCase()}${supported?' · Visualisable':' · Aperçu indispo'}</div>
+                    const supported  = ['glb','gltf','usdz'].includes(e);
+                    const viewer3DOk = ['glb','gltf','stl','obj'].includes(e);
+                    return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'">
+                      <div style="cursor:pointer;text-align:center;" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
+                        <div style="font-size:42px;line-height:1;">🎨</div>
+                        <div style="font-weight:700;font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Modèle')}</div>
+                        <div style="font-size:10px;color:var(--text3);margin-top:2px;">.${e.toUpperCase()}${supported?' · Visualisable':' · Aperçu indispo'}</div>
+                      </div>
+                      ${viewer3DOk ? `
+                      <button class="btn btn-primary btn-xs" style="width:100%;margin-top:10px;font-size:11px;" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${CURRENT_PROJECT_ID}')">🎮 Ouvrir Viewer 3D (mesures + photos)</button>
+                      ` : ''}
                     </div>`;
                   }).join('')}
                 </div></div>`;
