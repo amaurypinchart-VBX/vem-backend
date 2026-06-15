@@ -569,7 +569,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="bn-fab-center" onclick="toggleFAB()">
       <div class="bn-fab-circle" id="fab-circle">＋</div>
     </div>
-    <div class="bn-item" id="bn-tickets" onclick="goto('tickets');setActiveBN('bn-tickets')">
+    <div class="bn-item" id="bn-tickets" onclick="goto('tickets');setActiveBN('bn-tickets')" style="display:none;">
       <div class="bn-icon-wrap" style="position:relative;">
         🛠️
         <span class="bn-badge" id="bn-badge-tickets" style="display:none;">0</span>
@@ -586,7 +586,7 @@ textarea.input{min-height:80px;resize:vertical;}
 <!-- FAB menu popup -->
 <div class="fab-menu" id="fab-menu">
   <div class="fab-item" onclick="closeFAB();showModal('modal-daily')"><span>📓</span> Daily Report</div>
-  <div class="fab-item" onclick="closeFAB();showModal('modal-ticket')"><span>🛠️</span> Ticket SAV</div>
+  <div class="fab-item" onclick="closeFAB();showModal('modal-ticket')" style="display:none;"><span>🛠️</span> Ticket SAV</div>
   <div class="fab-item" onclick="closeFAB();showModal('modal-handover')"><span>🧾</span> Handover</div>
   <div class="fab-item" onclick="closeFAB();openAddPointModal(CURRENT_PROJECT_ID)"><span>📸</span> Point visite</div>
 </div>
@@ -614,7 +614,8 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="nav-item" onclick="goto('handover')"><span class="ni">🧾</span>Handover</div>
     <div class="nav-item" onclick="goto('remarks')"><span class="ni">📸</span>Visites Client</div>
   </div>
-  <div class="nav-section">
+  <!-- Section "SAV & Stock" cachée — peut être rétablie en retirant le style="display:none;" -->
+  <div class="nav-section" style="display:none;">
     <div class="nav-label">SAV & Stock</div>
     <div class="nav-item" onclick="goto('tickets')"><span class="ni">🛠️</span>Tickets SAV<span class="nav-badge" id="tickets-badge">0</span></div>
     <div class="nav-item" onclick="goto('warehouse')"><span class="ni">📦</span>Entrepôt</div>
@@ -680,7 +681,7 @@ textarea.input{min-height:80px;resize:vertical;}
   <div class="stat-grid" id="dash-stats">
     <div class="stat-card red"><div class="stat-val" id="stat-projects">—</div><div class="stat-lbl">Projets actifs</div></div>
     <div class="stat-card green"><div class="stat-val" id="stat-tasks">—</div><div class="stat-lbl">Tâches terminées</div></div>
-    <div class="stat-card amber"><div class="stat-val" id="stat-tickets">—</div><div class="stat-lbl">Tickets ouverts</div></div>
+    <div class="stat-card amber" style="display:none;"><div class="stat-val" id="stat-tickets">—</div><div class="stat-lbl">Tickets ouverts</div></div>
     <div class="stat-card blue"><div class="stat-val" id="stat-team">—</div><div class="stat-lbl">Membres équipe</div></div>
   </div>
   <div class="grid-2-1">
@@ -691,17 +692,17 @@ textarea.input{min-height:80px;resize:vertical;}
       </div>
     </div>
     <div>
-      <div class="card">
+      <div class="card" style="display:none;">
         <div class="card-header"><span class="card-title">🚨 Tickets urgents</span><button class="btn btn-ghost btn-sm" onclick="goto('tickets')">Voir →</button></div>
         <div class="card-body" id="dash-tickets" style="padding:12px;"><div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Chargement...</div></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">⚡ Actions rapides</span></div>
         <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;">
-          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="showModal('modal-ticket')">🛠️ Ticket SAV</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;display:none;" onclick="showModal('modal-ticket')">🛠️ Ticket SAV</button>
           <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('daily')">📓 Daily report</button>
           <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('handover')">🧾 Handover</button>
-          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;" onclick="goto('warehouse')">📦 Entrepôt</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;font-size:12px;display:none;" onclick="goto('warehouse')">📦 Entrepôt</button>
         </div>
       </div>
     </div>
@@ -807,9 +808,9 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="tab" onclick="switchTab(this,'dtab-daily')">📓 Daily Reports</div>
     <div class="tab" onclick="switchTab(this,'dtab-handover')">🧾 Handover</div>
     <div class="tab" onclick="switchTab(this,'dtab-remarks')">📸 Visites Client</div>
-    <div class="tab" onclick="switchTab(this,'dtab-tickets')">🛠️ Tickets</div>
-    <div class="tab" onclick="switchTab(this,'dtab-warehouse')">📦 Entrepôt</div>
-    <div class="tab" onclick="switchTab(this,'dtab-toolbox')">🧰 Boîtes à outils</div>
+    <div class="tab" onclick="switchTab(this,'dtab-tickets')" style="display:none;">🛠️ Tickets</div>
+    <div class="tab" onclick="switchTab(this,'dtab-warehouse')" style="display:none;">📦 Entrepôt</div>
+    <div class="tab" onclick="switchTab(this,'dtab-toolbox')" style="display:none;">🧰 Boîtes à outils</div>
     <div class="tab" onclick="switchTab(this,'dtab-team')">👥 Équipe</div>
     <div class="tab" onclick="switchTab(this,'dtab-trucks')">🚛 Logistique</div>
     <div class="tab" onclick="switchTab(this,'dtab-bookings')">✈️ Bookings</div>
@@ -2195,6 +2196,48 @@ function setAllProjectsCalVisible(visible) {
   renderDashCalendar();
 }
 
+// Déplacer un projet vers le haut/bas dans le Gantt — met à jour sortOrder
+// uniquement pour les projets visibles (en respectant les filtres).
+async function moveProjectInGantt(projectId, direction) {
+  if (!PROJECTS || !PROJECTS.length) return;
+
+  // Liste actuellement affichée (mêmes filtres que renderDashCalendar)
+  const visible = PROJECTS
+    .filter(p => p.installationStart && !HIDDEN_CAL_PROJECTS.has(p.id))
+    .sort((a, b) => {
+      const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      if (so !== 0) return so;
+      return new Date(a.installationStart) - new Date(b.installationStart);
+    });
+
+  const idx = visible.findIndex(p => p.id === projectId);
+  if (idx < 0) return;
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= visible.length) return;
+
+  // Échange leurs positions dans le tableau visible
+  [visible[idx], visible[swapIdx]] = [visible[swapIdx], visible[idx]];
+
+  // Renumérote TOUS les visibles avec un sortOrder propre (0, 10, 20, 30...)
+  // (espacement de 10 pour permettre des insertions futures sans tout renuméroter)
+  const orders = visible.map((p, i) => ({ id: p.id, sortOrder: (i + 1) * 10 }));
+
+  // Met à jour localement dans PROJECTS (optimistic UI)
+  orders.forEach(o => {
+    const p = PROJECTS.find(x => x.id === o.id);
+    if (p) p.sortOrder = o.sortOrder;
+  });
+  renderDashCalendar();
+
+  // Persiste sur le serveur
+  try {
+    await api('PATCH', '/projects/reorder', { orders });
+  } catch (e) {
+    toast('Erreur enregistrement de l\'ordre — recharge la page', 'error');
+    console.error('[moveProjectInGantt]', e);
+  }
+}
+
 // Calendrier Gantt projets — période ajustable + groupage des ressources par projet
 async function renderDashCalendar() {
   const el = document.getElementById('dash-calendar');
@@ -2220,9 +2263,14 @@ async function renderDashCalendar() {
   };
 
   // Filtre : visible ET non décoché manuellement
+  // Tri par sortOrder (drag/flèches), avec installationStart en fallback
   const list = (PROJECTS || [])
     .filter(p => p.installationStart && inWindow(p) && !HIDDEN_CAL_PROJECTS.has(p.id))
-    .sort((a, b) => new Date(a.installationStart) - new Date(b.installationStart));
+    .sort((a, b) => {
+      const so = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      if (so !== 0) return so;
+      return new Date(a.installationStart) - new Date(b.installationStart);
+    });
 
   if (!list.length) {
     el.innerHTML = `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Aucun projet visible sur ${NUM_WEEKS} semaines.<br>Vérifie le filtre "🎯 Filtrer projets" si tu as décoché des projets.</div>`;
@@ -2312,7 +2360,7 @@ async function renderDashCalendar() {
   const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'🔧',manitou:'🔧',forklift:'🚜',generator:'⚡',other:'🚗'};
 
   // ─── Construction des lignes ───
-  const rows = list.map(p => {
+  const rows = list.map((p, idx) => {
     const insS = p.installationStart ? posPct(p.installationStart) : null;
     const insE = p.installationEnd   ? posPct(p.installationEnd)   : null;
     const disS = p.dismantlingStart  ? posPct(p.dismantlingStart)  : null;
@@ -2322,12 +2370,22 @@ async function renderDashCalendar() {
     const insLabel = (insE-insS) > 7 ? `${shortD(p.installationStart)} → ${shortD(p.installationEnd)}` : '📐';
     const disLabel = (disE != null && disE-disS > 7) ? `${shortD(p.dismantlingStart)} → ${shortD(p.dismantlingEnd)}` : '📦';
 
-    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;cursor:pointer;background:var(--bg2);border-radius:6px;padding:6px;" onclick="openProject('${p.id}')">
-      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-        <div style="font-size:13px;font-weight:700;">${esc(p.name)}</div>
-        <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')}${p.internalNumber?' · '+esc(p.internalNumber):''}</div>
+    // Boutons flèches pour réordonner manuellement
+    const canUp   = idx > 0;
+    const canDown = idx < list.length - 1;
+
+    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;background:var(--bg2);border-radius:6px;padding:6px;">
+      <div style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+        <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0;">
+          <button onclick="event.stopPropagation();moveProjectInGantt('${p.id}','up')" ${canUp?'':'disabled'} style="background:none;border:none;color:${canUp?'var(--text2)':'var(--text3)'};cursor:${canUp?'pointer':'not-allowed'};padding:0 2px;font-size:10px;line-height:1;opacity:${canUp?'1':'.3'};" title="Monter">▲</button>
+          <button onclick="event.stopPropagation();moveProjectInGantt('${p.id}','down')" ${canDown?'':'disabled'} style="background:none;border:none;color:${canDown?'var(--text2)':'var(--text3)'};cursor:${canDown?'pointer':'not-allowed'};padding:0 2px;font-size:10px;line-height:1;opacity:${canDown?'1':'.3'};" title="Descendre">▼</button>
+        </div>
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;flex:1;" onclick="openProject('${p.id}')">
+          <div style="font-size:13px;font-weight:700;">${esc(p.name)}</div>
+          <div style="font-size:11px;color:var(--text3);">${esc(p.client?.name||'')}${p.internalNumber?' · '+esc(p.internalNumber):''}</div>
+        </div>
       </div>
-      <div style="position:relative;height:28px;background:var(--bg3);border-radius:6px;">
+      <div style="position:relative;height:28px;background:var(--bg3);border-radius:6px;cursor:pointer;" onclick="openProject('${p.id}')">
         ${insS != null && insE != null ? `<div title="Installation : ${fmtD(p.installationStart)} → ${fmtD(p.installationEnd)}" style="position:absolute;left:${insS}%;width:${Math.max(1.5, insE-insS)}%;height:100%;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:700;overflow:hidden;padding:0 4px;">${esc(insLabel)}</div>` : ''}
         ${disS != null && disE != null ? `<div title="Démontage : ${fmtD(p.dismantlingStart)} → ${fmtD(p.dismantlingEnd)}" style="position:absolute;left:${disS}%;width:${Math.max(1.5, disE-disS)}%;height:100%;background:#f4a261;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:700;overflow:hidden;padding:0 4px;">${esc(disLabel)}</div>` : ''}
         <div style="position:absolute;left:${todayPct}%;top:-3px;width:2px;height:34px;background:var(--accent);pointer-events:none;"></div>
@@ -2820,13 +2878,25 @@ async function loadProjectDetail(id) {
         </div>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nom</th><th>Rôle</th><th>Téléphone</th><th>Lead</th></tr></thead>
-        <tbody>${team.map(m => `<tr>
+        <thead><tr><th>Nom</th><th>Rôle</th><th>Phase</th><th>Téléphone</th><th>Lead</th><th></th></tr></thead>
+        <tbody>${team.map(m => {
+          const phaseLabels = { both:'🔄 Les deux', installation:'🔨 Installation', dismantling:'🔧 Démontage' };
+          const currentPhase = m.phase || 'both';
+          return `<tr>
           <td><div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">${(m.user.firstName[0]+m.user.lastName[0]).toUpperCase()}</div><strong>${m.user.firstName} ${m.user.lastName}</strong></div></td>
           <td><span class="badge badge-blue">${m.role}</span></td>
+          <td>
+            <select onchange="updateTeamMemberPhase('${p.id}','${m.id}',this.value)" style="padding:4px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;">
+              <option value="both" ${currentPhase==='both'?'selected':''}>${phaseLabels.both}</option>
+              <option value="installation" ${currentPhase==='installation'?'selected':''}>${phaseLabels.installation}</option>
+              <option value="dismantling" ${currentPhase==='dismantling'?'selected':''}>${phaseLabels.dismantling}</option>
+            </select>
+          </td>
           <td style="color:var(--text3);">${m.user.phone||'—'}</td>
           <td>${m.isLead?'⭐ Lead':''}</td>
-        </tr>`).join('')}</tbody>
+          <td><button class="btn btn-ghost btn-xs" onclick="if(confirm('Retirer ${m.user.firstName} ${m.user.lastName} de l\\'équipe ?')) removeTeamMember('${p.id}','${m.id}')" title="Retirer">✕</button></td>
+        </tr>`;
+        }).join('')}</tbody>
       </table></div>
     </div>`;
 
@@ -10702,6 +10772,14 @@ function showAddToTeamModal(projectId) {
           <option value="engineer">🛠️ Engineer</option>
         </select>
       </div>
+      <div class="form-group2">
+        <label class="form-label2">Phase d'intervention</label>
+        <select class="input" id="addteam-phase">
+          <option value="both">🔄 Les deux phases (installation + démontage)</option>
+          <option value="installation">🔨 Uniquement installation</option>
+          <option value="dismantling">🔧 Uniquement démontage</option>
+        </select>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="addToTeam('${projectId}',this.closest('.overlay'))">✅ Ajouter</button>
@@ -10714,13 +10792,32 @@ function showAddToTeamModal(projectId) {
 async function addToTeam(projectId, overlay) {
   const userId = document.getElementById('addteam-user')?.value;
   const role   = document.getElementById('addteam-role')?.value || 'worker';
+  const phase  = document.getElementById('addteam-phase')?.value || 'both';
   if (!userId) { toast('Sélectionne un membre','error'); return; }
-  const res = await api('POST', `/projects/${projectId}/team`, { userId, role });
+  const res = await api('POST', `/projects/${projectId}/team`, { userId, role, phase });
   if (res?.success) {
     toast('Membre ajouté ✅','success');
     overlay?.remove();
     loadProjectDetail(projectId);
   } else toast('Erreur: '+(res?.error||'inconnue'),'error');
+}
+
+// PATCH phase d'un membre déjà dans l'équipe (rapide depuis la liste)
+async function updateTeamMemberPhase(projectId, memberId, newPhase) {
+  const res = await api('PATCH', `/projects/${projectId}/team/${memberId}`, { phase: newPhase });
+  if (res?.success) {
+    toast('Phase mise à jour ✅', 'success');
+    loadProjectDetail(projectId);
+  } else toast('Erreur : ' + (res?.error || 'inconnue'), 'error');
+}
+
+// Retirer un membre de l'équipe d'un projet
+async function removeTeamMember(projectId, memberId) {
+  const res = await api('DELETE', `/projects/${projectId}/team/${memberId}`);
+  if (res?.success) {
+    toast('Membre retiré ✅', 'success');
+    loadProjectDetail(projectId);
+  } else toast('Erreur : ' + (res?.error || 'inconnue'), 'error');
 }
 
 // ═══════════════════════════════════════════
@@ -11217,6 +11314,20 @@ async function openTransportModal(projectId, bookingId, defaultPhase) {
 
       <div class="form-group2"><label class="form-label2">Notes</label><textarea class="input" id="bk-notes" rows="2">${esc(b?.notes||'')}</textarea></div>
 
+      <!-- Pièce jointe (PDF/image) -->
+      <div class="form-group2">
+        <label class="form-label2">📎 Pièce jointe (billet, voucher...)</label>
+        <div id="bk-attach-current" style="display:${b?.attachmentUrl?'flex':'none'};align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:6px;margin-bottom:6px;font-size:12px;">
+          <a href="${b?.attachmentUrl||''}" target="_blank" style="color:var(--blue);text-decoration:none;flex:1;">📎 ${esc(b?.attachmentName||'Pièce jointe actuelle')}</a>
+          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('bk-attach-url').value='';document.getElementById('bk-attach-name').value='';document.getElementById('bk-attach-pid').value='';document.getElementById('bk-attach-current').style.display='none';" title="Retirer la PJ actuelle">✕</button>
+        </div>
+        <input type="hidden" id="bk-attach-url"  value="${esc(b?.attachmentUrl||'')}">
+        <input type="hidden" id="bk-attach-name" value="${esc(b?.attachmentName||'')}">
+        <input type="hidden" id="bk-attach-pid"  value="${esc(b?.attachmentPublicId||'')}">
+        <input class="input" type="file" id="bk-attach-input" accept="application/pdf,image/*" onchange="uploadBookingAttachment(this,'bk')">
+        <div id="bk-attach-status" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
+      </div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="saveTransport('${projectId}','${bookingId||''}',this.closest('.overlay'))">💾 ${isEdit?'Enregistrer':'Créer'}</button>
@@ -11224,6 +11335,52 @@ async function openTransportModal(projectId, bookingId, defaultPhase) {
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// Upload d'une PJ pour booking transport ou hôtel.
+// `prefix` = 'bk' (transport) ou 'hb' (hôtel). Écrit dans les hidden inputs
+// {prefix}-attach-url/name/pid et affiche le fichier choisi en lien cliquable.
+async function uploadBookingAttachment(input, prefix) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const statusEl = document.getElementById(`${prefix}-attach-status`);
+  if (statusEl) statusEl.textContent = '⏳ Upload en cours...';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('folder', prefix === 'hb' ? 'hotel-bookings' : 'team-bookings');
+    const r = await fetch(`${API}/upload/photo`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd,
+    });
+    if (!r.ok) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">❌ Erreur ${r.status}</span>`;
+      return;
+    }
+    const data = await r.json();
+    const url       = data.data?.url || data.url;
+    const publicId  = data.data?.publicId || data.data?.public_id || null;
+    const name      = data.data?.name || file.name;
+    if (url) {
+      document.getElementById(`${prefix}-attach-url`).value  = url;
+      document.getElementById(`${prefix}-attach-name`).value = name;
+      document.getElementById(`${prefix}-attach-pid`).value  = publicId || '';
+      // Afficher la PJ uploadée dans le bloc "current"
+      const currentBox = document.getElementById(`${prefix}-attach-current`);
+      if (currentBox) {
+        currentBox.innerHTML = `
+          <a href="${url}" target="_blank" style="color:var(--blue);text-decoration:none;flex:1;">📎 ${name}</a>
+          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('${prefix}-attach-url').value='';document.getElementById('${prefix}-attach-name').value='';document.getElementById('${prefix}-attach-pid').value='';this.parentElement.style.display='none';" title="Retirer">✕</button>
+        `;
+        currentBox.style.display = 'flex';
+      }
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);">✅ Fichier prêt — clique "Enregistrer" pour confirmer</span>`;
+    }
+  } catch (e) {
+    console.error('[uploadBookingAttachment] échec :', e);
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">❌ Erreur réseau</span>`;
+  }
 }
 
 async function saveTransport(projectId, bookingId, overlay) {
@@ -11244,6 +11401,9 @@ async function saveTransport(projectId, bookingId, overlay) {
     returnDate:      fromLocalDatetimeInput(val('bk-ret-date')),
     returnDetails:   val('bk-ret-det')  || null,
     notes:           val('bk-notes')    || null,
+    attachmentUrl:      val('bk-attach-url')  || null,
+    attachmentName:     val('bk-attach-name') || null,
+    attachmentPublicId: val('bk-attach-pid')  || null,
   };
 
   const res = bookingId
@@ -11337,6 +11497,20 @@ async function openHotelModal(projectId, hotelId, defaultPhase) {
       <div class="form-group2"><label class="form-label2">Notes (contact, particularités, etc.)</label>
         <textarea class="input" id="hb-notes" rows="2">${esc(h?.notes||'')}</textarea></div>
 
+      <!-- Pièce jointe (PDF/image) -->
+      <div class="form-group2">
+        <label class="form-label2">📎 Pièce jointe (confirmation, voucher...)</label>
+        <div id="hb-attach-current" style="display:${h?.attachmentUrl?'flex':'none'};align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:6px;margin-bottom:6px;font-size:12px;">
+          <a href="${h?.attachmentUrl||''}" target="_blank" style="color:var(--blue);text-decoration:none;flex:1;">📎 ${esc(h?.attachmentName||'Pièce jointe actuelle')}</a>
+          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('hb-attach-url').value='';document.getElementById('hb-attach-name').value='';document.getElementById('hb-attach-pid').value='';document.getElementById('hb-attach-current').style.display='none';" title="Retirer la PJ actuelle">✕</button>
+        </div>
+        <input type="hidden" id="hb-attach-url"  value="${esc(h?.attachmentUrl||'')}">
+        <input type="hidden" id="hb-attach-name" value="${esc(h?.attachmentName||'')}">
+        <input type="hidden" id="hb-attach-pid"  value="${esc(h?.attachmentPublicId||'')}">
+        <input class="input" type="file" id="hb-attach-input" accept="application/pdf,image/*" onchange="uploadBookingAttachment(this,'hb')">
+        <div id="hb-attach-status" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>
+      </div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="saveHotel('${projectId}','${hotelId||''}',this.closest('.overlay'))">💾 ${isEdit?'Enregistrer':'Créer'}</button>
@@ -11370,6 +11544,9 @@ async function saveHotel(projectId, hotelId, overlay) {
     checkin, checkout,
     reference:    val('hb-ref') || null,
     notes:        val('hb-notes') || null,
+    attachmentUrl:      val('hb-attach-url')  || null,
+    attachmentName:     val('hb-attach-name') || null,
+    attachmentPublicId: val('hb-attach-pid')  || null,
     userIds,
   };
 

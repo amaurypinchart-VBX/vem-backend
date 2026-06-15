@@ -166,6 +166,8 @@ model Project {
   scope               String?       // Notes globales / objet du projet
   installNotes        String?       @map("install_notes")    // Notes spécifiques à l'installation
   dismantleNotes      String?       @map("dismantle_notes")  // Notes spécifiques au démontage
+  // Ordre d'affichage dans le calendrier Gantt (drag-and-drop par l'utilisateur)
+  sortOrder           Int           @default(0) @map("sort_order")
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
   createdAt           DateTime      @default(now()) @map("created_at")
@@ -217,6 +219,10 @@ model TeamBooking {
   returnDetails   String?   @map("return_details")
 
   notes           String?
+  // Pièce jointe (PDF / image) — confirmation, billet, voucher...
+  attachmentUrl      String?  @map("attachment_url")
+  attachmentName     String?  @map("attachment_name")
+  attachmentPublicId String?  @map("attachment_public_id")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -239,6 +245,10 @@ model HotelBooking {
   checkout     DateTime
   reference    String?                 // n° de réservation
   notes        String?
+  // Pièce jointe (PDF / image) — voucher, confirmation hôtel...
+  attachmentUrl      String?            @map("attachment_url")
+  attachmentName     String?            @map("attachment_name")
+  attachmentPublicId String?            @map("attachment_public_id")
   createdAt    DateTime                @default(now()) @map("created_at")
   updatedAt    DateTime                @updatedAt @map("updated_at")
 
@@ -269,6 +279,9 @@ model ProjectTeam {
   userId    String   @map("user_id")
   role      String
   isLead    Boolean  @default(false) @map("is_lead")
+  // Phase du projet sur laquelle ce membre intervient :
+  // 'installation' = uniquement à l'install, 'dismantling' = uniquement au démontage, 'both' = les deux.
+  phase     String   @default("both")
   createdAt DateTime @default(now()) @map("created_at")
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])

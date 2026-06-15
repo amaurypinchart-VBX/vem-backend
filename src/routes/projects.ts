@@ -18,7 +18,8 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     ];
 
     const projects = await prisma.project.findMany({
-      where, orderBy: { installationStart: 'asc' },
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { installationStart: 'asc' }],
       include: {
         client: { select: { id:true, name:true } },
         technicalManager: { select: { id:true, firstName:true, lastName:true } },
@@ -37,6 +38,27 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     }));
 
     res.json({ success: true, data: enriched });
+  } catch (err) { next(err); }
+});
+
+// PATCH /projects/reorder — réordonner plusieurs projets en une seule requête.
+// IMPORTANT : doit être déclarée AVANT GET/PATCH /:id pour qu'Express ne
+// confonde pas "reorder" avec un id de projet.
+router.patch('/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { orders } = req.body; // [{ id: string, sortOrder: number }, ...]
+    if (!Array.isArray(orders)) {
+      return res.status(400).json({ success: false, error: 'orders doit être un tableau' });
+    }
+    await prisma.$transaction(
+      orders.map((o: any) =>
+        prisma.project.update({
+          where: { id: o.id },
+          data:  { sortOrder: Number(o.sortOrder) || 0 },
+        })
+      )
+    );
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
@@ -103,7 +125,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     const allowed = [
       'name','internalNumber','clientId','technicalManagerId',
       'address','city','description','specialInstructions',
-      'scope','installNotes','dismantleNotes',
+      'scope','installNotes','dismantleNotes','sortOrder',
       'workersCount','status',
       'installationStart','installationEnd','dismantlingStart','dismantlingEnd',
     ];
@@ -132,9 +154,15 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 // POST /projects/:id/team — ajouter un membre
 router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { userId, role, isLead } = req.body;
+    const { userId, role, isLead, phase } = req.body;
     const member = await prisma.projectTeam.create({
-      data: { projectId: req.params.id, userId, role, isLead: isLead||false },
+      data: {
+        projectId: req.params.id,
+        userId,
+        role,
+        isLead: isLead||false,
+        phase: phase || 'both',
+      },
       include: { user: { select: { firstName:true, lastName:true, email:true } } },
     });
     res.status(201).json({ success: true, data: member });
@@ -142,6 +170,30 @@ router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunct
     if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Déjà dans l\'équipe' });
     next(err);
   }
+});
+
+// PATCH /projects/:id/team/:memberId — modifier un membre (phase, rôle, isLead)
+router.patch('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data: any = {};
+    if (req.body.phase  !== undefined) data.phase  = req.body.phase;
+    if (req.body.role   !== undefined) data.role   = req.body.role;
+    if (req.body.isLead !== undefined) data.isLead = req.body.isLead;
+    const member = await prisma.projectTeam.update({
+      where: { id: req.params.memberId },
+      data,
+      include: { user: { select: { firstName:true, lastName:true, email:true } } },
+    });
+    res.json({ success: true, data: member });
+  } catch (err) { next(err); }
+});
+
+// DELETE /projects/:id/team/:memberId — retirer un membre de l'équipe
+router.delete('/:id/team/:memberId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await prisma.projectTeam.delete({ where: { id: req.params.memberId } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
 });
 
 // POST /projects/:id/trucks — ajouter camion/machine
