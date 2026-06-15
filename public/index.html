@@ -5244,8 +5244,36 @@ async function editDailyReport(id) {
       <!-- Entrées timeline modifiables -->
       <div style="margin:14px 0 10px;display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">⏱️ Journal</div>
-        <button class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('edit-ai-panel').style.display=document.getElementById('edit-ai-panel').style.display==='none'?'block':'none'">🤖 Assistant IA</button>
+          <button class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
+        </div>
       </div>
+
+      <!-- Panneau IA (replié par défaut) -->
+      <div id="edit-ai-panel" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">
+          🤖 Colle un nouveau texte ou enregistre un audio — l'IA extrait les entrées et les <strong>ajoute</strong> à ton journal existant.
+        </div>
+
+        <!-- Audio -->
+        <div style="margin-bottom:8px;">
+          <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">
+            🎙️ Transcrire un audio
+            <input type="file" accept="audio/*" style="display:none;" onchange="editDailyTranscribeAudio(this)">
+          </label>
+          <span id="edit-ai-audio-status" style="font-size:11px;color:var(--text3);margin-left:8px;"></span>
+        </div>
+
+        <!-- Texte brut -->
+        <textarea id="edit-ai-raw" rows="3" placeholder="Colle ton texte ici (ou laisse la transcription audio le remplir)..." style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <button class="btn btn-primary btn-sm" onclick="editDailyAddFromAI()">🤖 Analyser & Ajouter au journal</button>
+          <span id="edit-ai-status" style="font-size:11px;color:var(--text3);"></span>
+        </div>
+      </div>
+
       <div id="edit-entries-list" style="display:flex;flex-direction:column;gap:6px;max-height:30vh;overflow-y:auto;padding-right:2px;"></div>
 
       <!-- Notes -->
@@ -5310,6 +5338,95 @@ function addEditEntry() {
     const inputs = document.querySelectorAll('#edit-entries-list input[placeholder]');
     if (inputs.length) inputs[inputs.length-1].focus();
   }, 50);
+}
+
+// ─── Édition Daily : Transcription audio (Whisper) ─────────────────────
+async function editDailyTranscribeAudio(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (file.size > 50 * 1024 * 1024) {
+    toast('Fichier trop volumineux (max 50 Mo)', 'error');
+    return;
+  }
+  const statusEl = document.getElementById('edit-ai-audio-status');
+  if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);">⏳ Transcription en cours...</span>`;
+
+  const fd = new FormData();
+  fd.append('audio', file);
+  try {
+    const r = await fetch(`${API}/ai/transcribe`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd,
+    });
+    const data = await r.json();
+    if (!data.success) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">❌ ${esc(data.error || 'Erreur')}</span>`;
+      return;
+    }
+    const text = (data.data?.text || '').trim();
+    if (!text) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--amber);">⚠️ Aucun texte détecté</span>`;
+      return;
+    }
+    // Rempli le textarea (ajoute s'il y a déjà du texte)
+    const ta = document.getElementById('edit-ai-raw');
+    if (ta) ta.value = ta.value.trim() ? (ta.value.trim() + '\n\n' + text) : text;
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);">✅ Transcrit (${text.length} car) — clique "Analyser"</span>`;
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">❌ Erreur réseau</span>`;
+    console.error('[editDailyTranscribeAudio]', e);
+  }
+}
+
+// ─── Édition Daily : Analyse IA + ajout au journal ─────────────────────
+async function editDailyAddFromAI() {
+  const raw = document.getElementById('edit-ai-raw')?.value.trim();
+  if (!raw) { toast('Saisis ou transcris d\'abord un texte', 'error'); return; }
+  const statusEl = document.getElementById('edit-ai-status');
+  if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);">⏳ Analyse en cours...</span>`;
+
+  try {
+    const r = await fetch(`${API}/ai/parse-daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+      body: JSON.stringify({ text: raw }),
+    });
+    const data = await r.json();
+    if (!data.success) throw new Error(data.error || 'Erreur IA');
+
+    const entries = Array.isArray(data.data) ? data.data : [];
+    if (!entries.length) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--amber);">⚠️ Aucune entrée extraite</span>`;
+      return;
+    }
+
+    // Ajoute les nouvelles entrées à la fin de _EDIT_ENTRIES (sans remplacer)
+    if (!window._EDIT_ENTRIES) window._EDIT_ENTRIES = [];
+    entries.forEach(e => {
+      window._EDIT_ENTRIES.push({
+        entryTime:   e.time || e.entryTime || '',
+        description: e.text || e.description || '',
+      });
+    });
+
+    // Trie par horaire (entrées vides à la fin)
+    window._EDIT_ENTRIES.sort((a, b) => {
+      if (!a.entryTime && !b.entryTime) return 0;
+      if (!a.entryTime) return 1;
+      if (!b.entryTime) return -1;
+      return a.entryTime.localeCompare(b.entryTime);
+    });
+
+    renderEditEntries();
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);">✅ ${entries.length} entrée(s) ajoutée(s)</span>`;
+    // Vide le textarea après succès
+    document.getElementById('edit-ai-raw').value = '';
+    toast(`${entries.length} entrée(s) ajoutée(s) au journal ✅`, 'success');
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">❌ ${esc(e.message || 'Erreur')}</span>`;
+    console.error('[editDailyAddFromAI]', e);
+  }
 }
 
 async function uploadEditDailyPhotos(reportId, input) {
