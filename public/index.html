@@ -3490,7 +3490,8 @@ async function openEditProjectModal(projectId) {
   set('proj-install-notes',     p.installNotes || '');
   set('proj-dismantle-notes',   p.dismantleNotes || '');
   // Les dates ISO doivent être tronquées en YYYY-MM-DDTHH:mm pour les inputs type="datetime-local"
-  const toDT = d => d ? new Date(d).toISOString().slice(0, 16) : '';
+  // En HEURE LOCALE pour éviter le décalage UTC qui faisait apparaître +2h
+  const toDT = toLocalDatetimeInput;
   set('proj-start',             toDT(p.installationStart));
   set('proj-end',               toDT(p.installationEnd));
   set('proj-dismantling-start', toDT(p.dismantlingStart));
@@ -3508,8 +3509,8 @@ async function openEditProjectModal(projectId) {
     licensePlate: t.licensePlate || '',
     driverName:   t.driverName   || '',
     driverPhone:  t.driverPhone  || '',
-    loadingDate:  t.loadingDate ? new Date(t.loadingDate).toISOString().slice(0,16) : '',
-    arrivalDate:  t.arrivalDate ? new Date(t.arrivalDate).toISOString().slice(0,16) : '',
+    loadingDate:  t.loadingDate ? toLocalDatetimeInput(t.loadingDate) : '',
+    arrivalDate:  t.arrivalDate ? toLocalDatetimeInput(t.arrivalDate) : '',
     notes:        t.notes        || '',
   }));
   if (typeof renderProjTrucks === 'function') renderProjTrucks();
@@ -3537,6 +3538,8 @@ async function createProject() {
   if (btn) { btn.disabled=true; btn.innerHTML='<span class="loader"></span> ' + (isEdit?'Enregistrement...':'Création...'); }
 
   // Build body — only include dismantling if filled
+  // Les dates datetime-local doivent être converties en ISO UTC explicite via
+  // fromLocalDatetimeInput, sinon le serveur Node (en UTC) les interprète mal.
   const body = {
     name, clientId, address,
     internalNumber: document.getElementById('proj-num').value.trim() || undefined,
@@ -3545,12 +3548,12 @@ async function createProject() {
     scope:          document.getElementById('proj-scope')?.value.trim() || null,
     installNotes:   document.getElementById('proj-install-notes')?.value.trim() || null,
     dismantleNotes: document.getElementById('proj-dismantle-notes')?.value.trim() || null,
-    installationStart: start,
-    installationEnd: end,
+    installationStart: fromLocalDatetimeInput(start),
+    installationEnd:   fromLocalDatetimeInput(end),
     city: address.split(',').pop()?.trim() || '',
   };
-  if (dismStart) body.dismantlingStart = dismStart;
-  if (dismEnd)   body.dismantlingEnd   = dismEnd;
+  if (dismStart) body.dismantlingStart = fromLocalDatetimeInput(dismStart);
+  if (dismEnd)   body.dismantlingEnd   = fromLocalDatetimeInput(dismEnd);
 
   // En mode édition : PATCH ; sinon POST
   const res = isEdit
@@ -3625,8 +3628,8 @@ async function createProject() {
           licensePlate: t.licensePlate?.trim() || null,
           driverName:   t.driverName?.trim() || null,
           driverPhone:  t.driverPhone?.trim() || null,
-          loadingDate:  t.loadingDate || null,
-          arrivalDate:  t.arrivalDate || null,
+          loadingDate:  t.loadingDate ? fromLocalDatetimeInput(t.loadingDate) : null,
+          arrivalDate:  t.arrivalDate ? fromLocalDatetimeInput(t.arrivalDate) : null,
           notes:        t.notes?.trim() || null,
           status:       'planned',
         };
@@ -4618,6 +4621,21 @@ function toLocalDateInput(isoString) {
 function fromLocalDatetimeInput(localString) {
   if (!localString) return null;
   return new Date(localString).toISOString();
+}
+
+/**
+ * Convertit une date ISO (depuis le backend) en format YYYY-MM-DDTHH:mm
+ * pour pré-remplir un input type="datetime-local", en HEURE LOCALE.
+ *
+ * À utiliser à la place de `new Date(d).toISOString().slice(0,16)` qui décale
+ * la valeur affichée du décalage UTC du navigateur (ex: -2h en été en Belgique).
+ */
+function toLocalDatetimeInput(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
  
 /**
@@ -6422,7 +6440,7 @@ async function openTruckDetail(truckId, projectId) {
       <div style="background:rgba(45,198,83,.06);border:1px solid rgba(45,198,83,.2);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:10px;">✅ Confirmer l'arrivée</div>
         <div class="input-row">
-          <div class="form-group2"><label class="form-label2">Heure d'arrivée</label><input class="input" type="datetime-local" id="truck-arrival-time" value="${new Date().toISOString().slice(0,16)}"></div>
+          <div class="form-group2"><label class="form-label2">Heure d'arrivée</label><input class="input" type="datetime-local" id="truck-arrival-time" value="${toLocalDatetimeInput(new Date())}"></div>
           <div class="form-group2"><label class="form-label2">Note d'arrivée</label><input class="input" id="truck-arrival-note" placeholder="Tout ok, retard..."></div>
         </div>
         <button class="btn btn-green" onclick="confirmTruckArrival('${truckId}','${projectId}',this.closest('.overlay'))">✅ Confirmer l'arrivée</button>
@@ -10510,7 +10528,7 @@ function showAddTruckModal(projectId, existing) {
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📅 Date & heure de chargement</label>
-            <input class="input" type="datetime-local" id="at-loading" value="${t.loadingDate ? new Date(t.loadingDate).toISOString().slice(0,16) : ''}">
+            <input class="input" type="datetime-local" id="at-loading" value="${t.loadingDate ? toLocalDatetimeInput(t.loadingDate) : ''}">
           </div>
         </div>
 
@@ -10531,7 +10549,7 @@ function showAddTruckModal(projectId, existing) {
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📅 Arrivée estimée</label>
-            <input class="input" type="datetime-local" id="at-arrival" value="${t.arrivalDate ? new Date(t.arrivalDate).toISOString().slice(0,16) : ''}">
+            <input class="input" type="datetime-local" id="at-arrival" value="${t.arrivalDate ? toLocalDatetimeInput(t.arrivalDate) : ''}">
           </div>
           <div class="form-group2" style="margin-top:8px;">
             <label class="form-label2">📍 Zone de déchargement</label>
@@ -11130,7 +11148,7 @@ async function openTransportModal(projectId, bookingId, defaultPhase) {
   }
   const phase = b?.phase || defaultPhase || 'installation';
   const isEdit = !!b;
-  const toDTLocal = d => d ? new Date(d).toISOString().slice(0,16) : '';
+  const toDTLocal = toLocalDatetimeInput;
   const toDate    = d => d ? new Date(d).toISOString().slice(0,10) : '';
 
   const overlay = document.createElement('div');
@@ -11220,10 +11238,10 @@ async function saveTransport(projectId, bookingId, overlay) {
   const body = {
     userId, phase, onSiteStart, onSiteEnd,
     outboundMode:    val('bk-out-mode') || null,
-    outboundDate:    val('bk-out-date') || null,
+    outboundDate:    fromLocalDatetimeInput(val('bk-out-date')),
     outboundDetails: val('bk-out-det')  || null,
     returnMode:      val('bk-ret-mode') || null,
-    returnDate:      val('bk-ret-date') || null,
+    returnDate:      fromLocalDatetimeInput(val('bk-ret-date')),
     returnDetails:   val('bk-ret-det')  || null,
     notes:           val('bk-notes')    || null,
   };
