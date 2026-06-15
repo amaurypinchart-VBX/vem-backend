@@ -162,6 +162,10 @@ model Project {
   workersCount        Int           @default(0) @map("workers_count")
   description         String?
   specialInstructions String?       @map("special_instructions")
+  // Notes complémentaires (saisies depuis Infos projet)
+  scope               String?       // Notes globales / objet du projet
+  installNotes        String?       @map("install_notes")    // Notes spécifiques à l'installation
+  dismantleNotes      String?       @map("dismantle_notes")  // Notes spécifiques au démontage
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
   createdAt           DateTime      @default(now()) @map("created_at")
