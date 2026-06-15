@@ -1620,39 +1620,30 @@ textarea.input{min-height:80px;resize:vertical;}
         <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
         </div>
-        <div class="report-section-toggle" data-section="files" onclick="toggleReportSection(this);return false;">
-          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">📁</span><div><div style="font-weight:600;font-size:13px;">Fichiers projet</div><div style="font-size:11px;color:#8892a4;">Photos et documents</div></div></div>
-        </div>
         <div class="report-section-toggle" data-section="logistics" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🚛</span><div><div style="font-weight:600;font-size:13px;">Logistique</div><div style="font-size:11px;color:#8892a4;">Camions et machines</div></div></div>
         </div>
         <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🤖</span><div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div></div>
         </div>
+        <div class="report-section-toggle" data-section="bookings" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">✈️</span><div><div style="font-weight:600;font-size:13px;">Bookings</div><div style="font-size:11px;color:#8892a4;">Transport & hôtels équipe</div></div></div>
+        </div>
+        <div class="report-section-toggle" data-section="comment" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">💬</span><div><div style="font-weight:600;font-size:13px;">Commentaire</div><div style="font-size:11px;color:#8892a4;">Note personnalisée</div></div></div>
+        </div>
       </div>
-<!-- AJOUT — Toggle Bookings -->
-<div class="report-section-toggle"
-     data-section="bookings"
-     onclick="return toggleReportSection(this);"
-     style="border:2px solid #2a2f3a;background:transparent;padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;">
-  <span style="font-size:18px;">✈️</span>
-  <div>
-    <div style="font-weight:600;font-size:13px;">Bookings</div>
-    <div style="font-size:11px;color:var(--text3);">Transport & hôtels équipe</div>
-  </div>
-</div>
 
-<!-- AJOUT — Toggle Commentaire personnalisé -->
-<div class="report-section-toggle"
-     data-section="comment"
-     onclick="return toggleReportSection(this);"
-     style="border:2px solid #2a2f3a;background:transparent;padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;">
-  <span style="font-size:18px;">💬</span>
-  <div>
-    <div style="font-weight:600;font-size:13px;">Commentaire</div>
-    <div style="font-size:11px;color:var(--text3);">Note personnalisée</div>
-  </div>
-</div>
+      <!-- Textarea commentaire personnalisé (utilisé si la section "Commentaire" est cochée) -->
+      <div id="report-custom-comment-row" style="margin-bottom:12px;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">
+          💬 Commentaire personnalisé <span style="font-weight:400;text-transform:none;color:var(--text3);">(visible uniquement si la section Commentaire est cochée)</span>
+        </label>
+        <textarea id="report-custom-comment"
+                  rows="4"
+                  placeholder="Ex : Ce rapport est destiné à la direction client. Merci de noter que l'événement a été déplacé d'une semaine..."
+                  style="width:100%;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+      </div>
       <!-- Langue -->
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
         <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
@@ -6593,7 +6584,7 @@ async function generateReport(mode) {
     // ── STEP 1: Collect all project data ──
     setReportStatus('🔄','Collecte des données du projet...','Chargement en cours');
 
-    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes, filesRes] = await Promise.all([
+    const [projRes, tasksRes, dailyRes, handoverRes, ticketsRes, remarksRes, filesRes, bookingsRes, hotelsRes] = await Promise.all([
       api('GET', `/projects/${CURRENT_PROJECT_ID}`),
       sections.includes('tasks')    ? api('GET', `/tasks?projectId=${CURRENT_PROJECT_ID}`)    : null,
       sections.includes('daily')    ? api('GET', `/daily-reports?projectId=${CURRENT_PROJECT_ID}`) : null,
@@ -6601,6 +6592,8 @@ async function generateReport(mode) {
       sections.includes('tickets')  ? api('GET', `/tickets?projectId=${CURRENT_PROJECT_ID}`)  : null,
       sections.includes('visite')   ? api('GET', `/client-remarks?projectId=${CURRENT_PROJECT_ID}`) : null,
       sections.includes('files')    ? api('GET', `/projects/${CURRENT_PROJECT_ID}/files`)     : null,
+      sections.includes('bookings') ? api('GET', `/projects/${CURRENT_PROJECT_ID}/bookings`)  : null,
+      sections.includes('bookings') ? api('GET', `/projects/${CURRENT_PROJECT_ID}/hotel-bookings`) : null,
     ]);
 
     const project = projRes?.data;
@@ -6613,6 +6606,9 @@ async function generateReport(mode) {
     const remarks  = remarksRes?.data  || [];
     const trucks   = (project.trucks || []).filter(t => t.status !== 'delivered' && t.status !== 'returned');
     const files    = filesRes?.data    || [];
+    const bookings = bookingsRes?.data || [];
+    const hotels   = hotelsRes?.data   || [];
+    const customComment = document.getElementById('report-custom-comment')?.value?.trim() || '';
 
     // ── STEP 2: AI Summary ──
     let aiSummary = '';
@@ -7031,6 +7027,95 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
           </tr>`).join('')}
         </tbody>
       </table>
+    </div>`;
+    }
+
+    // ── Section: Commentaire personnalisé ──
+    if (sections.includes('comment') && customComment) {
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">💬</span>${lang==='en'?'Custom Note':lang==='nl'?'Opmerking':'Commentaire'}</div>
+      <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:16px 20px;font-size:14px;line-height:1.7;color:#3a3a3a;white-space:pre-wrap;">
+        ${customComment.replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+      </div>
+    </div>`;
+    }
+
+    // ── Section: Bookings (transport + hôtels) ──
+    if (sections.includes('bookings') && (bookings.length || hotels.length)) {
+      const fmtDT = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+      const fmtD  = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+      const phaseLabel = p => p === 'installation' ? '🔨 Installation' : p === 'dismantling' ? '🔧 Démontage' : (p||'');
+      const modeIcon = m => ({plane:'✈️',train:'🚆',car:'🚗',bus:'🚌',taxi:'🚕',other:'🚗'})[m] || '🚗';
+
+      reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">✈️</span>${lang==='en'?'Bookings':lang==='nl'?'Boekingen':'Bookings'}</div>
+
+      ${bookings.length ? `
+      <div style="margin-bottom:20px;">
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:10px;">🚆 Transports équipe (${bookings.length})</div>
+        ${bookings.map(b => `
+        <div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:10px;page-break-inside:avoid;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:36px;height:36px;background:#e63946;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;">
+                ${(b.user?.firstName?.[0]||'?')+(b.user?.lastName?.[0]||'')}
+              </div>
+              <div>
+                <div style="font-weight:700;font-size:14px;">${b.user?.firstName||''} ${b.user?.lastName||''}</div>
+                <div style="font-size:11px;color:#8892a4;">${phaseLabel(b.phase)} · Sur site ${fmtD(b.onSiteStart)} → ${fmtD(b.onSiteEnd)}</div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+            <div style="background:#f8f9fb;padding:8px 10px;border-radius:6px;">
+              <div style="font-size:10px;color:#8892a4;text-transform:uppercase;margin-bottom:3px;">🛬 Aller</div>
+              ${b.outboundMode?`<div style="font-weight:600;">${modeIcon(b.outboundMode)} ${b.outboundMode}</div>`:''}
+              ${b.outboundDate?`<div style="color:#5a6275;">${fmtDT(b.outboundDate)}</div>`:''}
+              ${b.outboundDetails?`<div style="color:#5a6275;font-size:11px;">${b.outboundDetails}</div>`:''}
+              ${!b.outboundMode && !b.outboundDate ? '<div style="color:#8892a4;">Non renseigné</div>' : ''}
+            </div>
+            <div style="background:#f8f9fb;padding:8px 10px;border-radius:6px;">
+              <div style="font-size:10px;color:#8892a4;text-transform:uppercase;margin-bottom:3px;">🛫 Retour</div>
+              ${b.returnMode?`<div style="font-weight:600;">${modeIcon(b.returnMode)} ${b.returnMode}</div>`:''}
+              ${b.returnDate?`<div style="color:#5a6275;">${fmtDT(b.returnDate)}</div>`:''}
+              ${b.returnDetails?`<div style="color:#5a6275;font-size:11px;">${b.returnDetails}</div>`:''}
+              ${!b.returnMode && !b.returnDate ? '<div style="color:#8892a4;">Non renseigné</div>' : ''}
+            </div>
+          </div>
+          ${b.attachmentUrl ? `<div style="margin-top:8px;font-size:12px;"><a href="${b.attachmentUrl}" target="_blank" style="color:#4895ef;text-decoration:none;">📎 ${b.attachmentName||'Pièce jointe'}</a></div>` : ''}
+          ${b.notes ? `<div style="margin-top:8px;font-size:12px;color:#5a6275;background:#fffbeb;padding:6px 10px;border-radius:4px;">📝 ${b.notes}</div>` : ''}
+        </div>`).join('')}
+      </div>` : ''}
+
+      ${hotels.length ? `
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#8892a4;text-transform:uppercase;margin-bottom:10px;">🏨 Hôtels (${hotels.length})</div>
+        ${hotels.map(h => `
+        <div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:10px;page-break-inside:avoid;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
+            <div>
+              <div style="font-weight:700;font-size:14px;">🏨 ${h.hotelName}</div>
+              ${h.hotelAddress ? `<div style="font-size:12px;color:#8892a4;margin-top:2px;">📍 ${h.hotelAddress}</div>` : ''}
+              <div style="font-size:12px;color:#5a6275;margin-top:4px;">
+                ${phaseLabel(h.phase)} · ${fmtD(h.checkin)} → ${fmtD(h.checkout)}
+                ${h.reference?` · Réf: ${h.reference}`:''}
+              </div>
+            </div>
+          </div>
+          ${(h.occupants||[]).length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+            ${h.occupants.map(o => `
+            <div style="background:#f8f9fb;padding:4px 10px;border-radius:99px;font-size:11px;display:flex;align-items:center;gap:6px;">
+              <span style="width:20px;height:20px;background:#e63946;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:9px;">${(o.user?.firstName?.[0]||'?')+(o.user?.lastName?.[0]||'')}</span>
+              ${o.user?.firstName||''} ${o.user?.lastName||''}
+            </div>`).join('')}
+          </div>` : ''}
+          ${h.attachmentUrl ? `<div style="margin-top:8px;font-size:12px;"><a href="${h.attachmentUrl}" target="_blank" style="color:#4895ef;text-decoration:none;">📎 ${h.attachmentName||'Confirmation'}</a></div>` : ''}
+          ${h.notes ? `<div style="margin-top:8px;font-size:12px;color:#5a6275;background:#fffbeb;padding:6px 10px;border-radius:4px;">📝 ${h.notes}</div>` : ''}
+        </div>`).join('')}
+      </div>` : ''}
     </div>`;
     }
 
