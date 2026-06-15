@@ -1630,7 +1630,29 @@ textarea.input{min-height:80px;resize:vertical;}
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🤖</span><div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div></div>
         </div>
       </div>
+<!-- AJOUT — Toggle Bookings -->
+<div class="report-section-toggle"
+     data-section="bookings"
+     onclick="return toggleReportSection(this);"
+     style="border:2px solid #2a2f3a;background:transparent;padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;">
+  <span style="font-size:18px;">✈️</span>
+  <div>
+    <div style="font-weight:600;font-size:13px;">Bookings</div>
+    <div style="font-size:11px;color:var(--text3);">Transport & hôtels équipe</div>
+  </div>
+</div>
 
+<!-- AJOUT — Toggle Commentaire personnalisé -->
+<div class="report-section-toggle"
+     data-section="comment"
+     onclick="return toggleReportSection(this);"
+     style="border:2px solid #2a2f3a;background:transparent;padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;">
+  <span style="font-size:18px;">💬</span>
+  <div>
+    <div style="font-weight:600;font-size:13px;">Commentaire</div>
+    <div style="font-size:11px;color:var(--text3);">Note personnalisée</div>
+  </div>
+</div>
       <!-- Langue -->
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
         <span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">Langue :</span>
