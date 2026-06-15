@@ -424,6 +424,36 @@ export async function runStartupMigrations() {
       logger.warn(`[migration] drop unique daily_reports : ${e.message}`);
     }
 
+    // ─── Colonnes "Notes complémentaires" sur projects ───
+    // Permet de saisir des notes globales / installation / démontage depuis
+    // l'onglet Infos du projet, et de les afficher dans le Rapport IA.
+    // Ces colonnes correspondent aux champs Prisma : scope, installNotes (→ install_notes), dismantleNotes (→ dismantle_notes)
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "scope" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "install_notes" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "dismantle_notes" TEXT;
+    `);
+    logger.info('[migration] projects : scope / install_notes / dismantle_notes ajoutées si absentes');
+
+    // ─── Colonnes "createdAt" / "updatedAt" sur task_categories et task_templates ───
+    // Prisma s'attend à ces colonnes (présentes dans le schéma) mais elles n'avaient
+    // peut-être jamais été créées en base sur de vieilles installations.
+    // NB : Prisma ne map pas createdAt → created_at ici (pas de @map), donc on garde le PascalCase.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_categories" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    `);
+    logger.info('[migration] task_categories / task_templates : createdAt/updatedAt ajoutées si absentes');
+
     logger.info('✅ Migrations de démarrage OK');
 
     // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───
