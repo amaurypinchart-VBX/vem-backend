@@ -454,6 +454,42 @@ export async function runStartupMigrations() {
     `);
     logger.info('[migration] task_categories / task_templates : createdAt/updatedAt ajoutées si absentes');
 
+    // ─── Colonnes "pièces jointes" sur team_bookings et hotel_bookings ───
+    // Permet d'attacher un PDF/image (billet, voucher, confirmation hôtel) à un booking.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "team_bookings" ADD COLUMN IF NOT EXISTS "attachment_url" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "team_bookings" ADD COLUMN IF NOT EXISTS "attachment_name" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "team_bookings" ADD COLUMN IF NOT EXISTS "attachment_public_id" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "hotel_bookings" ADD COLUMN IF NOT EXISTS "attachment_url" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "hotel_bookings" ADD COLUMN IF NOT EXISTS "attachment_name" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "hotel_bookings" ADD COLUMN IF NOT EXISTS "attachment_public_id" TEXT;
+    `);
+    logger.info('[migration] team_bookings / hotel_bookings : colonnes attachment ajoutées si absentes');
+
+    // ─── Colonne "phase" sur project_team ───
+    // 'installation' = membre uniquement à l'install, 'dismantling' = uniquement au démontage,
+    // 'both' (défaut, compatible avec l'existant) = présent sur les deux phases.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "project_team" ADD COLUMN IF NOT EXISTS "phase" TEXT NOT NULL DEFAULT 'both';
+    `);
+    logger.info('[migration] project_team.phase ajoutée si absente');
+
+    // ─── Colonne "sort_order" sur projects (drag-and-drop dans le Gantt) ───
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "sort_order" INTEGER NOT NULL DEFAULT 0;
+    `);
+    logger.info('[migration] projects.sort_order ajoutée si absente');
+
     logger.info('✅ Migrations de démarrage OK');
 
     // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───
