@@ -2778,6 +2778,7 @@ async function loadProjectDetail(id) {
         <span class="card-title">📁 Fichiers</span>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="switchTab(document.querySelector('[onclick*=dtab-files]'),'dtab-files');loadDetailFiles('${id}')">Gérer</button>
+          <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${id}')" title="Ajouter un fichier via une URL externe (GitHub Releases, etc.) — utile pour les gros fichiers 3D > 10 Mo">🔗 URL</button>
           <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
             ⬆️ Ajouter
             <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
@@ -9698,6 +9699,97 @@ async function loadDetailFiles(projectId) {
         </div>
       </div>` : ''}
     `}`;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Ajouter un fichier au projet via une URL externe (GitHub Releases,
+// Backblaze, son propre serveur, etc.) — utile pour les fichiers > 10 Mo
+// qui dépassent la limite Cloudinary du plan gratuit.
+// Aucune limite de taille puisque VEM ne télécharge pas le fichier,
+// il enregistre juste l'URL (le viewer 3D ou le navigateur ira chercher
+// le fichier directement à cette URL).
+// ─────────────────────────────────────────────────────────────────
+function showAddFileByUrlModal(projectId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div><div class="modal-title">🔗 Ajouter un fichier via URL</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">Pour les gros fichiers (> 10 Mo) hébergés ailleurs</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="background:rgba(72,149,239,.08);border-left:3px solid var(--blue);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6;">
+        <strong>💡 Comment obtenir une URL pour un gros fichier 3D ?</strong><br>
+        <strong>Méthode recommandée — GitHub Releases</strong> (gratuit, illimité, jusqu'à 2 Go par fichier) :
+        <ol style="margin:6px 0 0 18px;padding:0;">
+          <li>Sur GitHub, crée un repo (peut être privé)</li>
+          <li>Onglet <em>Releases</em> → <em>Draft a new release</em></li>
+          <li>Drag-and-drop ton .glb dans la zone "Attach binaries"</li>
+          <li>Publie la release → clic droit sur le fichier → <em>Copier l'adresse du lien</em></li>
+          <li>Colle l'URL ci-dessous</li>
+        </ol>
+      </div>
+
+      <div class="form-group2">
+        <label class="form-label2">Nom du fichier *</label>
+        <input class="input" id="add-url-name" placeholder="ex: HOKA_2026_July.glb">
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">URL du fichier *</label>
+        <input class="input" id="add-url-url" placeholder="https://github.com/user/repo/releases/download/v1/model.glb">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">L'URL doit pointer directement vers le fichier (pas une page web).</div>
+      </div>
+      <div class="form-group2">
+        <label class="form-label2">Taille approx. (Mo) — optionnel</label>
+        <input class="input" type="number" id="add-url-size" placeholder="16" min="0" step="0.1">
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveFileByUrl('${projectId}', this.closest('.overlay'))">💾 Ajouter au projet</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+async function saveFileByUrl(projectId, overlay) {
+  const fileName = document.getElementById('add-url-name')?.value.trim();
+  const fileUrl  = document.getElementById('add-url-url')?.value.trim();
+  const sizeMo   = parseFloat(document.getElementById('add-url-size')?.value);
+
+  if (!fileName) { toast('Nom du fichier requis', 'error'); return; }
+  if (!fileUrl)  { toast('URL requise', 'error'); return; }
+  if (!/^https?:\/\//.test(fileUrl)) { toast('L\'URL doit commencer par http:// ou https://', 'error'); return; }
+
+  // Déduire le fileType de l'extension du nom
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const mimeMap = {
+    glb:'model/gltf-binary', gltf:'model/gltf+json', stl:'model/stl', obj:'model/obj',
+    pdf:'application/pdf', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
+  };
+  const fileType = mimeMap[ext] || 'application/octet-stream';
+  const fileSize = (!isNaN(sizeMo) && sizeMo > 0) ? Math.round(sizeMo * 1024 * 1024) : null;
+
+  const body = {
+    fileName,
+    fileUrl,
+    fileType,
+    fileSize,
+    publicId: null,           // pas de Cloudinary public_id pour un fichier externe
+    category: 'project',
+  };
+
+  const res = await api('POST', `/projects/${projectId}/files`, body);
+  if (res?.success) {
+    toast(`Fichier "${fileName}" ajouté ✅`, 'success');
+    overlay?.remove();
+    loadProjectDetail(projectId);
+  } else {
+    toast('Erreur : ' + (res?.error || 'inconnue'), 'error');
+  }
 }
 
 async function uploadProjectFiles(projectId, input) {
