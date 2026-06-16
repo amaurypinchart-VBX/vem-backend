@@ -195,6 +195,21 @@ canvas {
   background: rgba(255, 138, 61, 0.95); color: white; border: none;
 }
 .measure-label .axis { font-size: 9px; opacity: 0.7; margin-right: 3px; }
+.measure-label .value {
+  cursor: text; padding: 1px 4px; margin: -1px -4px;
+  border-radius: 3px; transition: background 0.1s;
+}
+.measure-label .value:hover {
+  background: rgba(255,255,255,0.2);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.measure-label .value[contenteditable="true"] {
+  background: rgba(0,0,0,0.5) !important;
+  outline: 1px dashed white;
+  text-decoration: none;
+  min-width: 30px;
+}
 
 #measure-hint {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
@@ -519,6 +534,14 @@ input[type="range"]::-moz-range-thumb {
 
         <div class="info-section">
           <h4>📏 Mesures</h4>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Unité du modèle source</div>
+          <select id="model-unit" style="width:100%;background:var(--bg-3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-size:12px;font-family:inherit;margin-bottom:6px;">
+            <option value="m" selected>Mètres (SketchUp/glTF standard)</option>
+            <option value="cm">Centimètres</option>
+            <option value="mm">Millimètres</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">→ Affichage toujours en <strong>mm</strong></div>
+          <div style="font-size:11px;color:var(--info);background:rgba(167,139,250,0.08);padding:6px 8px;border-radius:4px;margin-bottom:8px;border-left:2px solid var(--info);">💡 Clique directement sur un élément du 3D pour le sélectionner</div>
           <div class="toggle-row">
             <span>Dimensions auto<br><span style="font-size:10px;color:var(--text-dim);">du composant sélectionné</span></span>
             <div class="switch on" id="sw-auto-dim"></div>
@@ -664,13 +687,138 @@ function fmtNum(n) { return Number(n).toLocaleString('fr-FR'); }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-function fmtDim(v) {
-  // Smart dimension formatter: show 2 decimals if small, 1 if medium, 0 if large
-  const a = Math.abs(v);
-  if (a >= 100) return v.toFixed(0);
-  if (a >= 10) return v.toFixed(1);
-  return v.toFixed(2);
+// Unit conversion: model unit → mm display
+const SCALE_TO_MM = { m: 1000, cm: 10, mm: 1 };
+
+function fmtDim(v, withUnit) {
+  if (withUnit === undefined) withUnit = true;
+  const factor = SCALE_TO_MM[(state && state.modelUnit) || 'm'];
+  const mm = v * factor;
+  const a = Math.abs(mm);
+  let s;
+  if (a >= 100) s = mm.toFixed(0);
+  else if (a >= 10) s = mm.toFixed(1);
+  else s = mm.toFixed(2);
+  return withUnit ? s + ' mm' : s;
 }
+
+// Click-to-select on 3D meshes
+function findTreeNodeForMesh(meshIdx) {
+  if (!state.tree || !state.currentModel) return null;
+  const comp = state.currentModel.components[meshIdx];
+  if (!comp || !comp.path) return null;
+  let node = state.tree;
+  for (const seg of comp.path) {
+    if (node.children.has(seg)) node = node.children.get(seg);
+    else return null;
+  }
+  return node;
+}
+
+function expandAncestorsOf(targetNode) {
+  if (!state.tree || !targetNode) return;
+  function findPath(node, target, path) {
+    if (node === target) return path;
+    for (const child of node.children.values()) {
+      const r = findPath(child, target, [...path, node]);
+      if (r) return r;
+    }
+    return null;
+  }
+  const ancestors = findPath(state.tree, targetNode, []);
+  if (ancestors) ancestors.forEach(n => { n.expanded = true; });
+}
+
+function scrollTreeToSelected() {
+  setTimeout(() => {
+    const sel = document.querySelector('.tree-node.selected');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 80);
+}
+
+function handleSceneClick(e) {
+  if (!state.currentModel || state.measureMode) return;
+  const canvasEl = document.getElementById('canvas');
+  const rect = canvasEl.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+  const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
+  const hits = raycaster.intersectObjects(visibleMeshes, false);
+  if (hits.length === 0) {
+    // Clicked empty space → deselect
+    if (state.selectedTreeNode) {
+      state.selectedTreeNode = null;
+      applySelection();
+      updateDimOverlay();
+      buildTree();
+    }
+    return;
+  }
+  const meshIdx = hits[0].object.userData.compIndex;
+  const node = findTreeNodeForMesh(meshIdx);
+  if (!node) return;
+  if (state.selectedTreeNode === node) {
+    state.selectedTreeNode = null;
+  } else {
+    expandAncestorsOf(node);
+    state.selectedTreeNode = node;
+  }
+  applySelection();
+  updateDimOverlay();
+  buildTree();
+  if (state.selectedTreeNode) scrollTreeToSelected();
+}
+
+// Apply unit change: re-render all displays that show dimensions in mm
+function applyUnitChange() {
+  // View-info bar
+  if (state.modelInfo) {
+    const s = state.modelInfo.dimensions;
+    document.getElementById('view-info').textContent =
+      `${state.modelInfo.components} composants · ${fmtNum(state.modelInfo.triangles)} tri · ${fmtDim(s.x, false)}×${fmtDim(s.y, false)}×${fmtDim(s.z, false)} mm`;
+  }
+  // Manual ruler labels
+  state.measurements.forEach(m => {
+    if (m.labelEl) {
+      const v = m.labelEl.querySelector('.value');
+      if (v) v.textContent = fmtDim(m.distance);
+      else m.labelEl.textContent = fmtDim(m.distance);
+    }
+  });
+  // Measurements list
+  if (typeof updateMeasurementList === 'function') updateMeasurementList();
+  // Dim overlay
+  if (state.dimOverlay && typeof updateDimOverlay === 'function') updateDimOverlay();
+}
+
+// Attach handlers when DOM is ready (script runs after HTML, so this is safe)
+(function attachClickAndUnitHandlers() {
+  const canvasEl = document.getElementById('canvas');
+  if (canvasEl) {
+    let dx = 0, dy = 0;
+    canvasEl.addEventListener('mousedown', e => {
+      if (e.button === 0) { dx = e.clientX; dy = e.clientY; }
+    });
+    canvasEl.addEventListener('mouseup', e => {
+      if (e.button !== 0) return;
+      const moved = Math.abs(e.clientX - dx) + Math.abs(e.clientY - dy);
+      if (moved < 5 && !state.measureMode) handleSceneClick(e);
+    });
+  }
+  const unitSel = document.getElementById('model-unit');
+  if (unitSel) {
+    unitSel.addEventListener('change', (e) => {
+      state.modelUnit = e.target.value;
+      applyUnitChange();
+    });
+    // Note: state.modelUnit reste undefined jusqu'au premier change.
+    // fmtDim utilise un fallback 'm' via (state && state.modelUnit) || 'm'.
+  }
+})();
 
 // ============================================================================
 // STATE
@@ -1130,7 +1278,7 @@ function displayModel(components, file, ext, elapsed) {
   buildTree();
   document.getElementById('component-count').textContent = `${components.length} pièces`;
   document.getElementById('view-info').textContent =
-    `${components.length} composants · ${fmtNum(Math.round(totalTris))} tri · ${fmtDim(size.x)}×${fmtDim(size.y)}×${fmtDim(size.z)}`;
+    `${components.length} composants · ${fmtNum(Math.round(totalTris))} tri · ${fmtDim(size.x, false)}×${fmtDim(size.y, false)}×${fmtDim(size.z, false)} mm`;
   document.getElementById('drop-zone').classList.remove('empty');
   document.getElementById('drop-zone').style.display = 'none';
   document.getElementById('btn-ll').disabled = false;
@@ -1369,8 +1517,9 @@ function addMeasurement(p1, p2) {
   // Label
   const labelEl = document.createElement('div');
   labelEl.className = 'measure-label';
-  labelEl.textContent = fmtDim(distance);
+  labelEl.innerHTML = `<span class="value">${fmtDim(distance)}</span>`;
   measureLayer.appendChild(labelEl);
+  makeLabelEditable(labelEl.querySelector('.value'));
   const m = { p1, p2, distance, line, s1, s2, labelEl };
   state.measurements.push(m);
   updateMeasurementList();
@@ -1429,10 +1578,46 @@ function removeDimOverlay() {
   }
 }
 
+// Make a label value editable on double-click (temporary override, just for photos)
+function makeLabelEditable(valueEl) {
+  if (!valueEl) return;
+  valueEl.title = 'Double-clic pour modifier (juste pour la photo)';
+  valueEl.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (valueEl.contentEditable === 'true') return;
+    const original = valueEl.textContent;
+    valueEl.contentEditable = 'true';
+    valueEl.focus();
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(valueEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (err) {}
+    const cleanup = () => {
+      valueEl.contentEditable = 'false';
+      valueEl.removeEventListener('blur', onBlur);
+      valueEl.removeEventListener('keydown', onKey);
+    };
+    const onBlur = () => cleanup();
+    const onKey = (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); valueEl.blur(); }
+      else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        valueEl.textContent = original;
+        valueEl.blur();
+      }
+    };
+    valueEl.addEventListener('blur', onBlur);
+    valueEl.addEventListener('keydown', onKey);
+  });
+}
+
 function updateDimOverlay() {
   removeDimOverlay();
   if (!state.autoDim || !state.selectedTreeNode || !state.currentModel) return;
-  // Compute bounding box of selected node's meshes
   const indices = collectMeshIndices(state.selectedTreeNode);
   if (indices.length === 0) return;
   const box = new THREE.Box3();
@@ -1443,7 +1628,6 @@ function updateDimOverlay() {
   if (box.isEmpty()) return;
   const size = new THREE.Vector3(); box.getSize(size);
   const center = new THREE.Vector3(); box.getCenter(center);
-  // Draw wireframe box
   const boxGeom = new THREE.BoxGeometry(size.x, size.y, size.z);
   const edges = new THREE.EdgesGeometry(boxGeom);
   const mat = new THREE.LineBasicMaterial({ color: 0xff8a3d, depthTest: false, transparent: true, opacity: 0.7 });
@@ -1452,14 +1636,14 @@ function updateDimOverlay() {
   wireBox.renderOrder = 998;
   scene.add(wireBox);
   boxGeom.dispose();
-  // Three labels for W, H, D
   const min = box.min, max = box.max;
   const labels = {};
   const addLabel = (axisName, text, worldPos) => {
     const el = document.createElement('div');
     el.className = 'measure-label dim';
-    el.innerHTML = `<span class="axis">${axisName}</span>${text}`;
+    el.innerHTML = `<span class="axis">${axisName}</span> <span class="value">${text}</span>`;
     measureLayer.appendChild(el);
+    makeLabelEditable(el.querySelector('.value'));
     labels[axisName] = { el, world: worldPos };
   };
   addLabel('L', fmtDim(size.x), new THREE.Vector3((min.x + max.x) / 2, min.y, max.z));
@@ -2079,10 +2263,5 @@ requestAnimationFrame(() => {
 loadRules();
 </script>
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     VEM INTEGRATION — NE PAS RETIRER cette ligne, elle ajoute :
-     - Chargement automatique du modèle depuis ?modelUrl=...
-     - Bouton "💾 Enregistrer sur le projet" dans la galerie
-     Si tu modifies ce viewer ailleurs et le ré-envoies, garde cette ligne.
-     ════════════════════════════════════════════════════════════════════════ -->
+<!-- VEM INTEGRATION — NE PAS RETIRER -->
 <script src="vem-3d-integration.js"></script>
