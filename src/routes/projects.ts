@@ -4,6 +4,7 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { io } from '../index';
+import { notifyTubizeTruckMovement } from '../services/telegramService';
 
 const router = Router();
 
@@ -216,6 +217,17 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
         notes: req.body.notes || null,
       } as any,
     });
+
+    // Notification Telegram si le camion part ou arrive à Tubize (entrepôt Viewbox).
+    // Échoue silencieusement si TELEGRAM_BOT_TOKEN n'est pas configuré.
+    // On ne `await` PAS le résultat pour ne pas bloquer la réponse HTTP au client.
+    prisma.project.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, name: true, internalNumber: true },
+    }).then(project => {
+      if (project) notifyTubizeTruckMovement(truck, project, 'created').catch(() => {});
+    }).catch(() => {});
+
     res.status(201).json({ success: true, data: truck });
   } catch (err) { next(err); }
 });
@@ -233,6 +245,27 @@ router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, nex
       if (req.body[k] !== undefined) data[k] = req.body[k] ? new Date(req.body[k]) : null;
     }
     const truck = await prisma.truck.update({ where: { id: req.params.truckId }, data });
+
+    // Notification Telegram en cas de modification SIGNIFICATIVE :
+    // - changement de la date de chargement (replanification)
+    // - changement du lieu de chargement / déchargement
+    // (un changement de chauffeur ou de notes ne déclenche pas de notif)
+    const significantChange = (
+      data.loadingDate       !== undefined ||
+      data.arrivalDate       !== undefined ||
+      data.loadingLocation   !== undefined ||
+      data.unloadingLocation !== undefined ||
+      data.status            !== undefined
+    );
+    if (significantChange) {
+      prisma.project.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, name: true, internalNumber: true },
+      }).then(project => {
+        if (project) notifyTubizeTruckMovement(truck, project, 'updated').catch(() => {});
+      }).catch(() => {});
+    }
+
     res.json({ success: true, data: truck });
   } catch (err) { next(err); }
 });
