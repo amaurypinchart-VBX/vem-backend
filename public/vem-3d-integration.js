@@ -2,13 +2,14 @@
 // VEM Integration pour le viewer 3D
 // ════════════════════════════════════════════════════════════════════════
 // Chargé en fin de viewer3d.html via <script src>. Gère :
-//   1. Auto-chargement depuis ?modelUrl=...
+//   1. Auto-chargement depuis ?modelUrl=... (+ décompression Draco auto)
 //   2. Affichage du nom de projet dans le header
 //   3. Bouton "💾 Sauver sur VEM" sur chaque capture
 //   4. Bouton "💾 Tout sauver sur VEM" dans le footer galerie
 //
-// Compatibilité : utilise UNIQUEMENT window.loadFile (déclaré en `function`,
-// donc accessible). N'accède PAS à state qui est `const` (non-global).
+// Le viewer custom (parseGLB) ne supporte ni Draco ni Meshopt. On les détecte
+// dans le fichier reçu et on les décompresse côté browser avant de passer
+// au viewer, en utilisant GLTFLoader + DRACOLoader + GLTFExporter de three.js.
 // ════════════════════════════════════════════════════════════════════════
 
 (function() {
@@ -40,6 +41,86 @@
     });
   }
 
+  // ─── Détection Draco / Meshopt dans un GLB ─────────────────────────
+  function detectCompressionFromGLB(arrayBuffer) {
+    try {
+      const dv = new DataView(arrayBuffer);
+      const magic = dv.getUint32(0, true);
+      if (magic !== 0x46546C67) return { draco: false, meshopt: false }; // pas un GLB
+      const jsonLength = dv.getUint32(12, true);
+      const jsonStart = 20;
+      const jsonBytes = new Uint8Array(arrayBuffer, jsonStart, jsonLength);
+      const json = JSON.parse(new TextDecoder().decode(jsonBytes));
+      const used = json.extensionsUsed || [];
+      return {
+        draco:   used.includes('KHR_draco_mesh_compression'),
+        meshopt: used.includes('EXT_meshopt_compression'),
+      };
+    } catch (e) {
+      console.warn('[VEM] Détection compression échouée :', e);
+      return { draco: false, meshopt: false };
+    }
+  }
+
+  // ─── Chargement dynamique des libs three.js examples ───────────────
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[src="' + src + '"]');
+      if (existing) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load ' + src));
+      document.head.appendChild(s);
+    });
+  }
+
+  let _libsLoaded = false;
+  async function loadDecompressionLibs() {
+    if (_libsLoaded) return;
+    // three.js r128 examples/js (UMD classique, ajoute à THREE globalement)
+    const base = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js';
+    await loadScript(base + '/loaders/GLTFLoader.js');
+    await loadScript(base + '/loaders/DRACOLoader.js');
+    await loadScript(base + '/libs/meshopt_decoder.js');
+    await loadScript(base + '/exporters/GLTFExporter.js');
+    _libsLoaded = true;
+    console.log('[VEM] Libs Draco/Meshopt/GLTFExporter chargées');
+  }
+
+  // ─── Décompression d'un GLB compressé vers un GLB non compressé ────
+  async function decompressGLB(arrayBuffer) {
+    await loadDecompressionLibs();
+    if (!window.THREE || !window.THREE.GLTFLoader) {
+      throw new Error('GLTFLoader indisponible');
+    }
+    const loader = new window.THREE.GLTFLoader();
+    if (window.THREE.DRACOLoader) {
+      const draco = new window.THREE.DRACOLoader();
+      draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+      loader.setDRACOLoader(draco);
+    }
+    if (window.MeshoptDecoder) {
+      loader.setMeshoptDecoder(window.MeshoptDecoder);
+    }
+    // 1. Parser le GLB compressé
+    const gltf = await new Promise((resolve, reject) => {
+      loader.parse(arrayBuffer, '', resolve, reject);
+    });
+    console.log('[VEM] GLB compressé parsé OK, ré-export en cours...');
+    // 2. Ré-exporter en GLB binaire sans compression
+    const exporter = new window.THREE.GLTFExporter();
+    const out = await new Promise((resolve, reject) => {
+      try {
+        exporter.parse(gltf.scene, resolve, { binary: true, embedImages: true });
+      } catch (e) { reject(e); }
+    });
+    if (!(out instanceof ArrayBuffer)) {
+      throw new Error('GLTFExporter n\'a pas renvoyé un ArrayBuffer (compression non décompressée ?)');
+    }
+    return out;
+  }
+
   function injectProjectBadge() {
     if (!projectName) return;
     const brandSub = document.querySelector('.brand-sub');
@@ -48,19 +129,35 @@
     }
   }
 
+  // ─── Chargement auto depuis URL avec décompression si besoin ───────
   async function autoLoadFromUrl(url) {
     try {
       console.log('[VEM] Téléchargement :', url);
       if (typeof window.setStatus === 'function') window.setStatus('📥 Téléchargement depuis VEM...', 'info');
       const r = await fetch(url);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const blob = await r.blob();
-      console.log('[VEM] Blob reçu :', blob.size, 'bytes');
+      let arrayBuffer = await r.arrayBuffer();
+      console.log('[VEM] Reçu :', arrayBuffer.byteLength, 'bytes');
+
+      // Détection de compression et décompression si besoin
+      const comp = detectCompressionFromGLB(arrayBuffer);
+      if (comp.draco || comp.meshopt) {
+        console.log('[VEM] Compression détectée :', comp.draco ? 'Draco' : '', comp.meshopt ? 'Meshopt' : '');
+        if (typeof window.setStatus === 'function') {
+          window.setStatus('🔧 Décompression ' + (comp.draco ? 'Draco' : 'Meshopt') + ' en cours...', 'info');
+        }
+        const decompressed = await decompressGLB(arrayBuffer);
+        console.log('[VEM] Décompression OK :', arrayBuffer.byteLength, '→', decompressed.byteLength, 'bytes');
+        arrayBuffer = decompressed;
+      }
+
+      // Construire un File et appeler le loadFile du viewer
       let filename = (url.split('/').pop() || 'model').split('?')[0] || 'model.glb';
       try { filename = decodeURIComponent(filename); } catch {}
       const ext = filename.split('.').pop().toLowerCase();
       if (!['glb','gltf','stl','obj'].includes(ext)) filename = filename + '.glb';
-      const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+      const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+      const file = new File([blob], filename, { type: blob.type });
       await window.loadFile(file);
       console.log('[VEM] ✅ Modèle chargé');
     } catch (e) {
@@ -70,6 +167,7 @@
     }
   }
 
+  // ─── Sauvegarde sur projet ─────────────────────────────────────────
   async function uploadBlobToProject(blob, filename) {
     const file = new File([blob], filename, { type: 'image/png' });
     const fd = new FormData();
