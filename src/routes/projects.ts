@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { io } from '../index';
 import { notifyTubizeTruckMovement } from '../services/telegramService';
+import { createWarehouseTask } from '../services/warehouseAppService';
 
 const router = Router();
 
@@ -218,14 +219,16 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
       } as any,
     });
 
-    // Notification Telegram si le camion part ou arrive à Tubize (entrepôt Viewbox).
-    // Échoue silencieusement si TELEGRAM_BOT_TOKEN n'est pas configuré.
-    // On ne `await` PAS le résultat pour ne pas bloquer la réponse HTTP au client.
+    // Notification Telegram + création task dans EntrepôtApp si Tubize.
+    // Échoue silencieusement si non configuré (logs warning).
+    // Fire-and-forget pour ne pas bloquer la réponse HTTP.
     prisma.project.findUnique({
       where: { id: req.params.id },
-      select: { id: true, name: true, internalNumber: true },
+      select: { id: true, name: true, internalNumber: true, address: true },
     }).then(project => {
-      if (project) notifyTubizeTruckMovement(truck, project, 'created').catch(() => {});
+      if (!project) return;
+      notifyTubizeTruckMovement(truck, project, 'created').catch(() => {});
+      createWarehouseTask(truck, project).catch(() => {});
     }).catch(() => {});
 
     res.status(201).json({ success: true, data: truck });
