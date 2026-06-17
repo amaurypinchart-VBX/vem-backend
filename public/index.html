@@ -5279,8 +5279,8 @@ async function editDailyReport(id) {
       <div style="margin:14px 0 10px;display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">⏱️ Journal</div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('edit-ai-panel').style.display=document.getElementById('edit-ai-panel').style.display==='none'?'block':'none'">🤖 Assistant IA</button>
-          <button class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
+          <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('edit-ai-panel').style.display=document.getElementById('edit-ai-panel').style.display==='none'?'block':'none'">🤖 Assistant IA</button>
+          <button type="button" class="btn btn-ghost btn-xs" onclick="addEditEntry()">+ Ajouter une ligne</button>
         </div>
       </div>
 
@@ -5303,7 +5303,7 @@ async function editDailyReport(id) {
         <textarea id="edit-ai-raw" rows="3" placeholder="Colle ton texte ici (ou laisse la transcription audio le remplir)..." style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;"></textarea>
 
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
-          <button class="btn btn-primary btn-sm" onclick="editDailyAddFromAI()">🤖 Analyser & Ajouter au journal</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="editDailyAddFromAI()">🤖 Analyser & Ajouter au journal</button>
           <span id="edit-ai-status" style="font-size:11px;color:var(--text3);"></span>
         </div>
       </div>
@@ -5335,9 +5335,9 @@ async function editDailyReport(id) {
       </div>
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button type="button" class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -5353,10 +5353,10 @@ function renderEditEntries() {
     return;
   }
   list.innerHTML = window._EDIT_ENTRIES.map((e, i) => `
-    <div style="display:flex;gap:8px;align-items:center;background:var(--bg3);border-radius:8px;padding:8px 10px;">
-      <input type="time" value="${e.entryTime||''}" onchange="window._EDIT_ENTRIES[${i}].entryTime=this.value"
+    <div style="display:flex;gap:8px;align-items:center;background:var(--bg3);border-radius:8px;padding:8px 10px;" data-entry-idx="${i}">
+      <input type="time" value="${e.entryTime||''}" oninput="window._EDIT_ENTRIES[${i}].entryTime=this.value"
         style="width:80px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:monospace;flex-shrink:0;">
-      <input value="${(e.description||'').replace(/"/g,'&quot;')}" onchange="window._EDIT_ENTRIES[${i}].description=this.value"
+      <input class="entry-desc" value="${(e.description||'').replace(/"/g,'&quot;')}" oninput="window._EDIT_ENTRIES[${i}].description=this.value" placeholder="Description"
         style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border);padding:4px 2px;color:var(--text);font-size:13px;"
         placeholder="Description...">
       <button onclick="window._EDIT_ENTRIES.splice(${i},1);renderEditEntries()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:16px;flex-shrink:0;">✕</button>
@@ -5576,16 +5576,18 @@ async function deleteDailyPhotoFromView(reportId, photoId, projectId, btnEl) {
 }
 
 async function saveDailyReport(id, overlay) {
-  // Collect current values from DOM before saving
-  const entriesEls = document.querySelectorAll('#edit-entries-list > div');
+  // Collect current values from DOM before saving — on relit le DOM au cas où
+  // les `oninput` n'auraient pas tous déclenché (notamment sur mobile lors d'un
+  // tap rapide sur Sauvegarder sans blur des inputs).
+  const entriesEls = document.querySelectorAll('#edit-entries-list > div[data-entry-idx]');
   if (entriesEls.length && window._EDIT_ENTRIES) {
-    entriesEls.forEach((div, i) => {
+    entriesEls.forEach((div) => {
+      const i = parseInt(div.dataset.entryIdx);
+      if (isNaN(i) || !window._EDIT_ENTRIES[i]) return;
       const timeInput = div.querySelector('input[type="time"]');
-      const descInput = div.querySelector('input[placeholder]');
-      if (window._EDIT_ENTRIES[i]) {
-        if (timeInput) window._EDIT_ENTRIES[i].entryTime = timeInput.value;
-        if (descInput) window._EDIT_ENTRIES[i].description = descInput.value;
-      }
+      const descInput = div.querySelector('input.entry-desc');
+      if (timeInput) window._EDIT_ENTRIES[i].entryTime = timeInput.value;
+      if (descInput) window._EDIT_ENTRIES[i].description = descInput.value;
     });
   }
 
