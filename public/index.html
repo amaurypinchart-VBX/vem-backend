@@ -7,6 +7,7 @@
 <title>VEM — ViewBox Event Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
 <style>
 :root{
   --bg:#0a0c10;--bg2:#111318;--bg3:#1a1d24;--bg4:#22262f;
@@ -12106,6 +12107,18 @@ async function loadDetailBriefing(projectId) {
   if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
 
   CURRENT_BRIEFING = briefRes.data;
+  const rawSlides = CURRENT_BRIEFING.slides;
+
+  // ─── Détection du format Studio (v2) ─────────────────────────
+  // Ancien format : slides = array de { title, blocks: [...] }
+  // Nouveau format Studio : slides = { version: 2, logoUrl, slides: [{ id, name, json }] }
+  if (rawSlides && typeof rawSlides === 'object' && !Array.isArray(rawSlides) && rawSlides.version === 2) {
+    // Affiche un écran d'accueil avec bouton "Ouvrir Studio"
+    el.innerHTML = renderBriefingStudioWelcome(rawSlides, projectId);
+    return;
+  }
+
+  // ─── Format classique (anciens briefings ou nouveaux vides) ──
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
   CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
 
@@ -12115,6 +12128,27 @@ async function loadDetailBriefing(projectId) {
 
   CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
   renderBriefing();
+}
+
+function renderBriefingStudioWelcome(studioData, projectId) {
+  const nb = (studioData.slides || []).length;
+  return `
+    <div style="background:linear-gradient(135deg,#0a2540 0%,#1a3a60 100%);color:#fff;border-radius:14px;padding:32px;text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">🎨</div>
+      <div style="font-size:22px;font-weight:700;margin-bottom:6px;">Briefing Studio</div>
+      <div style="font-size:13px;opacity:.8;margin-bottom:20px;">${studioData.title || 'Briefing'} · ${nb} slide${nb>1?'s':''}</div>
+      <button class="btn btn-primary" onclick="openBriefingStudio(${JSON.stringify(studioData).replace(/"/g, '&quot;')})" style="font-size:14px;padding:10px 24px;">
+        ✏️ Ouvrir le Studio
+      </button>
+      <div style="font-size:11px;opacity:.6;margin-top:14px;">Éditeur visuel type Canva : texte, images, formes et flèches en drag-and-drop.</div>
+      <button class="btn btn-ghost btn-sm" onclick="briefingStudioRevertToClassic('${projectId}')" style="color:#fff;opacity:.5;margin-top:12px;font-size:11px;">↩︎ Revenir au mode classique</button>
+    </div>`;
+}
+
+async function briefingStudioRevertToClassic(projectId) {
+  if (!confirm('Revenir au mode classique ? Vos slides Studio seront perdues.')) return;
+  await api('PATCH', `/briefings/${projectId}`, { title: 'Briefing', slides: [] });
+  loadDetailBriefing(projectId);
 }
 
 function renderBriefing() {
@@ -12127,6 +12161,7 @@ function renderBriefing() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
       <input class="input" id="brf-title" placeholder="Titre du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:320px;" onchange="CURRENT_BRIEFING.title=this.value">
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" onclick="briefingStudioStart()" title="Nouveau mode : éditeur visuel type Canva" style="background:linear-gradient(135deg,#0a2540,#1a3a60);color:#fff;border:none;">🎨 Studio</button>
         <button class="btn btn-outline btn-sm" onclick="printBriefing()">🖨️ Imprimer</button>
         <button class="btn btn-primary btn-sm" onclick="saveBriefing()">💾 Enregistrer</button>
       </div>
@@ -12858,6 +12893,449 @@ function pickThisContact(slideIdx, bi, contactData) {
   // Fermer la modal et rafraîchir
   document.querySelector('.overlay.open')?.remove();
   renderBriefing();
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 🎨 BRIEFING STUDIO — Éditeur visuel canvas (Canva-like)
+// ═══════════════════════════════════════════════════════════
+// Stack : Fabric.js 5.x (canvas + drag/resize/rotate) + jsPDF (export)
+// Stocké dans le même modèle Briefing, dans le champ `slides` JSON
+// avec un objet { version: 2, logoUrl, slides: [{id, name, json}] }.
+
+const BRF_STUDIO_VERSION = 2;
+const BRF_CANVAS_W = 1280;
+const BRF_CANVAS_H = 720;
+let BRF_STUDIO = null;
+
+// Démarre un nouveau briefing Studio (depuis le mode classique)
+function briefingStudioStart() {
+  if (CURRENT_BRIEFING?.slides?.length > 0) {
+    if (!confirm('Passer en mode Studio ? Vos slides classiques resteront sauvegardées en parallèle mais ne seront pas visibles dans le Studio.')) return;
+  }
+  openBriefingStudio({
+    version: BRF_STUDIO_VERSION,
+    title: CURRENT_BRIEFING?.title || 'Briefing',
+    logoUrl: null,
+    slides: [{ id: 'slide-' + Date.now(), name: 'Slide 1', json: null }],
+  });
+}
+
+async function openBriefingStudio(initialData) {
+  if (typeof fabric === 'undefined') {
+    toast('Chargement Fabric.js...', 'info');
+    await new Promise(r => {
+      const check = () => (typeof fabric !== 'undefined') ? r() : setTimeout(check, 100);
+      check();
+    });
+  }
+
+  BRF_STUDIO = {
+    fabricCanvas: null,
+    slides: Array.isArray(initialData?.slides) && initialData.slides.length
+      ? initialData.slides
+      : [{ id: 'slide-' + Date.now(), name: 'Slide 1', json: null }],
+    curIdx: 0,
+    logoUrl: initialData?.logoUrl || null,
+    title: initialData?.title || 'Briefing',
+    projectId: CURRENT_PROJECT_ID,
+  };
+
+  const overlay = document.createElement('div');
+  overlay.id = 'brf-studio-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#1a1a1a;color:#eee;z-index:10000;display:flex;flex-direction:column;';
+  overlay.innerHTML = buildStudioHTML();
+  document.body.appendChild(overlay);
+
+  // Init Fabric canvas
+  BRF_STUDIO.fabricCanvas = new fabric.Canvas('brf-studio-canvas', {
+    width: BRF_CANVAS_W,
+    height: BRF_CANVAS_H,
+    backgroundColor: '#ffffff',
+    selection: true,
+    preserveObjectStacking: true,
+  });
+
+  loadSlideIntoCanvas(0);
+  renderStudioSidebar();
+  resizeStudioCanvas();
+  window.addEventListener('resize', resizeStudioCanvas);
+  document.addEventListener('keydown', handleStudioKeydown);
+}
+
+function buildStudioHTML() {
+  return `
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#0f0f0f;border-bottom:1px solid #333;flex-wrap:wrap;">
+      <strong style="font-size:14px;">🎨 Briefing Studio</strong>
+      <input id="brf-st-title" value="${(BRF_STUDIO?.title||'Briefing').replace(/"/g,'&quot;')}"
+        style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font-size:13px;max-width:280px;"
+        oninput="BRF_STUDIO.title=this.value">
+      <div style="flex:1;"></div>
+      <button class="btn btn-outline btn-sm" onclick="briefingStudioExportPDF(this)" style="border-color:#666;color:#eee;background:#222;">📄 PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="briefingStudioSave()">💾 Sauvegarder</button>
+      <button onclick="briefingStudioClose()" style="background:transparent;color:#eee;border:none;font-size:22px;cursor:pointer;padding:0 8px;">✕</button>
+    </div>
+
+    <!-- Toolbar -->
+    <div style="display:flex;align-items:center;gap:4px;padding:6px 16px;background:#161616;border-bottom:1px solid #333;flex-wrap:wrap;">
+      <button class="brf-tbtn" onclick="brfAddText()" title="Ajouter du texte">📝 Texte</button>
+      <button class="brf-tbtn" onclick="brfAddTitle()" title="Ajouter un titre">🔤 Titre</button>
+      <button class="brf-tbtn" onclick="document.getElementById('brf-image-input').click()" title="Image">🖼️ Image</button>
+      <input type="file" id="brf-image-input" accept="image/*" style="display:none;" onchange="brfAddImage(this.files[0]);this.value='';">
+      <span class="brf-sep"></span>
+      <button class="brf-tbtn" onclick="brfAddRect()" title="Rectangle">▭</button>
+      <button class="brf-tbtn" onclick="brfAddCircle()" title="Cercle">⭕</button>
+      <button class="brf-tbtn" onclick="brfAddLine()" title="Ligne">— Ligne</button>
+      <button class="brf-tbtn" onclick="brfAddArrow()" title="Flèche">➜ Flèche</button>
+      <span class="brf-sep"></span>
+      <button class="brf-tbtn" onclick="brfBringForward()" title="Avancer">⬆</button>
+      <button class="brf-tbtn" onclick="brfSendBack()" title="Reculer">⬇</button>
+      <button class="brf-tbtn" onclick="brfDuplicateSel()" title="Dupliquer">⎘</button>
+      <button class="brf-tbtn" onclick="brfDeleteSel()" title="Supprimer (Suppr)" style="color:#e63946;">🗑️</button>
+      <span class="brf-sep"></span>
+      <label style="font-size:11px;color:#aaa;">Couleur :</label>
+      <input type="color" id="brf-color" value="#222222" onchange="brfApplyColor(this.value)" style="width:28px;height:24px;border:none;cursor:pointer;background:transparent;">
+      <label style="font-size:11px;color:#aaa;margin-left:6px;">Taille :</label>
+      <input type="number" id="brf-fontsize" value="24" min="8" max="120" onchange="brfApplyFontSize(this.value)" style="width:50px;font-size:11px;padding:3px 6px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;">
+      <button class="brf-tbtn" onclick="brfToggleBold()" title="Gras"><b>B</b></button>
+      <button class="brf-tbtn" onclick="brfToggleItalic()" title="Italique"><i>I</i></button>
+      <span class="brf-sep"></span>
+      <button class="brf-tbtn" onclick="document.getElementById('brf-logo-input').click()" title="Définir un logo en arrière-plan">📌 Logo</button>
+      <input type="file" id="brf-logo-input" accept="image/*" style="display:none;" onchange="brfSetLogo(this.files[0]);this.value='';">
+      ${BRF_STUDIO?.logoUrl ? '<button class="brf-tbtn" onclick="brfRemoveLogo()" title="Retirer le logo" style="color:#e63946;">×</button>' : ''}
+    </div>
+
+    <style>
+      .brf-tbtn { background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;}
+      .brf-tbtn:hover { background:#333; }
+      .brf-sep { border-left:1px solid #444; padding-left:6px; margin-left:2px; height:18px; display:inline-block;}
+    </style>
+
+    <!-- Main area -->
+    <div style="display:flex;flex:1;overflow:hidden;">
+      <!-- Sidebar -->
+      <div style="width:200px;background:#0f0f0f;border-right:1px solid #333;display:flex;flex-direction:column;">
+        <div style="padding:8px 12px;border-bottom:1px solid #333;font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;">Slides</div>
+        <div id="brf-st-sidebar" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;"></div>
+        <div style="padding:8px;border-top:1px solid #333;">
+          <button class="btn btn-primary btn-sm" style="width:100%;" onclick="brfAddSlide()">+ Nouvelle slide</button>
+        </div>
+      </div>
+
+      <!-- Canvas -->
+      <div id="brf-st-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;background:#222;overflow:auto;padding:20px;">
+        <div id="brf-st-canvas-container" style="position:relative;box-shadow:0 4px 24px rgba(0,0,0,0.6);background:#fff;">
+          <canvas id="brf-studio-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function resizeStudioCanvas() {
+  if (!BRF_STUDIO?.fabricCanvas) return;
+  const wrap = document.getElementById('brf-st-wrap');
+  if (!wrap) return;
+  const availW = wrap.clientWidth - 40;
+  const availH = wrap.clientHeight - 40;
+  let scale = Math.min(availW / BRF_CANVAS_W, availH / BRF_CANVAS_H);
+  scale = Math.min(scale, 1);
+  // Fabric : on garde les coords internes 1280×720 mais on adapte l'affichage CSS
+  BRF_STUDIO.fabricCanvas.setDimensions({ width: BRF_CANVAS_W * scale, height: BRF_CANVAS_H * scale }, { cssOnly: true });
+  BRF_STUDIO.fabricCanvas.setDimensions({ width: BRF_CANVAS_W, height: BRF_CANVAS_H }, { backstoreOnly: true });
+}
+
+function handleStudioKeydown(e) {
+  if (!document.getElementById('brf-studio-overlay')) {
+    document.removeEventListener('keydown', handleStudioKeydown);
+    return;
+  }
+  const t = e.target;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+  if (BRF_STUDIO?.fabricCanvas?.getActiveObject() && (e.key === 'Delete' || e.key === 'Backspace')) {
+    // Don't delete if editing text inline
+    if (BRF_STUDIO.fabricCanvas.getActiveObject().isEditing) return;
+    e.preventDefault();
+    brfDeleteSel();
+  }
+}
+
+// ─── Ajout d'objets ───
+function brfAddText() {
+  const t = new fabric.IText('Texte...', { left:120, top:120, fontSize:24, fontFamily:'Helvetica', fill:'#222' });
+  BRF_STUDIO.fabricCanvas.add(t).setActiveObject(t);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfAddTitle() {
+  const t = new fabric.IText('Titre principal', { left:80, top:60, fontSize:54, fontFamily:'Helvetica', fontWeight:'bold', fill:'#0a2540' });
+  BRF_STUDIO.fabricCanvas.add(t).setActiveObject(t);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+async function brfAddImage(file) {
+  if (!file) return;
+  toast('Upload...', 'info');
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+      method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const url = data?.data?.fileUrl;
+    if (!url) throw new Error('Pas d\'URL renvoyée');
+    fabric.Image.fromURL(url, img => {
+      const maxW = 600;
+      if (img.width > maxW) img.scaleToWidth(maxW);
+      img.set({ left:200, top:150 });
+      BRF_STUDIO.fabricCanvas.add(img).setActiveObject(img);
+      BRF_STUDIO.fabricCanvas.requestRenderAll();
+      toast('Image ajoutée', 'success');
+    }, { crossOrigin: 'anonymous' });
+  } catch (e) {
+    toast('Échec upload : ' + e.message, 'error');
+  }
+}
+function brfAddRect() {
+  const r = new fabric.Rect({ left:200, top:200, width:240, height:140, fill:'#e63946', opacity:0.85, rx:4, ry:4 });
+  BRF_STUDIO.fabricCanvas.add(r).setActiveObject(r);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfAddCircle() {
+  const c = new fabric.Circle({ left:250, top:200, radius:70, fill:'#4895ef', opacity:0.85 });
+  BRF_STUDIO.fabricCanvas.add(c).setActiveObject(c);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfAddLine() {
+  const l = new fabric.Line([100, 200, 400, 200], { stroke:'#222', strokeWidth:4, originX:'center', originY:'center' });
+  BRF_STUDIO.fabricCanvas.add(l).setActiveObject(l);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfAddArrow() {
+  // Flèche horizontale = ligne + triangle
+  const line = new fabric.Line([0, 12, 180, 12], { stroke:'#e63946', strokeWidth:4 });
+  const tri  = new fabric.Triangle({ left:184, top:12, width:20, height:24, fill:'#e63946', angle:90, originX:'center', originY:'center' });
+  const grp = new fabric.Group([line, tri], { left:200, top:300 });
+  BRF_STUDIO.fabricCanvas.add(grp).setActiveObject(grp);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+
+function brfBringForward(){ const o=BRF_STUDIO.fabricCanvas.getActiveObject(); if(o){BRF_STUDIO.fabricCanvas.bringForward(o);BRF_STUDIO.fabricCanvas.requestRenderAll();}}
+function brfSendBack(){ const o=BRF_STUDIO.fabricCanvas.getActiveObject(); if(o){BRF_STUDIO.fabricCanvas.sendBackwards(o);BRF_STUDIO.fabricCanvas.requestRenderAll();}}
+function brfDuplicateSel(){
+  const o=BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
+  o.clone(c => { c.set({ left:(c.left||0)+24, top:(c.top||0)+24 }); BRF_STUDIO.fabricCanvas.add(c).setActiveObject(c); BRF_STUDIO.fabricCanvas.requestRenderAll(); });
+}
+function brfDeleteSel(){
+  const objs = BRF_STUDIO.fabricCanvas.getActiveObjects();
+  if (!objs?.length) return;
+  objs.forEach(o => BRF_STUDIO.fabricCanvas.remove(o));
+  BRF_STUDIO.fabricCanvas.discardActiveObject();
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfApplyColor(color){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
+  if (o.type==='i-text' || o.type==='text') o.set('fill', color);
+  else if (o.type==='line') o.set('stroke', color);
+  else if (o.type==='group') {
+    o.getObjects().forEach(sub => {
+      if (sub.type==='line') sub.set('stroke', color);
+      else sub.set('fill', color);
+    });
+    o.dirty = true;
+  } else {
+    o.set('fill', color);
+  }
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfApplyFontSize(size){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
+  if (o.type==='i-text' || o.type==='text') { o.set('fontSize', parseInt(size, 10) || 24); BRF_STUDIO.fabricCanvas.requestRenderAll(); }
+}
+function brfToggleBold(){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o || (o.type!=='i-text'&&o.type!=='text')) return;
+  o.set('fontWeight', o.fontWeight==='bold' ? 'normal' : 'bold');
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfToggleItalic(){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o || (o.type!=='i-text'&&o.type!=='text')) return;
+  o.set('fontStyle', o.fontStyle==='italic' ? 'normal' : 'italic');
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+
+// ─── Logo en background ───
+async function brfSetLogo(file) {
+  if (!file) return;
+  toast('Upload du logo...', 'info');
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+      method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const url = data?.data?.fileUrl;
+    if (!url) throw new Error('Pas d\'URL');
+    BRF_STUDIO.logoUrl = url;
+    applyLogoBackground();
+    // Refresh toolbar to show "remove" button
+    document.getElementById('brf-studio-overlay').querySelector('.brf-sep:last-of-type').nextElementSibling?.nextElementSibling?.remove();
+    toast('Logo défini ✅ (en filigrane sur toutes les slides)', 'success');
+  } catch (e) {
+    toast('Échec : ' + e.message, 'error');
+  }
+}
+function brfRemoveLogo() {
+  if (!confirm('Retirer le logo de fond ?')) return;
+  BRF_STUDIO.logoUrl = null;
+  applyLogoBackground();
+  toast('Logo retiré', 'info');
+}
+function applyLogoBackground() {
+  if (!BRF_STUDIO?.fabricCanvas) return;
+  if (!BRF_STUDIO.logoUrl) {
+    BRF_STUDIO.fabricCanvas.setBackgroundImage(null, () => BRF_STUDIO.fabricCanvas.renderAll());
+    return;
+  }
+  fabric.Image.fromURL(BRF_STUDIO.logoUrl, img => {
+    img.scaleToWidth(BRF_CANVAS_W * 0.20);
+    img.set({
+      left: BRF_CANVAS_W - img.getScaledWidth() - 30,
+      top:  BRF_CANVAS_H - img.getScaledHeight() - 30,
+      opacity: 0.25,
+      selectable: false, evented: false,
+    });
+    BRF_STUDIO.fabricCanvas.setBackgroundImage(img, () => BRF_STUDIO.fabricCanvas.renderAll());
+  }, { crossOrigin: 'anonymous' });
+}
+
+// ─── Gestion des slides ───
+function brfAddSlide() {
+  saveCurrentSlideJson();
+  BRF_STUDIO.slides.push({ id:'slide-'+Date.now(), name:'Slide '+(BRF_STUDIO.slides.length+1), json:null });
+  BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+  loadSlideIntoCanvas(BRF_STUDIO.curIdx);
+  renderStudioSidebar();
+}
+function brfSelectSlide(idx) {
+  saveCurrentSlideJson();
+  BRF_STUDIO.curIdx = idx;
+  loadSlideIntoCanvas(idx);
+  renderStudioSidebar();
+}
+function brfDeleteSlide(idx) {
+  if (BRF_STUDIO.slides.length <= 1) { toast('Au moins une slide doit rester', 'warning'); return; }
+  if (!confirm('Supprimer la slide "' + (BRF_STUDIO.slides[idx].name || '') + '" ?')) return;
+  BRF_STUDIO.slides.splice(idx, 1);
+  if (BRF_STUDIO.curIdx >= BRF_STUDIO.slides.length) BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+  loadSlideIntoCanvas(BRF_STUDIO.curIdx);
+  renderStudioSidebar();
+}
+function brfMoveSlide(idx, dir) {
+  saveCurrentSlideJson();
+  const ni = idx + dir;
+  if (ni < 0 || ni >= BRF_STUDIO.slides.length) return;
+  [BRF_STUDIO.slides[idx], BRF_STUDIO.slides[ni]] = [BRF_STUDIO.slides[ni], BRF_STUDIO.slides[idx]];
+  if (BRF_STUDIO.curIdx === idx) BRF_STUDIO.curIdx = ni;
+  else if (BRF_STUDIO.curIdx === ni) BRF_STUDIO.curIdx = idx;
+  renderStudioSidebar();
+}
+
+function saveCurrentSlideJson() {
+  if (!BRF_STUDIO?.fabricCanvas) return;
+  const json = BRF_STUDIO.fabricCanvas.toJSON();
+  delete json.backgroundImage; // appliqué séparément depuis logoUrl
+  if (BRF_STUDIO.slides[BRF_STUDIO.curIdx]) BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
+}
+
+function loadSlideIntoCanvas(idx) {
+  const slide = BRF_STUDIO.slides[idx];
+  if (!slide || !BRF_STUDIO.fabricCanvas) return;
+  BRF_STUDIO.fabricCanvas.clear();
+  BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => BRF_STUDIO.fabricCanvas.renderAll());
+  if (slide.json) {
+    BRF_STUDIO.fabricCanvas.loadFromJSON(slide.json, () => {
+      applyLogoBackground();
+      BRF_STUDIO.fabricCanvas.renderAll();
+    });
+  } else {
+    applyLogoBackground();
+  }
+}
+
+function renderStudioSidebar() {
+  const sb = document.getElementById('brf-st-sidebar');
+  if (!sb) return;
+  sb.innerHTML = BRF_STUDIO.slides.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:2px;padding:6px;background:${i===BRF_STUDIO.curIdx?'#2a1518':'#1a1a1a'};border:1px solid ${i===BRF_STUDIO.curIdx?'#e63946':'#333'};border-radius:6px;cursor:pointer;" onclick="brfSelectSlide(${i})">
+      <span style="font-size:11px;color:#aaa;min-width:18px;">${i+1}.</span>
+      <input value="${(s.name||'').replace(/"/g,'&quot;')}"
+        style="flex:1;min-width:0;background:transparent;border:none;color:#eee;font-size:12px;padding:2px 4px;outline:none;"
+        onclick="event.stopPropagation();" oninput="BRF_STUDIO.slides[${i}].name=this.value">
+      <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},-1)" title="Monter">▲</button>
+      <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},1)" title="Descendre">▼</button>
+      <button style="background:transparent;border:none;color:#e63946;cursor:pointer;padding:0 4px;font-size:14px;" onclick="event.stopPropagation();brfDeleteSlide(${i})" title="Supprimer">×</button>
+    </div>
+  `).join('');
+}
+
+// ─── Save / Export / Close ───
+async function briefingStudioSave() {
+  saveCurrentSlideJson();
+  const payload = {
+    title: BRF_STUDIO.title || 'Briefing',
+    slides: {
+      version: BRF_STUDIO_VERSION,
+      logoUrl: BRF_STUDIO.logoUrl || null,
+      title:   BRF_STUDIO.title || 'Briefing',
+      slides:  BRF_STUDIO.slides,
+    },
+  };
+  const res = await api('PATCH', `/briefings/${BRF_STUDIO.projectId}`, payload);
+  if (res?.success) toast('Briefing sauvegardé ✅', 'success');
+  else toast('Échec sauvegarde', 'error');
+}
+
+async function briefingStudioExportPDF(btn) {
+  saveCurrentSlideJson();
+  if (!window.jspdf) { toast('jsPDF non chargé', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const orig = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Export...'; }
+  try {
+    const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const pageW = 297, pageH = 210;
+    const imgW = pageW;
+    const imgH = pageW * (BRF_CANVAS_H / BRF_CANVAS_W);
+    const offsetY = (pageH - imgH) / 2;
+    const curIdx = BRF_STUDIO.curIdx;
+    for (let i = 0; i < BRF_STUDIO.slides.length; i++) {
+      BRF_STUDIO.curIdx = i;
+      loadSlideIntoCanvas(i);
+      // attendre rendu (images, background)
+      await new Promise(r => setTimeout(r, 1000));
+      const dataUrl = BRF_STUDIO.fabricCanvas.toDataURL({ format:'jpeg', quality:0.9, multiplier:2 });
+      if (i > 0) pdf.addPage();
+      pdf.addImage(dataUrl, 'JPEG', 0, offsetY, imgW, imgH);
+    }
+    BRF_STUDIO.curIdx = curIdx;
+    loadSlideIntoCanvas(curIdx);
+    pdf.save((BRF_STUDIO.title || 'briefing').replace(/[^\w-]/g,'_') + '.pdf');
+    toast('PDF exporté ✅', 'success');
+  } catch (e) {
+    toast('Échec export : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+function briefingStudioClose() {
+  if (!confirm('Fermer le Studio ? Pensez à sauvegarder.')) return;
+  document.removeEventListener('keydown', handleStudioKeydown);
+  window.removeEventListener('resize', resizeStudioCanvas);
+  document.getElementById('brf-studio-overlay')?.remove();
+  BRF_STUDIO = null;
+  if (CURRENT_PROJECT_ID) loadDetailBriefing(CURRENT_PROJECT_ID);
 }
 
 
