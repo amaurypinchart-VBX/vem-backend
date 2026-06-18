@@ -135,6 +135,7 @@ model RefreshToken {
 model Client {
   id          String    @id @default(uuid())
   name        String
+  vat         String?
   contactName String?   @map("contact_name")
   email       String?
   phone       String?
@@ -143,8 +144,27 @@ model Client {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   projects    Project[]
   clientVisits ClientVisit[]
+  contacts    ClientContact[]
 
   @@map("clients")
+}
+
+model ClientContact {
+  id          String   @id @default(uuid())
+  clientId    String   @map("client_id")
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  role        String?
+  email       String?
+  phone       String?
+  notes       String?
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@map("client_contacts")
 }
 
 model Project {
