@@ -98,32 +98,69 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
-// POST /task-templates/apply — create tasks from templates
+// POST /task-templates/apply — crée des tâches à partir de templates pour un projet.
+// Accepte 2 formats :
+//   FORMAT 1 (legacy) : { projectId, templateIds: [...], startDate? }
+//     → toutes les tâches utilisent la même startDate, sans assignee
+//   FORMAT 2 (nouveau, détaillé) : { projectId, items: [{ templateId, taskDate, assigneeId }, ...] }
+//     → date + assignee par tâche
 router.post('/apply', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { projectId, templateIds, startDate } = req.body;
-    if (!projectId || !templateIds?.length) {
-      return res.status(400).json({ success: false, error: 'projectId et templateIds requis' });
+    const { projectId, templateIds, startDate, items } = req.body;
+    if (!projectId) {
+      return res.status(400).json({ success: false, error: 'projectId requis' });
     }
+
+    // Normaliser vers le format détaillé
+    let normalizedItems: Array<{ templateId: string; taskDate: string | null; assigneeId: string | null }> = [];
+
+    if (Array.isArray(items) && items.length > 0) {
+      normalizedItems = items.map((it: any) => ({
+        templateId: String(it.templateId),
+        taskDate: it.taskDate || null,
+        assigneeId: it.assigneeId || null,
+      }));
+    } else if (Array.isArray(templateIds) && templateIds.length > 0) {
+      normalizedItems = templateIds.map((id: string) => ({
+        templateId: id,
+        taskDate: startDate || null,
+        assigneeId: null,
+      }));
+    } else {
+      return res.status(400).json({ success: false, error: 'items ou templateIds requis' });
+    }
+
+    // Charger les templates avec leur catégorie
+    const tplIds = normalizedItems.map(i => i.templateId);
     const templates = await (prisma as any).taskTemplate.findMany({
-      where: { id: { in: templateIds } },
-      orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }],
+      where: { id: { in: tplIds } },
+      include: { category: true },
     });
+    const byId: Record<string, any> = {};
+    templates.forEach((t: any) => { byId[t.id] = t; });
+
+    // Créer les tâches
     const tasks = await Promise.all(
-      templates.map((tpl: any) =>
-        prisma.task.create({
-          data: {
-            projectId,
-            title: tpl.title,
-            description: tpl.description || null,
-            taskDate: startDate ? new Date(startDate) : new Date(),
-            status: 'todo' as any,
-            priority: (tpl.priority || 'normal') as any,
-            estimatedHours: tpl.durationHours,
-            createdById: req.user!.id,
-          },
+      normalizedItems
+        .filter(item => byId[item.templateId])
+        .map(item => {
+          const tpl = byId[item.templateId];
+          // Préfixer le titre avec la catégorie pour s'y retrouver
+          const titleWithCat = tpl.category ? `[${tpl.category.name}] ${tpl.title}` : tpl.title;
+          return prisma.task.create({
+            data: {
+              projectId,
+              title: titleWithCat,
+              description: tpl.description || null,
+              taskDate: item.taskDate ? new Date(item.taskDate) : new Date(),
+              status: 'todo' as any,
+              priority: (tpl.priority || 'normal') as any,
+              estimatedHours: tpl.durationHours,
+              assigneeId: item.assigneeId || null,
+              createdById: req.user!.id,
+            },
+          });
         })
-      )
     );
     res.status(201).json({ success: true, data: tasks, meta: { created: tasks.length } });
   } catch (err) { next(err); }

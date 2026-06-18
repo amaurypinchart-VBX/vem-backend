@@ -78,29 +78,66 @@ const TASK_TEMPLATES_SEED: Array<{ name: string; icon: string; color: string; ta
 
 async function seedTaskTemplatesIfEmpty(): Promise<void> {
   try {
-    const count = await (prisma as any).taskCategory.count();
-    if (count > 0) {
-      logger.info(`[seed] task templates : ${count} catégorie(s) déjà en base, seed sauté`);
+    const cats = await (prisma as any).taskCategory.findMany();
+    const tplCount = await (prisma as any).taskTemplate.count();
+
+    if (cats.length === 0) {
+      // Cas 1 : tout vide → seed complet
+      logger.info('[seed] task templates : base vide, import complet...');
+      for (let i = 0; i < TASK_TEMPLATES_SEED.length; i++) {
+        const cat = TASK_TEMPLATES_SEED[i];
+        const created = await (prisma as any).taskCategory.create({
+          data: { name: cat.name, icon: cat.icon, color: cat.color, sortOrder: i, isActive: true },
+        });
+        for (let j = 0; j < cat.tasks.length; j++) {
+          await (prisma as any).taskTemplate.create({
+            data: {
+              categoryId: created.id, title: cat.tasks[j],
+              durationHours: 8, priority: 'normal',
+              sortOrder: j, isActive: true,
+            },
+          });
+        }
+        logger.info(`[seed]   → ${cat.name} (${cat.tasks.length} tâches)`);
+      }
+      logger.info('[seed] ✅ Templates Viewbox importés en base');
       return;
     }
-    logger.info('[seed] task templates : base vide, import des 7 étapes Viewbox...');
-    for (let i = 0; i < TASK_TEMPLATES_SEED.length; i++) {
-      const cat = TASK_TEMPLATES_SEED[i];
-      const created = await (prisma as any).taskCategory.create({
-        data: { name: cat.name, icon: cat.icon, color: cat.color, sortOrder: i, isActive: true },
-      });
-      for (let j = 0; j < cat.tasks.length; j++) {
-        await (prisma as any).taskTemplate.create({
-          data: {
-            categoryId: created.id, title: cat.tasks[j],
-            durationHours: 4, priority: 'normal',
-            sortOrder: j, isActive: true,
-          },
-        });
+
+    if (tplCount === 0) {
+      // Cas 2 : catégories OK mais templates vides (bug categoryId historique).
+      // → re-seeder les templates en mappant par nom de catégorie.
+      logger.info(`[seed] task templates : ${cats.length} catégorie(s) OK mais 0 templates, re-seed des templates...`);
+      let totalCreated = 0;
+      const catsByName: Record<string, any> = {};
+      cats.forEach((c: any) => { catsByName[c.name] = c; });
+
+      for (let i = 0; i < TASK_TEMPLATES_SEED.length; i++) {
+        const seedCat = TASK_TEMPLATES_SEED[i];
+        let cat = catsByName[seedCat.name];
+        if (!cat) {
+          // Catégorie pas trouvée → on la crée
+          cat = await (prisma as any).taskCategory.create({
+            data: { name: seedCat.name, icon: seedCat.icon, color: seedCat.color, sortOrder: cats.length + i, isActive: true },
+          });
+          catsByName[seedCat.name] = cat;
+        }
+        for (let j = 0; j < seedCat.tasks.length; j++) {
+          await (prisma as any).taskTemplate.create({
+            data: {
+              categoryId: cat.id, title: seedCat.tasks[j],
+              durationHours: 8, priority: 'normal',
+              sortOrder: j, isActive: true,
+            },
+          });
+          totalCreated++;
+        }
       }
-      logger.info(`[seed]   → ${cat.name} (${cat.tasks.length} tâches)`);
+      logger.info(`[seed] ✅ ${totalCreated} template(s) recréé(s) sur les catégories existantes`);
+      return;
     }
-    logger.info('[seed] ✅ Templates Viewbox importés en base');
+
+    logger.info(`[seed] task templates : ${cats.length} catégorie(s) et ${tplCount} template(s) en base, seed sauté`);
   } catch (err: any) {
     logger.error(`[seed] échec d'import des templates : ${err.message || err}`);
   }
@@ -348,6 +385,16 @@ export async function runStartupMigrations() {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "description" TEXT;
     `);
+    // categoryId — colonne MANQUANTE qui plantait tout depuis le début.
+    // On la met en NULL d'abord ; le seed (plus bas) y mettra des valeurs valides.
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "categoryId" TEXT;
+    `);
+    // Nettoyer les anciens templates orphelins (sans categoryId valide).
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM "task_templates" WHERE "categoryId" IS NULL;
+    `);
+    logger.info('[migration] task_templates.categoryId ajoutée si absente + orphelins purgés');
 
     // ─── Table "client_visits" (rapport de visite client = contenant de N points) ───
     await prisma.$executeRawUnsafe(`
