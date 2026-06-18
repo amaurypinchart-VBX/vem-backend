@@ -6721,65 +6721,60 @@ async function importTemplatesFromText() {
   previewImportedTemplates();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// REMPLACEMENT pour confirmImportTemplates() dans public/index.html
+//
+// ⚠️ INSTRUCTIONS :
+//   1. Dans public/index.html, trouve la ligne : async function confirmImportTemplates(overlay) {
+//   2. Sélectionne TOUT depuis cette ligne jusqu'à la } finale de la fonction (juste avant
+//      le commentaire "// 🔄 Recharge la liste standard...")
+//   3. Remplace par le bloc ci-dessous
+//
+// Le reste du flow (modal, parsing CSV, prévisualisation, IMPORT_TEMPLATES_DATA)
+// ne change pas — c'est uniquement la phase finale d'envoi à l'API qui est refaite.
+// ═══════════════════════════════════════════════════════════════════════════
+
 async function confirmImportTemplates(overlay) {
   if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
   const btn = document.getElementById('import-confirm-btn');
-  if (btn) btn.disabled=true;
+  if (btn) btn.disabled = true;
 
-  toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
+  toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`, 'info');
 
-  // Get or create categories
-  const catRes = await api('GET', '/task-templates/categories');
-  if (!catRes?.success) {
-    console.error('[import] échec GET categories:', catRes);
-    toast('Échec chargement catégories — voir console F12','error');
+  // On mappe `hours` → `durationHours` pour matcher le contrat backend.
+  // Toute la logique (création/réutilisation des catégories, isActive=true,
+  // skip des doublons, comptage exact) est déléguée au serveur.
+  const rows = IMPORT_TEMPLATES_DATA.map(d => ({
+    category: d.category,
+    title: d.title,
+    durationHours: d.hours,
+    priority: ['low','normal','high','critical'].includes(d.priority) ? d.priority : 'normal',
+  }));
+
+  const r = await api('POST', '/task-templates/import', { rows });
+
+  if (!r?.success) {
+    console.error('[import] échec :', r);
+    toast(`❌ Erreur import : ${r?.error || 'erreur HTTP'}`, 'error');
     if (btn) btn.disabled = false;
     return;
   }
-  const existingCats = catRes.data || [];
-  const catMap = {};
-  existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
 
-  // Create missing categories
-  const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
-  for (const catName of newCats) {
-    if (!catMap[catName.toLowerCase()]) {
-      const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
-      if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
-      else console.error('[import] échec création catégorie:', catName, r);
-    }
+  const d = r.data;
+
+  // Message de succès détaillé (vraies stats, plus de mensonges)
+  let msg = `✅ ${d.tasksCreated} tâche(s) créée(s)`;
+  if (d.categoriesCreated > 0) msg += ` · ${d.categoriesCreated} catégorie(s) créée(s)`;
+  if (d.categoriesReused > 0) msg += ` · ${d.categoriesReused} catégorie(s) réutilisée(s)`;
+  if (d.tasksSkipped > 0) msg += ` · ${d.tasksSkipped} ignorée(s) (déjà en base)`;
+  if (d.tasksFailed > 0) {
+    msg += ` · ⚠️ ${d.tasksFailed} échec(s) (F12)`;
+    console.warn('[import] erreurs :', d.errors);
   }
 
-  // Create templates with detailed error tracking
-  let created = 0;
-  const errors = [];
-  for (const tpl of IMPORT_TEMPLATES_DATA) {
-    const catId = catMap[tpl.category.toLowerCase()];
-    if (!catId) {
-      errors.push(`${tpl.title}: catégorie "${tpl.category}" introuvable`);
-      continue;
-    }
-    const r = await api('POST', '/task-templates', {
-      categoryId: catId,
-      title: tpl.title,
-      durationHours: tpl.hours,
-      priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
-    });
-    if (r?.success) created++;
-    else errors.push(`${tpl.category}/${tpl.title}: ${r?.error || 'erreur HTTP'}`);
-  }
+  toast(msg, d.tasksCreated > 0 ? 'success' : 'warning');
 
-  if (errors.length) {
-    console.error('[import templates] erreurs détaillées (' + errors.length + ') :', errors);
-    if (created === 0) {
-      toast(`❌ AUCUN template créé — ouvre la console (F12) pour voir les ${errors.length} erreurs`, 'error');
-    } else {
-      toast(`${created} créé(s), ${errors.length} échec(s) — voir console F12`, 'warning');
-    }
-  } else {
-    toast(`${created} template(s) importé(s) ✅`,'success');
-  }
-
+  // Reset état + rechargement UI (identique à l'ancienne version)
   IMPORT_TEMPLATES_DATA = [];
   overlay?.remove();
   loadTemplatesPage();
