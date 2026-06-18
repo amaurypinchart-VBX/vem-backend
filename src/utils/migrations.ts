@@ -570,6 +570,17 @@ export async function runStartupMigrations() {
     } catch (_e) { /* FK déjà présente */ }
     logger.info('[migration] clients.vat + table client_contacts créées si absentes');
 
+    // ─── Table app_settings (key/value globaux) ───
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "app_settings" (
+        "key"        TEXT          NOT NULL,
+        "value"      JSONB         NOT NULL,
+        "updated_at" TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "app_settings_pkey" PRIMARY KEY ("key")
+      );
+    `);
+    logger.info('[migration] table app_settings créée si absente');
+
     logger.info('✅ Migrations de démarrage OK');
 
     // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───

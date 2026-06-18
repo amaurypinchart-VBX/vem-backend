@@ -30,6 +30,7 @@ import aiRoutes from './routes/ai';
 import clientRemarksRoutes from './routes/clientRemarks';
 import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
+import settingsRoutes from './routes/settings';
 import teamBookingsRoutes from './routes/teamBookings';
 import emailWebhookRoutes from './routes/emailWebhook';
 import { startImapPoller } from './services/imapPoller';
@@ -95,6 +96,7 @@ app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
+app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
 app.use(API,                     authMiddleware, teamBookingsRoutes);

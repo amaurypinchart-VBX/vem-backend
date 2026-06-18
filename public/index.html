@@ -12971,15 +12971,27 @@ async function openBriefingStudio(initialData) {
     });
   }
 
+  // Récupère le logo global (s'il y en a un) — utilisé par défaut si pas de logo spécifique
+  let globalLogo = null;
+  try {
+    const r = await api('GET', '/settings/briefing-default-logo');
+    if (r?.success && r.data?.url) globalLogo = r.data.url;
+  } catch {}
+
   BRF_STUDIO = {
     fabricCanvas: null,
     slides: Array.isArray(initialData?.slides) && initialData.slides.length
       ? initialData.slides
       : [{ id: 'slide-' + Date.now(), name: 'Slide 1', json: null }],
     curIdx: 0,
-    logoUrl: initialData?.logoUrl || null,
+    // Logo spécifique de CE briefing > logo global Viewbox > rien
+    logoUrl: initialData?.logoUrl || globalLogo || null,
+    globalLogoUrl: globalLogo,
     title: initialData?.title || 'Briefing',
     projectId: CURRENT_PROJECT_ID,
+    undoStack: [],
+    redoStack: [],
+    suppressSnapshot: false,
   };
 
   const overlay = document.createElement('div');
@@ -12997,9 +13009,15 @@ async function openBriefingStudio(initialData) {
     preserveObjectStacking: true,
   });
 
+  // Listeners pour undo/redo et thumbnails
+  ['object:modified', 'object:added', 'object:removed'].forEach(evt => {
+    BRF_STUDIO.fabricCanvas.on(evt, () => brfSnapshot());
+  });
+
   loadSlideIntoCanvas(0);
   renderStudioSidebar();
   resizeStudioCanvas();
+  brfUpdateUndoButtons();
   window.addEventListener('resize', resizeStudioCanvas);
   document.addEventListener('keydown', handleStudioKeydown);
 }
@@ -13020,6 +13038,9 @@ function buildStudioHTML() {
 
     <!-- Toolbar -->
     <div style="display:flex;align-items:center;gap:4px;padding:6px 16px;background:#161616;border-bottom:1px solid #333;flex-wrap:wrap;">
+      <button class="brf-tbtn" onclick="brfUndo()" title="Annuler (Ctrl+Z)" id="brf-undo-btn">↶</button>
+      <button class="brf-tbtn" onclick="brfRedo()" title="Rétablir (Ctrl+Y)" id="brf-redo-btn">↷</button>
+      <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfAddText()" title="Ajouter du texte">📝 Texte</button>
       <button class="brf-tbtn" onclick="brfAddTitle()" title="Ajouter un titre">🔤 Titre</button>
       <button class="brf-tbtn" onclick="document.getElementById('brf-image-input').click()" title="Image">🖼️ Image</button>
@@ -13031,6 +13052,7 @@ function buildStudioHTML() {
       <button class="brf-tbtn" onclick="brfAddArrow()" title="Flèche">➜ Flèche</button>
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfOpenProjectMenu(this)" title="Insérer depuis les données du projet" style="background:linear-gradient(135deg,#0a2540,#1a3a60);">📂 Depuis projet ▾</button>
+      <button class="brf-tbtn" onclick="brfOpenTemplatesMenu(this)" title="Templates de slides prêts à l'emploi" style="background:linear-gradient(135deg,#7b2cbf,#9d4edd);">🎨 Templates ▾</button>
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfBringForward()" title="Avancer">⬆</button>
       <button class="brf-tbtn" onclick="brfSendBack()" title="Reculer">⬇</button>
@@ -13044,9 +13066,7 @@ function buildStudioHTML() {
       <button class="brf-tbtn" onclick="brfToggleBold()" title="Gras"><b>B</b></button>
       <button class="brf-tbtn" onclick="brfToggleItalic()" title="Italique"><i>I</i></button>
       <span class="brf-sep"></span>
-      <button class="brf-tbtn" onclick="document.getElementById('brf-logo-input').click()" title="Définir un logo en arrière-plan">📌 Logo</button>
-      <input type="file" id="brf-logo-input" accept="image/*" style="display:none;" onchange="brfSetLogo(this.files[0]);this.value='';">
-      ${BRF_STUDIO?.logoUrl ? '<button class="brf-tbtn" onclick="brfRemoveLogo()" title="Retirer le logo" style="color:#e63946;">×</button>' : ''}
+      <button class="brf-tbtn" onclick="brfOpenLogoMenu(this)" title="Gestion du logo de fond">📌 Logo ▾</button>
     </div>
 
     <style>
@@ -13096,8 +13116,15 @@ function handleStudioKeydown(e) {
   }
   const t = e.target;
   if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+  // Undo / Redo
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault(); brfUndo(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y' || ((e.shiftKey) && (e.key === 'z' || e.key === 'Z')))) {
+    e.preventDefault(); brfRedo(); return;
+  }
+  // Delete
   if (BRF_STUDIO?.fabricCanvas?.getActiveObject() && (e.key === 'Delete' || e.key === 'Backspace')) {
-    // Don't delete if editing text inline
     if (BRF_STUDIO.fabricCanvas.getActiveObject().isEditing) return;
     e.preventDefault();
     brfDeleteSel();
@@ -13206,9 +13233,40 @@ function brfToggleItalic(){
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
 
-// ─── Logo en background ───
-async function brfSetLogo(file) {
+// ─── Menu Logo (filigrane de fond) ───
+function brfOpenLogoMenu(btn) {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  const hasLogo = !!BRF_STUDIO.logoUrl;
+  const hasGlobal = !!BRF_STUDIO.globalLogoUrl;
+  const menu = document.createElement('div');
+  menu.className = 'brf-proj-menu';
+  menu.style.cssText = 'position:fixed;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:6px;z-index:10010;box-shadow:0 6px 20px rgba(0,0,0,0.6);min-width:280px;';
+  menu.innerHTML = `
+    <button class="brf-pm-item" onclick="document.getElementById('brf-logo-input').click()">📤 Uploader un logo pour ce briefing</button>
+    <input type="file" id="brf-logo-input" accept="image/*" style="display:none;" onchange="brfSetLogo(this.files[0], false);this.value='';">
+    <button class="brf-pm-item" onclick="document.getElementById('brf-logo-global-input').click()" title="Devient le logo par défaut pour TOUS les briefings (admin)">🌐 Définir comme logo global Viewbox</button>
+    <input type="file" id="brf-logo-global-input" accept="image/*" style="display:none;" onchange="brfSetLogo(this.files[0], true);this.value='';">
+    ${hasGlobal && !hasLogo ? '' : `<button class="brf-pm-item" onclick="brfUseGlobalLogo()" ${!hasGlobal?'disabled style="opacity:.4;"':''}>🔄 Réutiliser le logo global Viewbox</button>`}
+    ${hasLogo ? '<button class="brf-pm-item" onclick="brfRemoveLogo()" style="color:#e63946;">✕ Retirer le logo de ce briefing</button>' : ''}
+  `;
+  const r = btn.getBoundingClientRect();
+  menu.style.top  = (r.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - r.right) + 'px';
+  document.body.appendChild(menu);
+  menu.querySelectorAll('.brf-pm-item').forEach(b => {
+    b.style.cssText = (b.style.cssText || '') + ';display:block;width:100%;text-align:left;background:transparent;color:#eee;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:12px;';
+    b.onmouseover = () => b.style.background = '#333';
+    b.onmouseout  = () => b.style.background = 'transparent';
+  });
+  setTimeout(() => {
+    const closeIt = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeIt); }};
+    document.addEventListener('click', closeIt);
+  }, 50);
+}
+
+async function brfSetLogo(file, asGlobal) {
   if (!file) return;
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
   toast('Upload du logo...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
@@ -13221,35 +13279,273 @@ async function brfSetLogo(file) {
     if (!url) throw new Error('Pas d\'URL');
     BRF_STUDIO.logoUrl = url;
     applyLogoBackground();
-    // Refresh toolbar to show "remove" button
-    document.getElementById('brf-studio-overlay').querySelector('.brf-sep:last-of-type').nextElementSibling?.nextElementSibling?.remove();
-    toast('Logo défini ✅ (en filigrane sur toutes les slides)', 'success');
+    if (asGlobal) {
+      // Sauvegarde dans app_settings pour réutiliser dans tous les briefings
+      const r2 = await api('PUT', '/settings/briefing-default-logo', { value: { url } });
+      if (r2?.success) {
+        BRF_STUDIO.globalLogoUrl = url;
+        toast('🌐 Logo global défini ✅ (visible sur tous les briefings)', 'success');
+      } else {
+        toast('Logo appliqué à ce briefing mais pas globalisé : ' + (r2?.error || 'admin requis'), 'warning');
+      }
+    } else {
+      toast('Logo défini sur ce briefing ✅', 'success');
+    }
   } catch (e) {
     toast('Échec : ' + e.message, 'error');
   }
 }
 function brfRemoveLogo() {
-  if (!confirm('Retirer le logo de fond ?')) return;
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
   BRF_STUDIO.logoUrl = null;
   applyLogoBackground();
-  toast('Logo retiré', 'info');
+  toast('Logo retiré de ce briefing', 'info');
 }
+function brfUseGlobalLogo() {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  if (!BRF_STUDIO.globalLogoUrl) { toast('Aucun logo global défini', 'warning'); return; }
+  BRF_STUDIO.logoUrl = BRF_STUDIO.globalLogoUrl;
+  applyLogoBackground();
+  toast('Logo global appliqué ✅', 'success');
+}
+
+// ─── Undo / Redo (pile d'états JSON Fabric) ───
+const BRF_UNDO_MAX = 30;
+function brfSnapshot() {
+  if (!BRF_STUDIO?.fabricCanvas || BRF_STUDIO.suppressSnapshot) return;
+  // Snapshot du JSON courant (sans backgroundImage qui est appliqué séparément)
+  const json = BRF_STUDIO.fabricCanvas.toJSON();
+  delete json.backgroundImage;
+  // Évite de stocker le même état 2 fois de suite
+  const last = BRF_STUDIO.undoStack[BRF_STUDIO.undoStack.length - 1];
+  if (last && JSON.stringify(last) === JSON.stringify(json)) return;
+  BRF_STUDIO.undoStack.push(json);
+  if (BRF_STUDIO.undoStack.length > BRF_UNDO_MAX) BRF_STUDIO.undoStack.shift();
+  BRF_STUDIO.redoStack = []; // nouvelle action → on perd la pile de redo
+  brfUpdateUndoButtons();
+  // Régénérer thumbnail (async pour ne pas bloquer)
+  setTimeout(() => brfRegenThumbnail(), 80);
+}
+function brfUndo() {
+  if (!BRF_STUDIO?.undoStack?.length) return;
+  // Pop l'état actuel pour le mettre dans redo, puis charger l'état précédent
+  const current = BRF_STUDIO.undoStack.pop();
+  BRF_STUDIO.redoStack.push(current);
+  const prev = BRF_STUDIO.undoStack[BRF_STUDIO.undoStack.length - 1];
+  brfLoadJsonSilent(prev || { objects: [] });
+  brfUpdateUndoButtons();
+}
+function brfRedo() {
+  if (!BRF_STUDIO?.redoStack?.length) return;
+  const next = BRF_STUDIO.redoStack.pop();
+  BRF_STUDIO.undoStack.push(next);
+  brfLoadJsonSilent(next);
+  brfUpdateUndoButtons();
+}
+function brfLoadJsonSilent(json) {
+  if (!BRF_STUDIO?.fabricCanvas) return;
+  BRF_STUDIO.suppressSnapshot = true;
+  BRF_STUDIO.fabricCanvas.clear();
+  BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => {});
+  BRF_STUDIO.fabricCanvas.loadFromJSON(json, () => {
+    applyLogoBackground();
+    BRF_STUDIO.fabricCanvas.renderAll();
+    BRF_STUDIO.suppressSnapshot = false;
+  });
+}
+function brfUpdateUndoButtons() {
+  const u = document.getElementById('brf-undo-btn');
+  const r = document.getElementById('brf-redo-btn');
+  if (u) u.style.opacity = BRF_STUDIO?.undoStack?.length > 1 ? '1' : '0.4';
+  if (r) r.style.opacity = BRF_STUDIO?.redoStack?.length > 0 ? '1' : '0.4';
+}
+
+// ─── Thumbnails ───
+function brfRegenThumbnail() {
+  if (!BRF_STUDIO?.fabricCanvas) return;
+  const idx = BRF_STUDIO.curIdx;
+  if (idx == null || !BRF_STUDIO.slides[idx]) return;
+  try {
+    // Mini ~192×108 px en jpeg compressé
+    const dataUrl = BRF_STUDIO.fabricCanvas.toDataURL({ format: 'jpeg', quality: 0.5, multiplier: 0.15 });
+    BRF_STUDIO.slides[idx].thumbnail = dataUrl;
+    // Re-render sidebar pour montrer le nouveau thumbnail
+    renderStudioSidebar();
+  } catch (e) {
+    // CORS error si le logo est cross-origin sans CORS — silencieux
+  }
+}
+
+// ─── Menu Templates de slides ───
+function brfOpenTemplatesMenu(btn) {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'brf-proj-menu';
+  menu.style.cssText = 'position:fixed;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:6px;z-index:10010;box-shadow:0 6px 20px rgba(0,0,0,0.6);min-width:240px;';
+  menu.innerHTML = `
+    <div style="font-size:10px;color:#888;padding:4px 12px;text-transform:uppercase;letter-spacing:1px;">Ajouter une slide depuis un modèle</div>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('title-bullets')">📝 Titre + points clés</button>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('photo-text')">🖼️ Photo + texte</button>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('contacts')">📞 Contacts</button>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('calendar')">📅 Calendrier / Planning</button>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('cover')">🎯 Page de garde</button>
+    <button class="brf-pm-item" onclick="brfAddSlideFromTemplate('section')">📍 Séparateur de section</button>
+  `;
+  const r = btn.getBoundingClientRect();
+  menu.style.top  = (r.bottom + 4) + 'px';
+  menu.style.left = r.left + 'px';
+  document.body.appendChild(menu);
+  menu.querySelectorAll('.brf-pm-item').forEach(b => {
+    b.style.cssText = (b.style.cssText || '') + ';display:block;width:100%;text-align:left;background:transparent;color:#eee;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:12px;';
+    b.onmouseover = () => b.style.background = '#333';
+    b.onmouseout  = () => b.style.background = 'transparent';
+  });
+  setTimeout(() => {
+    const closeIt = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeIt); }};
+    document.addEventListener('click', closeIt);
+  }, 50);
+}
+
+function brfAddSlideFromTemplate(type) {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  // Sauve la slide courante puis ajoute une nouvelle slide
+  saveCurrentSlideJson();
+  const slide = { id:'slide-'+Date.now(), name: brfTemplateName(type), json: null };
+  BRF_STUDIO.slides.push(slide);
+  BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+  // Vide le canvas puis applique le template
+  BRF_STUDIO.suppressSnapshot = true;
+  BRF_STUDIO.fabricCanvas.clear();
+  BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => {});
+  applyLogoBackground();
+  brfApplyTemplate(type);
+  BRF_STUDIO.suppressSnapshot = false;
+  renderStudioSidebar();
+  brfSnapshot();
+  // Réinit undo pour cette slide
+  BRF_STUDIO.undoStack = [];
+  BRF_STUDIO.redoStack = [];
+}
+
+function brfTemplateName(type) {
+  return ({
+    'title-bullets': 'Titre + points',
+    'photo-text':    'Photo + texte',
+    'contacts':      'Contacts',
+    'calendar':      'Planning',
+    'cover':         'Page de garde',
+    'section':       'Section',
+  })[type] || 'Slide';
+}
+
+function brfApplyTemplate(type) {
+  const cv = BRF_STUDIO.fabricCanvas;
+  // Couleurs Viewbox
+  const PRIMARY = '#0a2540';
+  const ACCENT  = '#e63946';
+  const GRAY    = '#666';
+
+  if (type === 'cover') {
+    // Bande accent en haut, gros titre + sous-titre
+    cv.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:8, fill:ACCENT, selectable:false, evented:false }));
+    cv.add(new fabric.IText('TITRE DU PROJET', { left:80, top:240, fontSize:64, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+    cv.add(new fabric.IText('Sous-titre ou nom du client', { left:80, top:330, fontSize:28, fontFamily:'Helvetica', fill:GRAY }));
+    cv.add(new fabric.IText('— Briefing préparé par Viewbox —', { left:80, top:560, fontSize:18, fontFamily:'Helvetica', fontStyle:'italic', fill:GRAY }));
+  }
+  else if (type === 'section') {
+    // Page séparatrice : grand rectangle en fond + numéro de section
+    cv.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:BRF_CANVAS_H, fill:PRIMARY, selectable:false, evented:false }));
+    cv.add(new fabric.IText('01', { left:80, top:200, fontSize:120, fontFamily:'Helvetica', fontWeight:'bold', fill:ACCENT }));
+    cv.add(new fabric.IText('TITRE DE LA SECTION', { left:80, top:380, fontSize:48, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff' }));
+  }
+  else if (type === 'title-bullets') {
+    // Petit accent + titre + ligne de séparation + bullets
+    cv.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+    cv.add(new fabric.IText('Titre de la slide', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+    const bullets = [
+      '•  Premier point important',
+      '•  Deuxième point à retenir',
+      '•  Troisième élément clé',
+      '•  Quatrième information',
+    ];
+    cv.add(new fabric.Textbox(bullets.join('\n'), {
+      left:80, top:200, width:1120, fontSize:24, fontFamily:'Helvetica',
+      fill:'#333', lineHeight:1.6,
+    }));
+  }
+  else if (type === 'photo-text') {
+    // Zone photo à gauche (placeholder rect) + titre/texte à droite
+    cv.add(new fabric.Rect({
+      left:60, top:80, width:560, height:560, fill:'#e0e0e0', stroke:'#bbb', strokeDashArray:[8,4],
+    }));
+    cv.add(new fabric.IText('🖼️\nCliquez Image pour insérer', {
+      left:140, top:300, fontSize:24, fontFamily:'Helvetica', fill:'#888', textAlign:'center',
+    }));
+    cv.add(new fabric.Rect({ left:680, top:120, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+    cv.add(new fabric.IText('Titre', { left:680, top:140, fontSize:40, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+    cv.add(new fabric.Textbox('Tapez ici le texte qui décrit votre photo, le contexte ou les points à retenir. Le texte va s\'adapter automatiquement à la largeur.', {
+      left:680, top:220, width:540, fontSize:20, fontFamily:'Helvetica', fill:'#333', lineHeight:1.4,
+    }));
+  }
+  else if (type === 'contacts') {
+    cv.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+    cv.add(new fabric.IText('📞 Contacts', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+    cv.add(new fabric.Textbox('Tu peux remplacer ce texte ou cliquer sur "📂 Depuis projet" puis "Contacts du client" pour piocher dans les contacts enregistrés.\n\n★ Nom Prénom\n   Fonction\n   ✉️ email@exemple.com\n   📞 +32 ...\n\n☆ Autre contact\n   ...', {
+      left:80, top:200, width:1120, fontSize:20, fontFamily:'Helvetica', fill:'#333', lineHeight:1.5,
+    }));
+  }
+  else if (type === 'calendar') {
+    cv.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+    cv.add(new fabric.IText('📅 Planning', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+    // 2 colonnes : installation + démontage
+    cv.add(new fabric.Rect({ left:80,  top:220, width:540, height:380, fill:'#f8f9fb', stroke:'#ddd' }));
+    cv.add(new fabric.IText('🏗️ INSTALLATION', { left:110, top:250, fontSize:26, fontFamily:'Helvetica', fontWeight:'bold', fill:ACCENT }));
+    cv.add(new fabric.Textbox('Lundi 25 juin\n  08:00  Arrivée camion Tubize\n  09:00  Déchargement\n  10:00  Mise en place\n\nMardi 26 juin\n  08:00  ...', {
+      left:110, top:300, width:480, fontSize:18, fontFamily:'Helvetica', fill:'#333', lineHeight:1.6,
+    }));
+    cv.add(new fabric.Rect({ left:660, top:220, width:540, height:380, fill:'#f8f9fb', stroke:'#ddd' }));
+    cv.add(new fabric.IText('🔨 DÉMONTAGE', { left:690, top:250, fontSize:26, fontFamily:'Helvetica', fontWeight:'bold', fill:ACCENT }));
+    cv.add(new fabric.Textbox('Vendredi 29 juin\n  17:00  Fin événement\n  18:00  Début démontage\n\nSamedi 30 juin\n  ...', {
+      left:690, top:300, width:480, fontSize:18, fontFamily:'Helvetica', fill:'#333', lineHeight:1.6,
+    }));
+  }
+  cv.requestRenderAll();
+}
+
 function applyLogoBackground() {
   if (!BRF_STUDIO?.fabricCanvas) return;
+  const c = BRF_STUDIO.fabricCanvas;
   if (!BRF_STUDIO.logoUrl) {
-    BRF_STUDIO.fabricCanvas.setBackgroundImage(null, () => BRF_STUDIO.fabricCanvas.renderAll());
+    c.backgroundImage = null;
+    c.renderAll();
     return;
   }
-  fabric.Image.fromURL(BRF_STUDIO.logoUrl, img => {
-    img.scaleToWidth(BRF_CANVAS_W * 0.20);
-    img.set({
-      left: BRF_CANVAS_W - img.getScaledWidth() - 30,
-      top:  BRF_CANVAS_H - img.getScaledHeight() - 30,
+  // On charge en bypass Fabric.fromURL pour mieux gérer les erreurs CORS et logger
+  const place = (imgEl) => {
+    const fImg = new fabric.Image(imgEl);
+    fImg.scaleToWidth(BRF_CANVAS_W * 0.20);
+    fImg.set({
+      left: BRF_CANVAS_W - fImg.getScaledWidth() - 30,
+      top:  BRF_CANVAS_H - fImg.getScaledHeight() - 30,
       opacity: 0.25,
-      selectable: false, evented: false,
+      selectable: false,
+      evented: false,
     });
-    BRF_STUDIO.fabricCanvas.setBackgroundImage(img, () => BRF_STUDIO.fabricCanvas.renderAll());
-  }, { crossOrigin: 'anonymous' });
+    c.setBackgroundImage(fImg, () => c.renderAll());
+  };
+  // Essai 1 : avec crossOrigin (permet l'export PDF)
+  const imgEl = new Image();
+  imgEl.crossOrigin = 'anonymous';
+  imgEl.onload  = () => { console.log('[brf] logo chargé avec CORS'); place(imgEl); };
+  imgEl.onerror = () => {
+    console.warn('[brf] logo bloqué par CORS, retry sans crossOrigin (l\'export PDF perdra le logo)');
+    // Essai 2 : sans crossOrigin → s'affiche mais ne pourra pas être exporté en PDF
+    const imgEl2 = new Image();
+    imgEl2.onload  = () => place(imgEl2);
+    imgEl2.onerror = () => console.error('[brf] logo introuvable : ' + BRF_STUDIO.logoUrl);
+    imgEl2.src = BRF_STUDIO.logoUrl;
+  };
+  imgEl.src = BRF_STUDIO.logoUrl;
 }
 
 // ─── Gestion des slides ───
@@ -13294,32 +13590,48 @@ function saveCurrentSlideJson() {
 function loadSlideIntoCanvas(idx) {
   const slide = BRF_STUDIO.slides[idx];
   if (!slide || !BRF_STUDIO.fabricCanvas) return;
+  BRF_STUDIO.suppressSnapshot = true;
   BRF_STUDIO.fabricCanvas.clear();
   BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => BRF_STUDIO.fabricCanvas.renderAll());
-  if (slide.json) {
-    BRF_STUDIO.fabricCanvas.loadFromJSON(slide.json, () => {
-      applyLogoBackground();
-      BRF_STUDIO.fabricCanvas.renderAll();
-    });
-  } else {
+  const finish = () => {
     applyLogoBackground();
+    BRF_STUDIO.fabricCanvas.renderAll();
+    // Reset undo/redo pour cette slide + premier snapshot
+    BRF_STUDIO.undoStack = [];
+    BRF_STUDIO.redoStack = [];
+    BRF_STUDIO.suppressSnapshot = false;
+    brfSnapshot();
+    brfUpdateUndoButtons();
+  };
+  if (slide.json) {
+    BRF_STUDIO.fabricCanvas.loadFromJSON(slide.json, finish);
+  } else {
+    finish();
   }
 }
 
 function renderStudioSidebar() {
   const sb = document.getElementById('brf-st-sidebar');
   if (!sb) return;
-  sb.innerHTML = BRF_STUDIO.slides.map((s, i) => `
-    <div style="display:flex;align-items:center;gap:2px;padding:6px;background:${i===BRF_STUDIO.curIdx?'#2a1518':'#1a1a1a'};border:1px solid ${i===BRF_STUDIO.curIdx?'#e63946':'#333'};border-radius:6px;cursor:pointer;" onclick="brfSelectSlide(${i})">
-      <span style="font-size:11px;color:#aaa;min-width:18px;">${i+1}.</span>
-      <input value="${(s.name||'').replace(/"/g,'&quot;')}"
-        style="flex:1;min-width:0;background:transparent;border:none;color:#eee;font-size:12px;padding:2px 4px;outline:none;"
-        onclick="event.stopPropagation();" oninput="BRF_STUDIO.slides[${i}].name=this.value">
-      <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},-1)" title="Monter">▲</button>
-      <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},1)" title="Descendre">▼</button>
-      <button style="background:transparent;border:none;color:#e63946;cursor:pointer;padding:0 4px;font-size:14px;" onclick="event.stopPropagation();brfDeleteSlide(${i})" title="Supprimer">×</button>
-    </div>
-  `).join('');
+  sb.innerHTML = BRF_STUDIO.slides.map((s, i) => {
+    const isCur = i === BRF_STUDIO.curIdx;
+    const thumb = s.thumbnail;
+    return `
+    <div style="display:flex;flex-direction:column;gap:4px;padding:6px;background:${isCur?'#2a1518':'#1a1a1a'};border:1px solid ${isCur?'#e63946':'#333'};border-radius:6px;cursor:pointer;" onclick="brfSelectSlide(${i})">
+      <div style="display:flex;align-items:center;gap:2px;">
+        <span style="font-size:11px;color:#aaa;min-width:18px;">${i+1}.</span>
+        <input value="${(s.name||'').replace(/"/g,'&quot;')}"
+          style="flex:1;min-width:0;background:transparent;border:none;color:#eee;font-size:11px;padding:1px 2px;outline:none;"
+          onclick="event.stopPropagation();" oninput="BRF_STUDIO.slides[${i}].name=this.value">
+        <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},-1)" title="Monter">▲</button>
+        <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},1)" title="Descendre">▼</button>
+        <button style="background:transparent;border:none;color:#e63946;cursor:pointer;padding:0 4px;font-size:14px;" onclick="event.stopPropagation();brfDeleteSlide(${i})" title="Supprimer">×</button>
+      </div>
+      <div style="aspect-ratio:16/9;background:${thumb?'#fff':'#222'};border-radius:4px;overflow:hidden;border:1px solid #333;">
+        ${thumb ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:contain;display:block;">` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:#666;">(vide)</div>`}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ─── Save / Export / Close ───

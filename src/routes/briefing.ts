@@ -19,15 +19,16 @@ router.get('/:projectId', async (req: AuthRequest, res: Response, next: NextFunc
   } catch (err) { next(err); }
 });
 
-// PUT /briefings/:projectId — remplace title + slides
-router.put('/:projectId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// Handler upsert partagé entre PUT et PATCH
+async function upsertBriefing(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const projectId = req.params.projectId;
     const { title, slides } = req.body;
-
-    // Garde-fou : slides doit être un tableau
-    const safeSlides = Array.isArray(slides) ? slides : [];
-
+    // Accepte les 2 formats :
+    //   - Array (ancien briefing classique)
+    //   - Object { version: 2, ... } (nouveau Studio v2)
+    // Tout JSON valide est accepté ; on stocke tel quel.
+    const safeSlides = slides !== undefined ? slides : [];
     const briefing = await prisma.briefing.upsert({
       where:  { projectId },
       update: { title: title ?? null, slides: safeSlides as any },
@@ -35,6 +36,9 @@ router.put('/:projectId', async (req: AuthRequest, res: Response, next: NextFunc
     });
     res.json({ success: true, data: briefing });
   } catch (err) { next(err); }
-});
+}
+
+router.put('/:projectId',   upsertBriefing);
+router.patch('/:projectId', upsertBriefing);
 
 export default router;
