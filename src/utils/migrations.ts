@@ -396,6 +396,29 @@ export async function runStartupMigrations() {
     `);
     logger.info('[migration] task_templates.categoryId ajoutée si absente + orphelins purgés');
 
+    // ─── FIX colonne orpheline "category_id" (snake_case) sur task_templates ───
+    // Héritée d'un ancien schéma Prisma qui avait @map("category_id") sur ce champ.
+    // Aujourd'hui le schéma n'a plus de @map donc Prisma écrit dans "categoryId" (camelCase),
+    // et l'orpheline reste vide → sa contrainte NOT NULL bloquait TOUS les inserts.
+    // On la drop carrément pour faire propre (le contenu utile est dans "categoryId").
+    try {
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "task_templates" DROP COLUMN IF EXISTS "category_id";
+      `);
+      logger.info('[migration] task_templates.category_id (colonne orpheline) supprimée');
+    } catch (e: any) {
+      // Si DROP échoue (FK ou autre), on tente au moins de retirer le NOT NULL
+      logger.warn(`[migration] DROP category_id échoué (${e.message}), tentative DROP NOT NULL...`);
+      try {
+        await prisma.$executeRawUnsafe(`
+          ALTER TABLE "task_templates" ALTER COLUMN "category_id" DROP NOT NULL;
+        `);
+        logger.info('[migration] task_templates.category_id : NOT NULL retiré');
+      } catch (e2: any) {
+        logger.warn(`[migration] DROP NOT NULL category_id : ${e2.message}`);
+      }
+    }
+
     // ─── Table "client_visits" (rapport de visite client = contenant de N points) ───
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "client_visits" (
