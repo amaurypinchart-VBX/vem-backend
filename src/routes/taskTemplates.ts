@@ -76,14 +76,23 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 });
 
 // PATCH /task-templates/:id
-router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const tpl = await (prisma as any).taskTemplate.update({
-      where: { id: req.params.id },
-      data: req.body,
+    const { categoryId, title, durationHours, priority, sortOrder, description } = req.body;
+    
+    const tpl = await (prisma as any).taskTemplate.create({
+      data: {
+        category: { connect: { id: categoryId } },  // ← connexion explicite
+        title,
+        durationHours: durationHours || 4,
+        priority: priority || 'normal',
+        sortOrder: sortOrder || 0,
+        description: description || null,
+        isActive: true,
+      },
       include: { category: true },
     });
-    res.json({ success: true, data: tpl });
+    res.status(201).json({ success: true, data: tpl });
   } catch (err) { next(err); }
 });
 
