@@ -6708,13 +6708,97 @@ function showImportPreview(data) {
 async function importTemplatesFromText() {
   previewImportedTemplates();
 }
-
 async function confirmImportTemplates(overlay) {
   if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
   const btn = document.getElementById('import-confirm-btn');
   if (btn) btn.disabled=true;
 
   toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
+
+  // Get or create categories
+  const catRes = await api('GET', '/task-templates/categories');
+  if (!catRes?.success) {
+    console.error('[import] échec GET categories:', catRes);
+    toast('Échec chargement catégories — voir console F12','error');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  const existingCats = catRes.data || [];
+  const catMap = {};
+  existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
+
+  // Create missing categories
+  const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
+  for (const catName of newCats) {
+    if (!catMap[catName.toLowerCase()]) {
+      const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
+      if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
+      else console.error('[import] échec création catégorie:', catName, r);
+    }
+  }
+
+  // LOG ICI
+  console.log('[import] catMap keys:', Object.keys(catMap));
+
+  // Create templates
+  let created = 0;
+  const errors = [];
+  for (const tpl of IMPORT_TEMPLATES_DATA) {
+    
+    // LOG ICI
+    console.log('[import] tpl.category lower:', tpl.category.toLowerCase(), '→ catId:', catMap[tpl.category.toLowerCase()]);
+    
+    const catId = catMap[tpl.category.toLowerCase()];
+    if (!catId) {
+      errors.push(`${tpl.title}: catégorie "${tpl.category}" introuvable`);
+      continue;
+    }
+    const r = await api('POST', '/task-templates', {
+      categoryId: catId,
+      title: tpl.title,
+      durationHours: tpl.hours,
+      priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
+    });
+    if (r?.success) created++;
+    else errors.push(`${tpl.category}/${tpl.title}: ${r?.error || 'erreur HTTP'}`);
+  }
+
+  if (errors.length) {
+    console.error('[import templates] erreurs détaillées (' + errors.length + ') :', errors);
+    if (created === 0) {
+      toast(`❌ AUCUN template créé — ouvre la console (F12) pour voir les ${errors.length} erreurs`, 'error');
+    } else {
+      toast(`${created} créé(s), ${errors.length} échec(s) — voir console F12`, 'warning');
+    }
+  } else {
+    toast(`${created} template(s) importé(s) ✅`,'success');
+  }
+
+  IMPORT_TEMPLATES_DATA = [];
+  overlay?.remove();
+  loadTemplatesPage();
+  PROJ_CATEGORIES_DATA = [];
+  loadProjTemplateSelector();
+  await loadTaskTemplatesFromAPI();
+}
+
+  // ← AJOUTE ICI les logs
+  console.log('[import] catMap keys:', Object.keys(catMap));
+
+  for (const tpl of IMPORT_TEMPLATES_DATA) {
+    // ← ET ICI
+    console.log('[import] tpl.category lower:', tpl.category.toLowerCase(), '→ catId:', catMap[tpl.category.toLowerCase()]);
+    
+    const catId = catMap[tpl.category.toLowerCase()];
+    const catRes = await api('GET', '/task-templates/categories');
+  if (!catRes?.success) {
+    console.error('[import] échec GET categories:', catRes);
+    toast('Échec chargement catégories — voir console F12','error');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  }
+
 
   // Get or create categories
   const catRes = await api('GET', '/task-templates/categories');
@@ -6774,7 +6858,7 @@ async function confirmImportTemplates(overlay) {
   PROJ_CATEGORIES_DATA = [];
   loadProjTemplateSelector();
   await loadTaskTemplatesFromAPI();
-}
+
 
 // 🔄 Recharge la liste standard des 52 tâches Viewbox en 1 clic.
 // Appelle l'endpoint admin /task-templates/reset qui vide la table et recrée tout.
