@@ -935,6 +935,7 @@ textarea.input{min-height:80px;resize:vertical;}
   <div class="pg-head">
     <div><div class="pg-title">📋 Templates de Tâches</div><div class="pg-sub">Bibliothèque de tâches réutilisables par catégorie</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="diagTaskTemplates()" title="Diagnostic état BD templates" style="color:#888;">🔍 Diag</button>
       <button class="btn btn-ghost btn-sm" onclick="showNewCategoryModal()">+ Catégorie</button>
       <button class="btn btn-ghost btn-sm" onclick="showImportTemplatesModal()">📥 Import Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="resetViewboxTemplates()" title="Recharge la liste standard des 52 tâches Viewbox" style="color:#0a2540;border-color:#0a2540;">🔄 Viewbox standard</button>
@@ -6650,21 +6651,12 @@ function parseTemplateFile(input) {
   const file = input.files[0];
   const reader = new FileReader();
   reader.onload = (e) => {
-    const text = e.target.result;
-    // Simple CSV parse
-    const lines = text.split(/\r?\n/).filter(l=>l.trim());
-    const data = lines.map(line => {
-      const parts = line.split(/[;,\t]/);
-      return {
-        category: (parts[0]||'').trim(),
-        title: (parts[1]||'').trim(),
-        hours: parseFloat(parts[2])||4,
-        priority: (parts[3]||'normal').trim().toLowerCase(),
-      };
-    }).filter(d=>d.category&&d.title);
-    document.getElementById('import-csv-text').value = lines.join('\n');
-    IMPORT_TEMPLATES_DATA = data;
-    showImportPreview(data);
+    let text = e.target.result;
+    // Si encodage Windows-1252/ISO-8859-1 mal lu (UTF-8 par défaut), on tente une conversion
+    // simple des caractères latin-1 problématiques (ex: 'Dur‚e' → 'Durée'). Mais
+    // surtout, on s'en fout car on n'utilise pas les accents pour parser — juste pour le
+    // titre des catégories, et l'utilisateur les corrigera s'il y a besoin.
+    parseAndPreviewCSV(text);
   };
   reader.readAsText(file);
 }
@@ -6672,16 +6664,36 @@ function parseTemplateFile(input) {
 function previewImportedTemplates() {
   const text = document.getElementById('import-csv-text')?.value.trim();
   if (!text) { toast('Colle du contenu CSV','error'); return; }
-  const lines = text.split(/\n/).filter(l=>l.trim());
+  parseAndPreviewCSV(text);
+}
+
+// Parse partagé entre file upload et collage texte.
+// Détecte automatiquement le séparateur (`;`, `,` ou tab) et skip la ligne d'en-tête.
+function parseAndPreviewCSV(text) {
+  const allLines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!allLines.length) { toast('Fichier vide', 'error'); return; }
+
+  // Skip la ligne d'en-tête (si col A contient "categorie", "category", "stage", "step")
+  let lines = allLines;
+  const firstColLower = (allLines[0].split(/[;,\t]/)[0] || '').trim().toLowerCase();
+  if (['categorie','category','catégorie','stage','step','étape','etape'].includes(firstColLower)) {
+    lines = allLines.slice(1);
+    console.log('[import] ligne d\'en-tête skippée :', allLines[0]);
+  }
+
   const data = lines.map(line => {
     const parts = line.split(/[;,\t]/);
     return {
-      category: (parts[0]||'').trim().replace(/^["']|["']$/g,''),
-      title: (parts[1]||'').trim().replace(/^["']|["']$/g,''),
-      hours: parseFloat(parts[2])||4,
-      priority: (parts[3]||'normal').trim().toLowerCase().replace(/^["']|["']$/g,''),
+      category: (parts[0] || '').trim().replace(/^["']|["']$/g, ''),
+      title:    (parts[1] || '').trim().replace(/^["']|["']$/g, ''),
+      hours:    parseFloat(parts[2]) || 4,
+      priority: (parts[3] || 'normal').trim().toLowerCase().replace(/^["']|["']$/g, ''),
     };
-  }).filter(d=>d.category&&d.title);
+  }).filter(d => d.category && d.title);
+
+  if (!data.length) { toast('Aucune ligne valide (vérifie le format : Catégorie;Titre;Heures;Priorité)','error'); return; }
+
+  document.getElementById('import-csv-text').value = lines.join('\n');
   IMPORT_TEMPLATES_DATA = data;
   showImportPreview(data);
 }
@@ -6708,97 +6720,13 @@ function showImportPreview(data) {
 async function importTemplatesFromText() {
   previewImportedTemplates();
 }
+
 async function confirmImportTemplates(overlay) {
   if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
   const btn = document.getElementById('import-confirm-btn');
   if (btn) btn.disabled=true;
 
   toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
-
-  // Get or create categories
-  const catRes = await api('GET', '/task-templates/categories');
-  if (!catRes?.success) {
-    console.error('[import] échec GET categories:', catRes);
-    toast('Échec chargement catégories — voir console F12','error');
-    if (btn) btn.disabled = false;
-    return;
-  }
-  const existingCats = catRes.data || [];
-  const catMap = {};
-  existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
-
-  // Create missing categories
-  const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
-  for (const catName of newCats) {
-    if (!catMap[catName.toLowerCase()]) {
-      const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
-      if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
-      else console.error('[import] échec création catégorie:', catName, r);
-    }
-  }
-
-  // LOG ICI
-  console.log('[import] catMap keys:', Object.keys(catMap));
-
-  // Create templates
-  let created = 0;
-  const errors = [];
-  for (const tpl of IMPORT_TEMPLATES_DATA) {
-    
-    // LOG ICI
-    console.log('[import] tpl.category lower:', tpl.category.toLowerCase(), '→ catId:', catMap[tpl.category.toLowerCase()]);
-    
-    const catId = catMap[tpl.category.toLowerCase()];
-    if (!catId) {
-      errors.push(`${tpl.title}: catégorie "${tpl.category}" introuvable`);
-      continue;
-    }
-    const r = await api('POST', '/task-templates', {
-      categoryId: catId,
-      title: tpl.title,
-      durationHours: tpl.hours,
-      priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
-    });
-    if (r?.success) created++;
-    else errors.push(`${tpl.category}/${tpl.title}: ${r?.error || 'erreur HTTP'}`);
-  }
-
-  if (errors.length) {
-    console.error('[import templates] erreurs détaillées (' + errors.length + ') :', errors);
-    if (created === 0) {
-      toast(`❌ AUCUN template créé — ouvre la console (F12) pour voir les ${errors.length} erreurs`, 'error');
-    } else {
-      toast(`${created} créé(s), ${errors.length} échec(s) — voir console F12`, 'warning');
-    }
-  } else {
-    toast(`${created} template(s) importé(s) ✅`,'success');
-  }
-
-  IMPORT_TEMPLATES_DATA = [];
-  overlay?.remove();
-  loadTemplatesPage();
-  PROJ_CATEGORIES_DATA = [];
-  loadProjTemplateSelector();
-  await loadTaskTemplatesFromAPI();
-}
-
-  // ← AJOUTE ICI les logs
-  console.log('[import] catMap keys:', Object.keys(catMap));
-
-  for (const tpl of IMPORT_TEMPLATES_DATA) {
-    // ← ET ICI
-    console.log('[import] tpl.category lower:', tpl.category.toLowerCase(), '→ catId:', catMap[tpl.category.toLowerCase()]);
-    
-    const catId = catMap[tpl.category.toLowerCase()];
-    const catRes = await api('GET', '/task-templates/categories');
-  if (!catRes?.success) {
-    console.error('[import] échec GET categories:', catRes);
-    toast('Échec chargement catégories — voir console F12','error');
-    if (btn) btn.disabled = false;
-    return;
-  }
-  }
-
 
   // Get or create categories
   const catRes = await api('GET', '/task-templates/categories');
@@ -6858,7 +6786,7 @@ async function confirmImportTemplates(overlay) {
   PROJ_CATEGORIES_DATA = [];
   loadProjTemplateSelector();
   await loadTaskTemplatesFromAPI();
-
+}
 
 // 🔄 Recharge la liste standard des 52 tâches Viewbox en 1 clic.
 // Appelle l'endpoint admin /task-templates/reset qui vide la table et recrée tout.
@@ -6866,15 +6794,40 @@ async function resetViewboxTemplates() {
   if (!confirm('⚠️ Cela va EFFACER tous les templates et catégories actuels puis recréer les 52 tâches Viewbox standard.\n\nContinuer ?')) return;
   toast('Réinitialisation en cours...', 'info');
   const r = await api('POST', '/task-templates/reset');
+  console.log('[reset] response complète :', JSON.stringify(r, null, 2));
   if (r?.success) {
     toast(`✅ ${r.data?.tasks || 52} tâches Viewbox recréées (${r.data?.categories || 7} catégories)`, 'success');
     PROJ_CATEGORIES_DATA = [];
     await loadTaskTemplatesFromAPI();
     loadTemplatesPage();
   } else {
-    console.error('[reset] échec:', r);
-    toast(`❌ ${r?.error || 'Échec — voir console (F12). Tu dois être admin.'}`, 'error');
+    const msg = r?.error || r?.message || JSON.stringify(r) || 'Erreur inconnue';
+    console.error('[reset] échec — détails :', msg, r);
+    toast(`❌ Échec reset : ${msg}`, 'error');
   }
+}
+
+// Diagnostic admin : affiche l'état de la BD côté templates dans un alert
+async function diagTaskTemplates() {
+  const r = await api('GET', '/task-templates/diag');
+  console.log('[diag] response :', r);
+  if (!r?.success) {
+    alert('Diag impossible : ' + (r?.error || 'erreur'));
+    return;
+  }
+  const d = r.data;
+  const msg = [
+    '📊 État de la BD templates :',
+    '',
+    `Colonnes de task_templates : ${d.columns.length}`,
+    `  ${d.columns.join(', ')}`,
+    '',
+    `Colonne categoryId présente : ${d.hasCategoryIdColumn ? '✅ OUI' : '❌ NON'}`,
+    `Catégories en base : ${d.categoryCount}`,
+    `Templates en base  : ${d.templateCount}`,
+    `Templates orphelins : ${d.orphanTemplates}`,
+  ].join('\n');
+  alert(msg);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -13114,6 +13067,7 @@ function buildStudioHTML() {
       <input id="brf-st-title" value="${(BRF_STUDIO?.title||'Briefing').replace(/"/g,'&quot;')}"
         style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font-size:13px;max-width:280px;"
         oninput="BRF_STUDIO.title=this.value">
+      <button class="btn btn-sm" onclick="brfAutoGenerateBriefing(this)" title="Génère automatiquement un briefing complet à partir des données du projet" style="background:linear-gradient(135deg,#7b2cbf,#c77dff);color:#fff;border:none;font-weight:600;">🪄 Auto-générer</button>
       <div style="flex:1;"></div>
       <button class="btn btn-outline btn-sm" onclick="briefingStudioExportPDF(this)" style="border-color:#666;color:#eee;background:#222;">📄 PDF</button>
       <button class="btn btn-primary btn-sm" onclick="briefingStudioSave()">💾 Sauvegarder</button>
@@ -13787,21 +13741,32 @@ function brfOpenProjectMenu(btn) {
   document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
   const menu = document.createElement('div');
   menu.className = 'brf-proj-menu';
-  menu.style.cssText = 'position:fixed;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:6px;z-index:10010;box-shadow:0 6px 20px rgba(0,0,0,0.6);min-width:220px;';
+  menu.style.cssText = 'position:fixed;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:6px;z-index:10010;box-shadow:0 6px 20px rgba(0,0,0,0.6);min-width:260px;max-height:80vh;overflow-y:auto;';
   menu.innerHTML = `
-    <button class="brf-pm-item" onclick="brfPickFromProject('infos')">🏷️ Infos projet</button>
+    <div class="brf-pm-section">PROJET</div>
+    <button class="brf-pm-item" onclick="brfPickFromProject('infos')">🏷️ Infos projet (résumé)</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('planning')">📅 Planning install/démontage</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('location')">📍 Localisation + lien Maps</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('notes')">📓 Notes projet (scope, install...)</button>
+    <div class="brf-pm-section">PERSONNES</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('contacts')">📞 Contacts du client</button>
-    <button class="brf-pm-item" onclick="brfPickFromProject('trucks')">🚛 Camions / Logistique</button>
-    <button class="brf-pm-item" onclick="brfPickFromProject('team')">👥 Équipes</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('team')">👥 Équipes (+ téléphones)</button>
+    <div class="brf-pm-section">LOGISTIQUE</div>
+    <button class="brf-pm-item" onclick="brfPickFromProject('trucks')">🚛 Camions (détaillé)</button>
+    <div class="brf-pm-section">CONTENU</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('tasks')">📋 Tâches</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('files')">📁 Fichiers / Photos</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('remarks')">⚠️ Remarques client</button>
+    <style>
+      .brf-pm-section { font-size:10px;color:#888;padding:6px 12px 2px;text-transform:uppercase;letter-spacing:1px; }
+    </style>
   `;
   const r = btn.getBoundingClientRect();
   menu.style.top  = (r.bottom + 4) + 'px';
   menu.style.left = r.left + 'px';
   document.body.appendChild(menu);
   menu.querySelectorAll('.brf-pm-item').forEach(b => {
-    b.style.cssText = 'display:block;width:100%;text-align:left;background:transparent;color:#eee;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:12px;';
+    b.style.cssText = 'display:block;width:100%;text-align:left;background:transparent;color:#eee;border:none;padding:7px 12px;cursor:pointer;border-radius:4px;font-size:12px;';
     b.onmouseover = () => b.style.background = '#333';
     b.onmouseout  = () => b.style.background = 'transparent';
   });
@@ -13832,6 +13797,22 @@ async function brfPickFromProject(type) {
       brfAddPlanningBlock(r.data);
       return;
     }
+    if (type === 'location') {
+      const r = await api('GET', `/projects/${projectId}`);
+      if (!r?.success) throw new Error('Projet introuvable');
+      brfAddLocationBlock(r.data);
+      return;
+    }
+    if (type === 'notes') {
+      const r = await api('GET', `/projects/${projectId}`);
+      if (!r?.success) throw new Error('Projet introuvable');
+      const p = r.data;
+      if (!p.scope && !p.installNotes && !p.dismantleNotes && !p.description && !p.specialInstructions) {
+        toast('Aucune note saisie sur ce projet', 'warning'); return;
+      }
+      brfAddNotesBlock(p);
+      return;
+    }
     if (type === 'trucks') {
       const r = await api('GET', `/projects/${projectId}/trucks`);
       const items = r?.data || [];
@@ -13850,7 +13831,7 @@ async function brfPickFromProject(type) {
       brfOpenPicker('👥 Choisir les membres à inclure', team, m => ({
         key:   m.userId || m.id,
         label: `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—',
-        sub:   [m.role, phaseLabel(m.phase)].filter(Boolean).join(' · '),
+        sub:   [m.role, phaseLabel(m.phase), m.user?.phone ? '📞 ' + m.user.phone : null].filter(Boolean).join(' · '),
       }), selected => brfAddTeamBlock(selected));
       return;
     }
@@ -13877,7 +13858,6 @@ async function brfPickFromProject(type) {
       if (!cliRes?.success) throw new Error('Client introuvable');
       const client = cliRes.data;
       const contacts = Array.isArray(client.contacts) ? [...client.contacts] : [];
-      // Si pas de contacts détaillés, mais champ contactName legacy, on l'ajoute en option
       if (contacts.length === 0 && client.contactName) {
         contacts.push({ id:'main', name: client.contactName, email: client.email, phone: client.phone, role:'Contact principal', isPrimary:true });
       }
@@ -13889,8 +13869,34 @@ async function brfPickFromProject(type) {
       }), selected => brfAddContactsBlock(selected, client.name));
       return;
     }
+    if (type === 'files') {
+      const r = await api('GET', `/projects/${projectId}/files`);
+      const files = (r?.data || []).filter(f => {
+        const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+        return ['jpg','jpeg','png','gif','webp','heic','pdf','svg'].includes(ext);
+      });
+      if (!files.length) { toast('Aucun fichier image/PDF sur ce projet', 'warning'); return; }
+      brfOpenPicker('📁 Choisir les fichiers à insérer', files, f => ({
+        key:   f.id,
+        label: f.fileName || 'fichier',
+        sub:   (f.fileType || '?') + (f.fileSize ? ' · ' + Math.round(f.fileSize/1024) + ' KB' : ''),
+      }), selected => brfAddFilesBlock(selected));
+      return;
+    }
+    if (type === 'remarks') {
+      const r = await api('GET', `/client-remarks?projectId=${projectId}`);
+      const remarks = r?.data || [];
+      if (!remarks.length) { toast('Aucune remarque client sur ce projet', 'warning'); return; }
+      brfOpenPicker('⚠️ Choisir les remarques à inclure', remarks, rk => ({
+        key:   rk.id,
+        label: (rk.title || rk.description || '—').slice(0, 80),
+        sub:   [rk.status, rk.priority, rk.createdAt ? new Date(rk.createdAt).toLocaleDateString('fr-FR') : null].filter(Boolean).join(' · '),
+      }), selected => brfAddRemarksBlock(selected));
+      return;
+    }
   } catch (e) {
     toast('Erreur : ' + (e.message || e), 'error');
+    console.error('[brf] pick error:', e);
   }
 }
 
@@ -14034,41 +14040,428 @@ function brfAddPlanningBlock(p) {
 function brfAddTrucksBlock(trucks) {
   const lines = ['🚛 LOGISTIQUE', ''];
   for (const t of trucks) {
-    lines.push(`${vehicleLabel(t.vehicleType)} — ${t.loadingLocation || '?'} → ${t.unloadingLocation || '?'}`);
+    lines.push(`${vehicleLabel(t.vehicleType)}${t.customName ? ' « ' + t.customName + ' »' : ''}`);
+    lines.push(`  ${t.loadingLocation || '?'}  →  ${t.unloadingLocation || '?'}`);
     if (t.loadingDate) {
-      const d = new Date(t.loadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-      lines.push(`  🕒 ${d}`);
+      const d = new Date(t.loadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      lines.push(`  🕒 Chargement : ${d}`);
     }
-    if (t.driverName) lines.push(`  👤 ${t.driverName}${t.driverPhone ? ' · ' + t.driverPhone : ''}`);
+    if (t.unloadingDate) {
+      const d = new Date(t.unloadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      lines.push(`  🏁 Livraison : ${d}`);
+    }
+    if (t.driverName) lines.push(`  👤 ${t.driverName}${t.driverPhone ? '  📞 ' + t.driverPhone : ''}`);
     if (t.licensePlate) lines.push(`  🪧 ${t.licensePlate}`);
+    if (t.transportCompany) lines.push(`  🏢 ${t.transportCompany}`);
+    if (t.price) lines.push(`  💶 ${t.price} €`);
+    if (t.status) lines.push(`  ⚙️ Statut : ${t.status}`);
     if (t.notes) lines.push(`  📝 ${t.notes}`);
     lines.push('');
   }
-  brfAddTextbox(lines.join('\n'), { width: 560, fontSize: 15 });
+  brfAddTextbox(lines.join('\n'), { width: 600, fontSize: 14 });
 }
 
 function brfAddTeamBlock(members) {
   const lines = ['👥 ÉQUIPE', ''];
-  // Grouper par phase
-  const install = members.filter(m => m.phase === 'installation' || m.phase === 'both' || !m.phase);
-  const dism    = members.filter(m => m.phase === 'dismantling');
-  if (install.length) {
-    lines.push('Installation');
-    for (const m of install) {
+  // Grouper par phase pour clarté
+  const groups = {
+    'Installation': members.filter(m => m.phase === 'installation' || m.phase === 'both' || !m.phase),
+    'Démontage':    members.filter(m => m.phase === 'dismantling'),
+  };
+  let first = true;
+  for (const [phaseName, list] of Object.entries(groups)) {
+    if (!list.length) continue;
+    if (!first) lines.push('');
+    lines.push(phaseName);
+    for (const m of list) {
       const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—';
-      lines.push(`  • ${name}${m.role ? ' — ' + m.role : ''}`);
+      const role = m.role ? ' — ' + m.role : '';
+      lines.push(`  • ${name}${role}`);
+      if (m.user?.phone)  lines.push(`      📞 ${m.user.phone}`);
+      if (m.user?.email)  lines.push(`      ✉️  ${m.user.email}`);
     }
-    if (dism.length) lines.push('');
+    first = false;
   }
-  if (dism.length) {
-    lines.push('Démontage');
-    for (const m of dism) {
-      const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—';
-      lines.push(`  • ${name}${m.role ? ' — ' + m.role : ''}`);
-    }
-  }
-  brfAddTextbox(lines.join('\n'), { width: 480, fontSize: 16 });
+  brfAddTextbox(lines.join('\n'), { width: 540, fontSize: 15 });
 }
+
+// ─── Nouveaux générateurs : location, notes, files, remarks ──────────
+function brfAddLocationBlock(p) {
+  const addr = [p.address, p.city].filter(Boolean).join(', ');
+  if (!addr) { toast('Pas d\'adresse sur ce projet', 'warning'); return; }
+  const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
+  const lines = [
+    '📍 LOCALISATION',
+    '',
+    p.name || '',
+    addr,
+    '',
+    'Voir sur Google Maps :',
+    mapsUrl,
+  ];
+  // Texte avec lien cliquable (le lien est dans le texte, browser le détectera)
+  const tb = brfAddTextbox(lines.join('\n'), { width: 540, fontSize: 16 });
+  // Ajouter un marqueur emoji pour pointer une position. L'utilisateur peut le bouger.
+  setTimeout(() => {
+    const pin = new fabric.IText('📌', { left: 700, top: 200, fontSize: 64, fill: '#e63946' });
+    BRF_STUDIO.fabricCanvas.add(pin);
+    BRF_STUDIO.fabricCanvas.requestRenderAll();
+  }, 100);
+}
+
+function brfAddNotesBlock(p) {
+  const lines = ['📓 NOTES PROJET', ''];
+  if (p.scope)               { lines.push('OBJET'); lines.push(p.scope); lines.push(''); }
+  if (p.description)         { lines.push('DESCRIPTION'); lines.push(p.description); lines.push(''); }
+  if (p.installNotes)        { lines.push('NOTES INSTALLATION'); lines.push(p.installNotes); lines.push(''); }
+  if (p.dismantleNotes)      { lines.push('NOTES DÉMONTAGE'); lines.push(p.dismantleNotes); lines.push(''); }
+  if (p.specialInstructions) { lines.push('INSTRUCTIONS SPÉCIALES'); lines.push(p.specialInstructions); lines.push(''); }
+  brfAddTextbox(lines.join('\n').trim(), { width: 1000, fontSize: 16 });
+}
+
+async function brfAddFilesBlock(files) {
+  // Pour chaque fichier : image → fabric.Image, autre (PDF) → cadre cliquable.
+  let yCursor = 100;
+  let xCursor = 100;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+    const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext);
+    if (isImage) {
+      // Charge async, attend
+      await new Promise(resolve => {
+        const imgEl = new Image();
+        imgEl.crossOrigin = 'anonymous';
+        const place = () => {
+          const fImg = new fabric.Image(imgEl);
+          const maxW = 380;
+          if (fImg.width > maxW) fImg.scaleToWidth(maxW);
+          fImg.set({ left: xCursor, top: yCursor });
+          BRF_STUDIO.fabricCanvas.add(fImg);
+          xCursor += fImg.getScaledWidth() + 20;
+          if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 280; }
+          resolve();
+        };
+        imgEl.onload  = place;
+        imgEl.onerror = () => {
+          // Retry sans CORS
+          const im2 = new Image();
+          im2.onload  = () => { imgEl.naturalWidth || (imgEl.width = im2.width); place.call({ imgEl: im2 }); resolve(); };
+          im2.onerror = () => { console.warn('image illisible:', f.fileUrl); resolve(); };
+          im2.src = f.fileUrl;
+        };
+        imgEl.src = f.fileUrl;
+      });
+    } else {
+      // PDF ou autre → cadre avec nom + URL en dessous
+      const grp = new fabric.Group([
+        new fabric.Rect({ width: 260, height: 90, fill:'#f4f4f4', stroke:'#bbb', rx:8, ry:8 }),
+        new fabric.IText('📄', { left:14, top:20, fontSize:40 }),
+        new fabric.Textbox(f.fileName || 'Document', { left:70, top:20, width:180, fontSize:14, fill:'#0a2540', fontWeight:'bold' }),
+        new fabric.Textbox(f.fileUrl, { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
+      ], { left: xCursor, top: yCursor });
+      BRF_STUDIO.fabricCanvas.add(grp);
+      xCursor += 280;
+      if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 110; }
+    }
+  }
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+  toast(`${files.length} fichier(s) ajouté(s)`, 'success');
+}
+
+function brfAddRemarksBlock(remarks) {
+  const lines = ['⚠️ REMARQUES CLIENT', ''];
+  for (const r of remarks) {
+    const status = r.status === 'resolved' ? '✓' : r.status === 'in_progress' ? '↻' : '○';
+    lines.push(`${status} ${r.title || r.description || '—'}`);
+    if (r.title && r.description) lines.push(`   ${r.description}`);
+    const meta = [
+      r.priority ? 'priorité: ' + r.priority : null,
+      r.zone ? 'zone: ' + r.zone : null,
+      r.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : null,
+    ].filter(Boolean).join(' · ');
+    if (meta) lines.push(`   [${meta}]`);
+    lines.push('');
+  }
+  brfAddTextbox(lines.join('\n'), { width: 720, fontSize: 14 });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 🪄 AUTO-GÉNÉRATION DE BRIEFING COMPLET
+// ════════════════════════════════════════════════════════════════════
+// Charge toutes les données du projet et construit automatiquement un
+// briefing complet de 6 à 10 slides avec un design Viewbox cohérent.
+// L'utilisateur peut ensuite ajuster chaque slide à sa guise.
+
+async function brfAutoGenerateBriefing(btn) {
+  if (!confirm('🪄 Auto-générer un briefing complet à partir des données du projet ?\n\nLes slides actuelles seront REMPLACÉES par les slides générées.\n(Tu peux les éditer ensuite.)')) return;
+
+  const orig = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Génération...'; }
+  toast('Chargement des données du projet...', 'info');
+
+  try {
+    const projectId = BRF_STUDIO.projectId;
+    // 1. Charger TOUT en parallèle
+    const [pRes, tRes, taskRes, fileRes, remarkRes] = await Promise.all([
+      api('GET', `/projects/${projectId}`),
+      api('GET', `/projects/${projectId}/trucks`),
+      api('GET', `/tasks?projectId=${projectId}`),
+      api('GET', `/projects/${projectId}/files`),
+      api('GET', `/client-remarks?projectId=${projectId}`).catch(() => ({ data: [] })),
+    ]);
+    if (!pRes?.success) throw new Error('Impossible de charger le projet');
+    const project  = pRes.data;
+    const trucks   = tRes?.data   || [];
+    const tasks    = taskRes?.data || [];
+    const files    = fileRes?.data || [];
+    const remarks  = remarkRes?.data || [];
+
+    // Charger client + contacts
+    let client = null;
+    let clientContacts = [];
+    if (project.clientId) {
+      const cli = await api('GET', `/clients/${project.clientId}`);
+      if (cli?.success) {
+        client = cli.data;
+        clientContacts = client.contacts || [];
+        if (!clientContacts.length && client.contactName) {
+          clientContacts = [{ name: client.contactName, email: client.email, phone: client.phone, role:'Contact principal', isPrimary:true }];
+        }
+      }
+    }
+
+    // 2. Wipe slides actuelles et générer
+    BRF_STUDIO.slides = [];
+    BRF_STUDIO.curIdx = 0;
+
+    // Helper : crée une nouvelle slide vide et la sélectionne
+    const newSlide = (name) => {
+      const id = 'slide-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+      BRF_STUDIO.slides.push({ id, name, json: null });
+      BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+      BRF_STUDIO.suppressSnapshot = true;
+      BRF_STUDIO.fabricCanvas.clear();
+      BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => {});
+      applyLogoBackground();
+    };
+    const saveSlide = () => {
+      const json = BRF_STUDIO.fabricCanvas.toJSON();
+      delete json.backgroundImage;
+      BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
+      BRF_STUDIO.suppressSnapshot = false;
+    };
+
+    const PRIMARY = '#0a2540';
+    const ACCENT  = '#e63946';
+    const GRAY    = '#666';
+
+    // ─── SLIDE 1 : COUVERTURE ─────────────────────────────────────
+    newSlide('Couverture');
+    BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:8, fill:ACCENT, selectable:false, evented:false }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('BRIEFING', { left:80, top:160, fontSize:24, fontFamily:'Helvetica', fill:GRAY, fontWeight:'bold' }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox((project.name || 'Projet').toUpperCase(), {
+      left:80, top:200, width:1120, fontSize:68, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY, lineHeight:1.05,
+    }));
+    if (client?.name) {
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('Client : ' + client.name, { left:80, top:380, fontSize:28, fontFamily:'Helvetica', fill:'#333' }));
+    }
+    if (project.installationStart) {
+      const ds = new Date(project.installationStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' });
+      const de = project.installationEnd ? new Date(project.installationEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'long' }) : '?';
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText(`📅  Installation : ${ds} → ${de}`, { left:80, top:440, fontSize:20, fontFamily:'Helvetica', fill:GRAY }));
+    }
+    if (project.address) {
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText(`📍  ${project.address}${project.city ? ', ' + project.city : ''}`, { left:80, top:480, fontSize:20, fontFamily:'Helvetica', fill:GRAY }));
+    }
+    if (project.internalNumber) {
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText(`Référence : ${project.internalNumber}`, { left:80, top:580, fontSize:14, fontFamily:'Helvetica', fill:'#999', fontStyle:'italic' }));
+    }
+    saveSlide();
+
+    // ─── SLIDE 2 : PLANNING ──────────────────────────────────────
+    if (project.installationStart || project.dismantlingStart) {
+      newSlide('Planning');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📅 Planning', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) : '?';
+      if (project.installationStart) {
+        BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:220, width:540, height:380, fill:'#f8f9fb', stroke:'#ddd' }));
+        BRF_STUDIO.fabricCanvas.add(new fabric.IText('🏗️ INSTALLATION', { left:110, top:250, fontSize:26, fontFamily:'Helvetica', fontWeight:'bold', fill:ACCENT }));
+        BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(`Du :\n${fmt(project.installationStart)}\n\nAu :\n${fmt(project.installationEnd)}`, {
+          left:110, top:300, width:480, fontSize:20, fontFamily:'Helvetica', fill:'#333', lineHeight:1.5,
+        }));
+      }
+      if (project.dismantlingStart) {
+        BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:660, top:220, width:540, height:380, fill:'#f8f9fb', stroke:'#ddd' }));
+        BRF_STUDIO.fabricCanvas.add(new fabric.IText('🔨 DÉMONTAGE', { left:690, top:250, fontSize:26, fontFamily:'Helvetica', fontWeight:'bold', fill:ACCENT }));
+        BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(`Du :\n${fmt(project.dismantlingStart)}\n\nAu :\n${fmt(project.dismantlingEnd)}`, {
+          left:690, top:300, width:480, fontSize:20, fontFamily:'Helvetica', fill:'#333', lineHeight:1.5,
+        }));
+      }
+      saveSlide();
+    }
+
+    // ─── SLIDE 3 : LOCALISATION ──────────────────────────────────
+    if (project.address) {
+      newSlide('Lieu');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📍 Localisation', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const addr = [project.address, project.city].filter(Boolean).join(', ');
+      const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, { left:80, top:200, width:900, fontSize:30, fontFamily:'Helvetica', fill:'#333', fontWeight:'bold' }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('🗺️  Lien Google Maps :', { left:80, top:340, fontSize:18, fontFamily:'Helvetica', fill:GRAY }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(mapsUrl, { left:80, top:370, width:1120, fontSize:14, fontFamily:'Helvetica', fill:'#4895ef' }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📌', { left:1000, top:200, fontSize:120, fill:ACCENT }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 4 : ÉQUIPE ─────────────────────────────────────────
+    if (project.team?.length) {
+      newSlide('Équipe');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('👥 Équipe', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const lines = [];
+      const groups = {
+        'INSTALLATION': project.team.filter(m => m.phase === 'installation' || m.phase === 'both' || !m.phase),
+        'DÉMONTAGE':    project.team.filter(m => m.phase === 'dismantling'),
+      };
+      for (const [phase, list] of Object.entries(groups)) {
+        if (!list.length) continue;
+        if (lines.length) lines.push('');
+        lines.push(phase);
+        for (const m of list) {
+          const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim();
+          const phone = m.user?.phone ? '  📞 ' + m.user.phone : '';
+          const role = m.role ? '  — ' + m.role : '';
+          lines.push(`  • ${name}${role}${phone}`);
+        }
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:18, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 5 : CONTACTS CLIENT ───────────────────────────────
+    if (clientContacts.length) {
+      newSlide('Contacts');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📞 Contacts', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      if (client?.name) BRF_STUDIO.fabricCanvas.add(new fabric.IText(client.name, { left:80, top:160, fontSize:22, fontFamily:'Helvetica', fill:GRAY, fontStyle:'italic' }));
+      const lines = [];
+      for (const c of clientContacts) {
+        lines.push(`${c.isPrimary ? '★ ' : ''}${c.name || '—'}${c.role ? '   ' + c.role : ''}`);
+        if (c.phone) lines.push(`   📞 ${c.phone}`);
+        if (c.email) lines.push(`   ✉️  ${c.email}`);
+        lines.push('');
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:230, width:1120, fontSize:18, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 6 : LOGISTIQUE CAMIONS ───────────────────────────
+    if (trucks.length) {
+      newSlide('Logistique');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('🚛 Logistique', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const lines = [];
+      for (const t of trucks) {
+        lines.push(`${vehicleLabel(t.vehicleType)}${t.customName ? ' « ' + t.customName + ' »' : ''}`);
+        lines.push(`   ${t.loadingLocation || '?'}  →  ${t.unloadingLocation || '?'}`);
+        if (t.loadingDate) {
+          const d = new Date(t.loadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+          lines.push(`   🕒 ${d}`);
+        }
+        if (t.driverName)   lines.push(`   👤 ${t.driverName}${t.driverPhone ? '  📞 ' + t.driverPhone : ''}`);
+        if (t.licensePlate) lines.push(`   🪧 ${t.licensePlate}`);
+        lines.push('');
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:15, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 7 : NOTES ─────────────────────────────────────────
+    if (project.scope || project.installNotes || project.dismantleNotes || project.specialInstructions || project.description) {
+      newSlide('Notes');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📓 Notes', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const lines = [];
+      if (project.scope)               { lines.push('OBJET'); lines.push(project.scope); lines.push(''); }
+      if (project.description)         { lines.push('DESCRIPTION'); lines.push(project.description); lines.push(''); }
+      if (project.installNotes)        { lines.push('INSTALLATION'); lines.push(project.installNotes); lines.push(''); }
+      if (project.dismantleNotes)      { lines.push('DÉMONTAGE'); lines.push(project.dismantleNotes); lines.push(''); }
+      if (project.specialInstructions) { lines.push('INSTRUCTIONS SPÉCIALES'); lines.push(project.specialInstructions); }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n').trim(), {
+        left:80, top:200, width:1120, fontSize:16, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 8 : TÂCHES IMPORTANTES (priorité high/critical) ────
+    const importantTasks = tasks.filter(t => ['high','critical'].includes(t.priority)).slice(0, 12);
+    if (importantTasks.length) {
+      newSlide('Tâches clés');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('📋 Tâches importantes', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const lines = [];
+      for (const t of importantTasks) {
+        const icon = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '↻' : '○';
+        const date = t.taskDate ? new Date(t.taskDate).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '';
+        const ass  = t.assignedTo?.firstName ? '  · ' + t.assignedTo.firstName : '';
+        lines.push(`${icon} ${t.title || '?'}${date ? '  [' + date + ']' : ''}${ass}`);
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:17, fontFamily:'Helvetica', fill:'#222', lineHeight:1.6,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE 9 : REMARQUES CLIENT (si en cours) ───────────────
+    const openRemarks = remarks.filter(r => r.status !== 'resolved').slice(0, 10);
+    if (openRemarks.length) {
+      newSlide('Remarques');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Remarques client', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const lines = [];
+      for (const r of openRemarks) {
+        lines.push(`• ${r.title || r.description || '—'}`);
+        if (r.title && r.description) lines.push(`   ${r.description}`);
+        lines.push('');
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:16, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
+
+    // ─── SLIDE FINAL : MERCI ─────────────────────────────────────
+    newSlide('Merci');
+    BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:BRF_CANVAS_H, fill:PRIMARY, selectable:false, evented:false }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('MERCI', { left:520, top:280, fontSize:96, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff' }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('Des questions ?', { left:520, top:400, fontSize:26, fontFamily:'Helvetica', fill:'#aac', fontStyle:'italic' }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:520, top:460, width:80, height:4, fill:ACCENT, selectable:false, evented:false }));
+    saveSlide();
+
+    // Recharger la première slide
+    BRF_STUDIO.curIdx = 0;
+    loadSlideIntoCanvas(0);
+    renderStudioSidebar();
+
+    toast(`✅ ${BRF_STUDIO.slides.length} slides générées — pense à sauvegarder !`, 'success');
+  } catch (e) {
+    console.error('[brf auto] error:', e);
+    toast('Erreur : ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+
 
 function brfAddTasksBlock(tasks) {
   const lines = ['📋 TÂCHES', ''];
