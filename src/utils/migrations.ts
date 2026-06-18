@@ -537,6 +537,39 @@ export async function runStartupMigrations() {
     `);
     logger.info('[migration] projects.sort_order ajoutée si absente');
 
+    // ─── Clients : colonne vat + table client_contacts ───
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "vat" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "client_contacts" (
+        "id"          TEXT          NOT NULL,
+        "client_id"   TEXT          NOT NULL,
+        "name"        TEXT          NOT NULL,
+        "role"        TEXT,
+        "email"       TEXT,
+        "phone"       TEXT,
+        "notes"       TEXT,
+        "is_primary"  BOOLEAN       NOT NULL DEFAULT FALSE,
+        "sort_order"  INTEGER       NOT NULL DEFAULT 0,
+        "created_at"  TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"  TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "client_contacts_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "client_contacts_client_id_idx" ON "client_contacts"("client_id");
+    `);
+    // Foreign key (idempotent : on ignore l'erreur si déjà créée)
+    try {
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "client_contacts"
+          ADD CONSTRAINT "client_contacts_client_id_fkey"
+          FOREIGN KEY ("client_id") REFERENCES "clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+      `);
+    } catch (_e) { /* FK déjà présente */ }
+    logger.info('[migration] clients.vat + table client_contacts créées si absentes');
+
     logger.info('✅ Migrations de démarrage OK');
 
     // ─── DIAGNOSTIC : qu'y a-t-il réellement en base ? ───

@@ -4389,23 +4389,34 @@ async function createClientAndReturn() {
   const name = document.getElementById('client-name').value.trim();
   if (!name) { toast('Nom de société obligatoire', 'error'); return; }
 
-  // Collect contacts
+  // Collect contacts (tous, pas seulement le 1er) + marque le 1er comme principal
   const contacts = [];
   document.querySelectorAll('.client-contact-row').forEach((row, i) => {
     const cname  = document.getElementById(`contact-${i}-name`)?.value.trim();
     const cemail = document.getElementById(`contact-${i}-email`)?.value.trim();
     const cphone = document.getElementById(`contact-${i}-phone`)?.value.trim();
-    if (cname || cemail) contacts.push({ name: cname, email: cemail, phone: cphone, isPrimary: i===0 });
+    if (cname || cemail || cphone) {
+      contacts.push({
+        name: cname || '(sans nom)',
+        email: cemail || null,
+        phone: cphone || null,
+        isPrimary: contacts.length === 0,  // le 1er rempli devient principal
+        sortOrder: i,
+      });
+    }
   });
+  // Filtrer les contacts sans vrai nom
+  const validContacts = contacts.filter(c => c.name && c.name !== '(sans nom)');
 
-  // Create client (use first contact as main contact for backward compat)
-  const primary = contacts[0] || {};
+  const primary = validContacts[0] || {};
   const res = await api('POST', '/clients', {
     name,
-    contactName: primary.name || undefined,
-    email: document.getElementById('client-email').value || primary.email || undefined,
-    phone: document.getElementById('client-phone').value || primary.phone || undefined,
-    address: document.getElementById('client-address').value || undefined,
+    vat:         document.getElementById('client-vat').value || null,
+    contactName: primary.name || null,
+    email:       document.getElementById('client-email').value || primary.email || null,
+    phone:       document.getElementById('client-phone').value || primary.phone || null,
+    address:     document.getElementById('client-address').value || null,
+    contacts:    validContacts,
   });
 
   if (res?.success) {
@@ -4783,24 +4794,45 @@ async function loadClientsPage() {
 }
 
 async function openClientDetail(id) {
-  const client = CLIENTS.find(c=>c.id===id);
-  if (!client) return;
-  const projRes = await api('GET', '/projects');
-  const clientProjects = projRes?.data?.filter(p=>p.clientId===id||p.client?.id===id)||[];
+  // Re-fetch pour récupérer les contacts (pas inclus dans la liste légère)
+  const detail = await api('GET', `/clients/${id}`);
+  if (!detail?.success) { toast('Client introuvable', 'error'); return; }
+  const client = detail.data;
+  const clientProjects = client.projects || [];
+  const contacts = client.contacts || [];
+
+  const contactsHtml = contacts.length ? `
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Personnes de contact (${contacts.length})</div>
+      ${contacts.map(c => `
+        <div style="display:flex;justify-content:space-between;align-items:start;padding:8px 0;border-bottom:1px solid var(--border);gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;">${c.isPrimary?'★ ':''}${escapeHtml(c.name)}${c.role?` <span style="font-weight:400;color:var(--text3);font-size:12px;">— ${escapeHtml(c.role)}</span>`:''}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+              ${c.email?`<span>✉️ ${escapeHtml(c.email)}</span>`:''}
+              ${c.email && c.phone?' · ':''}
+              ${c.phone?`<span>📞 ${escapeHtml(c.phone)}</span>`:''}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : '';
+
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML=`
-    <div class="modal" style="max-width:600px;">
-      <div class="modal-head"><div class="modal-title">🏢 ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-        ${client.email?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">EMAIL</div><div>${client.email}</div></div>`:''}
-        ${client.phone?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div>${client.phone}</div></div>`:''}
-        ${client.contactName?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">CONTACT PRINCIPAL</div><div>👤 ${client.contactName}</div></div>`:''}
-        ${client.address?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">ADRESSE</div><div>${client.address}</div></div>`:''}
+    <div class="modal" style="max-width:620px;">
+      <div class="modal-head"><div class="modal-title">🏢 ${escapeHtml(client.name)}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
+        ${client.vat?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TVA</div><div>${escapeHtml(client.vat)}</div></div>`:''}
+        ${client.email?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">EMAIL SOCIÉTÉ</div><div>${escapeHtml(client.email)}</div></div>`:''}
+        ${client.phone?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">TÉLÉPHONE</div><div>${escapeHtml(client.phone)}</div></div>`:''}
+        ${client.address?`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px;">ADRESSE</div><div>${escapeHtml(client.address)}</div></div>`:''}
       </div>
-      ${clientProjects.length?`<div style="border-top:1px solid var(--border);padding-top:12px;"><div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Projets (${clientProjects.length})</div>${clientProjects.map(p=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.closest('.overlay').remove();openProject('${p.id}')"><span style="font-weight:600;">${p.name}</span><span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span></div>`).join('')}</div>`:''}
+      ${contactsHtml}
+      ${clientProjects.length?`<div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;"><div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Projets (${clientProjects.length})</div>${clientProjects.map(p=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.closest('.overlay').remove();openProject('${p.id}')"><span style="font-weight:600;">${escapeHtml(p.name)}</span><span class="badge badge-${p.status==='installation'?'red':p.status==='completed'?'green':'amber'}">${p.status}</span></div>`).join('')}</div>`:''}
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editClient('${client.id}')">✏️ Modifier</button>
+        <button class="btn btn-primary btn-sm" onclick="this.closest('.overlay').remove();editClient('${client.id}')">✏️ Modifier</button>
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -4808,40 +4840,141 @@ async function openClientDetail(id) {
 }
 
 async function editClient(id) {
-  const client = CLIENTS.find(c=>c.id===id);
-  if (!client) return;
+  // Re-fetch frais pour récupérer aussi les contacts (qui ne sont pas dans CLIENTS)
+  const res = await api('GET', `/clients/${id}`);
+  if (!res?.success) { toast('Client introuvable', 'error'); return; }
+  const client = res.data;
+  const contacts = Array.isArray(client.contacts) ? client.contacts : [];
+
   const el = document.createElement('div'); el.className='overlay open';
-  el.innerHTML=`
-    <div class="modal" style="max-width:560px;">
-      <div class="modal-head"><div class="modal-title">✏️ Modifier ${client.name}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
-      <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Nom société *</label><input class="input" id="ec-name" value="${client.name}"></div>
-        <div class="form-group2"><label class="form-label2">Contact principal</label><input class="input" id="ec-contact" value="${client.contactName||''}"></div>
+  el.id = 'overlay-edit-client';
+  el.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-head">
+        <div class="modal-title">✏️ Modifier ${escapeHtml(client.name)}</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
       <div class="input-row">
-        <div class="form-group2"><label class="form-label2">Email</label><input class="input" type="email" id="ec-email" value="${client.email||''}"></div>
-        <div class="form-group2"><label class="form-label2">Téléphone</label><input class="input" id="ec-phone" value="${client.phone||''}"></div>
+        <div class="form-group2"><label class="form-label2">Nom société *</label><input class="input" id="ec-name" value="${escapeHtmlAttr(client.name)}"></div>
+        <div class="form-group2"><label class="form-label2">N° TVA / VAT</label><input class="input" id="ec-vat" value="${escapeHtmlAttr(client.vat||'')}" placeholder="BE0123456789"></div>
       </div>
-      <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="ec-addr" value="${client.address||''}"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
-        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-primary" onclick="saveClientEdit('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+      <div class="form-group2"><label class="form-label2">Adresse</label><input class="input" id="ec-addr" value="${escapeHtmlAttr(client.address||'')}" placeholder="Rue, Code postal, Ville"></div>
+      <div class="input-row">
+        <div class="form-group2"><label class="form-label2">Email société</label><input class="input" type="email" id="ec-email" value="${escapeHtmlAttr(client.email||'')}"></div>
+        <div class="form-group2"><label class="form-label2">Téléphone société</label><input class="input" id="ec-phone" value="${escapeHtmlAttr(client.phone||'')}"></div>
+      </div>
+
+      <!-- Contacts -->
+      <div style="border-top:1px solid var(--border);margin:14px 0 12px;padding-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <label class="form-label2" style="margin:0;">Personnes de contact (${contacts.length})</label>
+          <button class="btn btn-ghost btn-xs" onclick="addEditClientContact()">+ Ajouter contact</button>
+        </div>
+        <div id="ec-contacts-list"></div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:space-between;margin-top:14px;">
+        <button class="btn btn-danger" onclick="deleteClient('${id}', this.closest('.overlay'))" style="background:#e63946;color:#fff;border-color:#e63946;">🗑️ Supprimer ce client</button>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+          <button class="btn btn-primary" onclick="saveClientEdit('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+
+  // Remplir la liste des contacts
+  const list = document.getElementById('ec-contacts-list');
+  EC_CONTACTS_COUNT = 0;
+  if (contacts.length === 0) {
+    // Ajoute une ligne vide pour commencer
+    addEditClientContact();
+  } else {
+    contacts.forEach(c => addEditClientContact(c));
+  }
+}
+
+let EC_CONTACTS_COUNT = 0;
+function addEditClientContact(contact) {
+  const list = document.getElementById('ec-contacts-list');
+  if (!list) return;
+  const idx = EC_CONTACTS_COUNT++;
+  const c = contact || {};
+  const div = document.createElement('div');
+  div.className = 'ec-contact-row';
+  div.id = `ec-contact-${idx}`;
+  div.dataset.contactId = c.id || '';
+  div.style.cssText = 'display:grid;grid-template-columns:1.3fr 1fr 1.2fr 1fr auto auto;gap:6px;margin-bottom:6px;align-items:center;';
+  div.innerHTML = `
+    <input class="input ec-c-name"  placeholder="Prénom Nom *" value="${escapeHtmlAttr(c.name||'')}" style="font-size:12px;">
+    <input class="input ec-c-role"  placeholder="Fonction"     value="${escapeHtmlAttr(c.role||'')}" style="font-size:12px;">
+    <input class="input ec-c-email" placeholder="Email" type="email" value="${escapeHtmlAttr(c.email||'')}" style="font-size:12px;">
+    <input class="input ec-c-phone" placeholder="Téléphone"    value="${escapeHtmlAttr(c.phone||'')}" style="font-size:12px;">
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:4px;cursor:pointer;" title="Marquer comme contact principal">
+      <input type="radio" name="ec-primary" class="ec-c-primary" ${c.isPrimary?'checked':''}>★
+    </label>
+    <button class="btn btn-ghost btn-xs" onclick="this.closest('.ec-contact-row').remove()" title="Supprimer">✕</button>`;
+  list.appendChild(div);
 }
 
 async function saveClientEdit(id, overlay) {
-  const res = await api('PATCH', `/clients/${id}`, {
-    name: document.getElementById('ec-name').value.trim(),
-    contactName: document.getElementById('ec-contact').value||undefined,
-    email: document.getElementById('ec-email').value||undefined,
-    phone: document.getElementById('ec-phone').value||undefined,
-    address: document.getElementById('ec-addr').value||undefined,
+  const name = document.getElementById('ec-name').value.trim();
+  if (!name) { toast('Nom de société obligatoire', 'error'); return; }
+
+  // Collecter les contacts
+  const contacts = [];
+  document.querySelectorAll('#ec-contacts-list .ec-contact-row').forEach((row, i) => {
+    const n = row.querySelector('.ec-c-name')?.value.trim();
+    if (!n) return; // ignore les lignes vides
+    contacts.push({
+      id:        row.dataset.contactId || undefined,
+      name:      n,
+      role:      row.querySelector('.ec-c-role')?.value.trim() || null,
+      email:     row.querySelector('.ec-c-email')?.value.trim() || null,
+      phone:     row.querySelector('.ec-c-phone')?.value.trim() || null,
+      isPrimary: row.querySelector('.ec-c-primary')?.checked || false,
+      sortOrder: i,
+    });
   });
-  if (res?.success) { toast('Client mis à jour ✅','success'); overlay.remove(); loadClientsPage(); loadClients(); }
-  else toast('Erreur','error');
+
+  const res = await api('PATCH', `/clients/${id}`, {
+    name,
+    vat:         document.getElementById('ec-vat').value || null,
+    contactName: contacts.find(c=>c.isPrimary)?.name || contacts[0]?.name || null,
+    email:       document.getElementById('ec-email').value || null,
+    phone:       document.getElementById('ec-phone').value || null,
+    address:     document.getElementById('ec-addr').value || null,
+    contacts,
+  });
+  if (res?.success) {
+    toast('Client mis à jour ✅','success');
+    overlay.remove();
+    loadClientsPage();
+    loadClients();
+  } else {
+    toast('Erreur sauvegarde', 'error');
+  }
+}
+
+async function deleteClient(id, overlay) {
+  if (!confirm('Êtes-vous sûr de vouloir supprimer ce client ?\n\nSi des projets y sont rattachés, la suppression sera refusée.')) return;
+  const res = await api('DELETE', `/clients/${id}`);
+  if (res?.success) {
+    toast('Client supprimé', 'success');
+    overlay?.remove();
+    loadClientsPage();
+    loadClients();
+  } else {
+    toast(res?.error || 'Suppression impossible', 'error');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeHtmlAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
 // ═══ TOOLBOX NEW MODAL ALIAS ═══

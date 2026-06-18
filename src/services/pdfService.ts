@@ -116,7 +116,7 @@ export async function generateHandoverPdf(data: {
     for (const ph of (item.photos || [])) {
       try {
         const optimized = ph.photoUrl.includes('/upload/')
-          ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_400,h_400,q_auto:good/')
+          ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_800,h_800,q_auto:good/')
           : ph.photoUrl;
         const r = await fetch(optimized) as any;
         if (!r.ok) continue;
@@ -154,14 +154,16 @@ export async function generateHandoverPdf(data: {
     const statusColor: Record<string,string> = { ok: GREEN, remark: AMBER, defect: RED, pending: MUTED };
     const statusLabel: Record<string,string> = { ok: 'OK', remark: 'Remarque', defect: 'Défaut', pending: 'En attente' };
 
-    // ─── Mise en page : texte à gauche, photos 5×5 cm à droite ───
-    // 5 cm = 142 pt. On met 2 colonnes de photos (2 × 142 = 284 pt) à droite,
-    // le texte prend la largeur restante (515 - 284 - 8 = 223 pt min).
-    const PHOTO_SIZE = 142;            // 5 cm
+    // ─── Mise en page : texte à gauche, photos 7×7 cm à droite ───
+    // 7 cm = 198 pt. À cette taille on ne peut mettre qu'1 colonne (sinon le
+    // texte n'a plus assez de place). Les photos supplémentaires se déclinent
+    // verticalement sous la première.
+    const PHOTO_SIZE = 198;            // 7 cm
     const PHOTO_GAP = 6;
-    const PHOTOS_W  = 2 * PHOTO_SIZE + PHOTO_GAP; // bloc photos (2 par ligne max)
+    const PHOTO_COLS = 1;
+    const PHOTOS_W  = PHOTO_COLS * PHOTO_SIZE + (PHOTO_COLS - 1) * PHOTO_GAP;
     const TEXT_X    = 40;
-    const TEXT_W    = 515 - PHOTOS_W - 14; // ≈ 217 pt
+    const TEXT_W    = 515 - PHOTOS_W - 14; // ≈ 303 pt — confortable pour le texte
     const PHOTOS_X  = TEXT_X + TEXT_W + 14;
 
     for (const item of itemsWithBuffers) {
@@ -189,28 +191,28 @@ export async function generateHandoverPdf(data: {
       }
       const textBottomY = textY;
 
-      // — Bloc photos à droite (5×5 cm chacune) —
+      // — Bloc photos à droite (7×7 cm chacune, 1 colonne) —
       let photoBottomY = rowTop;
       const photos = item.photoBuffers || [];
       if (photos.length > 0) {
         let col = 0, row = 0;
         for (let i = 0; i < photos.length; i++) {
-          const x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
-          const y = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+          let x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
+          let realY = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
           // Saut de page si une photo déborde
-          if (y + PHOTO_SIZE > 800) {
+          if (realY + PHOTO_SIZE > 800) {
             doc.addPage();
-            // On ne réimprime pas le texte, juste les photos restantes en haut de la nouvelle page
             row = 0;
             col = 0;
+            x = PHOTOS_X;
+            realY = doc.y;
           }
-          const realY = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
           try {
             doc.image(photos[i], x, realY, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
           } catch { /* image illisible */ }
           photoBottomY = realY + PHOTO_SIZE;
           col++;
-          if (col >= 2) { col = 0; row++; }
+          if (col >= PHOTO_COLS) { col = 0; row++; }
         }
       }
 
