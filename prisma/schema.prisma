@@ -167,6 +167,16 @@ model ClientContact {
   @@map("client_contacts")
 }
 
+// Settings globaux de l'application (key/value JSON).
+// Stocke par exemple le logo par défaut des briefings sous la clé "briefing-default-logo".
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
 model Project {
   id                  String        @id @default(uuid())
   internalNumber      String        @unique @map("internal_number")
