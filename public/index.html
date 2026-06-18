@@ -934,9 +934,10 @@ textarea.input{min-height:80px;resize:vertical;}
 <div class="pg" id="pg-templates">
   <div class="pg-head">
     <div><div class="pg-title">📋 Templates de Tâches</div><div class="pg-sub">Bibliothèque de tâches réutilisables par catégorie</div></div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="showNewCategoryModal()">+ Catégorie</button>
       <button class="btn btn-ghost btn-sm" onclick="showImportTemplatesModal()">📥 Import Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="resetViewboxTemplates()" title="Recharge la liste standard des 52 tâches Viewbox" style="color:#0a2540;border-color:#0a2540;">🔄 Viewbox standard</button>
       <button class="btn btn-primary" onclick="showNewTemplateModal()">+ Template</button>
     </div>
   </div>
@@ -6712,29 +6713,40 @@ async function confirmImportTemplates(overlay) {
   if (!IMPORT_TEMPLATES_DATA.length) { toast('Aucune donnée à importer','error'); return; }
   const btn = document.getElementById('import-confirm-btn');
   if (btn) btn.disabled=true;
-  
+
   toast(`Import de ${IMPORT_TEMPLATES_DATA.length} template(s)...`,'info');
-  
+
   // Get or create categories
   const catRes = await api('GET', '/task-templates/categories');
-  const existingCats = catRes?.data||[];
+  if (!catRes?.success) {
+    console.error('[import] échec GET categories:', catRes);
+    toast('Échec chargement catégories — voir console F12','error');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  const existingCats = catRes.data || [];
   const catMap = {};
   existingCats.forEach(c=>{ catMap[c.name.toLowerCase()] = c.id; });
-  
+
   // Create missing categories
   const newCats = [...new Set(IMPORT_TEMPLATES_DATA.map(d=>d.category))];
   for (const catName of newCats) {
     if (!catMap[catName.toLowerCase()]) {
       const r = await api('POST', '/task-templates/categories', { name: catName, icon:'📋', color:'#4895ef' });
       if (r?.success) catMap[catName.toLowerCase()] = r.data.id;
+      else console.error('[import] échec création catégorie:', catName, r);
     }
   }
-  
-  // Create templates
+
+  // Create templates with detailed error tracking
   let created = 0;
+  const errors = [];
   for (const tpl of IMPORT_TEMPLATES_DATA) {
     const catId = catMap[tpl.category.toLowerCase()];
-    if (!catId) continue;
+    if (!catId) {
+      errors.push(`${tpl.title}: catégorie "${tpl.category}" introuvable`);
+      continue;
+    }
     const r = await api('POST', '/task-templates', {
       categoryId: catId,
       title: tpl.title,
@@ -6742,14 +6754,43 @@ async function confirmImportTemplates(overlay) {
       priority: ['low','normal','high','critical'].includes(tpl.priority) ? tpl.priority : 'normal',
     });
     if (r?.success) created++;
+    else errors.push(`${tpl.category}/${tpl.title}: ${r?.error || 'erreur HTTP'}`);
   }
-  
-  toast(`${created} template(s) importé(s) ✅`,'success');
+
+  if (errors.length) {
+    console.error('[import templates] erreurs détaillées (' + errors.length + ') :', errors);
+    if (created === 0) {
+      toast(`❌ AUCUN template créé — ouvre la console (F12) pour voir les ${errors.length} erreurs`, 'error');
+    } else {
+      toast(`${created} créé(s), ${errors.length} échec(s) — voir console F12`, 'warning');
+    }
+  } else {
+    toast(`${created} template(s) importé(s) ✅`,'success');
+  }
+
   IMPORT_TEMPLATES_DATA = [];
   overlay?.remove();
   loadTemplatesPage();
   PROJ_CATEGORIES_DATA = [];
   loadProjTemplateSelector();
+  await loadTaskTemplatesFromAPI();
+}
+
+// 🔄 Recharge la liste standard des 52 tâches Viewbox en 1 clic.
+// Appelle l'endpoint admin /task-templates/reset qui vide la table et recrée tout.
+async function resetViewboxTemplates() {
+  if (!confirm('⚠️ Cela va EFFACER tous les templates et catégories actuels puis recréer les 52 tâches Viewbox standard.\n\nContinuer ?')) return;
+  toast('Réinitialisation en cours...', 'info');
+  const r = await api('POST', '/task-templates/reset');
+  if (r?.success) {
+    toast(`✅ ${r.data?.tasks || 52} tâches Viewbox recréées (${r.data?.categories || 7} catégories)`, 'success');
+    PROJ_CATEGORIES_DATA = [];
+    await loadTaskTemplatesFromAPI();
+    loadTemplatesPage();
+  } else {
+    console.error('[reset] échec:', r);
+    toast(`❌ ${r?.error || 'Échec — voir console (F12). Tu dois être admin.'}`, 'error');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -12989,6 +13030,8 @@ function buildStudioHTML() {
       <button class="brf-tbtn" onclick="brfAddLine()" title="Ligne">— Ligne</button>
       <button class="brf-tbtn" onclick="brfAddArrow()" title="Flèche">➜ Flèche</button>
       <span class="brf-sep"></span>
+      <button class="brf-tbtn" onclick="brfOpenProjectMenu(this)" title="Insérer depuis les données du projet" style="background:linear-gradient(135deg,#0a2540,#1a3a60);">📂 Depuis projet ▾</button>
+      <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfBringForward()" title="Avancer">⬆</button>
       <button class="brf-tbtn" onclick="brfSendBack()" title="Reculer">⬇</button>
       <button class="brf-tbtn" onclick="brfDuplicateSel()" title="Dupliquer">⎘</button>
@@ -13336,6 +13379,323 @@ function briefingStudioClose() {
   document.getElementById('brf-studio-overlay')?.remove();
   BRF_STUDIO = null;
   if (CURRENT_PROJECT_ID) loadDetailBriefing(CURRENT_PROJECT_ID);
+}
+
+// ─── BRIEFING STUDIO — Insertion depuis les données du projet ───────
+// Menu déroulant "📂 Depuis projet" qui propose d'insérer dans le canvas :
+// camions, équipes, contacts, tâches, planning, infos projet.
+// Pour les listes (camions/équipes/contacts/tâches) → modal sélecteur
+// avec checkboxes pour choisir précisément ce qu'on veut insérer.
+
+function brfOpenProjectMenu(btn) {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'brf-proj-menu';
+  menu.style.cssText = 'position:fixed;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:6px;z-index:10010;box-shadow:0 6px 20px rgba(0,0,0,0.6);min-width:220px;';
+  menu.innerHTML = `
+    <button class="brf-pm-item" onclick="brfPickFromProject('infos')">🏷️ Infos projet</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('planning')">📅 Planning install/démontage</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('contacts')">📞 Contacts du client</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('trucks')">🚛 Camions / Logistique</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('team')">👥 Équipes</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('tasks')">📋 Tâches</button>
+  `;
+  const r = btn.getBoundingClientRect();
+  menu.style.top  = (r.bottom + 4) + 'px';
+  menu.style.left = r.left + 'px';
+  document.body.appendChild(menu);
+  menu.querySelectorAll('.brf-pm-item').forEach(b => {
+    b.style.cssText = 'display:block;width:100%;text-align:left;background:transparent;color:#eee;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:12px;';
+    b.onmouseover = () => b.style.background = '#333';
+    b.onmouseout  = () => b.style.background = 'transparent';
+  });
+  setTimeout(() => {
+    const closeIt = (e) => {
+      if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeIt); }
+    };
+    document.addEventListener('click', closeIt);
+  }, 50);
+}
+
+async function brfPickFromProject(type) {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  const projectId = BRF_STUDIO.projectId;
+  if (!projectId) { toast('Pas de projet', 'error'); return; }
+  toast('Chargement...', 'info');
+
+  try {
+    if (type === 'infos') {
+      const r = await api('GET', `/projects/${projectId}`);
+      if (!r?.success) throw new Error('Projet introuvable');
+      brfAddInfoBlock(r.data);
+      return;
+    }
+    if (type === 'planning') {
+      const r = await api('GET', `/projects/${projectId}`);
+      if (!r?.success) throw new Error('Projet introuvable');
+      brfAddPlanningBlock(r.data);
+      return;
+    }
+    if (type === 'trucks') {
+      const r = await api('GET', `/projects/${projectId}/trucks`);
+      const items = r?.data || [];
+      if (!items.length) { toast('Aucun camion sur ce projet', 'warning'); return; }
+      brfOpenPicker('🚛 Choisir les camions à inclure', items, t => ({
+        key:   t.id,
+        label: `${vehicleLabel(t.vehicleType)} — ${t.loadingLocation || '?'} → ${t.unloadingLocation || '?'}`,
+        sub:   formatTruckSub(t),
+      }), selected => brfAddTrucksBlock(selected));
+      return;
+    }
+    if (type === 'team') {
+      const r = await api('GET', `/projects/${projectId}`);
+      const team = r?.data?.team || [];
+      if (!team.length) { toast('Aucun membre dans l\'équipe', 'warning'); return; }
+      brfOpenPicker('👥 Choisir les membres à inclure', team, m => ({
+        key:   m.userId || m.id,
+        label: `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—',
+        sub:   [m.role, phaseLabel(m.phase)].filter(Boolean).join(' · '),
+      }), selected => brfAddTeamBlock(selected));
+      return;
+    }
+    if (type === 'tasks') {
+      const r = await api('GET', `/tasks?projectId=${projectId}`);
+      const tasks = r?.data || [];
+      if (!tasks.length) { toast('Aucune tâche sur ce projet', 'warning'); return; }
+      brfOpenPicker('📋 Choisir les tâches à inclure', tasks, t => ({
+        key:   t.id,
+        label: t.title || '—',
+        sub:   [
+          t.taskDate ? new Date(t.taskDate).toLocaleDateString('fr-FR') : null,
+          t.assignedTo?.firstName ? '👤 ' + t.assignedTo.firstName : null,
+          taskStatusLabel(t.status),
+        ].filter(Boolean).join(' · '),
+      }), selected => brfAddTasksBlock(selected));
+      return;
+    }
+    if (type === 'contacts') {
+      const projRes = await api('GET', `/projects/${projectId}`);
+      const clientId = projRes?.data?.clientId;
+      if (!clientId) { toast('Pas de client lié à ce projet', 'warning'); return; }
+      const cliRes = await api('GET', `/clients/${clientId}`);
+      if (!cliRes?.success) throw new Error('Client introuvable');
+      const client = cliRes.data;
+      const contacts = Array.isArray(client.contacts) ? [...client.contacts] : [];
+      // Si pas de contacts détaillés, mais champ contactName legacy, on l'ajoute en option
+      if (contacts.length === 0 && client.contactName) {
+        contacts.push({ id:'main', name: client.contactName, email: client.email, phone: client.phone, role:'Contact principal', isPrimary:true });
+      }
+      if (!contacts.length) { toast('Aucun contact défini pour ce client', 'warning'); return; }
+      brfOpenPicker(`📞 Choisir les contacts de ${client.name}`, contacts, c => ({
+        key:   c.id,
+        label: (c.isPrimary?'★ ':'') + (c.name || '—'),
+        sub:   [c.role, c.email, c.phone].filter(Boolean).join(' · '),
+      }), selected => brfAddContactsBlock(selected, client.name));
+      return;
+    }
+  } catch (e) {
+    toast('Erreur : ' + (e.message || e), 'error');
+  }
+}
+
+function vehicleLabel(t) {
+  const map = { truck:'Camion', tautliner:'Tautliner', flatbed:'Flatbed', van:'Camionnette', crane:'Grue', scissor:'Nacelle', manitou:'Manitou', forklift:'Chariot', generator:'Groupe', machine:'Machine', other:'Véhicule' };
+  return map[t] || 'Camion';
+}
+function phaseLabel(p) {
+  return p === 'installation' ? 'install' : p === 'dismantling' ? 'démontage' : '';
+}
+function taskStatusLabel(s) {
+  return s === 'completed' ? '✓ terminé' : s === 'in_progress' ? '↻ en cours' : '○ à faire';
+}
+function formatTruckSub(t) {
+  const parts = [];
+  if (t.loadingDate) {
+    parts.push(new Date(t.loadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }));
+  }
+  if (t.driverName) parts.push('👤 ' + t.driverName);
+  if (t.licensePlate) parts.push('🪧 ' + t.licensePlate);
+  return parts.join(' · ');
+}
+
+// ─── Modal sélecteur générique avec checkboxes ───
+function brfOpenPicker(title, items, itemFormatter, onConfirm) {
+  if (!items.length) { toast('Aucun élément', 'warning'); return; }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10020;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:18px;max-width:640px;width:100%;max-height:80vh;display:flex;flex-direction:column;color:#eee;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:700;">${title}</div>
+        <button onclick="this.closest('div').parentElement.remove()" style="background:transparent;color:#eee;border:none;font-size:24px;cursor:pointer;padding:0;line-height:1;">×</button>
+      </div>
+      <div style="margin-bottom:10px;display:flex;gap:6px;">
+        <button class="brf-pick-act" onclick="this.closest('div').parentElement.querySelectorAll('.brf-pick-cb').forEach(cb=>cb.checked=true)">Tout cocher</button>
+        <button class="brf-pick-act" onclick="this.closest('div').parentElement.querySelectorAll('.brf-pick-cb').forEach(cb=>cb.checked=false)">Décocher</button>
+        <div style="flex:1;"></div>
+        <input id="brf-pick-search" placeholder="🔎 Rechercher..." style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 10px;font-size:11px;max-width:200px;">
+      </div>
+      <div id="brf-pick-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:14px;padding-right:4px;">
+        ${items.map((it, i) => {
+          const f = itemFormatter(it, i);
+          const escLabel = String(f.label).replace(/</g,'&lt;');
+          const escSub   = String(f.sub || '').replace(/</g,'&lt;');
+          return `<label class="brf-pick-row" data-search="${escLabel.toLowerCase()} ${escSub.toLowerCase()}" style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;background:#222;border:1px solid #333;border-radius:6px;cursor:pointer;">
+            <input type="checkbox" class="brf-pick-cb" data-idx="${i}" checked style="accent-color:#e63946;margin-top:2px;width:16px;height:16px;flex-shrink:0;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:600;">${escLabel}</div>
+              ${escSub ? `<div style="font-size:11px;color:#aaa;margin-top:2px;">${escSub}</div>` : ''}
+            </div>
+          </label>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="this.closest('div').parentElement.remove()" style="background:transparent;color:#eee;border:1px solid #666;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">Annuler</button>
+        <button id="brf-pick-confirm" style="background:#e63946;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">✅ Ajouter au canvas</button>
+      </div>
+      <style>
+        .brf-pick-act { background:#333;color:#eee;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;}
+        .brf-pick-row:hover { background:#2a2a2a; }
+      </style>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  // Recherche live
+  overlay.querySelector('#brf-pick-search').oninput = (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    overlay.querySelectorAll('.brf-pick-row').forEach(row => {
+      row.style.display = !q || (row.dataset.search || '').includes(q) ? '' : 'none';
+    });
+  };
+  overlay.querySelector('#brf-pick-confirm').onclick = () => {
+    const selected = [];
+    overlay.querySelectorAll('.brf-pick-cb:checked').forEach(cb => {
+      selected.push(items[parseInt(cb.dataset.idx)]);
+    });
+    overlay.remove();
+    if (selected.length) onConfirm(selected);
+    else toast('Aucun élément coché', 'warning');
+  };
+}
+
+// ─── Générateurs de blocs Fabric depuis les données projet ───
+// Utilise fabric.Textbox (multi-ligne avec wrap auto) pour rester éditable.
+function brfAddTextbox(content, options = {}) {
+  // Position : trouve une zone libre approximative
+  const t = new fabric.Textbox(content, {
+    left:       options.left ?? 100 + (BRF_STUDIO.fabricCanvas.getObjects().length * 18) % 200,
+    top:        options.top  ?? 100 + (BRF_STUDIO.fabricCanvas.getObjects().length * 18) % 200,
+    width:      options.width || 520,
+    fontSize:   options.fontSize || 16,
+    fontFamily: 'Helvetica',
+    fill:       options.fill || '#222',
+    lineHeight: 1.35,
+    splitByGrapheme: false,
+    textAlign:  options.textAlign || 'left',
+  });
+  BRF_STUDIO.fabricCanvas.add(t).setActiveObject(t);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+  return t;
+}
+
+function brfAddInfoBlock(p) {
+  const lines = [];
+  lines.push(`🏷️ ${(p.name || 'Projet').toUpperCase()}`);
+  if (p.internalNumber) lines.push(`Ref : ${p.internalNumber}`);
+  lines.push('');
+  if (p.client?.name) lines.push(`Client : ${p.client.name}`);
+  if (p.address) lines.push(`📍 ${p.address}${p.city ? ', ' + p.city : ''}`);
+  if (p.installationStart) {
+    const ds = new Date(p.installationStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const de = p.installationEnd ? new Date(p.installationEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
+    lines.push(`📅 Install : ${ds} → ${de}`);
+  }
+  if (p.dismantlingStart) {
+    const ds = new Date(p.dismantlingStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const de = p.dismantlingEnd ? new Date(p.dismantlingEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
+    lines.push(`🔨 Démontage : ${ds} → ${de}`);
+  }
+  brfAddTextbox(lines.join('\n'), { width: 480, fontSize: 18 });
+}
+
+function brfAddPlanningBlock(p) {
+  const lines = ['📅 PLANNING', ''];
+  const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long' }) : '?';
+  if (p.installationStart) {
+    lines.push('INSTALLATION');
+    lines.push(`  Début : ${fmt(p.installationStart)}`);
+    lines.push(`  Fin   : ${fmt(p.installationEnd)}`);
+    lines.push('');
+  }
+  if (p.dismantlingStart) {
+    lines.push('DÉMONTAGE');
+    lines.push(`  Début : ${fmt(p.dismantlingStart)}`);
+    lines.push(`  Fin   : ${fmt(p.dismantlingEnd)}`);
+  }
+  brfAddTextbox(lines.join('\n'), { width: 480, fontSize: 18 });
+}
+
+function brfAddTrucksBlock(trucks) {
+  const lines = ['🚛 LOGISTIQUE', ''];
+  for (const t of trucks) {
+    lines.push(`${vehicleLabel(t.vehicleType)} — ${t.loadingLocation || '?'} → ${t.unloadingLocation || '?'}`);
+    if (t.loadingDate) {
+      const d = new Date(t.loadingDate).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      lines.push(`  🕒 ${d}`);
+    }
+    if (t.driverName) lines.push(`  👤 ${t.driverName}${t.driverPhone ? ' · ' + t.driverPhone : ''}`);
+    if (t.licensePlate) lines.push(`  🪧 ${t.licensePlate}`);
+    if (t.notes) lines.push(`  📝 ${t.notes}`);
+    lines.push('');
+  }
+  brfAddTextbox(lines.join('\n'), { width: 560, fontSize: 15 });
+}
+
+function brfAddTeamBlock(members) {
+  const lines = ['👥 ÉQUIPE', ''];
+  // Grouper par phase
+  const install = members.filter(m => m.phase === 'installation' || m.phase === 'both' || !m.phase);
+  const dism    = members.filter(m => m.phase === 'dismantling');
+  if (install.length) {
+    lines.push('Installation');
+    for (const m of install) {
+      const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—';
+      lines.push(`  • ${name}${m.role ? ' — ' + m.role : ''}`);
+    }
+    if (dism.length) lines.push('');
+  }
+  if (dism.length) {
+    lines.push('Démontage');
+    for (const m of dism) {
+      const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—';
+      lines.push(`  • ${name}${m.role ? ' — ' + m.role : ''}`);
+    }
+  }
+  brfAddTextbox(lines.join('\n'), { width: 480, fontSize: 16 });
+}
+
+function brfAddTasksBlock(tasks) {
+  const lines = ['📋 TÂCHES', ''];
+  for (const t of tasks) {
+    const icon = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '↻' : '○';
+    const date = t.taskDate ? new Date(t.taskDate).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '';
+    const assignee = t.assignedTo?.firstName ? ` · ${t.assignedTo.firstName}` : '';
+    lines.push(`${icon} ${t.title || '?'}${date ? '  [' + date + ']' : ''}${assignee}`);
+  }
+  brfAddTextbox(lines.join('\n'), { width: 560, fontSize: 15 });
+}
+
+function brfAddContactsBlock(contacts, clientName) {
+  const lines = ['📞 CONTACTS', ''];
+  if (clientName) { lines.push(clientName.toUpperCase()); lines.push(''); }
+  for (const c of contacts) {
+    lines.push(`${c.isPrimary ? '★ ' : ''}${c.name || '—'}`);
+    if (c.role) lines.push(`  ${c.role}`);
+    if (c.email) lines.push(`  ✉️  ${c.email}`);
+    if (c.phone) lines.push(`  📞 ${c.phone}`);
+    lines.push('');
+  }
+  brfAddTextbox(lines.join('\n'), { width: 460, fontSize: 16 });
 }
 
 
