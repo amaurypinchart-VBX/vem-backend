@@ -13286,18 +13286,25 @@ async function brfAddImage(file) {
     const data = await r.json();
     const url = data?.data?.fileUrl;
     if (!url) throw new Error('Pas d\'URL renvoyée');
-    // Pour les PDFs : transformation Cloudinary pg_1/ → JPG (sinon Fabric ne sait pas charger un PDF)
-    const renderUrl = (isPdf && url.includes('/upload/'))
-      ? url.replace('/upload/', '/upload/f_jpg,c_limit,w_1100,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
-      : url;
-    fabric.Image.fromURL(renderUrl, img => {
-      const maxW = 600;
-      if (img.width > maxW) img.scaleToWidth(maxW);
-      img.set({ left:200, top:150 });
-      BRF_STUDIO.fabricCanvas.add(img).setActiveObject(img);
-      BRF_STUDIO.fabricCanvas.requestRenderAll();
-      toast(isPdf ? 'PDF ajouté (page 1)' : 'Image ajoutée', 'success');
-    }, { crossOrigin: 'anonymous' });
+
+    if (isPdf) {
+      // PDF uploadé → 1 slide par page (au lieu d'une image sur slide courante)
+      const fakeFile = { fileName: file.name, fileUrl: url };
+      const pageCount = await brfAddPdfPagesAsSlides(fakeFile);
+      renderStudioSidebar();
+      if (pageCount > 0) toast(`✅ PDF ajouté : ${pageCount} slide(s) créée(s)`, 'success');
+      else toast('PDF uploadé mais aucune page lisible', 'warning');
+    } else {
+      // Image normale → sur slide courante (comportement classique)
+      fabric.Image.fromURL(url, img => {
+        const maxW = 600;
+        if (img.width > maxW) img.scaleToWidth(maxW);
+        img.set({ left:200, top:150 });
+        BRF_STUDIO.fabricCanvas.add(img).setActiveObject(img);
+        BRF_STUDIO.fabricCanvas.requestRenderAll();
+        toast('Image ajoutée', 'success');
+      }, { crossOrigin: 'anonymous' });
+    }
   } catch (e) {
     toast('Échec upload : ' + e.message, 'error');
   }
@@ -14336,79 +14343,198 @@ function brfAddNotesBlock(p) {
   if (p.specialInstructions) { lines.push('INSTRUCTIONS SPÉCIALES'); lines.push(p.specialInstructions); lines.push(''); }
   brfAddTextbox(lines.join('\n').trim(), { width: 1000, fontSize: 16 });
 }
+// ─── Helpers PDF multi-pages ────────────────────────────────────────
+// Sonde la page 1, 2, 3... d'un PDF Cloudinary jusqu'au premier 404.
+// Utilise des miniatures (w_300) pour ne pas surcharger le réseau.
+// Retourne 0 si le fichier n'est pas Cloudinary ou si aucune page n'est lisible.
+async function brfGetPdfPageCount(fileUrl, maxPages = 30) {
+  if (!fileUrl?.includes('/upload/')) return 0;
+  const probeUrl = (n) => fileUrl
+    .replace('/upload/', `/upload/f_jpg,c_limit,w_300,pg_${n}/`)
+    .replace(/\.pdf($|\?)/i, '.jpg$1');
+  let count = 0;
+  for (let n = 1; n <= maxPages; n++) {
+    const exists = await new Promise(resolve => {
+      const img = new Image();
+      let done = false;
+      const finish = (val) => { if (!done) { done = true; resolve(val); } };
+      img.onload  = () => finish(true);
+      img.onerror = () => finish(false);
+      // Sécurité : pas plus de 8s par page (au cas où Cloudinary est lent)
+      setTimeout(() => finish(false), 8000);
+      img.src = probeUrl(n);
+    });
+    if (!exists) break;
+    count = n;
+  }
+  return count;
+}
 
+// Pour un PDF Cloudinary multi-pages : crée 1 slide par page,
+// avec la page en image plein cadre et un header bleu avec le nom du fichier + le n° de page.
+// Sauve automatiquement la slide en cours avant de commencer.
+// Retourne le nombre de slides créées (0 si erreur ou PDF hors Cloudinary).
+async function brfAddPdfPagesAsSlides(file) {
+  const fileName = file.fileName || file.name || 'PDF';
+  const fileUrl  = file.fileUrl  || '';
+  if (!fileUrl.includes('/upload/')) {
+    toast(`PDF "${fileName}" hors Cloudinary — impossible de séparer les pages`, 'warning');
+    return 0;
+  }
+
+  // Sauve la slide en cours pour pouvoir ajouter les nouvelles en sécurité
+  saveCurrentSlideJson();
+
+  toast(`Analyse du PDF "${fileName}"...`, 'info');
+  const pageCount = await brfGetPdfPageCount(fileUrl);
+
+  if (pageCount === 0) {
+    toast(`Aucune page lisible dans "${fileName}"`, 'warning');
+    return 0;
+  }
+
+  toast(`📄 "${fileName}" : création de ${pageCount} slide(s)...`, 'info');
+
+  const PRIMARY = '#0a2540';
+  const renderUrl = (n) => fileUrl
+    .replace('/upload/', `/upload/f_jpg,c_limit,w_1280,pg_${n}/`)
+    .replace(/\.pdf($|\?)/i, '.jpg$1');
+
+  for (let n = 1; n <= pageCount; n++) {
+    // Crée une nouvelle slide
+    BRF_STUDIO.slides.push({
+      id: 'slide-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+      name: `${fileName} — p.${n}/${pageCount}`,
+      json: null,
+    });
+    BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+    BRF_STUDIO.suppressSnapshot = true;
+    BRF_STUDIO.fabricCanvas.clear();
+    BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => {});
+    applyLogoBackground();
+
+    // Header bandeau bleu
+    BRF_STUDIO.fabricCanvas.add(new fabric.Rect({
+      left:0, top:0, width:BRF_CANVAS_W, height:50, fill:PRIMARY, selectable:false, evented:false,
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText(
+      `📄 ${fileName} — Page ${n}/${pageCount}`,
+      { left:20, top:14, fontSize:18, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff', selectable:false }
+    ));
+
+    // Page en image plein cadre (scaling auto)
+    await new Promise(resolve => {
+      const place = (loadedImg) => {
+        try {
+          const fImg = new fabric.Image(loadedImg);
+          const availW = BRF_CANVAS_W - 40;
+          const availH = BRF_CANVAS_H - 50 - 20;
+          const scale = Math.min(availW / fImg.width, availH / fImg.height, 1);
+          fImg.scale(scale);
+          fImg.set({
+            left: (BRF_CANVAS_W - fImg.getScaledWidth()) / 2,
+            top:  60 + (availH - fImg.getScaledHeight()) / 2,
+          });
+          BRF_STUDIO.fabricCanvas.add(fImg);
+        } catch (e) { console.warn('[brf] échec page', n, e); }
+        resolve();
+      };
+      const tryWithCors = new Image();
+      tryWithCors.crossOrigin = 'anonymous';
+      tryWithCors.onload  = () => place(tryWithCors);
+      tryWithCors.onerror = () => {
+        const noCors = new Image();
+        noCors.onload  = () => place(noCors);
+        noCors.onerror = () => resolve();
+        noCors.src = renderUrl(n);
+      };
+      tryWithCors.src = renderUrl(n);
+    });
+
+    // Sauve la slide
+    const slideJson = BRF_STUDIO.fabricCanvas.toJSON();
+    delete slideJson.backgroundImage;
+    BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = slideJson;
+    BRF_STUDIO.suppressSnapshot = false;
+  }
+
+  return pageCount;
+}
 async function brfAddFilesBlock(files) {
-  // Pour chaque fichier : image → fabric.Image directement.
-  // PDF → on convertit la page 1 en JPG via Cloudinary (pg_1/) et on l'insère comme image.
-  // Sinon (autre format / hors Cloudinary) → on retombe sur une carte avec icône + URL.
-  let yCursor = 100;
-  let xCursor = 100;
-  const advance = (widthAdded) => {
-    xCursor += widthAdded;
+  // Tri des fichiers par type :
+  //   • images → ajoutées sur la slide COURANTE
+  //   • PDFs   → chaque PDF crée N NOUVELLES slides (une par page)
+  //   • autres → carte icône sur la slide courante
+  const images = [];
+  const pdfs   = [];
+  const others = [];
+  for (const f of files) {
+    const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+    if (['jpg','jpeg','png','gif','webp','heic','svg'].includes(ext)) images.push(f);
+    else if (ext === 'pdf') pdfs.push(f);
+    else others.push(f);
+  }
+
+  // ── 1. Images + autres sur la slide courante ──
+  let xCursor = 100, yCursor = 100;
+  const advance = (w) => {
+    xCursor += w;
     if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 280; }
   };
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
-    const isImage = ['jpg','jpeg','png','gif','webp','heic','svg'].includes(ext);
-    const isPdf   = ext === 'pdf';
-    // URL effective pour le rendu (PDF → page 1 en JPG via transformation Cloudinary)
-    const renderUrl = (isPdf && (f.fileUrl||'').includes('/upload/'))
-      ? f.fileUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1100,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
-      : f.fileUrl;
-    if (isImage || isPdf) {
-      await new Promise(resolve => {
-        const place = (loadedImg) => {
-          try {
-            const fImg = new fabric.Image(loadedImg);
-            const maxW = 380;
-            if (fImg.width > maxW) fImg.scaleToWidth(maxW);
-            fImg.set({ left: xCursor, top: yCursor });
-            BRF_STUDIO.fabricCanvas.add(fImg);
-            advance(fImg.getScaledWidth() + 20);
-          } catch (e) {
-            console.warn('[brf] échec ajout image:', e);
-          }
-          resolve();
-        };
-        const tryWithCors = new Image();
-        tryWithCors.crossOrigin = 'anonymous';
-        tryWithCors.onload  = () => place(tryWithCors);
-        tryWithCors.onerror = () => {
-          // Retry sans CORS (s'affichera dans le canvas mais ne sera pas exportable en PDF)
-          const noCors = new Image();
-          noCors.onload  = () => place(noCors);
-          noCors.onerror = () => {
-            // Fallback ultime : carte avec icône + URL
-            console.warn('[brf] image illisible:', f.fileUrl);
-            const grp = new fabric.Group([
-              new fabric.Rect({ width: 260, height: 90, fill:'#fff4f4', stroke:'#e63946', rx:8, ry:8 }),
-              new fabric.IText('⚠️', { left:14, top:20, fontSize:40 }),
-              new fabric.Textbox(f.fileName || 'Fichier inaccessible', { left:70, top:20, width:180, fontSize:14, fill:'#e63946', fontWeight:'bold' }),
-              new fabric.Textbox('CORS bloqué — ouvrir le lien dans l\'onglet', { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
-            ], { left: xCursor, top: yCursor });
-            BRF_STUDIO.fabricCanvas.add(grp);
-            advance(280);
-            resolve();
-          };
-          noCors.src = renderUrl;
-        };
-        tryWithCors.src = renderUrl;
-      });
-    } else {
-      // Format non-image, non-PDF → carte avec icône + nom + URL
-      const grp = new fabric.Group([
-        new fabric.Rect({ width: 260, height: 90, fill:'#f4f4f4', stroke:'#bbb', rx:8, ry:8 }),
-        new fabric.IText('📄', { left:14, top:20, fontSize:40 }),
-        new fabric.Textbox(f.fileName || 'Document', { left:70, top:20, width:180, fontSize:14, fill:'#0a2540', fontWeight:'bold' }),
-        new fabric.Textbox(f.fileUrl || '', { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
-      ], { left: xCursor, top: yCursor });
-      BRF_STUDIO.fabricCanvas.add(grp);
-      advance(280);
-    }
+
+  for (const f of images) {
+    await new Promise(resolve => {
+      const place = (loadedImg) => {
+        try {
+          const fImg = new fabric.Image(loadedImg);
+          const maxW = 380;
+          if (fImg.width > maxW) fImg.scaleToWidth(maxW);
+          fImg.set({ left: xCursor, top: yCursor });
+          BRF_STUDIO.fabricCanvas.add(fImg);
+          advance(fImg.getScaledWidth() + 20);
+        } catch (e) { console.warn('[brf]', e); }
+        resolve();
+      };
+      const tryWithCors = new Image();
+      tryWithCors.crossOrigin = 'anonymous';
+      tryWithCors.onload  = () => place(tryWithCors);
+      tryWithCors.onerror = () => {
+        const noCors = new Image();
+        noCors.onload  = () => place(noCors);
+        noCors.onerror = () => resolve();
+        noCors.src = f.fileUrl;
+      };
+      tryWithCors.src = f.fileUrl;
+    });
+  }
+
+  for (const f of others) {
+    const grp = new fabric.Group([
+      new fabric.Rect({ width: 260, height: 90, fill:'#f4f4f4', stroke:'#bbb', rx:8, ry:8 }),
+      new fabric.IText('📄', { left:14, top:20, fontSize:40 }),
+      new fabric.Textbox(f.fileName || 'Document', { left:70, top:20, width:180, fontSize:14, fill:'#0a2540', fontWeight:'bold' }),
+      new fabric.Textbox(f.fileUrl || '', { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
+    ], { left: xCursor, top: yCursor });
+    BRF_STUDIO.fabricCanvas.add(grp);
+    advance(280);
   }
   BRF_STUDIO.fabricCanvas.requestRenderAll();
-  toast(`${files.length} fichier(s) ajouté(s)`, 'success');
+
+  // ── 2. PDFs : chacun crée N nouvelles slides ──
+  let totalPdfSlides = 0;
+  for (const pdf of pdfs) {
+    totalPdfSlides += await brfAddPdfPagesAsSlides(pdf);
+  }
+
+  // Rafraîchit la sidebar pour montrer les nouvelles slides
+  renderStudioSidebar();
+
+  // Toast récap
+  const parts = [];
+  if (images.length)   parts.push(`${images.length} image(s) sur slide courante`);
+  if (others.length)   parts.push(`${others.length} autre(s)`);
+  if (totalPdfSlides)  parts.push(`${totalPdfSlides} slide(s) PDF`);
+  toast(`✅ Ajouté : ${parts.join(' + ')}`, 'success');
 }
 function brfAddRemarksBlock(remarks) {
   const lines = ['⚠️ REMARQUES CLIENT', ''];
@@ -14757,67 +14883,104 @@ async function brfAutoGenerateBriefing(btn) {
     // Une slide par fichier : header bleu Viewbox + image plein cadre.
     // Pour les PDFs, on génère la page 1 en JPG via la transformation Cloudinary
     // (pg_1/) — les pages suivantes restent accessibles dans le fichier original.
+    // ─── SLIDES FICHIERS CHOISIS PAR L'UTILISATEUR ───────────────
+    // Pour les PDFs Cloudinary : une slide par page (sondage du nombre de pages).
+    // Pour les images : une seule slide par fichier (header + image plein cadre).
+    // Les fichiers hors Cloudinary ou illisibles : 1 slide d'avertissement.
     if (pickedFiles?.length) {
       for (const file of pickedFiles) {
         const ext = (file.fileName || '').split('.').pop().toLowerCase();
         const isPdf = ext === 'pdf';
-        const imageUrl = (isPdf && file.fileUrl?.includes('/upload/'))
-          ? file.fileUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1280,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
-          : file.fileUrl;
 
-        newSlide(file.fileName || 'Fichier');
-
-        // Header bandeau
-        BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:64, fill:PRIMARY, selectable:false, evented:false }));
-        BRF_STUDIO.fabricCanvas.add(new fabric.IText(
-          (isPdf?'📄 ':'🖼️ ') + (file.fileName || 'Fichier'),
-          { left:30, top:18, fontSize:22, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff', selectable:false }
-        ));
-        if (isPdf) {
+        if (isPdf && file.fileUrl?.includes('/upload/')) {
+          // PDF Cloudinary multi-pages → 1 slide par page
+          const pageCount = await brfGetPdfPageCount(file.fileUrl);
+          if (pageCount === 0) continue; // saute si illisible
+          const renderPageUrl = (n) => file.fileUrl
+            .replace('/upload/', `/upload/f_jpg,c_limit,w_1280,pg_${n}/`)
+            .replace(/\.pdf($|\?)/i, '.jpg$1');
+          for (let n = 1; n <= pageCount; n++) {
+            newSlide(`${file.fileName || 'PDF'} — p.${n}/${pageCount}`);
+            // Header bandeau
+            BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:50, fill:PRIMARY, selectable:false, evented:false }));
+            BRF_STUDIO.fabricCanvas.add(new fabric.IText(
+              `📄 ${file.fileName || 'PDF'} — Page ${n}/${pageCount}`,
+              { left:20, top:14, fontSize:18, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff', selectable:false }
+            ));
+            await new Promise(resolve => {
+              const place = (loadedImg) => {
+                try {
+                  const fImg = new fabric.Image(loadedImg);
+                  const availW = BRF_CANVAS_W - 40;
+                  const availH = BRF_CANVAS_H - 50 - 20;
+                  const scale = Math.min(availW / fImg.width, availH / fImg.height, 1);
+                  fImg.scale(scale);
+                  fImg.set({
+                    left: (BRF_CANVAS_W - fImg.getScaledWidth()) / 2,
+                    top:  60 + (availH - fImg.getScaledHeight()) / 2,
+                  });
+                  BRF_STUDIO.fabricCanvas.add(fImg);
+                } catch (e) { console.warn('[brf auto] page', n, e); }
+                resolve();
+              };
+              const tryWithCors = new Image();
+              tryWithCors.crossOrigin = 'anonymous';
+              tryWithCors.onload  = () => place(tryWithCors);
+              tryWithCors.onerror = () => {
+                const noCors = new Image();
+                noCors.onload  = () => place(noCors);
+                noCors.onerror = () => resolve();
+                noCors.src = renderPageUrl(n);
+              };
+              tryWithCors.src = renderPageUrl(n);
+            });
+            saveSlide();
+          }
+        } else {
+          // Image (ou PDF hors Cloudinary) → 1 slide
+          const imageUrl = (isPdf && file.fileUrl?.includes('/upload/'))
+            ? file.fileUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1280,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
+            : file.fileUrl;
+          newSlide(file.fileName || 'Fichier');
+          BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:64, fill:PRIMARY, selectable:false, evented:false }));
           BRF_STUDIO.fabricCanvas.add(new fabric.IText(
-            'Page 1 — voir le PDF original pour les pages suivantes',
-            { left: BRF_CANVAS_W - 420, top: 24, fontSize: 12, fontFamily:'Helvetica', fill:'#aac', fontStyle:'italic', selectable:false }
+            (isPdf?'📄 ':'🖼️ ') + (file.fileName || 'Fichier'),
+            { left:30, top:18, fontSize:22, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff', selectable:false }
           ));
-        }
-
-        // Image (chargement async avec fallback CORS)
-        await new Promise(resolve => {
-          const place = (loadedImg) => {
-            try {
-              const fImg = new fabric.Image(loadedImg);
-              const availW = BRF_CANVAS_W - 80;
-              const availH = BRF_CANVAS_H - 64 - 40; // header + marge basse
-              const scale = Math.min(availW / fImg.width, availH / fImg.height, 1);
-              fImg.scale(scale);
-              fImg.set({
-                left: (BRF_CANVAS_W - fImg.getScaledWidth()) / 2,
-                top:  84 + (availH - fImg.getScaledHeight()) / 2,
-              });
-              BRF_STUDIO.fabricCanvas.add(fImg);
-            } catch (e) {
-              BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Erreur de rendu : ' + e.message, { left:80, top:200, fontSize:16, fill:'#888' }));
-            }
-            resolve();
-          };
-          const tryWithCors = new Image();
-          tryWithCors.crossOrigin = 'anonymous';
-          tryWithCors.onload  = () => place(tryWithCors);
-          tryWithCors.onerror = () => {
-            // Retry sans CORS (s'affichera mais ne sera pas exportable en PDF)
-            console.warn('[brf auto] CORS bloqué pour', file.fileName, '- fallback sans CORS');
-            const noCors = new Image();
-            noCors.onload  = () => place(noCors);
-            noCors.onerror = () => {
-              BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Fichier inaccessible', { left:80, top:200, fontSize:18, fill:'#666' }));
-              BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(file.fileUrl || '', { left:80, top:240, width:BRF_CANVAS_W-160, fontSize:11, fill:'#888' }));
+          await new Promise(resolve => {
+            const place = (loadedImg) => {
+              try {
+                const fImg = new fabric.Image(loadedImg);
+                const availW = BRF_CANVAS_W - 80;
+                const availH = BRF_CANVAS_H - 64 - 40;
+                const scale = Math.min(availW / fImg.width, availH / fImg.height, 1);
+                fImg.scale(scale);
+                fImg.set({
+                  left: (BRF_CANVAS_W - fImg.getScaledWidth()) / 2,
+                  top:  84 + (availH - fImg.getScaledHeight()) / 2,
+                });
+                BRF_STUDIO.fabricCanvas.add(fImg);
+              } catch (e) {
+                BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Erreur de rendu', { left:80, top:200, fontSize:16, fill:'#888' }));
+              }
               resolve();
             };
-            noCors.src = imageUrl;
-          };
-          tryWithCors.src = imageUrl;
-        });
-
-        saveSlide();
+            const tryWithCors = new Image();
+            tryWithCors.crossOrigin = 'anonymous';
+            tryWithCors.onload  = () => place(tryWithCors);
+            tryWithCors.onerror = () => {
+              const noCors = new Image();
+              noCors.onload  = () => place(noCors);
+              noCors.onerror = () => {
+                BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Fichier inaccessible', { left:80, top:200, fontSize:18, fill:'#666' }));
+                resolve();
+              };
+              noCors.src = imageUrl;
+            };
+            tryWithCors.src = imageUrl;
+          });
+          saveSlide();
+        }
       }
     }
     // ─── SLIDE FINAL : MERCI ─────────────────────────────────────
