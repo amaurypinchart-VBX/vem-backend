@@ -12363,22 +12363,33 @@ function renderBlockEditor(slideIdx, bi, b) {
   else if (b.type === 'photos') {
     const photos = b.photos || [];
     // Helper : page N d'un PDF Cloudinary → URL JPG (pour l'impression)
-    const isPdf = u => /\\.pdf($|\\?)/i.test(u);
-    body = `
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:8px;">
-        ${photos.map((p,pi)=>{
-          if (isPdf(p.url)) {
-            // PDF : intégration via iframe (le navigateur affiche le PDF nativement)
-            return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;">
-              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
-                <span>📄 PDF intégré</span>
-                <a href="${p.url}" target="_blank" style="color:var(--blue);font-size:11px;">↗ Ouvrir dans un onglet</a>
-              </div>
-              <iframe src="${p.url}#toolbar=0&navpanes=0" style="width:100%;height:460px;border:1px solid var(--border);border-radius:6px;background:white;"></iframe>
-              <input class="input" style="font-size:11px;padding:4px;margin-top:6px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
-              <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
-            </div>`;
-          }
+    const isPdf = u => /\.pdf($|\?)/i.test(u || '');
+      // PDFs : conversion Cloudinary pg_N/ → JPG (l'iframe Cloudinary est souvent bloquée
+      // par X-Frame-Options ou Content-Disposition, donc on convertit en image fiable).
+      const pdfPageUrl = (url, n) => url.includes('/upload/')
+        ? url.replace('/upload/', `/upload/f_jpg,c_limit,w_1100,pg_${n}/`).replace(/\.pdf($|\?)/i, '.jpg$1')
+        : url;
+      body = `
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:8px;">
+          ${photos.map((p,pi)=>{
+            if (isPdf(p.url)) {
+              // On rend 10 pages max (les onerror masquent celles qui n'existent pas)
+              const PAGES = 10;
+              const pagesHtml = Array.from({length: PAGES}, (_, i) => i + 1)
+                .map(n => `<img src="${pdfPageUrl(p.url, n)}" onerror="this.style.display='none';" style="max-width:100%;display:block;margin:6px auto;border:1px solid var(--border);border-radius:4px;background:white;">`)
+                .join('');
+              return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;">
+                <div style="font-size:11px;color:var(--text3);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span>📄 ${esc(p.caption || 'PDF')}</span>
+                  <a href="${p.url}" target="_blank" style="color:var(--blue);font-size:11px;">↗ Ouvrir le PDF original</a>
+                </div>
+                <div style="max-height:560px;overflow-y:auto;background:#fafafa;padding:6px;border-radius:6px;border:1px solid var(--border);">
+                  ${pagesHtml}
+                </div>
+                <input class="input" style="font-size:11px;padding:4px;margin-top:6px;" placeholder="Légende" value="${esc(p.caption)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].photos[${pi}].caption=this.value">
+                <button class="btn btn-ghost btn-sm" style="position:absolute;top:4px;right:4px;color:var(--accent);background:var(--bg2);" onclick="removeBriefPhoto(${slideIdx},${bi},${pi})">×</button>
+              </div>`;
+            }
           return `<div style="position:relative;background:var(--bg3);border-radius:8px;padding:8px;display:grid;grid-template-columns:280px 1fr;gap:10px;align-items:start;">
             <img src="${p.url}" style="width:280px;max-height:200px;object-fit:cover;border-radius:6px;">
             <div>
@@ -13163,8 +13174,8 @@ function buildStudioHTML() {
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfAddText()" title="Ajouter du texte">📝 Texte</button>
       <button class="brf-tbtn" onclick="brfAddTitle()" title="Ajouter un titre">🔤 Titre</button>
-      <button class="brf-tbtn" onclick="document.getElementById('brf-image-input').click()" title="Image">🖼️ Image</button>
-      <input type="file" id="brf-image-input" accept="image/*" style="display:none;" onchange="brfAddImage(this.files[0]);this.value='';">
+     <button class="brf-tbtn" onclick="document.getElementById('brf-image-input').click()" title="Image ou PDF">🖼️ Image/PDF</button>
+      <input type="file" id="brf-image-input" accept="image/*,application/pdf" style="display:none;" onchange="brfAddImage(this.files[0]);this.value='';">
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfAddRect()" title="Rectangle">▭</button>
       <button class="brf-tbtn" onclick="brfAddCircle()" title="Cercle">⭕</button>
@@ -13264,7 +13275,8 @@ function brfAddTitle() {
 }
 async function brfAddImage(file) {
   if (!file) return;
-  toast('Upload...', 'info');
+  const isPdf = file.type === 'application/pdf' || (file.name || '').toLowerCase().endsWith('.pdf');
+  toast(isPdf ? 'Upload du PDF...' : 'Upload...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
     const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
@@ -13274,13 +13286,17 @@ async function brfAddImage(file) {
     const data = await r.json();
     const url = data?.data?.fileUrl;
     if (!url) throw new Error('Pas d\'URL renvoyée');
-    fabric.Image.fromURL(url, img => {
+    // Pour les PDFs : transformation Cloudinary pg_1/ → JPG (sinon Fabric ne sait pas charger un PDF)
+    const renderUrl = (isPdf && url.includes('/upload/'))
+      ? url.replace('/upload/', '/upload/f_jpg,c_limit,w_1100,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
+      : url;
+    fabric.Image.fromURL(renderUrl, img => {
       const maxW = 600;
       if (img.width > maxW) img.scaleToWidth(maxW);
       img.set({ left:200, top:150 });
       BRF_STUDIO.fabricCanvas.add(img).setActiveObject(img);
       BRF_STUDIO.fabricCanvas.requestRenderAll();
-      toast('Image ajoutée', 'success');
+      toast(isPdf ? 'PDF ajouté (page 1)' : 'Image ajoutée', 'success');
     }, { crossOrigin: 'anonymous' });
   } catch (e) {
     toast('Échec upload : ' + e.message, 'error');
@@ -14322,55 +14338,78 @@ function brfAddNotesBlock(p) {
 }
 
 async function brfAddFilesBlock(files) {
-  // Pour chaque fichier : image → fabric.Image, autre (PDF) → cadre cliquable.
+  // Pour chaque fichier : image → fabric.Image directement.
+  // PDF → on convertit la page 1 en JPG via Cloudinary (pg_1/) et on l'insère comme image.
+  // Sinon (autre format / hors Cloudinary) → on retombe sur une carte avec icône + URL.
   let yCursor = 100;
   let xCursor = 100;
+  const advance = (widthAdded) => {
+    xCursor += widthAdded;
+    if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 280; }
+  };
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
     const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
-    const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext);
-    if (isImage) {
-      // Charge async, attend
+    const isImage = ['jpg','jpeg','png','gif','webp','heic','svg'].includes(ext);
+    const isPdf   = ext === 'pdf';
+    // URL effective pour le rendu (PDF → page 1 en JPG via transformation Cloudinary)
+    const renderUrl = (isPdf && (f.fileUrl||'').includes('/upload/'))
+      ? f.fileUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1100,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
+      : f.fileUrl;
+    if (isImage || isPdf) {
       await new Promise(resolve => {
-        const imgEl = new Image();
-        imgEl.crossOrigin = 'anonymous';
-        const place = () => {
-          const fImg = new fabric.Image(imgEl);
-          const maxW = 380;
-          if (fImg.width > maxW) fImg.scaleToWidth(maxW);
-          fImg.set({ left: xCursor, top: yCursor });
-          BRF_STUDIO.fabricCanvas.add(fImg);
-          xCursor += fImg.getScaledWidth() + 20;
-          if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 280; }
+        const place = (loadedImg) => {
+          try {
+            const fImg = new fabric.Image(loadedImg);
+            const maxW = 380;
+            if (fImg.width > maxW) fImg.scaleToWidth(maxW);
+            fImg.set({ left: xCursor, top: yCursor });
+            BRF_STUDIO.fabricCanvas.add(fImg);
+            advance(fImg.getScaledWidth() + 20);
+          } catch (e) {
+            console.warn('[brf] échec ajout image:', e);
+          }
           resolve();
         };
-        imgEl.onload  = place;
-        imgEl.onerror = () => {
-          // Retry sans CORS
-          const im2 = new Image();
-          im2.onload  = () => { imgEl.naturalWidth || (imgEl.width = im2.width); place.call({ imgEl: im2 }); resolve(); };
-          im2.onerror = () => { console.warn('image illisible:', f.fileUrl); resolve(); };
-          im2.src = f.fileUrl;
+        const tryWithCors = new Image();
+        tryWithCors.crossOrigin = 'anonymous';
+        tryWithCors.onload  = () => place(tryWithCors);
+        tryWithCors.onerror = () => {
+          // Retry sans CORS (s'affichera dans le canvas mais ne sera pas exportable en PDF)
+          const noCors = new Image();
+          noCors.onload  = () => place(noCors);
+          noCors.onerror = () => {
+            // Fallback ultime : carte avec icône + URL
+            console.warn('[brf] image illisible:', f.fileUrl);
+            const grp = new fabric.Group([
+              new fabric.Rect({ width: 260, height: 90, fill:'#fff4f4', stroke:'#e63946', rx:8, ry:8 }),
+              new fabric.IText('⚠️', { left:14, top:20, fontSize:40 }),
+              new fabric.Textbox(f.fileName || 'Fichier inaccessible', { left:70, top:20, width:180, fontSize:14, fill:'#e63946', fontWeight:'bold' }),
+              new fabric.Textbox('CORS bloqué — ouvrir le lien dans l\'onglet', { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
+            ], { left: xCursor, top: yCursor });
+            BRF_STUDIO.fabricCanvas.add(grp);
+            advance(280);
+            resolve();
+          };
+          noCors.src = renderUrl;
         };
-        imgEl.src = f.fileUrl;
+        tryWithCors.src = renderUrl;
       });
     } else {
-      // PDF ou autre → cadre avec nom + URL en dessous
+      // Format non-image, non-PDF → carte avec icône + nom + URL
       const grp = new fabric.Group([
         new fabric.Rect({ width: 260, height: 90, fill:'#f4f4f4', stroke:'#bbb', rx:8, ry:8 }),
         new fabric.IText('📄', { left:14, top:20, fontSize:40 }),
         new fabric.Textbox(f.fileName || 'Document', { left:70, top:20, width:180, fontSize:14, fill:'#0a2540', fontWeight:'bold' }),
-        new fabric.Textbox(f.fileUrl, { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
+        new fabric.Textbox(f.fileUrl || '', { left:70, top:50, width:180, fontSize:10, fill:'#888' }),
       ], { left: xCursor, top: yCursor });
       BRF_STUDIO.fabricCanvas.add(grp);
-      xCursor += 280;
-      if (xCursor > BRF_CANVAS_W - 200) { xCursor = 100; yCursor += 110; }
+      advance(280);
     }
   }
   BRF_STUDIO.fabricCanvas.requestRenderAll();
   toast(`${files.length} fichier(s) ajouté(s)`, 'success');
 }
-
 function brfAddRemarksBlock(remarks) {
   const lines = ['⚠️ REMARQUES CLIENT', ''];
   for (const r of remarks) {
