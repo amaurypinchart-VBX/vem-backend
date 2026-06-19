@@ -13835,6 +13835,8 @@ function brfOpenProjectMenu(btn) {
     <button class="brf-pm-item" onclick="brfPickFromProject('team')">👥 Équipes (+ téléphones)</button>
     <div class="brf-pm-section">LOGISTIQUE</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('trucks')">🚛 Camions (détaillé)</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('team_bookings')">✈️ Bookings transport équipe</button>
+    <button class="brf-pm-item" onclick="brfPickFromProject('hotel_bookings')">🏨 Réservations hôtels équipe</button>
     <div class="brf-pm-section">CONTENU</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('tasks')">📋 Tâches</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('files')">📁 Fichiers / Photos</button>
@@ -13915,6 +13917,36 @@ async function brfPickFromProject(type) {
         label: `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—',
         sub:   [m.role, phaseLabel(m.phase), m.user?.phone ? '📞 ' + m.user.phone : null].filter(Boolean).join(' · '),
       }), selected => brfAddTeamBlock(selected));
+      return;
+    }
+    if (type === 'team_bookings') {
+      const r = await api('GET', `/projects/${projectId}/bookings`);
+      const bookings = r?.data || [];
+      if (!bookings.length) { toast('Aucun booking transport sur ce projet', 'warning'); return; }
+      brfOpenPicker('✈️ Choisir les bookings transport à inclure', bookings, b => ({
+        key:   b.id,
+        label: `${b.user?.firstName||''} ${b.user?.lastName||''}`.trim() + ' — ' + (b.phase === 'dismantling' ? 'démontage' : 'install'),
+        sub:   [
+          b.onSiteStart ? new Date(b.onSiteStart).toLocaleDateString('fr-FR') : null,
+          b.outboundMode ? '🛫 ' + b.outboundMode : null,
+          b.returnMode   ? '🛬 ' + b.returnMode   : null,
+        ].filter(Boolean).join(' · '),
+      }), selected => brfAddTeamBookingsBlock(selected));
+      return;
+    }
+    if (type === 'hotel_bookings') {
+      const r = await api('GET', `/projects/${projectId}/hotel-bookings`);
+      const hotels = r?.data || [];
+      if (!hotels.length) { toast('Aucune réservation hôtel sur ce projet', 'warning'); return; }
+      brfOpenPicker('🏨 Choisir les hôtels à inclure', hotels, h => ({
+        key:   h.id,
+        label: h.hotelName + ' — ' + (h.phase === 'dismantling' ? 'démontage' : 'install'),
+        sub:   [
+          h.checkin ? new Date(h.checkin).toLocaleDateString('fr-FR') + ' → ' + new Date(h.checkout).toLocaleDateString('fr-FR') : null,
+          h.hotelAddress,
+          (h.occupants||[]).length + ' occupant(s)',
+        ].filter(Boolean).join(' · '),
+      }), selected => brfAddHotelBookingsBlock(selected));
       return;
     }
     if (type === 'tasks') {
@@ -14520,7 +14552,61 @@ async function brfAutoGenerateBriefing(btn) {
       }));
       saveSlide();
     }
+// ─── SLIDE 10 : BOOKINGS TRANSPORT ÉQUIPE ─────────────────────
+    const tbRes = await api('GET', `/projects/${projectId}/bookings`);
+    const teamBookings = tbRes?.data || [];
+    if (teamBookings.length) {
+      newSlide('Transport équipe');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('✈️ Transport équipe', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '?';
+      const groups = {
+        'INSTALLATION': teamBookings.filter(b => b.phase === 'installation'),
+        'DÉMONTAGE':    teamBookings.filter(b => b.phase === 'dismantling'),
+      };
+      const lines = [];
+      for (const [phase, list] of Object.entries(groups)) {
+        if (!list.length) continue;
+        if (lines.length) lines.push('');
+        lines.push(phase);
+        for (const bk of list) {
+          const name = `${bk.user?.firstName||''} ${bk.user?.lastName||''}`.trim();
+          lines.push(`  • ${name}`);
+          lines.push(`     Sur site : ${fmt(bk.onSiteStart)} → ${fmt(bk.onSiteEnd)}`);
+          if (bk.outboundMode) lines.push(`     🛫 ${bk.outboundMode}${bk.outboundDate?' · '+fmt(bk.outboundDate):''}`);
+          if (bk.returnMode)   lines.push(`     🛬 ${bk.returnMode}${bk.returnDate?' · '+fmt(bk.returnDate):''}`);
+        }
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:14, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
 
+    // ─── SLIDE 11 : RÉSERVATIONS HÔTELS ───────────────────────────
+    const hbRes = await api('GET', `/projects/${projectId}/hotel-bookings`);
+    const hotelBookings = hbRes?.data || [];
+    if (hotelBookings.length) {
+      newSlide('Hôtels équipe');
+      BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:80, top:80, width:60, height:5, fill:ACCENT, selectable:false, evented:false }));
+      BRF_STUDIO.fabricCanvas.add(new fabric.IText('🏨 Hôtels équipe', { left:80, top:100, fontSize:42, fontFamily:'Helvetica', fontWeight:'bold', fill:PRIMARY }));
+      const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'long' }) : '?';
+      const lines = [];
+      for (const h of hotelBookings) {
+        const phaseLbl = h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Installation';
+        lines.push(`${h.hotelName}  —  ${phaseLbl}`);
+        if (h.hotelAddress) lines.push(`  📍 ${h.hotelAddress}`);
+        lines.push(`  📅 ${fmtD(h.checkin)} → ${fmtD(h.checkout)}`);
+        if (h.reference) lines.push(`  Réf : ${h.reference}`);
+        const occupants = (h.occupants||[]).map(o => `${o.user?.firstName||''} ${o.user?.lastName||''}`.trim()).filter(Boolean);
+        if (occupants.length) lines.push(`  👥 ${occupants.join(', ')}`);
+        lines.push('');
+      }
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n'), {
+        left:80, top:200, width:1120, fontSize:15, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
+      }));
+      saveSlide();
+    }
     // ─── SLIDE FINAL : MERCI ─────────────────────────────────────
     newSlide('Merci');
     BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:BRF_CANVAS_H, fill:PRIMARY, selectable:false, evented:false }));
@@ -14544,6 +14630,53 @@ async function brfAutoGenerateBriefing(btn) {
 }
 
 
+function brfAddTeamBookingsBlock(bookings) {
+  const lines = ['✈️ TRANSPORT ÉQUIPE', ''];
+  const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '?';
+  const groups = {
+    'INSTALLATION': bookings.filter(b => b.phase === 'installation'),
+    'DÉMONTAGE':    bookings.filter(b => b.phase === 'dismantling'),
+  };
+  let first = true;
+  for (const [phaseName, list] of Object.entries(groups)) {
+    if (!list.length) continue;
+    if (!first) lines.push('');
+    lines.push(phaseName);
+    for (const bk of list) {
+      const name = `${bk.user?.firstName||''} ${bk.user?.lastName||''}`.trim() || '—';
+      lines.push(`  • ${name}`);
+      lines.push(`     Sur site : ${fmt(bk.onSiteStart)} → ${fmt(bk.onSiteEnd)}`);
+      if (bk.outboundMode) {
+        lines.push(`     🛫 ${bk.outboundMode}${bk.outboundDate?' · '+fmt(bk.outboundDate):''}${bk.outboundDetails?' · '+bk.outboundDetails:''}`);
+      }
+      if (bk.returnMode) {
+        lines.push(`     🛬 ${bk.returnMode}${bk.returnDate?' · '+fmt(bk.returnDate):''}${bk.returnDetails?' · '+bk.returnDetails:''}`);
+      }
+      if (bk.notes) lines.push(`     📝 ${bk.notes}`);
+    }
+    first = false;
+  }
+  brfAddTextbox(lines.join('\n'), { width: 720, fontSize: 14 });
+}
+
+function brfAddHotelBookingsBlock(hotels) {
+  const lines = ['🏨 HÔTELS ÉQUIPE', ''];
+  const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' }) : '?';
+  let first = true;
+  for (const h of hotels) {
+    if (!first) lines.push('');
+    const phaseLbl = h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Installation';
+    lines.push(`${h.hotelName}  —  ${phaseLbl}`);
+    if (h.hotelAddress) lines.push(`  📍 ${h.hotelAddress}`);
+    lines.push(`  📅 ${fmt(h.checkin)} → ${fmt(h.checkout)}`);
+    if (h.reference) lines.push(`  Réf : ${h.reference}`);
+    const occupants = (h.occupants||[]).map(o => `${o.user?.firstName||''} ${o.user?.lastName||''}`.trim()).filter(Boolean);
+    if (occupants.length) lines.push(`  👥 ${occupants.join(', ')}`);
+    if (h.notes) lines.push(`  📝 ${h.notes}`);
+    first = false;
+  }
+  brfAddTextbox(lines.join('\n'), { width: 600, fontSize: 14 });
+}
 
 function brfAddTasksBlock(tasks) {
   const lines = ['📋 TÂCHES', ''];
