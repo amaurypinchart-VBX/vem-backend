@@ -14093,6 +14093,94 @@ function brfOpenPicker(title, items, itemFormatter, onConfirm) {
     else toast('Aucun élément coché', 'warning');
   };
 }
+// Picker dédié à l'auto-génération du briefing : 3 issues possibles
+//   • "✅ Générer avec ces fichiers" → resolve(arrayOfFiles)
+//   • "Continuer sans fichiers"      → resolve([])
+//   • "Annuler" ou X                 → resolve(null) → l'auto-gen est ABORTÉE
+// Cette logique 3-way (vs le picker générique qui en a 2) justifie une fonction séparée.
+function brfPickFilesForAutoGen(files) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10020;display:flex;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `
+      <div style="background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:18px;max-width:680px;width:100%;max-height:80vh;display:flex;flex-direction:column;color:#eee;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:700;">📁 Fichiers à inclure dans le briefing</div>
+          <button id="brf-pickf-x" style="background:transparent;color:#eee;border:none;font-size:24px;cursor:pointer;padding:0;line-height:1;">×</button>
+        </div>
+        <div style="font-size:12px;color:#aaa;margin-bottom:12px;">${files.length} fichier(s) disponible(s) — coche ceux à inclure. Chaque fichier coché créera une slide dédiée dans le briefing.</div>
+
+        <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;">
+          <button class="brf-pickf-act" id="brf-pickf-all">Tout cocher</button>
+          <button class="brf-pickf-act" id="brf-pickf-none">Décocher</button>
+          <div style="flex:1;"></div>
+          <input id="brf-pickf-search" placeholder="🔎 Rechercher..." style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 10px;font-size:11px;max-width:200px;">
+        </div>
+
+        <div id="brf-pickf-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:14px;padding-right:4px;">
+          ${files.map((f, i) => {
+            const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+            const isImage = ['jpg','jpeg','png','gif','webp','heic','svg'].includes(ext);
+            const icon = isImage ? '🖼️' : '📄';
+            const escLabel = String(f.fileName || 'fichier').replace(/</g, '&lt;');
+            return `<label class="brf-pickf-row" data-search="${escLabel.toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#222;border:1px solid #333;border-radius:6px;cursor:pointer;">
+              <input type="checkbox" class="brf-pickf-cb" data-idx="${i}" style="accent-color:#e63946;width:16px;height:16px;flex-shrink:0;">
+              <div style="font-size:24px;flex-shrink:0;">${icon}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escLabel}</div>
+                <div style="font-size:11px;color:#aaa;margin-top:2px;">${ext.toUpperCase()}${f.fileSize ? ' · '+Math.round(f.fileSize/1024)+' KB' : ''}</div>
+              </div>
+            </label>`;
+          }).join('')}
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+          <div id="brf-pickf-count" style="flex:1;font-size:11px;color:#aaa;">0 fichier(s) coché(s)</div>
+          <button id="brf-pickf-cancel" style="background:transparent;color:#aaa;border:1px solid #555;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">Annuler</button>
+          <button id="brf-pickf-skip" style="background:#333;color:#eee;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">⏭️ Sans fichiers</button>
+          <button id="brf-pickf-go" style="background:#e63946;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">✅ Générer</button>
+        </div>
+        <style>
+          .brf-pickf-act { background:#333;color:#eee;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;}
+          .brf-pickf-row:hover { background:#2a2a2a; }
+        </style>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const updateCount = () => {
+      const n = overlay.querySelectorAll('.brf-pickf-cb:checked').length;
+      overlay.querySelector('#brf-pickf-count').textContent = `${n} fichier(s) coché(s)`;
+    };
+    overlay.querySelectorAll('.brf-pickf-cb').forEach(cb => cb.addEventListener('change', updateCount));
+
+    overlay.querySelector('#brf-pickf-all').onclick  = () => { overlay.querySelectorAll('.brf-pickf-cb').forEach(cb => cb.checked = true);  updateCount(); };
+    overlay.querySelector('#brf-pickf-none').onclick = () => { overlay.querySelectorAll('.brf-pickf-cb').forEach(cb => cb.checked = false); updateCount(); };
+
+    overlay.querySelector('#brf-pickf-search').oninput = (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      overlay.querySelectorAll('.brf-pickf-row').forEach(row => {
+        row.style.display = !q || (row.dataset.search || '').includes(q) ? '' : 'none';
+      });
+    };
+
+    const cancel = () => { overlay.remove(); resolve(null); };
+    overlay.querySelector('#brf-pickf-cancel').onclick = cancel;
+    overlay.querySelector('#brf-pickf-x').onclick      = cancel;
+    overlay.addEventListener('click', e => { if (e.target === overlay) cancel(); });
+
+    overlay.querySelector('#brf-pickf-skip').onclick = () => { overlay.remove(); resolve([]); };
+
+    overlay.querySelector('#brf-pickf-go').onclick = () => {
+      const selected = [];
+      overlay.querySelectorAll('.brf-pickf-cb:checked').forEach(cb => {
+        selected.push(files[parseInt(cb.dataset.idx)]);
+      });
+      overlay.remove();
+      resolve(selected);
+    };
+  });
+}
 
 // ─── Générateurs de blocs Fabric depuis les données projet ───
 // Utilise fabric.Textbox (multi-ligne avec wrap auto) pour rester éditable.
@@ -14345,7 +14433,26 @@ async function brfAutoGenerateBriefing(btn) {
       }
     }
 
-    // 2. Wipe slides actuelles et générer
+// 2. Picker fichiers : laisse l'utilisateur choisir quels fichiers inclure
+    // Ne s'affiche que si le projet a au moins un fichier image/PDF.
+    const mediaFiles = files.filter(f => {
+      const ext = (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+      return ['jpg','jpeg','png','gif','webp','heic','pdf','svg'].includes(ext);
+    });
+    let pickedFiles = [];
+    if (mediaFiles.length) {
+      // Restaure temporairement le bouton pour ne pas laisser un "⏳ Génération..." trompeur
+      if (btn) { btn.innerHTML = '📁 Choix des fichiers...'; }
+      pickedFiles = await brfPickFilesForAutoGen(mediaFiles);
+      if (pickedFiles === null) {
+        // L'utilisateur a annulé → on n'a encore RIEN modifié, on sort proprement.
+        toast('Génération annulée', 'info');
+        return;
+      }
+      if (btn) { btn.innerHTML = '⏳ Génération...'; }
+    }
+
+    // 3. Wipe slides actuelles et générer
     BRF_STUDIO.slides = [];
     BRF_STUDIO.curIdx = 0;
 
@@ -14606,6 +14713,73 @@ async function brfAutoGenerateBriefing(btn) {
         left:80, top:200, width:1120, fontSize:15, fontFamily:'Helvetica', fill:'#222', lineHeight:1.5,
       }));
       saveSlide();
+    }
+    // ─── SLIDES FICHIERS CHOISIS PAR L'UTILISATEUR ───────────────
+    // Une slide par fichier : header bleu Viewbox + image plein cadre.
+    // Pour les PDFs, on génère la page 1 en JPG via la transformation Cloudinary
+    // (pg_1/) — les pages suivantes restent accessibles dans le fichier original.
+    if (pickedFiles?.length) {
+      for (const file of pickedFiles) {
+        const ext = (file.fileName || '').split('.').pop().toLowerCase();
+        const isPdf = ext === 'pdf';
+        const imageUrl = (isPdf && file.fileUrl?.includes('/upload/'))
+          ? file.fileUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1280,pg_1/').replace(/\.pdf($|\?)/i, '.jpg$1')
+          : file.fileUrl;
+
+        newSlide(file.fileName || 'Fichier');
+
+        // Header bandeau
+        BRF_STUDIO.fabricCanvas.add(new fabric.Rect({ left:0, top:0, width:BRF_CANVAS_W, height:64, fill:PRIMARY, selectable:false, evented:false }));
+        BRF_STUDIO.fabricCanvas.add(new fabric.IText(
+          (isPdf?'📄 ':'🖼️ ') + (file.fileName || 'Fichier'),
+          { left:30, top:18, fontSize:22, fontFamily:'Helvetica', fontWeight:'bold', fill:'#ffffff', selectable:false }
+        ));
+        if (isPdf) {
+          BRF_STUDIO.fabricCanvas.add(new fabric.IText(
+            'Page 1 — voir le PDF original pour les pages suivantes',
+            { left: BRF_CANVAS_W - 420, top: 24, fontSize: 12, fontFamily:'Helvetica', fill:'#aac', fontStyle:'italic', selectable:false }
+          ));
+        }
+
+        // Image (chargement async avec fallback CORS)
+        await new Promise(resolve => {
+          const place = (loadedImg) => {
+            try {
+              const fImg = new fabric.Image(loadedImg);
+              const availW = BRF_CANVAS_W - 80;
+              const availH = BRF_CANVAS_H - 64 - 40; // header + marge basse
+              const scale = Math.min(availW / fImg.width, availH / fImg.height, 1);
+              fImg.scale(scale);
+              fImg.set({
+                left: (BRF_CANVAS_W - fImg.getScaledWidth()) / 2,
+                top:  84 + (availH - fImg.getScaledHeight()) / 2,
+              });
+              BRF_STUDIO.fabricCanvas.add(fImg);
+            } catch (e) {
+              BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Erreur de rendu : ' + e.message, { left:80, top:200, fontSize:16, fill:'#888' }));
+            }
+            resolve();
+          };
+          const tryWithCors = new Image();
+          tryWithCors.crossOrigin = 'anonymous';
+          tryWithCors.onload  = () => place(tryWithCors);
+          tryWithCors.onerror = () => {
+            // Retry sans CORS (s'affichera mais ne sera pas exportable en PDF)
+            console.warn('[brf auto] CORS bloqué pour', file.fileName, '- fallback sans CORS');
+            const noCors = new Image();
+            noCors.onload  = () => place(noCors);
+            noCors.onerror = () => {
+              BRF_STUDIO.fabricCanvas.add(new fabric.IText('⚠️ Fichier inaccessible', { left:80, top:200, fontSize:18, fill:'#666' }));
+              BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(file.fileUrl || '', { left:80, top:240, width:BRF_CANVAS_W-160, fontSize:11, fill:'#888' }));
+              resolve();
+            };
+            noCors.src = imageUrl;
+          };
+          tryWithCors.src = imageUrl;
+        });
+
+        saveSlide();
+      }
     }
     // ─── SLIDE FINAL : MERCI ─────────────────────────────────────
     newSlide('Merci');
