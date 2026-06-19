@@ -12157,7 +12157,8 @@ const BLOCK_TYPES = {
   hotel_bookings: { icon:'🏨', label:'Hôtels équipe (auto)' },
   photos:         { icon:'📸', label:'Photos / PDF' },
   location:       { icon:'📍', label:'Localisation' },
-  planning:       { icon:'📅', label:'Planning installation / démontage' },
+  planning: { icon:'📅', label:'Planning installation / démontage' },
+  gantt:    { icon:'📊', label:'Gantt / Planning hebdomadaire' },
 };
 
 // Migration silencieuse : ancien format (slide.type) → nouveau (slide.blocks[])
@@ -12494,6 +12495,127 @@ function renderBlockEditor(slideIdx, bi, b) {
       }).join('');
       return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Hôtel</th><th style="text-align:left;padding:6px;">Phase</th><th style="text-align:left;padding:6px;">Séjour</th><th style="text-align:left;padding:6px;">Occupants</th><th style="text-align:left;padding:6px;">Réf / Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
+else if (b.type === 'gantt') {
+    // Initialise les défauts si bloc neuf
+    if (typeof b.title    !== 'string')                                  b.title    = '';
+    if (typeof b.prefix   !== 'string')                                  b.prefix   = 'KW';
+    if (!Array.isArray(b.columns) || b.columns.length === 0)             b.columns  = ['1','2','3','4','5','6'];
+    if (!Array.isArray(b.tasks))                                         b.tasks    = [];
+
+    const cols = b.columns;
+    const colLabel = (ci) => `${b.prefix?esc(b.prefix)+' ':''}${esc(cols[ci])}`;
+
+    // ─── Aperçu : tableau Gantt avec barres colorées ───
+    const previewHeader = cols.map((c, ci) =>
+      `<th style="background:#f8f9fa;border:1px solid #ddd;padding:4px 6px;font-size:11px;text-align:center;min-width:50px;color:#222;">${b.prefix?esc(b.prefix)+' ':''}${esc(c)}</th>`
+    ).join('');
+
+    const previewRows = b.tasks.map((t, ti) => {
+      const from = Math.max(0, Math.min(cols.length - 1, parseInt(t.from) || 0));
+      const to   = Math.max(from, Math.min(cols.length - 1, parseInt(t.to) || from));
+      let cellsHtml = '';
+      let ci = 0;
+      while (ci < cols.length) {
+        if (ci < from || ci > to) {
+          cellsHtml += '<td style="border:1px solid #eee;height:26px;background:white;"></td>';
+          ci++;
+        } else {
+          const span = to - from + 1;
+          const noteHtml = t.note ? `<span style="color:#fff;font-size:11px;font-weight:600;padding-left:6px;">${esc(t.note)}</span>` : '&nbsp;';
+          cellsHtml += `<td colspan="${span}" style="background:${esc(t.color||'#4895ef')};border:1px solid #ddd;height:26px;padding:2px 6px;">${noteHtml}</td>`;
+          ci = to + 1;
+        }
+      }
+      return `<tr><td style="border:1px solid #eee;padding:4px 8px;font-size:12px;background:#fafafa;color:#222;min-width:200px;">${esc(t.title)||'<span style="color:#aaa;font-style:italic;">(sans titre)</span>'}</td>${cellsHtml}</tr>`;
+    }).join('');
+
+    const previewHtml = `<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;background:white;">
+      <table style="border-collapse:collapse;width:100%;">
+        <thead><tr><th style="background:#f8f9fa;border:1px solid #ddd;padding:4px 8px;font-size:11px;text-align:left;color:#222;">Tâche</th>${previewHeader}</tr></thead>
+        <tbody>${previewRows||`<tr><td colspan="${cols.length+1}" style="text-align:center;padding:14px;color:#888;font-size:11px;font-style:italic;background:white;">Aucune tâche — ajoute-en ci-dessous</td></tr>`}</tbody>
+      </table>
+    </div>`;
+
+    // ─── Éditeurs ligne-par-ligne ───
+    const colEditorsHtml = cols.map((c, ci) =>
+      `<input class="input" value="${esc(c)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].columns[${ci}]=this.value;renderBriefing()" style="width:60px;font-size:11px;padding:3px;text-align:center;" placeholder="${ci+1}">`
+    ).join('');
+
+    const taskEditorsHtml = b.tasks.map((t, ti) => {
+      const fromOpts = cols.map((c, ci) => `<option value="${ci}" ${ci===parseInt(t.from)?'selected':''}>${b.prefix?esc(b.prefix)+' ':''}${esc(c)}</option>`).join('');
+      const toOpts   = cols.map((c, ci) => `<option value="${ci}" ${ci===parseInt(t.to)?'selected':''}>${b.prefix?esc(b.prefix)+' ':''}${esc(c)}</option>`).join('');
+      return `<div style="display:grid;grid-template-columns:1fr 110px 110px 110px 40px 28px;gap:4px;align-items:center;background:var(--bg2);padding:4px;border-radius:4px;margin-bottom:4px;">
+        <input class="input" style="font-size:11px;padding:4px 6px;" placeholder="Description de la tâche" value="${esc(t.title)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks[${ti}].title=this.value;renderBriefing()">
+        <select class="input" style="font-size:11px;padding:4px;" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks[${ti}].from=parseInt(this.value);renderBriefing()">${fromOpts}</select>
+        <select class="input" style="font-size:11px;padding:4px;" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks[${ti}].to=parseInt(this.value);renderBriefing()">${toOpts}</select>
+        <input class="input" style="font-size:11px;padding:4px 6px;" placeholder="Date / note" value="${esc(t.note||'')}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks[${ti}].note=this.value;renderBriefing()">
+        <input type="color" value="${esc(t.color||'#4895ef')}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks[${ti}].color=this.value;renderBriefing()" style="width:36px;height:24px;border:none;padding:0;cursor:pointer;background:transparent;" title="Couleur de la barre">
+        <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].tasks.splice(${ti},1);renderBriefing()" title="Supprimer la tâche">×</button>
+      </div>`;
+    }).join('');
+
+    body = `
+      <input class="input" placeholder="Titre du planning (ex: SAP Planning Extension)" value="${esc(b.title)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].title=this.value;renderBriefing()" style="margin-bottom:8px;">
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+        <label style="font-size:11px;color:var(--text3);">Préfixe colonnes :</label>
+        <input class="input" value="${esc(b.prefix)}" onchange="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].prefix=this.value;renderBriefing()" style="width:80px;font-size:11px;padding:3px 6px;" placeholder="ex: KW, Sem.">
+        <span style="font-size:10px;color:var(--text3);">(laisse vide pour libellés libres comme "Janv.", "Févr.")</span>
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700;margin:10px 0 4px;">Colonnes</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        ${colEditorsHtml}
+        <button class="btn btn-outline btn-xs" onclick="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].columns.push('');renderBriefing()" style="font-size:11px;padding:3px 8px;" title="Ajouter une colonne">+</button>
+        ${cols.length>1?`<button class="btn btn-outline btn-xs" onclick="CURRENT_BRIEFING.slides[${slideIdx}].blocks[${bi}].columns.pop();renderBriefing()" style="font-size:11px;padding:3px 8px;color:var(--accent);" title="Retirer la dernière colonne">−</button>`:''}
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700;margin:10px 0 4px;">Aperçu</div>
+      ${previewHtml}
+
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-weight:700;margin:14px 0 4px;">Tâches</div>
+      <div style="display:grid;grid-template-columns:1fr 110px 110px 110px 40px 28px;gap:4px;margin-bottom:4px;font-size:10px;color:var(--text3);padding:0 4px;">
+        <div>Description</div><div>De</div><div>À</div><div>Date/Note</div><div>🎨</div><div></div>
+      </div>
+      ${taskEditorsHtml || '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:8px;">Aucune tâche. Clique sur "+ Ajouter une tâche" ci-dessous.</div>'}
+
+      <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="addGanttTask(${slideIdx},${bi})">+ Ajouter une tâche</button>
+    `;
+  }
+if (b.type === 'gantt') {
+      const cols = b.columns || [];
+      const tasks = b.tasks || [];
+      if (cols.length === 0) return '<div style="color:#888;padding:10px;font-style:italic;">Gantt sans colonnes</div>';
+      const headerCells = cols.map(c =>
+        `<th style="background:#f8f9fa;border:1px solid #ddd;padding:6px;font-size:12px;text-align:center;min-width:60px;">${b.prefix?esc(b.prefix)+' ':''}${esc(c)}</th>`
+      ).join('');
+      const taskRows = tasks.map(t => {
+        const from = Math.max(0, Math.min(cols.length - 1, parseInt(t.from) || 0));
+        const to   = Math.max(from, Math.min(cols.length - 1, parseInt(t.to) || from));
+        let cellsHtml = '';
+        let ci = 0;
+        while (ci < cols.length) {
+          if (ci < from || ci > to) {
+            cellsHtml += '<td style="border:1px solid #eee;height:28px;"></td>';
+            ci++;
+          } else {
+            const span = to - from + 1;
+            const note = t.note ? `<span style="font-size:11px;font-weight:600;color:#fff;padding-left:6px;">${esc(t.note)}</span>` : '&nbsp;';
+            cellsHtml += `<td colspan="${span}" style="background:${esc(t.color||'#4895ef')};border:1px solid #ddd;height:28px;padding:4px 8px;">${note}</td>`;
+            ci = to + 1;
+          }
+        }
+        return `<tr><td style="border:1px solid #eee;padding:6px 8px;font-size:12px;background:#fafafa;min-width:220px;">${esc(t.title)}</td>${cellsHtml}</tr>`;
+      }).join('');
+      const titleHtml = b.title ? `<div style="font-weight:700;color:#1a1a2e;font-size:14px;margin-bottom:8px;">${esc(b.title)}</div>` : '';
+      return `<div style="margin:14px 0;page-break-inside:avoid;">
+        ${titleHtml}
+        <table style="border-collapse:collapse;width:100%;">
+          <thead><tr><th style="background:#f8f9fa;border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left;">Tâche</th>${headerCells}</tr></thead>
+          <tbody>${taskRows||`<tr><td colspan="${cols.length+1}" style="text-align:center;padding:14px;color:#888;font-size:12px;">Aucune tâche</td></tr>`}</tbody>
+        </table>
+      </div>`;
+    }
   else if (b.type === 'planning') {
     // Bloc Planning : sélection du type (installation/démontage/jour spécifique) + liste d'étapes horaires
     // Chaque étape = { time: "HH:mm", duration: "Xh", description: "...", responsible: "..." }
@@ -12626,7 +12748,22 @@ function moveBlock(slideIdx, bi, dir) {
   [arr[bi], arr[j]] = [arr[j], arr[bi]];
   renderBriefing();
 }
-
+// ─── Gantt-style planning ───
+// Ajoute une nouvelle ligne de tâche dans un bloc Gantt avec une couleur cyclique.
+function addGanttTask(slideIdx, bi) {
+  const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
+  if (!Array.isArray(b.tasks)) b.tasks = [];
+  const palette = ['#4895ef', '#e63946', '#f4a261', '#2dc653', '#9b59b6', '#0a2540', '#e67e22'];
+  const cols = Array.isArray(b.columns) ? b.columns : [];
+  b.tasks.push({
+    title: '',
+    from: 0,
+    to: Math.max(0, cols.length - 1),
+    note: '',
+    color: palette[b.tasks.length % palette.length],
+  });
+  renderBriefing();
+}
 // ─── Planning installation / démontage ───
 function addPlanningStep(slideIdx, bi) {
   const b = CURRENT_BRIEFING.slides[slideIdx].blocks[bi];
