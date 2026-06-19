@@ -12148,14 +12148,16 @@ let CURRENT_SLIDE_IDX = 0;
 let BRIEFING_AUTO = { tasks: [], trucks: [], project: {} };  // cache des données auto
 
 const BLOCK_TYPES = {
-  text:     { icon:'📝', label:'Texte / notes' },
-  contacts: { icon:'📞', label:'Contacts' },
-  project:  { icon:'🏷️', label:'Infos projet (auto)' },
-  tasks:    { icon:'✅', label:'Tâches (auto)' },
-  trucks:   { icon:'🚛', label:'Logistique (auto)' },
-  photos:   { icon:'📸', label:'Photos / PDF' },
-  location: { icon:'📍', label:'Localisation' },
-  planning: { icon:'📅', label:'Planning installation / démontage' },
+  text:           { icon:'📝', label:'Texte / notes' },
+  contacts:       { icon:'📞', label:'Contacts' },
+  project:        { icon:'🏷️', label:'Infos projet (auto)' },
+  tasks:          { icon:'✅', label:'Tâches (auto)' },
+  trucks:         { icon:'🚛', label:'Logistique (auto)' },
+  team_bookings:  { icon:'✈️', label:'Transport équipe (auto)' },
+  hotel_bookings: { icon:'🏨', label:'Hôtels équipe (auto)' },
+  photos:         { icon:'📸', label:'Photos / PDF' },
+  location:       { icon:'📍', label:'Localisation' },
+  planning:       { icon:'📅', label:'Planning installation / démontage' },
 };
 
 // Migration silencieuse : ancien format (slide.type) → nouveau (slide.blocks[])
@@ -12198,7 +12200,17 @@ async function loadDetailBriefing(projectId) {
   BRIEFING_AUTO.tasks   = tasksRes?.data  || [];
   BRIEFING_AUTO.trucks  = trucksRes?.data || [];
   BRIEFING_AUTO.project = projRes?.data   || {};
-
+// Bookings transport + hôtel équipe (chargés à chaque ouverture du briefing)
+  try {
+    const bookingsRes = await api('GET', `/projects/${projectId}/bookings`);
+    const hotelsRes   = await api('GET', `/projects/${projectId}/hotel-bookings`);
+    BRIEFING_AUTO.teamBookings  = bookingsRes?.data || [];
+    BRIEFING_AUTO.hotelBookings = hotelsRes?.data   || [];
+  } catch (e) {
+    console.warn('[brf] échec chargement bookings :', e);
+    BRIEFING_AUTO.teamBookings  = [];
+    BRIEFING_AUTO.hotelBookings = [];
+  }
   CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
   renderBriefing();
 }
@@ -12396,6 +12408,81 @@ function renderBlockEditor(slideIdx, bi, b) {
       </div>
       ${addr ? `<a class="btn btn-outline btn-sm" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}">🗺️ Google Maps</a>` : ''}`;
   }
+  else if (b.type === 'team_bookings') {
+    const bookings = BRIEFING_AUTO.teamBookings || [];
+    if (!bookings.length) {
+      body = '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:10px;">Aucun booking transport pour ce projet. Ajoute-les depuis l\'onglet Équipe / Transport.</div>';
+    } else {
+      const fmtDt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+      const groups = {
+        installation: bookings.filter(x => x.phase === 'installation'),
+        dismantling:  bookings.filter(x => x.phase === 'dismantling'),
+      };
+      const renderRow = bk => {
+        const u = bk.user || {};
+        const name = `${u.firstName||''} ${u.lastName||''}`.trim() || '—';
+        const out = bk.outboundMode ? `${esc(bk.outboundMode)}${bk.outboundDate?' · '+fmtDt(bk.outboundDate):''}${bk.outboundDetails?' · '+esc(bk.outboundDetails):''}` : '—';
+        const ret = bk.returnMode   ? `${esc(bk.returnMode)}${bk.returnDate?' · '+fmtDt(bk.returnDate):''}${bk.returnDetails?' · '+esc(bk.returnDetails):''}` : '—';
+        return `<div style="background:var(--bg2);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px;">
+          <div style="font-weight:700;margin-bottom:4px;">👤 ${esc(name)} ${u.role?'<span style="color:var(--text3);font-weight:400;font-size:11px;">('+esc(u.role)+')</span>':''}</div>
+          <div style="color:var(--text2);">📍 Sur site : ${fmtDt(bk.onSiteStart)} → ${fmtDt(bk.onSiteEnd)}</div>
+          <div style="color:var(--text2);">🛫 Aller : ${out}</div>
+          <div style="color:var(--text2);">🛬 Retour : ${ret}</div>
+          ${bk.notes?`<div style="color:var(--text3);font-style:italic;margin-top:4px;">📝 ${esc(bk.notes)}</div>`:''}
+          ${bk.attachmentUrl?`<a href="${esc(bk.attachmentUrl)}" target="_blank" style="color:var(--blue);font-size:11px;">📎 ${esc(bk.attachmentName||'Pièce jointe')}</a>`:''}
+        </div>`;
+      };
+      body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Bookings transport extraits automatiquement (${bookings.length} au total).</div>
+        ${groups.installation.length ? `<div style="font-weight:700;font-size:12px;color:var(--accent);margin:8px 0 4px;">🏗️ Installation</div>${groups.installation.map(renderRow).join('')}` : ''}
+        ${groups.dismantling.length ? `<div style="font-weight:700;font-size:12px;color:var(--accent);margin:8px 0 4px;">🔨 Démontage</div>${groups.dismantling.map(renderRow).join('')}` : ''}`;
+    }
+  }
+  else if (b.type === 'hotel_bookings') {
+    const hotels = BRIEFING_AUTO.hotelBookings || [];
+    if (!hotels.length) {
+      body = '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:10px;">Aucune réservation hôtel pour ce projet.</div>';
+    } else {
+      const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR') : '—';
+      body = `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">📌 Réservations extraites automatiquement (${hotels.length} hôtel${hotels.length>1?'s':''}).</div>
+        ${hotels.map(h => {
+          const phaseLbl = h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Installation';
+          const occupants = (h.occupants||[]).map(o => `${o.user?.firstName||''} ${o.user?.lastName||''}`.trim()).filter(Boolean);
+          return `<div style="background:var(--bg2);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px;">
+            <div style="font-weight:700;margin-bottom:4px;">🏨 ${esc(h.hotelName)} <span style="color:var(--text3);font-weight:400;font-size:11px;">— ${phaseLbl}</span></div>
+            ${h.hotelAddress?`<div style="color:var(--text2);">📍 ${esc(h.hotelAddress)}</div>`:''}
+            <div style="color:var(--text2);">📅 ${fmtDate(h.checkin)} → ${fmtDate(h.checkout)}</div>
+            ${h.reference?`<div style="color:var(--text3);font-size:11px;">Réf : ${esc(h.reference)}</div>`:''}
+            ${occupants.length?`<div style="color:var(--text2);margin-top:4px;">👥 ${occupants.map(esc).join(', ')}</div>`:''}
+            ${h.notes?`<div style="color:var(--text3);font-style:italic;margin-top:4px;">📝 ${esc(h.notes)}</div>`:''}
+            ${h.attachmentUrl?`<a href="${esc(h.attachmentUrl)}" target="_blank" style="color:var(--blue);font-size:11px;">📎 ${esc(h.attachmentName||'Voucher')}</a>`:''}
+          </div>`;
+        }).join('')}`;
+    }
+  }
+  if (b.type === 'team_bookings') {
+      const bookings = BRIEFING_AUTO.teamBookings || [];
+      if (!bookings.length) return '<div style="color:#888;text-align:center;padding:10px;">Aucun booking transport</div>';
+      const fmtDt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '—';
+      const rows = bookings.map(bk => {
+        const u = bk.user || {};
+        const name = `${u.firstName||''} ${u.lastName||''}`.trim();
+        const phaseLbl = bk.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Installation';
+        const out = bk.outboundMode ? `${esc(bk.outboundMode)}${bk.outboundDate?'<br>'+fmtDt(bk.outboundDate):''}${bk.outboundDetails?'<br><span style="color:#888;font-size:11px;">'+esc(bk.outboundDetails)+'</span>':''}` : '—';
+        const ret = bk.returnMode   ? `${esc(bk.returnMode)}${bk.returnDate?'<br>'+fmtDt(bk.returnDate):''}${bk.returnDetails?'<br><span style="color:#888;font-size:11px;">'+esc(bk.returnDetails)+'</span>':''}` : '—';
+        return `<tr><td><strong>${esc(name)}</strong>${u.role?'<br><span style="color:#888;font-size:11px;">'+esc(u.role)+'</span>':''}</td><td>${phaseLbl}</td><td>${fmtDt(bk.onSiteStart)}<br>→ ${fmtDt(bk.onSiteEnd)}</td><td>${out}</td><td>${ret}</td></tr>`;
+      }).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Membre</th><th style="text-align:left;padding:6px;">Phase</th><th style="text-align:left;padding:6px;">Sur site</th><th style="text-align:left;padding:6px;">Aller</th><th style="text-align:left;padding:6px;">Retour</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    if (b.type === 'hotel_bookings') {
+      const hotels = BRIEFING_AUTO.hotelBookings || [];
+      if (!hotels.length) return '<div style="color:#888;text-align:center;padding:10px;">Aucune réservation hôtel</div>';
+      const rows = hotels.map(h => {
+        const phaseLbl = h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Installation';
+        const occupants = (h.occupants||[]).map(o => `${o.user?.firstName||''} ${o.user?.lastName||''}`.trim()).filter(Boolean).join(', ');
+        return `<tr><td><strong>${esc(h.hotelName)}</strong>${h.hotelAddress?'<br><span style="color:#888;font-size:11px;">'+esc(h.hotelAddress)+'</span>':''}</td><td>${phaseLbl}</td><td>${fmtDate(h.checkin)}<br>→ ${fmtDate(h.checkout)}</td><td>${esc(occupants||'—')}</td><td>${esc(h.reference||'')}${h.notes?'<br><span style="color:#888;font-size:11px;">'+esc(h.notes)+'</span>':''}</td></tr>`;
+      }).join('');
+      return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0;"><thead><tr style="background:#f0f0f0;"><th style="text-align:left;padding:6px;">Hôtel</th><th style="text-align:left;padding:6px;">Phase</th><th style="text-align:left;padding:6px;">Séjour</th><th style="text-align:left;padding:6px;">Occupants</th><th style="text-align:left;padding:6px;">Réf / Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
   else if (b.type === 'planning') {
     // Bloc Planning : sélection du type (installation/démontage/jour spécifique) + liste d'étapes horaires
     // Chaque étape = { time: "HH:mm", duration: "Xh", description: "...", responsible: "..." }
