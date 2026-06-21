@@ -7805,279 +7805,151 @@ function buildTerrainPoint(num, title, description, status, photos, zone='') {
     </div>` : ''}
   </div>`;
 }
-
-async function generateHandoverPDF(handoverId) {
-  const res = await api('GET', `/handover/${handoverId}`);
-  if (!res?.success) { toast('Handover introuvable','error'); return; }
-  const h   = res.data;
-  const proj = h.project || PROJECTS?.find(p => p.id === h.projectId) || {};
-  const items = h.items || [];
-  const now  = new Date();
-  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'long',year:'numeric'}) : '';
-
-  // Custom fields (from editHandoverFields)
-  const f  = h.customFields || {};
-  const fv = (key, fallback='') => f[key] !== undefined ? f[key] : (fallback || '');
-
-  // Auto-fill from project data
-  const projectName  = fv('projectName',  proj.name || '');
-  const clientName   = fv('clientName',   h.clientName || proj.client?.name || '');
-  const siteAddress  = fv('siteAddress',  proj.address || '');
-  const scopeOfWork  = fv('scopeOfWork',  proj.description || '');
-  const handoverDate = fv('handoverDate', fmtD(h.createdAt || now));
-  const comments     = fv('comments',     (items.filter(i=>i.status!=='ok').map(i=>`• ${i.zoneName}${i.comment?' — '+i.comment:''}`).join('\n')) || '');
-
-  const clientTitle  = fv('clientTitle',  '');
-  const clientRep    = fv('clientRep',    h.clientName || '');
-  const spantechTitle= fv('spantechTitle','Site Manager');
-  const spantechRep  = fv('spantechRep',  h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : '');
-
-  const LOGO_B64 = '` + LOGO + `';
-
-  const FOOTER = `
-    <table style="width:100%;border-top:4px solid;border-image:linear-gradient(to right,#cc0000 25%,#f4a261 25% 50%,#4895ef 50% 75%,#2dc653 75%) 1;padding-top:8pt;font-size:8.5pt;color:#333;">
-      <tr>
-        <td style="width:25%;vertical-align:top;"><strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA<br>Avenue du Diamant 156<br>1030 Bruxelles<br>Belgique</td>
-        <td style="width:40%;vertical-align:top;">E-Mail: <a href="mailto:info@span-tech.com" style="color:#4895ef;">info@span-tech.com</a><br>Internet: <a href="http://www.span-tech.com" style="color:#4895ef;">www.span-tech.com</a><br>Téléphone: +32 (0) 2 732 57 93<br>Telefax: +32 (0) 67 55 53 05</td>
-        <td style="width:35%;vertical-align:top;">TVA: BE0849280728<br>Numéro d'entreprise : 0849280728</td>
-      </tr>
-    </table>`;
-
-  const pdfHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Handover Certificate — ${projectName}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Arial',sans-serif;font-size:11pt;color:#1a1a1a;background:#fff;}
-    @media print{
-      body{margin:0;}
-      .page{padding:20mm 25mm;min-height:297mm;position:relative;}
-      .page-break{page-break-before:always;}
-      .no-print{display:none!important;}
-      @page{margin:0;size:A4;}
+export async function generateHandoverPdf(data: {
+  project: { name: string; internalNumber: string; address: string };
+  clientName: string;
+  siteManagerName: string;
+  items: Array<{ zoneName: string; status: string; comment?: string | null; photos?: Array<{ photoUrl: string }> }>;
+  generalNotes?: string | null;
+  clientSignatureUrl?: string | null;
+  managerSignatureUrl?: string | null;
+  date: Date;
+}): Promise<Buffer> {
+  // Pré-télécharge toutes les photos des items en parallèle (Cloudinary → JPEG optimisé)
+  // ⚡ c_limit (vs c_fill) = on PRÉSERVE le ratio original, on ne recadre plus en carré
+  // ⚡ w_1200 = résolution suffisante pour un affichage net en 7 cm de haut (≈ 290 DPI)
+  const itemsWithBuffers: Array<{
+    zoneName: string;
+    status: string;
+    comment?: string | null;
+    photoBuffers: Buffer[];
+  }> = [];
+  for (const item of data.items) {
+    const buffers: Buffer[] = [];
+    for (const ph of (item.photos || [])) {
+      try {
+        const optimized = ph.photoUrl.includes('/upload/')
+          ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_1200,q_auto:good/')
+          : ph.photoUrl;
+        const r = await fetch(optimized) as any;
+        if (!r.ok) continue;
+        const ab = await r.arrayBuffer();
+        buffers.push(Buffer.from(ab));
+      } catch { /* ignorée */ }
     }
-    @media screen{
-      .page{max-width:210mm;margin:0 auto;padding:20mm 25mm;background:#fff;box-shadow:0 0 20px rgba(0,0,0,.1);min-height:297mm;position:relative;}
-      .page-break{margin-top:40px;}
-      body{background:#f0f0f0;padding:20px;}
+    itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
+  }
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, 'HANDOVER REPORT', {
+      projectName: data.project.name,
+      projectRef:  `N° ${data.project.internalNumber}`,
+      reportDate:  new Date(data.date).toLocaleDateString('fr-FR'),
+    });
+
+    sectionTitle(doc, 'Informations Projet');
+    infoRow(doc, 'Projet',         data.project.name);
+    infoRow(doc, 'N° Interne',     data.project.internalNumber);
+    infoRow(doc, 'Adresse',        data.project.address);
+    infoRow(doc, 'Client',         data.clientName);
+    infoRow(doc, 'Site Manager',   data.siteManagerName);
+    infoRow(doc, 'Date réception', new Date(data.date).toLocaleDateString('fr-FR'));
+
+    doc.moveDown(0.8);
+    sectionTitle(doc, 'Zones inspectées');
+
+    const statusColor: Record<string,string> = { ok: GREEN, remark: AMBER, defect: RED, pending: MUTED };
+    const statusLabel: Record<string,string> = { ok: 'OK', remark: 'Remarque', defect: 'Défaut', pending: 'En attente' };
+
+    // ─── Mise en page : texte à gauche, photos 7 cm de haut à droite ───
+    // 7 cm = 198 pt (hauteur fixe). Largeur variable selon ratio de la photo,
+    // capée à 10 cm = 280 pt pour ne pas déborder dans la zone texte.
+    // → Portrait 3:4   : 148 × 198 pt (5.2 × 7 cm)
+    // → Paysage 4:3    : 264 × 198 pt (9.3 × 7 cm)
+    // → Paysage 16:9   : 280 × 158 pt (capé en largeur)
+    const PHOTO_HEIGHT = 198;        // 7 cm — hauteur fixe demandée
+    const PHOTO_MAX_W  = 280;        // 10 cm — largeur max (cap pour les photos très allongées)
+    const PHOTO_GAP    = 8;
+    const PHOTOS_W     = PHOTO_MAX_W;
+    const TEXT_X       = 40;
+    const TEXT_W       = 515 - PHOTOS_W - 14;  // ≈ 221 pt — encore confortable pour le texte
+    const PHOTOS_X     = TEXT_X + TEXT_W + 14;
+
+    for (const item of itemsWithBuffers) {
+      // Saut de page si plus assez de place pour l'item (texte + au moins 1 photo)
+      if (doc.y > 700) doc.addPage();
+
+      const rowTop = doc.y;
+      const color = statusColor[item.status] || MUTED;
+      const label = statusLabel[item.status] || item.status;
+
+      // — Bloc texte à gauche —
+      doc.circle(TEXT_X + 10, rowTop + 5, 5).fill(color);
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
+        .text(item.zoneName, TEXT_X + 25, rowTop, { width: TEXT_W - 110 });
+      const titleEnd = doc.y;
+      // Pastille de statut
+      doc.roundedRect(TEXT_X + TEXT_W - 75, rowTop - 1, 75, 16, 3).fill(color);
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(9)
+        .text(label, TEXT_X + TEXT_W - 75, rowTop + 3, { width: 75, align: 'center' });
+      let textY = Math.max(titleEnd, rowTop + 20);
+      if (item.comment) {
+        doc.fillColor('#3a3a3a').font('Helvetica').fontSize(10)
+          .text(item.comment, TEXT_X + 25, textY + 2, { width: TEXT_W - 30, lineGap: 1 });
+        textY = doc.y;
+      }
+      const textBottomY = textY;
+
+      // — Bloc photos à droite (7 cm de haut chacune, empilées verticalement) —
+      let photoBottomY = rowTop;
+      const photos = item.photoBuffers || [];
+      for (let i = 0; i < photos.length; i++) {
+        let realY = rowTop + i * (PHOTO_HEIGHT + PHOTO_GAP);
+        // Saut de page si la photo déborde du bas
+        if (realY + PHOTO_HEIGHT > 800) {
+          doc.addPage();
+          realY = doc.y;
+        }
+        try {
+          // fit: [maxW, maxH] → PDFKit préserve le ratio et limite aux deux dimensions
+          // En pratique, pour la plupart des photos (portrait/paysage 3:4 ou 4:3),
+          // c'est la HAUTEUR qui contraint, donc on obtient bien 7 cm de haut
+          doc.image(photos[i], PHOTOS_X, realY, { fit: [PHOTO_MAX_W, PHOTO_HEIGHT] });
+        } catch { /* image illisible */ }
+        photoBottomY = realY + PHOTO_HEIGHT;
+      }
+
+      // Avancer Y au plus bas des deux blocs + une marge
+      const rowBottom = Math.max(textBottomY, photoBottomY) + 14;
+      // Trait de séparation léger entre items
+      doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
+      doc.y = rowBottom;
     }
-    .header-bar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30pt;font-size:8.5pt;color:#333;}
-    .header-info{line-height:1.6;}
-    .logo{height:60pt;width:auto;}
-    .title-box{border:1px solid #333;background:#e8e8e8;text-align:center;padding:8pt 20pt;margin:20pt 0;font-weight:700;font-size:13pt;letter-spacing:1px;}
-    .project-name{font-weight:700;font-size:13pt;text-align:center;margin-bottom:20pt;}
-    .field-row{margin-bottom:12pt;font-size:11pt;}
-    .field-label{display:inline;}
-    .field-value{display:inline;border-bottom:1px solid #333;min-width:200pt;padding-bottom:1pt;}
-    .underline-label{text-decoration:underline;font-weight:400;}
-    .address-block{margin:16pt 0;font-size:11pt;}
-    .address-line{border-bottom:1px solid #333;margin-bottom:8pt;min-height:16pt;padding-bottom:2pt;}
-    .legal-text{margin-top:30pt;font-size:11pt;line-height:1.7;}
-    .footer{position:absolute;bottom:15mm;left:25mm;right:25mm;}
-    .sign-section{margin-top:20pt;}
-    .sign-title{font-weight:700;text-decoration:underline;margin-bottom:10pt;font-size:11pt;}
-    .sign-row{margin-bottom:16pt;font-size:11pt;}
-    .sign-value{display:inline-block;border-bottom:1px solid #333;min-width:250pt;padding-bottom:2pt;margin-left:6pt;}
-    .sig-box{border-bottom:1px solid #333;min-height:60pt;width:200pt;margin:10pt 0 4pt;}
-    .comments-box{min-height:120pt;border-bottom:1px solid #ccc;margin-bottom:8pt;font-size:11pt;line-height:1.6;white-space:pre-wrap;}
-  </style></head>
-  <body>
 
-  <!-- Print button -->
-  <div class="no-print" style="position:fixed;top:16px;right:16px;z-index:999;display:flex;gap:8px;">
-    <button onclick="window.print()" style="background:#cc0000;color:#fff;border:none;padding:10px 22px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.2);">🖨️ Imprimer / PDF</button>
-    <button onclick="window.close()" style="background:#eee;color:#333;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;">Fermer</button>
-  </div>
+    if (data.generalNotes) {
+      doc.moveDown(0.5);
+      sectionTitle(doc, 'Notes générales');
+      doc.fillColor(MUTED).font('Helvetica').fontSize(11).text(data.generalNotes, 40, doc.y, { width: 515 });
+    }
 
-  <!-- ═══════════════════ PAGE 1 ═══════════════════ -->
-  <div class="page">
+    doc.moveDown(1);
+    if (doc.y > 700) doc.addPage();
+    sectionTitle(doc, 'Signatures');
+    const sigY = doc.y + 10;
+    doc.rect(40, sigY, 220, 70).stroke('#ccc');
+    doc.rect(315, sigY, 220, 70).stroke('#ccc');
+    doc.fillColor(MUTED).fontSize(9).text('Site Manager', 40, sigY + 5).text('Client', 315, sigY + 5);
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(data.siteManagerName, 40, sigY + 55).text(data.clientName, 315, sigY + 55);
 
-    <!-- Header -->
-    <div class="header-bar">
-      <div class="header-info">
-        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
-        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com &nbsp;&nbsp; Numéro d'entreprise : 0849280728<br>
-        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93<br>
-        Belgique &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Telefax: +32 (0) 67 55 53 05
-      </div>
-      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
-    </div>
-
-    <!-- Title -->
-    <div class="title-box">HANDOVER CERTIFICATE</div>
-
-    <!-- Project -->
-    <div class="project-name">PROJECT : ${projectName || '…………………………………………………………………'}</div>
-
-    <!-- Date -->
-    <div class="field-row">
-      <span class="field-label"><span class="underline-label">Date:</span> </span>
-      <span class="field-value">${handoverDate || '………………………………………………'}</span>
-    </div>
-
-    <!-- Contractor -->
-    <div class="field-row">Contractor : Spantech International SA</div>
-
-    <!-- Client -->
-    <div class="field-row">
-      <span class="field-label">Client : </span>
-      <span class="field-value">${clientName || '………………………………………………'}</span>
-    </div>
-
-    <!-- Site address -->
-    <div class="address-block">
-      <div class="underline-label" style="margin-bottom:8pt;">Site address:</div>
-      ${siteAddress
-        ? siteAddress.split(',').map(line => `<div class="address-line">${line.trim()}</div>`).join('')
-        : `<div class="address-line">………………………………………………</div>
-           <div class="address-line">………………………………………………</div>
-           <div class="address-line">………………………………………………</div>`}
-    </div>
-
-    <!-- Scope of work -->
-    <div class="field-row">
-      <div class="underline-label" style="margin-bottom:4pt;">Scope of work:</div>
-      <div>Supply of a <span style="border-bottom:1px solid #333;display:inline-block;min-width:350pt;">${scopeOfWork || '…………………………………………………………………………………………………………………………………………'}</span></div>
-    </div>
-
-    <!-- Legal text -->
-    <div class="legal-text">
-      <p style="margin-bottom:10pt;">We hereby confirm that the structures comply to manufacturer recommendations, to best practices and to statics calculations supplied with the product.</p>
-      <p>The structure was manufactured in accordance with international code of practice and design standards. We confirm the structure complies to the original drawings and as-built drawings and calculations.</p>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">${FOOTER}</div>
-  </div>
-
-  <!-- ═══════════════════ PAGE 2 — INSPECTION TABLE ═══════════════════ -->
-  ${items.length ? `
-  <div class="page page-break">
-    <div class="header-bar">
-      <div class="header-info">
-        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
-        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com<br>
-        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93
-      </div>
-      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
-    </div>
-
-    <div class="title-box" style="margin-bottom:16pt;">RAPPORT D'INSPECTION — ${projectName}</div>
-
-    <table style="width:100%;border-collapse:collapse;font-size:10pt;">
-      <thead>
-        <tr style="background:#cc0000;color:#fff;">
-          <th style="padding:8pt 10pt;text-align:left;width:30pt;">#</th>
-          <th style="padding:8pt 10pt;text-align:left;width:35%;">Zone / Emplacement</th>
-          <th style="padding:8pt 10pt;text-align:left;width:15%;">Statut</th>
-          <th style="padding:8pt 10pt;text-align:left;">Commentaire</th>
-          <th style="padding:8pt 10pt;text-align:center;width:80pt;">Photo</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${items.map((item, i) => {
-          const stColor = {ok:'#16a34a', remark:'#ca8a04', defect:'#dc2626', pending:'#6b7280'}[item.status] || '#333';
-          const stLabel = {ok:'✅ OK', remark:'⚠️ Remarque', defect:'❌ Défaut', pending:'⏳ En attente'}[item.status] || item.status;
-          const rowBg = i % 2 === 0 ? '#fff' : '#f9fafb';
-          const firstPhoto = (item.photos||[])[0]?.photoUrl || (item.itemPhotos||[])[0]?.photoUrl;
-          return `<tr style="background:${rowBg};border-bottom:1pt solid #e5e7eb;">
-            <td style="padding:8pt 10pt;font-weight:700;color:#cc0000;vertical-align:top;">${i+1}</td>
-            <td style="padding:8pt 10pt;font-weight:600;vertical-align:top;">${item.zoneName}</td>
-            <td style="padding:8pt 10pt;vertical-align:top;">
-              <span style="color:${stColor};font-weight:700;">${stLabel}</span>
-            </td>
-            <td style="padding:8pt 10pt;color:#374151;vertical-align:top;font-size:9.5pt;">${item.comment||'—'}</td>
-            <td style="padding:6pt;text-align:center;vertical-align:middle;">
-              ${firstPhoto ? `<img src="${firstPhoto}" style="width:65pt;height:50pt;object-fit:cover;border-radius:4pt;border:1pt solid #e5e7eb;">` : '<span style="color:#ccc;font-size:18pt;">📷</span>'}
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-
-    <!-- Summary -->
-    <div style="display:flex;gap:12pt;margin-top:16pt;">
-      <div style="flex:1;background:#f0fdf4;border:1pt solid #bbf7d0;border-radius:6pt;padding:10pt;text-align:center;">
-        <div style="font-size:22pt;font-weight:800;color:#16a34a;">${items.filter(i=>i.status==='ok').length}</div>
-        <div style="font-size:9pt;color:#16a34a;font-weight:600;">Zones OK</div>
-      </div>
-      <div style="flex:1;background:#fefce8;border:1pt solid #fde047;border-radius:6pt;padding:10pt;text-align:center;">
-        <div style="font-size:22pt;font-weight:800;color:#ca8a04;">${items.filter(i=>i.status==='remark').length}</div>
-        <div style="font-size:9pt;color:#ca8a04;font-weight:600;">Remarques</div>
-      </div>
-      <div style="flex:1;background:#fff5f5;border:1pt solid #fecaca;border-radius:6pt;padding:10pt;text-align:center;">
-        <div style="font-size:22pt;font-weight:800;color:#dc2626;">${items.filter(i=>i.status==='defect').length}</div>
-        <div style="font-size:9pt;color:#dc2626;font-weight:600;">Défauts</div>
-      </div>
-      <div style="flex:1;background:#f3f4f6;border:1pt solid #e5e7eb;border-radius:6pt;padding:10pt;text-align:center;">
-        <div style="font-size:22pt;font-weight:800;color:#374151;">${items.length}</div>
-        <div style="font-size:9pt;color:#374151;font-weight:600;">Total</div>
-      </div>
-    </div>
-
-    <div class="footer">${FOOTER}</div>
-  </div>` : ''}
-
-  <!-- ═══════════════════ PAGE SIGNATURES ═══════════════════ -->
-  <div class="page page-break">
-
-    <!-- Header -->
-    <div class="header-bar">
-      <div class="header-info">
-        <strong><span style="color:#cc0000;">SPAN</span>TECH</strong> International SA &nbsp;&nbsp; E-Mail: info@span-tech.com &nbsp;&nbsp; TVA: BE0849280728<br>
-        Avenue du Diamant 156 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Internet: www.span-tech.com &nbsp;&nbsp; Numéro d'entreprise : 0849280728<br>
-        1030 Bruxelles &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Téléphone: +32 (0) 2 732 57 93<br>
-        Belgique &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Telefax: +32 (0) 67 55 53 05
-      </div>
-      <img src="data:image/png;base64,${LOGO_B64}" class="logo">
-    </div>
-
-    <!-- Comments -->
-    <div style="margin-bottom:30pt;">
-      <div class="underline-label" style="margin-bottom:10pt;font-size:11pt;">Comments/reservations:</div>
-      <div class="comments-box">${comments}</div>
-    </div>
-
-    <!-- Date -->
-    <div class="field-row" style="margin-bottom:20pt;">
-      DATE: <span class="field-value">${handoverDate}</span>
-    </div>
-
-    <!-- CLIENT sign -->
-    <div class="sign-section" style="margin-bottom:30pt;">
-      <div class="sign-title">CLIENT</div>
-      <div class="sign-row">Title: <span class="sign-value">${clientTitle}</span></div>
-      <div class="sign-row">Name: <span class="sign-value">${clientRep}</span></div>
-      <div class="sign-row">
-        Signature:
-        ${h.clientSignatureUrl
-          ? `<img src="${h.clientSignatureUrl}" style="max-height:60pt;max-width:200pt;border-bottom:1px solid #333;vertical-align:bottom;">`
-          : `<div class="sig-box"></div>`}
-      </div>
-    </div>
-
-    <!-- SPANTECH sign -->
-    <div class="sign-section">
-      <div class="sign-title">SPANTECH INTERNATIONAL SA</div>
-      <div class="sign-row">Title: <span class="sign-value">${spantechTitle}</span></div>
-      <div class="sign-row">Name: <span class="sign-value">${spantechRep}</span></div>
-      <div class="sign-row">
-        Signature:
-        ${h.managerSignatureUrl
-          ? `<img src="${h.managerSignatureUrl}" style="max-height:60pt;max-width:200pt;border-bottom:1px solid #333;vertical-align:bottom;">`
-          : `<div class="sig-box"></div>`}
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">${FOOTER}</div>
-  </div>
-
-  </body></html>`;
-
-  const win = window.open('','_blank');
-  if (!win) { toast('Autorisez les popups pour générer le PDF','error'); return; }
-  win.document.write(pdfHTML);
-  win.document.close();
+    footer(doc);
+    doc.end();
+  });
 }
 
 // ═══ MOBILE NAV ═══
@@ -14634,21 +14506,22 @@ function brfAddInfoBlock(p) {
   if (p.client?.name) lines.push(`Client : ${p.client.name}`);
   if (p.address) lines.push(`📍 ${p.address}${p.city ? ', ' + p.city : ''}`);
   if (p.installationStart) {
-    const ds = new Date(p.installationStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
-    const de = p.installationEnd ? new Date(p.installationEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
-    lines.push(`📅 Install : ${ds} → ${de}`);
+    lines.push(`📅 Install : ${brfFmtDateTime(p.installationStart)} → ${brfFmtDateTime(p.installationEnd)}`);
   }
   if (p.dismantlingStart) {
-    const ds = new Date(p.dismantlingStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
-    const de = p.dismantlingEnd ? new Date(p.dismantlingEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
-    lines.push(`🔨 Démontage : ${ds} → ${de}`);
+    lines.push(`🔨 Démontage : ${brfFmtDateTime(p.dismantlingStart)} → ${brfFmtDateTime(p.dismantlingEnd)}`);
   }
   brfAddTextbox(lines.join('\n'), { width: 480, fontSize: 18 });
 }
 
 function brfAddPlanningBlock(p) {
   const lines = ['📅 PLANNING', ''];
-  const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long' }) : '?';
+  // Format : "lundi 22 juin 2026 à 08:00"
+  const fmt = d => {
+    if (!d) return '?';
+    const weekday = new Date(d).toLocaleDateString('fr-FR', { weekday:'long' });
+    return weekday + ' ' + brfFmtDateTime(d);
+  };
   if (p.installationStart) {
     lines.push('INSTALLATION');
     lines.push(`  Début : ${fmt(p.installationStart)}`);
