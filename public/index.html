@@ -13213,6 +13213,27 @@ function pickThisContact(slideIdx, bi, contactData) {
 // ═══════════════════════════════════════════════════════════════
 // Design Template Viewbox — constantes + helpers de rendu
 // ═══════════════════════════════════════════════════════════════
+// Format date+heure pour les briefings : "22 juin 2026 à 08:00"
+// Si seulement la date est disponible (pas d'heure), retombe sur date seule.
+function brfFmtDateTime(d) {
+  if (!d) return '?';
+  const dt = new Date(d);
+  // Heure 00:00 = probablement "pas d'heure définie" → date seule
+  if (dt.getHours() === 0 && dt.getMinutes() === 0) {
+    return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' });
+  }
+  return dt.toLocaleString('fr-FR', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+// Variante courte (sans année) pour les tableaux
+function brfFmtDateTimeShort(d) {
+  if (!d) return '?';
+  const dt = new Date(d);
+  if (dt.getHours() === 0 && dt.getMinutes() === 0) {
+    return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' });
+  }
+  return dt.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
 const BRF_TPL = {
   NAVY:        '#000a3d',
   NAVY_BORDER: '#4a6dba',
@@ -15029,8 +15050,8 @@ async function brfAutoGenerateBriefing(btn) {
       }));
     }
     if (project.installationStart) {
-      const ds = new Date(project.installationStart).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' });
-      const de = project.installationEnd ? new Date(project.installationEnd).toLocaleDateString('fr-FR', { day:'2-digit', month:'long' }) : '?';
+      const ds = brfFmtDateTime(project.installationStart);
+      const de = brfFmtDateTime(project.installationEnd);
       BRF_STUDIO.fabricCanvas.add(new fabric.IText(`📅  Installation : ${ds} → ${de}`, {
         left: 60, top: 480, fontSize: 20, fontFamily: 'Helvetica', fill: '#666',
       }));
@@ -15045,8 +15066,12 @@ async function brfAutoGenerateBriefing(btn) {
     // ─── SLIDE PLANNING ─────────────────────────────────────────
     if (project.installationStart || project.dismantlingStart) {
       newSlide('Planning', 'Planning');
-      const fmt = d => d ? new Date(d).toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) : '?';
-      const headers = ['Phase', 'Début', 'Fin'];
+const fmt = d => {
+        if (!d) return '?';
+        const dt = new Date(d);
+        const weekday = dt.toLocaleDateString('fr-FR', { weekday:'long' });
+        return weekday + ' ' + brfFmtDateTime(d);
+      };      const headers = ['Phase', 'Début', 'Fin'];
       const rows = [];
       if (project.installationStart) rows.push(['🏗️ Installation', fmt(project.installationStart), fmt(project.installationEnd)]);
       if (project.dismantlingStart)  rows.push(['🔨 Démontage',    fmt(project.dismantlingStart),  fmt(project.dismantlingEnd)]);
