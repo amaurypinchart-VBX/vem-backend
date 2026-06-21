@@ -13313,8 +13313,8 @@ brfPreloadLogo();
   document.body.appendChild(overlay);
 
   // Init Fabric canvas
-  BRF_STUDIO.fabricCanvas = await brfPreloadLogo(); new fabric.Canvas('brf-studio-canvas', {
-    width: BRF_CANVAS_W,
+await brfPreloadLogo();
+  BRF_STUDIO.fabricCanvas = new fabric.Canvas('brf-studio-canvas', {    width: BRF_CANVAS_W,
     height: BRF_CANVAS_H,
     backgroundColor: '#ffffff',
     selection: true,
