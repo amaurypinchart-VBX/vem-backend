@@ -13840,26 +13840,104 @@ function brfOpenTemplatesMenu(btn) {
     document.addEventListener('click', closeIt);
   }, 50);
 }
-
 function brfAddSlideFromTemplate(type) {
-  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
-  // Sauve la slide courante puis ajoute une nouvelle slide
   saveCurrentSlideJson();
-  const slide = { id:'slide-'+Date.now(), name: brfTemplateName(type), json: null };
-  BRF_STUDIO.slides.push(slide);
+  const slideNum = BRF_STUDIO.slides.length + 1;
+
+  // Mapping type → nom affiché dans la sidebar
+  const sidebarNames = {
+    cover:           'Couverture',
+    section:         'Section',
+    'title-bullets': 'Liste',
+    'photo-text':    'Photo + texte',
+    contacts:        'Contacts',
+    calendar:        'Planning',
+  };
+  const sidebarName = sidebarNames[type] || ('Slide ' + slideNum);
+
+  BRF_STUDIO.slides.push({ id: 'slide-' + Date.now(), name: sidebarName, json: null });
   BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
-  // Vide le canvas puis applique le template
   BRF_STUDIO.suppressSnapshot = true;
   BRF_STUDIO.fabricCanvas.clear();
-  BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => {});
-  applyLogoBackground();
-  brfApplyTemplate(type);
-  BRF_STUDIO.suppressSnapshot = false;
-  renderStudioSidebar();
-  brfSnapshot();
-  // Réinit undo pour cette slide
+
+  if (type === 'cover') {
+    // Couverture : layout spécial (pas d'encadré titre), MAIS avec logo + watermark
+    BRF_STUDIO.fabricCanvas.setBackgroundColor(BRF_TPL.BG, () => {});
+    brfAddLogoTopRight(240);
+    brfAddWatermarkBottomRight();
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('BRIEFING', {
+      left: 60, top: 200, fontSize: 24, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#666',
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('NOM DU PROJET', {
+      left: 60, top: 240, width: 1000, fontSize: 64, fontFamily: 'Helvetica', fontWeight: 'bold', fill: BRF_TPL.NAVY, lineHeight: 1.05,
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('Client : ...', {
+      left: 60, top: 420, fontSize: 28, fontFamily: 'Helvetica', fill: '#333',
+    }));
+  } else if (type === 'section') {
+    // Section : fond bleu marine + gros titre blanc + logo + watermark
+    BRF_STUDIO.fabricCanvas.setBackgroundColor(BRF_TPL.NAVY, () => {});
+    brfAddLogoTopRight(180);
+    brfAddWatermarkBottomRight();
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('TITRE DE SECTION', {
+      left: 60, top: 300, width: 1100, fontSize: 72, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#ffffff', lineHeight: 1.05,
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('Sous-titre / contexte', {
+      left: 60, top: 440, fontSize: 26, fontFamily: 'Helvetica', fill: '#aac', fontStyle: 'italic',
+    }));
+  } else if (type === 'title-bullets') {
+    brfApplyStandardTemplate('Titre de la slide');
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('• Premier point\n• Deuxième point\n• Troisième point\n• Quatrième point', {
+      left: 60, top: 200, width: 1100, fontSize: 22, fontFamily: 'Helvetica', fill: '#222', lineHeight: 1.8,
+    }));
+  } else if (type === 'photo-text') {
+    brfApplyStandardTemplate('Titre de la slide');
+    BRF_STUDIO.fabricCanvas.add(new fabric.Rect({
+      left: 60, top: 200, width: 540, height: 400, fill: '#ddd', stroke: '#bbb', strokeWidth: 2,
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.IText('Glisser une image ici', {
+      left: 200, top: 380, fontSize: 16, fontFamily: 'Helvetica', fill: '#999',
+    }));
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('Texte de description...', {
+      left: 640, top: 200, width: 560, fontSize: 18, fontFamily: 'Helvetica', fill: '#222', lineHeight: 1.5,
+    }));
+  } else if (type === 'contacts') {
+    brfApplyStandardTemplate('Contacts');
+    brfRenderDataTable({
+      x: 60, y: 200,
+      headers: ['Nom', 'Rôle', 'Téléphone', 'Email'],
+      rows: [
+        ['Nom 1', 'Rôle', '+32 ...', 'mail@...'],
+        ['Nom 2', 'Rôle', '+32 ...', 'mail@...'],
+        ['Nom 3', 'Rôle', '+32 ...', 'mail@...'],
+      ],
+      colWidths: [280, 260, 240, 380],
+    });
+  } else if (type === 'calendar') {
+    brfApplyStandardTemplate('Planning');
+    brfRenderDataTable({
+      x: 60, y: 200,
+      headers: ['Phase', 'Début', 'Fin'],
+      rows: [
+        ['🏗️ Installation', 'dd/mm/yyyy', 'dd/mm/yyyy'],
+        ['🔨 Démontage',    'dd/mm/yyyy', 'dd/mm/yyyy'],
+      ],
+      colWidths: [260, 470, 430],
+    });
+  } else {
+    // Fallback : slide standard vide avec template
+    brfApplyStandardTemplate('Titre de la slide');
+  }
+
+  // Sauvegarde
+  const json = BRF_STUDIO.fabricCanvas.toJSON();
+  delete json.backgroundImage;
+  BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
   BRF_STUDIO.undoStack = [];
   BRF_STUDIO.redoStack = [];
+  BRF_STUDIO.suppressSnapshot = false;
+  brfSnapshot();
+  renderStudioSidebar();
 }
 
 function brfTemplateName(type) {
@@ -13989,11 +14067,9 @@ function brfAddSlide() {
   const slideNum = BRF_STUDIO.slides.length + 1;
   BRF_STUDIO.slides.push({ id:'slide-'+Date.now(), name:'Slide '+slideNum, json:null });
   BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
-  // Charge la slide vide puis applique le template Viewbox
   BRF_STUDIO.suppressSnapshot = true;
   BRF_STUDIO.fabricCanvas.clear();
   brfApplyStandardTemplate('Titre de la slide');
-  // Sauve immédiatement (avec le template appliqué)
   const json = BRF_STUDIO.fabricCanvas.toJSON();
   delete json.backgroundImage;
   BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
