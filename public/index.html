@@ -13292,7 +13292,150 @@ async function openBriefingStudio(initialData) {
     const r = await api('GET', '/settings/briefing-default-logo');
     if (r?.success && r.data?.url) globalLogo = r.data.url;
   } catch {}
+// ═══════════════════════════════════════════════════════════════
+// Design Template Viewbox — constantes + helpers de rendu
+// ═══════════════════════════════════════════════════════════════
+const BRF_TPL = {
+  NAVY:        '#000a3d',
+  NAVY_BORDER: '#4a6dba',
+  BG:          '#e8e8e8',
+  LOGO_URL:    '/logo.png',
+};
 
+// Logo préchargé une seule fois en DOM Image (évite les race conditions async)
+let BRF_TPL_LOGO_IMG = null;
+function brfPreloadLogo() {
+  return new Promise((resolve) => {
+    if (BRF_TPL_LOGO_IMG) { resolve(BRF_TPL_LOGO_IMG); return; }
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload  = () => { BRF_TPL_LOGO_IMG = im; resolve(im); };
+    im.onerror = () => { console.warn('[brf] Logo non chargé:', BRF_TPL.LOGO_URL); resolve(null); };
+    im.src = BRF_TPL.LOGO_URL;
+  });
+}
+
+// Ajoute le logo en haut-droite (synchrone via image préchargée)
+function brfAddLogoTopRight(width) {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv || !BRF_TPL_LOGO_IMG) return;
+  const fImg = new fabric.Image(BRF_TPL_LOGO_IMG);
+  fImg.scaleToWidth(width || 220);
+  fImg.set({
+    left: BRF_CANVAS_W - fImg.getScaledWidth() - 30,
+    top: 30,
+    selectable: false, evented: false,
+  });
+  cv.add(fImg);
+}
+
+// Ajoute le watermark "WB" en bas-droite (positionné précisément pour ne pas déborder)
+function brfAddWatermarkBottomRight() {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv) return;
+  const wb = new fabric.IText('WB', {
+    fontSize: 150, fontFamily: 'Helvetica', fontWeight: '900',
+    fill: '#ffffff', opacity: 0.85,
+    selectable: false, evented: false,
+  });
+  wb.set({
+    left: BRF_CANVAS_W - wb.width - 30,
+    top:  BRF_CANVAS_H - wb.height - 20,
+  });
+  cv.add(wb);
+}
+
+// Applique le template Viewbox standard à la slide courante : fond gris + encadré titre bleu + logo + watermark
+function brfApplyStandardTemplate(title) {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv) return;
+
+  cv.setBackgroundColor(BRF_TPL.BG, () => {});
+
+  if (title) {
+    const tempText = new fabric.IText(String(title), {
+      fontSize: 36, fontFamily: 'Helvetica', fontWeight: 'bold',
+    });
+    const textWidth = tempText.width;
+    const padX = 36;
+    const frameW = Math.max(textWidth + padX * 2, 220);
+    const frameH = 90;
+
+    cv.add(new fabric.Rect({
+      left: 60, top: 50, width: frameW, height: frameH,
+      fill: BRF_TPL.NAVY, stroke: BRF_TPL.NAVY_BORDER, strokeWidth: 3,
+      rx: 12, ry: 12,
+      selectable: false, evented: false,
+    }));
+    cv.add(new fabric.IText(String(title), {
+      left: 60 + padX,
+      top: 50 + (frameH - 40) / 2,
+      fontSize: 36, fontFamily: 'Helvetica', fontWeight: 'bold',
+      fill: '#ffffff',
+    }));
+  }
+
+  brfAddLogoTopRight();
+  brfAddWatermarkBottomRight();
+
+  cv.requestRenderAll();
+}
+
+// Rend un tableau Fabric (header bleu marine + lignes alternées)
+function brfRenderDataTable(opts) {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv) return;
+  const headers      = opts.headers      || [];
+  const rows         = opts.rows         || [];
+  const colWidths    = opts.colWidths    || headers.map(() => 200);
+  const rowHeight    = opts.rowHeight    || 40;
+  const headerHeight = opts.headerHeight || 46;
+  const startX       = opts.x || 60;
+  const startY       = opts.y || 200;
+  const totalWidth   = colWidths.reduce((s, w) => s + w, 0);
+  let y = startY;
+
+  cv.add(new fabric.Rect({
+    left: startX, top: y, width: totalWidth, height: headerHeight,
+    fill: BRF_TPL.NAVY, rx: 6, ry: 6,
+    selectable: false, evented: false,
+  }));
+  let x = startX;
+  for (let i = 0; i < headers.length; i++) {
+    cv.add(new fabric.Textbox(String(headers[i] ?? ''), {
+      left: x + 14, top: y + 14, width: colWidths[i] - 28,
+      fontSize: 14, fontFamily: 'Helvetica', fontWeight: 'bold',
+      fill: '#ffffff', selectable: false, evented: false,
+    }));
+    x += colWidths[i];
+  }
+  y += headerHeight + 4;
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    cv.add(new fabric.Rect({
+      left: startX, top: y, width: totalWidth, height: rowHeight,
+      fill: ri % 2 === 0 ? '#ffffff' : '#f4f4f4',
+      stroke: '#ddd', strokeWidth: 1,
+      selectable: false, evented: false,
+    }));
+    x = startX;
+    for (let ci = 0; ci < row.length; ci++) {
+      cv.add(new fabric.Textbox(String(row[ci] ?? ''), {
+        left: x + 14, top: y + 11, width: colWidths[ci] - 28,
+        fontSize: 13, fontFamily: 'Helvetica',
+        fill: '#222', selectable: false, evented: false,
+      }));
+      x += colWidths[ci];
+    }
+    y += rowHeight;
+  }
+  cv.requestRenderAll();
+  return y;
+}
+
+// ⚡ Démarrer le préchargement du logo dès le chargement du script
+brfPreloadLogo();
   BRF_STUDIO = {
     fabricCanvas: null,
     slides: Array.isArray(initialData?.slides) && initialData.slides.length
