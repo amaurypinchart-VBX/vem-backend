@@ -13185,23 +13185,37 @@ function brfParseGoogleMapsUrl(url) {
   return null;
 }
 
-// Construit l'URL de l'image statique OSM
+// MapTiler API key — restreindre par HTTP origin dans le dashboard MapTiler
+// (sinon n'importe qui peut utiliser ta clé en copiant ton code source)
+const BRF_MAPTILER_KEY = 'hSmcXyG6rhvYyBgfH7md';
+const BRF_MAPTILER_STYLE = 'streets-v2';  // ou: outdoor-v2, satellite, hybrid, basic-v2, winter-v2
+
+// Construit l'URL de l'image statique MapTiler
+// ⚠️ MapTiler veut LON,LAT (inverse de l'ordre habituel LAT,LON)
 function brfStaticMapUrl(lat, lon, opts) {
   opts = opts || {};
   const zoom = opts.zoom || 15;
-  const size = opts.size || '1100x600';
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${size}&markers=${lat},${lon},red-pushpin&maptype=mapnik`;
+  const w = opts.width || 1100;
+  const h = opts.height || 600;
+  if (!BRF_MAPTILER_KEY || BRF_MAPTILER_KEY === 'hSmcXyG6rhvYyBgfH7md') {
+    console.warn('[brf] BRF_MAPTILER_KEY manquante — la carte ne se chargera pas');
+    return null;
+  }
+  return `https://api.maptiler.com/maps/${BRF_MAPTILER_STYLE}/static/${lon},${lat},${zoom}/${w}x${h}.png?key=${BRF_MAPTILER_KEY}`;
 }
 
 // Ajoute le plan au canvas à partir de coordonnées GPS
 async function brfAddMapImageByCoords(lat, lon, x, y, targetWidth) {
   const cv = BRF_STUDIO?.fabricCanvas;
   if (!cv) return y;
-  const mapUrl = brfStaticMapUrl(lat, lon, { zoom: 15, size: '1100x600' });
+  const mapUrl = brfStaticMapUrl(lat, lon, { zoom: 15, width: 1100, height: 600 });
+  if (!mapUrl) return y;
+  console.log('[brf] map URL:', mapUrl);
+
   return new Promise(resolve => {
     let resolved = false;
     const fail = () => { if (resolved) return; resolved = true; resolve(y); };
-    const timer = setTimeout(fail, 10000);
+    const timer = setTimeout(fail, 15000);
     const tryLoad = (useCors) => {
       const img = new Image();
       if (useCors) img.crossOrigin = 'anonymous';
@@ -13213,26 +13227,35 @@ async function brfAddMapImageByCoords(lat, lon, x, y, targetWidth) {
           const fImg = new fabric.Image(img);
           fImg.scaleToWidth(targetWidth || 1100);
           fImg.set({
-            left: x || 60,
-            top: y || 200,
-            selectable: true,
-            evented: true,
+            left: x || 60, top: y || 200,
+            selectable: true, evented: true,
           });
           cv.add(fImg);
+
+          // Marqueur rouge au centre de l'image (= position géocodée)
+          const cx = (x || 60) + fImg.getScaledWidth() / 2;
+          const cy = (y || 200) + fImg.getScaledHeight() / 2;
+          const marker = new fabric.Circle({
+            left: cx - 14, top: cy - 28,
+            radius: 14, fill: '#e63946',
+            stroke: '#ffffff', strokeWidth: 4,
+            selectable: true, evented: true,
+          });
+          cv.add(marker);
+
           cv.requestRenderAll();
           resolve((y || 200) + fImg.getScaledHeight() + 20);
         } catch (e) { console.warn('[brf]', e); resolve(y); }
       };
       img.onerror = () => {
         if (useCors) tryLoad(false);
-        else { console.warn('[brf] échec chargement plan'); fail(); }
+        else { console.warn('[brf] échec chargement plan. URL:', mapUrl); fail(); }
       };
       img.src = mapUrl;
     };
     tryLoad(true);
   });
 }
-
 // Ajoute le plan au canvas à partir d'une adresse (géocode d'abord)
 async function brfAddMapToCanvas(address, x, y, targetWidth) {
   if (!address) return y;
