@@ -13106,7 +13106,82 @@ function brfRenderDataTable(opts) {
   cv.requestRenderAll();
   return y;
 }
+// ═══════════════════════════════════════════════════════════════
+// Map helpers — géocodage + image OSM (pour le slide Localisation)
+// ═══════════════════════════════════════════════════════════════
 
+// Géocode une adresse via Nominatim (OSM) — retourne {lat, lon} ou null
+async function brfGeocodeAddress(address) {
+  if (!address) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+    const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await r.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+  } catch (e) {
+    console.warn('[brf] geocoding failed:', e);
+    return null;
+  }
+}
+
+// Construit l'URL de l'image statique OSM centrée sur les coordonnées
+function brfStaticMapUrl(lat, lon, opts) {
+  opts = opts || {};
+  const zoom = opts.zoom || 15;
+  const size = opts.size || '1100x600';
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${size}&markers=${lat},${lon},red-pushpin&maptype=mapnik`;
+}
+
+// Géocode l'adresse + charge le plan dans le canvas Studio
+// (image sélectionnable et déplaçable, sur laquelle tu peux ensuite dessiner)
+// Retourne la position Y en bas du plan (utile pour chaîner du contenu après)
+async function brfAddMapToCanvas(address, x, y, targetWidth) {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv || !address) return y;
+
+  const coords = await brfGeocodeAddress(address);
+  if (!coords) {
+    console.warn('[brf] adresse non géocodable:', address);
+    return y;
+  }
+  const mapUrl = brfStaticMapUrl(coords.lat, coords.lon, { zoom: 15, size: '1100x600' });
+
+  return new Promise(resolve => {
+    let resolved = false;
+    const fail = () => { if (resolved) return; resolved = true; resolve(y); };
+    const timer = setTimeout(fail, 10000);  // 10s timeout
+
+    const tryLoad = (useCors) => {
+      const img = new Image();
+      if (useCors) img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        try {
+          const fImg = new fabric.Image(img);
+          fImg.scaleToWidth(targetWidth || 1100);
+          fImg.set({
+            left: x || 60,
+            top: y || 200,
+            selectable: true,
+            evented: true,
+          });
+          cv.add(fImg);
+          cv.requestRenderAll();
+          resolve((y || 200) + fImg.getScaledHeight() + 20);
+        } catch (e) { console.warn('[brf]', e); resolve(y); }
+      };
+      img.onerror = () => {
+        if (useCors) tryLoad(false);  // retry sans CORS (image affichée mais canvas teinté)
+        else { console.warn('[brf] échec chargement plan:', mapUrl); fail(); }
+      };
+      img.src = mapUrl;
+    };
+    tryLoad(true);
+  });
+}
 // ⚡ Démarrer le préchargement du logo dès le chargement du script
 // → au moment où le user ouvre le Studio, le logo est déjà prêt en DOM
 brfPreloadLogo();
@@ -13288,82 +13363,7 @@ function brfRenderDataTable(opts) {
   cv.requestRenderAll();
   return y;
 }
-// ═══════════════════════════════════════════════════════════════
-// Map helpers — géocodage + image OSM (pour le slide Localisation)
-// ═══════════════════════════════════════════════════════════════
 
-// Géocode une adresse via Nominatim (OSM) — retourne {lat, lon} ou null
-async function brfGeocodeAddress(address) {
-  if (!address) return null;
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
-    const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
-    const data = await r.json();
-    if (!Array.isArray(data) || !data.length) return null;
-    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-  } catch (e) {
-    console.warn('[brf] geocoding failed:', e);
-    return null;
-  }
-}
-
-// Construit l'URL de l'image statique OSM centrée sur les coordonnées
-function brfStaticMapUrl(lat, lon, opts) {
-  opts = opts || {};
-  const zoom = opts.zoom || 15;
-  const size = opts.size || '1100x600';
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${size}&markers=${lat},${lon},red-pushpin&maptype=mapnik`;
-}
-
-// Géocode l'adresse + charge le plan dans le canvas Studio
-// (image sélectionnable et déplaçable, sur laquelle tu peux ensuite dessiner)
-// Retourne la position Y en bas du plan (utile pour chaîner du contenu après)
-async function brfAddMapToCanvas(address, x, y, targetWidth) {
-  const cv = BRF_STUDIO?.fabricCanvas;
-  if (!cv || !address) return y;
-
-  const coords = await brfGeocodeAddress(address);
-  if (!coords) {
-    console.warn('[brf] adresse non géocodable:', address);
-    return y;
-  }
-  const mapUrl = brfStaticMapUrl(coords.lat, coords.lon, { zoom: 15, size: '1100x600' });
-
-  return new Promise(resolve => {
-    let resolved = false;
-    const fail = () => { if (resolved) return; resolved = true; resolve(y); };
-    const timer = setTimeout(fail, 10000);  // 10s timeout
-
-    const tryLoad = (useCors) => {
-      const img = new Image();
-      if (useCors) img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timer);
-        try {
-          const fImg = new fabric.Image(img);
-          fImg.scaleToWidth(targetWidth || 1100);
-          fImg.set({
-            left: x || 60,
-            top: y || 200,
-            selectable: true,
-            evented: true,
-          });
-          cv.add(fImg);
-          cv.requestRenderAll();
-          resolve((y || 200) + fImg.getScaledHeight() + 20);
-        } catch (e) { console.warn('[brf]', e); resolve(y); }
-      };
-      img.onerror = () => {
-        if (useCors) tryLoad(false);  // retry sans CORS (image affichée mais canvas teinté)
-        else { console.warn('[brf] échec chargement plan:', mapUrl); fail(); }
-      };
-      img.src = mapUrl;
-    };
-    tryLoad(true);
-  });
-}
 // ⚡ Démarrer le préchargement du logo dès le chargement du script
 brfPreloadLogo();
   BRF_STUDIO = {
