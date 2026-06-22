@@ -13107,25 +13107,85 @@ function brfRenderDataTable(opts) {
   return y;
 }
 // ═══════════════════════════════════════════════════════════════
-// Map helpers — géocodage + image OSM (pour le slide Localisation)
+// Map helpers — géocodage robuste + image OSM + fallback manuel
 // ═══════════════════════════════════════════════════════════════
 
-// Géocode une adresse via Nominatim (OSM) — retourne {lat, lon} ou null
-async function brfGeocodeAddress(address) {
-  if (!address) return null;
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
-    const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
-    const data = await r.json();
-    if (!Array.isArray(data) || !data.length) return null;
-    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-  } catch (e) {
-    console.warn('[brf] geocoding failed:', e);
-    return null;
-  }
+// Déduplique les parties d'une adresse (insensible à la casse)
+// ex: "Messestraße 1, 12529 Schönefeld, Allemagne, Allemagne" → "Messestraße 1, 12529 Schönefeld, Allemagne"
+function brfDedupAddressParts(address) {
+  const seen = new Set();
+  return address.split(',')
+    .map(s => s.trim())
+    .filter(s => {
+      const key = s.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(', ');
 }
 
-// Construit l'URL de l'image statique OSM centrée sur les coordonnées
+// Construit des variations d'une adresse, de la plus précise à la plus générale
+function brfBuildAddressVariations(address) {
+  const variations = [];
+  variations.push(address);
+  const dedup = brfDedupAddressParts(address);
+  if (dedup !== address) variations.push(dedup);
+
+  const parts = dedup.split(',').map(s => s.trim()).filter(Boolean);
+
+  // Sans le dernier élément (généralement le pays)
+  if (parts.length > 1) variations.push(parts.slice(0, -1).join(', '));
+  // Juste les 2 derniers (ville + pays)
+  if (parts.length > 2) variations.push(parts.slice(-2).join(', '));
+  // Code postal + pays (si on peut extraire un code postal)
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    const cityPart = parts[parts.length - 2].match(/(\d{4,5})\s+(.+)/);
+    if (cityPart) variations.push(`${cityPart[1]} ${cityPart[2]}, ${last}`);
+  }
+
+  return [...new Set(variations)];
+}
+
+// Géocode une adresse via Nominatim (essaie les variations en cas d'échec)
+async function brfGeocodeAddress(address) {
+  if (!address) return null;
+  const variations = brfBuildAddressVariations(address);
+  for (let i = 0; i < variations.length; i++) {
+    const variant = variations[i];
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(variant)}&limit=1`;
+      const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+      const data = await r.json();
+      if (Array.isArray(data) && data.length > 0) {
+        console.log('[brf] adresse géocodée via la variante :', variant);
+        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+      }
+    } catch (e) {
+      console.warn('[brf] erreur géocodage pour :', variant, e);
+    }
+    if (i < variations.length - 1) await new Promise(r => setTimeout(r, 250));  // throttle Nominatim
+  }
+  return null;
+}
+
+// Parse un lien Google Maps pour en extraire des coordonnées
+function brfParseGoogleMapsUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  // @LAT,LON,Zoom (format le plus courant dans l'URL bar Google Maps)
+  let m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return { lat: parseFloat(m[1]), lon: parseFloat(m[2]) };
+  // ?q=LAT,LON
+  m = url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (m) return { lat: parseFloat(m[1]), lon: parseFloat(m[2]) };
+  // !3dLAT!4dLON (Google Maps embed)
+  m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (m) return { lat: parseFloat(m[1]), lon: parseFloat(m[2]) };
+  return null;
+}
+
+// Construit l'URL de l'image statique OSM
 function brfStaticMapUrl(lat, lon, opts) {
   opts = opts || {};
   const zoom = opts.zoom || 15;
@@ -13133,25 +13193,15 @@ function brfStaticMapUrl(lat, lon, opts) {
   return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${size}&markers=${lat},${lon},red-pushpin&maptype=mapnik`;
 }
 
-// Géocode l'adresse + charge le plan dans le canvas Studio
-// (image sélectionnable et déplaçable, sur laquelle tu peux ensuite dessiner)
-// Retourne la position Y en bas du plan (utile pour chaîner du contenu après)
-async function brfAddMapToCanvas(address, x, y, targetWidth) {
+// Ajoute le plan au canvas à partir de coordonnées GPS
+async function brfAddMapImageByCoords(lat, lon, x, y, targetWidth) {
   const cv = BRF_STUDIO?.fabricCanvas;
-  if (!cv || !address) return y;
-
-  const coords = await brfGeocodeAddress(address);
-  if (!coords) {
-    console.warn('[brf] adresse non géocodable:', address);
-    return y;
-  }
-  const mapUrl = brfStaticMapUrl(coords.lat, coords.lon, { zoom: 15, size: '1100x600' });
-
+  if (!cv) return y;
+  const mapUrl = brfStaticMapUrl(lat, lon, { zoom: 15, size: '1100x600' });
   return new Promise(resolve => {
     let resolved = false;
     const fail = () => { if (resolved) return; resolved = true; resolve(y); };
-    const timer = setTimeout(fail, 10000);  // 10s timeout
-
+    const timer = setTimeout(fail, 10000);
     const tryLoad = (useCors) => {
       const img = new Image();
       if (useCors) img.crossOrigin = 'anonymous';
@@ -13174,13 +13224,50 @@ async function brfAddMapToCanvas(address, x, y, targetWidth) {
         } catch (e) { console.warn('[brf]', e); resolve(y); }
       };
       img.onerror = () => {
-        if (useCors) tryLoad(false);  // retry sans CORS (image affichée mais canvas teinté)
-        else { console.warn('[brf] échec chargement plan:', mapUrl); fail(); }
+        if (useCors) tryLoad(false);
+        else { console.warn('[brf] échec chargement plan'); fail(); }
       };
       img.src = mapUrl;
     };
     tryLoad(true);
   });
+}
+
+// Ajoute le plan au canvas à partir d'une adresse (géocode d'abord)
+async function brfAddMapToCanvas(address, x, y, targetWidth) {
+  if (!address) return y;
+  const coords = await brfGeocodeAddress(address);
+  if (!coords) {
+    console.warn('[brf] adresse non géocodable:', address);
+    return y;
+  }
+  return brfAddMapImageByCoords(coords.lat, coords.lon, x, y, targetWidth);
+}
+
+// Demande manuellement une localisation : adresse, coords GPS, ou lien Google Maps
+async function brfPromptForLocationAndAddMap(x, y, targetWidth) {
+  const input = prompt(
+    '🗺️  Placer une carte sur la slide\n\n' +
+    'Colle au choix :\n' +
+    '• Une adresse (ex: "Berlin Messezentrum, Allemagne")\n' +
+    '• Des coordonnées GPS (ex: "52.5074,13.5414")\n' +
+    '• Un lien Google Maps complet (copié depuis l\'URL bar)\n\n' +
+    'Astuce : sur Google Maps, fais clic-droit sur l\'endroit voulu → "Copier les coordonnées" → colle ici.'
+  );
+  if (!input || !input.trim()) return y;
+
+  let coords = brfParseGoogleMapsUrl(input);
+  if (!coords) {
+    const m = input.match(/^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/);
+    if (m) coords = { lat: parseFloat(m[1]), lon: parseFloat(m[2]) };
+  }
+  if (!coords) coords = await brfGeocodeAddress(input);
+
+  if (!coords) {
+    alert('Impossible de localiser. Réessaie avec :\n• Une adresse plus standard (rue + ville + pays)\n• Ou des coordonnées GPS (lat,lon)');
+    return y;
+  }
+  return brfAddMapImageByCoords(coords.lat, coords.lon, x || 90, y || 200, targetWidth || 1100);
 }
 // ⚡ Démarrer le préchargement du logo dès le chargement du script
 // → au moment où le user ouvre le Studio, le logo est déjà prêt en DOM
