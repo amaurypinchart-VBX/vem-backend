@@ -11909,25 +11909,28 @@ async function loadDetailBriefing(projectId) {
   if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
 
   CURRENT_BRIEFING = briefRes.data;
-  const rawSlides = CURRENT_BRIEFING.slides;
 
-  // ─── Détection du format Studio (v2) ─────────────────────────
-  // Ancien format : slides = array de { title, blocks: [...] }
-  // Nouveau format Studio : slides = { version: 2, logoUrl, slides: [{ id, name, json }] }
-  if (rawSlides && typeof rawSlides === 'object' && !Array.isArray(rawSlides) && rawSlides.version === 2) {
-    // Affiche un écran d'accueil avec bouton "Ouvrir Studio"
-    el.innerHTML = renderBriefingStudioWelcome(rawSlides, projectId);
-    return;
-  }
-
-  // ─── Format classique (anciens briefings ou nouveaux vides) ──
+  // Normalise les 2 champs
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
   CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
 
+  const studio = CURRENT_BRIEFING.studioSlides;
+  const hasStudioContent    = studio && studio.version === 2 && Array.isArray(studio.slides) && studio.slides.length > 0;
+  const hasClassiqueContent = CURRENT_BRIEFING.slides.length > 0;
+
+  // Si on a UNIQUEMENT du contenu Studio (Classique vide) → on garde l'écran d'accueil Studio
+  // → utile pour les anciens briefings qui étaient en mode Studio pur
+  if (hasStudioContent && !hasClassiqueContent) {
+    el.innerHTML = renderBriefingStudioWelcome(studio, projectId);
+    return;
+  }
+
+  // Sinon → éditeur Classique (avec ton bouton existant pour ouvrir le Studio)
   BRIEFING_AUTO.tasks   = tasksRes?.data  || [];
   BRIEFING_AUTO.trucks  = trucksRes?.data || [];
   BRIEFING_AUTO.project = projRes?.data   || {};
-// Bookings transport + hôtel équipe (chargés à chaque ouverture du briefing)
+
+  // Bookings transport + hôtel équipe
   try {
     const bookingsRes = await api('GET', `/projects/${projectId}/bookings`);
     const hotelsRes   = await api('GET', `/projects/${projectId}/hotel-bookings`);
@@ -11941,7 +11944,6 @@ async function loadDetailBriefing(projectId) {
   CURRENT_SLIDE_IDX = Math.min(CURRENT_SLIDE_IDX, Math.max(0, CURRENT_BRIEFING.slides.length - 1));
   renderBriefing();
 }
-
 function renderBriefingStudioWelcome(studioData, projectId) {
   const nb = (studioData.slides || []).length;
   return `
@@ -13120,9 +13122,13 @@ let BRF_STUDIO = null;
 
 // Démarre un nouveau briefing Studio (depuis le mode classique)
 function briefingStudioStart() {
-  if (CURRENT_BRIEFING?.slides?.length > 0) {
-    if (!confirm('Passer en mode Studio ? Vos slides classiques resteront sauvegardées en parallèle mais ne seront pas visibles dans le Studio.')) return;
+  // Si un contenu Studio existe déjà → on le reprend (pas de redémarrage à zéro)
+  const existing = CURRENT_BRIEFING?.studioSlides;
+  if (existing && existing.version === 2 && Array.isArray(existing.slides) && existing.slides.length > 0) {
+    openBriefingStudio(existing);
+    return;
   }
+  // Sinon → première ouverture du Studio pour ce briefing : 1 slide vide
   openBriefingStudio({
     version: BRF_STUDIO_VERSION,
     title: CURRENT_BRIEFING?.title || 'Briefing',

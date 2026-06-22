@@ -644,8 +644,7 @@ export async function runStartupMigrations() {
     logger.error('❌ Erreur lors des migrations de démarrage :', err);
     // On ne plante pas le serveur pour autant — il pourra démarrer même si la migration échoue.
   }
-}
-// ─── Briefing : ajouter studio_slides + migrer les anciens briefings v2 ───
+  // ─── Briefing : ajouter studio_slides + migrer les anciens briefings v2 ───
 await prisma.$executeRawUnsafe(`
   ALTER TABLE briefings ADD COLUMN IF NOT EXISTS studio_slides JSONB;
 `);
@@ -659,3 +658,4 @@ await prisma.$executeRawUnsafe(`
     AND studio_slides IS NULL;
 `);
 console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_slides)');
+}
