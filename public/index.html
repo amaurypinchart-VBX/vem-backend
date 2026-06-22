@@ -13187,23 +13187,22 @@ function brfParseGoogleMapsUrl(url) {
 
 // MapTiler API key — restreindre par HTTP origin dans le dashboard MapTiler
 // (sinon n'importe qui peut utiliser ta clé en copiant ton code source)
-const BRF_MAPTILER_KEY = 'qkyrvaAp96tRB2X6FyrX';
-const BRF_MAPTILER_STYLE = 'streets-v2';  // ou: outdoor-v2, satellite, hybrid, basic-v2, winter-v2
+// Geoapify API key — gratuit 3000 requêtes/jour
+const BRF_GEOAPIFY_KEY = 'COLLE_TA_CLE_GEOAPIFY_ICI';
+const BRF_MAP_STYLE = 'osm-bright';  // ou: osm-carto, klokantech-basic, positron, dark-matter, toner
 
-// Construit l'URL de l'image statique MapTiler
-// ⚠️ MapTiler veut LON,LAT (inverse de l'ordre habituel LAT,LON)
+// Construit l'URL de l'image statique Geoapify
 function brfStaticMapUrl(lat, lon, opts) {
   opts = opts || {};
   const zoom = opts.zoom || 15;
   const w = opts.width || 1100;
   const h = opts.height || 600;
-if (!BRF_MAPTILER_KEY || BRF_MAPTILER_KEY.length < 10) {
-    console.warn('[brf] BRF_MAPTILER_KEY manquante — la carte ne se chargera pas');
+  if (!BRF_GEOAPIFY_KEY || BRF_GEOAPIFY_KEY.length < 10) {
+    console.warn('[brf] BRF_GEOAPIFY_KEY manquante — la carte ne se chargera pas');
     return null;
   }
-  return `https://api.maptiler.com/maps/${BRF_MAPTILER_STYLE}/static/${lon},${lat},${zoom}/${w}x${h}.png?key=${BRF_MAPTILER_KEY}`;
+  return `https://maps.geoapify.com/v1/staticmap?style=${BRF_MAP_STYLE}&width=${w}&height=${h}&center=lonlat:${lon},${lat}&zoom=${zoom}&apiKey=${BRF_GEOAPIFY_KEY}`;
 }
-
 // Ajoute le plan au canvas à partir de coordonnées GPS
 async function brfAddMapImageByCoords(lat, lon, x, y, targetWidth) {
   const cv = BRF_STUDIO?.fabricCanvas;
