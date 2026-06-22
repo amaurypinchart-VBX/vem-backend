@@ -11914,16 +11914,10 @@ async function loadDetailBriefing(projectId) {
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
   CURRENT_BRIEFING.slides = CURRENT_BRIEFING.slides.map(migrateSlide);
 
-  const studio = CURRENT_BRIEFING.studioSlides;
-  const hasStudioContent    = studio && studio.version === 2 && Array.isArray(studio.slides) && studio.slides.length > 0;
-  const hasClassiqueContent = CURRENT_BRIEFING.slides.length > 0;
-
-  // Si on a UNIQUEMENT du contenu Studio (Classique vide) → on garde l'écran d'accueil Studio
-  // → utile pour les anciens briefings qui étaient en mode Studio pur
-  if (hasStudioContent && !hasClassiqueContent) {
-    el.innerHTML = renderBriefingStudioWelcome(studio, projectId);
-    return;
-  }
+  // Note : avant Feature 1, on affichait un écran de bienvenue quand seul le
+  // Studio avait du contenu. Plus nécessaire maintenant que les 2 modes coexistent.
+  // L'éditeur Classique s'affiche toujours par défaut + ton bouton "Ouvrir Studio"
+  // habituel reste accessible pour basculer.
 
   // Sinon → éditeur Classique (avec ton bouton existant pour ouvrir le Studio)
   BRIEFING_AUTO.tasks   = tasksRes?.data  || [];
@@ -11960,8 +11954,9 @@ function renderBriefingStudioWelcome(studioData, projectId) {
 }
 
 async function briefingStudioRevertToClassic(projectId) {
-  if (!confirm('Revenir au mode classique ? Vos slides Studio seront perdues.')) return;
-  await api('PATCH', `/briefings/${projectId}`, { title: 'Briefing', slides: [] });
+  // Avec Feature 1, les slides Studio sont déjà préservées dans studioSlides.
+  // Cette fonction n'a plus de raison de wipe quoi que ce soit — elle juste
+  // re-charge la vue (l'éditeur Classique s'affichera par défaut).
   loadDetailBriefing(projectId);
 }
 
