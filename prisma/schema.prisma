@@ -809,12 +809,13 @@ model ClientRemarkPhoto {
 // Briefing — document d'avant-événement par projet
 // ─────────────────────────────────────────────
 model Briefing {
-  id        String   @id @default(uuid())
-  projectId String   @unique @map("project_id")
-  title     String?
-  slides    Json     @default("[]")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  projectId    String   @unique @map("project_id")
+  title        String?
+  slides       Json     @default("[]")
+  studioSlides Json?    @map("studio_slides")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
