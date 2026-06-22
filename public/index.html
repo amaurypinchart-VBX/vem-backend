@@ -14735,15 +14735,25 @@ function brfAddTeamBlock(members) {
 async function brfAddLocationBlock(p) {
   const addr = [p.address, p.city].filter(Boolean).join(', ');
   if (!addr) {
-    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('📍 Aucune adresse renseignée pour ce projet', {
-      left: 60, top: 220, width: 1000, fontSize: 20, fontFamily: 'Helvetica', fill: '#888', fontStyle: 'italic',
-    }));
+    // Pas d'adresse renseignée → propose direct la saisie manuelle
+    if (confirm('Pas d\'adresse pour ce projet. Veux-tu placer une carte manuellement ?')) {
+      await brfPromptForLocationAndAddMap(90, 220, 1100);
+    }
     return;
   }
   BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, {
     left: 60, top: 170, width: 1160, fontSize: 22, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#222',
   }));
-  await brfAddMapToCanvas(addr, 90, 220, 1100);
+  // Try auto-geocode
+  const coords = await brfGeocodeAddress(addr);
+  if (coords) {
+    await brfAddMapImageByCoords(coords.lat, coords.lon, 90, 220, 1100);
+  } else {
+    // Auto a échoué → propose le manuel
+    if (confirm(`Carte introuvable automatiquement pour :\n\n"${addr}"\n\nVeux-tu la placer manuellement (autre adresse, coords GPS, ou lien Google Maps) ?`)) {
+      await brfPromptForLocationAndAddMap(90, 220, 1100);
+    }
+  }
 }
 
 function brfAddNotesBlock(p) {
