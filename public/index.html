@@ -13288,7 +13288,82 @@ function brfRenderDataTable(opts) {
   cv.requestRenderAll();
   return y;
 }
+// ═══════════════════════════════════════════════════════════════
+// Map helpers — géocodage + image OSM (pour le slide Localisation)
+// ═══════════════════════════════════════════════════════════════
 
+// Géocode une adresse via Nominatim (OSM) — retourne {lat, lon} ou null
+async function brfGeocodeAddress(address) {
+  if (!address) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+    const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await r.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+  } catch (e) {
+    console.warn('[brf] geocoding failed:', e);
+    return null;
+  }
+}
+
+// Construit l'URL de l'image statique OSM centrée sur les coordonnées
+function brfStaticMapUrl(lat, lon, opts) {
+  opts = opts || {};
+  const zoom = opts.zoom || 15;
+  const size = opts.size || '1100x600';
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=${zoom}&size=${size}&markers=${lat},${lon},red-pushpin&maptype=mapnik`;
+}
+
+// Géocode l'adresse + charge le plan dans le canvas Studio
+// (image sélectionnable et déplaçable, sur laquelle tu peux ensuite dessiner)
+// Retourne la position Y en bas du plan (utile pour chaîner du contenu après)
+async function brfAddMapToCanvas(address, x, y, targetWidth) {
+  const cv = BRF_STUDIO?.fabricCanvas;
+  if (!cv || !address) return y;
+
+  const coords = await brfGeocodeAddress(address);
+  if (!coords) {
+    console.warn('[brf] adresse non géocodable:', address);
+    return y;
+  }
+  const mapUrl = brfStaticMapUrl(coords.lat, coords.lon, { zoom: 15, size: '1100x600' });
+
+  return new Promise(resolve => {
+    let resolved = false;
+    const fail = () => { if (resolved) return; resolved = true; resolve(y); };
+    const timer = setTimeout(fail, 10000);  // 10s timeout
+
+    const tryLoad = (useCors) => {
+      const img = new Image();
+      if (useCors) img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        try {
+          const fImg = new fabric.Image(img);
+          fImg.scaleToWidth(targetWidth || 1100);
+          fImg.set({
+            left: x || 60,
+            top: y || 200,
+            selectable: true,
+            evented: true,
+          });
+          cv.add(fImg);
+          cv.requestRenderAll();
+          resolve((y || 200) + fImg.getScaledHeight() + 20);
+        } catch (e) { console.warn('[brf]', e); resolve(y); }
+      };
+      img.onerror = () => {
+        if (useCors) tryLoad(false);  // retry sans CORS (image affichée mais canvas teinté)
+        else { console.warn('[brf] échec chargement plan:', mapUrl); fail(); }
+      };
+      img.src = mapUrl;
+    };
+    tryLoad(true);
+  });
+}
 // ⚡ Démarrer le préchargement du logo dès le chargement du script
 brfPreloadLogo();
   BRF_STUDIO = {
@@ -14570,27 +14645,18 @@ function brfAddTeamBlock(members) {
 }
 
 // ─── Nouveaux générateurs : location, notes, files, remarks ──────────
-function brfAddLocationBlock(p) {
+async function brfAddLocationBlock(p) {
   const addr = [p.address, p.city].filter(Boolean).join(', ');
-  if (!addr) { toast('Pas d\'adresse sur ce projet', 'warning'); return; }
-  const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
-  const lines = [
-    '📍 LOCALISATION',
-    '',
-    p.name || '',
-    addr,
-    '',
-    'Voir sur Google Maps :',
-    mapsUrl,
-  ];
-  // Texte avec lien cliquable (le lien est dans le texte, browser le détectera)
-  const tb = brfAddTextbox(lines.join('\n'), { width: 540, fontSize: 16 });
-  // Ajouter un marqueur emoji pour pointer une position. L'utilisateur peut le bouger.
-  setTimeout(() => {
-    const pin = new fabric.IText('📌', { left: 700, top: 200, fontSize: 64, fill: '#e63946' });
-    BRF_STUDIO.fabricCanvas.add(pin);
-    BRF_STUDIO.fabricCanvas.requestRenderAll();
-  }, 100);
+  if (!addr) {
+    BRF_STUDIO.fabricCanvas.add(new fabric.Textbox('📍 Aucune adresse renseignée pour ce projet', {
+      left: 60, top: 220, width: 1000, fontSize: 20, fontFamily: 'Helvetica', fill: '#888', fontStyle: 'italic',
+    }));
+    return;
+  }
+  BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, {
+    left: 60, top: 170, width: 1160, fontSize: 22, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#222',
+  }));
+  await brfAddMapToCanvas(addr, 90, 220, 1100);
 }
 
 function brfAddNotesBlock(p) {
@@ -14950,14 +15016,16 @@ const fmt = d => {
       saveSlide();
     }
 
-    // ─── SLIDE LIEU ──────────────────────────────────────────────
+   // ─── SLIDE LIEU (avec plan OSM affiché, drawable) ───────────
     if (project.address) {
       newSlide('Lieu', 'Localisation');
       const addr = [project.address, project.city].filter(Boolean).join(', ');
-      const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
-      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, { left: 60, top: 220, width: 1000, fontSize: 30, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#222' }));
-      BRF_STUDIO.fabricCanvas.add(new fabric.IText('🗺️  Lien Google Maps :', { left: 60, top: 360, fontSize: 18, fontFamily: 'Helvetica', fill: '#666' }));
-      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(mapsUrl, { left: 60, top: 390, width: 1100, fontSize: 14, fontFamily: 'Helvetica', fill: '#4895ef' }));
+      // Adresse en gros texte au-dessus du plan
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, {
+        left: 60, top: 170, width: 1160, fontSize: 22, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#222',
+      }));
+      // Plan OSM — drag/resize/draw-on dispos via les outils Studio
+      await brfAddMapToCanvas(addr, 90, 220, 1100);
       saveSlide();
     }
 
