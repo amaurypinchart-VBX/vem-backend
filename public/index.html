@@ -13197,7 +13197,7 @@ function brfStaticMapUrl(lat, lon, opts) {
   const zoom = opts.zoom || 15;
   const w = opts.width || 1100;
   const h = opts.height || 600;
-  if (!BRF_MAPTILER_KEY || BRF_MAPTILER_KEY === 'hSmcXyG6rhvYyBgfH7md') {
+if (!BRF_MAPTILER_KEY || BRF_MAPTILER_KEY.length < 10) {
     console.warn('[brf] BRF_MAPTILER_KEY manquante — la carte ne se chargera pas');
     return null;
   }
