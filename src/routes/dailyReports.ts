@@ -143,13 +143,13 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 // Sinon : fallback à l'envoi automatique (client + manager technique + équipe).
 router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const lang: 'fr' | 'en' = (req.body?.lang === 'en') ? 'en' : 'fr';
+
     const r = await prisma.dailyReport.findUnique({
       where: { id: req.params.id },
       include: {
         project: {
           include: {
-            // On garde l'email du client pour le destinataire mais on récupère
-            // aussi nom, contact, phone, address pour les afficher dans le PDF
             client: { select: { name:true, contactName:true, email:true, phone:true, address:true } },
             technicalManager: { select: { email:true } },
             team: { include: { user: { select: { email:true } } } },
@@ -174,31 +174,27 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       entries: r.entries,
       checklist: r.checklist,
       photos: r.photos,
+      lang,  // ⬅️ ajout
     });
 
-    // Construction de la liste finale de destinataires
     const recipients = new Set<string>();
     const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
-
     if (customList.length > 0) {
-      // Liste fournie explicitement : on n'ajoute que ce qui est dedans
       customList
         .map(e => String(e).trim().toLowerCase())
         .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
         .forEach(e => recipients.add(e));
     } else {
-      // Comportement par défaut (rétrocompatible)
       if (r.project.client?.email) recipients.add(r.project.client.email);
       if (r.project.technicalManager?.email) recipients.add(r.project.technicalManager.email);
       r.project.team.forEach((t: any) => { if (t.user.email) recipients.add(t.user.email); });
     }
-
     if (recipients.size === 0) throw new AppError('Aucun destinataire valide', 400);
 
     await sendDailyReport({
       to: Array.from(recipients),
       projectName: r.project.name,
-      date: new Date(r.reportDate).toLocaleDateString('fr-FR'),
+      date: new Date(r.reportDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR'),
       notes: r.generalNotes || undefined,
       entries: r.entries,
       pdfBuffer,
@@ -221,5 +217,45 @@ router.post('/test-email', async (req: AuthRequest, res: Response, next: NextFun
     res.json({ success: true, data: { sentTo: to, messageId: result?.messageId } });
   } catch (err) { next(err); }
 });
+// GET /daily-reports/:id/pdf?lang=fr|en — télécharge le PDF (sans envoyer d'email)
+router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const lang: 'fr' | 'en' = (req.query.lang === 'en') ? 'en' : 'fr';
 
+    const r = await prisma.dailyReport.findUnique({
+      where: { id: req.params.id },
+      include: {
+        project: {
+          include: {
+            client: { select: { name:true, contactName:true, email:true, phone:true, address:true } },
+          },
+        },
+        entries: { orderBy: { entryTime: 'asc' } },
+        checklist: true, photos: true,
+        createdBy: { select: { firstName:true, lastName:true } },
+      },
+    });
+    if (!r) throw new AppError('Rapport introuvable', 404);
+
+    const pdfBuffer = await generateDailyReportPdf({
+      project: { name: r.project.name, internalNumber: r.project.internalNumber },
+      client: r.project.client || null,
+      reportDate: r.reportDate,
+      reportId: r.id,
+      createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,
+      weather: r.weather,
+      workersPresent: r.workersPresent,
+      generalNotes: r.generalNotes,
+      entries: r.entries,
+      checklist: r.checklist,
+      photos: r.photos,
+      lang,
+    });
+
+    const filename = `DailyReport_${r.project.internalNumber}_${new Date(r.reportDate).toISOString().slice(0,10)}_${lang}.pdf`;
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (err) { next(err); }
+});
 export default router;

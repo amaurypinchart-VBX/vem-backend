@@ -302,5 +302,48 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     res.json({ success: true, data: { sentTo: recipients.size, recipients: Array.from(recipients) } });
   } catch (err) { next(err); }
 });
+// GET /handover/:id/pdf?lang=fr|en — télécharge le PDF (sans envoyer d'email)
+router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const lang: 'fr' | 'en' = (req.query.lang === 'en') ? 'en' : 'fr';
 
+    const h = await prisma.handover.findUnique({
+      where: { id: req.params.id },
+      include: {
+        project: { include: { client: true } },
+        siteManager: { select: { firstName: true, lastName: true } },
+        items: {
+          orderBy: { sortOrder: 'asc' },
+          include: { photos: true, itemPhotos: true },
+        },
+      },
+    });
+    if (!h) throw new AppError('Handover introuvable', 404);
+
+    const items = h.items.map((it: any) => ({
+      zoneName: it.zoneName,
+      status:   it.status,
+      comment:  it.comment,
+      photos:   [
+        ...(it.photos     || []).map((p: any) => ({ photoUrl: p.photoUrl })),
+        ...(it.itemPhotos || []).map((p: any) => ({ photoUrl: p.photoUrl })),
+      ],
+    }));
+
+    const pdfBuffer = await generateHandoverPdf({
+      project: { name: h.project.name, internalNumber: h.project.internalNumber, address: h.project.address },
+      clientName: h.clientName || h.project.client?.name || 'Client',
+      siteManagerName: h.siteManager ? `${h.siteManager.firstName} ${h.siteManager.lastName}` : 'N/A',
+      items,
+      generalNotes: h.generalNotes,
+      date: h.createdAt,
+      lang,
+    });
+
+    const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (err) { next(err); }
+});
 export default router;

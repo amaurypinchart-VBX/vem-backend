@@ -1724,7 +1724,73 @@ function esc(s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+// ═══════════════════════════════════════════════════════════════
+// Choix de langue pour les PDFs (FR/EN) — modal de sélection
+// ═══════════════════════════════════════════════════════════════
+function pickPdfLang() {
+  return new Promise(resolve => {
+    const el = document.createElement('div');
+    el.className = 'overlay open';
+    el.innerHTML = `
+      <div class="modal" style="max-width:360px;">
+        <div class="modal-head">
+          <div class="modal-title">📄 Langue du PDF</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding:8px 0 4px;">
+          <button class="btn btn-primary" data-lang="fr" style="padding:14px;font-size:14px;">🇫🇷 Français</button>
+          <button class="btn btn-primary" data-lang="en" style="padding:14px;font-size:14px;">🇬🇧 English</button>
+          <button class="btn btn-ghost"   data-lang=""   style="margin-top:4px;">Annuler</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => {
+      if (e.target === el) { el.remove(); resolve(null); return; }
+      const btn = e.target.closest('button[data-lang]');
+      if (!btn) return;
+      el.remove();
+      resolve(btn.dataset.lang || null);
+    });
+  });
+}
 
+// Télécharge un PDF avec choix de langue — générique pour handover/daily-report
+async function downloadPdfWithLang(endpoint, filenameHint) {
+  const lang = await pickPdfLang();
+  if (!lang) return;
+  try {
+    // Token JWT — adapté à ta façon de stocker l'auth
+    const token = localStorage.getItem('token')
+               || localStorage.getItem('jwt')
+               || localStorage.getItem('authToken')
+               || '';
+    const r = await fetch(`${endpoint}?lang=${lang}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (filenameHint || 'document') + `_${lang}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('PDF téléchargé ✅', 'success');
+  } catch (e) {
+    console.error('[pdf download]', e);
+    toast('Erreur génération PDF', 'error');
+  }
+}
+
+// Wrappers spécifiques pour chaque type
+async function downloadHandoverPdf(id) {
+  return downloadPdfWithLang(`/api/handover/${id}/pdf`, `Handover_${id.slice(0,8)}`);
+}
+async function downloadDailyReportPdf(id) {
+  return downloadPdfWithLang(`/api/daily-reports/${id}/pdf`, `DailyReport_${id.slice(0,8)}`);
+}
 // ═══ VIEWER FICHIER UNIVERSEL ═══════════════════════════════════════
 // Ouvre une modale pleine taille avec le visualiseur adapté au type de fichier :
 //   - Image (jpg, png, webp, gif...) → affichage plein écran avec fond noir
@@ -6353,7 +6419,7 @@ async function openHandoverFull(id) {
           <button class="btn btn-ghost btn-xs" onclick="showAddHandoverItemModal('${h.id}','${h.projectId}')">+ Point</button>
           <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${h.projectId}')">✏️ Modifier</button>
           <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
-          <button class="btn btn-primary btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+          <button class="btn btn-primary btn-xs" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
         </div>
       </div>
 
@@ -6425,7 +6491,7 @@ async function openHandoverFull(id) {
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
         <button class="btn btn-ghost btn-sm" onclick="editHandoverFields('${h.id}','${h.projectId||CURRENT_PROJECT_ID}')">✏️</button>
-        <button class="btn btn-ghost btn-sm" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+       <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
         <button class="btn btn-ghost btn-sm" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
         <button class="btn btn-primary btn-sm" onclick="generateAndSendHandover('${h.id}')">📤 Envoyer</button>
       </div>
@@ -10417,7 +10483,7 @@ async function editHandoverFields(handoverId, projectId) {
 
       <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
-        <button class="btn btn-ghost btn-sm" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',null).then(()=>generateHandoverPDF('${handoverId}'))">💾 Sauv. & PDF</button>
+<button class="btn btn-ghost btn-sm" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',null).then(()=>downloadHandoverPdf('${handoverId}'))">💾 Sauv. & PDF</button>
         <button class="btn btn-primary" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
       </div>
     </div>`;
