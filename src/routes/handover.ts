@@ -226,6 +226,9 @@ router.patch('/:id/items/:itemId', async (req: AuthRequest, res: Response, next:
 // Body optionnel : { recipients?: string[] } — sinon utilise l'email du client du projet
 router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    // Langue du PDF + email — par défaut français, mais le frontend peut passer 'en'
+    const lang: 'fr' | 'en' = (req.body?.lang === 'en') ? 'en' : 'fr';
+
     const h = await prisma.handover.findUnique({
       where: { id: req.params.id },
       include: {
@@ -239,7 +242,6 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     });
     if (!h) throw new AppError('Handover introuvable', 404);
 
-    // Fusion des photos pour le PDF
     const items = h.items.map((it: any) => ({
       zoneName: it.zoneName,
       status:   it.status,
@@ -257,9 +259,9 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       items,
       generalNotes: h.generalNotes,
       date: h.createdAt,
+      lang,  // ⬅️ passe la langue au PDF
     });
 
-    // Destinataires : liste explicite ou client par défaut
     const recipients = new Set<string>();
     const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
     if (customList.length > 0) {
@@ -273,13 +275,23 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
 
     if (recipients.size === 0) throw new AppError('Aucun destinataire valide (client sans email et aucun email manuel)', 400);
 
+    // Email body localisé
+    const dateStr = new Date(h.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
+    const greeting   = lang === 'en' ? 'Hello,'                                      : 'Bonjour,';
+    const bodyLine   = lang === 'en' ? 'Please find attached the handover report for the project' : 'Veuillez trouver ci-joint le rapport de handover pour le projet';
+    const dateLabel  = lang === 'en' ? 'Date'                                        : 'Date';
+    const signature  = lang === 'en' ? 'Best regards,<br>The VIEWBOX team'           : 'Cordialement,<br>L\'équipe VIEWBOX';
+    const subject    = lang === 'en'
+      ? `[VEM] Handover Report — ${h.project.name} (${h.project.internalNumber})`
+      : `[VEM] Rapport de handover — ${h.project.name} (${h.project.internalNumber})`;
+
     await sendMail({
       to: Array.from(recipients),
-      subject: `[VEM] Handover Report — ${h.project.name} (${h.project.internalNumber})`,
-      html: `<p>Bonjour,</p>
-<p>Veuillez trouver ci-joint le rapport de handover pour le projet <strong>${h.project.name}</strong> (réf. ${h.project.internalNumber}).</p>
-<p>Date : ${new Date(h.createdAt).toLocaleDateString('fr-FR')}</p>
-<p>Cordialement,<br>L'équipe VIEWBOX</p>`,
+      subject,
+      html: `<p>${greeting}</p>
+<p>${bodyLine} <strong>${h.project.name}</strong> (réf. ${h.project.internalNumber}).</p>
+<p>${dateLabel} : ${dateStr}</p>
+<p>${signature}</p>`,
       attachments: [{
         filename: `Handover_${h.project.internalNumber}.pdf`,
         content: pdfBuffer,
