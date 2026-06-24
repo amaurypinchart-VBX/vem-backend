@@ -112,8 +112,11 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 });
 
 // GET /client-visits/:id/pdf — télécharger le rapport PDF
+// GET /client-visits/:id/pdf?lang=fr|en — télécharger le rapport PDF
 router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const lang: 'fr' | 'en' = (req.query.lang === 'en') ? 'en' : 'fr';
+
     const v = await prisma.clientVisit.findUnique({
       where: { id: req.params.id },
       include: {
@@ -142,20 +145,23 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
         assignedToUser: r.assignedToUser,
         photos: r.photos || [],
       })),
+      lang,  // ⬅️ ajout
     });
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="Visite_${v.project.internalNumber}_${v.id.slice(0,8)}.pdf"`,
+      'Content-Disposition': `attachment; filename="Visite_${v.project.internalNumber}_${v.id.slice(0,8)}_${lang}.pdf"`,
     });
     res.send(pdf);
   } catch (err) { next(err); }
 });
 
 // POST /client-visits/:id/send — envoie le PDF par email
-// Body : { recipients?: string[] } — sinon utilise l'email du client de la visite
+// Body : { recipients?: string[]; lang?: 'fr' | 'en' }
 router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const lang: 'fr' | 'en' = (req.body?.lang === 'en') ? 'en' : 'fr';
+
     const v = await prisma.clientVisit.findUnique({
       where: { id: req.params.id },
       include: {
@@ -184,6 +190,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
         assignedToUser: r.assignedToUser,
         photos: r.photos || [],
       })),
+      lang,  // ⬅️ ajout
     });
 
     const recipients = new Set<string>();
@@ -198,16 +205,28 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     }
     if (recipients.size === 0) throw new AppError('Aucun destinataire valide (client sans email et aucun email manuel)', 400);
 
+    // Email body localisé
+    const dateStr = new Date(v.visitDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR');
+    const greeting     = lang === 'en' ? 'Hello,'                                                : 'Bonjour,';
+    const bodyLine     = lang === 'en' ? 'Please find attached the report of the visit'          : 'Veuillez trouver ci-joint le rapport de la visite';
+    const ofThe        = lang === 'en' ? 'on'                                                    : 'du';
+    const projectLine  = lang === 'en' ? `Project: <strong>${v.project.name}</strong> (ref. ${v.project.internalNumber})` : `Projet : <strong>${v.project.name}</strong> (réf. ${v.project.internalNumber})`;
+    const pointsLine   = lang === 'en' ? `${v.remarks.length} item(s) inspected.`                : `${v.remarks.length} point(s) inspecté(s).`;
+    const signature    = lang === 'en' ? 'Best regards,<br>The VIEWBOX team'                     : 'Cordialement,<br>L\'équipe VIEWBOX';
+    const subject      = lang === 'en'
+      ? `[VEM] Visit Report — ${v.project.name} (${v.project.internalNumber})`
+      : `[VEM] Rapport de visite — ${v.project.name} (${v.project.internalNumber})`;
+
     await sendMail({
       to: Array.from(recipients),
-      subject: `[VEM] Rapport de visite — ${v.project.name} (${v.project.internalNumber})`,
-      html: `<p>Bonjour,</p>
-<p>Veuillez trouver ci-joint le rapport de la visite <strong>${v.title}</strong> du ${new Date(v.visitDate).toLocaleDateString('fr-FR')}.</p>
-<p>Projet : <strong>${v.project.name}</strong> (réf. ${v.project.internalNumber})</p>
-<p>${v.remarks.length} point(s) inspecté(s).</p>
-<p>Cordialement,<br>L'équipe VIEWBOX</p>`,
+      subject,
+      html: `<p>${greeting}</p>
+<p>${bodyLine} <strong>${v.title}</strong> ${ofThe} ${dateStr}.</p>
+<p>${projectLine}</p>
+<p>${pointsLine}</p>
+<p>${signature}</p>`,
       attachments: [{
-        filename: `Visite_${v.project.internalNumber}_${v.id.slice(0,8)}.pdf`,
+        filename: `Visite_${v.project.internalNumber}_${v.id.slice(0,8)}_${lang}.pdf`,
         content:  pdf,
         contentType: 'application/pdf',
       }],
@@ -216,5 +235,4 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     res.json({ success: true, data: { sentTo: recipients.size, recipients: Array.from(recipients) } });
   } catch (err) { next(err); }
 });
-
 export default router;

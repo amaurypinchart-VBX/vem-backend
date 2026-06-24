@@ -3243,26 +3243,32 @@ async function loadDailyReports() {
 }
 
 async function downloadDailyPDF(id) {
+  const lang = await pickPdfLang();
+  if (!lang) return;
   toast('Génération PDF...', 'info');
-  const url = `${API}/reports/daily/${id}`;
-  const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
-  if (r.ok) {
+  // On utilise la nouvelle route /daily-reports/:id/pdf?lang=...
+  const url = `${API}/daily-reports/${id}/pdf?lang=${lang}`;
+  try {
+    const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const blob = await r.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `DailyReport_${id}.pdf`;
+    a.download = `DailyReport_${id.slice(0,8)}_${lang}.pdf`;
     a.click();
+    URL.revokeObjectURL(a.href);
     toast('PDF téléchargé ✅', 'success');
-  } else toast('Erreur PDF', 'error');
+  } catch (e) {
+    console.error('[daily pdf]', e);
+    toast('Erreur PDF', 'error');
+  }
 }
 
 async function sendDailyReport(id) {
-  // Construit la liste d'emails de l'équipe pour le picker
   const teamOptions = (USERS || [])
     .filter(u => u.email && u.isActive !== false)
     .map(u => ({ id: u.id, email: u.email, name: `${u.firstName} ${u.lastName}`, role: u.role }));
 
-  // Récupère le rapport pour avoir le contexte projet (et son client)
   const repRes = await api('GET', `/daily-reports/${id}`);
   if (!repRes?.success) { toast('Rapport introuvable', 'error'); return; }
   const r = repRes.data;
@@ -3280,7 +3286,19 @@ async function sendDailyReport(id) {
         Rapport du ${fmtDate(r.reportDate)} — ${r.project?.name || ''}
       </div>
 
-      <!-- Équipe (cases à cocher) -->
+      <!-- 🌐 Langue du PDF -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🌐 Langue du PDF</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;" id="send-lang-wrap">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--accent);border-radius:6px;cursor:pointer;font-weight:600;">
+          <input type="radio" name="send-lang" value="fr" checked style="accent-color:var(--accent);">
+          🇫🇷 Français
+        </label>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="send-lang" value="en" style="accent-color:var(--accent);">
+          🇬🇧 English
+        </label>
+      </div>
+
       <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
       <div id="send-team-list" style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
         ${teamOptions.length ? teamOptions.map(u => `
@@ -3301,7 +3319,6 @@ async function sendDailyReport(id) {
         </label>
       ` : ''}
 
-      <!-- Emails manuels -->
       <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">✉️ Adresses manuelles</div>
       <textarea class="input" id="send-manual-emails" rows="3" placeholder="Une adresse par ligne ou séparées par des virgules&#10;ex : contact@viewbox.be, jean@example.com" style="font-size:13px;margin-bottom:14px;"></textarea>
 
@@ -3312,31 +3329,39 @@ async function sendDailyReport(id) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e => { if (e.target === el) el.remove(); });
-}
 
+  // Highlight visuel du toggle FR/EN sur clic
+  el.querySelectorAll('input[name="send-lang"]').forEach(r => {
+    r.addEventListener('change', () => {
+      el.querySelectorAll('#send-lang-wrap label').forEach(l => {
+        const checked = l.querySelector('input').checked;
+        l.style.borderColor = checked ? 'var(--accent)' : 'var(--border)';
+      });
+    });
+  });
+}
 async function submitSendDaily(id, overlay) {
   const list = new Set();
-  // Équipe cochée
   document.querySelectorAll('.send-team-cb:checked').forEach(cb => list.add(cb.value));
-  // Client
   const cli = document.getElementById('send-client-cb');
   if (cli && cli.checked) list.add(cli.value);
-  // Manuels
-  const raw = (document.getElementById('send-manual-emails').value || '').trim();
-  raw.split(/[\s,;]+/).forEach(e => {
+  (document.getElementById('send-manual-emails')?.value || '').split(/[\s,;]+/).forEach(e => {
     const s = e.trim().toLowerCase();
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
   });
-
   if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
 
-  toast(`Envoi en cours à ${list.size} destinataire(s)...`, 'info');
-  const res = await api('POST', `/daily-reports/${id}/send`, { recipients: Array.from(list) });
+  // Lecture de la langue choisie
+  const lang = document.querySelector('input[name="send-lang"]:checked')?.value || 'fr';
+
+  toast(`Envoi à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/daily-reports/${id}/send`, {
+    recipients: Array.from(list),
+    lang,  // ⬅️ ajout
+  });
   if (res?.success) {
     toast(`Rapport envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
     overlay?.remove();
-    loadDailyReports();
-    if (CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);
   } else {
     toast(res?.error || 'Erreur envoi', 'error');
   }
@@ -3386,13 +3411,11 @@ async function downloadHandoverPDF(id) {
 }
 
 async function generateAndSendHandover(id) {
-  // Récupère le handover pour avoir le contexte (client, etc.)
   const hRes = await api('GET', `/handover/${id}`);
   if (!hRes?.success) { toast('Handover introuvable', 'error'); return; }
   const h = hRes.data;
   const clientEmail = h.project?.client?.email || null;
 
-  // Picker d'emails simple (équipe + client + manuel) — comme pour daily report
   const teamOptions = (USERS || [])
     .filter(u => u.email && u.isActive !== false)
     .map(u => ({ id: u.id, email: u.email, name: `${u.firstName} ${u.lastName}` }));
@@ -3408,6 +3431,20 @@ async function generateAndSendHandover(id) {
       <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
         ${h.project?.name || ''} · ${fmtDate(h.createdAt)}
       </div>
+
+      <!-- 🌐 Langue du PDF -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🌐 Langue du PDF</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;" id="hsend-lang-wrap">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--accent);border-radius:6px;cursor:pointer;font-weight:600;">
+          <input type="radio" name="hsend-lang" value="fr" checked style="accent-color:var(--accent);">
+          🇫🇷 Français
+        </label>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="hsend-lang" value="en" style="accent-color:var(--accent);">
+          🇬🇧 English
+        </label>
+      </div>
+
       <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
       <div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
         ${teamOptions.length ? teamOptions.map(u => `
@@ -3435,8 +3472,17 @@ async function generateAndSendHandover(id) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e => { if (e.target === el) el.remove(); });
-}
 
+  // Highlight visuel du toggle FR/EN sur clic
+  el.querySelectorAll('input[name="hsend-lang"]').forEach(r => {
+    r.addEventListener('change', () => {
+      el.querySelectorAll('#hsend-lang-wrap label').forEach(l => {
+        const checked = l.querySelector('input').checked;
+        l.style.borderColor = checked ? 'var(--accent)' : 'var(--border)';
+      });
+    });
+  });
+}
 async function submitSendHandover(id, overlay) {
   const list = new Set();
   document.querySelectorAll('.hsend-team-cb:checked').forEach(cb => list.add(cb.value));
@@ -3447,8 +3493,15 @@ async function submitSendHandover(id, overlay) {
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) list.add(s);
   });
   if (list.size === 0) { toast('Sélectionne au moins un destinataire', 'error'); return; }
-  toast(`Envoi en cours à ${list.size} destinataire(s)...`, 'info');
-  const res = await api('POST', `/handover/${id}/send`, { recipients: Array.from(list) });
+
+  // Lecture de la langue choisie
+  const lang = document.querySelector('input[name="hsend-lang"]:checked')?.value || 'fr';
+
+  toast(`Envoi à ${list.size} destinataire(s)...`, 'info');
+  const res = await api('POST', `/handover/${id}/send`, {
+    recipients: Array.from(list),
+    lang,  // ⬅️ ajout
+  });
   if (res?.success) {
     toast(`Handover envoyé à ${res.data.sentTo} destinataire(s) ✉️`, 'success');
     overlay?.remove();
@@ -3456,7 +3509,6 @@ async function submitSendHandover(id, overlay) {
     toast(res?.error || 'Erreur envoi', 'error');
   }
 }
-
 // ═══ WAREHOUSE ═══
 async function loadWarehouse() {
   const res = await api('GET', '/warehouse/boxes');
@@ -8926,17 +8978,20 @@ async function changePointPriority(remarkId, visitId, projectId, priority) {
 
 // Télécharger le PDF de la visite
 async function downloadVisitPDF(visitId) {
+  const lang = await pickPdfLang();
+  if (!lang) return;
   toast('Génération du PDF...', 'info');
   try {
-    const r = await fetch(`${API}/client-visits/${visitId}/pdf`, {
+    const r = await fetch(`${API}/client-visits/${visitId}/pdf?lang=${lang}`, {
       headers: { 'Authorization': `Bearer ${TOKEN}` },
     });
     if (!r.ok) { toast('Erreur génération PDF', 'error'); return; }
     const blob = await r.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Visite_${visitId.slice(0,8)}.pdf`;
+    a.download = `Visite_${visitId.slice(0,8)}_${lang}.pdf`;
     a.click();
+    URL.revokeObjectURL(a.href);
     toast('PDF téléchargé ✅', 'success');
   } catch (e) {
     toast('Erreur réseau', 'error');
@@ -8963,6 +9018,20 @@ async function sendVisitReport(visitId, projectId) {
       <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
         ${esc(v.title)} · ${fmtDate(v.visitDate)}
       </div>
+
+      <!-- 🌐 Choix de la langue -->
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🌐 Langue du PDF</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;" id="vsend-lang-wrap">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--accent);border-radius:6px;cursor:pointer;font-weight:600;">
+          <input type="radio" name="vsend-lang" value="fr" checked style="accent-color:var(--accent);">
+          🇫🇷 Français
+        </label>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;background:var(--bg3);border:2px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="vsend-lang" value="en" style="accent-color:var(--accent);">
+          🇬🇧 English
+        </label>
+      </div>
+
       <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">👥 Équipe</div>
       <div style="max-height:200px;overflow-y:auto;background:var(--bg3);border-radius:var(--radius);padding:8px;margin-bottom:12px;">
         ${teamOptions.length ? teamOptions.map(u => `
@@ -8990,6 +9059,16 @@ async function sendVisitReport(visitId, projectId) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+
+  // Highlight visuel du toggle FR/EN sur clic
+  el.querySelectorAll('input[name="vsend-lang"]').forEach(r => {
+    r.addEventListener('change', () => {
+      el.querySelectorAll('#vsend-lang-wrap label').forEach(l => {
+        const checked = l.querySelector('input').checked;
+        l.style.borderColor = checked ? 'var(--accent)' : 'var(--border)';
+      });
+    });
+  });
 }
 
 async function submitSendVisit(visitId, overlay) {

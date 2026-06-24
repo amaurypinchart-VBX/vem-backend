@@ -271,18 +271,54 @@ export async function sendTicketAssigned(opts: { to: string; ticketTitle: string
   await sendMail({ to: opts.to, subject: `[VEM] Ticket assigné : ${opts.ticketTitle}`, html: base('🛠️ Nouveau ticket assigné', content) });
 }
 
-export async function sendDailyReport(opts: { to: string|string[]; projectName: string; date: string; notes?: string; entries: any[]; pdfBuffer?: Buffer }) {
-  const entriesHtml = opts.entries.map(e => `<div class="row"><span class="lbl">${e.entryTime}</span><span class="val" style="max-width:340px;">${e.description}</span></div>`).join('');
+export async function sendDailyReport(opts: {
+  to: string | string[];
+  projectName: string;
+  date: string;
+  notes?: string;
+  entries: any[];
+  pdfBuffer?: Buffer;
+  lang?: 'fr' | 'en';
+}) {
+  const lang = opts.lang === 'en' ? 'en' : 'fr';
+
+  // Traductions inline (le dico complet est dans pdfService.ts mais ici on garde simple)
+  const T = {
+    fr: {
+      headerTitle:   '📓 Rapport Journalier',
+      intro:         `Rapport journalier du projet <strong>${opts.projectName}</strong> pour le <strong>${opts.date}</strong>.`,
+      noEntries:     'Aucune entrée.',
+      notesLabel:    'Notes',
+      attached:      '📎 Le rapport PDF est joint à cet email.',
+      subjectPrefix: '[VEM] Daily Report',
+    },
+    en: {
+      headerTitle:   '📓 Daily Report',
+      intro:         `Daily report for project <strong>${opts.projectName}</strong> on <strong>${opts.date}</strong>.`,
+      noEntries:     'No entries.',
+      notesLabel:    'Notes',
+      attached:      '📎 The PDF report is attached to this email.',
+      subjectPrefix: '[VEM] Daily Report',
+    },
+  }[lang];
+
+  const entriesHtml = opts.entries.map(e =>
+    `<div class="row"><span class="lbl">${e.entryTime}</span><span class="val" style="max-width:340px;">${e.description}</span></div>`
+  ).join('');
+
   const content = `
-    <p>Rapport journalier du projet <strong>${opts.projectName}</strong> pour le <strong>${opts.date}</strong>.</p>
-    <div class="info">${entriesHtml || '<p style="color:#999;font-size:13px;">Aucune entrée.</p>'}</div>
-    ${opts.notes ? `<p><strong>Notes :</strong> ${opts.notes}</p>` : ''}
-    ${opts.pdfBuffer ? '<p>📎 Le rapport PDF est joint à cet email.</p>' : ''}`;
+    <p>${T.intro}</p>
+    <div class="info">${entriesHtml || `<p style="color:#999;font-size:13px;">${T.noEntries}</p>`}</div>
+    ${opts.notes ? `<p><strong>${T.notesLabel} :</strong> ${opts.notes}</p>` : ''}
+    ${opts.pdfBuffer ? `<p>${T.attached}</p>` : ''}`;
+
   await sendMail({
     to: opts.to,
-    subject: `[VEM] Daily Report — ${opts.projectName} — ${opts.date}`,
-    html: base('📓 Rapport Journalier', content),
-    attachments: opts.pdfBuffer ? [{ filename: `Daily_${opts.projectName}_${opts.date}.pdf`, content: opts.pdfBuffer }] : undefined,
+    subject: `${T.subjectPrefix} — ${opts.projectName} — ${opts.date}`,
+    html: base(T.headerTitle, content),
+    attachments: opts.pdfBuffer
+      ? [{ filename: `Daily_${opts.projectName}_${opts.date}.pdf`, content: opts.pdfBuffer }]
+      : undefined,
   });
 }
 

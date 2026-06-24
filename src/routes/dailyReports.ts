@@ -191,14 +191,15 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
     }
     if (recipients.size === 0) throw new AppError('Aucun destinataire valide', 400);
 
-    await sendDailyReport({
-      to: Array.from(recipients),
-      projectName: r.project.name,
-      date: new Date(r.reportDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR'),
-      notes: r.generalNotes || undefined,
-      entries: r.entries,
-      pdfBuffer,
-    });
+   await sendDailyReport({
+  to: Array.from(recipients),
+  projectName: r.project.name,
+  date: new Date(r.reportDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR'),
+  notes: r.generalNotes || undefined,
+  entries: r.entries,
+  pdfBuffer,
+  lang,  // ⬅️ ajout
+});
 
     await prisma.dailyReport.update({ where: { id: r.id }, data: { sentAt: new Date() } });
     res.json({ success: true, data: { sentTo: recipients.size, recipients: Array.from(recipients) } });
