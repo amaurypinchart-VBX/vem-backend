@@ -1786,10 +1786,10 @@ async function downloadPdfWithLang(endpoint, filenameHint) {
 
 // Wrappers spécifiques pour chaque type
 async function downloadHandoverPdf(id) {
-  return downloadPdfWithLang(`/api/handover/${id}/pdf`, `Handover_${id.slice(0,8)}`);
+  return downloadPdfWithLang(`/api/v1/handover/${id}/pdf`, `Handover_${id.slice(0,8)}`);
 }
 async function downloadDailyReportPdf(id) {
-  return downloadPdfWithLang(`/api/daily-reports/${id}/pdf`, `DailyReport_${id.slice(0,8)}`);
+  return downloadPdfWithLang(`/api/v1/daily-reports/${id}/pdf`, `DailyReport_${id.slice(0,8)}`);
 }
 // ═══ VIEWER FICHIER UNIVERSEL ═══════════════════════════════════════
 // Ouvre une modale pleine taille avec le visualiseur adapté au type de fichier :
@@ -3247,7 +3247,7 @@ async function downloadDailyPDF(id) {
   if (!lang) return;
   toast('Génération PDF...', 'info');
   // On utilise la nouvelle route /daily-reports/:id/pdf?lang=...
-  const url = `${API}/daily-reports/${id}/pdf?lang=${lang}`;
+const API = '/api/v1';   // ← bon
   try {
     const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
     if (!r.ok) throw new Error('HTTP ' + r.status);
