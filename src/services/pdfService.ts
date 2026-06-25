@@ -471,30 +471,7 @@ export async function generateDailyReportPdf(data: {
   lang?: Lang;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
-  // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
-  if (lang !== 'fr') {
-    const fields: { kind: string; idx: number; text: string }[] = [];
-    if (data.visit.title) fields.push({ kind: 'visit.title', idx: 0, text: data.visit.title });
-    if (data.visit.notes) fields.push({ kind: 'visit.notes', idx: 0, text: data.visit.notes });
-    data.points.forEach((pt, i) => {
-      if (pt.title) fields.push({ kind: 'pt.title', idx: i, text: pt.title });
-      if (pt.description) fields.push({ kind: 'pt.desc', idx: i, text: pt.description });
-      if (pt.zone) fields.push({ kind: 'pt.zone', idx: i, text: pt.zone });
-    });
-
-    if (fields.length > 0) {
-      const translated = await translateTexts(fields.map(f => f.text), lang);
-      fields.forEach((f, i) => {
-        const t = translated[i];
-        if (!t) return;
-        if (f.kind === 'visit.title')    data.visit.title                  = t;
-        else if (f.kind === 'visit.notes') data.visit.notes                = t;
-        else if (f.kind === 'pt.title')  data.points[f.idx].title          = t;
-        else if (f.kind === 'pt.desc')   data.points[f.idx].description    = t;
-        else if (f.kind === 'pt.zone')   data.points[f.idx].zone           = t;
-      });
-    }
-  }
+  
 // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
   if (lang !== 'fr') {
     const fields: { kind: string; idx: number; text: string }[] = [];
@@ -737,7 +714,30 @@ export async function generateVisitReportPdf(data: {
     }
     pointsWithBuffers.push({ point: pt, photoBuffers: buffers });
   }
+// ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+  if (lang !== 'fr') {
+    const fields: { kind: string; idx: number; text: string }[] = [];
+    if (data.visit.title) fields.push({ kind: 'visit.title', idx: 0, text: data.visit.title });
+    if (data.visit.notes) fields.push({ kind: 'visit.notes', idx: 0, text: data.visit.notes });
+    data.points.forEach((pt, i) => {
+      if (pt.title) fields.push({ kind: 'pt.title', idx: i, text: pt.title });
+      if (pt.description) fields.push({ kind: 'pt.desc', idx: i, text: pt.description });
+      if (pt.zone) fields.push({ kind: 'pt.zone', idx: i, text: pt.zone });
+    });
 
+    if (fields.length > 0) {
+      const translated = await translateTexts(fields.map(f => f.text), lang);
+      fields.forEach((f, i) => {
+        const t = translated[i];
+        if (!t) return;
+        if (f.kind === 'visit.title')    data.visit.title                  = t;
+        else if (f.kind === 'visit.notes') data.visit.notes                = t;
+        else if (f.kind === 'pt.title')  data.points[f.idx].title          = t;
+        else if (f.kind === 'pt.desc')   data.points[f.idx].description    = t;
+        else if (f.kind === 'pt.zone')   data.points[f.idx].zone           = t;
+      });
+    }
+  }
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
