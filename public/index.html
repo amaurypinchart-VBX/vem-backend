@@ -1758,14 +1758,8 @@ async function downloadPdfWithLang(endpoint, filenameHint) {
   const lang = await pickPdfLang();
   if (!lang) return;
   try {
-    // Token JWT — adapté à ta façon de stocker l'auth
-    const token = localStorage.getItem('token')
-               || localStorage.getItem('jwt')
-               || localStorage.getItem('authToken')
-               || '';
     const r = await fetch(`${endpoint}?lang=${lang}`, {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      credentials: 'include',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const blob = await r.blob();
