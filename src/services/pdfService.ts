@@ -3,6 +3,7 @@
 const PDFDocument = require('pdfkit');
 import * as path from 'path';
 import * as fs from 'fs';
+import { translateTexts } from './translationService';
 // ═══════════════════════════════════════════════════════════════
 // Système de traduction pour les PDFs (FR/EN)
 // Un seul dictionnaire partagé entre tous les PDFs (Handover, Daily Report, Visit)
@@ -250,6 +251,28 @@ function infoRow(doc: any, label: string, value: string) {
   doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(value, 175, y, { width: 370 });
   doc.moveDown(0.3);
 }
+// Charge une image de signature en Buffer pour PDFKit.
+// Gère 2 formats :
+//  - data URL base64 (canvas frontend) → 'data:image/png;base64,...'
+//  - URL HTTP (Cloudinary par ex.) → fetch puis Buffer
+async function loadSignatureBuffer(sigUrl: string | null | undefined): Promise<Buffer | null> {
+  if (!sigUrl) return null;
+  // Cas 1 : data URL base64 (signature du canvas frontend)
+  if (sigUrl.startsWith('data:')) {
+    const m = sigUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    try {
+      return Buffer.from(m[2], 'base64');
+    } catch { return null; }
+  }
+  // Cas 2 : URL HTTP (Cloudinary)
+  try {
+    const r = await fetch(sigUrl) as any;
+    if (!r.ok) return null;
+    const ab = await r.arrayBuffer();
+    return Buffer.from(ab);
+  } catch { return null; }
+}
 
 export async function generateHandoverPdf(data: {
   project: { name: string; internalNumber: string; address: string };
@@ -263,7 +286,26 @@ export async function generateHandoverPdf(data: {
   lang?: Lang;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
+// ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+  if (lang !== 'fr') {
+    const fields: { kind: string; idx: number; text: string }[] = [];
+    data.items.forEach((item, i) => {
+      if (item.zoneName) fields.push({ kind: 'zone', idx: i, text: item.zoneName });
+      if (item.comment) fields.push({ kind: 'comment', idx: i, text: item.comment });
+    });
+    if (data.generalNotes) fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
 
+    if (fields.length > 0) {
+      const translated = await translateTexts(fields.map(f => f.text), lang);
+      fields.forEach((f, i) => {
+        const t = translated[i];
+        if (!t) return;
+        if (f.kind === 'zone')         data.items[f.idx].zoneName    = t;
+        else if (f.kind === 'comment') data.items[f.idx].comment     = t;
+        else if (f.kind === 'notes')   data.generalNotes             = t;
+      });
+    }
+  }
   // Pré-télécharge toutes les photos
   const itemsWithBuffers: Array<{ zoneName: string; status: string; comment?: string | null; photoBuffers: Buffer[] }> = [];
   for (const item of data.items) {
@@ -281,6 +323,9 @@ export async function generateHandoverPdf(data: {
     }
     itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
   }
+  // Pré-charge les signatures (base64 ou URL HTTP)
+  const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
+  const clientSigBuf  = await loadSignatureBuffer(data.clientSignatureUrl);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -377,18 +422,34 @@ export async function generateHandoverPdf(data: {
       doc.fillColor(MUTED).font('Helvetica').fontSize(11).text(data.generalNotes, 40, doc.y, { width: 515 });
     }
 
-    doc.moveDown(1);
+   doc.moveDown(1);
     if (doc.y > 700) doc.addPage();
     sectionTitle(doc, t('handover.section.signatures', lang));
     const sigY = doc.y + 10;
+    // Cadres
     doc.rect(40, sigY, 220, 70).stroke('#ccc');
     doc.rect(315, sigY, 220, 70).stroke('#ccc');
+    // Labels en haut des cadres
     doc.fillColor(MUTED).fontSize(9)
-      .text(t('handover.signature.siteManager', lang), 40, sigY + 5)
-      .text(t('handover.signature.client', lang),      315, sigY + 5);
+      .text(t('handover.signature.siteManager', lang), 50, sigY + 6)
+      .text(t('handover.signature.client', lang),      325, sigY + 6);
+
+    // ─── Dessin des signatures (au milieu des cadres) ───
+    if (managerSigBuf) {
+      try {
+        doc.image(managerSigBuf, 50, sigY + 18, { fit: [200, 32], align: 'center', valign: 'center' });
+      } catch (e) { console.warn('[pdf] manager signature illisible'); }
+    }
+    if (clientSigBuf) {
+      try {
+        doc.image(clientSigBuf, 325, sigY + 18, { fit: [200, 32], align: 'center', valign: 'center' });
+      } catch (e) { console.warn('[pdf] client signature illisible'); }
+    }
+
+    // Noms en bas des cadres
     doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10)
-      .text(data.siteManagerName, 40, sigY + 55)
-      .text(data.clientName,      315, sigY + 55);
+      .text(data.siteManagerName, 50, sigY + 55)
+      .text(data.clientName,      325, sigY + 55);
 
     footer(doc, lang);
     doc.end();
@@ -410,7 +471,60 @@ export async function generateDailyReportPdf(data: {
   lang?: Lang;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
+  // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+  if (lang !== 'fr') {
+    const fields: { kind: string; idx: number; text: string }[] = [];
+    if (data.visit.title) fields.push({ kind: 'visit.title', idx: 0, text: data.visit.title });
+    if (data.visit.notes) fields.push({ kind: 'visit.notes', idx: 0, text: data.visit.notes });
+    data.points.forEach((pt, i) => {
+      if (pt.title) fields.push({ kind: 'pt.title', idx: i, text: pt.title });
+      if (pt.description) fields.push({ kind: 'pt.desc', idx: i, text: pt.description });
+      if (pt.zone) fields.push({ kind: 'pt.zone', idx: i, text: pt.zone });
+    });
 
+    if (fields.length > 0) {
+      const translated = await translateTexts(fields.map(f => f.text), lang);
+      fields.forEach((f, i) => {
+        const t = translated[i];
+        if (!t) return;
+        if (f.kind === 'visit.title')    data.visit.title                  = t;
+        else if (f.kind === 'visit.notes') data.visit.notes                = t;
+        else if (f.kind === 'pt.title')  data.points[f.idx].title          = t;
+        else if (f.kind === 'pt.desc')   data.points[f.idx].description    = t;
+        else if (f.kind === 'pt.zone')   data.points[f.idx].zone           = t;
+      });
+    }
+  }
+// ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+  if (lang !== 'fr') {
+    const fields: { kind: string; idx: number; text: string }[] = [];
+    (data.entries || []).forEach((e, i) => {
+      if (e.description) fields.push({ kind: 'entry', idx: i, text: e.description });
+    });
+    if (data.generalNotes) fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
+    (data.checklist || []).forEach((c, i) => {
+      if (c.item) fields.push({ kind: 'check.item', idx: i, text: c.item });
+      if (c.notes) fields.push({ kind: 'check.notes', idx: i, text: c.notes });
+    });
+    (data.photos || []).forEach((p, i) => {
+      if (p.caption) fields.push({ kind: 'photo', idx: i, text: p.caption });
+    });
+    if (data.weather) fields.push({ kind: 'weather', idx: 0, text: data.weather });
+
+    if (fields.length > 0) {
+      const translated = await translateTexts(fields.map(f => f.text), lang);
+      fields.forEach((f, i) => {
+        const t = translated[i];
+        if (!t) return;
+        if (f.kind === 'entry')             data.entries[f.idx].description = t;
+        else if (f.kind === 'notes')        data.generalNotes               = t;
+        else if (f.kind === 'check.item')   data.checklist[f.idx].item      = t;
+        else if (f.kind === 'check.notes')  data.checklist[f.idx].notes     = t;
+        else if (f.kind === 'photo' && data.photos) data.photos[f.idx].caption = t;
+        else if (f.kind === 'weather')      data.weather                    = t;
+      });
+    }
+  }
   // Tri chronologique des entries
   data.entries = [...(data.entries || [])].sort((a, b) => {
     const ta = (a.entryTime || '').trim();

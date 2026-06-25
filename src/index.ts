@@ -35,6 +35,7 @@ import teamBookingsRoutes from './routes/teamBookings';
 import emailWebhookRoutes from './routes/emailWebhook';
 import { startImapPoller } from './services/imapPoller';
 import { runStartupMigrations } from './utils/migrations';
+import translateRoutes from './routes/translate';
 
 const app  = express();
 const http = createServer(app);
@@ -97,6 +98,7 @@ app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
 app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
+app.use('/api/translate', translateRoutes);
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
 app.use(API,                     authMiddleware, teamBookingsRoutes);

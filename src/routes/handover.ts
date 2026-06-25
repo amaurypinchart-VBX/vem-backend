@@ -258,10 +258,11 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       siteManagerName: h.siteManager ? `${h.siteManager.firstName} ${h.siteManager.lastName}` : 'N/A',
       items,
       generalNotes: h.generalNotes,
+      managerSignatureUrl: h.managerSignatureUrl,
+      clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
-      lang,  // ⬅️ passe la langue au PDF
+      lang,
     });
-
     const recipients = new Set<string>();
     const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
     if (customList.length > 0) {
@@ -330,12 +331,14 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       ],
     }));
 
-    const pdfBuffer = await generateHandoverPdf({
+   const pdfBuffer = await generateHandoverPdf({
       project: { name: h.project.name, internalNumber: h.project.internalNumber, address: h.project.address },
       clientName: h.clientName || h.project.client?.name || 'Client',
       siteManagerName: h.siteManager ? `${h.siteManager.firstName} ${h.siteManager.lastName}` : 'N/A',
       items,
       generalNotes: h.generalNotes,
+      managerSignatureUrl: h.managerSignatureUrl,
+      clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
     });
