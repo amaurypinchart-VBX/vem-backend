@@ -3240,17 +3240,20 @@ async function downloadDailyPDF(id) {
   const lang = await pickPdfLang();
   if (!lang) return;
   toast('Génération PDF...', 'info');
-  // On utilise la nouvelle route /daily-reports/:id/pdf?lang=...
-const API = '/api/v1';   // ← bon
   try {
-    const r = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    const r = await fetch(`${API}/daily-reports/${id}/pdf?lang=${lang}`, {
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+    });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `DailyReport_${id.slice(0,8)}_${lang}.pdf`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    URL.revokeObjectURL(url);
     toast('PDF téléchargé ✅', 'success');
   } catch (e) {
     console.error('[daily pdf]', e);
