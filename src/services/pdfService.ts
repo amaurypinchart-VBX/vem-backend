@@ -455,7 +455,6 @@ export async function generateHandoverPdf(data: {
     doc.end();
   });
 }
-
 export async function generateDailyReportPdf(data: {
   project: { name: string; internalNumber: string };
   client?: { name?: string | null; contactName?: string | null; email?: string | null; phone?: string | null; address?: string | null; } | null;
@@ -470,28 +469,16 @@ export async function generateDailyReportPdf(data: {
   reportId?: string;
   lang?: Lang;
 }): Promise<Buffer> {
-  
   const lang: Lang = data.lang || 'fr';
   console.log('[DEBUG daily pdf] lang reçu:', lang, 'data.lang:', data.lang);
-  
-// ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+
+  // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
   if (lang !== 'fr') {
+    console.log('[DEBUG] entrée dans bloc traduction');
     const fields: { kind: string; idx: number; text: string }[] = [];
     (data.entries || []).forEach((e, i) => {
       if (e.description) fields.push({ kind: 'entry', idx: i, text: e.description });
     });
-    if (lang !== 'fr') {
-    console.log('[DEBUG] entrée dans bloc traduction');
-    const fields: { kind: string; idx: number; text: string }[] = [];
-    // ... ton code ...
-    console.log('[DEBUG] nombre de textes à traduire:', fields.length);
-
-    if (fields.length > 0) {
-      const translated = await translateTexts(fields.map(f => f.text), lang);
-      console.log('[DEBUG] traductions reçues:', translated);
-      // ... ton code ...
-    }
-  }
     if (data.generalNotes) fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
     (data.checklist || []).forEach((c, i) => {
       if (c.item) fields.push({ kind: 'check.item', idx: i, text: c.item });
@@ -502,8 +489,11 @@ export async function generateDailyReportPdf(data: {
     });
     if (data.weather) fields.push({ kind: 'weather', idx: 0, text: data.weather });
 
+    console.log('[DEBUG] nombre de textes à traduire:', fields.length);
+
     if (fields.length > 0) {
       const translated = await translateTexts(fields.map(f => f.text), lang);
+      console.log('[DEBUG] traductions reçues:', translated);
       fields.forEach((f, i) => {
         const t = translated[i];
         if (!t) return;
