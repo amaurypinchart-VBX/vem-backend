@@ -470,7 +470,7 @@ export async function generateDailyReportPdf(data: {
   reportId?: string;
   lang?: Lang;
 }): Promise<Buffer> {
-  const lang: Lang = data.lang || 'fr';
+  
   const lang: Lang = data.lang || 'fr';
   console.log('[DEBUG daily pdf] lang reçu:', lang, 'data.lang:', data.lang);
   
