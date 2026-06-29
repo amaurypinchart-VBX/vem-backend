@@ -36,6 +36,21 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'handover.status.pending':         'En attente',
     'handover.signature.siteManager':  'Site Manager',
     'handover.signature.client':       'Client',
+    'handover.certificate':            'CERTIFICAT DE RÉCEPTION',
+    'handover.field.contractor':       'Entrepreneur',
+    'handover.section.scope':          'Étendue des travaux',
+    'handover.scope.template':         'Installation et remise en service de la structure événementielle pour le projet « {name} » incluant {n} zone(s) inspectée(s).',
+    'handover.section.legal':          'Certification',
+    'handover.legal.p1':               'Nous certifions par la présente que les installations sont conformes aux recommandations du fabricant, aux normes de sécurité applicables, et aux meilleures pratiques de l\'industrie pour les structures événementielles temporaires.',
+    'handover.legal.p2':               'Les structures ont été assemblées conformément aux plans et spécifications d\'origine. Nous confirmons que l\'installation correspond au plan d\'implantation approuvé et au briefing de conception fournis pour ce projet.',
+    'handover.section.comments':       'Remarques / Réservations',
+    'handover.signature.title':        'Titre',
+    'handover.signature.name':         'Nom',
+    'handover.signature.signature':    'Signature',
+    'handover.signature.client.title': 'Représentant du client',
+    'handover.signature.viewbox':      'VIEWBOX International SA',
+    'handover.signature.siteManager.title': 'Site Manager',
+    'handover.contractor.name':        'VIEWBOX International SA',
     // Email
     'handover.email.subject':          'Rapport de handover',
     'handover.email.greeting':         'Bonjour,',
@@ -103,6 +118,21 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'handover.status.pending':         'Pending',
     'handover.signature.siteManager':  'Site Manager',
     'handover.signature.client':       'Client',
+    'handover.certificate':            'HANDOVER CERTIFICATE',
+    'handover.field.contractor':       'Contractor',
+    'handover.section.scope':          'Scope of work',
+    'handover.scope.template':         'Installation and handover of the event structure for project « {name} » including {n} inspected zone(s).',
+    'handover.section.legal':          'Certification',
+    'handover.legal.p1':               'We hereby confirm that the installations comply with manufacturer recommendations, applicable safety standards, and best industry practices for temporary event structures.',
+    'handover.legal.p2':               'The structures were assembled in accordance with the original plans and specifications. We confirm that the installation matches the approved layout and design briefs supplied for this project.',
+    'handover.section.comments':       'Comments / Reservations',
+    'handover.signature.title':        'Title',
+    'handover.signature.name':         'Name',
+    'handover.signature.signature':    'Signature',
+    'handover.signature.client.title': 'Client Representative',
+    'handover.signature.viewbox':      'VIEWBOX International SA',
+    'handover.signature.siteManager.title': 'Site Manager',
+    'handover.contractor.name':        'VIEWBOX International SA',
     // Email
     'handover.email.subject':          'Handover Report',
     'handover.email.greeting':         'Hello,',
@@ -286,7 +316,8 @@ export async function generateHandoverPdf(data: {
   lang?: Lang;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
-// ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+
+  // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
   if (lang !== 'fr') {
     const fields: { kind: string; idx: number; text: string }[] = [];
     data.items.forEach((item, i) => {
@@ -300,13 +331,14 @@ export async function generateHandoverPdf(data: {
       fields.forEach((f, i) => {
         const t = translated[i];
         if (!t) return;
-        if (f.kind === 'zone')         data.items[f.idx].zoneName    = t;
-        else if (f.kind === 'comment') data.items[f.idx].comment     = t;
-        else if (f.kind === 'notes')   data.generalNotes             = t;
+        if (f.kind === 'zone')         data.items[f.idx].zoneName = t;
+        else if (f.kind === 'comment') data.items[f.idx].comment  = t;
+        else if (f.kind === 'notes')   data.generalNotes          = t;
       });
     }
   }
-  // Pré-télécharge toutes les photos
+
+  // ─── Pré-télécharge toutes les photos ───
   const itemsWithBuffers: Array<{ zoneName: string; status: string; comment?: string | null; photoBuffers: Buffer[] }> = [];
   for (const item of data.items) {
     const buffers: Buffer[] = [];
@@ -323,9 +355,15 @@ export async function generateHandoverPdf(data: {
     }
     itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
   }
-  // Pré-charge les signatures (base64 ou URL HTTP)
+
+  // ─── Pré-charge les signatures ───
   const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
   const clientSigBuf  = await loadSignatureBuffer(data.clientSignatureUrl);
+
+  // Scope of work auto-généré depuis le nom du projet + nombre de zones
+  const scopeText = t('handover.scope.template', lang)
+    .replace('{name}', data.project.name)
+    .replace('{n}', String(data.items.length));
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -334,21 +372,52 @@ export async function generateHandoverPdf(data: {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    // ─── Header ───
     header(doc, t('handover.title', lang), {
       projectName: data.project.name,
       projectRef:  `N° ${data.project.internalNumber}`,
       reportDate:  fmtPdfDate(data.date, lang),
     }, lang);
 
+    // ─── Titre principal centré "HANDOVER CERTIFICATE" ───
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(18)
+      .text(t('handover.certificate', lang), 40, doc.y, { width: 515, align: 'center', characterSpacing: 1 });
+    doc.moveDown(0.3);
+    // Trait rouge décoratif sous le titre
+    const lineY = doc.y;
+    doc.moveTo(220, lineY).lineTo(375, lineY).strokeColor(RED).lineWidth(2).stroke();
+    doc.moveDown(0.8);
+
+    // ─── Section Informations Projet ───
     sectionTitle(doc, t('handover.section.projectInfo', lang));
     infoRow(doc, t('handover.field.project', lang),       data.project.name);
     infoRow(doc, t('handover.field.internalRef', lang),   data.project.internalNumber);
     infoRow(doc, t('handover.field.address', lang),       data.project.address);
     infoRow(doc, t('handover.field.client', lang),        data.clientName);
+    infoRow(doc, t('handover.field.contractor', lang),    t('handover.contractor.name', lang));
     infoRow(doc, t('handover.field.siteManager', lang),   data.siteManagerName);
     infoRow(doc, t('handover.field.reportDate', lang),    fmtPdfDate(data.date, lang));
 
+    // ─── Section Scope of work ───
+    doc.moveDown(0.6);
+    sectionTitle(doc, t('handover.section.scope', lang));
+    doc.fillColor('#333').font('Helvetica').fontSize(10)
+      .text(scopeText, 40, doc.y, { width: 515, lineGap: 2 });
+
+    // ─── Section Certification (textes légaux) ───
     doc.moveDown(0.8);
+    if (doc.y > 650) doc.addPage();
+    sectionTitle(doc, t('handover.section.legal', lang));
+    // Bloc avec fond gris clair
+    const legalY = doc.y;
+    doc.fillColor('#333').font('Helvetica').fontSize(10);
+    doc.text(t('handover.legal.p1', lang), 40, legalY, { width: 515, align: 'justify', lineGap: 2 });
+    doc.moveDown(0.4);
+    doc.text(t('handover.legal.p2', lang), 40, doc.y, { width: 515, align: 'justify', lineGap: 2 });
+
+    // ─── Section Zones inspectées ───
+    doc.moveDown(0.8);
+    if (doc.y > 650) doc.addPage();
     sectionTitle(doc, t('handover.section.zones', lang));
 
     const statusColor: Record<string,string> = { ok: GREEN, remark: AMBER, defect: RED, pending: MUTED };
@@ -361,11 +430,10 @@ export async function generateHandoverPdf(data: {
 
     const PHOTO_SIZE = 198;
     const PHOTO_GAP = 6;
-    const PHOTO_COLS = 1;
-    const PHOTOS_W  = PHOTO_COLS * PHOTO_SIZE + (PHOTO_COLS - 1) * PHOTO_GAP;
-    const TEXT_X    = 40;
-    const TEXT_W    = 515 - PHOTOS_W - 14;
-    const PHOTOS_X  = TEXT_X + TEXT_W + 14;
+    const PHOTOS_W = PHOTO_SIZE;
+    const TEXT_X = 40;
+    const TEXT_W = 515 - PHOTOS_W - 14;
+    const PHOTOS_X = TEXT_X + TEXT_W + 14;
 
     for (const item of itemsWithBuffers) {
       if (doc.y > 700) doc.addPage();
@@ -391,23 +459,19 @@ export async function generateHandoverPdf(data: {
       let photoBottomY = rowTop;
       const photos = item.photoBuffers || [];
       if (photos.length > 0) {
-        let col = 0, row = 0;
+        let row = 0;
         for (let i = 0; i < photos.length; i++) {
-          let x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
           let realY = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
           if (realY + PHOTO_SIZE > 800) {
             doc.addPage();
             row = 0;
-            col = 0;
-            x = PHOTOS_X;
             realY = doc.y;
           }
           try {
-            doc.image(photos[i], x, realY, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
-          } catch { /* image illisible */ }
+            doc.image(photos[i], PHOTOS_X, realY, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
+          } catch {}
           photoBottomY = realY + PHOTO_SIZE;
-          col++;
-          if (col >= PHOTO_COLS) { col = 0; row++; }
+          row++;
         }
       }
 
@@ -416,40 +480,93 @@ export async function generateHandoverPdf(data: {
       doc.y = rowBottom;
     }
 
-    if (data.generalNotes) {
+    // ─── Section Comments / Reservations ───
+    if (data.generalNotes && data.generalNotes.trim()) {
       doc.moveDown(0.5);
-      sectionTitle(doc, t('handover.section.notes', lang));
-      doc.fillColor(MUTED).font('Helvetica').fontSize(11).text(data.generalNotes, 40, doc.y, { width: 515 });
+      if (doc.y > 670) doc.addPage();
+      sectionTitle(doc, t('handover.section.comments', lang));
+      // Bloc avec bordure ambre
+      const cY = doc.y;
+      doc.rect(40, cY, 515, 4).fill(AMBER);
+      doc.fillColor(DARK).font('Helvetica').fontSize(10)
+        .text(data.generalNotes, 40, cY + 12, { width: 515, lineGap: 2 });
+      doc.moveDown(0.5);
     }
 
-   doc.moveDown(1);
-    if (doc.y > 700) doc.addPage();
+    // ─── Section Signatures (style Spantech : Title / Name / Signature) ───
+    doc.moveDown(0.8);
+    if (doc.y > 640) doc.addPage();
     sectionTitle(doc, t('handover.section.signatures', lang));
-    const sigY = doc.y + 10;
-    // Cadres
-    doc.rect(40, sigY, 220, 70).stroke('#ccc');
-    doc.rect(315, sigY, 220, 70).stroke('#ccc');
-    // Labels en haut des cadres
-    doc.fillColor(MUTED).fontSize(9)
-      .text(t('handover.signature.siteManager', lang), 50, sigY + 6)
-      .text(t('handover.signature.client', lang),      325, sigY + 6);
 
-    // ─── Dessin des signatures (au milieu des cadres) ───
-    if (managerSigBuf) {
-      try {
-        doc.image(managerSigBuf, 50, sigY + 18, { fit: [200, 32], align: 'center', valign: 'center' });
-      } catch (e) { console.warn('[pdf] manager signature illisible'); }
-    }
+    const sigBlockTop = doc.y + 6;
+    const blockW = 250;
+    const blockH = 130;
+    const labelBarH = 18;
+    const rowH = 16;
+    const gap = 15;
+    const leftX = 40;
+    const rightX = leftX + blockW + gap;
+
+    // ─── Bloc CLIENT (gauche) ───
+    doc.rect(leftX, sigBlockTop, blockW, blockH).stroke('#ccc');
+    // Barre de label en haut
+    doc.rect(leftX, sigBlockTop, blockW, labelBarH).fill(DARK);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(10)
+      .text(t('handover.signature.client', lang).toUpperCase(), leftX + 10, sigBlockTop + 4, { width: blockW - 20 });
+
+    let y = sigBlockTop + labelBarH + 6;
+    // Title
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.title', lang) + ':', leftX + 10, y);
+    doc.fillColor(DARK).font('Helvetica').fontSize(9)
+      .text(t('handover.signature.client.title', lang), leftX + 60, y);
+    y += rowH;
+    // Name
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.name', lang) + ':', leftX + 10, y);
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
+      .text(data.clientName, leftX + 60, y, { width: blockW - 70 });
+    y += rowH;
+    // Signature label
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.signature', lang) + ':', leftX + 10, y);
+    // Signature image
     if (clientSigBuf) {
       try {
-        doc.image(clientSigBuf, 325, sigY + 18, { fit: [200, 32], align: 'center', valign: 'center' });
+        doc.image(clientSigBuf, leftX + 10, y + 12, { fit: [blockW - 20, 50], align: 'center', valign: 'center' });
       } catch (e) { console.warn('[pdf] client signature illisible'); }
     }
 
-    // Noms en bas des cadres
-    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10)
-      .text(data.siteManagerName, 50, sigY + 55)
-      .text(data.clientName,      325, sigY + 55);
+    // ─── Bloc VIEWBOX (droite) ───
+    doc.rect(rightX, sigBlockTop, blockW, blockH).stroke('#ccc');
+    doc.rect(rightX, sigBlockTop, blockW, labelBarH).fill(RED);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(10)
+      .text(t('handover.signature.viewbox', lang).toUpperCase(), rightX + 10, sigBlockTop + 4, { width: blockW - 20 });
+
+    y = sigBlockTop + labelBarH + 6;
+    // Title
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.title', lang) + ':', rightX + 10, y);
+    doc.fillColor(DARK).font('Helvetica').fontSize(9)
+      .text(t('handover.signature.siteManager.title', lang), rightX + 60, y);
+    y += rowH;
+    // Name
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.name', lang) + ':', rightX + 10, y);
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
+      .text(data.siteManagerName, rightX + 60, y, { width: blockW - 70 });
+    y += rowH;
+    // Signature label
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+      .text(t('handover.signature.signature', lang) + ':', rightX + 10, y);
+    // Signature image
+    if (managerSigBuf) {
+      try {
+        doc.image(managerSigBuf, rightX + 10, y + 12, { fit: [blockW - 20, 50], align: 'center', valign: 'center' });
+      } catch (e) { console.warn('[pdf] manager signature illisible'); }
+    }
+
+    doc.y = sigBlockTop + blockH + 10;
 
     footer(doc, lang);
     doc.end();
