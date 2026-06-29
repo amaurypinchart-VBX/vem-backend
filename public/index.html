@@ -10598,20 +10598,19 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
     if (el) fields[k] = el.value;
   });
 
-
-}
-
   const res = await api('PATCH', `/handover/${handoverId}`, {
     customFields: fields,
     clientName: fields.clientName || undefined,
     clientEmail: fields.clientContactEmail || undefined,
     generalNotes: document.getElementById('hf-projectSummary')?.value || undefined,
+    scopeOfWork: document.getElementById('hf-scope')?.value || null,
   });
   if (res?.success) {
     toast('Handover mis à jour ✅','success');
     overlay?.remove();
     loadDetailHandovers(projectId);
   } else toast('Erreur sauvegarde','error');
+}
 
 // ── Lien de signature client (sans compte) ──
 function generateSignatureLink(handoverId) {
