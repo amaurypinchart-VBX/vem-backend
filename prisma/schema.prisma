@@ -423,6 +423,7 @@ model Handover {
   status              String    @default("draft")
   pdfUrl              String?   @map("pdf_url")
   generalNotes        String?   @map("general_notes")
+  scopeOfWork          String?   @map("scope_of_work")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 

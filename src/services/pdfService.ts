@@ -310,6 +310,7 @@ export async function generateHandoverPdf(data: {
   siteManagerName: string;
   items: Array<{ zoneName: string; status: string; comment?: string | null; photos?: Array<{ photoUrl: string }> }>;
   generalNotes?: string | null;
+  scopeOfWork?: string | null;
   clientSignatureUrl?: string | null;
   managerSignatureUrl?: string | null;
   date: Date;
@@ -324,7 +325,8 @@ export async function generateHandoverPdf(data: {
       if (item.zoneName) fields.push({ kind: 'zone', idx: i, text: item.zoneName });
       if (item.comment) fields.push({ kind: 'comment', idx: i, text: item.comment });
     });
-    if (data.generalNotes) fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
+   if (data.generalNotes) fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
+    if (data.scopeOfWork)  fields.push({ kind: 'scope', idx: 0, text: data.scopeOfWork });
 
     if (fields.length > 0) {
       const translated = await translateTexts(fields.map(f => f.text), lang);
@@ -334,6 +336,7 @@ export async function generateHandoverPdf(data: {
         if (f.kind === 'zone')         data.items[f.idx].zoneName = t;
         else if (f.kind === 'comment') data.items[f.idx].comment  = t;
         else if (f.kind === 'notes')   data.generalNotes          = t;
+        else if (f.kind === 'scope')   data.scopeOfWork           = t;
       });
     }
   }
@@ -360,10 +363,16 @@ export async function generateHandoverPdf(data: {
   const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
   const clientSigBuf  = await loadSignatureBuffer(data.clientSignatureUrl);
 
-  // Scope of work auto-généré depuis le nom du projet + nombre de zones
-  const scopeText = t('handover.scope.template', lang)
-    .replace('{name}', data.project.name)
-    .replace('{n}', String(data.items.length));
+  // Scope of work : utilise le texte saisi par l'utilisateur si présent,
+  // sinon retombe sur une phrase auto-générée à partir du projet
+  let scopeText: string;
+  if (data.scopeOfWork && data.scopeOfWork.trim()) {
+    scopeText = data.scopeOfWork.trim();
+  } else {
+    scopeText = t('handover.scope.template', lang)
+      .replace('{name}', data.project.name)
+      .replace('{n}', String(data.items.length));
+  }
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });

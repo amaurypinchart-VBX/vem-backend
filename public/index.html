@@ -10500,8 +10500,8 @@ async function editHandoverFields(handoverId, projectId) {
             <input class="input" id="hf-siteAddress" value="${fv('siteAddress', proj.address||'')}">
           </div>
           <div class="form-group2">
-            <label class="form-label2">Scope of work — Supply of a...</label>
-            <textarea class="input" id="hf-scopeOfWork" rows="2">${fv('scopeOfWork', proj.description||'')}</textarea>
+            <label class="form-label2">📋 Étendue des travaux (Scope of work)</label>
+            <textarea class="input" id="hf-scope" rows="3" placeholder="Description de l'installation, équipement fourni, services réalisés...&#10;(Laisser vide pour utiliser la description automatique)">${h.scopeOfWork || ''}</textarea>
           </div>
         </div>
 
@@ -10591,11 +10591,15 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
   ['projectName','projectLocation','clientName','contractor','startDate','completionDate','projectSummary',
    'clientContactName','clientContactPosition','clientContactEmail','clientContactPhone',
    'spantechContactName','spantechContactPosition','spantechContactEmail','spantechContactPhone',
-   'handoverDate','attendees','clientRepName','clientFunction','spantechRepName','spantechFunction'
+   'handoverDate','attendees','clientRepName','clientFunction','spantechRepName','spantechFunction',
+   'scope'
   ].forEach(k => {
     const el = document.getElementById('hf-'+k);
     if (el) fields[k] = el.value;
   });
+
+
+}
 
   const res = await api('PATCH', `/handover/${handoverId}`, {
     customFields: fields,

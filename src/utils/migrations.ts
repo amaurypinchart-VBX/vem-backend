@@ -559,7 +559,11 @@ export async function runStartupMigrations() {
       ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "sort_order" INTEGER NOT NULL DEFAULT 0;
     `);
     logger.info('[migration] projects.sort_order ajoutée si absente');
-
+// ─── handovers.scope_of_work : étendue des travaux éditable ───
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE handovers ADD COLUMN IF NOT EXISTS scope_of_work TEXT;
+  `);
+  logger.info('[migration] handovers.scope_of_work ajoutée si absente');
     // ─── Clients : colonne vat + table client_contacts ───
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "vat" TEXT;
