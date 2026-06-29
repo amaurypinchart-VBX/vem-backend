@@ -8984,13 +8984,17 @@ async function downloadVisitPDF(visitId) {
     });
     if (!r.ok) { toast('Erreur génération PDF', 'error'); return; }
     const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `Visite_${visitId.slice(0,8)}_${lang}.pdf`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    URL.revokeObjectURL(url);
     toast('PDF téléchargé ✅', 'success');
   } catch (e) {
+    console.error('[visit pdf]', e);
     toast('Erreur réseau', 'error');
   }
 }
