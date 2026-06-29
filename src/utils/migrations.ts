@@ -564,7 +564,15 @@ export async function runStartupMigrations() {
     ALTER TABLE handovers ADD COLUMN IF NOT EXISTS scope_of_work TEXT;
   `);
   logger.info('[migration] handovers.scope_of_work ajoutée si absente');
-    // ─── Clients : colonne vat + table client_contacts ───
+    // ─── handovers : token de signature client (single-use) ───
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE handovers 
+      ADD COLUMN IF NOT EXISTS signature_token TEXT,
+      ADD COLUMN IF NOT EXISTS signature_token_used BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS signature_token_created_at TIMESTAMP;
+  `);
+  logger.info('[migration] handovers : colonnes signature_token ajoutées si absentes');
+  // ─── Clients : colonne vat + table client_contacts ───
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "vat" TEXT;
     `);

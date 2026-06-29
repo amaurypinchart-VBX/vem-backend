@@ -10613,35 +10613,50 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
 }
 
 // ── Lien de signature client (sans compte) ──
-function generateSignatureLink(handoverId) {
+async function generateSignatureLink(handoverId) {
+  // 1. Demande un nouveau token au backend (invalide tout token précédent)
+  toast('Génération du lien...', 'info');
+  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`);
+  if (!tokenRes?.success) { toast('Erreur génération du lien', 'error'); return; }
+  const token = tokenRes.data.token;
+
+  // 2. Construit le lien complet vers la page publique
   const baseUrl = window.location.origin;
-  const link = `${baseUrl}?sign=${handoverId}`;
-  const overlay = document.createElement('div'); overlay.className='overlay open';
+  const link = `${baseUrl}/sign-handover.html?token=${token}`;
+
+  // 3. Modal d'affichage du lien
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay open';
   overlay.innerHTML = `
-    <div class="modal" style="max-width:500px;">
-      <div class="modal-head"><div class="modal-title">🔗 Lien de Signature Client</div>
-        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <div class="modal-title">🔗 Lien de Signature Client</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="background:rgba(45,198,83,.1);border:1px solid rgba(45,198,83,.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--green);">
+        ✅ Nouveau lien généré (les liens précédents pour ce handover sont désactivés)
+      </div>
       <div style="background:var(--bg3);border-radius:10px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Envoyez ce lien au client pour qu'il signe sans créer de compte :</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Envoyez ce lien au client :</div>
         <div style="display:flex;gap:8px;">
-          <input class="input" value="${link}" id="sig-link-input" readonly style="flex:1;font-size:12px;">
-          <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText('${link}');toast('Lien copié ✅','success')">📋 Copier</button>
+          <input class="input" value="${link}" id="sig-link-input" readonly style="flex:1;font-size:11px;">
+          <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('sig-link-input').value);toast('Lien copié ✅','success')">📋 Copier</button>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--text3);">
-        ✅ Le client peut signer directement depuis son téléphone<br>
-        ✅ Aucun compte nécessaire<br>
-        ✅ La signature est sauvegardée automatiquement
+      <div style="font-size:12px;color:var(--text3);line-height:1.7;">
+        🔒 <strong>Lien à usage unique</strong> — expire après la première signature<br>
+        📱 Le client peut signer depuis son téléphone ou ordinateur<br>
+        ✉️ Vous recevrez le PDF signé par email automatiquement<br>
+        ⚠️ Si vous regénérez un lien, l'ancien sera invalidé
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
-        <button class="btn btn-primary" onclick="window.open('mailto:?subject=Handover Signature&body=Please sign the handover document: ${link}')">📧 Envoyer par email</button>
+        <button class="btn btn-primary" onclick="window.open('mailto:?subject=Signature du handover&body=Bonjour,%0A%0AVeuillez signer le document via ce lien :%0A${encodeURIComponent(link)}%0A%0ACordialement,%0AL%27équipe VIEWBOX')">📧 Envoyer par email</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
-
 // ═══════════════════════════════════════════
 // CAMIONS DANS CRÉATION PROJET
 // ═══════════════════════════════════════════

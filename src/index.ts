@@ -36,6 +36,7 @@ import emailWebhookRoutes from './routes/emailWebhook';
 import { startImapPoller } from './services/imapPoller';
 import { runStartupMigrations } from './utils/migrations';
 import translateRoutes from './routes/translate';
+import publicHandoverSignRoutes from './routes/publicHandoverSign';
 
 const app  = express();
 const http = createServer(app);
@@ -80,12 +81,15 @@ app.get('/health', (_, res) => res.json({ ok: true, ts: new Date().toISOString()
 const API = '/api/v1';
 
 app.use(`${API}/auth`,           authRoutes);
+// Route PUBLIQUE — pas de middleware auth, accessible par lien
+app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
 app.use(`${API}/users`,          authMiddleware, userRoutes);
 app.use(`${API}/clients`,        authMiddleware, clientRoutes);
 app.use(`${API}/projects`,       authMiddleware, projectRoutes);
 app.use(`${API}/tasks`,          authMiddleware, taskRoutes);
 app.use(`${API}/tickets`,        authMiddleware, ticketRoutes);
 app.use(`${API}/handover`,       authMiddleware, handoverRoutes);
+
 app.use(`${API}/daily-reports`,  authMiddleware, dailyRoutes);
 app.use(`${API}/warehouse`,      authMiddleware, warehouseRoutes);
 app.use(`${API}/toolbox`,        authMiddleware, toolboxRoutes);

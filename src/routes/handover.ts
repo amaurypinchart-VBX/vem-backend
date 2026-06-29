@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -349,6 +350,28 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
+  } catch (err) { next(err); }
+});
+// POST /handover/:id/signature-token — génère un nouveau token de signature (single-use)
+// Invalide automatiquement tout token précédent pour le même handover.
+router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const h = await prisma.handover.findUnique({ where: { id: req.params.id } });
+    if (!h) throw new AppError('Handover introuvable', 404);
+
+    // Génère un token cryptographique URL-safe (43 caractères)
+    const token = crypto.randomBytes(32).toString('base64url');
+
+    await prisma.handover.update({
+      where: { id: req.params.id },
+      data: {
+        signatureToken: token,
+        signatureTokenUsed: false,
+        signatureTokenCreatedAt: new Date(),
+      },
+    });
+
+    res.json({ success: true, data: { token } });
   } catch (err) { next(err); }
 });
 export default router;
