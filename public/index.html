@@ -1732,6 +1732,7 @@ function pickPdfLang() {
     const el = document.createElement('div');
     el.className = 'overlay open';
     el.style.zIndex = '100000';
+    el.innerHTML = `
       <div class="modal" style="max-width:360px;">
         <div class="modal-head">
           <div class="modal-title">📄 Langue du PDF</div>
