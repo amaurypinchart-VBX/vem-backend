@@ -311,6 +311,7 @@ export async function generateHandoverPdf(data: {
   items: Array<{ zoneName: string; status: string; comment?: string | null; photos?: Array<{ photoUrl: string }> }>;
   generalNotes?: string | null;
   scopeOfWork?: string | null;
+  customFields?: Record<string, any> | null;
   clientSignatureUrl?: string | null;
   managerSignatureUrl?: string | null;
   date: Date;
@@ -340,6 +341,25 @@ export async function generateHandoverPdf(data: {
       });
     }
   }
+// ─── Lecture des customFields avec fallbacks intelligents ───
+  const cf = data.customFields || {};
+  const f = (key: string, fallback: string = ''): string => {
+    const v = cf[key];
+    return (v !== undefined && v !== null && String(v).trim() !== '') ? String(v) : fallback;
+  };
+
+  // Données enrichies (customFields > data > défaut)
+  const displayClientName  = f('clientName',         data.clientName);
+  const displayContractor  = f('contractor',         t('handover.contractor.name', lang));
+  const displaySiteManager = f('spantechRep',        data.siteManagerName);
+  const displayClientTitle = f('clientTitle',        t('handover.signature.client.title', lang));
+  const displaySpantechTitle = f('spantechTitle',    t('handover.signature.siteManager.title', lang));
+  const displayClientRep   = f('clientRep',          displayClientName);
+  // Contacts (pour bloc enrichi si présents)
+  const clientContactEmail = f('clientContactEmail');
+  const clientContactPhone = f('clientContactPhone');
+  const spantechContactEmail = f('spantechContactEmail');
+  const spantechContactPhone = f('spantechContactPhone');
 
   // ─── Pré-télécharge toutes les photos ───
   const itemsWithBuffers: Array<{ zoneName: string; status: string; comment?: string | null; photoBuffers: Buffer[] }> = [];
@@ -402,11 +422,19 @@ export async function generateHandoverPdf(data: {
     infoRow(doc, t('handover.field.project', lang),       data.project.name);
     infoRow(doc, t('handover.field.internalRef', lang),   data.project.internalNumber);
     infoRow(doc, t('handover.field.address', lang),       data.project.address);
-    infoRow(doc, t('handover.field.client', lang),        data.clientName);
-    infoRow(doc, t('handover.field.contractor', lang),    t('handover.contractor.name', lang));
-    infoRow(doc, t('handover.field.siteManager', lang),   data.siteManagerName);
+    infoRow(doc, t('handover.field.client', lang),        displayClientName);
+    infoRow(doc, t('handover.field.contractor', lang),    displayContractor);
+    infoRow(doc, t('handover.field.siteManager', lang),   displaySiteManager);
     infoRow(doc, t('handover.field.reportDate', lang),    fmtPdfDate(data.date, lang));
-
+    // Contacts si renseignés
+    if (clientContactEmail || clientContactPhone) {
+      const contactStr = [clientContactEmail, clientContactPhone].filter(Boolean).join(' · ');
+      infoRow(doc, lang === 'en' ? 'Client contact' : 'Contact client', contactStr);
+    }
+    if (spantechContactEmail || spantechContactPhone) {
+      const contactStr = [spantechContactEmail, spantechContactPhone].filter(Boolean).join(' · ');
+      infoRow(doc, lang === 'en' ? 'VIEWBOX contact' : 'Contact VIEWBOX', contactStr);
+    }
     // ─── Section Scope of work ───
     doc.moveDown(0.6);
     sectionTitle(doc, t('handover.section.scope', lang));
@@ -528,13 +556,13 @@ export async function generateHandoverPdf(data: {
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
       .text(t('handover.signature.title', lang) + ':', leftX + 10, y);
     doc.fillColor(DARK).font('Helvetica').fontSize(9)
-      .text(t('handover.signature.client.title', lang), leftX + 60, y);
+      .text(displayClientTitle, leftX + 60, y);
     y += rowH;
     // Name
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
       .text(t('handover.signature.name', lang) + ':', leftX + 10, y);
     doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
-      .text(data.clientName, leftX + 60, y, { width: blockW - 70 });
+      .text(displayClientRep, leftX + 60, y, { width: blockW - 70 });
     y += rowH;
     // Signature label
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
@@ -557,13 +585,13 @@ export async function generateHandoverPdf(data: {
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
       .text(t('handover.signature.title', lang) + ':', rightX + 10, y);
     doc.fillColor(DARK).font('Helvetica').fontSize(9)
-      .text(t('handover.signature.siteManager.title', lang), rightX + 60, y);
+      .text(displaySpantechTitle, rightX + 60, y);
     y += rowH;
     // Name
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
       .text(t('handover.signature.name', lang) + ':', rightX + 10, y);
     doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
-      .text(data.siteManagerName, rightX + 60, y, { width: blockW - 70 });
+      .text(displaySiteManager, rightX + 60, y, { width: blockW - 70 });
     y += rowH;
     // Signature label
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)

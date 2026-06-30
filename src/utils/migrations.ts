@@ -334,7 +334,11 @@ export async function runStartupMigrations() {
         logger.warn(`[migration] ProjectStatus value "${val}" : ${e.message}`);
       }
     }
-
+// ─── handovers.custom_fields : champs custom du modal d'édition ───
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE handovers ADD COLUMN IF NOT EXISTS custom_fields JSONB;
+  `);
+  logger.info('[migration] handovers.custom_fields ajoutée si absente');
     // ─── Corriger contraintes NOT NULL incohérentes avec le schéma Prisma ───
     // entry_time de daily_report_entries : le schéma dit nullable mais la DB
     // a été créée avec NOT NULL → DROP NOT NULL (no-op si déjà nullable).

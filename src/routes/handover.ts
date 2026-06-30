@@ -96,7 +96,6 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     const {
       items,
       responsible,
-      customFields,
       project,
       createdBy,
       siteManagerUser,

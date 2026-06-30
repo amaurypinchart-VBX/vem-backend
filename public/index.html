@@ -10593,7 +10593,7 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
    'clientContactName','clientContactPosition','clientContactEmail','clientContactPhone',
    'spantechContactName','spantechContactPosition','spantechContactEmail','spantechContactPhone',
    'handoverDate','attendees','clientRepName','clientFunction','spantechRepName','spantechFunction',
-   'scope'
+   'scope', 'siteAddress', 'scopeOfWork', 'clientTitle', 'clientRep', 'spantechTitle', 'spantechRep', 'comments'
   ].forEach(k => {
     const el = document.getElementById('hf-'+k);
     if (el) fields[k] = el.value;

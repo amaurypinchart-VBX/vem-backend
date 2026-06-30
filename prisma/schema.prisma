@@ -424,6 +424,7 @@ model Handover {
   pdfUrl              String?   @map("pdf_url")
   generalNotes        String?   @map("general_notes")
   scopeOfWork          String?   @map("scope_of_work")
+  customFields         Json?     @map("custom_fields")
   signatureToken          String?   @map("signature_token")
   signatureTokenUsed      Boolean   @default(false) @map("signature_token_used")
   signatureTokenCreatedAt DateTime? @map("signature_token_created_at")
