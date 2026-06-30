@@ -14411,34 +14411,115 @@ async function briefingStudioSave() {
   if (res?.success) toast('Briefing sauvegardé ✅', 'success');
   else toast('Échec sauvegarde', 'error');
 }
+// Traduit tous les objets texte d'une slide Fabric via /api/v1/translate
+// Retourne le nombre de textes traduits (pour debug / toast)
+async function brfTranslateSlideTexts(canvas, targetLang) {
+  if (!canvas || !targetLang || targetLang === 'fr') return 0;
 
+  // Collecte tous les objets texte ET leurs textes
+  const textObjects = [];
+  canvas.getObjects().forEach(obj => {
+    if (obj.type === 'text' || obj.type === 'i-text' || obj.type === 'textbox') {
+      if (obj.text && String(obj.text).trim()) {
+        textObjects.push(obj);
+      }
+    }
+  });
+
+  if (textObjects.length === 0) return 0;
+
+  const texts = textObjects.map(o => String(o.text));
+
+  try {
+    const r = await fetch('/api/v1/public/translate'.replace('/public', ''), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TOKEN}`,
+      },
+      body: JSON.stringify({ texts, targetLang, sourceLang: 'fr' }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const translations = data?.data?.translations || [];
+
+    // Applique les traductions aux objets Fabric
+    textObjects.forEach((obj, i) => {
+      const t = translations[i];
+      if (t && typeof t === 'string') {
+        obj.set('text', t);
+        // Force le recalcul du rendu pour les textbox/i-text
+        if (typeof obj.initDimensions === 'function') obj.initDimensions();
+      }
+    });
+    canvas.requestRenderAll();
+    return translations.length;
+  } catch (e) {
+    console.error('[brf translate]', e);
+    return 0;
+  }
+}
 async function briefingStudioExportPDF(btn) {
   saveCurrentSlideJson();
   if (!window.jspdf) { toast('jsPDF non chargé', 'error'); return; }
+
+  // 1. Demande de la langue
+  const lang = await pickPdfLang();
+  if (!lang) return;
+
   const { jsPDF } = window.jspdf;
   const orig = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Export...'; }
+
   try {
-    const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageW = 297, pageH = 210;
     const imgW = pageW;
     const imgH = pageW * (BRF_CANVAS_H / BRF_CANVAS_W);
     const offsetY = (pageH - imgH) / 2;
     const curIdx = BRF_STUDIO.curIdx;
+
+    let totalTranslated = 0;
+
     for (let i = 0; i < BRF_STUDIO.slides.length; i++) {
+      if (btn) btn.innerHTML = `⏳ Slide ${i + 1}/${BRF_STUDIO.slides.length}...`;
+
       BRF_STUDIO.curIdx = i;
       loadSlideIntoCanvas(i);
-      // attendre rendu (images, background)
+
+      // attendre rendu initial (images, background, logo)
       await new Promise(r => setTimeout(r, 1000));
-      const dataUrl = BRF_STUDIO.fabricCanvas.toDataURL({ format:'jpeg', quality:0.9, multiplier:2 });
+
+      // 2. Traduction IA si lang === 'en'
+      if (lang === 'en') {
+        if (btn) btn.innerHTML = `🌐 Traduction slide ${i + 1}/${BRF_STUDIO.slides.length}...`;
+        const n = await brfTranslateSlideTexts(BRF_STUDIO.fabricCanvas, lang);
+        totalTranslated += n;
+        // Petit délai pour que le canvas se re-rende après les set('text')
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      // 3. Export du canvas
+      const dataUrl = BRF_STUDIO.fabricCanvas.toDataURL({ format: 'jpeg', quality: 0.9, multiplier: 2 });
       if (i > 0) pdf.addPage();
       pdf.addImage(dataUrl, 'JPEG', 0, offsetY, imgW, imgH);
     }
+
+    // 4. Restaurer la slide originale (la traduction n'est pas persistée — on recharge le JSON original)
     BRF_STUDIO.curIdx = curIdx;
     loadSlideIntoCanvas(curIdx);
-    pdf.save((BRF_STUDIO.title || 'briefing').replace(/[^\w-]/g,'_') + '.pdf');
-    toast('PDF exporté ✅', 'success');
+
+    // 5. Save PDF
+    const safeTitle = (BRF_STUDIO.title || 'briefing').replace(/[^\w-]/g, '_');
+    pdf.save(`${safeTitle}_${lang}.pdf`);
+
+    if (lang === 'en') {
+      toast(`PDF exporté ✅ (${totalTranslated} textes traduits)`, 'success');
+    } else {
+      toast('PDF exporté ✅', 'success');
+    }
   } catch (e) {
+    console.error('[briefing export]', e);
     toast('Échec export : ' + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig; }

@@ -83,6 +83,7 @@ const API = '/api/v1';
 app.use(`${API}/auth`,           authRoutes);
 // Route PUBLIQUE — pas de middleware auth, accessible par lien
 app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
+app.use('/api/v1/translate', translateRoutes);
 app.use(`${API}/users`,          authMiddleware, userRoutes);
 app.use(`${API}/clients`,        authMiddleware, clientRoutes);
 app.use(`${API}/projects`,       authMiddleware, projectRoutes);
@@ -102,7 +103,7 @@ app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
 app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
-app.use('/api/translate', translateRoutes);
+
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
 app.use(API,                     authMiddleware, teamBookingsRoutes);
