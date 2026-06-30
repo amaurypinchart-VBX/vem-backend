@@ -14431,7 +14431,7 @@ async function brfTranslateSlideTexts(canvas, targetLang) {
   const texts = textObjects.map(o => String(o.text));
 
   try {
-    const r = await fetch('/api/v1/public/translate'.replace('/public', ''), {
+    const r = await fetch('/api/v1/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
