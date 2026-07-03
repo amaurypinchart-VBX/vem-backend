@@ -518,6 +518,7 @@ input[type="range"]::-moz-range-thumb {
             <span class="format-chip">.OBJ</span>
             <span class="format-chip">.GLTF</span>
             <span class="format-chip">.GLB</span>
+            <span class="format-chip">.IFC</span>
           </div>
         </div>
       </div>
@@ -648,7 +649,7 @@ input[type="range"]::-moz-range-thumb {
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".stl,.obj,.gltf,.glb" style="display:none">
+<input type="file" id="file-input" accept=".stl,.obj,.gltf,.glb,.ifc" style="display:none">
 
 <!-- Photo Gallery Modal -->
 <div id="gallery-modal" class="ll-modal-like" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;">
@@ -1077,22 +1078,98 @@ function parseOBJ(text) {
   return out;
 }
 
-function parseGLB(buffer) {
-  const dv = new DataView(buffer);
-  if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('Magic GLB invalide');
-  if (dv.getUint32(4, true) !== 2) throw new Error('Version GLB non supportée');
-  let off = 12, json = null, bin = null;
-  while (off < buffer.byteLength) {
-    const len = dv.getUint32(off, true);
-    const type = dv.getUint32(off + 4, true);
-    off += 8;
-    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, off, len)));
-    else if (type === 0x004E4942) bin = buffer.slice(off, off + len);
-    off += len;
+// ============================================================================
+// IFC PARSER — web-ifc (WASM chargé dynamiquement depuis CDN, ~2 Mo au 1er load)
+// ============================================================================
+async function parseIFC(arrayBuffer) {
+  // Chargement paresseux de la lib (une seule fois par session)
+  if (!window._webIfcAPI) {
+    setStatus('📦 Chargement du moteur IFC (~2 Mo, première fois seulement)...', 'info');
+    const module = await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.68/web-ifc-api.js');
+    const api = new module.IfcAPI();
+    api.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.68/');
+    await api.Init();
+    window._webIfcAPI = api;
   }
-  if (!json) throw new Error('Pas de chunk JSON');
-  return processGLTF(json, bin);
+  const api = window._webIfcAPI;
+  setStatus('🔧 Analyse du fichier IFC en cours...', 'info');
+
+  const uint8 = new Uint8Array(arrayBuffer);
+  const modelID = api.OpenModel(uint8);
+  const components = [];
+
+  // IFC utilise Z-up, three.js utilise Y-up → matrice de correction globale
+  const zUpToYUp = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+
+  api.StreamAllMeshes(modelID, (mesh) => {
+    const expressID = mesh.expressID;
+    let elementName = 'Element_' + expressID;
+    let elementType = 'IfcElement';
+    try {
+      const props = api.GetLine(modelID, expressID);
+      if (typeof api.GetNameFromTypeCode === 'function') {
+        try { elementType = api.GetNameFromTypeCode(props.type) || elementType; } catch {}
+      }
+      if (props.Name && props.Name.value) elementName = props.Name.value;
+      else elementName = elementType + '_' + expressID;
+    } catch (e) {}
+
+    const geometries = mesh.geometries;
+    const size = geometries.size();
+    for (let i = 0; i < size; i++) {
+      const placedGeom = geometries.get(i);
+      try {
+        const geom = api.GetGeometry(modelID, placedGeom.geometryExpressID);
+        const vertArr = api.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
+        const idxArr = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+
+        // web-ifc renvoie [x,y,z,nx,ny,nz, ...] (6 floats par vertex)
+        const numVerts = vertArr.length / 6;
+        const positions = new Float32Array(numVerts * 3);
+        const normals   = new Float32Array(numVerts * 3);
+        for (let v = 0; v < numVerts; v++) {
+          positions[v*3]   = vertArr[v*6];
+          positions[v*3+1] = vertArr[v*6+1];
+          positions[v*3+2] = vertArr[v*6+2];
+          normals[v*3]     = vertArr[v*6+3];
+          normals[v*3+1]   = vertArr[v*6+4];
+          normals[v*3+2]   = vertArr[v*6+5];
+        }
+        const bufferGeom = new THREE.BufferGeometry();
+        bufferGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        bufferGeom.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
+        bufferGeom.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
+
+        // Transformation IFC (matrice locale) + rotation globale Z→Y up
+        const ifcMat  = new THREE.Matrix4().fromArray(Array.from(placedGeom.flatTransformation));
+        const combined = new THREE.Matrix4().multiplyMatrices(zUpToYUp, ifcMat);
+        bufferGeom.applyMatrix4(combined);
+
+        // Couleur du matériau IFC (si disponible)
+        let color = null;
+        if (placedGeom.color) {
+          color = new THREE.Color(placedGeom.color.x, placedGeom.color.y, placedGeom.color.z);
+        }
+
+        components.push({
+          name: size > 1 ? `${elementName} (#${i+1})` : elementName,
+          path: [elementType, elementName],
+          geometry: bufferGeom,
+          color: color
+        });
+      } catch (e) {
+        console.warn('[IFC] Géométrie échec pour expressID', expressID, e);
+      }
+    }
+  });
+
+  api.CloseModel(modelID);
+  if (components.length === 0) throw new Error('IFC : aucune géométrie exploitable');
+  console.log('[IFC] ✅', components.length, 'composants extraits');
+  return components;
 }
+
+function parseGLB(buffer) {
 
 function processGLTF(json, bin) {
   const components = [];
@@ -1185,6 +1262,7 @@ async function loadFile(file) {
     if (ext === 'stl') components = parseSTL(await file.arrayBuffer());
     else if (ext === 'obj') components = parseOBJ(await file.text());
     else if (ext === 'glb') components = parseGLB(await file.arrayBuffer());
+    else if (ext === 'ifc') components = await parseIFC(await file.arrayBuffer());
     else if (ext === 'gltf') {
       const json = JSON.parse(await file.text());
       if (json.buffers && json.buffers[0] && json.buffers[0].uri && json.buffers[0].uri.startsWith('data:')) {

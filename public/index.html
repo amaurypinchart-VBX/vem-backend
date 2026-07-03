@@ -1827,7 +1827,7 @@ async function openFileViewer(url, filename) {
   // Pour les formats supportés par notre viewer 3D dédié (avec mesures + photos),
   // on ouvre directement notre viewer dans un nouvel onglet plutôt que le component
   // <model-viewer> de Google qui est plus basique et plante avec certaines compressions.
-  const supportedByOurViewer = ['glb','gltf','stl','obj'].includes(ext);
+  const supportedByOurViewer = ['glb','gltf','stl','obj','ifc'].includes(ext);
   if (supportedByOurViewer && CURRENT_PROJECT_ID) {
     openIn3DViewer(url, filename, CURRENT_PROJECT_ID);
     return;
@@ -2856,7 +2856,7 @@ async function loadProjectDetail(id) {
           <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${id}')" title="Ajouter un fichier via une URL externe (GitHub Releases, etc.) — utile pour les gros fichiers 3D > 10 Mo">🔗 URL</button>
           <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
             ⬆️ Ajouter
-            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.ifc" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>
         </div>
       </div>
@@ -2879,8 +2879,7 @@ async function loadProjectDetail(id) {
             <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>` : (() => {
             // Catégorisation : images / PDF / modèles 3D / autres
-            const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend'].includes(extOf(f));
-            const isPDF = f => extOf(f) === 'pdf';
+            const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','ifc'].includes(extOf(f));            const isPDF = f => extOf(f) === 'pdf';
             const imgs    = files.filter(f => isImg(f));
             const pdfs    = files.filter(f => isPDF(f));
             const models  = files.filter(f => is3D(f));
@@ -2929,7 +2928,7 @@ async function loadProjectDetail(id) {
                   ${models.map(f=>{
                     const e = extOf(f);
                     const supported  = ['glb','gltf','usdz'].includes(e);
-                    const viewer3DOk = ['glb','gltf','stl','obj'].includes(e);
+                    const viewer3DOk = ['glb','gltf','stl','obj','ifc'].includes(e);
                     return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'">
                       <div style="cursor:pointer;text-align:center;" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
                         <div style="font-size:42px;line-height:1;">🎨</div>
