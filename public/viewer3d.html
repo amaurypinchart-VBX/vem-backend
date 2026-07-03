@@ -750,7 +750,6 @@ function handleSceneClick(e) {
   const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
   const hits = raycaster.intersectObjects(visibleMeshes, false);
   if (hits.length === 0) {
-    // Clicked empty space → deselect
     if (state.selectedTreeNode) {
       state.selectedTreeNode = null;
       applySelection();
@@ -774,15 +773,12 @@ function handleSceneClick(e) {
   if (state.selectedTreeNode) scrollTreeToSelected();
 }
 
-// Apply unit change: re-render all displays that show dimensions in mm
 function applyUnitChange() {
-  // View-info bar
   if (state.modelInfo) {
     const s = state.modelInfo.dimensions;
     document.getElementById('view-info').textContent =
       `${state.modelInfo.components} composants · ${fmtNum(state.modelInfo.triangles)} tri · ${fmtDim(s.x, false)}×${fmtDim(s.y, false)}×${fmtDim(s.z, false)} mm`;
   }
-  // Manual ruler labels
   state.measurements.forEach(m => {
     if (m.labelEl) {
       const v = m.labelEl.querySelector('.value');
@@ -790,13 +786,10 @@ function applyUnitChange() {
       else m.labelEl.textContent = fmtDim(m.distance);
     }
   });
-  // Measurements list
   if (typeof updateMeasurementList === 'function') updateMeasurementList();
-  // Dim overlay
   if (state.dimOverlay && typeof updateDimOverlay === 'function') updateDimOverlay();
 }
 
-// Attach handlers when DOM is ready (script runs after HTML, so this is safe)
 (function attachClickAndUnitHandlers() {
   const canvasEl = document.getElementById('canvas');
   if (canvasEl) {
@@ -816,8 +809,6 @@ function applyUnitChange() {
       state.modelUnit = e.target.value;
       applyUnitChange();
     });
-    // Note: state.modelUnit reste undefined jusqu'au premier change.
-    // fmtDim utilise un fallback 'm' via (state && state.modelUnit) || 'm'.
   }
 })();
 
@@ -832,12 +823,11 @@ const state = {
   currentModel: null, modelInfo: null,
   tree: null,
   rules: '', aiProducts: [],
-  // measurements
   measureMode: false,
-  pendingPoint: null,        // first clicked point waiting for second
-  measurements: [],          // [{ p1, p2, distance, line, sphere1, sphere2, labelEl }]
+  pendingPoint: null,
+  measurements: [],
   autoDim: true,
-  dimOverlay: null,          // { box, edges, labels: { x, y, z } }
+  dimOverlay: null,
 };
 
 // ============================================================================
@@ -929,7 +919,6 @@ function OrbitController(cam, dom) {
   window.addEventListener('mouseup', (e) => {
     const wasDragging = dragging;
     dragging = false; panning = false;
-    // Detect "click" (not drag) in measure mode
     if (wasDragging && state.measureMode && e.button === 0) {
       const moved = Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY);
       if (moved < 5) handleMeasureClick(e);
@@ -972,7 +961,7 @@ function OrbitController(cam, dom) {
 }
 
 // ============================================================================
-// PARSERS (STL / OBJ / GLB) — unchanged from previous version
+// PARSERS (STL / OBJ / GLB / IFC)
 // ============================================================================
 function parseSTL(buffer) {
   if (buffer.byteLength < 84) return parseSTLAscii(buffer);
@@ -1078,11 +1067,8 @@ function parseOBJ(text) {
   return out;
 }
 
-// ============================================================================
-// IFC PARSER — web-ifc (WASM chargé dynamiquement depuis CDN, ~2 Mo au 1er load)
-// ============================================================================
+// ─── IFC PARSER (web-ifc via CDN, chargement dynamique) ───
 async function parseIFC(arrayBuffer) {
-  // Chargement paresseux de la lib (une seule fois par session)
   if (!window._webIfcAPI) {
     setStatus('📦 Chargement du moteur IFC (~2 Mo, première fois seulement)...', 'info');
     const module = await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.68/web-ifc-api.js');
@@ -1108,7 +1094,7 @@ async function parseIFC(arrayBuffer) {
     try {
       const props = api.GetLine(modelID, expressID);
       if (typeof api.GetNameFromTypeCode === 'function') {
-        try { elementType = api.GetNameFromTypeCode(props.type) || elementType; } catch {}
+        try { elementType = api.GetNameFromTypeCode(props.type) || elementType; } catch (e) {}
       }
       if (props.Name && props.Name.value) elementName = props.Name.value;
       else elementName = elementType + '_' + expressID;
@@ -1123,36 +1109,33 @@ async function parseIFC(arrayBuffer) {
         const vertArr = api.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
         const idxArr = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
 
-        // web-ifc renvoie [x,y,z,nx,ny,nz, ...] (6 floats par vertex)
         const numVerts = vertArr.length / 6;
         const positions = new Float32Array(numVerts * 3);
-        const normals   = new Float32Array(numVerts * 3);
+        const normals = new Float32Array(numVerts * 3);
         for (let v = 0; v < numVerts; v++) {
-          positions[v*3]   = vertArr[v*6];
-          positions[v*3+1] = vertArr[v*6+1];
-          positions[v*3+2] = vertArr[v*6+2];
-          normals[v*3]     = vertArr[v*6+3];
-          normals[v*3+1]   = vertArr[v*6+4];
-          normals[v*3+2]   = vertArr[v*6+5];
+          positions[v * 3]     = vertArr[v * 6];
+          positions[v * 3 + 1] = vertArr[v * 6 + 1];
+          positions[v * 3 + 2] = vertArr[v * 6 + 2];
+          normals[v * 3]     = vertArr[v * 6 + 3];
+          normals[v * 3 + 1] = vertArr[v * 6 + 4];
+          normals[v * 3 + 2] = vertArr[v * 6 + 5];
         }
         const bufferGeom = new THREE.BufferGeometry();
         bufferGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        bufferGeom.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
+        bufferGeom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
         bufferGeom.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
 
-        // Transformation IFC (matrice locale) + rotation globale Z→Y up
-        const ifcMat  = new THREE.Matrix4().fromArray(Array.from(placedGeom.flatTransformation));
+        const ifcMat = new THREE.Matrix4().fromArray(Array.from(placedGeom.flatTransformation));
         const combined = new THREE.Matrix4().multiplyMatrices(zUpToYUp, ifcMat);
         bufferGeom.applyMatrix4(combined);
 
-        // Couleur du matériau IFC (si disponible)
         let color = null;
         if (placedGeom.color) {
           color = new THREE.Color(placedGeom.color.x, placedGeom.color.y, placedGeom.color.z);
         }
 
         components.push({
-          name: size > 1 ? `${elementName} (#${i+1})` : elementName,
+          name: size > 1 ? `${elementName} (#${i + 1})` : elementName,
           path: [elementType, elementName],
           geometry: bufferGeom,
           color: color
@@ -1170,6 +1153,21 @@ async function parseIFC(arrayBuffer) {
 }
 
 function parseGLB(buffer) {
+  const dv = new DataView(buffer);
+  if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('Magic GLB invalide');
+  if (dv.getUint32(4, true) !== 2) throw new Error('Version GLB non supportée');
+  let off = 12, json = null, bin = null;
+  while (off < buffer.byteLength) {
+    const len = dv.getUint32(off, true);
+    const type = dv.getUint32(off + 4, true);
+    off += 8;
+    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, off, len)));
+    else if (type === 0x004E4942) bin = buffer.slice(off, off + len);
+    off += len;
+  }
+  if (!json) throw new Error('Pas de chunk JSON');
+  return processGLTF(json, bin);
+}
 
 function processGLTF(json, bin) {
   const components = [];
@@ -1287,7 +1285,6 @@ async function loadFile(file) {
 }
 
 function displayModel(components, file, ext, elapsed) {
-  // Clear measurements when loading new model
   clearMeasurements();
   removeDimOverlay();
 
@@ -1492,7 +1489,7 @@ function buildTree() {
 }
 
 // ============================================================================
-// MEASUREMENTS — manual ruler & auto-dimensions
+// MEASUREMENTS
 // ============================================================================
 function projectToScreen(worldPos) {
   const v = worldPos.clone();
@@ -1507,7 +1504,6 @@ function projectToScreen(worldPos) {
 }
 
 function updateAllLabels() {
-  // Update measurement labels
   state.measurements.forEach(m => {
     if (!m.labelEl) return;
     const mid = m.p1.clone().add(m.p2).multiplyScalar(0.5);
@@ -1516,7 +1512,6 @@ function updateAllLabels() {
     m.labelEl.style.top = s.y + 'px';
     m.labelEl.style.display = s.visible ? '' : 'none';
   });
-  // Update dimension overlay labels
   if (state.dimOverlay && state.dimOverlay.labels) {
     Object.values(state.dimOverlay.labels).forEach(({ el, world }) => {
       const s = projectToScreen(world);
@@ -1560,7 +1555,6 @@ function handleMeasureClick(e) {
   const point = hits[0].point.clone();
   if (state.pendingPoint === null) {
     state.pendingPoint = point;
-    // Show a small temporary marker
     const sphereSize = state.currentModel.maxDim * 0.008;
     const sg = new THREE.SphereGeometry(sphereSize, 12, 12);
     const sm = new THREE.MeshBasicMaterial({ color: 0xff8a3d });
@@ -1581,18 +1575,15 @@ function handleMeasureClick(e) {
 function addMeasurement(p1, p2) {
   const distance = p1.distanceTo(p2);
   const sphereSize = state.currentModel.maxDim * 0.008;
-  // Line
   const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
   const lineMat = new THREE.LineBasicMaterial({ color: 0xff8a3d, depthTest: false });
   const line = new THREE.Line(lineGeom, lineMat);
   line.renderOrder = 999;
   scene.add(line);
-  // Spheres
   const sg = new THREE.SphereGeometry(sphereSize, 12, 12);
   const sm = new THREE.MeshBasicMaterial({ color: 0xff8a3d, depthTest: false });
   const s1 = new THREE.Mesh(sg, sm); s1.position.copy(p1); s1.renderOrder = 999; scene.add(s1);
   const s2 = new THREE.Mesh(sg.clone(), sm.clone()); s2.position.copy(p2); s2.renderOrder = 999; scene.add(s2);
-  // Label
   const labelEl = document.createElement('div');
   labelEl.className = 'measure-label';
   labelEl.innerHTML = `<span class="value">${fmtDim(distance)}</span>`;
@@ -1644,7 +1635,6 @@ function updateMeasurementList() {
   });
 }
 
-// Auto-dimensions overlay
 function removeDimOverlay() {
   if (state.dimOverlay) {
     if (state.dimOverlay.box) scene.remove(state.dimOverlay.box);
@@ -1656,7 +1646,6 @@ function removeDimOverlay() {
   }
 }
 
-// Make a label value editable on double-click (temporary override, just for photos)
 function makeLabelEditable(valueEl) {
   if (!valueEl) return;
   valueEl.title = 'Double-clic pour modifier (juste pour la photo)';
@@ -1731,7 +1720,7 @@ function updateDimOverlay() {
 }
 
 // ============================================================================
-// LOADING LIST (aggregation, AI, export) — same as before
+// LOADING LIST
 // ============================================================================
 function aggregateAtDepth(tree, depth) {
   const agg = new Map();
@@ -1876,7 +1865,6 @@ function exportCSV() {
   setStatus('✓ CSV exporté', 'success');
 }
 
-// Rules persistence
 async function loadRules() {
   try {
     if (window.storage && window.storage.get) {
@@ -1904,7 +1892,7 @@ async function saveRules() {
 // PHOTO CAPTURE & GALLERY
 // ============================================================================
 state.captureCount = 0;
-state.captures = []; // [{ id, url, timestamp, modelName }]
+state.captures = [];
 
 function flashCapture() {
   const flash = document.createElement('div');
@@ -2138,7 +2126,6 @@ function applyTheme(t) {
   }
 }
 
-// Sidebar toggle
 function toggleSidebar(show) {
   const sb = document.getElementById('sidebar');
   const expandBtn = document.getElementById('expand-sidebar');
@@ -2175,7 +2162,6 @@ document.getElementById('btn-theme').onclick = () => applyTheme(state.theme === 
 document.getElementById('btn-toggle-sidebar').onclick = () => toggleSidebar();
 document.getElementById('expand-sidebar').onclick = () => toggleSidebar(true);
 
-// Overlay buttons
 document.getElementById('ov-reset').onclick = () => {
   if (state.currentModel) {
     const box = new THREE.Box3();
@@ -2212,7 +2198,6 @@ document.getElementById('ov-measure').onclick = () => setMeasureMode(!state.meas
 document.getElementById('btn-measure-start').onclick = () => setMeasureMode(!state.measureMode);
 document.getElementById('btn-clear-measures').onclick = clearMeasurements;
 
-// Sliders
 document.getElementById('explode-slider').addEventListener('input', (e) => {
   const v = +e.target.value;
   document.getElementById('explode-val').textContent = v + '%';
@@ -2225,7 +2210,6 @@ document.getElementById('opacity-slider').addEventListener('input', (e) => {
   applyOpacity(v);
 });
 
-// Switches
 function setupSwitch(id, callback) {
   const el = document.getElementById(id);
   el.addEventListener('click', () => {
@@ -2250,7 +2234,6 @@ setupSwitch('sw-axes', (on) => {
   document.getElementById('ov-axes').classList.toggle('active', on);
 });
 
-// Loading list modal
 document.getElementById('btn-ll').onclick = () => {
   document.getElementById('ll-modal').classList.add('show');
   renderLLTable();
@@ -2276,7 +2259,6 @@ document.getElementById('ll-csv').addEventListener('click', exportCSV);
 document.getElementById('ll-xlsx').addEventListener('click', exportXLSX);
 document.getElementById('ll-save-rules').addEventListener('click', saveRules);
 
-// Drag & drop
 const dropZone = document.getElementById('drop-zone');
 container.addEventListener('dragover', (e) => {
   e.preventDefault();
