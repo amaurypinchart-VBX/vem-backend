@@ -9863,6 +9863,7 @@ async function saveFileByUrl(projectId, overlay) {
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const mimeMap = {
     glb:'model/gltf-binary', gltf:'model/gltf+json', stl:'model/stl', obj:'model/obj',
+    ifc:'application/x-step',
     pdf:'application/pdf', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
   };
   const fileType = mimeMap[ext] || 'application/octet-stream';
