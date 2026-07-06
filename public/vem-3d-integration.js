@@ -139,24 +139,29 @@
       let arrayBuffer = await r.arrayBuffer();
       console.log('[VEM] Reçu :', arrayBuffer.byteLength, 'bytes');
 
-      // Détection de compression et décompression si besoin
-      const comp = detectCompressionFromGLB(arrayBuffer);
-      if (comp.draco || comp.meshopt) {
-        console.log('[VEM] Compression détectée :', comp.draco ? 'Draco' : '', comp.meshopt ? 'Meshopt' : '');
-        if (typeof window.setStatus === 'function') {
-          window.setStatus('🔧 Décompression ' + (comp.draco ? 'Draco' : 'Meshopt') + ' en cours...', 'info');
-        }
-        const decompressed = await decompressGLB(arrayBuffer);
-        console.log('[VEM] Décompression OK :', arrayBuffer.byteLength, '→', decompressed.byteLength, 'bytes');
-        arrayBuffer = decompressed;
-      }
-
-      // Construire un File et appeler le loadFile du viewer
+    // Nom de fichier + extension depuis l'URL
       let filename = (url.split('/').pop() || 'model').split('?')[0] || 'model.glb';
       try { filename = decodeURIComponent(filename); } catch {}
       const ext = filename.split('.').pop().toLowerCase();
-      if (!['glb','gltf','stl','obj'].includes(ext)) filename = filename + '.glb';
-      const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+      if (!['glb','gltf','stl','obj','ifc'].includes(ext)) filename = filename + '.glb';
+
+      // Détection de compression et décompression : GLB/GLTF uniquement
+      if (ext === 'glb' || ext === 'gltf') {
+        const comp = detectCompressionFromGLB(arrayBuffer);
+        if (comp.draco || comp.meshopt) {
+          console.log('[VEM] Compression détectée :', comp.draco ? 'Draco' : '', comp.meshopt ? 'Meshopt' : '');
+          if (typeof window.setStatus === 'function') {
+            window.setStatus('🔧 Décompression ' + (comp.draco ? 'Draco' : 'Meshopt') + ' en cours...', 'info');
+          }
+          const decompressed = await decompressGLB(arrayBuffer);
+          console.log('[VEM] Décompression OK :', arrayBuffer.byteLength, '→', decompressed.byteLength, 'bytes');
+          arrayBuffer = decompressed;
+        }
+      }
+
+      // Construire un File et appeler le loadFile du viewer
+      const blobType = ext === 'ifc' ? 'application/octet-stream' : 'model/gltf-binary';
+      const blob = new Blob([arrayBuffer], { type: blobType });
       const file = new File([blob], filename, { type: blob.type });
       await window.loadFile(file);
       console.log('[VEM] ✅ Modèle chargé');
