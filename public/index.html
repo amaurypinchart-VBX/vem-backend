@@ -13812,12 +13812,12 @@ async function brfAddImage(file) {
   toast(isPdf ? 'Upload du PDF...' : 'Upload...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
-    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+    const r = await fetch(window.location.origin + '/api/v1/upload/photo', {
       method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const url = data?.data?.fileUrl;
+    const url = data?.data?.url || data?.url || data?.secure_url;
     if (!url) throw new Error('Pas d\'URL renvoyée');
 
     if (isPdf) {
@@ -13946,12 +13946,12 @@ async function brfSetLogo(file, asGlobal) {
   toast('Upload du logo...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
-    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+    const r = await fetch(window.location.origin + '/api/v1/upload/photo', {
       method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const url = data?.data?.fileUrl;
+    const url = data?.data?.url || data?.url || data?.secure_url;
     if (!url) throw new Error('Pas d\'URL');
     BRF_STUDIO.logoUrl = url;
     applyLogoBackground();
