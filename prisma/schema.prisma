@@ -217,7 +217,7 @@ model Project {
   toolboxes        Toolbox[]
   clientRemarks    ClientRemark[]
   clientVisits     ClientVisit[]
-  briefing         Briefing?
+  briefing         Briefing[]
   teamBookings     TeamBooking[]
   hotelBookings    HotelBooking[]
 
@@ -815,7 +815,7 @@ model ClientRemarkPhoto {
 // ─────────────────────────────────────────────
 model Briefing {
   id           String   @id @default(uuid())
-  projectId    String   @unique @map("project_id")
+  projectId    String   @map("project_id")
   title        String?
   slides       Json     @default("[]")
   studioSlides Json?    @map("studio_slides")
@@ -824,5 +824,6 @@ model Briefing {
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([projectId])
   @@map("briefings")
 }

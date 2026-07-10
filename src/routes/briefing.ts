@@ -1,65 +1,127 @@
-// src/routes/briefing.ts
-import { Router, Response, NextFunction } from 'express';
-import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { Router, Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
 
+const prisma = new PrismaClient();
 const router = Router();
 
-// GET /briefings/:projectId — récupère le briefing du projet (le crée vide si absent)
-router.get('/:projectId', async (req: AuthRequest, res: Response, next: NextFunction) => {
+// ═══════════════════════════════════════════════════════════
+// LISTE des briefings d'un projet
+// GET /api/v1/briefings/project/:projectId
+// ═══════════════════════════════════════════════════════════
+router.get('/project/:projectId', async (req: Request, res: Response) => {
   try {
-    const projectId = req.params.projectId;
-    let briefing = await prisma.briefing.findUnique({ where: { projectId } });
-    if (!briefing) {
-      briefing = await prisma.briefing.create({
-        data: { projectId, title: null, slides: [] as any, studioSlides: null },
-      });
-    } else {
-      // Migration on-the-fly de sécurité : si slides est encore un v2 et studio_slides null,
-      // on bascule (au cas où la migration SQL aurait été zappée pour cette ligne)
-      const s = briefing.slides as any;
-      if (s && typeof s === 'object' && !Array.isArray(s) && s.version === 2 && !briefing.studioSlides) {
-        briefing = await prisma.briefing.update({
-          where: { projectId },
-          data: { slides: [] as any, studioSlides: s as any },
-        });
-      }
-    }
-    res.json({ success: true, data: briefing });
-  } catch (err) { next(err); }
+    const { projectId } = req.params;
+    const briefings = await prisma.briefing.findMany({
+      where: { projectId },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        projectId: true,
+        title: true,
+        studioSlides: true,
+        slides: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    // On retourne des méta-données allégées pour la liste
+    // (les slides complètes sont chargées à l'ouverture)
+    const list = briefings.map(b => {
+      const hasStudio = b.studioSlides && (b.studioSlides as any).slides?.length > 0;
+      const nbSlides = hasStudio
+        ? (b.studioSlides as any).slides.length
+        : (Array.isArray(b.slides) ? (b.slides as any[]).length : 0);
+      return {
+        id: b.id,
+        projectId: b.projectId,
+        title: b.title || 'Briefing sans titre',
+        mode: hasStudio ? 'studio' : 'classic',
+        nbSlides,
+        createdAt: b.createdAt,
+        updatedAt: b.updatedAt,
+      };
+    });
+    res.json({ success: true, data: list });
+  } catch (e: any) {
+    console.error('[briefings list]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
-// Handler upsert partagé entre PUT et PATCH
-async function upsertBriefing(req: AuthRequest, res: Response, next: NextFunction) {
+// ═══════════════════════════════════════════════════════════
+// CRÉER un nouveau briefing pour un projet
+// POST /api/v1/briefings/project/:projectId
+// Body: { title?, slides?, studioSlides? }
+// ═══════════════════════════════════════════════════════════
+router.post('/project/:projectId', async (req: Request, res: Response) => {
   try {
-    const projectId = req.params.projectId;
+    const { projectId } = req.params;
     const { title, slides, studioSlides } = req.body;
-
-    // Update : on ne touche QUE les champs explicitement présents dans le body
-    // → un save Studio (qui n'envoie pas slides) ne touche pas les blocks Classique
-    // → un save Classique (qui n'envoie pas studioSlides) ne touche pas le Studio
-    const updateData: any = { title: title ?? null };
-    if (slides       !== undefined) updateData.slides       = slides;
-    if (studioSlides !== undefined) updateData.studioSlides = studioSlides;
-
-    // Create : valeurs par défaut raisonnables
-    const createData: any = {
-      projectId,
-      title:        title        ?? null,
-      slides:       slides       ?? [],
-      studioSlides: studioSlides ?? null,
-    };
-
-    const briefing = await prisma.briefing.upsert({
-      where:  { projectId },
-      update: updateData,
-      create: createData,
+    const brief = await prisma.briefing.create({
+      data: {
+        projectId,
+        title: title || 'Nouveau briefing',
+        slides: slides ?? [],
+        studioSlides: studioSlides ?? null,
+      },
     });
-    res.json({ success: true, data: briefing });
-  } catch (err) { next(err); }
-}
+    res.json({ success: true, data: brief });
+  } catch (e: any) {
+    console.error('[briefings create]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
-router.put('/:projectId',   upsertBriefing);
-router.patch('/:projectId', upsertBriefing);
+// ═══════════════════════════════════════════════════════════
+// LIRE un briefing par son ID
+// GET /api/v1/briefings/:id
+// ═══════════════════════════════════════════════════════════
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const brief = await prisma.briefing.findUnique({ where: { id } });
+    if (!brief) return res.status(404).json({ success: false, error: 'Briefing introuvable' });
+    res.json({ success: true, data: brief });
+  } catch (e: any) {
+    console.error('[briefings get]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// METTRE À JOUR un briefing par son ID
+// PATCH /api/v1/briefings/:id
+// Body: { title?, slides?, studioSlides? }
+// ═══════════════════════════════════════════════════════════
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, slides, studioSlides } = req.body;
+    const data: any = {};
+    if (title !== undefined) data.title = title;
+    if (slides !== undefined) data.slides = slides;
+    if (studioSlides !== undefined) data.studioSlides = studioSlides;
+    const brief = await prisma.briefing.update({ where: { id }, data });
+    res.json({ success: true, data: brief });
+  } catch (e: any) {
+    console.error('[briefings patch]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// SUPPRIMER un briefing par son ID
+// DELETE /api/v1/briefings/:id
+// ═══════════════════════════════════════════════════════════
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.briefing.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error('[briefings delete]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 export default router;

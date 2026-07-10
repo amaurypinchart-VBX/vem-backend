@@ -12082,14 +12082,91 @@ async function loadDetailBriefing(projectId) {
   if (!el) return;
   el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
 
+  const listRes = await api('GET', `/briefings/project/${projectId}`);
+  if (!listRes?.success) {
+    el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>';
+    return;
+  }
+
+  const briefings = listRes.data || [];
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px;flex-wrap:wrap;">
+      <div style="font-size:13px;color:var(--text3);">${briefings.length} briefing${briefings.length>1?'s':''}</div>
+      <button class="btn btn-primary btn-sm" onclick="createNewBriefing('${projectId}')">➕ Nouveau briefing</button>
+    </div>
+    ${briefings.length === 0 ? `
+      <div class="empty" style="padding:40px 20px;text-align:center;">
+        <div style="font-size:48px;margin-bottom:12px;">📋</div>
+        <div class="empty-title">Aucun briefing</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:8px;">Clique sur "Nouveau briefing" pour en créer un.</div>
+      </div>
+    ` : `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+        ${briefings.map(b => {
+          const modeLabel = b.mode === 'studio' ? '🎨 Studio' : '📝 Classique';
+          const modeBg = b.mode === 'studio' ? 'linear-gradient(135deg,#0a2540,#1a3a60)' : 'var(--bg3)';
+          const modeColor = b.mode === 'studio' ? '#fff' : 'var(--text2)';
+          const dt = new Date(b.updatedAt).toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'short'});
+          return `
+            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                <div style="font-weight:600;font-size:14px;flex:1;word-break:break-word;">${(b.title||'').replace(/</g,'&lt;')}</div>
+                <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${modeBg};color:${modeColor};white-space:nowrap;">${modeLabel}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text3);">
+                ${b.nbSlides} slide${b.nbSlides>1?'s':''} · Modifié le ${dt}
+              </div>
+              <div style="display:flex;gap:6px;margin-top:4px;">
+                <button class="btn btn-primary btn-sm" style="flex:1;" onclick="openBriefingEditor('${b.id}')">✏️ Ouvrir</button>
+                <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteBriefingConfirm('${b.id}','${projectId}')" title="Supprimer">🗑️</button>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    `}
+  `;
+}
+
+// Créer un nouveau briefing (demande un nom, POST, puis ouvre l'éditeur)
+async function createNewBriefing(projectId) {
+  const name = prompt('Nom du briefing :', 'Briefing ' + new Date().toLocaleDateString('fr-FR'));
+  if (!name || !name.trim()) return;
+  const res = await api('POST', `/briefings/project/${projectId}`, { title: name.trim() });
+  if (!res?.success) { toast('Erreur création', 'error'); return; }
+  toast('Briefing créé ✅', 'success');
+  openBriefingEditor(res.data.id);
+}
+
+// Supprimer un briefing (confirmation puis DELETE)
+async function deleteBriefingConfirm(briefingId, projectId) {
+  if (!confirm('Supprimer définitivement ce briefing ?')) return;
+  const res = await api('DELETE', `/briefings/${briefingId}`);
+  if (res?.success) {
+    toast('Briefing supprimé', 'success');
+    loadDetailBriefing(projectId);
+  } else {
+    toast('Erreur suppression', 'error');
+  }
+}
+
+// Ouvre le briefing dans l'éditeur (classique ou studio selon le contenu)
+async function openBriefingEditor(briefingId) {
+  const projectId = CURRENT_PROJECT_ID;
+  const el = document.getElementById('detail-briefing-content');
+  if (el) el.innerHTML = '<div class="empty"><div class="empty-title">Chargement...</div></div>';
+
   const [briefRes, tasksRes, trucksRes, projRes] = await Promise.all([
-    api('GET', `/briefings/${projectId}`),
+    api('GET', `/briefings/${briefingId}`),
     api('GET', `/tasks?projectId=${projectId}`),
     api('GET', `/projects/${projectId}/trucks`),
     api('GET', `/projects/${projectId}`),
   ]);
 
-  if (!briefRes?.success) { el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>'; return; }
+  if (!briefRes?.success) {
+    if (el) el.innerHTML = '<div class="empty"><div class="empty-title">Erreur de chargement</div></div>';
+    return;
+  }
 
   CURRENT_BRIEFING = briefRes.data;
 
@@ -12151,7 +12228,10 @@ function renderBriefing() {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
-      <input class="input" id="brf-title" placeholder="Titre du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:320px;" onchange="CURRENT_BRIEFING.title=this.value">
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-ghost btn-sm" onclick="loadDetailBriefing(CURRENT_PROJECT_ID)" title="Retour à la liste">← Liste</button>
+        <input class="input" id="brf-title" placeholder="Nom du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:280px;" onchange="CURRENT_BRIEFING.title=this.value">
+      </div>
       <div style="display:flex;gap:6px;">
         <button class="btn btn-outline btn-sm" onclick="briefingStudioStart()" title="Nouveau mode : éditeur visuel type Canva" style="background:linear-gradient(135deg,#0a2540,#1a3a60);color:#fff;border:none;">🎨 Studio</button>
         <button class="btn btn-outline btn-sm" onclick="printBriefing()">🖨️ Imprimer</button>
@@ -12784,9 +12864,9 @@ function removeBriefPhoto(slideIdx, bi, pi) {
 
 // ─── Enregistrement ───
 async function saveBriefing() {
-  if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  if (!CURRENT_BRIEFING || !CURRENT_BRIEFING.id) return;
   const t = document.getElementById('brf-title'); if (t) CURRENT_BRIEFING.title = t.value;
-  const res = await api('PUT', `/briefings/${CURRENT_PROJECT_ID}`, { title: CURRENT_BRIEFING.title, slides: CURRENT_BRIEFING.slides });
+  const res = await api('PATCH', `/briefings/${CURRENT_BRIEFING.id}`, { title: CURRENT_BRIEFING.title, slides: CURRENT_BRIEFING.slides });
   if (res?.success) toast('Briefing enregistré ✅', 'success');
   else toast('Erreur enregistrement', 'error');
 }
@@ -13484,10 +13564,11 @@ let BRF_STUDIO = null;
 
 // Démarre un nouveau briefing Studio (depuis le mode classique)
 function briefingStudioStart() {
+  if (!CURRENT_BRIEFING?.id) { toast('Aucun briefing ouvert', 'error'); return; }
   // Si un contenu Studio existe déjà → on le reprend (pas de redémarrage à zéro)
   const existing = CURRENT_BRIEFING?.studioSlides;
   if (existing && existing.version === 2 && Array.isArray(existing.slides) && existing.slides.length > 0) {
-    openBriefingStudio(existing);
+    openBriefingStudio({ ...existing, __briefingId: CURRENT_BRIEFING.id });
     return;
   }
   // Sinon → première ouverture du Studio pour ce briefing : 1 slide vide
@@ -13496,6 +13577,7 @@ function briefingStudioStart() {
     title: CURRENT_BRIEFING?.title || 'Briefing',
     logoUrl: null,
     slides: [{ id: 'slide-' + Date.now(), name: 'Slide 1', json: null }],
+    __briefingId: CURRENT_BRIEFING.id,
   });
 }
 
@@ -13669,6 +13751,7 @@ brfPreloadLogo();
     globalLogoUrl: globalLogo,
     title: initialData?.title || 'Briefing',
     projectId: CURRENT_PROJECT_ID,
+    briefingId: initialData?.__briefingId || CURRENT_BRIEFING?.id || null,
     undoStack: [],
     redoStack: [],
     suppressSnapshot: false,
@@ -14418,6 +14501,7 @@ function renderStudioSidebar() {
 // ─── Save / Export / Close ───
 async function briefingStudioSave() {
   saveCurrentSlideJson();
+  if (!BRF_STUDIO?.briefingId) { toast('Aucun briefing associé', 'error'); return; }
   const payload = {
     title: BRF_STUDIO.title || 'Briefing',
     studioSlides: {
@@ -14427,7 +14511,7 @@ async function briefingStudioSave() {
       slides:  BRF_STUDIO.slides,
     },
   };
-  const res = await api('PATCH', `/briefings/${BRF_STUDIO.projectId}`, payload);
+  const res = await api('PATCH', `/briefings/${BRF_STUDIO.briefingId}`, payload);
   if (res?.success) toast('Briefing sauvegardé ✅', 'success');
   else toast('Échec sauvegarde', 'error');
 }
@@ -14529,14 +14613,36 @@ async function briefingStudioExportPDF(btn) {
     BRF_STUDIO.curIdx = curIdx;
     loadSlideIntoCanvas(curIdx);
 
-    // 5. Save PDF
+    // 5. Save PDF (téléchargement local)
     const safeTitle = (BRF_STUDIO.title || 'briefing').replace(/[^\w-]/g, '_');
-    pdf.save(`${safeTitle}_${lang}.pdf`);
+    const fileName = `${safeTitle}_${lang}.pdf`;
+    pdf.save(fileName);
 
-    if (lang === 'en') {
-      toast(`PDF exporté ✅ (${totalTranslated} textes traduits)`, 'success');
-    } else {
-      toast('PDF exporté ✅', 'success');
+    // 6. Upload du PDF dans les fichiers du projet
+    if (btn) btn.innerHTML = '📁 Sauvegarde dans les fichiers...';
+    try {
+      const pdfBlob = pdf.output('blob');
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+      const fd = new FormData();
+      fd.append('file', pdfFile);
+      const upRes = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || TOKEN) },
+        body: fd,
+      });
+      if (upRes.ok) {
+        toast(
+          lang === 'en'
+            ? `PDF exporté + sauvegardé dans les fichiers ✅ (${totalTranslated} textes traduits)`
+            : 'PDF exporté + sauvegardé dans les fichiers ✅',
+          'success'
+        );
+      } else {
+        toast('PDF téléchargé mais échec sauvegarde dans les fichiers', 'warning');
+      }
+    } catch (upErr) {
+      console.error('[briefing pdf upload]', upErr);
+      toast('PDF téléchargé mais échec sauvegarde dans les fichiers', 'warning');
     }
   } catch (e) {
     console.error('[briefing export]', e);
@@ -14552,7 +14658,9 @@ function briefingStudioClose() {
   window.removeEventListener('resize', resizeStudioCanvas);
   document.getElementById('brf-studio-overlay')?.remove();
   BRF_STUDIO = null;
+  // Retour à la liste des briefings du projet
   if (CURRENT_PROJECT_ID) loadDetailBriefing(CURRENT_PROJECT_ID);
+  CURRENT_BRIEFING = null;
 }
 
 // ─── BRIEFING STUDIO — Insertion depuis les données du projet ───────
