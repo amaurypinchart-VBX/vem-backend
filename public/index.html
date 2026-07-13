@@ -14194,7 +14194,8 @@ function brfOpenTemplatesMenu(btn) {
 }
 function brfAddSlideFromTemplate(type) {
   saveCurrentSlideJson();
-  const slideNum = BRF_STUDIO.slides.length + 1;
+  const insertAt = BRF_STUDIO.curIdx + 1;
+  const slideNum = insertAt + 1;
 
   // Mapping type → nom affiché dans la sidebar
   const sidebarNames = {
@@ -14207,8 +14208,8 @@ function brfAddSlideFromTemplate(type) {
   };
   const sidebarName = sidebarNames[type] || ('Slide ' + slideNum);
 
-  BRF_STUDIO.slides.push({ id: 'slide-' + Date.now(), name: sidebarName, json: null });
-  BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+  BRF_STUDIO.slides.splice(insertAt, 0, { id: 'slide-' + Date.now(), name: sidebarName, json: null });
+  BRF_STUDIO.curIdx = insertAt;
   BRF_STUDIO.suppressSnapshot = true;
   BRF_STUDIO.fabricCanvas.clear();
 
@@ -14680,18 +14681,26 @@ function renderStudioSidebar() {
     const isCur = i === BRF_STUDIO.curIdx;
     const thumb = s.thumbnail;
     return `
-    <div style="display:flex;flex-direction:column;gap:4px;padding:6px;background:${isCur?'#2a1518':'#1a1a1a'};border:1px solid ${isCur?'#e63946':'#333'};border-radius:6px;cursor:pointer;" onclick="brfSelectSlide(${i})">
-      <div style="display:flex;align-items:center;gap:2px;">
+    <div draggable="true"
+      ondragstart="brfSlideDragStart(event,${i})"
+      ondragover="brfSlideDragOver(event,${i})"
+      ondragleave="brfSlideDragLeave(event)"
+      ondrop="brfSlideDrop(event,${i})"
+      ondragend="brfSlideDragEnd(event)"
+      style="display:flex;flex-direction:column;gap:4px;padding:6px;background:${isCur?'#2a1518':'#1a1a1a'};border:1px solid ${isCur?'#e63946':'#333'};border-radius:6px;cursor:grab;" onclick="brfSelectSlide(${i})" title="Glisse-dépose la miniature pour réordonner">
+      <div style="display:flex;align-items:center;gap:4px;">
+        <span style="font-size:14px;color:#666;min-width:14px;cursor:grab;line-height:1;" title="Glisse-dépose pour réordonner">⋮⋮</span>
         <span style="font-size:11px;color:#aaa;min-width:18px;">${i+1}.</span>
         <input value="${(s.name||'').replace(/"/g,'&quot;')}"
-          style="flex:1;min-width:0;background:transparent;border:none;color:#eee;font-size:11px;padding:1px 2px;outline:none;"
+          draggable="false"
+          style="flex:1;min-width:0;background:transparent;border:none;color:#eee;font-size:11px;padding:1px 2px;outline:none;cursor:text;"
           onclick="event.stopPropagation();" oninput="BRF_STUDIO.slides[${i}].name=this.value">
         <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},-1)" title="Monter">▲</button>
         <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},1)" title="Descendre">▼</button>
         <button style="background:transparent;border:none;color:#e63946;cursor:pointer;padding:0 4px;font-size:14px;" onclick="event.stopPropagation();brfDeleteSlide(${i})" title="Supprimer">×</button>
       </div>
-      <div style="aspect-ratio:16/9;background:${thumb?'#fff':'#222'};border-radius:4px;overflow:hidden;border:1px solid #333;">
-        ${thumb ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:contain;display:block;">` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:#666;">(vide)</div>`}
+      <div style="aspect-ratio:16/9;background:${thumb?'#fff':'#222'};border-radius:4px;overflow:hidden;border:1px solid #333;cursor:grab;">
+        ${thumb ? `<img src="${thumb}" draggable="false" style="width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;">` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:#666;pointer-events:none;">(vide)</div>`}
       </div>
     </div>`;
   }).join('');
