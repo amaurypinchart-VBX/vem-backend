@@ -13817,6 +13817,7 @@ function buildStudioHTML() {
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfOpenProjectMenu(this)" title="Insérer depuis les données du projet" style="background:linear-gradient(135deg,#0a2540,#1a3a60);">📂 Depuis projet ▾</button>
       <button class="brf-tbtn" onclick="brfOpenTemplatesMenu(this)" title="Templates de slides prêts à l'emploi" style="background:linear-gradient(135deg,#7b2cbf,#9d4edd);">🎨 Templates ▾</button>
+      <button class="brf-tbtn" onclick="brfImportFromClassic()" title="Importer les slides du Briefing Classique" style="background:linear-gradient(135deg,#2d6a4f,#40916c);">📥 Depuis Classique</button>
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfBringForward()" title="Avancer">⬆</button>
       <button class="brf-tbtn" onclick="brfSendBack()" title="Reculer">⬇</button>
@@ -13912,12 +13913,12 @@ async function brfAddImage(file) {
   toast(isPdf ? 'Upload du PDF...' : 'Upload...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
-    const r = await fetch(window.location.origin + '/api/v1/upload/photo', {
-      method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
+    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+      method:'POST', headers:{ 'Authorization': 'Bearer ' + TOKEN }, body: fd,
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const url = data?.data?.url || data?.url || data?.secure_url;
+    const url = data?.data?.fileUrl;
     if (!url) throw new Error('Pas d\'URL renvoyée');
 
     if (isPdf) {
@@ -13928,15 +13929,25 @@ async function brfAddImage(file) {
       if (pageCount > 0) toast(`✅ PDF ajouté : ${pageCount} slide(s) créée(s)`, 'success');
       else toast('PDF uploadé mais aucune page lisible', 'warning');
     } else {
-      // Image normale → sur slide courante (comportement classique)
-      fabric.Image.fromURL(url, img => {
+      // Image normale → preload avec fallback sans CORS (au cas où Cloudinary tainte le canvas)
+      const place = (loadedImg) => {
+        const fImg = new fabric.Image(loadedImg);
         const maxW = 600;
-        if (img.width > maxW) img.scaleToWidth(maxW);
-        img.set({ left:200, top:150 });
-        BRF_STUDIO.fabricCanvas.add(img).setActiveObject(img);
+        if (fImg.width > maxW) fImg.scaleToWidth(maxW);
+        fImg.set({ left:200, top:150 });
+        BRF_STUDIO.fabricCanvas.add(fImg).setActiveObject(fImg);
         BRF_STUDIO.fabricCanvas.requestRenderAll();
-        toast('Image ajoutée', 'success');
-      }, { crossOrigin: 'anonymous' });
+      };
+      const tryWithCors = new Image();
+      tryWithCors.crossOrigin = 'anonymous';
+      tryWithCors.onload  = () => { place(tryWithCors); toast('Image ajoutée', 'success'); };
+      tryWithCors.onerror = () => {
+        const noCors = new Image();
+        noCors.onload  = () => { place(noCors); toast('⚠️ Image ajoutée (export PDF risque de rater)', 'warning'); };
+        noCors.onerror = () => toast('Impossible de charger l\'image depuis le serveur', 'error');
+        noCors.src = url;
+      };
+      tryWithCors.src = url;
     }
   } catch (e) {
     toast('Échec upload : ' + e.message, 'error');
@@ -14046,12 +14057,12 @@ async function brfSetLogo(file, asGlobal) {
   toast('Upload du logo...', 'info');
   const fd = new FormData(); fd.append('file', file);
   try {
-    const r = await fetch(window.location.origin + '/api/v1/upload/photo', {
-      method:'POST', headers:{ 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: fd,
+      const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + BRF_STUDIO.projectId, {
+      method:'POST', headers:{ 'Authorization': 'Bearer ' + TOKEN }, body: fd,
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
-    const url = data?.data?.url || data?.url || data?.secure_url;
+    const url = data?.data?.fileUrl;
     if (!url) throw new Error('Pas d\'URL');
     BRF_STUDIO.logoUrl = url;
     applyLogoBackground();
@@ -14405,9 +14416,10 @@ function applyLogoBackground() {
 // ─── Gestion des slides ───
 function brfAddSlide() {
   saveCurrentSlideJson();
-  const slideNum = BRF_STUDIO.slides.length + 1;
-  BRF_STUDIO.slides.push({ id:'slide-'+Date.now(), name:'Slide '+slideNum, json:null });
-  BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+  const insertAt = BRF_STUDIO.curIdx + 1;
+  const slideNum = insertAt + 1;
+  BRF_STUDIO.slides.splice(insertAt, 0, { id:'slide-'+Date.now(), name:'Slide '+slideNum, json:null });
+  BRF_STUDIO.curIdx = insertAt;
   BRF_STUDIO.suppressSnapshot = true;
   BRF_STUDIO.fabricCanvas.clear();
   brfApplyStandardTemplate('Titre de la slide');
@@ -14426,6 +14438,145 @@ function brfSelectSlide(idx) {
   loadSlideIntoCanvas(idx);
   renderStudioSidebar();
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Import des slides du Briefing Classique dans le Studio
+// ═══════════════════════════════════════════════════════════════
+async function brfImportFromClassic() {
+  if (!CURRENT_BRIEFING?.slides?.length) {
+    toast('Aucune slide classique à importer', 'warning');
+    return;
+  }
+  const nb = CURRENT_BRIEFING.slides.length;
+  if (!confirm(`Importer ${nb} slide(s) du Briefing Classique dans le Studio ?\n\nElles seront insérées juste après la slide courante.`)) return;
+
+  saveCurrentSlideJson();
+  const savedIdx  = BRF_STUDIO.curIdx;
+  const beforeLen = BRF_STUDIO.slides.length;
+
+  toast(`⏳ Import de ${nb} slide(s)...`, 'info');
+
+  for (const cs of CURRENT_BRIEFING.slides) {
+    BRF_STUDIO.slides.push({
+      id: 'slide-import-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+      name: cs.title || 'Slide importée',
+      json: null,
+    });
+    BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+    BRF_STUDIO.suppressSnapshot = true;
+    BRF_STUDIO.fabricCanvas.clear();
+    brfApplyStandardTemplate(cs.title || 'Slide');
+
+    let y = 170;
+    for (const block of (cs.blocks || [])) {
+      y = await brfRenderClassicBlock(block, y);
+      if (y > BRF_CANVAS_H - 60) break; // évite le débordement
+    }
+
+    const json = BRF_STUDIO.fabricCanvas.toJSON();
+    delete json.backgroundImage;
+    BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
+    BRF_STUDIO.suppressSnapshot = false;
+  }
+
+  // Déplace les slides importées juste après savedIdx
+  const insertAt = savedIdx + 1;
+  const imported = BRF_STUDIO.slides.splice(beforeLen, BRF_STUDIO.slides.length - beforeLen);
+  BRF_STUDIO.slides.splice(insertAt, 0, ...imported);
+  BRF_STUDIO.curIdx = insertAt;
+
+  loadSlideIntoCanvas(BRF_STUDIO.curIdx);
+  renderStudioSidebar();
+  toast(`✅ ${imported.length} slide(s) importée(s) depuis le classique`, 'success');
+}
+
+async function brfRenderClassicBlock(block, y) {
+  const cv = BRF_STUDIO.fabricCanvas;
+  const maxW = BRF_CANVAS_W - 120;
+
+  if (block.type === 'text' && block.content) {
+    const tb = new fabric.Textbox(String(block.content), {
+      left: 60, top: y, width: maxW, fontSize: 16, fontFamily: 'Helvetica', fill: '#222',
+    });
+    cv.add(tb);
+    return y + Math.min(tb.height || 40, 300) + 20;
+  }
+  if (block.type === 'contacts' && (block.contacts || []).length) {
+    brfRenderDataTable({
+      x: 60, y,
+      headers: ['Nom', 'Rôle', 'Téléphone', 'Email'],
+      rows: block.contacts.map(c => [c.name||'', c.role||'', c.phone||'', c.email||'']),
+      colWidths: [220, 180, 200, 260],
+    });
+    return y + 50 + block.contacts.length * 40 + 20;
+  }
+  if (block.type === 'project') {
+    const p = BRIEFING_AUTO.project || {};
+    const fmt = d => d ? new Date(d).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' }) : '';
+    const rows = [
+      ['Projet',        p.name || ''],
+      ['N° interne',    p.internalNumber || ''],
+      ['Client',        p.client?.name || ''],
+      ['Adresse',       `${p.address||''}${p.city?', '+p.city:''}`],
+      ['Installation',  p.installationStart ? `${fmt(p.installationStart)} → ${fmt(p.installationEnd)}` : ''],
+      ['Ouvriers',      p.workersCount ? String(p.workersCount) : ''],
+    ].filter(r => r[1]);
+    brfRenderDataTable({ x: 60, y, headers: ['Champ','Valeur'], rows, colWidths: [220, 640] });
+    return y + 50 + rows.length * 40 + 20;
+  }
+  if (block.type === 'tasks' && (BRIEFING_AUTO.tasks||[]).length) {
+    const rows = (BRIEFING_AUTO.tasks || []).slice(0, 12).map(t => [
+      t.taskDate ? new Date(t.taskDate).toLocaleDateString('fr-FR') : '',
+      t.title || '',
+      t.status || '',
+    ]);
+    brfRenderDataTable({ x: 60, y, headers: ['Date','Tâche','Statut'], rows, colWidths: [140, 540, 180] });
+    return y + 50 + rows.length * 40 + 20;
+  }
+  if (block.type === 'trucks' && (BRIEFING_AUTO.trucks||[]).length) {
+    const rows = (BRIEFING_AUTO.trucks || []).map(t => [
+      `${t.vehicleType||'truck'} ${t.truckNumber||''}`.trim(),
+      t.driverName || '',
+      t.driverPhone || '',
+      t.arrivalDate ? new Date(t.arrivalDate).toLocaleString('fr-FR') : '',
+    ]);
+    brfRenderDataTable({ x: 60, y, headers: ['Véhicule','Chauffeur','Téléphone','Arrivée'], rows, colWidths: [200, 220, 200, 240] });
+    return y + 50 + rows.length * 40 + 20;
+  }
+  if (block.type === 'photos' && (block.photos || []).length) {
+    let x = 60;
+    let rowH = 0;
+    for (const p of block.photos) {
+      if (!p.url || /\.pdf($|\?)/i.test(p.url)) continue;
+      await new Promise(resolve => {
+        const place = (im) => {
+          try {
+            const fImg = new fabric.Image(im);
+            fImg.scaleToWidth(280);
+            if (x + fImg.getScaledWidth() > BRF_CANVAS_W - 40) { x = 60; y += rowH + 20; rowH = 0; }
+            fImg.set({ left: x, top: y });
+            cv.add(fImg);
+            x += fImg.getScaledWidth() + 20;
+            rowH = Math.max(rowH, fImg.getScaledHeight());
+          } catch (e) { console.warn('[brf import photo]', e); }
+          resolve();
+        };
+        const tryCors = new Image();
+        tryCors.crossOrigin = 'anonymous';
+        tryCors.onload  = () => place(tryCors);
+        tryCors.onerror = () => {
+          const noCors = new Image();
+          noCors.onload  = () => place(noCors);
+          noCors.onerror = () => resolve();
+          noCors.src = p.url;
+        };
+        tryCors.src = p.url;
+      });
+    }
+    return y + rowH + 20;
+  }
+  return y;
+}
 function brfDeleteSlide(idx) {
   if (BRF_STUDIO.slides.length <= 1) { toast('Au moins une slide doit rester', 'warning'); return; }
   if (!confirm('Supprimer la slide "' + (BRF_STUDIO.slides[idx].name || '') + '" ?')) return;
@@ -14442,6 +14593,54 @@ function brfMoveSlide(idx, dir) {
   if (BRF_STUDIO.curIdx === idx) BRF_STUDIO.curIdx = ni;
   else if (BRF_STUDIO.curIdx === ni) BRF_STUDIO.curIdx = idx;
   renderStudioSidebar();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Drag & drop de réordonnancement des slides (sidebar)
+// ═══════════════════════════════════════════════════════════════
+let BRF_DRAG_FROM = -1;
+function brfSlideDragStart(e, idx) {
+  BRF_DRAG_FROM = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', String(idx)); } catch {}
+  e.currentTarget.style.opacity = '0.4';
+}
+function brfSlideDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (BRF_DRAG_FROM < 0 || idx === BRF_DRAG_FROM) return;
+  e.currentTarget.style.borderTop    = idx < BRF_DRAG_FROM ? '2px solid #e63946' : '1px solid #333';
+  e.currentTarget.style.borderBottom = idx > BRF_DRAG_FROM ? '2px solid #e63946' : '1px solid #333';
+}
+function brfSlideDragLeave(e) {
+  e.currentTarget.style.borderTop    = '';
+  e.currentTarget.style.borderBottom = '';
+}
+function brfSlideDrop(e, idx) {
+  e.preventDefault();
+  const from = BRF_DRAG_FROM;
+  BRF_DRAG_FROM = -1;
+  if (from < 0 || from === idx) return;
+  saveCurrentSlideJson();
+  const [moved] = BRF_STUDIO.slides.splice(from, 1);
+  BRF_STUDIO.slides.splice(idx, 0, moved);
+  // Recalcule curIdx
+  if (BRF_STUDIO.curIdx === from) {
+    BRF_STUDIO.curIdx = idx;
+  } else if (from < BRF_STUDIO.curIdx && idx >= BRF_STUDIO.curIdx) {
+    BRF_STUDIO.curIdx--;
+  } else if (from > BRF_STUDIO.curIdx && idx <= BRF_STUDIO.curIdx) {
+    BRF_STUDIO.curIdx++;
+  }
+  renderStudioSidebar();
+}
+function brfSlideDragEnd(e) {
+  BRF_DRAG_FROM = -1;
+  document.querySelectorAll('#brf-st-sidebar > div').forEach(d => {
+    d.style.opacity = '';
+    d.style.borderTop = '';
+    d.style.borderBottom = '';
+  });
 }
 
 function saveCurrentSlideJson() {
