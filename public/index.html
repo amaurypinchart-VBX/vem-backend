@@ -1671,12 +1671,48 @@ textarea.input{min-height:80px;resize:vertical;}
         <div class="report-section-toggle active" data-section="ai_summary" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">🤖</span><div><div style="font-weight:600;font-size:13px;">Résumé IA</div><div style="font-size:11px;color:#8892a4;">Analyse et points clés</div></div></div>
         </div>
+        <div class="report-section-toggle" data-section="time_analysis" onclick="toggleReportSection(this);return false;">
+          <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">⏱️</span><div><div style="font-weight:600;font-size:13px;">Temps par tâche</div><div style="font-size:11px;color:#8892a4;">Heures × ouvriers par catégorie</div></div></div>
+        </div>
         <div class="report-section-toggle" data-section="bookings" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">✈️</span><div><div style="font-weight:600;font-size:13px;">Bookings</div><div style="font-size:11px;color:#8892a4;">Transport & hôtels équipe</div></div></div>
         </div>
         <div class="report-section-toggle" data-section="comment" onclick="toggleReportSection(this);return false;">
           <div style="display:flex;align-items:center;gap:8px;pointer-events:none;"><span style="font-size:18px;">💬</span><div><div style="font-weight:600;font-size:13px;">Commentaire</div><div style="font-size:11px;color:#8892a4;">Note personnalisée</div></div></div>
         </div>
+      </div>
+
+      <!-- Panneau Analyse Temps par Tâche (visible si section "Temps par tâche" cochée) -->
+      <div id="ta-panel" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;">⏱️ Analyse temps par tâche</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">L'IA lit tous les daily reports et calcule les heures. Modifie les valeurs si besoin avant de générer.</div>
+          </div>
+          <button class="btn btn-blue btn-sm" onclick="runTimeAnalysisForReport()" id="ta-run-btn">🤖 Lancer / relancer l'analyse</button>
+        </div>
+
+        <details style="margin-bottom:10px;">
+          <summary style="cursor:pointer;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;">⚙️ Personnaliser les catégories</summary>
+          <textarea id="ta-categories" rows="6" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-top:6px;">Installation Viewbox
+Installation Ceiling / Plafond
+Déchargement camions / Réception matériel
+Installation électrique
+Installation façades
+Installation escaliers / rails
+Montage structure / grue
+Nettoyage / rangement
+Réunion / briefing
+Démontage
+Autres tâches</textarea>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Une catégorie par ligne.</div>
+        </details>
+
+        <div id="ta-status" style="display:none;background:var(--bg2);border-radius:8px;padding:10px;text-align:center;margin-bottom:10px;">
+          <span id="ta-status-icon">🤖</span> <span id="ta-status-text">Analyse en cours...</span>
+        </div>
+
+        <div id="ta-edit-result" style="display:none;"></div>
       </div>
 
       <!-- Textarea commentaire personnalisé (utilisé si la section "Commentaire" est cochée) -->
@@ -7163,7 +7199,294 @@ function toggleReportSection(el) {
   const count = document.querySelectorAll('.report-section-toggle.active').length;
   const hint = document.getElementById('report-sections-hint');
   if (hint) hint.textContent = count + ' section(s) sélectionnée(s)';
-  return false; // prevent default
+  // Toggle Time Analysis panel visibility
+  if (el.dataset.section === 'time_analysis') {
+    const panel = document.getElementById('ta-panel');
+    if (panel) panel.style.display = el.classList.contains('active') ? 'block' : 'none';
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ANALYSE TEMPS PAR TÂCHE — V2 (dans Rapport IA)
+// ═══════════════════════════════════════════════════════════
+let TA_REPORT_DATA = null;
+
+function setTAStatus(icon, text) {
+  const box = document.getElementById('ta-status');
+  const iEl = document.getElementById('ta-status-icon');
+  const tEl = document.getElementById('ta-status-text');
+  if (box) box.style.display = 'block';
+  if (iEl) iEl.textContent = icon;
+  if (tEl) tEl.textContent = text;
+}
+
+async function runTimeAnalysisForReport() {
+  let projectId = CURRENT_PROJECT_ID;
+  if (!projectId) {
+    const sel = document.getElementById('report-project-select');
+    if (sel) projectId = sel.value;
+  }
+  if (!projectId) { toast('Sélectionne un projet d\'abord', 'error'); return; }
+
+  const runBtn = document.getElementById('ta-run-btn');
+  if (runBtn) runBtn.disabled = true;
+
+  try {
+    setTAStatus('📥', 'Chargement des daily reports...');
+    const listRes = await api('GET', `/daily-reports?projectId=${projectId}`);
+    if (!listRes?.success) throw new Error('Erreur chargement rapports');
+    const reports = listRes.data || [];
+    if (!reports.length) {
+      setTAStatus('⚠️', 'Aucun rapport journalier à analyser');
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
+
+    setTAStatus('📥', `Chargement du détail (${reports.length} rapport(s))...`);
+    const detailed = await Promise.all(
+      reports.map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
+    );
+
+    const sourceLines = [];
+    let totalEntries = 0;
+    detailed.forEach(r => {
+      const date = r.reportDate?.split('T')[0] || '';
+      const workers = r.workersPresent || 0;
+      const entries = (r.entries || []).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+      if (!entries.length && !r.generalNotes) return;
+      sourceLines.push(`\n=== JOUR ${date} — ${workers} ouvrier(s) présent(s) ===`);
+      entries.forEach(e => {
+        sourceLines.push(`[${e.entryTime || '?'}] ${e.description || ''}`);
+        totalEntries++;
+      });
+      if (r.generalNotes) sourceLines.push(`Notes générales : ${r.generalNotes}`);
+    });
+
+    if (!totalEntries) {
+      setTAStatus('⚠️', 'Aucune entrée détaillée dans les rapports');
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
+
+    const sourceText = sourceLines.join('\n');
+    const categoriesRaw = document.getElementById('ta-categories')?.value?.trim() || '';
+    const categories = categoriesRaw.split('\n').map(c=>c.trim()).filter(Boolean);
+
+    setTAStatus('🤖', `Analyse IA (${totalEntries} entrées, ${detailed.length} jours)...`);
+
+    const prompt = `Tu es un expert en gestion de chantier. Analyse les rapports journaliers ci-dessous et extrais toutes les tâches réalisées avec leur durée et effectif.
+
+CATÉGORIES PARENTES (regroupe les entrées sous ces catégories) :
+${categories.map(c => `- ${c}`).join('\n')}
+
+INSTRUCTIONS :
+1. Chaque entrée du journal a un horaire [HH:MM] et une description
+2. Pour chaque entrée productive, crée UNE sous-tâche avec :
+   - "date" : jour de l'entrée (YYYY-MM-DD)
+   - "time" : horaire de début (HH:MM)
+   - "description" : description synthétique courte de la tâche (max 100 caractères)
+   - "durationHours" : durée estimée en heures (temps jusqu'à l'entrée suivante du même jour, ou estimation raisonnable). Nombre décimal.
+   - "workers" : nombre d'ouvriers sur cette tâche. Nombre entier SI mentionné dans le texte ("3 ouvriers", "l'équipe", "Jeremy et Marc"), SINON null
+   - "workersKnown" : true si les ouvriers sont clairement mentionnés dans le texte, false sinon
+3. Regroupe les sous-tâches par catégorie parente
+4. Ignore les entrées non productives (pause, arrivée, départ non travaillé, café)
+5. Une entrée trop courte ou trop vague : mets-la dans "Autres tâches"
+
+RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
+{
+  "summary": {
+    "totalDays": nombre_de_jours_avec_activite,
+    "avgWorkersPerDay": moyenne_ouvriers_par_jour,
+    "period": "YYYY-MM-DD → YYYY-MM-DD"
+  },
+  "categories": [
+    {
+      "name": "Installation Viewbox",
+      "subtasks": [
+        {
+          "date": "2025-01-15",
+          "time": "09:15",
+          "description": "Montage 1ère box avec grue",
+          "durationHours": 0.5,
+          "workers": 4,
+          "workersKnown": true
+        }
+      ]
+    }
+  ],
+  "insights": [
+    "Point d'analyse 1"
+  ]
+}
+
+Sois précis dans les calculs de durée. Ne crée pas de tâches inventées.
+
+RAPPORTS À ANALYSER :
+${sourceText}`;
+
+    const aiRes = await fetch(`${API}/ai/parse-daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+      body: JSON.stringify({ text: prompt })
+    });
+    const aiData = await aiRes.json();
+    if (!aiData.success) throw new Error(aiData.error || 'Erreur IA');
+
+    let result;
+    try {
+      if (typeof aiData.data === 'object' && !Array.isArray(aiData.data)) {
+        result = aiData.data;
+      } else if (typeof aiData.data === 'string') {
+        const clean = aiData.data.replace(/```json|```/g, '').trim();
+        result = JSON.parse(clean);
+      }
+    } catch (parseErr) {
+      console.error('[TA] parse err:', parseErr, aiData.data);
+      throw new Error('Format IA invalide — réessaie');
+    }
+    if (!result || !result.categories) throw new Error('Réponse IA incomplète');
+
+    result.categories.forEach(cat => {
+      (cat.subtasks || []).forEach(st => {
+        st.workers = st.workers ?? null;
+        st.workersKnown = !!st.workersKnown && st.workers != null;
+      });
+    });
+
+    const avgWorkers = detailed.reduce((sum,r)=>sum+(r.workersPresent||0),0) / (detailed.length||1);
+    if (!result.summary) result.summary = {};
+    if (!result.summary.avgWorkersPerDay) result.summary.avgWorkersPerDay = Math.round(avgWorkers*10)/10;
+
+    TA_REPORT_DATA = result;
+    renderTAEditTable();
+    setTAStatus('✅', `Analyse terminée — modifie si besoin puis génère le rapport`);
+
+  } catch (e) {
+    console.error('[TA] error:', e);
+    setTAStatus('❌', e.message || 'Erreur analyse');
+    toast('Erreur analyse IA', 'error');
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+function renderTAEditTable() {
+  if (!TA_REPORT_DATA) return;
+  const el = document.getElementById('ta-edit-result');
+  if (!el) return;
+
+  const cats = TA_REPORT_DATA.categories || [];
+  const barColors = ['#e63946','#4895ef','#2dc653','#f4a261','#9b59b6','#ff6b6b','#8b5cf6','#22d3ee','#facc15','#fb923c','#6b7280'];
+
+  const html = cats.map((cat, ci) => {
+    const color = barColors[ci % barColors.length];
+    const subs = cat.subtasks || [];
+    const catTotalMH = subs.reduce((sum, st) => {
+      const w = st.workers ?? 0;
+      return sum + (st.durationHours||0) * w;
+    }, 0);
+
+    const rows = subs.map((st, si) => {
+      const wDisplay = st.workersKnown && st.workers != null ? st.workers : '';
+      const wPlaceholder = st.workersKnown ? '' : '?';
+      return `
+        <div style="display:grid;grid-template-columns:80px 1fr 90px 90px 80px 30px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+          <span style="color:var(--text3);font-family:monospace;font-size:11px;">${st.date||''} ${st.time||''}</span>
+          <span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(st.description||'')}">${esc(st.description||'')}</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input type="number" step="0.25" min="0" value="${st.durationHours||0}"
+              onchange="updateTASubtask(${ci},${si},'durationHours',this.value)"
+              style="width:60px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+            <span style="color:var(--text3);font-size:11px;">h</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="color:var(--text3);font-size:11px;">×</span>
+            <input type="number" step="1" min="0" value="${wDisplay}" placeholder="${wPlaceholder}"
+              onchange="updateTASubtask(${ci},${si},'workers',this.value)"
+              style="width:50px;background:var(--bg2);border:1px solid ${st.workersKnown ? 'var(--border)' : 'var(--amber)'};border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+            <span style="color:var(--text3);font-size:11px;">h.</span>
+          </div>
+          <span style="text-align:right;font-weight:700;color:${color};font-size:12px;" id="ta-mh-${ci}-${si}">${((st.durationHours||0)*(st.workers||0)).toFixed(1)}H</span>
+          <button onclick="removeTASubtask(${ci},${si})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;" title="Supprimer">✕</button>
+        </div>`;
+    }).join('');
+
+    return `
+      <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:10px;border-left:4px solid ${color};">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="font-weight:700;font-size:14px;color:var(--text);">${esc(cat.name)}</div>
+            <span style="font-size:11px;color:var(--text3);">${subs.length} tâche(s)</span>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:18px;font-weight:800;color:${color};font-family:'Syne',sans-serif;" id="ta-cattotal-${ci}">${catTotalMH.toFixed(1)}H</div>
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Total heures-hommes</div>
+          </div>
+        </div>
+        ${subs.length ? `
+          <div style="display:grid;grid-template-columns:80px 1fr 90px 90px 80px 30px;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">
+            <span>Date</span>
+            <span>Description</span>
+            <span style="text-align:right;">Durée</span>
+            <span style="text-align:right;">Ouvriers</span>
+            <span style="text-align:right;">H-hommes</span>
+            <span></span>
+          </div>
+          ${rows}
+        ` : '<div style="font-size:12px;color:var(--text3);text-align:center;padding:10px;">Aucune tâche</div>'}
+      </div>`;
+  }).join('');
+
+  const grandTotal = cats.reduce((sum, cat) =>
+    sum + (cat.subtasks||[]).reduce((s,st) => s + (st.durationHours||0)*(st.workers||0), 0), 0);
+
+  el.innerHTML = `
+    <div style="background:linear-gradient(135deg,rgba(230,57,70,.12),rgba(72,149,239,.12));border-radius:var(--radius);padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:700;">Total général</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${cats.reduce((n,c)=>n+(c.subtasks||[]).length,0)} tâches · ${TA_REPORT_DATA.summary?.period||''}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:26px;font-weight:800;color:var(--accent);font-family:'Syne',sans-serif;" id="ta-grandtotal">${grandTotal.toFixed(1)}H</div>
+        <div style="font-size:11px;color:var(--text3);">heures-hommes</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">💡 Les champs bordure orange indiquent que l'IA n'a pas trouvé le nombre d'ouvriers — complète-les.</div>
+    ${html}
+  `;
+  el.style.display = 'block';
+}
+
+function updateTASubtask(catIdx, subIdx, field, value) {
+  if (!TA_REPORT_DATA?.categories?.[catIdx]?.subtasks?.[subIdx]) return;
+  const st = TA_REPORT_DATA.categories[catIdx].subtasks[subIdx];
+  if (field === 'durationHours') {
+    st.durationHours = parseFloat(value) || 0;
+  } else if (field === 'workers') {
+    const v = value === '' ? null : (parseInt(value) || 0);
+    st.workers = v;
+    st.workersKnown = v != null;
+  }
+  const mh = (st.durationHours||0) * (st.workers||0);
+  const mhCell = document.getElementById(`ta-mh-${catIdx}-${subIdx}`);
+  if (mhCell) mhCell.textContent = `${mh.toFixed(1)}H`;
+
+  const catTotal = (TA_REPORT_DATA.categories[catIdx].subtasks||[])
+    .reduce((sum,s)=> sum + (s.durationHours||0)*(s.workers||0), 0);
+  const catCell = document.getElementById(`ta-cattotal-${catIdx}`);
+  if (catCell) catCell.textContent = `${catTotal.toFixed(1)}H`;
+
+  const grand = TA_REPORT_DATA.categories.reduce((sum, cat) =>
+    sum + (cat.subtasks||[]).reduce((s,s2) => s + (s2.durationHours||0)*(s2.workers||0), 0), 0);
+  const grandCell = document.getElementById('ta-grandtotal');
+  if (grandCell) grandCell.textContent = `${grand.toFixed(1)}H`;
+}
+
+function removeTASubtask(catIdx, subIdx) {
+  if (!TA_REPORT_DATA?.categories?.[catIdx]?.subtasks) return;
+  TA_REPORT_DATA.categories[catIdx].subtasks.splice(subIdx, 1);
+  renderTAEditTable();
 }
 
 function getSelectedSections() {
@@ -7550,6 +7873,93 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
         ${t.assignedTo&&!isClient?`<span class="task-assign">👤 ${t.assignedTo.firstName}</span>`:''}
       </div>`).join('')}
     </div>`;
+    }
+
+    // ── Section: Analyse Temps par Tâche ──
+    if (sections.includes('time_analysis')) {
+      if (!TA_REPORT_DATA) {
+        setReportStatus('⏱️','Analyse temps par tâche...','L\'IA calcule les heures par catégorie');
+        await runTimeAnalysisForReport();
+      }
+      if (TA_REPORT_DATA) {
+        const cats = (TA_REPORT_DATA.categories || []).filter(c => (c.subtasks||[]).length);
+        const barColors = ['#e63946','#4895ef','#2dc653','#f4a261','#9b59b6','#ff6b6b','#8b5cf6','#22d3ee','#facc15','#fb923c','#6b7280'];
+
+        const grandTotal = cats.reduce((sum, cat) =>
+          sum + (cat.subtasks||[]).reduce((s,st) => s + (st.durationHours||0)*(st.workers||0), 0), 0);
+
+        const catsHTML = cats.map((cat, ci) => {
+          const color = barColors[ci % barColors.length];
+          const subs = cat.subtasks || [];
+          const catTotal = subs.reduce((s,st)=> s+(st.durationHours||0)*(st.workers||0), 0);
+          const pct = grandTotal > 0 ? Math.round(catTotal/grandTotal*100) : 0;
+
+          const rows = subs.map(st => {
+            const w = st.workers ?? '?';
+            const mh = (st.durationHours||0) * (st.workers||0);
+            return `
+              <tr>
+                <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#8892a4;white-space:nowrap;">${st.date||''} ${st.time||''}</td>
+                <td style="padding:6px 8px;font-size:12px;color:#4a5568;">${st.description||''}</td>
+                <td style="padding:6px 8px;text-align:right;font-size:12px;color:#1a1a2e;white-space:nowrap;"><strong>${(st.durationHours||0).toFixed(1)}H</strong> × ${w} ${w==='?'?'':'👷'}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:700;color:${color};white-space:nowrap;">${mh.toFixed(1)}H</td>
+              </tr>`;
+          }).join('');
+
+          return `
+            <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;border-left:4px solid ${color};">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+                <div>
+                  <div style="font-weight:700;font-size:15px;color:#1a1a2e;">${cat.name}</div>
+                  <div style="font-size:11px;color:#8892a4;margin-top:2px;">${subs.length} tâche(s) · ${pct}% du total</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:22px;font-weight:800;color:${color};">${catTotal.toFixed(1)}H</div>
+                  <div style="font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.5px;">heures-hommes</div>
+                </div>
+              </div>
+              <div style="background:#e5e7eb;border-radius:4px;height:6px;overflow:hidden;margin-bottom:${subs.length?'10px':'0'};">
+                <div style="background:${color};height:100%;width:${pct}%;"></div>
+              </div>
+              ${subs.length ? `
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                  <thead>
+                    <tr style="border-bottom:1px solid #e5e7eb;">
+                      <th style="padding:6px 8px;text-align:left;font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Quand</th>
+                      <th style="padding:6px 8px;text-align:left;font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Tâche</th>
+                      <th style="padding:6px 8px;text-align:right;font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Durée × Ouvriers</th>
+                      <th style="padding:6px 8px;text-align:right;font-size:10px;color:#8892a4;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              ` : ''}
+            </div>`;
+        }).join('');
+
+        const insightsHTML = (TA_REPORT_DATA.insights||[]).length ? `
+          <div style="background:#eff6ff;border-left:3px solid #4895ef;border-radius:8px;padding:12px;margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:700;color:#4895ef;text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">🤖 Analyse IA</div>
+            ${(TA_REPORT_DATA.insights||[]).map(i => `<div style="font-size:13px;color:#4a5568;margin-bottom:4px;">• ${i}</div>`).join('')}
+          </div>` : '';
+
+        reportHTML += `
+    <div class="section">
+      <div class="section-title"><span class="section-icon">⏱️</span>Temps passé par tâche</div>
+      <div style="background:linear-gradient(135deg,rgba(230,57,70,.08),rgba(72,149,239,.08));border-radius:8px;padding:14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:11px;color:#8892a4;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">Total général</div>
+          <div style="font-size:11px;color:#8892a4;margin-top:2px;">${cats.reduce((n,c)=>n+(c.subtasks||[]).length,0)} tâches · ${cats.length} catégories · ${TA_REPORT_DATA.summary?.period||''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:32px;font-weight:800;color:#e63946;">${grandTotal.toFixed(1)}H</div>
+          <div style="font-size:11px;color:#8892a4;">heures-hommes totales</div>
+        </div>
+      </div>
+      ${insightsHTML}
+      ${catsHTML || '<div style="text-align:center;color:#8892a4;padding:20px;">Aucune tâche catégorisée</div>'}
+    </div>`;
+      }
     }
 
     // ── Section: Daily Reports — fetch entries detail ──
