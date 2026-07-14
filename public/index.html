@@ -815,6 +815,7 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="pg-actions">
       <button class="btn btn-ghost btn-sm" onclick="openEditProjectModal(CURRENT_PROJECT_ID)" title="Modifier les infos du projet">✏️ Modifier</button>
       <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
+      <button class="btn btn-ghost btn-sm" onclick="openTimeAnalysisModal()" title="Analyse IA des heures passées par type de tâche">⏱️ Temps par tâche</button>
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
       <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()" title="Ajouter plusieurs tâches d'un coup depuis le template">📋 Plusieurs tâches</button>
@@ -850,6 +851,56 @@ textarea.input{min-height:80px;resize:vertical;}
   <div id="dtab-bookings" style="display:none;"><div id="detail-bookings-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-briefing" style="display:none;"><div id="detail-briefing-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
+</div>
+
+<!-- MODAL — ANALYSE TEMPS PAR TÂCHE -->
+<div class="overlay" id="modal-time-analysis">
+  <div class="modal" style="max-width:920px;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-head" style="flex-shrink:0;">
+      <div>
+        <div class="modal-title">⏱️ Analyse Temps par Tâche</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px;">L'IA analyse tous les daily reports du projet et calcule les heures passées par type de tâche</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-time-analysis')">×</button>
+    </div>
+
+    <div style="overflow-y:auto;flex:1;padding-right:4px;">
+      <!-- Statut / progress -->
+      <div id="ta-status" style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:8px;" id="ta-status-icon">⏱️</div>
+        <div style="font-weight:600;" id="ta-status-text">Prêt à lancer l'analyse</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="ta-status-sub">Clique sur "Lancer l'analyse" ci-dessous</div>
+      </div>
+
+      <!-- Options -->
+      <div id="ta-options" style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Catégories à identifier</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">L'IA identifie automatiquement ces types de tâches (personnalisable) :</div>
+        <textarea id="ta-categories" rows="6" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;">Installation Viewbox
+Installation Ceiling / Plafond
+Déchargement camions / Réception matériel
+Installation électrique
+Installation façades
+Installation escaliers / rails
+Montage structure / grue
+Nettoyage / rangement
+Réunion / briefing
+Démontage
+Autres tâches</textarea>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;">Une catégorie par ligne. L'IA regroupera intelligemment les entrées similaires.</div>
+      </div>
+
+      <!-- Résultat -->
+      <div id="ta-result" style="display:none;"></div>
+    </div>
+
+    <!-- Actions -->
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:14px;margin-top:8px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="closeModal('modal-time-analysis')">Fermer</button>
+      <button class="btn btn-ghost btn-sm" id="ta-export-btn" onclick="exportTimeAnalysisPDF()" style="display:none;">📄 Exporter PDF</button>
+      <button class="btn btn-primary" id="ta-run-btn" onclick="runTimeAnalysis()">🤖 Lancer l'analyse</button>
+    </div>
+  </div>
 </div>
 
 <!-- TACHES -->
@@ -8335,6 +8386,407 @@ function switchDailyTab(tab) {
       tabEl.style.borderBottomColor = t===tab?'var(--accent)':'transparent';
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// ═══ ANALYSE TEMPS PAR TÂCHE — IA ═══
+// ═══════════════════════════════════════════════════════════
+// Analyse tous les daily reports du projet courant, envoie à l'IA
+// pour catégoriser en tâches types et calcule les heures × ouvriers.
+// Utilise l'endpoint existant /ai/parse-daily (gpt-4o-mini).
+// ═══════════════════════════════════════════════════════════
+
+let TA_LAST_RESULT = null; // dernier résultat pour export PDF
+
+function openTimeAnalysisModal() {
+  if (!CURRENT_PROJECT_ID) { toast('Sélectionne un projet', 'error'); return; }
+  // Reset
+  document.getElementById('ta-result').style.display = 'none';
+  document.getElementById('ta-result').innerHTML = '';
+  document.getElementById('ta-export-btn').style.display = 'none';
+  setTAStatus('⏱️', 'Prêt à lancer l\'analyse', 'Clique sur "Lancer l\'analyse" ci-dessous');
+  TA_LAST_RESULT = null;
+  showModal('modal-time-analysis');
+}
+
+function setTAStatus(icon, text, sub) {
+  const iEl = document.getElementById('ta-status-icon');
+  const tEl = document.getElementById('ta-status-text');
+  const sEl = document.getElementById('ta-status-sub');
+  if (iEl) iEl.textContent = icon;
+  if (tEl) tEl.textContent = text;
+  if (sEl) sEl.textContent = sub || '';
+}
+
+async function runTimeAnalysis() {
+  if (!CURRENT_PROJECT_ID) { toast('Sélectionne un projet', 'error'); return; }
+
+  const runBtn = document.getElementById('ta-run-btn');
+  const exportBtn = document.getElementById('ta-export-btn');
+  if (runBtn) runBtn.disabled = true;
+  if (exportBtn) exportBtn.style.display = 'none';
+
+  try {
+    // ── Étape 1 : charger tous les daily reports du projet ──
+    setTAStatus('📥', 'Chargement des rapports journaliers...', 'Récupération de toutes les entrées');
+    const listRes = await api('GET', `/daily-reports?projectId=${CURRENT_PROJECT_ID}`);
+    if (!listRes?.success) throw new Error('Erreur chargement rapports');
+    const reports = listRes.data || [];
+    if (!reports.length) {
+      setTAStatus('⚠️', 'Aucun rapport journalier', 'Ajoute au moins un daily report pour lancer l\'analyse');
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
+
+    // Fetch détail de chaque rapport (pour avoir les entries)
+    setTAStatus('📥', `Chargement de ${reports.length} rapport(s)...`, 'Récupération des entrées détaillées');
+    const detailed = await Promise.all(
+      reports.map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
+    );
+
+    // ── Étape 2 : construire le texte source pour l'IA ──
+    const sourceLines = [];
+    let totalEntries = 0;
+    detailed.forEach(r => {
+      const date = r.reportDate?.split('T')[0] || '';
+      const workers = r.workersPresent || 0;
+      const entries = (r.entries || []).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
+      if (!entries.length && !r.generalNotes) return;
+      sourceLines.push(`\n=== JOUR ${date} — ${workers} ouvrier(s) présent(s) ===`);
+      entries.forEach(e => {
+        sourceLines.push(`[${e.entryTime || '?'}] ${e.description || ''}`);
+        totalEntries++;
+      });
+      if (r.generalNotes) sourceLines.push(`Notes générales : ${r.generalNotes}`);
+    });
+
+    if (!totalEntries) {
+      setTAStatus('⚠️', 'Aucune entrée détaillée', 'Les rapports existent mais ne contiennent pas d\'entrées à analyser');
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
+
+    const sourceText = sourceLines.join('\n');
+    const categoriesRaw = document.getElementById('ta-categories')?.value?.trim() || '';
+    const categories = categoriesRaw.split('\n').map(c=>c.trim()).filter(Boolean);
+
+    // ── Étape 3 : construire le prompt pour l'IA ──
+    setTAStatus('🤖', `Analyse IA en cours...`, `${totalEntries} entrées sur ${detailed.length} jours`);
+
+    const prompt = `Tu es un expert en gestion de chantier. Analyse les rapports journaliers ci-dessous et calcule les heures totales passées par type de tâche.
+
+CATÉGORIES DE TÂCHES À IDENTIFIER (regroupe les entrées similaires sous ces catégories) :
+${categories.map(c => `- ${c}`).join('\n')}
+
+INSTRUCTIONS :
+1. Chaque entrée a un horaire [HH:MM] et une description
+2. Calcule la DURÉE de chaque tâche = temps entre l'entrée courante et la suivante (dans le même jour). Ignore les pauses évidentes (déjeuner, café).
+3. Détermine le NOMBRE D'OUVRIERS sur chaque tâche :
+   - Si le texte le mentionne explicitement ("3 ouvriers sur la façade", "l'équipe complète", "seul", "avec Jeremy"), utilise cette info
+   - Sinon utilise le total d'ouvriers présents du jour (indiqué dans "=== JOUR ...")
+4. HEURES-HOMMES d'une tâche = durée (h) × nombre d'ouvriers
+5. Regroupe toutes les tâches par catégorie et somme les heures-hommes
+6. Si une entrée ne correspond à aucune catégorie, mets-la dans "Autres tâches"
+7. Ignore les entrées non productives (pause, arrivée, départ, réunion courte < 15 min sauf si elles concernent le briefing)
+
+RÉPONDS UNIQUEMENT AVEC UN OBJET JSON VALIDE (pas de markdown, pas de backticks), format exact :
+{
+  "summary": {
+    "totalDays": nombre,
+    "totalManHours": nombre (arrondi à 1 décimale),
+    "avgWorkersPerDay": nombre (arrondi à 1 décimale),
+    "period": "YYYY-MM-DD → YYYY-MM-DD"
+  },
+  "categories": [
+    {
+      "name": "Installation Viewbox",
+      "manHours": 24.5,
+      "durationHours": 8.0,
+      "avgWorkers": 3.1,
+      "occurrences": 4,
+      "days": ["2025-01-15", "2025-01-16"],
+      "details": [
+        {"date": "2025-01-15", "time": "09:15", "description": "Montage 1ère box", "durationHours": 0.25, "workers": 4, "manHours": 1.0}
+      ]
+    }
+  ],
+  "insights": [
+    "Point d'analyse 1 (ex: 40% du temps a été consacré à l'installation Viewbox)",
+    "Point d'analyse 2 (ex: Le déchargement a été particulièrement long jour 3)"
+  ]
+}
+
+Trie les catégories par manHours décroissant. Sois précis dans les calculs.
+
+RAPPORTS À ANALYSER :
+${sourceText}`;
+
+    // ── Étape 4 : appel IA ──
+    const aiRes = await fetch(`${API}/ai/parse-daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+      body: JSON.stringify({ text: prompt })
+    });
+    const aiData = await aiRes.json();
+    if (!aiData.success) throw new Error(aiData.error || 'Erreur IA');
+
+    // Parser la réponse — peut être un objet direct ou une string JSON
+    let result;
+    try {
+      if (typeof aiData.data === 'object' && !Array.isArray(aiData.data)) {
+        result = aiData.data;
+      } else if (typeof aiData.data === 'string') {
+        // Nettoyer d'éventuels backticks/markdown
+        const clean = aiData.data.replace(/```json|```/g, '').trim();
+        result = JSON.parse(clean);
+      } else if (Array.isArray(aiData.data)) {
+        // Backend a peut-être parsé comme array — cas de repli
+        result = { summary: {}, categories: aiData.data, insights: [] };
+      }
+    } catch (parseErr) {
+      console.error('[TA] parse err:', parseErr, aiData.data);
+      throw new Error('Format de réponse IA invalide — réessaie');
+    }
+
+    if (!result || !result.categories) throw new Error('Réponse IA incomplète');
+
+    // ── Étape 5 : afficher le résultat ──
+    TA_LAST_RESULT = { ...result, projectId: CURRENT_PROJECT_ID };
+    renderTimeAnalysisReport(result);
+    setTAStatus('✅', 'Analyse terminée', `${result.summary?.totalManHours || 0} heures-hommes analysées sur ${result.summary?.totalDays || detailed.length} jours`);
+    if (exportBtn) exportBtn.style.display = 'inline-flex';
+
+  } catch (e) {
+    console.error('[TA] error:', e);
+    setTAStatus('❌', 'Erreur d\'analyse', e.message || 'Impossible de générer le rapport');
+    toast('Erreur analyse IA', 'error');
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+function renderTimeAnalysisReport(data) {
+  const el = document.getElementById('ta-result');
+  if (!el) return;
+
+  const s = data.summary || {};
+  const cats = (data.categories || []).sort((a,b)=>(b.manHours||0)-(a.manHours||0));
+  const totalMH = s.totalManHours || cats.reduce((sum,c)=>sum+(c.manHours||0),0);
+  const insights = data.insights || [];
+
+  // Palette couleurs pour les barres
+  const barColors = ['#e63946','#4895ef','#2dc653','#f4a261','#9b59b6','#ff6b6b','#8b5cf6','#22d3ee','#facc15','#fb923c','#6b7280'];
+
+  const catsHTML = cats.map((c,i) => {
+    const pct = totalMH > 0 ? Math.round((c.manHours||0)/totalMH*100) : 0;
+    const color = barColors[i % barColors.length];
+    const detailsHTML = (c.details||[]).slice(0, 20).map(d => `
+      <div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+        <span style="color:var(--text3);min-width:90px;">${d.date || ''}</span>
+        <span style="color:var(--text3);min-width:50px;font-family:monospace;">${d.time || ''}</span>
+        <span style="flex:1;color:var(--text2);">${esc(d.description || '')}</span>
+        <span style="color:var(--text3);min-width:100px;text-align:right;">${d.workers||0}👷 × ${(d.durationHours||0).toFixed(2)}h = <strong style="color:var(--text);">${(d.manHours||0).toFixed(1)}h</strong></span>
+      </div>
+    `).join('');
+
+    return `
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:10px;border-left:4px solid ${color};">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:700;font-size:15px;color:var(--text);">${esc(c.name)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">
+              ${(c.durationHours||0).toFixed(1)}h de travail × ${(c.avgWorkers||0).toFixed(1)} ouvriers en moyenne
+              ${c.occurrences ? ` · ${c.occurrences} occurrence(s)` : ''}
+              ${c.days?.length ? ` · ${c.days.length} jour(s)` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:22px;font-weight:800;color:${color};font-family:'Syne',sans-serif;">${(c.manHours||0).toFixed(1)}h</div>
+            <div style="font-size:11px;color:var(--text3);">${pct}% du total</div>
+          </div>
+        </div>
+        <div style="background:var(--bg2);border-radius:6px;height:8px;overflow:hidden;margin-bottom:${(c.details||[]).length?'10px':'0'};">
+          <div style="background:${color};height:100%;width:${pct}%;transition:width .3s;"></div>
+        </div>
+        ${(c.details||[]).length ? `
+          <details style="margin-top:6px;">
+            <summary style="cursor:pointer;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding:4px 0;">📋 Voir le détail (${(c.details||[]).length} entrée${(c.details||[]).length>1?'s':''})</summary>
+            <div style="margin-top:8px;background:var(--bg2);border-radius:6px;padding:8px 12px;">${detailsHTML}</div>
+          </details>
+        ` : ''}
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <!-- Résumé global -->
+    <div style="background:linear-gradient(135deg,rgba(230,57,70,.12),rgba(72,149,239,.12));border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">📊 Résumé global</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+        <div>
+          <div style="font-size:24px;font-weight:800;color:var(--accent);font-family:'Syne',sans-serif;">${(s.totalManHours||totalMH||0).toFixed(1)}h</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;">Heures-hommes totales</div>
+        </div>
+        <div>
+          <div style="font-size:24px;font-weight:800;color:var(--blue);font-family:'Syne',sans-serif;">${s.totalDays||0}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;">Jours analysés</div>
+        </div>
+        <div>
+          <div style="font-size:24px;font-weight:800;color:var(--green);font-family:'Syne',sans-serif;">${(s.avgWorkersPerDay||0).toFixed(1)}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;">Ouvriers/jour (moy.)</div>
+        </div>
+        <div>
+          <div style="font-size:24px;font-weight:800;color:var(--amber);font-family:'Syne',sans-serif;">${cats.length}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;">Catégories</div>
+        </div>
+      </div>
+      ${s.period ? `<div style="font-size:12px;color:var(--text3);margin-top:10px;">📅 Période : <strong style="color:var(--text2);">${esc(s.period)}</strong></div>` : ''}
+    </div>
+
+    <!-- Insights IA -->
+    ${insights.length ? `
+    <div style="background:var(--bg3);border-left:3px solid var(--blue);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">🤖 Analyse IA</div>
+      ${insights.map(i => `<div style="font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.5;">• ${esc(i)}</div>`).join('')}
+    </div>
+    ` : ''}
+
+    <!-- Catégories -->
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">⏱️ Répartition par tâche</div>
+    ${catsHTML || '<div class="empty"><div class="empty-title">Aucune tâche catégorisée</div></div>'}
+  `;
+
+  el.style.display = 'block';
+}
+
+async function exportTimeAnalysisPDF() {
+  if (!TA_LAST_RESULT) { toast('Lance d\'abord une analyse', 'error'); return; }
+
+  const proj = await api('GET', `/projects/${TA_LAST_RESULT.projectId}`);
+  const project = proj?.data || {};
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = margin;
+
+  // Header
+  doc.setFillColor(10, 37, 64); // navy Viewbox
+  doc.rect(0, 0, pageW, 70, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('Analyse Temps par Tâche', margin, 32);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`${project.name || 'Projet'} — ${project.internalNumber || ''}`, margin, 50);
+  doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageW - margin, 50, { align: 'right' });
+  y = 90;
+
+  // Résumé
+  const s = TA_LAST_RESULT.summary || {};
+  const cats = TA_LAST_RESULT.categories || [];
+  const totalMH = s.totalManHours || cats.reduce((sum,c)=>sum+(c.manHours||0),0);
+
+  doc.setTextColor(10, 37, 64);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('Résumé global', margin, y);
+  y += 18;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(50, 50, 50);
+  const summaryLines = [
+    `Heures-hommes totales : ${totalMH.toFixed(1)} h`,
+    `Jours analysés : ${s.totalDays || 0}`,
+    `Ouvriers/jour (moyenne) : ${(s.avgWorkersPerDay || 0).toFixed(1)}`,
+    `Nombre de catégories : ${cats.length}`,
+    s.period ? `Période : ${s.period}` : null,
+  ].filter(Boolean);
+  summaryLines.forEach(line => { doc.text(line, margin, y); y += 14; });
+  y += 10;
+
+  // Insights
+  const insights = TA_LAST_RESULT.insights || [];
+  if (insights.length) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(10, 37, 64);
+    doc.text('Analyse IA', margin, y);
+    y += 16;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(50, 50, 50);
+    insights.forEach(ins => {
+      const wrapped = doc.splitTextToSize(`• ${ins}`, pageW - 2*margin);
+      wrapped.forEach(w => {
+        if (y > pageH - 40) { doc.addPage(); y = margin; }
+        doc.text(w, margin, y);
+        y += 14;
+      });
+    });
+    y += 8;
+  }
+
+  // Catégories
+  if (y > pageH - 100) { doc.addPage(); y = margin; }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(10, 37, 64);
+  doc.text('Répartition par tâche', margin, y);
+  y += 18;
+
+  const barColors = [[230,57,70],[72,149,239],[45,198,83],[244,162,97],[155,89,182],[139,92,246],[34,211,238],[250,204,21]];
+
+  cats.forEach((c, i) => {
+    if (y > pageH - 80) { doc.addPage(); y = margin; }
+    const col = barColors[i % barColors.length];
+    const pct = totalMH > 0 ? Math.round((c.manHours||0)/totalMH*100) : 0;
+
+    // Barre couleur
+    doc.setFillColor(col[0], col[1], col[2]);
+    doc.rect(margin, y - 8, 4, 30, 'F');
+
+    // Nom + heures
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(20, 20, 20);
+    doc.text(c.name, margin + 12, y);
+    doc.setTextColor(col[0], col[1], col[2]);
+    doc.text(`${(c.manHours||0).toFixed(1)} h`, pageW - margin, y, { align: 'right' });
+
+    // Détails ligne 2
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    const sub = `${(c.durationHours||0).toFixed(1)}h × ${(c.avgWorkers||0).toFixed(1)} ouvriers · ${c.occurrences||0} occurrence(s) · ${pct}%`;
+    doc.text(sub, margin + 12, y + 13);
+
+    // Barre de progression
+    doc.setDrawColor(220, 220, 220);
+    doc.setFillColor(240, 240, 240);
+    doc.roundedRect(margin + 12, y + 18, pageW - 2*margin - 12, 4, 2, 2, 'F');
+    doc.setFillColor(col[0], col[1], col[2]);
+    doc.roundedRect(margin + 12, y + 18, (pageW - 2*margin - 12) * pct/100, 4, 2, 2, 'F');
+
+    y += 34;
+  });
+
+  // Footer
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`VEM — ViewBox Event Manager · Page ${p}/${totalPages}`, pageW/2, pageH - 20, { align: 'center' });
+  }
+
+  const filename = `Analyse-Temps_${(project.internalNumber||'projet')}_${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+  toast('PDF exporté ✅', 'success');
 }
 
 // ═══ DAILY REPORT — AI PARSE RAW TEXT ═══
