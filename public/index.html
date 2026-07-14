@@ -815,7 +815,6 @@ textarea.input{min-height:80px;resize:vertical;}
     <div class="pg-actions">
       <button class="btn btn-ghost btn-sm" onclick="openEditProjectModal(CURRENT_PROJECT_ID)" title="Modifier les infos du projet">✏️ Modifier</button>
       <button class="btn btn-ghost btn-sm" onclick="showReportModal()">📊 Rapport IA</button>
-      <button class="btn btn-ghost btn-sm" onclick="openTimeAnalysisModal()" title="Analyse IA des heures passées par type de tâche">⏱️ Temps par tâche</button>
       <button class="btn btn-ghost btn-sm" onclick="goto('handover')">🧾 Handover</button>
       <button class="btn btn-ghost btn-sm" onclick="showModal('modal-ticket')">🛠️ Ticket</button>
       <button class="btn btn-ghost btn-sm" onclick="openTemplateTasksModal()" title="Ajouter plusieurs tâches d'un coup depuis le template">📋 Plusieurs tâches</button>
@@ -851,56 +850,6 @@ textarea.input{min-height:80px;resize:vertical;}
   <div id="dtab-bookings" style="display:none;"><div id="detail-bookings-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-briefing" style="display:none;"><div id="detail-briefing-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-files" style="display:none;"><div id="detail-files-content"><div class="empty"><div class="empty-icon">📁</div><div class="empty-title">Aucun fichier</div></div></div></div>
-</div>
-
-<!-- MODAL — ANALYSE TEMPS PAR TÂCHE -->
-<div class="overlay" id="modal-time-analysis">
-  <div class="modal" style="max-width:920px;max-height:90vh;display:flex;flex-direction:column;">
-    <div class="modal-head" style="flex-shrink:0;">
-      <div>
-        <div class="modal-title">⏱️ Analyse Temps par Tâche</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:3px;">L'IA analyse tous les daily reports du projet et calcule les heures passées par type de tâche</div>
-      </div>
-      <button class="modal-close" onclick="closeModal('modal-time-analysis')">×</button>
-    </div>
-
-    <div style="overflow-y:auto;flex:1;padding-right:4px;">
-      <!-- Statut / progress -->
-      <div id="ta-status" style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;text-align:center;">
-        <div style="font-size:22px;margin-bottom:8px;" id="ta-status-icon">⏱️</div>
-        <div style="font-weight:600;" id="ta-status-text">Prêt à lancer l'analyse</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px;" id="ta-status-sub">Clique sur "Lancer l'analyse" ci-dessous</div>
-      </div>
-
-      <!-- Options -->
-      <div id="ta-options" style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;">Catégories à identifier</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">L'IA identifie automatiquement ces types de tâches (personnalisable) :</div>
-        <textarea id="ta-categories" rows="6" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;">Installation Viewbox
-Installation Ceiling / Plafond
-Déchargement camions / Réception matériel
-Installation électrique
-Installation façades
-Installation escaliers / rails
-Montage structure / grue
-Nettoyage / rangement
-Réunion / briefing
-Démontage
-Autres tâches</textarea>
-        <div style="font-size:11px;color:var(--text3);margin-top:6px;">Une catégorie par ligne. L'IA regroupera intelligemment les entrées similaires.</div>
-      </div>
-
-      <!-- Résultat -->
-      <div id="ta-result" style="display:none;"></div>
-    </div>
-
-    <!-- Actions -->
-    <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:14px;margin-top:8px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
-      <button class="btn btn-outline" onclick="closeModal('modal-time-analysis')">Fermer</button>
-      <button class="btn btn-ghost btn-sm" id="ta-export-btn" onclick="exportTimeAnalysisPDF()" style="display:none;">📄 Exporter PDF</button>
-      <button class="btn btn-primary" id="ta-run-btn" onclick="runTimeAnalysis()">🤖 Lancer l'analyse</button>
-    </div>
-  </div>
 </div>
 
 <!-- TACHES -->
@@ -8388,43 +8337,8 @@ function switchDailyTab(tab) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════
-// ═══ ANALYSE TEMPS PAR TÂCHE — IA ═══
-// ═══════════════════════════════════════════════════════════
-// Analyse tous les daily reports du projet courant, envoie à l'IA
-// pour catégoriser en tâches types et calcule les heures × ouvriers.
-// Utilise l'endpoint existant /ai/parse-daily (gpt-4o-mini).
-// ═══════════════════════════════════════════════════════════
-
-let TA_LAST_RESULT = null; // dernier résultat pour export PDF
-
-function openTimeAnalysisModal() {
-  if (!CURRENT_PROJECT_ID) { toast('Sélectionne un projet', 'error'); return; }
-  // Reset
-  document.getElementById('ta-result').style.display = 'none';
-  document.getElementById('ta-result').innerHTML = '';
-  document.getElementById('ta-export-btn').style.display = 'none';
-  setTAStatus('⏱️', 'Prêt à lancer l\'analyse', 'Clique sur "Lancer l\'analyse" ci-dessous');
-  TA_LAST_RESULT = null;
-  showModal('modal-time-analysis');
-}
-
-function setTAStatus(icon, text, sub) {
-  const iEl = document.getElementById('ta-status-icon');
-  const tEl = document.getElementById('ta-status-text');
-  const sEl = document.getElementById('ta-status-sub');
-  if (iEl) iEl.textContent = icon;
-  if (tEl) tEl.textContent = text;
-  if (sEl) sEl.textContent = sub || '';
-}
-
-async function runTimeAnalysis() {
-  if (!CURRENT_PROJECT_ID) { toast('Sélectionne un projet', 'error'); return; }
-
-  const runBtn = document.getElementById('ta-run-btn');
-  const exportBtn = document.getElementById('ta-export-btn');
-  if (runBtn) runBtn.disabled = true;
-  if (exportBtn) exportBtn.style.display = 'none';
+async function runTimeAnalysis__V1_REMOVED() {
+  if (false) {
 
   try {
     // ── Étape 1 : charger tous les daily reports du projet ──
@@ -8788,6 +8702,9 @@ async function exportTimeAnalysisPDF() {
   doc.save(filename);
   toast('PDF exporté ✅', 'success');
 }
+
+} // fin V1 removed
+} // fin runTimeAnalysis__V1_REMOVED
 
 // ═══ DAILY REPORT — AI PARSE RAW TEXT ═══
 async function parseRawTextWithAI() {
