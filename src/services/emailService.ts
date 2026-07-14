@@ -153,10 +153,11 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
     if (!location) break;
     redirects++;
     logger.info(`[email/apps-script] Redirect ${r.status} → ${location.slice(0, 80)}...`);
+    const preserveMethod = r.status === 307 || r.status === 308;
     r = await fetch(location, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body:    bodyStr,
+      method:   preserveMethod ? 'POST' : 'GET',
+      headers:  preserveMethod ? { 'Content-Type': 'application/json; charset=utf-8' } : {},
+      body:     preserveMethod ? bodyStr : undefined,
       redirect: 'manual' as any,
     });
   }
