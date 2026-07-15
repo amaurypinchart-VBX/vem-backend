@@ -7349,26 +7349,78 @@ async function runTimeAnalysisForReport() {
     const titleToTemplate = {};
     templateCategories.forEach(t => { titleToTemplate[t.title.toLowerCase()] = t; });
 
-    const prompt = `Tu es un expert en gestion de chantier. Analyse les rapports journaliers ci-dessous et extrais toutes les tâches réalisées avec leur durée et effectif.
+    const prompt = `Tu es un expert en gestion de chantier événementiel (stands, box modulaires, structures aluminium, panels, vitres, portes, escaliers, joints). Analyse les rapports journaliers ci-dessous et éclate CHAQUE entrée en autant de sous-tâches distinctes qu'il y a d'actions différentes dedans.
 
-TEMPLATES DE TÂCHES DE L'ENTREPRISE (catégories à utiliser en priorité — utilise EXACTEMENT le nom du template) :
+═══════════════════════════════════════════════════════════
+TEMPLATES DE TÂCHES DISPONIBLES — utilise EXACTEMENT ces noms :
+═══════════════════════════════════════════════════════════
 ${finalCategories.map(c => `- ${c}`).join('\n')}
 
-INSTRUCTIONS :
-1. Chaque entrée du journal a un horaire [HH:MM] et une description
-2. Pour chaque entrée productive, crée UNE sous-tâche avec :
-   - "date" : jour de l'entrée (YYYY-MM-DD)
-   - "time" : horaire de début (HH:MM)
-   - "description" : description synthétique courte (max 100 caractères)
-   - "durationHours" : durée estimée en heures (temps jusqu'à l'entrée suivante du même jour). Nombre décimal.
-   - "workers" : nombre d'ouvriers sur cette tâche. Entier SI mentionné explicitement dans le texte ("3 ouvriers", "l'équipe", "Jeremy et Marc"), SINON null
-   - "workersKnown" : true si les ouvriers sont clairement mentionnés, false sinon
-3. Regroupe les sous-tâches par catégorie/template parent — UTILISE EXACTEMENT LE NOM D'UN TEMPLATE ci-dessus (sans "(catégorie: ...)")
-4. Ignore les entrées non productives (pause, café, arrivée, départ non travaillé)
-5. Si aucun template ne correspond, mets dans "Autres tâches"
-6. Sois strict : n'invente pas de nouveaux noms de catégorie, réutilise EXACTEMENT ceux fournis
+Si aucun template ne correspond → "Autres tâches" (à éviter au max).
 
-RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
+═══════════════════════════════════════════════════════════
+RÈGLE ABSOLUE — ÉCLATEMENT DES ENTRÉES COMPOSITES
+═══════════════════════════════════════════════════════════
+Une entrée contient SOUVENT plusieurs actions distinctes (séparées par des virgules, des "et", des "+", ou juste énumérées).
+Tu DOIS créer UNE sous-tâche par action distincte, chacune rattachée au template le plus adapté.
+
+Exemple 1 :
+  Entrée : "1 vitre et porte posées 7ème box, gummies extérieurs, réglage porte" (3.0h, 4 ouvriers)
+  → 4 sous-tâches (durée éclatée : 3h ÷ 4 = 0.75h chacune) :
+     • "Pose vitre 7ème box"        → template le plus proche (ex : "Pose vitres")
+     • "Pose porte 7ème box"        → template "Pose portes"
+     • "Pose gummies extérieurs"    → template "Joints / gummies"
+     • "Réglage porte"              → template "Finitions" ou "Réglages"
+
+Exemple 2 :
+  Entrée : "6 box montées et connectées, roof tape, rubber et pièces sécurité" (1.5h, 4 ouvriers)
+  → 4 sous-tâches (0.375h chacune) :
+     • "Montage 6 box"                  → "Montage box"
+     • "Connexion des box entre elles"  → "Assemblage / connexion"
+     • "Pose roof tape + rubber"        → "Étanchéité / joints"
+     • "Pose pièces sécurité"           → "Sécurité chantier"
+
+Exemple 3 :
+  Entrée : "2 escaliers et plateforme placés fixés, 2 doubles portes bas, peintures en cours, 10 panels joints gummies" (10.5h)
+  → 5 sous-tâches (~2.1h chacune) :
+     • "Pose 2 escaliers + plateforme fixation" → "Installation escaliers"
+     • "Pose 2 doubles portes bas"              → "Pose portes"
+     • "Peinture profils"                       → "Peinture"
+     • "Pose 10 panels"                         → "Pose panneaux"
+     • "Pose joints/gummies sur panels"         → "Joints / gummies"
+
+Exemple 4 :
+  Entrée : "1 box montée à l'étage, 9ème box montée au sol prête pour demain" (0.0h)
+  → 2 sous-tâches (à durée nulle mais quand même listées pour traçabilité) :
+     • "Montage 1 box étage" → "Montage box"
+     • "Préparation 9ème box au sol" → "Préparation / logistique"
+
+═══════════════════════════════════════════════════════════
+INTERDICTIONS
+═══════════════════════════════════════════════════════════
+❌ INTERDIT de tout mettre sous UN SEUL template (ex : tout sous "UNIT" ou "Installation Viewbox").
+❌ INTERDIT de créer moins de sous-tâches qu'il y a d'actions distinctes dans le texte.
+❌ INTERDIT d'inventer une action absente du texte source.
+❌ INTERDIT d'utiliser un nom de template qui n'est pas dans la liste ci-dessus (sauf "Autres tâches").
+
+═══════════════════════════════════════════════════════════
+INSTRUCTIONS DÉTAILLÉES
+═══════════════════════════════════════════════════════════
+1. Chaque entrée du journal a un horaire [HH:MM], une durée (jusqu'à l'entrée suivante du même jour) et une description.
+2. Pour CHAQUE ACTION DISTINCTE identifiée dans une entrée, crée UNE sous-tâche avec :
+   - "date" : jour (YYYY-MM-DD)
+   - "time" : horaire de l'entrée d'origine (HH:MM)
+   - "description" : verbe + objet, max 80 caractères (ex : "Pose vitre 7ème box")
+   - "durationHours" : durée de l'entrée ÷ nombre d'actions extraites (arrondi à 0.25h près)
+   - "workers" : nombre d'ouvriers si mentionné dans l'entrée d'origine ("l'équipe", "3 ouvriers", "Jeremy et Marc"), sinon null
+   - "workersKnown" : true si mentionné, false sinon
+3. Regroupe les sous-tâches par NOM DE TEMPLATE (celui de la liste ci-dessus).
+4. Ignore les entrées non productives : briefing, pause, café, "arrivée sur site sans activité", "team en place".
+5. Si une entrée est vraiment mono-action, 1 seule sous-tâche (mais c'est rare — la plupart en ont 2 à 5).
+
+═══════════════════════════════════════════════════════════
+FORMAT DE RÉPONSE (JSON UNIQUEMENT — pas de markdown, pas de backticks)
+═══════════════════════════════════════════════════════════
 {
   "summary": {
     "totalDays": nombre_de_jours_avec_activite,
@@ -7377,13 +7429,13 @@ RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
   },
   "categories": [
     {
-      "name": "Installation Viewbox",
+      "name": "Nom exact du template",
       "subtasks": [
         {
-          "date": "2025-01-15",
-          "time": "09:15",
-          "description": "Montage 1ère box",
-          "durationHours": 0.5,
+          "date": "2026-07-13",
+          "time": "18:00",
+          "description": "Pose vitre 7ème box",
+          "durationHours": 0.75,
           "workers": 4,
           "workersKnown": true
         }
@@ -7391,11 +7443,12 @@ RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
     }
   ],
   "insights": [
-    "Point d'analyse pertinent"
+    "Analyse pertinente 1",
+    "Analyse pertinente 2"
   ]
 }
 
-Sois précis. Ne crée pas de tâches inventées.
+Sois systématique dans l'éclatement. Une entrée à 4 actions = 4 sous-tâches dans 4 templates différents (sauf si 2 actions relèvent vraiment du même template).
 
 RAPPORTS À ANALYSER :
 ${sourceText}`;
