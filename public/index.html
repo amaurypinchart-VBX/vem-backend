@@ -1687,25 +1687,23 @@ textarea.input{min-height:80px;resize:vertical;}
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div>
             <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;">⏱️ Analyse temps par tâche</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px;">L'IA lit tous les daily reports et calcule les heures. Modifie les valeurs si besoin avant de générer.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">L'IA lit tous les daily reports et rattache chaque tâche à un template de ta bibliothèque.</div>
           </div>
-          <button class="btn btn-blue btn-sm" onclick="runTimeAnalysisForReport()" id="ta-run-btn">🤖 Lancer / relancer l'analyse</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="loadTATemplates(true)" title="Recharger les templates depuis la base de données">🔄 Recharger templates</button>
+            <button class="btn btn-blue btn-sm" onclick="runTimeAnalysisForReport()" id="ta-run-btn">🤖 Lancer / relancer l'analyse</button>
+          </div>
+        </div>
+
+        <!-- Affichage des templates chargés -->
+        <div id="ta-templates-display" style="background:var(--bg2);border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px;color:var(--text3);text-align:center;">
+          <span style="color:var(--text3);">📋 Les templates de tâches seront chargés automatiquement...</span>
         </div>
 
         <details style="margin-bottom:10px;">
-          <summary style="cursor:pointer;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;">⚙️ Personnaliser les catégories</summary>
-          <textarea id="ta-categories" rows="6" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-top:6px;">Installation Viewbox
-Installation Ceiling / Plafond
-Déchargement camions / Réception matériel
-Installation électrique
-Installation façades
-Installation escaliers / rails
-Montage structure / grue
-Nettoyage / rangement
-Réunion / briefing
-Démontage
-Autres tâches</textarea>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Une catégorie par ligne.</div>
+          <summary style="cursor:pointer;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;">⚙️ Personnaliser les catégories (avancé)</summary>
+          <div style="font-size:11px;color:var(--text3);margin:6px 0;">Ajoute des catégories manuelles ici — elles seront combinées avec tes templates. Une par ligne.</div>
+          <textarea id="ta-categories" rows="4" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;" placeholder="Catégories additionnelles optionnelles..."></textarea>
         </details>
 
         <div id="ta-status" style="display:none;background:var(--bg2);border-radius:8px;padding:10px;text-align:center;margin-bottom:10px;">
@@ -7203,6 +7201,10 @@ function toggleReportSection(el) {
   if (el.dataset.section === 'time_analysis') {
     const panel = document.getElementById('ta-panel');
     if (panel) panel.style.display = el.classList.contains('active') ? 'block' : 'none';
+    // Auto-charger les templates la première fois
+    if (el.classList.contains('active') && !TA_TEMPLATES_CACHE) {
+      loadTATemplates(false);
+    }
   }
   return false;
 }
@@ -7211,6 +7213,46 @@ function toggleReportSection(el) {
 // ANALYSE TEMPS PAR TÂCHE — V2 (dans Rapport IA)
 // ═══════════════════════════════════════════════════════════
 let TA_REPORT_DATA = null;
+let TA_TEMPLATES_CACHE = null; // { categories: [{name, icon, color, templates: [{id, title}]}] }
+
+async function loadTATemplates(forceReload = false) {
+  const display = document.getElementById('ta-templates-display');
+  if (!TA_TEMPLATES_CACHE || forceReload) {
+    if (display) display.innerHTML = '<span style="color:var(--text3);">⏳ Chargement des templates...</span>';
+    try {
+      const res = await api('GET', '/task-templates/categories');
+      if (res?.success && res.data?.length) {
+        TA_TEMPLATES_CACHE = res.data;
+      } else {
+        TA_TEMPLATES_CACHE = [];
+      }
+    } catch (e) {
+      console.error('[TA] load templates err:', e);
+      TA_TEMPLATES_CACHE = [];
+    }
+  }
+
+  if (!display) return;
+  if (!TA_TEMPLATES_CACHE.length) {
+    display.innerHTML = '<span style="color:var(--amber);">⚠️ Aucun template de tâche défini. L\'IA utilisera les catégories personnalisées ci-dessous ou des catégories génériques.</span>';
+    return;
+  }
+
+  // Afficher les templates par catégorie avec icônes et couleurs
+  const totalTemplates = TA_TEMPLATES_CACHE.reduce((sum,c) => sum + (c.templates||[]).length, 0);
+  display.innerHTML = `
+    <div style="text-align:left;">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📋 ${totalTemplates} template(s) chargé(s) depuis ${TA_TEMPLATES_CACHE.length} catégorie(s)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${TA_TEMPLATES_CACHE.flatMap(cat =>
+          (cat.templates||[]).map(t => `
+            <span style="background:${cat.color||'var(--bg3)'}22;border:1px solid ${cat.color||'var(--border)'}66;color:${cat.color||'var(--text2)'};font-size:11px;padding:3px 8px;border-radius:12px;white-space:nowrap;" title="${esc(cat.name)}">
+              ${cat.icon||'📋'} ${esc(t.title)}
+            </span>`)
+        ).join('')}
+      </div>
+    </div>`;
+}
 
 function setTAStatus(icon, text) {
   const box = document.getElementById('ta-status');
@@ -7270,28 +7312,61 @@ async function runTimeAnalysisForReport() {
     }
 
     const sourceText = sourceLines.join('\n');
-    const categoriesRaw = document.getElementById('ta-categories')?.value?.trim() || '';
-    const categories = categoriesRaw.split('\n').map(c=>c.trim()).filter(Boolean);
 
-    setTAStatus('🤖', `Analyse IA (${totalEntries} entrées, ${detailed.length} jours)...`);
+    // Charger templates si pas déjà fait
+    if (!TA_TEMPLATES_CACHE) await loadTATemplates(false);
+
+    // Construire la liste des catégories à partir des templates + additions manuelles
+    const templateCategories = [];
+    (TA_TEMPLATES_CACHE || []).forEach(cat => {
+      (cat.templates || []).forEach(t => {
+        templateCategories.push({
+          id: t.id,
+          title: t.title,
+          categoryName: cat.name,
+          icon: cat.icon || '📋',
+          color: cat.color || null
+        });
+      });
+    });
+
+    const customRaw = document.getElementById('ta-categories')?.value?.trim() || '';
+    const customCategories = customRaw.split('\n').map(c=>c.trim()).filter(Boolean);
+
+    // Fallback si aucun template et aucun custom
+    const finalCategories = templateCategories.length > 0
+      ? templateCategories.map(t => `${t.title}${t.categoryName ? ` (catégorie: ${t.categoryName})` : ''}`).concat(customCategories)
+      : (customCategories.length > 0 ? customCategories : ['Installation','Déchargement','Nettoyage','Autres tâches']);
+
+    // Toujours ajouter "Autres tâches" comme fallback si pas déjà présent
+    if (!finalCategories.some(c => c.toLowerCase().includes('autre'))) {
+      finalCategories.push('Autres tâches');
+    }
+
+    setTAStatus('🤖', `Analyse IA (${totalEntries} entrées, ${detailed.length} jours, ${templateCategories.length} template(s))...`);
+
+    // Mapping template.title → template.id pour post-processing
+    const titleToTemplate = {};
+    templateCategories.forEach(t => { titleToTemplate[t.title.toLowerCase()] = t; });
 
     const prompt = `Tu es un expert en gestion de chantier. Analyse les rapports journaliers ci-dessous et extrais toutes les tâches réalisées avec leur durée et effectif.
 
-CATÉGORIES PARENTES (regroupe les entrées sous ces catégories) :
-${categories.map(c => `- ${c}`).join('\n')}
+TEMPLATES DE TÂCHES DE L'ENTREPRISE (catégories à utiliser en priorité — utilise EXACTEMENT le nom du template) :
+${finalCategories.map(c => `- ${c}`).join('\n')}
 
 INSTRUCTIONS :
 1. Chaque entrée du journal a un horaire [HH:MM] et une description
 2. Pour chaque entrée productive, crée UNE sous-tâche avec :
    - "date" : jour de l'entrée (YYYY-MM-DD)
    - "time" : horaire de début (HH:MM)
-   - "description" : description synthétique courte de la tâche (max 100 caractères)
-   - "durationHours" : durée estimée en heures (temps jusqu'à l'entrée suivante du même jour, ou estimation raisonnable). Nombre décimal.
-   - "workers" : nombre d'ouvriers sur cette tâche. Nombre entier SI mentionné dans le texte ("3 ouvriers", "l'équipe", "Jeremy et Marc"), SINON null
-   - "workersKnown" : true si les ouvriers sont clairement mentionnés dans le texte, false sinon
-3. Regroupe les sous-tâches par catégorie parente
-4. Ignore les entrées non productives (pause, arrivée, départ non travaillé, café)
-5. Une entrée trop courte ou trop vague : mets-la dans "Autres tâches"
+   - "description" : description synthétique courte (max 100 caractères)
+   - "durationHours" : durée estimée en heures (temps jusqu'à l'entrée suivante du même jour). Nombre décimal.
+   - "workers" : nombre d'ouvriers sur cette tâche. Entier SI mentionné explicitement dans le texte ("3 ouvriers", "l'équipe", "Jeremy et Marc"), SINON null
+   - "workersKnown" : true si les ouvriers sont clairement mentionnés, false sinon
+3. Regroupe les sous-tâches par catégorie/template parent — UTILISE EXACTEMENT LE NOM D'UN TEMPLATE ci-dessus (sans "(catégorie: ...)")
+4. Ignore les entrées non productives (pause, café, arrivée, départ non travaillé)
+5. Si aucun template ne correspond, mets dans "Autres tâches"
+6. Sois strict : n'invente pas de nouveaux noms de catégorie, réutilise EXACTEMENT ceux fournis
 
 RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
 {
@@ -7307,7 +7382,7 @@ RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
         {
           "date": "2025-01-15",
           "time": "09:15",
-          "description": "Montage 1ère box avec grue",
+          "description": "Montage 1ère box",
           "durationHours": 0.5,
           "workers": 4,
           "workersKnown": true
@@ -7316,11 +7391,11 @@ RÉPONDS UNIQUEMENT AVEC UN JSON VALIDE (pas de markdown, pas de backticks) :
     }
   ],
   "insights": [
-    "Point d'analyse 1"
+    "Point d'analyse pertinent"
   ]
 }
 
-Sois précis dans les calculs de durée. Ne crée pas de tâches inventées.
+Sois précis. Ne crée pas de tâches inventées.
 
 RAPPORTS À ANALYSER :
 ${sourceText}`;
@@ -7348,6 +7423,18 @@ ${sourceText}`;
     if (!result || !result.categories) throw new Error('Réponse IA incomplète');
 
     result.categories.forEach(cat => {
+      // Chercher un template correspondant (nom exact ou partiel)
+      const catNameLower = (cat.name || '').toLowerCase().trim();
+      const matchedTemplate = titleToTemplate[catNameLower]
+        || Object.values(titleToTemplate).find(t =>
+             catNameLower.includes(t.title.toLowerCase()) || t.title.toLowerCase().includes(catNameLower)
+           );
+      if (matchedTemplate) {
+        cat.templateId = matchedTemplate.id;
+        cat.icon = matchedTemplate.icon;
+        cat.color = matchedTemplate.color;
+        cat.parentCategory = matchedTemplate.categoryName;
+      }
       (cat.subtasks || []).forEach(st => {
         st.workers = st.workers ?? null;
         st.workersKnown = !!st.workersKnown && st.workers != null;
@@ -7412,15 +7499,20 @@ function renderTAEditTable() {
         </div>`;
     }).join('');
 
+    const catColor = cat.color || color;
     return `
-      <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:10px;border-left:4px solid ${color};">
+      <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:10px;border-left:4px solid ${catColor};">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <div style="font-weight:700;font-size:14px;color:var(--text);">${esc(cat.name)}</div>
+            <span style="font-size:18px;">${cat.icon || '📋'}</span>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--text);">${esc(cat.name)}${cat.templateId ? '' : ' <span style="color:var(--amber);font-size:11px;">(hors templates)</span>'}</div>
+              ${cat.parentCategory ? `<div style="font-size:10px;color:var(--text3);">Catégorie : ${esc(cat.parentCategory)}</div>` : ''}
+            </div>
             <span style="font-size:11px;color:var(--text3);">${subs.length} tâche(s)</span>
           </div>
           <div style="text-align:right;">
-            <div style="font-size:18px;font-weight:800;color:${color};font-family:'Syne',sans-serif;" id="ta-cattotal-${ci}">${catTotalMH.toFixed(1)}H</div>
+            <div style="font-size:18px;font-weight:800;color:${catColor};font-family:'Syne',sans-serif;" id="ta-cattotal-${ci}">${catTotalMH.toFixed(1)}H</div>
             <div style="font-size:10px;color:var(--text3);text-transform:uppercase;">Total heures-hommes</div>
           </div>
         </div>
@@ -7889,7 +7981,8 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
           sum + (cat.subtasks||[]).reduce((s,st) => s + (st.durationHours||0)*(st.workers||0), 0), 0);
 
         const catsHTML = cats.map((cat, ci) => {
-          const color = barColors[ci % barColors.length];
+          const color = cat.color || barColors[ci % barColors.length];
+          const icon = cat.icon || '📋';
           const subs = cat.subtasks || [];
           const catTotal = subs.reduce((s,st)=> s+(st.durationHours||0)*(st.workers||0), 0);
           const pct = grandTotal > 0 ? Math.round(catTotal/grandTotal*100) : 0;
@@ -7909,9 +8002,12 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
           return `
             <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:12px;border-left:4px solid ${color};">
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-                <div>
-                  <div style="font-weight:700;font-size:15px;color:#1a1a2e;">${cat.name}</div>
-                  <div style="font-size:11px;color:#8892a4;margin-top:2px;">${subs.length} tâche(s) · ${pct}% du total</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:22px;">${icon}</span>
+                  <div>
+                    <div style="font-weight:700;font-size:15px;color:#1a1a2e;">${cat.name}</div>
+                    <div style="font-size:11px;color:#8892a4;margin-top:2px;">${cat.parentCategory ? `${cat.parentCategory} · ` : ''}${subs.length} tâche(s) · ${pct}% du total</div>
+                  </div>
                 </div>
                 <div style="text-align:right;">
                   <div style="font-size:22px;font-weight:800;color:${color};">${catTotal.toFixed(1)}H</div>
