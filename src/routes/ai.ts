@@ -24,7 +24,7 @@ router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFu
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
+        max_tokens: 8000,
         messages: [{
           role: 'user',
           content: `Tu es un assistant pour des rapports de chantier. Analyse ce texte de rapport journalier et extrais UN tableau JSON d'entrées chronologiques.
@@ -58,12 +58,20 @@ ${text}`,
     }
 
     const data = await response.json() as any;
-    const content = data.content?.[0]?.text || '[]';
+    const content = data.content?.[0]?.text || '';
+    logger.info(`[parse-daily] Réponse IA brute (${content.length} car) : ${content.slice(0, 300)}`);
 
     let entries;
     try {
-      entries = JSON.parse(content.replace(/```json|```/g, '').trim());
-    } catch {
+      const cleaned = content.replace(/```json|```/g, '').trim();
+      const firstBracket = cleaned.indexOf('[');
+      const lastBracket  = cleaned.lastIndexOf(']');
+      if (firstBracket === -1 || lastBracket <= firstBracket) {
+        throw new Error('Aucun tableau JSON trouvé dans la réponse');
+      }
+      entries = JSON.parse(cleaned.slice(firstBracket, lastBracket + 1));
+    } catch (e: any) {
+      logger.error(`[parse-daily] JSON.parse échoué : ${e.message} — contenu : ${content.slice(0, 500)}`);
       throw new Error('Impossible de parser la réponse IA');
     }
 
