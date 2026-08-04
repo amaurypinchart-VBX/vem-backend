@@ -18,6 +18,7 @@ import { simpleParser } from 'mailparser';
 import { prisma } from '../config/database';
 import { uploadToCloudinary } from './cloudinaryService';
 import { logger } from '../utils/logger';
+import { createProjectFromEmail } from './projectFromEmail';
 
 let isRunning = false;
 let pollTimer: NodeJS.Timeout | null = null;
@@ -83,6 +84,33 @@ export async function pollImapOnce(): Promise<{ processed: number; skipped: numb
             logger.info(`[imap] Mail UID ${uid} sans sujet — ignoré`);
             await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             skipped++;
+            continue;
+          }
+
+          // ─── NOUVEAU : création de projet depuis un mail transféré ───
+          // Si le sujet commence par le préfixe déclencheur (défaut "NEW"),
+          // on ne cherche PAS un projet existant : on en crée un nouveau.
+          const NEW_PREFIX = (process.env.NEW_PROJECT_SUBJECT_PREFIX || 'NEW').toUpperCase();
+          if (subject.toUpperCase().replace(/^\s+/, '').startsWith(NEW_PREFIX)) {
+            try {
+              const result = await createProjectFromEmail({
+                subject,
+                text: parsed.text || parsed.html || '',
+                from,
+                attachments: parsed.attachments || [],
+              });
+              if (result.created) {
+                processed++;
+                logger.info(`[imap] 🆕 Projet créé "${result.internalNumber}" (${result.filesUploaded} fichier(s)) depuis mail de ${from}`);
+              } else {
+                skipped++;
+                logger.warn(`[imap] Création projet ignorée : ${result.reason || 'inconnue'}`);
+              }
+            } catch (e: any) {
+              errors++;
+              logger.error(`[imap] Erreur création projet depuis mail : ${e.message || e}`);
+            }
+            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             continue;
           }
 
