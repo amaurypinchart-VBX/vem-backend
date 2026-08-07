@@ -3044,7 +3044,10 @@ async function loadProjectDetail(id) {
           </td>
           <td style="color:var(--text3);">${m.user.phone||'—'}</td>
           <td>${m.isLead?'⭐ Lead':''}</td>
-          <td><button class="btn btn-ghost btn-xs" onclick="if(confirm('Retirer ${m.user.firstName} ${m.user.lastName} de l\\'équipe ?')) removeTeamMember('${p.id}','${m.id}')" title="Retirer">✕</button></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-ghost btn-xs" onclick="showSendToMemberModal('${p.id}','${m.id}')" title="Envoyer infos / notifier">📤</button>
+            <button class="btn btn-ghost btn-xs" onclick="if(confirm('Retirer ${m.user.firstName} ${m.user.lastName} de l\\'équipe ?')) removeTeamMember('${p.id}','${m.id}')" title="Retirer">✕</button>
+          </td>
         </tr>`;
         }).join('')}</tbody>
       </table></div>
@@ -12108,6 +12111,114 @@ async function removeTeamMember(projectId, memberId) {
     toast('Membre retiré ✅', 'success');
     loadProjectDetail(projectId);
   } else toast('Erreur : ' + (res?.error || 'inconnue'), 'error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENVOYER INFOS / NOTIFIER UN MEMBRE DE L'ÉQUIPE
+// ═══════════════════════════════════════════════════════════
+async function showSendToMemberModal(projectId, memberId) {
+  const res = await api('GET', `/projects/${projectId}`);
+  if (!res?.success) { toast('Projet introuvable', 'error'); return; }
+  const p = res.data;
+  const member = (p.team || []).find(m => m.id === memberId);
+  if (!member) { toast('Membre introuvable', 'error'); return; }
+
+  const u     = member.user || {};
+  const name  = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+  const email = u.email || '';
+  const role  = member.role || 'worker';
+  const phaseLabels = { both:'🔄 Les deux', installation:'🔨 Installation', dismantling:'🔧 Démontage' };
+  const phase = phaseLabels[member.phase || 'both'] || member.phase;
+
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:540px;">
+      <div class="modal-head">
+        <div class="modal-title">📤 Envoyer à ${esc(name)}</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">
+        <span class="badge badge-blue">${esc(role)}</span>
+        <span style="margin-left:6px;">${phase}</span>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">
+          ${email ? '✉️ ' + esc(email) : '⚠️ Aucun email — seule la notification in-app sera possible'}
+        </div>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Quoi envoyer ?</div>
+      <div style="display:flex;flex-direction:column;gap:4px;background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:14px;">
+        ${[
+          ['assignment','📌 Notification d\'assignation','Nouveau projet + rôle attribué',true],
+          ['project_info','📋 Infos du projet','Dates, lieu, client, notes',false],
+          ['briefings','📊 Briefings','Briefings créés pour ce projet',false],
+          ['bookings','🚚 Ses réservations','Transport + hôtel qui le concernent',false],
+          ['reports','📄 Derniers rapports','Rapports journaliers récents',false],
+          ['ai_content','🤖 Message personnalisé (IA)','Résumé/message généré par l\'IA',false],
+        ].map(([val,label,desc,checked]) => `
+          <label style="display:flex;align-items:flex-start;gap:8px;padding:6px;cursor:pointer;border-radius:6px;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+            <input type="checkbox" class="send-item-cb" value="${val}" ${checked?'checked':''} style="accent-color:var(--accent);margin-top:2px;">
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;">${label}</div>
+              <div style="font-size:11px;color:var(--text3);">${desc}</div>
+            </div>
+          </label>
+        `).join('')}
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Canal</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;background:var(--bg3);border:2px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">
+          <input type="radio" name="send-channel" value="notif" style="accent-color:var(--accent);">📱 Notif
+        </label>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;background:var(--bg3);border:2px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">
+          <input type="radio" name="send-channel" value="email" ${email?'':'disabled'} style="accent-color:var(--accent);">✉️ Email
+        </label>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;background:var(--bg3);border:2px solid var(--accent);border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+          <input type="radio" name="send-channel" value="both" ${email?'checked':''} ${email?'':'disabled'} style="accent-color:var(--accent);">📱+✉️ Les deux
+        </label>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Message (optionnel)</div>
+      <textarea class="input" id="send-member-msg" rows="3" placeholder="Mot personnel ajouté en haut du message..." style="font-size:13px;margin-bottom:14px;"></textarea>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitSendToMember('${projectId}','${memberId}',this.closest('.overlay'))">📤 Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+
+  // Si pas d'email, force le canal sur "notif"
+  if (!email) {
+    const notifRadio = el.querySelector('input[name="send-channel"][value="notif"]');
+    if (notifRadio) notifRadio.checked = true;
+  }
+}
+
+async function submitSendToMember(projectId, memberId, overlay) {
+  const items = Array.from(document.querySelectorAll('.send-item-cb:checked')).map(cb => cb.value);
+  if (!items.length) { toast('Sélectionne au moins un élément à envoyer', 'error'); return; }
+
+  const channel = document.querySelector('input[name="send-channel"]:checked')?.value || 'notif';
+  const message = document.getElementById('send-member-msg')?.value?.trim() || '';
+
+  const btn = overlay?.querySelector('.btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loader"></span> Envoi...'; }
+
+  const res = await api('POST', `/projects/${projectId}/team/${memberId}/notify`, {
+    items, channel, message,
+  });
+
+  if (res?.success) {
+    toast(res.data?.summary || 'Envoyé ✅', 'success');
+    overlay?.remove();
+  } else {
+    if (btn) { btn.disabled = false; btn.innerHTML = '📤 Envoyer'; }
+    toast(res?.error || 'Erreur envoi', 'error');
+  }
 }
 
 // ═══════════════════════════════════════════
