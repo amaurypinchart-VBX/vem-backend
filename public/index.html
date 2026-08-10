@@ -10692,7 +10692,17 @@ async function loadDetailFiles(projectId) {
           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov,.glb,.gltf,.usdz,.obj,.stl,.skp,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
         </label>
       </div>
-    </div>
+    0</div>
+
+    ${files.length ? `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:8px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;">
+          <input type="checkbox" id="pf-select-all" onchange="togglePfSelectAll(this)" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;">
+          Tout sélectionner
+        </label>
+        <span id="pf-sel-count" style="font-size:12px;color:var(--text3);"></span>
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);margin-left:auto;" onclick="bulkDeleteProjectFiles('${projectId}')">🗑️ Supprimer la sélection</button>
+      </div>` : ''}
 
     ${!files.length ? `
       <label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--border);border-radius:16px;padding:40px;cursor:pointer;color:var(--text3);">
@@ -10711,6 +10721,7 @@ async function loadDetailFiles(projectId) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">
           ${files.filter(isImage).map(f=>`
             <div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;cursor:pointer;border:1px solid var(--border);" onclick="openPhotoViewer('${f.fileUrl}')">
+              <input type="checkbox" class="pf-cb" value="${f.id}" onclick="event.stopPropagation();updatePfSelCount()" style="position:absolute;top:4px;left:4px;z-index:2;width:18px;height:18px;accent-color:var(--accent);cursor:pointer;">
               <img src="${f.fileUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">
               <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:6px 8px;">
                 <div style="font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Photo'}</div>
@@ -10727,6 +10738,7 @@ async function loadDetailFiles(projectId) {
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${files.filter(f=>!isImage(f)).map(f=>`
             <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);">
+              <input type="checkbox" class="pf-cb" value="${f.id}" onclick="updatePfSelCount()" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer;">
               <span style="font-size:28px;flex-shrink:0;">${fileIcon(f)}</span>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
@@ -10896,6 +10908,37 @@ async function deleteProjectFile(fileId, projectId) {
   const res = await api('DELETE', `/projects/${projectId}/files/${fileId}`);
   if (res?.success) { toast('Fichier supprimé','success'); loadDetailFiles(projectId); }
   else toast('Erreur suppression','error');
+}
+
+function togglePfSelectAll(master) {
+  document.querySelectorAll('.pf-cb').forEach(cb => { cb.checked = master.checked; });
+  updatePfSelCount();
+}
+
+function updatePfSelCount() {
+  const total = document.querySelectorAll('.pf-cb').length;
+  const n = document.querySelectorAll('.pf-cb:checked').length;
+  const c = document.getElementById('pf-sel-count');
+  if (c) c.textContent = n ? `${n} sélectionné(s)` : '';
+  const master = document.getElementById('pf-select-all');
+  if (master) {
+    master.checked = total > 0 && n === total;
+    master.indeterminate = n > 0 && n < total;
+  }
+}
+
+async function bulkDeleteProjectFiles(projectId) {
+  const ids = Array.from(document.querySelectorAll('.pf-cb:checked')).map(cb => cb.value);
+  if (!ids.length) { toast('Aucun fichier sélectionné', 'error'); return; }
+  if (!confirm(`Supprimer ${ids.length} fichier(s) ?`)) return;
+  toast(`Suppression de ${ids.length} fichier(s)...`, 'info');
+  let ok = 0;
+  for (const id of ids) {
+    const res = await api('DELETE', `/projects/${projectId}/files/${id}`);
+    if (res?.success) ok++;
+  }
+  toast(`${ok} fichier(s) supprimé(s) ✅`, 'success');
+  loadDetailFiles(projectId);
 }
 
 // ═══════════════════════════════════════════════════════
