@@ -3057,7 +3057,7 @@ async function loadProjectDetail(id) {
   const trucks = p.trucks || [];
   const truckIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
   const truckStatusBadge = {planned:'badge-muted',loading:'badge-amber',in_transit:'badge-blue',delivered:'badge-green',returned:'badge-muted'};
-  const truckStatusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
+  const truckStatusLabel = {draft:'📝 Brouillon',planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
   document.getElementById('detail-trucks-content').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
       <button class="btn btn-primary btn-sm" onclick="showAddTruckModal('${p.id}')">+ Ajouter camion / machine</button>
@@ -7007,8 +7007,8 @@ async function openTruckDetail(truckId, projectId) {
 
   const typeIcons = {truck:'🚛',van:'🚐',crane:'🏗️',lift:'🔼',forklift:'🚜',generator:'⚡',trailer:'🚛',machine:'⚙️',other:'📦'};
   const icon = typeIcons[truck.vehicleType]||'🚛';
-  const statusColors = {planned:'var(--text3)',loading:'var(--amber)',in_transit:'var(--blue)',delivered:'var(--green)',returned:'var(--text3)'};
-  const statusLabels = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'Livré',returned:'Retourné'};
+  const statusColors = {draft:'var(--amber)',planned:'var(--text3)',loading:'var(--amber)',in_transit:'var(--blue)',delivered:'var(--green)',returned:'var(--text3)'};
+  const statusLabels = {draft:'📝 Brouillon',planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'Livré',returned:'Retourné'};
 
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML = `
@@ -7065,6 +7065,7 @@ async function openTruckDetail(truckId, projectId) {
         <div class="input-row">
           <div class="form-group2"><label class="form-label2">Statut</label>
             <select class="input" id="etruck-status">
+              <option value="draft" ${truck.status==='draft'?'selected':''}>📝 Brouillon</option>
               <option value="planned" ${truck.status==='planned'?'selected':''}>Planifié</option>
               <option value="loading" ${truck.status==='loading'?'selected':''}>En chargement</option>
               <option value="in_transit" ${truck.status==='in_transit'?'selected':''}>En transit</option>
@@ -8205,7 +8206,7 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
     // ── Section: Logistics ──
     if (sections.includes('logistics') && trucks.length) {
       const icons = {truck:'🚛',van:'🚐',crane:'🏗️',scissor:'✂️',manitou:'🔧',forklift:'🚜',generator:'⚡',machine:'⚙️',other:'📦'};
-      const statusLabel = {planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
+      const statusLabel = {draft:'📝 Brouillon',planned:'Planifié',loading:'En chargement',in_transit:'En transit',delivered:'✅ Livré',returned:'Retourné'};
       const fmtDT = d => d ? new Date(d).toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
       reportHTML += `
     <div class="section">

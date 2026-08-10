@@ -19,6 +19,7 @@ import { prisma } from '../config/database';
 import { uploadToCloudinary } from './cloudinaryService';
 import { logger } from '../utils/logger';
 import { createProjectFromEmail } from './projectFromEmail';
+import { createBookingsFromEmail } from './bookingFromEmail';
 
 let isRunning = false;
 let pollTimer: NodeJS.Timeout | null = null;
@@ -129,15 +130,29 @@ export async function pollImapOnce(): Promise<{ processed: number; skipped: numb
             continue;
           }
 
-          const attachments = parsed.attachments || [];
-          if (attachments.length === 0) {
-            logger.info(`[imap] Mail "${subject}" pour ${project.internalNumber} sans pièce jointe`);
-            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
-            skipped++;
-            continue;
+          // ─── NOUVEAU : réservations depuis le corps du mail (l'IA décide) ───
+          let bookingsCreated = 0;
+          try {
+            const r = await createBookingsFromEmail({
+              projectId:      project.id,
+              internalNumber: project.internalNumber,
+              subject,
+              text:           parsed.text || parsed.html || '',
+              from,
+            });
+            bookingsCreated = r.created;
+            if (r.created > 0) {
+              processed++;
+              logger.info(`[imap] 🚛 ${r.trucks} camion(s), ${r.hotels} hôtel(s), ${r.team} trajet(s) → ${project.internalNumber} (de ${from})`);
+            }
+            if (r.skipped.length) logger.info(`[imap] réservations ignorées : ${r.skipped.join(' | ')}`);
+          } catch (e: any) {
+            logger.error(`[imap] Erreur parsing réservations : ${e.message || e}`);
+            errors++;
           }
 
-          // Upload chaque pièce jointe
+          // ─── Upload des pièces jointes (comme avant) ───
+          const attachments = parsed.attachments || [];
           let uploadedHere = 0;
           for (const att of attachments) {
             try {
@@ -167,10 +182,11 @@ export async function pollImapOnce(): Promise<{ processed: number; skipped: numb
             }
           }
 
-          // On marque le mail comme lu seulement si au moins une pièce jointe a été uploadée
-          // (sinon on retentera au prochain poll, utile si Cloudinary était down)
-          if (uploadedHere > 0) {
+          // Marquer comme lu, SAUF si des PJ étaient présentes mais aucune n'a pu
+          // être uploadée ET qu'aucune réservation n'a été créée (retry au prochain poll).
+          if (bookingsCreated > 0 || uploadedHere > 0 || attachments.length === 0) {
             await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
+            if (bookingsCreated === 0 && uploadedHere === 0) skipped++;
           }
         } catch (e: any) {
           logger.error(`[imap] Erreur traitement UID ${uid} : ${e.message || e}`);
