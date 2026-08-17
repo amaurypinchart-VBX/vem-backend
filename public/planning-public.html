@@ -78,6 +78,7 @@
   }
   .bar.dismantle{opacity:.9;background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.12) 0 6px,transparent 6px 12px);}
   .today-line{position:absolute;top:0;bottom:0;width:2px;background:var(--today);z-index:4;box-shadow:0 0 8px var(--today);}
+  .truck{position:absolute;top:-1px;font-size:16px;z-index:6;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));}
   .today-flag{position:absolute;top:0;background:var(--today);color:#0e1116;font-size:11px;font-weight:800;padding:2px 6px;border-radius:0 0 6px 0;transform:translateX(-1px);z-index:4;}
 
   .empty,.error{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:10px;color:var(--text2);font-size:18px;}
@@ -132,7 +133,7 @@ function buildLegend(){
   const used=['confirmed','in_preparation','installation','on_site','handover_ok','completed'];
   document.getElementById('legend').innerHTML = used.map(s=>
     `<span class="lg"><span class="dot" style="background:${STATUS[s].c}"></span>${STATUS[s].lbl}</span>`
-  ).join('') + `<span class="lg"><span class="dot" style="background:repeating-linear-gradient(45deg,var(--dismantle) 0 6px,#0e1116 6px 12px)"></span>Démontage</span>`;
+  ).join('') + `<span class="lg"><span class="dot" style="background:repeating-linear-gradient(45deg,var(--dismantle) 0 6px,#0e1116 6px 12px)"></span>Démontage</span><span class="lg">🚛 Camion</span>`;
 }
 
 function render(projects){
@@ -175,7 +176,7 @@ function render(projects){
       const b=Math.min(WINDOW_DAYS-1,dayIndex(win0,iEnd));
       if(b>=0 && a<WINDOW_DAYS){
         const col=STATUS[p.status]?.c||'var(--draft)';
-        bars.push(`<div class="bar" style="left:${a*DAY_W}px;width:${(b-a+1)*DAY_W-4}px;background:${col}" title="${p.name}">${STATUS[p.status]?.lbl||p.status}</div>`);
+        bars.push(`<div class="bar" style="left:${a*DAY_W}px;width:${(b-a+1)*DAY_W-4}px;background:${col}" title="${esc(p.name)} — ${STATUS[p.status]?.lbl||p.status}">Installation</div>`);
       }
     }
     // phase démontage
@@ -188,6 +189,14 @@ function render(projects){
         bars.push(`<div class="bar dismantle" style="left:${a*DAY_W}px;width:${(b-a+1)*DAY_W-4}px;background:var(--dismantle)" title="Démontage — ${p.name}">Démontage</div>`);
       }
     }
+    // Camions
+    let trucksHtml='';
+    (p.trucks||[]).forEach(t=>{
+      if(!t.date) return;
+      const idx=dayIndex(win0,new Date(t.date));
+      if(idx<0||idx>=WINDOW_DAYS) return;
+      trucksHtml+=`<div class="truck" style="left:${idx*DAY_W+3}px" title="🚛 ${esc(t.label)}">🚛</div>`;
+    });
     rows+=`
       <div class="row">
         <div class="cell-name">
@@ -199,6 +208,7 @@ function render(projects){
           ${weHtml}
           ${(todayLeft>=0&&todayLeft<=tlWidth)?`<div class="today-line" style="left:${todayLeft}px"></div>`:''}
           ${bars.join('')}
+          ${trucksHtml}
         </div></div>
       </div>`;
   });

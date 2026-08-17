@@ -35,6 +35,16 @@ router.get('/calendar', async (_req, res, next) => {
         dismantlingStart: true,
         dismantlingEnd: true,
         client: { select: { name: true } },
+        trucks: {
+          select: {
+            id: true,
+            truckNumber: true,
+            licensePlate: true,
+            loadingDate: true,
+            departureDate: true,
+            arrivalDate: true,
+          },
+        },
       },
       orderBy: { installationStart: 'asc' },
     });
@@ -50,6 +60,11 @@ router.get('/calendar', async (_req, res, next) => {
       installationEnd: p.installationEnd,
       dismantlingStart: p.dismantlingStart,
       dismantlingEnd: p.dismantlingEnd,
+      trucks: (p.trucks || []).map((t) => ({
+        id: t.id,
+        label: t.truckNumber || t.licensePlate || 'Camion',
+        date: t.loadingDate || t.departureDate || t.arrivalDate,
+      })),
     }));
 
     // Pas de cache navigateur/CDN : la page se rafraîchit d'elle-même
