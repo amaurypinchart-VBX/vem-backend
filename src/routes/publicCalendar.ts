@@ -15,7 +15,7 @@ router.get('/calendar', async (_req, res, next) => {
 
     const projects = await prisma.project.findMany({
       where: {
-        status: { notIn: ['cancelled', 'draft'] },
+        status: { notIn: ['cancelled'] },
         // Le projet démarre avant la fin de fenêtre
         installationStart: { lte: windowEnd },
         // ET se termine après le début de fenêtre (fin = démontage si présent, sinon installation)
