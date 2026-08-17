@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planning Projets — 2 mois</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a3340;
+    --text:#e6edf3; --text2:#9aa7b4; --text3:#6b7684;
+    --today:#f4a261;
+    --draft:#8892a4; --confirmed:#4895ef; --prep:#f4a261; --loading:#f4a261;
+    --onsite:#e63946; --install:#e63946; --handover:#a06cd5; --handoverok:#2dc653;
+    --dismantle:#f4a261; --completed:#2dc653;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    overflow:hidden;
+  }
+  .wrap{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 24px;background:var(--panel);border-bottom:2px solid var(--line);
+    flex-shrink:0;
+  }
+  header h1{font-size:26px;font-weight:800;letter-spacing:.3px;}
+  header h1 span{color:var(--confirmed);}
+  .meta{text-align:right;font-size:13px;color:var(--text2);line-height:1.5;}
+  .meta b{color:var(--text);}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;justify-content:flex-end;}
+  .legend .lg{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);}
+  .legend .dot{width:12px;height:12px;border-radius:3px;}
+
+  .gantt{flex:1;overflow:auto;position:relative;}
+  .grid{display:grid;min-width:100%;}
+  /* colonne de gauche + zone timeline */
+  .row{
+    display:grid;grid-template-columns:280px 1fr;
+    border-bottom:1px solid var(--line);
+  }
+  .row.head{position:sticky;top:0;z-index:5;background:var(--panel2);}
+  .cell-name{
+    padding:10px 14px;border-right:2px solid var(--line);
+    background:var(--panel);display:flex;flex-direction:column;justify-content:center;
+    position:sticky;left:0;z-index:2;
+  }
+  .row.head .cell-name{background:var(--panel2);z-index:6;}
+  .pname{font-size:15px;font-weight:700;line-height:1.25;}
+  .pclient{font-size:12px;color:var(--text2);margin-top:2px;}
+  .pnum{font-size:11px;color:var(--text3);}
+
+  .timeline{position:relative;}
+  /* entête dates */
+  .months{display:flex;}
+  .month{
+    text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;
+    letter-spacing:1px;color:var(--text2);padding:6px 0;
+    border-right:1px solid var(--line);
+  }
+  .days{display:flex;}
+  .day{
+    flex:0 0 auto;text-align:center;font-size:11px;color:var(--text3);
+    padding:3px 0;border-right:1px solid rgba(42,51,64,.5);
+  }
+  .day.we{background:rgba(255,255,255,.03);}
+  .day .wd{display:block;font-size:9px;color:var(--text3);}
+
+  .track{position:relative;height:52px;}
+  .track .we{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.02);}
+  .bar{
+    position:absolute;top:9px;height:34px;border-radius:6px;
+    display:flex;align-items:center;padding:0 8px;overflow:hidden;
+    font-size:12px;font-weight:600;color:#fff;white-space:nowrap;
+    box-shadow:0 2px 6px rgba(0,0,0,.35);
+  }
+  .bar.dismantle{opacity:.9;background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.12) 0 6px,transparent 6px 12px);}
+  .today-line{position:absolute;top:0;bottom:0;width:2px;background:var(--today);z-index:4;box-shadow:0 0 8px var(--today);}
+  .today-flag{position:absolute;top:0;background:var(--today);color:#0e1116;font-size:11px;font-weight:800;padding:2px 6px;border-radius:0 0 6px 0;transform:translateX(-1px);z-index:4;}
+
+  .empty,.error{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:10px;color:var(--text2);font-size:18px;}
+  .spin{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--confirmed);border-radius:50%;animation:s 1s linear infinite;}
+  @keyframes s{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Planning <span>Projets</span> — 2 mois</h1>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="meta">
+      <div>Dernière MAJ : <b id="lastUpdate">—</b></div>
+      <div>Actualisation auto toutes les 6h</div>
+    </div>
+  </header>
+  <div class="gantt" id="gantt">
+    <div class="empty"><div class="spin"></div>Chargement du planning…</div>
+  </div>
+</div>
+
+<script>
+const REFRESH_MS = 6 * 60 * 60 * 1000; // 6 heures
+const WINDOW_DAYS = 60;                 // ~2 mois
+const DAY_W = 34;                       // largeur d'un jour (px)
+
+const STATUS = {
+  draft:{lbl:'Brouillon',c:'var(--draft)'},
+  confirmed:{lbl:'Confirmé',c:'var(--confirmed)'},
+  quote_to_validate:{lbl:'Devis à valider',c:'var(--draft)'},
+  quote_validated:{lbl:'Devis validé',c:'var(--confirmed)'},
+  in_preparation:{lbl:'Préparation',c:'var(--prep)'},
+  loading:{lbl:'Chargement',c:'var(--loading)'},
+  on_site:{lbl:'Sur site',c:'var(--onsite)'},
+  installation:{lbl:'Installation',c:'var(--install)'},
+  handover:{lbl:'Handover',c:'var(--handover)'},
+  handover_ok:{lbl:'Handover OK',c:'var(--handoverok)'},
+  dismantling:{lbl:'Démontage',c:'var(--dismantle)'},
+  completed:{lbl:'Terminé',c:'var(--completed)'},
+};
+const MONTHS = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
+const WD = ['D','L','M','M','J','V','S'];
+
+function startOfDay(d){const x=new Date(d);x.setHours(0,0,0,0);return x;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function dayIndex(win0,d){return Math.floor((startOfDay(d)-win0)/86400000);}
+
+function buildLegend(){
+  const used=['confirmed','in_preparation','installation','on_site','handover_ok','completed'];
+  document.getElementById('legend').innerHTML = used.map(s=>
+    `<span class="lg"><span class="dot" style="background:${STATUS[s].c}"></span>${STATUS[s].lbl}</span>`
+  ).join('') + `<span class="lg"><span class="dot" style="background:repeating-linear-gradient(45deg,var(--dismantle) 0 6px,#0e1116 6px 12px)"></span>Démontage</span>`;
+}
+
+function render(projects){
+  const win0 = startOfDay(new Date());
+  const winEnd = addDays(win0, WINDOW_DAYS);
+  const tlWidth = WINDOW_DAYS * DAY_W;
+
+  // entête mois
+  let monthsHtml='', i=0;
+  while(i<WINDOW_DAYS){
+    const d=addDays(win0,i); const m=d.getMonth(), y=d.getFullYear();
+    let span=0;
+    while(i+span<WINDOW_DAYS && addDays(win0,i+span).getMonth()===m) span++;
+    monthsHtml+=`<div class="month" style="width:${span*DAY_W}px">${MONTHS[m]} ${y}</div>`;
+    i+=span;
+  }
+  // entête jours
+  let daysHtml='';
+  for(let k=0;k<WINDOW_DAYS;k++){
+    const d=addDays(win0,k); const we=(d.getDay()===0||d.getDay()===6);
+    daysHtml+=`<div class="day ${we?'we':''}" style="width:${DAY_W}px"><span class="wd">${WD[d.getDay()]}</span>${d.getDate()}</div>`;
+  }
+  // bandes weekend (réutilisables)
+  let weHtml='';
+  for(let k=0;k<WINDOW_DAYS;k++){
+    const d=addDays(win0,k);
+    if(d.getDay()===0||d.getDay()===6) weHtml+=`<div class="we" style="left:${k*DAY_W}px;width:${DAY_W}px"></div>`;
+  }
+  const todayLeft = dayIndex(win0,new Date())*DAY_W;
+
+  // lignes projets
+  let rows='';
+  projects.forEach(p=>{
+    const bars=[];
+    // phase installation → (installEnd)
+    const iStart=p.installationStart?new Date(p.installationStart):null;
+    const iEnd=p.installationEnd?new Date(p.installationEnd):iStart;
+    if(iStart){
+      const a=Math.max(0,dayIndex(win0,iStart));
+      const b=Math.min(WINDOW_DAYS-1,dayIndex(win0,iEnd));
+      if(b>=0 && a<WINDOW_DAYS){
+        const col=STATUS[p.status]?.c||'var(--draft)';
+        bars.push(`<div class="bar" style="left:${a*DAY_W}px;width:${(b-a+1)*DAY_W-4}px;background:${col}" title="${p.name}">${STATUS[p.status]?.lbl||p.status}</div>`);
+      }
+    }
+    // phase démontage
+    if(p.dismantlingStart){
+      const dS=new Date(p.dismantlingStart);
+      const dE=p.dismantlingEnd?new Date(p.dismantlingEnd):dS;
+      const a=Math.max(0,dayIndex(win0,dS));
+      const b=Math.min(WINDOW_DAYS-1,dayIndex(win0,dE));
+      if(b>=0 && a<WINDOW_DAYS){
+        bars.push(`<div class="bar dismantle" style="left:${a*DAY_W}px;width:${(b-a+1)*DAY_W-4}px;background:var(--dismantle)" title="Démontage — ${p.name}">Démontage</div>`);
+      }
+    }
+    rows+=`
+      <div class="row">
+        <div class="cell-name">
+          <div class="pname">${esc(p.name)}</div>
+          <div class="pclient">${esc(p.clientName||'')}</div>
+          <div class="pnum">${esc(p.internalNumber||'')}${p.city?' · '+esc(p.city):''}</div>
+        </div>
+        <div class="timeline"><div class="track" style="width:${tlWidth}px">
+          ${weHtml}
+          ${(todayLeft>=0&&todayLeft<=tlWidth)?`<div class="today-line" style="left:${todayLeft}px"></div>`:''}
+          ${bars.join('')}
+        </div></div>
+      </div>`;
+  });
+
+  const html=`
+    <div class="grid" style="width:${280+tlWidth}px">
+      <div class="row head">
+        <div class="cell-name" style="justify-content:center">
+          <div class="pname">${projects.length} projet${projects.length>1?'s':''}</div>
+        </div>
+        <div class="timeline">
+          <div class="months" style="width:${tlWidth}px">${monthsHtml}</div>
+          <div class="days" style="width:${tlWidth}px;position:relative">
+            ${(todayLeft>=0&&todayLeft<=tlWidth)?`<div class="today-flag" style="left:${todayLeft}px">AUJOURD'HUI</div>`:''}
+            ${daysHtml}
+          </div>
+        </div>
+      </div>
+      ${rows||'<div class="empty" style="grid-column:1/3;padding:40px">Aucun projet planifié sur les 2 prochains mois.</div>'}
+    </div>`;
+  document.getElementById('gantt').innerHTML=html;
+}
+
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+async function load(){
+  try{
+    const r=await fetch('/api/v1/public/calendar',{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    const projects=(data.data||data.projects||data||[]);
+    render(projects);
+    document.getElementById('lastUpdate').textContent=new Date().toLocaleString('fr-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    document.getElementById('gantt').innerHTML=`<div class="error">⚠️ Impossible de charger le planning<br><small style="color:var(--text3)">${esc(e.message)}</small></div>`;
+  }
+}
+
+buildLegend();
+load();
+setInterval(load, REFRESH_MS);
+// rechargement complet de la page toutes les 6h (récupère aussi les MAJ de code)
+setTimeout(()=>location.reload(), REFRESH_MS);
+</script>
+</body>
+</html>

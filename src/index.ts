@@ -37,6 +37,7 @@ import { startImapPoller } from './services/imapPoller';
 import { runStartupMigrations } from './utils/migrations';
 import translateRoutes from './routes/translate';
 import publicHandoverSignRoutes from './routes/publicHandoverSign';
+import publicCalendarRoutes from './routes/publicCalendar';
 
 const app  = express();
 const http = createServer(app);
@@ -83,6 +84,8 @@ const API = '/api/v1';
 app.use(`${API}/auth`,           authRoutes);
 // Route PUBLIQUE — pas de middleware auth, accessible par lien
 app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
+// Route PUBLIQUE — calendrier projets 2 mois pour écran entrepôt
+app.use('/api/v1/public', publicCalendarRoutes);
 
 app.use(`${API}/users`,          authMiddleware, userRoutes);
 app.use(`${API}/clients`,        authMiddleware, clientRoutes);
