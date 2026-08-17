@@ -568,6 +568,60 @@ textarea.input{min-height:80px;resize:vertical;}
   </div>
 </div>
 
+<!-- ═══ PAGE INSCRIPTION (lien d'invitation) ═══ -->
+<div id="register-screen" style="display:none;">
+  <div class="login-wrap">
+    <div class="login-bg"></div>
+    <div class="login-card">
+      <div class="login-logo" style="flex-direction:column;gap:6px;">
+        <img src="/logo_light.png" alt="VIEWBOX" style="width:200px;height:auto;">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:2px;">Event Manager</div>
+      </div>
+      <div class="login-title">Créer mon compte</div>
+      <div class="login-sub" id="register-role-label">Complétez vos informations</div>
+      <div style="display:flex;gap:8px;">
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Prénom</label>
+          <input class="form-input" id="reg-firstname" type="text" autocomplete="given-name">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label class="form-label">Nom</label>
+          <input class="form-input" id="reg-lastname" type="text" autocomplete="family-name">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="reg-email" type="email" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rôle</label>
+        <select class="form-input" id="reg-role">
+          <option value="worker">👷 Ouvrier / Équipe</option>
+          <option value="installer">🔧 Installateur</option>
+          <option value="site_manager">🏗️ Site Manager</option>
+          <option value="technical_manager">⚙️ Technical Manager</option>
+          <option value="project_manager">📊 Project Manager</option>
+          <option value="sales_engineer">💼 Sales Engineer</option>
+          <option value="warehouse">📦 Entrepôt</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe (8 caractères min)</label>
+        <input class="form-input" id="reg-password" type="password" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <input class="form-input" id="reg-password2" type="password" autocomplete="new-password">
+      </div>
+      <button class="login-btn" id="reg-btn" onclick="submitRegister()">✅ Créer mon compte</button>
+      <div class="login-error" id="reg-error" style="display:none;"></div>
+      <div style="text-align:center;margin-top:18px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="showLoginFromRegister()">← Retour à la connexion</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ APP ═══ -->
 <div id="app-screen" style="display:none;">
 
@@ -1010,6 +1064,47 @@ textarea.input{min-height:80px;resize:vertical;}
 <div class="toasts" id="toasts"></div>
 
 <!-- ═══ MODALS ═══ -->
+
+<!-- Inviter par lien -->
+<div class="overlay" id="modal-invite">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <div class="modal-title">🔗 Inviter par lien</div>
+      <button class="modal-close" onclick="this.closest('.overlay').classList.remove('open')">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
+      Générez un lien : la personne créera elle-même son compte.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Rôle attribué</label>
+      <select class="input" id="invite-role">
+        <option value="worker">👷 Ouvrier / Équipe</option>
+        <option value="installer">🔧 Installateur</option>
+        <option value="site_manager">🏗️ Site Manager</option>
+        <option value="technical_manager">⚙️ Technical Manager</option>
+        <option value="project_manager">📊 Project Manager</option>
+        <option value="sales_engineer">💼 Sales Engineer</option>
+        <option value="warehouse">📦 Entrepôt</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email (optionnel — verrouille l'invitation sur cette adresse)</label>
+      <input class="input" id="invite-email" type="email" placeholder="facultatif">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note interne (optionnel)</label>
+      <input class="input" id="invite-note" type="text" placeholder="facultatif">
+    </div>
+    <button class="btn btn-primary" id="invite-gen-btn" onclick="generateInviteLink()" style="width:100%;">🔗 Générer le lien</button>
+    <div id="invite-result" style="display:none;margin-top:16px;">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px;">Lien d'invitation (copié automatiquement) :</div>
+      <div style="display:flex;gap:8px;">
+        <input class="input" id="invite-link-input" readonly style="flex:1;font-size:11px;">
+        <button class="btn btn-outline btn-sm" onclick="copyInviteLink()">📋</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Nouveau Projet -->
 <div class="overlay" id="modal-proj">
@@ -2042,16 +2137,70 @@ async function doLogin() {
     CURRENT_USER = res.data.user;
     localStorage.setItem('vem_token', TOKEN);
     localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER));
-    showApp();
+    btn.disabled = false;
+    btn.innerHTML = 'Se connecter';
+    if (res.data.user.mustChangePassword) {
+      forcePasswordChange(pwd);   // pwd = mot de passe temporaire saisi
+    } else {
+      showApp();
+    }
   } else {
     err.style.display = 'block';
-    err.textContent = 'Email ou mot de passe incorrect';
+    err.textContent = res?.error || 'Email ou mot de passe incorrect';
     btn.disabled = false;
     btn.innerHTML = 'Se connecter';
   }
 }
 
 document.getElementById('login-pwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+// Changement de mot de passe forcé après connexion avec un mot de passe temporaire
+function forcePasswordChange(tempPwd) {
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:9999;';
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:32px;width:90%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px;">🔐 Choisissez votre mot de passe</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;">Votre accès était temporaire. Définissez maintenant votre mot de passe personnel.</div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe (8 caractères min)</label>
+        <input class="form-input" type="password" id="force-pwd-new" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer</label>
+        <input class="form-input" type="password" id="force-pwd-confirm" autocomplete="new-password">
+      </div>
+      <div id="force-pwd-err" style="display:none;color:var(--accent);font-size:13px;margin-bottom:10px;"></div>
+      <button class="login-btn" id="force-pwd-btn" onclick="submitForcePassword('${tempPwd.replace(/'/g,"\\'")}')">💾 Valider</button>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => document.getElementById('force-pwd-new')?.focus(), 100);
+}
+
+async function submitForcePassword(tempPwd) {
+  const next    = document.getElementById('force-pwd-new').value;
+  const confirm = document.getElementById('force-pwd-confirm').value;
+  const errEl   = document.getElementById('force-pwd-err');
+  const btn     = document.getElementById('force-pwd-btn');
+  const showErr = m => { errEl.style.display='block'; errEl.textContent=m; };
+
+  if (next.length < 8)    return showErr('Au moins 8 caractères.');
+  if (next !== confirm)   return showErr('Les mots de passe ne correspondent pas.');
+  if (next === tempPwd)   return showErr('Choisissez un mot de passe différent du temporaire.');
+
+  btn.disabled = true; btn.innerHTML = '<span class="loader"></span> Validation...';
+  const res = await api('POST', '/auth/change-password', { currentPassword: tempPwd, newPassword: next });
+  if (res?.success) {
+    if (CURRENT_USER) { delete CURRENT_USER.mustChangePassword; localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER)); }
+    document.querySelector('.overlay.open')?.remove();
+    toast('Mot de passe défini ✅', 'success');
+    showApp();
+  } else {
+    showErr(res?.error || 'Erreur — le mot de passe temporaire a peut-être expiré.');
+    btn.disabled = false; btn.innerHTML = '💾 Valider';
+  }
+}
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
@@ -11265,8 +11414,9 @@ async function openUserDetail(userId) {
       </div>
 
       <!-- BOUTONS -->
-      <div id="user-detail-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <div id="user-detail-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
+        <button class="btn btn-outline" style="border-color:var(--blue);color:var(--blue);" onclick="sendUserInvite('${u.id}',this)">📧 Envoyer invitation</button>
         <button class="btn btn-primary" onclick="toggleUserEdit(true)">✏️ Modifier</button>
       </div>
       <div id="user-detail-actions-edit" style="display:none;gap:8px;justify-content:flex-end;margin-top:14px;">
@@ -11283,6 +11433,20 @@ function toggleUserEdit(editing) {
   document.getElementById('user-detail-edit').style.display          = editing ? 'flex' : 'none';
   document.getElementById('user-detail-actions').style.display       = editing ? 'none' : 'flex';
   document.getElementById('user-detail-actions-edit').style.display  = editing ? 'flex' : 'none';
+}
+
+async function sendUserInvite(userId, btn) {
+  const u = USERS.find(x => x.id === userId);
+  if (u && !u.email) { toast('Ce membre n\'a pas d\'email', 'error'); return; }
+  if (!confirm(`Envoyer un mot de passe temporaire (valable 5 min) à ${u ? u.email : 'ce membre'} ?`)) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loader"></span> Envoi...'; }
+  const res = await api('POST', `/users/${userId}/send-invite`);
+  if (btn) { btn.disabled = false; btn.innerHTML = '📧 Envoyer invitation'; }
+  if (res?.success) {
+    toast(`Invitation envoyée à ${res.data.sentTo} ✅ (valable 5 min)`, 'success');
+  } else {
+    toast(res?.error || 'Erreur d\'envoi', 'error');
+  }
 }
 
 async function saveUserEdit(userId) {

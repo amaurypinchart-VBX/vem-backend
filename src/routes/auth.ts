@@ -32,6 +32,25 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
 
+    // ── Mot de passe temporaire (invitation) ? ──
+    let mustChangePassword = false;
+    try {
+      const rows: any = await (prisma as any).$queryRaw`
+        SELECT expires_at FROM invite_passwords WHERE user_id = ${user.id} LIMIT 1
+      `;
+      const inv = Array.isArray(rows) ? rows[0] : null;
+      if (inv) {
+        if (new Date(inv.expires_at) < new Date()) {
+          await (prisma as any).$executeRaw`DELETE FROM invite_passwords WHERE user_id = ${user.id}`;
+          throw new AppError('Mot de passe temporaire expiré. Demandez un nouvel envoi à un administrateur.', 401);
+        }
+        mustChangePassword = true;
+      }
+    } catch (e) {
+      if (e instanceof AppError) throw e;
+      // table absente / autre : login normal
+    }
+
     const token    = signAccess(user);
     const refresh  = jwt.sign({ id: user.id }, RSECRET, { expiresIn: '30d' });
 
@@ -43,7 +62,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
       success: true,
       data: {
         token, refreshToken: refresh,
-        user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl },
+        user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl, mustChangePassword },
       },
     });
   } catch (err) { next(err); }
@@ -219,10 +238,87 @@ router.post('/change-password', authMiddleware, async (req: AuthRequest, res: Re
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
+    // Efface un éventuel mot de passe temporaire d'invitation
+    try { await (prisma as any).$executeRaw`DELETE FROM invite_passwords WHERE user_id = ${user.id}`; } catch (_) {}
+
     // Révoque les autres sessions pour forcer une reconnexion ailleurs
     await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
 
     res.json({ success: true, message: 'Mot de passe modifié avec succès' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/v1/auth/invite — génère un lien d'inscription (admin / project_manager)
+router.post('/invite', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!['admin','project_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
+    const { role, email, note } = req.body;
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 jours
+
+    await prisma.invitationToken.create({
+      data: {
+        token,
+        role: role || 'worker',
+        email: email ? String(email).toLowerCase() : null,
+        note: note || null,
+        expiresAt,
+        createdBy: req.user!.id,
+      },
+    });
+
+    const appUrl = process.env.APP_URL || 'https://viewboxsitemanagement.up.railway.app';
+    const inviteUrl = `${appUrl}/?invite=${token}${role ? `&role=${role}` : ''}`;
+    res.json({ success: true, data: { inviteUrl, token, expiresAt } });
+  } catch (err) { next(err); }
+});
+
+// POST /api/v1/auth/register — création de compte via lien d'invitation
+router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { firstName, lastName, email, password, role, inviteToken } = req.body;
+    if (!firstName || !lastName || !email || !password) throw new AppError('Champs obligatoires manquants', 400);
+    if (password.length < 8) throw new AppError('Mot de passe trop court (min 8 caractères)', 400);
+    if (!inviteToken) throw new AppError('Lien d\'invitation manquant', 400);
+
+    const invite = await prisma.invitationToken.findUnique({ where: { token: inviteToken } });
+    if (!invite) throw new AppError('Invitation invalide', 400);
+    if (invite.usedAt) throw new AppError('Cette invitation a déjà été utilisée', 400);
+    if (invite.expiresAt < new Date()) throw new AppError('Invitation expirée', 400);
+    if (invite.email && invite.email.toLowerCase() !== String(email).toLowerCase()) {
+      throw new AppError('Cette invitation est réservée à une autre adresse email', 400);
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
+    if (existing) throw new AppError('Un compte existe déjà avec cet email', 400);
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const finalRole = (role || invite.role || 'worker');
+
+    const user = await prisma.user.create({
+      data: {
+        firstName, lastName,
+        email: String(email).toLowerCase(),
+        passwordHash,
+        role: finalRole as any,
+      },
+    });
+
+    await prisma.invitationToken.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
+
+    const token   = signAccess(user);
+    const refresh = jwt.sign({ id: user.id }, RSECRET, { expiresIn: '30d' });
+    await prisma.refreshToken.create({
+      data: { userId: user.id, token: refresh, expiresAt: new Date(Date.now() + 30*24*60*60*1000) },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        token, refreshToken: refresh,
+        user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl },
+      },
+    });
   } catch (err) { next(err); }
 });
 
