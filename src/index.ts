@@ -53,7 +53,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {});
 });
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
 app.use(cors({ origin: '*', credentials: true }));
 app.use(compression());
 app.use(morgan('tiny'));
