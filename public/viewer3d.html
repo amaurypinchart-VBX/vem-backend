@@ -519,6 +519,7 @@ input[type="range"]::-moz-range-thumb {
             <span class="format-chip">.GLTF</span>
             <span class="format-chip">.GLB</span>
             <span class="format-chip">.IFC</span>
+            <span class="format-chip">.DAE</span>
           </div>
         </div>
       </div>
@@ -649,7 +650,7 @@ input[type="range"]::-moz-range-thumb {
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".stl,.obj,.gltf,.glb,.ifc" style="display:none">
+<input type="file" id="file-input" accept=".stl,.obj,.gltf,.glb,.ifc,.dae" style="display:none">
 
 <!-- Photo Gallery Modal -->
 <div id="gallery-modal" class="ll-modal-like" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;">
@@ -1247,6 +1248,63 @@ function processGLTF(json, bin) {
   return components;
 }
 
+// ─── COLLADA (.dae) PARSER — via ColladaLoader de three.js (chargé dynamiquement) ───
+async function parseDAE(text) {
+  if (!window.THREE || !window.THREE.ColladaLoader) {
+    setStatus('📦 Chargement du moteur COLLADA (première fois seulement)...', 'info');
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-collada-loader]');
+      if (existing) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js';
+      s.setAttribute('data-collada-loader', '1');
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Chargement de ColladaLoader échoué'));
+      document.head.appendChild(s);
+    });
+  }
+  if (!window.THREE.ColladaLoader) throw new Error('ColladaLoader indisponible');
+  setStatus('🔧 Analyse du fichier COLLADA en cours...', 'info');
+
+  const loader = new window.THREE.ColladaLoader();
+  const collada = loader.parse(text, '');
+  const root = collada && collada.scene;
+  if (!root) throw new Error('COLLADA : scène vide');
+  root.updateMatrixWorld(true);
+
+  const components = [];
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return;
+    const geom = obj.geometry.clone();
+    geom.applyMatrix4(obj.matrixWorld); // baker les transforms (ColladaLoader gère déjà up_axis)
+
+    // Chemin depuis la hiérarchie du fichier
+    const path = [];
+    let p = obj;
+    while (p && p !== root) {
+      path.unshift(p.name || ('Node_' + path.length));
+      p = p.parent;
+    }
+    if (path.length === 0) path.push(obj.name || 'Mesh');
+
+    // Couleur du matériau si présente
+    let color = null;
+    const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+    if (mat && mat.color) { try { color = mat.color.clone(); } catch (e) {} }
+
+    components.push({
+      name: obj.name || path[path.length - 1] || 'Mesh',
+      path,
+      geometry: geom,
+      color
+    });
+  });
+
+  if (components.length === 0) throw new Error('COLLADA : aucune géométrie exploitable');
+  console.log('[DAE] ✅', components.length, 'composants extraits');
+  return components;
+}
+
 // ============================================================================
 // LOAD FILE / DISPLAY
 // ============================================================================
@@ -1261,6 +1319,7 @@ async function loadFile(file) {
     else if (ext === 'obj') components = parseOBJ(await file.text());
     else if (ext === 'glb') components = parseGLB(await file.arrayBuffer());
     else if (ext === 'ifc') components = await parseIFC(await file.arrayBuffer());
+    else if (ext === 'dae') components = await parseDAE(await file.text());
     else if (ext === 'gltf') {
       const json = JSON.parse(await file.text());
       if (json.buffers && json.buffers[0] && json.buffers[0].uri && json.buffers[0].uri.startsWith('data:')) {

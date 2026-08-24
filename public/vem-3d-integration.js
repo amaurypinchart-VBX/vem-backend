@@ -143,7 +143,7 @@
       let filename = (url.split('/').pop() || 'model').split('?')[0] || 'model.glb';
       try { filename = decodeURIComponent(filename); } catch {}
       const ext = filename.split('.').pop().toLowerCase();
-      if (!['glb','gltf','stl','obj','ifc'].includes(ext)) filename = filename + '.glb';
+      if (!['glb','gltf','stl','obj','ifc','dae'].includes(ext)) filename = filename + '.glb';
 
       // Détection de compression et décompression : GLB/GLTF uniquement
       if (ext === 'glb' || ext === 'gltf') {
@@ -160,7 +160,7 @@
       }
 
       // Construire un File et appeler le loadFile du viewer
-      const blobType = ext === 'ifc' ? 'application/octet-stream' : 'model/gltf-binary';
+      const blobType = (ext === 'ifc' || ext === 'dae') ? 'application/octet-stream' : 'model/gltf-binary';
       const blob = new Blob([arrayBuffer], { type: blobType });
       const file = new File([blob], filename, { type: blob.type });
       await window.loadFile(file);

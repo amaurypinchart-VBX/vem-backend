@@ -1968,12 +1968,12 @@ async function openFileViewer(url, filename) {
   const isImg = ['jpg','jpeg','png','gif','webp','svg','bmp','heic'].includes(ext);
   const isPDF = ext === 'pdf';
   const is3DSupported   = ['glb','gltf','usdz'].includes(ext);
-  const is3DUnsupported = ['skp','fbx','obj','stl','dae','3ds','blend'].includes(ext);
+  const is3DUnsupported = ['skp','fbx','3ds','blend'].includes(ext);
 
   // Pour les formats supportés par notre viewer 3D dédié (avec mesures + photos),
   // on ouvre directement notre viewer dans un nouvel onglet plutôt que le component
   // <model-viewer> de Google qui est plus basique et plante avec certaines compressions.
-  const supportedByOurViewer = ['glb','gltf','stl','obj','ifc'].includes(ext);
+    const supportedByOurViewer = ['glb','gltf','stl','obj','dae'].includes(ext);
   if (supportedByOurViewer && CURRENT_PROJECT_ID) {
     openIn3DViewer(url, filename, CURRENT_PROJECT_ID);
     return;
@@ -3128,7 +3128,7 @@ async function loadProjectDetail(id) {
                   ${models.map(f=>{
                     const e = extOf(f);
                     const supported  = ['glb','gltf','usdz'].includes(e);
-                    const viewer3DOk = ['glb','gltf','stl','obj','ifc'].includes(e);
+                    const viewer3DOk = ['glb','gltf','stl','obj','dae'].includes(e);
                     return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'">
                       <div style="cursor:pointer;text-align:center;" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
                         <div style="font-size:42px;line-height:1;">🎨</div>
