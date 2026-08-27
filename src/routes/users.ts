@@ -38,7 +38,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!['admin','project_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
+    if (!['admin','project_manager','technical_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
     const password = req.body.password || 'VEM2025!';
     const passwordHash = await bcrypt.hash(password, 12);
 
