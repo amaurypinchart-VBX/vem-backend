@@ -15887,6 +15887,22 @@ function brfMoveSlide(idx, dir) {
   else if (BRF_STUDIO.curIdx === ni) BRF_STUDIO.curIdx = idx;
   renderStudioSidebar();
 }
+function brfDuplicateSlide(idx) {
+  saveCurrentSlideJson();
+  const src = BRF_STUDIO.slides[idx];
+  if (!src) return;
+  const copy = {
+    id: 'slide-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+    name: (src.name || 'Slide') + ' (copie)',
+    json: src.json ? JSON.parse(JSON.stringify(src.json)) : null,
+    thumbnail: src.thumbnail || null,
+  };
+  BRF_STUDIO.slides.splice(idx + 1, 0, copy);
+  BRF_STUDIO.curIdx = idx + 1;
+  loadSlideIntoCanvas(BRF_STUDIO.curIdx);
+  renderStudioSidebar();
+  toast('Slide dupliquée 🗐', 'success');
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Drag & drop de réordonnancement des slides (sidebar)
@@ -15989,6 +16005,7 @@ function renderStudioSidebar() {
           onclick="event.stopPropagation();" oninput="BRF_STUDIO.slides[${i}].name=this.value">
         <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},-1)" title="Monter">▲</button>
         <button style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 2px;font-size:10px;" onclick="event.stopPropagation();brfMoveSlide(${i},1)" title="Descendre">▼</button>
+        <button style="background:transparent;border:none;color:#4895ef;cursor:pointer;padding:0 3px;font-size:12px;" onclick="event.stopPropagation();brfDuplicateSlide(${i})" title="Dupliquer la slide">🗐</button>
         <button style="background:transparent;border:none;color:#e63946;cursor:pointer;padding:0 4px;font-size:14px;" onclick="event.stopPropagation();brfDeleteSlide(${i})" title="Supprimer">×</button>
       </div>
       <div style="aspect-ratio:16/9;background:${thumb?'#fff':'#222'};border-radius:4px;overflow:hidden;border:1px solid #333;cursor:grab;">
