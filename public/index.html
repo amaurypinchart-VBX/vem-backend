@@ -15023,6 +15023,16 @@ await brfPreloadLogo();
     BRF_STUDIO.fabricCanvas.on(evt, () => brfSnapshot());
   });
 
+  // Anti-déformation du texte + synchro de la barre d'outils
+  BRF_STUDIO.fabricCanvas.on('object:scaling', e => brfLiveTextScale(e.target));
+  BRF_STUDIO.fabricCanvas.on('object:added', e => brfSetupTextObject(e.target));
+  ['selection:created','selection:updated','object:modified'].forEach(evt => {
+    BRF_STUDIO.fabricCanvas.on(evt, () => {
+      const o = BRF_STUDIO.fabricCanvas.getActiveObject();
+      brfSetupTextObject(o); brfSyncTextControls(o);
+    });
+  });
+
   loadSlideIntoCanvas(0);
   renderStudioSidebar();
   resizeStudioCanvas();
@@ -15074,8 +15084,22 @@ function buildStudioHTML() {
       <span class="brf-sep"></span>
       <label style="font-size:11px;color:#aaa;">Couleur :</label>
       <input type="color" id="brf-color" value="#222222" onchange="brfApplyColor(this.value)" style="width:28px;height:24px;border:none;cursor:pointer;background:transparent;">
+      <label style="font-size:11px;color:#aaa;margin-left:6px;">Police :</label>
+      <select id="brf-fontfamily" onchange="brfApplyFont(this.value)" style="font-size:11px;padding:3px 4px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;">
+        <option value="Helvetica">Helvetica</option>
+        <option value="Arial">Arial</option>
+        <option value="Verdana">Verdana</option>
+        <option value="Trebuchet MS">Trebuchet MS</option>
+        <option value="Georgia">Georgia</option>
+        <option value="Times New Roman">Times New Roman</option>
+        <option value="Courier New">Courier New</option>
+        <option value="Impact">Impact</option>
+        <option value="Comic Sans MS">Comic Sans</option>
+      </select>
       <label style="font-size:11px;color:#aaa;margin-left:6px;">Taille :</label>
-      <input type="number" id="brf-fontsize" value="24" min="8" max="120" onchange="brfApplyFontSize(this.value)" style="width:50px;font-size:11px;padding:3px 6px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;">
+      <button class="brf-tbtn" onclick="brfBumpFontSize(-2)" title="Réduire" style="padding:5px 8px;">−</button>
+      <input type="number" id="brf-fontsize" value="24" min="8" max="200" onchange="brfApplyFontSize(this.value)" style="width:50px;font-size:11px;padding:3px 6px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;">
+      <button class="brf-tbtn" onclick="brfBumpFontSize(2)" title="Augmenter" style="padding:5px 8px;">+</button>
       <button class="brf-tbtn" onclick="brfToggleBold()" title="Gras"><b>B</b></button>
       <button class="brf-tbtn" onclick="brfToggleItalic()" title="Italique"><i>I</i></button>
       <span class="brf-sep"></span>
@@ -15161,7 +15185,8 @@ function handleStudioKeydown(e) {
 
 // ─── Ajout d'objets ───
 function brfAddText() {
-  const t = new fabric.IText('Texte...', { left:120, top:120, fontSize:24, fontFamily:'Helvetica', fill:'#222' });
+  const t = new fabric.Textbox('Texte...', { left:120, top:120, width:400, fontSize:24, fontFamily:'Helvetica', fill:'#222' });
+  brfSetupTextObject(t);
   BRF_STUDIO.fabricCanvas.add(t).setActiveObject(t);
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
@@ -15282,9 +15307,11 @@ function brfDeleteSel(){
   BRF_STUDIO.fabricCanvas.discardActiveObject();
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
+function brfIsText(o){ return !!o && (o.type==='i-text' || o.type==='text' || o.type==='textbox'); }
+
 function brfApplyColor(color){
   const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
-  if (o.type==='i-text' || o.type==='text') o.set('fill', color);
+  if (brfIsText(o)) o.set('fill', color);
   else if (o.type==='line') o.set('stroke', color);
   else if (o.type==='group') {
     o.getObjects().forEach(sub => {
@@ -15298,19 +15325,53 @@ function brfApplyColor(color){
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
 function brfApplyFontSize(size){
-  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
-  if (o.type==='i-text' || o.type==='text') { o.set('fontSize', parseInt(size, 10) || 24); BRF_STUDIO.fabricCanvas.requestRenderAll(); }
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!brfIsText(o)) return;
+  o.set('fontSize', parseInt(size, 10) || 24);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfBumpFontSize(delta){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!brfIsText(o)) return;
+  const ns = Math.max(6, Math.round((o.fontSize||24) + delta));
+  o.set('fontSize', ns);
+  const sz = document.getElementById('brf-fontsize'); if(sz) sz.value = ns;
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
+}
+function brfApplyFont(family){
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!brfIsText(o)) return;
+  o.set('fontFamily', family);
+  BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
 function brfToggleBold(){
-  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o || (o.type!=='i-text'&&o.type!=='text')) return;
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!brfIsText(o)) return;
   o.set('fontWeight', o.fontWeight==='bold' ? 'normal' : 'bold');
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
 function brfToggleItalic(){
-  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o || (o.type!=='i-text'&&o.type!=='text')) return;
+  const o = BRF_STUDIO.fabricCanvas.getActiveObject(); if(!brfIsText(o)) return;
   o.set('fontStyle', o.fontStyle==='italic' ? 'normal' : 'italic');
   BRF_STUDIO.fabricCanvas.requestRenderAll();
 }
+// Empêche la déformation : on convertit le "scale" en vraie taille de police / largeur
+function brfLiveTextScale(o){
+  if(!brfIsText(o)) return;
+  if(o.type==='textbox'){
+    // La zone d'écriture change seulement de LARGEUR (le texte se replie), police inchangée
+    o.set({ width: Math.max(20, (o.width||100) * o.scaleX), scaleX:1, scaleY:1 });
+  } else {
+    // Titre / texte simple : la police grossit proprement, sans étirement
+    const f = Math.max(o.scaleX||1, o.scaleY||1);
+    o.set({ fontSize: Math.max(6, Math.round((o.fontSize||24) * f)), scaleX:1, scaleY:1 });
+  }
+  o.setCoords();
+}
+function brfSetupTextObject(o){
+  if(o && o.type==='textbox'){ o.setControlsVisibility({ mt:false, mb:false }); }
+}
+function brfSyncTextControls(o){
+  if(!brfIsText(o)) return;
+  const sz = document.getElementById('brf-fontsize'); if(sz) sz.value = Math.round(o.fontSize||24);
+  const ff = document.getElementById('brf-fontfamily'); if(ff && o.fontFamily) ff.value = o.fontFamily;
+  const cl = document.getElementById('brf-color'); if(cl
 
 // ─── Menu Logo (filigrane de fond) ───
 function brfOpenLogoMenu(btn) {
