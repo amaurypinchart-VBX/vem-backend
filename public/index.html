@@ -15371,7 +15371,8 @@ function brfSyncTextControls(o){
   if(!brfIsText(o)) return;
   const sz = document.getElementById('brf-fontsize'); if(sz) sz.value = Math.round(o.fontSize||24);
   const ff = document.getElementById('brf-fontfamily'); if(ff && o.fontFamily) ff.value = o.fontFamily;
-  const cl = document.getElementById('brf-color'); if(cl
+  const cl = document.getElementById('brf-color'); if(cl && typeof o.fill==='string' && o.fill.startsWith('#')) cl.value = o.fill;
+}
 
 // ─── Menu Logo (filigrane de fond) ───
 function brfOpenLogoMenu(btn) {
