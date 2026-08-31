@@ -15067,6 +15067,8 @@ function buildStudioHTML() {
       <span class="brf-sep"></span>
       <button class="brf-tbtn" onclick="brfBringForward()" title="Avancer">⬆</button>
       <button class="brf-tbtn" onclick="brfSendBack()" title="Reculer">⬇</button>
+      <button class="brf-tbtn" onclick="brfCopySel()" title="Copier (Ctrl+C)">📋</button>
+      <button class="brf-tbtn" onclick="brfPasteSel()" title="Coller (Ctrl+V)">📥</button>
       <button class="brf-tbtn" onclick="brfDuplicateSel()" title="Dupliquer">⎘</button>
       <button class="brf-tbtn" onclick="brfDeleteSel()" title="Supprimer (Suppr)" style="color:#e63946;">🗑️</button>
       <span class="brf-sep"></span>
@@ -15133,6 +15135,21 @@ function handleStudioKeydown(e) {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y' || ((e.shiftKey) && (e.key === 'z' || e.key === 'Z')))) {
     e.preventDefault(); brfRedo(); return;
+  }
+  // Copier
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+    if (BRF_STUDIO?.fabricCanvas?.getActiveObject()?.isEditing) return;
+    e.preventDefault(); brfCopySel(); return;
+  }
+  // Couper
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+    if (BRF_STUDIO?.fabricCanvas?.getActiveObject()?.isEditing) return;
+    e.preventDefault(); brfCutSel(); return;
+  }
+  // Coller
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+    if (BRF_STUDIO?.fabricCanvas?.getActiveObject()?.isEditing) return;
+    e.preventDefault(); brfPasteSel(); return;
   }
   // Delete
   if (BRF_STUDIO?.fabricCanvas?.getActiveObject() && (e.key === 'Delete' || e.key === 'Backspace')) {
@@ -15228,6 +15245,35 @@ function brfSendBack(){ const o=BRF_STUDIO.fabricCanvas.getActiveObject(); if(o)
 function brfDuplicateSel(){
   const o=BRF_STUDIO.fabricCanvas.getActiveObject(); if(!o) return;
   o.clone(c => { c.set({ left:(c.left||0)+24, top:(c.top||0)+24 }); BRF_STUDIO.fabricCanvas.add(c).setActiveObject(c); BRF_STUDIO.fabricCanvas.requestRenderAll(); });
+}
+let BRF_CLIPBOARD = null;
+function brfCopySel(){
+  const o = BRF_STUDIO?.fabricCanvas?.getActiveObject(); if(!o) return;
+  o.clone(c => { BRF_CLIPBOARD = c; toast('Élément copié 📋', 'info'); });
+}
+function brfCutSel(){
+  const o = BRF_STUDIO?.fabricCanvas?.getActiveObject(); if(!o) return;
+  o.clone(c => { BRF_CLIPBOARD = c; brfDeleteSel(); toast('Élément coupé ✂️', 'info'); });
+}
+function brfPasteSel(){
+  if (!BRF_CLIPBOARD || !BRF_STUDIO?.fabricCanvas) return;
+  BRF_CLIPBOARD.clone(clone => {
+    const cv = BRF_STUDIO.fabricCanvas;
+    cv.discardActiveObject();
+    clone.set({ left:(clone.left||0)+24, top:(clone.top||0)+24, evented:true });
+    if (clone.type === 'activeSelection') {
+      clone.canvas = cv;
+      clone.forEachObject(obj => cv.add(obj));
+      clone.setCoords();
+    } else {
+      cv.add(clone);
+    }
+    // On décale le presse-papier pour un collage multiple en escalier
+    BRF_CLIPBOARD.top = (BRF_CLIPBOARD.top||0) + 24;
+    BRF_CLIPBOARD.left = (BRF_CLIPBOARD.left||0) + 24;
+    cv.setActiveObject(clone);
+    cv.requestRenderAll();
+  });
 }
 function brfDeleteSel(){
   const objs = BRF_STUDIO.fabricCanvas.getActiveObjects();
