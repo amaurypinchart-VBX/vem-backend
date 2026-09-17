@@ -523,7 +523,7 @@ ${sourceText}`;
     const aiRes = await fetch(`${API}/ai/parse-daily`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify({ text: prompt })
+      body: JSON.stringify({ text: prompt, mode: 'json' })
     });
     const aiData = await aiRes.json();
     if (!aiData.success) throw new Error(aiData.error || 'Erreur IA');

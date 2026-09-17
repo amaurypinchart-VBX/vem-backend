@@ -191,7 +191,7 @@ ${sourceText}`;
     const aiRes = await fetch(`${API}/ai/parse-daily`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify({ text: prompt })
+      body: JSON.stringify({ text: prompt, mode: 'json' })
     });
     const aiData = await aiRes.json();
     if (!aiData.success) throw new Error(aiData.error || 'Erreur IA');
@@ -485,7 +485,7 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
       const aiRes = await fetch(`${API}/ai/parse-daily`, {
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
-        body: JSON.stringify({ text: prompt })
+        body: JSON.stringify({ text: prompt, mode: 'text' })
       });
       const aiData = await aiRes.json();
       aiSummary = aiData.success ? (Array.isArray(aiData.data) ? aiData.data.map(e=>e.text||e).join(' ') : String(aiData.data)) : 'Résumé non disponible.';

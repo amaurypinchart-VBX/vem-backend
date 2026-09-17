@@ -3,7 +3,7 @@ import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
-import { callClaudeJSON } from '../services/aiService';
+import { callClaude, callClaudeJSON } from '../services/aiService';
 
 const router = Router();
 
@@ -14,11 +14,33 @@ const DAILY_ENTRY_SCHEMA = z.array(z.object({
 }));
 
 // POST /api/v1/ai/parse-daily
-// Parse raw daily report text into structured entries
+// Parse raw daily report text into structured entries.
+// `mode` permet de réutiliser cet endpoint pour d'autres prompts que l'extraction
+// d'entrées de rapport journalier (résumé exécutif, analyse temps par tâche, extraction
+// de tâches de réunion...), chacun avec sa propre forme de réponse JSON — sans quoi le
+// schéma strict DAILY_ENTRY_SCHEMA rejette systématiquement ces autres usages (502).
 router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { text } = req.body;
+    const { text, mode } = req.body;
     if (!text?.trim()) return res.status(400).json({ success: false, error: 'Texte manquant' });
+
+    if (mode === 'text') {
+      // Le prompt complet est déjà construit côté client (ex : résumé exécutif) :
+      // on le transmet tel quel à Claude et on renvoie le texte brut, sans validation JSON.
+      const result = await callClaude({ maxTokens: 3000, messages: [{ role: 'user', content: text }] });
+      return res.json({ success: true, data: result });
+    }
+
+    if (mode === 'json') {
+      // Le prompt complet (avec ses propres instructions de format) est déjà construit
+      // côté client : on le transmet tel quel, sans schéma imposé côté serveur.
+      const result = await callClaudeJSON({
+        maxTokens: 8000,
+        schema: z.any(),
+        messages: [{ role: 'user', content: text }],
+      });
+      return res.json({ success: true, data: result });
+    }
 
     const entries = await callClaudeJSON({
       maxTokens: 8000,
