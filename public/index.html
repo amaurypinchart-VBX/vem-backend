@@ -2206,8 +2206,78 @@ function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'block';
   updateNavUser();
+  ensureAssistantWidget();
   loadAll();
   goto('dashboard');
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🤖 ASSISTANT IA — panneau flottant, lecture seule sur les données projets.
+// Réservé aux rôles pilotage (miroir de la restriction serveur sur /assistant).
+// v1 volontairement sans mémoire de conversation : chaque question est indépendante.
+// ═══════════════════════════════════════════════════════════
+const ASSISTANT_ROLES = ['admin', 'project_manager', 'technical_manager', 'site_manager'];
+
+function ensureAssistantWidget() {
+  if (document.getElementById('assistant-widget')) return;
+  if (!CURRENT_USER || !ASSISTANT_ROLES.includes(CURRENT_USER.role)) return;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'assistant-widget';
+  wrap.innerHTML = `
+    <button id="assistant-fab" onclick="toggleAssistantPanel()" title="Assistant IA"
+      style="position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:9000;">🤖</button>
+    <div id="assistant-panel" style="display:none;flex-direction:column;position:fixed;bottom:88px;right:24px;width:340px;max-width:calc(100vw - 32px);height:440px;max-height:calc(100vh - 120px);background:var(--bg2);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);overflow:hidden;z-index:9000;">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:13px;">
+        <span>🤖 Assistant VEM</span>
+        <button onclick="toggleAssistantPanel()" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text3);">×</button>
+      </div>
+      <div id="assistant-messages" style="flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px;font-size:13px;">
+        <div style="align-self:flex-start;color:var(--text3);font-size:12px;font-style:italic;">Pose une question sur un projet, une tâche, un ticket, un camion, un hôtel...</div>
+      </div>
+      <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;">
+        <input id="assistant-input" class="input" placeholder="Pose ta question…" style="flex:1;font-size:13px;" onkeydown="if(event.key==='Enter')sendAssistantQuestion()">
+        <button class="btn btn-primary btn-sm" id="assistant-send-btn" onclick="sendAssistantQuestion()">➤</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+}
+
+function toggleAssistantPanel() {
+  const panel = document.getElementById('assistant-panel');
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'flex' : 'none';
+  if (opening) document.getElementById('assistant-input')?.focus();
+}
+
+function renderAssistantMessage(role, text) {
+  const box = document.getElementById('assistant-messages');
+  if (!box) return null;
+  const bubble = document.createElement('div');
+  bubble.style.cssText = role === 'user'
+    ? 'align-self:flex-end;background:var(--accent);color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;white-space:pre-wrap;'
+    : 'align-self:flex-start;background:var(--bg3);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:85%;white-space:pre-wrap;';
+  bubble.textContent = text;
+  box.appendChild(bubble);
+  box.scrollTop = box.scrollHeight;
+  return bubble;
+}
+
+async function sendAssistantQuestion() {
+  const input = document.getElementById('assistant-input');
+  const question = (input?.value || '').trim();
+  if (!question) return;
+  input.value = '';
+  renderAssistantMessage('user', question);
+  const loadingBubble = renderAssistantMessage('assistant', '…');
+  const btn = document.getElementById('assistant-send-btn');
+  if (btn) btn.disabled = true;
+
+  const res = await api('POST', '/assistant/ask', { question });
+
+  if (btn) btn.disabled = false;
+  if (loadingBubble) loadingBubble.textContent = res?.success ? res.data.answer : (res?.error || "Erreur de l'assistant");
 }
 
 function doLogout() {

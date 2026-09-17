@@ -9,7 +9,7 @@ import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 
 import { errorHandler } from './middleware/errorHandler';
-import { authMiddleware } from './middleware/auth';
+import { authMiddleware, requireRole } from './middleware/auth';
 import { logger } from './utils/logger';
 
 import authRoutes          from './routes/auth';
@@ -38,6 +38,7 @@ import { runStartupMigrations } from './utils/migrations';
 import translateRoutes from './routes/translate';
 import publicHandoverSignRoutes from './routes/publicHandoverSign';
 import publicCalendarRoutes from './routes/publicCalendar';
+import assistantRoutes from './routes/assistant';
 
 const app  = express();
 const http = createServer(app);
@@ -105,6 +106,8 @@ app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
+// Assistant lecture seule — réservé aux rôles qui pilotent les projets.
+app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager'), assistantRoutes);
 app.use('/api/v1/translate', translateRoutes);
 app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
 
