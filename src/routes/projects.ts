@@ -7,6 +7,8 @@ import { io } from '../index';
 import { notifyTubizeTruckMovement } from '../services/telegramService';
 import { createWarehouseTask } from '../services/warehouseAppService';
 import { sendMail } from '../services/emailService';
+import { generateProjectReport } from '../services/projectReportService';
+import { generateProjectReportPdf } from '../services/pdfService';
 
 const router = Router();
 
@@ -514,6 +516,34 @@ router.get('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFunc
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, data: trucks });
+  } catch (err) { next(err); }
+});
+
+// GET /projects/:id/report/pdf — rapport complet du projet (même contenu que
+// celui produit par l'assistant IA en chat, voir services/projectReportService.ts)
+router.get('/:id/report/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const lang = req.query.lang === 'en' ? 'en' : 'fr';
+    const report = await generateProjectReport(req.params.id);
+    const pdf = await generateProjectReportPdf({
+      project: report.data.project,
+      client: report.data.client,
+      technicalManager: report.data.technicalManager,
+      team: report.data.team,
+      trucks: report.data.trucks,
+      teamBookings: report.data.teamBookings,
+      hotelBookings: report.data.hotelBookings,
+      tasks: report.data.tasks,
+      tickets: report.data.tickets,
+      dailyReports: report.data.dailyReports,
+      narrative: report.narrative,
+      lang,
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="Rapport_${report.data.project.internalNumber}.pdf"`,
+    });
+    res.send(pdf);
   } catch (err) { next(err); }
 });
 

@@ -839,6 +839,126 @@ export async function generateDailyReportPdf(data: {
   });
 }
 
+// ─── Rapport PDF complet d'un projet (généré depuis l'assistant IA ou la fiche projet) ───
+export async function generateProjectReportPdf(data: {
+  project: {
+    name: string; internalNumber: string; status: string; address: string; city?: string | null;
+    installationStart: Date; installationEnd: Date; dismantlingStart?: Date | null; dismantlingEnd?: Date | null;
+  };
+  client?: { name?: string | null } | null;
+  technicalManager?: { firstName: string; lastName: string } | null;
+  team: Array<{ role: string; isLead: boolean; user: { firstName: string; lastName: string } }>;
+  trucks: Array<{ vehicleType?: string | null; truckNumber?: string | null; driverName?: string | null; status: string; loadingDate?: Date | null }>;
+  teamBookings: Array<any>;
+  hotelBookings: Array<{ hotelName: string; checkin: Date; checkout: Date; occupants: Array<{ user: { firstName: string; lastName: string } }> }>;
+  tasks: { total: number; done: number; overdue: number };
+  tickets: { total: number; open: number; critical: number; list: Array<{ title: string; status: string; urgency: string }> };
+  dailyReports: Array<any>;
+  narrative: string;
+  lang?: Lang;
+}): Promise<Buffer> {
+  const lang: Lang = data.lang || 'fr';
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, lang === 'en' ? 'PROJECT REPORT' : 'RAPPORT PROJET', {
+      projectName: s(data.project.name),
+      projectRef:  `N° ${s(data.project.internalNumber)}`,
+      reportDate:  fmtPdfDate(new Date(), lang),
+    }, lang);
+
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(18)
+      .text(lang === 'en' ? 'Full project report' : 'Rapport complet de projet', 40, doc.y, { width: 515, align: 'center' });
+    doc.moveDown(0.8);
+
+    // ─── Aperçu ───
+    sectionTitle(doc, lang === 'en' ? 'Overview' : 'Aperçu');
+    infoRow(doc, lang === 'en' ? 'Status' : 'Statut', s(data.project.status));
+    infoRow(doc, lang === 'en' ? 'Client' : 'Client', s(data.client?.name) || '—');
+    infoRow(doc, lang === 'en' ? 'Address' : 'Adresse', s(data.project.address) + (data.project.city ? ', ' + s(data.project.city) : ''));
+    infoRow(doc, lang === 'en' ? 'Installation' : 'Installation', `${fmtPdfDate(data.project.installationStart, lang)} - ${fmtPdfDate(data.project.installationEnd, lang)}`);
+    if (data.project.dismantlingStart) {
+      infoRow(doc, lang === 'en' ? 'Dismantling' : 'Démontage', `${fmtPdfDate(data.project.dismantlingStart, lang)} - ${fmtPdfDate(data.project.dismantlingEnd!, lang)}`);
+    }
+    infoRow(doc, lang === 'en' ? 'Technical manager' : 'Responsable technique',
+      data.technicalManager ? s(`${data.technicalManager.firstName} ${data.technicalManager.lastName}`) : '—');
+
+    // ─── Équipe ───
+    doc.moveDown(0.6);
+    if (doc.y > 700) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? `Team (${data.team.length})` : `Équipe (${data.team.length})`);
+    if (data.team.length === 0) {
+      doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(10)
+        .text(lang === 'en' ? 'No member assigned.' : 'Aucun membre assigné.', 40, doc.y);
+    }
+    for (const m of data.team) {
+      if (doc.y > 760) doc.addPage();
+      doc.fillColor(DARK).font('Helvetica').fontSize(10)
+        .text(`- ${s(m.user.firstName)} ${s(m.user.lastName)} (${s(m.role)}${m.isLead ? ', lead' : ''})`, 40, doc.y, { width: 515 });
+    }
+
+    // ─── Logistique ───
+    doc.moveDown(0.6);
+    if (doc.y > 700) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? 'Logistics' : 'Logistique');
+    infoRow(doc, lang === 'en' ? 'Vehicles' : 'Véhicules', String(data.trucks.length));
+    for (const truck of data.trucks) {
+      if (doc.y > 770) doc.addPage();
+      doc.fillColor(DARK).font('Helvetica').fontSize(9)
+        .text(`- ${s(truck.vehicleType || 'truck')} ${s(truck.truckNumber || '')} - ${s(truck.driverName || '?')} - ${s(truck.status)}${truck.loadingDate ? ', ' + fmtPdfDate(truck.loadingDate, lang) : ''}`, 40, doc.y, { width: 515 });
+    }
+    infoRow(doc, lang === 'en' ? 'Team trips' : 'Trajets équipe', String(data.teamBookings.length));
+    infoRow(doc, lang === 'en' ? 'Hotel bookings' : 'Réservations hôtel', String(data.hotelBookings.length));
+    for (const hotel of data.hotelBookings) {
+      if (doc.y > 770) doc.addPage();
+      const occupants = hotel.occupants.map(o => `${o.user.firstName} ${o.user.lastName}`).join(', ');
+      doc.fillColor(DARK).font('Helvetica').fontSize(9)
+        .text(`- ${s(hotel.hotelName)} (${fmtPdfDate(hotel.checkin, lang)} - ${fmtPdfDate(hotel.checkout, lang)}) - ${s(occupants)}`, 40, doc.y, { width: 515 });
+    }
+
+    // ─── Tâches ───
+    doc.moveDown(0.6);
+    if (doc.y > 700) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? 'Tasks' : 'Tâches');
+    infoRow(doc, lang === 'en' ? 'Completed' : 'Terminées', `${data.tasks.done} / ${data.tasks.total}`);
+    infoRow(doc, lang === 'en' ? 'Overdue' : 'En retard', String(data.tasks.overdue));
+
+    // ─── Tickets ───
+    doc.moveDown(0.4);
+    if (doc.y > 700) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? 'Tickets' : 'Tickets');
+    infoRow(doc, lang === 'en' ? 'Total' : 'Total', String(data.tickets.total));
+    infoRow(doc, lang === 'en' ? 'Open' : 'Ouverts', String(data.tickets.open));
+    infoRow(doc, lang === 'en' ? 'Critical' : 'Critiques', String(data.tickets.critical));
+    for (const ticket of data.tickets.list.slice(0, 15)) {
+      if (doc.y > 770) doc.addPage();
+      doc.fillColor(DARK).font('Helvetica').fontSize(9)
+        .text(`- ${s(ticket.title)} [${s(ticket.urgency)}/${s(ticket.status)}]`, 40, doc.y, { width: 515 });
+    }
+
+    // ─── Rapports journaliers ───
+    doc.moveDown(0.4);
+    if (doc.y > 720) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? 'Daily reports' : 'Rapports journaliers');
+    infoRow(doc, lang === 'en' ? 'Available reports' : 'Rapports disponibles', String(data.dailyReports.length));
+
+    // ─── Synthèse IA ───
+    doc.moveDown(0.6);
+    if (doc.y > 650) doc.addPage();
+    sectionTitle(doc, lang === 'en' ? 'AI Summary' : 'Synthèse');
+    doc.fillColor('#333').font('Helvetica').fontSize(10)
+      .text(s(data.narrative), 40, doc.y, { width: 515, align: 'justify', lineGap: 2 });
+
+    footer(doc, lang);
+    doc.end();
+  });
+}
+
 // ─── Rapport PDF d'une visite client (style aligné sur les autres rapports) ───
 export async function generateVisitReportPdf(data: {
   project: { name: string; internalNumber: string };

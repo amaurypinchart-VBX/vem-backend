@@ -56,6 +56,71 @@ export declare function generateDailyReportPdf(data: {
     reportId?: string;
     lang?: Lang;
 }): Promise<Buffer>;
+export declare function generateProjectReportPdf(data: {
+    project: {
+        name: string;
+        internalNumber: string;
+        status: string;
+        address: string;
+        city?: string | null;
+        installationStart: Date;
+        installationEnd: Date;
+        dismantlingStart?: Date | null;
+        dismantlingEnd?: Date | null;
+    };
+    client?: {
+        name?: string | null;
+    } | null;
+    technicalManager?: {
+        firstName: string;
+        lastName: string;
+    } | null;
+    team: Array<{
+        role: string;
+        isLead: boolean;
+        user: {
+            firstName: string;
+            lastName: string;
+        };
+    }>;
+    trucks: Array<{
+        vehicleType?: string | null;
+        truckNumber?: string | null;
+        driverName?: string | null;
+        status: string;
+        loadingDate?: Date | null;
+    }>;
+    teamBookings: Array<any>;
+    hotelBookings: Array<{
+        hotelName: string;
+        checkin: Date;
+        checkout: Date;
+        occupants: Array<{
+            user: {
+                firstName: string;
+                lastName: string;
+            };
+        }>;
+    }>;
+    tasks: {
+        total: number;
+        done: number;
+        overdue: number;
+    };
+    tickets: {
+        total: number;
+        open: number;
+        critical: number;
+        list: Array<{
+            title: string;
+            status: string;
+            urgency: string;
+        }>;
+    };
+    dailyReports: Array<any>;
+    narrative: string;
+    lang?: Lang;
+}): Promise<Buffer>;
 export declare function generateVisitReportPdf(data: {
     project: {
         name: string;

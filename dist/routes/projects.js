@@ -8,6 +8,8 @@ const index_1 = require("../index");
 const telegramService_1 = require("../services/telegramService");
 const warehouseAppService_1 = require("../services/warehouseAppService");
 const emailService_1 = require("../services/emailService");
+const projectReportService_1 = require("../services/projectReportService");
+const pdfService_1 = require("../services/pdfService");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res, next) => {
     try {
@@ -524,6 +526,36 @@ router.get('/:id/trucks', async (req, res, next) => {
             orderBy: { createdAt: 'desc' },
         });
         res.json({ success: true, data: trucks });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /projects/:id/report/pdf — rapport complet du projet (même contenu que
+// celui produit par l'assistant IA en chat, voir services/projectReportService.ts)
+router.get('/:id/report/pdf', async (req, res, next) => {
+    try {
+        const lang = req.query.lang === 'en' ? 'en' : 'fr';
+        const report = await (0, projectReportService_1.generateProjectReport)(req.params.id);
+        const pdf = await (0, pdfService_1.generateProjectReportPdf)({
+            project: report.data.project,
+            client: report.data.client,
+            technicalManager: report.data.technicalManager,
+            team: report.data.team,
+            trucks: report.data.trucks,
+            teamBookings: report.data.teamBookings,
+            hotelBookings: report.data.hotelBookings,
+            tasks: report.data.tasks,
+            tickets: report.data.tickets,
+            dailyReports: report.data.dailyReports,
+            narrative: report.narrative,
+            lang,
+        });
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="Rapport_${report.data.project.internalNumber}.pdf"`,
+        });
+        res.send(pdf);
     }
     catch (err) {
         next(err);

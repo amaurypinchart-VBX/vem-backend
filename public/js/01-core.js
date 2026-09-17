@@ -78,6 +78,9 @@ async function downloadHandoverPdf(id) {
 async function downloadDailyReportPdf(id) {
   return downloadPdfWithLang(`/api/v1/daily-reports/${id}/pdf`, `DailyReport_${id.slice(0,8)}`);
 }
+async function downloadProjectReportPdf(id) {
+  return downloadPdfWithLang(`/api/v1/projects/${id}/report/pdf`, `Rapport_${id.slice(0,8)}`);
+}
 // ═══ VIEWER FICHIER UNIVERSEL ═══════════════════════════════════════
 // Ouvre une modale pleine taille avec le visualiseur adapté au type de fichier :
 //   - Image (jpg, png, webp, gif...) → affichage plein écran avec fond noir
@@ -356,11 +359,15 @@ function showApp() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🤖 ASSISTANT IA — panneau flottant, lecture seule sur les données projets.
-// Réservé aux rôles pilotage (miroir de la restriction serveur sur /assistant).
-// v1 volontairement sans mémoire de conversation : chaque question est indépendante.
+// 🤖 ASSISTANT IA — panneau flottant. Réservé aux rôles pilotage (miroir de la
+// restriction serveur sur /assistant). Peut désormais aussi créer des choses
+// (projet, camion, booking hôtel, tâche, ticket...) après confirmation
+// conversationnelle, et générer un rapport complet de projet (texte + PDF).
+// ASSISTANT_HISTORY garde les derniers échanges pour que l'assistant se
+// souvienne d'un récapitulatif proposé au tour précédent avant de confirmer.
 // ═══════════════════════════════════════════════════════════
 const ASSISTANT_ROLES = ['admin', 'project_manager', 'technical_manager', 'site_manager'];
+let ASSISTANT_HISTORY = [];
 
 function ensureAssistantWidget() {
   if (document.getElementById('assistant-widget')) return;
@@ -377,7 +384,7 @@ function ensureAssistantWidget() {
         <button onclick="toggleAssistantPanel()" style="background:none;border:none;font-size:16px;cursor:pointer;color:var(--text3);">×</button>
       </div>
       <div id="assistant-messages" style="flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px;font-size:13px;">
-        <div style="align-self:flex-start;color:var(--text3);font-size:12px;font-style:italic;">Pose une question sur un projet, une tâche, un ticket, un camion, un hôtel...</div>
+        <div style="align-self:flex-start;color:var(--text3);font-size:12px;font-style:italic;">Pose une question, demande de créer un projet/camion/booking hôtel/tâche/ticket, ou demande un rapport complet sur un projet...</div>
       </div>
       <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;">
         <input id="assistant-input" class="input" placeholder="Pose ta question…" style="flex:1;font-size:13px;" onkeydown="if(event.key==='Enter')sendAssistantQuestion()">
@@ -408,6 +415,23 @@ function renderAssistantMessage(role, text) {
   return bubble;
 }
 
+// Ajoute un bouton "Télécharger le PDF" sous une réponse quand l'assistant
+// vient de générer un rapport complet de projet (generate_project_report).
+function renderAssistantReportButton(projectId) {
+  const box = document.getElementById('assistant-messages');
+  if (!box) return;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'align-self:flex-start;';
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-sm btn-ghost';
+  btn.style.cssText = 'font-size:12px;';
+  btn.textContent = '📄 Télécharger le PDF';
+  btn.onclick = () => downloadProjectReportPdf(projectId);
+  wrap.appendChild(btn);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
 async function sendAssistantQuestion() {
   const input = document.getElementById('assistant-input');
   const question = (input?.value || '').trim();
@@ -418,15 +442,24 @@ async function sendAssistantQuestion() {
   const btn = document.getElementById('assistant-send-btn');
   if (btn) btn.disabled = true;
 
-  const res = await api('POST', '/assistant/ask', { question });
+  const res = await api('POST', '/assistant/ask', { question, history: ASSISTANT_HISTORY });
 
   if (btn) btn.disabled = false;
-  if (loadingBubble) loadingBubble.textContent = res?.success ? res.data.answer : (res?.error || "Erreur de l'assistant");
+  const answer = res?.success ? res.data.answer : (res?.error || "Erreur de l'assistant");
+  if (loadingBubble) loadingBubble.textContent = answer;
+
+  if (res?.success) {
+    ASSISTANT_HISTORY.push({ role: 'user', text: question });
+    ASSISTANT_HISTORY.push({ role: 'assistant', text: answer });
+    ASSISTANT_HISTORY = ASSISTANT_HISTORY.slice(-12);
+    if (res.data.reportProjectId) renderAssistantReportButton(res.data.reportProjectId);
+  }
 }
 
 function doLogout() {
   TOKEN = '';
   CURRENT_USER = null;
+  ASSISTANT_HISTORY = [];
   localStorage.removeItem('vem_token');
   localStorage.removeItem('vem_user');
   document.getElementById('app-screen').style.display = 'none';
