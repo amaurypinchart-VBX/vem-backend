@@ -1,0 +1,73 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.upload = void 0;
+exports.uploadToCloudinary = uploadToCloudinary;
+exports.deleteFromCloudinary = deleteFromCloudinary;
+// src/services/cloudinaryService.ts
+// Import compatible toutes versions de cloudinary (v1 et v2) — certains setups
+// TypeScript voient `v2` comme non exporté ; le require fonctionne à coup sûr.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const cloudinary = require('cloudinary').v2;
+const multer_1 = __importDefault(require("multer"));
+const logger_1 = require("../utils/logger");
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+// Use memory storage — we'll upload buffer to Cloudinary manually
+exports.upload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB (les modèles 3D peuvent être lourds)
+    fileFilter: (_req, file, cb) => {
+        // Liste blanche par mime-type
+        const allowedMimes = [
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/bmp', 'image/svg+xml',
+            'application/pdf',
+            'video/mp4', 'video/webm', 'video/quicktime',
+            // Documents Office
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            // Audio (pour la transcription Whisper des dictées vocales importées)
+            'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
+            'audio/wav', 'audio/wave', 'audio/x-wav', 'audio/ogg', 'audio/webm',
+            'audio/aac', 'audio/flac',
+            // Modèles 3D — Cloudinary stocke en raw, donc les mime peuvent être génériques
+            'model/gltf-binary', 'model/gltf+json', 'model/obj', 'model/stl', 'model/vnd.usdz+zip',
+            'application/octet-stream', // fallback fréquent pour les .glb / .skp / .fbx / etc.
+            'application/zip', // .usdz est un zip déguisé
+            'text/plain', // .obj est parfois servi en text/plain
+        ];
+        // En complément, on accepte les extensions 3D même si le mime est tordu
+        const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
+        const allowedExts = ['glb', 'gltf', 'usdz', 'skp', 'obj', 'stl', 'fbx', 'dae', '3ds', 'blend', 'mp3', 'm4a', 'wav', 'ogg', 'webm', 'aac', 'flac'];
+        const ok = allowedMimes.includes(file.mimetype) || allowedExts.includes(ext);
+        cb(null, ok);
+    },
+});
+async function uploadToCloudinary(buffer, folder, options = {}) {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream({ folder: `vem/${folder}`, resource_type: 'auto', ...options }, (err, result) => {
+            if (err || !result)
+                return reject(err || new Error('Upload failed'));
+            resolve({ url: result.secure_url, publicId: result.public_id });
+        });
+        stream.end(buffer);
+    });
+}
+async function deleteFromCloudinary(publicId) {
+    try {
+        await cloudinary.uploader.destroy(publicId);
+    }
+    catch (err) {
+        logger_1.logger.warn(`Cloudinary delete failed for ${publicId}`);
+    }
+}
+//# sourceMappingURL=cloudinaryService.js.map

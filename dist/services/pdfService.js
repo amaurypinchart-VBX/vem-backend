@@ -1,0 +1,1013 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateHandoverPdf = generateHandoverPdf;
+exports.generateDailyReportPdf = generateDailyReportPdf;
+exports.generateVisitReportPdf = generateVisitReportPdf;
+// src/services/pdfService.ts
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PDFDocument = require('pdfkit');
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const translationService_1 = require("./translationService");
+const PDF_TRANSLATIONS = {
+    fr: {
+        // Commun
+        'common.subtitle': 'Event Manager',
+        'common.generatedBy': 'Généré par VIEWBOX Event Manager',
+        'common.untitled': 'Sans titre',
+        'common.notApplicable': 'N/A',
+        // ─── Handover ───
+        'handover.title': 'HANDOVER REPORT',
+        'handover.section.projectInfo': 'Informations Projet',
+        'handover.section.zones': 'Zones inspectées',
+        'handover.section.notes': 'Notes générales',
+        'handover.section.signatures': 'Signatures',
+        'handover.field.project': 'Projet',
+        'handover.field.internalRef': 'N° Interne',
+        'handover.field.address': 'Adresse',
+        'handover.field.client': 'Client',
+        'handover.field.siteManager': 'Site Manager',
+        'handover.field.reportDate': 'Date réception',
+        'handover.status.ok': 'OK',
+        'handover.status.remark': 'Remarque',
+        'handover.status.defect': 'Défaut',
+        'handover.status.pending': 'En attente',
+        'handover.signature.siteManager': 'Site Manager',
+        'handover.signature.client': 'Client',
+        'handover.certificate': 'CERTIFICAT DE RÉCEPTION',
+        'handover.field.contractor': 'Entrepreneur',
+        'handover.section.scope': 'Étendue des travaux',
+        'handover.scope.template': 'Installation et remise en service de la structure événementielle pour le projet « {name} » incluant {n} zone(s) inspectée(s).',
+        'handover.section.legal': 'Certification',
+        'handover.legal.p1': 'Nous certifions par la présente que les installations sont conformes aux recommandations du fabricant, aux normes de sécurité applicables, et aux meilleures pratiques de l\'industrie pour les structures événementielles temporaires.',
+        'handover.legal.p2': 'Les structures ont été assemblées conformément aux plans et spécifications d\'origine. Nous confirmons que l\'installation correspond au plan d\'implantation approuvé et au briefing de conception fournis pour ce projet.',
+        'handover.section.comments': 'Remarques / Réservations',
+        'handover.signature.title': 'Titre',
+        'handover.signature.name': 'Nom',
+        'handover.signature.signature': 'Signature',
+        'handover.signature.client.title': 'Représentant du client',
+        'handover.signature.viewbox': 'VIEWBOX International SA',
+        'handover.signature.siteManager.title': 'Site Manager',
+        'handover.contractor.name': 'VIEWBOX International SA',
+        // Email
+        'handover.email.subject': 'Rapport de handover',
+        'handover.email.greeting': 'Bonjour,',
+        'handover.email.bodyLine': 'Veuillez trouver ci-joint le rapport de handover pour le projet',
+        'handover.email.dateLabel': 'Date',
+        'handover.email.signature': 'Cordialement,<br>L\'équipe VIEWBOX',
+        // ─── Daily Report ───
+        'daily.title': 'DAILY REPORT',
+        'daily.titlePhotos': 'DAILY REPORT — PHOTOS',
+        'daily.titlePhotosCont': 'DAILY REPORT — PHOTOS (suite)',
+        'daily.reportOf': 'Rapport du',
+        'daily.section.info': 'Informations',
+        'daily.section.clientContact': 'Contact Client',
+        'daily.section.timeline': 'Journal de la journée',
+        'daily.section.checklist': 'Checklist sécurité',
+        'daily.section.notes': 'Notes générales',
+        'daily.section.photos': 'Photos',
+        'daily.label.author': 'Rédigé par',
+        'daily.label.weather': 'Météo',
+        'daily.label.workers': 'Ouvriers',
+        'daily.label.date': 'Date',
+        'daily.label.contact': 'Contact',
+        'daily.label.email': 'Email',
+        'daily.label.phone': 'Tél.',
+        // ─── Visit Report ───
+        'visit.title': 'VISITE CLIENT',
+        'visit.client': 'Client',
+        'visit.points': 'Points',
+        'visit.zone': 'Zone',
+        'visit.assignedTo': 'Assigné à',
+        'visit.status.open': 'OUVERT',
+        'visit.status.in_progress': 'EN COURS',
+        'visit.status.resolved': 'RÉSOLU',
+        'visit.status.urgent': 'URGENT',
+        'visit.status.archived': 'ARCHIVÉ',
+        'visit.priority.critical': 'Priorité Critique',
+        'visit.priority.high': 'Priorité Élevée',
+        'visit.priority.normal': 'Priorité Normale',
+        'visit.priority.low': 'Priorité Faible',
+    },
+    en: {
+        // Common
+        'common.subtitle': 'Event Manager',
+        'common.generatedBy': 'Generated by VIEWBOX Event Manager',
+        'common.untitled': 'Untitled',
+        'common.notApplicable': 'N/A',
+        // ─── Handover ───
+        'handover.title': 'HANDOVER REPORT',
+        'handover.section.projectInfo': 'Project Information',
+        'handover.section.zones': 'Inspected Zones',
+        'handover.section.notes': 'General Notes',
+        'handover.section.signatures': 'Signatures',
+        'handover.field.project': 'Project',
+        'handover.field.internalRef': 'Internal Ref',
+        'handover.field.address': 'Address',
+        'handover.field.client': 'Client',
+        'handover.field.siteManager': 'Site Manager',
+        'handover.field.reportDate': 'Report Date',
+        'handover.status.ok': 'OK',
+        'handover.status.remark': 'Remark',
+        'handover.status.defect': 'Defect',
+        'handover.status.pending': 'Pending',
+        'handover.signature.siteManager': 'Site Manager',
+        'handover.signature.client': 'Client',
+        'handover.certificate': 'HANDOVER CERTIFICATE',
+        'handover.field.contractor': 'Contractor',
+        'handover.section.scope': 'Scope of work',
+        'handover.scope.template': 'Installation and handover of the event structure for project « {name} » including {n} inspected zone(s).',
+        'handover.section.legal': 'Certification',
+        'handover.legal.p1': 'We hereby confirm that the installations comply with manufacturer recommendations, applicable safety standards, and best industry practices for temporary event structures.',
+        'handover.legal.p2': 'The structures were assembled in accordance with the original plans and specifications. We confirm that the installation matches the approved layout and design briefs supplied for this project.',
+        'handover.section.comments': 'Comments / Reservations',
+        'handover.signature.title': 'Title',
+        'handover.signature.name': 'Name',
+        'handover.signature.signature': 'Signature',
+        'handover.signature.client.title': 'Client Representative',
+        'handover.signature.viewbox': 'VIEWBOX International SA',
+        'handover.signature.siteManager.title': 'Site Manager',
+        'handover.contractor.name': 'VIEWBOX International SA',
+        // Email
+        'handover.email.subject': 'Handover Report',
+        'handover.email.greeting': 'Hello,',
+        'handover.email.bodyLine': 'Please find attached the handover report for the project',
+        'handover.email.dateLabel': 'Date',
+        'handover.email.signature': 'Best regards,<br>The VIEWBOX team',
+        // ─── Daily Report ───
+        'daily.title': 'DAILY REPORT',
+        'daily.titlePhotos': 'DAILY REPORT — PHOTOS',
+        'daily.titlePhotosCont': 'DAILY REPORT — PHOTOS (cont.)',
+        'daily.reportOf': 'Report of',
+        'daily.section.info': 'Information',
+        'daily.section.clientContact': 'Client Contact',
+        'daily.section.timeline': 'Daily Log',
+        'daily.section.checklist': 'Safety Checklist',
+        'daily.section.notes': 'General Notes',
+        'daily.section.photos': 'Photos',
+        'daily.label.author': 'Author',
+        'daily.label.weather': 'Weather',
+        'daily.label.workers': 'Workers',
+        'daily.label.date': 'Date',
+        'daily.label.contact': 'Contact',
+        'daily.label.email': 'Email',
+        'daily.label.phone': 'Phone',
+        // ─── Visit Report ───
+        'visit.title': 'CLIENT VISIT',
+        'visit.client': 'Client',
+        'visit.points': 'Items',
+        'visit.zone': 'Zone',
+        'visit.assignedTo': 'Assigned to',
+        'visit.status.open': 'OPEN',
+        'visit.status.in_progress': 'IN PROGRESS',
+        'visit.status.resolved': 'RESOLVED',
+        'visit.status.urgent': 'URGENT',
+        'visit.status.archived': 'ARCHIVED',
+        'visit.priority.critical': 'Critical Priority',
+        'visit.priority.high': 'High Priority',
+        'visit.priority.normal': 'Normal Priority',
+        'visit.priority.low': 'Low Priority',
+    },
+};
+function t(key, lang = 'fr') {
+    return PDF_TRANSLATIONS[lang]?.[key] || PDF_TRANSLATIONS.fr[key] || key;
+}
+// Format de date selon la langue
+function fmtPdfDate(d, lang = 'fr', long = false) {
+    const locale = lang === 'en' ? 'en-US' : 'fr-FR';
+    if (long) {
+        return new Date(d).toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    }
+    return new Date(d).toLocaleDateString(locale);
+}
+// Format date + heure selon la langue
+function fmtPdfDateTime(d, lang = 'fr') {
+    const locale = lang === 'en' ? 'en-US' : 'fr-FR';
+    return new Date(d).toLocaleString(locale);
+}
+const RED = '#e63946';
+const DARK = '#1a1a2e';
+const MUTED = '#8892a4';
+const GREEN = '#2dc653';
+const AMBER = '#f4a261';
+// PDFKit + Helvetica ne supporte que WinAnsi/Latin-1 ; certains caractères Unicode
+// "exotiques" (apostrophes courbes, em-dash, etc.) sortent en charabia ou s'affichent
+// comme des cases vides. On les remplace par leurs équivalents ASCII.
+// Les caractères Latin-1 standards (é, è, à, ç, ü, ö, ä, ß) sont supportés et passent inchangés.
+function s(text) {
+    if (text === null || text === undefined)
+        return '';
+    const str = String(text);
+    return str
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'") // ' ' ‚ ‛  → '
+        .replace(/[\u201C\u201D\u201E\u201F]/g, '"') // " " „ ‟  → "
+        .replace(/[\u2013\u2014\u2015]/g, '-') // – — ―    → -
+        .replace(/\u2026/g, '...') // …        → ...
+        .replace(/\u00A0/g, ' ') // nbsp     → espace
+        .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width spaces → rien
+        .replace(/[\u2022\u2023\u25E6\u2043]/g, '-') // • ‣ ◦ ⁃   → -
+        .replace(/[^\x00-\xFF]/g, '?'); // tout caractère non Latin-1 → ?
+}
+// Chemin du logo (version claire pour fond sombre du header).
+// Chargé une seule fois en buffer pour éviter les I/O à chaque PDF.
+const LOGO_LIGHT_PATH = path.join(__dirname, '..', '..', 'public', 'logo_light.png');
+let LOGO_LIGHT_BUFFER = null;
+try {
+    if (fs.existsSync(LOGO_LIGHT_PATH))
+        LOGO_LIGHT_BUFFER = fs.readFileSync(LOGO_LIGHT_PATH);
+}
+catch { /* logo absent : on retombe sur le texte */ }
+function header(doc, subtitle, info, lang = 'fr') {
+    doc.rect(0, 0, 595, 70).fill(DARK);
+    if (LOGO_LIGHT_BUFFER) {
+        doc.image(LOGO_LIGHT_BUFFER, 40, 22, { fit: [120, 24] });
+    }
+    else {
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(20).text('VIEWBOX', 40, 26);
+    }
+    doc.fillColor('white').font('Helvetica').fontSize(9).text(t('common.subtitle', lang), 40, 50);
+    if (info && (info.projectName || info.projectRef)) {
+        const rightX = 380;
+        const rightW = 175;
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(11)
+            .text(info.projectName || '', rightX, 12, { width: rightW, align: 'right', ellipsis: true });
+        doc.fillColor(RED).font('Helvetica-Bold').fontSize(9)
+            .text(info.projectRef || '', rightX, 28, { width: rightW, align: 'right' });
+        doc.fillColor('white').font('Helvetica').fontSize(9)
+            .text(subtitle, rightX, 42, { width: rightW, align: 'right' });
+        if (info.reportNum || info.reportDate) {
+            doc.fillColor('#bbbbbb').font('Helvetica').fontSize(8)
+                .text([info.reportNum, info.reportDate].filter(Boolean).join(' · '), rightX, 56, { width: rightW, align: 'right' });
+        }
+    }
+    else {
+        doc.fillColor(RED).font('Helvetica-Bold').fontSize(13).text(subtitle, 420, 28, { align: 'right', width: 135 });
+    }
+    doc.moveDown(2.5);
+    doc.y = 90;
+}
+function footer(doc, lang = 'fr') {
+    doc.rect(0, 810, 595, 30).fill('#f8f8f8');
+    const locale = lang === 'en' ? 'en-US' : 'fr-FR';
+    doc.fillColor(MUTED).fontSize(8).font('Helvetica')
+        .text(`${t('common.generatedBy', lang)} · ${new Date().toLocaleString(locale)}`, 40, 817, { align: 'center', width: 515 });
+}
+function sectionTitle(doc, title) {
+    const y = doc.y;
+    // Petite barre d'accent rouge à gauche du titre
+    doc.rect(40, y + 2, 3, 14).fill(RED);
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(13).text(title, 50, y);
+    doc.moveDown(0.6);
+}
+function infoRow(doc, label, value) {
+    const y = doc.y;
+    doc.fillColor(MUTED).font('Helvetica').fontSize(10).text(label, 40, y, { width: 130 });
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(value, 175, y, { width: 370 });
+    doc.moveDown(0.3);
+}
+// Charge une image de signature en Buffer pour PDFKit.
+// Gère 2 formats :
+//  - data URL base64 (canvas frontend) → 'data:image/png;base64,...'
+//  - URL HTTP (Cloudinary par ex.) → fetch puis Buffer
+async function loadSignatureBuffer(sigUrl) {
+    if (!sigUrl)
+        return null;
+    // Cas 1 : data URL base64 (signature du canvas frontend)
+    if (sigUrl.startsWith('data:')) {
+        const m = sigUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!m)
+            return null;
+        try {
+            return Buffer.from(m[2], 'base64');
+        }
+        catch {
+            return null;
+        }
+    }
+    // Cas 2 : URL HTTP (Cloudinary)
+    try {
+        const r = await fetch(sigUrl);
+        if (!r.ok)
+            return null;
+        const ab = await r.arrayBuffer();
+        return Buffer.from(ab);
+    }
+    catch {
+        return null;
+    }
+}
+async function generateHandoverPdf(data) {
+    const lang = data.lang || 'fr';
+    // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+    if (lang !== 'fr') {
+        const fields = [];
+        data.items.forEach((item, i) => {
+            if (item.zoneName)
+                fields.push({ kind: 'zone', idx: i, text: item.zoneName });
+            if (item.comment)
+                fields.push({ kind: 'comment', idx: i, text: item.comment });
+        });
+        if (data.generalNotes)
+            fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
+        if (data.scopeOfWork)
+            fields.push({ kind: 'scope', idx: 0, text: data.scopeOfWork });
+        if (fields.length > 0) {
+            const translated = await (0, translationService_1.translateTexts)(fields.map(f => f.text), lang);
+            fields.forEach((f, i) => {
+                const t = translated[i];
+                if (!t)
+                    return;
+                if (f.kind === 'zone')
+                    data.items[f.idx].zoneName = t;
+                else if (f.kind === 'comment')
+                    data.items[f.idx].comment = t;
+                else if (f.kind === 'notes')
+                    data.generalNotes = t;
+                else if (f.kind === 'scope')
+                    data.scopeOfWork = t;
+            });
+        }
+    }
+    // ─── Lecture des customFields avec fallbacks intelligents ───
+    const cf = data.customFields || {};
+    const f = (key, fallback = '') => {
+        const v = cf[key];
+        return (v !== undefined && v !== null && String(v).trim() !== '') ? String(v) : fallback;
+    };
+    // Données enrichies (customFields > data > défaut)
+    const displayClientName = f('clientName', data.clientName);
+    const displayContractor = f('contractor', t('handover.contractor.name', lang));
+    const displaySiteManager = f('spantechRep', data.siteManagerName);
+    const displayClientTitle = f('clientTitle', t('handover.signature.client.title', lang));
+    const displaySpantechTitle = f('spantechTitle', t('handover.signature.siteManager.title', lang));
+    const displayClientRep = f('clientRep', displayClientName);
+    // Contacts (pour bloc enrichi si présents)
+    const clientContactEmail = f('clientContactEmail');
+    const clientContactPhone = f('clientContactPhone');
+    const spantechContactEmail = f('spantechContactEmail');
+    const spantechContactPhone = f('spantechContactPhone');
+    // ─── Pré-télécharge toutes les photos ───
+    const itemsWithBuffers = [];
+    for (const item of data.items) {
+        const buffers = [];
+        for (const ph of (item.photos || [])) {
+            try {
+                const optimized = ph.photoUrl.includes('/upload/')
+                    ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_800,h_800,q_auto:good/')
+                    : ph.photoUrl;
+                const r = await fetch(optimized);
+                if (!r.ok)
+                    continue;
+                const ab = await r.arrayBuffer();
+                buffers.push(Buffer.from(ab));
+            }
+            catch { /* ignorée */ }
+        }
+        itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
+    }
+    // ─── Pré-charge les signatures ───
+    const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
+    const clientSigBuf = await loadSignatureBuffer(data.clientSignatureUrl);
+    // Scope of work : utilise le texte saisi par l'utilisateur si présent,
+    // sinon retombe sur une phrase auto-générée à partir du projet
+    let scopeText;
+    if (data.scopeOfWork && data.scopeOfWork.trim()) {
+        scopeText = data.scopeOfWork.trim();
+    }
+    else {
+        scopeText = t('handover.scope.template', lang)
+            .replace('{name}', data.project.name)
+            .replace('{n}', String(data.items.length));
+    }
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'A4', margin: 40 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+        // ─── Header ───
+        header(doc, t('handover.title', lang), {
+            projectName: data.project.name,
+            projectRef: `N° ${data.project.internalNumber}`,
+            reportDate: fmtPdfDate(data.date, lang),
+        }, lang);
+        // ─── Titre principal centré "HANDOVER CERTIFICATE" ───
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(18)
+            .text(t('handover.certificate', lang), 40, doc.y, { width: 515, align: 'center', characterSpacing: 1 });
+        doc.moveDown(0.3);
+        // Trait rouge décoratif sous le titre
+        const lineY = doc.y;
+        doc.moveTo(220, lineY).lineTo(375, lineY).strokeColor(RED).lineWidth(2).stroke();
+        doc.moveDown(0.8);
+        // ─── Section Informations Projet ───
+        sectionTitle(doc, t('handover.section.projectInfo', lang));
+        infoRow(doc, t('handover.field.project', lang), data.project.name);
+        infoRow(doc, t('handover.field.internalRef', lang), data.project.internalNumber);
+        infoRow(doc, t('handover.field.address', lang), data.project.address);
+        infoRow(doc, t('handover.field.client', lang), displayClientName);
+        infoRow(doc, t('handover.field.contractor', lang), displayContractor);
+        infoRow(doc, t('handover.field.siteManager', lang), displaySiteManager);
+        infoRow(doc, t('handover.field.reportDate', lang), fmtPdfDate(data.date, lang));
+        // Contacts si renseignés
+        if (clientContactEmail || clientContactPhone) {
+            const contactStr = [clientContactEmail, clientContactPhone].filter(Boolean).join(' · ');
+            infoRow(doc, lang === 'en' ? 'Client contact' : 'Contact client', contactStr);
+        }
+        if (spantechContactEmail || spantechContactPhone) {
+            const contactStr = [spantechContactEmail, spantechContactPhone].filter(Boolean).join(' · ');
+            infoRow(doc, lang === 'en' ? 'VIEWBOX contact' : 'Contact VIEWBOX', contactStr);
+        }
+        // ─── Section Scope of work ───
+        doc.moveDown(0.6);
+        sectionTitle(doc, t('handover.section.scope', lang));
+        doc.fillColor('#333').font('Helvetica').fontSize(10)
+            .text(scopeText, 40, doc.y, { width: 515, lineGap: 2 });
+        // ─── Section Certification (textes légaux) ───
+        doc.moveDown(0.8);
+        if (doc.y > 650)
+            doc.addPage();
+        sectionTitle(doc, t('handover.section.legal', lang));
+        // Bloc avec fond gris clair
+        const legalY = doc.y;
+        doc.fillColor('#333').font('Helvetica').fontSize(10);
+        doc.text(t('handover.legal.p1', lang), 40, legalY, { width: 515, align: 'justify', lineGap: 2 });
+        doc.moveDown(0.4);
+        doc.text(t('handover.legal.p2', lang), 40, doc.y, { width: 515, align: 'justify', lineGap: 2 });
+        // ─── Section Zones inspectées ───
+        doc.moveDown(0.8);
+        if (doc.y > 650)
+            doc.addPage();
+        sectionTitle(doc, t('handover.section.zones', lang));
+        const statusColor = { ok: GREEN, remark: AMBER, defect: RED, pending: MUTED };
+        const statusLabelKey = {
+            ok: 'handover.status.ok',
+            remark: 'handover.status.remark',
+            defect: 'handover.status.defect',
+            pending: 'handover.status.pending',
+        };
+        const PHOTO_SIZE = 198;
+        const PHOTO_GAP = 6;
+        const PHOTOS_W = PHOTO_SIZE;
+        const TEXT_X = 40;
+        const TEXT_W = 515 - PHOTOS_W - 14;
+        const PHOTOS_X = TEXT_X + TEXT_W + 14;
+        for (const item of itemsWithBuffers) {
+            if (doc.y > 700)
+                doc.addPage();
+            const rowTop = doc.y;
+            const color = statusColor[item.status] || MUTED;
+            const label = t(statusLabelKey[item.status] || 'handover.status.pending', lang);
+            doc.circle(TEXT_X + 10, rowTop + 5, 5).fill(color);
+            doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
+                .text(item.zoneName, TEXT_X + 25, rowTop, { width: TEXT_W - 110 });
+            const titleEnd = doc.y;
+            doc.roundedRect(TEXT_X + TEXT_W - 75, rowTop - 1, 75, 16, 3).fill(color);
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(9)
+                .text(label, TEXT_X + TEXT_W - 75, rowTop + 3, { width: 75, align: 'center' });
+            let textY = Math.max(titleEnd, rowTop + 20);
+            if (item.comment) {
+                doc.fillColor('#3a3a3a').font('Helvetica').fontSize(10)
+                    .text(item.comment, TEXT_X + 25, textY + 2, { width: TEXT_W - 30, lineGap: 1 });
+                textY = doc.y;
+            }
+            const textBottomY = textY;
+            let photoBottomY = rowTop;
+            const photos = item.photoBuffers || [];
+            if (photos.length > 0) {
+                let row = 0;
+                for (let i = 0; i < photos.length; i++) {
+                    let realY = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+                    if (realY + PHOTO_SIZE > 800) {
+                        doc.addPage();
+                        row = 0;
+                        realY = doc.y;
+                    }
+                    try {
+                        doc.image(photos[i], PHOTOS_X, realY, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
+                    }
+                    catch { }
+                    photoBottomY = realY + PHOTO_SIZE;
+                    row++;
+                }
+            }
+            const rowBottom = Math.max(textBottomY, photoBottomY) + 12;
+            doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
+            doc.y = rowBottom;
+        }
+        // ─── Section Comments / Reservations ───
+        if (data.generalNotes && data.generalNotes.trim()) {
+            doc.moveDown(0.5);
+            if (doc.y > 670)
+                doc.addPage();
+            sectionTitle(doc, t('handover.section.comments', lang));
+            // Bloc avec bordure ambre
+            const cY = doc.y;
+            doc.rect(40, cY, 515, 4).fill(AMBER);
+            doc.fillColor(DARK).font('Helvetica').fontSize(10)
+                .text(data.generalNotes, 40, cY + 12, { width: 515, lineGap: 2 });
+            doc.moveDown(0.5);
+        }
+        // ─── Section Signatures (style Spantech : Title / Name / Signature) ───
+        doc.moveDown(0.8);
+        if (doc.y > 640)
+            doc.addPage();
+        sectionTitle(doc, t('handover.section.signatures', lang));
+        const sigBlockTop = doc.y + 6;
+        const blockW = 250;
+        const blockH = 130;
+        const labelBarH = 18;
+        const rowH = 16;
+        const gap = 15;
+        const leftX = 40;
+        const rightX = leftX + blockW + gap;
+        // ─── Bloc CLIENT (gauche) ───
+        doc.rect(leftX, sigBlockTop, blockW, blockH).stroke('#ccc');
+        // Barre de label en haut
+        doc.rect(leftX, sigBlockTop, blockW, labelBarH).fill(DARK);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(10)
+            .text(t('handover.signature.client', lang).toUpperCase(), leftX + 10, sigBlockTop + 4, { width: blockW - 20 });
+        let y = sigBlockTop + labelBarH + 6;
+        // Title
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.title', lang) + ':', leftX + 10, y);
+        doc.fillColor(DARK).font('Helvetica').fontSize(9)
+            .text(displayClientTitle, leftX + 60, y);
+        y += rowH;
+        // Name
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.name', lang) + ':', leftX + 10, y);
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
+            .text(displayClientRep, leftX + 60, y, { width: blockW - 70 });
+        y += rowH;
+        // Signature label
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.signature', lang) + ':', leftX + 10, y);
+        // Signature image
+        if (clientSigBuf) {
+            try {
+                doc.image(clientSigBuf, leftX + 10, y + 12, { fit: [blockW - 20, 50], align: 'center', valign: 'center' });
+            }
+            catch (e) {
+                console.warn('[pdf] client signature illisible');
+            }
+        }
+        // ─── Bloc VIEWBOX (droite) ───
+        doc.rect(rightX, sigBlockTop, blockW, blockH).stroke('#ccc');
+        doc.rect(rightX, sigBlockTop, blockW, labelBarH).fill(RED);
+        doc.fillColor('white').font('Helvetica-Bold').fontSize(10)
+            .text(t('handover.signature.viewbox', lang).toUpperCase(), rightX + 10, sigBlockTop + 4, { width: blockW - 20 });
+        y = sigBlockTop + labelBarH + 6;
+        // Title
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.title', lang) + ':', rightX + 10, y);
+        doc.fillColor(DARK).font('Helvetica').fontSize(9)
+            .text(displaySpantechTitle, rightX + 60, y);
+        y += rowH;
+        // Name
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.name', lang) + ':', rightX + 10, y);
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9)
+            .text(displaySiteManager, rightX + 60, y, { width: blockW - 70 });
+        y += rowH;
+        // Signature label
+        doc.fillColor(MUTED).font('Helvetica').fontSize(8)
+            .text(t('handover.signature.signature', lang) + ':', rightX + 10, y);
+        // Signature image
+        if (managerSigBuf) {
+            try {
+                doc.image(managerSigBuf, rightX + 10, y + 12, { fit: [blockW - 20, 50], align: 'center', valign: 'center' });
+            }
+            catch (e) {
+                console.warn('[pdf] manager signature illisible');
+            }
+        }
+        doc.y = sigBlockTop + blockH + 10;
+        footer(doc, lang);
+        doc.end();
+    });
+}
+async function generateDailyReportPdf(data) {
+    const lang = data.lang || 'fr';
+    console.log('[DEBUG daily pdf] lang reçu:', lang, 'data.lang:', data.lang);
+    // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+    if (lang !== 'fr') {
+        console.log('[DEBUG] entrée dans bloc traduction');
+        const fields = [];
+        (data.entries || []).forEach((e, i) => {
+            if (e.description)
+                fields.push({ kind: 'entry', idx: i, text: e.description });
+        });
+        if (data.generalNotes)
+            fields.push({ kind: 'notes', idx: 0, text: data.generalNotes });
+        (data.checklist || []).forEach((c, i) => {
+            if (c.item)
+                fields.push({ kind: 'check.item', idx: i, text: c.item });
+            if (c.notes)
+                fields.push({ kind: 'check.notes', idx: i, text: c.notes });
+        });
+        (data.photos || []).forEach((p, i) => {
+            if (p.caption)
+                fields.push({ kind: 'photo', idx: i, text: p.caption });
+        });
+        if (data.weather)
+            fields.push({ kind: 'weather', idx: 0, text: data.weather });
+        console.log('[DEBUG] nombre de textes à traduire:', fields.length);
+        if (fields.length > 0) {
+            const translated = await (0, translationService_1.translateTexts)(fields.map(f => f.text), lang);
+            console.log('[DEBUG] traductions reçues:', translated);
+            fields.forEach((f, i) => {
+                const t = translated[i];
+                if (!t)
+                    return;
+                if (f.kind === 'entry')
+                    data.entries[f.idx].description = t;
+                else if (f.kind === 'notes')
+                    data.generalNotes = t;
+                else if (f.kind === 'check.item')
+                    data.checklist[f.idx].item = t;
+                else if (f.kind === 'check.notes')
+                    data.checklist[f.idx].notes = t;
+                else if (f.kind === 'photo' && data.photos)
+                    data.photos[f.idx].caption = t;
+                else if (f.kind === 'weather')
+                    data.weather = t;
+            });
+        }
+    }
+    // Tri chronologique des entries
+    data.entries = [...(data.entries || [])].sort((a, b) => {
+        const ta = (a.entryTime || '').trim();
+        const tb = (b.entryTime || '').trim();
+        if (!ta && !tb)
+            return 0;
+        if (!ta)
+            return 1;
+        if (!tb)
+            return -1;
+        return ta.localeCompare(tb);
+    });
+    // Pré-téléchargement des photos
+    const photoBuffers = [];
+    if (data.photos && data.photos.length) {
+        for (const p of data.photos) {
+            try {
+                const optimized = p.photoUrl.includes('/upload/')
+                    ? p.photoUrl.replace('/upload/', '/upload/f_jpg,c_limit,w_900,q_auto:good/')
+                    : p.photoUrl;
+                const r = await fetch(optimized);
+                if (!r.ok)
+                    continue;
+                const ab = await r.arrayBuffer();
+                photoBuffers.push({ buffer: Buffer.from(ab), caption: p.caption });
+            }
+            catch { /* photo ignorée */ }
+        }
+    }
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'A4', margin: 40 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+        const reportNum = data.reportId ? `N° REP-${data.reportId.slice(0, 8).toUpperCase()}` : '';
+        const reportDateLong = fmtPdfDate(data.reportDate, lang, true);
+        const reportDateShort = fmtPdfDate(data.reportDate, lang);
+        header(doc, t('daily.title', lang), {
+            projectName: s(data.project.name),
+            projectRef: `N° ${s(data.project.internalNumber)}`,
+            reportNum,
+            reportDate: reportDateShort,
+        }, lang);
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16)
+            .text(`${t('daily.reportOf', lang)} ${reportDateLong}`, 40, doc.y);
+        doc.moveDown(0.5);
+        // Carte d'infos
+        sectionTitle(doc, t('daily.section.info', lang));
+        const infoY = doc.y;
+        const infoH = 70;
+        doc.rect(40, infoY, 515, infoH).fillAndStroke('#fafbfc', '#e5e7eb');
+        const labelStyle = (txt, x, y) => doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(txt.toUpperCase(), x, y, { characterSpacing: 0.5 });
+        const valueStyle = (txt, x, y) => doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(txt || '—', x, y);
+        labelStyle(t('daily.label.author', lang), 56, infoY + 12);
+        valueStyle(s(data.createdBy) || t('common.notApplicable', lang), 56, infoY + 26);
+        labelStyle(t('daily.label.weather', lang), 210, infoY + 12);
+        valueStyle(s(data.weather) || t('common.notApplicable', lang), 210, infoY + 26);
+        labelStyle(t('daily.label.workers', lang), 370, infoY + 12);
+        valueStyle(String(data.workersPresent), 370, infoY + 26);
+        labelStyle(t('daily.label.date', lang), 56, infoY + 46);
+        valueStyle(fmtPdfDate(data.reportDate, lang), 56, infoY + 60);
+        doc.y = infoY + infoH + 12;
+        // Bloc Contact Client
+        if (data.client && (data.client.name || data.client.contactName || data.client.email || data.client.phone)) {
+            sectionTitle(doc, t('daily.section.clientContact', lang));
+            const cY = doc.y;
+            const cH = 60;
+            doc.rect(40, cY, 515, cH).fillAndStroke('#fafbfc', '#e5e7eb');
+            doc.circle(60, cY + 30, 12).fill('#e63946');
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(11).text('C', 55, cY + 24);
+            doc.fillColor(DARK).font('Helvetica-Bold').fontSize(12).text(s(data.client.name) || '—', 84, cY + 10);
+            if (data.client.contactName) {
+                doc.fillColor('#555').font('Helvetica').fontSize(10).text(`${t('daily.label.contact', lang)} : ${s(data.client.contactName)}`, 84, cY + 28);
+            }
+            const rightX = 320;
+            if (data.client.email)
+                doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`${t('daily.label.email', lang)} : ${s(data.client.email)}`, rightX, cY + 12);
+            if (data.client.phone)
+                doc.fillColor(DARK).font('Helvetica').fontSize(10).text(`${t('daily.label.phone', lang)} : ${s(data.client.phone)}`, rightX, cY + 28);
+            if (data.client.address) {
+                doc.fillColor('#555').font('Helvetica-Oblique').fontSize(9).text(s(data.client.address), 84, cY + 44, { width: 460 });
+            }
+            doc.y = cY + cH + 12;
+        }
+        // Timeline
+        if (data.entries.length > 0) {
+            sectionTitle(doc, t('daily.section.timeline', lang));
+            const TIME_X = 40;
+            const TIME_W = 60;
+            const DESC_X = 115;
+            const DESC_W = 440;
+            const LINE_X = 100;
+            const timelineStart = doc.y;
+            for (const entry of data.entries) {
+                if (doc.y > 740)
+                    doc.addPage();
+                const rowY = doc.y;
+                const time = (entry.entryTime || '').trim();
+                if (time) {
+                    doc.roundedRect(TIME_X, rowY - 1, TIME_W, 16, 3).fill(RED);
+                    doc.fillColor('white').font('Helvetica-Bold').fontSize(10).text(time, TIME_X, rowY + 3, { width: TIME_W, align: 'center' });
+                }
+                else {
+                    doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9).text('—', TIME_X, rowY + 3, { width: TIME_W, align: 'center' });
+                }
+                doc.circle(LINE_X + 5, rowY + 7, 3).fill(RED);
+                doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(entry.description), DESC_X, rowY, { width: DESC_W });
+                const after = doc.y;
+                doc.y = Math.max(after, rowY + 20);
+                doc.moveDown(0.4);
+            }
+            doc.moveTo(LINE_X + 5, timelineStart).lineTo(LINE_X + 5, doc.y - 5).strokeColor('#e5e7eb').lineWidth(1).stroke();
+            doc.moveDown(0.5);
+        }
+        // Checklist
+        if (data.checklist.length > 0) {
+            if (doc.y > 700)
+                doc.addPage();
+            sectionTitle(doc, t('daily.section.checklist', lang));
+            for (const item of data.checklist) {
+                if (doc.y > 770)
+                    doc.addPage();
+                const rowY = doc.y;
+                if (item.checked) {
+                    doc.roundedRect(40, rowY, 14, 14, 2).fill(GREEN);
+                    doc.fillColor('white').font('Helvetica-Bold').fontSize(11).text('v', 43, rowY + 1);
+                }
+                else {
+                    doc.roundedRect(40, rowY, 14, 14, 2).fill('#fff').stroke(MUTED);
+                    doc.fillColor(RED).font('Helvetica-Bold').fontSize(11).text('x', 44, rowY + 1);
+                }
+                doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(item.item), 64, rowY, { width: 491 });
+                if (item.notes) {
+                    doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9).text(s(item.notes), 64, doc.y, { width: 491 });
+                }
+                doc.moveDown(0.4);
+            }
+            doc.moveDown(0.5);
+        }
+        // Notes
+        if (data.generalNotes && data.generalNotes.trim()) {
+            if (doc.y > 720)
+                doc.addPage();
+            sectionTitle(doc, t('daily.section.notes', lang));
+            const noteY = doc.y;
+            doc.rect(40, noteY, 515, 4).fill(AMBER);
+            doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(data.generalNotes), 40, noteY + 12, { width: 515, lineGap: 2 });
+            doc.moveDown(0.8);
+        }
+        // Photos
+        if (photoBuffers.length > 0) {
+            doc.addPage();
+            header(doc, t('daily.titlePhotos', lang), undefined, lang);
+            sectionTitle(doc, `${t('daily.section.photos', lang)} (${photoBuffers.length})`);
+            const cellW = 425;
+            const cellH = 283;
+            const x = (595 - cellW) / 2;
+            let y = doc.y + 6;
+            for (let i = 0; i < photoBuffers.length; i++) {
+                const p = photoBuffers[i];
+                if (y + cellH + 30 > 800) {
+                    doc.addPage();
+                    header(doc, t('daily.titlePhotosCont', lang), undefined, lang);
+                    y = doc.y + 6;
+                }
+                try {
+                    doc.rect(x - 4, y - 4, cellW + 8, cellH + 8).fill('#f8f9fa');
+                    doc.image(p.buffer, x, y, { fit: [cellW, cellH], align: 'center', valign: 'center' });
+                    if (p.caption) {
+                        doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(10)
+                            .text(s(p.caption), x, y + cellH + 6, { width: cellW, align: 'center' });
+                    }
+                }
+                catch { /* image illisible : on saute */ }
+                y += cellH + (p.caption ? 28 : 18);
+            }
+        }
+        footer(doc, lang);
+        doc.end();
+    });
+}
+// ─── Rapport PDF d'une visite client (style aligné sur les autres rapports) ───
+async function generateVisitReportPdf(data) {
+    const lang = data.lang || 'fr';
+    const pointsWithBuffers = [];
+    for (const pt of data.points) {
+        const buffers = [];
+        for (const ph of (pt.photos || [])) {
+            try {
+                const optimized = ph.photoUrl.includes('/upload/')
+                    ? ph.photoUrl.replace('/upload/', '/upload/f_jpg,c_fill,w_400,h_400,q_auto:good/')
+                    : ph.photoUrl;
+                const r = await fetch(optimized);
+                if (!r.ok)
+                    continue;
+                const ab = await r.arrayBuffer();
+                buffers.push(Buffer.from(ab));
+            }
+            catch { /* ignorée */ }
+        }
+        pointsWithBuffers.push({ point: pt, photoBuffers: buffers });
+    }
+    // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
+    if (lang !== 'fr') {
+        const fields = [];
+        if (data.visit.title)
+            fields.push({ kind: 'visit.title', idx: 0, text: data.visit.title });
+        if (data.visit.notes)
+            fields.push({ kind: 'visit.notes', idx: 0, text: data.visit.notes });
+        data.points.forEach((pt, i) => {
+            if (pt.title)
+                fields.push({ kind: 'pt.title', idx: i, text: pt.title });
+            if (pt.description)
+                fields.push({ kind: 'pt.desc', idx: i, text: pt.description });
+            if (pt.zone)
+                fields.push({ kind: 'pt.zone', idx: i, text: pt.zone });
+        });
+        if (fields.length > 0) {
+            const translated = await (0, translationService_1.translateTexts)(fields.map(f => f.text), lang);
+            fields.forEach((f, i) => {
+                const t = translated[i];
+                if (!t)
+                    return;
+                if (f.kind === 'visit.title')
+                    data.visit.title = t;
+                else if (f.kind === 'visit.notes')
+                    data.visit.notes = t;
+                else if (f.kind === 'pt.title')
+                    data.points[f.idx].title = t;
+                else if (f.kind === 'pt.desc')
+                    data.points[f.idx].description = t;
+                else if (f.kind === 'pt.zone')
+                    data.points[f.idx].zone = t;
+            });
+        }
+    }
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'A4', margin: 40 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+        const reportNum = `N° VIS-${data.visit.id.slice(0, 8).toUpperCase()}`;
+        const visitDateStr = fmtPdfDate(data.visit.visitDate, lang, true);
+        header(doc, t('visit.title', lang), {
+            projectName: data.project.name,
+            projectRef: `N° ${data.project.internalNumber}`,
+            reportNum,
+            reportDate: fmtPdfDate(data.visit.visitDate, lang),
+        }, lang);
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16).text(data.visit.title, 40, doc.y);
+        doc.moveDown(0.2);
+        doc.fillColor(MUTED).font('Helvetica').fontSize(11)
+            .text(`${visitDateStr}${data.visit.client?.name ? `  ·  ${t('visit.client', lang)} : ${data.visit.client.name}` : ''}`, 40, doc.y);
+        if (data.visit.notes) {
+            doc.moveDown(0.4);
+            doc.fillColor('#444').font('Helvetica-Oblique').fontSize(10).text(data.visit.notes, 40, doc.y, { width: 515 });
+        }
+        doc.moveDown(0.8);
+        sectionTitle(doc, `${t('visit.points', lang)} (${pointsWithBuffers.length})`);
+        const statusColors = {
+            open: '#c0392b',
+            in_progress: '#ca8a04',
+            resolved: '#16a34a',
+            urgent: '#e63946',
+            archived: '#6b7280',
+        };
+        const statusKeys = {
+            open: 'visit.status.open',
+            in_progress: 'visit.status.in_progress',
+            resolved: 'visit.status.resolved',
+            urgent: 'visit.status.urgent',
+            archived: 'visit.status.archived',
+        };
+        const priorityKeys = {
+            critical: 'visit.priority.critical',
+            high: 'visit.priority.high',
+            normal: 'visit.priority.normal',
+            low: 'visit.priority.low',
+        };
+        const PHOTO_SIZE = 113;
+        const PHOTO_GAP = 6;
+        const PHOTOS_W = 2 * PHOTO_SIZE + PHOTO_GAP;
+        const TEXT_X = 40;
+        const TEXT_W = 515 - PHOTOS_W - 14;
+        const PHOTOS_X = TEXT_X + TEXT_W + 14;
+        pointsWithBuffers.forEach((item, idx) => {
+            const pt = item.point;
+            if (doc.y > 720)
+                doc.addPage();
+            const rowTop = doc.y;
+            const sColor = statusColors[pt.status || 'open'] || statusColors.open;
+            const sLabel = t(statusKeys[pt.status || 'open'] || 'visit.status.open', lang);
+            const pLabel = t(priorityKeys[pt.priority || 'normal'] || 'visit.priority.normal', lang);
+            doc.circle(TEXT_X + 10, rowTop + 6, 8).fill('#e63946');
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(9).text(String(idx + 1), TEXT_X + 3, rowTop + 2, { width: 14, align: 'center' });
+            doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
+                .text(pt.title || t('common.untitled', lang), TEXT_X + 25, rowTop, { width: TEXT_W - 110 });
+            let curY = doc.y + 2;
+            doc.roundedRect(TEXT_X + TEXT_W - 75, rowTop - 1, 75, 14, 3).fill(sColor);
+            doc.fillColor('white').font('Helvetica-Bold').fontSize(8)
+                .text(sLabel, TEXT_X + TEXT_W - 75, rowTop + 2, { width: 75, align: 'center' });
+            if (pt.description) {
+                doc.fillColor('#3a3a3a').font('Helvetica').fontSize(10)
+                    .text(pt.description, TEXT_X + 25, curY, { width: TEXT_W - 30, lineGap: 1 });
+                curY = doc.y + 2;
+            }
+            doc.fillColor(MUTED).font('Helvetica').fontSize(9);
+            const metaLines = [];
+            if (pt.zone)
+                metaLines.push(`${t('visit.zone', lang)} : ${pt.zone}`);
+            if (pt.assignedToUser)
+                metaLines.push(`${t('visit.assignedTo', lang)} ${pt.assignedToUser.firstName} ${pt.assignedToUser.lastName}`);
+            metaLines.push(pLabel);
+            if (metaLines.length) {
+                doc.text(metaLines.join('   |   '), TEXT_X + 25, curY, { width: TEXT_W - 30 });
+                curY = doc.y + 4;
+            }
+            const textBottomY = curY;
+            let photoBottomY = rowTop;
+            const photos = item.photoBuffers || [];
+            photos.forEach((buf, i) => {
+                const col = i % 2;
+                const row = Math.floor(i / 2);
+                const x = PHOTOS_X + col * (PHOTO_SIZE + PHOTO_GAP);
+                const y = rowTop + row * (PHOTO_SIZE + PHOTO_GAP);
+                if (y + PHOTO_SIZE > 810)
+                    return;
+                try {
+                    doc.image(buf, x, y, { fit: [PHOTO_SIZE, PHOTO_SIZE], align: 'center', valign: 'center' });
+                }
+                catch { }
+                photoBottomY = Math.max(photoBottomY, y + PHOTO_SIZE);
+            });
+            const rowBottom = Math.max(textBottomY, photoBottomY) + 10;
+            doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
+            doc.y = rowBottom;
+        });
+        footer(doc, lang);
+        doc.end();
+    });
+}
+//# sourceMappingURL=pdfService.js.map

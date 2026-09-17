@@ -1,0 +1,332 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+// src/routes/auth.ts
+const express_1 = require("express");
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const database_1 = require("../config/database");
+const AppError_1 = require("../utils/AppError");
+const auth_1 = require("../middleware/auth");
+const crypto_1 = __importDefault(require("crypto"));
+const router = (0, express_1.Router)();
+const SECRET = process.env.JWT_SECRET || 'vem-secret-change-me';
+const RSECRET = process.env.JWT_REFRESH_SECRET || 'vem-refresh-change-me';
+function signAccess(user) {
+    return jsonwebtoken_1.default.sign({ id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName }, SECRET, { expiresIn: '8h' });
+}
+// POST /api/v1/auth/login
+router.post('/login', async (req, res, next) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password)
+            throw new AppError_1.AppError('Email et mot de passe requis', 400);
+        const user = await database_1.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+        if (!user || !user.isActive)
+            throw new AppError_1.AppError('Identifiants invalides', 401);
+        const valid = await bcryptjs_1.default.compare(password, user.passwordHash);
+        if (!valid)
+            throw new AppError_1.AppError('Identifiants invalides', 401);
+        await database_1.prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+        // ── Mot de passe temporaire (invitation) ? ──
+        let mustChangePassword = false;
+        try {
+            const rows = await database_1.prisma.$queryRaw `
+        SELECT expires_at FROM invite_passwords WHERE user_id = ${user.id} LIMIT 1
+      `;
+            const inv = Array.isArray(rows) ? rows[0] : null;
+            if (inv) {
+                if (new Date(inv.expires_at) < new Date()) {
+                    await database_1.prisma.$executeRaw `DELETE FROM invite_passwords WHERE user_id = ${user.id}`;
+                    throw new AppError_1.AppError('Mot de passe temporaire expiré. Demandez un nouvel envoi à un administrateur.', 401);
+                }
+                mustChangePassword = true;
+            }
+        }
+        catch (e) {
+            if (e instanceof AppError_1.AppError)
+                throw e;
+            // table absente / autre : login normal
+        }
+        const token = signAccess(user);
+        const refresh = jsonwebtoken_1.default.sign({ id: user.id }, RSECRET, { expiresIn: '30d' });
+        await database_1.prisma.refreshToken.create({
+            data: { userId: user.id, token: refresh, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+        });
+        res.json({
+            success: true,
+            data: {
+                token, refreshToken: refresh,
+                user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl, mustChangePassword },
+            },
+        });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/refresh
+router.post('/refresh', async (req, res, next) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken)
+            throw new AppError_1.AppError('Refresh token manquant', 400);
+        const stored = await database_1.prisma.refreshToken.findUnique({
+            where: { token: refreshToken }, include: { user: true },
+        });
+        if (!stored || stored.expiresAt < new Date())
+            throw new AppError_1.AppError('Token expiré', 401);
+        const token = signAccess(stored.user);
+        res.json({ success: true, data: { token } });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /api/v1/auth/me
+router.get('/me', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const user = await database_1.prisma.user.findUnique({
+            where: { id: req.user.id },
+            select: { id: true, email: true, role: true, firstName: true, lastName: true, phone: true, avatarUrl: true },
+        });
+        res.json({ success: true, data: user });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/logout
+router.post('/logout', async (req, res, next) => {
+    try {
+        const { refreshToken } = req.body;
+        if (refreshToken)
+            await database_1.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+        res.json({ success: true });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// ── Ajouter ces imports en haut de auth.ts si pas déjà présents ──
+// import crypto from 'crypto';
+// import nodemailer from 'nodemailer';
+// ── Ajouter cette table dans Railway Postgres ──
+// CREATE TABLE IF NOT EXISTS password_reset_tokens (
+//   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+//   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+//   token TEXT NOT NULL UNIQUE,
+//   expires_at TIMESTAMP NOT NULL,
+//   used BOOLEAN DEFAULT FALSE,
+//   created_at TIMESTAMP DEFAULT NOW()
+// );
+// ── Coller ce code dans src/routes/auth.ts avant export default router ──
+// POST /api/v1/auth/forgot-password
+router.post('/forgot-password', async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        if (!email)
+            throw new AppError_1.AppError('Email requis', 400);
+        // Always return success (don't reveal if email exists)
+        const user = await database_1.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+        if (user && user.isActive) {
+            // Generate secure token
+            const crypto = require('crypto');
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+            // Store token (using raw query since no Prisma model yet)
+            await database_1.prisma.$executeRaw `
+        INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
+        VALUES (gen_random_uuid()::text, ${user.id}, ${token}, ${expiresAt})
+        ON CONFLICT DO NOTHING
+      `;
+            // Send email
+            const appUrl = process.env.APP_URL || 'https://viewboxsitemanagement.up.railway.app';
+            const resetUrl = `${appUrl}/reset-password?token=${token}`;
+            const nodemailer = require('nodemailer');
+            const transporter = nodemailer.createTransporter({
+                host: process.env.SMTP_HOST || 'smtp.gmail.com',
+                port: parseInt(process.env.SMTP_PORT || '587'),
+                secure: false,
+                auth: {
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASS,
+                },
+            });
+            await transporter.sendMail({
+                from: `"VEM — ViewBox Event Manager" <${process.env.SMTP_USER}>`,
+                to: user.email,
+                subject: '🔑 Réinitialisation de votre mot de passe VEM',
+                html: `
+          <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#1a1a2e;color:#f0f2f5;padding:32px;border-radius:12px;">
+            <div style="font-size:24px;font-weight:800;color:#e63946;margin-bottom:6px;">VEM</div>
+            <div style="font-size:11px;color:#8892a4;margin-bottom:24px;text-transform:uppercase;letter-spacing:1px;">ViewBox Event Manager</div>
+            <h2 style="font-size:20px;margin-bottom:12px;">Réinitialisation du mot de passe</h2>
+            <p style="color:#9ba3b2;line-height:1.6;">Bonjour ${user.firstName},</p>
+            <p style="color:#9ba3b2;line-height:1.6;">Vous avez demandé une réinitialisation de votre mot de passe. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.</p>
+            <div style="text-align:center;margin:28px 0;">
+              <a href="${resetUrl}" style="background:#e63946;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;display:inline-block;">
+                🔑 Réinitialiser mon mot de passe
+              </a>
+            </div>
+            <p style="color:#5a6275;font-size:12px;line-height:1.6;">Ce lien est valable <strong style="color:#9ba3b2;">2 heures</strong>. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+            <hr style="border:none;border-top:1px solid #2a2f3a;margin:20px 0;">
+            <p style="color:#5a6275;font-size:11px;text-align:center;">VEM — ViewBox Event Manager</p>
+          </div>`,
+            });
+        }
+        // Always return success
+        res.json({ success: true, message: 'Si cet email existe, un lien a été envoyé.' });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/reset-password
+router.post('/reset-password', async (req, res, next) => {
+    try {
+        const { token, password } = req.body;
+        if (!token || !password)
+            throw new AppError_1.AppError('Token et mot de passe requis', 400);
+        if (password.length < 8)
+            throw new AppError_1.AppError('Mot de passe trop court (min 8 caractères)', 400);
+        // Find token
+        const result = await database_1.prisma.$queryRaw `
+      SELECT * FROM password_reset_tokens 
+      WHERE token = ${token} AND used = FALSE AND expires_at > NOW()
+      LIMIT 1
+    `;
+        const resetToken = Array.isArray(result) ? result[0] : null;
+        if (!resetToken)
+            throw new AppError_1.AppError('Lien invalide ou expiré', 400);
+        // Hash new password
+        const hash = await bcryptjs_1.default.hash(password, 12);
+        await database_1.prisma.user.update({
+            where: { id: resetToken.user_id },
+            data: { passwordHash: hash },
+        });
+        // Mark token as used
+        await database_1.prisma.$executeRaw `
+      UPDATE password_reset_tokens SET used = TRUE WHERE token = ${token}
+    `;
+        // Invalidate all refresh tokens
+        await database_1.prisma.refreshToken.deleteMany({ where: { userId: resetToken.user_id } });
+        res.json({ success: true, message: 'Mot de passe réinitialisé avec succès.' });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/change-password — changement depuis le compte connecté
+// Requiert l'ancien mot de passe pour vérifier l'identité.
+router.post('/change-password', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword)
+            throw new AppError_1.AppError('Ancien et nouveau mot de passe requis', 400);
+        if (newPassword.length < 8)
+            throw new AppError_1.AppError('Nouveau mot de passe trop court (min 8 caractères)', 400);
+        if (currentPassword === newPassword)
+            throw new AppError_1.AppError('Le nouveau mot de passe doit être différent', 400);
+        const user = await database_1.prisma.user.findUnique({ where: { id: req.user.id } });
+        if (!user)
+            throw new AppError_1.AppError('Utilisateur introuvable', 404);
+        const valid = await bcryptjs_1.default.compare(currentPassword, user.passwordHash);
+        if (!valid)
+            throw new AppError_1.AppError('Ancien mot de passe incorrect', 401);
+        const passwordHash = await bcryptjs_1.default.hash(newPassword, 12);
+        await database_1.prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+        // Efface un éventuel mot de passe temporaire d'invitation
+        try {
+            await database_1.prisma.$executeRaw `DELETE FROM invite_passwords WHERE user_id = ${user.id}`;
+        }
+        catch (_) { }
+        // Révoque les autres sessions pour forcer une reconnexion ailleurs
+        await database_1.prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+        res.json({ success: true, message: 'Mot de passe modifié avec succès' });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/invite — génère un lien d'inscription (admin / project_manager)
+router.post('/invite', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        if (!['admin', 'project_manager'].includes(req.user.role))
+            throw new AppError_1.AppError('Permission insuffisante', 403);
+        const { role, email, note } = req.body;
+        const token = crypto_1.default.randomBytes(24).toString('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 jours
+        await database_1.prisma.invitationToken.create({
+            data: {
+                token,
+                role: role || 'worker',
+                email: email ? String(email).toLowerCase() : null,
+                note: note || null,
+                expiresAt,
+                createdBy: req.user.id,
+            },
+        });
+        const appUrl = process.env.APP_URL || 'https://viewboxsitemanagement.up.railway.app';
+        const inviteUrl = `${appUrl}/?invite=${token}${role ? `&role=${role}` : ''}`;
+        res.json({ success: true, data: { inviteUrl, token, expiresAt } });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// POST /api/v1/auth/register — création de compte via lien d'invitation
+router.post('/register', async (req, res, next) => {
+    try {
+        const { firstName, lastName, email, password, role, inviteToken } = req.body;
+        if (!firstName || !lastName || !email || !password)
+            throw new AppError_1.AppError('Champs obligatoires manquants', 400);
+        if (password.length < 8)
+            throw new AppError_1.AppError('Mot de passe trop court (min 8 caractères)', 400);
+        if (!inviteToken)
+            throw new AppError_1.AppError('Lien d\'invitation manquant', 400);
+        const invite = await database_1.prisma.invitationToken.findUnique({ where: { token: inviteToken } });
+        if (!invite)
+            throw new AppError_1.AppError('Invitation invalide', 400);
+        if (invite.usedAt)
+            throw new AppError_1.AppError('Cette invitation a déjà été utilisée', 400);
+        if (invite.expiresAt < new Date())
+            throw new AppError_1.AppError('Invitation expirée', 400);
+        if (invite.email && invite.email.toLowerCase() !== String(email).toLowerCase()) {
+            throw new AppError_1.AppError('Cette invitation est réservée à une autre adresse email', 400);
+        }
+        const existing = await database_1.prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
+        if (existing)
+            throw new AppError_1.AppError('Un compte existe déjà avec cet email', 400);
+        const passwordHash = await bcryptjs_1.default.hash(password, 12);
+        const finalRole = (role || invite.role || 'worker');
+        const user = await database_1.prisma.user.create({
+            data: {
+                firstName, lastName,
+                email: String(email).toLowerCase(),
+                passwordHash,
+                role: finalRole,
+            },
+        });
+        await database_1.prisma.invitationToken.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
+        const token = signAccess(user);
+        const refresh = jsonwebtoken_1.default.sign({ id: user.id }, RSECRET, { expiresIn: '30d' });
+        await database_1.prisma.refreshToken.create({
+            data: { userId: user.id, token: refresh, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+        });
+        res.status(201).json({
+            success: true,
+            data: {
+                token, refreshToken: refresh,
+                user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl },
+            },
+        });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+exports.default = router;
+//# sourceMappingURL=auth.js.map
