@@ -13339,7 +13339,10 @@ async function loadDetailBriefing(projectId) {
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px;flex-wrap:wrap;">
       <div style="font-size:13px;color:var(--text3);">${briefings.length} briefing${briefings.length>1?'s':''}</div>
-      <button class="btn btn-primary btn-sm" onclick="createNewBriefing('${projectId}')">➕ Nouveau briefing</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-outline btn-sm" id="brf-ai-generate-btn" onclick="generateBriefingWithAI('${projectId}')" title="Génère un premier jet (intro, planning, contacts) à partir des données du projet">✨ Générer avec l'IA</button>
+        <button class="btn btn-primary btn-sm" onclick="createNewBriefing('${projectId}')">➕ Nouveau briefing</button>
+      </div>
     </div>
     ${briefings.length === 0 ? `
       <div class="empty" style="padding:40px 20px;text-align:center;">
@@ -13372,6 +13375,18 @@ async function loadDetailBriefing(projectId) {
       </div>
     `}
   `;
+}
+
+// Génère un brouillon de briefing par IA (intro + planning depuis les données
+// projet, contacts réels, blocs logistique auto) puis ouvre l'éditeur dessus.
+async function generateBriefingWithAI(projectId) {
+  const btn = document.getElementById('brf-ai-generate-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '✨ Génération...'; }
+  const res = await api('POST', `/briefings/project/${projectId}/generate`);
+  if (btn) { btn.disabled = false; btn.textContent = "✨ Générer avec l'IA"; }
+  if (!res?.success) { toast(res?.error || 'Erreur génération IA', 'error'); return; }
+  toast('Brouillon généré ✅ — relis et ajuste avant envoi', 'success');
+  openBriefingEditor(res.data.id);
 }
 
 // Créer un nouveau briefing (demande un nom, POST, puis ouvre l'éditeur)

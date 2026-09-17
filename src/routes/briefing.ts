@@ -1,5 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
+import { generateBriefingDraft } from '../services/briefingAI';
 
 const router = Router();
 
@@ -68,6 +69,23 @@ router.post('/project/:projectId', async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error('[briefings create]', e);
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// GÉNÉRER un brouillon de briefing par IA à partir des données du projet
+// POST /api/v1/briefings/project/:projectId/generate
+// ═══════════════════════════════════════════════════════════
+router.post('/project/:projectId/generate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { projectId } = req.params;
+    const draft = await generateBriefingDraft(projectId);
+    const brief = await prisma.briefing.create({
+      data: { projectId, title: draft.title, slides: draft.slides },
+    });
+    res.json({ success: true, data: brief });
+  } catch (err: any) {
+    next(err);
   }
 });
 
