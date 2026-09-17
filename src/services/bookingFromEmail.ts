@@ -14,8 +14,10 @@
 //
 // Fichier autonome : ne modifie aucun flux existant.
 
+import { z } from 'zod';
 import { prisma } from '../config/database';
 import { logger } from '../utils/logger';
+import { callClaudeJSON } from './aiService';
 
 interface EmailInput {
   projectId: string;
@@ -50,11 +52,47 @@ function norm(s: string): string {
     .trim();
 }
 
-// Appelle Claude pour décider du contenu et extraire les réservations.
-async function extract(subject: string, body: string, roster: string[]): Promise<any> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY non configurée');
+const TRUCK_SCHEMA = z.object({
+  vehicleType: z.string().catch('truck'),
+  truckNumber: z.string().catch(''),
+  licensePlate: z.string().catch(''),
+  driverName: z.string().catch(''),
+  driverPhone: z.string().catch(''),
+  loadingLocation: z.string().catch(''),
+  unloadingLocation: z.string().catch(''),
+  loadingDate: z.string().catch(''),
+  departureDate: z.string().catch(''),
+  arrivalDate: z.string().catch(''),
+  notes: z.string().catch(''),
+});
+const HOTEL_SCHEMA = z.object({
+  hotelName: z.string().catch(''),
+  hotelAddress: z.string().catch(''),
+  checkin: z.string().catch(''),
+  checkout: z.string().catch(''),
+  reference: z.string().catch(''),
+  phase: z.string().catch('installation'),
+  notes: z.string().catch(''),
+});
+const TEAM_TRAVEL_SCHEMA = z.object({
+  memberName: z.string().catch(''),
+  phase: z.string().catch('installation'),
+  outboundMode: z.string().catch(''),
+  outboundDate: z.string().catch(''),
+  outboundDetails: z.string().catch(''),
+  returnMode: z.string().catch(''),
+  returnDate: z.string().catch(''),
+  returnDetails: z.string().catch(''),
+  notes: z.string().catch(''),
+});
+const BOOKINGS_SCHEMA = z.object({
+  trucks: z.array(TRUCK_SCHEMA).catch([]),
+  hotels: z.array(HOTEL_SCHEMA).catch([]),
+  teamTravel: z.array(TEAM_TRAVEL_SCHEMA).catch([]),
+});
 
+// Appelle Claude pour décider du contenu et extraire les réservations.
+async function extract(subject: string, body: string, roster: string[]): Promise<z.infer<typeof BOOKINGS_SCHEMA>> {
   const today = new Date().toISOString().split('T')[0];
   const rosterLine = roster.length
     ? roster.join(', ')
@@ -119,34 +157,11 @@ Règles :
 - Ne mets un "memberName" QUE s'il correspond clairement à un membre de la liste fournie. Sinon ''.
 - Si le mail ne contient aucune réservation d'un type donné, renvoie un tableau vide pour ce type.`;
 
-  const response: any = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2500,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  return callClaudeJSON<z.infer<typeof BOOKINGS_SCHEMA>>({
+    maxTokens: 2500,
+    schema: BOOKINGS_SCHEMA,
+    messages: [{ role: 'user', content: prompt }],
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Anthropic API error: ${response.status} — ${err.slice(0, 200)}`);
-  }
-
-  const data = await response.json() as any;
-  const content = data.content?.[0]?.text || '';
-  logger.info(`[booking-from-email] IA brute (${content.length} car) : ${content.slice(0, 300)}`);
-
-  const cleaned = content.replace(/```json|```/g, '').trim();
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first === -1 || last <= first) throw new Error('Pas de JSON dans la réponse IA');
-  return JSON.parse(cleaned.slice(first, last + 1));
 }
 
 export async function createBookingsFromEmail(input: EmailInput): Promise<CreateResult> {

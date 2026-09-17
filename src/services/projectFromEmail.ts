@@ -12,9 +12,11 @@
 //
 // Aucune modification des flux existants : ce fichier est autonome.
 
+import { z } from 'zod';
 import { prisma } from '../config/database';
 import { uploadToCloudinary } from './cloudinaryService';
 import { logger } from '../utils/logger';
+import { callClaudeJSON } from './aiService';
 
 interface EmailAttachment {
   content?: Buffer;
@@ -54,11 +56,26 @@ function parseDate(s: any): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Appelle Claude pour extraire les champs du projet depuis le texte du mail.
-async function extractFields(subjectClean: string, body: string): Promise<any> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY non configurée');
+const PROJECT_FIELDS_SCHEMA = z.object({
+  projectName: z.string().catch(''),
+  internalNumber: z.string().catch(''),
+  clientName: z.string().catch(''),
+  contactName: z.string().catch(''),
+  contactEmail: z.string().catch(''),
+  contactPhone: z.string().catch(''),
+  address: z.string().catch(''),
+  city: z.string().catch(''),
+  installationStart: z.string().catch(''),
+  installationEnd: z.string().catch(''),
+  dismantlingStart: z.string().catch(''),
+  dismantlingEnd: z.string().catch(''),
+  workersCount: z.number().catch(0),
+  description: z.string().catch(''),
+  specialInstructions: z.string().catch(''),
+});
 
+// Appelle Claude pour extraire les champs du projet depuis le texte du mail.
+async function extractFields(subjectClean: string, body: string): Promise<z.infer<typeof PROJECT_FIELDS_SCHEMA>> {
   const today = new Date().toISOString().split('T')[0];
 
   const prompt = `Tu extrais les informations d'un projet d'installation événementielle depuis un email transféré (FR, EN ou NL).
@@ -93,34 +110,11 @@ Règles :
 - N'invente jamais une date : si aucune date n'est trouvée, laisse ''.
 - Ne confonds pas l'expéditeur interne (Viewbox, sales engineer) avec le client final.`;
 
-  const response: any = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  return callClaudeJSON<z.infer<typeof PROJECT_FIELDS_SCHEMA>>({
+    maxTokens: 1500,
+    schema: PROJECT_FIELDS_SCHEMA,
+    messages: [{ role: 'user', content: prompt }],
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Anthropic API error: ${response.status} — ${err.slice(0, 200)}`);
-  }
-
-  const data = await response.json() as any;
-  const content = data.content?.[0]?.text || '';
-  logger.info(`[project-from-email] IA brute (${content.length} car) : ${content.slice(0, 300)}`);
-
-  const cleaned = content.replace(/```json|```/g, '').trim();
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first === -1 || last <= first) throw new Error('Pas de JSON dans la réponse IA');
-  return JSON.parse(cleaned.slice(first, last + 1));
 }
 
 // Trouve un client existant (nom insensible à la casse, ou email) ou le crée.
