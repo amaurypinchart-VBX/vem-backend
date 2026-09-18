@@ -27,15 +27,21 @@ router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFu
     if (mode === 'text') {
       // Le prompt complet est déjà construit côté client (ex : résumé exécutif) :
       // on le transmet tel quel à Claude et on renvoie le texte brut, sans validation JSON.
-      const result = await callClaude({ maxTokens: 3000, messages: [{ role: 'user', content: text }] });
+      // timeoutMs relevé : le prompt peut couvrir plusieurs jours de rapport, la génération
+      // dépasse régulièrement les 30s par défaut d'aiService (→ 504 "Délai dépassé").
+      const result = await callClaude({ maxTokens: 3000, timeoutMs: 90000, messages: [{ role: 'user', content: text }] });
       return res.json({ success: true, data: result });
     }
 
     if (mode === 'json') {
       // Le prompt complet (avec ses propres instructions de format) est déjà construit
       // côté client : on le transmet tel quel, sans schéma imposé côté serveur.
+      // Ce mode sert notamment à l'analyse temps (06-time-analysis.js), qui envoie un
+      // prompt volumineux (tout l'historique des rapports journaliers) et demande jusqu'à
+      // 8000 tokens de JSON en sortie — nettement plus lent que les 30s par défaut.
       const result = await callClaudeJSON({
         maxTokens: 8000,
+        timeoutMs: 120000,
         schema: z.any(),
         messages: [{ role: 'user', content: text }],
       });
@@ -44,6 +50,7 @@ router.post('/parse-daily', async (req: AuthRequest, res: Response, next: NextFu
 
     const entries = await callClaudeJSON({
       maxTokens: 8000,
+      timeoutMs: 90000,
       schema: DAILY_ENTRY_SCHEMA,
       messages: [{
         role: 'user',
