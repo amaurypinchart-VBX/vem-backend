@@ -54,7 +54,11 @@ async function runTimeAnalysisForReport() {
     // géant sur tout l'historique du projet dépasse régulièrement le timeout
     // ou la limite de sortie de l'IA (chaque entrée est "éclatée" en
     // plusieurs sous-tâches, donc la sortie JSON attendue grossit vite).
-    const BATCH_MAX_ENTRIES = 25;
+    // 25 entrées par lot dépassait encore régulièrement 120s de génération
+    // sur Sonnet (chaque entrée peut exploser en 4-5 sous-tâches JSON) : on
+    // réduit la taille des lots pour garder chaque appel largement sous le
+    // timeout, quitte à multiplier les allers-retours.
+    const BATCH_MAX_ENTRIES = 10;
     const batches = [];
     let currentBatch = [];
     let currentCount = 0;
