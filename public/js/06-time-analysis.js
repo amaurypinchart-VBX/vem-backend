@@ -25,19 +25,23 @@ async function runTimeAnalysisForReport() {
       reports.map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
     );
 
-    const sourceLines = [];
+    // Un "bloc jour" par rapport journalier (au lieu d'un seul gros bloc de
+    // texte) : ça permet de regrouper les jours en lots pour l'appel IA
+    // ci-dessous, plutôt que d'envoyer tout l'historique du projet d'un coup.
+    const dayBlocks = [];
     let totalEntries = 0;
     detailed.forEach(r => {
       const date = r.reportDate?.split('T')[0] || '';
       const workers = r.workersPresent || 0;
       const entries = (r.entries || []).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
       if (!entries.length && !r.generalNotes) return;
-      sourceLines.push(`\n=== JOUR ${date} — ${workers} ouvrier(s) présent(s) ===`);
+      const lines = [`\n=== JOUR ${date} — ${workers} ouvrier(s) présent(s) ===`];
       entries.forEach(e => {
-        sourceLines.push(`[${e.entryTime || '?'}] ${e.description || ''}`);
+        lines.push(`[${e.entryTime || '?'}] ${e.description || ''}`);
         totalEntries++;
       });
-      if (r.generalNotes) sourceLines.push(`Notes générales : ${r.generalNotes}`);
+      if (r.generalNotes) lines.push(`Notes générales : ${r.generalNotes}`);
+      dayBlocks.push({ date, entryCount: entries.length, text: lines.join('\n') });
     });
 
     if (!totalEntries) {
@@ -46,7 +50,24 @@ async function runTimeAnalysisForReport() {
       return;
     }
 
-    const sourceText = sourceLines.join('\n');
+    // Regroupe les jours en lots bornés en nombre d'entrées : un seul appel
+    // géant sur tout l'historique du projet dépasse régulièrement le timeout
+    // ou la limite de sortie de l'IA (chaque entrée est "éclatée" en
+    // plusieurs sous-tâches, donc la sortie JSON attendue grossit vite).
+    const BATCH_MAX_ENTRIES = 25;
+    const batches = [];
+    let currentBatch = [];
+    let currentCount = 0;
+    dayBlocks.forEach(day => {
+      if (currentCount > 0 && currentCount + day.entryCount > BATCH_MAX_ENTRIES) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentCount = 0;
+      }
+      currentBatch.push(day);
+      currentCount += day.entryCount;
+    });
+    if (currentBatch.length) batches.push(currentBatch);
 
     // Charger templates si pas déjà fait
     if (!TA_TEMPLATES_CACHE) await loadTATemplates(false);
@@ -78,13 +99,14 @@ async function runTimeAnalysisForReport() {
       finalCategories.push('Autres tâches');
     }
 
-    setTAStatus('🤖', `Analyse IA (${totalEntries} entrées, ${detailed.length} jours, ${templateCategories.length} template(s))...`);
-
     // Mapping template.title → template.id pour post-processing
     const titleToTemplate = {};
     templateCategories.forEach(t => { titleToTemplate[t.title.toLowerCase()] = t; });
 
-    const prompt = `Tu es un expert en gestion de chantier événementiel (stands, box modulaires, structures aluminium, panels, vitres, portes, escaliers, joints). Analyse les rapports journaliers ci-dessous et éclate CHAQUE entrée en autant de sous-tâches distinctes qu'il y a d'actions différentes dedans.
+    // Tout le bloc d'instructions/exemples est identique pour chaque lot —
+    // seule la section "RAPPORTS À ANALYSER" change. On le construit une
+    // fois et on y ajoute le texte du lot courant à chaque appel.
+    const promptHeader = `Tu es un expert en gestion de chantier événementiel (stands, box modulaires, structures aluminium, panels, vitres, portes, escaliers, joints). Analyse les rapports journaliers ci-dessous et éclate CHAQUE entrée en autant de sous-tâches distinctes qu'il y a d'actions différentes dedans.
 
 ═══════════════════════════════════════════════════════════
 TEMPLATES DE TÂCHES DISPONIBLES — utilise EXACTEMENT ces noms :
@@ -186,29 +208,52 @@ FORMAT DE RÉPONSE (JSON UNIQUEMENT — pas de markdown, pas de backticks)
 Sois systématique dans l'éclatement. Une entrée à 4 actions = 4 sous-tâches dans 4 templates différents (sauf si 2 actions relèvent vraiment du même template).
 
 RAPPORTS À ANALYSER :
-${sourceText}`;
+`;
 
-    const aiRes = await fetch(`${API}/ai/parse-daily`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify({ text: prompt, mode: 'json' })
-    });
-    const aiData = await aiRes.json();
-    if (!aiData.success) throw new Error(aiData.error || 'Erreur IA');
+    // Fusion des catégories/sous-tâches renvoyées par chaque lot, indexées
+    // par nom de template en minuscule pour regrouper les mêmes catégories
+    // entre deux lots différents.
+    const mergedCategories = new Map();
+    const mergedInsights = [];
 
-    let result;
-    try {
-      if (typeof aiData.data === 'object' && !Array.isArray(aiData.data)) {
-        result = aiData.data;
-      } else if (typeof aiData.data === 'string') {
-        const clean = aiData.data.replace(/```json|```/g, '').trim();
-        result = JSON.parse(clean);
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const batchEntryCount = batch.reduce((sum, d) => sum + d.entryCount, 0);
+      setTAStatus('🤖', `Analyse IA — lot ${i + 1}/${batches.length} (${batchEntryCount} entrées, ${templateCategories.length} template(s))...`);
+
+      const prompt = promptHeader + batch.map(d => d.text).join('\n');
+
+      const aiRes = await fetch(`${API}/ai/parse-daily`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: prompt, mode: 'json' })
+      });
+      const aiData = await aiRes.json();
+      if (!aiData.success) throw new Error(aiData.error || `Erreur IA (lot ${i + 1}/${batches.length})`);
+
+      let batchResult;
+      try {
+        if (typeof aiData.data === 'object' && !Array.isArray(aiData.data)) {
+          batchResult = aiData.data;
+        } else if (typeof aiData.data === 'string') {
+          const clean = aiData.data.replace(/```json|```/g, '').trim();
+          batchResult = JSON.parse(clean);
+        }
+      } catch (parseErr) {
+        console.error('[TA] parse err:', parseErr, aiData.data);
+        throw new Error(`Format IA invalide (lot ${i + 1}/${batches.length}) — réessaie`);
       }
-    } catch (parseErr) {
-      console.error('[TA] parse err:', parseErr, aiData.data);
-      throw new Error('Format IA invalide — réessaie');
+      if (!batchResult || !batchResult.categories) throw new Error(`Réponse IA incomplète (lot ${i + 1}/${batches.length})`);
+
+      batchResult.categories.forEach(cat => {
+        const key = (cat.name || '').toLowerCase().trim();
+        if (!mergedCategories.has(key)) mergedCategories.set(key, { name: cat.name, subtasks: [] });
+        mergedCategories.get(key).subtasks.push(...(cat.subtasks || []));
+      });
+      if (Array.isArray(batchResult.insights)) mergedInsights.push(...batchResult.insights);
     }
-    if (!result || !result.categories) throw new Error('Réponse IA incomplète');
+
+    const result = { categories: Array.from(mergedCategories.values()), insights: mergedInsights, summary: {} };
 
     result.categories.forEach(cat => {
       // Chercher un template correspondant (nom exact ou partiel)
@@ -230,12 +275,14 @@ ${sourceText}`;
     });
 
     const avgWorkers = detailed.reduce((sum,r)=>sum+(r.workersPresent||0),0) / (detailed.length||1);
-    if (!result.summary) result.summary = {};
-    if (!result.summary.avgWorkersPerDay) result.summary.avgWorkersPerDay = Math.round(avgWorkers*10)/10;
+    result.summary.avgWorkersPerDay = Math.round(avgWorkers*10)/10;
+    result.summary.totalDays = dayBlocks.length;
+    const sortedDates = dayBlocks.map(d => d.date).filter(Boolean).sort();
+    if (sortedDates.length) result.summary.period = `${sortedDates[0]} → ${sortedDates[sortedDates.length - 1]}`;
 
     TA_REPORT_DATA = result;
     renderTAEditTable();
-    setTAStatus('✅', `Analyse terminée — modifie si besoin puis génère le rapport`);
+    setTAStatus('✅', `Analyse terminée (${batches.length} lot(s), ${totalEntries} entrées) — modifie si besoin puis génère le rapport`);
 
   } catch (e) {
     console.error('[TA] error:', e);
