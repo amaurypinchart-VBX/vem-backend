@@ -93,6 +93,9 @@ export async function callClaude(params: CallClaudeParams): Promise<string> {
     },
     { timeoutMs }
   );
+  if (data.stop_reason === 'max_tokens') {
+    logger.warn(`[aiService] réponse tronquée (max_tokens=${maxTokens} atteint)`);
+  }
   return data.content?.[0]?.text || '';
 }
 
@@ -119,15 +122,33 @@ export interface CallClaudeJSONParams<T> extends CallClaudeParams {
 }
 
 // Appel haut niveau pour une extraction structurée : parse + valide avec zod.
+// Appelle anthropicRequest directement (plutôt que via callClaude) pour avoir
+// accès à stop_reason : une réponse coupée par max_tokens produit un JSON
+// incomplet qui échoue au parsing avec un message trompeur ("impossible de
+// parser") alors que la vraie cause est un maxTokens trop bas pour la taille
+// du prompt/de la sortie demandée (ex: rapports journaliers volumineux).
 export async function callClaudeJSON<T>(params: CallClaudeJSONParams<T>): Promise<T> {
-  const { schema, ...callParams } = params;
-  const text = await callClaude(callParams);
-  logger.info(`[aiService] réponse brute (${text.length} car) : ${text.slice(0, 300)}`);
+  const { schema, messages, system, maxTokens = 1500, model, timeoutMs } = params;
+  const data = await anthropicRequest(
+    {
+      model: model || DEFAULT_MODEL,
+      max_tokens: maxTokens,
+      ...(system ? { system } : {}),
+      messages,
+    },
+    { timeoutMs }
+  );
+  const text = data.content?.[0]?.text || '';
+  logger.info(`[aiService] réponse brute (${text.length} car, stop_reason=${data.stop_reason}) : ${text.slice(0, 300)}`);
 
   let raw: any;
   try {
     raw = JSON.parse(extractJsonBlock(text));
   } catch (e: any) {
+    if (data.stop_reason === 'max_tokens') {
+      logger.error(`[aiService] réponse tronquée (max_tokens=${maxTokens} atteint) — JSON incomplet`);
+      throw new AppError(`La réponse IA a été coupée car elle dépassait la limite de ${maxTokens} tokens — réduis la quantité de texte envoyée (ex: une période plus courte) ou réessaie.`, 502);
+    }
     logger.error(`[aiService] JSON.parse échoué : ${e.message} — contenu : ${text.slice(0, 500)}`);
     throw new AppError('Impossible de parser la réponse IA', 502);
   }

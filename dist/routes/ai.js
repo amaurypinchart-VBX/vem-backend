@@ -34,10 +34,15 @@ router.post('/parse-daily', async (req, res, next) => {
             // Le prompt complet (avec ses propres instructions de format) est déjà construit
             // côté client : on le transmet tel quel, sans schéma imposé côté serveur.
             // Ce mode sert notamment à l'analyse temps (06-time-analysis.js), qui envoie un
-            // prompt volumineux (tout l'historique des rapports journaliers) et demande jusqu'à
-            // 8000 tokens de JSON en sortie — nettement plus lent que les 30s par défaut.
+            // prompt volumineux (tout l'historique des rapports journaliers) et demande
+            // d'"exploser" chaque entrée en plusieurs sous-tâches — la sortie JSON attendue
+            // est donc souvent volumineuse. Le modèle Haiku par défaut plafonne sa sortie à
+            // ~8192 tokens : avec maxTokens=8000 la réponse était régulièrement coupée en
+            // plein milieu du JSON (→ 502 "Impossible de parser la réponse IA"). On bascule
+            // ce mode sur Sonnet, qui accepte une sortie bien plus large, avec plus de marge.
             const result = await (0, aiService_1.callClaudeJSON)({
-                maxTokens: 8000,
+                model: 'claude-sonnet-5',
+                maxTokens: 16000,
                 timeoutMs: 120000,
                 schema: zod_1.z.any(),
                 messages: [{ role: 'user', content: text }],
