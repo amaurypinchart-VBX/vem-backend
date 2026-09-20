@@ -466,6 +466,12 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
         <span>Arborescence</span>
         <span id="component-count" style="color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0">—</span>
       </div>
+      <div style="padding:8px 14px;border-bottom:1px solid var(--border);">
+        <div class="toggle-row" style="padding:2px 0;">
+          <span style="font-size:11px;">Regrouper par composant<br><span style="font-size:9px;color:var(--text-dim);">masque le détail interne (vis, faces...) des groupes/instances SketchUp</span></span>
+          <div class="switch on" id="sw-group-components"></div>
+        </div>
+      </div>
       <div class="panel-body" id="tree-container">
         <div class="empty-state">Aucun modèle chargé.</div>
       </div>
@@ -855,6 +861,7 @@ const state = {
   autoDim: true,
   dimOverlay: null,
   realMaterials: true,
+  groupBySketchupInstance: true,
 };
 
 // ============================================================================
@@ -1716,11 +1723,6 @@ function displayModel(components, file, ext, elapsed) {
   camera.near = Math.max(maxDim * 0.001, 0.001);
   camera.far = Math.max(maxDim * 100, 1000);
   camera.updateProjectionMatrix();
-  // Sur écran haute densité (Retina...), pixelRatio=2 quadruple le nombre de
-  // pixels à ombrer : sur un modèle lourd (beaucoup de triangles/meshes), c'est
-  // souvent ça qui fait ramer la navigation, pas la géométrie elle-même.
-  const heavyModel = totalTris > 150000 || meshes.length > 800;
-  renderer.setPixelRatio(heavyModel ? 1 : Math.min(window.devicePixelRatio, 2));
   state.currentModel = { components, meshes, maxDim };
   state.modelInfo = {
     name: file.name, size: file.size, ext: ext.toUpperCase(),
@@ -1742,10 +1744,23 @@ function displayModel(components, file, ext, elapsed) {
 // ============================================================================
 // HIERARCHY & TREE
 // ============================================================================
-function buildHierarchy(components) {
+// Motifs identifiant un "composant SketchUp de base" (le niveau que l'on veut
+// cliquable/mesurable) : un code ERP du type "7-632-009 ...", "4-700-087 ...",
+// "1-799-..." (chiffres-tiret-chiffres en début de nom), ou un nom d'instance
+// SketchUp générique ("instance_12", "Component#3", "Group 5"...). Tout ce qui
+// est imbriqué SOUS un nœud reconnu comme tel (vis, panneaux, faces internes...)
+// est regroupé avec lui plutôt que de continuer à créer des niveaux dans l'arbre.
+const BASE_GROUP_PATTERN = /^(\d+-\d+|instance[_\s-]?#?\d*|component[_\s-]?#?\d*|group[_\s-]?#?\d*)\b/i;
+
+function buildHierarchy(components, groupByComponent) {
   const root = { name: '_root', meshIndices: [], children: new Map(), totalMeshes: 0, expanded: true, depth: 0, fullPath: [] };
   components.forEach((comp, idx) => {
-    const path = comp.path && comp.path.length ? comp.path : [comp.name];
+    const fullPath = comp.path && comp.path.length ? comp.path : [comp.name];
+    let path = fullPath;
+    if (groupByComponent) {
+      const cutIdx = fullPath.findIndex(seg => BASE_GROUP_PATTERN.test(String(seg).trim()));
+      if (cutIdx !== -1) path = fullPath.slice(0, cutIdx + 1);
+    }
     let node = root;
     for (let i = 0; i < path.length; i++) {
       const seg = path[i];
@@ -2675,6 +2690,7 @@ function setupSwitch(id, callback) {
 }
 setupSwitch('sw-auto-rotate', (on) => { state.autoRotate = on; });
 setupSwitch('sw-real-materials', (on) => { state.realMaterials = on; applyMaterialMode(); });
+setupSwitch('sw-group-components', (on) => { state.groupBySketchupInstance = on; applyTreeGrouping(); });
 setupSwitch('sw-auto-dim', (on) => {
   state.autoDim = on;
   updateDimOverlay(); updateSelectionPanel();
