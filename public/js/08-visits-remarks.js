@@ -1043,7 +1043,7 @@ async function loadDetailFiles(projectId) {
         <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${projectId}')" title="Ajouter un fichier via URL externe (GitHub, Drive...) — utile pour les fichiers > 10 Mo">🔗 URL</button>
         <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
           ⬆️ Ajouter
-          <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov,.glb,.gltf,.usdz,.obj,.stl,.skp,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
+          <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov,.glb,.gltf,.usdz,.obj,.stl,.skp,.fbx,.dae,.zip" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
         </label>
       </div>
     0</div>

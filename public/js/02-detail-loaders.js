@@ -161,7 +161,7 @@ async function loadProjectDetail(id) {
           <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${id}')" title="Ajouter un fichier via une URL externe (GitHub Releases, etc.) — utile pour les gros fichiers 3D > 10 Mo">🔗 URL</button>
           <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
             ⬆️ Ajouter
-           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.ifc" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.ifc,.zip" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>
         </div>
       </div>
@@ -181,7 +181,7 @@ async function loadProjectDetail(id) {
             <span style="font-size:36px;">📁</span>
             <div style="font-weight:600;">Ajouter des fichiers</div>
             <div style="font-size:11px;">Photos, PDF, Office, modèles 3D (GLB/glTF/SketchUp)...</div>
-            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
+            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.zip" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>` : (() => {
             // Catégorisation : images / PDF / modèles 3D / autres
             const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','ifc'].includes(extOf(f));            const isPDF = f => extOf(f) === 'pdf';

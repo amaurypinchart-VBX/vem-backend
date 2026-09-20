@@ -82,9 +82,50 @@ async function saveFileByUrl(projectId, overlay) {
   }
 }
 
+// Charge JSZip depuis le CDN à la demande (uniquement quand on doit empaqueter
+// un modèle 3D + ses textures)
+function loadJSZipScript() {
+  if (window.JSZip) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Chargement de JSZip échoué'));
+    document.head.appendChild(s);
+  });
+}
+
+// Empaquette un modèle 3D (.dae/.gltf/.obj) et ses fichiers annexes (textures,
+// .bin...) en un seul .zip, pour que le viewer 3D retrouve tout au même endroit
+// à l'ouverture au lieu d'avoir des fichiers dispersés dans la liste du projet.
+async function bundle3DFilesToZip(files, modelFile) {
+  await loadJSZipScript();
+  const zip = new window.JSZip();
+  files.forEach(f => zip.file(f.name, f));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const baseName = modelFile.name.replace(/\.[^.]+$/, '');
+  return new File([blob], `${baseName}_3d-package.zip`, { type: 'application/zip' });
+}
+
 async function uploadProjectFiles(projectId, input) {
   if (!input.files?.length) return;
-  const files = Array.from(input.files);
+  let files = Array.from(input.files);
+
+  // Si l'utilisateur sélectionne un modèle 3D (.dae/.gltf/.obj) accompagné
+  // d'autres fichiers (textures) en une seule fois, on les empaquette en .zip
+  // pour garder le lien entre le modèle et ses textures.
+  const model3DExts = ['dae', 'gltf', 'obj'];
+  const modelFile = files.find(f => model3DExts.includes(f.name.split('.').pop()?.toLowerCase()));
+  if (modelFile && files.length > 1) {
+    try {
+      toast('Empaquetage du modèle 3D et de ses fichiers annexes...', 'info');
+      files = [await bundle3DFilesToZip(files, modelFile)];
+    } catch (e) {
+      console.error('[3D bundle]', e);
+      toast('Empaquetage impossible, envoi fichier par fichier', 'error');
+    }
+  }
+
   toast(`Upload ${files.length} fichier(s)...`, 'info');
   let uploaded = 0;
 

@@ -41,7 +41,7 @@ export const upload = multer({
     ];
     // En complément, on accepte les extensions 3D même si le mime est tordu
     const ext = (file.originalname || '').split('.').pop()?.toLowerCase();
-    const allowedExts = ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','mp3','m4a','wav','ogg','webm','aac','flac'];
+    const allowedExts = ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','zip','mp3','m4a','wav','ogg','webm','aac','flac'];
     const ok = allowedMimes.includes(file.mimetype) || allowedExts.includes(ext);
     cb(null, ok);
   },
