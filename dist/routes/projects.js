@@ -10,6 +10,7 @@ const warehouseAppService_1 = require("../services/warehouseAppService");
 const emailService_1 = require("../services/emailService");
 const projectReportService_1 = require("../services/projectReportService");
 const pdfService_1 = require("../services/pdfService");
+const taskHours_1 = require("../services/taskHours");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res, next) => {
     try {
@@ -556,6 +557,20 @@ router.get('/:id/report/pdf', async (req, res, next) => {
             'Content-Disposition': `attachment; filename="Rapport_${report.data.project.internalNumber}.pdf"`,
         });
         res.send(pdf);
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// GET /projects/:id/task-hours — total d'heures par tâche générale (template),
+// calculé à partir des daily reports. Classe d'abord via IA (un seul appel par
+// lot, avec cache DailyEntryTaskMap) les entrées pas encore analysées, puis
+// calcule les heures en JS pur (voir services/taskHours.ts).
+router.get('/:id/task-hours', async (req, res, next) => {
+    try {
+        await (0, taskHours_1.classifyProjectEntries)(req.params.id);
+        const { data, totalHours, unclassifiedHours } = await (0, taskHours_1.computeProjectTaskHours)(req.params.id);
+        res.json({ success: true, data, totalHours, unclassifiedHours });
     }
     catch (err) {
         next(err);

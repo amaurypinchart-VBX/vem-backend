@@ -538,6 +538,20 @@ model DailyReportPhoto {
   @@map("daily_report_photos")
 }
 
+// Cache d'assignation IA : associe chaque DailyReportEntry à la tâche générale
+// (Task.title du template) à laquelle elle correspond, pour ne jamais la
+// renvoyer à l'IA une deuxième fois lors du calcul d'heures par tâche.
+model DailyEntryTaskMap {
+  entryId   String   @id @map("entry_id")
+  projectId String   @map("project_id")
+  taskTitle String   @map("task_title")
+  stage     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@map("daily_entry_task_map")
+}
+
 model Ticket {
   id              String        @id @default(uuid())
   projectId       String?       @map("project_id")
