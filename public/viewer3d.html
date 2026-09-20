@@ -1592,7 +1592,12 @@ function buildNodeMeshes(node, components, nodeIdx, palette, meshes) {
   const hasTexture = comps.some(c => c.map);
   let tris = 0, verts = 0;
 
-  const addMesh = (geom, matComp) => {
+  // ownsGeometry=false : le mesh réutilise directement la géométrie brute d'une
+  // pièce (comp.geometry) — elle ne doit JAMAIS être disposée, car elle peut
+  // resservir si le regroupement de l'arborescence change (voir rebuildSceneMeshes).
+  // ownsGeometry=true : géométrie fusionnée créée ici, propre à ce mesh, à
+  // disposer normalement quand ce mesh est retiré de la scène.
+  const addMesh = (geom, matComp, ownsGeometry) => {
     if (!geom.attributes.normal) geom.computeVertexNormals();
     geom.computeBoundingBox();
     const material = buildMaterialForComponent(matComp, nodeIdx, palette);
@@ -1600,6 +1605,7 @@ function buildNodeMeshes(node, components, nodeIdx, palette, meshes) {
     mesh.userData.leafNode = node;
     mesh.userData.matComp = matComp;
     mesh.userData.paletteIdx = nodeIdx;
+    mesh.userData.ownsGeometry = ownsGeometry;
     const center = new THREE.Vector3();
     if (geom.boundingBox) geom.boundingBox.getCenter(center);
     mesh.userData.center = center.clone();
@@ -1614,12 +1620,11 @@ function buildNodeMeshes(node, components, nodeIdx, palette, meshes) {
   };
 
   if (hasTexture || comps.length === 1) {
-    comps.forEach(comp => addMesh(comp.geometry, comp));
+    comps.forEach(comp => addMesh(comp.geometry, comp, false));
   } else {
     const repColor = comps.find(c => c.color)?.color || null;
     const mergedGeom = mergeGeometries(comps.map(c => c.geometry));
-    comps.forEach(c => c.geometry.dispose());
-    addMesh(mergedGeom, { color: repColor });
+    addMesh(mergedGeom, { color: repColor }, true);
   }
   return { tris, verts };
 }
