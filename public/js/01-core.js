@@ -120,10 +120,10 @@ async function openFileViewer(url, filename) {
   // Pour les formats supportés par notre viewer 3D dédié (avec mesures + photos),
   // on ouvre directement notre viewer dans un nouvel onglet plutôt que le component
   // <model-viewer> de Google qui est plus basique et plante avec certaines compressions.
-  // Les .zip "_3d-package" sont générés par uploadProjectFiles quand un DAE est
-  // envoyé avec ses textures : le viewer sait les dézipper lui-même à l'ouverture.
-  const is3DPackageZip = ext === 'zip' && /_3d-package\.zip$/i.test(filename);
-  const supportedByOurViewer = ['glb','gltf','stl','obj','dae'].includes(ext) || is3DPackageZip;
+  // Un .zip est inclus : il peut contenir un modèle DAE/glTF/OBJ + ses textures
+  // (empaqueté automatiquement à l'upload, ou zippé manuellement) — le viewer le
+  // dézippe lui-même à l'ouverture et affiche une erreur claire si rien d'exploitable.
+  const supportedByOurViewer = ['glb','gltf','stl','obj','dae','zip'].includes(ext);
   if (supportedByOurViewer && CURRENT_PROJECT_ID) {
     openIn3DViewer(url, filename, CURRENT_PROJECT_ID);
     return;

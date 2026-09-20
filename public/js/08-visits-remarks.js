@@ -1025,14 +1025,20 @@ async function loadDetailFiles(projectId) {
   const isImage = f => ['jpg','jpeg','png','gif','webp'].includes(ext(f));
   const isPDF   = f => ext(f) === 'pdf';
   const isVideo = f => ['mp4','mov','avi'].includes(ext(f));
+  // Fichiers ouvrables dans notre viewer 3D dédié (mesures + photos). Un .zip est
+  // inclus car il peut contenir un modèle DAE/glTF/OBJ + ses textures — le viewer
+  // le dézippe lui-même et affiche une erreur claire si aucun modèle n'est dedans.
+  const is3D = f => ['glb','gltf','stl','obj','dae','zip'].includes(ext(f));
 
   const fileIcon = f => {
     if (isImage(f)) return '🖼️';
     if (isPDF(f))   return '📄';
     if (isVideo(f)) return '🎬';
+    if (['glb','gltf','stl','obj','dae'].includes(ext(f))) return '📐';
     if (['ppt','pptx'].includes(ext(f))) return '📊';
     if (['xls','xlsx'].includes(ext(f))) return '📈';
     if (['doc','docx'].includes(ext(f))) return '📝';
+    if (ext(f) === 'zip') return '🗜️';
     return '📎';
   };
 
@@ -1099,6 +1105,7 @@ async function loadDetailFiles(projectId) {
                 <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.fileType||ext(f).toUpperCase()} · ${f.fileSize?Math.round(f.fileSize/1024)+'KB':''}</div>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0;">
+                ${is3D(f) ? `<button class="btn btn-primary btn-xs" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${projectId}')" title="Ouvrir dans le viewer 3D (mesures, photos, dimensions)">🎮 Voir en 3D</button>` : ''}
                 <a href="${f.fileUrl}" target="_blank" class="btn btn-ghost btn-xs">👁️ Voir</a>
                 <a href="${f.fileUrl}" download class="btn btn-ghost btn-xs">⬇️</a>
                 <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteProjectFile('${f.id}','${projectId}')">🗑️</button>

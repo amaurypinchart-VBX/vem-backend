@@ -184,7 +184,9 @@ async function loadProjectDetail(id) {
             <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.zip" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">
           </label>` : (() => {
             // Catégorisation : images / PDF / modèles 3D / autres
-            const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','ifc'].includes(extOf(f));            const isPDF = f => extOf(f) === 'pdf';
+            // .zip inclus : peut être un modèle DAE/glTF/OBJ empaqueté avec ses textures
+            const is3D = f => ['glb','gltf','usdz','skp','obj','stl','fbx','dae','3ds','blend','ifc','zip'].includes(extOf(f));
+            const isPDF = f => extOf(f) === 'pdf';
             const imgs    = files.filter(f => isImg(f));
             const pdfs    = files.filter(f => isPDF(f));
             const models  = files.filter(f => is3D(f));
@@ -233,12 +235,13 @@ async function loadProjectDetail(id) {
                   ${models.map(f=>{
                     const e = extOf(f);
                     const supported  = ['glb','gltf','usdz'].includes(e);
-                    const viewer3DOk = ['glb','gltf','stl','obj','dae'].includes(e);
+                    const viewer3DOk = ['glb','gltf','stl','obj','dae','zip'].includes(e);
+                    const label = e === 'zip' ? '.ZIP · Peut contenir un modèle 3D' : `.${e.toUpperCase()}${supported?' · Visualisable':' · Aperçu indispo'}`;
                     return `<div style="border:1px solid ${supported?'var(--blue)':'var(--amber)'}55;background:var(--bg3);border-radius:10px;padding:14px;transition:all .15s;" onmouseover="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}'" onmouseout="this.style.borderColor='${supported?'var(--blue)':'var(--amber)'}55'">
-                      <div style="cursor:pointer;text-align:center;" onclick="openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')">
-                        <div style="font-size:42px;line-height:1;">🎨</div>
+                      <div style="cursor:pointer;text-align:center;" onclick="${e === 'zip' ? `openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${CURRENT_PROJECT_ID}')` : `openFileViewer('${f.fileUrl}','${esc(f.fileName||'')}')`}">
+                        <div style="font-size:42px;line-height:1;">${e === 'zip' ? '🗜️' : '🎨'}</div>
                         <div style="font-weight:700;font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.fileName||'Modèle')}</div>
-                        <div style="font-size:10px;color:var(--text3);margin-top:2px;">.${e.toUpperCase()}${supported?' · Visualisable':' · Aperçu indispo'}</div>
+                        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${label}</div>
                       </div>
                       ${viewer3DOk ? `
                       <button class="btn btn-primary btn-xs" style="width:100%;margin-top:10px;font-size:11px;" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${CURRENT_PROJECT_ID}')">🎮 Ouvrir Viewer 3D (mesures + photos)</button>
