@@ -103,6 +103,10 @@ function openIn3DViewer(modelUrl, fileName, projectId) {
   const projectName = proj?.name || '';
   const url = '/viewer3d.html'
     + '?modelUrl='    + encodeURIComponent(modelUrl)
+    // Le vrai nom de fichier (avec extension) est transmis explicitement : une URL
+    // Cloudinary "raw" (.dae/.zip/.obj/...) n'est qu'un identifiant opaque sans
+    // extension, donc le viewer ne peut pas deviner le format depuis l'URL seule.
+    + '&fileName='    + encodeURIComponent(fileName || '')
     + '&projectId='   + encodeURIComponent(projectId || '')
     + '&projectName=' + encodeURIComponent(projectName)
     + '&token='       + encodeURIComponent(TOKEN || '');

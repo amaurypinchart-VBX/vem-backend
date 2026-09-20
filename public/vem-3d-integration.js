@@ -15,6 +15,7 @@
 (function() {
   const params       = new URLSearchParams(window.location.search);
   const modelUrl     = params.get('modelUrl');
+  const modelName    = params.get('fileName'); // vrai nom du fichier (l'URL Cloudinary "raw" ne le contient pas)
   const projectId    = params.get('projectId');
   const projectName  = params.get('projectName');
   const token        = params.get('token');
@@ -139,11 +140,17 @@
       let arrayBuffer = await r.arrayBuffer();
       console.log('[VEM] Reçu :', arrayBuffer.byteLength, 'bytes');
 
-    // Nom de fichier + extension depuis l'URL
-      let filename = (url.split('/').pop() || 'model').split('?')[0] || 'model.glb';
+      // Nom de fichier + extension : on privilégie le vrai nom transmis par VEM
+      // (?fileName=...) — l'URL Cloudinary "raw" (utilisée pour .dae/.zip/.obj/...)
+      // ne contient qu'un identifiant opaque sans extension, donc la deviner depuis
+      // l'URL faisait passer n'importe quel format pour du .glb et cassait le parsing.
+      let filename = modelName || (url.split('/').pop() || 'model').split('?')[0] || 'model.glb';
       try { filename = decodeURIComponent(filename); } catch {}
-      const ext = filename.split('.').pop().toLowerCase();
-      if (!['glb','gltf','stl','obj','ifc','dae','zip'].includes(ext)) filename = filename + '.glb';
+      let ext = filename.split('.').pop().toLowerCase();
+      if (!['glb','gltf','stl','obj','ifc','dae','zip'].includes(ext)) {
+        filename = filename + '.glb';
+        ext = 'glb';
+      }
 
       // Détection de compression et décompression : GLB/GLTF uniquement
       if (ext === 'glb' || ext === 'gltf') {
