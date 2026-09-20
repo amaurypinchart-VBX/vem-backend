@@ -1629,15 +1629,16 @@ function buildNodeMeshes(node, components, nodeIdx, palette, meshes) {
   return { tris, verts };
 }
 
-function displayModel(components, file, ext, elapsed) {
-  clearMeasurements();
-  removeDimOverlay();
-  applyModelUnitForFormat(ext);
-
+// Reconstruit les meshes de rendu à partir des composants bruts déjà chargés,
+// en respectant le regroupement choisi (state.groupBySketchupInstance). Les
+// géométries brutes des pièces ne sont jamais détruites (voir buildNodeMeshes /
+// ownsGeometry), donc cette fonction peut être rappelée à volonté — par ex.
+// quand on bascule le regroupement dans le panneau — sans recharger le fichier.
+function rebuildSceneMeshes(components) {
   while (modelGroup.children.length) {
     const c = modelGroup.children[0];
     modelGroup.remove(c);
-    if (c.geometry) c.geometry.dispose();
+    if (c.geometry && c.userData.ownsGeometry) c.geometry.dispose();
     if (c.material) c.material.dispose();
   }
   const meshes = [];
@@ -1648,7 +1649,7 @@ function displayModel(components, file, ext, elapsed) {
   // au lieu d'un mesh par pièce brute — indispensable pour les exports SketchUp/
   // Collada qui contiennent souvent des centaines/milliers de petites géométries,
   // sinon la navigation devient injouable (un draw call par pièce).
-  const tree = buildHierarchy(components);
+  const tree = buildHierarchy(components, state.groupBySketchupInstance);
   const meshNodes = collectMeshNodes(tree);
   meshNodes.forEach((node, nodeIdx) => {
     const r = buildNodeMeshes(node, components, nodeIdx, palette, meshes);
@@ -1665,6 +1666,35 @@ function displayModel(components, file, ext, elapsed) {
     m.userData.center.sub(center);
     m.userData.originalPosition.copy(m.position);
   });
+  // Sur écran haute densité (Retina...), pixelRatio=2 quadruple le nombre de
+  // pixels à ombrer : sur un modèle lourd (beaucoup de triangles/meshes), c'est
+  // souvent ça qui fait ramer la navigation, pas la géométrie elle-même.
+  const heavyModel = totalTris > 150000 || meshes.length > 800;
+  renderer.setPixelRatio(heavyModel ? 1 : Math.min(window.devicePixelRatio, 2));
+  return { meshes, tree, totalTris, totalVerts, size, maxDim };
+}
+
+// Recalcule l'arborescence/les meshes après un changement du mode de
+// regroupement (sans recharger le fichier). La vue caméra n'est pas touchée.
+function applyTreeGrouping() {
+  if (!state.currentModel) return;
+  const { meshes, tree, maxDim } = rebuildSceneMeshes(state.currentModel.components);
+  state.currentModel.meshes = meshes;
+  state.currentModel.maxDim = maxDim;
+  state.tree = tree;
+  state.selectedTreeNode = null;
+  removeDimOverlay();
+  applySelection();
+  buildTree();
+  updateSelectionPanel();
+}
+
+function displayModel(components, file, ext, elapsed) {
+  clearMeasurements();
+  removeDimOverlay();
+  applyModelUnitForFormat(ext);
+
+  const { meshes, tree, totalTris, totalVerts, size, maxDim } = rebuildSceneMeshes(components);
   scene.remove(gridHelper);
   const gcolor = state.theme === 'dark' ? 0x2a313f : 0xc8cdd6;
   gridHelper = new THREE.GridHelper(Math.max(maxDim * 1.5, 2), 20, gcolor, gcolor);
