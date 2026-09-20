@@ -743,19 +743,6 @@ function fmtDim(v, withUnit) {
   return withUnit ? s + ' mm' : s;
 }
 
-// Click-to-select on 3D meshes
-function findTreeNodeForMesh(meshIdx) {
-  if (!state.tree || !state.currentModel) return null;
-  const comp = state.currentModel.components[meshIdx];
-  if (!comp || !comp.path) return null;
-  let node = state.tree;
-  for (const seg of comp.path) {
-    if (node.children.has(seg)) node = node.children.get(seg);
-    else return null;
-  }
-  return node;
-}
-
 function expandAncestorsOf(targetNode) {
   if (!state.tree || !targetNode) return;
   function findPath(node, target, path) {
@@ -798,8 +785,7 @@ function handleSceneClick(e) {
     }
     return;
   }
-  const meshIdx = hits[0].object.userData.compIndex;
-  const node = findTreeNodeForMesh(meshIdx);
+  const node = hits[0].object.userData.leafNode;
   if (!node) return;
   if (state.selectedTreeNode === node) {
     state.selectedTreeNode = null;
@@ -858,7 +844,7 @@ function applyUnitChange() {
 const state = {
   theme: 'dark', showGrid: true, showAxes: true,
   wireframe: false, autoRotate: false,
-  opacity: 1, hiddenComponents: new Set(),
+  opacity: 1,
   selectedTreeNode: null,
   currentModel: null, modelInfo: null,
   tree: null,
@@ -1545,17 +1531,20 @@ function buildMaterialForComponent(comp, idx, palette) {
   return new THREE.MeshStandardMaterial(params);
 }
 
-// Bascule palette technique ⇄ matériaux réels sans recharger le modèle
+// Bascule palette technique ⇄ matériaux réels sans recharger le modèle.
+// Chaque mesh porte en userData le "comp" représentatif et l'index de palette
+// utilisés à sa création (voir displayModel) — nécessaire depuis que plusieurs
+// pièces brutes peuvent être fusionnées en un seul mesh pour la performance.
 function applyMaterialMode() {
   if (!state.currentModel) return;
   const palette = [0xff8a3d, 0x4ade80, 0x60a5fa, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb7185, 0x38bdf8, 0xfcd34d];
-  state.currentModel.meshes.forEach((mesh, idx) => {
-    const comp = state.currentModel.components[idx];
+  state.currentModel.meshes.forEach((mesh) => {
+    const comp = mesh.userData.matComp;
     const wasWireframe = mesh.material.wireframe;
     const wasOpacity = mesh.material.opacity;
     const wasTransparent = mesh.material.transparent;
     mesh.material.dispose();
-    mesh.material = buildMaterialForComponent(comp, idx, palette);
+    mesh.material = buildMaterialForComponent(comp, mesh.userData.paletteIdx, palette);
     mesh.material.wireframe = wasWireframe;
     if (!(comp && comp.opacity !== undefined)) {
       mesh.material.opacity = wasOpacity;
@@ -1563,6 +1552,76 @@ function applyMaterialMode() {
     }
   });
   applySelection();
+}
+
+// Fusionne plusieurs géométries (sans texture) en une seule — décisif pour les
+// exports SketchUp/Collada qui regroupent souvent des centaines/milliers de
+// petites pièces sous un même composant nommé : sans fusion, chacune est un
+// "draw call" séparé et le rendu devient injouable à la navigation. La fusion
+// se fait uniquement à l'intérieur d'un même nœud de l'arborescence, donc la
+// sélection et le masquage par composant restent inchangés.
+function mergeGeometries(geoms) {
+  let totalVerts = 0;
+  const parts = geoms.map((g) => {
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const nonIndexed = g.index ? g.toNonIndexed() : g;
+    totalVerts += nonIndexed.attributes.position.count;
+    return nonIndexed;
+  });
+  const positions = new Float32Array(totalVerts * 3);
+  const normals = new Float32Array(totalVerts * 3);
+  let offset = 0;
+  parts.forEach((g, i) => {
+    positions.set(g.attributes.position.array, offset * 3);
+    if (g.attributes.normal) normals.set(g.attributes.normal.array, offset * 3);
+    offset += g.attributes.position.count;
+    if (g !== geoms[i]) g.dispose(); // clone temporaire créé par toNonIndexed()
+  });
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  merged.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  return merged;
+}
+
+// Construit le(s) mesh(es) de rendu pour un nœud de l'arborescence qui porte
+// des pièces (node.meshIndices). Fusionne en un seul mesh quand c'est possible
+// (aucune pièce texturée) pour limiter le nombre de draw calls ; sinon garde un
+// mesh par pièce brute pour préserver les textures individuelles.
+function buildNodeMeshes(node, components, nodeIdx, palette, meshes) {
+  const comps = node.meshIndices.map(i => components[i]);
+  const hasTexture = comps.some(c => c.map);
+  let tris = 0, verts = 0;
+
+  const addMesh = (geom, matComp) => {
+    if (!geom.attributes.normal) geom.computeVertexNormals();
+    geom.computeBoundingBox();
+    const material = buildMaterialForComponent(matComp, nodeIdx, palette);
+    const mesh = new THREE.Mesh(geom, material);
+    mesh.userData.leafNode = node;
+    mesh.userData.matComp = matComp;
+    mesh.userData.paletteIdx = nodeIdx;
+    const center = new THREE.Vector3();
+    if (geom.boundingBox) geom.boundingBox.getCenter(center);
+    mesh.userData.center = center.clone();
+    mesh.userData.originalPosition = mesh.position.clone();
+    modelGroup.add(mesh);
+    meshes.push(mesh);
+    if (!node.meshes) node.meshes = [];
+    node.meshes.push(mesh);
+    const pA = geom.attributes.position, iA = geom.index;
+    tris += iA ? iA.count / 3 : pA.count / 3;
+    verts += pA.count;
+  };
+
+  if (hasTexture || comps.length === 1) {
+    comps.forEach(comp => addMesh(comp.geometry, comp));
+  } else {
+    const repColor = comps.find(c => c.color)?.color || null;
+    const mergedGeom = mergeGeometries(comps.map(c => c.geometry));
+    comps.forEach(c => c.geometry.dispose());
+    addMesh(mergedGeom, { color: repColor });
+  }
+  return { tris, verts };
 }
 
 function displayModel(components, file, ext, elapsed) {
@@ -1576,25 +1635,20 @@ function displayModel(components, file, ext, elapsed) {
     if (c.geometry) c.geometry.dispose();
     if (c.material) c.material.dispose();
   }
-  state.hiddenComponents.clear();
   const meshes = [];
   let totalTris = 0, totalVerts = 0;
   const palette = [0xff8a3d, 0x4ade80, 0x60a5fa, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb7185, 0x38bdf8, 0xfcd34d];
-  components.forEach((comp, idx) => {
-    const geom = comp.geometry;
-    if (!geom.attributes.normal) geom.computeVertexNormals();
-    geom.computeBoundingBox();
-    const mesh = new THREE.Mesh(geom, buildMaterialForComponent(comp, idx, palette));
-    mesh.userData.compIndex = idx;
-    const center = new THREE.Vector3();
-    if (geom.boundingBox) geom.boundingBox.getCenter(center);
-    mesh.userData.center = center.clone();
-    mesh.userData.originalPosition = mesh.position.clone();
-    modelGroup.add(mesh);
-    meshes.push(mesh);
-    const pA = geom.attributes.position, iA = geom.index;
-    totalVerts += pA.count;
-    totalTris += iA ? iA.count / 3 : pA.count / 3;
+  // La hiérarchie est construite AVANT les meshes : chaque nœud qui porte des
+  // pièces reçoit un seul mesh fusionné quand c'est possible (voir buildNodeMeshes),
+  // au lieu d'un mesh par pièce brute — indispensable pour les exports SketchUp/
+  // Collada qui contiennent souvent des centaines/milliers de petites géométries,
+  // sinon la navigation devient injouable (un draw call par pièce).
+  const tree = buildHierarchy(components);
+  const meshNodes = collectMeshNodes(tree);
+  meshNodes.forEach((node, nodeIdx) => {
+    const r = buildNodeMeshes(node, components, nodeIdx, palette, meshes);
+    totalTris += r.tris;
+    totalVerts += r.verts;
   });
   const globalBox = new THREE.Box3();
   meshes.forEach(m => globalBox.expandByObject(m));
@@ -1627,13 +1681,18 @@ function displayModel(components, file, ext, elapsed) {
   camera.near = Math.max(maxDim * 0.001, 0.001);
   camera.far = Math.max(maxDim * 100, 1000);
   camera.updateProjectionMatrix();
+  // Sur écran haute densité (Retina...), pixelRatio=2 quadruple le nombre de
+  // pixels à ombrer : sur un modèle lourd (beaucoup de triangles/meshes), c'est
+  // souvent ça qui fait ramer la navigation, pas la géométrie elle-même.
+  const heavyModel = totalTris > 150000 || meshes.length > 800;
+  renderer.setPixelRatio(heavyModel ? 1 : Math.min(window.devicePixelRatio, 2));
   state.currentModel = { components, meshes, maxDim };
   state.modelInfo = {
     name: file.name, size: file.size, ext: ext.toUpperCase(),
     components: components.length, triangles: Math.round(totalTris),
     vertices: totalVerts, dimensions: size, elapsed
   };
-  state.tree = buildHierarchy(components);
+  state.tree = tree;
   state.selectedTreeNode = null;
   buildTree();
   updateSelectionPanel();
@@ -1678,10 +1737,13 @@ function buildHierarchy(components) {
   return root;
 }
 
-function collectMeshIndices(node, out) {
+// Retourne tous les nœuds (à partir de `node` inclus) qui portent directement
+// des pièces — donc auxquels un ou plusieurs meshes de rendu sont attachés
+// (voir node.meshes, rempli par buildNodeMeshes).
+function collectMeshNodes(node, out) {
   out = out || [];
-  node.meshIndices.forEach(i => out.push(i));
-  node.children.forEach(c => collectMeshIndices(c, out));
+  if (node.meshIndices.length > 0) out.push(node);
+  node.children.forEach(c => collectMeshNodes(c, out));
   return out;
 }
 
@@ -1694,22 +1756,21 @@ function selectTreeNode(node) {
 
 function applySelection() {
   if (!state.currentModel) return;
-  const indices = state.selectedTreeNode ? collectMeshIndices(state.selectedTreeNode) : null;
-  const indexSet = indices ? new Set(indices) : null;
-  state.currentModel.meshes.forEach((m, i) => {
-    if (state.hiddenComponents.has(i)) return;
-    if (!indexSet) {
-      m.material.emissive = new THREE.Color(0x000000);
+  const nodeSet = state.selectedTreeNode ? new Set(collectMeshNodes(state.selectedTreeNode)) : null;
+  state.currentModel.meshes.forEach((m) => {
+    if (!m.visible) return;
+    if (!nodeSet) {
+      m.material.emissive.setHex(0x000000);
       m.material.emissiveIntensity = 0;
       m.material.opacity = state.opacity;
       m.material.transparent = state.opacity < 1;
-    } else if (indexSet.has(i)) {
-      m.material.emissive = new THREE.Color(0x553311);
+    } else if (nodeSet.has(m.userData.leafNode)) {
+      m.material.emissive.setHex(0x553311);
       m.material.emissiveIntensity = 0.4;
       m.material.opacity = state.opacity;
       m.material.transparent = state.opacity < 1;
     } else {
-      m.material.emissive = new THREE.Color(0x000000);
+      m.material.emissive.setHex(0x000000);
       m.material.emissiveIntensity = 0;
       m.material.opacity = state.opacity * 0.2;
       m.material.transparent = true;
@@ -1718,13 +1779,9 @@ function applySelection() {
 }
 
 function toggleNodeVisibility(node) {
-  const indices = collectMeshIndices(node);
-  const anyVisible = indices.some(i => !state.hiddenComponents.has(i));
-  indices.forEach(i => {
-    const mesh = state.currentModel.meshes[i];
-    if (anyVisible) { state.hiddenComponents.add(i); mesh.visible = false; }
-    else { state.hiddenComponents.delete(i); mesh.visible = true; }
-  });
+  const meshes = collectMeshNodes(node).flatMap(n => n.meshes || []);
+  const anyVisible = meshes.some(m => m.visible);
+  meshes.forEach(m => { m.visible = !anyVisible; });
   buildTree();
 }
 
@@ -1737,8 +1794,8 @@ function buildTree() {
   }
   function renderNode(node, depth, container) {
     const hasChildren = node.children.size > 0;
-    const indices = collectMeshIndices(node);
-    const allHidden = indices.length > 0 && indices.every(i => state.hiddenComponents.has(i));
+    const nodeMeshes = collectMeshNodes(node).flatMap(n => n.meshes || []);
+    const allHidden = nodeMeshes.length > 0 && nodeMeshes.every(m => !m.visible);
     const isSelected = state.selectedTreeNode === node;
     const el = document.createElement('div');
     el.className = 'tree-node' + (isSelected ? ' selected' : '');
@@ -1971,13 +2028,10 @@ function makeLabelEditable(valueEl) {
 function updateDimOverlay() {
   removeDimOverlay();
   if (!state.autoDim || !state.selectedTreeNode || !state.currentModel) return;
-  const indices = collectMeshIndices(state.selectedTreeNode);
-  if (indices.length === 0) return;
+  const meshNodes = collectMeshNodes(state.selectedTreeNode);
+  if (meshNodes.length === 0) return;
   const box = new THREE.Box3();
-  indices.forEach(i => {
-    const m = state.currentModel.meshes[i];
-    if (m.visible) box.expandByObject(m);
-  });
+  meshNodes.forEach(n => (n.meshes || []).forEach(m => { if (m.visible) box.expandByObject(m); }));
   if (box.isEmpty()) return;
   const size = new THREE.Vector3(); box.getSize(size);
   const center = new THREE.Vector3(); box.getCenter(center);
@@ -2016,20 +2070,20 @@ function updateSelectionPanel() {
   const node = state.selectedTreeNode;
   if (!node || !state.currentModel) { section.style.display = 'none'; return; }
 
-  const indices = collectMeshIndices(node);
   const box = new THREE.Box3();
   let tris = 0, verts = 0, visibleCount = 0;
   let firstColor = null;
-  indices.forEach(i => {
-    const m = state.currentModel.meshes[i];
-    if (!m.visible) return;
-    visibleCount++;
-    box.expandByObject(m);
-    const pA = m.geometry.attributes.position, iA = m.geometry.index;
-    verts += pA.count;
-    tris += iA ? iA.count / 3 : pA.count / 3;
-    const comp = state.currentModel.components[i];
-    if (!firstColor && comp && comp.color) firstColor = comp.color;
+  collectMeshNodes(node).forEach(n => {
+    const visibleMeshes = (n.meshes || []).filter(m => m.visible);
+    if (visibleMeshes.length === 0) return;
+    visibleCount += n.meshIndices.length; // pièces brutes, même si fusionnées en un seul mesh
+    visibleMeshes.forEach(m => {
+      box.expandByObject(m);
+      const pA = m.geometry.attributes.position, iA = m.geometry.index;
+      verts += pA.count;
+      tris += iA ? iA.count / 3 : pA.count / 3;
+      if (!firstColor && m.material && m.material.color) firstColor = m.material.color;
+    });
   });
 
   const size = new THREE.Vector3();
