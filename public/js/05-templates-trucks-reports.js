@@ -989,6 +989,16 @@ function selectReportType(type) {
 
 function showReportModal() {
   showModal('modal-report');
+
+  // Repart de zéro à chaque ouverture — sinon le résultat de l'analyse IA
+  // (TA_REPORT_DATA) reste affiché pour l'ancien projet si on rouvre la
+  // modale sur un projet différent.
+  TA_REPORT_DATA = null;
+  const taResult = document.getElementById('ta-edit-result');
+  if (taResult) taResult.innerHTML = '';
+  const taStatus = document.getElementById('ta-status');
+  if (taStatus) taStatus.style.display = 'none';
+
   const row = document.getElementById('report-project-row');
   const sel = document.getElementById('report-project-select');
   if (!CURRENT_PROJECT_ID && PROJECTS?.length) {
