@@ -474,6 +474,19 @@ async function generateReport(mode) {
   if (pdfBtn) pdfBtn.disabled=true;
   if (prevBtn) prevBtn.disabled=true;
 
+  // Ouvrir la fenêtre MAINTENANT, en réponse directe au clic — le rapport
+  // prend plusieurs dizaines de secondes à générer (appels IA), et un
+  // window.open() lancé après tous ces await n'est plus considéré comme
+  // déclenché par un geste utilisateur : la plupart des navigateurs le
+  // bloquent silencieusement, sans erreur visible (exactement le symptôme
+  // "rien ne se passe"). On garde le handle et on le remplit une fois prêt.
+  const reportWin = window.open('', '_blank');
+  if (reportWin) {
+    reportWin.document.write('<html><body style="font-family:Arial,sans-serif;padding:60px;text-align:center;color:#555;"><div style="font-size:32px;margin-bottom:16px;">⏳</div>Génération du rapport en cours...<br><span style="font-size:13px;color:#999;">Ça peut prendre jusqu\'à une minute si l\'analyse IA est incluse.</span></body></html>');
+  } else {
+    toast('Autorise les popups pour générer le rapport','warning');
+  }
+
   try {
     // ── STEP 1: Collect all project data ──
     setReportStatus('🔄','Collecte des données du projet...','Chargement en cours');
@@ -1206,18 +1219,13 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
     // ── STEP 4: Output ──
     setReportStatus('✅','Rapport généré !','');
 
-    if (mode === 'preview') {
-      const win = window.open('', '_blank');
-      if (win) { win.document.write(reportHTML); win.document.close(); }
-      else toast('Autorisez les popups pour la prévisualisation','warning');
+    if (reportWin && !reportWin.closed) {
+      reportWin.document.open();
+      reportWin.document.write(reportHTML);
+      reportWin.document.close();
+      if (mode !== 'preview') setTimeout(()=>reportWin.print(), 800);
     } else {
-      // PDF via print dialog
-      const win = window.open('', '_blank');
-      if (win) {
-        win.document.write(reportHTML);
-        win.document.close();
-        setTimeout(()=>win.print(), 800);
-      } else toast('Autorisez les popups pour le PDF','warning');
+      toast('La fenêtre du rapport a été fermée ou bloquée — réessaie et autorise les popups','warning');
     }
 
     closeModal('modal-report');
@@ -1225,6 +1233,13 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
   } catch(err) {
     console.error(err);
     toast('Erreur génération rapport: '+err.message,'error');
+    // Sinon la fenêtre ouverte au clic reste bloquée sur "Génération en cours..."
+    // indéfiniment, sans que l'erreur n'y soit visible.
+    if (reportWin && !reportWin.closed) {
+      reportWin.document.open();
+      reportWin.document.write(`<html><body style="font-family:Arial,sans-serif;padding:60px;text-align:center;color:#e63946;">❌ Erreur génération du rapport<br><span style="font-size:13px;color:#999;">${(err.message||'').replace(/</g,'&lt;')}</span></body></html>`);
+      reportWin.document.close();
+    }
   } finally {
     if (pdfBtn) pdfBtn.disabled=false;
     if (prevBtn) prevBtn.disabled=false;
