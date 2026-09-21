@@ -8,6 +8,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateVisitReportPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
+import { saveProjectFilePdf } from '../utils/saveProjectFile';
 
 const router = Router();
 
@@ -147,6 +148,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       })),
       lang,  // ⬅️ ajout
     });
+    saveProjectFilePdf(v.projectId, pdf, `Visite_${v.project.internalNumber}_${v.id.slice(0,8)}_${lang}.pdf`, 'visite_client', req.user?.id);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -192,6 +194,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       })),
       lang,  // ⬅️ ajout
     });
+    saveProjectFilePdf(v.projectId, pdf, `Visite_${v.project.internalNumber}_${v.id.slice(0,8)}_${lang}.pdf`, 'visite_client', req.user?.id);
 
     const recipients = new Set<string>();
     const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];

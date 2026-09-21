@@ -10,6 +10,8 @@ const warehouseAppService_1 = require("../services/warehouseAppService");
 const emailService_1 = require("../services/emailService");
 const projectReportService_1 = require("../services/projectReportService");
 const pdfService_1 = require("../services/pdfService");
+const cloudinaryService_1 = require("../services/cloudinaryService");
+const saveProjectFile_1 = require("../utils/saveProjectFile");
 const taskHours_1 = require("../services/taskHours");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res, next) => {
@@ -552,6 +554,7 @@ router.get('/:id/report/pdf', async (req, res, next) => {
             narrative: report.narrative,
             lang,
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(req.params.id, pdf, `Rapport_${report.data.project.internalNumber}.pdf`, 'rapport_projet', req.user?.id);
         res.set({
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="Rapport_${report.data.project.internalNumber}.pdf"`,
@@ -581,9 +584,25 @@ router.get('/:id/files', async (req, res, next) => {
     try {
         const files = await database_1.prisma.projectFile.findMany({
             where: { projectId: req.params.id },
-            orderBy: { createdAt: 'desc' },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
         });
         res.json({ success: true, data: files });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// PUT /projects/:id/files/reorder — { order: [fileId, fileId, ...] } dans le nouvel ordre d'affichage
+router.put('/:id/files/reorder', async (req, res, next) => {
+    try {
+        const { order } = req.body;
+        if (!Array.isArray(order) || !order.length)
+            throw new AppError_1.AppError('order (tableau d\'ids) requis', 400);
+        await database_1.prisma.$transaction(order.map((fileId, index) => database_1.prisma.projectFile.updateMany({
+            where: { id: fileId, projectId: req.params.id },
+            data: { sortOrder: index },
+        })));
+        res.json({ success: true });
     }
     catch (err) {
         next(err);
@@ -616,7 +635,10 @@ router.post('/:id/files', async (req, res, next) => {
 // DELETE /projects/:id/files/:fileId
 router.delete('/:id/files/:fileId', async (req, res, next) => {
     try {
-        await database_1.prisma.projectFile.delete({ where: { id: req.params.fileId } });
+        const file = await database_1.prisma.projectFile.delete({ where: { id: req.params.fileId } });
+        // Best-effort — un fichier ajouté par URL externe n'a pas de publicId Cloudinary.
+        if (file.publicId)
+            await (0, cloudinaryService_1.deleteFromCloudinary)(file.publicId);
         res.json({ success: true });
     }
     catch (err) {

@@ -8,6 +8,7 @@ const database_1 = require("../config/database");
 const AppError_1 = require("../utils/AppError");
 const pdfService_1 = require("../services/pdfService");
 const emailService_1 = require("../services/emailService");
+const saveProjectFile_1 = require("../utils/saveProjectFile");
 const router = (0, express_1.Router)();
 // Pas de cache : ces données changent à chaque ajout de point
 router.use((_req, res, next) => {
@@ -156,6 +157,7 @@ router.get('/:id/pdf', async (req, res, next) => {
             })),
             lang, // ⬅️ ajout
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(v.projectId, pdf, `Visite_${v.project.internalNumber}_${v.id.slice(0, 8)}_${lang}.pdf`, 'visite_client', req.user?.id);
         res.set({
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="Visite_${v.project.internalNumber}_${v.id.slice(0, 8)}_${lang}.pdf"`,
@@ -201,6 +203,7 @@ router.post('/:id/send', async (req, res, next) => {
             })),
             lang, // ⬅️ ajout
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(v.projectId, pdf, `Visite_${v.project.internalNumber}_${v.id.slice(0, 8)}_${lang}.pdf`, 'visite_client', req.user?.id);
         const recipients = new Set();
         const customList = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
         if (customList.length > 0) {

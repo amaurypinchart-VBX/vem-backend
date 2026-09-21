@@ -7,6 +7,7 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
+import { saveProjectFilePdf } from '../utils/saveProjectFile';
 
 const router = Router();
 
@@ -120,6 +121,7 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       date: h.createdAt,
       lang: 'fr',
     });
+    saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed.pdf`, 'handover', null);
 
     // 3. Email aux 2 parties (site manager + client)
     const recipients = new Set<string>();

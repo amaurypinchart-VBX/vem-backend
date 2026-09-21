@@ -351,6 +351,7 @@ model ProjectFile {
   fileType   String?  @map("file_type")
   fileSize   Int?     @map("file_size")
   category   String   @default("general")
+  sortOrder  Int      @default(0) @map("sort_order")
   createdAt  DateTime @default(now()) @map("created_at")
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

@@ -9,6 +9,7 @@ const database_1 = require("../config/database");
 const AppError_1 = require("../utils/AppError");
 const pdfService_1 = require("../services/pdfService");
 const emailService_1 = require("../services/emailService");
+const saveProjectFile_1 = require("../utils/saveProjectFile");
 const crypto_1 = __importDefault(require("crypto"));
 const router = (0, express_1.Router)();
 // GET /handover — liste tous les handovers (filtrés par projet si ?projectId=)
@@ -265,6 +266,7 @@ router.post('/:id/send', async (req, res, next) => {
             date: h.createdAt,
             lang,
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
         const recipients = new Set();
         const customList = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
         if (customList.length > 0) {
@@ -345,6 +347,7 @@ router.get('/:id/pdf', async (req, res, next) => {
             lang,
         });
         const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
+        (0, saveProjectFile_1.saveProjectFilePdf)(h.projectId, pdfBuffer, filename, 'handover', req.user?.id);
         res.set('Content-Type', 'application/pdf');
         res.set('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(pdfBuffer);

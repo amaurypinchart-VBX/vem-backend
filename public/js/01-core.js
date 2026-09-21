@@ -149,7 +149,7 @@ async function openFileViewer(url, filename) {
         <a href="${url}" download="${esc(filename)}" target="_blank" style="position:absolute;bottom:14px;right:14px;background:rgba(0,0,0,.6);color:#fff;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;">⬇️ Télécharger</a>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
     return;
   }
 
@@ -167,7 +167,7 @@ async function openFileViewer(url, filename) {
         <iframe src="${url}#toolbar=1&view=FitH" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
     return;
   }
 
@@ -188,7 +188,7 @@ async function openFileViewer(url, filename) {
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 
     // Chargement lazy de model-viewer (≈ 130 KB, on l'évite tant qu'on n'en a pas besoin)
     if (!window._mvLoaded) {
@@ -232,7 +232,7 @@ async function openFileViewer(url, filename) {
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
     return;
   }
 

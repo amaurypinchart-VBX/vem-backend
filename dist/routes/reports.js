@@ -6,6 +6,7 @@ const database_1 = require("../config/database");
 const AppError_1 = require("../utils/AppError");
 const pdfService_1 = require("../services/pdfService");
 const logger_1 = require("../utils/logger");
+const saveProjectFile_1 = require("../utils/saveProjectFile");
 const router = (0, express_1.Router)();
 // GET /reports/daily/:id — download daily report PDF
 router.get('/daily/:id', async (req, res, next) => {
@@ -45,6 +46,8 @@ router.get('/daily/:id', async (req, res, next) => {
             checklist: r.checklist,
             photos: r.photos,
         });
+        // Archivage best-effort dans les fichiers du projet — ne bloque pas le téléchargement.
+        (0, saveProjectFile_1.saveProjectFilePdf)(r.projectId, pdf, `DailyReport_${r.project.internalNumber}_${new Date(r.reportDate).toISOString().slice(0, 10)}.pdf`, 'daily_report', req.user?.id);
         res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="DailyReport_${r.project.internalNumber}_${new Date(r.reportDate).toISOString().slice(0, 10)}.pdf"` });
         res.send(pdf);
     }
@@ -89,6 +92,7 @@ router.get('/handover/:id', async (req, res, next) => {
             generalNotes: h.generalNotes,
             date: h.createdAt,
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(h.projectId, pdf, `Handover_${h.project.internalNumber}.pdf`, 'handover', req.user?.id);
         res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="Handover_${h.project.internalNumber}.pdf"` });
         res.send(pdf);
     }

@@ -816,9 +816,11 @@ function closeModal(id) {
   if (id === 'modal-proj') EDITING_PROJECT_ID = null;
 }
 
-document.querySelectorAll('.overlay').forEach(o => {
-  o.addEventListener('click', e => { if(e.target===o) closeModal(o.id); });
-});
+// Volontairement PAS de fermeture au clic sur le fond ("outside click") : sur
+// mobile, un scroll/swipe qui se termine sur le fond du modal est souvent
+// interprété comme un clic → le modal se refermait tout seul et on perdait
+// tout ce qui avait été rempli. Il faut désormais utiliser explicitement la
+// croix ✕ ou "Annuler" pour fermer un formulaire — pas de fermeture "par accident".
 
 // ═══ DROPDOWN ═══
 function toggleDropdown(id) {

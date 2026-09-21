@@ -7,6 +7,7 @@ const express_1 = require("express");
 const database_1 = require("../config/database");
 const pdfService_1 = require("../services/pdfService");
 const emailService_1 = require("../services/emailService");
+const saveProjectFile_1 = require("../utils/saveProjectFile");
 const router = (0, express_1.Router)();
 // GET /api/v1/public/handover-sign/:token
 // Renvoie les infos du handover pour aperçu sur la page de signature.
@@ -115,6 +116,7 @@ router.post('/:token', async (req, res, next) => {
             date: h.createdAt,
             lang: 'fr',
         });
+        (0, saveProjectFile_1.saveProjectFilePdf)(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed.pdf`, 'handover', null);
         // 3. Email aux 2 parties (site manager + client)
         const recipients = new Set();
         if (h.siteManager?.email)

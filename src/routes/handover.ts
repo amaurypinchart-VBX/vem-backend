@@ -5,6 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
+import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import crypto from 'crypto';
 
 const router = Router();
@@ -264,6 +265,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       date: h.createdAt,
       lang,
     });
+    saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
     const customList: string[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
     if (customList.length > 0) {
@@ -346,6 +348,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
+    saveProjectFilePdf(h.projectId, pdfBuffer, filename, 'handover', req.user?.id);
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);

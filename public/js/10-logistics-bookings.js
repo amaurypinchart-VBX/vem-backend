@@ -136,7 +136,7 @@ function showAddTruckModal(projectId, existing) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 
   // Show/hide "autre lieu" pour chargement
   document.getElementById('at-loading-place')?.addEventListener('change', function() {
@@ -265,7 +265,7 @@ function showAddToTeamModal(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 async function addToTeam(projectId, overlay) {
@@ -456,7 +456,7 @@ function showAddHandoverItemModal(handoverId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
   window._PENDING_HI_PHOTO = null;
   setTimeout(()=>document.getElementById('hi-zone')?.focus(), 80);
 }
@@ -921,7 +921,7 @@ async function openTransportModal(projectId, bookingId, defaultPhase) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 // Upload d'une PJ pour booking transport ou hôtel.
@@ -1104,7 +1104,7 @@ async function openHotelModal(projectId, hotelId, defaultPhase) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
   hbUpdateCount();
 }
 

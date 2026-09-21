@@ -41,7 +41,7 @@ function showAddFileByUrlModal(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 async function saveFileByUrl(projectId, overlay) {
@@ -184,6 +184,30 @@ async function deleteProjectFile(fileId, projectId) {
   const res = await api('DELETE', `/projects/${projectId}/files/${fileId}`);
   if (res?.success) { toast('Fichier supprimé','success'); loadDetailFiles(projectId); }
   else toast('Erreur suppression','error');
+}
+
+// Déplace un fichier vers le haut/bas parmi les fichiers du même type (photo
+// ou document) — répond immédiatement en réordonnant le cache local, puis
+// persiste le nouvel ordre côté serveur.
+function moveProjectFile(fileId, dir, projectId) {
+  const files = CURRENT_PROJECT_FILES || [];
+  const idx = files.findIndex(f => f.id === fileId);
+  if (idx === -1) return;
+  const isImg = f => ['jpg','jpeg','png','gif','webp'].includes((f.fileName||f.fileUrl||'').split('.').pop().toLowerCase());
+  const sameType = isImg(files[idx]);
+  let swapIdx = -1;
+  if (dir === 'up') {
+    for (let i = idx - 1; i >= 0; i--) { if (isImg(files[i]) === sameType) { swapIdx = i; break; } }
+  } else {
+    for (let i = idx + 1; i < files.length; i++) { if (isImg(files[i]) === sameType) { swapIdx = i; break; } }
+  }
+  if (swapIdx === -1) return;
+
+  const reordered = files.slice();
+  [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+  CURRENT_PROJECT_FILES = reordered;
+  renderDetailFiles(projectId, reordered);
+  api('PUT', `/projects/${projectId}/files/reorder`, { order: reordered.map(f => f.id) });
 }
 
 function togglePfSelectAll(master) {
@@ -551,7 +575,7 @@ async function openUserDetail(userId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 function toggleUserEdit(editing) {
@@ -859,7 +883,7 @@ async function editHandoverFields(handoverId, projectId) {
       (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('\n');
     commentsTA.value = existingComments;
   }
-  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 async function updateHandoverItemStatus(itemId, handoverId, status) {
@@ -939,7 +963,7 @@ async function generateSignatureLink(handoverId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 // ═══════════════════════════════════════════
 // CAMIONS DANS CRÉATION PROJET
@@ -1100,7 +1124,7 @@ async function confirmDeleteProject(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 async function archiveProject(projectId, overlay) {

@@ -448,6 +448,88 @@ function setReportStatus(icon, text, sub='') {
   if (s) s.textContent = sub;
 }
 
+// Rend un fragment HTML complet (doctype+head+body) dans un iframe caché, le
+// capture avec html2canvas, puis découpe l'image obtenue en pages A4 pour
+// produire un vrai fichier PDF (Blob) avec jsPDF — utilisé pour archiver le
+// "Rapport IA" dans les fichiers du projet, en plus de l'aperçu imprimable.
+async function captureHtmlToPdfBlob(html, pxWidth = 900) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-99999px';
+    iframe.style.top = '0';
+    iframe.style.width = pxWidth + 'px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); };
+
+    iframe.onload = async () => {
+      try {
+        const doc = iframe.contentDocument;
+        const fullHeight = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 200);
+        iframe.style.height = fullHeight + 'px';
+        // Laisse le temps au reflow avant la capture
+        await new Promise(r => setTimeout(r, 200));
+
+        const canvas = await html2canvas(doc.body, {
+          width: pxWidth, windowWidth: pxWidth, height: fullHeight,
+          scale: 1.5, backgroundColor: '#ffffff', useCORS: true,
+        });
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        const imgW = pageW;
+        const imgH = canvas.height * (imgW / canvas.width);
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+        let heightLeft = imgH;
+        let position = 0;
+        pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+        heightLeft -= pageH;
+        while (heightLeft > 0) {
+          position = heightLeft - imgH;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+          heightLeft -= pageH;
+        }
+
+        cleanup();
+        resolve(pdf.output('blob'));
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    };
+    iframe.onerror = () => { cleanup(); reject(new Error('Chargement iframe échoué')); };
+    iframe.srcdoc = html;
+  });
+}
+
+// Archive le rapport (HTML déjà généré) dans les fichiers du projet — best
+// effort : ne bloque jamais l'affichage/impression du rapport si ça échoue.
+async function saveReportToProjectFiles(reportHTML, projectId, project) {
+  try {
+    const pdfBlob = await captureHtmlToPdfBlob(reportHTML);
+    const fileName = `Rapport_${project?.internalNumber || project?.name || projectId}_${new Date().toISOString().slice(0,10)}_${Date.now()}.pdf`;
+    const fd = new FormData();
+    fd.append('file', pdfBlob, fileName);
+    fd.append('category', 'rapport_ia');
+    const upRes = await fetch(`${API}/upload/project-file/${projectId}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd,
+    });
+    if (upRes.ok) toast('Rapport enregistré dans les fichiers du projet ✅', 'success');
+    else toast('Rapport généré mais non sauvegardé dans le projet', 'warning');
+  } catch (e) {
+    console.error('[report] sauvegarde projet échouée:', e);
+    toast('Rapport généré mais non sauvegardé dans le projet', 'warning');
+  }
+}
+
 async function generateReport(mode) {
   // If no project selected, ask user to pick one
   let projectId = CURRENT_PROJECT_ID;
@@ -1227,6 +1309,10 @@ Style : professionnel, factuel, concis. Répondre UNIQUEMENT avec le texte du r�
     } else {
       toast('La fenêtre du rapport a été fermée ou bloquée — réessaie et autorise les popups','warning');
     }
+
+    // Archivage automatique dans les fichiers du projet — en arrière-plan,
+    // ne bloque pas la fermeture de la modale ni l'aperçu/impression.
+    saveReportToProjectFiles(reportHTML, CURRENT_PROJECT_ID, project);
 
     closeModal('modal-report');
 

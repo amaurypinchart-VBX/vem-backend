@@ -1076,7 +1076,7 @@ function brfPickFilesForAutoGen(files) {
     const cancel = () => { overlay.remove(); resolve(null); };
     overlay.querySelector('#brf-pickf-cancel').onclick = cancel;
     overlay.querySelector('#brf-pickf-x').onclick      = cancel;
-    overlay.addEventListener('click', e => { if (e.target === overlay) cancel(); });
+    // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de la sélection sur un scroll/swipe mobile mal interprété.
 
     overlay.querySelector('#brf-pickf-skip').onclick = () => { overlay.remove(); resolve([]); };
 

@@ -111,7 +111,7 @@ function openNewVisitModal(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 async function submitNewVisit(projectId, overlay) {
@@ -259,7 +259,7 @@ async function openVisitDetail(visitId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 // Changer l'assignation d'un point depuis le modal
@@ -460,7 +460,7 @@ function openAddPointToVisitModal(visitId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 function previewVisitPointPhotos(input) {
@@ -681,7 +681,7 @@ function openAddPointModal(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
   setTimeout(() => document.getElementById('point-title')?.focus(), 100);
 }
 
@@ -868,7 +868,7 @@ async function openPointDetail(remarkId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 // ── Mettre à jour un point ──
@@ -1014,12 +1014,19 @@ async function createVisite() {
 // FICHIERS PROJET
 // ═══════════════════════════════════════════
 
+// Cache du dernier chargement — permet de réordonner localement (réponse
+// instantanée) sans re-fetch, tout en persistant le nouvel ordre côté serveur.
+let CURRENT_PROJECT_FILES = [];
+
 async function loadDetailFiles(projectId) {
+  const res = await api('GET', `/projects/${projectId}/files`);
+  CURRENT_PROJECT_FILES = res?.data || [];
+  renderDetailFiles(projectId, CURRENT_PROJECT_FILES);
+}
+
+function renderDetailFiles(projectId, files) {
   const el = document.getElementById('detail-files-content');
   if (!el) return;
-
-  const res = await api('GET', `/projects/${projectId}/files`);
-  const files = res?.data || [];
 
   const ext = f => (f.fileName||f.fileUrl||'').split('.').pop().toLowerCase();
   const isImage = f => ['jpg','jpeg','png','gif','webp'].includes(ext(f));
@@ -1087,6 +1094,10 @@ async function loadDetailFiles(projectId) {
                 <div style="font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Photo'}</div>
               </div>
               <button onclick="event.stopPropagation();deleteProjectFile('${f.id}','${projectId}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+              <div style="position:absolute;top:4px;right:30px;display:flex;flex-direction:column;gap:2px;">
+                <button onclick="event.stopPropagation();moveProjectFile('${f.id}','up','${projectId}')" style="background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:4px;width:22px;height:16px;cursor:pointer;font-size:10px;">▲</button>
+                <button onclick="event.stopPropagation();moveProjectFile('${f.id}','down','${projectId}')" style="background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:4px;width:22px;height:16px;cursor:pointer;font-size:10px;">▼</button>
+              </div>
             </div>`).join('')}
         </div>
       </div>` : ''}
@@ -1103,6 +1114,10 @@ async function loadDetailFiles(projectId) {
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
                 <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.fileType||ext(f).toUpperCase()} · ${f.fileSize?Math.round(f.fileSize/1024)+'KB':''}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">
+                <button class="btn btn-ghost btn-xs" style="padding:1px 6px;" onclick="moveProjectFile('${f.id}','up','${projectId}')" title="Monter">▲</button>
+                <button class="btn btn-ghost btn-xs" style="padding:1px 6px;" onclick="moveProjectFile('${f.id}','down','${projectId}')" title="Descendre">▼</button>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0;">
                 ${is3D(f) ? `<button class="btn btn-primary btn-xs" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${projectId}')" title="Ouvrir dans le viewer 3D (mesures, photos, dimensions)">🎮 Voir en 3D</button>` : ''}

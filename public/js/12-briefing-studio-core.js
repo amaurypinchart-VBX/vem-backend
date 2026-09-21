@@ -55,7 +55,7 @@ async function openPickContactFromClients(slideIdx, bi) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
 function filterPickContactsList(q) {
