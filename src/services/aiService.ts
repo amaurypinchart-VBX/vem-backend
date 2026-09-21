@@ -81,6 +81,17 @@ export interface CallClaudeParams {
   timeoutMs?: number;
 }
 
+// Concatène uniquement les blocs de type "text" de la réponse — certains modèles
+// (notamment en raisonnement étendu) renvoient un bloc "thinking" avant le texte,
+// or content[0] n'est alors pas la réponse : la lire en dur donnait une chaîne
+// vide et un "JSON introuvable" trompeur (voir callClaudeJSON ci-dessous).
+function extractText(data: any): string {
+  return (data.content || [])
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
+    .join('\n');
+}
+
 // Appel haut niveau pour un tour simple : renvoie le texte de la réponse.
 export async function callClaude(params: CallClaudeParams): Promise<string> {
   const { messages, system, maxTokens = 1500, model, timeoutMs } = params;
@@ -96,7 +107,7 @@ export async function callClaude(params: CallClaudeParams): Promise<string> {
   if (data.stop_reason === 'max_tokens') {
     logger.warn(`[aiService] réponse tronquée (max_tokens=${maxTokens} atteint)`);
   }
-  return data.content?.[0]?.text || '';
+  return extractText(data);
 }
 
 // Cherche le premier bloc JSON équilibré ({...} ou [...]) dans un texte,
@@ -138,7 +149,7 @@ export async function callClaudeJSON<T>(params: CallClaudeJSONParams<T>): Promis
     },
     { timeoutMs }
   );
-  const text = data.content?.[0]?.text || '';
+  const text = extractText(data);
   logger.info(`[aiService] réponse brute (${text.length} car, stop_reason=${data.stop_reason}) : ${text.slice(0, 300)}`);
 
   let raw: any;
@@ -149,8 +160,11 @@ export async function callClaudeJSON<T>(params: CallClaudeJSONParams<T>): Promis
       logger.error(`[aiService] réponse tronquée (max_tokens=${maxTokens} atteint) — JSON incomplet`);
       throw new AppError(`La réponse IA a été coupée car elle dépassait la limite de ${maxTokens} tokens — réduis la quantité de texte envoyée (ex: une période plus courte) ou réessaie.`, 502);
     }
-    logger.error(`[aiService] JSON.parse échoué : ${e.message} — contenu : ${text.slice(0, 500)}`);
-    throw new AppError('Impossible de parser la réponse IA', 502);
+    // On garde le message d'origine (ex: "Aucun JSON trouvé...") plutôt qu'un
+    // message générique — sinon on perd la vraie cause en logs (texte vide,
+    // bloc "thinking" seul, etc.) au profit d'un "Impossible de parser" opaque.
+    logger.error(`[aiService] JSON introuvable/invalide (${e.message}) — contenu complet : ${text}`);
+    throw new AppError(e instanceof AppError ? e.message : 'Impossible de parser la réponse IA', 502);
   }
 
   const parsed = schema.safeParse(raw);
