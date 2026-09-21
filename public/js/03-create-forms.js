@@ -37,17 +37,24 @@ async function createTask() {
 // ═══ DAILY REPORT STATE ═══
 let DAILY_ENTRIES = []; // {id, time, text}
 let DAILY_TASK_UPDATES = {}; // {taskId: newStatus}
+let DAILY_PHASE = null; // 'installation' | 'dismantling'
+let DAILY_TASK_HOURS = []; // {taskTemplateId, taskTitle, hours, workers}
+let DAILY_ALL_TEMPLATES = null; // cache brut de GET /task-templates
 let voiceRecognition = null;
 let isRecording = false;
 
 function resetDailyReport() {
   DAILY_ENTRIES = [];
   DAILY_TASK_UPDATES = {};
+  DAILY_PHASE = null;
+  DAILY_TASK_HOURS = [];
   renderDailyEntries();
   document.getElementById('daily-tasks-list').innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Sélectionne un projet</div>';
   document.getElementById('new-entry-text').value = '';
   document.getElementById('daily-notes').value = '';
   document.getElementById('daily-workers').value = '0';
+  document.querySelectorAll('input[name="daily-phase"]').forEach(r => { r.checked = false; });
+  renderDailyTaskHoursGrid();
   PENDING_DAILY_PHOTOS = [];
   const preview = document.getElementById('daily-photos-preview');
   if (preview) preview.innerHTML = '';
@@ -56,6 +63,77 @@ function resetDailyReport() {
   // Set current time
   const now = new Date();
   document.getElementById('new-entry-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
+// ── HEURES PAR TÂCHE (Installation / Démontage) ──────────────
+async function loadDailyAllTemplates() {
+  if (DAILY_ALL_TEMPLATES) return DAILY_ALL_TEMPLATES;
+  const res = await api('GET', '/task-templates');
+  DAILY_ALL_TEMPLATES = res?.success ? (res.data || []) : [];
+  return DAILY_ALL_TEMPLATES;
+}
+
+async function onDailyPhaseChange(phase) {
+  DAILY_PHASE = phase;
+  const templates = await loadDailyAllTemplates();
+  const forPhase = templates.filter(t => t.phase === phase);
+  DAILY_TASK_HOURS = forPhase.map(t => ({
+    taskTemplateId: t.id,
+    taskTitle: t.title,
+    hours: 0,
+    workers: 0,
+  }));
+  renderDailyTaskHoursGrid();
+}
+
+function renderDailyTaskHoursGrid() {
+  const empty  = document.getElementById('daily-taskhours-empty');
+  const header = document.getElementById('daily-taskhours-header');
+  const addRow = document.getElementById('daily-taskhours-add');
+  const list   = document.getElementById('daily-taskhours-list');
+  if (!list) return;
+
+  if (!DAILY_PHASE) {
+    if (empty) empty.style.display = 'block';
+    if (header) header.style.display = 'none';
+    if (addRow) addRow.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (header) header.style.display = 'grid';
+  if (addRow) addRow.style.display = 'flex';
+
+  list.innerHTML = DAILY_TASK_HOURS.map((t, i) => `
+    <div style="display:grid;grid-template-columns:1fr 85px 85px 26px;gap:8px;align-items:center;padding:5px 4px;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;color:var(--text2);">${esc(t.taskTitle)}</span>
+      <input type="number" step="0.25" min="0" value="${t.hours || ''}" placeholder="0"
+        onchange="updateDailyTaskHour(${i},'hours',this.value)"
+        style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+      <input type="number" step="1" min="0" value="${t.workers || ''}" placeholder="0"
+        onchange="updateDailyTaskHour(${i},'workers',this.value)"
+        style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+      <button onclick="removeDailyTaskHourRow(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;" title="Retirer">✕</button>
+    </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
+}
+
+function updateDailyTaskHour(idx, field, value) {
+  if (!DAILY_TASK_HOURS[idx]) return;
+  DAILY_TASK_HOURS[idx][field] = field === 'workers' ? (parseInt(value) || 0) : (parseFloat(value) || 0);
+}
+
+function removeDailyTaskHourRow(idx) {
+  DAILY_TASK_HOURS.splice(idx, 1);
+  renderDailyTaskHoursGrid();
+}
+
+function addCustomDailyTaskHourRow() {
+  const input = document.getElementById('daily-taskhours-custom-title');
+  const title = input?.value.trim();
+  if (!title) { toast('Nom de la tâche requis', 'error'); return; }
+  DAILY_TASK_HOURS.push({ taskTemplateId: null, taskTitle: title, hours: 0, workers: 0 });
+  input.value = '';
+  renderDailyTaskHoursGrid();
 }
 
 function addDailyEntry() {
@@ -415,13 +493,18 @@ async function createDailyReport(send=false) {
   if (!projectId || !date) { toast('Projet et date obligatoires', 'error'); return; }
 
   const entries = DAILY_ENTRIES.map(e => ({ entryTime: e.time, description: e.text }));
+  const taskHours = DAILY_TASK_HOURS
+    .filter(t => (t.hours || 0) > 0 || (t.workers || 0) > 0)
+    .map(t => ({ taskTemplateId: t.taskTemplateId || undefined, taskTitle: t.taskTitle, hours: t.hours || 0, workers: t.workers || 0 }));
 
   const res = await api('POST', '/daily-reports', {
     projectId, reportDate: date,
     weather: document.getElementById('daily-weather').value,
     workersPresent: parseInt(document.getElementById('daily-workers').value)||0,
     generalNotes: document.getElementById('daily-notes').value || undefined,
+    phase: DAILY_PHASE || undefined,
     entries,
+    taskHours,
   });
 
   if (res?.success) {

@@ -77,7 +77,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 // les erreurs silencieuses où la catégorie n'est pas liée.
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { categoryId, title, durationHours, priority, sortOrder, description } = req.body;
+    const { categoryId, title, durationHours, priority, sortOrder, description, phase } = req.body;
 
     if (!categoryId || !title) {
       return res.status(400).json({
@@ -101,6 +101,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
         title,
         durationHours: durationHours || 4,
         priority: priority || 'normal',
+        phase: phase || null,
         sortOrder: sortOrder || 0,
         description: description || null,
         isActive: true,
@@ -114,7 +115,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 // PATCH /task-templates/:id — modifier un template existant
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { categoryId, title, durationHours, priority, sortOrder, description, isActive } = req.body;
+    const { categoryId, title, durationHours, priority, sortOrder, description, isActive, phase } = req.body;
     const data: any = {};
     if (categoryId !== undefined) data.categoryId = categoryId;
     if (title !== undefined) data.title = title;
@@ -123,6 +124,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     if (sortOrder !== undefined) data.sortOrder = sortOrder;
     if (description !== undefined) data.description = description;
     if (isActive !== undefined) data.isActive = isActive;
+    if (phase !== undefined) data.phase = phase || null;
 
     const tpl = await (prisma as any).taskTemplate.update({
       where: { id: req.params.id },
@@ -361,13 +363,13 @@ router.post('/reset', async (req: AuthRequest, res: Response, next: NextFunction
     await (prisma as any).taskTemplate.deleteMany({});
     await (prisma as any).taskCategory.deleteMany({});
 
-    const SEED = [
+    const SEED: Array<{ name: string; icon: string; color: string; phase?: string; tasks: string[] }> = [
       { name:'To Do',                 icon:'📋', color:'#5a6275', tasks:['Team - Dismantling','Preparation material from delivery note'] },
       { name:'PRE-PROD',              icon:'📐', color:'#4895ef', tasks:['Briefing SHEET from SALES','Preparation of all packing list','Packing list for warehouse team','Site Visit ( Verify faisability on site)','Boarding solution','Analyse packing list','Buy missing material','Briefing team','Briefing PP with all informations','Create Whats app group'] },
       { name:'Booking Supplier',      icon:'📞', color:'#9b59b6', tasks:['Organise transport TRUCK','Book SM','Book accomodation SM','Book Transport SM','Rent Forklift','Book team','Rent Manitou ROTO','Rent Scisor Lift','Book CRANE','Book Accomodation team'] },
       { name:'Warehouse Preparation', icon:'📦', color:'#f4a261', tasks:['Loading truck'] },
-      { name:'Installation',          icon:'🏗️', color:'#e63946', tasks:['GENERAL TASK','TMPL - Electricity','Unload Tautliner with Forklift On Site','Levelling and Laser work on site','Unload Flatbed truck on site with crane','UNIT','Placing Facade elements','Placement of inner Ceilings','Placement of vinyl floor','Placement of Vinyl click hard floor','Handover with the client','Interior or exterior Staircase','Terraces and Unit'] },
-      { name:'Dismantling',           icon:'🔨', color:'#f4a261', tasks:['Unloading of rack and tools and reorganisation of racks','Remove Decoration and interior material','Remove facade Elements','Remove external or internal staircase','Flat Packing With crane UNIT','Remove terraces Unit and Handrails','Loading FlatBED','Loading Tautliner','Cleaning SITE','HANDHOVER Client to end of event','GENERAL DISMANTLING TASK'] },
+      { name:'Installation',          icon:'🏗️', color:'#e63946', phase:'installation', tasks:['GENERAL TASK','TMPL - Electricity','Unload Tautliner with Forklift On Site','Levelling and Laser work on site','Unload Flatbed truck on site with crane','UNIT','Placing Facade elements','Placement of inner Ceilings','Placement of vinyl floor','Placement of Vinyl click hard floor','Handover with the client','Interior or exterior Staircase','Terraces and Unit'] },
+      { name:'Dismantling',           icon:'🔨', color:'#f4a261', phase:'dismantling', tasks:['Unloading of rack and tools and reorganisation of racks','Remove Decoration and interior material','Remove facade Elements','Remove external or internal staircase','Flat Packing With crane UNIT','Remove terraces Unit and Handrails','Loading FlatBED','Loading Tautliner','Cleaning SITE','HANDHOVER Client to end of event','GENERAL DISMANTLING TASK'] },
       { name:'Come Back Warehouse',   icon:'🏠', color:'#2dc653', tasks:['Dismounting','Unloading truck in warehouse','Verification of return material'] },
     ];
 
@@ -382,7 +384,7 @@ router.post('/reset', async (req: AuthRequest, res: Response, next: NextFunction
         await (prisma as any).taskTemplate.create({
           data: {
             categoryId: created.id, title: cat.tasks[j],
-            durationHours: 4, priority: 'normal',
+            durationHours: 4, priority: 'normal', phase: cat.phase || null,
             sortOrder: j, isActive: true,
           },
         });

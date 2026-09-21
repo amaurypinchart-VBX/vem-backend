@@ -60,10 +60,10 @@ async function loadTemplatesPage() {
               <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;display:flex;justify-content:space-between;align-items:flex-start;">
                 <div style="flex:1;padding-right:6px;">
                   <div style="font-size:13px;font-weight:500;">${t.title}</div>
-                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}${t.phase?` · ${t.phase==='installation'?'🏗️ Installation':'🔨 Démontage'}`:''}</div>
                 </div>
                 <div style="display:flex;gap:4px;flex-shrink:0;">
-                  <button class="btn btn-ghost btn-xs" onclick="editTemplate('${t.id}','${cat.id}','${t.title.replace(/'/g,"'")}','${t.priority}',${t.durationHours})">✏️</button>
+                  <button class="btn btn-ghost btn-xs" onclick="editTemplate('${t.id}','${cat.id}','${t.title.replace(/'/g,"'")}','${t.priority}',${t.durationHours},'${t.phase||''}')">✏️</button>
                   <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteTemplate('${t.id}')">🗑️</button>
                 </div>
               </div>`).join('')}
@@ -98,6 +98,13 @@ function showNewTemplateModal(catId='') {
           </select>
         </div>
       </div>
+      <div class="form-group2"><label class="form-label2">Phase (rapports journaliers)</label>
+        <select class="input" id="nt-phase">
+          <option value="">— Aucune (n'apparaît pas dans les rapports) —</option>
+          <option value="installation">🏗️ Installation</option>
+          <option value="dismantling">🔨 Démontage</option>
+        </select>
+      </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="createTemplate(this.closest('.overlay'))">✅ Créer</button>
@@ -116,12 +123,13 @@ async function createTemplate(overlay) {
     description: document.getElementById('nt-desc')?.value||undefined,
     durationHours: parseFloat(document.getElementById('nt-hours')?.value)||4,
     priority: document.getElementById('nt-priority')?.value||'normal',
+    phase: document.getElementById('nt-phase')?.value||null,
   });
   if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); loadProjTemplateSelector(); }
   else toast('Erreur création template','error');
 }
 
-async function editTemplate(id, catId, title, priority, hours) {
+async function editTemplate(id, catId, title, priority, hours, phase) {
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML = `
     <div class="modal" style="max-width:500px;">
@@ -137,6 +145,13 @@ async function editTemplate(id, catId, title, priority, hours) {
             <option value="critical" ${priority==='critical'?'selected':''}>🔴 Critique</option>
           </select>
         </div>
+      </div>
+      <div class="form-group2"><label class="form-label2">Phase (rapports journaliers)</label>
+        <select class="input" id="edit-tpl-phase">
+          <option value="" ${!phase?'selected':''}>— Aucune (n'apparaît pas dans les rapports) —</option>
+          <option value="installation" ${phase==='installation'?'selected':''}>🏗️ Installation</option>
+          <option value="dismantling" ${phase==='dismantling'?'selected':''}>🔨 Démontage</option>
+        </select>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:12px;">
         <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTemplate('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
@@ -155,6 +170,7 @@ async function saveTemplate(id, overlay) {
     title: document.getElementById('edit-tpl-title')?.value.trim(),
     durationHours: parseFloat(document.getElementById('edit-tpl-hours')?.value)||4,
     priority: document.getElementById('edit-tpl-priority')?.value,
+    phase: document.getElementById('edit-tpl-phase')?.value||null,
   });
   if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur','error');
@@ -1037,58 +1053,14 @@ function toggleReportSection(el) {
   if (el.dataset.section === 'time_analysis') {
     const panel = document.getElementById('ta-panel');
     if (panel) panel.style.display = el.classList.contains('active') ? 'block' : 'none';
-    // Auto-charger les templates la première fois
-    if (el.classList.contains('active') && !TA_TEMPLATES_CACHE) {
-      loadTATemplates(false);
-    }
   }
   return false;
 }
 
 // ═══════════════════════════════════════════════════════════
-// ANALYSE TEMPS PAR TÂCHE — V2 (dans Rapport IA)
+// ANALYSE TEMPS PAR TÂCHE — heures/hommes saisis dans les rapports journaliers
 // ═══════════════════════════════════════════════════════════
 let TA_REPORT_DATA = null;
-let TA_TEMPLATES_CACHE = null; // { categories: [{name, icon, color, templates: [{id, title}]}] }
-
-async function loadTATemplates(forceReload = false) {
-  const display = document.getElementById('ta-templates-display');
-  if (!TA_TEMPLATES_CACHE || forceReload) {
-    if (display) display.innerHTML = '<span style="color:var(--text3);">⏳ Chargement des templates...</span>';
-    try {
-      const res = await api('GET', '/task-templates/categories');
-      if (res?.success && res.data?.length) {
-        TA_TEMPLATES_CACHE = res.data;
-      } else {
-        TA_TEMPLATES_CACHE = [];
-      }
-    } catch (e) {
-      console.error('[TA] load templates err:', e);
-      TA_TEMPLATES_CACHE = [];
-    }
-  }
-
-  if (!display) return;
-  if (!TA_TEMPLATES_CACHE.length) {
-    display.innerHTML = '<span style="color:var(--amber);">⚠️ Aucun template de tâche défini. L\'IA utilisera les catégories personnalisées ci-dessous ou des catégories génériques.</span>';
-    return;
-  }
-
-  // Afficher les templates par catégorie avec icônes et couleurs
-  const totalTemplates = TA_TEMPLATES_CACHE.reduce((sum,c) => sum + (c.templates||[]).length, 0);
-  display.innerHTML = `
-    <div style="text-align:left;">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📋 ${totalTemplates} template(s) chargé(s) depuis ${TA_TEMPLATES_CACHE.length} catégorie(s)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        ${TA_TEMPLATES_CACHE.flatMap(cat =>
-          (cat.templates||[]).map(t => `
-            <span style="background:${cat.color||'var(--bg3)'}22;border:1px solid ${cat.color||'var(--border)'}66;color:${cat.color||'var(--text2)'};font-size:11px;padding:3px 8px;border-radius:12px;white-space:nowrap;" title="${esc(cat.name)}">
-              ${cat.icon||'📋'} ${esc(t.title)}
-            </span>`)
-        ).join('')}
-      </div>
-    </div>`;
-}
 
 function setTAStatus(icon, text) {
   const box = document.getElementById('ta-status');

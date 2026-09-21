@@ -1,3 +1,7 @@
+// Heures par tâche : lues directement depuis les rapports journaliers (saisie
+// manuelle heures + hommes par tâche, plus d'extraction/devinette IA depuis du
+// texte libre). L'IA n'intervient plus qu'à la toute fin, pour rédiger une
+// courte synthèse à partir de ces chiffres déjà exacts.
 async function runTimeAnalysisForReport() {
   let projectId = CURRENT_PROJECT_ID;
   if (!projectId) {
@@ -10,296 +14,102 @@ async function runTimeAnalysisForReport() {
   if (runBtn) runBtn.disabled = true;
 
   try {
-    setTAStatus('📥', 'Chargement des daily reports...');
-    const listRes = await api('GET', `/daily-reports?projectId=${projectId}`);
-    if (!listRes?.success) throw new Error('Erreur chargement rapports');
-    const reports = listRes.data || [];
-    if (!reports.length) {
-      setTAStatus('⚠️', 'Aucun rapport journalier à analyser');
+    setTAStatus('📥', 'Chargement des heures saisies dans les rapports journaliers...');
+    const res = await api('GET', `/projects/${projectId}/task-hours`);
+    if (!res?.success) throw new Error('Erreur chargement des heures par tâche');
+    const rows = res.data || [];
+
+    if (!rows.length) {
+      setTAStatus('⚠️', 'Aucune heure saisie — remplis le tableau "Heures par tâche" dans les rapports journaliers');
+      TA_REPORT_DATA = { categories: [], insights: [], summary: {} };
+      renderTAEditTable();
       if (runBtn) runBtn.disabled = false;
       return;
     }
 
-    setTAStatus('📥', `Chargement du détail (${reports.length} rapport(s))...`);
-    const detailed = await Promise.all(
-      reports.map(r => api('GET', `/daily-reports/${r.id}`).then(res => res?.data || r))
-    );
-
-    // Un "bloc jour" par rapport journalier (au lieu d'un seul gros bloc de
-    // texte) : ça permet de regrouper les jours en lots pour l'appel IA
-    // ci-dessous, plutôt que d'envoyer tout l'historique du projet d'un coup.
-    const dayBlocks = [];
-    let totalEntries = 0;
-    detailed.forEach(r => {
-      const date = r.reportDate?.split('T')[0] || '';
-      const workers = r.workersPresent || 0;
-      const entries = (r.entries || []).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
-      if (!entries.length && !r.generalNotes) return;
-      const lines = [`\n=== JOUR ${date} — ${workers} ouvrier(s) présent(s) ===`];
-      entries.forEach(e => {
-        lines.push(`[${e.entryTime || '?'}] ${e.description || ''}`);
-        totalEntries++;
-      });
-      if (r.generalNotes) lines.push(`Notes générales : ${r.generalNotes}`);
-      dayBlocks.push({ date, entryCount: entries.length, text: lines.join('\n') });
-    });
-
-    if (!totalEntries) {
-      setTAStatus('⚠️', 'Aucune entrée détaillée dans les rapports');
-      if (runBtn) runBtn.disabled = false;
-      return;
-    }
-
-    // Regroupe les jours en lots bornés en nombre d'entrées : un seul appel
-    // géant sur tout l'historique du projet dépasse régulièrement le timeout
-    // ou la limite de sortie de l'IA (chaque entrée est "éclatée" en
-    // plusieurs sous-tâches, donc la sortie JSON attendue grossit vite).
-    // 10 entrées par lot atteignait encore régulièrement les 16000 tokens de
-    // sortie (chaque entrée peut exploser en 4-5 sous-tâches JSON, chacune
-    // avec 6 champs) → réponse coupée en plein milieu du JSON. On réduit
-    // encore pour rester confortablement sous la limite, quitte à
-    // multiplier les allers-retours (le header d'instructions ci-dessous
-    // est mis en cache côté Anthropic entre les lots, donc ça ne fait pas
-    // repayer le gros prompt d'instructions à chaque lot).
-    const BATCH_MAX_ENTRIES = 5;
-    const batches = [];
-    let currentBatch = [];
-    let currentCount = 0;
-    dayBlocks.forEach(day => {
-      if (currentCount > 0 && currentCount + day.entryCount > BATCH_MAX_ENTRIES) {
-        batches.push(currentBatch);
-        currentBatch = [];
-        currentCount = 0;
-      }
-      currentBatch.push(day);
-      currentCount += day.entryCount;
-    });
-    if (currentBatch.length) batches.push(currentBatch);
-
-    // Charger templates si pas déjà fait
-    if (!TA_TEMPLATES_CACHE) await loadTATemplates(false);
-
-    // Construire la liste des catégories à partir des templates + additions manuelles
-    const templateCategories = [];
-    (TA_TEMPLATES_CACHE || []).forEach(cat => {
-      (cat.templates || []).forEach(t => {
-        templateCategories.push({
-          id: t.id,
-          title: t.title,
-          categoryName: cat.name,
-          icon: cat.icon || '📋',
-          color: cat.color || null
+    // Regroupe les lignes par tâche (une catégorie du tableau = une tâche du
+    // template Installation/Démontage), chaque ligne = un jour saisi.
+    const byTask = new Map();
+    rows.forEach(r => {
+      const key = r.taskTemplateId || r.taskTitle;
+      if (!byTask.has(key)) {
+        byTask.set(key, {
+          name: r.taskTitle,
+          icon: r.icon || '📋',
+          color: r.color || null,
+          parentCategory: r.categoryName || null,
+          templateId: r.taskTemplateId || undefined,
+          subtasks: [],
         });
+      }
+      const date = r.reportDate ? r.reportDate.split('T')[0] : '';
+      byTask.get(key).subtasks.push({
+        date,
+        time: '',
+        description: date ? `Journée du ${date}` : r.taskTitle,
+        durationHours: r.hours || 0,
+        workers: r.workers || 0,
+        workersKnown: true,
       });
     });
 
-    const customRaw = document.getElementById('ta-categories')?.value?.trim() || '';
-    const customCategories = customRaw.split('\n').map(c=>c.trim()).filter(Boolean);
+    const categories = Array.from(byTask.values()).sort((a, b) => {
+      const totalA = a.subtasks.reduce((s, st) => s + (st.durationHours || 0) * (st.workers || 0), 0);
+      const totalB = b.subtasks.reduce((s, st) => s + (st.durationHours || 0) * (st.workers || 0), 0);
+      return totalB - totalA;
+    });
 
-    // Fallback si aucun template et aucun custom
-    const finalCategories = templateCategories.length > 0
-      ? templateCategories.map(t => `${t.title}${t.categoryName ? ` (catégorie: ${t.categoryName})` : ''}`).concat(customCategories)
-      : (customCategories.length > 0 ? customCategories : ['Installation','Déchargement','Nettoyage','Autres tâches']);
+    const dates = [...new Set(rows.map(r => r.reportDate ? r.reportDate.split('T')[0] : '').filter(Boolean))].sort();
+    const totalManHours = rows.reduce((s, r) => s + (r.hours || 0) * (r.workers || 0), 0);
+    const avgWorkers = rows.length ? rows.reduce((s, r) => s + (r.workers || 0), 0) / rows.length : 0;
 
-    // Toujours ajouter "Autres tâches" comme fallback si pas déjà présent
-    if (!finalCategories.some(c => c.toLowerCase().includes('autre'))) {
-      finalCategories.push('Autres tâches');
-    }
+    TA_REPORT_DATA = {
+      categories,
+      insights: [],
+      summary: {
+        totalDays: dates.length,
+        avgWorkersPerDay: Math.round(avgWorkers * 10) / 10,
+        period: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : '',
+      },
+    };
+    renderTAEditTable();
 
-    // Mapping template.title → template.id pour post-processing
-    const titleToTemplate = {};
-    templateCategories.forEach(t => { titleToTemplate[t.title.toLowerCase()] = t; });
+    // Synthèse IA légère — les chiffres sont déjà exacts (saisis à la main),
+    // l'IA ne fait ici que rédiger 3-5 phrases d'analyse, best-effort.
+    setTAStatus('🤖', 'Rédaction de la synthèse IA...');
+    try {
+      const summaryLines = categories.map(c => {
+        const total = c.subtasks.reduce((s, st) => s + (st.durationHours || 0) * (st.workers || 0), 0);
+        return `- ${c.name}${c.parentCategory ? ` (${c.parentCategory})` : ''} : ${total.toFixed(1)}h-hommes sur ${c.subtasks.length} jour(s) saisi(s)`;
+      }).join('\n');
 
-    // Tout le bloc d'instructions/exemples est identique pour chaque lot —
-    // seule la section "RAPPORTS À ANALYSER" change. On le construit une
-    // fois et on y ajoute le texte du lot courant à chaque appel.
-    const promptHeader = `Tu es un expert en gestion de chantier événementiel (stands, box modulaires, structures aluminium, panels, vitres, portes, escaliers, joints). Analyse les rapports journaliers ci-dessous et éclate CHAQUE entrée en autant de sous-tâches distinctes qu'il y a d'actions différentes dedans.
+      const prompt = `Voici les heures-hommes enregistrées par tâche sur ce chantier (période ${TA_REPORT_DATA.summary.period || 'N/A'}, ${TA_REPORT_DATA.summary.totalDays} jour(s), ${totalManHours.toFixed(1)}h-hommes au total) :
 
-═══════════════════════════════════════════════════════════
-TEMPLATES DE TÂCHES DISPONIBLES — utilise EXACTEMENT ces noms :
-═══════════════════════════════════════════════════════════
-${finalCategories.map(c => `- ${c}`).join('\n')}
+${summaryLines}
 
-Si aucun template ne correspond → "Autres tâches" (à éviter au max).
-
-═══════════════════════════════════════════════════════════
-RÈGLE ABSOLUE — ÉCLATEMENT DES ENTRÉES COMPOSITES
-═══════════════════════════════════════════════════════════
-Une entrée contient SOUVENT plusieurs actions distinctes (séparées par des virgules, des "et", des "+", ou juste énumérées).
-Tu DOIS créer UNE sous-tâche par action distincte, chacune rattachée au template le plus adapté.
-
-Exemple 1 :
-  Entrée : "1 vitre et porte posées 7ème box, gummies extérieurs, réglage porte" (3.0h, 4 ouvriers)
-  → 4 sous-tâches (durée éclatée : 3h ÷ 4 = 0.75h chacune) :
-     • "Pose vitre 7ème box"        → template le plus proche (ex : "Pose vitres")
-     • "Pose porte 7ème box"        → template "Pose portes"
-     • "Pose gummies extérieurs"    → template "Joints / gummies"
-     • "Réglage porte"              → template "Finitions" ou "Réglages"
-
-Exemple 2 :
-  Entrée : "6 box montées et connectées, roof tape, rubber et pièces sécurité" (1.5h, 4 ouvriers)
-  → 4 sous-tâches (0.375h chacune) :
-     • "Montage 6 box"                  → "Montage box"
-     • "Connexion des box entre elles"  → "Assemblage / connexion"
-     • "Pose roof tape + rubber"        → "Étanchéité / joints"
-     • "Pose pièces sécurité"           → "Sécurité chantier"
-
-Exemple 3 :
-  Entrée : "2 escaliers et plateforme placés fixés, 2 doubles portes bas, peintures en cours, 10 panels joints gummies" (10.5h)
-  → 5 sous-tâches (~2.1h chacune) :
-     • "Pose 2 escaliers + plateforme fixation" → "Installation escaliers"
-     • "Pose 2 doubles portes bas"              → "Pose portes"
-     • "Peinture profils"                       → "Peinture"
-     • "Pose 10 panels"                         → "Pose panneaux"
-     • "Pose joints/gummies sur panels"         → "Joints / gummies"
-
-Exemple 4 :
-  Entrée : "1 box montée à l'étage, 9ème box montée au sol prête pour demain" (0.0h)
-  → 2 sous-tâches (à durée nulle mais quand même listées pour traçabilité) :
-     • "Montage 1 box étage" → "Montage box"
-     • "Préparation 9ème box au sol" → "Préparation / logistique"
-
-═══════════════════════════════════════════════════════════
-INTERDICTIONS
-═══════════════════════════════════════════════════════════
-❌ INTERDIT de tout mettre sous UN SEUL template (ex : tout sous "UNIT" ou "Installation Viewbox").
-❌ INTERDIT de créer moins de sous-tâches qu'il y a d'actions distinctes dans le texte.
-❌ INTERDIT d'inventer une action absente du texte source.
-❌ INTERDIT d'utiliser un nom de template qui n'est pas dans la liste ci-dessus (sauf "Autres tâches").
-
-═══════════════════════════════════════════════════════════
-INSTRUCTIONS DÉTAILLÉES
-═══════════════════════════════════════════════════════════
-1. Chaque entrée du journal a un horaire [HH:MM], une durée (jusqu'à l'entrée suivante du même jour) et une description.
-2. Pour CHAQUE ACTION DISTINCTE identifiée dans une entrée, crée UNE sous-tâche avec :
-   - "date" : jour (YYYY-MM-DD)
-   - "time" : horaire de l'entrée d'origine (HH:MM)
-   - "description" : verbe + objet, max 80 caractères (ex : "Pose vitre 7ème box")
-   - "durationHours" : durée de l'entrée ÷ nombre d'actions extraites (arrondi à 0.25h près)
-   - "workers" : nombre d'ouvriers si mentionné dans l'entrée d'origine ("l'équipe", "3 ouvriers", "Jeremy et Marc"), sinon null
-   - "workersKnown" : true si mentionné, false sinon
-3. Regroupe les sous-tâches par NOM DE TEMPLATE (celui de la liste ci-dessus).
-4. Ignore les entrées non productives : briefing, pause, café, "arrivée sur site sans activité", "team en place".
-5. Si une entrée est vraiment mono-action, 1 seule sous-tâche (mais c'est rare — la plupart en ont 2 à 5).
-
-═══════════════════════════════════════════════════════════
-FORMAT DE RÉPONSE (JSON UNIQUEMENT — pas de markdown, pas de backticks)
-═══════════════════════════════════════════════════════════
-{
-  "summary": {
-    "totalDays": nombre_de_jours_avec_activite,
-    "avgWorkersPerDay": moyenne_ouvriers_par_jour,
-    "period": "YYYY-MM-DD → YYYY-MM-DD"
-  },
-  "categories": [
-    {
-      "name": "Nom exact du template",
-      "subtasks": [
-        {
-          "date": "2026-07-13",
-          "time": "18:00",
-          "description": "Pose vitre 7ème box",
-          "durationHours": 0.75,
-          "workers": 4,
-          "workersKnown": true
-        }
-      ]
-    }
-  ],
-  "insights": [
-    "Analyse pertinente 1",
-    "Analyse pertinente 2"
-  ]
-}
-
-Sois systématique dans l'éclatement. Une entrée à 4 actions = 4 sous-tâches dans 4 templates différents (sauf si 2 actions relèvent vraiment du même template).
-
-RAPPORTS À ANALYSER :
-`;
-
-    // Fusion des catégories/sous-tâches renvoyées par chaque lot, indexées
-    // par nom de template en minuscule pour regrouper les mêmes catégories
-    // entre deux lots différents.
-    const mergedCategories = new Map();
-    const mergedInsights = [];
-
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      const batchEntryCount = batch.reduce((sum, d) => sum + d.entryCount, 0);
-      setTAStatus('🤖', `Analyse IA — lot ${i + 1}/${batches.length} (${batchEntryCount} entrées, ${templateCategories.length} template(s))...`);
-
-      // Le header d'instructions (long, identique à chaque lot) part dans
-      // "system" plutôt que concatené au texte du lot : Anthropic met en
-      // cache un system prompt réutilisé sur des appels rapprochés, donc à
-      // partir du 2e lot on ne repaye (presque) plus ces tokens-là — gros
-      // gain de coût sur une analyse à plusieurs lots.
-      const batchText = batch.map(d => d.text).join('\n');
+Rédige 3 à 5 phrases courtes et concrètes (une par ligne, sans puces ni numéros) qui identifient les tâches ayant pris le plus de temps, d'éventuels déséquilibres, et un point d'attention utile pour la suite. Style factuel, direct. Réponds UNIQUEMENT avec ces phrases, une par ligne, sans autre texte.`;
 
       const aiRes = await fetch(`${API}/ai/parse-daily`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-        body: JSON.stringify({ text: batchText, system: promptHeader, mode: 'json' })
+        body: JSON.stringify({ text: prompt, mode: 'text' }),
       });
       const aiData = await aiRes.json();
-      if (!aiData.success) throw new Error(aiData.error || `Erreur IA (lot ${i + 1}/${batches.length})`);
-
-      let batchResult;
-      try {
-        if (typeof aiData.data === 'object' && !Array.isArray(aiData.data)) {
-          batchResult = aiData.data;
-        } else if (typeof aiData.data === 'string') {
-          const clean = aiData.data.replace(/```json|```/g, '').trim();
-          batchResult = JSON.parse(clean);
-        }
-      } catch (parseErr) {
-        console.error('[TA] parse err:', parseErr, aiData.data);
-        throw new Error(`Format IA invalide (lot ${i + 1}/${batches.length}) — réessaie`);
+      if (aiData.success) {
+        const text = Array.isArray(aiData.data) ? aiData.data.map(e => e.text || e).join(' ') : String(aiData.data || '');
+        TA_REPORT_DATA.insights = text.split('\n').map(l => l.replace(/^[-•\d.\s]+/, '').trim()).filter(Boolean);
       }
-      if (!batchResult || !batchResult.categories) throw new Error(`Réponse IA incomplète (lot ${i + 1}/${batches.length})`);
-
-      batchResult.categories.forEach(cat => {
-        const key = (cat.name || '').toLowerCase().trim();
-        if (!mergedCategories.has(key)) mergedCategories.set(key, { name: cat.name, subtasks: [] });
-        mergedCategories.get(key).subtasks.push(...(cat.subtasks || []));
-      });
-      if (Array.isArray(batchResult.insights)) mergedInsights.push(...batchResult.insights);
+    } catch (e) {
+      console.warn('[TA] synthèse IA indisponible:', e);
     }
 
-    const result = { categories: Array.from(mergedCategories.values()), insights: mergedInsights, summary: {} };
-
-    result.categories.forEach(cat => {
-      // Chercher un template correspondant (nom exact ou partiel)
-      const catNameLower = (cat.name || '').toLowerCase().trim();
-      const matchedTemplate = titleToTemplate[catNameLower]
-        || Object.values(titleToTemplate).find(t =>
-             catNameLower.includes(t.title.toLowerCase()) || t.title.toLowerCase().includes(catNameLower)
-           );
-      if (matchedTemplate) {
-        cat.templateId = matchedTemplate.id;
-        cat.icon = matchedTemplate.icon;
-        cat.color = matchedTemplate.color;
-        cat.parentCategory = matchedTemplate.categoryName;
-      }
-      (cat.subtasks || []).forEach(st => {
-        st.workers = st.workers ?? null;
-        st.workersKnown = !!st.workersKnown && st.workers != null;
-      });
-    });
-
-    const avgWorkers = detailed.reduce((sum,r)=>sum+(r.workersPresent||0),0) / (detailed.length||1);
-    result.summary.avgWorkersPerDay = Math.round(avgWorkers*10)/10;
-    result.summary.totalDays = dayBlocks.length;
-    const sortedDates = dayBlocks.map(d => d.date).filter(Boolean).sort();
-    if (sortedDates.length) result.summary.period = `${sortedDates[0]} → ${sortedDates[sortedDates.length - 1]}`;
-
-    TA_REPORT_DATA = result;
     renderTAEditTable();
-    setTAStatus('✅', `Analyse terminée (${batches.length} lot(s), ${totalEntries} entrées) — modifie si besoin puis génère le rapport`);
+    setTAStatus('✅', `Analyse terminée — ${totalManHours.toFixed(1)}h-hommes sur ${TA_REPORT_DATA.summary.totalDays} jour(s)`);
 
   } catch (e) {
     console.error('[TA] error:', e);
     setTAStatus('❌', e.message || 'Erreur analyse');
-    toast('Erreur analyse IA', 'error');
+    toast('Erreur analyse', 'error');
   } finally {
     if (runBtn) runBtn.disabled = false;
   }

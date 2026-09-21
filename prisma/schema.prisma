@@ -489,6 +489,9 @@ model DailyReport {
   createdById    String?  @map("created_by")
   weather        String?
   workersPresent Int      @default(0) @map("workers_present")
+  // Phase du chantier couverte par ce rapport : 'installation' | 'dismantling'.
+  // Pilote la liste de tâches par défaut proposée dans le tableau heures/hommes.
+  phase          String?
   generalNotes   String?  @map("general_notes")
   sentAt         DateTime? @map("sent_at")
   pdfUrl         String?  @map("pdf_url")
@@ -500,6 +503,7 @@ model DailyReport {
   entries   DailyReportEntry[]
   checklist DailyReportChecklistItem[]
   photos    DailyReportPhoto[]
+  taskHours DailyReportTaskHours[]
 
   @@map("daily_reports")
 }
@@ -539,18 +543,25 @@ model DailyReportPhoto {
   @@map("daily_report_photos")
 }
 
-// Cache d'assignation IA : associe chaque DailyReportEntry à la tâche générale
-// (Task.title du template) à laquelle elle correspond, pour ne jamais la
-// renvoyer à l'IA une deuxième fois lors du calcul d'heures par tâche.
-model DailyEntryTaskMap {
-  entryId   String   @id @map("entry_id")
-  projectId String   @map("project_id")
-  taskTitle String   @map("task_title")
-  stage     String?
-  createdAt DateTime @default(now()) @map("created_at")
+// Heures + nombre d'hommes saisis directement par tâche sur un rapport journalier.
+// Remplace l'ancien système où l'IA devinait ces chiffres à partir du texte libre :
+// ici la donnée est exacte dès la saisie, l'IA ne sert plus qu'à rédiger la
+// synthèse finale à partir de ces lignes déjà structurées.
+model DailyReportTaskHours {
+  id             String   @id @default(uuid())
+  reportId       String   @map("report_id")
+  taskTemplateId String?  @map("task_template_id")
+  taskTitle      String   @map("task_title")
+  hours          Float    @default(0)
+  workers        Int      @default(0)
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  @@index([projectId])
-  @@map("daily_entry_task_map")
+  report       DailyReport   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  taskTemplate TaskTemplate? @relation(fields: [taskTemplateId], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
+  @@map("daily_report_task_hours")
 }
 
 model Ticket {
@@ -744,10 +755,16 @@ model TaskTemplate {
   description   String?
   durationHours Float        @default(4)
   priority      String       @default("normal")
+  // Phase de chantier à laquelle ce template appartient : 'installation' | 'dismantling' | null.
+  // Détermine dans quelle liste (Installation / Démontage) la tâche apparaît dans le
+  // tableau heures/hommes des rapports journaliers.
+  phase         String?
   sortOrder     Int          @default(0)
   isActive      Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
+  dailyReportHours DailyReportTaskHours[]
 
   @@map("task_templates")
 }

@@ -9,7 +9,7 @@ import { logger } from './logger';
 
 // ─── Seeder inline pour les templates de tâches Viewbox ───
 // Idempotent : ne fait rien si la table contient déjà des catégories.
-const TASK_TEMPLATES_SEED: Array<{ name: string; icon: string; color: string; tasks: string[] }> = [
+const TASK_TEMPLATES_SEED: Array<{ name: string; icon: string; color: string; phase?: string; tasks: string[] }> = [
   { name: 'To Do', icon: '📋', color: '#5a6275', tasks: [
     'Team - Dismantling',
     'Preparation material from delivery note',
@@ -41,7 +41,7 @@ const TASK_TEMPLATES_SEED: Array<{ name: string; icon: string; color: string; ta
   { name: 'Warehouse Preparation', icon: '📦', color: '#f4a261', tasks: [
     'Loading truck',
   ]},
-  { name: 'Installation', icon: '🏗️', color: '#e63946', tasks: [
+  { name: 'Installation', icon: '🏗️', color: '#e63946', phase: 'installation', tasks: [
     'GENERAL TASK',
     'TMPL - Electricity',
     'Unload Tautliner with Forklift On Site',
@@ -56,7 +56,7 @@ const TASK_TEMPLATES_SEED: Array<{ name: string; icon: string; color: string; ta
     'Interior or exterior Staircase',
     'Terraces and Unit',
   ]},
-  { name: 'Dismantling', icon: '🔨', color: '#f4a261', tasks: [
+  { name: 'Dismantling', icon: '🔨', color: '#f4a261', phase: 'dismantling', tasks: [
     'Unloading of rack and tools and reorganisation of racks',
     'Remove Decoration and interior material',
     'Remove facade Elements',
@@ -93,7 +93,7 @@ async function seedTaskTemplatesIfEmpty(): Promise<void> {
           await (prisma as any).taskTemplate.create({
             data: {
               categoryId: created.id, title: cat.tasks[j],
-              durationHours: 8, priority: 'normal',
+              durationHours: 8, priority: 'normal', phase: cat.phase || null,
               sortOrder: j, isActive: true,
             },
           });
@@ -126,7 +126,7 @@ async function seedTaskTemplatesIfEmpty(): Promise<void> {
           await (prisma as any).taskTemplate.create({
             data: {
               categoryId: cat.id, title: seedCat.tasks[j],
-              durationHours: 8, priority: 'normal',
+              durationHours: 8, priority: 'normal', phase: seedCat.phase || null,
               sortOrder: j, isActive: true,
             },
           });
@@ -674,4 +674,69 @@ await prisma.$executeRawUnsafe(`
     AND studio_slides IS NULL;
 `);
 console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_slides)');
+
+  // ─── Nouveau système "Heures par tâche" (remplace l'ancienne analyse IA) ───
+  // Colonne phase sur daily_reports (installation | dismantling, choisie en tête
+  // de rapport) et sur task_templates (pilote la liste par défaut proposée).
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "daily_reports" ADD COLUMN IF NOT EXISTS "phase" TEXT;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "phase" TEXT;
+    `);
+
+    // Rétro-compatibilité : les templates déjà en base sous les catégories
+    // "Installation" / "Dismantling" (seed historique) n'ont pas encore de phase
+    // typée — on la déduit une fois du nom de catégorie.
+    await prisma.$executeRawUnsafe(`
+      UPDATE "task_templates" t
+      SET "phase" = 'installation'
+      FROM "task_categories" c
+      WHERE t."categoryId" = c."id" AND c."name" = 'Installation' AND t."phase" IS NULL;
+    `);
+    await prisma.$executeRawUnsafe(`
+      UPDATE "task_templates" t
+      SET "phase" = 'dismantling'
+      FROM "task_categories" c
+      WHERE t."categoryId" = c."id" AND c."name" = 'Dismantling' AND t."phase" IS NULL;
+    `);
+
+    // Table des heures/hommes saisis par tâche et par rapport journalier.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "daily_report_task_hours" (
+        "id"               TEXT             NOT NULL PRIMARY KEY,
+        "report_id"        TEXT             NOT NULL,
+        "task_template_id" TEXT,
+        "task_title"       TEXT             NOT NULL,
+        "hours"            DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "workers"          INTEGER          NOT NULL DEFAULT 0,
+        "sort_order"       INTEGER          NOT NULL DEFAULT 0,
+        "created_at"       TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "daily_report_task_hours_report_idx" ON "daily_report_task_hours" ("report_id");
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'daily_report_task_hours_report_id_fkey') THEN
+          ALTER TABLE "daily_report_task_hours" ADD CONSTRAINT "daily_report_task_hours_report_id_fkey"
+            FOREIGN KEY ("report_id") REFERENCES "daily_reports"("id") ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'daily_report_task_hours_task_template_id_fkey') THEN
+          ALTER TABLE "daily_report_task_hours" ADD CONSTRAINT "daily_report_task_hours_task_template_id_fkey"
+            FOREIGN KEY ("task_template_id") REFERENCES "task_templates"("id") ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Ancien cache d'assignation IA (daily_entry_task_map) : plus utilisé, le
+    // nouveau système saisit les heures directement, sans classification IA.
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "daily_entry_task_map";`);
+
+    logger.info('[migration] Heures par tâche : daily_reports.phase / task_templates.phase / daily_report_task_hours OK');
+  } catch (e: any) {
+    logger.warn(`[migration] heures par tâche : ${e.message}`);
+  }
 }

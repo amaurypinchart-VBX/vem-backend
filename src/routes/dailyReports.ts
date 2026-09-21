@@ -41,7 +41,13 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   try {
     const r = await prisma.dailyReport.findUnique({
       where: { id: req.params.id },
-      include: { entries: { orderBy: { entryTime: 'asc' } }, checklist: true, photos: true, createdBy: { select: { firstName:true, lastName:true } }, project: { select: { name:true, internalNumber:true } } },
+      include: {
+        entries: { orderBy: { entryTime: 'asc' } },
+        checklist: true, photos: true,
+        taskHours: { orderBy: { sortOrder: 'asc' } },
+        createdBy: { select: { firstName:true, lastName:true } },
+        project: { select: { name:true, internalNumber:true } },
+      },
     });
     if (!r) throw new AppError('Rapport introuvable', 404);
     res.json({ success: true, data: r });
@@ -50,7 +56,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { entries = [], checklist = [], ...data } = req.body;
+    const { entries = [], checklist = [], taskHours = [], ...data } = req.body;
     const reportDate = new Date(data.reportDate);
 
     // Le métier autorise plusieurs rapports par projet pour la même date
@@ -64,8 +70,15 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
         reportDate,
         entries:   { create: entries },
         checklist: { create: checklist },
+        taskHours: { create: taskHours.map((t: any, i: number) => ({
+          taskTemplateId: t.taskTemplateId || null,
+          taskTitle: t.taskTitle,
+          hours: Number(t.hours) || 0,
+          workers: Number(t.workers) || 0,
+          sortOrder: i,
+        })) },
       },
-      include: { entries: true, checklist: true, photos: true },
+      include: { entries: true, checklist: true, photos: true, taskHours: true },
     });
     res.status(201).json({ success: true, data: report });
   } catch (err) { next(err); }
@@ -73,26 +86,38 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { entries, checklist, ...scalars } = req.body;
+    const { entries, checklist, taskHours, ...scalars } = req.body;
     const id = req.params.id;
 
-    // Si on reçoit des entries ou une checklist, on les remplace (delete + create)
+    // Si on reçoit des entries, une checklist ou des taskHours, on les remplace (delete + create)
     if (Array.isArray(entries)) {
       await prisma.dailyReportEntry.deleteMany({ where: { reportId: id } });
     }
     if (Array.isArray(checklist)) {
       await prisma.dailyReportChecklistItem.deleteMany({ where: { reportId: id } });
     }
+    if (Array.isArray(taskHours)) {
+      await prisma.dailyReportTaskHours.deleteMany({ where: { reportId: id } });
+    }
 
     const data: any = { ...scalars };
     if (scalars.reportDate) data.reportDate = new Date(scalars.reportDate);
     if (Array.isArray(entries)   && entries.length)   data.entries   = { create: entries };
     if (Array.isArray(checklist) && checklist.length) data.checklist = { create: checklist };
+    if (Array.isArray(taskHours) && taskHours.length) {
+      data.taskHours = { create: taskHours.map((t: any, i: number) => ({
+        taskTemplateId: t.taskTemplateId || null,
+        taskTitle: t.taskTitle,
+        hours: Number(t.hours) || 0,
+        workers: Number(t.workers) || 0,
+        sortOrder: i,
+      })) };
+    }
 
     const report = await prisma.dailyReport.update({
       where: { id },
       data,
-      include: { entries: true, checklist: true, photos: true },
+      include: { entries: true, checklist: true, photos: true, taskHours: true },
     });
     res.json({ success: true, data: report });
   } catch (err) { next(err); }

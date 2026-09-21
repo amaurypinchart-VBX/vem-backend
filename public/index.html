@@ -846,6 +846,30 @@
       </div>
     </div>
 
+    <!-- HEURES PAR TÂCHE (Installation / Démontage) -->
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;font-weight:700;">⏱️ Heures par tâche</div>
+        <div style="display:flex;gap:12px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+            <input type="radio" name="daily-phase" value="installation" onchange="onDailyPhaseChange('installation')"> 🏗️ Installation
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+            <input type="radio" name="daily-phase" value="dismantling" onchange="onDailyPhaseChange('dismantling')"> 🔨 Démontage
+          </label>
+        </div>
+      </div>
+      <div id="daily-taskhours-empty" style="font-size:12px;color:var(--text3);text-align:center;padding:10px;">Choisis d'abord Installation ou Démontage pour afficher les tâches.</div>
+      <div id="daily-taskhours-header" style="display:none;grid-template-columns:1fr 85px 85px 26px;gap:8px;padding:2px 4px 6px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">
+        <span>Tâche</span><span style="text-align:right;">Heures</span><span style="text-align:right;">Hommes</span><span></span>
+      </div>
+      <div id="daily-taskhours-list" style="max-height:240px;overflow-y:auto;"></div>
+      <div id="daily-taskhours-add" style="display:none;gap:6px;margin-top:8px;">
+        <input class="input" id="daily-taskhours-custom-title" placeholder="Ajouter une autre tâche..." style="flex:1;font-size:12px;">
+        <button class="btn btn-ghost btn-sm" onclick="addCustomDailyTaskHourRow()">+ Ajouter</button>
+      </div>
+    </div>
+
     <!-- TABS : Saisie manuelle / Import texte / Vocal -->
     <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0;">
       <div class="tab active" id="tab-manual" onclick="switchDailyTab('manual')" style="padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px;">✏️ Saisie entrée par entrée</div>
@@ -1261,24 +1285,12 @@
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div>
             <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;">⏱️ Analyse temps par tâche</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px;">L'IA lit tous les daily reports et rattache chaque tâche à un template de ta bibliothèque.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;">Reprend les heures et le nombre d'hommes saisis tâche par tâche dans les rapports journaliers (Installation / Démontage) et ajoute une courte synthèse IA.</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn btn-ghost btn-sm" onclick="loadTATemplates(true)" title="Recharger les templates depuis la base de données">🔄 Recharger templates</button>
             <button class="btn btn-blue btn-sm" onclick="runTimeAnalysisForReport()" id="ta-run-btn">🤖 Lancer / relancer l'analyse</button>
           </div>
         </div>
-
-        <!-- Affichage des templates chargés -->
-        <div id="ta-templates-display" style="background:var(--bg2);border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px;color:var(--text3);text-align:center;">
-          <span style="color:var(--text3);">📋 Les templates de tâches seront chargés automatiquement...</span>
-        </div>
-
-        <details style="margin-bottom:10px;">
-          <summary style="cursor:pointer;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;">⚙️ Personnaliser les catégories (avancé)</summary>
-          <div style="font-size:11px;color:var(--text3);margin:6px 0;">Ajoute des catégories manuelles ici — elles seront combinées avec tes templates. Une par ligne.</div>
-          <textarea id="ta-categories" rows="4" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;" placeholder="Catégories additionnelles optionnelles..."></textarea>
-        </details>
 
         <div id="ta-status" style="display:none;background:var(--bg2);border-radius:8px;padding:10px;text-align:center;margin-bottom:10px;">
           <span id="ta-status-icon">🤖</span> <span id="ta-status-text">Analyse en cours...</span>

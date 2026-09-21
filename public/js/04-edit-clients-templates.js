@@ -543,6 +543,8 @@ async function editDailyReport(id) {
 
   // Build editable entries
   window._EDIT_ENTRIES = entries.map(e => ({...e}));
+  window._EDIT_PHASE = r.phase || null;
+  window._EDIT_TASK_HOURS = (r.taskHours || []).map(t => ({...t}));
 
   const el = document.createElement('div'); el.className='overlay open';
   el.innerHTML = `
@@ -566,6 +568,29 @@ async function editDailyReport(id) {
         </div>
       </div>
       <div class="form-group2"><label class="form-label2">Ouvriers présents</label><input class="input" type="number" id="er-workers" value="${r.workersPresent||0}" min="0"></div>
+
+      <!-- Heures par tâche -->
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">⏱️ Heures par tâche</div>
+          <div style="display:flex;gap:12px;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+              <input type="radio" name="er-phase" value="installation" ${r.phase==='installation'?'checked':''} onchange="onEditPhaseChange('${id}','installation')"> 🏗️ Installation
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+              <input type="radio" name="er-phase" value="dismantling" ${r.phase==='dismantling'?'checked':''} onchange="onEditPhaseChange('${id}','dismantling')"> 🔨 Démontage
+            </label>
+          </div>
+        </div>
+        <div id="er-taskhours-header" style="display:${r.phase?'grid':'none'};grid-template-columns:1fr 85px 85px 26px;gap:8px;padding:2px 4px 6px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;">
+          <span>Tâche</span><span style="text-align:right;">Heures</span><span style="text-align:right;">Hommes</span><span></span>
+        </div>
+        <div id="er-taskhours-list" style="max-height:200px;overflow-y:auto;"></div>
+        <div id="er-taskhours-add" style="display:${r.phase?'flex':'none'};gap:6px;margin-top:8px;">
+          <input class="input" id="er-taskhours-custom-title" placeholder="Ajouter une autre tâche..." style="flex:1;font-size:12px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addCustomEditTaskHourRow()">+ Ajouter</button>
+        </div>
+      </div>
 
       <!-- Entrées timeline modifiables -->
       <div style="margin:14px 0 10px;display:flex;justify-content:space-between;align-items:center;">
@@ -635,6 +660,70 @@ async function editDailyReport(id) {
   document.body.appendChild(el);
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
   renderEditEntries();
+  renderEditTaskHoursGrid();
+}
+
+// ── Heures par tâche (modal d'édition) ────────────────────────
+async function onEditPhaseChange(reportId, phase) {
+  window._EDIT_PHASE = phase;
+  const templates = await loadDailyAllTemplates();
+  const forPhase = templates.filter(t => t.phase === phase);
+  window._EDIT_TASK_HOURS = forPhase.map(t => ({
+    taskTemplateId: t.id,
+    taskTitle: t.title,
+    hours: 0,
+    workers: 0,
+  }));
+  renderEditTaskHoursGrid();
+}
+
+function renderEditTaskHoursGrid() {
+  const header = document.getElementById('er-taskhours-header');
+  const addRow = document.getElementById('er-taskhours-add');
+  const list   = document.getElementById('er-taskhours-list');
+  if (!list) return;
+
+  if (!window._EDIT_PHASE) {
+    if (header) header.style.display = 'none';
+    if (addRow) addRow.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  if (header) header.style.display = 'grid';
+  if (addRow) addRow.style.display = 'flex';
+
+  const rows = window._EDIT_TASK_HOURS || [];
+  list.innerHTML = rows.map((t, i) => `
+    <div style="display:grid;grid-template-columns:1fr 85px 85px 26px;gap:8px;align-items:center;padding:5px 4px;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;color:var(--text2);">${esc(t.taskTitle)}</span>
+      <input type="number" step="0.25" min="0" value="${t.hours || ''}" placeholder="0"
+        onchange="updateEditTaskHour(${i},'hours',this.value)"
+        style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+      <input type="number" step="1" min="0" value="${t.workers || ''}" placeholder="0"
+        onchange="updateEditTaskHour(${i},'workers',this.value)"
+        style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
+      <button type="button" onclick="removeEditTaskHourRow(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;" title="Retirer">✕</button>
+    </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
+}
+
+function updateEditTaskHour(idx, field, value) {
+  if (!window._EDIT_TASK_HOURS?.[idx]) return;
+  window._EDIT_TASK_HOURS[idx][field] = field === 'workers' ? (parseInt(value) || 0) : (parseFloat(value) || 0);
+}
+
+function removeEditTaskHourRow(idx) {
+  window._EDIT_TASK_HOURS.splice(idx, 1);
+  renderEditTaskHoursGrid();
+}
+
+function addCustomEditTaskHourRow() {
+  const input = document.getElementById('er-taskhours-custom-title');
+  const title = input?.value.trim();
+  if (!title) { toast('Nom de la tâche requis', 'error'); return; }
+  if (!window._EDIT_TASK_HOURS) window._EDIT_TASK_HOURS = [];
+  window._EDIT_TASK_HOURS.push({ taskTemplateId: null, taskTitle: title, hours: 0, workers: 0 });
+  input.value = '';
+  renderEditTaskHoursGrid();
 }
 
 function renderEditEntries() {
@@ -897,10 +986,19 @@ async function saveDailyReport(id, overlay) {
       .map(e => ({ entryTime: e.entryTime||null, description: e.description }));
   }
 
+  if (window._EDIT_PHASE) body.phase = window._EDIT_PHASE;
+  if (window._EDIT_TASK_HOURS) {
+    body.taskHours = window._EDIT_TASK_HOURS
+      .filter(t => (t.hours||0) > 0 || (t.workers||0) > 0)
+      .map(t => ({ taskTemplateId: t.taskTemplateId||undefined, taskTitle: t.taskTitle, hours: t.hours||0, workers: t.workers||0 }));
+  }
+
   const res = await api('PATCH', `/daily-reports/${id}`, body);
   if (res?.success) {
     toast('Rapport mis à jour ✅','success');
     window._EDIT_ENTRIES = [];
+    window._EDIT_TASK_HOURS = [];
+    window._EDIT_PHASE = null;
     overlay?.remove();
     loadDailyReports();
     if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID);

@@ -11,7 +11,7 @@ import { generateProjectReport } from '../services/projectReportService';
 import { generateProjectReportPdf } from '../services/pdfService';
 import { deleteFromCloudinary } from '../services/cloudinaryService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
-import { classifyProjectEntries, computeProjectTaskHours } from '../services/taskHours';
+import { getProjectTaskHours } from '../services/taskHours';
 
 const router = Router();
 
@@ -551,15 +551,12 @@ router.get('/:id/report/pdf', async (req: AuthRequest, res: Response, next: Next
   } catch (err) { next(err); }
 });
 
-// GET /projects/:id/task-hours — total d'heures par tâche générale (template),
-// calculé à partir des daily reports. Classe d'abord via IA (un seul appel par
-// lot, avec cache DailyEntryTaskMap) les entrées pas encore analysées, puis
-// calcule les heures en JS pur (voir services/taskHours.ts).
+// GET /projects/:id/task-hours — heures/hommes saisis par tâche sur les rapports
+// journaliers du projet (une ligne par tâche × rapport). Voir services/taskHours.ts.
 router.get('/:id/task-hours', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    await classifyProjectEntries(req.params.id);
-    const { data, totalHours, unclassifiedHours } = await computeProjectTaskHours(req.params.id);
-    res.json({ success: true, data, totalHours, unclassifiedHours });
+    const data = await getProjectTaskHours(req.params.id);
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
