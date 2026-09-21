@@ -75,7 +75,9 @@ export async function anthropicRequest(
 
 export interface CallClaudeParams {
   messages: Array<{ role: 'user' | 'assistant'; content: any }>;
-  system?: string;
+  // string classique, ou bloc(s) explicites pour activer le cache Anthropic
+  // (cache_control) sur un system prompt réutilisé sur plusieurs appels.
+  system?: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }>;
   maxTokens?: number;
   model?: string;
   timeoutMs?: number;

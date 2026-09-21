@@ -9,7 +9,13 @@ export interface CallClaudeParams {
         role: 'user' | 'assistant';
         content: any;
     }>;
-    system?: string;
+    system?: string | Array<{
+        type: 'text';
+        text: string;
+        cache_control?: {
+            type: 'ephemeral';
+        };
+    }>;
     maxTokens?: number;
     model?: string;
     timeoutMs?: number;

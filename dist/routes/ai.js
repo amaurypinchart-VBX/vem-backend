@@ -19,7 +19,7 @@ const DAILY_ENTRY_SCHEMA = zod_1.z.array(zod_1.z.object({
 // schéma strict DAILY_ENTRY_SCHEMA rejette systématiquement ces autres usages (502).
 router.post('/parse-daily', async (req, res, next) => {
     try {
-        const { text, mode } = req.body;
+        const { text, mode, system } = req.body;
         if (!text?.trim())
             return res.status(400).json({ success: false, error: 'Texte manquant' });
         if (mode === 'text') {
@@ -34,19 +34,24 @@ router.post('/parse-daily', async (req, res, next) => {
             // Le prompt complet (avec ses propres instructions de format) est déjà construit
             // côté client : on le transmet tel quel, sans schéma imposé côté serveur.
             // Ce mode sert notamment à l'analyse temps (06-time-analysis.js), qui demande
-            // d'"exploser" chaque entrée de rapport journalier en plusieurs sous-tâches —
-            // la sortie JSON attendue peut donc être volumineuse (le client envoie
-            // désormais son historique par petits lots pour limiter la taille de chaque
-            // appel, mais on garde une marge généreuse ici aussi). Le modèle Haiku par
-            // défaut plafonne sa sortie à ~8192 tokens : avec maxTokens=8000 la réponse
-            // était régulièrement coupée en plein milieu du JSON (→ 502 "Impossible de
-            // parser la réponse IA"). On bascule ce mode sur Sonnet, qui accepte une
-            // sortie bien plus large et génère plus vite qu'Haiku pour ce volume.
+            // d'"exploser" chaque entrée de rapport journalier en plusieurs sous-tâches.
+            // Le client envoie désormais des lots plus petits (5 entrées max) pour que
+            // la sortie JSON attendue reste sous la limite — augmenter maxTokens/passer
+            // sur Sonnet coûtait cher en tokens (facturés, y compris quand la réponse
+            // est coupée) sans garantir de ne plus tronquer. On repasse sur le modèle
+            // par défaut (Haiku, nettement moins cher) : à 5 entrées/lot la sortie tient
+            // largement sous son plafond (~8192 tokens).
+            //
+            // Le long bloc d'instructions ("system") est identique à chaque lot d'une
+            // même analyse : cache_control le fait mettre en cache côté Anthropic, donc
+            // les lots suivants ne repayent (presque) plus ces tokens d'entrée.
             const result = await (0, aiService_1.callClaudeJSON)({
-                model: 'claude-sonnet-5',
-                maxTokens: 16000,
-                timeoutMs: 180000,
+                maxTokens: 8000,
+                timeoutMs: 90000,
                 schema: zod_1.z.any(),
+                system: system?.trim()
+                    ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
+                    : undefined,
                 messages: [{ role: 'user', content: text }],
             });
             return res.json({ success: true, data: result });

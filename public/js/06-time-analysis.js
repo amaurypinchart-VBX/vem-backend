@@ -54,11 +54,14 @@ async function runTimeAnalysisForReport() {
     // géant sur tout l'historique du projet dépasse régulièrement le timeout
     // ou la limite de sortie de l'IA (chaque entrée est "éclatée" en
     // plusieurs sous-tâches, donc la sortie JSON attendue grossit vite).
-    // 25 entrées par lot dépassait encore régulièrement 120s de génération
-    // sur Sonnet (chaque entrée peut exploser en 4-5 sous-tâches JSON) : on
-    // réduit la taille des lots pour garder chaque appel largement sous le
-    // timeout, quitte à multiplier les allers-retours.
-    const BATCH_MAX_ENTRIES = 10;
+    // 10 entrées par lot atteignait encore régulièrement les 16000 tokens de
+    // sortie (chaque entrée peut exploser en 4-5 sous-tâches JSON, chacune
+    // avec 6 champs) → réponse coupée en plein milieu du JSON. On réduit
+    // encore pour rester confortablement sous la limite, quitte à
+    // multiplier les allers-retours (le header d'instructions ci-dessous
+    // est mis en cache côté Anthropic entre les lots, donc ça ne fait pas
+    // repayer le gros prompt d'instructions à chaque lot).
+    const BATCH_MAX_ENTRIES = 5;
     const batches = [];
     let currentBatch = [];
     let currentCount = 0;
@@ -225,12 +228,17 @@ RAPPORTS À ANALYSER :
       const batchEntryCount = batch.reduce((sum, d) => sum + d.entryCount, 0);
       setTAStatus('🤖', `Analyse IA — lot ${i + 1}/${batches.length} (${batchEntryCount} entrées, ${templateCategories.length} template(s))...`);
 
-      const prompt = promptHeader + batch.map(d => d.text).join('\n');
+      // Le header d'instructions (long, identique à chaque lot) part dans
+      // "system" plutôt que concatené au texte du lot : Anthropic met en
+      // cache un system prompt réutilisé sur des appels rapprochés, donc à
+      // partir du 2e lot on ne repaye (presque) plus ces tokens-là — gros
+      // gain de coût sur une analyse à plusieurs lots.
+      const batchText = batch.map(d => d.text).join('\n');
 
       const aiRes = await fetch(`${API}/ai/parse-daily`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-        body: JSON.stringify({ text: prompt, mode: 'json' })
+        body: JSON.stringify({ text: batchText, system: promptHeader, mode: 'json' })
       });
       const aiData = await aiRes.json();
       if (!aiData.success) throw new Error(aiData.error || `Erreur IA (lot ${i + 1}/${batches.length})`);
