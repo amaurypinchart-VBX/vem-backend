@@ -1752,6 +1752,56 @@ function displayModel(components, file, ext, elapsed) {
 // est regroupé avec lui plutôt que de continuer à créer des niveaux dans l'arbre.
 const BASE_GROUP_PATTERN = /^(\d+-\d+|instance[_\s-]?#?\d*|component[_\s-]?#?\d*|group[_\s-]?#?\d*)\b/i;
 
+// Profondeur maximale de "vrais" niveaux de groupes qu'on autorise à ouvrir
+// dans l'arborescence (voir computeTreeLimits ci-dessous). 2 = la liste
+// racine (group_10, SketchUp_Instance_0...) + un seul niveau de sous-groupes
+// cliquables (ex: _7-230-00037_2, ou 7-355/7-632/7-207 dans une instance) ;
+// au-delà, le dossier reste cliquable/sélectionnable mais ne se déplie plus.
+const MAX_FORK_DEPTH = 2;
+
+// Un nœud à enfant unique (pas de vrai choix) qui ne mène, en suivant la
+// chaîne, qu'à une pièce terminale sans jamais rencontrer un vrai embranchement
+// (ex: SketchUp_Instance_57 > MultiBrep > Node_0) est un détail technique de
+// l'export SketchUp/Collada, pas un "groupe" au sens métier. On retourne le
+// nœud où la chaîne s'arrête (feuille réelle ou embranchement réel).
+function chainOutcome(node) {
+  let n = node;
+  while (n.children.size === 1) n = [...n.children.values()][0];
+  return n;
+}
+
+// Calcule, pour chaque nœud, sa profondeur "en vrais groupes" (forkDepth —
+// ne compte que les embranchements réels, les chaînes à enfant unique sont
+// gratuites) et si l'arborescence doit rester repliable dans l'UI à ce
+// nœud (uiExpandable). Ça permet de limiter la navigation à MAX_FORK_DEPTH
+// niveaux de groupes tout en gardant les chaînes techniques (auto-expand)
+// invisibles quand elles ne mènent nulle part d'utile.
+function computeTreeLimits(root) {
+  function assignForkDepth(node, forkDepth) {
+    node.forkDepth = forkDepth;
+    if (node.children.size === 1) {
+      assignForkDepth([...node.children.values()][0], forkDepth);
+    } else if (node.children.size > 1) {
+      node.children.forEach(c => assignForkDepth(c, forkDepth + 1));
+    }
+  }
+  root.children.forEach(c => assignForkDepth(c, 1));
+  function assignUiExpandable(node) {
+    if (node.children.size === 0) {
+      node.uiExpandable = false;
+    } else if (node.children.size === 1) {
+      // Chaîne technique : on ne l'ouvre que si elle débouche sur quelque
+      // chose (un embranchement réel) — sinon tout le sous-arbre est masqué.
+      node.uiExpandable = chainOutcome(node).children.size > 0;
+    } else {
+      // Vrai embranchement : autorisé seulement sous le plafond de profondeur.
+      node.uiExpandable = node.forkDepth < MAX_FORK_DEPTH;
+    }
+    node.children.forEach(assignUiExpandable);
+  }
+  root.children.forEach(assignUiExpandable);
+}
+
 function buildHierarchy(components, groupByComponent) {
   const root = { name: '_root', meshIndices: [], children: new Map(), totalMeshes: 0, expanded: true, depth: 0, fullPath: [] };
   components.forEach((comp, idx) => {
@@ -1784,6 +1834,7 @@ function buildHierarchy(components, groupByComponent) {
     }
     n.children.forEach(c => { if (c.children.size === 1 && c.meshIndices.length === 0) autoExpand(c); });
   })(root);
+  computeTreeLimits(root);
   return root;
 }
 
@@ -1843,20 +1894,29 @@ function buildTree() {
     return;
   }
   function renderNode(node, depth, container) {
-    const hasChildren = node.children.size > 0;
+    // isGroup : ce nœud regroupe plusieurs pièces (icône dossier + compteur),
+    // que l'utilisateur puisse ou non aller plus loin dedans.
+    // canExpand : en plus d'être un groupe, on a le droit de le déplier dans
+    // l'UI (voir computeTreeLimits/uiExpandable) — au-delà de MAX_FORK_DEPTH
+    // niveaux de groupes réels, un dossier reste cliquable/sélectionnable
+    // (toute sa géométrie) mais ne se déplie plus.
+    const isGroup = node.children.size > 0;
+    const canExpand = isGroup && node.uiExpandable !== false;
+    const capped = isGroup && !canExpand;
     const nodeMeshes = collectMeshNodes(node).flatMap(n => n.meshes || []);
     const allHidden = nodeMeshes.length > 0 && nodeMeshes.every(m => !m.visible);
     const isSelected = state.selectedTreeNode === node;
     const el = document.createElement('div');
     el.className = 'tree-node' + (isSelected ? ' selected' : '');
     el.style.paddingLeft = (8 + depth * 14) + 'px';
-    const iconChar = hasChildren ? (node.expanded ? '📂' : '📁') : '🔹';
-    const arrowChar = hasChildren ? (node.expanded ? '▼' : '▶') : '';
+    if (capped) el.title = 'Groupe : clique pour sélectionner, détail non affiché au-delà de ce niveau';
+    const iconChar = isGroup ? (canExpand && node.expanded ? '📂' : '📁') : '🔹';
+    const arrowChar = canExpand ? (node.expanded ? '▼' : '▶') : '';
     el.innerHTML = `
       <span class="tree-arrow">${arrowChar}</span>
       <span class="tree-icon-em">${iconChar}</span>
       <span class="tree-label">${escapeHtml(node.name)}</span>
-      ${hasChildren ? `<span class="tree-count">${node.totalMeshes}</span>` : ''}
+      ${isGroup ? `<span class="tree-count">${node.totalMeshes}</span>` : ''}
       <span class="tree-visibility ${allHidden ? 'hidden-item' : ''}" title="Masquer/Afficher">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           ${allHidden
@@ -1867,12 +1927,12 @@ function buildTree() {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       if (e.target.closest('.tree-visibility')) { toggleNodeVisibility(node); return; }
-      if (e.target.closest('.tree-arrow') && hasChildren) { node.expanded = !node.expanded; buildTree(); return; }
-      if (hasChildren && e.detail === 2) { node.expanded = !node.expanded; buildTree(); return; }
+      if (e.target.closest('.tree-arrow') && canExpand) { node.expanded = !node.expanded; buildTree(); return; }
+      if (canExpand && e.detail === 2) { node.expanded = !node.expanded; buildTree(); return; }
       selectTreeNode(node);
     });
     container.appendChild(el);
-    if (hasChildren && node.expanded) {
+    if (canExpand && node.expanded) {
       const sorted = [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
       sorted.forEach(c => renderNode(c, depth + 1, container));
     }
