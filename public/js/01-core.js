@@ -1088,6 +1088,7 @@ function renderProjectsGrid(projects) {
     el.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon">🏗️</div><div class="empty-title">Aucun projet</div><div class="empty-sub">Créez votre premier projet</div></div>';
     return;
   }
+  const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR') : '—';
   el.innerHTML = projects.map(p => `
     <div class="proj-card" onclick="openProject('${p.id}')">
       <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
@@ -1097,6 +1098,10 @@ function renderProjectsGrid(projects) {
       <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:3px;">${p.name}</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:4px;">${p.client?.name||''}</div>
       <div style="font-size:13px;margin-bottom:12px;">📍 ${p.city||''}</div>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:10px;font-size:12px;color:var(--text2);">
+        <span>📐 Installation : ${fmtD(p.installationStart)}${p.installationEnd?' → '+fmtD(p.installationEnd):''}</span>
+        <span>📦 Démontage : ${fmtD(p.dismantlingStart)}${p.dismantlingEnd?' → '+fmtD(p.dismantlingEnd):''}</span>
+      </div>
       <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
         <span style="font-size:12px;background:var(--bg3);padding:2px 8px;border-radius:6px;">👷 ${p.workersCount}</span>
         ${p._count?.tickets>0?`<span class="badge badge-red">🛠️ ${p._count.tickets}</span>`:''}
@@ -1112,6 +1117,7 @@ function renderProjectsGrid(projects) {
 function filterProjects() {
   const search = document.getElementById('proj-search').value.toLowerCase();
   const status = document.getElementById('proj-status-filter').value;
+  const sort = document.getElementById('proj-sort')?.value || '';
   const showArchived = document.getElementById('show-archived')?.checked;
   const filtered = PROJECTS.filter(p => {
     const matchSearch = !search || p.name.toLowerCase().includes(search) || p.internalNumber.toLowerCase().includes(search);
@@ -1122,6 +1128,20 @@ function filterProjects() {
     const matchArch = showArchived ? true : !archived;
     return matchSearch && matchStatus && matchArch;
   });
+  if (sort) {
+    const [field, dir] = sort.split('_');
+    const key = field === 'install' ? 'installationStart' : 'dismantlingStart';
+    const mult = dir === 'desc' ? -1 : 1;
+    filtered.sort((a, b) => {
+      const da = a[key] ? new Date(a[key]).getTime() : null;
+      const db = b[key] ? new Date(b[key]).getTime() : null;
+      // Projets sans date envoyés en fin de liste, quel que soit le sens du tri.
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return (da - db) * mult;
+    });
+  }
   renderProjectsGrid(filtered);
 }
 // Alias pour le onchange du checkbox

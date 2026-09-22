@@ -314,6 +314,13 @@
       <option value="installation">Installation</option>
       <option value="completed">Terminé</option>
     </select>
+    <select class="input" style="width:220px;padding:8px 12px;" id="proj-sort" onchange="filterProjects()">
+      <option value="">Trier par...</option>
+      <option value="install_asc">📐 Installation (plus proche)</option>
+      <option value="install_desc">📐 Installation (plus loin)</option>
+      <option value="dismantle_asc">📦 Démontage (plus proche)</option>
+      <option value="dismantle_desc">📦 Démontage (plus loin)</option>
+    </select>
     <label style="display:flex;align-items:center;gap:6px;color:var(--text2);font-size:13px;cursor:pointer;white-space:nowrap;padding:0 4px;">
       <input type="checkbox" id="show-archived" onchange="renderProjects()" style="accent-color:var(--accent);">
       📦 Voir archivés
