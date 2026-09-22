@@ -1756,8 +1756,16 @@ const BASE_GROUP_PATTERN = /^(\d+-\d+|instance[_\s-]?#?\d*|component[_\s-]?#?\d*
 // dans l'arborescence (voir computeTreeLimits ci-dessous). 2 = la liste
 // racine (group_10, SketchUp_Instance_0...) + un seul niveau de sous-groupes
 // cliquables (ex: _7-230-00037_2, ou 7-355/7-632/7-207 dans une instance) ;
-// au-delà, le dossier reste cliquable/sélectionnable mais ne se déplie plus.
+// au-delà, le dossier reste cliquable/sélectionnable mais ne se déplie plus,
+// quelle que soit la structure technique en dessous (chaîne ou embranchement).
 const MAX_FORK_DEPTH = 2;
+
+// Nombre max de wrappers techniques à enfant unique (ex: imbrication
+// SketchUp_Instance_0 > SketchUp_Instance_1 > ...) affichés à la suite avant
+// de forcer l'arrêt, même s'ils débouchent plus loin sur un vrai embranchement.
+// Sans ça, une pièce (profilé...) enterrée sous une longue chaîne de wrappers
+// techniques restait accessible en cliquant assez profond.
+const MAX_CHAIN_HOPS = 3;
 
 // Un nœud à enfant unique (pas de vrai choix) qui ne mène, en suivant la
 // chaîne, qu'à une pièce terminale sans jamais rencontrer un vrai embranchement
@@ -1771,31 +1779,37 @@ function chainOutcome(node) {
 }
 
 // Calcule, pour chaque nœud, sa profondeur "en vrais groupes" (forkDepth —
-// ne compte que les embranchements réels, les chaînes à enfant unique sont
-// gratuites) et si l'arborescence doit rester repliable dans l'UI à ce
-// nœud (uiExpandable). Ça permet de limiter la navigation à MAX_FORK_DEPTH
-// niveaux de groupes tout en gardant les chaînes techniques (auto-expand)
-// invisibles quand elles ne mènent nulle part d'utile.
+// ne compte que les embranchements réels), le nombre de wrappers techniques
+// consécutifs déjà traversés (chainHops), et si l'arborescence doit rester
+// repliable dans l'UI à ce nœud (uiExpandable). Ça limite la navigation à
+// MAX_FORK_DEPTH niveaux de groupes ET à MAX_CHAIN_HOPS crans de chaîne
+// technique d'affilée, pour empêcher toute pièce de rester accessible via
+// une chaîne d'imbrication trop longue.
 function computeTreeLimits(root) {
-  function assignForkDepth(node, forkDepth) {
+  function assignDepths(node, forkDepth, chainHops) {
     node.forkDepth = forkDepth;
+    node.chainHops = chainHops;
     if (node.children.size === 1) {
-      assignForkDepth([...node.children.values()][0], forkDepth);
+      assignDepths([...node.children.values()][0], forkDepth, chainHops + 1);
     } else if (node.children.size > 1) {
-      node.children.forEach(c => assignForkDepth(c, forkDepth + 1));
+      node.children.forEach(c => assignDepths(c, forkDepth + 1, 0));
     }
   }
-  root.children.forEach(c => assignForkDepth(c, 1));
+  root.children.forEach(c => assignDepths(c, 1, 0));
   function assignUiExpandable(node) {
     if (node.children.size === 0) {
       node.uiExpandable = false;
+    } else if (node.forkDepth >= MAX_FORK_DEPTH) {
+      // Plafond de "vrais" groupes déjà atteint : on ne va plus jamais plus
+      // loin ici, chaîne ou nouvel embranchement, point final.
+      node.uiExpandable = false;
     } else if (node.children.size === 1) {
-      // Chaîne technique : on ne l'ouvre que si elle débouche sur quelque
-      // chose (un embranchement réel) — sinon tout le sous-arbre est masqué.
-      node.uiExpandable = chainOutcome(node).children.size > 0;
+      // Chaîne technique : gratuite mais bornée (MAX_CHAIN_HOPS crans), et
+      // seulement utile si elle débouche sur un vrai embranchement.
+      node.uiExpandable = node.chainHops < MAX_CHAIN_HOPS && chainOutcome(node).children.size > 0;
     } else {
-      // Vrai embranchement : autorisé seulement sous le plafond de profondeur.
-      node.uiExpandable = node.forkDepth < MAX_FORK_DEPTH;
+      // Vrai embranchement, encore dans le budget de profondeur.
+      node.uiExpandable = true;
     }
     node.children.forEach(assignUiExpandable);
   }
