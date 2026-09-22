@@ -79,8 +79,14 @@ export async function createWarehouseTask(
   // location = la destination du camion (ce que l'entrepôt doit savoir géographiquement)
   const location = isDeparture ? to : from;
 
-  // Date et heure (extraite de loadingDate, en TZ Europe/Brussels)
-  const date = truck.loadingDate ? new Date(truck.loadingDate) : null;
+  // Date et heure envoyées à l'entrepôt (en TZ Europe/Brussels).
+  // Si le camion arrive à Tubize (retour d'un event) → date d'ARRIVÉE à Tubize (arrivalDate),
+  // pas la date de chargement qui a eu lieu sur le chantier.
+  // Si le camion part de Tubize (vers un event) → date de chargement à Tubize (loadingDate).
+  const rawDate = role === 'arrival'
+    ? (truck.arrivalDate || truck.loadingDate)
+    : truck.loadingDate;
+  const date = rawDate ? new Date(rawDate) : null;
   let date_task: string | null = null;
   let scheduled_time: string | null = null;
   if (date && !isNaN(date.getTime())) {
