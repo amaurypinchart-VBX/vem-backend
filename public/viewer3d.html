@@ -1754,12 +1754,13 @@ function displayModel(components, file, ext, elapsed) {
 const BASE_GROUP_PATTERN = /^(\d+-\d+|instance[_\s-]?#?\d*|component[_\s-]?#?\d*|group[_\s-]?#?\d*)\b/i;
 
 // Profondeur maximale de "vrais" niveaux de groupes qu'on autorise à ouvrir
-// dans l'arborescence (voir computeTreeLimits ci-dessous). 2 = la liste
-// racine (group_10, SketchUp_Instance_0...) + un seul niveau de sous-groupes
-// cliquables (ex: _7-230-00037_2, ou 7-355/7-632/7-207 dans une instance) ;
-// au-delà, le dossier reste cliquable/sélectionnable mais ne se déplie plus,
-// quelle que soit la structure technique en dessous (chaîne ou embranchement).
-const MAX_FORK_DEPTH = 2;
+// dans l'arborescence (voir computeTreeLimits ci-dessous). 3 = la liste
+// racine (group_10, SketchUp_Instance_0...) + deux niveaux de sous-groupes
+// cliquables (ex: _7-230-00037_2, ou 7-355/7-632/7-207 dans une instance,
+// puis encore un niveau en dessous) ; au-delà, le dossier reste
+// cliquable/sélectionnable mais ne se déplie plus, quelle que soit la
+// structure technique en dessous (chaîne ou embranchement).
+const MAX_FORK_DEPTH = 3;
 
 // Nombre max de wrappers techniques à enfant unique (ex: imbrication
 // SketchUp_Instance_0 > SketchUp_Instance_1 > ...) affichés à la suite avant
