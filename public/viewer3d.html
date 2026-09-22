@@ -791,8 +791,9 @@ function handleSceneClick(e) {
     }
     return;
   }
-  const node = hits[0].object.userData.leafNode;
-  if (!node) return;
+  const rawNode = hits[0].object.userData.leafNode;
+  if (!rawNode) return;
+  const node = getEffectiveNode(rawNode);
   if (state.selectedTreeNode === node) {
     state.selectedTreeNode = null;
   } else {
@@ -1814,6 +1815,24 @@ function computeTreeLimits(root) {
     node.children.forEach(assignUiExpandable);
   }
   root.children.forEach(assignUiExpandable);
+}
+
+// Retrouve, à partir de la pièce réellement touchée par un clic dans la vue
+// 3D (qui peut être arbitrairement profonde, ex: un profilé tout au fond
+// d'une longue chaîne technique), le nœud le plus profond que l'arborescence
+// autorise à afficher/sélectionner (voir uiExpandable ci-dessus). Sans ça,
+// cliquer directement sur une pièce dans le viewport 3D contournait le
+// plafond de navigation qui ne s'appliquait qu'aux clics dans l'arborescence.
+function getEffectiveNode(rawNode) {
+  if (!state.tree || !rawNode || !rawNode.fullPath) return rawNode;
+  let node = state.tree;
+  for (const seg of rawNode.fullPath) {
+    if (node !== state.tree && node.uiExpandable === false) return node;
+    const next = node.children.get(seg);
+    if (!next) return node;
+    node = next;
+  }
+  return node;
 }
 
 function buildHierarchy(components, groupByComponent) {
