@@ -158,29 +158,51 @@ export async function runStartupMigrations() {
       );
     `);
 
+    // Doublons éventuels (project_id) avant d'ajouter la contrainte unique ci-dessous
+    // — on garde la ligne la plus récente et on supprime les autres.
+    try {
+      await prisma.$executeRawUnsafe(`
+        DELETE FROM "briefings" b
+        USING "briefings" b2
+        WHERE b."project_id" = b2."project_id"
+          AND b."id" <> b2."id"
+          AND (b."updated_at", b."id") < (b2."updated_at", b2."id");
+      `);
+    } catch (e: any) {
+      logger.warn(`[migration] dédoublonnage briefings : ${e.message}`);
+    }
+
     // Contrainte d'unicité (1 briefing par projet)
-    await prisma.$executeRawUnsafe(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'briefings_project_id_key') THEN
-          ALTER TABLE "briefings"
-            ADD CONSTRAINT "briefings_project_id_key" UNIQUE ("project_id");
-        END IF;
-      END $$;
-    `);
+    try {
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'briefings_project_id_key') THEN
+            ALTER TABLE "briefings"
+              ADD CONSTRAINT "briefings_project_id_key" UNIQUE ("project_id");
+          END IF;
+        END $$;
+      `);
+    } catch (e: any) {
+      logger.warn(`[migration] contrainte unique briefings.project_id : ${e.message}`);
+    }
 
     // Clé étrangère vers projects
-    await prisma.$executeRawUnsafe(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'briefings_project_id_fkey') THEN
-          ALTER TABLE "briefings"
-            ADD CONSTRAINT "briefings_project_id_fkey"
-            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
-            ON DELETE CASCADE ON UPDATE CASCADE;
-        END IF;
-      END $$;
-    `);
+    try {
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'briefings_project_id_fkey') THEN
+            ALTER TABLE "briefings"
+              ADD CONSTRAINT "briefings_project_id_fkey"
+              FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+              ON DELETE CASCADE ON UPDATE CASCADE;
+          END IF;
+        END $$;
+      `);
+    } catch (e: any) {
+      logger.warn(`[migration] FK briefings.project_id : ${e.message}`);
+    }
 
     // ─── Colonnes "carte d'identité" sur users ───
     for (const col of [
@@ -738,5 +760,15 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
     logger.info('[migration] Heures par tâche : daily_reports.phase / task_templates.phase / daily_report_task_hours OK');
   } catch (e: any) {
     logger.warn(`[migration] heures par tâche : ${e.message}`);
+  }
+
+  // ─── Colonne "sort_order" sur project_files (réordonnancement des fichiers projet) ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "project_files" ADD COLUMN IF NOT EXISTS "sort_order" INTEGER NOT NULL DEFAULT 0;
+    `);
+    logger.info('[migration] project_files.sort_order ajoutée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] project_files.sort_order : ${e.message}`);
   }
 }
