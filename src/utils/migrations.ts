@@ -172,19 +172,17 @@ export async function runStartupMigrations() {
       logger.warn(`[migration] dédoublonnage briefings : ${e.message}`);
     }
 
-    // Contrainte d'unicité (1 briefing par projet)
+    // Ancienne contrainte d'unicité (1 briefing par projet) — obsolète : le schéma
+    // Prisma actuel et les routes permettent plusieurs briefings par projet.
+    // On la supprime : sa présence en base faisait échouer "prisma db push" (Postgres
+    // refuse de DROP INDEX sur un index qui porte une contrainte, il faut DROP CONSTRAINT),
+    // ce qui bloquait tout redémarrage du serveur.
     try {
       await prisma.$executeRawUnsafe(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'briefings_project_id_key') THEN
-            ALTER TABLE "briefings"
-              ADD CONSTRAINT "briefings_project_id_key" UNIQUE ("project_id");
-          END IF;
-        END $$;
+        ALTER TABLE "briefings" DROP CONSTRAINT IF EXISTS "briefings_project_id_key";
       `);
     } catch (e: any) {
-      logger.warn(`[migration] contrainte unique briefings.project_id : ${e.message}`);
+      logger.warn(`[migration] drop contrainte unique briefings.project_id : ${e.message}`);
     }
 
     // Clé étrangère vers projects
