@@ -772,4 +772,43 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] project_files.sort_order : ${e.message}`);
   }
+
+  // ─── Table "plan2ds" (planches 2D annotées depuis le viewer 3D — Plan 2D Studio) ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "plan2ds" (
+        "id"         TEXT         NOT NULL,
+        "project_id" TEXT         NOT NULL,
+        "title"      TEXT,
+        "sheets"     JSONB        NOT NULL DEFAULT '[]'::jsonb,
+        "created_by" TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "plan2ds_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "plan2ds_project_id_idx" ON "plan2ds" ("project_id");
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan2ds_project_id_fkey') THEN
+          ALTER TABLE "plan2ds"
+            ADD CONSTRAINT "plan2ds_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan2ds_created_by_fkey') THEN
+          ALTER TABLE "plan2ds"
+            ADD CONSTRAINT "plan2ds_created_by_fkey"
+            FOREIGN KEY ("created_by") REFERENCES "users"("id")
+            ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table plan2ds créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table plan2ds : ${e.message}`);
+  }
 }
