@@ -29,12 +29,33 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       where,
       orderBy: [{ sortOrder: 'asc' }, { installationStart: 'asc' }],
       include: {
-        client: { select: { id:true, name:true } },
         technicalManager: { select: { id:true, firstName:true, lastName:true } },
-        team: { include: { user: { select: { id:true, firstName:true, lastName:true, role:true } } } },
         _count: { select: { tasks:true, tickets:true } },
       },
     });
+
+    // Client et équipe récupérés séparément (pas en include direct) : si un
+    // projet référence un client_id ou user_id qui n'existe plus en base
+    // (donnée orpheline), Prisma plante sur un include de relation obligatoire.
+    // Ici on tolère le cas : client à null / membre orphelin ignoré, plutôt qu'un 500.
+    const clientIds = [...new Set(projects.map(p => p.clientId))];
+    const clients = await prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id:true, name:true } });
+    const clientMap = new Map(clients.map(c => [c.id, c]));
+
+    const teamRows = await prisma.projectTeam.findMany({ where: { projectId: { in: projects.map(p => p.id) } } });
+    const teamUserIds = [...new Set(teamRows.map(t => t.userId))];
+    const teamUsers = await prisma.user.findMany({
+      where: { id: { in: teamUserIds } },
+      select: { id:true, firstName:true, lastName:true, role:true },
+    });
+    const teamUserMap = new Map(teamUsers.map(u => [u.id, u]));
+    const teamByProject = new Map<string, any[]>();
+    for (const t of teamRows) {
+      const user = teamUserMap.get(t.userId);
+      if (!user) continue;
+      if (!teamByProject.has(t.projectId)) teamByProject.set(t.projectId, []);
+      teamByProject.get(t.projectId)!.push({ ...t, user });
+    }
 
     // Attach progress
     const enriched = await Promise.all(projects.map(async p => {
@@ -42,7 +63,12 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
         prisma.task.count({ where: { projectId: p.id } }),
         prisma.task.count({ where: { projectId: p.id, status: 'done' } }),
       ]);
-      return { ...p, tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0 };
+      return {
+        ...p,
+        client: clientMap.get(p.clientId) || null,
+        team: teamByProject.get(p.id) || [],
+        tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0,
+      };
     }));
 
     res.json({ success: true, data: enriched });
@@ -75,20 +101,44 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
     const p = await prisma.project.findUnique({
       where: { id: req.params.id },
       include: {
-        client: true,
         technicalManager: { select: { id:true, firstName:true, lastName:true, email:true } },
-        team: { include: { user: { select: { id:true, firstName:true, lastName:true, role:true, avatarUrl:true, phone:true, email:true } } } },
         trucks: true,
         files: { orderBy: { createdAt: 'desc' } },
         _count: { select: { tasks:true, tickets:true, handovers:true, warehouseBoxes:true } },
       },
     });
     if (!p) throw new AppError('Projet introuvable', 404);
+
+    // Client et équipe récupérés séparément (pas en include direct) : si le
+    // projet référence un client_id ou user_id qui n'existe plus en base
+    // (donnée orpheline), Prisma plante sur un include de relation obligatoire.
+    // Ici on tolère le cas : client à null / membre orphelin ignoré, plutôt qu'un 500.
+    const client = await prisma.client.findUnique({ where: { id: p.clientId } });
+
+    const teamRows = await prisma.projectTeam.findMany({ where: { projectId: p.id } });
+    const teamUserIds = [...new Set(teamRows.map(t => t.userId))];
+    const teamUsers = await prisma.user.findMany({
+      where: { id: { in: teamUserIds } },
+      select: { id:true, firstName:true, lastName:true, role:true, avatarUrl:true, phone:true, email:true },
+    });
+    const teamUserMap = new Map(teamUsers.map(u => [u.id, u]));
+    const team = teamRows
+      .map(t => ({ ...t, user: teamUserMap.get(t.userId) }))
+      .filter(t => t.user);
+
     const [total, done] = await Promise.all([
       prisma.task.count({ where: { projectId: p.id } }),
       prisma.task.count({ where: { projectId: p.id, status: 'done' } }),
     ]);
-    res.json({ success: true, data: { ...p, tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0 } });
+    res.json({
+      success: true,
+      data: {
+        ...p,
+        client: client || null,
+        team,
+        tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0,
+      },
+    });
   } catch (err) { next(err); }
 });
 
