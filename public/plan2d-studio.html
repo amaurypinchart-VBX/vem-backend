@@ -68,8 +68,12 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
       <div class="panel-head">Gabarits (nouvelle planche)</div>
       <div class="panel-body">
         <button class="btn tpl-btn" data-tpl="cover">🖼 Page de garde (rendus 3D)</button>
-        <button class="btn tpl-btn" data-tpl="elevations">📐 Élévations (Face/Dos/G/D)</button>
-        <button class="btn tpl-btn" data-tpl="top">⬛ Vue de dessus</button>
+        <button class="btn tpl-btn" data-tpl="overview">🔲 Vue d'ensemble (Long/Top/Short/3D)</button>
+        <button class="btn tpl-btn" data-tpl="elevFront">📐 Élévation — Face</button>
+        <button class="btn tpl-btn" data-tpl="elevBack">📐 Élévation — Dos</button>
+        <button class="btn tpl-btn" data-tpl="elevLeft">📐 Élévation — Gauche</button>
+        <button class="btn tpl-btn" data-tpl="elevRight">📐 Élévation — Droite</button>
+        <button class="btn tpl-btn" data-tpl="top">⬛ Vue de dessus / Implantation</button>
       </div>
 
       <div class="panel-head">Outils</div>
@@ -115,9 +119,35 @@ const params = new URLSearchParams(window.location.search);
 const PROJECT_ID = params.get('projectId');
 const TOKEN = params.get('token') || localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
 const CANVAS_W = 1600, CANVAS_H = 1131; // ratio A3 paysage (420x297mm)
+const TITLE_COL_W = 340; // largeur de la colonne cartouche à droite, comme sur les planches VIEWBOX
+const PAGE_MARGIN = 15;
+const DRAWING_LEGEND = [
+  { color:'#2255cc', label:'Windows Seamless' },
+  { color:'#cc2299', label:'Windows Frame' },
+  { color:'#bbbbbb', label:'WALL LIGHT' },
+  { color:'#992222', label:'WALL HEAVY' },
+  { color:'#e63946', label:'Single Door' },
+  { color:'#e8590c', label:'Double Door' },
+  { color:'#f06595', label:'Full Sliding door' },
+];
+const GENERAL_NOTES =
+  'Document protected – Property of Viewbox International SA.\n' +
+  'Unauthorised reproduction or use is prohibited.\n' +
+  'Not to be used for scaling.\n' +
+  'Dimensions in mm unless stated otherwise.\n' +
+  'Critical dimensions to be checked on site.\n' +
+  'Design assumption: level and stable supporting surface.\n' +
+  'No client-specific data included.\n\n' +
+  'Allowable loads (unfactored):\n' +
+  'Ground floor: 500 kg/m²\n' +
+  'First floor: 350 kg/m²\n\n' +
+  'Any additional elements (cladding, signage, equipment, etc.) require separate wind resistance testing.\n\n' +
+  'Structure must not be used without a validated inspection certificate.\n' +
+  'Partial use only with approval of the Crew Boss or Project Manager.';
 
 const STUDIO = { fabricCanvas:null, sheets:[{ id:'sheet-'+Date.now(), name:'Planche 1', json:null }], curIdx:0, title:'Plan 2D', planId:null, project:null, captures:[], mode:null };
 let dimPending = null;
+function sheetCodeFor(idx) { return 'A0.' + (idx + 1); }
 
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 function flashStatus(msg, type) {
@@ -212,21 +242,29 @@ function renderSidebar() {
 }
 
 // ─── Vues capturées (depuis le viewer 3D) ───
+// Chaque capture a un "id" unique (ex: "front", "3d-1700000000-0") et un "view" sémantique
+// (front/back/left/right/top/3d) — plusieurs rendus 3D peuvent coexister (page de garde).
+const VIEW_LABELS = { front:'Face', back:'Dos', left:'Gauche', right:'Droite', top:'Dessus', '3d':'Rendu 3D' };
 function renderCaptureList() {
   const el = document.getElementById('capture-list');
-  const labelOf = { front:'Face', back:'Dos', left:'Gauche', right:'Droite', top:'Dessus', '3d':'Rendu 3D' };
   if (!STUDIO.captures.length) { el.innerHTML = '<div class="hint">Aucune vue capturée pour l\'instant. Retourne dans le viewer 3D, coche des vues et clique "Capturer", puis reviens ici (ou rouvre le studio).</div>'; return; }
-  el.innerHTML = STUDIO.captures.map(c => `<img class="capture-thumb" src="${c.url}" title="Glisser sur la planche, ou cliquer pour insérer — ${labelOf[c.view] || c.view}" draggable="true" data-view="${c.view}">`).join('');
+  const counts = {};
+  el.innerHTML = STUDIO.captures.map(c => {
+    counts[c.view] = (counts[c.view] || 0) + 1;
+    const label = VIEW_LABELS[c.view] || c.view;
+    const title = c.view === '3d' ? (label + ' #' + counts[c.view]) : label;
+    return `<img class="capture-thumb" src="${c.url}" title="${escapeHtml(title)} — glisser sur la planche, ou cliquer pour insérer" draggable="true" data-id="${c.id}">`;
+  }).join('');
   el.querySelectorAll('.capture-thumb').forEach(img => {
-    img.addEventListener('dragstart', e => e.dataTransfer.setData('text/plan2d-view', img.dataset.view));
-    img.addEventListener('click', () => insertCapturedImage(img.dataset.view, CANVAS_W / 2 - 300, CANVAS_H / 2 - 200, 600, 400, null));
+    img.addEventListener('dragstart', e => e.dataTransfer.setData('text/plan2d-capture-id', img.dataset.id));
+    img.addEventListener('click', () => insertCapturedImageById(img.dataset.id, CANVAS_W / 2 - 300, CANVAS_H / 2 - 200, 600, 400, null));
   });
 }
-async function insertCapturedImage(viewKey, x, y, maxW, maxH, label) {
-  const cap = STUDIO.captures.find(c => c.view === viewKey);
+async function insertCapturedImageById(id, x, y, maxW, maxH, label) {
+  const cap = STUDIO.captures.find(c => c.id === id);
   if (!cap) return;
   const el = await loadImageWithCors(cap.url);
-  if (!el) { flashStatus('Impossible de charger l\'image (' + viewKey + ')', 'error'); return; }
+  if (!el) { flashStatus('Impossible de charger l\'image', 'error'); return; }
   const img = new fabric.Image(el);
   const scale = Math.min(maxW / img.width, maxH / img.height);
   img.set({ left: x, top: y, scaleX: scale, scaleY: scale });
@@ -234,89 +272,211 @@ async function insertCapturedImage(viewKey, x, y, maxW, maxH, label) {
   if (label) STUDIO.fabricCanvas.add(new fabric.Textbox(label, { left: x, top: y - 24, fontSize: 16, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica' }));
   STUDIO.fabricCanvas.requestRenderAll();
 }
+// Insertion par TYPE de vue (prend la 1ère capture de ce type) — pratique pour les gabarits.
+async function insertCapturedImageByView(viewKey, x, y, maxW, maxH, label) {
+  const cap = STUDIO.captures.find(c => c.view === viewKey);
+  if (!cap) return;
+  await insertCapturedImageById(cap.id, x, y, maxW, maxH, label);
+}
 
-// ─── Gabarits de planche ───
+// ─── Gabarits de planche (calqués sur les planches VIEWBOX A0.x fournies en référence) ───
+function buildInfoBand(cv, y, boxed) {
+  // Bandeau CLIENT / PROJECT / PROJECT NO. / DRAWN BY / ISSUE / DESCRIPTION (page de garde,
+  // en haut sans cadre et en bas avec cadre — comme sur la page 1 des planches de référence).
+  const proj = STUDIO.project || {};
+  const cols = [
+    ['CLIENT', (proj.client && proj.client.name) || ''],
+    ['PROJECT', proj.name || ''],
+    ['PROJECT NO.', proj.internalNumber || ''],
+    ['DRAWN BY', ''],
+    ['ISSUE', ''],
+    ['DESCRIPTION', 'Sheet Description'],
+  ];
+  const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - PAGE_MARGIN - 25;
+  const colW = (x1 - x0) / cols.length, h = 46;
+  if (boxed) cv.add(new fabric.Rect({ left:x0, top:y, width:x1-x0, height:h, fill:'transparent', stroke:'#000', strokeWidth:1, selectable:false }));
+  cols.forEach((c, i) => {
+    const x = x0 + i * colW;
+    if (i > 0) cv.add(new fabric.Line([x, y, x, y+h], { stroke:'#000', strokeWidth:1, selectable:false }));
+    cv.add(new fabric.Textbox(c[0], { left:x+8, top:y+5, fontSize:10, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colW-16 }));
+    cv.add(new fabric.Textbox(c[1] || '', { left:x+8, top:y+22, fontSize:10, fill:'#111', fontFamily:'Helvetica', width:colW-16 }));
+  });
+  if (!boxed) cv.add(new fabric.Line([x0, y+h, x1, y+h], { stroke:'#000', strokeWidth:1, selectable:false }));
+}
 async function insertTemplateCover() {
   const cv = STUDIO.fabricCanvas;
-  cv.add(new fabric.Textbox('VIEWBOX', { left: CANVAS_W - 340, top: 30, fontSize: 42, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#3d1e42' }));
-  await insertCapturedImage('3d', 60, 60, CANVAS_W - 120, CANVAS_H - 230, null);
-  buildTitleBlock(cv, 'Page de garde');
+  cv.add(new fabric.Rect({ left:PAGE_MARGIN, top:PAGE_MARGIN, width:CANVAS_W-PAGE_MARGIN*2, height:CANVAS_H-PAGE_MARGIN*2, fill:'transparent', stroke:'#000', strokeWidth:1.5, selectable:false, evented:false }));
+  buildInfoBand(cv, PAGE_MARGIN + 8, false);
+  buildInfoBand(cv, CANVAS_H - PAGE_MARGIN - 54, true);
+  cv.add(new fabric.Textbox('VIEWBOX', { left: CANVAS_W - 480, top: PAGE_MARGIN + 30, fontSize: 52, fontWeight: 'bold', fill: '#2b0a33', fontFamily: 'Georgia', charSpacing: 30 }));
+
+  const threeD = STUDIO.captures.filter(c => c.view === '3d').slice(0, 4);
+  const gx0 = PAGE_MARGIN + 40, gy0 = PAGE_MARGIN + 140;
+  const cellW = (CANVAS_W - PAGE_MARGIN * 2 - 90) / 2, cellH = (CANVAS_H - PAGE_MARGIN * 2 - 230) / 2;
+  const positions = [[gx0, gy0], [gx0 + cellW + 30, gy0], [gx0, gy0 + cellH + 30], [gx0 + cellW + 30, gy0 + cellH + 30]];
+  for (let i = 0; i < 4; i++) { if (threeD[i]) await insertCapturedImageById(threeD[i].id, positions[i][0], positions[i][1], cellW, cellH, null); }
+  if (threeD.length === 0) {
+    cv.add(new fabric.Textbox('Astuce : oriente le modèle sous 4 angles différents dans le viewer 3D et coche "Rendu 3D" à chaque capture — chaque capture s\'ajoute ici sans écraser la précédente.', {
+      left: gx0, top: gy0, fontSize: 13, fill: '#888', fontFamily: 'Helvetica', width: cellW * 2 + 30, fontStyle: 'italic',
+    }));
+  }
   cv.requestRenderAll();
 }
-async function insertTemplateElevations() {
+async function insertTemplateOverview() {
   const cv = STUDIO.fabricCanvas;
-  const cellW = (CANVAS_W - 90) / 2, cellH = (CANVAS_H - 280) / 2;
-  await insertCapturedImage('front', 30, 60, cellW, cellH, 'Face');
-  await insertCapturedImage('back', 30 + cellW + 30, 60, cellW, cellH, 'Dos');
-  await insertCapturedImage('left', 30, 60 + cellH + 60, cellW, cellH, 'Gauche');
-  await insertCapturedImage('right', 30 + cellW + 30, 60 + cellH + 60, cellW, cellH, 'Droite');
-  buildTitleBlock(cv, 'Élévations');
+  const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
+  const cellW = (x1 - x0 - 40) / 2, cellH = (CANVAS_H - PAGE_MARGIN * 2 - 140) / 2;
+  const y0 = PAGE_MARGIN + 70;
+  await insertCapturedImageByView('front', x0, y0, cellW, cellH, 'Long side');
+  await insertCapturedImageByView('top', x0 + cellW + 40, y0, cellW, cellH, 'Top side');
+  await insertCapturedImageByView('left', x0, y0 + cellH + 40, cellW, cellH, 'Short side');
+  const first3d = STUDIO.captures.find(c => c.view === '3d');
+  if (first3d) await insertCapturedImageById(first3d.id, x0 + cellW + 40, y0 + cellH + 40, cellW, cellH, '3D');
+  buildTitleBlock(cv, 'Vue d\'ensemble', sheetCodeFor(STUDIO.curIdx));
+  cv.requestRenderAll();
+}
+async function insertTemplateBigElevation(viewKey, label) {
+  const cv = STUDIO.fabricCanvas;
+  const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
+  await insertCapturedImageByView(viewKey, x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, label);
+  buildTitleBlock(cv, label, sheetCodeFor(STUDIO.curIdx));
   cv.requestRenderAll();
 }
 async function insertTemplateTop() {
   const cv = STUDIO.fabricCanvas;
-  await insertCapturedImage('top', 60, 60, CANVAS_W - 120, CANVAS_H - 230, 'Vue de dessus / implantation');
-  buildTitleBlock(cv, 'Vue de dessus');
+  const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
+  await insertCapturedImageByView('top', x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, 'Implementation plan');
+  buildTitleBlock(cv, 'Vue de dessus', sheetCodeFor(STUDIO.curIdx));
   cv.requestRenderAll();
 }
 async function newSheetFromTemplate(kind) {
   saveCurrentSheetJson();
-  const names = { cover:'Page de garde', elevations:'Élévations', top:'Vue de dessus' };
-  STUDIO.sheets.push({ id:'sheet-'+Date.now(), name: names[kind] + ' ' + (STUDIO.sheets.length + 1), json:null });
+  const names = {
+    cover: 'Page de garde', overview: 'Vue d\'ensemble',
+    elevFront: 'Long side (Face)', elevBack: 'Long side (Dos)',
+    elevLeft: 'Short side (Gauche)', elevRight: 'Short side (Droite)',
+    top: 'Vue de dessus / Implantation',
+  };
+  STUDIO.sheets.push({ id:'sheet-'+Date.now(), name: names[kind] || ('Planche ' + (STUDIO.sheets.length + 1)), json:null });
   STUDIO.curIdx = STUDIO.sheets.length - 1;
   const cv = STUDIO.fabricCanvas;
   cv.clear(); cv.setBackgroundColor('#ffffff', () => cv.renderAll());
   if (kind === 'cover') await insertTemplateCover();
-  else if (kind === 'elevations') await insertTemplateElevations();
+  else if (kind === 'overview') await insertTemplateOverview();
+  else if (kind === 'elevFront') await insertTemplateBigElevation('front', 'Long side (Face)');
+  else if (kind === 'elevBack') await insertTemplateBigElevation('back', 'Long side (Dos)');
+  else if (kind === 'elevLeft') await insertTemplateBigElevation('left', 'Short side (Gauche)');
+  else if (kind === 'elevRight') await insertTemplateBigElevation('right', 'Short side (Droite)');
   else if (kind === 'top') await insertTemplateTop();
   renderSidebar();
 }
 
-// ─── Cartouche (titre projet) & légende ───
-// Ajoutés comme objets individuels (non groupés) — chacun reste éditable en double-clic,
-// même pattern que les tableaux dessinés ailleurs dans l'app (loading list PDF).
-function buildTitleBlock(cv, sheetName) {
-  const w = 460, rowH = 22;
+// ─── Cartouche VIEWBOX (colonne complète à droite, comme sur les planches A0.x de référence) ───
+// Tout est ajouté comme objets individuels (non groupés) — chaque champ reste éditable en
+// double-clic, même pattern que les tableaux dessinés ailleurs dans l'app (ex. loading list PDF).
+function tbLine(cv, x1, y, x2) { cv.add(new fabric.Line([x1, y, x2, y], { stroke:'#000', strokeWidth:1, selectable:false })); }
+function buildTitleBlock(cv, sheetName, sheetCode) {
   const proj = STUDIO.project || {};
   const client = proj.client || {};
   const tm = proj.technicalManager;
-  const rows = [
-    ['Client', client.name || ''],
-    ['Projet', proj.name || ''],
-    ['N° projet', proj.internalNumber || ''],
-    ['Adresse', [proj.address, proj.city].filter(Boolean).join(', ')],
-    ['Dates install.', fmtRange(proj.installationStart, proj.installationEnd)],
-    ['Responsable technique', tm ? ((tm.firstName || '') + ' ' + (tm.lastName || '')).trim() : ''],
-    ['Ingénieur commercial', ''],
-    ['Dessiné par', ''],
-    ['Planche', sheetName || ''],
-  ];
-  const h = 34 + rows.length * rowH;
-  const x0 = CANVAS_W - w - 30, y0 = CANVAS_H - h - 30;
-  cv.add(new fabric.Rect({ left:x0, top:y0, width:w, height:h, fill:'#ffffff', stroke:'#111', strokeWidth:1.5 }));
-  cv.add(new fabric.Textbox('VIEWBOX INTERNATIONAL S.A.', { left:x0+10, top:y0+8, fontSize:13, fontWeight:'bold', fill:'#3d1e42', fontFamily:'Helvetica', width:w-20 }));
-  rows.forEach((r, i) => {
-    const y = y0 + 34 + i * rowH;
-    cv.add(new fabric.Line([x0, y, x0 + w, y], { stroke:'#ccc', strokeWidth:1, selectable:false }));
-    cv.add(new fabric.Textbox(r[0], { left:x0+8, top:y+4, fontSize:10, fill:'#888', width:160, fontFamily:'Helvetica' }));
-    cv.add(new fabric.Textbox(r[1] || '—', { left:x0+172, top:y+4, fontSize:11, fill:'#111', fontWeight:'600', width:w-182, fontFamily:'Helvetica' }));
+  const colX = CANVAS_W - TITLE_COL_W;
+  const pad = 14;
+  const colInnerW = TITLE_COL_W - pad * 2;
+  const halfW = colInnerW / 2 - 6;
+  const x = colX + pad;
+
+  // Cadre de page + séparateur de la colonne cartouche
+  cv.add(new fabric.Rect({ left:PAGE_MARGIN, top:PAGE_MARGIN, width:CANVAS_W-PAGE_MARGIN*2, height:CANVAS_H-PAGE_MARGIN*2, fill:'transparent', stroke:'#000', strokeWidth:1.5, selectable:false, evented:false }));
+  cv.add(new fabric.Line([colX, PAGE_MARGIN, colX, CANVAS_H - PAGE_MARGIN], { stroke:'#000', strokeWidth:1, selectable:false }));
+
+  // Boîte "Extract - Plan View - ..." en haut de la zone de dessin
+  cv.add(new fabric.Rect({ left:colX-260, top:PAGE_MARGIN, width:260, height:22, fill:'#ffffff', stroke:'#000', strokeWidth:1, selectable:false }));
+  cv.add(new fabric.Textbox('Extract - Plan View - ' + (sheetName || ''), { left:colX-254, top:PAGE_MARGIN+4, fontSize:10, fill:'#111', fontFamily:'Helvetica', width:250 }));
+
+  let y = PAGE_MARGIN + 14;
+  cv.add(new fabric.Textbox('VB', { left:x, top:y, fontSize:50, fontWeight:'bold', fill:'#2b0a33', fontFamily:'Georgia', charSpacing:20 }));
+  y += 62;
+  cv.add(new fabric.Textbox('Viewbox International S.A.', { left:x, top:y, fontSize:10, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colInnerW }));
+  y += 14;
+  cv.add(new fabric.Textbox('Avenue Robert Schuman 112\n1480 Tubize\nBelgium\nBE 0753.562.910', { left:x, top:y, fontSize:8.5, fill:'#333', fontFamily:'Helvetica', width:colInnerW, lineHeight:1.35 }));
+  y += 56;
+  tbLine(cv, colX, y, CANVAS_W - PAGE_MARGIN); y += 8;
+
+  cv.add(new fabric.Textbox('CLIENT', { left:x, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox('Installation Address', { left:x+halfW+12, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  cv.add(new fabric.Textbox(client.name || '', { left:x, top:y, fontSize:10, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox([proj.address, proj.city].filter(Boolean).join('\n'), { left:x+halfW+12, top:y, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW, lineHeight:1.3 }));
+  y += 38;
+  tbLine(cv, colX, y, CANVAS_W - PAGE_MARGIN); y += 8;
+
+  cv.add(new fabric.Textbox('PROJECT Name', { left:x, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox('Project Date', { left:x+halfW+12, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  cv.add(new fabric.Textbox(proj.name || '', { left:x, top:y, fontSize:10, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox(fmtRange(proj.installationStart, proj.installationEnd), { left:x+halfW+12, top:y, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 16;
+  cv.add(new fabric.Textbox('ISSUE', { left:x+halfW+12, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  cv.add(new fabric.Textbox('', { left:x+halfW+12, top:y, fontSize:10, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 18;
+  tbLine(cv, colX, y, CANVAS_W - PAGE_MARGIN); y += 8;
+
+  cv.add(new fabric.Textbox('Sales Ingenior', { left:x, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox('Technical Manager', { left:x+halfW+12, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  const tmName = tm ? ((tm.firstName || '') + ' ' + (tm.lastName || '')).trim() : '';
+  cv.add(new fabric.Textbox('', { left:x, top:y, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox(tmName, { left:x+halfW+12, top:y, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  cv.add(new fabric.Textbox('', { left:x, top:y, fontSize:8, fill:'#555', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox((tm && tm.email) || '', { left:x+halfW+12, top:y, fontSize:8, fill:'#555', fontFamily:'Helvetica', width:halfW }));
+  y += 16;
+  cv.add(new fabric.Textbox('PROJECT Manager', { left:x+halfW+12, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 13;
+  cv.add(new fabric.Textbox('', { left:x+halfW+12, top:y, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  y += 18;
+  tbLine(cv, colX, y, CANVAS_W - PAGE_MARGIN); y += 8;
+
+  cv.add(new fabric.Textbox('GENERAL NOTES VIEWBOX', { left:x, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colInnerW }));
+  y += 13;
+  const notesBox = new fabric.Textbox(GENERAL_NOTES, { left:x, top:y, fontSize:8, fill:'#333', fontFamily:'Helvetica', width:colInnerW, lineHeight:1.35 });
+  cv.add(notesBox);
+  y += (notesBox.height || 160) + 10;
+  tbLine(cv, colX, y, CANVAS_W - PAGE_MARGIN); y += 8;
+
+  cv.add(new fabric.Textbox('DRAWING LEGEND', { left:x, top:y, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colInnerW }));
+  y += 15;
+  DRAWING_LEGEND.forEach((it) => {
+    cv.add(new fabric.Line([x, y+6, x+26, y+6], { stroke: it.color, strokeWidth:3, selectable:false }));
+    cv.add(new fabric.Textbox(it.label, { left:x+34, top:y, fontSize:9, fill:'#111', fontFamily:'Helvetica', width:colInnerW-34 }));
+    y += 15;
   });
+
+  // Bloc du bas, ancré près du bas de page (indépendant du texte au-dessus qui peut varier en hauteur)
+  let by = CANVAS_H - PAGE_MARGIN - 150;
+  tbLine(cv, colX, by, CANVAS_W - PAGE_MARGIN); by += 8;
+  cv.add(new fabric.Textbox('DRAWN BY', { left:x, top:by, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox('Created date', { left:x+halfW+12, top:by, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  by += 13;
+  cv.add(new fabric.Textbox('', { left:x, top:by, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  cv.add(new fabric.Textbox(fmtDate(new Date()), { left:x+halfW+12, top:by, fontSize:9.5, fill:'#111', fontFamily:'Helvetica', width:halfW }));
+  by += 20;
+  cv.add(new fabric.Textbox('Deadline for Approval', { left:x, top:by, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colInnerW }));
+  by += 18;
+  cv.add(new fabric.Textbox('Signature', { left:x, top:by, fontSize:9, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:colInnerW }));
+  by += 13;
+  cv.add(new fabric.Rect({ left:x, top:by, width:colInnerW, height:44, fill:'#ffffff', stroke:'#000', strokeWidth:1 }));
+
+  cv.add(new fabric.Textbox(sheetCode || 'A0.1', { left:CANVAS_W - PAGE_MARGIN - 90, top:CANVAS_H - PAGE_MARGIN - 26, fontSize:16, fontWeight:'bold', fill:'#111', fontFamily:'Helvetica', width:80, textAlign:'right' }));
+  cv.requestRenderAll();
 }
 function addLegend() {
   const cv = STUDIO.fabricCanvas;
-  const items = [
-    { color:'#6f42c1', label:'Fenêtre Seamless' },
-    { color:'#d6336c', label:'Fenêtre Frame' },
-    { color:'#adb5bd', label:'Mur léger' },
-    { color:'#495057', label:'Mur lourd' },
-    { color:'#e63946', label:'Porte simple' },
-    { color:'#e8590c', label:'Porte double' },
-    { color:'#f06595', label:'Porte coulissante' },
-  ];
   const w = 220, x0 = 40, y0 = 40;
-  cv.add(new fabric.Rect({ left:x0, top:y0, width:w, height: 30 + items.length * 22, fill:'#ffffff', stroke:'#333', strokeWidth:1 }));
-  cv.add(new fabric.Textbox('LÉGENDE', { left:x0+10, top:y0+6, fontSize:12, fontWeight:'bold', fill:'#222', fontFamily:'Helvetica' }));
-  items.forEach((it, i) => {
+  cv.add(new fabric.Rect({ left:x0, top:y0, width:w, height: 30 + DRAWING_LEGEND.length * 22, fill:'#ffffff', stroke:'#333', strokeWidth:1 }));
+  cv.add(new fabric.Textbox('DRAWING LEGEND', { left:x0+10, top:y0+6, fontSize:12, fontWeight:'bold', fill:'#222', fontFamily:'Helvetica' }));
+  DRAWING_LEGEND.forEach((it, i) => {
     const y = y0 + 32 + i * 22;
     cv.add(new fabric.Line([x0+12, y+7, x0+42, y+7], { stroke: it.color, strokeWidth:4, selectable:false }));
     cv.add(new fabric.Textbox(it.label, { left:x0+50, top:y, fontSize:11, fill:'#333', width:160, fontFamily:'Helvetica' }));
@@ -415,13 +575,13 @@ function initCanvas() {
   shell.addEventListener('dragover', e => e.preventDefault());
   shell.addEventListener('drop', async (e) => {
     e.preventDefault();
-    const view = e.dataTransfer.getData('text/plan2d-view');
-    if (!view) return;
+    const id = e.dataTransfer.getData('text/plan2d-capture-id');
+    if (!id) return;
     const scale = shell._p2dScale || 1;
     const rect = shell.getBoundingClientRect();
     const x = (e.clientX - rect.left) / scale - 300;
     const y = (e.clientY - rect.top) / scale - 200;
-    await insertCapturedImage(view, Math.max(0, x), Math.max(0, y), 600, 400, null);
+    await insertCapturedImageById(id, Math.max(0, x), Math.max(0, y), 600, 400, null);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -530,7 +690,7 @@ document.getElementById('btn-add-sheet').onclick = addBlankSheet;
 document.querySelectorAll('.tpl-btn').forEach(b => b.onclick = () => newSheetFromTemplate(b.dataset.tpl));
 document.getElementById('btn-tool-dim').onclick = startDimensionTool;
 document.getElementById('btn-tool-legend').onclick = addLegend;
-document.getElementById('btn-tool-title').onclick = () => buildTitleBlock(STUDIO.fabricCanvas, STUDIO.sheets[STUDIO.curIdx].name);
+document.getElementById('btn-tool-title').onclick = () => buildTitleBlock(STUDIO.fabricCanvas, STUDIO.sheets[STUDIO.curIdx].name, sheetCodeFor(STUDIO.curIdx));
 document.getElementById('btn-tool-text').onclick = addText;
 document.getElementById('btn-tool-line').onclick = addLine;
 document.getElementById('btn-tool-arrow').onclick = addArrow;

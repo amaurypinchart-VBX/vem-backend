@@ -2747,15 +2747,20 @@ async function runPlan2DCapture() {
     statusEl.textContent = `Capture ${i + 1}/${checked.length}...`;
     const blob = await capturePlan2DView(key);
     if (!blob) continue;
-    if (state.plan2dCaptures[key]) URL.revokeObjectURL(state.plan2dCaptures[key].url);
+    // Les vues orthographiques (face/dos/gauche/droite/dessus) s'écrasent (une seule utile) ;
+    // "Rendu 3D" s'accumule (clé unique à chaque capture) car la page de garde des plans
+    // façon bureau d'études utilise plusieurs angles 3D différents.
+    const storeKey = key === '3d' ? ('3d-' + Date.now() + '-' + i) : key;
+    if (state.plan2dCaptures[storeKey]) URL.revokeObjectURL(state.plan2dCaptures[storeKey].url);
     const url = URL.createObjectURL(blob);
-    state.plan2dCaptures[key] = { blob, url, uploadedUrl: null };
+    state.plan2dCaptures[storeKey] = { blob, url, uploadedUrl: null, view: key };
   }
   // L'animate() loop (rAF) redessine déjà la vue perspective interactive à la frame suivante — rien à restaurer.
-  Object.keys(state.plan2dCaptures).forEach((key) => {
-    const view = PLAN2D_VIEWS.find(v => v.key === key);
+  Object.keys(state.plan2dCaptures).forEach((storeKey) => {
+    const cap = state.plan2dCaptures[storeKey];
+    const view = PLAN2D_VIEWS.find(v => v.key === cap.view) || { label: cap.view };
     const thumb = document.createElement('img');
-    thumb.src = state.plan2dCaptures[key].url;
+    thumb.src = cap.url;
     thumb.title = view.label;
     thumb.className = 'plan2d-thumb';
     thumbsEl.appendChild(thumb);
@@ -2774,7 +2779,7 @@ async function runPlan2DCapture() {
 function openPlan2DStudio() {
   const captures = Object.entries(state.plan2dCaptures)
     .filter(([, c]) => c.uploadedUrl)
-    .map(([key, c]) => ({ view: key, url: c.uploadedUrl }));
+    .map(([key, c]) => ({ id: key, view: c.view || key, url: c.uploadedUrl }));
   if (captures.length === 0) {
     setStatus('Attends la fin de l\'envoi des captures avant d\'ouvrir le studio', 'error');
     return;
