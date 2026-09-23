@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan 2D Studio — VIEWBOX</title>
+<script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root { --bg:#0f1115; --bg-2:#161a22; --bg-3:#1d222c; --border:#2a313f; --text:#e6e9ef; --text-dim:#8b94a7; --accent:#e63946; --accent-2:#ff5c69; --success:#4ade80; --danger:#f87171; }
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { height:100%; overflow:hidden; }
+body { font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; background:var(--bg); color:var(--text); font-size:13px; }
+#app { display:flex; flex-direction:column; height:100vh; width:100vw; }
+header { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--bg-2); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+.brand { font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px; }
+.brand-sub { font-weight:400; color:var(--text-dim); font-size:12px; }
+#studio-title { background:var(--bg-3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; font-family:inherit; min-width:200px; }
+.spacer { flex:1; }
+.btn { background:var(--bg-3); color:var(--text); border:1px solid var(--border); padding:7px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:500; display:inline-flex; align-items:center; gap:6px; font-family:inherit; }
+.btn:hover:not(:disabled) { background:var(--border); }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.btn-primary:hover:not(:disabled) { background:var(--accent-2); }
+#main { display:flex; flex:1; overflow:hidden; min-height:0; }
+aside { width:260px; flex:0 0 260px; background:var(--bg-2); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
+.panel-head { padding:10px 14px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim); border-bottom:1px solid var(--border); border-top:1px solid var(--border); }
+.panel-head:first-child { border-top:none; }
+.panel-body { padding:10px 12px; }
+.sheet-item { display:flex; align-items:center; gap:4px; padding:6px; border-radius:6px; border:1px solid var(--border); margin-bottom:6px; cursor:pointer; background:var(--bg-3); }
+.sheet-item.active { border-color:var(--accent); background:rgba(230,57,70,0.12); }
+.sheet-item input { flex:1; min-width:0; background:transparent; border:none; color:var(--text); font-size:12px; outline:none; }
+.sheet-actions { display:flex; gap:2px; }
+.sheet-actions button { background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:11px; padding:2px 3px; }
+.sheet-actions button:hover { color:var(--text); }
+.tpl-btn { display:block; width:100%; text-align:left; margin-bottom:6px; }
+.tool-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.tool-grid .btn { width:100%; justify-content:center; }
+.capture-thumb { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:grab; margin-bottom:6px; }
+.hint { font-size:11px; color:var(--text-dim); line-height:1.5; }
+#canvas-wrap { flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:center; padding:30px; background:#3a3f4a; }
+.canvas-shell { box-shadow:0 8px 30px rgba(0,0,0,0.5); }
+#status-banner { position:fixed; top:12px; left:50%; transform:translateX(-50%); background:var(--bg-2); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:8px 14px; font-size:12px; z-index:999; display:none; }
+#status-banner.show { display:block; }
+#status-banner.success { border-left-color:var(--success); }
+#status-banner.error { border-left-color:var(--danger); }
+.error-full { padding:60px; text-align:center; color:var(--text-dim); }
+label.field-label { display:block; font-size:11px; color:var(--text-dim); margin:8px 0 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">📐 Plan 2D Studio <span class="brand-sub" id="project-badge"></span></div>
+    <input id="studio-title" placeholder="Titre du plan 2D">
+    <div class="spacer"></div>
+    <button class="btn" id="btn-save">💾 Sauvegarder</button>
+    <button class="btn btn-primary" id="btn-export-pdf">📄 Export PDF</button>
+  </header>
+  <div id="main">
+    <aside id="left-panel">
+      <div class="panel-head">Planches</div>
+      <div class="panel-body">
+        <div id="sheets-list"></div>
+        <button class="btn" id="btn-add-sheet" style="width:100%;">➕ Nouvelle planche vierge</button>
+      </div>
+
+      <div class="panel-head">Gabarits (nouvelle planche)</div>
+      <div class="panel-body">
+        <button class="btn tpl-btn" data-tpl="cover">🖼 Page de garde (rendus 3D)</button>
+        <button class="btn tpl-btn" data-tpl="elevations">📐 Élévations (Face/Dos/G/D)</button>
+        <button class="btn tpl-btn" data-tpl="top">⬛ Vue de dessus</button>
+      </div>
+
+      <div class="panel-head">Outils</div>
+      <div class="panel-body">
+        <div class="tool-grid">
+          <button class="btn" id="btn-tool-dim">📏 Cote</button>
+          <button class="btn" id="btn-tool-legend">🏷 Légende</button>
+          <button class="btn" id="btn-tool-title">🧾 Cartouche</button>
+          <button class="btn" id="btn-tool-text">🔤 Texte</button>
+          <button class="btn" id="btn-tool-line">／ Ligne</button>
+          <button class="btn" id="btn-tool-arrow">➔ Flèche</button>
+          <button class="btn" id="btn-tool-rect">▭ Rectangle</button>
+          <button class="btn" id="btn-tool-image">🖼 Image</button>
+        </div>
+        <input type="file" id="file-image" accept="image/*" style="display:none;">
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn" id="btn-front" style="flex:1;" title="Premier plan">⬆ 1er plan</button>
+          <button class="btn" id="btn-back" style="flex:1;" title="Arrière plan">⬇ Arr. plan</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn" id="btn-dup" style="flex:1;">🗐 Dupliquer</button>
+          <button class="btn" id="btn-del" style="flex:1;">🗑 Supprimer</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">💡 Double-clique une cote pour taper sa valeur en mm. Glisse une vue capturée sur la planche pour l'insérer.</div>
+      </div>
+
+      <div class="panel-head">Vues capturées</div>
+      <div class="panel-body" id="capture-list"></div>
+    </aside>
+
+    <div id="canvas-wrap">
+      <div class="canvas-shell" id="canvas-shell">
+        <canvas id="p2d-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="status-banner"></div>
+
+<script>
+const API = '/api/v1';
+const params = new URLSearchParams(window.location.search);
+const PROJECT_ID = params.get('projectId');
+const TOKEN = params.get('token') || localStorage.getItem('vem_token') || sessionStorage.getItem('vem_token') || '';
+const CANVAS_W = 1600, CANVAS_H = 1131; // ratio A3 paysage (420x297mm)
+
+const STUDIO = { fabricCanvas:null, sheets:[{ id:'sheet-'+Date.now(), name:'Planche 1', json:null }], curIdx:0, title:'Plan 2D', planId:null, project:null, captures:[], mode:null };
+let dimPending = null;
+
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function flashStatus(msg, type) {
+  const el = document.getElementById('status-banner');
+  el.textContent = msg; el.className = 'show' + (type ? ' ' + type : '');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 4000);
+}
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('fr-FR') : ''; }
+function fmtRange(a, b) { const x = fmtDate(a), y = fmtDate(b); return x && y ? (x + ' → ' + y) : (x || y || ''); }
+
+async function apiGet(path) {
+  const r = await fetch(API + path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function apiSend(method, path, body) {
+  const r = await fetch(API + path, { method, headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ─── Chargement image avec repli CORS (même logique que applyLogoBackground de Briefing Studio) ───
+function loadImageWithCors(url) {
+  return new Promise((resolve) => {
+    const el = new Image();
+    el.crossOrigin = 'anonymous';
+    el.onload = () => resolve(el);
+    el.onerror = () => {
+      const el2 = new Image();
+      el2.onload = () => resolve(el2);
+      el2.onerror = () => resolve(null);
+      el2.src = url;
+    };
+    el.src = url;
+  });
+}
+
+// ─── Sheets (planches) ───
+function saveCurrentSheetJson() {
+  if (!STUDIO.fabricCanvas) return;
+  STUDIO.sheets[STUDIO.curIdx].json = STUDIO.fabricCanvas.toJSON();
+}
+function loadSheetIntoCanvas(idx) {
+  const sheet = STUDIO.sheets[idx];
+  if (!sheet || !STUDIO.fabricCanvas) return;
+  const cv = STUDIO.fabricCanvas;
+  cv.clear();
+  cv.setBackgroundColor('#ffffff', () => cv.renderAll());
+  if (sheet.json) cv.loadFromJSON(sheet.json, () => cv.renderAll());
+}
+function selectSheet(idx) { saveCurrentSheetJson(); STUDIO.curIdx = idx; loadSheetIntoCanvas(idx); renderSidebar(); }
+function addBlankSheet() {
+  saveCurrentSheetJson();
+  STUDIO.sheets.push({ id:'sheet-'+Date.now(), name:'Planche ' + (STUDIO.sheets.length + 1), json:null });
+  selectSheet(STUDIO.sheets.length - 1);
+}
+function duplicateSheet(idx) {
+  saveCurrentSheetJson();
+  const copy = JSON.parse(JSON.stringify(STUDIO.sheets[idx]));
+  copy.id = 'sheet-' + Date.now(); copy.name = (copy.name || 'Planche') + ' (copie)';
+  STUDIO.sheets.splice(idx + 1, 0, copy);
+  selectSheet(idx + 1);
+}
+function deleteSheet(idx) {
+  if (STUDIO.sheets.length <= 1) { alert('Il faut garder au moins une planche.'); return; }
+  if (!confirm('Supprimer cette planche ?')) return;
+  STUDIO.sheets.splice(idx, 1);
+  selectSheet(Math.max(0, idx - 1));
+}
+function moveSheet(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= STUDIO.sheets.length) return;
+  saveCurrentSheetJson();
+  const tmp = STUDIO.sheets[idx]; STUDIO.sheets[idx] = STUDIO.sheets[j]; STUDIO.sheets[j] = tmp;
+  if (STUDIO.curIdx === idx) STUDIO.curIdx = j; else if (STUDIO.curIdx === j) STUDIO.curIdx = idx;
+  renderSidebar();
+}
+function renderSidebar() {
+  const el = document.getElementById('sheets-list');
+  el.innerHTML = STUDIO.sheets.map((s, i) => `
+    <div class="sheet-item ${i === STUDIO.curIdx ? 'active' : ''}" onclick="selectSheet(${i})">
+      <input value="${escapeHtml(s.name)}" onclick="event.stopPropagation()" oninput="STUDIO.sheets[${i}].name=this.value">
+      <div class="sheet-actions">
+        <button onclick="event.stopPropagation();moveSheet(${i},-1)" title="Monter">▲</button>
+        <button onclick="event.stopPropagation();moveSheet(${i},1)" title="Descendre">▼</button>
+        <button onclick="event.stopPropagation();duplicateSheet(${i})" title="Dupliquer">🗐</button>
+        <button onclick="event.stopPropagation();deleteSheet(${i})" title="Supprimer">×</button>
+      </div>
+    </div>`).join('');
+}
+
+// ─── Vues capturées (depuis le viewer 3D) ───
+function renderCaptureList() {
+  const el = document.getElementById('capture-list');
+  const labelOf = { front:'Face', back:'Dos', left:'Gauche', right:'Droite', top:'Dessus', '3d':'Rendu 3D' };
+  if (!STUDIO.captures.length) { el.innerHTML = '<div class="hint">Aucune vue capturée pour l\'instant. Retourne dans le viewer 3D, coche des vues et clique "Capturer", puis reviens ici (ou rouvre le studio).</div>'; return; }
+  el.innerHTML = STUDIO.captures.map(c => `<img class="capture-thumb" src="${c.url}" title="Glisser sur la planche, ou cliquer pour insérer — ${labelOf[c.view] || c.view}" draggable="true" data-view="${c.view}">`).join('');
+  el.querySelectorAll('.capture-thumb').forEach(img => {
+    img.addEventListener('dragstart', e => e.dataTransfer.setData('text/plan2d-view', img.dataset.view));
+    img.addEventListener('click', () => insertCapturedImage(img.dataset.view, CANVAS_W / 2 - 300, CANVAS_H / 2 - 200, 600, 400, null));
+  });
+}
+async function insertCapturedImage(viewKey, x, y, maxW, maxH, label) {
+  const cap = STUDIO.captures.find(c => c.view === viewKey);
+  if (!cap) return;
+  const el = await loadImageWithCors(cap.url);
+  if (!el) { flashStatus('Impossible de charger l\'image (' + viewKey + ')', 'error'); return; }
+  const img = new fabric.Image(el);
+  const scale = Math.min(maxW / img.width, maxH / img.height);
+  img.set({ left: x, top: y, scaleX: scale, scaleY: scale });
+  STUDIO.fabricCanvas.add(img);
+  if (label) STUDIO.fabricCanvas.add(new fabric.Textbox(label, { left: x, top: y - 24, fontSize: 16, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica' }));
+  STUDIO.fabricCanvas.requestRenderAll();
+}
+
+// ─── Gabarits de planche ───
+async function insertTemplateCover() {
+  const cv = STUDIO.fabricCanvas;
+  cv.add(new fabric.Textbox('VIEWBOX', { left: CANVAS_W - 340, top: 30, fontSize: 42, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#3d1e42' }));
+  await insertCapturedImage('3d', 60, 60, CANVAS_W - 120, CANVAS_H - 230, null);
+  buildTitleBlock(cv, 'Page de garde');
+  cv.requestRenderAll();
+}
+async function insertTemplateElevations() {
+  const cv = STUDIO.fabricCanvas;
+  const cellW = (CANVAS_W - 90) / 2, cellH = (CANVAS_H - 280) / 2;
+  await insertCapturedImage('front', 30, 60, cellW, cellH, 'Face');
+  await insertCapturedImage('back', 30 + cellW + 30, 60, cellW, cellH, 'Dos');
+  await insertCapturedImage('left', 30, 60 + cellH + 60, cellW, cellH, 'Gauche');
+  await insertCapturedImage('right', 30 + cellW + 30, 60 + cellH + 60, cellW, cellH, 'Droite');
+  buildTitleBlock(cv, 'Élévations');
+  cv.requestRenderAll();
+}
+async function insertTemplateTop() {
+  const cv = STUDIO.fabricCanvas;
+  await insertCapturedImage('top', 60, 60, CANVAS_W - 120, CANVAS_H - 230, 'Vue de dessus / implantation');
+  buildTitleBlock(cv, 'Vue de dessus');
+  cv.requestRenderAll();
+}
+async function newSheetFromTemplate(kind) {
+  saveCurrentSheetJson();
+  const names = { cover:'Page de garde', elevations:'Élévations', top:'Vue de dessus' };
+  STUDIO.sheets.push({ id:'sheet-'+Date.now(), name: names[kind] + ' ' + (STUDIO.sheets.length + 1), json:null });
+  STUDIO.curIdx = STUDIO.sheets.length - 1;
+  const cv = STUDIO.fabricCanvas;
+  cv.clear(); cv.setBackgroundColor('#ffffff', () => cv.renderAll());
+  if (kind === 'cover') await insertTemplateCover();
+  else if (kind === 'elevations') await insertTemplateElevations();
+  else if (kind === 'top') await insertTemplateTop();
+  renderSidebar();
+}
+
+// ─── Cartouche (titre projet) & légende ───
+// Ajoutés comme objets individuels (non groupés) — chacun reste éditable en double-clic,
+// même pattern que les tableaux dessinés ailleurs dans l'app (loading list PDF).
+function buildTitleBlock(cv, sheetName) {
+  const w = 460, rowH = 22;
+  const proj = STUDIO.project || {};
+  const client = proj.client || {};
+  const tm = proj.technicalManager;
+  const rows = [
+    ['Client', client.name || ''],
+    ['Projet', proj.name || ''],
+    ['N° projet', proj.internalNumber || ''],
+    ['Adresse', [proj.address, proj.city].filter(Boolean).join(', ')],
+    ['Dates install.', fmtRange(proj.installationStart, proj.installationEnd)],
+    ['Responsable technique', tm ? ((tm.firstName || '') + ' ' + (tm.lastName || '')).trim() : ''],
+    ['Ingénieur commercial', ''],
+    ['Dessiné par', ''],
+    ['Planche', sheetName || ''],
+  ];
+  const h = 34 + rows.length * rowH;
+  const x0 = CANVAS_W - w - 30, y0 = CANVAS_H - h - 30;
+  cv.add(new fabric.Rect({ left:x0, top:y0, width:w, height:h, fill:'#ffffff', stroke:'#111', strokeWidth:1.5 }));
+  cv.add(new fabric.Textbox('VIEWBOX INTERNATIONAL S.A.', { left:x0+10, top:y0+8, fontSize:13, fontWeight:'bold', fill:'#3d1e42', fontFamily:'Helvetica', width:w-20 }));
+  rows.forEach((r, i) => {
+    const y = y0 + 34 + i * rowH;
+    cv.add(new fabric.Line([x0, y, x0 + w, y], { stroke:'#ccc', strokeWidth:1, selectable:false }));
+    cv.add(new fabric.Textbox(r[0], { left:x0+8, top:y+4, fontSize:10, fill:'#888', width:160, fontFamily:'Helvetica' }));
+    cv.add(new fabric.Textbox(r[1] || '—', { left:x0+172, top:y+4, fontSize:11, fill:'#111', fontWeight:'600', width:w-182, fontFamily:'Helvetica' }));
+  });
+}
+function addLegend() {
+  const cv = STUDIO.fabricCanvas;
+  const items = [
+    { color:'#6f42c1', label:'Fenêtre Seamless' },
+    { color:'#d6336c', label:'Fenêtre Frame' },
+    { color:'#adb5bd', label:'Mur léger' },
+    { color:'#495057', label:'Mur lourd' },
+    { color:'#e63946', label:'Porte simple' },
+    { color:'#e8590c', label:'Porte double' },
+    { color:'#f06595', label:'Porte coulissante' },
+  ];
+  const w = 220, x0 = 40, y0 = 40;
+  cv.add(new fabric.Rect({ left:x0, top:y0, width:w, height: 30 + items.length * 22, fill:'#ffffff', stroke:'#333', strokeWidth:1 }));
+  cv.add(new fabric.Textbox('LÉGENDE', { left:x0+10, top:y0+6, fontSize:12, fontWeight:'bold', fill:'#222', fontFamily:'Helvetica' }));
+  items.forEach((it, i) => {
+    const y = y0 + 32 + i * 22;
+    cv.add(new fabric.Line([x0+12, y+7, x0+42, y+7], { stroke: it.color, strokeWidth:4, selectable:false }));
+    cv.add(new fabric.Textbox(it.label, { left:x0+50, top:y, fontSize:11, fill:'#333', width:160, fontFamily:'Helvetica' }));
+  });
+  cv.requestRenderAll();
+}
+
+// ─── Outils de dessin ───
+function addText() { const cv = STUDIO.fabricCanvas; const t = new fabric.Textbox('Texte', { left:100, top:100, fontSize:20, fontFamily:'Helvetica', fill:'#222', width:220 }); cv.add(t).setActiveObject(t); cv.requestRenderAll(); }
+function addRect() { const cv = STUDIO.fabricCanvas; const r = new fabric.Rect({ left:100, top:100, width:200, height:120, fill:'transparent', stroke:'#222', strokeWidth:2 }); cv.add(r).setActiveObject(r); cv.requestRenderAll(); }
+function addLine() { const cv = STUDIO.fabricCanvas; const l = new fabric.Line([100,100,300,100], { stroke:'#222', strokeWidth:2 }); cv.add(l).setActiveObject(l); cv.requestRenderAll(); }
+function addArrow() {
+  const cv = STUDIO.fabricCanvas;
+  const line = new fabric.Line([0,12,180,12], { stroke:'#e63946', strokeWidth:4 });
+  const tri = new fabric.Triangle({ left:184, top:12, width:20, height:24, fill:'#e63946', angle:90, originX:'center', originY:'center' });
+  const grp = new fabric.Group([line, tri], { left:150, top:150 });
+  cv.add(grp).setActiveObject(grp); cv.requestRenderAll();
+}
+function addImageFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    fabric.Image.fromURL(e.target.result, (img) => {
+      if (img.width > 600) img.scaleToWidth(600);
+      img.set({ left:150, top:150 });
+      STUDIO.fabricCanvas.add(img).setActiveObject(img);
+      STUDIO.fabricCanvas.requestRenderAll();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+function bringFront() { const cv = STUDIO.fabricCanvas; const o = cv.getActiveObject(); if (o) { cv.bringToFront(o); cv.requestRenderAll(); } }
+function sendBack() { const cv = STUDIO.fabricCanvas; const o = cv.getActiveObject(); if (o) { cv.sendToBack(o); cv.requestRenderAll(); } }
+function duplicateSelected() { const cv = STUDIO.fabricCanvas; const o = cv.getActiveObject(); if (!o) return; o.clone(c => { c.set({ left:(c.left||0)+20, top:(c.top||0)+20 }); cv.add(c).setActiveObject(c); cv.requestRenderAll(); }); }
+function deleteSelected() { const cv = STUDIO.fabricCanvas; const objs = cv.getActiveObjects(); if (!objs.length) return; objs.forEach(o => cv.remove(o)); cv.discardActiveObject(); cv.requestRenderAll(); }
+
+// ─── Outil cote (clic 2 points → ligne cotée avec flèches, valeur mm éditable en double-clic) ───
+function startDimensionTool() {
+  dimPending = null;
+  STUDIO.mode = 'dimension';
+  STUDIO.fabricCanvas.defaultCursor = 'crosshair';
+  flashStatus('Clique 2 points sur la planche pour poser la cote', 'info');
+}
+function addDimensionLine(p1, p2) {
+  const cv = STUDIO.fabricCanvas;
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const angleRad = Math.atan2(dy, dx);
+  const angleDeg = angleRad * 180 / Math.PI;
+  const tickLen = 10;
+  const perp = { x: Math.cos(angleRad + Math.PI / 2) * tickLen, y: Math.sin(angleRad + Math.PI / 2) * tickLen };
+  const objs = [];
+  objs.push(new fabric.Line([p1.x - perp.x, p1.y - perp.y, p1.x + perp.x, p1.y + perp.y], { stroke:'#e63946', strokeWidth:2 }));
+  objs.push(new fabric.Line([p2.x - perp.x, p2.y - perp.y, p2.x + perp.x, p2.y + perp.y], { stroke:'#e63946', strokeWidth:2 }));
+  objs.push(new fabric.Line([p1.x, p1.y, p2.x, p2.y], { stroke:'#e63946', strokeWidth:2 }));
+  objs.push(new fabric.Triangle({ left:p1.x, top:p1.y, width:9, height:13, fill:'#e63946', angle:angleDeg + 90, originX:'center', originY:'center' }));
+  objs.push(new fabric.Triangle({ left:p2.x, top:p2.y, width:9, height:13, fill:'#e63946', angle:angleDeg - 90, originX:'center', originY:'center' }));
+  const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+  const label = new fabric.Textbox('? mm', { left:midX - 50, top:midY - 18, fontSize:14, fontFamily:'monospace', fill:'#e63946', fontWeight:'bold', textAlign:'center', width:100, backgroundColor:'rgba(255,255,255,0.85)' });
+  label.isDimLabel = true;
+  objs.push(label);
+  const grp = new fabric.Group(objs, {});
+  grp.isDimension = true;
+  cv.add(grp).setActiveObject(grp);
+  cv.requestRenderAll();
+}
+function handleCanvasMouseDown(opt) {
+  if (STUDIO.mode !== 'dimension') return;
+  const p = STUDIO.fabricCanvas.getPointer(opt.e);
+  if (!dimPending) { dimPending = p; }
+  else {
+    addDimensionLine(dimPending, p);
+    dimPending = null; STUDIO.mode = null;
+    STUDIO.fabricCanvas.defaultCursor = 'default';
+  }
+}
+function handleCanvasDblClick(opt) {
+  const target = opt.target;
+  if (!target || !target.isDimension) return;
+  const label = (target._objects || []).find(o => o.isDimLabel);
+  if (!label) return;
+  const current = String(label.text || '').replace(/\s*mm\s*$/i, '');
+  const val = prompt('Valeur de la cote (mm) :', current === '?' ? '' : current);
+  if (val === null) return;
+  label.set('text', (val.trim() || '?') + ' mm');
+  STUDIO.fabricCanvas.requestRenderAll();
+}
+
+// ─── Canvas init & responsive scaling ───
+function initCanvas() {
+  STUDIO.fabricCanvas = new fabric.Canvas('p2d-canvas', { width:CANVAS_W, height:CANVAS_H, backgroundColor:'#ffffff', selection:true, preserveObjectStacking:true });
+  STUDIO.fabricCanvas.on('mouse:down', handleCanvasMouseDown);
+  STUDIO.fabricCanvas.on('mouse:dblclick', handleCanvasDblClick);
+  resizeCanvasShell();
+  window.addEventListener('resize', resizeCanvasShell);
+
+  const shell = document.getElementById('canvas-shell');
+  shell.addEventListener('dragover', e => e.preventDefault());
+  shell.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const view = e.dataTransfer.getData('text/plan2d-view');
+    if (!view) return;
+    const scale = shell._p2dScale || 1;
+    const rect = shell.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / scale - 300;
+    const y = (e.clientY - rect.top) / scale - 200;
+    await insertCapturedImage(view, Math.max(0, x), Math.max(0, y), 600, 400, null);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+  });
+}
+function resizeCanvasShell() {
+  const wrap = document.getElementById('canvas-wrap');
+  const shell = document.getElementById('canvas-shell');
+  const scale = Math.min((wrap.clientWidth - 60) / CANVAS_W, (wrap.clientHeight - 60) / CANVAS_H, 1);
+  shell._p2dScale = scale;
+  shell.style.width = (CANVAS_W * scale) + 'px';
+  shell.style.height = (CANVAS_H * scale) + 'px';
+  const lower = shell.querySelector('.canvas-container');
+  if (lower) { lower.style.transform = `scale(${scale})`; lower.style.transformOrigin = 'top left'; }
+}
+
+// ─── Sauvegarde ───
+async function saveStudio() {
+  saveCurrentSheetJson();
+  STUDIO.title = document.getElementById('studio-title').value || 'Plan 2D';
+  try {
+    await apiSend('PATCH', '/plan2d/' + STUDIO.planId, { title: STUDIO.title, sheets: STUDIO.sheets });
+    flashStatus('✓ Plan 2D sauvegardé', 'success');
+  } catch (e) { flashStatus('Échec sauvegarde : ' + e.message, 'error'); }
+}
+
+// ─── Export PDF (même méthode que Briefing Studio : rasterisation canvas → jsPDF, une page par planche) ───
+async function exportPDF() {
+  saveCurrentSheetJson();
+  if (!window.jspdf) { flashStatus('jsPDF non chargé', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const btn = document.getElementById('btn-export-pdf');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  try {
+    const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a3' });
+    const pageW = 420, pageH = 297;
+    const curIdx = STUDIO.curIdx;
+    for (let i = 0; i < STUDIO.sheets.length; i++) {
+      btn.innerHTML = `⏳ Planche ${i + 1}/${STUDIO.sheets.length}...`;
+      STUDIO.curIdx = i;
+      loadSheetIntoCanvas(i);
+      await new Promise(r => setTimeout(r, 400));
+      const dataUrl = STUDIO.fabricCanvas.toDataURL({ format:'jpeg', quality:0.92, multiplier:2 });
+      if (i > 0) pdf.addPage();
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pageW, pageH);
+    }
+    STUDIO.curIdx = curIdx; loadSheetIntoCanvas(curIdx);
+    const safeTitle = (STUDIO.title || 'plan2d').replace(/[^\w-]/g, '_');
+    const fileName = safeTitle + '.pdf';
+    pdf.save(fileName);
+    try {
+      const blob = pdf.output('blob');
+      const file = new File([blob], fileName, { type:'application/pdf' });
+      const fd = new FormData(); fd.append('file', file); fd.append('category', 'plan2d-pdf');
+      const up = await fetch(window.location.origin + '/api/v1/upload/project-file/' + PROJECT_ID, { method:'POST', headers:{ 'Authorization':'Bearer ' + TOKEN }, body: fd });
+      flashStatus(up.ok ? '✓ PDF exporté et sauvegardé dans les fichiers du projet' : 'PDF téléchargé, mais échec de sauvegarde dans les fichiers', up.ok ? 'success' : 'error');
+    } catch (e) { flashStatus('PDF téléchargé, mais échec de sauvegarde dans les fichiers', 'error'); }
+  } catch (e) {
+    console.error('[plan2d export]', e);
+    flashStatus('Échec export : ' + e.message, 'error');
+  } finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+
+// ─── Bootstrap ───
+async function init() {
+  if (!PROJECT_ID) { document.getElementById('main').innerHTML = '<div class="error-full">Aucun projet spécifié.<br>Ouvre cet outil depuis le viewer 3D d\'un projet (panneau "📐 Plan 2D").</div>'; return; }
+  if (!TOKEN) { document.getElementById('main').innerHTML = '<div class="error-full">Session expirée ou lien invalide.<br>Reviens depuis VEM et réessaie.</div>'; return; }
+  try {
+    const capturesRaw = sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
+    STUDIO.captures = capturesRaw ? JSON.parse(capturesRaw) : [];
+
+    const projRes = await apiGet('/projects/' + PROJECT_ID);
+    STUDIO.project = projRes.data;
+    document.getElementById('project-badge').textContent = '· ' + (STUDIO.project.name || '');
+
+    const listRes = await apiGet('/plan2d/project/' + PROJECT_ID);
+    if (listRes.data && listRes.data.length > 0) {
+      const full = await apiGet('/plan2d/' + listRes.data[0].id);
+      STUDIO.planId = full.data.id;
+      STUDIO.title = full.data.title || 'Plan 2D';
+      if (Array.isArray(full.data.sheets) && full.data.sheets.length) STUDIO.sheets = full.data.sheets;
+    } else {
+      const created = await apiSend('POST', '/plan2d/project/' + PROJECT_ID, { title: 'Plan 2D — ' + (STUDIO.project.name || '') });
+      STUDIO.planId = created.data.id;
+      STUDIO.title = created.data.title;
+    }
+
+    document.getElementById('studio-title').value = STUDIO.title;
+    initCanvas();
+    renderSidebar();
+    loadSheetIntoCanvas(STUDIO.curIdx);
+    renderCaptureList();
+  } catch (e) {
+    console.error('[plan2d init]', e);
+    document.getElementById('main').innerHTML = '<div class="error-full">Erreur de chargement : ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+document.getElementById('btn-save').onclick = saveStudio;
+document.getElementById('btn-export-pdf').onclick = exportPDF;
+document.getElementById('btn-add-sheet').onclick = addBlankSheet;
+document.querySelectorAll('.tpl-btn').forEach(b => b.onclick = () => newSheetFromTemplate(b.dataset.tpl));
+document.getElementById('btn-tool-dim').onclick = startDimensionTool;
+document.getElementById('btn-tool-legend').onclick = addLegend;
+document.getElementById('btn-tool-title').onclick = () => buildTitleBlock(STUDIO.fabricCanvas, STUDIO.sheets[STUDIO.curIdx].name);
+document.getElementById('btn-tool-text').onclick = addText;
+document.getElementById('btn-tool-line').onclick = addLine;
+document.getElementById('btn-tool-arrow').onclick = addArrow;
+document.getElementById('btn-tool-rect').onclick = addRect;
+document.getElementById('btn-tool-image').onclick = () => document.getElementById('file-image').click();
+document.getElementById('file-image').onchange = (e) => { if (e.target.files[0]) addImageFromFile(e.target.files[0]); e.target.value = ''; };
+document.getElementById('btn-front').onclick = bringFront;
+document.getElementById('btn-back').onclick = sendBack;
+document.getElementById('btn-dup').onclick = duplicateSelected;
+document.getElementById('btn-del').onclick = deleteSelected;
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

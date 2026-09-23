@@ -30,6 +30,7 @@ import aiRoutes from './routes/ai';
 import clientRemarksRoutes from './routes/clientRemarks';
 import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
+import plan2dRoutes from './routes/plan2d';
 import settingsRoutes from './routes/settings';
 import teamBookingsRoutes from './routes/teamBookings';
 import emailWebhookRoutes from './routes/emailWebhook';
@@ -106,6 +107,7 @@ app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
+app.use(`${API}/plan2d`,         authMiddleware, plan2dRoutes);
 // Assistant lecture seule — réservé aux rôles qui pilotent les projets.
 app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager'), assistantRoutes);
 app.use('/api/v1/translate', translateRoutes);

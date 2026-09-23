@@ -106,6 +106,7 @@ model User {
   taskComments        TaskComment[]
   handovers           Handover[]     @relation("HandoverCreatedBy")
   siteManagerHandover Handover[]     @relation("SiteManager")
+  createdPlan2Ds      Plan2D[]       @relation("Plan2DCreatedBy")
   dailyReports        DailyReport[]
   reportedTickets     Ticket[]       @relation("ReportedBy")
   assignedTickets     Ticket[]       @relation("TicketAssignedTo")
@@ -220,6 +221,7 @@ model Project {
   briefing         Briefing[]
   teamBookings     TeamBooking[]
   hotelBookings    HotelBooking[]
+  plan2Ds          Plan2D[]
 
   @@map("projects")
 }
@@ -859,4 +861,22 @@ model Briefing {
 
   @@index([projectId])
   @@map("briefings")
+}
+
+// Plans 2D façon bureau d'études, générés depuis le viewer 3D (planches Fabric.js
+// annotées à la main à partir de captures orthographiques — voir plan2d-studio.html).
+model Plan2D {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  title       String?
+  sheets      Json     @default("[]") // [{ id, name, json, thumbnail }]
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("Plan2DCreatedBy", fields: [createdById], references: [id])
+
+  @@index([projectId])
+  @@map("plan2ds")
 }

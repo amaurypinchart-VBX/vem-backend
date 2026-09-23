@@ -132,6 +132,16 @@ canvas {
   font-family: 'SF Mono', Monaco, monospace; font-weight: 600;
 }
 
+.plan2d-check {
+  display: flex; align-items: center; gap: 7px; font-size: 12px;
+  padding: 4px 0; cursor: pointer; user-select: none;
+}
+.plan2d-check input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.plan2d-thumb {
+  width: 52px; height: 38px; object-fit: cover; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg-3);
+}
+
 #overlay-controls {
   position: absolute; top: 12px; left: 12px;
   display: flex; flex-direction: column; gap: 6px; z-index: 4;
@@ -570,6 +580,21 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           <button class="btn btn-sm" id="btn-measure-start" style="margin-top:8px;">📏 Activer la règle</button>
           <div id="measurement-list-container" style="margin-top:10px;"></div>
           <button class="btn btn-sm" id="btn-clear-measures" style="margin-top:6px; display:none;">🗑 Effacer les mesures</button>
+        </div>
+
+        <div class="info-section" id="plan2d-section">
+          <h4>📐 Plan 2D</h4>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">Choisis les vues à capturer pour préparer des plans façon bureau d'études.</div>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="front" checked> Face</label>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="back" checked> Dos</label>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="left" checked> Gauche</label>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="right" checked> Droite</label>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="top" checked> Dessus</label>
+          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="3d" checked> Rendu 3D (vue actuelle)</label>
+          <button class="btn btn-sm btn-primary" id="btn-plan2d-capture" style="margin-top:10px;width:100%;">📸 Capturer les vues sélectionnées</button>
+          <div id="plan2d-status" style="font-size:11px;color:var(--text-dim);margin-top:8px;"></div>
+          <div id="plan2d-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+          <button class="btn btn-sm" id="btn-plan2d-open-studio" style="margin-top:10px;width:100%;display:none;">📐 Ouvrir Plan 2D Studio →</button>
         </div>
 
         <div class="info-section">
@@ -2606,6 +2631,163 @@ function renderGallery() {
     img.addEventListener('click', () => window.open(img.src, '_blank'));
   });
 }
+
+// ============================================================================
+// PLAN 2D — vues orthographiques (Face/Dos/Gauche/Droite/Dessus) + rendu 3D
+// ============================================================================
+const PLAN2D_VIEWS = [
+  { key: 'front', label: 'Face',   dir: [0, 0, 1] },
+  { key: 'back',  label: 'Dos',    dir: [0, 0, -1] },
+  { key: 'left',  label: 'Gauche', dir: [-1, 0, 0] },
+  { key: 'right', label: 'Droite', dir: [1, 0, 0] },
+  { key: 'top',   label: 'Dessus', dir: [0, 1, 0] },
+  { key: '3d',    label: 'Rendu 3D', dir: null },
+];
+state.plan2dCaptures = {}; // key -> { blob, url, uploadedUrl }
+let plan2dOrthoCamera = null;
+const plan2dParams = new URLSearchParams(window.location.search);
+const plan2dProjectId = plan2dParams.get('projectId');
+const plan2dToken = plan2dParams.get('token');
+
+function getPlan2DOrthoCamera() {
+  if (!plan2dOrthoCamera) plan2dOrthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100000);
+  return plan2dOrthoCamera;
+}
+
+// Positionne (ou réutilise la caméra perspective pour "3d") et rend la scène pour une vue donnée.
+// Le modèle est toujours centré à l'origine (voir displayModel), donc pas besoin de recalculer un centre.
+function renderPlan2DView(key) {
+  if (key === '3d') { renderer.render(scene, camera); return; }
+  const view = PLAN2D_VIEWS.find(v => v.key === key);
+  const size = state.modelInfo.dimensions;
+  const maxDim = state.currentModel.maxDim;
+  const aspect = canvas.width / canvas.height;
+  let halfW, halfH;
+  if (key === 'front' || key === 'back') { halfW = size.x / 2; halfH = size.y / 2; }
+  else if (key === 'left' || key === 'right') { halfW = size.z / 2; halfH = size.y / 2; }
+  else { halfW = size.x / 2; halfH = size.z / 2; } // top
+  const margin = 1.15; // marge de 15% autour du modèle
+  let vH = Math.max(halfH * margin, 0.01);
+  let vW = vH * aspect;
+  if (vW < halfW * margin) { vW = halfW * margin; vH = vW / aspect; }
+  const cam = getPlan2DOrthoCamera();
+  cam.left = -vW; cam.right = vW; cam.top = vH; cam.bottom = -vH;
+  cam.near = 0.01; cam.far = Math.max(maxDim * 100, 1000);
+  const dist = Math.max(maxDim * 5, 10);
+  cam.position.set(view.dir[0] * dist, view.dir[1] * dist, view.dir[2] * dist);
+  cam.up.set(0, key === 'top' ? 0 : 1, key === 'top' ? -1 : 0);
+  cam.lookAt(0, 0, 0);
+  cam.updateProjectionMatrix();
+  renderer.render(scene, cam);
+}
+
+function drawPlan2DFooter(ctx, label) {
+  const cw = canvas.width, ch = canvas.height;
+  const scaleY = ch / canvas.getBoundingClientRect().height;
+  const fontSize = Math.round(14 * scaleY);
+  const padY = 10 * scaleY, padX = 16 * scaleY;
+  const footerH = fontSize + padY * 2;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, ch - footerH, cw, footerH);
+  ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+  ctx.fillStyle = 'white';
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const modelName = state.modelInfo ? state.modelInfo.name : 'Modèle 3D';
+  ctx.fillText('📐 ' + label + ' — ' + modelName, padX, ch - footerH / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(new Date().toLocaleString('fr-FR'), cw - padX, ch - footerH / 2);
+}
+
+function capturePlan2DView(key) {
+  return new Promise((resolve) => {
+    renderPlan2DView(key);
+    const offscreen = document.createElement('canvas');
+    offscreen.width = canvas.width; offscreen.height = canvas.height;
+    const ctx = offscreen.getContext('2d');
+    ctx.drawImage(canvas, 0, 0);
+    const view = PLAN2D_VIEWS.find(v => v.key === key);
+    drawPlan2DFooter(ctx, view.label);
+    offscreen.toBlob((blob) => resolve(blob), 'image/png');
+  });
+}
+
+async function uploadPlan2DCaptures() {
+  if (!plan2dProjectId || !plan2dToken) return; // viewer ouvert hors contexte VEM : pas d'upload possible
+  for (const [key, cap] of Object.entries(state.plan2dCaptures)) {
+    if (cap.uploadedUrl) continue;
+    try {
+      const file = new File([cap.blob], `plan2d-${key}.png`, { type: 'image/png' });
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', 'plan2d-view');
+      const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + plan2dProjectId, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + plan2dToken },
+        body: fd,
+      });
+      if (r.ok) {
+        const data = await r.json();
+        cap.uploadedUrl = data && data.data ? data.data.fileUrl : null;
+      }
+    } catch (e) { console.error('[Plan2D] upload échoué', key, e); }
+  }
+}
+
+async function runPlan2DCapture() {
+  if (!state.currentModel) { setStatus('Charge un modèle d\'abord', 'error'); return; }
+  const checked = Array.from(document.querySelectorAll('.plan2d-view-cb:checked')).map(cb => cb.value);
+  if (checked.length === 0) { setStatus('Coche au moins une vue', 'error'); return; }
+  const statusEl = document.getElementById('plan2d-status');
+  const thumbsEl = document.getElementById('plan2d-thumbs');
+  const btn = document.getElementById('btn-plan2d-capture');
+  btn.disabled = true;
+  thumbsEl.innerHTML = '';
+  for (let i = 0; i < checked.length; i++) {
+    const key = checked[i];
+    statusEl.textContent = `Capture ${i + 1}/${checked.length}...`;
+    const blob = await capturePlan2DView(key);
+    if (!blob) continue;
+    if (state.plan2dCaptures[key]) URL.revokeObjectURL(state.plan2dCaptures[key].url);
+    const url = URL.createObjectURL(blob);
+    state.plan2dCaptures[key] = { blob, url, uploadedUrl: null };
+  }
+  // L'animate() loop (rAF) redessine déjà la vue perspective interactive à la frame suivante — rien à restaurer.
+  Object.keys(state.plan2dCaptures).forEach((key) => {
+    const view = PLAN2D_VIEWS.find(v => v.key === key);
+    const thumb = document.createElement('img');
+    thumb.src = state.plan2dCaptures[key].url;
+    thumb.title = view.label;
+    thumb.className = 'plan2d-thumb';
+    thumbsEl.appendChild(thumb);
+  });
+  flashCapture();
+  btn.disabled = false;
+  const n = Object.keys(state.plan2dCaptures).length;
+  document.getElementById('btn-plan2d-open-studio').style.display = n > 0 ? 'block' : 'none';
+  statusEl.textContent = plan2dProjectId ? `✓ ${n} vue(s) capturée(s) — envoi vers VEM...` : `✓ ${n} vue(s) capturée(s).`;
+  await uploadPlan2DCaptures();
+  statusEl.textContent = plan2dProjectId
+    ? `✓ ${n} vue(s) capturée(s) et sauvées sur le projet.`
+    : `✓ ${n} vue(s) capturée(s). Ouvre le viewer depuis une fiche projet pour les sauvegarder.`;
+}
+
+function openPlan2DStudio() {
+  const captures = Object.entries(state.plan2dCaptures)
+    .filter(([, c]) => c.uploadedUrl)
+    .map(([key, c]) => ({ view: key, url: c.uploadedUrl }));
+  if (captures.length === 0) {
+    setStatus('Attends la fin de l\'envoi des captures avant d\'ouvrir le studio', 'error');
+    return;
+  }
+  try { sessionStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); } catch (e) {}
+  const url = new URL(window.location.origin + '/plan2d-studio.html');
+  if (plan2dProjectId) url.searchParams.set('projectId', plan2dProjectId);
+  if (plan2dToken) url.searchParams.set('token', plan2dToken);
+  window.open(url.toString(), '_blank');
+}
+
+document.getElementById('btn-plan2d-capture').onclick = runPlan2DCapture;
+document.getElementById('btn-plan2d-open-studio').onclick = openPlan2DStudio;
 
 document.getElementById('ov-capture').onclick = captureView;
 document.getElementById('btn-gallery').onclick = () => {
