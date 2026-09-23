@@ -5,7 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { io } from '../index';
 import { notifyTubizeTruckMovement } from '../services/telegramService';
-import { createWarehouseTask } from '../services/warehouseAppService';
+import { createWarehouseTask, updateWarehouseTask } from '../services/warehouseAppService';
 import { sendMail } from '../services/emailService';
 import { generateProjectReport } from '../services/projectReportService';
 import { generateProjectReportPdf } from '../services/pdfService';
@@ -458,7 +458,9 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
     }).then(project => {
       if (!project) return;
       notifyTubizeTruckMovement(truck, project, 'created').catch(() => {});
-      createWarehouseTask(truck, project).catch(() => {});
+      createWarehouseTask(truck, project).then(taskId => {
+        if (taskId) return prisma.truck.update({ where: { id: truck.id }, data: { warehouseTaskId: taskId } });
+      }).catch(() => {});
     }).catch(() => {});
 
     res.status(201).json({ success: true, data: truck });
@@ -495,7 +497,18 @@ router.patch('/:id/trucks/:truckId', async (req: AuthRequest, res: Response, nex
         where: { id: req.params.id },
         select: { id: true, name: true, internalNumber: true },
       }).then(project => {
-        if (project) notifyTubizeTruckMovement(truck, project, 'updated').catch(() => {});
+        if (!project) return;
+        notifyTubizeTruckMovement(truck, project, 'updated').catch(() => {});
+        // Répercute le changement dans l'app entrepôt : met à jour la task
+        // existante si on en a déjà créé une pour ce camion, sinon en crée
+        // une (cas où le camion ne concernait pas Tubize à sa création).
+        if (truck.warehouseTaskId) {
+          updateWarehouseTask(truck.warehouseTaskId, truck, project).catch(() => {});
+        } else {
+          createWarehouseTask(truck, project).then(taskId => {
+            if (taskId) return prisma.truck.update({ where: { id: truck.id }, data: { warehouseTaskId: taskId } });
+          }).catch(() => {});
+        }
       }).catch(() => {});
     }
 

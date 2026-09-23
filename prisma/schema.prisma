@@ -335,6 +335,7 @@ model Truck {
   status        String    @default("planned")
   loadingLocation   String? @map("loading_location")
   unloadingLocation String? @map("unloading_location")
+  warehouseTaskId   String? @map("warehouse_task_id")
   createdAt     DateTime  @default(now()) @map("created_at")
   project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
