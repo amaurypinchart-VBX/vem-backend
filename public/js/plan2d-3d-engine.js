@@ -425,11 +425,16 @@
     { key: 'top', label: 'Dessus', dir: [0, 1, 0] },
   ];
   const EDGE_ANGLE_THRESHOLD = 25;
-  const VECTOR_MAX_SEGMENTS = 40000;
+  const VECTOR_SAFETY_CAP = 500000; // garde-fou absolu pendant la collecte (cas pathologique)
+  const VECTOR_MAX_SEGMENTS = 60000; // nombre d'arêtes réellement conservées, APRÈS tri par importance
 
+  // Trie par longueur décroissante avant de couper — voir le commentaire détaillé de la même fonction
+  // dans viewer3d.html : sinon, sur un modèle avec beaucoup de petits détails (meneaux de fenêtres...),
+  // le contour principal peut ne jamais être atteint et disparaître complètement du plan.
   function collectEdgeSegmentsWorld(meshes) {
-    const segments = [];
+    const raw = [];
     const a = new THREE.Vector3(), b = new THREE.Vector3();
+    outer:
     for (const mesh of meshes) {
       if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) continue;
       let edges;
@@ -439,10 +444,26 @@
       for (let i = 0; i + 1 < pos.count; i += 2) {
         a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
         b.fromBufferAttribute(pos, i + 1).applyMatrix4(mesh.matrixWorld);
-        segments.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        raw.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        if (raw.length / 6 > VECTOR_SAFETY_CAP) { edges.dispose(); break outer; }
       }
       edges.dispose();
-      if (segments.length / 6 > VECTOR_MAX_SEGMENTS) break;
+    }
+    const n = raw.length / 6;
+    if (n <= VECTOR_MAX_SEGMENTS) return raw;
+    const order = new Array(n);
+    const lenSq = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      order[i] = i;
+      const o = i * 6;
+      const dx = raw[o + 3] - raw[o], dy = raw[o + 4] - raw[o + 1], dz = raw[o + 5] - raw[o + 2];
+      lenSq[i] = dx * dx + dy * dy + dz * dz;
+    }
+    order.sort((x, y) => lenSq[y] - lenSq[x]);
+    const segments = new Array(VECTOR_MAX_SEGMENTS * 6);
+    for (let k = 0; k < VECTOR_MAX_SEGMENTS; k++) {
+      const o = order[k] * 6, d = k * 6;
+      for (let c = 0; c < 6; c++) segments[d + c] = raw[o + c];
     }
     return segments;
   }
@@ -500,7 +521,7 @@
     const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
     const epsilon = (cam.far - cam.near) * 0.006;
     const SAMPLES = 10;
-    const MAX_PATH_POINTS = 20000; // garde-fou mémoire (voir computeVectorViewData dans viewer3d.html)
+    const MAX_PATH_POINTS = 150000; // garde-fou mémoire (voir computeVectorViewData dans viewer3d.html)
     const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
     let pathData = '', pathPointCount = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

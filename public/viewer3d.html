@@ -2667,14 +2667,22 @@ function getPlan2DOrthoCamera() {
 // En cas d'échec (WebGL, modèle trop complexe...), on retourne null et l'appelant
 // se rabat silencieusement sur la capture PNG classique — aucune régression.
 // ============================================================================
-const PLAN2D_VECTOR_MAX_SEGMENTS = 40000; // garde-fou mémoire/sessionStorage
+const PLAN2D_VECTOR_SAFETY_CAP = 500000; // garde-fou absolu pendant la collecte (cas pathologique)
+const PLAN2D_VECTOR_MAX_SEGMENTS = 60000; // nombre d'arêtes réellement conservées, APRÈS tri par importance
 const PLAN2D_EDGE_ANGLE_THRESHOLD = 25; // degrés — sépare arêtes vives (contours) des faces lissées
 
-// Arêtes "dures" de tous les meshes visibles, en coordonnées MONDE (unité native du modèle, pas encore mm).
+// Arêtes "dures" de tous les meshes visibles, en coordonnées MONDE (unité native du modèle, pas encore mm),
+// TRIÉES des plus longues aux plus courtes. Indispensable : sur un modèle avec beaucoup de petits détails
+// (ex. meneaux de fenêtres), ces détails peuvent représenter l'essentiel du nombre d'arêtes — si on
+// coupait "dans l'ordre du fichier" comme avant, le contour principal du bâtiment (quelques dizaines de
+// grandes arêtes) pouvait ne JAMAIS être atteint et disparaître complètement du plan, alors que le petit
+// détail, lui, survivait. En triant par longueur décroissante avant de couper, les grandes arêtes
+// structurantes sont toujours conservées en priorité, quel que soit l'ordre du fichier source.
 function collectEdgeSegmentsWorld() {
-  const segments = []; // [ax,ay,az, bx,by,bz, ax,ay,az, bx,by,bz, ...]
+  const raw = []; // [ax,ay,az, bx,by,bz, ax,ay,az, bx,by,bz, ...] — pas encore trié
   const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
   const a = new THREE.Vector3(), b = new THREE.Vector3();
+  outer:
   for (const mesh of visibleMeshes) {
     if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) continue;
     let edges;
@@ -2685,10 +2693,26 @@ function collectEdgeSegmentsWorld() {
     for (let i = 0; i + 1 < pos.count; i += 2) {
       a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
       b.fromBufferAttribute(pos, i + 1).applyMatrix4(mesh.matrixWorld);
-      segments.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      raw.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      if (raw.length / 6 > PLAN2D_VECTOR_SAFETY_CAP) { edges.dispose(); break outer; }
     }
     edges.dispose();
-    if (segments.length / 6 > PLAN2D_VECTOR_MAX_SEGMENTS) break;
+  }
+  const n = raw.length / 6;
+  if (n <= PLAN2D_VECTOR_MAX_SEGMENTS) return raw;
+  const order = new Array(n);
+  const lenSq = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    order[i] = i;
+    const o = i * 6;
+    const dx = raw[o + 3] - raw[o], dy = raw[o + 4] - raw[o + 1], dz = raw[o + 5] - raw[o + 2];
+    lenSq[i] = dx * dx + dy * dy + dz * dz;
+  }
+  order.sort((x, y) => lenSq[y] - lenSq[x]);
+  const segments = new Array(PLAN2D_VECTOR_MAX_SEGMENTS * 6);
+  for (let k = 0; k < PLAN2D_VECTOR_MAX_SEGMENTS; k++) {
+    const o = order[k] * 6, d = k * 6;
+    for (let c = 0; c < 6; c++) segments[d + c] = raw[o + c];
   }
   return segments;
 }
@@ -2776,7 +2800,7 @@ function computeVectorViewData(key) {
   const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
   const epsilon = (cam.far - cam.near) * 0.006; // tolérance profondeur (coplanarité / précision 8 bits)
   const SAMPLES = 10; // points intermédiaires par arête, pour découper les portions cachées
-  const MAX_PATH_POINTS = 20000; // garde-fou mémoire : au-delà, on arrête proprement plutôt que de saturer le navigateur
+  const MAX_PATH_POINTS = 150000; // garde-fou mémoire : au-delà, on arrête proprement plutôt que de saturer le navigateur (peu de risque de le heurter maintenant que collectEdgeSegmentsWorld trie déjà par importance)
   const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
   let pathData = '', pathPointCount = 0;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
