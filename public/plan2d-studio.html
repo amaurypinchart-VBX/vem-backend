@@ -97,10 +97,14 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
           <button class="btn" id="btn-dup" style="flex:1;">🗐 Dupliquer</button>
           <button class="btn" id="btn-del" style="flex:1;">🗑 Supprimer</button>
         </div>
-        <div class="hint" style="margin-top:8px;">💡 Double-clique une cote pour taper sa valeur en mm. Glisse une vue capturée sur la planche pour l'insérer.</div>
+        <button class="btn" id="btn-refresh-viewport" style="width:100%;margin-top:6px;">🔄 Actualiser le viewport</button>
+        <div class="hint" style="margin-top:8px;">💡 Double-clique une cote pour taper sa valeur en mm. Glisse une vue capturée sur la planche pour l'insérer — les vues avec contour vectoriel (traits nets) incluent déjà leurs cotes d'ensemble.</div>
       </div>
 
-      <div class="panel-head">Vues capturées</div>
+      <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Vues capturées</span>
+        <button class="btn" id="btn-reload-captures" style="padding:2px 8px;font-size:11px;" title="Recharger les dernières captures du viewer 3D (sans recharger la page)">↻</button>
+      </div>
       <div class="panel-body" id="capture-list"></div>
     </aside>
 
@@ -188,9 +192,13 @@ function loadImageWithCors(url) {
 }
 
 // ─── Sheets (planches) ───
+// Propriétés custom qu'on pose sur certains objets Fabric (cotes, viewports vectoriels) : par défaut
+// Fabric ne les sérialise pas dans toJSON()/toObject() — il faut les lister explicitement, sinon elles
+// disparaissent après un Sauvegarder/rouvrir (double-clic cote, bouton "Actualiser" du viewport cassés).
+const FABRIC_CUSTOM_PROPS = ['isDimension', 'isDimLabel', 'isVectorViewport', 'sourceView', '_p2dWidthMm', '_p2dHeightMm'];
 function saveCurrentSheetJson() {
   if (!STUDIO.fabricCanvas) return;
-  STUDIO.sheets[STUDIO.curIdx].json = STUDIO.fabricCanvas.toJSON();
+  STUDIO.sheets[STUDIO.curIdx].json = STUDIO.fabricCanvas.toJSON(FABRIC_CUSTOM_PROPS);
 }
 function loadSheetIntoCanvas(idx) {
   const sheet = STUDIO.sheets[idx];
@@ -257,7 +265,7 @@ function renderCaptureList() {
   }).join('');
   el.querySelectorAll('.capture-thumb').forEach(img => {
     img.addEventListener('dragstart', e => e.dataTransfer.setData('text/plan2d-capture-id', img.dataset.id));
-    img.addEventListener('click', () => insertCapturedImageById(img.dataset.id, CANVAS_W / 2 - 300, CANVAS_H / 2 - 200, 600, 400, null));
+    img.addEventListener('click', () => insertViewById(img.dataset.id, CANVAS_W / 2 - 300, CANVAS_H / 2 - 200, 600, 400, null, false));
   });
 }
 async function insertCapturedImageById(id, x, y, maxW, maxH, label) {
@@ -277,6 +285,78 @@ async function insertCapturedImageByView(viewKey, x, y, maxW, maxH, label) {
   const cap = STUDIO.captures.find(c => c.view === viewKey);
   if (!cap) return;
   await insertCapturedImageById(cap.id, x, y, maxW, maxH, label);
+}
+
+// ─── Viewports vectoriels (contour en traits nets, extrait dans le viewer 3D avec suppression des
+// lignes cachées — voir computeVectorViewData dans viewer3d.html) — remplace la photo par un vrai
+// dessin technique zoomable, façon SketchUp LayOut. Repli automatique sur l'image si aucune donnée
+// vectorielle n'est disponible pour cette capture (ancien plan, capture "Rendu 3D", etc.).
+function buildVectorGroupFromCapture(cap, maxW, maxH) {
+  const v = cap && cap.vector;
+  if (!v || !Array.isArray(v.segments) || !v.segments.length || !v.widthMm || !v.heightMm) return null;
+  const lines = v.segments.map(seg => new fabric.Line(seg, { stroke: '#111', strokeWidth: 1, selectable: false, evented: false }));
+  const grp = new fabric.Group(lines, {});
+  grp.isVectorViewport = true;
+  grp.sourceView = cap.view;
+  grp._p2dWidthMm = v.widthMm;
+  grp._p2dHeightMm = v.heightMm;
+  const scale = Math.min(maxW / (grp.width || 1), maxH / (grp.height || 1));
+  grp.scale(scale > 0 && isFinite(scale) ? scale : 1);
+  return grp;
+}
+async function insertVectorViewportById(id, x, y, maxW, maxH, label, withDims) {
+  const cap = STUDIO.captures.find(c => c.id === id);
+  const grp = buildVectorGroupFromCapture(cap, maxW, maxH);
+  if (!grp) return false;
+  grp.set({ left: x, top: y });
+  const cv = STUDIO.fabricCanvas;
+  cv.add(grp);
+  if (label) cv.add(new fabric.Textbox(label, { left: x, top: y - 24, fontSize: 16, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica' }));
+  if (withDims) {
+    const w = grp.getScaledWidth(), h = grp.getScaledHeight();
+    addDimensionLine({ x, y: y - 6 }, { x: x + w, y: y - 6 }, cap.vector.widthMm);
+    addDimensionLine({ x: x - 6, y }, { x: x - 6, y: y + h }, cap.vector.heightMm);
+  }
+  cv.requestRenderAll();
+  return true;
+}
+async function insertVectorViewportByView(viewKey, x, y, maxW, maxH, label, withDims) {
+  const cap = STUDIO.captures.find(c => c.view === viewKey && c.vector);
+  if (!cap) return false;
+  return insertVectorViewportById(cap.id, x, y, maxW, maxH, label, withDims);
+}
+// Points d'entrée uniques utilisés par les gabarits et l'insertion manuelle : vectoriel si possible, sinon photo.
+async function insertViewById(id, x, y, maxW, maxH, label, withDims) {
+  const ok = await insertVectorViewportById(id, x, y, maxW, maxH, label, withDims);
+  if (!ok) await insertCapturedImageById(id, x, y, maxW, maxH, label);
+}
+async function insertViewByView(viewKey, x, y, maxW, maxH, label, withDims) {
+  const ok = await insertVectorViewportByView(viewKey, x, y, maxW, maxH, label, withDims);
+  if (!ok) await insertCapturedImageByView(viewKey, x, y, maxW, maxH, label);
+}
+function refreshSelectedViewport() {
+  const cv = STUDIO.fabricCanvas;
+  const obj = cv.getActiveObject();
+  if (!obj || !obj.isVectorViewport) { flashStatus('Sélectionne d\'abord un viewport vectoriel sur la planche', 'error'); return; }
+  const cap = STUDIO.captures.filter(c => c.view === obj.sourceView && c.vector).pop();
+  if (!cap) { flashStatus('Aucune capture vectorielle pour cette vue — recapture-la dans le viewer 3D puis clique "↻" ci-dessus', 'error'); return; }
+  const w = obj.getScaledWidth(), h = obj.getScaledHeight();
+  const grp = buildVectorGroupFromCapture(cap, w, h);
+  if (!grp) return;
+  grp.set({ left: obj.left, top: obj.top, angle: obj.angle || 0 });
+  cv.remove(obj);
+  cv.add(grp);
+  cv.setActiveObject(grp);
+  cv.requestRenderAll();
+  flashStatus('✓ Viewport actualisé depuis la dernière capture du viewer 3D', 'success');
+}
+function reloadCapturesFromSession() {
+  try {
+    const raw = sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
+    STUDIO.captures = raw ? JSON.parse(raw) : [];
+    renderCaptureList();
+    flashStatus('✓ Vues capturées rechargées', 'success');
+  } catch (e) { flashStatus('Échec du rechargement des captures', 'error'); }
 }
 
 // ─── Gabarits de planche (calqués sur les planches VIEWBOX A0.x fournies en référence) ───
@@ -327,9 +407,9 @@ async function insertTemplateOverview() {
   const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
   const cellW = (x1 - x0 - 40) / 2, cellH = (CANVAS_H - PAGE_MARGIN * 2 - 140) / 2;
   const y0 = PAGE_MARGIN + 70;
-  await insertCapturedImageByView('front', x0, y0, cellW, cellH, 'Long side');
-  await insertCapturedImageByView('top', x0 + cellW + 40, y0, cellW, cellH, 'Top side');
-  await insertCapturedImageByView('left', x0, y0 + cellH + 40, cellW, cellH, 'Short side');
+  await insertViewByView('front', x0, y0, cellW, cellH, 'Long side', true);
+  await insertViewByView('top', x0 + cellW + 40, y0, cellW, cellH, 'Top side', true);
+  await insertViewByView('left', x0, y0 + cellH + 40, cellW, cellH, 'Short side', true);
   const first3d = STUDIO.captures.find(c => c.view === '3d');
   if (first3d) await insertCapturedImageById(first3d.id, x0 + cellW + 40, y0 + cellH + 40, cellW, cellH, '3D');
   buildTitleBlock(cv, 'Vue d\'ensemble', sheetCodeFor(STUDIO.curIdx));
@@ -338,14 +418,14 @@ async function insertTemplateOverview() {
 async function insertTemplateBigElevation(viewKey, label) {
   const cv = STUDIO.fabricCanvas;
   const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
-  await insertCapturedImageByView(viewKey, x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, label);
+  await insertViewByView(viewKey, x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, label, true);
   buildTitleBlock(cv, label, sheetCodeFor(STUDIO.curIdx));
   cv.requestRenderAll();
 }
 async function insertTemplateTop() {
   const cv = STUDIO.fabricCanvas;
   const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
-  await insertCapturedImageByView('top', x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, 'Implementation plan');
+  await insertViewByView('top', x0, PAGE_MARGIN + 70, x1 - x0, CANVAS_H - PAGE_MARGIN * 2 - 110, 'Implementation plan', true);
   buildTitleBlock(cv, 'Vue de dessus', sheetCodeFor(STUDIO.curIdx));
   cv.requestRenderAll();
 }
@@ -519,7 +599,7 @@ function startDimensionTool() {
   STUDIO.fabricCanvas.defaultCursor = 'crosshair';
   flashStatus('Clique 2 points sur la planche pour poser la cote', 'info');
 }
-function addDimensionLine(p1, p2) {
+function addDimensionLine(p1, p2, knownValueMm) {
   const cv = STUDIO.fabricCanvas;
   const dx = p2.x - p1.x, dy = p2.y - p1.y;
   const angleRad = Math.atan2(dy, dx);
@@ -533,7 +613,9 @@ function addDimensionLine(p1, p2) {
   objs.push(new fabric.Triangle({ left:p1.x, top:p1.y, width:9, height:13, fill:'#e63946', angle:angleDeg + 90, originX:'center', originY:'center' }));
   objs.push(new fabric.Triangle({ left:p2.x, top:p2.y, width:9, height:13, fill:'#e63946', angle:angleDeg - 90, originX:'center', originY:'center' }));
   const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
-  const label = new fabric.Textbox('? mm', { left:midX - 50, top:midY - 18, fontSize:14, fontFamily:'monospace', fill:'#e63946', fontWeight:'bold', textAlign:'center', width:100, backgroundColor:'rgba(255,255,255,0.85)' });
+  // Cote pré-remplie avec la vraie taille du modèle (viewport vectoriel) au lieu du "? mm" à saisir à la main.
+  const text = (knownValueMm != null && isFinite(knownValueMm)) ? (Math.round(knownValueMm) + ' mm') : '? mm';
+  const label = new fabric.Textbox(text, { left:midX - 50, top:midY - 18, fontSize:14, fontFamily:'monospace', fill:'#e63946', fontWeight:'bold', textAlign:'center', width:100, backgroundColor:'rgba(255,255,255,0.85)' });
   label.isDimLabel = true;
   objs.push(label);
   const grp = new fabric.Group(objs, {});
@@ -581,7 +663,7 @@ function initCanvas() {
     const rect = shell.getBoundingClientRect();
     const x = (e.clientX - rect.left) / scale - 300;
     const y = (e.clientY - rect.top) / scale - 200;
-    await insertCapturedImageById(id, Math.max(0, x), Math.max(0, y), 600, 400, null);
+    await insertViewById(id, Math.max(0, x), Math.max(0, y), 600, 400, null, false);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -701,6 +783,8 @@ document.getElementById('btn-front').onclick = bringFront;
 document.getElementById('btn-back').onclick = sendBack;
 document.getElementById('btn-dup').onclick = duplicateSelected;
 document.getElementById('btn-del').onclick = deleteSelected;
+document.getElementById('btn-refresh-viewport').onclick = refreshSelectedViewport;
+document.getElementById('btn-reload-captures').onclick = reloadCapturesFromSession;
 
 document.addEventListener('DOMContentLoaded', init);
 </script>

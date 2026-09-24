@@ -2654,6 +2654,160 @@ function getPlan2DOrthoCamera() {
   return plan2dOrthoCamera;
 }
 
+// ============================================================================
+// PLAN 2D VECTOR — extraction d'arêtes + suppression des lignes cachées
+// ----------------------------------------------------------------------------
+// Produit, en plus de la capture PNG existante, un jeu de segments 2D vectoriels
+// (en mm réels, unité du modèle appliquée via SCALE_TO_MM/state.modelUnit — voir
+// applyModelUnitForFormat) représentant le contour "façon dessin technique" du
+// modèle pour une vue orthographique donnée. Ce n'est PAS un rendu photo : les
+// arêtes cachées derrière une autre partie du modèle sont retirées via une passe
+// de profondeur hors-écran. Fonctionne indépendamment du format d'origine
+// (STL/OBJ/GLB/IFC/DAE) puisqu'on ne lit que les meshes Three.js déjà chargés.
+// En cas d'échec (WebGL, modèle trop complexe...), on retourne null et l'appelant
+// se rabat silencieusement sur la capture PNG classique — aucune régression.
+// ============================================================================
+const PLAN2D_VECTOR_MAX_SEGMENTS = 40000; // garde-fou mémoire/sessionStorage
+const PLAN2D_EDGE_ANGLE_THRESHOLD = 25; // degrés — sépare arêtes vives (contours) des faces lissées
+
+// Arêtes "dures" de tous les meshes visibles, en coordonnées MONDE (unité native du modèle, pas encore mm).
+function collectEdgeSegmentsWorld() {
+  const segments = []; // [ax,ay,az, bx,by,bz, ax,ay,az, bx,by,bz, ...]
+  const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  for (const mesh of visibleMeshes) {
+    if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) continue;
+    let edges;
+    try { edges = new THREE.EdgesGeometry(mesh.geometry, PLAN2D_EDGE_ANGLE_THRESHOLD); }
+    catch (e) { continue; }
+    const pos = edges.attributes.position;
+    mesh.updateMatrixWorld(true);
+    for (let i = 0; i + 1 < pos.count; i += 2) {
+      a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(pos, i + 1).applyMatrix4(mesh.matrixWorld);
+      segments.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+    edges.dispose();
+    if (segments.length / 6 > PLAN2D_VECTOR_MAX_SEGMENTS) break;
+  }
+  return segments;
+}
+
+// Caméra orthographique dédiée à la passe vectorielle : même cadrage que renderPlan2DView,
+// mais near/far resserrés au plus près du modèle (au lieu de 0.01→maxDim*100 utilisé pour la
+// navigation interactive) pour que la précision du depth-buffer 8 bits reste utilisable.
+function buildVectorPassCamera(key) {
+  const view = PLAN2D_VIEWS.find(v => v.key === key);
+  const size = state.modelInfo.dimensions;
+  const maxDim = state.currentModel.maxDim;
+  const aspect = canvas.width / canvas.height;
+  let halfW, halfH;
+  if (key === 'front' || key === 'back') { halfW = size.x / 2; halfH = size.y / 2; }
+  else if (key === 'left' || key === 'right') { halfW = size.z / 2; halfH = size.y / 2; }
+  else { halfW = size.x / 2; halfH = size.z / 2; }
+  const margin = 1.15;
+  let vH = Math.max(halfH * margin, 0.01);
+  let vW = vH * aspect;
+  if (vW < halfW * margin) { vW = halfW * margin; vH = vW / aspect; }
+  const dist = Math.max(maxDim * 5, 10);
+  const cam = new THREE.OrthographicCamera(-vW, vW, vH, -vH,
+    Math.max(dist - maxDim * 1.5, 0.01), dist + maxDim * 1.5);
+  cam.position.set(view.dir[0] * dist, view.dir[1] * dist, view.dir[2] * dist);
+  cam.up.set(0, key === 'top' ? 0 : 1, key === 'top' ? -1 : 0);
+  cam.lookAt(0, 0, 0);
+  cam.updateProjectionMatrix();
+  return cam;
+}
+
+// Rend une passe de profondeur (encodée RGBA) hors-écran avec la caméra donnée, en masquant
+// temporairement les helpers (grille/axes/ombre) qui ne font pas partie du modèle.
+function renderDepthBuffer(camForView, w, h) {
+  const prevGrid = gridHelper && gridHelper.visible;
+  const prevAxes = axesHelper && axesHelper.visible;
+  const prevShadow = shadowBlob && shadowBlob.visible;
+  if (gridHelper) gridHelper.visible = false;
+  if (axesHelper) axesHelper.visible = false;
+  if (shadowBlob) shadowBlob.visible = false;
+  const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  const prevOverride = scene.overrideMaterial;
+  const prevTarget = renderer.getRenderTarget();
+  scene.overrideMaterial = depthMaterial;
+  renderer.setRenderTarget(rt);
+  renderer.clear();
+  renderer.render(scene, camForView);
+  const pixels = new Uint8Array(w * h * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
+  renderer.setRenderTarget(prevTarget);
+  scene.overrideMaterial = prevOverride;
+  if (gridHelper) gridHelper.visible = prevGrid;
+  if (axesHelper) axesHelper.visible = prevAxes;
+  if (shadowBlob) shadowBlob.visible = prevShadow;
+  rt.dispose();
+  depthMaterial.dispose();
+  return pixels;
+}
+
+// Décodage RGBA → profondeur [0,1], inverse de packDepthToRGBA (three.js ShaderChunks/packing.glsl.js).
+function unpackRGBADepth(pixels, idx) {
+  const r = pixels[idx] / 255, g = pixels[idx + 1] / 255, b = pixels[idx + 2] / 255, a = pixels[idx + 3] / 255;
+  return r / 16777216 + g / 65536 + b / 256 + a;
+}
+
+// Point d'entrée : construit les segments 2D vectoriels (mm, X droite / Y bas — convention canvas)
+// visibles pour la vue `key`, avec suppression des portions cachées derrière le reste du modèle.
+function computeVectorViewData(key) {
+  if (key === '3d') return null; // le rendu 3D perspective reste une photo (page de garde), pas un plan technique
+  if (!state.currentModel || !state.modelInfo) return null;
+  const worldSegs = collectEdgeSegmentsWorld();
+  if (worldSegs.length === 0) return null;
+  const cam = buildVectorPassCamera(key);
+  const W = Math.max(Math.min(canvas.width, 2000), 200);
+  const H = Math.max(Math.min(canvas.height, 2000), 200);
+  let pixels;
+  try { pixels = renderDepthBuffer(cam, W, H); } catch (e) { console.error('[Plan2D] passe de profondeur échouée', e); return null; }
+  const factor = SCALE_TO_MM[(state && state.modelUnit) || 'm'];
+  const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
+  const epsilon = (cam.far - cam.near) * 0.0015; // tolérance profondeur (coplanarité / précision 8 bits)
+  const SAMPLES = 6; // points intermédiaires par arête, pour découper les portions cachées
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
+  const segments = [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  function isVisible(ndc) {
+    const col = Math.round((ndc.x + 1) / 2 * (W - 1));
+    const row = Math.round((ndc.y + 1) / 2 * (H - 1));
+    if (col < 0 || col >= W || row < 0 || row >= H) return true; // hors cadre : ne bloque pas le tracé
+    const bufDepth = unpackRGBADepth(pixels, (row * W + col) * 4);
+    const ptDepth = (ndc.z + 1) / 2;
+    return bufDepth >= ptDepth - epsilon;
+  }
+  function toSheetXY(ndc) {
+    const x = ndc.x * halfViewW * factor;
+    const y = -ndc.y * halfViewH * factor; // Y monde vers le haut → Y canvas vers le bas
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    return [x, y];
+  }
+
+  for (let i = 0; i + 5 < worldSegs.length; i += 6) {
+    a.set(worldSegs[i], worldSegs[i + 1], worldSegs[i + 2]);
+    b.set(worldSegs[i + 3], worldSegs[i + 4], worldSegs[i + 5]);
+    let prevPt = null, prevVis = false;
+    for (let s = 0; s <= SAMPLES; s++) {
+      const t = s / SAMPLES;
+      p.copy(a).lerp(b, t);
+      const ndc = p.clone().project(cam);
+      const vis = isVisible(ndc);
+      const pt = toSheetXY(ndc);
+      if (vis && prevVis && prevPt) segments.push([prevPt[0], prevPt[1], pt[0], pt[1]]);
+      prevPt = pt; prevVis = vis;
+    }
+  }
+  if (segments.length === 0) return null;
+  return { segments, widthMm: maxX - minX, heightMm: maxY - minY };
+}
+
 // Positionne (ou réutilise la caméra perspective pour "3d") et rend la scène pour une vue donnée.
 // Le modèle est toujours centré à l'origine (voir displayModel), donc pas besoin de recalculer un centre.
 function renderPlan2DView(key) {
@@ -2707,7 +2861,9 @@ function capturePlan2DView(key) {
     ctx.drawImage(canvas, 0, 0);
     const view = PLAN2D_VIEWS.find(v => v.key === key);
     drawPlan2DFooter(ctx, view.label);
-    offscreen.toBlob((blob) => resolve(blob), 'image/png');
+    let vector = null;
+    try { vector = computeVectorViewData(key); } catch (e) { console.error('[Plan2D] extraction vectorielle échouée', key, e); }
+    offscreen.toBlob((blob) => resolve({ blob, vector }), 'image/png');
   });
 }
 
@@ -2745,15 +2901,16 @@ async function runPlan2DCapture() {
   for (let i = 0; i < checked.length; i++) {
     const key = checked[i];
     statusEl.textContent = `Capture ${i + 1}/${checked.length}...`;
-    const blob = await capturePlan2DView(key);
-    if (!blob) continue;
+    const result = await capturePlan2DView(key);
+    if (!result || !result.blob) continue;
+    const { blob, vector } = result;
     // Les vues orthographiques (face/dos/gauche/droite/dessus) s'écrasent (une seule utile) ;
     // "Rendu 3D" s'accumule (clé unique à chaque capture) car la page de garde des plans
     // façon bureau d'études utilise plusieurs angles 3D différents.
     const storeKey = key === '3d' ? ('3d-' + Date.now() + '-' + i) : key;
     if (state.plan2dCaptures[storeKey]) URL.revokeObjectURL(state.plan2dCaptures[storeKey].url);
     const url = URL.createObjectURL(blob);
-    state.plan2dCaptures[storeKey] = { blob, url, uploadedUrl: null, view: key };
+    state.plan2dCaptures[storeKey] = { blob, url, uploadedUrl: null, view: key, vector };
   }
   // L'animate() loop (rAF) redessine déjà la vue perspective interactive à la frame suivante — rien à restaurer.
   Object.keys(state.plan2dCaptures).forEach((storeKey) => {
@@ -2779,7 +2936,7 @@ async function runPlan2DCapture() {
 function openPlan2DStudio() {
   const captures = Object.entries(state.plan2dCaptures)
     .filter(([, c]) => c.uploadedUrl)
-    .map(([key, c]) => ({ id: key, view: c.view || key, url: c.uploadedUrl }));
+    .map(([key, c]) => ({ id: key, view: c.view || key, url: c.uploadedUrl, vector: c.vector || null }));
   if (captures.length === 0) {
     setStatus('Attends la fin de l\'envoi des captures avant d\'ouvrir le studio', 'error');
     return;
