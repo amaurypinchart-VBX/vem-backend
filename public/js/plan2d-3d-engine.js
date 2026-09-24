@@ -424,48 +424,100 @@
     { key: 'right', label: 'Droite', dir: [1, 0, 0] },
     { key: 'top', label: 'Dessus', dir: [0, 1, 0] },
   ];
-  const EDGE_ANGLE_THRESHOLD = 25;
-  const VECTOR_SAFETY_CAP = 500000; // garde-fou absolu pendant la collecte (cas pathologique)
-  const VECTOR_MAX_SEGMENTS = 60000; // nombre d'arêtes réellement conservées, APRÈS tri par importance
+  const EDGE_ANGLE_THRESHOLD = 25; // degrés — ne s'applique qu'aux arêtes sur une face visible (crêtes), voir plus bas
+  const TRI_SAFETY_CAP = 2000000; // garde-fou absolu (triangles), cas vraiment pathologique uniquement
 
-  // Trie par longueur décroissante avant de couper — voir le commentaire détaillé de la même fonction
-  // dans viewer3d.html : sinon, sur un modèle avec beaucoup de petits détails (meneaux de fenêtres...),
-  // le contour principal peut ne jamais être atteint et disparaître complètement du plan.
-  function collectEdgeSegmentsWorld(meshes) {
-    const raw = [];
-    const a = new THREE.Vector3(), b = new THREE.Vector3();
-    outer:
+  // ─── Adjacence des arêtes (indépendante de la vue) ─────────────────────────────────────────────
+  // Pour chaque arête "candidate" d'un mesh, mémorise la/les normale(s) MONDE de la ou des face(s)
+  // triangulaires qui la bordent (1 = bord ouvert, 2+ = arête intérieure). Cette information ne dépend
+  // pas de l'angle de vue — elle est calculée UNE FOIS, puis réutilisée pour chacune des 5 vues.
+  //
+  // Pourquoi ce n'est pas une simple liste de segments + test de profondeur (version précédente) :
+  // un contour de silhouette est par nature tangent à sa PROPRE surface au moment où on le teste avec
+  // un depth-buffer — un micro-écart d'arrondi/anti-aliasing suffit à le classer "caché" à tort. Sur ce
+  // projet, ce bruit a fait disparaître les grandes arêtes droites du contour (remplacées par un
+  // gribouillis de petits fragments), et une fois "corrigé" en triant par longueur, ce tri pouvait à son
+  // tour favoriser à tort une longue diagonale de contreventement au détriment d'un rail principal
+  // découpé en plusieurs petits segments dans le fichier source.
+  //
+  // La vraie solution : déterminer la visibilité par la GÉOMÉTRIE (orientation des faces adjacentes par
+  // rapport à la direction de vue), qui ne dépend d'aucune précision de rendu :
+  //   - 1 face adjacente  → arête de bord ("bord ouvert") : visible si cette face regarde la caméra.
+  //   - 2+ faces, mélange face/dos → VRAIE SILHOUETTE : toujours visible, par définition géométrique.
+  //   - 2+ faces, toutes face à la caméra → crête sur une face visible : visible seulement si l'angle
+  //     entre les faces dépasse EDGE_ANGLE_THRESHOLD (sinon c'est juste la triangulation d'une surface
+  //     plane/lisse) — et seulement là, un test de profondeur reste utile (occultation par un AUTRE
+  //     objet du modèle, positionné devant).
+  //   - 2+ faces, toutes de dos → entièrement caché, jamais dessiné.
+  // Le test de profondeur (bruit possible) ne sert donc plus QUE pour ce dernier cas restreint, jamais
+  // pour la silhouette elle-même — qui ne peut plus disparaître.
+  function collectEdgeAdjacency(meshes) {
+    const edges = [];
+    const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+    const eCB = new THREE.Vector3(), eAB = new THREE.Vector3(), faceNormal = new THREE.Vector3();
+    let triBudget = TRI_SAFETY_CAP;
     for (const mesh of meshes) {
-      if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) continue;
-      let edges;
-      try { edges = new THREE.EdgesGeometry(mesh.geometry, EDGE_ANGLE_THRESHOLD); } catch (e) { continue; }
-      const pos = edges.attributes.position;
+      const geom = mesh.geometry;
+      if (!geom || !geom.attributes || !geom.attributes.position) continue;
       mesh.updateMatrixWorld(true);
-      for (let i = 0; i + 1 < pos.count; i += 2) {
-        a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-        b.fromBufferAttribute(pos, i + 1).applyMatrix4(mesh.matrixWorld);
-        raw.push(a.x, a.y, a.z, b.x, b.y, b.z);
-        if (raw.length / 6 > VECTOR_SAFETY_CAP) { edges.dispose(); break outer; }
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+      const pos = geom.attributes.position;
+      const index = geom.index;
+      const triCount = Math.min(index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3), triBudget);
+      const vIdx = (i) => index ? index.getX(i) : i;
+      const keyOf = (i) => Math.round(pos.getX(i) * 1e4) + '_' + Math.round(pos.getY(i) * 1e4) + '_' + Math.round(pos.getZ(i) * 1e4);
+      const edgeMap = new Map(); // "posKeyA|posKeyB" -> { ia, ib, normals: THREE.Vector3[] }
+      for (let t = 0; t < triCount; t++) {
+        const i0 = vIdx(t * 3), i1 = vIdx(t * 3 + 1), i2 = vIdx(t * 3 + 2);
+        vA.fromBufferAttribute(pos, i0); vB.fromBufferAttribute(pos, i1); vC.fromBufferAttribute(pos, i2);
+        // Normale locale = (C-B) x (A-B), même convention que THREE.Triangle.getNormal.
+        eCB.subVectors(vC, vB); eAB.subVectors(vA, vB);
+        faceNormal.crossVectors(eCB, eAB);
+        if (faceNormal.lengthSq() < 1e-14) continue; // triangle dégénéré
+        faceNormal.normalize().applyMatrix3(normalMatrix).normalize();
+        const k0 = keyOf(i0), k1 = keyOf(i1), k2 = keyOf(i2);
+        const tri = [[i0, i1, k0, k1], [i1, i2, k1, k2], [i2, i0, k2, k0]];
+        for (const [ia, ib, ka, kb] of tri) {
+          // Clé par POSITION (pas par indice) : indispensable sur une géométrie non indexée/non soudée
+          // (très courant — STL, exports OBJ...), où deux triangles adjacents ne partagent jamais le
+          // même indice de sommet même s'ils coïncident géométriquement.
+          const key = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+          let e = edgeMap.get(key);
+          if (!e) { e = { ia, ib, normals: [] }; edgeMap.set(key, e); }
+          e.normals.push(faceNormal.clone());
+        }
       }
-      edges.dispose();
+      triBudget -= triCount;
+      for (const e of edgeMap.values()) {
+        const worldA = new THREE.Vector3().fromBufferAttribute(pos, e.ia).applyMatrix4(mesh.matrixWorld);
+        const worldB = new THREE.Vector3().fromBufferAttribute(pos, e.ib).applyMatrix4(mesh.matrixWorld);
+        edges.push({ a: worldA, b: worldB, normals: e.normals });
+      }
+      if (triBudget <= 0) break;
     }
-    const n = raw.length / 6;
-    if (n <= VECTOR_MAX_SEGMENTS) return raw;
-    const order = new Array(n);
-    const lenSq = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      order[i] = i;
-      const o = i * 6;
-      const dx = raw[o + 3] - raw[o], dy = raw[o + 4] - raw[o + 1], dz = raw[o + 5] - raw[o + 2];
-      lenSq[i] = dx * dx + dy * dy + dz * dz;
+    return edges;
+  }
+
+  // Classe les arêtes pour UNE vue donnée (viewDir = direction "vers la caméra", constante en
+  // orthographique) — voir le commentaire de collectEdgeAdjacency pour le détail des 4 cas.
+  function classifyEdgesForView(edges, viewDir) {
+    const always = []; // silhouettes + bords visibles : prouvées visibles par la géométrie seule
+    const candidates = []; // crêtes sur face visible : à confirmer par un test de profondeur (occultation par un autre objet)
+    for (const e of edges) {
+      const facings = e.normals.map((n) => n.dot(viewDir) > 0);
+      const anyFront = facings.some((f) => f), anyBack = facings.some((f) => !f);
+      if (anyFront && anyBack) { always.push(e); continue; } // mélange face/dos = silhouette
+      if (!anyFront) continue; // toutes de dos = entièrement caché
+      if (e.normals.length === 1) { always.push(e); continue; } // bord ouvert, face visible
+      let maxAngle = 0;
+      for (let i = 0; i < e.normals.length; i++) {
+        for (let j = i + 1; j < e.normals.length; j++) {
+          maxAngle = Math.max(maxAngle, e.normals[i].angleTo(e.normals[j]) * 180 / Math.PI);
+        }
+      }
+      if (maxAngle > EDGE_ANGLE_THRESHOLD) candidates.push(e);
     }
-    order.sort((x, y) => lenSq[y] - lenSq[x]);
-    const segments = new Array(VECTOR_MAX_SEGMENTS * 6);
-    for (let k = 0; k < VECTOR_MAX_SEGMENTS; k++) {
-      const o = order[k] * 6, d = k * 6;
-      for (let c = 0; c < 6; c++) segments[d + c] = raw[o + c];
-    }
-    return segments;
+    return { always, candidates };
   }
 
   function buildOrthoCamera(key, dims, maxDim, aspect) {
@@ -509,73 +561,86 @@
     return r / 16777216 + g / 65536 + b / 256 + a;
   }
 
-  function computeVectorViewData(renderer, scene, meshes, dims, maxDim, unit, key, canvasW, canvasH) {
-    const worldSegs = collectEdgeSegmentsWorld(meshes);
-    if (worldSegs.length === 0) return null;
+  // edgeAdjacency : résultat de collectEdgeAdjacency(meshes), calculé une seule fois pour tout le
+  // modèle (indépendant de la vue) et réutilisé ici pour chacune des 5 vues.
+  function computeVectorViewData(renderer, scene, edgeAdjacency, dims, maxDim, unit, key, canvasW, canvasH) {
+    if (!edgeAdjacency || edgeAdjacency.length === 0) return null;
+    const view = PLAN2D_VIEWS.find((v) => v.key === key);
+    const viewDir = new THREE.Vector3(view.dir[0], view.dir[1], view.dir[2]); // direction "vers la caméra" (constante en orthographique)
+    const { always, candidates } = classifyEdgesForView(edgeAdjacency, viewDir);
+    if (always.length === 0 && candidates.length === 0) return null;
+
     const aspect = canvasW / canvasH;
     const cam = buildOrthoCamera(key, dims, maxDim, aspect);
-    const W = Math.max(Math.min(canvasW, 2000), 200), H = Math.max(Math.min(canvasH, 2000), 200);
-    let pixels;
-    try { pixels = renderDepthBuffer(renderer, scene, cam, W, H); } catch (e) { console.error('[Plan2DEngine] passe de profondeur échouée', e); return null; }
     const factor = SCALE_TO_MM[unit || 'm'];
     const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
-    const epsilon = (cam.far - cam.near) * 0.006;
-    const SAMPLES = 10;
-    const MAX_PATH_POINTS = 150000; // garde-fou mémoire (voir computeVectorViewData dans viewer3d.html)
-    const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
-    let pathData = '', pathPointCount = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    // Voir le commentaire équivalent dans viewer3d.html : un contour est tangent à sa propre surface,
-    // donc on cherche la profondeur la plus proche dans un petit voisinage de pixels (pas juste le
-    // pixel arrondi) pour ne pas perdre les grandes arêtes droites à cause du bruit de rendu.
-    function isVisible(ndc) {
-      const col = Math.round((ndc.x + 1) / 2 * (W - 1));
-      const row = Math.round((ndc.y + 1) / 2 * (H - 1));
-      if (col < 0 || col >= W || row < 0 || row >= H) return true;
-      let bufDepth = Infinity;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const c = col + dx, r = row + dy;
-          if (c < 0 || c >= W || r < 0 || r >= H) continue;
-          const d = unpackRGBADepth(pixels, (r * W + c) * 4);
-          if (d < bufDepth) bufDepth = d;
-        }
-      }
-      const ptDepth = (ndc.z + 1) / 2;
-      return bufDepth >= ptDepth - epsilon;
-    }
-    function toSheetXY(ndc) {
+    let pathData = '';
+    function project(v3) {
+      const ndc = v3.clone().project(cam);
       const x = ndc.x * halfViewW * factor;
-      const y = -ndc.y * halfViewH * factor;
+      const y = -ndc.y * halfViewH * factor; // Y monde vers le haut → Y canvas vers le bas
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
       return [x, y];
     }
-    let run = [];
-    function flushRun() {
-      if (run.length >= 2) {
-        pathData += 'M' + run[0][0].toFixed(1) + ' ' + run[0][1].toFixed(1);
-        for (let k = 1; k < run.length; k++) pathData += 'L' + run[k][0].toFixed(1) + ' ' + run[k][1].toFixed(1);
-        pathData += ' ';
-        pathPointCount += run.length;
-      }
-      run = [];
+    function addLine(pa, pb) {
+      pathData += 'M' + pa[0].toFixed(1) + ' ' + pa[1].toFixed(1) + 'L' + pb[0].toFixed(1) + ' ' + pb[1].toFixed(1) + ' ';
     }
-    outer:
-    for (let i = 0; i + 5 < worldSegs.length; i += 6) {
-      a.set(worldSegs[i], worldSegs[i + 1], worldSegs[i + 2]);
-      b.set(worldSegs[i + 3], worldSegs[i + 4], worldSegs[i + 5]);
-      for (let s = 0; s <= SAMPLES; s++) {
-        const t = s / SAMPLES;
-        p.copy(a).lerp(b, t);
-        const ndc = p.clone().project(cam);
-        const vis = isVisible(ndc);
-        const pt = toSheetXY(ndc);
-        if (vis) run.push(pt); else flushRun();
+
+    // Silhouettes + bords : visibilité prouvée par la géométrie seule (voir collectEdgeAdjacency) —
+    // aucun test de profondeur, donc aucun bruit possible sur l'essentiel du contour d'un module.
+    for (const e of always) addLine(project(e.a), project(e.b));
+
+    // Crêtes sur face visible : seul cas encore susceptible d'être caché par un AUTRE objet du modèle
+    // (ex. une pièce positionnée devant) — testé via une passe de profondeur, échantillonnée le long de
+    // chaque arête (une crête peut être partiellement masquée). Beaucoup plus sûr qu'avant : ce n'est
+    // jamais une arête tangente à sa propre surface (le cas qui posait problème est déjà écarté ci-dessus).
+    if (candidates.length > 0) {
+      const W = Math.max(Math.min(canvasW, 2000), 200), H = Math.max(Math.min(canvasH, 2000), 200);
+      let pixels = null;
+      try { pixels = renderDepthBuffer(renderer, scene, cam, W, H); } catch (e) { console.error('[Plan2DEngine] passe de profondeur échouée', e); }
+      if (pixels) {
+        const epsilon = (cam.far - cam.near) * 0.006;
+        const SAMPLES = 10;
+        function isVisible(ndc) {
+          const col = Math.round((ndc.x + 1) / 2 * (W - 1));
+          const row = Math.round((ndc.y + 1) / 2 * (H - 1));
+          if (col < 0 || col >= W || row < 0 || row >= H) return true;
+          let bufDepth = Infinity;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const c = col + dx, r = row + dy;
+              if (c < 0 || c >= W || r < 0 || r >= H) continue;
+              const d = unpackRGBADepth(pixels, (r * W + c) * 4);
+              if (d < bufDepth) bufDepth = d;
+            }
+          }
+          const ptDepth = (ndc.z + 1) / 2;
+          return bufDepth >= ptDepth - epsilon;
+        }
+        const p = new THREE.Vector3();
+        let run = [];
+        const flushRun = () => {
+          if (run.length >= 2) {
+            pathData += 'M' + run[0][0].toFixed(1) + ' ' + run[0][1].toFixed(1);
+            for (let k = 1; k < run.length; k++) pathData += 'L' + run[k][0].toFixed(1) + ' ' + run[k][1].toFixed(1);
+            pathData += ' ';
+          }
+          run = [];
+        };
+        for (const e of candidates) {
+          for (let s = 0; s <= SAMPLES; s++) {
+            p.lerpVectors(e.a, e.b, s / SAMPLES);
+            const ndc = p.clone().project(cam);
+            const pt = project(p);
+            if (isVisible(ndc)) run.push(pt); else flushRun();
+          }
+          flushRun();
+        }
       }
-      flushRun();
-      if (pathPointCount > MAX_PATH_POINTS) break outer;
     }
+
     if (!pathData) return null;
     return { path: pathData, widthMm: maxX - minX, heightMm: maxY - minY };
   }
@@ -671,13 +736,16 @@
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
       renderer.setClearColor(0xeef0f3, 1);
 
+      onProgress('Analyse de la géométrie (arêtes, faces)...');
+      const edgeAdjacency = collectEdgeAdjacency(meshes); // indépendant de la vue, calculé une seule fois
+
       const results = [];
       for (let i = 0; i < PLAN2D_VIEWS.length; i++) {
         const view = PLAN2D_VIEWS[i];
         onProgress(`Extraction vue ${i + 1}/${PLAN2D_VIEWS.length + 2} (${view.label})...`);
         const cam = buildOrthoCamera(view.key, dims, maxDim, canvasW / canvasH);
         const dataUrl = renderColorSnapshot(renderer, scene, cam, canvasW, canvasH);
-        const vector = computeVectorViewData(renderer, scene, meshes, dims, maxDim, unit, view.key, canvasW, canvasH);
+        const vector = computeVectorViewData(renderer, scene, edgeAdjacency, dims, maxDim, unit, view.key, canvasW, canvasH);
         results.push({ view: view.key, dataUrl, vector });
       }
       // Deux rendus 3D isométriques fixes pour la page de garde — UNIQUEMENT en repli, si l'appelant n'a

@@ -539,6 +539,9 @@ async function generateFromModelDirectly() {
     // sont conservés tels quels pour la page de garde — on ne régénère les 2 angles automatiques que
     // s'il n'y a vraiment aucune photo 3D à disposition, pour laisser la priorité aux vues choisies.
     const existing3D = STUDIO.captures.filter(c => c.view === '3d');
+    flashStatus(existing3D.length > 0
+      ? `📷 ${existing3D.length} photo(s) de la galerie détectée(s) — utilisées pour la page de garde`
+      : 'ℹ️ Aucune photo de galerie détectée — 2 rendus 3D par défaut seront générés pour la page de garde', 'info');
     const results = await window.Plan2DEngine.generateViewsFromFile(file, {
       onProgress: (msg) => { flashStatus(msg, 'info'); if (btn) btn.textContent = '⏳ ' + msg; },
       skipIsometricRenders: existing3D.length > 0,
