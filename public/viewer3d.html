@@ -2769,17 +2769,32 @@ function computeVectorViewData(key) {
   try { pixels = renderDepthBuffer(cam, W, H); } catch (e) { console.error('[Plan2D] passe de profondeur échouée', e); return null; }
   const factor = SCALE_TO_MM[(state && state.modelUnit) || 'm'];
   const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
-  const epsilon = (cam.far - cam.near) * 0.0015; // tolérance profondeur (coplanarité / précision 8 bits)
-  const SAMPLES = 6; // points intermédiaires par arête, pour découper les portions cachées
+  const epsilon = (cam.far - cam.near) * 0.006; // tolérance profondeur (coplanarité / précision 8 bits)
+  const SAMPLES = 12; // points intermédiaires par arête, pour découper les portions cachées
   const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
   const segments = [];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
+  // Le contour d'un objet (silhouette) est par nature tangent à sa PROPRE surface au moment où on le
+  // teste : un point du contour et la surface rendue au même pixel sont censés être à la même
+  // profondeur. Un tout petit écart d'arrondi (arrondi au pixel le plus proche, anti-aliasing) suffit
+  // alors à faire perdre le test de visibilité au contour lui-même — symptôme observé : les grandes
+  // arêtes droites d'ensemble disparaissent et seuls des petits détails (visserie, coins) survivent.
+  // Fix : chercher la profondeur la plus proche dans un petit voisinage de pixels (pas juste le pixel
+  // arrondi) avant de comparer, pour absorber ce bruit de rendu.
   function isVisible(ndc) {
     const col = Math.round((ndc.x + 1) / 2 * (W - 1));
     const row = Math.round((ndc.y + 1) / 2 * (H - 1));
     if (col < 0 || col >= W || row < 0 || row >= H) return true; // hors cadre : ne bloque pas le tracé
-    const bufDepth = unpackRGBADepth(pixels, (row * W + col) * 4);
+    let bufDepth = Infinity;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const c = col + dx, r = row + dy;
+        if (c < 0 || c >= W || r < 0 || r >= H) continue;
+        const d = unpackRGBADepth(pixels, (r * W + c) * 4);
+        if (d < bufDepth) bufDepth = d;
+      }
+    }
     const ptDepth = (ndc.z + 1) / 2;
     return bufDepth >= ptDepth - epsilon;
   }

@@ -417,7 +417,6 @@
 
   // ─── EXTRACTION VECTORIELLE (portage headless de la section PLAN 2D de viewer3d.html) ───
   const SCALE_TO_MM = { m: 1000, cm: 10, mm: 1 };
-  const AUTO_UNIT_EXTS = new Set(['glb', 'gltf', 'dae', 'ifc']);
   const PLAN2D_VIEWS = [
     { key: 'front', label: 'Face', dir: [0, 0, 1] },
     { key: 'back', label: 'Dos', dir: [0, 0, -1] },
@@ -499,16 +498,27 @@
     try { pixels = renderDepthBuffer(renderer, scene, cam, W, H); } catch (e) { console.error('[Plan2DEngine] passe de profondeur échouée', e); return null; }
     const factor = SCALE_TO_MM[unit || 'm'];
     const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
-    const epsilon = (cam.far - cam.near) * 0.0015;
-    const SAMPLES = 6;
+    const epsilon = (cam.far - cam.near) * 0.006;
+    const SAMPLES = 12;
     const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
     const segments = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    // Voir le commentaire équivalent dans viewer3d.html : un contour est tangent à sa propre surface,
+    // donc on cherche la profondeur la plus proche dans un petit voisinage de pixels (pas juste le
+    // pixel arrondi) pour ne pas perdre les grandes arêtes droites à cause du bruit de rendu.
     function isVisible(ndc) {
       const col = Math.round((ndc.x + 1) / 2 * (W - 1));
       const row = Math.round((ndc.y + 1) / 2 * (H - 1));
       if (col < 0 || col >= W || row < 0 || row >= H) return true;
-      const bufDepth = unpackRGBADepth(pixels, (row * W + col) * 4);
+      let bufDepth = Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const c = col + dx, r = row + dy;
+          if (c < 0 || c >= W || r < 0 || r >= H) continue;
+          const d = unpackRGBADepth(pixels, (r * W + c) * 4);
+          if (d < bufDepth) bufDepth = d;
+        }
+      }
       const ptDepth = (ndc.z + 1) / 2;
       return bufDepth >= ptDepth - epsilon;
     }
@@ -564,17 +574,30 @@
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', 'data-plan2d-three');
   }
 
+  // Reprend buildMaterialForComponent de viewer3d.html : utilise la vraie couleur/texture du composant
+  // quand le fichier source en fournit une (GLB/glTF/DAE/IFC peuvent en avoir), sinon retombe sur une
+  // couleur de palette technique — jamais un bloc orange uniforme comme avant ce correctif.
+  const MATERIAL_PALETTE = [0xff8a3d, 0x4ade80, 0x60a5fa, 0xf472b6, 0xfbbf24, 0xa78bfa, 0x34d399, 0xfb7185, 0x38bdf8, 0xfcd34d];
+  function buildMaterialForComponent(comp, idx) {
+    const params = { roughness: (comp && comp.roughness) ?? 0.6, metalness: (comp && comp.metalness) ?? 0.1, side: THREE.DoubleSide };
+    if (comp && comp.color) params.color = comp.color;
+    else params.color = new THREE.Color(MATERIAL_PALETTE[idx % MATERIAL_PALETTE.length]);
+    if (comp && comp.map) { comp.map.encoding = THREE.sRGBEncoding; comp.map.needsUpdate = true; params.map = comp.map; }
+    if (comp && comp.opacity !== undefined) { params.opacity = comp.opacity; params.transparent = true; }
+    return new THREE.MeshStandardMaterial(params);
+  }
+
   function buildScene(components) {
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
     const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(10, 20, 10); scene.add(dl);
-    const material = new THREE.MeshStandardMaterial({ color: 0xff8a3d, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide });
+    const dl2 = new THREE.DirectionalLight(0xffffff, 0.4); dl2.position.set(-10, 5, -10); scene.add(dl2);
     const meshes = [];
     const box = new THREE.Box3();
-    components.forEach((comp) => {
+    components.forEach((comp, idx) => {
       if (!comp.geometry || !comp.geometry.attributes || !comp.geometry.attributes.position) return;
       if (!comp.geometry.attributes.normal) comp.geometry.computeVertexNormals();
-      const mesh = new THREE.Mesh(comp.geometry, material);
+      const mesh = new THREE.Mesh(comp.geometry, buildMaterialForComponent(comp, idx));
       scene.add(mesh);
       meshes.push(mesh);
       mesh.updateMatrixWorld(true);
@@ -589,7 +612,12 @@
     return { scene, meshes, dims: size, maxDim };
   }
 
-  function detectUnit(ext) { return AUTO_UNIT_EXTS.has((ext || '').toLowerCase()) ? 'm' : 'mm'; }
+  // Même hypothèse par défaut que applyModelUnitForFormat dans viewer3d.html : les formats qui
+  // encodent leur propre unité (convertie en mètres par leur parseur) → 'm' ; les formats sans unité
+  // standard (STL/OBJ) sont eux aussi supposés en 'm' par défaut dans le viewer — on garde la même
+  // hypothèse ici pour rester cohérent (sinon les cotes automatiques divergeraient entre les deux
+  // parcours selon qu'on passe par le viewer 3D ou par ce moteur headless).
+  function detectUnit(ext) { return 'm'; }
 
   // Point d'entrée principal appelé par plan2d-studio.html.
   // opts.onProgress(message) est appelé à chaque étape pour afficher un statut à l'utilisateur.

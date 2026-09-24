@@ -208,6 +208,7 @@ function loadImageWithCors(url) {
 const FABRIC_CUSTOM_PROPS = ['isDimension', 'isDimLabel', 'isVectorViewport', 'sourceView', '_p2dWidthMm', '_p2dHeightMm'];
 function saveCurrentSheetJson() {
   if (!STUDIO.fabricCanvas) return;
+  if (STUDIO.curIdx < 0 || !STUDIO.sheets[STUDIO.curIdx]) return; // ex. juste après un reset dans generateFullPlanSet()
   STUDIO.sheets[STUDIO.curIdx].json = STUDIO.fabricCanvas.toJSON(FABRIC_CUSTOM_PROPS);
 }
 function loadSheetIntoCanvas(idx) {
@@ -287,7 +288,9 @@ async function insertCapturedImageById(id, x, y, maxW, maxH, label) {
   const scale = Math.min(maxW / img.width, maxH / img.height);
   img.set({ left: x, top: y, scaleX: scale, scaleY: scale });
   STUDIO.fabricCanvas.add(img);
-  if (label) STUDIO.fabricCanvas.add(new fabric.Textbox(label, { left: x, top: y - 24, fontSize: 16, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica' }));
+  // width explicite : sans elle, fabric.Textbox retombe sur une largeur par défaut bien trop étroite
+  // pour des libellés comme "Long side Right (Face)", ce qui les fait passer à la ligne n'importe où.
+  if (label) STUDIO.fabricCanvas.add(new fabric.Textbox(label, { left: x, top: y - 28, fontSize: 15, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica', width: Math.max(maxW, 260) }));
   STUDIO.fabricCanvas.requestRenderAll();
 }
 // Insertion par TYPE de vue (prend la 1ère capture de ce type) — pratique pour les gabarits.
@@ -321,7 +324,7 @@ async function insertVectorViewportById(id, x, y, maxW, maxH, label, withDims) {
   grp.set({ left: x, top: y });
   const cv = STUDIO.fabricCanvas;
   cv.add(grp);
-  if (label) cv.add(new fabric.Textbox(label, { left: x, top: y - 24, fontSize: 16, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica' }));
+  if (label) cv.add(new fabric.Textbox(label, { left: x, top: y - 28, fontSize: 15, fontWeight: 'bold', fill: '#222', fontFamily: 'Helvetica', width: Math.max(maxW, 260) }));
   if (withDims) {
     const w = grp.getScaledWidth(), h = grp.getScaledHeight();
     addDimensionLine({ x, y: y - 6 }, { x: x + w, y: y - 6 }, cap.vector.widthMm);
@@ -563,14 +566,25 @@ async function generateFromModelDirectly() {
 // Enchaîne les gabarits dans le même ordre que les planches de référence : page de garde (si des
 // rendus 3D ont été capturés), vue d'ensemble, élévations longues/courtes, vue de dessus — puis
 // sauvegarde et exporte le PDF automatiquement, pour obtenir en un clic un jeu de planches complet.
+function sheetsHaveContent() {
+  return STUDIO.sheets.some(s => s.json && Array.isArray(s.json.objects) && s.json.objects.length > 0);
+}
 async function generateFullPlanSet() {
   if (!STUDIO.captures.length) {
     flashStatus('Capture d\'abord des vues dans le viewer 3D (panneau "📐 Plan 2D") avant de générer les planches', 'error');
     return;
   }
+  // On repart d'un jeu de planches propre à chaque génération — sinon la planche vierge de départ
+  // ("Planche 1") reste en page 1 (page blanche) et décale la numérotation A0.x, et un second clic
+  // empilerait un deuxième jeu de planches à la suite du premier.
+  if (sheetsHaveContent() || STUDIO.sheets.length > 1) {
+    if (!confirm('Ceci va remplacer toutes les planches actuelles par un nouveau jeu généré automatiquement. Continuer ?')) return;
+  }
   const btn = document.getElementById('btn-generate-all');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération en cours...'; }
   try {
+    STUDIO.sheets = [];
+    STUDIO.curIdx = -1;
     if (STUDIO.captures.some(c => c.view === '3d')) await newSheetFromTemplate('cover');
     await newSheetFromTemplate('overview');
     await newSheetFromTemplate('elevLongPair');
@@ -583,7 +597,7 @@ async function generateFullPlanSet() {
     console.error('[plan2d generateFullPlanSet]', e);
     flashStatus('Échec de la génération automatique : ' + e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🪄 Générer tout le jeu de plans + PDF'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🪄 (Re)générer le jeu de plans + PDF'; }
   }
 }
 
