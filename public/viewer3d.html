@@ -2730,6 +2730,7 @@ function renderDepthBuffer(camForView, w, h) {
   if (shadowBlob) shadowBlob.visible = false;
   const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  depthMaterial.side = THREE.DoubleSide; // sinon les faces mal orientées créent des trous dans le depth buffer
   const prevOverride = scene.overrideMaterial;
   const prevTarget = renderer.getRenderTarget();
   scene.overrideMaterial = depthMaterial;
@@ -2941,7 +2942,10 @@ function openPlan2DStudio() {
     setStatus('Attends la fin de l\'envoi des captures avant d\'ouvrir le studio', 'error');
     return;
   }
-  try { sessionStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); } catch (e) {}
+  // localStorage (pas sessionStorage) : window.open('_blank') ouvre un nouvel onglet qui n'hérite pas
+  // toujours du sessionStorage de l'onglet d'origine (bloqueur de pop-up, "ouvrir dans un nouvel onglet"
+  // du navigateur, etc.) — localStorage, lui, est partagé entre tous les onglets du même site.
+  try { localStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); } catch (e) {}
   const url = new URL(window.location.origin + '/plan2d-studio.html');
   if (plan2dProjectId) url.searchParams.set('projectId', plan2dProjectId);
   if (plan2dToken) url.searchParams.set('token', plan2dToken);

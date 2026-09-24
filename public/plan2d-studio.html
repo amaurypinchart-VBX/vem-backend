@@ -67,8 +67,10 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
 
       <div class="panel-head">Génération automatique</div>
       <div class="panel-body">
-        <button class="btn btn-primary" id="btn-generate-all" style="width:100%;">🪄 Générer tout le jeu de plans + PDF</button>
-        <div class="hint" style="margin-top:6px;">Crée automatiquement la page de garde, la vue d'ensemble, les élévations (faces longues/courtes) et la vue de dessus à partir des vues déjà capturées dans le viewer 3D — puis sauvegarde et exporte le PDF, comme un jeu de planches VIEWBOX classique.</div>
+        <button class="btn btn-primary" id="btn-generate-from-model" style="width:100%;">🌐 Générer depuis le modèle 3D du projet</button>
+        <div class="hint" style="margin-top:6px;margin-bottom:10px;">Charge directement le fichier 3D du projet, en extrait les vues vectorisées avec suppression des lignes cachées, puis génère et exporte tout le jeu de planches — sans passer par le viewer 3D.</div>
+        <button class="btn" id="btn-generate-all" style="width:100%;">🪄 (Re)générer le jeu de plans + PDF</button>
+        <div class="hint" style="margin-top:6px;">À partir des vues déjà disponibles ci-dessous (issues du bouton ci-dessus, ou capturées manuellement dans le viewer 3D pour un angle personnalisé) — recrée toutes les planches + PDF.</div>
       </div>
 
       <div class="panel-head">Gabarits (nouvelle planche)</div>
@@ -360,7 +362,7 @@ function refreshSelectedViewport() {
 }
 function reloadCapturesFromSession() {
   try {
-    const raw = sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
+    const raw = localStorage.getItem('plan2d_captures_' + PROJECT_ID) || sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
     STUDIO.captures = raw ? JSON.parse(raw) : [];
     renderCaptureList();
     flashStatus('✓ Vues capturées rechargées', 'success');
@@ -472,6 +474,89 @@ async function newSheetFromTemplate(kind) {
   else if (kind === 'elevShortPair') await insertTemplateDualElevation('left', 'Short side entrance (Gauche)', 'right', 'Short side Exit (Droite)', names.elevShortPair);
   else if (kind === 'top') await insertTemplateTop();
   renderSidebar();
+}
+
+// ─── Génération 100% automatique depuis le modèle 3D du projet (sans passer par viewer3d.html) ───
+// Charge public/js/plan2d-3d-engine.js à la demande (pas au chargement de la page, pour ne pas
+// alourdir Plan 2D Studio quand cette fonctionnalité n'est pas utilisée).
+async function ensurePlan2DEngineLoaded() {
+  if (window.Plan2DEngine) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'js/plan2d-3d-engine.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Échec de chargement du moteur 3D'));
+    document.head.appendChild(s);
+  });
+}
+const MODEL_3D_EXTS = ['stl', 'obj', 'glb', 'gltf', 'ifc', 'dae', 'zip'];
+async function pickProjectModelFile() {
+  const res = await apiGet('/projects/' + PROJECT_ID + '/files');
+  const files = (res.data || []).filter(f => MODEL_3D_EXTS.includes((f.fileName || '').split('.').pop().toLowerCase()));
+  if (files.length === 0) {
+    flashStatus('Aucun fichier 3D (stl/obj/glb/gltf/ifc/dae) trouvé dans les fichiers du projet — dépose-en un d\'abord', 'error');
+    return null;
+  }
+  if (files.length === 1) return files[0];
+  const labels = files.map((f, i) => (i + 1) + '. ' + f.fileName).join('\n');
+  const choice = prompt('Plusieurs fichiers 3D trouvés dans ce projet, tape le numéro à utiliser :\n' + labels, '1');
+  if (choice === null) return null;
+  const idx = parseInt(choice, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= files.length) { flashStatus('Choix invalide', 'error'); return null; }
+  return files[idx];
+}
+// Ré-héberge un rendu PNG (data URL) comme fichier de projet, même route que les captures du viewer 3D
+// (/api/v1/upload/project-file/:projectId, catégorie "plan2d-view") — pour que la vignette reste
+// disponible même après avoir quitté la page (pas juste une data URL en mémoire).
+async function uploadDataUrlAsProjectFile(dataUrl, fileName, category) {
+  try {
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const file = new File([blob], fileName, { type: 'image/png' });
+    const fd = new FormData(); fd.append('file', file); fd.append('category', category);
+    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + PROJECT_ID, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd,
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data && data.data ? data.data.fileUrl : null;
+  } catch (e) { return null; }
+}
+async function generateFromModelDirectly() {
+  const btn = document.getElementById('btn-generate-from-model');
+  if (btn) { btn.disabled = true; }
+  const origLabel = btn ? btn.textContent : '';
+  try {
+    const fileMeta = await pickProjectModelFile();
+    if (!fileMeta) return;
+    flashStatus('Téléchargement de ' + fileMeta.fileName + '...', 'info');
+    await ensurePlan2DEngineLoaded();
+    const resp = await fetch(fileMeta.fileUrl);
+    if (!resp.ok) throw new Error('Téléchargement du modèle 3D échoué (HTTP ' + resp.status + ')');
+    const blob = await resp.blob();
+    const file = new File([blob], fileMeta.fileName, { type: blob.type });
+    const results = await window.Plan2DEngine.generateViewsFromFile(file, {
+      onProgress: (msg) => { flashStatus(msg, 'info'); if (btn) btn.textContent = '⏳ ' + msg; },
+    });
+    const captures = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      flashStatus(`Envoi de la vue ${i + 1}/${results.length}...`, 'info');
+      const id = r.view === '3d' ? ('3d-' + Date.now() + '-' + i) : r.view;
+      const uploadedUrl = await uploadDataUrlAsProjectFile(r.dataUrl, id + '.png', 'plan2d-view');
+      captures.push({ id, view: r.view, url: uploadedUrl || r.dataUrl, vector: r.vector });
+    }
+    STUDIO.captures = captures;
+    renderCaptureList();
+    try { localStorage.setItem('plan2d_captures_' + PROJECT_ID, JSON.stringify(captures)); } catch (e) {}
+    flashStatus('✓ Vues générées depuis le modèle 3D — génération des planches...', 'success');
+    await generateFullPlanSet();
+  } catch (e) {
+    console.error('[plan2d generateFromModelDirectly]', e);
+    flashStatus('Échec de la génération automatique : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
 }
 
 // ─── Génération automatique du jeu de plans complet (façon dossier VIEWBOX A0.x) ───
@@ -787,7 +872,9 @@ async function init() {
   if (!PROJECT_ID) { document.getElementById('main').innerHTML = '<div class="error-full">Aucun projet spécifié.<br>Ouvre cet outil depuis le viewer 3D d\'un projet (panneau "📐 Plan 2D").</div>'; return; }
   if (!TOKEN) { document.getElementById('main').innerHTML = '<div class="error-full">Session expirée ou lien invalide.<br>Reviens depuis VEM et réessaie.</div>'; return; }
   try {
-    const capturesRaw = sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
+    // On lit localStorage en priorité (partagé entre onglets, voir openPlan2DStudio dans viewer3d.html)
+    // avec repli sur sessionStorage pour les liens déjà ouverts avant ce correctif.
+    const capturesRaw = localStorage.getItem('plan2d_captures_' + PROJECT_ID) || sessionStorage.getItem('plan2d_captures_' + PROJECT_ID);
     STUDIO.captures = capturesRaw ? JSON.parse(capturesRaw) : [];
 
     const projRes = await apiGet('/projects/' + PROJECT_ID);
@@ -837,6 +924,7 @@ document.getElementById('btn-del').onclick = deleteSelected;
 document.getElementById('btn-refresh-viewport').onclick = refreshSelectedViewport;
 document.getElementById('btn-reload-captures').onclick = reloadCapturesFromSession;
 document.getElementById('btn-generate-all').onclick = generateFullPlanSet;
+document.getElementById('btn-generate-from-model').onclick = generateFromModelDirectly;
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
