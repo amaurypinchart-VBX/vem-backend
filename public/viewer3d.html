@@ -132,15 +132,6 @@ canvas {
   font-family: 'SF Mono', Monaco, monospace; font-weight: 600;
 }
 
-.plan2d-check {
-  display: flex; align-items: center; gap: 7px; font-size: 12px;
-  padding: 4px 0; cursor: pointer; user-select: none;
-}
-.plan2d-check input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
-.plan2d-thumb {
-  width: 52px; height: 38px; object-fit: cover; border-radius: 4px;
-  border: 1px solid var(--border); background: var(--bg-3);
-}
 
 #overlay-controls {
   position: absolute; top: 12px; left: 12px;
@@ -462,6 +453,7 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
     <div class="header-actions">
       <button class="btn btn-icon" id="btn-toggle-sidebar" title="Afficher/Masquer l'arborescence">≡</button>
       <button class="btn" id="btn-gallery" disabled>📷 Galerie<span class="badge" id="gallery-count" style="display:none;">0</span></button>
+      <button class="btn" id="btn-goto-plan2d" title="Envoie les photos de la galerie comme rendus 3D, puis ouvre Plan 2D Studio — les élévations et la vue de dessus s'y génèrent automatiquement depuis le modèle.">📐 Plan 2D →</button>
       <button class="btn" id="btn-ll" disabled>📋 Loading List</button>
       <button class="btn btn-icon" id="btn-theme" title="Thème">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -580,21 +572,6 @@ select:disabled { opacity: 0.55; cursor: not-allowed; }
           <button class="btn btn-sm" id="btn-measure-start" style="margin-top:8px;">📏 Activer la règle</button>
           <div id="measurement-list-container" style="margin-top:10px;"></div>
           <button class="btn btn-sm" id="btn-clear-measures" style="margin-top:6px; display:none;">🗑 Effacer les mesures</button>
-        </div>
-
-        <div class="info-section" id="plan2d-section">
-          <h4>📐 Plan 2D</h4>
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">Choisis les vues à capturer pour préparer des plans façon bureau d'études.</div>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="front" checked> Face</label>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="back" checked> Dos</label>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="left" checked> Gauche</label>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="right" checked> Droite</label>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="top" checked> Dessus</label>
-          <label class="plan2d-check"><input type="checkbox" class="plan2d-view-cb" value="3d" checked> Rendu 3D (vue actuelle)</label>
-          <button class="btn btn-sm btn-primary" id="btn-plan2d-capture" style="margin-top:10px;width:100%;">📸 Capturer les vues sélectionnées</button>
-          <div id="plan2d-status" style="font-size:11px;color:var(--text-dim);margin-top:8px;"></div>
-          <div id="plan2d-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
-          <button class="btn btn-sm" id="btn-plan2d-open-studio" style="margin-top:10px;width:100%;display:none;">📐 Ouvrir Plan 2D Studio →</button>
         </div>
 
         <div class="info-section">
@@ -2633,383 +2610,65 @@ function renderGallery() {
 }
 
 // ============================================================================
-// PLAN 2D — vues orthographiques (Face/Dos/Gauche/Droite/Dessus) + rendu 3D
+// PLAN 2D — passerelle vers Plan 2D Studio
+// ----------------------------------------------------------------------------
+// L'extraction vectorielle (élévations, vue de dessus, suppression des lignes
+// cachées) ne se fait plus ici : Plan 2D Studio la fait elle-même, directement
+// depuis le fichier 3D du projet, via public/js/plan2d-3d-engine.js (bouton
+// "🌐 Générer depuis le modèle 3D du projet"). Le viewer 3D n'a donc plus qu'un
+// rôle de passerelle : envoyer les photos déjà prises dans la Galerie comme
+// rendus 3D pour la page de garde, puis ouvrir Plan 2D Studio.
 // ============================================================================
-const PLAN2D_VIEWS = [
-  { key: 'front', label: 'Face',   dir: [0, 0, 1] },
-  { key: 'back',  label: 'Dos',    dir: [0, 0, -1] },
-  { key: 'left',  label: 'Gauche', dir: [-1, 0, 0] },
-  { key: 'right', label: 'Droite', dir: [1, 0, 0] },
-  { key: 'top',   label: 'Dessus', dir: [0, 1, 0] },
-  { key: '3d',    label: 'Rendu 3D', dir: null },
-];
-state.plan2dCaptures = {}; // key -> { blob, url, uploadedUrl }
-let plan2dOrthoCamera = null;
 const plan2dParams = new URLSearchParams(window.location.search);
 const plan2dProjectId = plan2dParams.get('projectId');
 const plan2dToken = plan2dParams.get('token');
 
-function getPlan2DOrthoCamera() {
-  if (!plan2dOrthoCamera) plan2dOrthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100000);
-  return plan2dOrthoCamera;
-}
-
-// ============================================================================
-// PLAN 2D VECTOR — extraction d'arêtes + suppression des lignes cachées
-// ----------------------------------------------------------------------------
-// Produit, en plus de la capture PNG existante, un jeu de segments 2D vectoriels
-// (en mm réels, unité du modèle appliquée via SCALE_TO_MM/state.modelUnit — voir
-// applyModelUnitForFormat) représentant le contour "façon dessin technique" du
-// modèle pour une vue orthographique donnée. Ce n'est PAS un rendu photo : les
-// arêtes cachées derrière une autre partie du modèle sont retirées via une passe
-// de profondeur hors-écran. Fonctionne indépendamment du format d'origine
-// (STL/OBJ/GLB/IFC/DAE) puisqu'on ne lit que les meshes Three.js déjà chargés.
-// En cas d'échec (WebGL, modèle trop complexe...), on retourne null et l'appelant
-// se rabat silencieusement sur la capture PNG classique — aucune régression.
-// ============================================================================
-const PLAN2D_VECTOR_SAFETY_CAP = 500000; // garde-fou absolu pendant la collecte (cas pathologique)
-const PLAN2D_VECTOR_MAX_SEGMENTS = 60000; // nombre d'arêtes réellement conservées, APRÈS tri par importance
-const PLAN2D_EDGE_ANGLE_THRESHOLD = 25; // degrés — sépare arêtes vives (contours) des faces lissées
-
-// Arêtes "dures" de tous les meshes visibles, en coordonnées MONDE (unité native du modèle, pas encore mm),
-// TRIÉES des plus longues aux plus courtes. Indispensable : sur un modèle avec beaucoup de petits détails
-// (ex. meneaux de fenêtres), ces détails peuvent représenter l'essentiel du nombre d'arêtes — si on
-// coupait "dans l'ordre du fichier" comme avant, le contour principal du bâtiment (quelques dizaines de
-// grandes arêtes) pouvait ne JAMAIS être atteint et disparaître complètement du plan, alors que le petit
-// détail, lui, survivait. En triant par longueur décroissante avant de couper, les grandes arêtes
-// structurantes sont toujours conservées en priorité, quel que soit l'ordre du fichier source.
-function collectEdgeSegmentsWorld() {
-  const raw = []; // [ax,ay,az, bx,by,bz, ax,ay,az, bx,by,bz, ...] — pas encore trié
-  const visibleMeshes = state.currentModel.meshes.filter(m => m.visible);
-  const a = new THREE.Vector3(), b = new THREE.Vector3();
-  outer:
-  for (const mesh of visibleMeshes) {
-    if (!mesh.geometry || !mesh.geometry.attributes || !mesh.geometry.attributes.position) continue;
-    let edges;
-    try { edges = new THREE.EdgesGeometry(mesh.geometry, PLAN2D_EDGE_ANGLE_THRESHOLD); }
-    catch (e) { continue; }
-    const pos = edges.attributes.position;
-    mesh.updateMatrixWorld(true);
-    for (let i = 0; i + 1 < pos.count; i += 2) {
-      a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
-      b.fromBufferAttribute(pos, i + 1).applyMatrix4(mesh.matrixWorld);
-      raw.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      if (raw.length / 6 > PLAN2D_VECTOR_SAFETY_CAP) { edges.dispose(); break outer; }
-    }
-    edges.dispose();
-  }
-  const n = raw.length / 6;
-  if (n <= PLAN2D_VECTOR_MAX_SEGMENTS) return raw;
-  const order = new Array(n);
-  const lenSq = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    order[i] = i;
-    const o = i * 6;
-    const dx = raw[o + 3] - raw[o], dy = raw[o + 4] - raw[o + 1], dz = raw[o + 5] - raw[o + 2];
-    lenSq[i] = dx * dx + dy * dy + dz * dz;
-  }
-  order.sort((x, y) => lenSq[y] - lenSq[x]);
-  const segments = new Array(PLAN2D_VECTOR_MAX_SEGMENTS * 6);
-  for (let k = 0; k < PLAN2D_VECTOR_MAX_SEGMENTS; k++) {
-    const o = order[k] * 6, d = k * 6;
-    for (let c = 0; c < 6; c++) segments[d + c] = raw[o + c];
-  }
-  return segments;
-}
-
-// Caméra orthographique dédiée à la passe vectorielle : même cadrage que renderPlan2DView,
-// mais near/far resserrés au plus près du modèle (au lieu de 0.01→maxDim*100 utilisé pour la
-// navigation interactive) pour que la précision du depth-buffer 8 bits reste utilisable.
-function buildVectorPassCamera(key) {
-  const view = PLAN2D_VIEWS.find(v => v.key === key);
-  const size = state.modelInfo.dimensions;
-  const maxDim = state.currentModel.maxDim;
-  const aspect = canvas.width / canvas.height;
-  let halfW, halfH;
-  if (key === 'front' || key === 'back') { halfW = size.x / 2; halfH = size.y / 2; }
-  else if (key === 'left' || key === 'right') { halfW = size.z / 2; halfH = size.y / 2; }
-  else { halfW = size.x / 2; halfH = size.z / 2; }
-  const margin = 1.15;
-  let vH = Math.max(halfH * margin, 0.01);
-  let vW = vH * aspect;
-  if (vW < halfW * margin) { vW = halfW * margin; vH = vW / aspect; }
-  const dist = Math.max(maxDim * 5, 10);
-  const cam = new THREE.OrthographicCamera(-vW, vW, vH, -vH,
-    Math.max(dist - maxDim * 1.5, 0.01), dist + maxDim * 1.5);
-  cam.position.set(view.dir[0] * dist, view.dir[1] * dist, view.dir[2] * dist);
-  cam.up.set(0, key === 'top' ? 0 : 1, key === 'top' ? -1 : 0);
-  cam.lookAt(0, 0, 0);
-  cam.updateProjectionMatrix();
-  return cam;
-}
-
-// Rend une passe de profondeur (encodée RGBA) hors-écran avec la caméra donnée, en masquant
-// temporairement les helpers (grille/axes/ombre) qui ne font pas partie du modèle.
-function renderDepthBuffer(camForView, w, h) {
-  const prevGrid = gridHelper && gridHelper.visible;
-  const prevAxes = axesHelper && axesHelper.visible;
-  const prevShadow = shadowBlob && shadowBlob.visible;
-  if (gridHelper) gridHelper.visible = false;
-  if (axesHelper) axesHelper.visible = false;
-  if (shadowBlob) shadowBlob.visible = false;
-  const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
-  const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
-  depthMaterial.side = THREE.DoubleSide; // sinon les faces mal orientées créent des trous dans le depth buffer
-  const prevOverride = scene.overrideMaterial;
-  const prevTarget = renderer.getRenderTarget();
-  scene.overrideMaterial = depthMaterial;
-  renderer.setRenderTarget(rt);
-  renderer.clear();
-  renderer.render(scene, camForView);
-  const pixels = new Uint8Array(w * h * 4);
-  renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
-  renderer.setRenderTarget(prevTarget);
-  scene.overrideMaterial = prevOverride;
-  if (gridHelper) gridHelper.visible = prevGrid;
-  if (axesHelper) axesHelper.visible = prevAxes;
-  if (shadowBlob) shadowBlob.visible = prevShadow;
-  rt.dispose();
-  depthMaterial.dispose();
-  return pixels;
-}
-
-// Décodage RGBA → profondeur [0,1], inverse de packDepthToRGBA (three.js ShaderChunks/packing.glsl.js).
-function unpackRGBADepth(pixels, idx) {
-  const r = pixels[idx] / 255, g = pixels[idx + 1] / 255, b = pixels[idx + 2] / 255, a = pixels[idx + 3] / 255;
-  return r / 16777216 + g / 65536 + b / 256 + a;
-}
-
-// Point d'entrée : construit le contour 2D vectoriel (mm, X droite / Y bas — convention canvas)
-// visible pour la vue `key`, avec suppression des portions cachées derrière le reste du modèle.
-// Retourne { path, widthMm, heightMm } — `path` est UNE SEULE chaîne SVG ("M x y L x y L x y M ...")
-// regroupant tous les segments visibles en polylignes continues. C'est volontaire : générer un objet
-// Fabric.js par petit segment (comme la première version le faisait) peut produire des centaines de
-// milliers d'objets sur un modèle un peu dense → plantage "Out of Memory" du navigateur. Une seule
-// chaîne de tracé, quelle que soit sa complexité, reste UN SEUL objet à charger/afficher.
-function computeVectorViewData(key) {
-  if (key === '3d') return null; // le rendu 3D perspective reste une photo (page de garde), pas un plan technique
-  if (!state.currentModel || !state.modelInfo) return null;
-  const worldSegs = collectEdgeSegmentsWorld();
-  if (worldSegs.length === 0) return null;
-  const cam = buildVectorPassCamera(key);
-  const W = Math.max(Math.min(canvas.width, 2000), 200);
-  const H = Math.max(Math.min(canvas.height, 2000), 200);
-  let pixels;
-  try { pixels = renderDepthBuffer(cam, W, H); } catch (e) { console.error('[Plan2D] passe de profondeur échouée', e); return null; }
-  const factor = SCALE_TO_MM[(state && state.modelUnit) || 'm'];
-  const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
-  const epsilon = (cam.far - cam.near) * 0.006; // tolérance profondeur (coplanarité / précision 8 bits)
-  const SAMPLES = 10; // points intermédiaires par arête, pour découper les portions cachées
-  const MAX_PATH_POINTS = 150000; // garde-fou mémoire : au-delà, on arrête proprement plutôt que de saturer le navigateur (peu de risque de le heurter maintenant que collectEdgeSegmentsWorld trie déjà par importance)
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
-  let pathData = '', pathPointCount = 0;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-  // Le contour d'un objet (silhouette) est par nature tangent à sa PROPRE surface au moment où on le
-  // teste : un point du contour et la surface rendue au même pixel sont censés être à la même
-  // profondeur. Un tout petit écart d'arrondi (arrondi au pixel le plus proche, anti-aliasing) suffit
-  // alors à faire perdre le test de visibilité au contour lui-même — symptôme observé : les grandes
-  // arêtes droites d'ensemble disparaissent et seuls des petits détails (visserie, coins) survivent.
-  // Fix : chercher la profondeur la plus proche dans un petit voisinage de pixels (pas juste le pixel
-  // arrondi) avant de comparer, pour absorber ce bruit de rendu.
-  function isVisible(ndc) {
-    const col = Math.round((ndc.x + 1) / 2 * (W - 1));
-    const row = Math.round((ndc.y + 1) / 2 * (H - 1));
-    if (col < 0 || col >= W || row < 0 || row >= H) return true; // hors cadre : ne bloque pas le tracé
-    let bufDepth = Infinity;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const c = col + dx, r = row + dy;
-        if (c < 0 || c >= W || r < 0 || r >= H) continue;
-        const d = unpackRGBADepth(pixels, (r * W + c) * 4);
-        if (d < bufDepth) bufDepth = d;
-      }
-    }
-    const ptDepth = (ndc.z + 1) / 2;
-    return bufDepth >= ptDepth - epsilon;
-  }
-  function toSheetXY(ndc) {
-    const x = ndc.x * halfViewW * factor;
-    const y = -ndc.y * halfViewH * factor; // Y monde vers le haut → Y canvas vers le bas
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-    return [x, y];
-  }
-  let run = [];
-  function flushRun() {
-    if (run.length >= 2) {
-      pathData += 'M' + run[0][0].toFixed(1) + ' ' + run[0][1].toFixed(1);
-      for (let k = 1; k < run.length; k++) pathData += 'L' + run[k][0].toFixed(1) + ' ' + run[k][1].toFixed(1);
-      pathData += ' ';
-      pathPointCount += run.length;
-    }
-    run = [];
-  }
-
-  outer:
-  for (let i = 0; i + 5 < worldSegs.length; i += 6) {
-    a.set(worldSegs[i], worldSegs[i + 1], worldSegs[i + 2]);
-    b.set(worldSegs[i + 3], worldSegs[i + 4], worldSegs[i + 5]);
-    for (let s = 0; s <= SAMPLES; s++) {
-      const t = s / SAMPLES;
-      p.copy(a).lerp(b, t);
-      const ndc = p.clone().project(cam);
-      const vis = isVisible(ndc);
-      const pt = toSheetXY(ndc);
-      if (vis) run.push(pt); else flushRun();
-    }
-    flushRun();
-    if (pathPointCount > MAX_PATH_POINTS) break outer;
-  }
-  if (!pathData) return null;
-  return { path: pathData, widthMm: maxX - minX, heightMm: maxY - minY };
-}
-
-// Positionne (ou réutilise la caméra perspective pour "3d") et rend la scène pour une vue donnée.
-// Le modèle est toujours centré à l'origine (voir displayModel), donc pas besoin de recalculer un centre.
-function renderPlan2DView(key) {
-  if (key === '3d') { renderer.render(scene, camera); return; }
-  const view = PLAN2D_VIEWS.find(v => v.key === key);
-  const size = state.modelInfo.dimensions;
-  const maxDim = state.currentModel.maxDim;
-  const aspect = canvas.width / canvas.height;
-  let halfW, halfH;
-  if (key === 'front' || key === 'back') { halfW = size.x / 2; halfH = size.y / 2; }
-  else if (key === 'left' || key === 'right') { halfW = size.z / 2; halfH = size.y / 2; }
-  else { halfW = size.x / 2; halfH = size.z / 2; } // top
-  const margin = 1.15; // marge de 15% autour du modèle
-  let vH = Math.max(halfH * margin, 0.01);
-  let vW = vH * aspect;
-  if (vW < halfW * margin) { vW = halfW * margin; vH = vW / aspect; }
-  const cam = getPlan2DOrthoCamera();
-  cam.left = -vW; cam.right = vW; cam.top = vH; cam.bottom = -vH;
-  cam.near = 0.01; cam.far = Math.max(maxDim * 100, 1000);
-  const dist = Math.max(maxDim * 5, 10);
-  cam.position.set(view.dir[0] * dist, view.dir[1] * dist, view.dir[2] * dist);
-  cam.up.set(0, key === 'top' ? 0 : 1, key === 'top' ? -1 : 0);
-  cam.lookAt(0, 0, 0);
-  cam.updateProjectionMatrix();
-  renderer.render(scene, cam);
-}
-
-function drawPlan2DFooter(ctx, label) {
-  const cw = canvas.width, ch = canvas.height;
-  const scaleY = ch / canvas.getBoundingClientRect().height;
-  const fontSize = Math.round(14 * scaleY);
-  const padY = 10 * scaleY, padX = 16 * scaleY;
-  const footerH = fontSize + padY * 2;
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(0, ch - footerH, cw, footerH);
-  ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
-  ctx.fillStyle = 'white';
-  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  const modelName = state.modelInfo ? state.modelInfo.name : 'Modèle 3D';
-  ctx.fillText('📐 ' + label + ' — ' + modelName, padX, ch - footerH / 2);
-  ctx.textAlign = 'right';
-  ctx.fillText(new Date().toLocaleString('fr-FR'), cw - padX, ch - footerH / 2);
-}
-
-function capturePlan2DView(key) {
-  return new Promise((resolve) => {
-    renderPlan2DView(key);
-    const offscreen = document.createElement('canvas');
-    offscreen.width = canvas.width; offscreen.height = canvas.height;
-    const ctx = offscreen.getContext('2d');
-    ctx.drawImage(canvas, 0, 0);
-    const view = PLAN2D_VIEWS.find(v => v.key === key);
-    drawPlan2DFooter(ctx, view.label);
-    let vector = null;
-    try { vector = computeVectorViewData(key); } catch (e) { console.error('[Plan2D] extraction vectorielle échouée', key, e); }
-    offscreen.toBlob((blob) => resolve({ blob, vector }), 'image/png');
-  });
-}
-
-async function uploadPlan2DCaptures() {
-  if (!plan2dProjectId || !plan2dToken) return; // viewer ouvert hors contexte VEM : pas d'upload possible
-  for (const [key, cap] of Object.entries(state.plan2dCaptures)) {
-    if (cap.uploadedUrl) continue;
-    try {
-      const file = new File([cap.blob], `plan2d-${key}.png`, { type: 'image/png' });
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('category', 'plan2d-view');
-      const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + plan2dProjectId, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + plan2dToken },
-        body: fd,
-      });
-      if (r.ok) {
-        const data = await r.json();
-        cap.uploadedUrl = data && data.data ? data.data.fileUrl : null;
-      }
-    } catch (e) { console.error('[Plan2D] upload échoué', key, e); }
-  }
-}
-
-async function runPlan2DCapture() {
-  if (!state.currentModel) { setStatus('Charge un modèle d\'abord', 'error'); return; }
-  const checked = Array.from(document.querySelectorAll('.plan2d-view-cb:checked')).map(cb => cb.value);
-  if (checked.length === 0) { setStatus('Coche au moins une vue', 'error'); return; }
-  const statusEl = document.getElementById('plan2d-status');
-  const thumbsEl = document.getElementById('plan2d-thumbs');
-  const btn = document.getElementById('btn-plan2d-capture');
-  btn.disabled = true;
-  thumbsEl.innerHTML = '';
-  for (let i = 0; i < checked.length; i++) {
-    const key = checked[i];
-    statusEl.textContent = `Capture ${i + 1}/${checked.length}...`;
-    const result = await capturePlan2DView(key);
-    if (!result || !result.blob) continue;
-    const { blob, vector } = result;
-    // Les vues orthographiques (face/dos/gauche/droite/dessus) s'écrasent (une seule utile) ;
-    // "Rendu 3D" s'accumule (clé unique à chaque capture) car la page de garde des plans
-    // façon bureau d'études utilise plusieurs angles 3D différents.
-    const storeKey = key === '3d' ? ('3d-' + Date.now() + '-' + i) : key;
-    if (state.plan2dCaptures[storeKey]) URL.revokeObjectURL(state.plan2dCaptures[storeKey].url);
-    const url = URL.createObjectURL(blob);
-    state.plan2dCaptures[storeKey] = { blob, url, uploadedUrl: null, view: key, vector };
-  }
-  // L'animate() loop (rAF) redessine déjà la vue perspective interactive à la frame suivante — rien à restaurer.
-  Object.keys(state.plan2dCaptures).forEach((storeKey) => {
-    const cap = state.plan2dCaptures[storeKey];
-    const view = PLAN2D_VIEWS.find(v => v.key === cap.view) || { label: cap.view };
-    const thumb = document.createElement('img');
-    thumb.src = cap.url;
-    thumb.title = view.label;
-    thumb.className = 'plan2d-thumb';
-    thumbsEl.appendChild(thumb);
-  });
-  flashCapture();
-  btn.disabled = false;
-  const n = Object.keys(state.plan2dCaptures).length;
-  document.getElementById('btn-plan2d-open-studio').style.display = n > 0 ? 'block' : 'none';
-  statusEl.textContent = plan2dProjectId ? `✓ ${n} vue(s) capturée(s) — envoi vers VEM...` : `✓ ${n} vue(s) capturée(s).`;
-  await uploadPlan2DCaptures();
-  statusEl.textContent = plan2dProjectId
-    ? `✓ ${n} vue(s) capturée(s) et sauvées sur le projet.`
-    : `✓ ${n} vue(s) capturée(s). Ouvre le viewer depuis une fiche projet pour les sauvegarder.`;
-}
-
-function openPlan2DStudio() {
-  const captures = Object.entries(state.plan2dCaptures)
-    .filter(([, c]) => c.uploadedUrl)
-    .map(([key, c]) => ({ id: key, view: c.view || key, url: c.uploadedUrl, vector: c.vector || null }));
-  if (captures.length === 0) {
-    setStatus('Attends la fin de l\'envoi des captures avant d\'ouvrir le studio', 'error');
+async function goToPlan2D() {
+  const btn = document.getElementById('btn-goto-plan2d');
+  if (!plan2dProjectId) {
+    setStatus('Ouvre le viewer depuis une fiche projet pour utiliser Plan 2D', 'error');
     return;
   }
-  // localStorage (pas sessionStorage) : window.open('_blank') ouvre un nouvel onglet qui n'hérite pas
-  // toujours du sessionStorage de l'onglet d'origine (bloqueur de pop-up, "ouvrir dans un nouvel onglet"
-  // du navigateur, etc.) — localStorage, lui, est partagé entre tous les onglets du même site.
-  try { localStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); } catch (e) {}
-  const url = new URL(window.location.origin + '/plan2d-studio.html');
-  if (plan2dProjectId) url.searchParams.set('projectId', plan2dProjectId);
-  if (plan2dToken) url.searchParams.set('token', plan2dToken);
-  window.open(url.toString(), '_blank');
+  if (btn) btn.disabled = true;
+  try {
+    if (state.captures.length) {
+      // Converties en data URL (pas envoyées dans les fichiers du projet) : ce ne sont que des photos
+      // de travail pour composer la page de garde dans Plan 2D Studio — seul ce que l'utilisateur
+      // sauvegarde explicitement là-bas (Export PDF...) doit atterrir dans les fichiers du projet.
+      setStatus('Préparation des photos de la galerie pour Plan 2D...', 'info');
+      const captures = [];
+      for (let i = 0; i < state.captures.length; i++) {
+        const cap = state.captures[i];
+        try {
+          const resp = await fetch(cap.url);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('Lecture échouée'));
+            reader.readAsDataURL(blob);
+          });
+          captures.push({ id: '3d-gallery-' + Date.now() + '-' + i, view: '3d', url: dataUrl, vector: null });
+        } catch (e) { console.error('[Plan2D] conversion photo galerie échouée', e); }
+      }
+      if (captures.length) {
+        // localStorage (pas sessionStorage) : window.open('_blank') ouvre un nouvel onglet qui n'hérite
+        // pas toujours du sessionStorage de l'onglet d'origine — localStorage, lui, est partagé entre
+        // tous les onglets du même site.
+        try { localStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); }
+        catch (e) { console.error('[Plan2D] localStorage plein ou indisponible', e); }
+      }
+    }
+    const url = new URL(window.location.origin + '/plan2d-studio.html');
+    url.searchParams.set('projectId', plan2dProjectId);
+    if (plan2dToken) url.searchParams.set('token', plan2dToken);
+    window.open(url.toString(), '_blank');
+    setStatus('', '');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
-
-document.getElementById('btn-plan2d-capture').onclick = runPlan2DCapture;
-document.getElementById('btn-plan2d-open-studio').onclick = openPlan2DStudio;
+document.getElementById('btn-goto-plan2d').onclick = goToPlan2D;
 
 document.getElementById('ov-capture').onclick = captureView;
 document.getElementById('btn-gallery').onclick = () => {

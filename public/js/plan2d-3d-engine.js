@@ -680,18 +680,22 @@
         const vector = computeVectorViewData(renderer, scene, meshes, dims, maxDim, unit, view.key, canvasW, canvasH);
         results.push({ view: view.key, dataUrl, vector });
       }
-      // Deux rendus 3D isométriques fixes pour la page de garde — pas d'étape d'orbite manuelle ici,
-      // donc pas de "bel angle" choisi par l'utilisateur : on prend deux coins opposés par défaut.
-      const persp = new THREE.PerspectiveCamera(45, canvasW / canvasH, Math.max(maxDim * 0.001, 0.001), maxDim * 100);
-      const azimuths = [Math.PI / 4, Math.PI * 1.25];
-      for (let i = 0; i < azimuths.length; i++) {
-        onProgress(`Extraction du rendu 3D ${i + 1}/${azimuths.length}...`);
-        const dist = maxDim * 2.2, polar = Math.PI / 3, sp = Math.sin(polar);
-        persp.position.set(dist * sp * Math.sin(azimuths[i]), dist * Math.cos(polar), dist * sp * Math.cos(azimuths[i]));
-        persp.lookAt(0, 0, 0);
-        persp.updateProjectionMatrix();
-        const dataUrl = renderColorSnapshot(renderer, scene, persp, canvasW, canvasH);
-        results.push({ view: '3d', dataUrl, vector: null });
+      // Deux rendus 3D isométriques fixes pour la page de garde — UNIQUEMENT en repli, si l'appelant n'a
+      // pas déjà de vraies photos 3D à disposition (ex. capturées à la main dans la Galerie du viewer et
+      // choisies par l'utilisateur — voir opts.skipIsometricRenders). Sans étape d'orbite manuelle ici,
+      // on n'a pas de "bel angle" choisi par l'utilisateur : deux coins opposés par défaut, en dépannage.
+      if (!opts.skipIsometricRenders) {
+        const persp = new THREE.PerspectiveCamera(45, canvasW / canvasH, Math.max(maxDim * 0.001, 0.001), maxDim * 100);
+        const azimuths = [Math.PI / 4, Math.PI * 1.25];
+        for (let i = 0; i < azimuths.length; i++) {
+          onProgress(`Extraction du rendu 3D ${i + 1}/${azimuths.length}...`);
+          const dist = maxDim * 2.2, polar = Math.PI / 3, sp = Math.sin(polar);
+          persp.position.set(dist * sp * Math.sin(azimuths[i]), dist * Math.cos(polar), dist * sp * Math.cos(azimuths[i]));
+          persp.lookAt(0, 0, 0);
+          persp.updateProjectionMatrix();
+          const dataUrl = renderColorSnapshot(renderer, scene, persp, canvasW, canvasH);
+          results.push({ view: '3d', dataUrl, vector: null });
+        }
       }
       renderer.dispose();
       return results;

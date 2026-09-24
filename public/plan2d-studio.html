@@ -68,9 +68,9 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
       <div class="panel-head">Génération automatique</div>
       <div class="panel-body">
         <button class="btn btn-primary" id="btn-generate-from-model" style="width:100%;">🌐 Générer depuis le modèle 3D du projet</button>
-        <div class="hint" style="margin-top:6px;margin-bottom:10px;">Charge directement le fichier 3D du projet, en extrait les vues vectorisées avec suppression des lignes cachées, puis génère et exporte tout le jeu de planches — sans passer par le viewer 3D.</div>
-        <button class="btn" id="btn-generate-all" style="width:100%;">🪄 (Re)générer le jeu de plans + PDF</button>
-        <div class="hint" style="margin-top:6px;">À partir des vues déjà disponibles ci-dessous (issues du bouton ci-dessus, ou capturées manuellement dans le viewer 3D pour un angle personnalisé) — recrée toutes les planches + PDF.</div>
+        <div class="hint" style="margin-top:6px;margin-bottom:10px;">Charge directement le fichier 3D du projet, en extrait les vues vectorisées avec suppression des lignes cachées, puis génère le jeu de planches — sans passer par le viewer 3D. Rien n'est envoyé dans les fichiers du projet à cette étape ; utilise "📄 Export PDF" quand tu veux vraiment le sauvegarder.</div>
+        <button class="btn" id="btn-generate-all" style="width:100%;">🪄 (Re)générer le jeu de plans</button>
+        <div class="hint" style="margin-top:6px;">À partir des vues déjà disponibles ci-dessous (issues du bouton ci-dessus, ou envoyées depuis la Galerie du viewer 3D) — recrée toutes les planches.</div>
       </div>
 
       <div class="panel-head">Gabarits (nouvelle planche)</div>
@@ -513,23 +513,10 @@ async function pickProjectModelFile() {
   if (isNaN(idx) || idx < 0 || idx >= files.length) { flashStatus('Choix invalide', 'error'); return null; }
   return files[idx];
 }
-// Ré-héberge un rendu PNG (data URL) comme fichier de projet, même route que les captures du viewer 3D
-// (/api/v1/upload/project-file/:projectId, catégorie "plan2d-view") — pour que la vignette reste
-// disponible même après avoir quitté la page (pas juste une data URL en mémoire).
-async function uploadDataUrlAsProjectFile(dataUrl, fileName, category) {
-  try {
-    const resp = await fetch(dataUrl);
-    const blob = await resp.blob();
-    const file = new File([blob], fileName, { type: 'image/png' });
-    const fd = new FormData(); fd.append('file', file); fd.append('category', category);
-    const r = await fetch(window.location.origin + '/api/v1/upload/project-file/' + PROJECT_ID, {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd,
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data && data.data ? data.data.fileUrl : null;
-  } catch (e) { return null; }
-}
+// Les vues générées (élévations, dessus, rendus 3D) restent de simples data URL en mémoire — on ne les
+// envoie PAS automatiquement dans les fichiers du projet. Seul ce que l'utilisateur choisit explicitement
+// de sauvegarder (Sauvegarder le plan, Export PDF) touche le projet ; tout le reste est juste du travail
+// en cours, jetable, tant qu'on n'a pas cliqué sur une action de sauvegarde explicite.
 async function generateFromModelDirectly() {
   const btn = document.getElementById('btn-generate-from-model');
   if (btn) { btn.disabled = true; }
@@ -543,20 +530,20 @@ async function generateFromModelDirectly() {
     if (!resp.ok) throw new Error('Téléchargement du modèle 3D échoué (HTTP ' + resp.status + ')');
     const blob = await resp.blob();
     const file = new File([blob], fileMeta.fileName, { type: blob.type });
+    // Les rendus 3D déjà présents (ex. photos de la Galerie du viewer 3D, envoyées via "📐 Plan 2D →")
+    // sont conservés tels quels pour la page de garde — on ne régénère les 2 angles automatiques que
+    // s'il n'y a vraiment aucune photo 3D à disposition, pour laisser la priorité aux vues choisies.
+    const existing3D = STUDIO.captures.filter(c => c.view === '3d');
     const results = await window.Plan2DEngine.generateViewsFromFile(file, {
       onProgress: (msg) => { flashStatus(msg, 'info'); if (btn) btn.textContent = '⏳ ' + msg; },
+      skipIsometricRenders: existing3D.length > 0,
     });
-    const captures = [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      flashStatus(`Envoi de la vue ${i + 1}/${results.length}...`, 'info');
-      const id = r.view === '3d' ? ('3d-' + Date.now() + '-' + i) : r.view;
-      const uploadedUrl = await uploadDataUrlAsProjectFile(r.dataUrl, id + '.png', 'plan2d-view');
-      captures.push({ id, view: r.view, url: uploadedUrl || r.dataUrl, vector: r.vector });
-    }
-    STUDIO.captures = captures;
+    const newCaptures = results.map((r, i) => ({
+      id: r.view === '3d' ? ('3d-auto-' + Date.now() + '-' + i) : r.view,
+      view: r.view, url: r.dataUrl, vector: r.vector,
+    }));
+    STUDIO.captures = [...existing3D, ...newCaptures];
     renderCaptureList();
-    try { localStorage.setItem('plan2d_captures_' + PROJECT_ID, JSON.stringify(captures)); } catch (e) {}
     flashStatus('✓ Vues générées depuis le modèle 3D — génération des planches...', 'success');
     await generateFullPlanSet();
   } catch (e) {
@@ -595,14 +582,16 @@ async function generateFullPlanSet() {
     await newSheetFromTemplate('elevLongPair');
     await newSheetFromTemplate('elevShortPair');
     await newSheetFromTemplate('top');
-    flashStatus('✓ Jeu de planches généré (' + STUDIO.sheets.length + ' planches) — sauvegarde et export PDF...', 'success');
     await saveStudio();
-    await exportPDF();
+    flashStatus('✓ Jeu de planches généré et sauvegardé (' + STUDIO.sheets.length + ' planches) — clique "📄 Export PDF" quand tu es satisfait du résultat', 'success');
+    // On n'exporte PAS le PDF automatiquement ici : ça créerait un nouveau fichier dans le projet à
+    // chaque génération, y compris pendant les essais avant d'être satisfait du résultat. L'export PDF
+    // reste une action volontaire, au clic sur "📄 Export PDF".
   } catch (e) {
     console.error('[plan2d generateFullPlanSet]', e);
     flashStatus('Échec de la génération automatique : ' + e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🪄 (Re)générer le jeu de plans + PDF'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🪄 (Re)générer le jeu de plans'; }
   }
 }
 
