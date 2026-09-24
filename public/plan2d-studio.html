@@ -65,6 +65,12 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
         <button class="btn" id="btn-add-sheet" style="width:100%;">➕ Nouvelle planche vierge</button>
       </div>
 
+      <div class="panel-head">Génération automatique</div>
+      <div class="panel-body">
+        <button class="btn btn-primary" id="btn-generate-all" style="width:100%;">🪄 Générer tout le jeu de plans + PDF</button>
+        <div class="hint" style="margin-top:6px;">Crée automatiquement la page de garde, la vue d'ensemble, les élévations (faces longues/courtes) et la vue de dessus à partir des vues déjà capturées dans le viewer 3D — puis sauvegarde et exporte le PDF, comme un jeu de planches VIEWBOX classique.</div>
+      </div>
+
       <div class="panel-head">Gabarits (nouvelle planche)</div>
       <div class="panel-body">
         <button class="btn tpl-btn" data-tpl="cover">🖼 Page de garde (rendus 3D)</button>
@@ -73,6 +79,8 @@ label.field-label { display:block; font-size:11px; color:var(--text-dim); margin
         <button class="btn tpl-btn" data-tpl="elevBack">📐 Élévation — Dos</button>
         <button class="btn tpl-btn" data-tpl="elevLeft">📐 Élévation — Gauche</button>
         <button class="btn tpl-btn" data-tpl="elevRight">📐 Élévation — Droite</button>
+        <button class="btn tpl-btn" data-tpl="elevLongPair">📐📐 Élévations — Faces longues (Face+Dos)</button>
+        <button class="btn tpl-btn" data-tpl="elevShortPair">📐📐 Élévations — Faces courtes (Gauche+Droite)</button>
         <button class="btn tpl-btn" data-tpl="top">⬛ Vue de dessus / Implantation</button>
       </div>
 
@@ -429,12 +437,25 @@ async function insertTemplateTop() {
   buildTitleBlock(cv, 'Vue de dessus', sheetCodeFor(STUDIO.curIdx));
   cv.requestRenderAll();
 }
+// Deux élévations empilées sur une même planche (ex. "Long side Right" + "Long side Left" sur
+// une seule feuille A0.x) — reprend la mise en page des planches VIEWBOX de référence, plutôt
+// qu'une élévation par planche comme insertTemplateBigElevation.
+async function insertTemplateDualElevation(viewA, labelA, viewB, labelB, sheetName) {
+  const cv = STUDIO.fabricCanvas;
+  const x0 = PAGE_MARGIN + 25, x1 = CANVAS_W - TITLE_COL_W - 30;
+  const rowH = (CANVAS_H - PAGE_MARGIN * 2 - 140) / 2;
+  await insertViewByView(viewA, x0, PAGE_MARGIN + 55, x1 - x0, rowH, labelA, true);
+  await insertViewByView(viewB, x0, PAGE_MARGIN + 55 + rowH + 30, x1 - x0, rowH, labelB, true);
+  buildTitleBlock(cv, sheetName, sheetCodeFor(STUDIO.curIdx));
+  cv.requestRenderAll();
+}
 async function newSheetFromTemplate(kind) {
   saveCurrentSheetJson();
   const names = {
     cover: 'Page de garde', overview: 'Vue d\'ensemble',
     elevFront: 'Long side (Face)', elevBack: 'Long side (Dos)',
     elevLeft: 'Short side (Gauche)', elevRight: 'Short side (Droite)',
+    elevLongPair: 'Élévations — Faces longues', elevShortPair: 'Élévations — Faces courtes',
     top: 'Vue de dessus / Implantation',
   };
   STUDIO.sheets.push({ id:'sheet-'+Date.now(), name: names[kind] || ('Planche ' + (STUDIO.sheets.length + 1)), json:null });
@@ -447,8 +468,38 @@ async function newSheetFromTemplate(kind) {
   else if (kind === 'elevBack') await insertTemplateBigElevation('back', 'Long side (Dos)');
   else if (kind === 'elevLeft') await insertTemplateBigElevation('left', 'Short side (Gauche)');
   else if (kind === 'elevRight') await insertTemplateBigElevation('right', 'Short side (Droite)');
+  else if (kind === 'elevLongPair') await insertTemplateDualElevation('front', 'Long side Right (Face)', 'back', 'Long side Left (Dos)', names.elevLongPair);
+  else if (kind === 'elevShortPair') await insertTemplateDualElevation('left', 'Short side entrance (Gauche)', 'right', 'Short side Exit (Droite)', names.elevShortPair);
   else if (kind === 'top') await insertTemplateTop();
   renderSidebar();
+}
+
+// ─── Génération automatique du jeu de plans complet (façon dossier VIEWBOX A0.x) ───
+// Enchaîne les gabarits dans le même ordre que les planches de référence : page de garde (si des
+// rendus 3D ont été capturés), vue d'ensemble, élévations longues/courtes, vue de dessus — puis
+// sauvegarde et exporte le PDF automatiquement, pour obtenir en un clic un jeu de planches complet.
+async function generateFullPlanSet() {
+  if (!STUDIO.captures.length) {
+    flashStatus('Capture d\'abord des vues dans le viewer 3D (panneau "📐 Plan 2D") avant de générer les planches', 'error');
+    return;
+  }
+  const btn = document.getElementById('btn-generate-all');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération en cours...'; }
+  try {
+    if (STUDIO.captures.some(c => c.view === '3d')) await newSheetFromTemplate('cover');
+    await newSheetFromTemplate('overview');
+    await newSheetFromTemplate('elevLongPair');
+    await newSheetFromTemplate('elevShortPair');
+    await newSheetFromTemplate('top');
+    flashStatus('✓ Jeu de planches généré (' + STUDIO.sheets.length + ' planches) — sauvegarde et export PDF...', 'success');
+    await saveStudio();
+    await exportPDF();
+  } catch (e) {
+    console.error('[plan2d generateFullPlanSet]', e);
+    flashStatus('Échec de la génération automatique : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🪄 Générer tout le jeu de plans + PDF'; }
+  }
 }
 
 // ─── Cartouche VIEWBOX (colonne complète à droite, comme sur les planches A0.x de référence) ───
@@ -785,6 +836,7 @@ document.getElementById('btn-dup').onclick = duplicateSelected;
 document.getElementById('btn-del').onclick = deleteSelected;
 document.getElementById('btn-refresh-viewport').onclick = refreshSelectedViewport;
 document.getElementById('btn-reload-captures').onclick = reloadCapturesFromSession;
+document.getElementById('btn-generate-all').onclick = generateFullPlanSet;
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
