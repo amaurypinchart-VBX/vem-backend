@@ -2755,8 +2755,13 @@ function unpackRGBADepth(pixels, idx) {
   return r / 16777216 + g / 65536 + b / 256 + a;
 }
 
-// Point d'entrée : construit les segments 2D vectoriels (mm, X droite / Y bas — convention canvas)
-// visibles pour la vue `key`, avec suppression des portions cachées derrière le reste du modèle.
+// Point d'entrée : construit le contour 2D vectoriel (mm, X droite / Y bas — convention canvas)
+// visible pour la vue `key`, avec suppression des portions cachées derrière le reste du modèle.
+// Retourne { path, widthMm, heightMm } — `path` est UNE SEULE chaîne SVG ("M x y L x y L x y M ...")
+// regroupant tous les segments visibles en polylignes continues. C'est volontaire : générer un objet
+// Fabric.js par petit segment (comme la première version le faisait) peut produire des centaines de
+// milliers d'objets sur un modèle un peu dense → plantage "Out of Memory" du navigateur. Une seule
+// chaîne de tracé, quelle que soit sa complexité, reste UN SEUL objet à charger/afficher.
 function computeVectorViewData(key) {
   if (key === '3d') return null; // le rendu 3D perspective reste une photo (page de garde), pas un plan technique
   if (!state.currentModel || !state.modelInfo) return null;
@@ -2770,9 +2775,10 @@ function computeVectorViewData(key) {
   const factor = SCALE_TO_MM[(state && state.modelUnit) || 'm'];
   const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
   const epsilon = (cam.far - cam.near) * 0.006; // tolérance profondeur (coplanarité / précision 8 bits)
-  const SAMPLES = 12; // points intermédiaires par arête, pour découper les portions cachées
+  const SAMPLES = 10; // points intermédiaires par arête, pour découper les portions cachées
+  const MAX_PATH_POINTS = 20000; // garde-fou mémoire : au-delà, on arrête proprement plutôt que de saturer le navigateur
   const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
-  const segments = [];
+  let pathData = '', pathPointCount = 0;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
   // Le contour d'un objet (silhouette) est par nature tangent à sa PROPRE surface au moment où on le
@@ -2805,23 +2811,34 @@ function computeVectorViewData(key) {
     if (y < minY) minY = y; if (y > maxY) maxY = y;
     return [x, y];
   }
+  let run = [];
+  function flushRun() {
+    if (run.length >= 2) {
+      pathData += 'M' + run[0][0].toFixed(1) + ' ' + run[0][1].toFixed(1);
+      for (let k = 1; k < run.length; k++) pathData += 'L' + run[k][0].toFixed(1) + ' ' + run[k][1].toFixed(1);
+      pathData += ' ';
+      pathPointCount += run.length;
+    }
+    run = [];
+  }
 
+  outer:
   for (let i = 0; i + 5 < worldSegs.length; i += 6) {
     a.set(worldSegs[i], worldSegs[i + 1], worldSegs[i + 2]);
     b.set(worldSegs[i + 3], worldSegs[i + 4], worldSegs[i + 5]);
-    let prevPt = null, prevVis = false;
     for (let s = 0; s <= SAMPLES; s++) {
       const t = s / SAMPLES;
       p.copy(a).lerp(b, t);
       const ndc = p.clone().project(cam);
       const vis = isVisible(ndc);
       const pt = toSheetXY(ndc);
-      if (vis && prevVis && prevPt) segments.push([prevPt[0], prevPt[1], pt[0], pt[1]]);
-      prevPt = pt; prevVis = vis;
+      if (vis) run.push(pt); else flushRun();
     }
+    flushRun();
+    if (pathPointCount > MAX_PATH_POINTS) break outer;
   }
-  if (segments.length === 0) return null;
-  return { segments, widthMm: maxX - minX, heightMm: maxY - minY };
+  if (!pathData) return null;
+  return { path: pathData, widthMm: maxX - minX, heightMm: maxY - minY };
 }
 
 // Positionne (ou réutilise la caméra perspective pour "3d") et rend la scène pour une vue donnée.

@@ -499,9 +499,10 @@
     const factor = SCALE_TO_MM[unit || 'm'];
     const halfViewW = (cam.right - cam.left) / 2, halfViewH = (cam.top - cam.bottom) / 2;
     const epsilon = (cam.far - cam.near) * 0.006;
-    const SAMPLES = 12;
+    const SAMPLES = 10;
+    const MAX_PATH_POINTS = 20000; // garde-fou mémoire (voir computeVectorViewData dans viewer3d.html)
     const a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3();
-    const segments = [];
+    let pathData = '', pathPointCount = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     // Voir le commentaire équivalent dans viewer3d.html : un contour est tangent à sa propre surface,
     // donc on cherche la profondeur la plus proche dans un petit voisinage de pixels (pas juste le
@@ -529,22 +530,33 @@
       if (y < minY) minY = y; if (y > maxY) maxY = y;
       return [x, y];
     }
+    let run = [];
+    function flushRun() {
+      if (run.length >= 2) {
+        pathData += 'M' + run[0][0].toFixed(1) + ' ' + run[0][1].toFixed(1);
+        for (let k = 1; k < run.length; k++) pathData += 'L' + run[k][0].toFixed(1) + ' ' + run[k][1].toFixed(1);
+        pathData += ' ';
+        pathPointCount += run.length;
+      }
+      run = [];
+    }
+    outer:
     for (let i = 0; i + 5 < worldSegs.length; i += 6) {
       a.set(worldSegs[i], worldSegs[i + 1], worldSegs[i + 2]);
       b.set(worldSegs[i + 3], worldSegs[i + 4], worldSegs[i + 5]);
-      let prevPt = null, prevVis = false;
       for (let s = 0; s <= SAMPLES; s++) {
         const t = s / SAMPLES;
         p.copy(a).lerp(b, t);
         const ndc = p.clone().project(cam);
         const vis = isVisible(ndc);
         const pt = toSheetXY(ndc);
-        if (vis && prevVis && prevPt) segments.push([prevPt[0], prevPt[1], pt[0], pt[1]]);
-        prevPt = pt; prevVis = vis;
+        if (vis) run.push(pt); else flushRun();
       }
+      flushRun();
+      if (pathPointCount > MAX_PATH_POINTS) break outer;
     }
-    if (segments.length === 0) return null;
-    return { segments, widthMm: maxX - minX, heightMm: maxY - minY };
+    if (!pathData) return null;
+    return { path: pathData, widthMm: maxX - minX, heightMm: maxY - minY };
   }
 
   function renderColorSnapshot(renderer, scene, cam, w, h) {

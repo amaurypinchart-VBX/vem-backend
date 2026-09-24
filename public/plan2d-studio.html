@@ -304,11 +304,16 @@ async function insertCapturedImageByView(viewKey, x, y, maxW, maxH, label) {
 // lignes cachées — voir computeVectorViewData dans viewer3d.html) — remplace la photo par un vrai
 // dessin technique zoomable, façon SketchUp LayOut. Repli automatique sur l'image si aucune donnée
 // vectorielle n'est disponible pour cette capture (ancien plan, capture "Rendu 3D", etc.).
-function buildVectorGroupFromCapture(cap, maxW, maxH) {
+//
+// Le contour est reçu comme UNE SEULE chaîne de tracé SVG (cap.vector.path, ex. "M0 0L10 0 M50 50L60 50...")
+// et devient UN SEUL objet fabric.Path — pas un objet par segment. Une première version créait un
+// fabric.Line par segment (parfois plusieurs centaines de milliers sur un modèle dense), ce qui a fait
+// planter l'onglet en "Out of Memory" : un objet Fabric coûte bien plus cher qu'une poignée de
+// coordonnées dans une chaîne de tracé.
+function buildVectorPathFromCapture(cap, maxW, maxH) {
   const v = cap && cap.vector;
-  if (!v || !Array.isArray(v.segments) || !v.segments.length || !v.widthMm || !v.heightMm) return null;
-  const lines = v.segments.map(seg => new fabric.Line(seg, { stroke: '#111', strokeWidth: 1, selectable: false, evented: false }));
-  const grp = new fabric.Group(lines, {});
+  if (!v || !v.path || !v.widthMm || !v.heightMm) return null;
+  const grp = new fabric.Path(v.path, { stroke: '#111', strokeWidth: 1, fill: null });
   grp.isVectorViewport = true;
   grp.sourceView = cap.view;
   grp._p2dWidthMm = v.widthMm;
@@ -319,7 +324,7 @@ function buildVectorGroupFromCapture(cap, maxW, maxH) {
 }
 async function insertVectorViewportById(id, x, y, maxW, maxH, label, withDims) {
   const cap = STUDIO.captures.find(c => c.id === id);
-  const grp = buildVectorGroupFromCapture(cap, maxW, maxH);
+  const grp = buildVectorPathFromCapture(cap, maxW, maxH);
   if (!grp) return false;
   grp.set({ left: x, top: y });
   const cv = STUDIO.fabricCanvas;
@@ -354,7 +359,7 @@ function refreshSelectedViewport() {
   const cap = STUDIO.captures.filter(c => c.view === obj.sourceView && c.vector).pop();
   if (!cap) { flashStatus('Aucune capture vectorielle pour cette vue — recapture-la dans le viewer 3D puis clique "↻" ci-dessus', 'error'); return; }
   const w = obj.getScaledWidth(), h = obj.getScaledHeight();
-  const grp = buildVectorGroupFromCapture(cap, w, h);
+  const grp = buildVectorPathFromCapture(cap, w, h);
   if (!grp) return;
   grp.set({ left: obj.left, top: obj.top, angle: obj.angle || 0 });
   cv.remove(obj);
