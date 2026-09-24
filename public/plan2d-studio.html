@@ -404,7 +404,6 @@ function buildInfoBand(cv, y, boxed) {
 async function insertTemplateCover() {
   const cv = STUDIO.fabricCanvas;
   cv.add(new fabric.Rect({ left:PAGE_MARGIN, top:PAGE_MARGIN, width:CANVAS_W-PAGE_MARGIN*2, height:CANVAS_H-PAGE_MARGIN*2, fill:'transparent', stroke:'#000', strokeWidth:1.5, selectable:false, evented:false }));
-  buildInfoBand(cv, PAGE_MARGIN + 8, false);
   buildInfoBand(cv, CANVAS_H - PAGE_MARGIN - 54, true);
   cv.add(new fabric.Textbox('VIEWBOX', { left: CANVAS_W - 480, top: PAGE_MARGIN + 30, fontSize: 52, fontWeight: 'bold', fill: '#2b0a33', fontFamily: 'Georgia', charSpacing: 30 }));
 
@@ -500,14 +499,21 @@ async function ensurePlan2DEngineLoaded() {
 const MODEL_3D_EXTS = ['stl', 'obj', 'glb', 'gltf', 'ifc', 'dae', 'zip'];
 async function pickProjectModelFile() {
   const res = await apiGet('/projects/' + PROJECT_ID + '/files');
+  const all = res.data || [];
   // Repli sur fileUrl si fileName n'a pas d'extension reconnue (ex. fichier ajouté par URL sans nom
   // propre) — même repli que partout ailleurs dans l'app (02-detail-loaders.js, 08-visits-remarks.js,
   // 06-time-analysis.js) : sans lui, un modèle qui s'ouvre très bien depuis la fiche projet pouvait
   // rester invisible ici et donner "Aucun fichier 3D trouvé" à tort.
   const extOf = f => (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
-  const files = (res.data || []).filter(f => MODEL_3D_EXTS.includes(extOf(f)));
+  const files = all.filter(f => MODEL_3D_EXTS.includes(extOf(f)));
+  console.log('[plan2d pickProjectModelFile] fichiers du projet :', all.map(f => ({ fileName: f.fileName, fileUrl: f.fileUrl, category: f.category, ext: extOf(f) })));
   if (files.length === 0) {
-    flashStatus('Aucun fichier 3D (stl/obj/glb/gltf/ifc/dae) trouvé dans les fichiers du projet — dépose-en un d\'abord', 'error');
+    flashStatus(
+      all.length === 0
+        ? `Aucun fichier trouvé dans les fichiers du projet (projet ${PROJECT_ID}) — dépose un modèle 3D d'abord`
+        : `${all.length} fichier(s) trouvé(s) mais aucun au format 3D reconnu (stl/obj/glb/gltf/ifc/dae/zip) — vérifie la console (F12) pour la liste exacte`,
+      'error'
+    );
     return null;
   }
   if (files.length === 1) return files[0];

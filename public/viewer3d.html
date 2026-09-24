@@ -2476,27 +2476,6 @@ function drawLabelsToCanvas(ctx) {
   });
 }
 
-function drawFooterToCanvas(ctx) {
-  const cw = canvas.width, ch = canvas.height;
-  const scaleY = ch / canvas.getBoundingClientRect().height;
-  const fontSize = Math.round(14 * scaleY);
-  const padY = 10 * scaleY;
-  const padX = 16 * scaleY;
-  const footerH = fontSize + padY * 2;
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(0, ch - footerH, cw, footerH);
-  ctx.font = `${fontSize}px -apple-system, sans-serif`;
-  ctx.fillStyle = 'white';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  const modelName = state.modelInfo ? state.modelInfo.name : 'Modèle 3D';
-  ctx.fillText('📐 ' + modelName, padX, ch - footerH / 2);
-  let rightText = new Date().toLocaleString('fr-FR');
-  if (state.modelInfo) rightText = `${state.modelInfo.components} composants · ${rightText}`;
-  ctx.textAlign = 'right';
-  ctx.fillText(rightText, cw - padX, ch - footerH / 2);
-}
-
 function formatTimestampForFilename(d) {
   d = d || new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -2508,6 +2487,13 @@ function captureView() {
     setStatus('Charge un modèle d\'abord', 'error');
     return;
   }
+  // Fond blanc (pas le fond sombre de l'interface) et sans bandeau de légende en bas : ces photos sont
+  // surtout destinées à devenir la page de garde de Plan 2D Studio (voir "📐 Plan 2D →"), un fond blanc
+  // sans texte superposé y rend bien mieux qu'une capture "façon logiciel".
+  const prevClearColor = new THREE.Color();
+  renderer.getClearColor(prevClearColor);
+  const prevClearAlpha = renderer.getClearAlpha();
+  renderer.setClearColor(0xffffff, 1);
   renderer.render(scene, camera);
   const offscreen = document.createElement('canvas');
   offscreen.width = canvas.width;
@@ -2515,7 +2501,8 @@ function captureView() {
   const ctx = offscreen.getContext('2d');
   ctx.drawImage(canvas, 0, 0);
   drawLabelsToCanvas(ctx);
-  drawFooterToCanvas(ctx);
+  renderer.setClearColor(prevClearColor, prevClearAlpha);
+  renderer.render(scene, camera); // restaure le rendu interactif normal à l'écran
   flashCapture();
   offscreen.toBlob((blob) => {
     if (!blob) { setStatus('Erreur de capture', 'error'); return; }
