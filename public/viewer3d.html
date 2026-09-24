@@ -2623,6 +2623,26 @@ const plan2dParams = new URLSearchParams(window.location.search);
 const plan2dProjectId = plan2dParams.get('projectId');
 const plan2dToken = plan2dParams.get('token');
 
+// Redimensionne une photo (blob URL) et la réencode en JPEG compressé avant de la mettre en data URL —
+// une capture d'écran WebGL en PNG plein format peut peser plusieurs Mo ; à plusieurs, ça dépasse le
+// quota de localStorage (typiquement 5-10 Mo) et l'écriture échouait silencieusement (voir plus bas).
+function downscaleToDataUrl(blobUrl, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); // fond blanc : le JPEG ne gère pas la transparence
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('Chargement de la photo échoué'));
+    img.src = blobUrl;
+  });
+}
 async function goToPlan2D() {
   const btn = document.getElementById('btn-goto-plan2d');
   if (!plan2dProjectId) {
@@ -2640,14 +2660,7 @@ async function goToPlan2D() {
       for (let i = 0; i < state.captures.length; i++) {
         const cap = state.captures[i];
         try {
-          const resp = await fetch(cap.url);
-          const blob = await resp.blob();
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error('Lecture échouée'));
-            reader.readAsDataURL(blob);
-          });
+          const dataUrl = await downscaleToDataUrl(cap.url, 900, 0.82);
           captures.push({ id: '3d-gallery-' + Date.now() + '-' + i, view: '3d', url: dataUrl, vector: null });
         } catch (e) { console.error('[Plan2D] conversion photo galerie échouée', e); }
       }
@@ -2655,15 +2668,19 @@ async function goToPlan2D() {
         // localStorage (pas sessionStorage) : window.open('_blank') ouvre un nouvel onglet qui n'hérite
         // pas toujours du sessionStorage de l'onglet d'origine — localStorage, lui, est partagé entre
         // tous les onglets du même site.
-        try { localStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures)); }
-        catch (e) { console.error('[Plan2D] localStorage plein ou indisponible', e); }
+        try {
+          localStorage.setItem('plan2d_captures_' + plan2dProjectId, JSON.stringify(captures));
+          setStatus(`✓ ${captures.length} photo(s) transmise(s) à Plan 2D`, 'success');
+        } catch (e) {
+          console.error('[Plan2D] localStorage plein ou indisponible', e);
+          setStatus('⚠ Les photos de la galerie sont trop volumineuses pour être transmises (stockage plein) — Plan 2D s\'ouvre sans elles', 'error');
+        }
       }
     }
     const url = new URL(window.location.origin + '/plan2d-studio.html');
     url.searchParams.set('projectId', plan2dProjectId);
     if (plan2dToken) url.searchParams.set('token', plan2dToken);
     window.open(url.toString(), '_blank');
-    setStatus('', '');
   } finally {
     if (btn) btn.disabled = false;
   }

@@ -500,13 +500,18 @@ async function ensurePlan2DEngineLoaded() {
 const MODEL_3D_EXTS = ['stl', 'obj', 'glb', 'gltf', 'ifc', 'dae', 'zip'];
 async function pickProjectModelFile() {
   const res = await apiGet('/projects/' + PROJECT_ID + '/files');
-  const files = (res.data || []).filter(f => MODEL_3D_EXTS.includes((f.fileName || '').split('.').pop().toLowerCase()));
+  // Repli sur fileUrl si fileName n'a pas d'extension reconnue (ex. fichier ajouté par URL sans nom
+  // propre) — même repli que partout ailleurs dans l'app (02-detail-loaders.js, 08-visits-remarks.js,
+  // 06-time-analysis.js) : sans lui, un modèle qui s'ouvre très bien depuis la fiche projet pouvait
+  // rester invisible ici et donner "Aucun fichier 3D trouvé" à tort.
+  const extOf = f => (f.fileName || f.fileUrl || '').split('.').pop().toLowerCase();
+  const files = (res.data || []).filter(f => MODEL_3D_EXTS.includes(extOf(f)));
   if (files.length === 0) {
     flashStatus('Aucun fichier 3D (stl/obj/glb/gltf/ifc/dae) trouvé dans les fichiers du projet — dépose-en un d\'abord', 'error');
     return null;
   }
   if (files.length === 1) return files[0];
-  const labels = files.map((f, i) => (i + 1) + '. ' + f.fileName).join('\n');
+  const labels = files.map((f, i) => (i + 1) + '. ' + (f.fileName || f.fileUrl)).join('\n');
   const choice = prompt('Plusieurs fichiers 3D trouvés dans ce projet, tape le numéro à utiliser :\n' + labels, '1');
   if (choice === null) return null;
   const idx = parseInt(choice, 10) - 1;
