@@ -18,6 +18,8 @@ export interface IngestOptions {
   runner: BatchRunner;
   onProgress?: (step: string, fraction: number) => void;
   signal?: AbortSignal;
+  /** tests hors navigateur uniquement */
+  skipTextures?: boolean;
 }
 
 export interface IngestResult {
@@ -51,7 +53,7 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
 
   progress(bundle.format === 'dae' ? 'Analyse du .dae (COLLADA)' : 'Analyse du .glb', 0.08);
   await new Promise((r) => setTimeout(r, 0)); // laisse l'interface afficher l'étape avant le parsing (bloquant)
-  const loaded = bundle.format === 'dae' ? await loadDae(bundle) : await loadRawGlb(bundle);
+  const loaded = bundle.format === 'dae' ? await loadDae(bundle, opts.skipTextures) : await loadRawGlb(bundle);
   if (loaded.missingTextures.length) {
     warnings.push({
       code: 'TEXTURES_MISSING',

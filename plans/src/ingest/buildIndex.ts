@@ -14,7 +14,7 @@ import type {
   SourceInfo,
   Warning,
 } from '../core/types';
-import { ENGINE_VERSION, MODULE_ACCESSORY_CATEGORIES } from '../core/types';
+import { ENGINE_VERSION } from '../core/types';
 import type { CompiledRules } from '../core/classification';
 import {
   articleRefFromName,
@@ -24,11 +24,10 @@ import {
   isGlassMaterial,
   moduleIdFromName,
 } from '../core/classification';
-import { checkPlanDims, groupLevels, levelLabel, suspectScaleFactor } from '../core/units';
-import type { Manifest, ManifestEntry } from '../core/manifest';
-import { asCategory, BBoxLookup, manifestBBoxToYUp } from '../core/manifest';
+import { checkPlanDims, groupLevels, levelLabel, nearestSize, suspectScaleFactor } from '../core/units';
+import type { Manifest, ManifestEntry, ManifestModule } from '../core/manifest';
+import { asCategory, BBoxLookup, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
 import { stableId } from '../core/hash';
-import { normalizeName } from '../core/classification';
 
 export interface CleanupStats {
   degenerate: number;
@@ -54,6 +53,8 @@ interface Rec {
   source: CategorySource | null;
   articleRef: string | null;
   glass: boolean;
+  label: string | null; // désignation (manifest)
+  sourceName: string | null; // nom d'origine SketchUp (manifest)
 }
 
 const EXCESSIVE_ITEM_TRIANGLES = 150_000;
@@ -182,6 +183,8 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
         source: null,
         articleRef: null,
         glass: false,
+        label: null,
+        sourceName: null,
       };
       child.userData = { ...child.userData, vbxId: id, originalName: child.name };
       objectsById.set(id, child);
@@ -268,19 +271,26 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
   }
 
   // ─── 5. Classification (manifest > nom > définition > réf. article > matériau > héritage) ───
+  // Correspondance manifest ↔ .dae : par le nom technique d'export (exportName), à défaut par le nom
+  // d'instance tel que SketchUp le réécrit dans le .dae (daeNameKey), puis par boîte englobante.
   const manifestByKey = new Map<string, ManifestEntry>();
   const manifestGlobal = new Map<string, ManifestEntry | null>(); // null = nom ambigu
   const manifestMatched = new Set<ManifestEntry>();
   const allManifestEntries: ManifestEntry[] = [];
+  const manifestModules = new Map<string, ManifestModule>();
   if (manifest) {
+    const keyOf = (e: ManifestEntry) => daeNameKey(e.exportName || e.name || '');
     const addGlobal = (e: ManifestEntry) => {
-      const k = normalizeName(e.name);
-      manifestGlobal.set(k, manifestGlobal.has(k) ? null : e);
+      const k = keyOf(e);
+      if (k) manifestGlobal.set(k, manifestGlobal.has(k) ? null : e);
       allManifestEntries.push(e);
     };
     for (const m of manifest.modules) {
+      const mid = moduleIdFromName(m.id, rules);
+      if (mid) manifestModules.set(mid, m);
       for (const e of m.accessories ?? []) {
-        manifestByKey.set(normalizeName(m.id) + '::' + normalizeName(e.name), e);
+        const k = keyOf(e);
+        if (k && mid) manifestByKey.set(mid + '::' + k, e);
         addGlobal(e);
       }
     }
@@ -288,9 +298,9 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
   }
   const fromManifest = (r: Rec): ManifestEntry | null => {
     if (!manifest || !r.name) return null;
-    const k = normalizeName(r.name);
+    const k = daeNameKey(r.name);
     const mid = r.inModule?.moduleId;
-    return (mid ? manifestByKey.get(normalizeName(mid) + '::' + k) : undefined) ?? manifestGlobal.get(k) ?? null;
+    return (mid ? manifestByKey.get(mid + '::' + k) : undefined) ?? manifestGlobal.get(k) ?? null;
   };
 
   const applyEntry = (r: Rec, e: ManifestEntry) => {
@@ -301,6 +311,9 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       r.source = 'manifest';
     }
     if (e.articleRef) r.articleRef = e.articleRef;
+    if (e.label) r.label = e.label;
+    if (e.name) r.sourceName = e.name;
+    if (e.definition) r.defName = e.definition; // nom exact (le .dae le déforme)
   };
 
   for (const r of recs) {
@@ -356,7 +369,9 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
   for (const r of recs) if (r.category?.startsWith('VITRE')) r.glass = true;
 
   // ─── 6. Modules par leurs dimensions, si aucun nom VBX-xx n'a été trouvé ───
-  const dims = rules.moduleDims;
+  const sizes = rules.moduleSizes;
+  const tol = rules.moduleToleranceMm;
+  const sizesText = sizes.map((z) => `${z.long} × ${z.short}`).join(' ou ');
   let detectedBy: ModuleInfo['detectedBy'] = 'name';
   if (moduleRecs.length === 0) {
     detectedBy = 'dimensions';
@@ -365,7 +380,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       for (const r of list) {
         if (r.context || r.kind !== 'group') continue;
         const fd = frameDims(r.obj, leavesOf(r));
-        if (fd && checkPlanDims(fd.plan[0], fd.plan[1], dims).ok) {
+        if (fd && nearestSize(fd.plan[0], fd.plan[1], sizes, tol).check.ok) {
           moduleRecs.push(r);
           continue;
         }
@@ -383,7 +398,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       warnings.push({
         code: 'MODULES_BY_DIMENSIONS',
         severity: 'warning',
-        message: `${moduleRecs.length} Viewbox reconnue(s) uniquement à leurs dimensions (${dims.long} × ${dims.short} mm) et nommée(s) AUTO-xx. Dans SketchUp, donne à chaque Viewbox un nom d'instance VBX-01, VBX-02… (l'extension Viewbox le fait pour toi).`,
+        message: `${moduleRecs.length} Viewbox reconnue(s) uniquement à leurs dimensions (${sizesText} mm) et nommée(s) AUTO-xx. Dans SketchUp, donne à chaque Viewbox un nom d'instance VBX-01, VBX-02… (l'extension Viewbox le fait pour toi).`,
         nodeIds: moduleRecs.map((r) => r.id),
       });
     }
@@ -401,7 +416,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     warnings.push({
       code: 'NO_MODULES',
       severity: 'blocking',
-      message: `Aucune Viewbox détectée : aucun objet nommé VBX-xx et aucun ensemble de ${dims.long} × ${dims.short} mm (± ${dims.toleranceMm}) trouvé.`,
+      message: `Aucune Viewbox détectée : aucun objet nommé VBX-xx et aucun ensemble de ${sizesText} mm (± ${tol}) trouvé. Ajoute la taille de tes Viewbox dans Réglages si elle n'y est pas.`,
     });
   }
 
@@ -409,48 +424,58 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
   const moduleInfos: ModuleInfo[] = [];
   const structureMinY = new Map<Rec, number>();
   for (const m of moduleRecs) {
+    // Mesure sur tout le module sauf les pieds (ils débordent souvent de l'emprise).
     const all = descendants(m, (d) => !d.context).filter((d) => d.kind === 'mesh');
-    const structural = all.filter((d) => d.category === 'STRUCTURE' || d.category === 'PLANCHER');
-    const leaves = structural.length ? structural : all;
+    const noFeet = all.filter((d) => d.category !== 'PIED');
+    const leaves = noFeet.length ? noFeet : all;
     const fd = frameDims(m.obj, leaves.map((d) => d.obj)) ?? { plan: [0, 0] as [number, number], height: 0 };
     const sBox = new Box3();
     for (const l of leaves) sBox.union(l.box);
     structureMinY.set(m, sBox.isEmpty() ? m.box.min.y : sBox.min.y);
-    const check = checkPlanDims(fd.plan[0], fd.plan[1], dims);
-    moduleInfos.push({
+    const mm = manifestModules.get(m.moduleId!);
+    const nominal = mm?.nominalPlanMm?.[0] && mm.nominalPlanMm[1] ? mm.nominalPlanMm : null;
+    const near = nearestSize(fd.plan[0], fd.plan[1], sizes, tol);
+    const expected: ModuleInfo['expected'] = nominal
+      ? { label: mm?.type || 'dimensions nominales', long: Math.max(...nominal), short: Math.min(...nominal), source: 'nominal' }
+      : { label: near.size.label, long: near.size.long, short: near.size.short, source: 'standard' };
+    const check = checkPlanDims(fd.plan[0], fd.plan[1], expected, tol);
+    const info: ModuleInfo = {
       id: m.moduleId!,
       nodeId: m.id,
       name: m.name || m.defName,
       level: 0,
       planDimsMm: [Math.round(fd.plan[0] * 10) / 10, Math.round(fd.plan[1] * 10) / 10],
       heightMm: Math.round(fd.height * 10) / 10,
-      dimsSource: structural.length ? 'structure' : 'all',
+      expected,
       dimsOk: check.ok,
       bboxMm: toBBox(m.box) ?? [0, 0, 0, 0, 0, 0],
       itemIds: [],
       detectedBy,
-    });
+    };
+    if (mm?.type) info.type = mm.type;
+    moduleInfos.push(info);
   }
   const badDims = moduleInfos.filter((m) => !m.dimsOk);
   if (badDims.length) {
     const med = (arr: number[]) => arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)];
     const suspect =
       badDims.length === moduleInfos.length
-        ? suspectScaleFactor(med(badDims.map((m) => m.planDimsMm[0])), med(badDims.map((m) => m.planDimsMm[1])), dims)
+        ? suspectScaleFactor(med(badDims.map((m) => m.planDimsMm[0])), med(badDims.map((m) => m.planDimsMm[1])), sizes)
         : null;
     if (suspect) {
       warnings.push({
         code: 'UNIT_SUSPECT',
         severity: 'blocking',
-        message: `Problème d'unités : les Viewbox mesurent ~${fmt(badDims[0].planDimsMm[0])} × ${fmt(badDims[0].planDimsMm[1])} mm au lieu de ${dims.long} × ${dims.short}. Facteur suspecté ${suspect.label}. Vérifie les unités du modèle SketchUp (Fenêtre › Infos sur le modèle › Unités) avant de réexporter.`,
+        message: `Problème d'unités : les Viewbox mesurent ~${fmt(badDims[0].planDimsMm[0])} × ${fmt(badDims[0].planDimsMm[1])} mm au lieu de ${sizesText}. Facteur suspecté ${suspect.label}. Vérifie les unités du modèle SketchUp (Fenêtre › Infos sur le modèle › Unités) avant de réexporter.`,
         nodeIds: badDims.map((m) => m.nodeId),
       });
     } else {
       for (const m of badDims) {
+        const e = m.expected;
         warnings.push({
           code: 'MODULE_DIMS',
           severity: 'warning',
-          message: `${m.id} mesure ${fmt(m.planDimsMm[0])} × ${fmt(m.planDimsMm[1])} mm en plan (attendu ${dims.long} × ${dims.short} ± ${dims.toleranceMm}, mesuré sur ${m.dimsSource === 'structure' ? 'la structure' : "l'ensemble du module"}).`,
+          message: `${m.id} mesure ${fmt(m.planDimsMm[0])} × ${fmt(m.planDimsMm[1])} mm en plan, pieds exclus (attendu ${e.long} × ${e.short} ± ${tol} : ${e.source === 'nominal' ? `dimensions nominales « ${e.label} » saisies dans SketchUp` : `taille standard la plus proche, ${e.label}`}). Si c'est un autre type de Viewbox, saisis ses dimensions nominales dans l'extension SketchUp ou ajoute la taille dans Réglages.`,
           nodeIds: [m.nodeId],
         });
       }
@@ -520,7 +545,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     }
     assignSubtree(r, { moduleId: null, how: 'common', level: lv });
     commonIds.push(r.id);
-    if (r.category && MODULE_ACCESSORY_CATEGORIES.has(r.category)) orphans.push(r);
+    if (r.category && rules.accessoryKeys.has(r.category)) orphans.push(r);
   }
 
   // ─── 10. Rôles, articles (items = plus haut nœud classé), non classés ───
@@ -592,7 +617,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     warnings.push({
       code: 'TWO_SIDED_FACES',
       severity: 'info',
-      message: `${fmt(cleanup.backToBack)} faces doublées dos à dos supprimées : l'option « Export Two-Sided Faces » était probablement activée à l'export .dae (à désactiver).`,
+      message: `${fmt(cleanup.backToBack)} faces doublées dos à dos supprimées (faces peintes des deux côtés dans SketchUp, ou option « Export Two-Sided Faces » activée).`,
     });
   }
   if (cleanup.duplicate - cleanup.backToBack > 0) {
@@ -662,6 +687,8 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       triangles: r.triangles,
     };
     if (r.defName && r.defName !== r.name) info.definition = r.defName;
+    if (r.sourceName && r.sourceName !== r.name) info.sourceName = r.sourceName;
+    if (r.label) info.label = r.label;
     if (r.materials.length) info.materialNames = r.materials;
     if (r.articleRef) info.articleRef = r.articleRef;
     if (r.glass) info.glass = true;

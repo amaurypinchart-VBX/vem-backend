@@ -20,7 +20,7 @@ interface Props {
 
 const SEV_LABEL: Record<Warning['severity'], string> = { blocking: 'BLOQUANT', warning: 'ATTENTION', info: 'INFO' };
 const SOURCE_LABEL: Record<string, string> = {
-  manifest: 'manifest.json',
+  manifest: 'choisi dans SketchUp (manifest)',
   name: "nom d'instance",
   definition: 'nom de définition',
   article: 'référence article',
@@ -94,7 +94,7 @@ export function Inspector(props: Props) {
       </span>
       <span className="nm">
         {displayName(n)}
-        {n.definition && n.name && <em>{n.definition}</em>}
+        {n.definition && n.definition !== displayName(n) && <em>{n.definition}</em>}
         {n.assignment === 'spatial' && <em>· rattaché par sa position</em>}
       </span>
       {n.articleRef && <span className="badge">{n.articleRef}</span>}
@@ -240,8 +240,12 @@ export function Inspector(props: Props) {
                             <span className="nm">
                               <b>{m.id}</b>
                               {node && m.name !== m.id && <em>{m.name}</em>}
+                              {m.type && <em>· {m.type}</em>}
                             </span>
-                            <span className={`badge ${m.dimsOk ? 'ok' : 'ko'}`}>
+                            <span
+                              className={`badge ${m.dimsOk ? 'ok' : 'ko'}`}
+                              title={`Attendu ${m.expected.long} × ${m.expected.short} mm (${m.expected.source === 'nominal' ? 'dimensions nominales saisies dans SketchUp' : 'taille standard ' + m.expected.label})`}
+                            >
                               {fmtInt(m.planDimsMm[0])} × {fmtInt(m.planDimsMm[1])} mm {m.dimsOk ? '✓' : '✗'}
                             </span>
                             <span className="meta">h {fmtInt(m.heightMm)} · {m.itemIds.length} objets</span>
@@ -320,8 +324,19 @@ function NodeDetail({ n, byId }: { n: NodeInfo; byId: Map<string, NodeInfo> }) {
   for (let p = n.parentId ? byId.get(n.parentId) : undefined; p; p = p.parentId ? byId.get(p.parentId) : undefined) path.unshift(displayName(p));
   return (
     <dl>
+      {n.label && (
+        <>
+          <dt>Désignation</dt>
+          <dd>
+            <b>{n.label}</b>
+          </dd>
+        </>
+      )}
       <dt>Nom</dt>
-      <dd>{n.name || '(sans nom)'}</dd>
+      <dd>
+        {n.sourceName || n.name || '(sans nom)'}
+        {n.sourceName && n.sourceName !== n.name && <span className="hint"> · dans le .dae : {n.name}</span>}
+      </dd>
       {n.definition && (
         <>
           <dt>Définition</dt>

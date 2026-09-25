@@ -29,7 +29,7 @@ describe("ingestion d'un export SketchUp", async () => {
       expect(m.dimsOk).toBe(true);
       expect(Math.abs(m.planDimsMm[0] - 5900)).toBeLessThanOrEqual(1);
       expect(Math.abs(m.planDimsMm[1] - 2500)).toBeLessThanOrEqual(1);
-      expect(m.dimsSource).toBe('structure');
+      expect(m.expected).toEqual({ label: 'Viewbox 5900', long: 5900, short: 2500, source: 'standard' });
     }
     expect(codes).not.toContain('UNIT_SUSPECT');
   });
@@ -113,18 +113,45 @@ describe('contrôles', () => {
     expect(w?.message).toContain('25,4');
   });
 
-  it('lit un .zip avec manifest.json : la catégorie du manifest prime', async () => {
+  it('lit un .zip avec manifest.json : les choix faits dans SketchUp priment (catégorie perso, désignation, dimensions nominales)', async () => {
+    // L'extension renomme temporairement les objets à l'export ("VBXE-n") : on imite ça dans le .dae.
+    const dae = makeSketchupDae({ twoSided: false, edges: false }).replace('name="Group 12"', 'name="VBXE-7"').replace('name="PORTE-DOUBLE orpheline"', 'name="VBXE-9"');
     const manifest = {
       schema: 'viewbox-manifest/1',
       units: 'mm',
       upAxis: 'Z',
-      modules: [{ id: 'VBX-01', accessories: [{ name: 'Group 12', category: 'MUR-LOURD' }] }],
+      modules: [
+        {
+          id: 'VBX-02',
+          type: 'Viewbox 6000 spéciale',
+          nominalPlanMm: [6000, 2500],
+          accessories: [{ exportName: 'VBXE-7', name: 'Group 12', category: 'Porte orangerie', categorySource: 'manuel', label: 'Porte orangerie 1800', definition: 'porte orangerie' }],
+        },
+      ],
+      common: [{ exportName: 'VBXE-9', name: '', category: 'MUR-LOURD', categorySource: 'manuel', definition: '7-636-008 NIDAPLAST WALL' }],
     };
-    const zip = zipSync({ 'export/test.dae': strToU8(makeSketchupDae({ twoSided: false, edges: false })), 'export/manifest.json': strToU8(JSON.stringify(manifest)) });
+    const zip = zipSync({
+      'ancien-export.dae': strToU8('<COLLADA/>'), // un 2e .dae ne gêne plus : on prend celui à côté du manifest
+      'export/test.dae': strToU8(dae),
+      'export/manifest.json': strToU8(JSON.stringify(manifest)),
+    });
     const { index } = await run('test.zip', zip.buffer as ArrayBuffer);
-    const g = byName(index, 'Group 12', 'VBX-01')[0];
-    expect(g.category).toBe('MUR-LOURD');
+    const g = index.nodes.find((n) => n.name === 'VBXE-7' && n.moduleId === 'VBX-02')!;
+    expect(g.category).toBe('PORTE-ORANGERIE');
     expect(g.categorySource).toBe('manifest');
+    expect(g.label).toBe('Porte orangerie 1800');
+    expect(g.sourceName).toBe('Group 12');
+    expect(g.definition).toBe('porte orangerie');
+    // définition de Viewbox partagée : c'est le même objet SketchUp dans chaque Viewbox → même choix partout
+    expect(index.nodes.filter((n) => n.name === 'VBXE-7').every((n) => n.category === 'PORTE-ORANGERIE')).toBe(true);
+    const orphan = index.nodes.find((n) => n.name === 'VBXE-9')!;
+    expect(orphan.category).toBe('MUR-LOURD');
+    expect(orphan.definition).toBe('7-636-008 NIDAPLAST WALL');
+    const v2 = index.modules.find((m) => m.id === 'VBX-02')!;
+    expect(v2.type).toBe('Viewbox 6000 spéciale');
+    expect(v2.expected.source).toBe('nominal');
+    expect(v2.dimsOk).toBe(false); // mesurée 5900, déclarée 6000
+    expect(index.warnings.find((w) => w.code === 'MODULE_DIMS')?.message).toContain('dimensions nominales');
     const codes = index.warnings.map((x) => x.code);
     expect(codes).not.toContain('NO_MANIFEST');
     expect(codes).not.toContain('TWO_SIDED_FACES');

@@ -31,9 +31,25 @@ class CoreTest < Minitest::Test
 
   def test_article_and_names
     assert_equal '7-230-044', C.article_ref('MUR-LEGER_#7-230-044')
-    assert_equal 'VBX-03|PORTE-SIMPLE|02|#7-230-044', C.accessory_name('VBX-03|', 'PORTE-SIMPLE', 2, '7-230-044')
-    assert_equal 'PORTE-SIMPLE|01', C.accessory_name('', 'PORTE-SIMPLE', 1)
+    assert_equal 'VBXE-12', C.export_name(12)
+    assert_equal 'PORTE-ORANGERIE', C.category_key('Porte orangerie')
+    assert_equal 'IGNORER', C.category_key('ignorer')
     assert_equal 'Projet_SAP_Unit_3', C.safe_file_name('Projet SAP (Unit 3)')
+  end
+
+  def test_erp_vocabulary
+    assert_equal 'PIED', C.category('7-632-001 Leveling feet')
+    assert_equal 'STRUCTURE', C.category('7-355-014 Vertical poles simple')
+    assert_equal 'PLANCHER', C.category('7-632-001 Floor module equipped with:')
+    assert_equal 'VITRE-SEAMLESS', C.category('7-637-010 Glasswall Seamless 10mm 2500X1130X#1')
+    assert_nil C.category('porte orangerie')
+    assert_nil C.category('Napoleon')
+  end
+
+  def test_center_inside
+    assert C.center_inside?([0, 0, 0], [100, 20, 2500], [0, 0, 0], [5900, 2500, 3000])
+    assert C.center_inside?([-40, 0, 0], [-20, 20, 2500], [0, 0, 0], [5900, 2500, 3000]) # à moins de 50 mm
+    refute C.center_inside?([-200, 0, 0], [-100, 20, 2500], [0, 0, 0], [5900, 2500, 3000])
   end
 
   def test_levels_and_numbers

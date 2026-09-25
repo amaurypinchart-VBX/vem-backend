@@ -29,13 +29,16 @@ module Viewbox
         ['MUR-LOURD', [/MUR[-_ ]?LOURD/, /WALL[-_ ]?HEAVY/, /HEAVY[-_ ]?WALL/]],
         ['GARDE-CORPS', [/GARDE[-_ ]?CORPS/, /RAILING/, /HANDRAIL/, /BALUSTRADE/]],
         ['ESCALIER', [/ESCALIER/, /STAIR/]],
-        ['PIED', [/(\A|[^A-Z])PIED/, /VERIN/, /(\A|[^A-Z])JACK/]],
+        ['PIED', [/(\A|[^A-Z])PIED/, /VERIN/, /(\A|[^A-Z])JACK/, /LEVEL+ING/, /(\A|[^A-Z])FEET/, /(\A|[^A-Z])FOOT([^A-Z]|\z)/]],
         ['TOIT', [/TOIT/, /ROOF/]],
-        ['PLANCHER', [/PLANCHER/, /FLOOR[-_ ]?PANEL/]],
-        ['STRUCTURE', [/STRUCTURE/, /CHASSIS/, /POTEAU/, /POUTRE/]],
+        ['PLANCHER', [/PLANCHER/, /FLOOR[-_ ]?(PANEL|MODULE)/]],
+        ['STRUCTURE', [/STRUCTURE/, /CHASSIS/, /POTEAU/, /POUTRE/, /(\A|[^A-Z])POLES?([^A-Z]|\z)/, /COLUMN/, /(\A|[^A-Z])BEAM/, /UPN[-_ ]?\d/, /IPE[-_ ]?\d/, /HE[AB][-_ ]?\d/]],
         ['VITRE', [/(\A|[^A-Z])VITRE/, /VITRAGE/, /GLAZING/]]
       ].freeze
       CATEGORIES = CATEGORY_RULES.map(&:first).freeze
+      # Choix "Ignorer à l'export" dans la fenêtre de révision : l'objet n'est pas exporté.
+      IGNORE = 'IGNORER'.freeze
+      EXPORT_PREFIX = 'VBXE-'.freeze
       ACCESSORY_CATEGORIES = %w[VITRE-SEAMLESS VITRE-CADRE VITRE MUR-LEGER MUR-LOURD PORTE-SIMPLE PORTE-DOUBLE PORTE-COULISSANTE].freeze
 
       # Majuscules, sans accents.
@@ -72,8 +75,23 @@ module Viewbox
         COMMON_RE.match?(normalize(name))
       end
 
-      def self.valid_category?(value)
-        CATEGORIES.include?(value.to_s)
+      # Clé de catégorie propre (catégories personnalisées) : "Porte orangerie" → "PORTE-ORANGERIE".
+      def self.category_key(value)
+        normalize(value).gsub(/[^A-Z0-9]+/, '-').gsub(/\A-+|-+\z/, '')
+      end
+
+      # Nom technique unique donné à un objet le temps de l'export .dae (sans caractère que SketchUp
+      # réécrirait) : c'est la clé qui relie chaque objet du .dae à sa ligne du manifest.
+      def self.export_name(number)
+        "#{EXPORT_PREFIX}#{number}"
+      end
+
+      # Boîte (min, max en mm) : le centre est-il dans l'autre boîte agrandie de margin ?
+      def self.center_inside?(min, max, bmin, bmax, margin = 50.0)
+        (0..2).all? do |i|
+          c = (min[i] + max[i]) / 2.0
+          c >= bmin[i] - margin && c <= bmax[i] + margin
+        end
       end
 
       # Dimensions en plan d'un module (orientation quelconque), tolérance en mm.
@@ -107,13 +125,6 @@ module Viewbox
           n += 1
         end
         out
-      end
-
-      # Nom d'accessoire unique : "VBX-03|PORTE-SIMPLE|02|#7-230-044" (sans préfixe de module si la
-      # définition du module est partagée par plusieurs Viewbox).
-      def self.accessory_name(module_prefix, category, number, article = nil)
-        name = "#{module_prefix}#{category}|#{format('%02d', number)}"
-        article ? "#{name}|##{article}" : name
       end
 
       def self.safe_file_name(name)
@@ -158,11 +169,13 @@ module Viewbox
       end
 
       # Zippe tout le contenu d'un dossier (chemins relatifs, avec sous-dossiers de textures).
+      # (chemins relatifs obtenus par glob "base:" : sous Windows, le dossier temporaire peut s'écrire
+      # de deux façons, C:/Users/NOM~1/… et C:/Users/Nom/…, ce qui cassait un simple retrait de préfixe)
       def self.zip_directory(dir, zip_path)
-        files = Dir.glob(File.join(dir, '**', '*'), File::FNM_DOTMATCH).select { |f| File.file?(f) }.sort
+        files = Dir.glob('**/*', File::FNM_DOTMATCH, base: dir).reject { |f| f.end_with?('.') }.select { |f| File.file?(File.join(dir, f)) }.sort
         File.open(zip_path, 'wb') do |io|
           zip = ZipWriter.new(io)
-          files.each { |f| zip.add(f.sub(%r{\A#{Regexp.escape(dir)}/?}, ''), File.binread(f)) }
+          files.each { |f| zip.add(f, File.binread(File.join(dir, f))) }
           zip.close
         end
         files.size

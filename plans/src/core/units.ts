@@ -28,23 +28,35 @@ export interface DimsCheck {
   deltaShort: number;
 }
 
-/** Compare les dimensions en plan d'un module (orientation quelconque) à la référence. */
-export function checkPlanDims(
-  a: number,
-  b: number,
-  ref: { long: number; short: number; toleranceMm: number },
-): DimsCheck {
+/** Compare les dimensions en plan d'un module (orientation quelconque) à une taille de référence. */
+export function checkPlanDims(a: number, b: number, ref: { long: number; short: number }, toleranceMm: number): DimsCheck {
   const long = Math.max(a, b);
   const short = Math.min(a, b);
   const deltaLong = long - ref.long;
   const deltaShort = short - ref.short;
   return {
-    ok: Math.abs(deltaLong) <= ref.toleranceMm && Math.abs(deltaShort) <= ref.toleranceMm,
+    ok: Math.abs(deltaLong) <= toleranceMm && Math.abs(deltaShort) <= toleranceMm,
     long,
     short,
     deltaLong,
     deltaShort,
   };
+}
+
+/** Taille standard la plus proche des dimensions mesurées (et si elle est dans la tolérance). */
+export function nearestSize<T extends { long: number; short: number }>(
+  a: number,
+  b: number,
+  sizes: T[],
+  toleranceMm: number,
+): { size: T; check: DimsCheck } {
+  let best: { size: T; check: DimsCheck } | null = null;
+  for (const size of sizes) {
+    const check = checkPlanDims(a, b, size, toleranceMm);
+    const err = Math.abs(check.deltaLong) + Math.abs(check.deltaShort);
+    if (!best || err < Math.abs(best.check.deltaLong) + Math.abs(best.check.deltaShort)) best = { size, check };
+  }
+  return best!;
 }
 
 export const SUSPECT_FACTORS: Array<{ factor: number; label: string }> = [
@@ -65,14 +77,14 @@ export const SUSPECT_FACTORS: Array<{ factor: number; label: string }> = [
 export function suspectScaleFactor(
   long: number,
   short: number,
-  ref: { long: number; short: number },
+  refs: Array<{ long: number; short: number }>,
   relTolerance = 0.02,
 ): { factor: number; label: string } | null {
   if (!(long > 0 && short > 0)) return null;
   for (const s of SUSPECT_FACTORS) {
     const l = long * s.factor;
     const w = short * s.factor;
-    if (Math.abs(l - ref.long) / ref.long <= relTolerance && Math.abs(w - ref.short) / ref.short <= relTolerance) {
+    if (refs.some((ref) => Math.abs(l - ref.long) / ref.long <= relTolerance && Math.abs(w - ref.short) / ref.short <= relTolerance)) {
       return s;
     }
   }

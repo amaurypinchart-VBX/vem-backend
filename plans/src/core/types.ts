@@ -1,9 +1,10 @@
 // Types partagés du module Plans Viewbox (index de scène, avertissements, règles).
 // Convention interne unique : millimètres, Y vers le haut (convention three.js).
 
-export const ENGINE_VERSION = 'p0-ingest-1';
+export const ENGINE_VERSION = 'p0-ingest-2';
 
-export const CATEGORIES = [
+/** Catégories intégrées. D'autres peuvent être ajoutées dans Réglages (ex. « PORTE-ORANGERIE »). */
+export const BUILTIN_CATEGORIES = [
   'VITRE-SEAMLESS',
   'VITRE-CADRE',
   'VITRE',
@@ -20,10 +21,11 @@ export const CATEGORIES = [
   'GARDE-CORPS',
 ] as const;
 
-export type Category = (typeof CATEGORIES)[number];
+/** Clé de catégorie : intégrée (BUILTIN_CATEGORIES) ou personnalisée (Réglages, manifest). */
+export type Category = string;
 
-/** Catégories d'accessoires "de façade" : hors module, elles sont signalées comme orphelines. */
-export const MODULE_ACCESSORY_CATEGORIES: ReadonlySet<Category> = new Set<Category>([
+/** Catégories d'accessoires "de façade" intégrées : hors module, elles sont signalées comme orphelines. */
+export const BUILTIN_ACCESSORY_CATEGORIES: ReadonlySet<Category> = new Set<Category>([
   'VITRE-SEAMLESS',
   'VITRE-CADRE',
   'VITRE',
@@ -34,8 +36,8 @@ export const MODULE_ACCESSORY_CATEGORIES: ReadonlySet<Category> = new Set<Catego
   'PORTE-COULISSANTE',
 ]);
 
-/** Légende des planches Viewbox (libellés + couleurs de la charte). */
-export const LEGEND: Partial<Record<Category, { label: string; color: string }>> = {
+/** Légende des planches Viewbox (libellés + couleurs de la charte), pour les catégories intégrées. */
+export const LEGEND: Record<string, { label: string; color: string }> = {
   'VITRE-SEAMLESS': { label: 'Windows Seamless', color: '#1030FF' },
   'VITRE-CADRE': { label: 'Windows Frame', color: '#800080' },
   'MUR-LEGER': { label: 'Wall Light', color: '#FFFB14' },
@@ -57,6 +59,10 @@ export interface NodeInfo {
   name: string;
   /** nom de la définition de composant SketchUp, quand il diffère du nom d'instance */
   definition?: string;
+  /** nom d'instance d'origine dans SketchUp (le .dae peut le modifier ; fourni par le manifest) */
+  sourceName?: string;
+  /** désignation libre saisie dans SketchUp (ex. « Porte orangerie 1800 ») */
+  label?: string;
   parentId: string | null;
   kind: 'group' | 'mesh' | 'lines';
   role: NodeRole;
@@ -77,10 +83,14 @@ export interface ModuleInfo {
   id: string;
   nodeId: string;
   name: string;
+  /** type de Viewbox saisi dans SketchUp (ex. « Viewbox M16 5900 ») */
+  type?: string;
   level: number;
+  /** dimensions en plan mesurées dans le repère du module, pieds exclus */
   planDimsMm: [number, number];
   heightMm: number;
-  dimsSource: 'structure' | 'all';
+  /** taille attendue : nominale (saisie dans SketchUp) ou taille standard la plus proche (Réglages) */
+  expected: { label: string; long: number; short: number; source: 'nominal' | 'standard' };
   dimsOk: boolean;
   bboxMm: BBox;
   itemIds: string[];
@@ -147,6 +157,20 @@ export interface SceneIndex {
 export interface CategoryRule {
   key: Category;
   patterns: string[];
+  /** libellé de légende (catégories personnalisées) */
+  label?: string;
+  /** couleur de légende (#RRGGBB) */
+  color?: string;
+  /** accessoire de façade : signalé s'il est hors de toute Viewbox */
+  accessory?: boolean;
+  /** ajoutée par l'utilisateur (supprimable) */
+  custom?: boolean;
+}
+
+export interface ModuleSize {
+  label: string;
+  long: number;
+  short: number;
 }
 
 /** Règles de classification, éditables dans la page Réglages (stockées dans app_settings). */
@@ -160,5 +184,7 @@ export interface ClassificationRules {
   categories: CategoryRule[];
   /** Référence article ERP → catégorie (ex. "7-230-044" → "MUR-LEGER"). */
   articleCategories: Record<string, Category>;
-  moduleDims: { long: number; short: number; toleranceMm: number };
+  /** tailles standard de Viewbox en plan (mm) : contrôle des dimensions et détection sans nom */
+  moduleSizes: ModuleSize[];
+  moduleToleranceMm: number;
 }

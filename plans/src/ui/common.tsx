@@ -1,7 +1,13 @@
-import type { Category } from '../core/types';
+import type { Category, ClassificationRules } from '../core/types';
 import { LEGEND } from '../core/types';
 
-const NEUTRAL: Partial<Record<Category, string>> = {
+// Règles en cours (couleurs/libellés des catégories personnalisées), fixées par App au chargement.
+let currentRules: ClassificationRules | null = null;
+export function setDisplayRules(rules: ClassificationRules) {
+  currentRules = rules;
+}
+
+const NEUTRAL: Record<string, string> = {
   STRUCTURE: '#9aa3b5',
   PLANCHER: '#b08968',
   TOIT: '#6b7280',
@@ -12,13 +18,17 @@ const NEUTRAL: Partial<Record<Category, string>> = {
 };
 
 export function categoryColor(c: Category): string {
-  return LEGEND[c]?.color ?? NEUTRAL[c] ?? '#9aa3b5';
+  return currentRules?.categories.find((r) => r.key === c)?.color || LEGEND[c]?.color || NEUTRAL[c] || '#9aa3b5';
+}
+
+function categoryLabel(c: Category): string {
+  return currentRules?.categories.find((r) => r.key === c)?.label || LEGEND[c]?.label || c;
 }
 
 export function CategoryChip({ category }: { category: Category | null }) {
   if (!category) return <span className="chip none">NON CLASSÉ</span>;
   return (
-    <span className="chip">
+    <span className="chip" title={categoryLabel(category)}>
       <i style={{ background: categoryColor(category) }} />
       {category}
     </span>

@@ -39,10 +39,13 @@ export function readSourceBundle(fileName: string, data: ArrayBuffer): SourceBun
   const manifestText = manifestName ? strFromU8(entries[manifestName]) : undefined;
 
   if (daes.length > 0) {
-    if (daes.length > 1) {
+    // Plusieurs .dae : on prend celui qui est à côté du manifest.json (export de l'extension Viewbox).
+    const dirOf = (n: string) => n.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+    const chosen = daes.length === 1 ? daes[0] : manifestName ? daes.find((d) => dirOf(d) === dirOf(manifestName)) : undefined;
+    if (!chosen) {
       throw new Error(`L'archive contient ${daes.length} fichiers .dae (${daes.map(baseName).join(', ')}) : n'en garde qu'un`);
     }
-    return { format: 'dae', modelName: baseName(daes[0]), daeText: strFromU8(entries[daes[0]]), manifestText, assets };
+    return { format: 'dae', modelName: baseName(chosen), daeText: strFromU8(entries[chosen]), manifestText, assets };
   }
   if (glbs.length > 0) {
     const u8 = entries[glbs[0]];

@@ -3,14 +3,15 @@ import {
   DEFAULT_RULES,
   articleRefFromName,
   categoryFromName,
+  categoryKey,
   compileRules,
   isContextName,
   mergeRules,
   moduleIdFromName,
 } from '../src/core/classification';
-import { checkPlanDims, groupLevels, parseColladaAsset, suspectScaleFactor } from '../src/core/units';
+import { checkPlanDims, groupLevels, nearestSize, parseColladaAsset, suspectScaleFactor } from '../src/core/units';
 import { cleanTriangles } from '../src/core/geometryClean';
-import { BBoxLookup, manifestBBoxToYUp, parseManifest } from '../src/core/manifest';
+import { BBoxLookup, asCategory, daeNameKey, manifestBBoxToYUp, parseManifest } from '../src/core/manifest';
 import { stableId } from '../src/core/hash';
 
 const rules = compileRules(DEFAULT_RULES);
@@ -51,11 +52,34 @@ describe('classification par le nom', () => {
     expect(isContextName('Contexte', rules)).toBe(false);
   });
 
-  it('fusionne des règles enregistrées partielles avec les défauts', () => {
-    const r = mergeRules({ modulePattern: '^BOX(\\d+)', moduleDims: { long: 6000 } as never });
+  it('fusionne des règles enregistrées partielles avec les défauts (et reprend l’ancienne taille unique)', () => {
+    const r = mergeRules({ modulePattern: '^BOX(\\d+)', moduleDims: { long: 6000, short: 2400, toleranceMm: 40 } });
     expect(r.modulePattern).toBe('^BOX(\\d+)');
     expect(r.categories.length).toBe(DEFAULT_RULES.categories.length);
-    expect(r.moduleDims).toEqual({ long: 6000, short: 2500, toleranceMm: 30 });
+    expect(r.moduleSizes[0]).toEqual({ label: 'Viewbox 6000', long: 6000, short: 2400 });
+    expect(r.moduleToleranceMm).toBe(40);
+  });
+
+  it('reconnaît le vocabulaire ERP des composants Viewbox', () => {
+    expect(categoryFromName('7-632-001 Leveling feet', rules)).toBe('PIED');
+    expect(categoryFromName('7-355-014 Vertical poles simple', rules)).toBe('STRUCTURE');
+    expect(categoryFromName('7-632-001 Floor module equipped with:', rules)).toBe('PLANCHER');
+    expect(categoryFromName('_7-364-27_UPN220_PG', rules)).toBe('STRUCTURE');
+    expect(categoryFromName('_7-637-010_Glasswall_Seamless_10mm', rules)).toBe('VITRE-SEAMLESS');
+    expect(categoryFromName('Napoleon', rules)).toBeNull();
+  });
+
+  it('crée des clés de catégorie propres et accepte les catégories personnalisées', () => {
+    expect(categoryKey('Porte orangerie')).toBe('PORTE-ORANGERIE');
+    expect(categoryKey(' bandeau / dibond ')).toBe('BANDEAU-DIBOND');
+    expect(asCategory('porte orangerie')).toBe('PORTE-ORANGERIE');
+    expect(asCategory('')).toBeNull();
+  });
+
+  it('retrouve le nom tel que SketchUp l’écrit dans le .dae', () => {
+    expect(daeNameKey('7-355-14:1')).toBe(daeNameKey('_7-355-14_1'));
+    expect(daeNameKey('7-637-010 Glasswall Seamless 10mm 2500X1130X#1')).toBe(daeNameKey('_7-637-010_Glasswall_Seamless_10mm_2500X1130X_1'));
+    expect(daeNameKey('VBXE-12')).toBe('VBXE-12');
   });
 
   it('signale un motif invalide de façon lisible', () => {
@@ -74,16 +98,23 @@ describe('unités et dimensions', () => {
   });
 
   it('contrôle les dimensions en plan quelle que soit l’orientation', () => {
-    const ref = DEFAULT_RULES.moduleDims;
-    expect(checkPlanDims(2500, 5900, ref).ok).toBe(true);
-    expect(checkPlanDims(5925, 2480, ref).ok).toBe(true);
-    expect(checkPlanDims(5950, 2500, ref).ok).toBe(false);
+    const ref = { long: 5900, short: 2500 };
+    expect(checkPlanDims(2500, 5900, ref, 30).ok).toBe(true);
+    expect(checkPlanDims(5925, 2480, ref, 30).ok).toBe(true);
+    expect(checkPlanDims(5950, 2500, ref, 30).ok).toBe(false);
+  });
+
+  it('choisit la taille standard la plus proche', () => {
+    const sizes = DEFAULT_RULES.moduleSizes;
+    expect(nearestSize(8395, 2502, sizes, 30).size.label).toBe('Viewbox 8400');
+    expect(nearestSize(8395, 2502, sizes, 30).check.ok).toBe(true);
+    expect(nearestSize(5778, 2378, sizes, 30).check.ok).toBe(false);
   });
 
   it("devine le facteur d'échelle d'une erreur d'unités", () => {
-    expect(suspectScaleFactor(5900 / 25.4, 2500 / 25.4, DEFAULT_RULES.moduleDims)?.factor).toBe(25.4);
-    expect(suspectScaleFactor(5.9, 2.5, DEFAULT_RULES.moduleDims)?.factor).toBe(1000);
-    expect(suspectScaleFactor(5000, 2000, DEFAULT_RULES.moduleDims)).toBeNull();
+    expect(suspectScaleFactor(5900 / 25.4, 2500 / 25.4, DEFAULT_RULES.moduleSizes)?.factor).toBe(25.4);
+    expect(suspectScaleFactor(8.4, 2.5, DEFAULT_RULES.moduleSizes)?.factor).toBe(1000);
+    expect(suspectScaleFactor(5000, 2000, DEFAULT_RULES.moduleSizes)).toBeNull();
   });
 
   it('regroupe les modules en niveaux (tolérance 200 mm)', () => {

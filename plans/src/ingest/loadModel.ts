@@ -51,7 +51,7 @@ function mimeOf(name: string): string {
 }
 
 /** Gestionnaire de chargement qui sert les textures depuis le contenu du .zip (blob URLs). */
-function assetManager(assets: Map<string, Uint8Array>) {
+function assetManager(assets: Map<string, Uint8Array>, skipTextures: boolean) {
   const urls = new Map<string, string>();
   const missing: string[] = [];
   let started = 0;
@@ -66,7 +66,7 @@ function assetManager(assets: Map<string, Uint8Array>) {
     started++;
   };
   manager.setURLModifier((url) => {
-    if (/^(data:|blob:)/i.test(url)) return url;
+    if (skipTextures || /^(data:|blob:)/i.test(url)) return url;
     let key: string;
     try {
       key = baseName(decodeURIComponent(url)).toLowerCase();
@@ -87,17 +87,18 @@ function assetManager(assets: Map<string, Uint8Array>) {
     missing,
     /** attend la fin du chargement des textures (ou rien s'il n'y en a pas), 60 s maximum */
     waitTextures: () =>
-      started === 0 ? Promise.resolve() : Promise.race([done, new Promise<void>((r) => setTimeout(r, 60000))]),
+      started === 0 || skipTextures ? Promise.resolve() : Promise.race([done, new Promise<void>((r) => setTimeout(r, 60000))]),
     revoke: () => urls.forEach((u) => URL.revokeObjectURL(u)),
   };
 }
 
-export async function loadDae(bundle: SourceBundle): Promise<LoadedModel> {
+/** skipTextures : pour les tests hors navigateur (jsdom ne décode pas les images). */
+export async function loadDae(bundle: SourceBundle, skipTextures = false): Promise<LoadedModel> {
   if (!bundle.daeText) throw new Error('Contenu .dae absent');
   const parsed = new ColladaParser().parse(bundle.daeText);
   if (!parsed) throw new Error('Fichier .dae vide ou illisible');
   const { library, asset, collada } = parsed;
-  const am = assetManager(bundle.assets);
+  const am = assetManager(bundle.assets, skipTextures);
   const composer = new TaggingComposer(library, collada, new TextureLoader(am.manager), new TGALoader(am.manager));
   const { scene } = composer.compose();
 

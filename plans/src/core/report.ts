@@ -13,8 +13,9 @@ export function fmtBytes(n: number | null | undefined): string {
   return (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' Mo';
 }
 
+/** Nom affiché : désignation saisie dans SketchUp > nom d'instance d'origine > nom > définition. */
 export function displayName(n: NodeInfo): string {
-  return n.name || n.definition || '(sans nom)';
+  return n.label || n.sourceName || n.name || n.definition || '(sans nom)';
 }
 
 /** Dimensions hors tout d'une boîte : largeur X × profondeur Z × hauteur Y, en mm. */
@@ -62,13 +63,13 @@ export function buildTextReport(index: SceneIndex): string {
       const m = index.modules.find((x) => x.id === mid);
       if (!m) continue;
       L.push(
-        `  ${m.id.padEnd(8)} ${fmtInt(m.planDimsMm[0])} × ${fmtInt(m.planDimsMm[1])} mm ${m.dimsOk ? '✓' : '✗'} · h ${fmtInt(m.heightMm)} mm · ${m.itemIds.length} objets · nom « ${m.name} »${m.detectedBy === 'dimensions' ? ' (détecté par ses dimensions)' : ''}`,
+        `  ${m.id.padEnd(8)} ${fmtInt(m.planDimsMm[0])} × ${fmtInt(m.planDimsMm[1])} mm ${m.dimsOk ? '✓' : '✗'} (attendu ${m.expected.long} × ${m.expected.short}, ${m.expected.label}) · h ${fmtInt(m.heightMm)} mm · ${m.itemIds.length} objets${m.type ? ` · type « ${m.type} »` : ''}${m.detectedBy === 'dimensions' ? ' (détecté par ses dimensions)' : ''}`,
       );
       for (const id of m.itemIds) {
         const n = byId.get(id);
         if (!n) continue;
         L.push(
-          `      - ${(n.category ?? 'NON CLASSÉ').padEnd(18)} ${displayName(n)}${n.articleRef ? ` [${n.articleRef}]` : ''}${n.assignment === 'spatial' ? ' (rattaché par sa position)' : ''}`,
+          `      - ${(n.category ?? 'NON CLASSÉ').padEnd(18)} ${displayName(n)}${n.definition && n.definition !== displayName(n) ? ` — ${n.definition}` : ''}${n.articleRef ? ` [${n.articleRef}]` : ''}${n.categorySource === 'manifest' ? ' (choisi dans SketchUp)' : ''}${n.assignment === 'spatial' ? ' (rattaché par sa position)' : ''}`,
         );
       }
     }

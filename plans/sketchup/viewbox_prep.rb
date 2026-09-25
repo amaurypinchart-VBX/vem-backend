@@ -10,7 +10,7 @@ module Viewbox
       ext = SketchupExtension.new('Viewbox — Préparer & exporter pour VEM', File.join(File.dirname(__FILE__), 'viewbox_prep', 'main'))
       ext.description = "Contrôle et nomme les Viewbox (VBX-01…), classe les accessoires d'après leurs balises, " \
                         'et exporte un .zip (.dae + textures + manifest.json) prêt pour le module Plans Viewbox de VEM.'
-      ext.version = '1.0.0'
+      ext.version = '1.1.0'
       ext.creator = 'Viewbox International SA'
       ext.copyright = '© Viewbox International SA'
       Sketchup.register_extension(ext, true)

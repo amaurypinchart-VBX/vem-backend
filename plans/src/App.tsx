@@ -5,6 +5,7 @@ import type { Project } from './api/vem';
 import { PROJECT_ID, TOKEN, vem } from './api/vem';
 import { ModelsPage } from './ui/ModelsPage';
 import { SettingsPage } from './ui/SettingsPage';
+import { setDisplayRules } from './ui/common';
 
 export function App() {
   const [tab, setTab] = useState<'models' | 'settings'>('models');
@@ -29,7 +30,9 @@ export function App() {
     vem
       .getRules()
       .then((saved) => {
-        setRules(mergeRules(saved));
+        const merged = mergeRules(saved);
+        setDisplayRules(merged);
+        setRules(merged);
         setRulesKey((k) => k + 1);
       })
       .catch(() => {
@@ -66,7 +69,14 @@ export function App() {
               <ModelsPage rules={rules} />
             </div>
             <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>
-              <SettingsPage key={rulesKey} rules={rules} onSaved={setRules} />
+              <SettingsPage
+                key={rulesKey}
+                rules={rules}
+                onSaved={(r) => {
+                  setDisplayRules(r);
+                  setRules(r);
+                }}
+              />
             </div>
           </>
         )}

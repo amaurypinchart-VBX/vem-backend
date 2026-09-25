@@ -7,7 +7,7 @@ import { zipSync } from 'fflate';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const src = join(root, 'sketchup');
-const files = ['viewbox_prep.rb', 'viewbox_prep/main.rb', 'viewbox_prep/core.rb'];
+const files = ['viewbox_prep.rb', 'viewbox_prep/main.rb', 'viewbox_prep/core.rb', 'viewbox_prep/review.rb', 'viewbox_prep/review.html'];
 const entries = Object.fromEntries(files.map((f) => [f, readFileSync(join(src, f))]));
 const outDir = join(root, '..', 'public', 'plans', 'tools');
 mkdirSync(outDir, { recursive: true });

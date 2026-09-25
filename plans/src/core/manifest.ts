@@ -1,8 +1,10 @@
 // manifest.json exporté par l'extension SketchUp viewbox_prep (repère SketchUp : Z vers le haut, mm).
-// Le .dae perd les balises (tags) SketchUp : le manifest est la source de vérité pour les catégories.
+// Le .dae perd les balises (tags) SketchUp et SketchUp y modifie les noms (espaces, "#", ":"…) : le
+// manifest est la source de vérité pour les catégories, désignations et noms d'origine. Pendant
+// l'export, l'extension donne à chaque objet un nom technique unique (exportName, ex. "VBXE-12") qui
+// sert de clé de correspondance, puis rétablit les noms du modèle.
 import type { BBox, Category } from './types';
-import { CATEGORIES } from './types';
-import { normalizeName } from './classification';
+import { categoryKey, normalizeName } from './classification';
 
 export interface ManifestBBox {
   min: [number, number, number];
@@ -10,8 +12,15 @@ export interface ManifestBBox {
 }
 
 export interface ManifestEntry {
+  /** nom technique dans le .dae (clé de correspondance) */
+  exportName?: string;
+  /** nom d'instance d'origine dans SketchUp */
   name: string;
   category?: string | null;
+  /** 'manuel' = choisi par l'utilisateur dans SketchUp ; sinon balise / nom / définition */
+  categorySource?: string | null;
+  /** désignation libre saisie dans SketchUp */
+  label?: string | null;
   tag?: string;
   definition?: string;
   articleRef?: string | null;
@@ -24,6 +33,10 @@ export interface ManifestModule {
   definition?: string;
   tag?: string;
   level?: number;
+  /** type de Viewbox saisi dans SketchUp */
+  type?: string | null;
+  /** dimensions nominales en plan [long, court] saisies dans SketchUp */
+  nominalPlanMm?: [number, number] | null;
   transform?: number[];
   bboxWorld?: ManifestBBox;
   accessories?: ManifestEntry[];
@@ -31,7 +44,7 @@ export interface ManifestModule {
 
 export interface Manifest {
   schema: string;
-  source?: { file?: string; sketchupVersion?: string; exportedAt?: string };
+  source?: { file?: string; sketchupVersion?: string; exportedAt?: string; extensionVersion?: string };
   units?: string;
   upAxis?: string;
   modules: ManifestModule[];
@@ -48,10 +61,19 @@ export function parseManifest(text: string): Manifest {
   return { ...data, modules: Array.isArray(data.modules) ? data.modules : [] } as Manifest;
 }
 
+/** Catégorie du manifest (intégrée ou personnalisée) ; null si vide. */
 export function asCategory(value: string | null | undefined): Category | null {
   if (!value) return null;
-  const v = normalizeName(value);
-  return (CATEGORIES as readonly string[]).includes(v) ? (v as Category) : null;
+  const k = categoryKey(value);
+  return k || null;
+}
+
+/**
+ * Clé de comparaison d'un nom entre SketchUp et le .dae : SketchUp remplace à l'export les caractères
+ * autres que lettres/chiffres/"-" par "_" et préfixe d'un "_" les noms commençant par un chiffre.
+ */
+export function daeNameKey(name: string): string {
+  return normalizeName(name).replace(/[^A-Z0-9-]+/g, '_').replace(/^_+/, '').replace(/_+$/, '');
 }
 
 /** Boîte SketchUp (Z-up) → boîte interne (Y-up) : (x, y, z) → (x, z, -y). */
