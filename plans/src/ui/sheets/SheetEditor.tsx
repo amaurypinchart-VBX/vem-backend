@@ -25,7 +25,12 @@ import { templateScale } from '../../sheets/template';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import type { IsoKind, Projection } from '../../viewer/SceneViewer';
 import { SheetCanvas } from './SheetCanvas';
-import type { Tool } from './SheetCanvas';
+import type { SnapResult, Tool } from './SheetCanvas';
+import type { SnapIndex } from '../../sheets/snap';
+import { buildSnapIndex } from '../../sheets/snap';
+import type { Linework2D } from '../../linework/types';
+import { autoDimensionViewport } from '../../sheets/autoDim';
+import type { DimensionItem } from '../../sheets/types';
 import { PropertiesPanel } from './Properties';
 import { downloadText } from '../common';
 
@@ -47,7 +52,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
   const [tool, setTool] = useState<Tool>('select');
-  const [hidden, setHidden] = useState<{ drawing?: boolean; annotations?: boolean }>({});
+  const [hidden, setHidden] = useState<{ drawing?: boolean; annotations?: boolean; dims?: boolean }>({});
   const [fitSignal, setFitSignal] = useState(0);
   const [zoomSignal, setZoomSignal] = useState({ n: 0, factor: 1 });
   const [save, setSave] = useState<{ status: SaveStatus; error?: string }>({ status: 'saved' });
@@ -146,24 +151,33 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
 
   // ─── repères : point du modèle sous le clic (accroche aux extrémités / milieux des traits) ───
   const raycaster = useMemo(() => new Raycaster(), []);
-  const anchorAt = (vp: ViewportItem, p: PointMm): { anchor3d?: Vec3; nodeId?: string } => {
+  // accroche : extrémités, milieux, centres de cercles des traits de la vue (index construit une fois par vue calculée)
+  const snapIndexes = useMemo(() => new WeakMap<Linework2D, SnapIndex>(), []);
+  const snapAt = (vp: ViewportItem, p: PointMm): SnapResult | null => {
     const data = bank.data(vp);
-    if (!data.basis || !data.lw || !vp.scale) return {};
+    if (!data.lw || !vp.scale) return null;
     const b = data.lw.boundsMm;
-    const center = vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
-    let [mx, my] = viewportTransform(vp.rect, vp.scale, center as [number, number]).toModel(p.x, p.y);
-    const clickX = mx;
-    const clickY = my;
-    const sp = data.lw.snapPoints;
-    let best = 3 * vp.scale; // 3 mm papier
-    for (let i = 0; i < sp.length; i += 2) {
-      const d = Math.hypot(sp[i] - mx, sp[i + 1] - my);
-      if (d < best) {
-        best = d;
-        mx = sp[i];
-        my = sp[i + 1];
-      }
+    const center = (vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]) as [number, number];
+    const tr = viewportTransform(vp.rect, vp.scale, center);
+    const [mx, my] = tr.toModel(p.x, p.y);
+    let idx = snapIndexes.get(data.lw);
+    if (!idx) {
+      idx = buildSnapIndex(data.lw);
+      snapIndexes.set(data.lw, idx);
     }
+    const hit = idx.nearest(mx, my, 3 * vp.scale); // 3 mm papier
+    const model: [number, number] = hit ? [hit.x, hit.y] : [mx, my];
+    return { model, paper: tr.toPaper(model[0], model[1]), kind: hit?.kind ?? null };
+  };
+
+  // point 3D du modèle sous un point accroché : rayon lancé dans la direction de la vue
+  const anchorAt = (vp: ViewportItem, p: PointMm): { model: [number, number]; anchor3d?: Vec3; nodeId?: string } | null => {
+    const data = bank.data(vp);
+    const s = snapAt(vp, p);
+    if (!data.basis || !s) return null;
+    const b = data.lw!.boundsMm;
+    const center = (vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]) as [number, number];
+    const [clickX, clickY] = viewportTransform(vp.rect, vp.scale, center).toModel(p.x, p.y);
     const meshes: Object3D[] = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories).flatMap((id) =>
       meshesOfNode(scene.objectsById.get(id)),
     );
@@ -173,9 +187,42 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
       raycaster.firstHitOnly = true;
       return raycaster.intersectObjects(meshes, false)[0];
     };
-    const hit = cast(mx, my) ?? cast(clickX, clickY);
+    const hit = cast(s.model[0], s.model[1]) ?? cast(clickX, clickY);
     const depth = hit ? hit.point.x * data.basis.toward[0] + hit.point.y * data.basis.toward[1] + hit.point.z * data.basis.toward[2] : 0;
-    return { anchor3d: unprojectPoint(data.basis, mx, my, depth), nodeId: hit ? nodeIdOf(hit.object) : undefined };
+    return { model: s.model, anchor3d: unprojectPoint(data.basis, s.model[0], s.model[1], depth), nodeId: hit ? nodeIdOf(hit.object) : undefined };
+  };
+
+  /** « Coter automatiquement » des fenêtres de vue : remplace leurs cotes automatiques, ajuste échelle et centrage. */
+  const autoDimension = (vps: ViewportItem[]) => {
+    const results: Array<{ vp: ViewportItem; dims: DimensionItem[]; scale: number; center: [number, number] }> = [];
+    let missing = 0;
+    for (const vp of vps) {
+      const data = bank.data(vp);
+      if (!data.lw || !data.basis) {
+        missing++;
+        continue;
+      }
+      const r = autoDimensionViewport(vp, data.lw, data.basis, scene);
+      results.push({ vp, ...r });
+    }
+    if (!results.length) {
+      if (missing) window.alert('Les vues sont encore en calcul : réessaie dans un instant.');
+      return;
+    }
+    const ids = new Set(results.map((r) => r.vp.id));
+    useEditor.getState().apply('Cotes automatiques', (d) => {
+      const s = d.sheets.find((x) => x.id === sheet.id);
+      if (!s) return;
+      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)));
+      for (const r of results) {
+        const it = s.items.find((i) => i.id === r.vp.id) as ViewportItem | undefined;
+        if (it) {
+          it.scale = r.scale;
+          it.center = r.center;
+        }
+        s.items.push(...(r.dims as typeof s.items));
+      }
+    });
   };
 
   const suggestionsOf = (nodeId?: string): string[] => {
@@ -193,14 +240,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
       const item: TextItem = { id: newId('t'), type: 'text', rect: { x: p.x, y: p.y, w: 80 * k, h: 10 * k }, text: 'Texte', size: 4 * k, font: 'serif' };
       actions.addItems([item], 'Ajouter un texte');
     } else if (t === 'label') {
-      const a = vp ? anchorAt(vp, p) : {};
-      const sugg = suggestionsOf(a.nodeId);
+      const a = vp ? anchorAt(vp, p) : null;
+      const sugg = suggestionsOf(a?.nodeId);
       const item: LabelItem = {
         id: newId('l'),
         type: 'label',
-        viewportId: vp && a.anchor3d ? vp.id : undefined,
-        anchor3d: vp ? a.anchor3d : undefined,
-        anchorPaper: vp && a.anchor3d ? undefined : p,
+        viewportId: vp && a?.anchor3d ? vp.id : undefined,
+        anchor3d: vp ? a?.anchor3d : undefined,
+        anchorPaper: vp && a?.anchor3d ? undefined : p,
         textPos: { x: p.x + 18 * k, y: p.y - 12 * k },
         text: sugg[0] ?? 'Repère',
         style: 'bold',
@@ -295,6 +342,19 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
         <button className={`btn small${tool === 'text' ? ' primary' : ''}`} onClick={() => setTool('text')}>
           T Texte
         </button>
+        <button className={`btn small${tool === 'dim' ? ' primary' : ''}`} onClick={() => setTool('dim')} title="Cote : 2 clics sur la vue (accroche ■ extrémité ▲ milieu ● centre), 3e clic pour placer la ligne de cote (Maj = alignée)">
+          ↔ Cote
+        </button>
+        <button className={`btn small${tool === 'chain' ? ' primary' : ''}`} onClick={() => setTool('chain')} title="Cote en chaîne : clics successifs, double-clic (ou Entrée) pour finir, puis clic pour placer">
+          ⇹ Chaîne
+        </button>
+        <button
+          className="btn small"
+          onClick={() => autoDimension(sheet.items.filter((i): i is ViewportItem => i.type === 'viewport'))}
+          title="Coter automatiquement toutes les vues de la planche (remplace les cotes automatiques existantes)"
+        >
+          📏 Cotes auto
+        </button>
         <button className="btn small" onClick={addViewport} title="Nouvelle fenêtre de vue">
           ▭ Vue
         </button>
@@ -345,6 +405,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
         <label className="check" title="Afficher les vues et images">
           <input type="checkbox" checked={!hidden.drawing} onChange={(e) => setHidden((h) => ({ ...h, drawing: !e.target.checked }))} />
           Dessin
+        </label>
+        <label className="check" title="Afficher les cotes">
+          <input type="checkbox" checked={!hidden.dims} onChange={(e) => setHidden((h) => ({ ...h, dims: !e.target.checked }))} />
+          Cotes
         </label>
         <label className="check" title="Afficher repères et textes">
           <input type="checkbox" checked={!hidden.annotations} onChange={(e) => setHidden((h) => ({ ...h, annotations: !e.target.checked }))} />
@@ -412,6 +476,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
           tool={tool}
           hiddenLayers={hidden}
           onPlace={onPlace}
+          snapAt={snapAt}
+          pointAt={anchorAt}
           fitSignal={fitSignal}
           zoomSignal={zoomSignal}
         />
@@ -422,6 +488,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
           viewData={viewData}
           suggestionsFor={(l) => labelSuggestions.current.get(l.id) ?? []}
           onRecapture={(item, v) => void capture(item, v)}
+          onAutoDimension={(vp) => autoDimension([vp])}
         />
       </div>
     </div>

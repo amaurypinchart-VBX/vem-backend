@@ -8,7 +8,9 @@ import type { Linework2D } from '../linework/types';
 import { STROKE_MM } from '../linework/svg';
 import type { LogoShape } from './logos';
 import { LOGO_COLOR, VB_LOGO, VIEWBOX_WORDMARK } from './logos';
-import type { Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import type { DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import type { DimInput } from './dimensions';
+import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
 import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
 import type { ModuleOverlay } from './overlays';
 import { moduleNumber } from './overlays';
@@ -42,7 +44,9 @@ export interface SheetSvgProps {
   editing?: {
     selection: string[];
     preview?: Map<string, RectMm | { dx: number; dy: number }>;
-    hidden?: { drawing?: boolean; annotations?: boolean };
+    hidden?: { drawing?: boolean; annotations?: boolean; dims?: boolean };
+    /** éléments provisoires (cote en cours de tracé) */
+    draft?: SheetItem[];
     onItemDown?: (e: ReactPointerEvent, item: SheetItem) => void;
     onHandleDown?: (e: ReactPointerEvent, item: SheetItem, handle: string) => void;
   };
@@ -390,6 +394,55 @@ export function labelAnchor(label: LabelItem, sheet: Sheet, viewData: (vp: Viewp
   return label.anchorPaper ?? null;
 }
 
+/** Points d'une cote sur la planche (et dans le dessin) : projection de ses ancrages 3D par sa fenêtre de vue. */
+export function dimensionInput(dim: DimensionItem, sheet: Sheet, viewData: (vp: ViewportItem) => ViewportData | undefined): DimInput | null {
+  const vp = sheet.items.find((i) => i.id === dim.viewportId) as ViewportItem | undefined;
+  const data = vp && viewData(vp);
+  if (!vp || !data?.basis || !vp.scale) return null;
+  const tr = viewportTransform(vp.rect, vp.scale, viewportCenter(vp, data.lw));
+  const model = dim.anchors3d.map((a) => {
+    const p = projectPoint(data.basis!, a);
+    return [p.x, p.y] as [number, number];
+  });
+  return { orient: dim.orient, paper: model.map(([x, y]) => tr.toPaper(x, y)), model, offsetMm: dim.offsetMm, textOverride: dim.textOverride, ends: dim.ends };
+}
+
+function DimensionView({ input }: { input: DimInput }) {
+  const g = dimGeometry(input);
+  return (
+    <g>
+      <g stroke="#000" strokeWidth={DIM.line} strokeLinecap="butt">
+        {g.lines.map((l, i) => (
+          <line key={i} x1={num(l[0])} y1={num(l[1])} x2={num(l[2])} y2={num(l[3])} />
+        ))}
+      </g>
+      <g stroke="#000" strokeWidth={0.3} strokeLinecap="butt">
+        {g.ticks.map((l, i) => (
+          <line key={i} x1={num(l[0])} y1={num(l[1])} x2={num(l[2])} y2={num(l[3])} />
+        ))}
+      </g>
+      {g.arrows.map((a, i) => (
+        <path key={i} d="M0 0 L-2.2 -0.6 L-2.2 0.6 Z" fill="#000" transform={`translate(${num(a.x)} ${num(a.y)}) rotate(${num(a.angle)})`} />
+      ))}
+      {g.texts.map((t, i) => (
+        <text
+          key={i}
+          x={num(t.x)}
+          y={num(t.y)}
+          fontSize={DIM.text}
+          fontFamily={FONT_SERIF}
+          fontStyle={t.override ? 'italic' : undefined}
+          textAnchor="middle"
+          transform={t.rotate ? `rotate(${num(t.rotate)} ${num(t.x)} ${num(t.y)})` : undefined}
+        >
+          {t.text}
+          {t.override && <tspan fill="#c2410c"> ✱</tspan>}
+        </text>
+      ))}
+    </g>
+  );
+}
+
 function LabelView({ label, anchor, k }: { label: LabelItem; anchor: PointMm | null; k: number }) {
   const size = (label.style === 'bold' ? 4.2 : 3.6) * k;
   const width = label.text.length * size * 0.52;
@@ -414,7 +467,8 @@ function LabelView({ label, anchor, k }: { label: LabelItem; anchor: PointMm | n
 }
 
 /** Rectangle englobant (mm papier) d'un élément, pour la sélection et l'accroche. */
-export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1): RectMm {
+export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1, dimBox?: RectMm | null): RectMm {
+  if (item.type === 'dimension') return dimBox ?? { x: 0, y: 0, w: 0, h: 0 };
   if (item.type !== 'label') return item.rect;
   const size = (item.style === 'bold' ? 4.2 : 3.6) * k;
   const w = Math.max(4, item.text.length * size * 0.52);
@@ -429,6 +483,7 @@ export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1): Rec
 
 function applyPreview(item: SheetItem, p?: RectMm | { dx: number; dy: number }): SheetItem {
   if (!p) return item;
+  if (item.type === 'dimension') return 'dx' in p ? { ...item, offsetMm: dimOffsetAfterDrag(item, p.dx, p.dy) } : item;
   if ('dx' in p) {
     if (item.type === 'label')
       return { ...item, textPos: { x: item.textPos.x + p.dx, y: item.textPos.y + p.dy }, anchorPaper: item.anchorPaper && { x: item.anchorPaper.x + p.dx, y: item.anchorPaper.y + p.dy } };
@@ -437,6 +492,16 @@ function applyPreview(item: SheetItem, p?: RectMm | { dx: number; dy: number }):
     return moved;
   }
   return item.type === 'label' ? item : ({ ...item, rect: p } as SheetItem);
+}
+
+/** Rectangle englobant (mm papier) de n'importe quel élément de la planche (repères et cotes suivent leur vue). */
+export function itemBox(item: SheetItem, sheet: Sheet, viewData: (vp: ViewportItem) => ViewportData | undefined, k = 1): RectMm {
+  if (item.type === 'label') return itemBounds(item, labelAnchor(item, sheet, viewData), k);
+  if (item.type === 'dimension') {
+    const input = dimensionInput(item, sheet, viewData);
+    return itemBounds(item, null, k, input ? dimGeometry(input).box : null);
+  }
+  return item.rect;
 }
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
@@ -449,13 +514,14 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
   const categoryColors = new Map(legend.map((e) => [e.key, e.color]));
   const titleSize = VIEW_TITLE_SIZE * k;
   const hidden = editing?.hidden ?? {};
-  const items = sheet.items.map((i) => applyPreview(i, editing?.preview?.get(i.id)));
+  const items = [...sheet.items, ...(editing?.draft ?? [])].map((i) => applyPreview(i, editing?.preview?.get(i.id)));
   const previewSheet = editing?.preview?.size ? { ...sheet, items } : sheet;
   const selected = new Set(editing?.selection ?? []);
 
   const renderItem = (item: SheetItem) => {
     const isAnnotation = item.type === 'label' || item.type === 'text';
-    if ((isAnnotation && hidden.annotations) || (!isAnnotation && hidden.drawing)) return null;
+    const isDim = item.type === 'dimension';
+    if ((isAnnotation && hidden.annotations) || (isDim && hidden.dims) || (!isAnnotation && !isDim && hidden.drawing)) return null;
     const down = editing?.onItemDown ? (e: ReactPointerEvent) => editing.onItemDown!(e, item) : undefined;
     let body: ReactNode = null;
     switch (item.type) {
@@ -505,6 +571,11 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
       case 'label':
         body = <LabelView label={item} anchor={labelAnchor(item, previewSheet, viewData)} k={k} />;
         break;
+      case 'dimension': {
+        const input = dimensionInput(item, previewSheet, viewData);
+        body = input ? <DimensionView input={input} /> : null;
+        break;
+      }
       case 'text': {
         const t = item as TextItem;
         const size = t.size;
@@ -534,7 +605,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     }
     if (!editing) return <g key={item.id}>{body}</g>;
     const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
-    const b = itemBounds(item, anchor, k);
+    const b = itemBounds(item, anchor, k, dimBoxOf(item));
     return (
       <g key={item.id} onPointerDown={down} style={{ cursor: item.locked ? 'default' : 'move' }}>
         {body}
@@ -544,18 +615,24 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     );
   };
 
+  const dimBoxOf = (item: SheetItem): RectMm | null => {
+    if (item.type !== 'dimension') return null;
+    const input = dimensionInput(item, previewSheet, viewData);
+    return input ? dimGeometry(input).box : null;
+  };
+
   const selOverlay = () => {
     if (!editing || !selected.size) return null;
     const out: ReactNode[] = [];
     const sel = items.filter((i) => selected.has(i.id));
     for (const item of sel) {
       const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
-      const b = itemBounds(item, anchor, k);
+      const b = itemBounds(item, anchor, k, dimBoxOf(item));
       out.push(
         <rect key={`sel-${item.id}`} {...rectAttrs({ x: b.x - 0.8, y: b.y - 0.8, w: b.w + 1.6, h: b.h + 1.6 })} fill="none" stroke={item.locked ? '#9aa3b5' : '#2563eb'} strokeWidth={0.4} strokeDasharray="1.5 1" pointerEvents="none" />,
       );
     }
-    if (sel.length === 1 && sel[0].type !== 'label' && !sel[0].locked && editing.onHandleDown) {
+    if (sel.length === 1 && sel[0].type !== 'label' && sel[0].type !== 'dimension' && !sel[0].locked && editing.onHandleDown) {
       const item = sel[0];
       const r = item.rect;
       const hs = 2.2;

@@ -96,6 +96,30 @@ export interface LabelItem extends ItemBase {
   style: 'bold' | 'normal';
 }
 
+/**
+ * Cote associative (§9.1) : ancrée sur des points 3D du modèle vus dans une fenêtre de vue ; sa valeur est calculée
+ * à partir de la géométrie et elle suit la vue (échelle, cadrage, recalcul).
+ */
+export interface DimensionItem extends ItemBase {
+  type: 'dimension';
+  viewportId: string;
+  /** linéaire (2 points) ou en chaîne (n points alignés sur une même ligne de cote) */
+  kind: 'linear' | 'chain';
+  /** horizontale / verticale (dans le dessin) ou alignée sur les deux points */
+  orient: 'h' | 'v' | 'aligned';
+  anchors3d: Vec3[];
+  /**
+   * distance (mm papier) de la ligne de cote aux points d'ancrage, perpendiculairement : négative = au-dessus / à
+   * gauche du point le plus haut / le plus à gauche, positive = en dessous / à droite du point le plus bas / à droite
+   */
+  offsetMm: number;
+  /** texte imposé (affiché en italique, signalé) */
+  textOverride?: string;
+  ends?: 'tick' | 'arrow';
+  /** créée par « Coter automatiquement » (remplacée si on relance) */
+  auto?: boolean;
+}
+
 export interface TextItem extends ItemBase {
   type: 'text';
   rect: RectMm;
@@ -122,8 +146,8 @@ export interface LogoItem extends ItemBase {
   logo: 'vb' | 'wordmark';
 }
 
-export type SheetItem = ViewportItem | Image3dItem | LabelItem | TextItem | ShapeItem | LogoItem;
-export type BoxItem = Exclude<SheetItem, LabelItem>;
+export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem;
+export type BoxItem = Exclude<SheetItem, LabelItem | DimensionItem>;
 
 export interface Sheet {
   id: string;
@@ -177,5 +201,5 @@ export function emptyTitleBlock(): TitleBlockData {
 }
 
 export function hasRect(i: SheetItem): i is BoxItem {
-  return i.type !== 'label';
+  return i.type !== 'label' && i.type !== 'dimension';
 }

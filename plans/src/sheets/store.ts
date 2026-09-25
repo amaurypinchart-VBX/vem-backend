@@ -3,9 +3,10 @@
 import { create } from 'zustand';
 import { applyPatches, enablePatches, produceWithPatches } from 'immer';
 import type { Draft, Patch } from 'immer';
-import type { DrawingSet, PointMm, RectMm, Sheet, SheetItem } from './types';
+import type { DimensionItem, DrawingSet, PointMm, RectMm, Sheet, SheetItem } from './types';
 import { hasRect } from './types';
 import { newId, renumber } from './generate';
+import { dimOffsetAfterDrag } from './dimensions';
 
 enablePatches();
 
@@ -117,6 +118,8 @@ export const actions = {
             lp.x += dx;
             lp.y += dy;
           }
+        } else if (it.type === 'dimension') {
+          it.offsetMm = dimOffsetAfterDrag(it as DimensionItem, dx, dy);
         } else if (it.type === 'label') {
           it.textPos.x += dx;
           it.textPos.y += dy;
@@ -136,8 +139,8 @@ export const actions = {
     useEditor.getState().apply('Supprimer', (d) => {
       const s = findSheet(d, sheetId);
       if (!s) return;
-      // un repère attaché à une vue supprimée disparaît avec elle
-      s.items = s.items.filter((i) => !ids.includes(i.id) && !(i.type === 'label' && i.viewportId && ids.includes(i.viewportId)));
+      // repères et cotes attachés à une vue supprimée disparaissent avec elle
+      s.items = s.items.filter((i) => !ids.includes(i.id) && !((i.type === 'label' || i.type === 'dimension') && i.viewportId && ids.includes(i.viewportId)));
     });
     useEditor.getState().select([]);
   },
@@ -165,13 +168,21 @@ export const actions = {
         it.rect.x += off;
         it.rect.y += off;
         if ('labelPos' in it && it.labelPos) it.labelPos = { x: it.labelPos.x + off, y: it.labelPos.y + off };
+      } else if (it.type === 'dimension') {
+        // une cote n'existe que dans sa vue : collée avec sa vue, ou sur la même planche
+        const vid = map.get(it.viewportId) ?? (sheet?.items.some((i) => i.id === it.viewportId) ? it.viewportId : undefined);
+        if (vid) it.viewportId = vid;
+        else it.viewportId = '';
       } else {
         it.textPos = { x: it.textPos.x + off, y: it.textPos.y + off };
         if (it.viewportId) it.viewportId = map.get(it.viewportId) ?? (sheet?.items.some((i) => i.id === it.viewportId) ? it.viewportId : undefined);
         if (!it.viewportId && it.anchor3d) it.anchorPaper = it.anchorPaper ?? { x: it.textPos.x - 10, y: it.textPos.y + 10 };
       }
     }
-    actions.addItems(items, 'Coller');
+    actions.addItems(
+      items.filter((it) => it.type !== 'dimension' || it.viewportId),
+      'Coller',
+    );
   },
   toggleLock(ids: string[]) {
     const { doc, sheetId } = useEditor.getState();
@@ -261,7 +272,7 @@ export const actions = {
       map.set(it.id, nid);
       it.id = nid;
     }
-    for (const it of copy.items) if (it.type === 'label' && it.viewportId) it.viewportId = map.get(it.viewportId);
+    for (const it of copy.items) if ((it.type === 'label' || it.type === 'dimension') && it.viewportId) it.viewportId = map.get(it.viewportId) ?? it.viewportId;
     useEditor.getState().apply('Dupliquer la planche', (d) => {
       const at = d.sheets.findIndex((s) => s.id === id);
       d.sheets.splice(at + 1, 0, copy as Draft<Sheet>);

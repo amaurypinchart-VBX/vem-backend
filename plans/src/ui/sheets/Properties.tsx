@@ -6,7 +6,9 @@ import type { ViewKind } from '../../core/views';
 import { VIEW_LABELS } from '../../core/views';
 import { categoriesIn, subsetAll, subsetForLevel, subsetForModule } from '../../core/subset';
 import type { LoadedScene } from '../../scene/loadedScene';
-import type { DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import type { DimensionItem, DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import { dimGeometry, formatDim } from '../../sheets/dimensions';
+import { dimensionInput } from '../../sheets/SheetSvg';
 import { STANDARD_SCALES, fitScale } from '../../sheets/scales';
 import type { ViewportData } from '../../sheets/SheetSvg';
 import { actions, useEditor } from '../../sheets/store';
@@ -37,14 +39,25 @@ function scopeOf(vp: ViewportItem, index: SceneIndex): Scope {
   return { kind: 'all' };
 }
 
-function ViewportProps({ vp, data, scene }: { vp: ViewportItem; data?: ViewportData; scene: LoadedScene }) {
+function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: ViewportItem; data?: ViewportData; scene: LoadedScene; onAutoDimension: () => void; dimCount: number }) {
   const { index } = scene;
   const scope = scopeOf(vp, index);
   const kind = vp.request.view.kind === 'custom' ? 'top' : vp.request.view.kind;
   const categories = useMemo(() => categoriesIn(index, scene.look, vp.request.subset.include), [index, scene, vp.request.subset.include]);
   const hide = vp.request.subset.hideCategories ?? [];
-  const setReq = (patch: Partial<ViewportItem['request']>, label: string, extra: Partial<ViewportItem> = {}) =>
-    actions.updateItem(vp.id, { request: { ...vp.request, ...patch }, lineworkKey: undefined, center: undefined, ...extra } as Partial<SheetItem>, label);
+  const setReq = (patch: Partial<ViewportItem['request']>, label: string, extra: Partial<ViewportItem> = {}) => {
+    // autre direction de vue ou autre sous-ensemble : les cotes de cette vue ne correspondent plus au dessin
+    const viewChanged = !!patch.view && JSON.stringify(patch.view) !== JSON.stringify(vp.request.view);
+    const subsetChanged = !!patch.subset && JSON.stringify(patch.subset.include) !== JSON.stringify(vp.request.subset.include);
+    useEditor.getState().apply(label, (d) => {
+      for (const s of d.sheets) {
+        const it = s.items.find((i) => i.id === vp.id);
+        if (!it) continue;
+        Object.assign(it, { request: { ...vp.request, ...patch }, lineworkKey: undefined, center: undefined, ...extra });
+        if (viewChanged || subsetChanged) s.items = s.items.filter((i) => !(i.type === 'dimension' && i.viewportId === vp.id && (viewChanged || i.auto)));
+      }
+    });
+  };
   const setScope = (v: string) => {
     const s: Scope = v === 'all' ? { kind: 'all' } : v.startsWith('l:') ? { kind: 'level', level: Number(v.slice(2)) } : { kind: 'module', moduleId: v.slice(2) };
     const include = s.kind === 'all' ? subsetAll(index) : s.kind === 'level' ? subsetForLevel(index, s.level) : subsetForModule(index, s.moduleId);
@@ -152,6 +165,12 @@ function ViewportProps({ vp, data, scene }: { vp: ViewportItem; data?: ViewportD
           Numéros des Viewbox
         </label>
       </div>
+      <div className="row">
+        <button className="btn small primary" disabled={!data?.lw} onClick={onAutoDimension} title="Cotes en chaîne et totales, placées à l’extérieur du dessin ; l’échelle est ajustée pour qu’elles tiennent dans le cadre">
+          📏 Coter automatiquement
+        </button>
+        {dimCount > 0 && <span className="hint">{dimCount} cote(s)</span>}
+      </div>
       {data?.stale && (
         <div className="stale-box">
           Le modèle a changé depuis la mise en page de cette vue.{' '}
@@ -161,6 +180,47 @@ function ViewportProps({ vp, data, scene }: { vp: ViewportItem; data?: ViewportD
         </div>
       )}
       <div className="hint">Alt + glisser dans la vue : recadrer son contenu.</div>
+    </>
+  );
+}
+
+function DimensionProps({ dim, sheet, viewData }: { dim: DimensionItem; sheet: Sheet; viewData: (vp: ViewportItem) => ViewportData | undefined }) {
+  const input = dimensionInput(dim, sheet, viewData);
+  const values = input ? dimGeometry({ ...input, textOverride: undefined }).values : [];
+  return (
+    <>
+      <div className="hint">
+        {dim.kind === 'chain' ? 'Cote en chaîne' : 'Cote'} {dim.orient === 'h' ? 'horizontale' : dim.orient === 'v' ? 'verticale' : 'alignée'}
+        {dim.auto ? ' · automatique' : ''} : {values.map((v) => formatDim(v)).join(' + ') || 'vue non calculée'}
+      </div>
+      {dim.kind === 'linear' && (
+        <Field label="Texte imposé (sinon la mesure)">
+          <input
+            type="text"
+            placeholder={values[0] !== undefined ? formatDim(values[0]) : ''}
+            value={dim.textOverride ?? ''}
+            onChange={(e) => actions.updateItem(dim.id, { textOverride: e.target.value || undefined } as Partial<SheetItem>, 'Texte de cote')}
+          />
+        </Field>
+      )}
+      <Field label="Extrémités">
+        <select value={dim.ends ?? 'tick'} onChange={(e) => actions.updateItem(dim.id, { ends: e.target.value } as Partial<SheetItem>, 'Extrémités de cote')}>
+          <option value="tick">Tick oblique (architecte)</option>
+          <option value="arrow">Flèches pleines</option>
+        </select>
+      </Field>
+      <Field label="Distance au dessin (mm)">
+        <input
+          type="number"
+          step={1}
+          value={Math.round(dim.offsetMm * 10) / 10}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (v) actions.updateItem(dim.id, { offsetMm: v } as Partial<SheetItem>, 'Position de cote');
+          }}
+        />
+      </Field>
+      <div className="hint">Glisser la cote pour l’éloigner ou la rapprocher. Elle suit la vue (échelle, cadrage, recalcul du modèle).</div>
     </>
   );
 }
@@ -301,6 +361,7 @@ export function PropertiesPanel({
   viewData,
   suggestionsFor,
   onRecapture,
+  onAutoDimension,
 }: {
   doc: DrawingSet;
   sheet: Sheet;
@@ -308,6 +369,7 @@ export function PropertiesPanel({
   viewData: (vp: ViewportItem) => ViewportData | undefined;
   suggestionsFor: (label: LabelItem) => string[];
   onRecapture: (item: Image3dItem, view: string) => void;
+  onAutoDimension: (vp: ViewportItem) => void;
 }) {
   const selection = useEditor((s) => s.selection);
   const [tab, setTab] = useState<'item' | 'titleblock'>('item');
@@ -329,10 +391,31 @@ export function PropertiesPanel({
         ) : one ? (
           <>
             <div className="prop-title">
-              {one.type === 'viewport' ? 'Fenêtre de vue' : one.type === 'image3d' ? 'Image 3D' : one.type === 'label' ? 'Repère' : one.type === 'text' ? 'Texte' : one.type === 'logo' ? 'Logo' : 'Forme'}
+              {one.type === 'viewport'
+                ? 'Fenêtre de vue'
+                : one.type === 'image3d'
+                  ? 'Image 3D'
+                  : one.type === 'label'
+                    ? 'Repère'
+                    : one.type === 'dimension'
+                      ? 'Cote'
+                      : one.type === 'text'
+                        ? 'Texte'
+                        : one.type === 'logo'
+                          ? 'Logo'
+                          : 'Forme'}
               {one.locked && <span className="badge">verrouillé</span>}
             </div>
-            {one.type === 'viewport' && <ViewportProps vp={one} data={viewData(one)} scene={scene} />}
+            {one.type === 'viewport' && (
+              <ViewportProps
+                vp={one}
+                data={viewData(one)}
+                scene={scene}
+                onAutoDimension={() => onAutoDimension(one)}
+                dimCount={sheet.items.filter((i) => i.type === 'dimension' && i.viewportId === one.id).length}
+              />
+            )}
+            {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}
             {one.type === 'label' && <LabelProps label={one} suggestions={suggestionsFor(one)} />}
             {one.type === 'text' && <TextProps t={one} />}
             {one.type === 'image3d' && <ImageProps it={one} onRecapture={(v) => onRecapture(one, v)} />}

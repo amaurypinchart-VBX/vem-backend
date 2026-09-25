@@ -9,7 +9,7 @@ import { generateDrawingSet, renumber } from '../src/sheets/generate';
 import { titleBlockFromProject } from '../src/sheets/titleBlock';
 import { actions, useEditor } from '../src/sheets/store';
 import { SheetSvg, wrapText } from '../src/sheets/SheetSvg';
-import { emptyTitleBlock } from '../src/sheets/types';
+import { emptyTitleBlock, hasRect } from '../src/sheets/types';
 import type { Sheet, ViewportItem } from '../src/sheets/types';
 import { DEFAULT_LINE_STYLE } from '../src/linework/types';
 import type { SceneIndex } from '../src/core/types';
@@ -65,7 +65,7 @@ describe('génération du jeu de plans', () => {
     // tout est dans la feuille A1
     for (const s of set.sheets)
       for (const it of s.items)
-        if (it.type !== 'label') {
+        if (hasRect(it)) {
           expect(it.rect.x).toBeGreaterThanOrEqual(0);
           expect(it.rect.x + it.rect.w).toBeLessThanOrEqual(841);
           expect(it.rect.y + it.rect.h).toBeLessThanOrEqual(594);
@@ -80,7 +80,7 @@ describe('génération du jeu de plans', () => {
     );
     const s = set.sheets[0];
     expect(s.number).toBe('A0.1');
-    for (const it of s.items) if (it.type !== 'label') expect(it.rect.x + it.rect.w).toBeLessThanOrEqual(420);
+    for (const it of s.items) if (hasRect(it)) expect(it.rect.x + it.rect.w).toBeLessThanOrEqual(420);
   });
 });
 

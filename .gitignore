@@ -4,3 +4,5 @@ public/plans/
 
 # Modèles SketchUp / PDF de test déposés à la main (confidentiels, trop lourds pour git)
 test-models/
+plans/e2e/shots/
+plans/e2e/*.zip

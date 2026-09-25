@@ -72,7 +72,7 @@ function longAxisOf(index: SceneIndex, include: Set<string>): 'x' | 'z' {
   return x1 - x0 >= z1 - z0 ? 'x' : 'z';
 }
 
-export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext): { set: DrawingSet; captures: CaptureJob[] } {
+export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext): { set: DrawingSet; captures: CaptureJob[]; dimensioned: string[] } {
   const { index } = ctx;
   const k = templateScale(opts.paper);
   const R = (x: number, y: number, w: number, h: number): RectMm => scaleRect({ x, y, w, h }, k);
@@ -88,6 +88,12 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
   const shortViews: [ViewKind, ViewKind] = long === 'x' ? ['left', 'right'] : ['front', 'back'];
   const sheets: Sheet[] = [];
   const captures: CaptureJob[] = [];
+  /** fenêtres de vue à coter automatiquement une fois les vues calculées */
+  const dimensioned: string[] = [];
+  const dimmed = (vp: ViewportItem) => {
+    dimensioned.push(vp.id);
+    return vp;
+  };
 
   const request = (include: string[], kind: ViewKind, frame: 'world' | { moduleId: string }, sub: Partial<LineworkRequest['subset']> = {}): LineworkRequest => ({
     modelId: ctx.modelKey,
@@ -145,29 +151,31 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
 
   if (opts.kinds.includes('longSides') && all.length) {
     addSheet(standTitle, () => [
-      viewport(R(20, 62, 685, 228), request(all, longViews[0], 'world'), 'Long side Right', P(25, 40)),
-      viewport(R(20, 330, 685, 245), request(all, longViews[1], 'world'), 'Long side Left', P(25, 305)),
+      dimmed(viewport(R(20, 62, 685, 228), request(all, longViews[0], 'world'), 'Long side Right', P(25, 40))),
+      dimmed(viewport(R(20, 330, 685, 245), request(all, longViews[1], 'world'), 'Long side Left', P(25, 305))),
     ]);
   }
 
   if (opts.kinds.includes('shortSides') && all.length) {
     addSheet(standTitle, () => [
-      viewport(R(20, 62, 685, 228), request(all, shortViews[0], 'world'), 'Short side entrance', P(25, 40)),
-      viewport(R(20, 330, 685, 245), request(all, shortViews[1], 'world'), 'Short side Exit', P(25, 305)),
+      dimmed(viewport(R(20, 62, 685, 228), request(all, shortViews[0], 'world'), 'Short side entrance', P(25, 40))),
+      dimmed(viewport(R(20, 330, 685, 245), request(all, shortViews[1], 'world'), 'Short side Exit', P(25, 305))),
     ]);
   }
 
   if (opts.kinds.includes('implantation') && moduleIds.length) {
     addSheet(standTitle, () => [
-      viewport(R(20, 62, 685, 513), request(all, 'top', 'world', { onlyCategories: ['PIED'] }), 'Implantation plan', P(25, 40), {
-        overlays: { moduleOutlines: true },
-      }),
+      dimmed(
+        viewport(R(20, 62, 685, 513), request(all, 'top', 'world', { onlyCategories: ['PIED'] }), 'Implantation plan', P(25, 40), {
+          overlays: { moduleOutlines: true },
+        }),
+      ),
     ]);
   }
 
   if (opts.kinds.includes('assembly') && moduleIds.length) {
     addSheet(standTitle, () => [
-      viewport(R(20, 62, 685, 513), request(all, 'top', 'world'), 'Assembly plan', P(25, 40), { overlays: { moduleOutlines: true, moduleNumbers: true } }),
+      dimmed(viewport(R(20, 62, 685, 513), request(all, 'top', 'world'), 'Assembly plan', P(25, 40), { overlays: { moduleOutlines: true, moduleNumbers: true } })),
     ]);
   }
 
@@ -177,9 +185,11 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
       if (!mods.length) continue;
       const include = subsetForLevel(index, lv.level).filter((id) => allSet.has(id));
       addSheet(`Extract - Plan View - ${lv.label}`, () => [
-        viewport(R(20, 62, 685, 513), request(include, 'top', 'world', { hideCategories: ['TOIT'] }), lv.label, P(25, 40), {
-          overlays: { moduleNumbers: true },
-        }),
+        dimmed(
+          viewport(R(20, 62, 685, 513), request(include, 'top', 'world', { hideCategories: ['TOIT'] }), lv.label, P(25, 40), {
+            overlays: { moduleNumbers: true },
+          }),
+        ),
       ]);
     }
   }
@@ -198,11 +208,11 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
       const rRight = R(360, 395, 345, 160);
       addSheet(`Extract - Plan View - ${m.id}${m.type ? ` ${m.type}` : ''}`, (sid) => [
         image3d(sid, r3d, { include, hideCategories: [], view: 'iso-sw', projection: 'perspective' }),
-        viewport(rFront, request(include, 'front', f), 'Front', below(rFront), small),
-        viewport(rBack, request(include, 'back', f), 'Back', below(rBack), small),
-        viewport(rTop, request(include, 'top', f, { hideCategories: ['TOIT'] }), 'Top', below(rTop), small),
-        viewport(rLeft, request(include, 'left', f), 'Left', below(rLeft), small),
-        viewport(rRight, request(include, 'right', f), 'Right', below(rRight), small),
+        dimmed(viewport(rFront, request(include, 'front', f), 'Front', below(rFront), small)),
+        dimmed(viewport(rBack, request(include, 'back', f), 'Back', below(rBack), small)),
+        dimmed(viewport(rTop, request(include, 'top', f, { hideCategories: ['TOIT'] }), 'Top', below(rTop), small)),
+        dimmed(viewport(rLeft, request(include, 'left', f), 'Left', below(rLeft), small)),
+        dimmed(viewport(rRight, request(include, 'right', f), 'Right', below(rRight), small)),
       ]);
     }
   }
@@ -221,7 +231,7 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     revision: 0,
     updatedAt: new Date().toISOString(),
   };
-  return { set, captures };
+  return { set, captures, dimensioned };
 }
 
 /** Numérotation Viewbox : couverture A0.0, puis A0.1, A0.2… */

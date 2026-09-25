@@ -10,6 +10,7 @@ import type { Linework2D } from '../linework/types';
 import type { LegendEntry, ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
 import { fitScale } from './scales';
+import { autoDimensionViewport } from './autoDim';
 
 interface Entry {
   lw?: Linework2D;
@@ -178,4 +179,31 @@ export async function fitDrawingSet(
       for (const vp of own) if (vp.scale) vp.scale = common;
     }
   }
+}
+
+/**
+ * Cotes automatiques des fenêtres de vue désignées (assistant) ; sur une planche par Viewbox, toutes les vues
+ * gardent la même échelle (la plus petite qui laisse la place aux cotes dans chaque cadre).
+ */
+export function dimensionDrawingSet(set: DrawingSet, bank: LineworkBank, ids: string[]): number {
+  const wanted = new Set(ids);
+  let count = 0;
+  for (const sheet of set.sheets) {
+    const vps = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport' && wanted.has(i.id));
+    const ready = vps
+      .map((vp) => ({ vp, data: bank.data(vp) }))
+      .filter((x): x is { vp: ViewportItem; data: ViewportData & { lw: Linework2D; basis: NonNullable<ViewportData['basis']> } } => !!x.data.lw && !!x.data.basis);
+    if (!ready.length) continue;
+    const first = ready.map(({ vp, data }) => ({ vp, data, r: autoDimensionViewport(vp, data.lw, data.basis, bank.scene) }));
+    const moduleSheet = ready.length > 1 && ready.every(({ vp }) => vp.request.view.kind !== 'custom' && typeof vp.request.view.frame === 'object');
+    const common = moduleSheet ? Math.max(...first.map((x) => x.r.scale)) : 0;
+    for (const { vp, data, r } of first) {
+      const res = moduleSheet && r.scale !== common ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, common) : r;
+      vp.scale = res.scale;
+      vp.center = res.center;
+      sheet.items.push(...res.dims);
+      count += res.dims.length;
+    }
+  }
+  return count;
 }

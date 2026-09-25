@@ -12,7 +12,7 @@ import type { DrawingSet, Image3dItem, Paper } from '../../sheets/types';
 import type { SheetKind } from '../../sheets/generate';
 import { DEFAULT_SHEET_KINDS, SHEET_KIND_LABELS, generateDrawingSet } from '../../sheets/generate';
 import { titleBlockFromProject } from '../../sheets/titleBlock';
-import { LineworkBank, fitDrawingSet } from '../../sheets/bank';
+import { LineworkBank, dimensionDrawingSet, fitDrawingSet } from '../../sheets/bank';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
@@ -110,11 +110,13 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
             setError('');
             try {
               setProgress({ label: 'Mise en page des planches', fraction: 0.02 });
-              const { set, captures } = generateDrawingSet(
+              const { set, captures, dimensioned } = generateDrawingSet(
                 { ...opts, style: DEFAULT_LINE_STYLE },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(project, me) },
               );
               await fitDrawingSet(set, bank, (done, total) => setProgress({ label: `Calcul des vues 2D (${done}/${total})`, fraction: 0.05 + 0.65 * (done / Math.max(total, 1)) }));
+              setProgress({ label: 'Cotes automatiques', fraction: 0.7 });
+              dimensionDrawingSet(set, bank, dimensioned);
               if (captures.length) {
                 const items = new Map(set.sheets.flatMap((s) => s.items).filter((i): i is Image3dItem => i.type === 'image3d').map((i) => [i.id, i]));
                 await captureOffscreen(
