@@ -107,7 +107,7 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
   }, [framesVersion]);
 
   useEffect(() => {
-    if (active) viewerRef.current?.requestRender();
+    if (active) viewerRef.current?.reclaim();
   }, [active]);
 
   const view = (k: StandardView) => viewerRef.current?.setView(k, soloModule ?? undefined);

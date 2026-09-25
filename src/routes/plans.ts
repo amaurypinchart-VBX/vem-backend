@@ -187,6 +187,84 @@ router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, nex
   } catch (err) { next(err); }
 });
 
+// ─── Jeux de plans (planches) ───
+const SET_LIST_SELECT = { id: true, projectId: true, modelVersionId: true, title: true, revision: true, createdById: true, createdAt: true, updatedAt: true };
+const MAX_SET_BYTES = 5_000_000;
+
+function cleanSetData(v: unknown): Record<string, unknown> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new AppError('data doit être un objet', 400);
+  if (JSON.stringify(v).length > MAX_SET_BYTES) throw new AppError('Jeu de plans trop volumineux', 400);
+  return v as Record<string, unknown>;
+}
+
+// GET /plans/project/:projectId/drawing-sets — jeux de plans du projet (sans le document)
+router.get('/project/:projectId/drawing-sets', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const sets = await db.plansDrawingSet.findMany({ where: { projectId: req.params.projectId }, orderBy: { updatedAt: 'desc' }, select: SET_LIST_SELECT });
+    res.json({ success: true, data: sets });
+  } catch (err) { next(err); }
+});
+
+// GET /plans/drawing-sets/:id — un jeu de plans complet
+router.get('/drawing-sets/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const set = await db.plansDrawingSet.findUnique({ where: { id: req.params.id } });
+    if (!set) throw new AppError('Jeu de plans introuvable', 404);
+    res.json({ success: true, data: set });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/project/:projectId/drawing-sets — { title, modelVersionId?, data }
+router.post('/project/:projectId/drawing-sets', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const b = req.body || {};
+    if (!b.title) throw new AppError('title requis', 400);
+    const set = await db.plansDrawingSet.create({
+      data: {
+        projectId: req.params.projectId,
+        modelVersionId: b.modelVersionId ?? null,
+        title: String(b.title).slice(0, 200),
+        data: cleanSetData(b.data ?? {}),
+        createdById: req.user?.id ?? null,
+      },
+    });
+    res.status(201).json({ success: true, data: set });
+  } catch (err) { next(err); }
+});
+
+// PUT /plans/drawing-sets/:id — enregistrement automatique : { title?, data, modelVersionId?, revision? }
+router.put('/drawing-sets/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const b = req.body || {};
+    const existing = await db.plansDrawingSet.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!existing) throw new AppError('Jeu de plans introuvable', 404);
+    const data: Record<string, unknown> = {};
+    if (b.data !== undefined) data.data = cleanSetData(b.data);
+    if (b.title !== undefined) data.title = String(b.title).slice(0, 200);
+    if (b.modelVersionId !== undefined) data.modelVersionId = b.modelVersionId;
+    if (Number.isInteger(b.revision)) data.revision = b.revision;
+    const set = await db.plansDrawingSet.update({ where: { id: existing.id }, data, select: SET_LIST_SELECT });
+    res.json({ success: true, data: set });
+  } catch (err) { next(err); }
+});
+
+// DELETE /plans/drawing-sets/:id
+router.delete('/drawing-sets/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await db.plansDrawingSet.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/project/:projectId/assets — image d'une planche (capture 3D, PNG, < 10 Mo) → { url, publicId }
+router.post('/project/:projectId/assets', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) throw new AppError('Image manquante', 400);
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `plans/${req.params.projectId}/sheets`, { resource_type: 'image' });
+    res.json({ success: true, data: { url, publicId } });
+  } catch (err) { next(err); }
+});
+
 // DELETE /plans/models/:id
 router.delete('/models/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

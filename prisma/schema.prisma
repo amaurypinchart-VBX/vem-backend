@@ -224,6 +224,7 @@ model Project {
   hotelBookings    HotelBooking[]
   plan2Ds          Plan2D[]
   plansModels      PlansModelVersion[]
+  drawingSets      PlansDrawingSet[]
 
   @@map("projects")
 }
@@ -918,4 +919,23 @@ model PlansModelVersion {
   @@unique([projectId, sha256])
   @@index([projectId])
   @@map("plans_model_versions")
+}
+
+// Module Plans Viewbox — jeux de plans (planches A1/A3). `data` = document JSON complet (cartouche, planches,
+// éléments) ; les traits des vues ne sont pas stockés, ils sont recalculés depuis le modèle.
+model PlansDrawingSet {
+  id             String   @id @default(uuid())
+  projectId      String   @map("project_id")
+  modelVersionId String?  @map("model_version_id")
+  title          String
+  data           Json     @default("{}")
+  revision       Int      @default(0)
+  createdById    String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("plans_drawing_sets")
 }

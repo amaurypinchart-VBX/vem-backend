@@ -33,7 +33,11 @@ export class BrowserHlrProvider implements LineworkProvider {
   ) {}
 
   private subsetKey(req: LineworkRequest): string {
-    return JSON.stringify([[...req.subset.include].sort(), [...(req.subset.hideCategories ?? [])].sort()]);
+    return JSON.stringify([
+      [...req.subset.include].sort(),
+      [...(req.subset.hideCategories ?? [])].sort(),
+      ...(req.subset.onlyCategories?.length ? [[...req.subset.onlyCategories].sort()] : []),
+    ]);
   }
 
   async cacheKey(req: LineworkRequest): Promise<string> {
@@ -48,7 +52,7 @@ export class BrowserHlrProvider implements LineworkProvider {
 
   private packetFor(req: LineworkRequest): { key: string; packet: HlrPacket; meshIds: string[] } {
     const key = this.subsetKey(req);
-    const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories);
+    const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
     let packet = this.packets.get(key);
     if (!packet) {
       packet = buildPacket(this.scene, meshIds, this.opts.glassTest);
@@ -72,7 +76,7 @@ export class BrowserHlrProvider implements LineworkProvider {
       if (!this.opts.noCache) void cachePut(cacheKey, lw);
     } else onProgress?.(1);
     if (req.style.colorByCategory && isTopView(basis)) {
-      meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories);
+      meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
       const extra = categoryStrokeLayers(this.scene, meshIds, basis, this.opts.categoryColors());
       lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('category:')), ...extra] };
     }

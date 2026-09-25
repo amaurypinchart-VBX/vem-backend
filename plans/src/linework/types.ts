@@ -37,6 +37,8 @@ export interface LineworkSubset {
   include: string[];
   /** catégories masquées en plus (ex. TOIT pour voir l'intérieur en plan) */
   hideCategories?: string[];
+  /** ne garder que ces catégories (ex. PIED pour le plan d'implantation) */
+  onlyCategories?: string[];
 }
 
 export interface LineworkRequest {

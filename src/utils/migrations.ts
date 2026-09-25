@@ -866,6 +866,40 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table plans_model_versions : ${e.message}`);
   }
+  // ─── Table "plans_drawing_sets" (module Plans Viewbox : jeux de plans / planches) ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "plans_drawing_sets" (
+        "id"               TEXT         NOT NULL,
+        "project_id"       TEXT         NOT NULL,
+        "model_version_id" TEXT,
+        "title"            TEXT         NOT NULL,
+        "data"             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "revision"         INTEGER      NOT NULL DEFAULT 0,
+        "created_by"       TEXT,
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "plans_drawing_sets_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "plans_drawing_sets_project_id_idx" ON "plans_drawing_sets" ("project_id");
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_drawing_sets_project_id_fkey') THEN
+          ALTER TABLE "plans_drawing_sets"
+            ADD CONSTRAINT "plans_drawing_sets_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table plans_drawing_sets créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table plans_drawing_sets : ${e.message}`);
+  }
   // Colonnes ajoutées ensuite (réglages, paquet 3D en morceaux) : bloc séparé, pour qu'elles soient créées
   // même si une étape du bloc précédent (index, clés étrangères) échoue.
   for (const sql of [

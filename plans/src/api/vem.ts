@@ -49,11 +49,36 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return json.data as T;
 }
 
+export interface VemUser {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  role?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   internalNumber?: string;
+  address?: string;
+  city?: string | null;
+  installationStart?: string;
   client?: { name?: string } | null;
+  technicalManager?: VemUser | null;
+  team?: Array<{ role?: string; user?: VemUser }>;
+}
+
+/** Jeu de plans tel que stocké par le serveur (`data` = DrawingSet sans id/projectId). */
+export interface DrawingSetRecord {
+  id: string;
+  projectId: string;
+  modelVersionId: string | null;
+  title: string;
+  revision: number;
+  data?: unknown;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectFile {
@@ -133,6 +158,19 @@ export const vem = {
   deleteModel: (id: string) => api<void>('DELETE', `/plans/models/${id}`),
   saveSettings: (id: string, settings: ModelSettings) =>
     api<{ id: string; settings: ModelSettings }>('PATCH', `/plans/models/${id}/settings`, { settings }),
+  me: () => api<VemUser>('GET', '/auth/me'),
+  listDrawingSets: (projectId: string) => api<DrawingSetRecord[]>('GET', `/plans/project/${projectId}/drawing-sets`),
+  getDrawingSet: (id: string) => api<DrawingSetRecord>('GET', `/plans/drawing-sets/${id}`),
+  createDrawingSet: (projectId: string, body: { title: string; modelVersionId?: string | null; data: unknown }) =>
+    api<DrawingSetRecord>('POST', `/plans/project/${projectId}/drawing-sets`, body),
+  saveDrawingSet: (id: string, body: { title?: string; data?: unknown; modelVersionId?: string | null; revision?: number }) =>
+    api<DrawingSetRecord>('PUT', `/plans/drawing-sets/${id}`, body),
+  deleteDrawingSet: (id: string) => api<void>('DELETE', `/plans/drawing-sets/${id}`),
+  uploadAsset: (projectId: string, png: Blob, name: string) => {
+    const fd = new FormData();
+    fd.append('file', png, name);
+    return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
+  },
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),
   saveRules: (value: ClassificationRules) => api<ClassificationRules>('PUT', `/settings/${RULES_SETTING_KEY}`, { value }),
 };

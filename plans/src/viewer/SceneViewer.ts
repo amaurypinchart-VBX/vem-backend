@@ -130,6 +130,8 @@ export class SceneViewer {
   private pickHandler: ((p: PickInfo | null) => void) | null = null;
   private showMarkers = true;
   private disposed = false;
+  /** parent d'origine du modèle (un autre viewer peut l'avoir) : on le lui rend à la fermeture */
+  private readonly previousParent: Object3D | null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -149,6 +151,7 @@ export class SceneViewer {
     const sun = new DirectionalLight(0xffffff, 1.1);
     sun.position.set(0.6, 1, 0.35);
     this.scene3.add(sun);
+    this.previousParent = model.root.parent;
     this.scene3.add(model.root);
     this.scene3.add(this.overlay);
     this.overlay.add(this.markers);
@@ -272,6 +275,12 @@ export class SceneViewer {
     if (e.category && this.hiddenCategories.has(e.category)) return 'hidden';
     if (this.include && !this.model.look.inSet(e.nodeId, this.include)) return this.ghosts ? 'ghost' : 'hidden';
     return 'shown';
+  }
+
+  /** Réapplique l'affichage (le modèle a pu être montré par un autre viewer entre-temps, ex. captures des planches). */
+  reclaim(): void {
+    if (this.model.root.parent !== this.scene3) this.scene3.add(this.model.root);
+    this.applyVisibility();
   }
 
   private applyVisibility(): void {
@@ -760,6 +769,7 @@ export class SceneViewer {
     el.removeEventListener('dblclick', this.onDoubleClick);
     this.controls.dispose();
     this.scene3.remove(this.model.root);
+    if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);
     this.edges?.geometry.dispose();
     this.renderer.dispose();
     el.remove();

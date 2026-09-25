@@ -74,16 +74,24 @@ export function subsetAll(index: SceneIndex): string[] {
 }
 
 /** Objets maillés à projeter / afficher : dans le sous-ensemble, hors contexte, hors catégories masquées. */
-export function resolveMeshes(index: SceneIndex, look: SceneLookup, include: string[], hideCategories: string[] = []): string[] {
+export function resolveMeshes(
+  index: SceneIndex,
+  look: SceneLookup,
+  include: string[],
+  hideCategories: string[] = [],
+  onlyCategories: string[] = [],
+): string[] {
   const set = new Set(include);
   const hidden = new Set(hideCategories);
+  const only = new Set(onlyCategories);
   const out: string[] = [];
   for (const n of index.nodes) {
     if (n.kind !== 'mesh' || n.role === 'context' || n.triangles === 0) continue;
     if (!look.inSet(n.id, set)) continue;
-    if (hidden.size) {
+    if (hidden.size || only.size) {
       const c = look.categoryOf(n.id);
       if (c && hidden.has(c)) continue;
+      if (only.size && (!c || !only.has(c))) continue;
     }
     out.push(n.id);
   }

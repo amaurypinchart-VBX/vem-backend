@@ -18,8 +18,9 @@ import { createInlineRunner, createWorkerPool } from '../linework/runner';
 import { ProgressBar } from './common';
 import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
+import { SheetsPage } from './sheets/SheetsPage';
 
-type Tab = 'control' | '3d' | '2d';
+type Tab = 'control' | '3d' | '2d' | 'sheets';
 
 interface Props {
   index: SceneIndex;
@@ -144,6 +145,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           <button className={`tab ${tab === '2d' ? 'active' : ''}`} onClick={() => open('2d')}>
             Vues 2D
           </button>
+          <button className={`tab ${tab === 'sheets' ? 'active' : ''}`} onClick={() => open('sheets')}>
+            Planches A1
+          </button>
         </nav>
       </div>
       {error && (
@@ -185,6 +189,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             onSetFront={setFront}
             onSaveSettings={saveSettings}
           />
+        </div>
+      )}
+      {scene && provider && visited.has('sheets') && (
+        <div style={{ display: tab === 'sheets' ? 'block' : 'none' }}>
+          <SheetsPage scene={scene} provider={provider} glassTest={glassTest} model={model} rules={rules} framesVersion={framesVersion} />
         </div>
       )}
       {scene && provider && visited.has('2d') && (
