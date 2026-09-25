@@ -162,3 +162,5 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .view-body .hint { color: #6b7280; }
 .view-img { max-width: 100%; max-height: 420px; display: block; }
 .view-foot { padding: 6px 14px 10px; }
+.nav-hint { font-size: 11px; white-space: nowrap; }
+@media (max-width: 1500px) { .nav-hint { display: none; } }

@@ -346,6 +346,10 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
             {projection === 'perspective' ? 'Perspective' : 'Orthographique'}
           </button>
           {soloModule && <span className="badge">vues relatives à {soloModule}</span>}
+          <span className="spacer" />
+          <span className="hint nav-hint" title="Molette enfoncée = tourner, Maj + molette enfoncée = déplacer (comme SketchUp)">
+            Clic gauche : tourner · clic droit : déplacer · molette : zoom · double-clic : centrer ici
+          </span>
           {frontPick && <span className="badge orange">clique une face de {frontPick} pour en faire l’avant</span>}
         </div>
         <div className="viewer-canvas" ref={holder} />

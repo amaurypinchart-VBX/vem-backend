@@ -3,6 +3,7 @@
 // surbrillance au survol, clic = infos, marqueurs de face avant, captures haute définition détourées.
 import {
   Box3,
+  MOUSE,
   BufferGeometry,
   Color,
   DirectionalLight,
@@ -188,9 +189,17 @@ export class SceneViewer {
       }
     });
 
+    // la verticale de la caméra reste celle du monde : OrbitControls tourne autour de l'axe « haut » fixé à sa
+    // création (le changer ferait basculer l'orbite dans tous les sens)
+    this.persp.up.set(0, 1, 0);
+    this.ortho.up.set(0, 1, 0);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = false;
     this.controls.screenSpacePanning = true;
+    this.controls.rotateSpeed = 0.6;
+    this.controls.zoomToCursor = true;
+    // comme SketchUp : molette enfoncée = tourner (Maj + molette = déplacer) ; clic gauche = tourner ; clic droit = déplacer
+    this.controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.PAN };
     this.controls.addEventListener('change', () => this.requestRender());
 
     const el = this.renderer.domElement;
@@ -198,6 +207,7 @@ export class SceneViewer {
     el.addEventListener('pointerleave', this.onPointerLeave);
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointerup', this.onPointerUp);
+    el.addEventListener('dblclick', this.onDoubleClick);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -382,7 +392,7 @@ export class SceneViewer {
     const target = this.controls.target.clone();
     const dir = from.position.clone().sub(target);
     const dist = dir.length();
-    to.up.copy(from.up);
+    to.up.set(0, 1, 0);
     if (to === this.ortho) {
       // même taille apparente à la distance de la cible
       const h = 2 * dist * Math.tan((this.persp.fov * Math.PI) / 360);
@@ -492,9 +502,20 @@ export class SceneViewer {
 
   applyPose(pose: CameraPose, keepOrthoHeight = true): void {
     const cam = pose.projection === 'perspective' ? this.persp : this.ortho;
-    cam.up.set(...pose.up);
-    cam.position.set(...pose.position);
-    this.controls.target.set(...pose.target);
+    const target = new Vector3(...pose.target);
+    const position = new Vector3(...pose.position);
+    const toward = position.clone().sub(target);
+    const dist = toward.length();
+    toward.normalize();
+    // vue de dessus / de dessous : la caméra garde la verticale du monde ; un très léger décalage horizontal
+    // donne l'orientation voulue à l'écran (ex. nord en haut, ou l'avant de la Viewbox à droite)
+    if (Math.abs(toward.y) > 0.999) {
+      const up = new Vector3(pose.up[0], 0, pose.up[2]);
+      if (up.lengthSq() > 1e-9) position.addScaledVector(up.normalize(), -Math.sign(toward.y) * dist * 0.002);
+    }
+    cam.up.set(0, 1, 0);
+    cam.position.copy(position);
+    this.controls.target.copy(target);
     if (cam === this.ortho) {
       const h = pose.orthoHeight;
       if (h) this.setOrthoFrustum(h);
@@ -590,6 +611,18 @@ export class SceneViewer {
 
   private readonly onPointerDown = (ev: PointerEvent) => {
     this.downAt = { x: ev.clientX, y: ev.clientY };
+  };
+
+  /** Double-clic sur un objet : la rotation se fait désormais autour de ce point. */
+  private readonly onDoubleClick = (ev: MouseEvent) => {
+    const p = this.pick(ev as PointerEvent);
+    if (!p) return;
+    const target = new Vector3(...p.point);
+    // le point cliqué vient au centre de l'écran et devient le centre de rotation
+    this.camera.position.add(target.clone().sub(this.controls.target));
+    this.controls.target.copy(target);
+    this.controls.update();
+    this.requestRender();
   };
 
   private readonly onPointerUp = (ev: PointerEvent) => {
@@ -724,6 +757,7 @@ export class SceneViewer {
     el.removeEventListener('pointerleave', this.onPointerLeave);
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointerup', this.onPointerUp);
+    el.removeEventListener('dblclick', this.onDoubleClick);
     this.controls.dispose();
     this.scene3.remove(this.model.root);
     this.edges?.geometry.dispose();
