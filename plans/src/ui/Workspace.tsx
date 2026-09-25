@@ -27,17 +27,22 @@ interface Props {
   /** paquet GLB déjà en mémoire (analyse qui vient d'être faite) */
   glb?: ArrayBuffer;
   rules: ClassificationRules;
+  /** analyse en cours d'enregistrement : le modèle 3D arrive */
+  busy?: boolean;
+  /** réanalyse le fichier source pour recréer le modèle 3D manquant */
+  onRebuild?: () => void;
   onBack: () => void;
   inspector: ReactNode;
 }
 
-export function Workspace({ index, model, glb, rules, onBack, inspector }: Props) {
+export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, inspector }: Props) {
   const [tab, setTab] = useState<Tab>('control');
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set(['control']));
   const [scene, setScene] = useState<LoadedScene | null>(null);
   const [framesVersion, setFramesVersion] = useState(0);
   const [loading, setLoading] = useState<{ label: string; fraction: number } | null>(null);
   const [error, setError] = useState('');
+  const [missing, setMissing] = useState(false);
   const [settings, setSettings] = useState<ModelSettings>(() => model?.settings ?? {});
   const loadStarted = useRef(false);
   // analyse fraîche : la version enregistrée arrive après coup, avec les réglages repris de la précédente
@@ -73,7 +78,12 @@ export function Workspace({ index, model, glb, rules, onBack, inspector }: Props
       try {
         let data = glb;
         if (!data) {
-          if (!model?.glbUrl) throw new Error('Paquet 3D absent : réanalyse le fichier (il est peut-être trop lourd pour être enregistré).');
+          if (!model?.glbUrl) {
+            // analyse en cours : le modèle 3D arrive (l'effet repart quand il est là) ; sinon il n'a jamais été enregistré
+            loadStarted.current = false;
+            if (!busy) setMissing(true);
+            return;
+          }
           setLoading({ label: 'Téléchargement du modèle 3D', fraction: 0 });
           data = await downloadPackage(model, (f) => setLoading({ label: 'Téléchargement du modèle 3D', fraction: f * 0.8 }));
         }
@@ -82,13 +92,15 @@ export function Workspace({ index, model, glb, rules, onBack, inspector }: Props
         const pkg = await loadPackage(data.slice(0));
         setScene(makeLoadedScene(pkg.root, pkg.objectsById, index, index.source.sha256, settings.fronts ?? {}));
         setLoading(null);
+        setMissing(false);
+        setError('');
       } catch (e) {
         setLoading(null);
         setError((e as Error).message);
         loadStarted.current = false;
       }
     })();
-  }, [tab, glb, model, index, settings.fronts]);
+  }, [tab, glb, model, index, settings.fronts, busy]);
 
   const saveSettings = async (patch: ModelSettings) => {
     const next = { ...settings, ...patch };
@@ -144,6 +156,24 @@ export function Workspace({ index, model, glb, rules, onBack, inspector }: Props
       )}
       <div style={{ display: tab === 'control' ? 'block' : 'none' }}>{inspector}</div>
       {tab !== 'control' && loading && <ProgressBar label={loading.label} fraction={loading.fraction} />}
+      {tab !== 'control' && !scene && !loading && busy && !glb && <ProgressBar label="Préparation du modèle 3D…" fraction={0.5} />}
+      {tab !== 'control' && !scene && missing && (
+        <div className="card">
+          <div className="card-body">
+            <p style={{ marginBottom: 10 }}>
+              Le modèle 3D de cette analyse n’a pas été enregistré (analyse faite avant la correction de la limite de 10 Mo, ou envoi
+              interrompu). Il faut réanalyser le fichier une fois : ensuite la vue 3D et les vues 2D s’ouvrent directement.
+            </p>
+            {onRebuild ? (
+              <button className="btn primary" onClick={onRebuild}>
+                Réanalyser le fichier et créer le modèle 3D
+              </button>
+            ) : (
+              <div className="hint">Le fichier d’origine n’est plus dans le projet : glisse-le à nouveau dans la page Modèles.</div>
+            )}
+          </div>
+        </div>
+      )}
       {scene && visited.has('3d') && (
         <div style={{ display: tab === '3d' ? 'block' : 'none' }}>
           <Viewer3DPage

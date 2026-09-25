@@ -862,17 +862,21 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
         END IF;
       END $$;
     `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "settings" JSONB NOT NULL DEFAULT '{}'::jsonb;
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_parts" JSONB;
-    `);
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_encoding" TEXT;
-    `);
     logger.info('[migration] table plans_model_versions créée si absente');
   } catch (e: any) {
     logger.warn(`[migration] table plans_model_versions : ${e.message}`);
+  }
+  // Colonnes ajoutées ensuite (réglages, paquet 3D en morceaux) : bloc séparé, pour qu'elles soient créées
+  // même si une étape du bloc précédent (index, clés étrangères) échoue.
+  for (const sql of [
+    `ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "settings" JSONB NOT NULL DEFAULT '{}'::jsonb`,
+    `ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_parts" JSONB`,
+    `ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_encoding" TEXT`,
+  ]) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch (e: any) {
+      logger.warn(`[migration] plans_model_versions : ${e.message}`);
+    }
   }
 }

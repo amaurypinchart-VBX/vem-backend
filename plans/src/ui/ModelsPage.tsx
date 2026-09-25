@@ -59,7 +59,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
     void refresh();
   }, [refresh]);
 
-  const analyze = async (fileName: string, data: ArrayBuffer, meta: { sourceFileId?: string; sourceUrl?: string }) => {
+  const analyze = async (fileName: string, data: ArrayBuffer, meta: { sourceFileId?: string; sourceUrl?: string }, force = false) => {
     setError('');
     const ctrl = new AbortController();
     const runner = createWorkerRunner();
@@ -69,9 +69,12 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
       setJob({ label: "Calcul de l'empreinte du fichier", fraction: 0.01 });
       const sha256 = await sha256Hex(data);
       const existing = models.find((m) => m.sha256 === sha256);
+      // une analyse existante sans modèle 3D ne sert à rien : on réanalyse sans poser la question
       if (
+        !force &&
         existing &&
         existing.engineVersion === ENGINE_VERSION &&
+        existing.glbUrl &&
         !window.confirm(
           `Ce fichier a déjà été analysé le ${new Date(existing.updatedAt).toLocaleString('fr-FR')}.\n\nOK = réanalyser (par ex. après avoir modifié les règles)\nAnnuler = ouvrir l'analyse existante`,
         )
@@ -91,8 +94,12 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
       });
       root = res.root;
       dispose = res.dispose;
+      // le paquet 3D est créé tout de suite et reste en mémoire : vue 3D et vues 2D utilisables même si
+      // l'enregistrement sur le serveur échoue
+      setJob({ label: 'Création du modèle 3D', fraction: 0.97 });
+      const glb = await exportPackage(res.root);
       setJob(null);
-      setCurrent({ index: res.index, saveState: 'saving' });
+      setCurrent({ index: res.index, glb, saveState: 'saving' });
 
       const saved = await vem.saveModel(PROJECT_ID, {
         sourceFileId: meta.sourceFileId,
@@ -107,8 +114,6 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         warnings: res.index.warnings,
         sceneIndex: res.index,
       });
-      // le paquet 3D reste en mémoire : vue 3D et vues 2D utilisables même si l'envoi échoue
-      const glb = await exportPackage(res.root);
       setCurrent({ index: res.index, model: saved, glb, saveState: 'packaging' });
       // compressé (≈ 5 × plus petit) et découpé en morceaux de moins de 10 Mo (limite Cloudinary)
       const packed = packPackage(glb);
@@ -142,7 +147,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
     }
   };
 
-  const analyzeProjectFile = async (f: ProjectFile) => {
+  const analyzeProjectFile = async (f: ProjectFile, force = false) => {
     const ctrl = new AbortController();
     try {
       setError('');
@@ -152,7 +157,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         (p) => setJob({ label: `Téléchargement de ${f.fileName}`, fraction: p, cancel: () => ctrl.abort() }),
         ctrl.signal,
       );
-      await analyze(f.fileName, data, { sourceFileId: f.id, sourceUrl: f.fileUrl });
+      await analyze(f.fileName, data, { sourceFileId: f.id, sourceUrl: f.fileUrl }, force);
     } catch (e) {
       setJob(null);
       setError((e as Error).name === 'AbortError' ? 'Téléchargement annulé.' : `Téléchargement impossible : ${(e as Error).message}`);
@@ -214,10 +219,14 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
     }
   };
 
+  /** fichier du projet d'où vient une analyse (pour la refaire) */
+  const sourceOf = (m?: ModelVersion) => (m?.sourceFileId ? files.find((f) => f.id === m.sourceFileId) : undefined);
+
   if (current && !job) {
     const back = () => {
       setCurrent(null);
       setReload({ busy: false });
+      void refresh(); // la liste reflète le dernier état (analyse enregistrée, avec ou sans modèle 3D)
     };
     return (
       <Workspace
@@ -226,6 +235,8 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         model={current.model}
         glb={current.glb}
         rules={rules}
+        busy={current.saveState === 'saving' || current.saveState === 'packaging'}
+        onRebuild={sourceOf(current.model) ? () => void analyzeProjectFile(sourceOf(current.model)!, true) : undefined}
         onBack={back}
         inspector={
           <Inspector
@@ -363,6 +374,16 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
                       <td>{m.glbUrl ? <span className="badge ok">{fmtBytes(m.glbSize)}</span> : <span className="badge">—</span>}</td>
                       <td>{new Date(m.updatedAt).toLocaleString('fr-FR')}</td>
                       <td className="actions">
+                        {!m.glbUrl && sourceOf(m) && (
+                          <button
+                            className="btn small primary"
+                            disabled={busy}
+                            onClick={() => void analyzeProjectFile(sourceOf(m)!, true)}
+                            title="Cette analyse n'a pas de modèle 3D enregistré : réanalyse le fichier pour la vue 3D et les vues 2D"
+                          >
+                            Recréer la 3D
+                          </button>
+                        )}
                         <button className="btn small" disabled={busy} onClick={() => void openModel(m.id)}>
                           Ouvrir
                         </button>
