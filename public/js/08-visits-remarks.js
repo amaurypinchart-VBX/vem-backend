@@ -1053,13 +1053,14 @@ function renderDetailFiles(projectId, files) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
       <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="openPlansViewbox('${projectId}')" title="Analyser un modèle SketchUp exporté (.zip) et préparer les plans">📐 Plans Viewbox</button>
         <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${projectId}')" title="Ajouter un fichier via URL externe (GitHub, Drive...) — utile pour les fichiers > 10 Mo">🔗 URL</button>
         <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
           ⬆️ Ajouter
           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov,.glb,.gltf,.usdz,.obj,.stl,.skp,.fbx,.dae,.zip" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
         </label>
       </div>
-    0</div>
+    </div>
 
     ${files.length ? `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:8px 12px;background:var(--bg3);border-radius:8px;flex-wrap:wrap;">
