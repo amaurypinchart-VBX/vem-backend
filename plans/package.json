@@ -15,7 +15,10 @@
     "fflate": "0.8.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "three": "0.186.1"
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.15",
+    "clipper2-js": "0.9.0",
+    "three-edge-projection": "github:gkjohnson/three-edge-projection#59a0a452c378"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
@@ -27,5 +30,11 @@
     "typescript": "5.9.3",
     "vite": "8.3.1",
     "vitest": "5.0.1"
+  },
+  "overrides": {
+    "three-edge-projection": {
+      "three": "$three",
+      "three-mesh-bvh": "$three-mesh-bvh"
+    }
   }
 }

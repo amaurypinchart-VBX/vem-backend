@@ -14,8 +14,20 @@ const db = prisma as any; // modèle ajouté au schéma ; client typé régéné
 const LIST_SELECT = {
   id: true, projectId: true, sourceFileId: true, fileName: true, sha256: true, sizeBytes: true,
   status: true, engineVersion: true, unitMeter: true, upAxis: true, stats: true, warnings: true,
-  glbUrl: true, glbSize: true, createdById: true, createdAt: true, updatedAt: true,
+  glbUrl: true, glbSize: true, settings: true, createdById: true, createdAt: true, updatedAt: true,
 };
+
+/** Réglages d'un modèle (face avant de chaque Viewbox, caméras enregistrées) : objet JSON, fusion clé par clé. */
+function cleanSettings(v: unknown): Record<string, unknown> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new AppError('settings doit être un objet', 400);
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (!/^[a-zA-Z0-9_]{1,40}$/.test(k)) throw new AppError(`Réglage invalide : ${k}`, 400);
+    out[k] = val;
+  }
+  if (JSON.stringify(out).length > 200_000) throw new AppError('Réglages trop volumineux', 400);
+  return out;
+}
 
 // GET /plans/project/:projectId/models — versions analysées du projet (sans l'index, trop lourd)
 router.get('/project/:projectId/models', async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -72,8 +84,14 @@ router.post('/project/:projectId/models', async (req: AuthRequest, res: Response
         select: LIST_SELECT,
       });
     } else {
+      // nouvelle version du modèle : on reprend les réglages de la précédente (faces avant, caméras)
+      const previous = await db.plansModelVersion.findFirst({
+        where: { projectId },
+        orderBy: { updatedAt: 'desc' },
+        select: { settings: true },
+      });
       model = await db.plansModelVersion.create({
-        data: { ...data, projectId, sha256: String(b.sha256), createdById: req.user?.id ?? null },
+        data: { ...data, projectId, sha256: String(b.sha256), settings: previous?.settings ?? {}, createdById: req.user?.id ?? null },
         select: LIST_SELECT,
       });
     }
@@ -93,6 +111,22 @@ router.post('/models/:id/package', upload.single('file'), async (req: AuthReques
       where: { id: model.id },
       data: { glbUrl: url, glbPublicId: publicId, glbSize: req.file.size, status: 'packaged' },
       select: LIST_SELECT,
+    });
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+// PATCH /plans/models/:id/settings — { settings: { fronts?, cameras?, … } } fusionné avec l'existant
+router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const patch = cleanSettings(req.body?.settings);
+    const model = await db.plansModelVersion.findUnique({ where: { id: req.params.id }, select: { id: true, settings: true } });
+    if (!model) throw new AppError('Modèle introuvable', 404);
+    const current = model.settings && typeof model.settings === 'object' && !Array.isArray(model.settings) ? model.settings : {};
+    const updated = await db.plansModelVersion.update({
+      where: { id: model.id },
+      data: { settings: { ...current, ...patch } },
+      select: { id: true, settings: true },
     });
     res.json({ success: true, data: updated });
   } catch (err) { next(err); }

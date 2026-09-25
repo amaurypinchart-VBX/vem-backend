@@ -905,6 +905,7 @@ model PlansModelVersion {
   glbUrl        String?  @map("glb_url")
   glbPublicId   String?  @map("glb_public_id")
   glbSize       Int?     @map("glb_size")
+  settings      Json     @default("{}") // face avant des Viewbox, caméras enregistrées…
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")

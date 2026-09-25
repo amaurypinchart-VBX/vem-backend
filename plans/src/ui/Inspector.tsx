@@ -13,6 +13,8 @@ interface Props {
   saveState: SaveState;
   saveMessage?: string;
   onBack: () => void;
+  /** affiché dans l'espace de travail : le bouton retour et le nom du fichier y sont déjà */
+  embedded?: boolean;
   onReloadPackage?: () => void;
   reloadMessage?: string;
   reloading?: boolean;
@@ -119,10 +121,14 @@ export function Inspector(props: Props) {
   return (
     <div className="page">
       <div className="row">
-        <button className="btn" onClick={props.onBack}>
-          ← Retour
-        </button>
-        <h1 style={{ fontSize: 16 }}>{index.source.fileName}</h1>
+        {!props.embedded && (
+          <>
+            <button className="btn" onClick={props.onBack}>
+              ← Retour
+            </button>
+            <h1 style={{ fontSize: 16 }}>{index.source.fileName}</h1>
+          </>
+        )}
         <span className="badge">
           {index.source.unitName || '?'} · {index.source.upAxis}
         </span>

@@ -12,6 +12,7 @@ import type { ModelVersion, ProjectFile } from '../api/vem';
 import { PROJECT_ID, downloadWithProgress, vem } from '../api/vem';
 import { Inspector } from './Inspector';
 import type { SaveState } from './Inspector';
+import { Workspace } from './Workspace';
 import { ProgressBar } from './common';
 
 const MODEL_EXTS = ['zip', 'dae', 'glb'];
@@ -24,6 +25,8 @@ interface Current {
   model?: ModelVersion;
   saveState: SaveState;
   saveMessage?: string;
+  /** paquet GLB de l'analyse qui vient d'être faite (évite de le retélécharger pour la vue 3D) */
+  glb?: ArrayBuffer;
 }
 
 interface Job {
@@ -111,12 +114,13 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         setCurrent({
           index: res.index,
           model: saved,
+          glb,
           saveState: 'saved',
-          saveMessage: `Paquet 3D trop lourd pour VEM (${fmtBytes(glb.byteLength)} > 50 Mo) : purge le modèle ou retire les textures inutiles. L'analyse reste consultable.`,
+          saveMessage: `Paquet 3D trop lourd pour VEM (${fmtBytes(glb.byteLength)} > 50 Mo) : purge le modèle ou retire les textures inutiles. L'analyse reste consultable (vue 3D et vues 2D disponibles jusqu'à la fermeture de cette page).`,
         });
       } else {
         const packaged = await vem.uploadPackage(saved.id, glb);
-        setCurrent({ index: res.index, model: packaged, saveState: 'packaged' });
+        setCurrent({ index: res.index, model: packaged, glb, saveState: 'packaged' });
       }
       await refresh();
     } catch (e) {
@@ -207,19 +211,31 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
   };
 
   if (current && !job) {
+    const back = () => {
+      setCurrent(null);
+      setReload({ busy: false });
+    };
     return (
-      <Inspector
+      <Workspace
+        key={current.index.source.sha256}
         index={current.index}
         model={current.model}
-        saveState={current.saveState}
-        saveMessage={current.saveMessage}
-        onBack={() => {
-          setCurrent(null);
-          setReload({ busy: false });
-        }}
-        onReloadPackage={reloadPackage}
-        reloading={reload.busy}
-        reloadMessage={reload.message}
+        glb={current.glb}
+        rules={rules}
+        onBack={back}
+        inspector={
+          <Inspector
+            index={current.index}
+            model={current.model}
+            saveState={current.saveState}
+            saveMessage={current.saveMessage}
+            onBack={back}
+            embedded
+            onReloadPackage={reloadPackage}
+            reloading={reload.busy}
+            reloadMessage={reload.message}
+          />
+        }
       />
     );
   }

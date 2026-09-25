@@ -1,6 +1,7 @@
 // Accès à l'API VEM (même origine). Le jeton vient de l'URL (?token=, ouverture depuis VEM) ou de la
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
+import type { FrontSide, Vec3 } from '../core/views';
 
 const params = new URLSearchParams(window.location.search);
 export const PROJECT_ID = params.get('projectId') ?? '';
@@ -63,6 +64,25 @@ export interface ProjectFile {
   createdAt?: string;
 }
 
+/** Caméra enregistrée (« 3D entrée », « 3D client »…) pour les captures. */
+export interface SavedCamera {
+  name: string;
+  projection: 'perspective' | 'orthographic';
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  fov?: number;
+  zoom?: number;
+  orthoHeight?: number;
+}
+
+/** Réglages d'un modèle, conservés d'une version à la suivante. */
+export interface ModelSettings {
+  /** face avant de chaque Viewbox (repère local SketchUp), quand elle n'est pas celle par défaut */
+  fronts?: Record<string, FrontSide>;
+  cameras?: SavedCamera[];
+}
+
 export interface ModelVersion {
   id: string;
   projectId: string;
@@ -78,6 +98,7 @@ export interface ModelVersion {
   warnings: Warning[];
   glbUrl: string | null;
   glbSize: number | null;
+  settings?: ModelSettings;
   createdAt: string;
   updatedAt: string;
   sceneIndex?: SceneIndex;
@@ -97,6 +118,8 @@ export const vem = {
     return api<ModelVersion>('POST', `/plans/models/${id}/package`, fd);
   },
   deleteModel: (id: string) => api<void>('DELETE', `/plans/models/${id}`),
+  saveSettings: (id: string, settings: ModelSettings) =>
+    api<{ id: string; settings: ModelSettings }>('PATCH', `/plans/models/${id}/settings`, { settings }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),
   saveRules: (value: ClassificationRules) => api<ClassificationRules>('PUT', `/settings/${RULES_SETTING_KEY}`, { value }),
 };

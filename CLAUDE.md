@@ -23,7 +23,7 @@ npm run db:studio     # prisma studio
 The backend has no test suite and no lint script. The Plans Viewbox sub-app (`plans/`, see below) has its own:
 
 ```bash
-cd plans && npm test                          # Vitest (geometry, classification, full .dae ingestion)
+cd plans && npm test                          # Vitest (geometry, classification, .dae ingestion, 2D engine, captures)
 cd plans && npm run typecheck                 # tsc --noEmit (strict)
 cd plans && npm run build                     # → public/plans (+ public/plans/tools/viewbox_prep.rbz)
 ruby plans/sketchup/test_core.rb              # SketchUp extension, pure logic
@@ -61,14 +61,17 @@ ruby plans/sketchup/test_main_smoke.rb        # SketchUp extension against a stu
 
 ### Plans Viewbox (`plans/` → served at `/plans/`)
 
-Separate Vite + React 19 + TypeScript (strict) sub-app, built into `public/plans` (gitignored) by the Dockerfile, opened from the project page (Modèles 3D › « 📐 Plans Viewbox », `openPlansViewbox` in `01-core.js`). Goal: SketchUp model → vector architect drawing sets (phased spec, P0 = ingestion + inspector done; see git log for current phase).
+Separate Vite + React 19 + TypeScript (strict) sub-app, built into `public/plans` (gitignored) by the Dockerfile, opened from the project page (Fichiers or Infos › Modèles 3D › « 📐 Plans Viewbox », `openPlansViewbox` in `01-core.js`). Goal: SketchUp model → vector architect drawing sets (phased spec P0–P7; P0 ingestion/inspector, P1 viewer/isolation/captures and P2 2D engine done; see git log for current phase). A saved analysis opens a workspace with tabs Contrôle (inspector) · Vue 3D · Vues 2D (`ui/Workspace.tsx`).
 
 - `plans/src/core/` — pure, tested logic: classification rules (editable in the app, stored in `app_settings` key `plans.classificationRules`), units/dimension checks, triangle cleanup, manifest.
 - `plans/src/ingest/` — browser pipeline: unzip → COLLADA parse (three 0.186 `ColladaParser`/`ColladaComposer` subclassed to keep SketchUp definition names; unit + Z-up applied exactly once) → geometry cleanup in a Web Worker → scene index (modules VBX-xx, accessories, levels, warnings) → GLB package (`userData.vbxId` = stable node id).
-- Backend: `src/routes/plans.ts` stores results in `plans_model_versions` (index JSON + GLB on Cloudinary raw, 50 MB upload limit).
+- `plans/src/scene/` + `plans/src/viewer/` — loaded model (`LoadedScene`: GLB package + index + module frames) and the three.js viewer (`SceneViewer`): isolation only by `visible = false` (never clipping), ghost neighbours, BVH picking, front-face arrows, offscreen HD captures (MSAA, `LineSegments2` edges, auto-crop via `captureImage.ts`). A GLB node with several materials comes back as a group of primitive meshes: use `meshesOfNode` / `nodeIdOf`.
+- `plans/src/core/views.ts` — view bases: world views = SketchUp standard views; module views are relative to the Viewbox frame (Front/Back = short sides, front = short side towards local +X unless overridden, stored in `plans_model_versions.settings.fronts`).
+- `plans/src/linework/` — 2D engine behind the `LineworkProvider` seam (`BrowserHlrProvider`): subset → world-baked packet → Web Worker pool (`hlr.worker.ts`) → `hlr.ts` (own edge extraction + three-edge-projection internals for hidden-line removal; glass excluded from occluders; `LineObjectsBVH` needs `heightOffset` = model depth because the library assumes metres) → 2D cleanup (`core/lines2d.ts`: collinear merge, chaining) → layers silhouette/visible/fine/hidden/category:* in model mm → SVG (`svg.ts`, paper-mm strokes). Results cached in IndexedDB (`LINEWORK_ENGINE` in `provider.ts` = cache version: bump it when the engine output changes).
+- Backend: `src/routes/plans.ts` stores results in `plans_model_versions` (index JSON + GLB on Cloudinary raw, 50 MB upload limit; `settings` JSON = module fronts + saved cameras, copied to the next version of the same project).
 - `plans/sketchup/` — SketchUp Ruby extension (`viewbox_prep.rbz`, downloadable from the app): numbers modules (VBX-xx), lets the user override category / label / article ref per component definition ("Réviser les catégories…" HtmlDialog `review.html`, or right-click), and module type + nominal size; exports .dae + textures + `manifest.json` as a .zip. SketchUp rewrites names in the .dae (spaces/`#`/`:` → `_`, leading-digit prefix), so during export every item is temporarily renamed `VBXE-<n>` (manifest `exportName`, the match key used by `buildIndex`), then the operation is aborted to restore the model. Keep its rules (`core.rb`) aligned with `plans/src/core/classification.ts`.
-- Real models dropped in `test-models/` (gitignored) are analysed by `cd plans && npx vitest run tests/real-models.test.ts` (writes `*.analyse-vem.txt` next to them).
-- `three-edge-projection` (needed from phase P2) is unpublished from npm: install it from a pinned GitHub commit.
+- Real models dropped in `test-models/` (gitignored, or `VEM_MODELS_DIR=…`) are analysed by `cd plans && npx vitest run tests/real-models.test.ts` (writes `*.analyse-vem.txt` next to them, and checks a Viewbox top view measures its plan dimensions ± 1 mm with no duplicate line).
+- `three-edge-projection` is unpublished from npm: it is installed from pinned GitHub commit 59a0a452c378; its stale peer ranges (three ^0.155, three-mesh-bvh ^0.6) are overridden in `plans/package.json` `overrides`.
 
 ### Frontend (`public/`)
 
