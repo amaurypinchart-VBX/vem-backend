@@ -113,6 +113,12 @@ function openIn3DViewer(modelUrl, fileName, projectId) {
   window.open(url, '_blank');
 }
 
+// Module Plans Viewbox (servi à /plans/, sources dans plans/) : analyse des modèles SketchUp
+// exportés (.zip) et préparation des jeux de plans. Le jeton est retiré de l'URL par la page.
+function openPlansViewbox(projectId) {
+  window.open('/plans/?projectId=' + encodeURIComponent(projectId || '') + '&token=' + encodeURIComponent(TOKEN || ''), '_blank');
+}
+
 async function openFileViewer(url, filename) {
   filename = filename || url.split('/').pop() || 'Fichier';
   const ext = (filename.split('.').pop() || '').toLowerCase();

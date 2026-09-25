@@ -811,4 +811,59 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table plan2ds : ${e.message}`);
   }
+
+  // ─── Table "plans_model_versions" (module Plans Viewbox : modèles SketchUp analysés) ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "plans_model_versions" (
+        "id"             TEXT             NOT NULL,
+        "project_id"     TEXT             NOT NULL,
+        "source_file_id" TEXT,
+        "file_name"      TEXT             NOT NULL,
+        "source_url"     TEXT,
+        "sha256"         TEXT             NOT NULL,
+        "size_bytes"     INTEGER,
+        "status"         TEXT             NOT NULL DEFAULT 'indexed',
+        "engine_version" TEXT,
+        "unit_meter"     DOUBLE PRECISION,
+        "up_axis"        TEXT,
+        "stats"          JSONB            NOT NULL DEFAULT '{}'::jsonb,
+        "warnings"       JSONB            NOT NULL DEFAULT '[]'::jsonb,
+        "scene_index"    JSONB,
+        "glb_url"        TEXT,
+        "glb_public_id"  TEXT,
+        "glb_size"       INTEGER,
+        "created_by"     TEXT,
+        "created_at"     TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"     TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "plans_model_versions_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "plans_model_versions_project_id_idx" ON "plans_model_versions" ("project_id");
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "plans_model_versions_project_id_sha256_key" ON "plans_model_versions" ("project_id", "sha256");
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_model_versions_project_id_fkey') THEN
+          ALTER TABLE "plans_model_versions"
+            ADD CONSTRAINT "plans_model_versions_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plans_model_versions_created_by_fkey') THEN
+          ALTER TABLE "plans_model_versions"
+            ADD CONSTRAINT "plans_model_versions_created_by_fkey"
+            FOREIGN KEY ("created_by") REFERENCES "users"("id")
+            ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table plans_model_versions créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table plans_model_versions : ${e.message}`);
+  }
 }

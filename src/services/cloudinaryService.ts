@@ -64,9 +64,9 @@ export async function uploadToCloudinary(
   });
 }
 
-export async function deleteFromCloudinary(publicId: string): Promise<void> {
+export async function deleteFromCloudinary(publicId: string, resourceType?: 'image' | 'video' | 'raw'): Promise<void> {
   try {
-    await cloudinary.uploader.destroy(publicId);
+    await cloudinary.uploader.destroy(publicId, resourceType ? { resource_type: resourceType } : undefined);
   } catch (err) {
     logger.warn(`Cloudinary delete failed for ${publicId}`);
   }

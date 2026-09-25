@@ -20,12 +20,22 @@ npm run db:seed       # ts-node prisma/seed.ts
 npm run db:studio     # prisma studio
 ```
 
-There is no test suite and no lint script configured in this project.
+The backend has no test suite and no lint script. The Plans Viewbox sub-app (`plans/`, see below) has its own:
+
+```bash
+cd plans && npm test                          # Vitest (geometry, classification, full .dae ingestion)
+cd plans && npm run typecheck                 # tsc --noEmit (strict)
+cd plans && npm run build                     # → public/plans (+ public/plans/tools/viewbox_prep.rbz)
+ruby plans/sketchup/test_core.rb              # SketchUp extension, pure logic
+ruby plans/sketchup/test_main_smoke.rb        # SketchUp extension against a stubbed SketchUp API
+```
 
 ## Deployment (Railway)
 
 - Auto-deploys on push to `main` via Dockerfile build (`railway.toml`).
-- Container start command: `npx prisma db push --accept-data-loss && node dist/index.js` (see `Dockerfile`). This means **`schema.prisma` is the single source of truth for the DB schema** — there are no versioned Prisma migration files in this project. To change the schema: edit `prisma/schema.prisma` directly, commit, push; `db push` reconciles the live Postgres DB on next boot.
+- The Dockerfile `CMD` runs `npx prisma db push --accept-data-loss && node dist/index.js`, **but `railway.toml`'s `startCommand` (`node dist/index.js`) overrides it on Railway, so `db push` does NOT run at boot in production.** There are no versioned Prisma migration files. To add a table/column: add it to `prisma/schema.prisma` (keeps the Prisma client typed) **and** create it with idempotent SQL in `src/utils/migrations.ts` (see the `plan2ds` / `plans_model_versions` blocks). New models are accessed as `(prisma as any).model` in routes because the Prisma client in `node_modules` is committed to git and only regenerated in the Docker build.
+- `node_modules/` and `dist/` are committed to git (historical); the Docker build ignores them (`.dockerignore`) and reinstalls/rebuilds. Don't run the root `npm run build` just to type-check (it rewrites tracked `dist/` files) — use `npx tsc --noEmit -p .`.
+- The Dockerfile has a first stage (Node 22) that builds `plans/` into `public/plans`; the backend stage copies it in.
 - Anything `db push` can't express safely at boot (new enum values, dropping/renaming constraints, backfills, data-preserving column type changes) is handled by hand-written **idempotent raw SQL** in `src/utils/migrations.ts`, run once at server startup via `runStartupMigrations()` (called from `src/index.ts`). Every statement there must be safe to re-run on every boot (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded `DO $$ ... $$` blocks, etc.). When adding a schema change that `db push` won't handle cleanly, add a new idempotent block at the bottom of `runStartupMigrations()` rather than writing a Prisma migration.
 - Health check: `GET /health`.
 - A recurring, misleading symptom: a push doesn't take effect. Before assuming a code bug, verify on github.com that the commit actually landed and that Railway's deployed commit hash matches it — Railway rebuilds don't guarantee the push was received.
@@ -48,6 +58,16 @@ There is no test suite and no lint script configured in this project.
 - AI features go through `src/services/aiService.ts` (`anthropicRequest` / `callClaude` / a schema-validated JSON variant), model configurable via `ANTHROPIC_MODEL` env (defaults to Claude Haiku). Callers must pass a generous `max_tokens` and check `stop_reason === 'max_tokens'` — a response truncated mid-JSON is a known recurring failure mode for report/summary generation (`assistantService.ts`, `briefingAI.ts`).
 - File uploads (photos, PDFs, attachments) go through Cloudinary via `src/services/cloudinaryService.ts` / `src/routes/upload.ts`.
 - PDF generation (handover docs, daily reports) is in `src/services/pdfService.ts` via `pdfkit`.
+
+### Plans Viewbox (`plans/` → served at `/plans/`)
+
+Separate Vite + React 19 + TypeScript (strict) sub-app, built into `public/plans` (gitignored) by the Dockerfile, opened from the project page (Modèles 3D › « 📐 Plans Viewbox », `openPlansViewbox` in `01-core.js`). Goal: SketchUp model → vector architect drawing sets (phased spec, P0 = ingestion + inspector done; see git log for current phase).
+
+- `plans/src/core/` — pure, tested logic: classification rules (editable in the app, stored in `app_settings` key `plans.classificationRules`), units/dimension checks, triangle cleanup, manifest.
+- `plans/src/ingest/` — browser pipeline: unzip → COLLADA parse (three 0.186 `ColladaParser`/`ColladaComposer` subclassed to keep SketchUp definition names; unit + Z-up applied exactly once) → geometry cleanup in a Web Worker → scene index (modules VBX-xx, accessories, levels, warnings) → GLB package (`userData.vbxId` = stable node id).
+- Backend: `src/routes/plans.ts` stores results in `plans_model_versions` (index JSON + GLB on Cloudinary raw, 50 MB upload limit).
+- `plans/sketchup/` — SketchUp Ruby extension (`viewbox_prep.rbz`, downloadable from the app): names modules/accessories, writes categories from tags (lost in .dae), exports .dae + textures + `manifest.json` as a .zip. Keep its rules (`core.rb`) aligned with `plans/src/core/classification.ts`.
+- `three-edge-projection` (needed from phase P2) is unpublished from npm: install it from a pinned GitHub commit.
 
 ### Frontend (`public/`)
 

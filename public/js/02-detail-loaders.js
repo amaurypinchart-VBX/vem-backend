@@ -230,7 +230,10 @@ async function loadProjectDetail(id) {
             // ── Modèles 3D
             if (models.length) {
               html += `<div style="margin-bottom:14px;">
-                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🎨 Modèles 3D (${models.length})</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;">🎨 Modèles 3D (${models.length})</div>
+                  <button class="btn btn-ghost btn-xs" onclick="openPlansViewbox('${CURRENT_PROJECT_ID}')" title="Analyser un modèle SketchUp exporté (.zip) et préparer les plans">📐 Plans Viewbox</button>
+                </div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
                   ${models.map(f=>{
                     const e = extOf(f);

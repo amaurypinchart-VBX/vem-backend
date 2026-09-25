@@ -107,6 +107,7 @@ model User {
   handovers           Handover[]     @relation("HandoverCreatedBy")
   siteManagerHandover Handover[]     @relation("SiteManager")
   createdPlan2Ds      Plan2D[]       @relation("Plan2DCreatedBy")
+  createdPlansModels  PlansModelVersion[] @relation("PlansModelCreatedBy")
   dailyReports        DailyReport[]
   reportedTickets     Ticket[]       @relation("ReportedBy")
   assignedTickets     Ticket[]       @relation("TicketAssignedTo")
@@ -222,6 +223,7 @@ model Project {
   teamBookings     TeamBooking[]
   hotelBookings    HotelBooking[]
   plan2Ds          Plan2D[]
+  plansModels      PlansModelVersion[]
 
   @@map("projects")
 }
@@ -879,4 +881,38 @@ model Plan2D {
 
   @@index([projectId])
   @@map("plan2ds")
+}
+
+// Module Plans Viewbox : un modèle SketchUp analysé (une version = un fichier, identifié par son SHA-256).
+// sceneIndex = index de scène (modules, accessoires, niveaux, avertissements) ; glbUrl = paquet 3D
+// normalisé (mm, Y-up, nettoyé) rechargé à chaque ouverture au lieu de réanalyser le .dae.
+// Table créée par src/utils/migrations.ts (pas de db push au démarrage sur Railway).
+model PlansModelVersion {
+  id            String   @id @default(uuid())
+  projectId     String   @map("project_id")
+  sourceFileId  String?  @map("source_file_id")
+  fileName      String   @map("file_name")
+  sourceUrl     String?  @map("source_url")
+  sha256        String
+  sizeBytes     Int?     @map("size_bytes")
+  status        String   @default("indexed") // indexed | packaged
+  engineVersion String?  @map("engine_version")
+  unitMeter     Float?   @map("unit_meter")
+  upAxis        String?  @map("up_axis")
+  stats         Json     @default("{}")
+  warnings      Json     @default("[]")
+  sceneIndex    Json?    @map("scene_index")
+  glbUrl        String?  @map("glb_url")
+  glbPublicId   String?  @map("glb_public_id")
+  glbSize       Int?     @map("glb_size")
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("PlansModelCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([projectId, sha256])
+  @@index([projectId])
+  @@map("plans_model_versions")
 }
