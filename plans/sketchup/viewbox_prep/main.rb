@@ -253,7 +253,7 @@ module Viewbox
       text = report_lines(a).join("\n")
       text += "\n\nTypes de composants non classés : #{n} (Extensions › Viewbox › Réviser les catégories…)" if n > 0
       puts "[Viewbox] Contrôle du modèle\n#{text}"
-      UI.messagebox("Viewbox — contrôle du modèle\n\n#{text}")
+      UI.messagebox("Viewbox #{VERSION} — contrôle du modèle\n\n#{text}")
     rescue StandardError => e
       fail_with(e)
     end
@@ -403,7 +403,7 @@ module Viewbox
                 "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}", '', *report_lines(a)].join("\n")
       File.write(File.join(dir, "#{base}_rapport.txt"), report)
       puts "[Viewbox] #{report}"
-      UI.messagebox("✓ Export terminé\n\n#{zip_path}\n\nDépose ce .zip (et lui seul) dans les fichiers du projet VEM, puis ouvre Plans Viewbox.\n\n" \
+      UI.messagebox("✓ Export terminé (extension Viewbox #{VERSION})\n\n#{zip_path}\n\nDépose ce .zip (et lui seul) dans les fichiers du projet VEM, puis ouvre Plans Viewbox.\n\n" \
                     "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}")
     rescue StandardError => e
       fail_with(e)

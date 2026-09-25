@@ -109,7 +109,7 @@ module Viewbox
 
     def self.show_review_dialog
       model = Sketchup.active_model
-      dlg = UI::HtmlDialog.new(dialog_title: 'Viewbox — réviser les catégories', preferences_key: 'viewbox_prep_review',
+      dlg = UI::HtmlDialog.new(dialog_title: "Viewbox #{VERSION} — réviser les catégories", preferences_key: 'viewbox_prep_review',
                                width: 1250, height: 780, resizable: true, style: UI::HtmlDialog::STYLE_DIALOG)
       dlg.set_html(File.read(File.join(__dir__, 'review.html'), encoding: 'UTF-8'))
       dlg.add_action_callback('ready') do |_ctx|
