@@ -3,6 +3,7 @@
 import type { Material, Mesh, Object3D, Texture } from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { gunzipSync, gzipSync } from 'fflate';
 
 const TEXTURE_SLOTS = ['map', 'normalMap', 'bumpMap', 'alphaMap', 'emissiveMap', 'specularMap', 'aoMap', 'lightMap', 'roughnessMap', 'metalnessMap'];
 
@@ -35,6 +36,38 @@ export async function exportPackage(root: Object3D): Promise<ArrayBuffer> {
   } finally {
     for (const r of removed) r.mat[r.slot] = r.tex;
   }
+}
+
+/** Taille maximale d'un morceau envoyé au serveur (Cloudinary refuse les fichiers de plus de 10 Mo). */
+export const PACKAGE_PART_BYTES = 9 * 1024 * 1024;
+
+export interface PackedPackage {
+  encoding: 'gzip';
+  /** taille du GLB avant compression */
+  totalSize: number;
+  parts: Uint8Array[];
+}
+
+/** Compresse le GLB (≈ 5 × plus petit) et le découpe en morceaux de moins de 9 Mo. */
+export function packPackage(glb: ArrayBuffer, partBytes = PACKAGE_PART_BYTES): PackedPackage {
+  const z = gzipSync(new Uint8Array(glb), { level: 6 });
+  const parts: Uint8Array[] = [];
+  for (let o = 0; o < z.length; o += partBytes) parts.push(z.subarray(o, Math.min(z.length, o + partBytes)));
+  return { encoding: 'gzip', totalSize: glb.byteLength, parts };
+}
+
+/** Recolle les morceaux et décompresse (ou rend le GLB tel quel s'il n'était pas compressé). */
+export function unpackPackage(parts: ArrayBuffer[], encoding: string | null | undefined): ArrayBuffer {
+  const total = parts.reduce((a, p) => a + p.byteLength, 0);
+  const all = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) {
+    all.set(new Uint8Array(p), o);
+    o += p.byteLength;
+  }
+  if (encoding !== 'gzip') return all.buffer;
+  const out = gunzipSync(all);
+  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
 }
 
 export interface LoadedPackage {

@@ -7,16 +7,15 @@ import { sha256Hex } from '../core/hash';
 import { fmtBytes, fmtInt } from '../core/report';
 import { ingest } from '../ingest/pipeline';
 import { createWorkerRunner } from '../ingest/cleanup';
-import { exportPackage, loadPackage } from '../ingest/package';
+import { exportPackage, loadPackage, packPackage } from '../ingest/package';
 import type { ModelVersion, ProjectFile } from '../api/vem';
-import { PROJECT_ID, downloadWithProgress, vem } from '../api/vem';
+import { PROJECT_ID, downloadPackage, downloadWithProgress, vem } from '../api/vem';
 import { Inspector } from './Inspector';
 import type { SaveState } from './Inspector';
 import { Workspace } from './Workspace';
 import { ProgressBar } from './common';
 
 const MODEL_EXTS = ['zip', 'dae', 'glb'];
-const MAX_PACKAGE_BYTES = 49.5 * 1024 * 1024; // limite d'upload VEM : 50 Mo
 
 const extOf = (f: ProjectFile) => (f.fileName || f.fileUrl || '').split('.').pop()?.toLowerCase() ?? '';
 
@@ -108,20 +107,23 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         warnings: res.index.warnings,
         sceneIndex: res.index,
       });
-      setCurrent({ index: res.index, model: saved, saveState: 'packaging' });
+      // le paquet 3D reste en mémoire : vue 3D et vues 2D utilisables même si l'envoi échoue
       const glb = await exportPackage(res.root);
-      if (glb.byteLength > MAX_PACKAGE_BYTES) {
+      setCurrent({ index: res.index, model: saved, glb, saveState: 'packaging' });
+      // compressé (≈ 5 × plus petit) et découpé en morceaux de moins de 10 Mo (limite Cloudinary)
+      const packed = packPackage(glb);
+      let packaged = saved;
+      for (let i = 0; i < packed.parts.length; i++) {
         setCurrent({
           index: res.index,
-          model: saved,
+          model: packaged,
           glb,
-          saveState: 'saved',
-          saveMessage: `Paquet 3D trop lourd pour VEM (${fmtBytes(glb.byteLength)} > 50 Mo) : purge le modèle ou retire les textures inutiles. L'analyse reste consultable (vue 3D et vues 2D disponibles jusqu'à la fermeture de cette page).`,
+          saveState: 'packaging',
+          saveMessage: packed.parts.length > 1 ? `Envoi du paquet 3D (${i + 1}/${packed.parts.length})…` : undefined,
         });
-      } else {
-        const packaged = await vem.uploadPackage(saved.id, glb);
-        setCurrent({ index: res.index, model: packaged, glb, saveState: 'packaged' });
+        packaged = await vem.uploadPackagePart(saved.id, packed.parts[i], i, packed.parts.length, packed.encoding, packed.totalSize);
       }
+      setCurrent({ index: res.index, model: packaged, glb, saveState: 'packaged' });
       await refresh();
     } catch (e) {
       const err = e as Error;
@@ -129,7 +131,9 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
       if (err.name === 'AbortError') setError('Analyse annulée.');
       else {
         console.error('[plans] analyse', err);
-        setCurrent((c) => (c ? { ...c, saveState: 'error', saveMessage: err.message } : c));
+        setCurrent((c) =>
+          c ? { ...c, saveState: 'error', saveMessage: `${err.message}${c.glb ? ' — la vue 3D et les vues 2D restent utilisables tant que cette page est ouverte.' : ''}` } : c,
+        );
         if (!root) setError(`Échec de l'analyse : ${err.message}`);
       }
     } finally {
@@ -185,7 +189,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
     setReload({ busy: true });
     try {
       const t0 = performance.now();
-      const data = await downloadWithProgress(m.glbUrl);
+      const data = await downloadPackage(m);
       const tDownload = performance.now() - t0;
       const pkg = await loadPackage(data);
       const total = performance.now() - t0;

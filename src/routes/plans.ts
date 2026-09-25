@@ -4,6 +4,7 @@
 // (public/plans, sources dans plans/) ; le serveur ne fait que stocker le résultat.
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
@@ -14,8 +15,21 @@ const db = prisma as any; // modèle ajouté au schéma ; client typé régéné
 const LIST_SELECT = {
   id: true, projectId: true, sourceFileId: true, fileName: true, sha256: true, sizeBytes: true,
   status: true, engineVersion: true, unitMeter: true, upAxis: true, stats: true, warnings: true,
-  glbUrl: true, glbSize: true, settings: true, createdById: true, createdAt: true, updatedAt: true,
+  glbUrl: true, glbSize: true, glbParts: true, glbEncoding: true, settings: true, createdById: true, createdAt: true, updatedAt: true,
 };
+
+type PackagePart = { url: string; publicId: string; size: number };
+
+/** Supprime de Cloudinary tous les fichiers du paquet 3D (ancien paquet unique ou morceaux). */
+async function deletePackageAssets(m: { glbPublicId?: string | null; glbParts?: unknown }): Promise<void> {
+  const ids = new Set<string>();
+  if (m.glbPublicId) ids.add(m.glbPublicId);
+  if (Array.isArray(m.glbParts)) for (const p of m.glbParts as PackagePart[]) if (p?.publicId) ids.add(p.publicId);
+  for (const id of ids) await deleteFromCloudinary(id, 'raw');
+}
+
+// champ JSON nullable : Prisma exige DbNull (et non null) pour remettre la colonne à NULL
+const PACKAGE_RESET = { glbUrl: null, glbPublicId: null, glbSize: null, glbParts: Prisma.DbNull, glbEncoding: null };
 
 /** Réglages d'un modèle (face avant de chaque Viewbox, caméras enregistrées) : objet JSON, fusion clé par clé. */
 function cleanSettings(v: unknown): Record<string, unknown> {
@@ -72,15 +86,15 @@ router.post('/project/:projectId/models', async (req: AuthRequest, res: Response
     };
     const existing = await db.plansModelVersion.findUnique({
       where: { projectId_sha256: { projectId, sha256: String(b.sha256) } },
-      select: { id: true, glbPublicId: true },
+      select: { id: true, glbPublicId: true, glbParts: true },
     });
     let model;
     if (existing) {
       // Réanalyse du même fichier (règles ou moteur modifiés) : l'ancien paquet 3D n'est plus valable.
-      if (existing.glbPublicId) await deleteFromCloudinary(existing.glbPublicId, 'raw');
+      await deletePackageAssets(existing);
       model = await db.plansModelVersion.update({
         where: { id: existing.id },
-        data: { ...data, glbUrl: null, glbPublicId: null, glbSize: null },
+        data: { ...data, ...PACKAGE_RESET },
         select: LIST_SELECT,
       });
     } else {
@@ -116,6 +130,47 @@ router.post('/models/:id/package', upload.single('file'), async (req: AuthReques
   } catch (err) { next(err); }
 });
 
+// POST /plans/models/:id/package/part — paquet GLB compressé, envoyé en morceaux (Cloudinary refuse les
+// fichiers de plus de 10 Mo sur l'offre actuelle). Multipart : file + index, count, encoding, totalSize.
+// Le morceau 0 remplace l'ancien paquet ; au dernier morceau, le paquet devient disponible.
+router.post('/models/:id/package/part', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) throw new AppError('Morceau du paquet manquant', 400);
+    const index = Number(req.body?.index);
+    const count = Number(req.body?.count);
+    const totalSize = Number(req.body?.totalSize);
+    const encoding = req.body?.encoding === 'gzip' ? 'gzip' : null;
+    if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || count > 200 || index < 0 || index >= count) {
+      throw new AppError('index / count invalides', 400);
+    }
+    const model = await db.plansModelVersion.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, projectId: true, glbPublicId: true, glbParts: true },
+    });
+    if (!model) throw new AppError('Modèle introuvable', 404);
+    let parts: PackagePart[] = Array.isArray(model.glbParts) ? [...(model.glbParts as PackagePart[])] : [];
+    if (index === 0) {
+      await deletePackageAssets(model);
+      parts = [];
+      await db.plansModelVersion.update({ where: { id: model.id }, data: { ...PACKAGE_RESET, status: 'indexed' } });
+    }
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `plans/${model.projectId}`, { resource_type: 'raw' });
+    parts[index] = { url, publicId, size: req.file.size };
+    const complete = index === count - 1;
+    if (complete && (parts.length !== count || parts.some((p) => !p))) {
+      throw new AppError('Paquet incomplet : recommence l’enregistrement', 400);
+    }
+    const updated = await db.plansModelVersion.update({
+      where: { id: model.id },
+      data: complete
+        ? { glbParts: parts, glbUrl: parts[0].url, glbPublicId: null, glbSize: Number.isFinite(totalSize) ? Math.round(totalSize) : null, glbEncoding: encoding, status: 'packaged' }
+        : { glbParts: parts },
+      select: LIST_SELECT,
+    });
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
 // PATCH /plans/models/:id/settings — { settings: { fronts?, cameras?, … } } fusionné avec l'existant
 router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -135,9 +190,9 @@ router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, nex
 // DELETE /plans/models/:id
 router.delete('/models/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const model = await db.plansModelVersion.findUnique({ where: { id: req.params.id }, select: { id: true, glbPublicId: true } });
+    const model = await db.plansModelVersion.findUnique({ where: { id: req.params.id }, select: { id: true, glbPublicId: true, glbParts: true } });
     if (!model) throw new AppError('Modèle introuvable', 404);
-    if (model.glbPublicId) await deleteFromCloudinary(model.glbPublicId, 'raw');
+    await deletePackageAssets(model);
     await db.plansModelVersion.delete({ where: { id: model.id } });
     res.json({ success: true });
   } catch (err) { next(err); }

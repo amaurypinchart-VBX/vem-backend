@@ -2,6 +2,7 @@
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
 import type { FrontSide, Vec3 } from '../core/views';
+import { unpackPackage } from '../ingest/package';
 
 const params = new URLSearchParams(window.location.search);
 export const PROJECT_ID = params.get('projectId') ?? '';
@@ -98,6 +99,9 @@ export interface ModelVersion {
   warnings: Warning[];
   glbUrl: string | null;
   glbSize: number | null;
+  /** paquet compressé découpé en morceaux (Cloudinary : 10 Mo maximum par fichier) */
+  glbParts?: Array<{ url: string; size: number }> | null;
+  glbEncoding?: string | null;
   settings?: ModelSettings;
   createdAt: string;
   updatedAt: string;
@@ -117,12 +121,35 @@ export const vem = {
     fd.append('file', new Blob([glb], { type: 'model/gltf-binary' }), 'package.glb');
     return api<ModelVersion>('POST', `/plans/models/${id}/package`, fd);
   },
+  uploadPackagePart: (id: string, part: Uint8Array, index: number, count: number, encoding: string, totalSize: number) => {
+    const fd = new FormData();
+    fd.append('index', String(index));
+    fd.append('count', String(count));
+    fd.append('encoding', encoding);
+    fd.append('totalSize', String(totalSize));
+    fd.append('file', new Blob([part as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' }), `package.glb.gz.${index}`);
+    return api<ModelVersion>('POST', `/plans/models/${id}/package/part`, fd);
+  },
   deleteModel: (id: string) => api<void>('DELETE', `/plans/models/${id}`),
   saveSettings: (id: string, settings: ModelSettings) =>
     api<{ id: string; settings: ModelSettings }>('PATCH', `/plans/models/${id}/settings`, { settings }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),
   saveRules: (value: ClassificationRules) => api<ClassificationRules>('PUT', `/settings/${RULES_SETTING_KEY}`, { value }),
 };
+
+/** Télécharge le paquet 3D d'un modèle (morceaux compressés, ou ancien fichier unique) : GLB prêt à lire. */
+export async function downloadPackage(m: ModelVersion, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<ArrayBuffer> {
+  const parts = m.glbParts?.length ? m.glbParts : m.glbUrl ? [{ url: m.glbUrl, size: m.glbSize ?? 0 }] : [];
+  if (!parts.length) throw new Error('Paquet 3D absent : réanalyse le fichier.');
+  const total = parts.reduce((a, p) => a + (p.size || 0), 0) || 1;
+  const buffers: ArrayBuffer[] = [];
+  let done = 0;
+  for (const p of parts) {
+    buffers.push(await downloadWithProgress(p.url, (f) => onProgress?.(Math.min(1, (done + f * (p.size || 0)) / total)), signal));
+    done += p.size || 0;
+  }
+  return unpackPackage(buffers, m.glbParts?.length ? m.glbEncoding : null);
+}
 
 /** Téléchargement d'un fichier (Cloudinary, public) avec progression. */
 export async function downloadWithProgress(url: string, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<ArrayBuffer> {

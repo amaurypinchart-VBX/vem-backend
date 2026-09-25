@@ -865,6 +865,12 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "settings" JSONB NOT NULL DEFAULT '{}'::jsonb;
     `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_parts" JSONB;
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "plans_model_versions" ADD COLUMN IF NOT EXISTS "glb_encoding" TEXT;
+    `);
     logger.info('[migration] table plans_model_versions créée si absente');
   } catch (e: any) {
     logger.warn(`[migration] table plans_model_versions : ${e.message}`);

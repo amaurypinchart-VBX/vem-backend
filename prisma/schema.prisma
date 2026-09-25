@@ -905,6 +905,8 @@ model PlansModelVersion {
   glbUrl        String?  @map("glb_url")
   glbPublicId   String?  @map("glb_public_id")
   glbSize       Int?     @map("glb_size")
+  glbParts      Json?    @map("glb_parts") // paquet compressé découpé : [{ url, publicId, size }]
+  glbEncoding   String?  @map("glb_encoding") // "gzip" si compressé
   settings      Json     @default("{}") // face avant des Viewbox, caméras enregistrées…
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")

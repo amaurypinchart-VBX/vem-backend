@@ -38,3 +38,22 @@ describe('captures', () => {
     expect(finishCapture(new Uint8Array(16), 2, 2, 3, 'white')).toBeNull();
   });
 });
+
+describe('paquet 3D compressé en morceaux', () => {
+  it('compresse, découpe sous la taille maximale et se recolle à l’identique', async () => {
+    const { packPackage, unpackPackage } = await import('../src/ingest/package');
+    const glb = new Uint8Array(300_000);
+    let seed = 12345;
+    for (let i = 0; i < glb.length; i++) glb[i] = i % 3 === 0 ? 0 : (seed = (seed * 1103515245 + 12345) & 0x7fffffff) >> 16; // peu compressible
+    const packed = packPackage(glb.buffer, 20_000);
+    expect(packed.encoding).toBe('gzip');
+    expect(packed.totalSize).toBe(300_000);
+    expect(packed.parts.length).toBeGreaterThan(1);
+    expect(packed.parts.every((p) => p.byteLength <= 20_000)).toBe(true);
+    const back = new Uint8Array(unpackPackage(packed.parts.map((p) => p.slice().buffer), 'gzip'));
+    expect(back.length).toBe(glb.length);
+    expect(back.every((v, i) => v === glb[i])).toBe(true);
+    // ancien paquet (un seul fichier non compressé)
+    expect(new Uint8Array(unpackPackage([glb.slice(0, 10).buffer], null))).toEqual(glb.slice(0, 10));
+  });
+});

@@ -8,7 +8,7 @@ import { compileRules } from '../core/classification';
 import type { FrontSide } from '../core/views';
 import { defaultFront } from '../core/views';
 import type { ModelSettings, ModelVersion } from '../api/vem';
-import { downloadWithProgress, vem } from '../api/vem';
+import { downloadPackage, vem } from '../api/vem';
 import { loadPackage } from '../ingest/package';
 import type { LoadedScene } from '../scene/loadedScene';
 import { computeFrames, makeLoadedScene } from '../scene/loadedScene';
@@ -75,7 +75,7 @@ export function Workspace({ index, model, glb, rules, onBack, inspector }: Props
         if (!data) {
           if (!model?.glbUrl) throw new Error('Paquet 3D absent : réanalyse le fichier (il est peut-être trop lourd pour être enregistré).');
           setLoading({ label: 'Téléchargement du modèle 3D', fraction: 0 });
-          data = await downloadWithProgress(model.glbUrl, (f) => setLoading({ label: 'Téléchargement du modèle 3D', fraction: f * 0.8 }));
+          data = await downloadPackage(model, (f) => setLoading({ label: 'Téléchargement du modèle 3D', fraction: f * 0.8 }));
         }
         setLoading({ label: 'Lecture du modèle 3D', fraction: 0.85 });
         await new Promise((r) => setTimeout(r, 0));
