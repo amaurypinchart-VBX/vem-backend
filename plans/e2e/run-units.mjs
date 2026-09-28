@@ -56,12 +56,20 @@ const dimTexts = async () => (await page.locator('.sheet-paper svg text').allTex
 const before = await dimTexts();
 await page.mouse.click(box.x + 362 * mm, box.y + 176 * mm);
 await page.waitForTimeout(500);
-const chips = page.locator('.prop-field', { hasText: 'Unités affichées' }).locator('label.chip-toggle');
-console.log('Unités affichées (vue) :', (await chips.allInnerTexts()).join(', '));
-await chips.filter({ hasText: 'Bar VIP' }).click();
-await page.waitForFunction(() => !document.body.innerText.includes('Calcul de la vue…'), null, { timeout: 120000 });
+const choice = page.locator('.unit-choice');
+const checked = async () => {
+  const out = [];
+  for (const l of await choice.locator('label.check').all()) if (await l.locator('input').isChecked()) out.push((await l.innerText()).trim());
+  return out.join(' + ');
+};
+console.log('Unités affichées (vue) :', await checked());
+// plusieurs unités : on décoche « Bar VIP » (unité 2) → les autres restent, une seule mise à jour sur « Appliquer »
+await choice.locator('label.check', { hasText: 'Bar VIP' }).locator('input').uncheck();
+await choice.screenshot({ path: shots + 'units-choix.png' });
+await choice.getByRole('button', { name: 'Appliquer' }).click();
+await choice.getByRole('button', { name: /Appliquer|Calcul/ }).waitFor({ state: 'detached', timeout: 120000 });
 await page.waitForTimeout(1000);
-console.log('Bar VIP masquée :', (await chips.filter({ hasText: 'Bar VIP' }).getAttribute('class')).includes('off') ? 'OK' : 'NON', '— cotes', before, '→', await dimTexts());
+console.log('Après « Appliquer » :', await checked(), '— cotes', before, '→', await dimTexts());
 await page.locator('.sheet-canvas').screenshot({ path: shots + 'units-facade-sans-unite2.png' });
 await page.keyboard.press('Escape');
 await page.keyboard.press('Control+z');

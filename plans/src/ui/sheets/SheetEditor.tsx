@@ -700,7 +700,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onPickImage={(item, img) => pickImage(item.id, img)}
           onOpenPicker={(item) => setPicker({ itemId: item.id })}
           onAutoDimension={(vp) => autoDimension([vp])}
-          onSetInclude={(vp, include, label) => void setViewportInclude(vp, include, label)}
+          onSetInclude={(vp, include, label) => setViewportInclude(vp, include, label)}
           onSyncProject={() => void syncProject(true)}
           syncMessage={syncMessage}
         />

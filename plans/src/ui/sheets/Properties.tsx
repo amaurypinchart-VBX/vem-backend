@@ -1,5 +1,5 @@
 // Panneau de droite de l'éditeur : propriétés de l'élément sélectionné, de la planche, et cartouche du jeu.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { SceneIndex } from '../../core/types';
 import type { ViewKind } from '../../core/views';
@@ -61,7 +61,7 @@ function ViewportProps({
   scene: LoadedScene;
   units: DrawingSetUnit[];
   onAutoDimension: () => void;
-  onSetInclude: (include: string[], label: string) => void;
+  onSetInclude: (include: string[], label: string) => Promise<void>;
   dimCount: number;
 }) {
   const { index } = scene;
@@ -95,11 +95,26 @@ function ViewportProps({
   const worldView = vp.request.view.kind === 'custom' || typeof vp.request.view.frame !== 'object';
   const include = vp.request.subset.include;
   const nodeOf = useMemo(() => new Map(index.modules.map((m) => [m.id, m.nodeId])), [index]);
-  const shownUnits = units.filter((u) => u.moduleIds.some((id) => include.includes(nodeOf.get(id) ?? '')));
-  const toggleUnit = (u: DrawingSetUnit, show: boolean) => {
-    const own = new Set(subsetForUnit(index, u));
-    const next = show ? [...include.filter((id) => !own.has(id)), ...own] : include.filter((id) => !own.has(id));
-    onSetInclude(next, show ? `Afficher ${u.name}` : `Masquer ${u.name}`);
+  const shown = units.filter((u) => u.moduleIds.some((id) => include.includes(nodeOf.get(id) ?? ''))).map((u) => u.n);
+  // choix en cours (plusieurs unités) : la vue n'est recalculée qu'une fois, sur « Appliquer »
+  const [pending, setPending] = useState<number[] | null>(null);
+  const [applying, setApplying] = useState(false);
+  useEffect(() => {
+    setPending(null);
+    setApplying(false);
+  }, [vp.id, include]);
+  const chosen = pending ?? shown;
+  const changed = chosen.length !== shown.length || chosen.some((n) => !shown.includes(n));
+  const applyUnits = () => {
+    let next = include;
+    for (const u of units) {
+      const own = new Set(subsetForUnit(index, u));
+      const on = shown.includes(u.n);
+      if (chosen.includes(u.n) && !on) next = [...next.filter((id) => !own.has(id)), ...own];
+      else if (!chosen.includes(u.n) && on) next = next.filter((id) => !own.has(id));
+    }
+    setApplying(true);
+    void onSetInclude(next, `Unités affichées : ${units.filter((u) => chosen.includes(u.n)).map((u) => u.name).join(', ')}`).finally(() => setApplying(false));
   };
   const fitNow = () => {
     if (!data?.lw) return;
@@ -146,19 +161,33 @@ function ViewportProps({
         </select>
       </Field>
       {worldView && units.length > 1 && (
-        <Field label="Unités affichées">
-          <div className="chips-select" title="Décocher une unité la retire de cette vue (utile en vue de face quand les unités se superposent)">
-            {units.map((u) => {
-              const on = shownUnits.includes(u);
-              return (
-                <label key={u.n} className={`chip-toggle${on ? '' : ' off'}`}>
-                  <input type="checkbox" checked={on} disabled={on && shownUnits.length === 1} onChange={() => toggleUnit(u, !on)} />
-                  <span className="chip">{u.name}</span>
-                </label>
-              );
-            })}
+        <div className="prop-field unit-choice" title="Coche les unités à montrer dans cette vue (utile en vue de face quand les unités se superposent), puis « Appliquer »">
+          <span>Unités affichées</span>
+          <div className="unit-checks">
+            {units.map((u) => (
+              <label key={u.n} className="check">
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(u.n)}
+                  disabled={applying}
+                  onChange={(e) => setPending(e.target.checked ? [...chosen, u.n].sort((a, b) => a - b) : chosen.filter((n) => n !== u.n))}
+                />
+                {u.name}
+              </label>
+            ))}
           </div>
-        </Field>
+          {changed && (
+            <div className="row">
+              <button className="btn small primary" disabled={!chosen.length || applying} onClick={applyUnits}>
+                {applying ? 'Calcul…' : 'Appliquer'}
+              </button>
+              <button className="btn small ghost" disabled={applying} onClick={() => setPending(null)}>
+                Annuler
+              </button>
+              {!chosen.length && <span className="hint">au moins une unité</span>}
+            </div>
+          )}
+        </div>
       )}
       <Field label="Vue">
         <select value={kind} onChange={(e) => setReq({ view: { kind: e.target.value as ViewKind, frame: vp.request.view.kind === 'custom' ? 'world' : vp.request.view.frame } }, 'Changer la vue', { scale: 0 })}>
@@ -526,7 +555,7 @@ export function PropertiesPanel({
   onPickImage: (item: Image3dItem, img: PickableImage) => void;
   onOpenPicker: (item: Image3dItem) => void;
   onAutoDimension: (vp: ViewportItem) => void;
-  onSetInclude: (vp: ViewportItem, include: string[], label: string) => void;
+  onSetInclude: (vp: ViewportItem, include: string[], label: string) => Promise<void>;
   onSyncProject: () => void;
   syncMessage: string;
 }) {
