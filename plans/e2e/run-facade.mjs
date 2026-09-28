@@ -1,4 +1,4 @@
-// Test navigateur : repères façade (hachure « // » des vitres, portes et murs en couleur) sur les élévations d'un jeu
+// Test navigateur : repères façade (hachure « // » des vitres, croix sur les murs, portes en couleur) sur les élévations d'un jeu
 // généré, puis détail type « coupes profils » ajouté, mis à 1:5, conservé à la réouverture.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -25,6 +25,8 @@ await page.getByText('paquet 3D enregistrés').waitFor({ timeout: 300000 });
 await page.getByRole('button', { name: 'Planches A1' }).click();
 await page.getByRole('button', { name: /Générer un jeu de plans/ }).click();
 check('assistant : repères façade cochés par défaut', await page.getByLabel(/Repères façade/).isChecked());
+// jeu classique (sans séparation en unités) : A0.2 grands côtés, A0.3 petits côtés, A0.5 première Viewbox
+await page.getByLabel(/Séparer en/).uncheck();
 await page.getByRole('button', { name: 'Générer', exact: true }).click();
 await page.locator('.sheet-editor').waitFor({ timeout: 900000 });
 await page.waitForTimeout(1500);
@@ -46,6 +48,9 @@ for (const i of [2, 3, 5]) {
   const n = await page.locator('.sheet-thumb .thumb-foot b').nth(i).innerText();
   console.log(`   ${n} : traits de couleur`, JSON.stringify(m));
   check(`${n} : repères façade présents`, Object.keys(m).length > 0);
+  // croix des murs : chemins noirs épais de 0,25 mm × échelle (calque mark:CROSS)
+  const crosses = await page.evaluate(() => [...document.querySelectorAll('.sheet-paper svg path[stroke="#000"]')].filter((p) => p.closest('g[transform]') && p.getAttribute('stroke-linecap') === null && /L/.test(p.getAttribute('d') || '')).length);
+  console.log(`   ${n} : chemins noirs`, crosses);
   await page.locator('.sheet-canvas').screenshot({ path: shots + `facade-${n}.png` });
 }
 // la vue de dessus (A0.1) n'a pas de hachure de vitrage

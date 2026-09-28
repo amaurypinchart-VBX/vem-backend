@@ -1,13 +1,13 @@
-// Repères façade : hachure « // » des vitres visibles, vitres cachées ou vues de profil non marquées, portes et murs
-// repris dans leur couleur de légende.
+// Repères façade : hachure « // » des vitres visibles, vitres cachées ou vues de profil non marquées, croix noire sur
+// les murs visibles, portes reprises dans leur couleur de légende.
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Mesh, MeshBasicMaterial } from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { viewBasis } from '../src/core/views';
-import { clipSegment, facadeMarkLayers, glassHatch, glassPanes, isElevation } from '../src/linework/facadeMarks';
+import { WALL_CROSS_LAYER, clipSegment, facadeMarkLayers, glassHatch, glassPanes, isElevation, wallCross } from '../src/linework/facadeMarks';
 import { makeGlassTest } from '../src/linework/packets';
-import { inkOf } from '../src/linework/svg';
+import { inkOf, markColor } from '../src/linework/svg';
 import type { LoadedScene } from '../src/scene/loadedScene';
 import type { Linework2D } from '../src/linework/types';
 
@@ -103,21 +103,47 @@ describe('repères façade', () => {
     const meshes = [visible, behindWall, wall, front, back, side];
     const scene = fakeScene(meshes, { g1: 'VITRE-SEAMLESS', g2: 'VITRE-SEAMLESS', g3: 'VITRE', g4: 'VITRE', g5: 'VITRE', w1: 'MUR-LOURD' });
     const layers = facadeMarkLayers(scene, meshes.map((m) => m.userData.vbxId), basis, emptyLw, isGlass, { 'VITRE-SEAMLESS': '#1030FF', VITRE: '#1EAAF1' });
-    const marked = new Set(layers.flatMap((l) => l.sourceNodeIds ?? []));
+    const marked = new Set(layers.filter((l) => l.key !== WALL_CROSS_LAYER).flatMap((l) => l.sourceNodeIds ?? []));
     expect([...marked].sort()).toEqual(['g1', 'g3']);
     expect(layers.find((l) => l.key === 'mark:VITRE-SEAMLESS')?.polylines).toHaveLength(3);
   });
 
-  it('portes et murs : leurs traits dans leur couleur, pas les autres', () => {
+  it('portes : leurs traits dans leur couleur ; murs, structure : pas de traits en couleur', () => {
     const lw: Linework2D = {
       ...emptyLw,
       layers: [{ key: 'visible', polylines: [Float64Array.from([0, 0, 1, 0]), Float64Array.from([0, 1, 1, 1]), Float64Array.from([0, 2, 1, 2])], sourceNodeIds: ['door', 'wall', 'struct'] }],
     };
     const scene = fakeScene([], { door: 'PORTE-DOUBLE', wall: 'MUR-LEGER', struct: 'STRUCTURE' });
     const layers = facadeMarkLayers(scene, [], basis, lw, isGlass, { 'PORTE-DOUBLE': '#FF3712', 'MUR-LEGER': '#FFFB14' });
-    expect(layers.map((l) => [l.key, l.sourceNodeIds])).toEqual([
-      ['mark:PORTE-DOUBLE', ['door']],
-      ['mark:MUR-LEGER', ['wall']],
+    expect(layers.map((l) => [l.key, l.sourceNodeIds])).toEqual([['mark:PORTE-DOUBLE', ['door']]]);
+  });
+
+  it('murs : croix noire d’angle à angle sur le mur visible, pas sur le mur caché, vu de profil ou derrière une vitre', () => {
+    const wall = facing('w1', 0, 0, wallMat);
+    const behindWall = facing('w2', 2000, 0, wallMat);
+    const front = facing('w3', 2000, 500, wallMat);
+    const behindGlass = facing('w4', 4000, 0, wallMat);
+    const glassFront = facing('g1', 4000, 600);
+    const side = place(box('w5', 1000, 2200, 10, 0, 0, 0, wallMat), at(6000, 0));
+    if (Math.abs(t[0]) <= 0.5) side.rotation.y = Math.PI / 2;
+    side.updateMatrixWorld(true);
+    const meshes = [wall, behindWall, front, behindGlass, glassFront, side];
+    const scene = fakeScene(meshes, { w1: 'MUR-LEGER', w2: 'MUR-LOURD', w3: 'MUR-LOURD', w4: 'MUR-LEGER', g1: 'VITRE', w5: 'MUR-LEGER' });
+    const layers = facadeMarkLayers(scene, meshes.map((m) => m.userData.vbxId), basis, emptyLw, isGlass, { 'MUR-LEGER': '#FFFB14', 'MUR-LOURD': '#17FF28' });
+    const cross = layers.find((l) => l.key === WALL_CROSS_LAYER)!;
+    expect([...new Set(cross.sourceNodeIds)].sort()).toEqual(['w1', 'w3']);
+    expect(cross.polylines).toHaveLength(4);
+    // w1 : 1000 × 2200 mm centré en x = 0 → diagonales d'angle à angle
+    const w1 = cross.polylines.filter((_, i) => cross.sourceNodeIds![i] === 'w1').map((pl) => [...pl].map(Math.round));
+    expect(w1).toEqual([
+      [-500, 0, 500, 2200],
+      [-500, 2200, 500, 0],
+    ]);
+    expect(layers.some((l) => l.key.startsWith('mark:MUR'))).toBe(false);
+    expect(markColor(WALL_CROSS_LAYER, {})).toBe('#000');
+    expect(wallCross(0, 0, 10, 20).map((pl) => [...pl])).toEqual([
+      [0, 0, 10, 20],
+      [0, 20, 10, 0],
     ]);
   });
 

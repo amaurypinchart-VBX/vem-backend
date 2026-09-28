@@ -182,7 +182,7 @@ export function Views2DPage({ scene, provider, framesVersion, categoryColors }: 
               <input type="checkbox" checked={style.colorByCategory} onChange={(e) => setStyle({ ...style, colorByCategory: e.target.checked })} />
               Colorer par catégorie (dessus)
             </label>
-            <label className="check" title="Vues de face : hachure « // » sur les vitres visibles, portes et murs dans leur couleur de légende">
+            <label className="check" title="Vues de face : hachure « // » sur les vitres visibles, croix sur les murs visibles, portes dans leur couleur de légende">
               <input type="checkbox" checked={!!style.facadeMarks} onChange={(e) => setStyle({ ...style, facadeMarks: e.target.checked })} />
               Repères façade (faces)
             </label>

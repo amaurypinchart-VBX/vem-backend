@@ -279,8 +279,8 @@ function Wizard({
             ))}
           </div>
           <label>Vues de face</label>
-          <label className="check" title="Hachure « // » sur les vitres visibles, portes et murs dans leur couleur de légende (modifiable ensuite vue par vue)">
-            <input type="checkbox" checked={facadeMarks} onChange={(e) => setFacadeMarks(e.target.checked)} /> Repères façade : vitres //, portes et murs en couleur
+          <label className="check" title="Hachure « // » sur les vitres visibles, croix sur les murs visibles, portes dans leur couleur de légende (modifiable ensuite vue par vue)">
+            <input type="checkbox" checked={facadeMarks} onChange={(e) => setFacadeMarks(e.target.checked)} /> Repères façade : vitres //, murs en croix, portes en couleur
           </label>
           <label>Unités</label>
           {detected.length > 1 ? (

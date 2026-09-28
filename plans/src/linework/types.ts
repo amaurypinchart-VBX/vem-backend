@@ -19,7 +19,7 @@ export interface LineStyleSpec {
   detailMinPaperMm: number;
   /** trait épais de couleur le long de la face du module qui porte l'accessoire (vues de dessus) */
   colorByCategory: boolean;
-  /** vues de face : hachures de vitrage « // » sur les vitres visibles, portes et murs dans leur couleur de légende */
+  /** vues de face : hachures de vitrage « // » sur les vitres visibles, croix sur les murs visibles, portes dans leur couleur de légende */
   facadeMarks?: boolean;
 }
 

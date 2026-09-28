@@ -186,9 +186,9 @@ function ViewportProps({
           <input type="checkbox" checked={vp.request.style.colorByCategory} onChange={(e) => setReq({ style: { ...vp.request.style, colorByCategory: e.target.checked } }, 'Style')} />
           Colorer par catégorie (dessus)
         </label>
-        <label className="check" title="Vues de face : hachure « // » sur les vitres visibles (comme sur les plans Viewbox), portes et murs dans leur couleur de légende">
+        <label className="check" title="Vues de face : hachure « // » sur les vitres visibles, croix sur les murs visibles (comme sur les plans Viewbox), portes dans leur couleur de légende">
           <input type="checkbox" checked={!!vp.request.style.facadeMarks} onChange={(e) => setReq({ style: { ...vp.request.style, facadeMarks: e.target.checked } }, 'Repères façade')} />
-          Repères façade (vitres //, portes, murs)
+          Repères façade (vitres //, murs ✕, portes)
         </label>
         <label className="check">
           <input

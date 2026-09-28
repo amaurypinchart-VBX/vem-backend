@@ -25,8 +25,9 @@ export function inkOf(color: string): string {
   return `#${[r, g, b].map((c) => Math.round(c * k).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Couleur d'un calque « mark:CATÉGORIE » (repères façade). */
+/** Couleur d'un calque « mark:CATÉGORIE » (repères façade) ; croix des murs (« mark:CROSS ») en noir. */
 export function markColor(key: string, colors: Record<string, string> | Map<string, string>): string {
+  if (key === 'mark:CROSS') return '#000';
   const cat = key.slice(5);
   const c = colors instanceof Map ? colors.get(cat) : colors[cat];
   return inkOf(c ?? GLASS_MARK_COLOR);
