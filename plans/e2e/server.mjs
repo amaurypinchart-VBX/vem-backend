@@ -17,6 +17,13 @@ const PORT = Number(process.env.PORT || 4173);
 const models = new Map();
 const sets = new Map();
 const blobs = new Map();
+// projet VEM (PATCH /projects/p1 = modification faite dans VEM, pour tester la reprise dans le cartouche)
+const project = {
+  id: 'p1', name: 'NVIDIA Hospitality Berlin', internalNumber: '6066RNVIDVIE', address: 'Messedamm 22', city: 'Berlin', installationStart: '2026-10-05T00:00:00Z',
+  client: { name: 'Image Construction Messe- und Eventbau GmbH' },
+  technicalManager: { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', email: 'amaury.pinchart@span-tech.com' },
+  team: [{ role: 'sales_engineer', user: { id: 'u2', firstName: 'Norick', lastName: 'Palm', email: 'norick.palm@span-tech.com' } }],
+};
 let failUploads = Number(process.env.FAIL_UPLOADS || 0);
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
@@ -46,13 +53,8 @@ http.createServer(async (req, res) => {
   if (p.startsWith('/api/v1/')) {
     if (req.headers.authorization !== 'Bearer tok') return json(res, 'Non autorisé', 401);
     const a = p.slice(7);
-    if (a === '/projects/p1')
-      return json(res, {
-        id: 'p1', name: 'NVIDIA Hospitality Berlin', internalNumber: '6066RNVIDVIE', address: 'Messedamm 22', city: 'Berlin', installationStart: '2026-10-05T00:00:00Z',
-        client: { name: 'Image Construction Messe- und Eventbau GmbH' },
-        technicalManager: { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', email: 'amaury.pinchart@span-tech.com' },
-        team: [{ role: 'sales_engineer', user: { id: 'u2', firstName: 'Norick', lastName: 'Palm', email: 'norick.palm@span-tech.com' } }],
-      });
+    if (a === '/projects/p1' && req.method === 'PATCH') { Object.assign(project, JSON.parse((await body(req)).toString())); return json(res, project); }
+    if (a === '/projects/p1') return json(res, project);
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
     if (a.startsWith('/settings/')) return json(res, null);

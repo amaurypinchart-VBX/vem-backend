@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { STANDARD_SCALES, fitScale, viewportTransform } from '../src/sheets/scales';
 import { generateDrawingSet, renumber } from '../src/sheets/generate';
-import { titleBlockFromProject } from '../src/sheets/titleBlock';
+import { PROJECT_FIELDS, projectChanges, projectValues, titleBlockFromProject } from '../src/sheets/titleBlock';
 import { actions, useEditor } from '../src/sheets/store';
 import { SheetSvg, wrapText } from '../src/sheets/SheetSvg';
 import { emptyTitleBlock, hasRect } from '../src/sheets/types';
@@ -150,6 +150,38 @@ describe('cartouche et rendu', () => {
     expect(tb.salesEngineer).toEqual({ name: 'Norick Palm', email: 'norick@x.com' });
     expect(tb.technicalManager.name).toBe('Amaury Pinchart');
     expect(tb.createdDate).toBe('25 / 09 / 2026');
+  });
+
+  it('intervenants : rôle sur le projet d’abord (responsable en premier), technical manager de l’équipe si la fiche n’en a pas', () => {
+    const u = (id: string, firstName: string, role?: string) => ({ id, firstName, lastName: 'X', email: `${id}@x.com`, role });
+    const v = projectValues({
+      id: 'p',
+      name: 'P',
+      technicalManager: null,
+      team: [
+        { role: 'installer', user: u('s1', 'Sam', 'sales_engineer') },
+        { role: 'sales_engineer', user: u('s2', 'Sara') },
+        { role: 'sales_engineer', isLead: true, user: u('s3', 'Lea') },
+        { role: 'technical_manager', user: u('t1', 'Tom') },
+        { role: 'installer', user: u('p1', 'Paul', 'project_manager') },
+      ],
+    });
+    expect(v.salesEngineer.name).toBe('Lea X');
+    expect(v.technicalManager).toEqual({ name: 'Tom X', email: 't1@x.com' });
+    expect(v.projectManager.name).toBe('Paul X');
+  });
+
+  it('cartouche ← projet : ne propose que ce qui a changé dans VEM, pas les champs modifiés à la main', () => {
+    const synced = projectValues({ id: 'p', name: 'Stand A', address: 'Rue 1', city: 'Berlin', team: [] });
+    const tb = { ...emptyTitleBlock(), ...synced, client: 'Client tapé à la main' };
+    // rien n'a changé dans le projet : le client tapé à la main est gardé
+    expect(projectChanges(tb, synced, synced)).toEqual([]);
+    // l'adresse change dans VEM : proposée
+    const fresh = { ...synced, address: 'Rue 2, Berlin' };
+    expect(projectChanges(tb, fresh, synced)).toEqual(['address']);
+    // jeu ancien (sans reprise connue) : tout ce qui diffère
+    expect(projectChanges(tb, fresh)).toEqual(['client', 'address']);
+    expect(PROJECT_FIELDS).toContain('salesEngineer');
   });
 
   it('SVG de planche : A1 exact, gabarit, cartouche, légende, vectoriel', () => {

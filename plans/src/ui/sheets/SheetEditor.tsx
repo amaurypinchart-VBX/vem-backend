@@ -38,6 +38,9 @@ import { CapturePicker } from './CapturePicker';
 import type { PickableImage } from '../../sheets/images';
 import { insertRect, otherImagesOfSet } from '../../sheets/images';
 import { DETAILS, detailRect } from '../../sheets/details';
+import type { ProjectField, ProjectValues } from '../../sheets/titleBlock';
+import { PROJECT_FIELDS, PROJECT_FIELD_LABELS, projectChanges, projectValues } from '../../sheets/titleBlock';
+import type { Person, TitleBlockData } from '../../sheets/types';
 
 interface Props {
   scene: LoadedScene;
@@ -63,6 +66,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [zoomSignal, setZoomSignal] = useState({ n: 0, factor: 1 });
   const [save, setSave] = useState<{ status: SaveStatus; error?: string }>({ status: 'saved' });
   const [busy, setBusy] = useState('');
+  /** cartouche : champs changés dans le projet VEM depuis la dernière reprise */
+  const [projectUpdate, setProjectUpdate] = useState<{ fresh: ProjectValues; fields: ProjectField[] } | null>(null);
+  const [syncMessage, setSyncMessage] = useState('');
   /** choix d'une image 3D : image à remplacer, ou null = nouvelle image */
   const [picker, setPicker] = useState<{ itemId: string | null } | null>(null);
   const bankTick = useBank(bank);
@@ -104,6 +110,42 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       }
     });
   }, [bankTick, doc.sheets, bank]);
+
+  // ─── cartouche ← projet VEM ───
+  const applyProject = useCallback((fresh: ProjectValues, fields: ProjectField[]) => {
+    const sync = { at: new Date().toISOString(), values: fresh };
+    const st = useEditor.getState();
+    if (fields.length)
+      st.apply('Cartouche repris du projet', (d) => {
+        for (const f of fields) (d.titleBlock as Record<ProjectField, unknown>)[f] = structuredClone(fresh[f]);
+        d.projectSync = sync;
+      });
+    else st.patchSilently((d) => void (d.projectSync = sync));
+    setProjectUpdate(null);
+    setSyncMessage(fields.length ? `✓ Repris du projet : ${fields.map((f) => PROJECT_FIELD_LABELS[f]).join(', ')}` : '✓ Le cartouche est déjà à jour avec le projet');
+  }, []);
+  /** automatique à l'ouverture : propose ce qui a changé dans VEM ; à la demande : reprend tous les champs du projet */
+  const syncProject = useCallback(
+    async (manual: boolean) => {
+      try {
+        const fresh = projectValues(await vem.project(PROJECT_ID));
+        const d = useEditor.getState().doc;
+        if (!d) return;
+        if (manual) applyProject(fresh, PROJECT_FIELDS.filter((f) => JSON.stringify(d.titleBlock[f]) !== JSON.stringify(fresh[f])));
+        else {
+          const fields = projectChanges(d.titleBlock, fresh, d.projectSync?.values);
+          setProjectUpdate(fields.length ? { fresh, fields } : null);
+        }
+      } catch (e) {
+        if (manual) setSyncMessage(`⚠ Projet VEM illisible : ${(e as Error).message}`);
+      }
+    },
+    [applyProject],
+  );
+  useEffect(() => {
+    setSyncMessage('');
+    void syncProject(false);
+  }, [doc.id, syncProject]);
 
   // ─── enregistrement automatique ───
   const saveNow = useCallback(async () => {
@@ -467,6 +509,34 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </span>
       </div>
 
+      {projectUpdate && (
+        <div className="sync-banner">
+          <span>
+            🔄 Le projet VEM a changé depuis ce jeu de plans :{' '}
+            {projectUpdate.fields.map((f, i) => (
+              <span key={f}>
+                {i > 0 && ' · '}
+                <b>{PROJECT_FIELD_LABELS[f]}</b> {shown(doc.titleBlock[f]) || '—'} → {shown(projectUpdate.fresh[f]) || '—'}
+              </span>
+            ))}
+          </span>
+          <span className="spacer" />
+          <button className="btn small primary" onClick={() => applyProject(projectUpdate.fresh, projectUpdate.fields)}>
+            Mettre à jour le cartouche
+          </button>
+          <button
+            className="btn small ghost"
+            title="Garder le cartouche tel quel (ces changements ne seront plus proposés)"
+            onClick={() => {
+              const fresh = projectUpdate.fresh;
+              useEditor.getState().patchSilently((d) => void (d.projectSync = { at: new Date().toISOString(), values: fresh }));
+              setProjectUpdate(null);
+            }}
+          >
+            Garder tel quel
+          </button>
+        </div>
+      )}
       <div className="sheet-body">
         <aside className="sheet-pages">
           {doc.sheets.map((s, i) => (
@@ -529,6 +599,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onPickImage={(item, img) => pickImage(item.id, img)}
           onOpenPicker={(item) => setPicker({ itemId: item.id })}
           onAutoDimension={(vp) => autoDimension([vp])}
+          onSyncProject={() => void syncProject(true)}
+          syncMessage={syncMessage}
         />
       </div>
       {picker && (
@@ -560,3 +632,5 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     </div>
   );
 }
+
+const shown = (v: TitleBlockData[ProjectField]) => (typeof v === 'string' ? v : (v as Person).name);

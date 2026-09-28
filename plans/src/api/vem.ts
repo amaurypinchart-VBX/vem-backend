@@ -68,7 +68,7 @@ export interface Project {
   installationStart?: string;
   client?: { name?: string } | null;
   technicalManager?: VemUser | null;
-  team?: Array<{ role?: string; user?: VemUser }>;
+  team?: Array<{ role?: string; isLead?: boolean; user?: VemUser }>;
 }
 
 /** Jeu de plans tel que stocké par le serveur (`data` = DrawingSet sans id/projectId). */

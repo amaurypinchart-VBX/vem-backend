@@ -188,6 +188,8 @@ export interface DrawingSet {
   sheets: Sheet[];
   /** incrémentée à l'export officiel (P5) */
   revision: number;
+  /** valeurs du projet VEM lors de la dernière reprise dans le cartouche (détecte ce qui a changé depuis) */
+  projectSync?: { at: string; values: Partial<Pick<TitleBlockData, 'client' | 'address' | 'projectName' | 'projectNumber' | 'projectDate' | 'salesEngineer' | 'technicalManager' | 'projectManager'>> };
   updatedAt: string;
 }
 

@@ -375,7 +375,7 @@ function DetailProps({ it }: { it: DetailItem }) {
   );
 }
 
-function TitleBlockForm({ doc }: { doc: DrawingSet }) {
+function TitleBlockForm({ doc, onSyncProject, syncMessage }: { doc: DrawingSet; onSyncProject: () => void; syncMessage: string }) {
   const tb = doc.titleBlock;
   const set = (patch: Partial<TitleBlockData>) =>
     useEditor.getState().apply('Cartouche', (d) => {
@@ -396,6 +396,12 @@ function TitleBlockForm({ doc }: { doc: DrawingSet }) {
   );
   return (
     <>
+      <div className="prop-field">
+        <button className="btn small" onClick={onSyncProject} title="Client, adresse, nom, n° et date du projet, Sales engineer, Technical manager, Project manager">
+          ↻ Reprendre les données du projet VEM
+        </button>
+        {syncMessage ? <span className="hint">{syncMessage}</span> : <span className="hint">Remplace les champs du projet par ceux de VEM (annulable avec Ctrl+Z).</span>}
+      </div>
       {text('client', 'Client')}
       {text('address', 'Adresse d’installation')}
       {text('projectName', 'Nom du projet')}
@@ -434,6 +440,8 @@ export function PropertiesPanel({
   onPickImage,
   onOpenPicker,
   onAutoDimension,
+  onSyncProject,
+  syncMessage,
 }: {
   doc: DrawingSet;
   sheet: Sheet;
@@ -446,6 +454,8 @@ export function PropertiesPanel({
   onPickImage: (item: Image3dItem, img: PickableImage) => void;
   onOpenPicker: (item: Image3dItem) => void;
   onAutoDimension: (vp: ViewportItem) => void;
+  onSyncProject: () => void;
+  syncMessage: string;
 }) {
   const selection = useEditor((s) => s.selection);
   const [tab, setTab] = useState<'item' | 'titleblock'>('item');
@@ -463,7 +473,7 @@ export function PropertiesPanel({
       </div>
       <div className="sheet-props-body">
         {tab === 'titleblock' ? (
-          <TitleBlockForm doc={doc} />
+          <TitleBlockForm doc={doc} onSyncProject={onSyncProject} syncMessage={syncMessage} />
         ) : one ? (
           <>
             <div className="prop-title">
