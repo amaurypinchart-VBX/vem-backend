@@ -28,10 +28,12 @@ async function fixtureIndex(): Promise<SceneIndex> {
 
 describe('échelles', () => {
   it('plus grande échelle normalisée qui tient dans le cadre', () => {
-    // 17 800 × 3 700 mm dans 685 × 228 mm (marges 4 mm) → 1:50 (356 × 74 mm) ; 1:25 serait trop grand
-    expect(fitScale({ minX: 0, minY: 0, maxX: 17800, maxY: 3700 }, { w: 685, h: 228 })).toBe(50);
+    // 17 800 × 3 700 mm dans 685 × 228 mm (marges 4 mm) → 1:30 (593 × 123 mm) ; 1:25 serait trop grand (712 mm)
+    expect(fitScale({ minX: 0, minY: 0, maxX: 17800, maxY: 3700 }, { w: 685, h: 228 })).toBe(30);
+    expect(fitScale({ minX: 0, minY: 0, maxX: 17800, maxY: 3700 }, { w: 460, h: 228 })).toBe(40); // 17 800 / 452 = 39,4
     expect(fitScale({ minX: 0, minY: 0, maxX: 5902, maxY: 3178 }, { w: 325, h: 170 })).toBe(20);
     expect(STANDARD_SCALES).toContain(25);
+    for (const s of [30, 35, 40, 45]) expect(STANDARD_SCALES).toContain(s);
     const t = viewportTransform({ x: 100, y: 100, w: 200, h: 100 }, 50, [1000, 500]);
     expect(t.toPaper(1000, 500)).toEqual({ x: 200, y: 150 });
     expect(t.toPaper(1500, 1000)).toEqual({ x: 210, y: 140 }); // y du dessin vers le haut

@@ -1,5 +1,5 @@
 // Échelles normalisées et placement d'une vue dans un cadre (fonctions pures).
-export const STANDARD_SCALES = [1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 1000];
+export const STANDARD_SCALES = [1, 2, 5, 10, 20, 25, 30, 35, 40, 45, 50, 75, 100, 150, 200, 250, 500, 1000];
 
 /** Plus petite échelle normalisée (dessin le plus grand) qui fait tenir l'encombrement dans le cadre, marge comprise. */
 export function fitScale(boundsMm: { minX: number; minY: number; maxX: number; maxY: number }, rect: { w: number; h: number }, marginMm = 4): number {

@@ -49,6 +49,7 @@ export interface SheetSvgProps {
     draft?: SheetItem[];
     onItemDown?: (e: ReactPointerEvent, item: SheetItem) => void;
     onHandleDown?: (e: ReactPointerEvent, item: SheetItem, handle: string) => void;
+    onItemDoubleClick?: (item: SheetItem) => void;
   };
   className?: string;
   style?: React.CSSProperties;
@@ -607,7 +608,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
     const b = itemBounds(item, anchor, k, dimBoxOf(item));
     return (
-      <g key={item.id} onPointerDown={down} style={{ cursor: item.locked ? 'default' : 'move' }}>
+      <g key={item.id} onPointerDown={down} onDoubleClick={editing.onItemDoubleClick && (() => editing.onItemDoubleClick!(item))} style={{ cursor: item.locked ? 'default' : 'move' }}>
         {body}
         {/* zone de clic : tout le cadre de l'élément */}
         <rect {...rectAttrs(b)} fill="transparent" stroke="none" />

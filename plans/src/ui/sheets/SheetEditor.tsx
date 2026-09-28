@@ -12,6 +12,7 @@ import type { LoadedScene } from '../../scene/loadedScene';
 import { meshesOfNode, nodeIdOf } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import { PROJECT_ID, vem } from '../../api/vem';
+import type { SavedCapture } from '../../api/vem';
 import type { Image3dItem, LabelItem, PointMm, Sheet, SheetItem, TextItem, ViewportItem } from '../../sheets/types';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import { SheetSvg } from '../../sheets/SheetSvg';
@@ -33,18 +34,22 @@ import { autoDimensionViewport } from '../../sheets/autoDim';
 import type { DimensionItem } from '../../sheets/types';
 import { PropertiesPanel } from './Properties';
 import { downloadText } from '../common';
+import { CapturePicker } from './CapturePicker';
+import type { PickableImage } from '../../sheets/images';
+import { insertRect, otherImagesOfSet } from '../../sheets/images';
 
 interface Props {
   scene: LoadedScene;
   bank: LineworkBank;
   glassTest: GlassTest;
   legendColors: Map<string, LegendEntry>;
+  captures: SavedCapture[];
   onClose: () => void;
 }
 
 type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 
-export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: Props) {
+export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose }: Props) {
   const doc = useEditor((s) => s.doc)!;
   const sheetId = useEditor((s) => s.sheetId);
   const selection = useEditor((s) => s.selection);
@@ -57,11 +62,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
   const [zoomSignal, setZoomSignal] = useState({ n: 0, factor: 1 });
   const [save, setSave] = useState<{ status: SaveStatus; error?: string }>({ status: 'saved' });
   const [busy, setBusy] = useState('');
+  /** choix d'une image 3D : image à remplacer, ou null = nouvelle image */
+  const [picker, setPicker] = useState<{ itemId: string | null } | null>(null);
   const bankTick = useBank(bank);
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
   const viewData = useCallback((vp: ViewportItem) => bank.data(vp), [bank, bankTick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const legend = useMemo(() => (sheet ? bank.legendFor(sheet, legendColors) : []), [sheet, bank, legendColors, bankTick]);
+  // DRAWING LEGEND : toutes les couleurs de catégorie (Viewbox + catégories personnalisées), sur chaque planche
+  const legend = useMemo(() => [...legendColors.values()], [legendColors]);
 
   // traits des vues de la planche affichée (et des autres, en arrière-plan)
   useEffect(() => {
@@ -263,7 +271,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
     const [view, projection] = viewSpec.split('|') as [IsoKind, Projection];
     const target = item ?? null;
     const inc = include ?? scene.index.modules.map((m) => m.nodeId).concat(scene.index.modules.flatMap((m) => m.itemIds), scene.index.commonIds);
-    const rect = target?.rect ?? { x: 30, y: 60, w: 250, h: 180 };
+    const k = templateScale(sheet.paper);
+    const rect = target?.rect ?? { x: 30 * k, y: 60 * k, w: 250 * k, h: 180 * k };
     setBusy('Capture 3D…');
     try {
       const [r] = await captureOffscreen(scene, glassTest, [{ include: inc, hideCategories: [], view, projection, aspect: rect.w / rect.h }]);
@@ -281,6 +290,19 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
       setBusy('');
     }
   };
+
+  const otherImages = useMemo(() => otherImagesOfSet(doc, captures), [doc, captures]);
+  const pickImage = (itemId: string | null, img: PickableImage) => {
+    const { url, width, height } = img;
+    if (itemId) actions.updateItem(itemId, { url, width, height } as Partial<SheetItem>, 'Changer l’image 3D');
+    else
+      actions.addItems(
+        [{ id: newId('c'), type: 'image3d', rect: insertRect(img, templateScale(sheet.paper)), url, width, height, label: '3D', showLabel: false }],
+        'Ajouter une image 3D',
+      );
+    setPicker(null);
+  };
+  const pickerItem = picker?.itemId ? (sheet?.items.find((i) => i.id === picker.itemId) as Image3dItem | undefined) : undefined;
 
   const exportSvg = () => {
     const markup = renderToStaticMarkup(<SheetSvg sheet={sheet} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} />);
@@ -358,7 +380,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
         <button className="btn small" onClick={addViewport} title="Nouvelle fenêtre de vue">
           ▭ Vue
         </button>
-        <button className="btn small" disabled={!!busy} onClick={() => void capture(null, 'iso-sw|perspective')} title="Image 3D de tout le modèle (iso SO)">
+        <button className="btn small" disabled={!!busy} onClick={() => setPicker({ itemId: null })} title="Ajouter une image 3D : une des captures de la vue 3D, ou tout le modèle en iso SO">
           📷 Image 3D
         </button>
         <span className="sep" />
@@ -436,7 +458,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
         <aside className="sheet-pages">
           {doc.sheets.map((s, i) => (
             <div key={s.id} className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}`} onClick={() => useEditor.getState().setSheet(s.id)}>
-              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={[]} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
+              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
                 <span className="thumb-title">{s.kind === 'cover' ? 'Couverture' : (s.items.find((x) => x.type === 'viewport' && (x as ViewportItem).label) as ViewportItem | undefined)?.label ?? s.title}</span>
@@ -480,6 +502,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
           pointAt={anchorAt}
           fitSignal={fitSignal}
           zoomSignal={zoomSignal}
+          onOpenItem={(it) => it.type === 'image3d' && setPicker({ itemId: it.id })}
         />
         <PropertiesPanel
           doc={doc}
@@ -488,9 +511,39 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, onClose }: P
           viewData={viewData}
           suggestionsFor={(l) => labelSuggestions.current.get(l.id) ?? []}
           onRecapture={(item, v) => void capture(item, v)}
+          captures={captures}
+          otherImages={otherImages}
+          onPickImage={(item, img) => pickImage(item.id, img)}
+          onOpenPicker={(item) => setPicker({ itemId: item.id })}
           onAutoDimension={(vp) => autoDimension([vp])}
         />
       </div>
+      {picker && (
+        <CapturePicker
+          title={pickerItem ? 'Changer l’image 3D' : 'Ajouter une image 3D'}
+          captures={captures}
+          others={otherImages}
+          current={pickerItem?.url}
+          onPick={(img) => pickImage(picker.itemId, img)}
+          onClose={() => setPicker(null)}
+          footer={
+            !picker.itemId && (
+              <>
+                <button
+                  className="btn small"
+                  onClick={() => {
+                    setPicker(null);
+                    void capture(null, 'iso-sw|perspective');
+                  }}
+                >
+                  📷 Nouvelle capture : tout le modèle (iso SO)
+                </button>
+                <span className="hint">Pour un autre cadrage : onglet Vue 3D, puis 📷 Capturer.</span>
+              </>
+            )
+          }
+        />
+      )}
     </div>
   );
 }

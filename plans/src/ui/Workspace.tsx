@@ -7,7 +7,7 @@ import { LEGEND } from '../core/types';
 import { compileRules } from '../core/classification';
 import type { FrontSide } from '../core/views';
 import { defaultFront } from '../core/views';
-import type { ModelSettings, ModelVersion } from '../api/vem';
+import type { ModelSettings, ModelVersion, SettingsUpdate } from '../api/vem';
 import { downloadPackage, vem } from '../api/vem';
 import { loadPackage } from '../ingest/package';
 import type { LoadedScene } from '../scene/loadedScene';
@@ -45,10 +45,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   const [error, setError] = useState('');
   const [missing, setMissing] = useState(false);
   const [settings, setSettings] = useState<ModelSettings>(() => model?.settings ?? {});
+  const settingsRef = useRef(settings);
   const loadStarted = useRef(false);
   // analyse fraîche : la version enregistrée arrive après coup, avec les réglages repris de la précédente
   useEffect(() => {
-    if (model?.settings) setSettings(model.settings);
+    if (model?.settings) setSettings((settingsRef.current = model.settings));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.id]);
 
@@ -103,8 +104,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
     })();
   }, [tab, glb, model, index, settings.fronts, busy]);
 
-  const saveSettings = async (patch: ModelSettings) => {
-    const next = { ...settings, ...patch };
+  // les envois de captures finissent dans le désordre : chaque modification part des réglages à jour
+  const saveSettings = async (update: SettingsUpdate) => {
+    const patch = typeof update === 'function' ? update(settingsRef.current) : update;
+    const next = { ...settingsRef.current, ...patch };
+    settingsRef.current = next;
     setSettings(next);
     if (patch.fronts && scene) {
       scene.frames = computeFrames(index, scene.objectsById, scene.look, next.fronts ?? {});
@@ -119,7 +123,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   };
 
   const setFront = (moduleId: string, front: FrontSide | null) => {
-    const fronts = { ...(settings.fronts ?? {}) };
+    const fronts = { ...(settingsRef.current.fronts ?? {}) };
     const frame = scene?.frames.get(moduleId);
     // revenir au côté par défaut = supprimer le réglage manuel
     if (front && frame && front === defaultFront(frame.longAxis)) front = null;
@@ -193,7 +197,15 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       )}
       {scene && provider && visited.has('sheets') && (
         <div style={{ display: tab === 'sheets' ? 'block' : 'none' }}>
-          <SheetsPage scene={scene} provider={provider} glassTest={glassTest} model={model} rules={rules} framesVersion={framesVersion} />
+          <SheetsPage
+            scene={scene}
+            provider={provider}
+            glassTest={glassTest}
+            model={model}
+            rules={rules}
+            framesVersion={framesVersion}
+            captures={settings.captures ?? []}
+          />
         </div>
       )}
       {scene && provider && visited.has('2d') && (

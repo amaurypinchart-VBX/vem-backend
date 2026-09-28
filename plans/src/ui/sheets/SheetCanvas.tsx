@@ -39,6 +39,8 @@ interface Props {
   pointAt: (vp: ViewportItem, p: PointMm) => { model: [number, number]; anchor3d?: Vec3 } | null;
   fitSignal: number;
   zoomSignal: { n: number; factor: number };
+  /** double-clic sur un élément (image 3D : choisir une autre image) */
+  onOpenItem?: (item: SheetItem) => void;
 }
 
 const GRID = 5;
@@ -67,7 +69,7 @@ function SnapMarker({ p, kind }: { p: PointMm; kind: SnapKind | null }) {
   return <path d={`M${p.x - r} ${p.y}L${p.x + r} ${p.y}M${p.x} ${p.y - r}L${p.x} ${p.y + r}`} {...common} />;
 }
 
-export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal }: Props) {
+export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const selection = useEditor((s) => s.selection);
@@ -422,6 +424,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
             hidden: hiddenLayers,
             onItemDown,
             onHandleDown,
+            onItemDoubleClick: (item) => tool === 'select' && onOpenItem?.(item),
             draft:
               dimDraft && dimDraft.phase === 'place'
                 ? [

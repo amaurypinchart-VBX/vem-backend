@@ -6,6 +6,9 @@ import type { ViewKind } from '../../core/views';
 import { VIEW_LABELS } from '../../core/views';
 import { categoriesIn, subsetAll, subsetForLevel, subsetForModule } from '../../core/subset';
 import type { LoadedScene } from '../../scene/loadedScene';
+import type { SavedCapture } from '../../api/vem';
+import type { PickableImage } from '../../sheets/images';
+import { CaptureGrid } from './CapturePicker';
 import type { DimensionItem, DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
 import { dimGeometry, formatDim } from '../../sheets/dimensions';
 import { dimensionInput } from '../../sheets/SheetSvg';
@@ -277,17 +280,40 @@ function TextProps({ t }: { t: TextItem }) {
   );
 }
 
-function ImageProps({ it, onRecapture }: { it: Image3dItem; onRecapture: (view: string) => void }) {
+function ImageProps({
+  it,
+  captures,
+  otherImages,
+  onPick,
+  onOpenPicker,
+  onRecapture,
+}: {
+  it: Image3dItem;
+  captures: SavedCapture[];
+  otherImages: PickableImage[];
+  onPick: (img: PickableImage) => void;
+  onOpenPicker: () => void;
+  onRecapture: (view: string) => void;
+}) {
   const [view, setView] = useState('iso-sw|perspective');
   return (
     <>
+      <div className="prop-field">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <span>Choisir parmi les captures ({captures.length})</span>
+          <button className="btn small ghost" onClick={onOpenPicker} title="Grande liste (aussi : double-clic sur l’image)">
+            ⤢ Agrandir
+          </button>
+        </div>
+        <CaptureGrid captures={captures} others={otherImages} current={it.url} onPick={onPick} />
+      </div>
       <Field label="Titre">
         <div className="row">
           <input type="text" value={it.label ?? ''} onChange={(e) => actions.updateItem(it.id, { label: e.target.value } as Partial<SheetItem>, 'Titre')} style={{ flex: 1, width: 'auto' }} />
           <input type="checkbox" checked={!!it.showLabel} onChange={(e) => actions.updateItem(it.id, { showLabel: e.target.checked } as Partial<SheetItem>, 'Titre')} />
         </div>
       </Field>
-      <Field label="Refaire la capture">
+      <Field label="Ou capture automatique (tout le modèle)">
         <div className="row">
           <select value={view} onChange={(e) => setView(e.target.value)} style={{ flex: 1, width: 'auto' }}>
             {['iso-sw', 'iso-se', 'iso-nw', 'iso-ne'].map((k) => (
@@ -361,6 +387,10 @@ export function PropertiesPanel({
   viewData,
   suggestionsFor,
   onRecapture,
+  captures,
+  otherImages,
+  onPickImage,
+  onOpenPicker,
   onAutoDimension,
 }: {
   doc: DrawingSet;
@@ -369,6 +399,10 @@ export function PropertiesPanel({
   viewData: (vp: ViewportItem) => ViewportData | undefined;
   suggestionsFor: (label: LabelItem) => string[];
   onRecapture: (item: Image3dItem, view: string) => void;
+  captures: SavedCapture[];
+  otherImages: PickableImage[];
+  onPickImage: (item: Image3dItem, img: PickableImage) => void;
+  onOpenPicker: (item: Image3dItem) => void;
   onAutoDimension: (vp: ViewportItem) => void;
 }) {
   const selection = useEditor((s) => s.selection);
@@ -418,7 +452,16 @@ export function PropertiesPanel({
             {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}
             {one.type === 'label' && <LabelProps label={one} suggestions={suggestionsFor(one)} />}
             {one.type === 'text' && <TextProps t={one} />}
-            {one.type === 'image3d' && <ImageProps it={one} onRecapture={(v) => onRecapture(one, v)} />}
+            {one.type === 'image3d' && (
+              <ImageProps
+                it={one}
+                captures={captures}
+                otherImages={otherImages}
+                onPick={(img) => onPickImage(one, img)}
+                onOpenPicker={() => onOpenPicker(one)}
+                onRecapture={(v) => onRecapture(one, v)}
+              />
+            )}
           </>
         ) : items.length > 1 ? (
           <div className="hint">{items.length} éléments sélectionnés : aligner / répartir depuis la barre d’outils.</div>

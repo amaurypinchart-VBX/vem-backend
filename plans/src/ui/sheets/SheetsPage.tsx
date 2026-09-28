@@ -6,7 +6,7 @@ import type { LoadedScene } from '../../scene/loadedScene';
 import type { BrowserHlrProvider } from '../../linework/provider';
 import type { GlassTest } from '../../linework/packets';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
-import type { DrawingSetRecord, ModelVersion, Project, VemUser } from '../../api/vem';
+import type { DrawingSetRecord, ModelVersion, Project, SavedCapture, VemUser } from '../../api/vem';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { DrawingSet, Image3dItem, Paper } from '../../sheets/types';
 import type { SheetKind } from '../../sheets/generate';
@@ -26,9 +26,11 @@ interface Props {
   model?: ModelVersion;
   rules: ClassificationRules;
   framesVersion: number;
+  /** captures enregistrées dans la vue 3D */
+  captures: SavedCapture[];
 }
 
-export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion }: Props) {
+export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures }: Props) {
   const bank = useMemo(() => new LineworkBank(scene, provider), [scene, provider]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
   const legendColors = useMemo(() => {
@@ -89,6 +91,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
         bank={bank}
         glassTest={glassTest}
         legendColors={legendColors}
+        captures={captures}
         onClose={() => {
           useEditor.getState().close();
           void refresh();

@@ -113,7 +113,7 @@ describe('cotation automatique', () => {
     expect(values).toContainEqual([900, 930, 4070, 900, 930, 4070, 5900]); // portes : position + largeur
     expect(values).toContainEqual([807, 2893]); // bandeau de toit (807 mm) + hauteur jusqu'au bandeau (de haut en bas), pieds exclus
     expect(values).toContainEqual([3700]); // hauteur totale de la Viewbox et de son toit, sans les pieds
-    expect(r.scale).toBe(50);
+    expect(r.scale).toBe(30); // 17 700 mm à 1:30 = 590 mm : les cotes tiennent encore dans les 685 mm du cadre
     checkNoOverlap(r, vp, lw, basis);
   });
 

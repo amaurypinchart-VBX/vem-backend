@@ -1,5 +1,6 @@
 // Vue 3D : liste des Viewbox par niveau + éléments communs, isolation (masquage), catégories masquées,
 // voisins en fantôme, face avant des Viewbox, infos au clic, captures haute définition, caméras enregistrées.
+// Les captures sont enregistrées avec le modèle (images Cloudinary) : les planches les proposent pour leurs images 3D.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FrontSide } from '../core/views';
 import { VIEW_LABELS, frontFromNormal } from '../core/views';
@@ -8,7 +9,11 @@ import { categoriesIn, subsetAll, subsetForModules } from '../core/subset';
 import { bboxDims, displayName, fmtInt } from '../core/report';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { GlassTest } from '../linework/packets';
-import type { ModelSettings, SavedCamera } from '../api/vem';
+import type { ModelSettings, SavedCamera, SavedCapture, SettingsUpdate } from '../api/vem';
+import { PROJECT_ID, vem } from '../api/vem';
+import { attachmentUrl, thumbUrl } from '../api/cloudinary';
+import { fitImageBytes } from '../viewer/uploadSize';
+import { newId } from '../sheets/generate';
 import type { CameraPose, IsoKind, PickInfo, Projection, StandardView } from '../viewer/SceneViewer';
 import { ISO_LABELS, SceneViewer } from '../viewer/SceneViewer';
 import { CategoryChip } from './common';
@@ -20,17 +25,24 @@ interface Props {
   framesVersion: number;
   settings: ModelSettings;
   onSetFront: (moduleId: string, front: FrontSide | null) => void;
-  onSaveSettings: (patch: ModelSettings) => Promise<void>;
+  onSaveSettings: (update: SettingsUpdate) => Promise<void>;
 }
 
-interface Capture {
-  url: string;
+/** Capture de cette session : fichier pleine résolution + état de l'enregistrement. */
+interface LocalCapture {
+  id: string;
+  blob: Blob;
+  blobUrl: string;
   name: string;
   width: number;
   height: number;
-  sizeKb: number;
   note?: string;
+  status: 'saving' | 'saved' | 'error';
+  error?: string;
 }
+
+const fileNameOf = (name: string, width: number, height: number) =>
+  `capture_${name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}_${width}x${height}.png`;
 
 const VIEW_BUTTONS: ViewKind[] = ['top', 'front', 'back', 'left', 'right'];
 const ISO_BUTTONS: IsoKind[] = ['iso-nw', 'iso-ne', 'iso-sw', 'iso-se'];
@@ -51,7 +63,7 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
   const [capBg, setCapBg] = useState<'white' | 'transparent'>('white');
   const [capMargin, setCapMargin] = useState(3);
   const [capCamera, setCapCamera] = useState('current');
-  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [local, setLocal] = useState<LocalCapture[]>([]);
   const [busy, setBusy] = useState('');
   const [camName, setCamName] = useState('');
   const frontPickRef = useRef<string | null>(null);
@@ -136,6 +148,41 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     return v.poseFor(kind, undefined, 4 / 3, 1.02, proj);
   };
 
+  /** Nom proposé : ce qui est affiché + la caméra (modifiable ensuite). */
+  const captureName = () => {
+    const mods = isolated?.filter((x) => x !== 'common') ?? [];
+    const what = !isolated
+      ? 'Tout le modèle'
+      : (mods.length ? (mods.length <= 3 ? mods.join(', ') : `${mods.length} Viewbox`) : '') +
+        (isolated.includes('common') ? (mods.length ? ' + éléments communs' : 'Éléments communs') : '');
+    let cam = 'vue libre';
+    if (capCamera.startsWith('cam:')) cam = capCamera.slice(4);
+    else if (capCamera !== 'current') {
+      const [kind, proj] = capCamera.split('|') as [IsoKind, Projection];
+      cam = `${ISO_LABELS[kind]} ${proj === 'perspective' ? 'perspective' : 'axonométrie'}`;
+    }
+    return `${what} · ${cam}`;
+  };
+
+  const patchLocal = (id: string, patch: Partial<LocalCapture>) => setLocal((l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
+  /** Envoi de la capture (réduite si > 10 Mo) puis ajout à la liste du modèle. */
+  const persist = async (c: LocalCapture) => {
+    patchLocal(c.id, { status: 'saving', error: undefined });
+    try {
+      const fit = await fitImageBytes(c.blob, c.width, c.height);
+      const { url } = await vem.uploadAsset(PROJECT_ID, fit.blob, fileNameOf(c.name, fit.width, fit.height));
+      const saved: SavedCapture = { id: c.id, url, name: c.name, width: fit.width, height: fit.height, createdAt: new Date().toISOString() };
+      await onSaveSettings((s) => ({ captures: [saved, ...(s.captures ?? []).filter((x) => x.id !== c.id)] }));
+      patchLocal(c.id, {
+        status: 'saved',
+        note: fit.width !== c.width ? `enregistrée en ${fit.width} × ${fit.height} px (limite de 10 Mo)` : undefined,
+      });
+    } catch (e) {
+      patchLocal(c.id, { status: 'error', error: (e as Error).message });
+    }
+  };
+
   const doCapture = async () => {
     const v = viewerRef.current;
     if (!v) return;
@@ -143,25 +190,41 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     await new Promise((r) => setTimeout(r, 30));
     try {
       const res = await v.capture({ size: capSize, background: capBg, marginPct: capMargin, pose: capturePose() });
-      const label = soloModule ?? (isolated ? 'selection' : 'ensemble');
-      const name = `capture_${label}_${capCamera.replace(/[^a-z0-9]+/gi, '-')}_${res.width}x${res.height}.png`;
-      setCaptures((c) => [
-        {
-          url: URL.createObjectURL(res.blob),
-          name,
-          width: res.width,
-          height: res.height,
-          sizeKb: Math.round(res.blob.size / 1024),
-          note: res.clamped ? `résolution limitée à ${v.maxCaptureSize()} px par la carte graphique` : undefined,
-        },
-        ...c,
-      ]);
+      const c: LocalCapture = {
+        id: newId('cap'),
+        blob: res.blob,
+        blobUrl: URL.createObjectURL(res.blob),
+        name: captureName(),
+        width: res.width,
+        height: res.height,
+        note: res.clamped ? `résolution limitée à ${v.maxCaptureSize()} px par la carte graphique` : undefined,
+        status: 'saving',
+      };
+      setLocal((l) => [c, ...l]);
+      void persist(c);
     } catch (e) {
       window.alert(`Capture impossible : ${(e as Error).message}`);
     } finally {
       setBusy('');
     }
   };
+
+  const renameCapture = (id: string, name: string) => {
+    patchLocal(id, { name });
+    void onSaveSettings((s) => ({ captures: (s.captures ?? []).map((x) => (x.id === id ? { ...x, name } : x)) }));
+  };
+
+  const removeCapture = (id: string) => {
+    if (!window.confirm('Retirer cette capture de la liste ? Les planches qui l’utilisent déjà la gardent.')) return;
+    setLocal((l) => l.filter((x) => x.id !== id));
+    void onSaveSettings((s) => ({ captures: (s.captures ?? []).filter((x) => x.id !== id) }));
+  };
+
+  // captures de cette session pas encore (ou pas) enregistrées, puis toutes celles du modèle
+  const saved = settings.captures ?? [];
+  const savedIds = new Set(saved.map((c) => c.id));
+  const localById = new Map(local.map((c) => [c.id, c]));
+  const captureRows = [...local.filter((c) => !savedIds.has(c.id)), ...saved.map((c) => localById.get(c.id) ?? c)];
 
   const saveCamera = async () => {
     const v = viewerRef.current;
@@ -433,29 +496,77 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
           </div>
         </div>
 
-        {captures.length > 0 && (
-          <div className="card">
-            <div className="card-head">
-              <h2>Captures</h2>
-            </div>
-            <div className="card-body captures">
-              {captures.map((c) => (
-                <div key={c.url} className="capture">
-                  <a href={c.url} target="_blank" rel="noreferrer">
-                    <img src={c.url} alt={c.name} />
-                  </a>
-                  <div className="hint">
-                    {c.width} × {c.height} px · {fmtInt(c.sizeKb)} Ko{c.note ? ` · ${c.note}` : ''}
-                  </div>
-                  <a className="btn small" href={c.url} download={c.name}>
-                    ⬇ Télécharger
-                  </a>
-                </div>
-              ))}
-            </div>
+        <div className="card">
+          <div className="card-head">
+            <h2>Captures{saved.length ? ` (${saved.length})` : ''}</h2>
           </div>
-        )}
+          <div className="card-body captures">
+            {!captureRows.length && (
+              <div className="hint">
+                Cadre la vue, puis 📷 Capturer : chaque capture est enregistrée avec le modèle et proposée dans les planches (clic sur une image 3D).
+              </div>
+            )}
+            {captureRows.map((c) => (
+              <CaptureCard key={c.id} c={c} onRename={(n) => renameCapture(c.id, n)} onRemove={() => removeCapture(c.id)} onRetry={() => 'blob' in c && void persist(c)} />
+            ))}
+          </div>
+        </div>
       </aside>
+    </div>
+  );
+}
+
+function CaptureCard({ c, onRename, onRemove, onRetry }: { c: LocalCapture | SavedCapture; onRename: (name: string) => void; onRemove: () => void; onRetry: () => void }) {
+  const [name, setName] = useState(c.name);
+  useEffect(() => setName(c.name), [c.name]);
+  const isLocal = 'blob' in c;
+  const status = isLocal ? c.status : 'saved';
+  const src = isLocal ? c.blobUrl : thumbUrl(c.url, 560);
+  // pleine résolution de cette session si on l'a, sinon l'image enregistrée
+  const href = isLocal ? c.blobUrl : attachmentUrl(c.url);
+  const commit = () => {
+    const n = name.trim();
+    if (!n) setName(c.name);
+    else if (n !== c.name) onRename(n);
+  };
+  return (
+    <div className="capture">
+      <a href={isLocal ? c.blobUrl : c.url} target="_blank" rel="noreferrer">
+        <img src={src} alt={c.name} onError={(e) => !isLocal && e.currentTarget.src !== c.url && (e.currentTarget.src = c.url)} />
+      </a>
+      <input
+        type="text"
+        value={name}
+        disabled={status !== 'saved'}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+        title="Nom de la capture (affiché dans les planches)"
+      />
+      <div className="hint">
+        {c.width} × {c.height} px{isLocal ? ` · ${fmtInt(Math.round(c.blob.size / 1024))} Ko` : ''}
+        {isLocal && c.note ? ` · ${c.note}` : ''}
+        {status === 'saving' && ' · enregistrement…'}
+        {status === 'saved' && ' · ✓ disponible dans les planches'}
+      </div>
+      {status === 'error' && (
+        <div className="error-box" style={{ margin: '4px 0', padding: '4px 8px', fontSize: 12 }}>
+          Non enregistrée : {isLocal ? c.error : ''}{' '}
+          <button className="btn small" onClick={onRetry}>
+            Réessayer
+          </button>
+        </div>
+      )}
+      <div className="row">
+        <a className="btn small" href={href} download={fileNameOf(c.name, c.width, c.height)}>
+          ⬇ Télécharger
+        </a>
+        {status !== 'saving' && (
+          <button className="btn small ghost" onClick={onRemove} title="Retirer de la liste">
+            🗑
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -2,12 +2,12 @@
 // IndexedDB) et gardés en mémoire pendant l'édition. Une fenêtre dont le calcul d'origine ne correspond plus au
 // modèle (modèle réanalysé, face avant changée…) est signalée « obsolète ».
 import { useEffect, useReducer } from 'react';
-import type { ViewportItem, Sheet, DrawingSet } from './types';
+import type { ViewportItem, DrawingSet } from './types';
 import { viewBasis } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { BrowserHlrProvider } from '../linework/provider';
 import type { Linework2D } from '../linework/types';
-import type { LegendEntry, ViewportData } from './SheetSvg';
+import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
 import { fitScale } from './scales';
 import { autoDimensionViewport } from './autoDim';
@@ -115,23 +115,6 @@ export class LineworkBank {
       this.pendingKeys.delete(key);
       this.emit();
     }
-  }
-
-  /** Légende d'une planche : catégories présentes dans ses vues qui ont une couleur de légende. */
-  legendFor(sheet: Sheet, colors: Map<string, LegendEntry>): LegendEntry[] {
-    const present = new Set<string>();
-    for (const it of sheet.items) {
-      if (it.type !== 'viewport') continue;
-      const lw = this.data(it).lw;
-      for (const l of lw?.layers ?? []) {
-        if (l.key.startsWith('category:')) present.add(l.key.slice(9));
-        for (const id of l.sourceNodeIds ?? []) {
-          const c = this.scene.look.categoryOf(id);
-          if (c) present.add(c);
-        }
-      }
-    }
-    return [...colors.values()].filter((e) => present.has(e.key));
   }
 }
 

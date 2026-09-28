@@ -104,12 +104,27 @@ export interface SavedCamera {
   orthoHeight?: number;
 }
 
+/** Capture haute définition de la vue 3D, enregistrée (image Cloudinary) : proposée pour les images 3D des planches. */
+export interface SavedCapture {
+  id: string;
+  url: string;
+  name: string;
+  width: number;
+  height: number;
+  createdAt: string;
+}
+
 /** Réglages d'un modèle, conservés d'une version à la suivante. */
 export interface ModelSettings {
   /** face avant de chaque Viewbox (repère local SketchUp), quand elle n'est pas celle par défaut */
   fronts?: Record<string, FrontSide>;
   cameras?: SavedCamera[];
+  /** captures de la vue 3D, la plus récente en premier */
+  captures?: SavedCapture[];
 }
+
+/** Modification des réglages : clés remplacées, ou fonction des réglages à jour (listes modifiées en parallèle). */
+export type SettingsUpdate = ModelSettings | ((current: ModelSettings) => ModelSettings);
 
 export interface ModelVersion {
   id: string;
