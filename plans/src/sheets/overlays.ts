@@ -1,6 +1,8 @@
 // Surcouches d'une fenêtre de vue calculées depuis les repères des Viewbox : contour de chaque Viewbox (plan
-// d'implantation) et numéro au centre (plan d'assemblage). Coordonnées : mm modèle, repère du dessin.
+// d'implantation) et numéro au centre (plan d'assemblage), cadre + nom de chaque unité (vue aérienne de l'ensemble).
+// Coordonnées : mm modèle, repère du dessin.
 import type { ModuleFrame, Vec3, ViewBasis } from '../core/views';
+import type { PointMm, RectMm, UnitOverlaySpec } from './types';
 import { projectPoint } from '../core/views';
 
 export interface ModuleOverlay {
@@ -48,4 +50,36 @@ export function moduleOverlays(frames: Iterable<ModuleFrame>, moduleIds: Set<str
 export function moduleNumber(moduleId: string): string {
   const m = moduleId.match(/(\d+)\s*$/);
   return m ? String(Number(m[1])) : moduleId;
+}
+
+/** Cadre des unités sur la planche : écart autour de leurs Viewbox, hauteur et écart du nom (mm papier, sous le cadre). */
+export const UNIT_FRAME = { margin: 4, text: 5, textGap: 2.5 };
+
+/** Place à laisser autour du dessin (mm papier) pour les cadres et noms des unités. */
+export const UNIT_FRAME_MARGINS = { top: UNIT_FRAME.margin, left: UNIT_FRAME.margin, right: UNIT_FRAME.margin, bottom: UNIT_FRAME.margin + UNIT_FRAME.textGap + UNIT_FRAME.text * 1.3 };
+
+/** Cadre (mm papier) de chaque unité, autour des contours de ses Viewbox. */
+export function unitFrames(overlays: ModuleOverlay[], units: UnitOverlaySpec[], toPaper: (x: number, y: number) => PointMm): Array<{ name: string; rect: RectMm }> {
+  const out: Array<{ name: string; rect: RectMm }> = [];
+  for (const u of units) {
+    const ids = new Set(u.moduleIds);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const o of overlays) {
+      if (!ids.has(o.moduleId)) continue;
+      for (let i = 0; i < o.outline.length; i += 2) {
+        const p = toPaper(o.outline[i], o.outline[i + 1]);
+        x0 = Math.min(x0, p.x);
+        x1 = Math.max(x1, p.x);
+        y0 = Math.min(y0, p.y);
+        y1 = Math.max(y1, p.y);
+      }
+    }
+    if (!Number.isFinite(x0)) continue;
+    const m = UNIT_FRAME.margin;
+    out.push({ name: u.name, rect: { x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m } });
+  }
+  return out;
 }

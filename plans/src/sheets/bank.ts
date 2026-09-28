@@ -65,7 +65,7 @@ export class LineworkBank {
     }
     const include = new Set(vp.request.subset.include);
     const overlays =
-      basis && (vp.overlays?.moduleOutlines || vp.overlays?.moduleNumbers || vp.overlays?.statusColors)
+      basis && (vp.overlays?.moduleOutlines || vp.overlays?.moduleNumbers || vp.overlays?.statusColors || vp.overlays?.units?.length)
         ? moduleOverlays(this.scene.frames.values(), new Set(this.scene.index.modules.filter((m) => include.has(m.nodeId)).map((m) => m.id)), basis)
         : undefined;
     return {

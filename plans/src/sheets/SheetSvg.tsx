@@ -14,7 +14,7 @@ import type { DimInput } from './dimensions';
 import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
 import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
 import type { ModuleOverlay } from './overlays';
-import { moduleNumber } from './overlays';
+import { UNIT_FRAME, moduleNumber, unitFrames } from './overlays';
 import { scaleLabel, viewportTransform } from './scales';
 
 export interface LegendEntry {
@@ -365,6 +365,16 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
               </text>
             );
           })}
+        {vp.overlays?.units &&
+          !vp.overlays.hideUnits &&
+          unitFrames(overlays, vp.overlays.units, toPaper).map((u, i) => (
+            <g key={`u${i}`}>
+              <rect {...rectAttrs(u.rect)} fill="none" stroke="#1a021d" strokeWidth={0.35} strokeDasharray="8 1.5 1.5 1.5" />
+              <text x={num(u.rect.x)} y={num(u.rect.y + u.rect.h + UNIT_FRAME.textGap + UNIT_FRAME.text)} fontSize={UNIT_FRAME.text} fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
+                {u.name}
+              </text>
+            </g>
+          ))}
       </g>
     </g>
   );

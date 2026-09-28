@@ -1,6 +1,6 @@
 // Éditeur de planches : barre d'outils, planches (vignettes), zone de dessin, propriétés, cartouche.
 // Enregistrement automatique 2 s après la dernière modification ; annuler / rétablir illimités.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
@@ -362,7 +362,16 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   const newSheet = () => {
-    const s: Sheet = { id: newId('s'), number: '', title: sheet?.title ?? doc.title, paper: sheet?.paper ?? 'A1', orientation: 'landscape', kind: 'standard', items: [] };
+    const s: Sheet = {
+      id: newId('s'),
+      number: '',
+      title: sheet?.title ?? doc.title,
+      paper: sheet?.paper ?? 'A1',
+      orientation: 'landscape',
+      kind: 'standard',
+      ...(sheet?.unit ? { unit: sheet.unit } : {}),
+      items: [],
+    };
     actions.addSheet(s);
   };
 
@@ -540,7 +549,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       <div className="sheet-body">
         <aside className="sheet-pages">
           {doc.sheets.map((s, i) => (
-            <div key={s.id} className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}`} onClick={() => useEditor.getState().setSheet(s.id)}>
+            <Fragment key={s.id}>
+            {!!doc.units?.length && (i === 0 || doc.sheets[i - 1].unit !== s.unit) && (
+              <div className="sheet-group">{s.unit ? unitTitle(s.unit, doc.units.find((u) => u.n === s.unit)?.name) : 'Vue d’ensemble'}</div>
+            )}
+            <div className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}`} onClick={() => useEditor.getState().setSheet(s.id)}>
               <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
@@ -568,6 +581,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
                 )}
               </div>
             </div>
+            </Fragment>
           ))}
           <button className="btn small" onClick={newSheet} style={{ width: '100%', justifyContent: 'center' }}>
             + Planche
@@ -634,3 +648,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 }
 
 const shown = (v: TitleBlockData[ProjectField]) => (typeof v === 'string' ? v : (v as Person).name);
+
+/** « Unité 2 · Bar VIP » (le nom par défaut « Unit 2 » n'est pas répété). */
+function unitTitle(n: number, name?: string): string {
+  return !name || name === `Unit ${n}` ? `Unité ${n}` : `Unité ${n} · ${name}`;
+}

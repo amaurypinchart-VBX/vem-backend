@@ -215,3 +215,8 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .wizard .form-grid { grid-template-columns: 170px 1fr; align-items: start; }
 .wizard-list { display: flex; flex-direction: column; gap: 4px; }
 .wizard-mods { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.sheet-group { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); padding: 6px 2px 0; }
+.wizard-units { display: flex; flex-direction: column; gap: 6px; }
+.wizard-unit { gap: 10px; align-items: center; }
+.wizard-unit .unit-n { min-width: 60px; font-weight: 600; }
+.wizard-unit input[type='text'] { width: 180px; }

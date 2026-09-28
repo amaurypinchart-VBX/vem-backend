@@ -255,7 +255,10 @@ export const actions = {
   // ─── planches ───
   addSheet(sheet: Sheet) {
     useEditor.getState().apply('Nouvelle planche', (d) => {
-      d.sheets.push(sheet as Draft<Sheet>);
+      // planche d'une unité : à la fin de la série de cette unité
+      let at = -1;
+      if (sheet.unit) for (let i = 0; i < d.sheets.length; i++) if (d.sheets[i].unit === sheet.unit) at = i;
+      d.sheets.splice(at >= 0 ? at + 1 : d.sheets.length, 0, sheet as Draft<Sheet>);
       renumber(d.sheets as Sheet[]);
     });
     useEditor.getState().setSheet(sheet.id);
@@ -296,10 +299,15 @@ export const actions = {
       renumber(d.sheets as Sheet[]);
     });
   },
-  updateSheet(id: string, patch: Partial<Pick<Sheet, 'title' | 'number' | 'paper'>>) {
+  updateSheet(id: string, patch: Partial<Pick<Sheet, 'title' | 'number' | 'paper' | 'unit'>>) {
     useEditor.getState().apply('Modifier la planche', (d) => {
       const s = d.sheets.find((x) => x.id === id);
-      if (s) Object.assign(s, patch);
+      if (!s) return;
+      Object.assign(s, patch);
+      if ('unit' in patch) {
+        if (!patch.unit) delete s.unit;
+        renumber(d.sheets as Sheet[]);
+      }
     });
   },
 };

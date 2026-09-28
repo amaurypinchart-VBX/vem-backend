@@ -50,6 +50,12 @@ interface ItemBase {
   locked?: boolean;
 }
 
+/** Unité montrée sur une vue de l'ensemble : ses Viewbox, encadrées, avec son nom. */
+export interface UnitOverlaySpec {
+  name: string;
+  moduleIds: string[];
+}
+
 export interface ViewportItem extends ItemBase {
   type: 'viewport';
   rect: RectMm;
@@ -65,8 +71,11 @@ export interface ViewportItem extends ItemBase {
   /** hauteur du titre de vue (mm papier) ; défaut = titre de planche Viewbox */
   labelSize?: number;
   renderStyle: 'trait';
-  /** contour de chaque Viewbox (plan d'implantation), numéros de Viewbox (plan d'assemblage) */
-  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string> };
+  /**
+   * contour de chaque Viewbox (plan d'implantation), numéros de Viewbox (plan d'assemblage), cadre + nom de chaque
+   * unité (vue aérienne de l'ensemble)
+   */
+  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean };
   /** clé du calcul utilisé pour le rendu : si elle ne correspond plus, la vue est obsolète */
   lineworkKey?: string;
 }
@@ -171,7 +180,18 @@ export interface Sheet {
   orientation: 'landscape';
   /** couverture : bandeau bas sans colonne cartouche */
   kind: 'standard' | 'cover';
+  /** unité de l'installation (série A1.x, A2.x…) ; absent = vue d'ensemble (série A0.x) */
+  unit?: number;
   items: SheetItem[];
+}
+
+/** Unité d'un jeu de plans séparé en unités (Viewbox espacées de plus de 2,5 m). */
+export interface DrawingSetUnit {
+  n: number;
+  name: string;
+  moduleIds: string[];
+  /** éléments communs rattachés à l'unité */
+  commonIds: string[];
 }
 
 export interface DrawingSet {
@@ -186,6 +206,8 @@ export interface DrawingSet {
   /** texte « GENERAL NOTES VIEWBOX » */
   notes: string;
   sheets: Sheet[];
+  /** unités de l'installation, quand le jeu est séparé en unités */
+  units?: DrawingSetUnit[];
   /** incrémentée à l'export officiel (P5) */
   revision: number;
   /** valeurs du projet VEM lors de la dernière reprise dans le cartouche (détecte ce qui a changé depuis) */

@@ -11,6 +11,7 @@ import type { AutoDim, AutoDimInput, DimPurpose, Extent } from './dimensions';
 import { DIM, dimGeometry, dimMargins, fitWithDims, planDimensions, rowOffset } from './dimensions';
 import { viewportTransform } from './scales';
 import { newId } from './generate';
+import { UNIT_FRAME_MARGINS } from './overlays';
 
 export function dimPurpose(vp: ViewportItem): DimPurpose {
   if (vp.request.subset.onlyCategories?.includes('PIED')) return 'implantation';
@@ -108,6 +109,14 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
   const offsets = new Map<AutoDim, number>();
   for (const d of plan) offsets.set(d, rowOffset(d.side, d.row));
   let margins = dimMargins(plan);
+  // cadres et noms des unités (vue aérienne de l'ensemble) : de la place autour du dessin
+  if (vp.overlays?.units?.length && !vp.overlays.hideUnits)
+    margins = {
+      top: Math.max(margins.top, UNIT_FRAME_MARGINS.top),
+      bottom: Math.max(margins.bottom, UNIT_FRAME_MARGINS.bottom),
+      left: Math.max(margins.left, UNIT_FRAME_MARGINS.left),
+      right: Math.max(margins.right, UNIT_FRAME_MARGINS.right),
+    };
   let fit = fitWithDims(input.bounds, vp.rect, margins, minScale);
   for (let pass = 0; pass < 2; pass++) {
     const tr = viewportTransform(vp.rect, fit.scale, fit.center);

@@ -9,6 +9,9 @@ import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import type { DrawingSetRecord, ModelVersion, Project, SavedCapture, VemUser } from '../../api/vem';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { DrawingSet, Image3dItem, Paper } from '../../sheets/types';
+import { emptyTitleBlock } from '../../sheets/types';
+import type { InstallUnit } from '../../core/installUnits';
+import { UNIT_GAP_MM, detectUnits } from '../../core/installUnits';
 import type { SheetKind } from '../../sheets/generate';
 import { DEFAULT_SHEET_KINDS, SHEET_KIND_LABELS, generateDrawingSet } from '../../sheets/generate';
 import { projectValues, titleBlockFromProject } from '../../sheets/titleBlock';
@@ -222,9 +225,12 @@ function Wizard({
   scene: LoadedScene;
   defaultTitle: string;
   onCancel: () => void;
-  onGenerate: (o: { modules: string[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean }) => void;
+  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
+  const detected = useMemo(() => detectUnits(scene.index, scene.frames), [scene]);
+  const [split, setSplit] = useState(true);
+  const [unitNames, setUnitNames] = useState<string[]>(() => detected.map((u) => u.name));
   const [modules, setModules] = useState<Set<string>>(() => new Set(mods.map((m) => m.id)));
   const [kinds, setKinds] = useState<Set<SheetKind>>(() => new Set(DEFAULT_SHEET_KINDS));
   const [paper, setPaper] = useState<Paper>('A1');
@@ -236,15 +242,17 @@ function Wizard({
     else n.add(v);
     return n;
   };
-  const nSheets =
-    (kinds.has('cover') ? 1 : 0) +
-    (kinds.has('fourViews') ? 1 : 0) +
-    (kinds.has('longSides') ? 1 : 0) +
-    (kinds.has('shortSides') ? 1 : 0) +
-    (kinds.has('implantation') ? 1 : 0) +
-    (kinds.has('assembly') ? 1 : 0) +
-    (kinds.has('levels') ? scene.index.levels.length : 0) +
-    (kinds.has('perModule') ? modules.size : 0);
+  const units = split && detected.length > 1 ? detected.map((u, i) => ({ ...u, name: unitNames[i]?.trim() || u.name })) : undefined;
+  const splitUsed = !!units && units.filter((u) => u.moduleIds.some((id) => modules.has(id))).length > 1;
+  const nSheets = useMemo(
+    () =>
+      generateDrawingSet(
+        { modules: [...modules], units, kinds: [...kinds], paper, style: DEFAULT_LINE_STYLE, title: '' },
+        { index: scene.index, projectId: '', modelVersionId: null, modelKey: '', titleBlock: emptyTitleBlock() },
+      ).set.sheets.length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modules, kinds, paper, split, unitNames, scene],
+  );
   return (
     <div className="card">
       <div className="card-head">
@@ -274,6 +282,30 @@ function Wizard({
           <label className="check" title="Hachure « // » sur les vitres visibles, portes et murs dans leur couleur de légende (modifiable ensuite vue par vue)">
             <input type="checkbox" checked={facadeMarks} onChange={(e) => setFacadeMarks(e.target.checked)} /> Repères façade : vitres //, portes et murs en couleur
           </label>
+          <label>Unités</label>
+          {detected.length > 1 ? (
+            <div className="wizard-units">
+              <label className="check">
+                <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} /> Séparer en {detected.length} unités (Viewbox espacées de plus de{' '}
+                {(UNIT_GAP_MM / 1000).toLocaleString('fr-FR')} m) : vue d’ensemble (vue aérienne, façades) puis toutes les planches pour chaque unité
+              </label>
+              {split &&
+                detected.map((u, i) => (
+                  <div key={u.n} className="row wizard-unit">
+                    <span className="unit-n">Unité {u.n}</span>
+                    <input
+                      type="text"
+                      value={unitNames[i] ?? ''}
+                      title="Nom sur les planches"
+                      onChange={(e) => setUnitNames((ns) => ns.map((n, j) => (j === i ? e.target.value : n)))}
+                    />
+                    <span className="hint">{u.moduleIds.filter((id) => modules.has(id)).join(', ') || 'aucune Viewbox choisie'}</span>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="hint">Une seule unité : toutes les Viewbox sont à {(UNIT_GAP_MM / 1000).toLocaleString('fr-FR')} m ou moins les unes des autres.</div>
+          )}
           <label>Viewbox à inclure</label>
           <div className="wizard-mods">
             {mods.map((m) => (
@@ -287,12 +319,12 @@ function Wizard({
           </div>
         </div>
         <div className="hint" style={{ margin: '12px 0' }}>
-          {nSheets} planche(s). Les vues sont calculées au mm près (lignes cachées retirées), l’échelle normalisée est choisie pour remplir chaque cadre,
+          {nSheets} planche(s){splitUsed ? ' : série A0 pour la vue d’ensemble, puis A1, A2… pour chaque unité' : ''}. Les vues sont calculées au mm près (lignes cachées retirées), l’échelle normalisée est choisie pour remplir chaque cadre,
           le cartouche est rempli avec les données du projet VEM. Compte de quelques secondes à quelques minutes selon la taille du
           stand (les vues déjà calculées sont réutilisées).
         </div>
         <div className="row">
-          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks })}>
+          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks })}>
             Générer
           </button>
           <button className="btn" onClick={onCancel}>

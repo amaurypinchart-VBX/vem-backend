@@ -4,13 +4,13 @@ import type { ReactNode } from 'react';
 import type { SceneIndex } from '../../core/types';
 import type { ViewKind } from '../../core/views';
 import { VIEW_LABELS } from '../../core/views';
-import { categoriesIn, subsetAll, subsetForLevel, subsetForModule } from '../../core/subset';
+import { categoriesIn, subsetAll, subsetForLevel, subsetForModule, subsetForModules } from '../../core/subset';
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { SavedCapture } from '../../api/vem';
 import type { PickableImage } from '../../sheets/images';
 import { CaptureGrid } from './CapturePicker';
 import { DETAILS, DETAIL_SCALES, detailRect, detailScale } from '../../sheets/details';
-import type { DetailItem, DimensionItem, DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import type { DetailItem, DimensionItem, DrawingSet, DrawingSetUnit, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
 import { dimGeometry, formatDim } from '../../sheets/dimensions';
 import { dimensionInput } from '../../sheets/SheetSvg';
 import { STANDARD_SCALES, fitScale } from '../../sheets/scales';
@@ -30,22 +30,40 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-type Scope = { kind: 'all' } | { kind: 'level'; level: number } | { kind: 'module'; moduleId: string };
+type Scope = { kind: 'all' } | { kind: 'level'; level: number } | { kind: 'module'; moduleId: string } | { kind: 'unit'; n: number } | { kind: 'custom' };
 
-function scopeOf(vp: ViewportItem, index: SceneIndex): Scope {
+function subsetForUnit(index: SceneIndex, u: DrawingSetUnit): string[] {
+  return [...subsetForModules(index, u.moduleIds), ...u.commonIds];
+}
+
+function scopeOf(vp: ViewportItem, index: SceneIndex, units: DrawingSetUnit[]): Scope {
   const f = vp.request.view.kind !== 'custom' ? vp.request.view.frame : 'world';
   if (typeof f === 'object') return { kind: 'module', moduleId: f.moduleId };
   const inc = new Set(vp.request.subset.include);
-  for (const lv of index.levels) {
-    const s = subsetForLevel(index, lv.level);
-    if (s.length === inc.size && s.every((id) => inc.has(id)) && index.levels.length > 1) return { kind: 'level', level: lv.level };
-  }
-  return { kind: 'all' };
+  const same = (s: string[]) => s.length === inc.size && s.every((id) => inc.has(id));
+  if (same(subsetAll(index))) return { kind: 'all' };
+  for (const u of units) if (same(subsetForUnit(index, u))) return { kind: 'unit', n: u.n };
+  for (const lv of index.levels) if (index.levels.length > 1 && same(subsetForLevel(index, lv.level))) return { kind: 'level', level: lv.level };
+  return { kind: 'custom' };
 }
 
-function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: ViewportItem; data?: ViewportData; scene: LoadedScene; onAutoDimension: () => void; dimCount: number }) {
+function ViewportProps({
+  vp,
+  data,
+  scene,
+  units,
+  onAutoDimension,
+  dimCount,
+}: {
+  vp: ViewportItem;
+  data?: ViewportData;
+  scene: LoadedScene;
+  units: DrawingSetUnit[];
+  onAutoDimension: () => void;
+  dimCount: number;
+}) {
   const { index } = scene;
-  const scope = scopeOf(vp, index);
+  const scope = scopeOf(vp, index, units);
   const kind = vp.request.view.kind === 'custom' ? 'top' : vp.request.view.kind;
   const categories = useMemo(() => categoriesIn(index, scene.look, vp.request.subset.include), [index, scene, vp.request.subset.include]);
   const hide = vp.request.subset.hideCategories ?? [];
@@ -63,8 +81,11 @@ function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: Vie
     });
   };
   const setScope = (v: string) => {
-    const s: Scope = v === 'all' ? { kind: 'all' } : v.startsWith('l:') ? { kind: 'level', level: Number(v.slice(2)) } : { kind: 'module', moduleId: v.slice(2) };
-    const include = s.kind === 'all' ? subsetAll(index) : s.kind === 'level' ? subsetForLevel(index, s.level) : subsetForModule(index, s.moduleId);
+    const unit = v.startsWith('u:') ? units.find((u) => u.n === Number(v.slice(2))) : undefined;
+    const s: Scope =
+      v === 'all' ? { kind: 'all' } : unit ? { kind: 'unit', n: unit.n } : v.startsWith('l:') ? { kind: 'level', level: Number(v.slice(2)) } : { kind: 'module', moduleId: v.slice(2) };
+    const include =
+      s.kind === 'module' ? subsetForModule(index, s.moduleId) : s.kind === 'level' ? subsetForLevel(index, s.level) : unit ? subsetForUnit(index, unit) : subsetAll(index);
     const frame = s.kind === 'module' ? { moduleId: s.moduleId } : ('world' as const);
     setReq({ subset: { ...vp.request.subset, include }, view: { kind, frame } }, 'Changer le sous-ensemble', { scale: 0 });
   };
@@ -82,8 +103,21 @@ function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: Vie
         </div>
       </Field>
       <Field label="Sous-ensemble">
-        <select value={scope.kind === 'all' ? 'all' : scope.kind === 'level' ? `l:${scope.level}` : `m:${scope.moduleId}`} onChange={(e) => setScope(e.target.value)}>
+        <select
+          value={scope.kind === 'level' ? `l:${scope.level}` : scope.kind === 'module' ? `m:${scope.moduleId}` : scope.kind === 'unit' ? `u:${scope.n}` : scope.kind}
+          onChange={(e) => setScope(e.target.value)}
+        >
+          {scope.kind === 'custom' && (
+            <option value="custom" disabled>
+              Sélection de l’assistant
+            </option>
+          )}
           <option value="all">Tout le modèle</option>
+          {units.map((u) => (
+            <option key={u.n} value={`u:${u.n}`}>
+              Unité {u.n} · {u.name}
+            </option>
+          ))}
           {index.levels.length > 1 &&
             index.levels.map((l) => (
               <option key={l.level} value={`l:${l.level}`}>
@@ -172,6 +206,16 @@ function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: Vie
           />
           Numéros des Viewbox
         </label>
+        {!!vp.overlays?.units?.length && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={!vp.overlays.hideUnits}
+              onChange={(e) => actions.updateItem(vp.id, { overlays: { ...vp.overlays, hideUnits: !e.target.checked } } as Partial<SheetItem>, 'Cadres des unités')}
+            />
+            Cadre et nom des unités
+          </label>
+        )}
       </div>
       <div className="row">
         <button className="btn small primary" disabled={!data?.lw} onClick={onAutoDimension} title="Cotes en chaîne et totales, placées à l’extérieur du dessin ; l’échelle est ajustée pour qu’elles tiennent dans le cadre">
@@ -499,6 +543,7 @@ export function PropertiesPanel({
                 vp={one}
                 data={viewData(one)}
                 scene={scene}
+                units={doc.units ?? []}
                 onAutoDimension={() => onAutoDimension(one)}
                 dimCount={sheet.items.filter((i) => i.type === 'dimension' && i.viewportId === one.id).length}
               />
@@ -528,6 +573,18 @@ export function PropertiesPanel({
             <Field label="Titre (encadré)">
               <input type="text" value={sheet.title} onChange={(e) => actions.updateSheet(sheet.id, { title: e.target.value })} />
             </Field>
+            {!!doc.units?.length && (
+              <Field label="Partie du jeu">
+                <select value={sheet.unit ?? 0} onChange={(e) => actions.updateSheet(sheet.id, { unit: Number(e.target.value) || undefined })}>
+                  <option value={0}>Vue d’ensemble (A0.x)</option>
+                  {doc.units.map((u) => (
+                    <option key={u.n} value={u.n}>
+                      Unité {u.n} · {u.name} (A{u.n}.x)
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <div className="hint" style={{ marginTop: 8 }}>
               Format {sheet.paper} paysage. Clique un élément pour le modifier ; Maj + clic pour en sélectionner plusieurs. Molette : zoom · molette enfoncée ou
               Espace + glisser : se déplacer · Suppr : supprimer · Ctrl+Z / Ctrl+Y : annuler / rétablir · Ctrl+C / Ctrl+V : copier / coller (aussi d’une
