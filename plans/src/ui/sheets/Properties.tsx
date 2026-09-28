@@ -9,7 +9,8 @@ import type { LoadedScene } from '../../scene/loadedScene';
 import type { SavedCapture } from '../../api/vem';
 import type { PickableImage } from '../../sheets/images';
 import { CaptureGrid } from './CapturePicker';
-import type { DimensionItem, DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import { DETAILS, DETAIL_SCALES, detailRect, detailScale } from '../../sheets/details';
+import type { DetailItem, DimensionItem, DrawingSet, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
 import { dimGeometry, formatDim } from '../../sheets/dimensions';
 import { dimensionInput } from '../../sheets/SheetSvg';
 import { STANDARD_SCALES, fitScale } from '../../sheets/scales';
@@ -150,6 +151,10 @@ function ViewportProps({ vp, data, scene, onAutoDimension, dimCount }: { vp: Vie
         <label className="check">
           <input type="checkbox" checked={vp.request.style.colorByCategory} onChange={(e) => setReq({ style: { ...vp.request.style, colorByCategory: e.target.checked } }, 'Style')} />
           Colorer par catégorie (dessus)
+        </label>
+        <label className="check" title="Vues de face : hachure « // » sur les vitres visibles (comme sur les plans Viewbox), portes et murs dans leur couleur de légende">
+          <input type="checkbox" checked={!!vp.request.style.facadeMarks} onChange={(e) => setReq({ style: { ...vp.request.style, facadeMarks: e.target.checked } }, 'Repères façade')} />
+          Repères façade (vitres //, portes, murs)
         </label>
         <label className="check">
           <input
@@ -333,6 +338,43 @@ function ImageProps({
   );
 }
 
+function DetailProps({ it }: { it: DetailItem }) {
+  const dt = DETAILS[it.detail];
+  if (!dt) return <div className="hint">Détail inconnu : {it.detail}</div>;
+  const scale = detailScale(dt, it.rect);
+  return (
+    <>
+      <Field label="Titre">
+        <div className="row">
+          <input type="text" value={it.label ?? ''} onChange={(e) => actions.updateItem(it.id, { label: e.target.value } as Partial<SheetItem>, 'Titre')} style={{ flex: 1, width: 'auto' }} />
+          <input type="checkbox" checked={!!it.showLabel} onChange={(e) => actions.updateItem(it.id, { showLabel: e.target.checked } as Partial<SheetItem>, 'Titre')} />
+        </div>
+      </Field>
+      <Field label="Échelle">
+        <select
+          value={DETAIL_SCALES.includes(scale) ? scale : ''}
+          onChange={(e) => {
+            const s = Number(e.target.value);
+            // le coin haut-gauche du dessin reste en place
+            const r = detailRect(dt, s, it.rect.x, it.rect.y);
+            actions.setRect(it.id, r);
+          }}
+        >
+          {!DETAIL_SCALES.includes(scale) && <option value="">1:{scale}</option>}
+          {DETAIL_SCALES.map((s) => (
+            <option key={s} value={s}>
+              1:{s}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="hint">
+        {dt.title} — dessin fixe et vectoriel repris du plan Spantech (cotes en mm réels). Poignées : agrandir / réduire (les proportions sont gardées).
+      </div>
+    </>
+  );
+}
+
 function TitleBlockForm({ doc }: { doc: DrawingSet }) {
   const tb = doc.titleBlock;
   const set = (patch: Partial<TitleBlockData>) =>
@@ -435,7 +477,9 @@ export function PropertiesPanel({
                       ? 'Cote'
                       : one.type === 'text'
                         ? 'Texte'
-                        : one.type === 'logo'
+                        : one.type === 'detail'
+                          ? 'Détail'
+                          : one.type === 'logo'
                           ? 'Logo'
                           : 'Forme'}
               {one.locked && <span className="badge">verrouillé</span>}
@@ -452,6 +496,7 @@ export function PropertiesPanel({
             {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}
             {one.type === 'label' && <LabelProps label={one} suggestions={suggestionsFor(one)} />}
             {one.type === 'text' && <TextProps t={one} />}
+            {one.type === 'detail' && <DetailProps it={one} />}
             {one.type === 'image3d' && (
               <ImageProps
                 it={one}

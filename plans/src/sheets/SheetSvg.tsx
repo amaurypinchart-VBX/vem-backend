@@ -5,10 +5,11 @@ import { memo } from 'react';
 import type { ViewBasis } from '../core/views';
 import { projectPoint } from '../core/views';
 import type { Linework2D } from '../linework/types';
-import { STROKE_MM } from '../linework/svg';
+import { STROKE_MM, inkOf, markColor } from '../linework/svg';
 import type { LogoShape } from './logos';
 import { LOGO_COLOR, VB_LOGO, VIEWBOX_WORDMARK } from './logos';
-import type { DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import type { DetailItem, DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import { DETAILS, detailFit, detailScale } from './details';
 import type { DimInput } from './dimensions';
 import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
 import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
@@ -199,7 +200,7 @@ function TitleColumn({ sheet, tb, notes, legend, k }: { sheet: Sheet; tb: TitleB
         return (
           <g key={e.key}>
             <line x1={num(TB.legend.lineX0 * k)} x2={num(TB.legend.lineX1 * k)} y1={num(y + 1.3 * k)} y2={num(y + 1.3 * k)} stroke={e.color} strokeWidth={num(0.6 * k)} />
-            <T x={TB.legend.labelX * k} top={y} size={s.legend * k} fill={e.color === '#FFFB14' ? '#b5a800' : e.color}>
+            <T x={TB.legend.labelX * k} top={y} size={s.legend * k} fill={inkOf(e.color)}>
               {e.label}
             </T>
           </g>
@@ -347,6 +348,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
               const color = categoryColors.get(key.slice(9)) ?? '#888';
               return <path key={key} d={d} stroke={color} strokeWidth={num(STROKE_MM.category * s)} strokeLinecap="butt" opacity={0.9} />;
             }
+            if (key.startsWith('mark:')) return <path key={key} d={d} stroke={markColor(key, categoryColors)} strokeWidth={num(STROKE_MM.mark * s)} />;
             const w = STROKE_MM[key as 'silhouette' | 'visible' | 'fine' | 'hidden'] ?? 0.18;
             return <path key={key} d={d} stroke="#000" strokeWidth={num(w * s)} strokeDasharray={key === 'hidden' ? `${num(1.2 * s)} ${num(0.8 * s)}` : undefined} />;
           })}
@@ -600,6 +602,38 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
             <rect {...rectAttrs(item.rect)} fill={item.fill ?? 'none'} stroke={item.stroke ?? '#000'} strokeWidth={num(item.strokeMm)} />
           );
         break;
+      case 'detail': {
+        const it = item as DetailItem;
+        const dt = DETAILS[it.detail];
+        if (!dt) {
+          body = <rect {...rectAttrs(it.rect)} fill="#f1f3f6" stroke="#c9ced8" strokeWidth={0.3} />;
+          break;
+        }
+        const f = detailFit(dt, it.rect);
+        body = (
+          <>
+            <g transform={`translate(${num(f.x)} ${num(f.y)}) scale(${num(f.k)})`} strokeLinecap="round" strokeLinejoin="round">
+              {dt.strokes.map((st, i) => (
+                <path key={i} d={st.d} fill="none" stroke="#000" strokeWidth={num(st.widthMm / f.k)} />
+              ))}
+              <path d={dt.fill} fill="#000" stroke="none" />
+              {!thumbnail &&
+                dt.texts.map((t, i) => (
+                  <text key={i} x={t.x} y={t.y} fontSize={t.size} fontFamily={FONT_SANS} fill="#000" transform={t.rotate ? `rotate(${t.rotate} ${t.x} ${t.y})` : undefined}>
+                    {t.text}
+                  </text>
+                ))}
+            </g>
+            {editing && (
+              <text x={num(it.rect.x + it.rect.w - 1)} y={num(it.rect.y + it.rect.h - 1.2)} fontSize={2.6} textAnchor="end" fill="#9aa3b5" fontFamily={FONT_SANS}>
+                {scaleLabel(detailScale(dt, it.rect))}
+              </text>
+            )}
+            {it.showLabel && it.label && <ViewTitle text={it.label} pos={it.labelPos ?? { x: it.rect.x, y: it.rect.y - titleSize * 1.3 }} size={it.labelSize ?? titleSize} />}
+          </>
+        );
+        break;
+      }
       case 'logo':
         body = <Logo shape={item.logo === 'vb' ? VB_LOGO : VIEWBOX_WORDMARK} rect={item.rect} />;
         break;

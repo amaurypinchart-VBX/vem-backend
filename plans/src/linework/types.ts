@@ -19,6 +19,8 @@ export interface LineStyleSpec {
   detailMinPaperMm: number;
   /** trait épais de couleur le long de la face du module qui porte l'accessoire (vues de dessus) */
   colorByCategory: boolean;
+  /** vues de face : hachures de vitrage « // » sur les vitres visibles, portes et murs dans leur couleur de légende */
+  facadeMarks?: boolean;
 }
 
 export const DEFAULT_LINE_STYLE: LineStyleSpec = {
@@ -48,7 +50,12 @@ export interface LineworkRequest {
   style: LineStyleSpec;
 }
 
-export type LayerKey = 'silhouette' | 'visible' | 'fine' | 'hidden' | `category:${string}`;
+export type LayerKey = 'silhouette' | 'visible' | 'fine' | 'hidden' | `category:${string}` | `mark:${string}`;
+
+/** Calques ajoutés au dessin (couleurs, repères, lignes cachées) : ni accroche ni mesure des cotes automatiques. */
+export function isDecorationLayer(key: LayerKey): boolean {
+  return key === 'hidden' || key.startsWith('category:') || key.startsWith('mark:');
+}
 
 export interface LineworkLayer {
   key: LayerKey;

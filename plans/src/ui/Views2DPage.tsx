@@ -182,10 +182,14 @@ export function Views2DPage({ scene, provider, framesVersion, categoryColors }: 
               <input type="checkbox" checked={style.colorByCategory} onChange={(e) => setStyle({ ...style, colorByCategory: e.target.checked })} />
               Colorer par catégorie (dessus)
             </label>
+            <label className="check" title="Vues de face : hachure « // » sur les vitres visibles, portes et murs dans leur couleur de légende">
+              <input type="checkbox" checked={!!style.facadeMarks} onChange={(e) => setStyle({ ...style, facadeMarks: e.target.checked })} />
+              Repères façade (faces)
+            </label>
             <label className="check" title="Échelle visée : fixe le seuil des détails fins et des très petits objets">
               Échelle
               <select value={style.scaleDenominator} onChange={(e) => setStyle({ ...style, scaleDenominator: Number(e.target.value) })} style={{ width: 80 }}>
-                {[20, 25, 50, 75, 100, 200].map((s) => (
+                {[20, 25, 30, 35, 40, 45, 50, 75, 100, 200].map((s) => (
                   <option key={s} value={s}>
                     1:{s}
                   </option>

@@ -45,6 +45,8 @@ export const LEGEND: Record<string, { label: string; color: string }> = {
   'PORTE-SIMPLE': { label: 'Single Door', color: '#CC0043' },
   'PORTE-DOUBLE': { label: 'Double Door', color: '#FF3712' },
   'PORTE-COULISSANTE': { label: 'Full Sliding Door', color: '#FF69B4' },
+  // vitrage sans type précis : couleur de la hachure « // » des vues de face (plans Viewbox)
+  VITRE: { label: 'Glass', color: '#1EAAF1' },
 };
 
 /** [minX, minY, minZ, maxX, maxY, maxZ] en mm, repère monde Y-up. */

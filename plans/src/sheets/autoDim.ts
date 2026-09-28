@@ -5,6 +5,7 @@ import type { Vec3, ViewBasis } from '../core/views';
 import { dot, unprojectPoint } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { Linework2D } from '../linework/types';
+import { isDecorationLayer } from '../linework/types';
 import type { DimensionItem, RectMm, ViewportItem } from './types';
 import type { AutoDim, AutoDimInput, DimPurpose, Extent } from './dimensions';
 import { DIM, dimGeometry, dimMargins, fitWithDims, planDimensions, rowOffset } from './dimensions';
@@ -21,7 +22,7 @@ export function dimPurpose(vp: ViewportItem): DimPurpose {
 function extentsBy(lw: Linework2D, scene: LoadedScene, pick: (category: string | null) => boolean): Extent[] {
   const byId = new Map<string, Extent>();
   for (const layer of lw.layers) {
-    if (layer.key === 'hidden' || layer.key.startsWith('category:')) continue;
+    if (isDecorationLayer(layer.key)) continue;
     layer.polylines.forEach((pl, i) => {
       const id = layer.sourceNodeIds?.[i];
       if (!id || !pick(scene.look.categoryOf(id))) return;

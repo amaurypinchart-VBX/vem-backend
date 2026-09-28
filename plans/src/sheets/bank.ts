@@ -49,9 +49,14 @@ export class LineworkBank {
     return this.keys.get(JSON.stringify(vp.request));
   }
 
+  /** Traits gardés en mémoire : clé du calcul + ce qui est ajouté après (couleurs, repères façade). */
+  private entryKey(key: string, vp: ViewportItem): string {
+    return `${key}|${vp.request.style.colorByCategory ? 'c' : ''}${vp.request.style.facadeMarks ? 'f' : ''}`;
+  }
+
   data(vp: ViewportItem): ViewportData {
     const key = this.keyOf(vp);
-    const e = key ? this.entries.get(key) : undefined;
+    const e = key ? this.entries.get(this.entryKey(key, vp)) : undefined;
     let basis;
     try {
       basis = viewBasis(vp.request.view, this.scene.frames);
@@ -86,33 +91,34 @@ export class LineworkBank {
       key = await this.provider.cacheKey(vp.request);
       this.keys.set(reqKey, key);
     }
-    const e = this.entries.get(key);
+    const ek = this.entryKey(key, vp);
+    const e = this.entries.get(ek);
     if (e?.lw) return { key, lw: e.lw };
-    if (this.pendingKeys.has(key)) {
+    if (this.pendingKeys.has(ek)) {
       // déjà en cours : on attend la fin
       await new Promise<void>((resolve) => {
         const off = this.subscribe(() => {
-          if (!this.pendingKeys.has(key!)) {
+          if (!this.pendingKeys.has(ek)) {
             off();
             resolve();
           }
         });
       });
-      const done = this.entries.get(key);
+      const done = this.entries.get(ek);
       return done?.lw ? { key, lw: done.lw } : null;
     }
-    this.pendingKeys.add(key);
-    this.entries.set(key, { busy: true });
+    this.pendingKeys.add(ek);
+    this.entries.set(ek, { busy: true });
     this.emit();
     try {
       const lw = await this.provider.getLinework(vp.request, undefined, signal);
-      this.entries.set(key, { lw });
+      this.entries.set(ek, { lw });
       return { key, lw };
     } catch (err) {
-      this.entries.set(key, { error: (err as Error).name === 'AbortError' ? 'annulé' : (err as Error).message });
+      this.entries.set(ek, { error: (err as Error).name === 'AbortError' ? 'annulé' : (err as Error).message });
       return null;
     } finally {
-      this.pendingKeys.delete(key);
+      this.pendingKeys.delete(ek);
       this.emit();
     }
   }

@@ -37,6 +37,7 @@ import { downloadText } from '../common';
 import { CapturePicker } from './CapturePicker';
 import type { PickableImage } from '../../sheets/images';
 import { insertRect, otherImagesOfSet } from '../../sheets/images';
+import { DETAILS, detailRect } from '../../sheets/details';
 
 interface Props {
   scene: LoadedScene;
@@ -302,6 +303,15 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       );
     setPicker(null);
   };
+  // détail type (coupes profils, plancher et isolant) : dessin fixe à 1:10, coin haut-gauche de la zone de dessin
+  const addDetail = (id: string) => {
+    const dt = DETAILS[id];
+    const k = templateScale(sheet.paper);
+    actions.addItems(
+      [{ id: newId('dt'), type: 'detail', detail: id, rect: detailRect(dt, 10 / k, 30 * k, 60 * k), label: 'Section details', showLabel: true }],
+      'Ajouter un détail',
+    );
+  };
   const pickerItem = picker?.itemId ? (sheet?.items.find((i) => i.id === picker.itemId) as Image3dItem | undefined) : undefined;
 
   const exportSvg = () => {
@@ -382,6 +392,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </button>
         <button className="btn small" disabled={!!busy} onClick={() => setPicker({ itemId: null })} title="Ajouter une image 3D : une des captures de la vue 3D, ou tout le modèle en iso SO">
           📷 Image 3D
+        </button>
+        <button className="btn small" onClick={() => addDetail('profiles')} title={`Détail type (dessin fixe) : ${DETAILS.profiles.title}`}>
+          ▦ Détail
         </button>
         <span className="sep" />
         {sel.length >= 2 && (

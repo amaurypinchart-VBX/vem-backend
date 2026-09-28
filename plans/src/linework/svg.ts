@@ -2,13 +2,35 @@
 // se mesure en mm réels, et les épaisseurs de trait ne dépendent pas de l'échelle (dessin d'architecte).
 import type { LayerKey, Linework2D } from './types';
 
-export const STROKE_MM: Record<'silhouette' | 'visible' | 'fine' | 'hidden' | 'category', number> = {
+export const STROKE_MM: Record<'silhouette' | 'visible' | 'fine' | 'hidden' | 'category' | 'mark', number> = {
   silhouette: 0.35,
   visible: 0.18,
   fine: 0.13,
   hidden: 0.13,
   category: 1.0,
+  mark: 0.25,
 };
+
+/** Couleur des vitres sans couleur de légende (hachure « // »), comme sur les plans Viewbox. */
+export const GLASS_MARK_COLOR = '#1EAAF1';
+
+/** Couleur de trait lisible sur fond blanc : une couleur très claire (jaune « Wall Light ») est foncée. */
+export function inkOf(color: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color);
+  if (!m) return color;
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  if (0.299 * r + 0.587 * g + 0.114 * b < 190) return color;
+  const k = 0.7;
+  return `#${[r, g, b].map((c) => Math.round(c * k).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Couleur d'un calque « mark:CATÉGORIE » (repères façade). */
+export function markColor(key: string, colors: Record<string, string> | Map<string, string>): string {
+  const cat = key.slice(5);
+  const c = colors instanceof Map ? colors.get(cat) : colors[cat];
+  return inkOf(c ?? GLASS_MARK_COLOR);
+}
 
 export interface SvgOptions {
   /** échelle (50 = 1:50) */
@@ -33,6 +55,7 @@ function styleOf(key: LayerKey, colors: Record<string, string>): string {
     const c = colors[key.slice(9)] ?? '#888888';
     return `stroke="${c}" stroke-width="${STROKE_MM.category}" stroke-linecap="butt" opacity="0.9"`;
   }
+  if (key.startsWith('mark:')) return `stroke="${markColor(key, colors)}" stroke-width="${STROKE_MM.mark}"`;
   const w = STROKE_MM[key as 'silhouette' | 'visible' | 'fine' | 'hidden'];
   const dash = key === 'hidden' ? ' stroke-dasharray="1.2 0.8"' : '';
   return `stroke="#000" stroke-width="${w}"${dash}`;

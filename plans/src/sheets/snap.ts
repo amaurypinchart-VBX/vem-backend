@@ -1,6 +1,7 @@
 // Accroche des cotes et repères (§9.3) : extrémités, milieux et centres de cercles des traits d'une vue, dans un index
 // en grille (recherche du point le plus proche en temps constant). Fonction pure, coordonnées mm modèle (dessin).
 import type { Linework2D } from '../linework/types';
+import { isDecorationLayer } from '../linework/types';
 
 export type SnapKind = 'end' | 'mid' | 'center';
 
@@ -52,7 +53,7 @@ export function buildSnapIndex(lw: Linework2D, cell = 100): SnapIndex {
     kinds.push(kind);
   };
   for (const layer of lw.layers) {
-    if (layer.key === 'hidden' || layer.key.startsWith('category:')) continue;
+    if (isDecorationLayer(layer.key)) continue;
     for (const pl of layer.polylines) {
       const c = circleCenter(pl);
       if (c) add(c.x, c.y, 'center');

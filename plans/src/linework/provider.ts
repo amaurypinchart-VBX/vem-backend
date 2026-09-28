@@ -5,6 +5,7 @@ import { viewBasis, viewKey } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import { cacheGet, cachePut, hashKey } from './cache';
 import { categoryStrokeLayers, isTopView } from './categoryStrokes';
+import { facadeMarkLayers } from './facadeMarks';
 import type { HlrPacket } from './hlr';
 import type { GlassTest } from './packets';
 import { buildPacket } from './packets';
@@ -46,7 +47,8 @@ export class BrowserHlrProvider implements LineworkProvider {
       model: this.scene.modelKey,
       subset: this.subsetKey(req),
       view: viewKey(req.view, this.scene.frames),
-      style: { ...req.style, colorByCategory: undefined },
+      // couleurs et repères sont ajoutés après le calcul : ils ne changent pas la clé des traits
+      style: { ...req.style, colorByCategory: undefined, facadeMarks: undefined },
     });
   }
 
@@ -79,6 +81,11 @@ export class BrowserHlrProvider implements LineworkProvider {
       meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
       const extra = categoryStrokeLayers(this.scene, meshIds, basis, this.opts.categoryColors());
       lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('category:')), ...extra] };
+    }
+    if (req.style.facadeMarks) {
+      meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+      const marks = facadeMarkLayers(this.scene, meshIds, basis, lw, this.opts.glassTest, this.opts.categoryColors());
+      lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('mark:')), ...marks] };
     }
     return lw;
   }

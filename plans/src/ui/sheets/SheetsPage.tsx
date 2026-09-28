@@ -114,7 +114,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
             try {
               setProgress({ label: 'Mise en page des planches', fraction: 0.02 });
               const { set, captures, dimensioned } = generateDrawingSet(
-                { ...opts, style: DEFAULT_LINE_STYLE },
+                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks } },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(project, me) },
               );
               await fitDrawingSet(set, bank, (done, total) => setProgress({ label: `Calcul des vues 2D (${done}/${total})`, fraction: 0.05 + 0.65 * (done / Math.max(total, 1)) }));
@@ -218,13 +218,14 @@ function Wizard({
   scene: LoadedScene;
   defaultTitle: string;
   onCancel: () => void;
-  onGenerate: (o: { modules: string[]; kinds: SheetKind[]; paper: Paper; title: string }) => void;
+  onGenerate: (o: { modules: string[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
   const [modules, setModules] = useState<Set<string>>(() => new Set(mods.map((m) => m.id)));
   const [kinds, setKinds] = useState<Set<SheetKind>>(() => new Set(DEFAULT_SHEET_KINDS));
   const [paper, setPaper] = useState<Paper>('A1');
   const [title, setTitle] = useState(defaultTitle);
+  const [facadeMarks, setFacadeMarks] = useState(true);
   const toggle = <T,>(set: Set<T>, v: T) => {
     const n = new Set(set);
     if (n.has(v)) n.delete(v);
@@ -265,6 +266,10 @@ function Wizard({
               </label>
             ))}
           </div>
+          <label>Vues de face</label>
+          <label className="check" title="Hachure « // » sur les vitres visibles, portes et murs dans leur couleur de légende (modifiable ensuite vue par vue)">
+            <input type="checkbox" checked={facadeMarks} onChange={(e) => setFacadeMarks(e.target.checked)} /> Repères façade : vitres //, portes et murs en couleur
+          </label>
           <label>Viewbox à inclure</label>
           <div className="wizard-mods">
             {mods.map((m) => (
@@ -283,7 +288,7 @@ function Wizard({
           stand (les vues déjà calculées sont réutilisées).
         </div>
         <div className="row">
-          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], kinds: [...kinds], paper, title: title.trim() || defaultTitle })}>
+          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks })}>
             Générer
           </button>
           <button className="btn" onClick={onCancel}>

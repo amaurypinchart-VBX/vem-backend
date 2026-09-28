@@ -146,7 +146,19 @@ export interface LogoItem extends ItemBase {
   logo: 'vb' | 'wordmark';
 }
 
-export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem;
+/** Détail type (dessin fixe et vectoriel de la bibliothèque `details/`), placé à l'échelle de son cadre. */
+export interface DetailItem extends ItemBase {
+  type: 'detail';
+  rect: RectMm;
+  /** identifiant dans DETAILS */
+  detail: string;
+  label?: string;
+  showLabel?: boolean;
+  labelPos?: PointMm;
+  labelSize?: number;
+}
+
+export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem | DetailItem;
 export type BoxItem = Exclude<SheetItem, LabelItem | DimensionItem>;
 
 export interface Sheet {
