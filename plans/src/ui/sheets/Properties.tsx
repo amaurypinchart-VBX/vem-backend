@@ -53,6 +53,7 @@ function ViewportProps({
   scene,
   units,
   onAutoDimension,
+  onSetInclude,
   dimCount,
 }: {
   vp: ViewportItem;
@@ -60,6 +61,7 @@ function ViewportProps({
   scene: LoadedScene;
   units: DrawingSetUnit[];
   onAutoDimension: () => void;
+  onSetInclude: (include: string[], label: string) => void;
   dimCount: number;
 }) {
   const { index } = scene;
@@ -89,6 +91,16 @@ function ViewportProps({
     const frame = s.kind === 'module' ? { moduleId: s.moduleId } : ('world' as const);
     setReq({ subset: { ...vp.request.subset, include }, view: { kind, frame } }, 'Changer le sous-ensemble', { scale: 0 });
   };
+  // unités affichées (vues du monde) : une unité est affichée si l'une de ses Viewbox est dans le sous-ensemble
+  const worldView = vp.request.view.kind === 'custom' || typeof vp.request.view.frame !== 'object';
+  const include = vp.request.subset.include;
+  const nodeOf = useMemo(() => new Map(index.modules.map((m) => [m.id, m.nodeId])), [index]);
+  const shownUnits = units.filter((u) => u.moduleIds.some((id) => include.includes(nodeOf.get(id) ?? '')));
+  const toggleUnit = (u: DrawingSetUnit, show: boolean) => {
+    const own = new Set(subsetForUnit(index, u));
+    const next = show ? [...include.filter((id) => !own.has(id)), ...own] : include.filter((id) => !own.has(id));
+    onSetInclude(next, show ? `Afficher ${u.name}` : `Masquer ${u.name}`);
+  };
   const fitNow = () => {
     if (!data?.lw) return;
     const b = data.lw.boundsMm;
@@ -109,7 +121,7 @@ function ViewportProps({
         >
           {scope.kind === 'custom' && (
             <option value="custom" disabled>
-              Sélection de l’assistant
+              Sélection personnalisée
             </option>
           )}
           <option value="all">Tout le modèle</option>
@@ -133,6 +145,21 @@ function ViewportProps({
             ))}
         </select>
       </Field>
+      {worldView && units.length > 1 && (
+        <Field label="Unités affichées">
+          <div className="chips-select" title="Décocher une unité la retire de cette vue (utile en vue de face quand les unités se superposent)">
+            {units.map((u) => {
+              const on = shownUnits.includes(u);
+              return (
+                <label key={u.n} className={`chip-toggle${on ? '' : ' off'}`}>
+                  <input type="checkbox" checked={on} disabled={on && shownUnits.length === 1} onChange={() => toggleUnit(u, !on)} />
+                  <span className="chip">{u.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </Field>
+      )}
       <Field label="Vue">
         <select value={kind} onChange={(e) => setReq({ view: { kind: e.target.value as ViewKind, frame: vp.request.view.kind === 'custom' ? 'world' : vp.request.view.frame } }, 'Changer la vue', { scale: 0 })}>
           {(['top', 'front', 'back', 'left', 'right', 'bottom'] as ViewKind[]).map((k) => (
@@ -484,6 +511,7 @@ export function PropertiesPanel({
   onPickImage,
   onOpenPicker,
   onAutoDimension,
+  onSetInclude,
   onSyncProject,
   syncMessage,
 }: {
@@ -498,6 +526,7 @@ export function PropertiesPanel({
   onPickImage: (item: Image3dItem, img: PickableImage) => void;
   onOpenPicker: (item: Image3dItem) => void;
   onAutoDimension: (vp: ViewportItem) => void;
+  onSetInclude: (vp: ViewportItem, include: string[], label: string) => void;
   onSyncProject: () => void;
   syncMessage: string;
 }) {
@@ -545,6 +574,7 @@ export function PropertiesPanel({
                 scene={scene}
                 units={doc.units ?? []}
                 onAutoDimension={() => onAutoDimension(one)}
+                onSetInclude={(include, label) => onSetInclude(one, include, label)}
                 dimCount={sheet.items.filter((i) => i.type === 'dimension' && i.viewportId === one.id).length}
               />
             )}

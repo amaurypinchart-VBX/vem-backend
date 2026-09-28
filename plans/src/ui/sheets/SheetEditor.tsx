@@ -33,7 +33,7 @@ import type { Linework2D } from '../../linework/types';
 import { autoDimensionViewport } from '../../sheets/autoDim';
 import type { DimensionItem } from '../../sheets/types';
 import { PropertiesPanel } from './Properties';
-import { downloadText } from '../common';
+import { downloadBlob, downloadText } from '../common';
 import { CapturePicker } from './CapturePicker';
 import type { PickableImage } from '../../sheets/images';
 import { insertRect, otherImagesOfSet } from '../../sheets/images';
@@ -276,6 +276,37 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     });
   };
 
+  /**
+   * Autre sous-ensemble pour une vue (unités affichées) : la vue est calculée d'abord, puis sous-ensemble, échelle,
+   * centrage et cotes automatiques (refaites si la vue en avait) changent en une seule action (un seul Ctrl+Z).
+   */
+  const setViewportInclude = async (vp: ViewportItem, include: string[], label: string) => {
+    const next: ViewportItem = { ...vp, request: { ...vp.request, subset: { ...vp.request.subset, include } } };
+    setBusy('Calcul de la vue…');
+    const r = await bank.load(next);
+    setBusy('');
+    const data = bank.data(next);
+    if (!r || !data.basis) {
+      window.alert(`Vue impossible à calculer${data.error ? ` : ${data.error}` : ''}`);
+      return;
+    }
+    const sheetOf = doc.sheets.find((x) => x.items.some((i) => i.id === vp.id));
+    const hadAuto = !!sheetOf?.items.some((i) => i.type === 'dimension' && i.auto && i.viewportId === vp.id);
+    const dimmed = hadAuto ? autoDimensionViewport(next, r.lw, data.basis, scene) : null;
+    const b = r.lw.boundsMm;
+    useEditor.getState().apply(label, (d) => {
+      const s = d.sheets.find((x) => x.id === sheetOf?.id);
+      const it = s?.items.find((i) => i.id === vp.id) as ViewportItem | undefined;
+      if (!s || !it) return;
+      it.request = next.request;
+      it.lineworkKey = r.key;
+      it.scale = dimmed?.scale ?? fitScale(b, it.rect);
+      it.center = dimmed?.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && i.viewportId === vp.id));
+      if (dimmed) s.items.push(...(dimmed.dims as typeof s.items));
+    });
+  };
+
   const suggestionsOf = (nodeId?: string): string[] => {
     if (!nodeId) return [];
     const item = scene.look.byId.get(scene.look.itemOf(nodeId)) ?? scene.look.byId.get(nodeId);
@@ -359,6 +390,56 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const exportSvg = () => {
     const markup = renderToStaticMarkup(<SheetSvg sheet={sheet} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} />);
     downloadText(`${doc.titleBlock.projectNumber || doc.title}_${sheet.number}.svg`.replace(/\s+/g, '_'), markup, 'image/svg+xml');
+  };
+
+  /** PDF vectoriel du jeu entier ou de la planche affichée (une page par planche, format exact). */
+  const exportPdf = async (all: boolean) => {
+    const sheets = all ? doc.sheets : [sheet];
+    try {
+      setBusy('PDF : calcul des vues…');
+      const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+      await Promise.all(vps.map((vp) => bank.load(vp)));
+      const missing = vps.filter((vp) => !bank.data(vp).lw).length;
+      if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
+      const { buildPdf, fontsUsed } = await import('../../sheets/pdf/pdf');
+      const { loadFonts, pdfImageDataUrl } = await import('../../sheets/pdf/assets');
+      // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
+      const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
+      const images = new Map<string, string>();
+      let failed = 0;
+      for (const [n, url] of urls.entries()) {
+        setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
+        try {
+          images.set(url, await pdfImageDataUrl(url));
+        } catch {
+          failed++;
+        }
+      }
+      const pages = sheets.map((s) => ({
+        paper: s.paper,
+        svg: renderToStaticMarkup(
+          <SheetSvg
+            sheet={{ ...s, items: s.items.map((i) => (i.type === 'image3d' && i.url ? { ...i, url: images.get(i.url) ?? '' } : i)) }}
+            titleBlock={doc.titleBlock}
+            notes={doc.notes}
+            legend={legend}
+            viewData={(vp) => bank.data(vp)}
+          />,
+        ),
+      }));
+      setBusy('PDF : polices…');
+      const fonts = await loadFonts(fontsUsed(pages.map((p) => p.svg)));
+      const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: all ? `${sheets.length} planche(s)` : `${sheet.number} ${sheet.title}` }, (d, n) =>
+        setBusy(`PDF : planche ${d}/${n}…`),
+      );
+      const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${all ? '' : `_${sheet.number}`}`;
+      downloadBlob(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`, pdf.output('blob'));
+      if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
+    } catch (e) {
+      window.alert(`Export PDF impossible : ${(e as Error).message}`);
+    } finally {
+      setBusy('');
+    }
   };
 
   const newSheet = () => {
@@ -510,7 +591,13 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small ghost" onClick={() => setZoomSignal((z) => ({ n: z.n + 1, factor: 1.25 }))}>
           +
         </button>
-        <button className="btn small" onClick={exportSvg} title="Planche au format SVG (A1 exact, vectoriel). Export PDF : étape suivante.">
+        <button className="btn small" disabled={!!busy} onClick={() => void exportPdf(true)} title="Tout le jeu de plans en un PDF vectoriel (une page par planche, format exact, polices intégrées)">
+          ⬇ PDF du jeu
+        </button>
+        <button className="btn small ghost" disabled={!!busy} onClick={() => void exportPdf(false)} title="La planche affichée en PDF vectoriel">
+          ⬇ PDF planche
+        </button>
+        <button className="btn small ghost" onClick={exportSvg} title="La planche affichée au format SVG (format exact, vectoriel)">
           ⬇ SVG
         </button>
         <span className={`save-status ${save.status}`} title={save.error}>
@@ -613,6 +700,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onPickImage={(item, img) => pickImage(item.id, img)}
           onOpenPicker={(item) => setPicker({ itemId: item.id })}
           onAutoDimension={(vp) => autoDimension([vp])}
+          onSetInclude={(vp, include, label) => void setViewportInclude(vp, include, label)}
           onSyncProject={() => void syncProject(true)}
           syncMessage={syncMessage}
         />

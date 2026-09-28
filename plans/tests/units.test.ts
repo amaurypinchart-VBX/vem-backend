@@ -11,7 +11,7 @@ import { subsetForModules } from '../src/core/subset';
 import { generateDrawingSet, renumber } from '../src/sheets/generate';
 import { actions, useEditor } from '../src/sheets/store';
 import { SheetSvg } from '../src/sheets/SheetSvg';
-import { moduleOverlays } from '../src/sheets/overlays';
+import { moduleOverlays, numberLabels } from '../src/sheets/overlays';
 import { emptyTitleBlock } from '../src/sheets/types';
 import type { Sheet, ViewportItem } from '../src/sheets/types';
 import { DEFAULT_LINE_STYLE } from '../src/linework/types';
@@ -216,5 +216,12 @@ describe('jeu de plans séparé en unités', () => {
     expect((svg.match(/stroke-dasharray="8 1.5 1.5 1.5"/g) ?? []).length).toBe(2);
     const hidden = render({ ...vp, overlays: { ...vp.overlays, hideUnits: true } });
     expect(hidden).not.toContain('Bar VIP');
+  });
+
+  it('vue de dessus : Viewbox empilées = un seul numéro « 1/4 », les autres gardent le leur', () => {
+    const basis = { right: [1, 0, 0] as Vec3, up: [0, 0, -1] as Vec3, toward: [0, 1, 0] as Vec3 };
+    const stacked = { ...frame('VBX-04', 0, 0), origin: [0, 2800, 0] as Vec3 };
+    const overlays = moduleOverlays([frame('VBX-01', 0, 0), frame('VBX-02', 5900, 0), stacked], new Set(['VBX-01', 'VBX-02', 'VBX-04']), basis);
+    expect(numberLabels(overlays).map((l) => l.label)).toEqual(['1/4', '2']);
   });
 });

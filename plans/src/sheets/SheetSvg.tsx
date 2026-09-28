@@ -14,7 +14,7 @@ import type { DimInput } from './dimensions';
 import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
 import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
 import type { ModuleOverlay } from './overlays';
-import { UNIT_FRAME, moduleNumber, unitFrames } from './overlays';
+import { UNIT_FRAME, numberLabels, unitFrames } from './overlays';
 import { scaleLabel, viewportTransform } from './scales';
 
 export interface LegendEntry {
@@ -356,12 +356,12 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
             overlays.map((o) => <path key={`o${o.moduleId}`} d={polyD(o.outline)} stroke="#000" strokeWidth={num(0.18 * s)} strokeDasharray={`${num(3 * s)} ${num(1.5 * s)}`} />)}
         </g>
         {vp.overlays?.moduleNumbers &&
-          overlays.map((o) => {
+          numberLabels(overlays).map((o) => {
             const p = toPaper(o.center.x, o.center.y);
             const size = Math.max(5, Math.min(40, o.minSize / s / 2.2));
             return (
-              <text key={`n${o.moduleId}`} x={num(p.x)} y={num(p.y + size * 0.35)} fontSize={num(size)} textAnchor="middle" fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
-                {moduleNumber(o.moduleId)}
+              <text key={`n${o.key}`} x={num(p.x)} y={num(p.y + size * 0.35)} fontSize={num(size)} textAnchor="middle" fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
+                {o.label}
               </text>
             );
           })}

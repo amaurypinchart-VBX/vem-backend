@@ -46,6 +46,20 @@ export function moduleOverlays(frames: Iterable<ModuleFrame>, moduleIds: Set<str
   return out;
 }
 
+/** Numéros à afficher : des Viewbox empilées (même emprise dans le dessin, vue de dessus) partagent « 1/4 ». */
+export function numberLabels(overlays: ModuleOverlay[]): Array<{ key: string; label: string; center: { x: number; y: number }; minSize: number }> {
+  const groups: ModuleOverlay[][] = [];
+  for (const o of overlays) {
+    const g = groups.find(([a]) => Math.hypot(a.center.x - o.center.x, a.center.y - o.center.y) < 0.15 * Math.min(a.minSize, o.minSize));
+    if (g) g.push(o);
+    else groups.push([o]);
+  }
+  return groups.map((g) => {
+    const sorted = [...g].sort((a, b) => Number(moduleNumber(a.moduleId)) - Number(moduleNumber(b.moduleId)) || a.moduleId.localeCompare(b.moduleId));
+    return { key: sorted.map((o) => o.moduleId).join('+'), label: sorted.map((o) => moduleNumber(o.moduleId)).join('/'), center: sorted[0].center, minSize: Math.min(...g.map((o) => o.minSize)) };
+  });
+}
+
 /** Numéro affiché d'une Viewbox (« VBX-07 » → « 7 »). */
 export function moduleNumber(moduleId: string): string {
   const m = moduleId.match(/(\d+)\s*$/);
