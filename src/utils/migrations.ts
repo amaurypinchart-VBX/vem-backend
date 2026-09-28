@@ -913,4 +913,29 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
       logger.warn(`[migration] plans_model_versions : ${e.message}`);
     }
   }
+  // ─── Colonne "plans_access" sur users (outils Plans 2D activés personne par personne) ───
+  // À la création de la colonne seulement, l'accès est donné au compte technical manager d'Amaury Pinchart ;
+  // ensuite il se gère depuis l'app (Équipe › fiche du membre), ce bloc ne le réécrit plus.
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'plans_access'
+        ) THEN
+          ALTER TABLE "users" ADD COLUMN "plans_access" BOOLEAN NOT NULL DEFAULT false;
+          UPDATE "users" SET "plans_access" = true
+            WHERE "role" = 'technical_manager'
+              AND ((lower("first_name") = 'amaury' AND lower("last_name") = 'pinchart')
+                   OR lower("email") LIKE 'amaury.pinchart@%');
+        END IF;
+      END $$;
+    `);
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT email FROM "users" WHERE "plans_access" = true ORDER BY email`
+    ) as Array<{ email: string }>;
+    logger.info(`[migration] accès Plans 2D : ${rows.map(r => r.email).join(', ') || 'personne'}`);
+  } catch (e: any) {
+    logger.warn(`[migration] users.plans_access : ${e.message}`);
+  }
 }

@@ -10,6 +10,7 @@ import { Server as SocketServer } from 'socket.io';
 
 import { errorHandler } from './middleware/errorHandler';
 import { authMiddleware, requireRole } from './middleware/auth';
+import { requirePlansAccess } from './middleware/plansAccess';
 import { logger } from './utils/logger';
 
 import authRoutes          from './routes/auth';
@@ -108,8 +109,9 @@ app.use(`${API}/ai`, authMiddleware, aiRoutes);
 app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
 app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
 app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
-app.use(`${API}/plan2d`,         authMiddleware, plan2dRoutes);
-app.use(`${API}/plans`,          authMiddleware, plansRoutes);
+// Outils Plans 2D : réservés aux comptes dont l'accès a été activé (Équipe › fiche du membre).
+app.use(`${API}/plan2d`,         authMiddleware, requirePlansAccess, plan2dRoutes);
+app.use(`${API}/plans`,          authMiddleware, requirePlansAccess, plansRoutes);
 // Assistant lecture seule — réservé aux rôles qui pilotent les projets.
 app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager'), assistantRoutes);
 app.use('/api/v1/translate', translateRoutes);

@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { hasPlansAccess } from '../middleware/plansAccess';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 const router = Router();
@@ -57,12 +58,13 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     await prisma.refreshToken.create({
       data: { userId: user.id, token: refresh, expiresAt: new Date(Date.now() + 30*24*60*60*1000) },
     });
+    const plansAccess = await hasPlansAccess(user.id);
 
     res.json({
       success: true,
       data: {
         token, refreshToken: refresh,
-        user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl, mustChangePassword },
+        user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, avatarUrl: user.avatarUrl, mustChangePassword, plansAccess },
       },
     });
   } catch (err) { next(err); }
@@ -91,7 +93,8 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response, next: 
       where: { id: req.user!.id },
       select: { id:true, email:true, role:true, firstName:true, lastName:true, phone:true, avatarUrl:true },
     });
-    res.json({ success: true, data: user });
+    if (!user) throw new AppError('Utilisateur introuvable', 404);
+    res.json({ success: true, data: { ...user, plansAccess: await hasPlansAccess(user.id) } });
   } catch (err) { next(err); }
 });
 

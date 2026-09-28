@@ -93,6 +93,8 @@ model User {
   idExpiry       String?  @map("id_expiry")
   teamGroupId    String?  @map("team_group_id")
   isActive     Boolean   @default(true) @map("is_active")
+  // Accès aux outils Plans 2D (Plans Viewbox + Plan 2D Studio), activé personne par personne
+  plansAccess  Boolean   @default(false) @map("plans_access")
   lastLogin    DateTime? @map("last_login")
   pushToken    String?   @map("push_token")
   createdAt    DateTime  @default(now()) @map("created_at")

@@ -113,9 +113,16 @@ function openIn3DViewer(modelUrl, fileName, projectId) {
   window.open(url, '_blank');
 }
 
+// Outils Plans 2D (Plans Viewbox, Plan 2D Studio) : activés personne par personne (Équipe › fiche du
+// membre). Le serveur refuse de toute façon les appels /plans et /plan2d sans l'accès.
+function hasPlansAccess() {
+  return !!(CURRENT_USER && CURRENT_USER.plansAccess);
+}
+
 // Module Plans Viewbox (servi à /plans/, sources dans plans/) : analyse des modèles SketchUp
 // exportés (.zip) et préparation des jeux de plans. Le jeton est retiré de l'URL par la page.
 function openPlansViewbox(projectId) {
+  if (!hasPlansAccess()) { toast('Accès aux Plans 2D non activé pour ton compte', 'error'); return; }
   window.open('/plans/?projectId=' + encodeURIComponent(projectId || '') + '&token=' + encodeURIComponent(TOKEN || ''), '_blank');
 }
 
@@ -618,6 +625,12 @@ async function loadAll() {
   }
   if (usersRes?.success) {
     USERS = usersRes.data;
+    // L'accès Plans 2D peut avoir été activé / retiré depuis la connexion
+    const me = CURRENT_USER && USERS.find(u => u.id === CURRENT_USER.id);
+    if (me && !!me.plansAccess !== !!CURRENT_USER.plansAccess) {
+      CURRENT_USER.plansAccess = !!me.plansAccess;
+      localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER));
+    }
     populateUserSelects();
     document.getElementById('stat-team').textContent = USERS.length;
   }

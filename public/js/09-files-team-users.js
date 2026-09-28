@@ -477,6 +477,7 @@ function renderMemberCard(u, color) {
         ${u.phone ? `<div style="font-size:11px;color:var(--blue);"><a href="tel:${u.phone}" style="color:inherit;" onclick="event.stopPropagation()">📞 ${u.phone}</a></div>` : ''}
         ${u.nationality ? `<div style="font-size:10px;color:var(--text3);">🌍 ${u.nationality}</div>` : ''}
       </div>
+      ${u.plansAccess ? '<span style="font-size:13px;flex-shrink:0;" title="Accès Plans 2D activé">📐</span>' : ''}
       <div style="width:8px;height:8px;border-radius:50%;background:${u.isActive?'#2dc653':'#6b7280'};flex-shrink:0;" title="${u.isActive?'Actif':'Inactif'}"></div>
     </div>`;
 }
@@ -534,6 +535,11 @@ async function openUserDetail(userId) {
         ${(!u.email && !u.phone && !u.nationality && !u.idNumber && !u.birthDate)
           ? '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Aucune information renseignée — clique sur Modifier pour compléter la fiche.</div>'
           : ''}
+        ${canGrantPlansAccess() ? `
+        <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;cursor:pointer;" title="Plans Viewbox et Plan 2D Studio">
+          <span>📐</span><span style="font-size:13px;flex:1;">Accès Plans 2D</span>
+          <input type="checkbox" ${u.plansAccess ? 'checked' : ''} onchange="setUserPlansAccess('${u.id}', this)" style="width:18px;height:18px;cursor:pointer;">
+        </label>` : ''}
       </div>
 
       <!-- MODE ÉDITION -->
@@ -576,6 +582,34 @@ async function openUserDetail(userId) {
     </div>`;
   document.body.appendChild(overlay);
   // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
+}
+
+// Accès aux outils Plans 2D : se donne depuis la fiche du membre, par un admin ou par quelqu'un qui l'a déjà.
+function canGrantPlansAccess() {
+  return !!CURRENT_USER && (CURRENT_USER.role === 'admin' || hasPlansAccess());
+}
+
+async function setUserPlansAccess(userId, cb) {
+  const enabled = cb.checked;
+  const self = CURRENT_USER && userId === CURRENT_USER.id;
+  if (!enabled && self && CURRENT_USER.role !== 'admin'
+      && !confirm('Retirer ton propre accès aux Plans 2D ? Seul un admin ou une personne qui a l\'accès pourra te le rendre.')) {
+    cb.checked = true;
+    return;
+  }
+  cb.disabled = true;
+  const res = await api('PUT', `/users/${userId}/plans-access`, { enabled });
+  cb.disabled = false;
+  if (res?.success) {
+    const u = USERS.find(x => x.id === userId);
+    if (u) u.plansAccess = enabled;
+    if (self) { CURRENT_USER.plansAccess = enabled; localStorage.setItem('vem_user', JSON.stringify(CURRENT_USER)); }
+    toast(enabled ? 'Accès Plans 2D activé ✅' : 'Accès Plans 2D retiré', 'success');
+    loadTeam();
+  } else {
+    cb.checked = !enabled;
+    toast(res?.error || 'Erreur', 'error');
+  }
 }
 
 function toggleUserEdit(editing) {

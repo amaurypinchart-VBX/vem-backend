@@ -55,6 +55,8 @@ export interface VemUser {
   lastName?: string;
   email?: string;
   role?: string;
+  /** accès aux outils Plans 2D (activé dans VEM › Équipe › fiche du membre) — renvoyé par /auth/me */
+  plansAccess?: boolean;
 }
 
 export interface Project {

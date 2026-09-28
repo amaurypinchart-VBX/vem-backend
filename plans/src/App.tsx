@@ -13,6 +13,7 @@ export function App() {
   const [rules, setRules] = useState<ClassificationRules>(DEFAULT_RULES);
   const [rulesKey, setRulesKey] = useState(0);
   const [fatal, setFatal] = useState('');
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
     if (!PROJECT_ID) {
@@ -23,6 +24,13 @@ export function App() {
       setFatal('Session VEM introuvable. Connecte-toi à VEM puis rouvre cet outil depuis la fiche projet.');
       return;
     }
+    vem
+      .me()
+      .then((me) => {
+        if (me.plansAccess) setAllowed(true);
+        else setFatal('Accès aux Plans 2D non activé pour ton compte. Demande à un responsable de l’activer (VEM › Équipe › fiche du membre).');
+      })
+      .catch((e: Error) => setFatal(e.message));
     vem
       .project(PROJECT_ID)
       .then(setProject)
@@ -63,6 +71,8 @@ export function App() {
       <main className="main">
         {fatal ? (
           <div className="center-msg">{fatal}</div>
+        ) : !allowed ? (
+          <div className="center-msg">Chargement…</div>
         ) : (
           <>
             <div style={{ display: tab === 'models' ? 'block' : 'none' }}>

@@ -53,7 +53,7 @@ http.createServer(async (req, res) => {
         technicalManager: { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', email: 'amaury.pinchart@span-tech.com' },
         team: [{ role: 'sales_engineer', user: { id: 'u2', firstName: 'Norick', lastName: 'Palm', email: 'norick.palm@span-tech.com' } }],
       });
-    if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager' });
+    if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
     if (a.startsWith('/settings/')) return json(res, null);
     if (a === '/plans/project/p1/models' && req.method === 'GET') return json(res, [...models.values()].map(list));

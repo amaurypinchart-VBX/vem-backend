@@ -3,6 +3,7 @@ import { Router, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { hasPlansAccess, plansAccessUserIds } from '../middleware/plansAccess';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { sendMail } from '../services/emailService';
@@ -32,7 +33,22 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       select: USER_SELECT,
       orderBy: { lastName: 'asc' },
     });
-    res.json({ success: true, data: users });
+    const plansIds = await plansAccessUserIds();
+    res.json({ success: true, data: users.map((u) => ({ ...u, plansAccess: plansIds.has(u.id) })) });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/v1/users/:id/plans-access { enabled }
+// Active / retire l'accès aux outils Plans 2D. Réservé aux admins et aux personnes qui ont déjà l'accès.
+router.put('/:id/plans-access', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (req.user!.role !== 'admin' && !(await hasPlansAccess(req.user!.id)))
+      throw new AppError('Permission insuffisante', 403);
+    const enabled = req.body?.enabled === true;
+    const n = await prisma.$executeRaw`UPDATE users SET plans_access = ${enabled} WHERE id = ${req.params.id}`;
+    if (!n) throw new AppError('Utilisateur introuvable', 404);
+    logger.info(`[plans-access] ${req.user!.email} → ${req.params.id} : ${enabled ? 'activé' : 'retiré'}`);
+    res.json({ success: true, data: { id: req.params.id, plansAccess: enabled } });
   } catch (err) { next(err); }
 });
 
