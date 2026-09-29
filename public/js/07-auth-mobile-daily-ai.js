@@ -1121,6 +1121,7 @@ async function openDailyDetail(id, projectId) {
 }
 
 async function loadDetailHandovers(projectId) {
+  loadChecklistCard(projectId); // carte « Check-list de montage » au-dessus des handovers (js/15-checklists.js)
   const res = await api('GET', `/handover?projectId=${projectId}`);
   const el = document.getElementById('detail-handover-content');
   if (!res?.success) return;
