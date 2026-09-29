@@ -511,7 +511,8 @@ const pgTitles = {
   dashboard:'Dashboard', projects:'Projets', tasks:'Tâches', daily:'Daily Reports',
   handover:'Handover', remarks:'Visites Client', tickets:'Tickets SAV',
   warehouse:'Entrepôt / Box', toolbox:'Boîtes à Outils', team:'Équipe',
-  notifs:'Notifications', 'project-detail':'Détail Projet'
+  notifs:'Notifications', 'project-detail':'Détail Projet',
+  'checklist-templates':'Templates Check-list'
 };
 
 // ─── Bascule de la sidebar (mode collapsed / expanded) ───
@@ -567,6 +568,7 @@ function goto(page) {
   if (page === 'handover')  loadHandovers();
   if (page === 'clients')   loadClientsPage();
   if (page === 'templates') loadTemplatesPage();
+  if (page === 'checklist-templates') loadChecklistTemplatesPage();
   if (page === 'remarks')   {} // loaded per project
   // Update bottom nav
   const bnMap = { dashboard:'bn-dashboard', projects:'bn-projects', tickets:'bn-tickets' };
