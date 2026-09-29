@@ -269,8 +269,120 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
   );
 }
 
-export function GroundPanel({ modules, source, storageKey, intro }: { modules: EstimateModule[]; source: string; storageKey: string; intro?: React.ReactNode }) {
-  const [hyp, setHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
+/** Formulaire « Site et hypothèses » (portance, charges, vent, options de calage). */
+export function HypothesesForm({ hyp, setHyp }: { hyp: Hypotheses; setHyp: (update: (h: Hypotheses) => Hypotheses) => void }) {
+  const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
+  const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Site et hypothèses</h2>
+        <div className="spacer" style={{ flex: 1 }} />
+        <button className="btn small ghost" onClick={() => setHyp(() => ({ ...DEFAULT_HYP }))}>
+          Valeurs par défaut
+        </button>
+      </div>
+      <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '8px 24px' }}>
+        <Field label="Type de sol / support">
+          <select
+            value={hyp.bearingPreset}
+            onChange={(e) => {
+              const p = BEARING_PRESETS.find((x) => x.key === e.target.value);
+              setHyp((h) => ({ ...h, bearingPreset: e.target.value, ...(p?.value ? { bearingValue: p.value * 1e3, bearingUnit: 'kN/m²' as const } : {}) }));
+            }}
+          >
+            {BEARING_PRESETS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+                {p.value ? ` — ${p.value * 1e3} kN/m²` : ' — à renseigner'}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Portance admissible" hint={preset?.source}>
+          <Num value={hyp.bearingValue} onChange={(v) => set('bearingValue', v)} />
+          <select value={hyp.bearingUnit} style={{ width: 90 }} onChange={(e) => set('bearingUnit', e.target.value as Hypotheses['bearingUnit'])}>
+            <option>kN/m²</option>
+            <option>t/m²</option>
+            <option>kg/cm²</option>
+          </select>
+        </Field>
+        {preset?.pointLoad && (
+          <Field label="Charge ponctuelle admissible">
+            <Num value={hyp.pointLoadKN} onChange={(v) => set('pointLoadKN', v)} /> kN
+          </Field>
+        )}
+        <Field label="Poids d’une Viewbox (planchers + isolants)">
+          <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
+        </Field>
+        <Field label="Plafond + isolation / sol + isolation">
+          <Num value={hyp.ceiling} onChange={(v) => set('ceiling', v)} width={60} /> /
+          <Num value={hyp.floorFinish} onChange={(v) => set('floorFinish', v)} width={60} /> kN/m²
+        </Field>
+        <Field label="Exploitation des planchers">
+          <Num value={hyp.live} onChange={(v) => set('live', v)} /> kN/m²
+        </Field>
+        <Field label="Exploitation des toitures accessibles">
+          <Num value={hyp.roofLive} onChange={(v) => set('roofLive', v)} /> kN/m²
+        </Field>
+        <Field label="Murs, garde-corps, logo… par Viewbox">
+          <Num value={hyp.extraKN} onChange={(v) => set('extraKN', v)} /> kN
+        </Field>
+        <Field label="Vent en service / hors service" hint="en service : DIN EN 13814 (h ≤ 8 m) ; hors service : qp × 0,7 (zone 1, h ≤ 9,5 m par défaut)">
+          <Num value={hyp.windIn} onChange={(v) => set('windIn', v)} width={60} /> /
+          <Num value={hyp.windOut} onChange={(v) => set('windOut', v)} width={60} /> kN/m²
+        </Field>
+        <Field label="Sol sous longrines (réaction)" hint="valeurs indicatives, à confirmer">
+          <select value={hyp.subgrade} onChange={(e) => set('subgrade', e.target.value)}>
+            {SUBGRADE_PRESETS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Épaisseurs de contreplaqué du commerce">
+          <input type="text" style={{ width: 170 }} value={hyp.thicknesses} onChange={(e) => set('thicknesses', e.target.value)} /> mm
+        </Field>
+        <Field label="Majoration forfaitaire">
+          <Num value={hyp.extraPct} onChange={(v) => set('extraPct', v)} width={60} /> %
+        </Field>
+        <label className="row hint">
+          <input type="checkbox" checked={hyp.middleFeet} onChange={(e) => set('middleFeet', e.target.checked)} /> Pieds centraux des grands côtés calés aussi
+        </label>
+        <label className="row hint">
+          <input type="checkbox" checked={hyp.evacuateTop} onChange={(e) => set('evacuateTop', e.target.checked)} /> Dernier niveau évacué par vent fort
+        </label>
+        <label className="row hint">
+          <input type="checkbox" checked={hyp.staticoConversion} onChange={(e) => set('staticoConversion', e.target.checked)} /> Surface des plaques avec Rz,Ed / 1,35 (comme statico)
+        </label>
+        <label className="row hint">
+          <input type="checkbox" checked={hyp.diffusion} onChange={(e) => set('diffusion', e.target.checked)} /> Proposer des couches continues (diffusion à 45°)
+        </label>
+      </div>
+    </div>
+  );
+}
+
+export interface GroundPanelProps {
+  modules: EstimateModule[];
+  source: string;
+  /** clé de stockage local des hypothèses (panneau autonome) */
+  storageKey: string;
+  intro?: React.ReactNode;
+  /** hypothèses fournies par l'étude (enregistrées avec elle) : le panneau ne les stocke pas lui-même */
+  hyp?: Hypotheses;
+  onHypChange?: (h: Hypotheses) => void;
+  showHypotheses?: boolean;
+}
+
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true }: GroundPanelProps) {
+  const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
+  const hyp = hypProp ?? localHyp;
+  const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
+    if (onHypChange) onHypChange(update(hyp));
+    else setLocalHyp(update);
+  };
   const [stock, setStock] = useState<StructureStock>({ plates: [], commercial: [] });
   const [project, setProject] = useState<Project | null>(null);
   const [result, setResult] = useState<CalageResult | null>(null);
@@ -289,12 +401,13 @@ export function GroundPanel({ modules, source, storageKey, intro }: { modules: E
   }, []);
 
   useEffect(() => {
+    if (hypProp) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(hyp));
     } catch {
       /* stockage local indisponible */
     }
-  }, [hyp, storageKey]);
+  }, [hyp, storageKey, hypProp]);
 
   const input = useMemo(() => calageInput(modules, hyp, stock), [modules, hyp, stock]);
   useEffect(() => {
@@ -314,7 +427,6 @@ export function GroundPanel({ modules, source, storageKey, intro }: { modules: E
     return () => clearTimeout(t);
   }, [input, modules.length]);
 
-  const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
 
   const assumptions = (): Array<[string, string]> => [
@@ -359,94 +471,7 @@ export function GroundPanel({ modules, source, storageKey, intro }: { modules: E
   return (
     <div className="page">
       {intro}
-      <div className="card">
-        <div className="card-head">
-          <h2>Site et hypothèses</h2>
-          <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn small ghost" onClick={() => setHyp({ ...DEFAULT_HYP })}>
-            Valeurs par défaut
-          </button>
-        </div>
-        <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '8px 24px' }}>
-          <Field label="Type de sol / support">
-            <select
-              value={hyp.bearingPreset}
-              onChange={(e) => {
-                const p = BEARING_PRESETS.find((x) => x.key === e.target.value);
-                setHyp((h) => ({ ...h, bearingPreset: e.target.value, ...(p?.value ? { bearingValue: p.value * 1e3, bearingUnit: 'kN/m²' as const } : {}) }));
-              }}
-            >
-              {BEARING_PRESETS.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
-                  {p.value ? ` — ${p.value * 1e3} kN/m²` : ' — à renseigner'}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Portance admissible" hint={preset?.source}>
-            <Num value={hyp.bearingValue} onChange={(v) => set('bearingValue', v)} />
-            <select value={hyp.bearingUnit} style={{ width: 90 }} onChange={(e) => set('bearingUnit', e.target.value as Hypotheses['bearingUnit'])}>
-              <option>kN/m²</option>
-              <option>t/m²</option>
-              <option>kg/cm²</option>
-            </select>
-          </Field>
-          {preset?.pointLoad && (
-            <Field label="Charge ponctuelle admissible">
-              <Num value={hyp.pointLoadKN} onChange={(v) => set('pointLoadKN', v)} /> kN
-            </Field>
-          )}
-          <Field label="Poids d’une Viewbox (planchers + isolants)">
-            <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
-          </Field>
-          <Field label="Plafond + isolation / sol + isolation">
-            <Num value={hyp.ceiling} onChange={(v) => set('ceiling', v)} width={60} /> /
-            <Num value={hyp.floorFinish} onChange={(v) => set('floorFinish', v)} width={60} /> kN/m²
-          </Field>
-          <Field label="Exploitation des planchers">
-            <Num value={hyp.live} onChange={(v) => set('live', v)} /> kN/m²
-          </Field>
-          <Field label="Exploitation des toitures accessibles">
-            <Num value={hyp.roofLive} onChange={(v) => set('roofLive', v)} /> kN/m²
-          </Field>
-          <Field label="Murs, garde-corps, logo… par Viewbox">
-            <Num value={hyp.extraKN} onChange={(v) => set('extraKN', v)} /> kN
-          </Field>
-          <Field label="Vent en service / hors service" hint="en service : DIN EN 13814 (h ≤ 8 m) ; hors service : qp × 0,7 (zone 1, h ≤ 9,5 m par défaut)">
-            <Num value={hyp.windIn} onChange={(v) => set('windIn', v)} width={60} /> /
-            <Num value={hyp.windOut} onChange={(v) => set('windOut', v)} width={60} /> kN/m²
-          </Field>
-          <Field label="Sol sous longrines (réaction)" hint="valeurs indicatives, à confirmer">
-            <select value={hyp.subgrade} onChange={(e) => set('subgrade', e.target.value)}>
-              {SUBGRADE_PRESETS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Épaisseurs de contreplaqué du commerce">
-            <input type="text" style={{ width: 170 }} value={hyp.thicknesses} onChange={(e) => set('thicknesses', e.target.value)} /> mm
-          </Field>
-          <Field label="Majoration forfaitaire">
-            <Num value={hyp.extraPct} onChange={(v) => set('extraPct', v)} width={60} /> %
-          </Field>
-          <label className="row hint">
-            <input type="checkbox" checked={hyp.middleFeet} onChange={(e) => set('middleFeet', e.target.checked)} /> Pieds centraux des grands côtés calés aussi
-          </label>
-          <label className="row hint">
-            <input type="checkbox" checked={hyp.evacuateTop} onChange={(e) => set('evacuateTop', e.target.checked)} /> Dernier niveau évacué par vent fort
-          </label>
-          <label className="row hint">
-            <input type="checkbox" checked={hyp.staticoConversion} onChange={(e) => set('staticoConversion', e.target.checked)} /> Surface des plaques avec Rz,Ed / 1,35 (comme statico)
-          </label>
-          <label className="row hint">
-            <input type="checkbox" checked={hyp.diffusion} onChange={(e) => set('diffusion', e.target.checked)} /> Proposer des couches continues (diffusion à 45°)
-          </label>
-        </div>
-      </div>
-
+      {showHypotheses && <HypothesesForm hyp={hyp} setHyp={setHyp} />}
       {error && <div className="error-box">{error}</div>}
       {pending && !result && <div className="hint">Calcul…</div>}
       {result && (

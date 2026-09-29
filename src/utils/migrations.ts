@@ -1125,4 +1125,76 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] check-list préparation : ${e.message}`);
   }
+
+  // ─── Plans Viewbox › Étude structure : bibliothèque partagée et études ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_library_items" (
+        "id"              TEXT         NOT NULL,
+        "kind"            TEXT         NOT NULL,
+        "key"             TEXT         NOT NULL,
+        "name"            TEXT         NOT NULL,
+        "data"            JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "source"          TEXT,
+        "key_struct_ref"  TEXT,
+        "key_article"     TEXT,
+        "key_definition"  TEXT,
+        "key_fingerprint" TEXT,
+        "key_module_type" TEXT,
+        "disabled"        BOOLEAN      NOT NULL DEFAULT false,
+        "confirmed_by"    TEXT,
+        "confirmed_at"    TIMESTAMP(3),
+        "history"         JSONB        NOT NULL DEFAULT '[]'::jsonb,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_library_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    for (const sql of [
+      `CREATE UNIQUE INDEX IF NOT EXISTS "struct_library_items_kind_key_key" ON "struct_library_items" ("kind", "key")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_struct_ref_idx" ON "struct_library_items" ("key_struct_ref")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_article_idx" ON "struct_library_items" ("key_article")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_definition_idx" ON "struct_library_items" ("key_definition")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_fingerprint_idx" ON "struct_library_items" ("key_fingerprint")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_module_type_idx" ON "struct_library_items" ("key_module_type")`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] table struct_library_items créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_library_items : ${e.message}`);
+  }
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_studies" (
+        "id"               TEXT         NOT NULL,
+        "project_id"       TEXT         NOT NULL,
+        "model_version_id" TEXT,
+        "name"             TEXT         NOT NULL DEFAULT 'Étude structure',
+        "settings"         JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "assignments"      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "results_summary"  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "status"           TEXT         NOT NULL DEFAULT 'draft',
+        "stale"            BOOLEAN      NOT NULL DEFAULT false,
+        "created_by"       TEXT,
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_studies_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "struct_studies_project_id_idx" ON "struct_studies" ("project_id")`);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'struct_studies_project_id_fkey') THEN
+          ALTER TABLE "struct_studies"
+            ADD CONSTRAINT "struct_studies_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table struct_studies créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_studies : ${e.message}`);
+  }
 }

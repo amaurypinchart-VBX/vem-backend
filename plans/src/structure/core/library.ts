@@ -19,8 +19,12 @@ export interface LibrarySource {
 export interface LibraryMatch {
   structRef?: string;
   articleRef?: string;
+  /** clé de type complète (« def:… » nom de définition, « name:…|empreinte ») */
   definition?: string;
+  /** empreinte géométrique (correspondance « probable » seulement) */
   fingerprint?: string;
+  /** type de module (« TYPE:… » saisi dans SketchUp, « SIZE:5900x2500 ») */
+  moduleType?: string;
 }
 
 interface EntryBase {
@@ -31,6 +35,13 @@ interface EntryBase {
   source: LibrarySource[];
   match?: LibraryMatch;
   notes?: string[];
+  /** entrée désactivée (ignorée par la reconnaissance et les calculs) */
+  disabled?: boolean;
+  /** d'où vient l'entrée : base de départ du module, base modifiée en ligne, ajoutée par un utilisateur */
+  origin?: 'seed' | 'override' | 'user';
+  /** identifiant en base (entrées enregistrées) */
+  id?: string;
+  confirmedAt?: string;
 }
 
 export interface SectionEntry extends EntryBase {
@@ -150,10 +161,95 @@ export interface MaterialEntry extends EntryBase {
   material: string;
 }
 
+/** Rôle d'un type de pièce dans le calcul (§5.4). */
+export type PartRole = 'structural' | 'load' | 'wind' | 'ignored';
+
+export type PartNature =
+  | 'viewbox'
+  | 'beam'
+  | 'column'
+  | 'bracing'
+  | 'deck'
+  | 'stair'
+  | 'landing'
+  | 'terrace'
+  | 'railing'
+  | 'wall'
+  | 'glazing'
+  | 'door'
+  | 'sign'
+  | 'ballast'
+  | 'spreading-plate'
+  | 'decor'
+  | 'other';
+
+export const ROLE_LABEL: Record<PartRole, string> = {
+  structural: 'Élément porteur',
+  load: 'Charge uniquement',
+  wind: 'Surface au vent uniquement',
+  ignored: 'Non structurel / ignorer',
+};
+
+export const NATURE_LABEL: Record<PartNature, string> = {
+  viewbox: 'Viewbox (gabarit)',
+  beam: 'Poutre',
+  column: 'Poteau',
+  bracing: 'Contreventement (traction seule)',
+  deck: 'Plancher / platelage',
+  stair: 'Escalier',
+  landing: 'Palier',
+  terrace: 'Terrasse',
+  railing: 'Garde-corps',
+  wall: 'Mur plein',
+  glazing: 'Vitrage',
+  door: 'Porte',
+  sign: 'Logo / enseigne',
+  ballast: 'Lest',
+  'spreading-plate': 'Plaque de répartition',
+  decor: 'Décor / mobilier',
+  other: 'Autre',
+};
+
+export const NATURES_BY_ROLE: Record<PartRole, PartNature[]> = {
+  structural: ['viewbox', 'beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace', 'other'],
+  load: ['wall', 'glazing', 'door', 'railing', 'sign', 'ballast', 'deck', 'other'],
+  wind: ['sign', 'wall', 'other'],
+  ignored: ['decor', 'spreading-plate', 'other'],
+};
+
+/** Natures porteuses calculées par un gabarit de la bibliothèque (pas de section à saisir). */
+export const TEMPLATE_NATURES: ReadonlySet<PartNature> = new Set<PartNature>(['viewbox', 'stair', 'landing', 'terrace']);
+
+export type WeightUnit = 'kg/m' | 'kg/m²' | 'kg';
+
+export interface PartConnection {
+  kind: 'fixed' | 'pinned' | 'bolted' | 'welded' | 'contact';
+  bolts?: { count: number; diameter: number; grade: string };
+}
+
+/** Ce que l'utilisateur (ou la bibliothèque, ou une proposition) dit d'un type de pièce. */
+export interface PartAssignment {
+  role: PartRole;
+  nature: PartNature;
+  material?: string;
+  /** section de la bibliothèque (clé) */
+  section?: string;
+  weight?: { value: number; unit: WeightUnit };
+  /** ferme la face au vent (murs, vitrages, portes) */
+  windClosed?: boolean;
+  connection?: PartConnection;
+  /** gabarit de module de la bibliothèque (Viewbox) */
+  moduleTemplate?: string;
+  note?: string;
+}
+
 export interface PartTypeEntry extends EntryBase {
   kind: 'part_type';
-  role: 'structural' | 'load' | 'wind' | 'ignored';
-  nature: string;
+  assignment: PartAssignment;
+  /** nombre de triangles du type mémorisé (tolérance ± 5 % sur l'empreinte) */
+  triangles?: number;
+  /** catégorie du classement au moment de la confirmation */
+  category?: string | null;
 }
 
 export type LibraryEntry = SectionEntry | ConnectionEntry | SpreadingEntry | StockEntry | ModuleTypeEntry | MaterialEntry | PartTypeEntry;

@@ -54,11 +54,52 @@ await page.getByRole('button', { name: '← Modèles' }).click();
 await page.getByRole('button', { name: 'Analyser' }).click();
 await page.getByText('paquet 3D enregistrés').waitFor({ timeout: 300000 });
 await page.getByRole('button', { name: 'Étude structure' }).click();
+await page.getByText('Vue 3D — statut des pièces').waitFor({ timeout: 120000 });
+await page.waitForTimeout(1500);
+const counts = () => page.getByText(/type\(s\) à renseigner/).innerText();
+console.log('Reconnaissance :', await counts());
+await shootAll('structure-reconnaissance');
+// file des types à renseigner : on répond à tout (valeurs proposées ou « ignorer »), mémorisé dans la bibliothèque
+let answered = 0;
+if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
+  await page.getByRole('button', { name: /Traiter la file/ }).click();
+  for (let k = 0; k < 30; k++) {
+    await page.getByText('Qu’est-ce que c’est ?').waitFor({ timeout: 10000 }).catch(() => {});
+    if (!(await page.getByText('Qu’est-ce que c’est ?').count())) break;
+    const isModule = await page.getByText('Gabarit de calcul').count();
+    const next = page.getByRole('button', { name: 'Valider et suivant' });
+    if (!isModule) await page.getByRole('button', { name: 'Ignorer (non structurel)' }).click();
+    else if (await next.count()) await next.click();
+    else await page.getByRole('button', { name: 'Valider', exact: true }).click();
+    answered++;
+    await page.waitForTimeout(400);
+  }
+}
+await page.waitForTimeout(2600); // enregistrement automatique de l'étude (2 s)
+console.log(`Types traités : ${answered} ; ensuite :`, await counts(), (await page.getByText(/Étude enregistrée/).count()) ? '(étude enregistrée)' : '');
+await shootAll('structure-reconnue');
+await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
 await page.getByText('Plan des appuis').waitFor({ timeout: 120000 });
 await page.waitForTimeout(800);
 await shootAll('structure-modele');
 const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Fiche PDF' }).click()]);
 await dl2.saveAs(shots + 'calage-modele.pdf');
 console.log('Fiche PDF du modèle :', dl2.suggestedFilename());
+// Réglages › Bibliothèque structure : les réponses mémorisées y figurent
+await page.getByRole('button', { name: '← Modèles' }).click();
+await page.getByRole('button', { name: 'Réglages' }).click();
+await page.getByRole('button', { name: 'Bibliothèque structure' }).click();
+await page.getByText('Partagée entre tous les projets').waitFor();
+await page.locator('select').first().selectOption('part_type');
+await page.waitForTimeout(300);
+console.log('Bibliothèque › types de pièces :', await page.locator('table.list tbody tr').count());
+await shootAll('structure-bibliotheque');
+// réouverture du modèle (page rechargée) : l'étude et la bibliothèque répondent, plus aucune question
+await page.goto(URL0);
+await page.getByRole('button', { name: 'Ouvrir' }).first().click();
+await page.getByRole('button', { name: 'Étude structure' }).click();
+await page.getByText('Vue 3D — statut des pièces').waitFor({ timeout: 120000 });
+await page.waitForTimeout(1500);
+console.log('Après réouverture :', await page.getByText(/type\(s\) à renseigner/).innerText());
 console.log('Erreurs console :', errors.length ? errors : 'aucune');
 await browser.close();

@@ -1,5 +1,6 @@
 // Accès à l'API VEM (même origine). Le jeton vient de l'URL (?token=, ouverture depuis VEM) ou de la
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
+import type { LibraryPayload, ServerLibraryRow } from '../structure/core/libraryStore';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
 import type { FrontSide, Vec3 } from '../core/views';
 import { unpackPackage } from '../ingest/package';
@@ -151,6 +152,21 @@ export interface ModelVersion {
 }
 
 export const RULES_SETTING_KEY = 'plans.classificationRules';
+/** Étude structure d'une version de modèle (table struct_studies). */
+export interface StudyRecord {
+  id: string;
+  projectId: string;
+  modelVersionId: string | null;
+  name: string;
+  settings: Record<string, unknown>;
+  assignments: Record<string, unknown>;
+  resultsSummary: Record<string, unknown>;
+  status: string;
+  stale: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
@@ -190,6 +206,15 @@ export const vem = {
     fd.append('file', png, name);
     return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
   },
+  structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),
+  saveLibraryEntry: (p: LibraryPayload) => api<ServerLibraryRow>('POST', '/structure/library', p),
+  deleteLibraryEntry: (id: string) => api<null>('DELETE', `/structure/library/${id}`),
+  importLibrary: (entries: LibraryPayload[]) => api<{ imported: number }>('POST', '/structure/library/import', { entries }),
+  listStudies: (projectId: string) => api<StudyRecord[]>('GET', `/structure/project/${projectId}/studies`),
+  createStudy: (projectId: string, body: Partial<Pick<StudyRecord, 'modelVersionId' | 'name' | 'settings' | 'assignments'>>) =>
+    api<StudyRecord>('POST', `/structure/project/${projectId}/studies`, body),
+  saveStudy: (id: string, body: Partial<Pick<StudyRecord, 'name' | 'settings' | 'assignments' | 'resultsSummary' | 'status' | 'stale'>>) =>
+    api<StudyRecord>('PUT', `/structure/studies/${id}`, body),
   getSetting: <T>(key: string) => api<T | null>('GET', `/settings/${key}`),
   saveSetting: <T>(key: string, value: T) => api<T>('PUT', `/settings/${key}`, { value }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),
