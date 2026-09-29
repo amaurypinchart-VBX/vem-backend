@@ -141,7 +141,7 @@ export interface ModuleTypeEntry extends EntryBase {
   params?: ViewboxTemplateParams;
   /** dimensions nominales en plan et hauteur hors tout (mm) */
   nominal: { long: number; short: number; height: number };
-  /** poids pesé d'une unité nue (toit + plancher + poteaux, sans murs) — contrôle du gabarit ± 10 % */
+  /** poids d'une unité (planchers et isolants compris, sans murs) — contrôle du gabarit ± 10 % */
   weighedN?: number;
 }
 

@@ -471,7 +471,8 @@ export const SEED_MODULES: ModuleTypeEntry[] = [
     status: 'known',
     template: 'viewbox-eu',
     nominal: { long: 5900, short: 2500, height: 3080 },
-    weighedN: 20 * KN,
+    // poids confirmé par Viewbox (29.09.2026) : planchers + isolants compris ; statico : GWaage ≈ 20 kN (toit + plancher + poteaux)
+    weighedN: 2564 * 9.81,
     params: {
       x0: 5,
       x1: 5895,
@@ -507,6 +508,7 @@ export const SEED_MODULES: ModuleTypeEntry[] = [
       plywood: { floorLayers: 2, roofLayers: 1, thickness: 18, material: 'CP-F20/15', maxSpan: 800 },
     },
     source: [
+      { ref: 'user', note: 'A. Pinchart 29.09.2026 : 2 564 kg planchers + isolants compris' },
       HOKA('A8', 'GWaage ≈ 20 kN (toit + plancher + poteaux, sans murs)'),
       HOKA('B13–B82', 'nœuds, barres, articulations, appuis'),
       { ref: 'drawing:7-364-27', note: 'toiture 886,432 kg ; ensemble planchers + isolants 2 563,752 kg' },

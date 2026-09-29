@@ -151,6 +151,8 @@ export interface ModelVersion {
 }
 
 export const RULES_SETTING_KEY = 'plans.classificationRules';
+/** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
+export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
 export const vem = {
   project: (id: string) => api<Project>('GET', `/projects/${id}`),
@@ -188,6 +190,8 @@ export const vem = {
     fd.append('file', png, name);
     return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
   },
+  getSetting: <T>(key: string) => api<T | null>('GET', `/settings/${key}`),
+  saveSetting: <T>(key: string, value: T) => api<T>('PUT', `/settings/${key}`, { value }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),
   saveRules: (value: ClassificationRules) => api<ClassificationRules>('PUT', `/settings/${RULES_SETTING_KEY}`, { value }),
 };

@@ -1,6 +1,6 @@
 // Hypothèses par défaut (annexe B du cahier des charges) : toutes paramétrables dans l'étape « Site & hypothèses » ou dans
 // Réglages, et imprimées dans le rapport. Unités internes : N, mm, N/mm² (1 kN/m² = 1e-3 N/mm², 1 kN/m = 1 N/mm).
-import { KN, KN_PER_M, KN_PER_M2 } from '../core/units';
+import { KN_PER_M, KN_PER_M2 } from '../core/units';
 
 export interface Assumption {
   value: number;
@@ -14,7 +14,12 @@ const a = (value: number, unit: string, label: string, source: string): Assumpti
 
 export const DEFAULTS = {
   // charges permanentes
-  moduleWeight: a(20 * KN, 'kN', 'Poids pesé d’une Viewbox nue (contrôle du gabarit)', 'statico 24-0571 § 2.1'),
+  moduleWeight: a(
+    2564 * 9.81,
+    'kg',
+    'Poids d’une Viewbox 5900, planchers et isolants compris (contrôle du gabarit)',
+    'A. Pinchart 29.09.2026 ; plan Spantech « VIEWBOX M16 60MM » 2 563,752 kg (statico 24-0571 § 2.1 : ≈ 20 kN sans planchers)',
+  ),
   ceiling: a(0.35 * KN_PER_M2, 'kN/m²', 'Plafond + isolation', 'statico 24-0571 § 2.1'),
   wall: a(0.5 * KN_PER_M, 'kN/m', 'Mur plein', 'statico 24-0571 § 2.1'),
   glazedWall: a(1.75 * KN_PER_M, 'kN/m', 'Mur vitré (vitrage lourd)', 'statico 24-0569'),
