@@ -955,10 +955,12 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
 }
 
 // ── Lien de signature client (sans compte) ──
-async function generateSignatureLink(handoverId) {
+async function generateSignatureLink(handoverId, force = false) {
   // 1. Demande un nouveau token au backend (invalide tout token précédent)
   toast('Génération du lien...', 'info');
-  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`);
+  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`, force ? { force: true } : undefined);
+  // Check-list de montage incomplète : avertissement, « Générer quand même » pour admin / technical manager (js/15-checklists.js)
+  if (tokenRes && !tokenRes.success && tokenRes.data?.checklist) { showChecklistSignatureWarning(handoverId, tokenRes.data); return; }
   if (!tokenRes?.success) { toast('Erreur génération du lien', 'error'); return; }
   const token = tokenRes.data.token;
 

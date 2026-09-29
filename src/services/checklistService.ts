@@ -142,3 +142,70 @@ export async function checklistSummaries(projectIds: string[], phase = 'installa
   }
   return out;
 }
+
+// ─── Check-list dans le handover (fiche, PDF, page de signature publique) ───
+// Le handover montre la check-list de la phase installation.
+
+type FullChecklist = NonNullable<Awaited<ReturnType<typeof loadProjectChecklist>>>;
+
+const fullName = (u: UserRef | null | undefined) => (u ? `${u.firstName} ${u.lastName}`.trim() : null);
+
+/** Check-list installation d'un projet pour le handover, ou null si pas configurée (ou table absente). */
+export async function handoverChecklist(projectId: string): Promise<FullChecklist | null> {
+  try {
+    return await loadProjectChecklist(projectId, 'installation');
+  } catch (e: any) {
+    logger.warn(`[checklist] check-list du handover indisponible : ${e.message}`);
+    return null;
+  }
+}
+
+/** Données de la section « Check-list de montage » du PDF handover. */
+export function checklistPdfData(cl: FullChecklist | null) {
+  if (!cl) return null;
+  return {
+    viewboxType: cl.viewboxType as string,
+    boxesChecked: cl.boxesChecked as string | null,
+    notes: cl.notes as string | null,
+    validatedAt: cl.validatedAt as Date | null,
+    validatedByName: fullName(cl.validatedBy),
+    items: cl.items.map((it: any) => ({
+      categoryName: it.categoryName as string,
+      label: it.label as string,
+      status: it.status as string,
+      comment: it.comment as string | null,
+      critical: !!it.critical,
+      photoRequired: !!it.photoRequired,
+      checkedByName: fullName(it.checkedBy),
+      checkedAt: it.checkedAt as Date | null,
+      photos: (it.photos || []).map((p: any) => ({ photoUrl: p.photoUrl as string })),
+    })),
+  };
+}
+
+/**
+ * Check-list montrée au client sur la page de signature : lecture seule, sans les points N.A.,
+ * sans identifiants ni données internes (seulement prénom + nom de qui a vérifié).
+ */
+export function publicChecklist(cl: FullChecklist | null) {
+  if (!cl) return null;
+  const items = cl.items.filter((it: any) => it.status !== 'na');
+  return {
+    viewboxType: cl.viewboxType,
+    boxesChecked: cl.boxesChecked,
+    validatedAt: cl.validatedAt,
+    validatedBy: fullName(cl.validatedBy),
+    stats: statsOf(items),
+    items: items.map((it: any) => ({
+      categoryName: it.categoryName,
+      label: it.label,
+      hint: it.hint,
+      status: it.status,
+      comment: it.comment,
+      critical: !!it.critical,
+      checkedBy: fullName(it.checkedBy),
+      checkedAt: it.checkedAt,
+      photos: (it.photos || []).map((p: any) => p.photoUrl),
+    })),
+  };
+}

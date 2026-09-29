@@ -57,6 +57,34 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'handover.email.bodyLine':         'Veuillez trouver ci-joint le rapport de handover pour le projet',
     'handover.email.dateLabel':        'Date',
     'handover.email.signature':        'Cordialement,<br>L\'équipe VIEWBOX',
+    // Check-list de montage (section du handover)
+    'checklist.section':               'Check-list de montage',
+    'checklist.viewboxType':           'Type de Viewbox',
+    'checklist.type.ephemere':         'Éphémère',
+    'checklist.type.permanente':       'Permanente',
+    'checklist.boxes':                 'Boxes contrôlées',
+    'checklist.validation':            'Validation',
+    'checklist.validatedOn':           'Validée le {date} par {name}',
+    'checklist.notValidated':          'Non validée',
+    'checklist.notes':                 'Notes',
+    'checklist.criticalLegend':        'Barre rouge à gauche : point critique.',
+    'checklist.col.point':             'Point contrôlé',
+    'checklist.col.status':            'Statut',
+    'checklist.col.comment':           'Commentaire',
+    'checklist.col.checked':           'Vérifié par / le',
+    'checklist.status.ok':             'OK',
+    'checklist.status.partial':        'Partiel',
+    'checklist.status.nok':            'Non fait',
+    'checklist.status.na':             'N.A.',
+    'checklist.status.pending':        'À vérifier',
+    'checklist.photos':                'Photos des points contrôlés',
+    'checklist.recap':                 'Récapitulatif',
+    'checklist.points':                'points',
+    'checklist.criticalOpen':          '{n} point(s) critique(s) non validé(s)',
+    'checklist.openItems':             'Points ouverts',
+    'checklist.noOpenItems':           'Aucun point ouvert.',
+    'checklist.na':                    'Non applicables ({n})',
+    'checklist.continued':             '(suite)',
 
     // ─── Daily Report ───
     'daily.title':                'DAILY REPORT',
@@ -139,6 +167,34 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'handover.email.bodyLine':         'Please find attached the handover report for the project',
     'handover.email.dateLabel':        'Date',
     'handover.email.signature':        'Best regards,<br>The VIEWBOX team',
+    // Installation checklist (handover section)
+    'checklist.section':               'Installation checklist',
+    'checklist.viewboxType':           'Viewbox type',
+    'checklist.type.ephemere':         'Temporary',
+    'checklist.type.permanente':       'Permanent',
+    'checklist.boxes':                 'Boxes checked',
+    'checklist.validation':            'Validation',
+    'checklist.validatedOn':           'Validated on {date} by {name}',
+    'checklist.notValidated':          'Not validated',
+    'checklist.notes':                 'Notes',
+    'checklist.criticalLegend':        'Red bar on the left: critical item.',
+    'checklist.col.point':             'Checked item',
+    'checklist.col.status':            'Status',
+    'checklist.col.comment':           'Comment',
+    'checklist.col.checked':           'Checked by / on',
+    'checklist.status.ok':             'OK',
+    'checklist.status.partial':        'Partial',
+    'checklist.status.nok':            'Not done',
+    'checklist.status.na':             'N/A',
+    'checklist.status.pending':        'To check',
+    'checklist.photos':                'Photos of checked items',
+    'checklist.recap':                 'Summary',
+    'checklist.points':                'items',
+    'checklist.criticalOpen':          '{n} critical item(s) not validated',
+    'checklist.openItems':             'Open items',
+    'checklist.noOpenItems':           'No open item.',
+    'checklist.na':                    'Not applicable ({n})',
+    'checklist.continued':             '(continued)',
 
     // ─── Daily Report ───
     'daily.title':                'DAILY REPORT',
@@ -304,6 +360,227 @@ async function loadSignatureBuffer(sigUrl: string | null | undefined): Promise<B
   } catch { return null; }
 }
 
+/** Section « Check-list de montage » du PDF handover (voir checklistPdfData dans checklistService). */
+export interface HandoverChecklistPdf {
+  viewboxType: string;
+  boxesChecked?: string | null;
+  notes?: string | null;
+  validatedAt?: Date | string | null;
+  validatedByName?: string | null;
+  items: Array<{
+    categoryName: string;
+    label: string;
+    status: string;
+    comment?: string | null;
+    critical: boolean;
+    photoRequired: boolean;
+    checkedByName?: string | null;
+    checkedAt?: Date | string | null;
+    photos: Array<{ photoUrl: string }>;
+  }>;
+}
+
+const CHECKLIST_PDF_COLORS: Record<string, string> = { ok: GREEN, partial: AMBER, nok: RED, na: '#9aa1ad', pending: MUTED };
+
+/** Date (+ heure) à l'heure belge : le serveur tourne en UTC. */
+function fmtChecklistDate(d: Date | string, lang: Lang, withTime: boolean): string {
+  const opts: Intl.DateTimeFormatOptions = { timeZone: 'Europe/Brussels', day: '2-digit', month: '2-digit', year: 'numeric' };
+  if (withTime) Object.assign(opts, { hour: '2-digit', minute: '2-digit' });
+  return new Date(d).toLocaleString(lang === 'en' ? 'en-GB' : 'fr-FR', opts).replace(/[\u202f\u00a0]/g, ' ');
+}
+const CHECKLIST_PDF_PHOTOS_PER_ITEM = 2;
+
+/** Télécharge des images en parallèle (6 à la fois), en vignettes Cloudinary ; une image introuvable est ignorée. */
+async function fetchPdfThumbs(urls: string[], transform: string): Promise<Array<Buffer | null>> {
+  const out: Array<Buffer | null> = new Array(urls.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < urls.length) {
+      const i = next++;
+      const url = urls[i].includes('/upload/') ? urls[i].replace('/upload/', `/upload/${transform}/`) : urls[i];
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(15000) }) as any;
+        if (r.ok) out[i] = Buffer.from(await r.arrayBuffer());
+      } catch { /* ignorée */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, urls.length) }, worker));
+  return out;
+}
+
+/** Traduit (hors français) les textes saisis de la check-list : catégories, points, commentaires, notes. */
+async function translateChecklist(cl: HandoverChecklistPdf, lang: Lang): Promise<void> {
+  if (lang === 'fr') return;
+  const texts = new Set<string>();
+  for (const it of cl.items) {
+    texts.add(it.categoryName);
+    texts.add(it.label);
+    if (it.comment) texts.add(it.comment);
+  }
+  if (cl.notes) texts.add(cl.notes);
+  const list = [...texts].filter(Boolean);
+  if (!list.length) return;
+  const translated = await translateTexts(list, lang);
+  const map = new Map(list.map((txt, i) => [txt, translated[i] || txt]));
+  const tr = (txt: string | null | undefined) => (txt ? map.get(txt) || txt : txt);
+  for (const it of cl.items) {
+    it.categoryName = tr(it.categoryName) as string;
+    it.label = tr(it.label) as string;
+    it.comment = tr(it.comment);
+  }
+  cl.notes = tr(cl.notes);
+}
+
+/**
+ * Section « Check-list de montage » : en-tête, tableau par catégorie (sans les N.A.), photos (2 par point),
+ * récapitulatif (totaux, points ouverts) puis les N.A. regroupés sur une ligne.
+ */
+function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<number, Buffer[]>, siteManagerName: string, lang: Lang) {
+  const BOTTOM = 790;
+  const X = 40;
+  const W = 515;
+  const statusLabel = (st: string) => t(`checklist.status.${st}`, lang);
+
+  doc.moveDown(0.8);
+  if (doc.y > 640) doc.addPage();
+  sectionTitle(doc, t('checklist.section', lang));
+  infoRow(doc, t('checklist.viewboxType', lang), t(`checklist.type.${cl.viewboxType}`, lang));
+  if (cl.boxesChecked) infoRow(doc, t('checklist.boxes', lang), s(cl.boxesChecked));
+  infoRow(doc, t('handover.field.siteManager', lang), s(siteManagerName));
+  infoRow(doc, t('checklist.validation', lang), cl.validatedAt
+    ? t('checklist.validatedOn', lang).replace('{date}', fmtChecklistDate(cl.validatedAt, lang, false)).replace('{name}', s(cl.validatedByName || '-'))
+    : t('checklist.notValidated', lang));
+  if (cl.notes) infoRow(doc, t('checklist.notes', lang), s(cl.notes));
+  doc.moveDown(0.3);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(8).text(t('checklist.criticalLegend', lang), X, doc.y, { width: W });
+  doc.moveDown(0.5);
+
+  // ─── Tableau par catégorie (les N.A. sont regroupés à la fin) ───
+  const cols = [
+    { key: 'point', w: 205 },
+    { key: 'status', w: 62 },
+    { key: 'comment', w: 143 },
+    { key: 'checked', w: 105 },
+  ];
+  const colX: number[] = [];
+  cols.reduce((x, c) => { colX.push(x); return x + c.w; }, X);
+  const PAD = 4;
+
+  const tableHeader = () => {
+    const y = doc.y;
+    doc.rect(X, y, W, 16).fill(DARK);
+    cols.forEach((c, i) => {
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(8)
+        .text(t(`checklist.col.${c.key}`, lang), colX[i] + PAD, y + 4, { width: c.w - PAD * 2, lineBreak: false });
+    });
+    doc.y = y + 16;
+  };
+  const categoryRow = (name: string) => {
+    if (doc.y + 16 + 20 > BOTTOM) { doc.addPage(); tableHeader(); }
+    const y = doc.y;
+    doc.rect(X, y, W, 16).fill('#eef0f4');
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(8.5).text(s(name), X + PAD, y + 4, { width: W - PAD * 2, lineBreak: false, ellipsis: true });
+    doc.y = y + 16;
+  };
+
+  const shown = cl.items.map((it, idx) => ({ it, idx })).filter(({ it }) => it.status !== 'na');
+  tableHeader();
+  let currentCat: string | null = null;
+  for (const { it } of shown) {
+    if (it.categoryName !== currentCat) { categoryRow(it.categoryName); currentCat = it.categoryName; }
+    const label = s(it.label);
+    const comment = s(it.comment || '');
+    const checked = it.checkedByName && it.status !== 'pending'
+      ? `${s(it.checkedByName)}\n${it.checkedAt ? fmtChecklistDate(it.checkedAt, lang, true) : ''}`
+      : '-';
+    doc.font('Helvetica').fontSize(8.5);
+    const hLabel = doc.heightOfString(label, { width: cols[0].w - PAD * 2 - 4 });
+    doc.fontSize(8);
+    const hComment = comment ? doc.heightOfString(comment, { width: cols[2].w - PAD * 2 }) : 0;
+    doc.fontSize(7.5);
+    const hChecked = doc.heightOfString(checked, { width: cols[3].w - PAD * 2 });
+    const rowH = Math.max(hLabel, hComment, hChecked, 14) + PAD * 2;
+    if (doc.y + rowH > BOTTOM) {
+      doc.addPage();
+      tableHeader();
+      categoryRow(`${it.categoryName} ${t('checklist.continued', lang)}`);
+    }
+    const y = doc.y;
+    if (it.critical) doc.rect(X, y, 2.5, rowH).fill(RED);
+    doc.fillColor(DARK).font('Helvetica').fontSize(8.5).text(label, colX[0] + PAD + 4, y + PAD, { width: cols[0].w - PAD * 2 - 4 });
+    const color = CHECKLIST_PDF_COLORS[it.status] || MUTED;
+    doc.roundedRect(colX[1] + PAD, y + PAD - 1, cols[1].w - PAD * 2, 13, 3).fill(color);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(7.5)
+      .text(statusLabel(it.status), colX[1] + PAD, y + PAD + 2, { width: cols[1].w - PAD * 2, align: 'center', lineBreak: false });
+    if (comment) doc.fillColor('#3a3a3a').font('Helvetica').fontSize(8).text(comment, colX[2] + PAD, y + PAD, { width: cols[2].w - PAD * 2 });
+    doc.fillColor(MUTED).font('Helvetica').fontSize(7.5).text(checked, colX[3] + PAD, y + PAD, { width: cols[3].w - PAD * 2 });
+    doc.moveTo(X, y + rowH).lineTo(X + W, y + rowH).strokeColor('#e3e5ea').lineWidth(0.5).stroke();
+    doc.y = y + rowH;
+  }
+
+  // ─── Photos (2 par point, vignettes), 2 points par ligne ───
+  const withPhotos = shown.filter(({ idx }) => (thumbs.get(idx) || []).length);
+  if (withPhotos.length) {
+    doc.moveDown(0.8);
+    if (doc.y + 20 + 130 > BOTTOM) doc.addPage();
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(t('checklist.photos', lang), X, doc.y);
+    doc.moveDown(0.4);
+    const CELL_W = 250, GAP = 15, TH_W = 120, TH_H = 90, LABEL_H = 22, CELL_H = LABEL_H + TH_H + 12;
+    for (let i = 0; i < withPhotos.length; i += 2) {
+      if (doc.y + CELL_H > BOTTOM) doc.addPage();
+      const y = doc.y;
+      withPhotos.slice(i, i + 2).forEach(({ it, idx }, k) => {
+        const x = X + k * (CELL_W + GAP);
+        doc.fillColor(DARK).font('Helvetica-Bold').fontSize(8)
+          .text(s(it.label), x, y, { width: CELL_W, height: LABEL_H, ellipsis: true });
+        (thumbs.get(idx) || []).forEach((buf, j) => {
+          try {
+            doc.image(buf, x + j * (TH_W + 10), y + LABEL_H, { fit: [TH_W, TH_H], align: 'center', valign: 'center' });
+          } catch { /* image illisible */ }
+        });
+      });
+      doc.y = y + CELL_H;
+    }
+  }
+
+  // ─── Récapitulatif : totaux, points ouverts ───
+  const count = (st: string) => cl.items.filter(it => it.status === st).length;
+  const criticalOpen = cl.items.filter(it => it.critical && it.status !== 'ok' && it.status !== 'na').length;
+  const open = cl.items.filter(it => ['partial', 'nok', 'pending'].includes(it.status));
+  doc.moveDown(0.8);
+  if (doc.y + 60 > BOTTOM) doc.addPage();
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(t('checklist.recap', lang), X, doc.y);
+  doc.moveDown(0.3);
+  const totals = [`${cl.items.length} ${t('checklist.points', lang)}`,
+    ...['ok', 'partial', 'nok', 'na', 'pending'].map(st => `${count(st)} ${statusLabel(st)}`)].join('  ·  ');
+  doc.fillColor(DARK).font('Helvetica').fontSize(9.5).text(totals, X, doc.y, { width: W });
+  if (criticalOpen) {
+    doc.moveDown(0.2);
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(9.5).text(t('checklist.criticalOpen', lang).replace('{n}', String(criticalOpen)), X, doc.y, { width: W });
+  }
+  doc.moveDown(0.4);
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9).text(`${t('checklist.openItems', lang)} (${open.length})`, X, doc.y, { width: W });
+  doc.moveDown(0.2);
+  if (!open.length) {
+    doc.fillColor(MUTED).font('Helvetica').fontSize(8.5).text(t('checklist.noOpenItems', lang), X, doc.y, { width: W });
+  }
+  for (const it of open) {
+    if (doc.y + 14 > BOTTOM) doc.addPage();
+    doc.fillColor(CHECKLIST_PDF_COLORS[it.status] || MUTED).font('Helvetica-Bold').fontSize(8.5)
+      .text(`[${statusLabel(it.status)}] `, X, doc.y, { continued: true, width: W })
+      .fillColor(DARK).font('Helvetica').text(`${s(it.label)}${it.comment ? ` - ${s(it.comment)}` : ''}`);
+  }
+
+  // ─── Points N.A. regroupés sur une ligne ───
+  const na = cl.items.filter(it => it.status === 'na');
+  if (na.length) {
+    doc.moveDown(0.5);
+    if (doc.y + 30 > BOTTOM) doc.addPage();
+    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(8).text(`${t('checklist.na', lang).replace('{n}', String(na.length))} : `, X, doc.y, { continued: true, width: W })
+      .font('Helvetica').text(na.map(it => s(it.label)).join(' ; '));
+  }
+}
+
 export async function generateHandoverPdf(data: {
   project: { name: string; internalNumber: string; address: string };
   clientName: string;
@@ -316,6 +593,7 @@ export async function generateHandoverPdf(data: {
   managerSignatureUrl?: string | null;
   date: Date;
   lang?: Lang;
+  checklist?: HandoverChecklistPdf | null;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
 
@@ -377,6 +655,25 @@ export async function generateHandoverPdf(data: {
       } catch { /* ignorée */ }
     }
     itemsWithBuffers.push({ zoneName: item.zoneName, status: item.status, comment: item.comment, photoBuffers: buffers });
+  }
+
+  // ─── Check-list de montage : traduction + vignettes (2 par point, hors N.A.) ───
+  const checklist = data.checklist && data.checklist.items.length ? data.checklist : null;
+  const checklistThumbs = new Map<number, Buffer[]>();
+  if (checklist) {
+    await translateChecklist(checklist, lang);
+    const wanted: Array<{ idx: number; url: string }> = [];
+    checklist.items.forEach((it, idx) => {
+      if (it.status === 'na') return;
+      it.photos.slice(0, CHECKLIST_PDF_PHOTOS_PER_ITEM).forEach(p => wanted.push({ idx, url: p.photoUrl }));
+    });
+    const bufs = await fetchPdfThumbs(wanted.map(w => w.url), 'f_jpg,c_fill,w_480,h_360,q_auto:good');
+    wanted.forEach((w, i) => {
+      const buf = bufs[i];
+      if (!buf) return;
+      if (!checklistThumbs.has(w.idx)) checklistThumbs.set(w.idx, []);
+      checklistThumbs.get(w.idx)!.push(buf);
+    });
   }
 
   // ─── Pré-charge les signatures ───
@@ -516,6 +813,9 @@ export async function generateHandoverPdf(data: {
       doc.moveTo(40, rowBottom - 4).lineTo(555, rowBottom - 4).strokeColor('#ececec').lineWidth(0.5).stroke();
       doc.y = rowBottom;
     }
+
+    // ─── Section Check-list de montage (après les zones) ───
+    if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, displaySiteManager, lang);
 
     // ─── Section Comments / Reservations ───
     if (data.generalNotes && data.generalNotes.trim()) {

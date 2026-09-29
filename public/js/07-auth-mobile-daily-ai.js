@@ -1149,6 +1149,7 @@ async function loadDetailHandovers(projectId) {
             ${rem?`<span style="font-size:11px;color:var(--amber);">⚠️ ${rem} remarque(s)</span>`:''}
             ${def?`<span style="font-size:11px;color:var(--accent);">❌ ${def} défaut(s)</span>`:''}
           </div>
+          ${checklistHandoverLine(h.checklistSummary)}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;" onclick="event.stopPropagation()">
           <span class="badge ${sc[h.status]||'badge-muted'}">${sl[h.status]||h.status}</span>

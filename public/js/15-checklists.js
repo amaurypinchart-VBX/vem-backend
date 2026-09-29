@@ -948,7 +948,7 @@ function updateChecklistItemView(id) {
   el.querySelector('[data-role="photos"]').innerHTML = `
     ${photos.map(ph => `
       <div style="position:relative;width:64px;height:64px;">
-        <img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;">
+        <img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;">
         ${canFill ? `<button onclick="checklistDeletePhoto('${id}','${ph.id}')" title="Supprimer la photo" style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.75);color:#fff;font-size:13px;cursor:pointer;line-height:24px;padding:0;">×</button>` : ''}
       </div>`).join('')}
     ${it._uploading ? `<div style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);text-align:center;">⏳ envoi ${it._uploading}</div>` : ''}
@@ -1227,4 +1227,104 @@ async function validateChecklistFull() {
     updateChecklistFullSummary();
     toast('Check-list validée ✅', 'success');
   } else toast(r.data?.error || 'Validation non enregistrée — réessaie', 'error');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ☑️ CHECK-LIST DANS LE HANDOVER — carte, fiche, lien de signature
+// ═══════════════════════════════════════════════════════════
+
+/** Ligne « ☑️ Check-list : 42/48 OK · … » sur la carte d'un handover (h.checklistSummary). */
+function checklistHandoverLine(s) {
+  if (!s) return '';
+  const parts = [`<strong>${s.ok}/${s.total} OK</strong>`];
+  if (s.na) parts.push(`${s.na} N.A.`);
+  if (s.partial + s.nok) parts.push(`<span style="color:var(--amber);">${s.partial + s.nok} à reprendre</span>`);
+  if (s.pending) parts.push(`${s.pending} à vérifier`);
+  if (s.criticalOpen) parts.push(`<span style="color:var(--accent);font-weight:700;">⚠️ ${s.criticalOpen} critique(s) ouvert(s)</span>`);
+  if (s.validatedAt) parts.push('<span style="color:var(--green);">✅ validée</span>');
+  return `<div style="font-size:11px;color:var(--text2);margin-top:4px;">☑️ Check-list : ${parts.join(' · ')}</div>`;
+}
+
+/** Ferme les modales ouvertes (fiche handover…) puis ouvre le remplissage plein écran. */
+function openChecklistFullFromHandover(projectId) {
+  document.querySelectorAll('.overlay.open').forEach(o => o.remove());
+  openChecklistFull(projectId, 'installation');
+}
+
+/** Section « Check-list de montage » de la fiche handover (lecture, par catégorie, photos en vignettes). */
+async function loadHandoverChecklistSection(projectId, handoverId) {
+  const el = document.getElementById(`hf-checklist-${handoverId}`);
+  if (!el) return;
+  const res = await api('GET', `/checklists/project/${projectId}?phase=installation`);
+  if (!res?.success) { el.innerHTML = ''; return; }
+  const cl = res.data;
+  const title = '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;">☑️ Check-list de montage</div>';
+  if (!cl) {
+    el.innerHTML = checklistCanEdit() ? `
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin:4px 0 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${title}<span style="font-size:12px;color:var(--text3);">Pas encore configurée (onglet Handover du projet)</span>
+      </div>` : '';
+    return;
+  }
+  const groups = [];
+  for (const it of cl.items) {
+    if (!groups.length || groups[groups.length - 1].name !== it.categoryName) groups.push({ name: it.categoryName, items: [] });
+    groups[groups.length - 1].items.push(it);
+  }
+  el.innerHTML = `
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin:4px 0 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${title}
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span class="badge badge-muted">Viewbox ${CHECKLIST_VIEWBOX_LABELS[cl.viewboxType] || cl.viewboxType}</span>
+          ${cl.validatedAt ? `<span class="badge badge-green">✅ Validée le ${fmtDate(cl.validatedAt)}</span>` : ''}
+          ${checklistCanFill() ? `<button class="btn btn-ghost btn-xs" onclick="openChecklistFullFromHandover('${projectId}')">✍️ Remplir</button>` : ''}
+        </div>
+      </div>
+      ${cl.boxesChecked ? `<div style="font-size:12px;color:var(--text2);margin-top:6px;">Boxes contrôlées : <strong>${esc(cl.boxesChecked)}</strong></div>` : ''}
+      ${checklistStatsHtml(cl.stats)}
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;font-size:13px;color:var(--blue);padding:6px 0;">Voir le détail des ${cl.stats.total} points</summary>
+        ${groups.map(g => `
+          <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px;overflow-wrap:anywhere;">${esc(g.name)}</div>
+          ${g.items.map(it => {
+            const st = CHECKLIST_STATUS[it.status] || CHECKLIST_STATUS.pending;
+            return `
+            <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;background:var(--bg3);border-left:3px solid ${st.color};border-radius:8px;margin-bottom:6px;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;overflow-wrap:anywhere;">${esc(it.label)}${it.critical ? ' <span class="badge badge-red" style="font-size:10px;">⚠️ critique</span>' : ''}</div>
+                ${it.comment ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere;">${esc(it.comment)}</div>` : ''}
+                ${it.checkedBy && it.status !== 'pending' ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">Vérifié par ${esc(checklistShortName(it.checkedBy))} — ${fmtDateTime(it.checkedAt)}</div>` : ''}
+                ${(it.photos || []).length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${it.photos.map(ph => `<img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}</div>` : ''}
+              </div>
+              <span class="badge" style="background:${st.bg};color:${st.color};flex-shrink:0;">${st.icon} ${st.label}</span>
+            </div>`;
+          }).join('')}`).join('')}
+      </details>
+    </div>`;
+}
+
+/** Avertissement avant le lien de signature : check-list avec points critiques ouverts ou « À vérifier ». */
+function showChecklistSignatureWarning(handoverId, info) {
+  const s = info.checklist || {};
+  const el = document.createElement('div'); el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-head"><div class="modal-title">⚠️ Check-list de montage incomplète</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+        ${s.criticalOpen ? `<div style="background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.35);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--accent2);font-weight:700;">${s.criticalOpen} point(s) critique(s) non validé(s)</div>` : ''}
+        ${s.pending ? `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;">⏳ ${s.pending} point(s) encore « À vérifier »</div>` : ''}
+      </div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+        ${info.canForce
+          ? 'Le client verra la check-list telle qu’elle est sur la page de signature et dans le PDF. Continuer quand même ?'
+          : 'Complète la check-list avant de faire signer le client. Seul un admin ou un technical manager peut générer le lien quand même.'}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px;">
+        <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
+        ${info.projectId ? `<button class="btn btn-ghost btn-sm" onclick="openChecklistFullFromHandover('${info.projectId}')">☑️ Ouvrir la check-list</button>` : ''}
+        ${info.canForce ? `<button class="btn btn-primary" onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', true)">Générer quand même</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(el);
 }

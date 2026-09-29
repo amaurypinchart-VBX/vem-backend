@@ -397,6 +397,9 @@ async function openHandoverFull(id) {
         }).join('')}
       </div>
 
+      <!-- Check-list de montage (js/15-checklists.js) -->
+      <div id="hf-checklist-${h.id}"></div>
+
       <!-- Notes -->
       ${h.generalNotes ? `<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text2);margin-bottom:14px;">📝 ${h.generalNotes}</div>` : ''}
 
@@ -441,6 +444,7 @@ async function openHandoverFull(id) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  loadHandoverChecklistSection(h.projectId, h.id);
   setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
 }
 

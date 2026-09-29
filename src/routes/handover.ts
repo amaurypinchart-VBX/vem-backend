@@ -6,7 +6,7 @@ import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
-import { checklistSummaries } from '../services/checklistService';
+import { checklistSummaries, handoverChecklist, checklistPdfData } from '../services/checklistService';
 import crypto from 'crypto';
 
 const router = Router();
@@ -271,6 +271,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
+      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -352,6 +353,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
+      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
@@ -363,10 +365,29 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
 });
 // POST /handover/:id/signature-token — génère un nouveau token de signature (single-use)
 // Invalide automatiquement tout token précédent pour le même handover.
+// Si la check-list de montage (installation) a des points critiques ouverts ou « À vérifier », renvoie 409
+// avec data.checklist ; seuls admin / technical_manager peuvent passer outre avec { force: true }.
+const SIGNATURE_FORCE_ROLES = ['admin', 'technical_manager'];
 router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const h = await prisma.handover.findUnique({ where: { id: req.params.id } });
     if (!h) throw new AppError('Handover introuvable', 404);
+
+    const summary = (await checklistSummaries([h.projectId])).get(h.projectId);
+    if (summary && (summary.criticalOpen > 0 || summary.pending > 0)) {
+      const canForce = SIGNATURE_FORCE_ROLES.includes(req.user!.role);
+      if (req.body?.force !== true || !canForce) {
+        const parts = [
+          summary.criticalOpen ? `${summary.criticalOpen} point(s) critique(s) non validé(s)` : '',
+          summary.pending ? `${summary.pending} point(s) « À vérifier »` : '',
+        ].filter(Boolean).join(' et ');
+        return res.status(409).json({
+          success: false,
+          error: `Check-list de montage incomplète : ${parts}.${canForce ? '' : ' Seul un admin ou un technical manager peut générer le lien quand même.'}`,
+          data: { checklist: summary, canForce, projectId: h.projectId },
+        });
+      }
+    }
 
     // Génère un token cryptographique URL-safe (43 caractères)
     const token = crypto.randomBytes(32).toString('base64url');
