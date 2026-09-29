@@ -431,10 +431,19 @@ export const SEED_CONNECTIONS: ConnectionEntry[] = [
     name: 'Pieds à vérin intégrés des Viewbox',
     // capacité inconnue : tant qu'elle n'est pas renseignée, « vérins utilisés » bloque le verdict
     status: 'unknown',
-    composition: 'pied acier 7-355-014, tige filetée trapézoïdale Tr 24 × 5 (7-366-001), platine 7-309-002',
+    composition: 'pied acier 7-355-014, tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (fy 900, fu 1 000 N/mm², 7-366-001), platine 7-309-002',
     capacities: [],
-    notes: ['Hoka : vérins interdits, angles directement sur la plaque de calage', 'Qatar : sortie maxi 5 cm (§ 1.4.4) mais vérins interdits en § 3.6 / § 3.10'],
-    source: [HOKA('A4'), { ref: 'drawing:ensemble VIEWBOX M16 60MM' }, { ref: 'report:24-0569', page: '§ 1.4.4, § 3.6, § 3.10' }],
+    notes: [
+      'Hoka : vérins interdits, angles directement sur la plaque de calage (réceptions de pied surchargées)',
+      'Qatar : sortie maxi 5 cm (§ 1.4.4) mais vérins interdits en § 3.6 / § 3.10',
+      'capacité à calculer selon la sortie (flambement de la tige, réception de pied) : phases S4 / S5',
+    ],
+    source: [
+      HOKA('A4'),
+      { ref: 'drawing:ensemble VIEWBOX M16 60MM' },
+      { ref: 'user', note: 'A. Pinchart 29.09.2026 : filetage trapézoïdal gros pas, classe 10.9' },
+      { ref: 'report:24-0569', page: '§ 1.4.4, § 3.6, § 3.10' },
+    ],
   },
 ];
 
