@@ -351,6 +351,8 @@ async function loadProjectDetail(id) {
 
   // Load tasks for detail
   loadDetailTasks(id);
+  // Check-list « Préparation de l'installation » en haut de l'onglet Infos (js/15-checklists.js)
+  loadChecklistCard(id, 'prep');
 }
 
 // ── taskCardHTML helper (used by global tasks view) ──

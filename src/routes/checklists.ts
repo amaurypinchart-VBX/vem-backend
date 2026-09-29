@@ -12,7 +12,7 @@ import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cl
 import { CHECKLIST_LIBRARY, parseLibraryItem } from '../services/checklistLibrary';
 import {
   CHECKLIST_PHASES, CHECKLIST_STATUSES, COMMENT_REQUIRED_STATUSES, CHECKLIST_STATUS_LABELS, ChecklistStatus,
-  loadProjectChecklist, loadChecklistItem, userRefs,
+  loadProjectChecklist, loadChecklistItem, userRefs, PHOTO_ONLY, isPhoto,
 } from '../services/checklistService';
 import { io } from '../index';
 
@@ -34,7 +34,7 @@ function requireRoles(req: AuthRequest, roles: string[], action: string): void {
 function parsePhase(v: unknown): string {
   const phase = v === undefined || v === null || v === '' ? 'installation' : String(v);
   if (!(CHECKLIST_PHASES as readonly string[]).includes(phase))
-    throw new AppError(`Phase invalide : ${phase} (installation ou dismantling)`, 400);
+    throw new AppError(`Phase invalide : ${phase} (${CHECKLIST_PHASES.join(', ')})`, 400);
   return phase;
 }
 
@@ -43,6 +43,12 @@ function text(v: unknown, max = 2000): string | null {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
   return s ? s.slice(0, max) : null;
+}
+
+/** Type Cloudinary d'un fichier d'après son URL (…/image/upload/…, …/raw/upload/…), pour le supprimer. */
+function cloudinaryResourceType(url: string): 'image' | 'video' | 'raw' {
+  const m = /\/(image|video|raw)\/upload\//.exec(url || '');
+  return (m?.[1] as 'image' | 'video' | 'raw') || 'image';
 }
 
 function notifyChange(projectId: string, phase: string): void {
@@ -55,7 +61,7 @@ async function itemWithAccess(req: AuthRequest, itemId: string) {
     where: { id: itemId },
     include: {
       checklist: { select: { id: true, projectId: true, phase: true, validatedAt: true } },
-      _count: { select: { photos: true } },
+      _count: { select: { photos: { where: PHOTO_ONLY } } }, // photos seulement (pas les documents)
     },
   });
   if (!item) throw new AppError('Point de check-list introuvable', 404);
@@ -331,7 +337,7 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
 
     const existing = await db.projectChecklist.findUnique({
       where: { projectId_phase: { projectId, phase } },
-      include: { items: { include: { photos: { select: { publicId: true } } } } },
+      include: { items: { include: { photos: { select: { publicId: true, photoUrl: true } } } } },
     });
     const existingItems: any[] = existing?.items || [];
     const isLinked = (it: any) => !!it.templateItemId && templates.has(it.templateItemId);
@@ -443,7 +449,7 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
     }, { timeout: 30000 });
 
     // Photos des points retirés : supprimées de Cloudinary après coup (la base est déjà à jour)
-    for (const it of removed) for (const p of it.photos) if (p.publicId) await deleteFromCloudinary(p.publicId, 'image');
+    for (const it of removed) for (const p of it.photos) if (p.publicId) await deleteFromCloudinary(p.publicId, cloudinaryResourceType(p.photoUrl));
 
     notifyChange(projectId, phase);
     res.json({
@@ -504,24 +510,40 @@ router.post('/items/:itemId/photos', upload.single('file'), async (req: AuthRequ
     const item = await itemWithAccess(req, req.params.itemId);
     const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`);
     const photo = await db.projectChecklistPhoto.create({
-      data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id },
+      data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'photo', fileName: req.file.originalname || null, mimeType: req.file.mimetype },
     });
     notifyChange(item.checklist.projectId, item.checklist.phase);
     res.status(201).json({ success: true, data: photo });
   } catch (err) { next(err); }
 });
 
-// DELETE /checklists/photos/:photoId — supprime la photo (Cloudinary + base)
+// POST /checklists/items/:itemId/documents — multipart « file » (PDF, Word, Excel, image…), même dossier que les photos.
+// Un document ne compte pas comme photo pour la règle « photo obligatoire ».
+router.post('/items/:itemId/documents', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    requireRoles(req, FILL_ROLES, 'ajouter un document');
+    if (!req.file) throw new AppError('Fichier manquant ou type de fichier non accepté', 400);
+    const item = await itemWithAccess(req, req.params.itemId);
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`);
+    const doc = await db.projectChecklistPhoto.create({
+      data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'document', fileName: req.file.originalname || 'document', mimeType: req.file.mimetype },
+    });
+    notifyChange(item.checklist.projectId, item.checklist.phase);
+    res.status(201).json({ success: true, data: doc });
+  } catch (err) { next(err); }
+});
+
+// DELETE /checklists/photos/:photoId — supprime une photo ou un document (Cloudinary + base)
 router.delete('/photos/:photoId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     requireRoles(req, FILL_ROLES, 'supprimer une photo');
     const photo = await db.projectChecklistPhoto.findUnique({ where: { id: req.params.photoId } });
-    if (!photo) throw new AppError('Photo introuvable', 404);
+    if (!photo) throw new AppError('Fichier introuvable', 404);
     const item = await itemWithAccess(req, photo.itemId);
-    if (item.status === 'ok' && item.photoRequired && item._count.photos <= 1)
+    if (isPhoto(photo) && item.status === 'ok' && item.photoRequired && item._count.photos <= 1)
       throw new AppError('Photo obligatoire : ce point est OK. Ajoute une autre photo ou change son statut avant de supprimer celle-ci.', 400);
     await db.projectChecklistPhoto.delete({ where: { id: photo.id } });
-    if (photo.publicId) await deleteFromCloudinary(photo.publicId, 'image');
+    if (photo.publicId) await deleteFromCloudinary(photo.publicId, cloudinaryResourceType(photo.photoUrl));
     notifyChange(item.checklist.projectId, item.checklist.phase);
     res.json({ success: true });
   } catch (err) { next(err); }

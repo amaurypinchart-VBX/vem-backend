@@ -3,7 +3,7 @@
 // Marques en fin de libellé : [P] photo obligatoire · [C] critique · [PERM] Viewbox permanente uniquement ·
 // [opt] « si présent » (non pré-coché). Une catégorie `permanent: true` met tous ses points en [PERM].
 
-export type ChecklistPhase = 'installation' | 'dismantling';
+export type ChecklistPhase = 'preparation' | 'installation' | 'dismantling';
 
 export interface LibraryCategory {
   phase: ChecklistPhase;
@@ -34,8 +34,8 @@ export function parseLibraryItem(raw: string, categoryPermanent = false): Librar
 }
 
 export const CHECKLIST_LIBRARY: LibraryCategory[] = [
-  // ─── Installation ───
-  { phase: 'installation', name: 'Préparation et réception du site', items: [
+  // ─── Préparation de l'installation (onglet Infos du projet, pas dans le handover) ───
+  { phase: 'preparation', name: 'Préparation et réception du site', items: [
     'Plan d\'implantation sur site = dernière version validée par le client [C]',
     'État des lieux du terrain / bâtiment client photographié avant le début des travaux [P]',
     'Support (sol, dalle, terrain) plan, portant et conforme au calage prévu [C]',
@@ -43,6 +43,8 @@ export const CHECKLIST_LIBRARY: LibraryCategory[] = [
     'Matériel reçu contrôlé par rapport à la liste de chargement ; manquants signalés',
     'Implantation (traçage, axes, niveaux de référence) contrôlée avant la pose de la première box [C]',
   ]},
+
+  // ─── Installation ───
   { phase: 'installation', name: 'Position et assemblage', items: [
     'Boxes placées dans le bon ordre et au bon endroit selon le plan [C]',
     'Niveaux, alignement des façades et hauteur des sols vérifiés [C]',

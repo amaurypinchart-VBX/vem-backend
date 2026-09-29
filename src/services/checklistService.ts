@@ -6,7 +6,8 @@ import { logger } from '../utils/logger';
 
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
 
-export const CHECKLIST_PHASES = ['installation', 'dismantling'] as const;
+// preparation = avant l'installation (onglet Infos du projet) ; installation = montage (handover) ; dismantling = démontage
+export const CHECKLIST_PHASES = ['preparation', 'installation', 'dismantling'] as const;
 export const CHECKLIST_STATUSES = ['pending', 'ok', 'partial', 'nok', 'na'] as const;
 export type ChecklistStatus = typeof CHECKLIST_STATUSES[number];
 /** Statuts qui exigent un commentaire (pourquoi). */
@@ -66,6 +67,11 @@ export async function userRefs(ids: Array<string | null | undefined>): Promise<M
   return new Map(users.map((u) => [u.id, u]));
 }
 
+// Pièces jointes d'un point (table project_checklist_photos) : kind = 'photo' (image) ou 'document' (PDF, Office…).
+// Seules les photos comptent pour la règle « photo obligatoire ».
+export const PHOTO_ONLY = { kind: 'photo' };
+export const isPhoto = (p: { kind?: string | null }) => !p.kind || p.kind === 'photo';
+
 const ITEM_INCLUDE = {
   photos: { orderBy: { createdAt: 'asc' } },
   _count: { select: { logs: true } },
@@ -86,7 +92,7 @@ function statsOf(items: any[]): ChecklistStats {
     status: it.status,
     critical: it.critical,
     photoRequired: it.photoRequired,
-    photoCount: Array.isArray(it.photos) ? it.photos.length : it._count?.photos ?? 0,
+    photoCount: Array.isArray(it.photos) ? it.photos.filter(isPhoto).length : it._count?.photos ?? 0,
   })));
 }
 
@@ -114,7 +120,7 @@ export async function loadChecklistItem(itemId: string) {
   const users = await userRefs([it.checkedById]);
   const siblings = await db.projectChecklistItem.findMany({
     where: { checklistId: it.checklistId },
-    select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: true } } },
+    select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: { where: PHOTO_ONLY } } } },
   });
   return { item: shapeItem(it, users), stats: statsOf(siblings) };
 }
@@ -133,7 +139,7 @@ export async function checklistSummaries(projectIds: string[], phase = 'installa
       select: {
         projectId: true,
         validatedAt: true,
-        items: { select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: true } } } },
+        items: { select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: { where: PHOTO_ONLY } } } } },
       },
     });
     for (const cl of lists) out.set(cl.projectId, { ...statsOf(cl.items), validatedAt: cl.validatedAt });
@@ -178,7 +184,7 @@ export function checklistPdfData(cl: FullChecklist | null) {
       photoRequired: !!it.photoRequired,
       checkedByName: fullName(it.checkedBy),
       checkedAt: it.checkedAt as Date | null,
-      photos: (it.photos || []).map((p: any) => ({ photoUrl: p.photoUrl as string })),
+      photos: (it.photos || []).filter(isPhoto).map((p: any) => ({ photoUrl: p.photoUrl as string })),
     })),
   };
 }
@@ -205,7 +211,7 @@ export function publicChecklist(cl: FullChecklist | null) {
       critical: !!it.critical,
       checkedBy: fullName(it.checkedBy),
       checkedAt: it.checkedAt,
-      photos: (it.photos || []).map((p: any) => p.photoUrl),
+      photos: (it.photos || []).filter(isPhoto).map((p: any) => p.photoUrl), // documents : internes
     })),
   };
 }

@@ -6,11 +6,17 @@
 // une check-list déjà configurée. API : /checklists (src/routes/checklists.ts).
 // ═══════════════════════════════════════════════════════════
 const CHECKLIST_EDIT_ROLES = ['admin', 'technical_manager', 'project_manager'];
-const CHECKLIST_PHASE_LABELS = { installation: '🏗️ Installation', dismantling: '🔨 Démontage' };
+const CHECKLIST_PHASE_LABELS = { preparation: '📋 Préparation', installation: '🏗️ Installation', dismantling: '🔨 Démontage' };
+const CHECKLIST_PHASE_ORDER = ['preparation', 'installation', 'dismantling'];
+const CHECKLIST_PHASE_HINTS = {
+  preparation: 'Points à vérifier avant l’installation — affichés dans l’onglet Infos du projet.',
+  installation: 'Contrôle du montage — onglet Handover, repris dans le PDF et sur la page de signature du client.',
+  dismantling: 'Contrôle du démontage — onglet Handover.',
+};
 
 let CLT_PHASE = 'installation';
 // Catégories (avec leurs points, désactivés compris) de chaque phase
-let CLT_LIB = { installation: [], dismantling: [] };
+let CLT_LIB = { preparation: [], installation: [], dismantling: [] };
 // Catégories dépliées
 const CLT_OPEN = new Set();
 
@@ -23,15 +29,13 @@ const CLT_BTN_SM = 'padding:4px 9px;min-height:30px;';
 async function loadChecklistTemplatesPage() {
   const el = document.getElementById('checklist-templates-content');
   if (!el) return;
-  const [inst, dism] = await Promise.all([
-    api('GET', '/checklists/templates?phase=installation&all=1'),
-    api('GET', '/checklists/templates?phase=dismantling&all=1'),
-  ]);
-  if (!inst?.success || !dism?.success) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">☑️</div><div class="empty-title">Impossible de charger la bibliothèque</div><div class="empty-sub">${esc(inst?.error || dism?.error || 'Erreur réseau')}</div></div>`;
+  const results = await Promise.all(CHECKLIST_PHASE_ORDER.map(ph => api('GET', `/checklists/templates?phase=${ph}&all=1`)));
+  const failed = results.find(r => !r?.success);
+  if (failed !== undefined) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">☑️</div><div class="empty-title">Impossible de charger la bibliothèque</div><div class="empty-sub">${esc(failed?.error || 'Erreur réseau')}</div></div>`;
     return;
   }
-  CLT_LIB = { installation: inst.data, dismantling: dism.data };
+  CLT_LIB = Object.fromEntries(CHECKLIST_PHASE_ORDER.map((ph, i) => [ph, results[i].data]));
   renderChecklistTemplates();
 }
 
@@ -84,7 +88,7 @@ function renderChecklistTemplates() {
   const canEdit = checklistCanEdit();
   const isAdmin = CURRENT_USER?.role === 'admin';
   const cats = CLT_LIB[CLT_PHASE] || [];
-  const libraryEmpty = !CLT_LIB.installation.length && !CLT_LIB.dismantling.length;
+  const libraryEmpty = CHECKLIST_PHASE_ORDER.every(ph => !(CLT_LIB[ph] || []).length);
 
   const actions = document.getElementById('clt-actions');
   if (actions) actions.innerHTML = !canEdit || libraryEmpty ? '' : `
@@ -97,7 +101,7 @@ function renderChecklistTemplates() {
       <div class="empty">
         <div class="empty-icon">☑️</div>
         <div class="empty-title">Bibliothèque vide</div>
-        <div class="empty-sub">La liste Viewbox contient 14 catégories d’installation, 3 de démontage et 116 points.</div>
+        <div class="empty-sub">La liste Viewbox contient 1 catégorie de préparation, 13 d’installation, 3 de démontage et 116 points.</div>
         ${canEdit ? `<button class="btn btn-primary" style="margin-top:16px;" onclick="seedChecklistLibrary(false)">📥 Charger la bibliothèque Viewbox</button>` : ''}
       </div>`;
     return;
@@ -110,11 +114,12 @@ function renderChecklistTemplates() {
 
   el.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      ${['installation', 'dismantling'].map(ph => `
+      ${CHECKLIST_PHASE_ORDER.map(ph => `
         <button class="btn ${ph === CLT_PHASE ? 'btn-primary' : 'btn-ghost'} btn-sm" onclick="setChecklistTemplatesPhase('${ph}')">
           ${CHECKLIST_PHASE_LABELS[ph]} <span style="opacity:.75;">(${countActive(ph)})</span>
         </button>`).join('')}
     </div>
+    <div style="font-size:12px;color:var(--text2);margin:-4px 0 10px;">${CHECKLIST_PHASE_HINTS[CLT_PHASE]}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
       <div style="font-size:12px;color:var(--text3);line-height:1.6;">
         ${active.length} point(s) actif(s) · pré-cochés : <strong style="color:var(--text2);">${nEphemere}</strong> en Éphémère, <strong style="color:var(--text2);">${nPermanente}</strong> en Permanente
@@ -144,7 +149,7 @@ function renderChecklistTemplates() {
               <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}" ${ci === 0 ? 'disabled' : ''} onclick="moveChecklistCategory('${cat.id}',-1)" title="Monter">↑</button>
               <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}" ${ci === cats.length - 1 ? 'disabled' : ''} onclick="moveChecklistCategory('${cat.id}',1)" title="Descendre">↓</button>
               <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}" onclick="showChecklistItemModal(null,'${cat.id}')">+ Point</button>
-              <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}" onclick="showChecklistCategoryModal('${cat.id}')" title="Renommer">✏️</button>
+              <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}" onclick="showChecklistCategoryModal('${cat.id}')" title="Renommer / changer de phase">✏️</button>
               <button class="btn btn-ghost btn-xs" style="${CLT_BTN_SM}color:var(--accent);" onclick="deleteChecklistCategory('${cat.id}')" title="Supprimer">🗑️</button>
             </div>` : ''}
           </div>
@@ -221,11 +226,16 @@ function showChecklistCategoryModal(catId) {
   const el = document.createElement('div'); el.className = 'overlay open';
   el.innerHTML = `
     <div class="modal" style="max-width:440px;">
-      <div class="modal-head"><div class="modal-title">${cat ? '✏️ Renommer la catégorie' : '🗂️ Nouvelle catégorie'}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+      <div class="modal-head"><div class="modal-title">${cat ? '✏️ Modifier la catégorie' : '🗂️ Nouvelle catégorie'}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
       <div class="form-group2"><label class="form-label2">Nom *</label>
         <input class="input" id="clc-name" value="${esc(cat?.name || '')}" placeholder="ex: Électricité" onkeydown="if(event.key==='Enter')saveChecklistCategory(${cat ? `'${cat.id}'` : 'null'}, this.closest('.overlay'))">
       </div>
-      <div style="font-size:12px;color:var(--text3);">Phase : ${CHECKLIST_PHASE_LABELS[CLT_PHASE]}</div>
+      <div class="form-group2"><label class="form-label2">Phase</label>
+        <select class="input" id="clc-phase">
+          ${CHECKLIST_PHASE_ORDER.map(ph => `<option value="${ph}" ${ph === CLT_PHASE ? 'selected' : ''}>${CHECKLIST_PHASE_LABELS[ph]}</option>`).join('')}
+        </select>
+        ${cat ? '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Changer de phase déplace la catégorie et tous ses points. Les check-lists déjà configurées dans les projets ne changent pas.</div>' : ''}
+      </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="saveChecklistCategory(${cat ? `'${cat.id}'` : 'null'}, this.closest('.overlay'))">${cat ? '💾 Enregistrer' : '✅ Créer'}</button>
@@ -238,13 +248,18 @@ function showChecklistCategoryModal(catId) {
 
 async function saveChecklistCategory(catId, overlay) {
   const name = overlay?.querySelector('#clc-name')?.value.trim();
+  const phase = overlay?.querySelector('#clc-phase')?.value || CLT_PHASE;
   if (!name) { toast('Nom obligatoire', 'error'); return; }
+  const body = { name, phase };
+  // catégorie déplacée dans une autre phase : elle passe à la fin de cette phase
+  if (catId && phase !== CLT_PHASE) body.sortOrder = Math.max(-1, ...(CLT_LIB[phase] || []).map(c => c.sortOrder)) + 1;
   const res = catId
-    ? await api('PATCH', `/checklists/templates/categories/${catId}`, { name })
-    : await api('POST', '/checklists/templates/categories', { name, phase: CLT_PHASE });
+    ? await api('PATCH', `/checklists/templates/categories/${catId}`, body)
+    : await api('POST', '/checklists/templates/categories', body);
   if (res?.success) {
-    toast(catId ? 'Catégorie renommée ✅' : 'Catégorie créée ✅', 'success');
+    toast(!catId ? 'Catégorie créée ✅' : phase !== CLT_PHASE ? `Catégorie déplacée vers ${CHECKLIST_PHASE_LABELS[phase]} ✅` : 'Catégorie enregistrée ✅', 'success');
     CLT_OPEN.add(res.data.id);
+    CLT_PHASE = phase;
     overlay?.remove();
     loadChecklistTemplatesPage();
   } else toast(res?.error || 'Erreur', 'error');
@@ -283,7 +298,10 @@ function showChecklistItemModal(itemId, catId) {
       <div class="modal-head"><div class="modal-title">${itemId ? '✏️ Modifier le point' : '☑️ Nouveau point'}</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
       <div class="form-group2"><label class="form-label2">Catégorie *</label>
         <select class="input" id="cli-cat">
-          ${cats.map((c, i) => `<option value="${c.id}" ${c.id === selCat ? 'selected' : ''}>${i + 1}. ${esc(c.name)}</option>`).join('')}
+          ${CHECKLIST_PHASE_ORDER.filter(ph => (CLT_LIB[ph] || []).length).map(ph => `
+            <optgroup label="${CHECKLIST_PHASE_LABELS[ph]}">
+              ${CLT_LIB[ph].map((c, i) => `<option value="${c.id}" ${c.id === selCat ? 'selected' : ''}>${i + 1}. ${esc(c.name)}</option>`).join('')}
+            </optgroup>`).join('')}
         </select>
       </div>
       <div class="form-group2"><label class="form-label2">Point à contrôler *</label>
@@ -335,7 +353,7 @@ async function saveChecklistTemplateItem(itemId, overlay) {
     body.active = !!q('#cli-active')?.checked;
     // changement de catégorie : le point passe à la fin de sa nouvelle catégorie
     if (found && found.cat.id !== categoryId) {
-      const target = CLT_LIB[CLT_PHASE].find(c => c.id === categoryId);
+      const target = CHECKLIST_PHASE_ORDER.flatMap(ph => CLT_LIB[ph] || []).find(c => c.id === categoryId);
       body.sortOrder = Math.max(-1, ...(target?.items || []).map(i => i.sortOrder)) + 1;
     }
     res = await api('PATCH', `/checklists/templates/items/${itemId}`, body);
@@ -345,6 +363,8 @@ async function saveChecklistTemplateItem(itemId, overlay) {
   if (res?.success) {
     toast(itemId ? 'Point mis à jour ✅' : 'Point ajouté ✅', 'success');
     CLT_OPEN.add(categoryId);
+    const targetPhase = CHECKLIST_PHASE_ORDER.find(ph => (CLT_LIB[ph] || []).some(c => c.id === categoryId));
+    if (targetPhase) CLT_PHASE = targetPhase;
     overlay?.remove();
     loadChecklistTemplatesPage();
   } else toast(res?.error || 'Erreur', 'error');
@@ -383,6 +403,11 @@ function checklistShortName(u) {
   return `${u.firstName || ''} ${u.lastName ? u.lastName[0] + '.' : ''}`.trim();
 }
 
+/** Pièce jointe photo (les documents PDF / Office ne comptent pas pour « photo obligatoire »). */
+const checklistIsPhoto = p => !p.kind || p.kind === 'photo';
+/** Cloudinary refuse les fichiers de plus de 10 Mo. */
+const CHECKLIST_MAX_FILE = 10 * 1024 * 1024;
+
 /** Mêmes règles que checklistStats côté serveur (src/services/checklistService.ts). */
 function checklistLocalStats(items) {
   const s = { total: items.length, pending: 0, ok: 0, partial: 0, nok: 0, na: 0, criticalOpen: 0, photoMissing: 0, percent: 0 };
@@ -390,7 +415,7 @@ function checklistLocalStats(items) {
     if (s[it.status] !== undefined) s[it.status]++;
     const closed = it.status === 'ok' || it.status === 'na';
     if (it.critical && !closed) s.criticalOpen++;
-    if (it.photoRequired && !(it.photos || []).length && it.status !== 'na') s.photoMissing++;
+    if (it.photoRequired && !(it.photos || []).filter(checklistIsPhoto).length && it.status !== 'na') s.photoMissing++;
   }
   s.percent = s.total ? Math.round(((s.ok + s.na) / s.total) * 100) : 0;
   return s;
@@ -438,26 +463,40 @@ function checklistStatsHtml(s, withBar = true) {
     </div>` : ''}`;
 }
 
-// ─── Carte « Check-list de montage » au-dessus des handovers du projet ───
-async function loadChecklistCard(projectId) {
-  const el = document.getElementById('detail-checklist-card');
-  if (!el) return;
-  const [inst, dism] = await Promise.all([
-    api('GET', `/checklists/project/${projectId}?phase=installation`),
-    api('GET', `/checklists/project/${projectId}?phase=dismantling`),
-  ]);
+// ─── Cartes de check-list du projet ───
+// handover : installation + démontage, au-dessus des handovers ; prep : préparation, en haut de l'onglet Infos.
+const CHECKLIST_CARDS = {
+  handover: { el: 'detail-checklist-card', title: '☑️ Check-list de montage', phases: ['installation', 'dismantling'] },
+  prep: { el: 'detail-prep-checklist-card', title: '📋 Préparation de l’installation', phases: ['preparation'], hint: 'Points à vérifier avant le début du montage (commentaires, photos, documents).' },
+};
+
+/** Recharge les deux cartes du projet affiché (après configuration ou remplissage). */
+function reloadChecklistCards(projectId) {
   if (CURRENT_PROJECT_ID !== projectId) return;
+  loadChecklistCard(projectId, 'handover');
+  loadChecklistCard(projectId, 'prep');
+}
+
+async function loadChecklistCard(projectId, which = 'handover') {
+  const conf = CHECKLIST_CARDS[which];
+  const el = document.getElementById(conf.el);
+  if (!el) return;
+  if (el.dataset.projectId !== projectId) el.innerHTML = ''; // pas de carte d'un autre projet pendant le chargement
+  const results = await Promise.all(conf.phases.map(ph => api('GET', `/checklists/project/${projectId}?phase=${ph}`)));
+  if (CURRENT_PROJECT_ID !== projectId) return;
+  el.dataset.projectId = projectId;
   // projet non accessible (installer / site manager non affecté) : pas de carte
-  if (!inst?.success && !dism?.success) { el.innerHTML = ''; return; }
+  if (!results.some(r => r?.success)) { el.innerHTML = ''; return; }
   const canConfigure = checklistCanEdit();
   const canFill = checklistCanFill();
+  const single = conf.phases.length === 1;
   const block = (phase, cl) => {
     if (!cl && phase === 'dismantling' && !canConfigure) return '';
     const head = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <span style="font-weight:700;font-size:13px;">${CHECKLIST_PHASE_LABELS[phase]}</span>
-          ${cl ? `<span class="badge badge-muted">${CHECKLIST_VIEWBOX_LABELS[cl.viewboxType] || cl.viewboxType}</span>` : ''}
+          ${single ? '' : `<span style="font-weight:700;font-size:13px;">${CHECKLIST_PHASE_LABELS[phase]}</span>`}
+          ${cl && phase !== 'preparation' ? `<span class="badge badge-muted">${CHECKLIST_VIEWBOX_LABELS[cl.viewboxType] || cl.viewboxType}</span>` : ''}
           ${cl?.validatedAt ? `<span class="badge badge-green" title="Validée par ${esc(checklistShortName(cl.validatedBy))}">✅ Validée le ${fmtDate(cl.validatedAt)}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -470,14 +509,12 @@ async function loadChecklistCard(projectId) {
       : `<div style="font-size:12px;color:var(--text3);margin-top:6px;">Pas encore configurée${canConfigure ? '' : ' — le Technical Manager la prépare'}.</div>`;
     return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;">${head}${body}</div>`;
   };
-  el.innerHTML = `
+  const blocks = conf.phases.map((ph, i) => block(ph, results[i]?.data)).join('');
+  el.innerHTML = blocks ? `
     <div class="card" style="margin-bottom:16px;">
-      <div class="card-header"><span class="card-title">☑️ Check-list de montage</span></div>
-      <div class="card-body" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;">
-        ${block('installation', inst?.data)}
-        ${block('dismantling', dism?.data)}
-      </div>
-    </div>`;
+      <div class="card-header"><div><div class="card-title">${conf.title}</div>${conf.hint ? `<div style="font-size:12px;color:var(--text3);margin-top:2px;">${conf.hint}</div>` : ''}</div></div>
+      <div class="card-body" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;">${blocks}</div>
+    </div>` : '';
 }
 
 // ─── Configuration (Technical Manager) ───
@@ -536,7 +573,7 @@ async function openChecklistConfig(projectId, phase) {
         </div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
-      <div class="form-group2"><label class="form-label2">Type de Viewbox</label>
+      <div class="form-group2" style="${cats.some(c => c.items.some(i => i.scope === 'permanent')) ? '' : 'display:none;'}"><label class="form-label2">Type de Viewbox</label>
         <div id="clc-type" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
@@ -715,7 +752,7 @@ async function saveChecklistConfig(force) {
   const projectId = CLC.projectId;
   document.getElementById('checklist-config-overlay')?.remove();
   CLC = null;
-  loadChecklistCard(projectId);
+  reloadChecklistCards(projectId);
 }
 
 // ─── Remplissage sur site (plein écran, pensé pour le téléphone) ───
@@ -754,7 +791,7 @@ function closeChecklistFull() {
   document.getElementById('checklist-full')?.remove();
   document.querySelector('.bottom-nav')?.style.removeProperty('display');
   document.getElementById('assistant-widget')?.style.removeProperty('display');
-  if (CURRENT_PROJECT_ID === projectId) loadChecklistCard(projectId);
+  reloadChecklistCards(projectId);
 }
 
 function checklistFullStats() {
@@ -788,7 +825,7 @@ function renderChecklistFull() {
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="btn btn-ghost btn-sm" style="min-height:44px;flex-shrink:0;" onclick="closeChecklistFull()">← Fermer</button>
           <div style="min-width:0;flex:1;">
-            <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:15px;overflow-wrap:anywhere;">☑️ Check-list ${CLF.phase === 'dismantling' ? 'de démontage' : 'de montage'}</div>
+            <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:15px;overflow-wrap:anywhere;">${{ preparation: '📋 Check-list de préparation', installation: '☑️ Check-list de montage', dismantling: '☑️ Check-list de démontage' }[CLF.phase] || '☑️ Check-list'}</div>
             <div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${esc(p ? `${p.name} · ${p.internalNumber}` : '')}</div>
           </div>
         </div>
@@ -816,14 +853,14 @@ function renderChecklistFullInfo() {
   el.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-        <span class="badge badge-muted">Viewbox ${CHECKLIST_VIEWBOX_LABELS[cl.viewboxType] || cl.viewboxType}</span>
+        ${CLF.phase !== 'preparation' ? `<span class="badge badge-muted">Viewbox ${CHECKLIST_VIEWBOX_LABELS[cl.viewboxType] || cl.viewboxType}</span>` : ''}
         ${cl.validatedAt ? `<span class="badge badge-green">✅ Validée le ${fmtDate(cl.validatedAt)}${cl.validatedBy ? ` par ${esc(checklistShortName(cl.validatedBy))}` : ''}</span>` : ''}
       </div>
       <div style="font-size:12px;color:var(--text2);line-height:1.7;">
         👷 Site Manager : <strong>${esc(sms.join(', ') || '—')}</strong><br>
         ⚙️ Configurée le ${fmtDate(cl.configuredAt)}${cl.configuredBy ? ` par ${esc(checklistShortName(cl.configuredBy))}` : ''}
       </div>
-      <div class="form-group2" style="margin:10px 0 0;">
+      <div class="form-group2" style="margin:10px 0 0;${CLF.phase === 'preparation' ? 'display:none;' : ''}">
         <label class="form-label2">Boxes contrôlées</label>
         <input class="input" id="clf-boxes" value="${esc(cl.boxesChecked || '')}" placeholder="ex: VBX-01 à VBX-12" ${canFill ? '' : 'disabled'} onchange="saveChecklistFullField('boxesChecked', this.value)">
       </div>
@@ -903,6 +940,7 @@ function checklistFullItemHtml(it) {
         : `<div data-role="comment-text" style="font-size:13px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;"></div>`}
       </div>
       <div data-role="photos" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center;"></div>
+      <div data-role="docs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
       <div data-role="meta" style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.8;"></div>
       <div data-role="error" style="display:none;margin-top:8px;"></div>
     </div>`;
@@ -943,7 +981,8 @@ function updateChecklistItemView(id) {
   const txt = box.querySelector('[data-role="comment-text"]');
   if (txt) txt.textContent = it._comment;
 
-  const photos = it.photos || [];
+  const photos = (it.photos || []).filter(checklistIsPhoto);
+  const docs = (it.photos || []).filter(p => !checklistIsPhoto(p));
   const missingPhoto = it.photoRequired && !photos.length && it._status !== 'na';
   el.querySelector('[data-role="photos"]').innerHTML = `
     ${photos.map(ph => `
@@ -960,8 +999,13 @@ function updateChecklistItemView(id) {
       <label title="Choisir dans la galerie" style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:22px;color:var(--text3);">
         🖼️<span style="font-size:9px;">Galerie</span>
         <input type="file" accept="image/*" multiple style="display:none;" onchange="checklistUploadPhotos('${id}', this)">
+      </label>
+      <label title="Joindre un document (PDF, Word, Excel…)" style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:22px;color:var(--text3);">
+        📎<span style="font-size:9px;">Document</span>
+        <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*" multiple style="display:none;" onchange="checklistUploadDocuments('${id}', this)">
       </label>` : ''}
     ${missingPhoto ? '<span style="font-size:12px;color:var(--accent);">📷 Photo obligatoire avant de mettre OK</span>' : ''}`;
+  el.querySelector('[data-role="docs"]').innerHTML = docs.map(d => checklistDocChip(d, canFill ? id : null)).join('');
 
   const meta = [];
   if (it._saving) meta.push('⏳ Enregistrement…');
@@ -1036,7 +1080,7 @@ function checklistShowComment(id) {
 function checklistSetStatus(id, status) {
   const it = CLF?.items.get(id);
   if (!it || !checklistCanFill()) return;
-  if (status === 'ok' && it.photoRequired && !(it.photos || []).length) {
+  if (status === 'ok' && it.photoRequired && !(it.photos || []).filter(checklistIsPhoto).length) {
     toast('📷 Photo obligatoire : prends d’abord une photo de ce point.', 'error');
     return;
   }
@@ -1175,8 +1219,44 @@ async function checklistUploadPhotos(id, input) {
   updateChecklistFullSummary();
 }
 
+/** Document joint : pastille cliquable (ouverture dans la visionneuse), avec × si modifiable (itemId). */
+function checklistDocChip(d, itemId) {
+  const name = d.fileName || 'Document';
+  return `
+    <span style="display:inline-flex;align-items:center;gap:6px;max-width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12px;">
+      <a href="#" onclick="event.preventDefault();openFileViewer('${esc(d.photoUrl)}', '${esc(name)}')" style="color:var(--blue);overflow-wrap:anywhere;">📄 ${esc(name)}</a>
+      ${itemId ? `<button onclick="checklistDeletePhoto('${itemId}','${d.id}')" title="Supprimer le document" style="border:none;background:none;color:var(--text3);font-size:15px;cursor:pointer;padding:0 2px;min-width:24px;min-height:24px;">×</button>` : ''}
+    </span>`;
+}
+
+async function checklistUploadDocuments(id, input) {
+  const files = [...(input.files || [])];
+  input.value = '';
+  const it = CLF?.items.get(id);
+  if (!files.length || !it) return;
+  const ok = files.filter(f => {
+    if (f.size <= CHECKLIST_MAX_FILE) return true;
+    toast(`« ${f.name} » est trop lourd (max 10 Mo)`, 'error');
+    return false;
+  });
+  if (!ok.length) return;
+  it._uploading = (it._uploading || 0) + ok.length;
+  updateChecklistItemView(id);
+  for (const f of ok) {
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await checklistRequest('POST', `/checklists/items/${id}/documents`, fd);
+    if (!CLF || !CLF.items.has(id)) return;
+    it._uploading--;
+    if (r.ok) it.photos = [...(it.photos || []), r.data.data];
+    else toast(r.data?.error || `« ${f.name} » non envoyé — réessaie`, 'error');
+    updateChecklistItemView(id);
+  }
+}
+
 async function checklistDeletePhoto(itemId, photoId) {
-  if (!confirm('Supprimer cette photo ?')) return;
+  const att = (CLF?.items.get(itemId)?.photos || []).find(p => p.id === photoId);
+  if (!confirm(att && !checklistIsPhoto(att) ? `Supprimer le document « ${att.fileName || 'Document'} » ?` : 'Supprimer cette photo ?')) return;
   const r = await checklistRequest('DELETE', `/checklists/photos/${photoId}`);
   const it = CLF?.items.get(itemId);
   if (!it) return;
@@ -1295,7 +1375,8 @@ async function loadHandoverChecklistSection(projectId, handoverId) {
                 <div style="font-size:13px;overflow-wrap:anywhere;">${esc(it.label)}${it.critical ? ' <span class="badge badge-red" style="font-size:10px;">⚠️ critique</span>' : ''}</div>
                 ${it.comment ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere;">${esc(it.comment)}</div>` : ''}
                 ${it.checkedBy && it.status !== 'pending' ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">Vérifié par ${esc(checklistShortName(it.checkedBy))} — ${fmtDateTime(it.checkedAt)}</div>` : ''}
-                ${(it.photos || []).length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${it.photos.map(ph => `<img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}</div>` : ''}
+                ${(it.photos || []).some(checklistIsPhoto) ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${it.photos.filter(checklistIsPhoto).map(ph => `<img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}</div>` : ''}
+                ${(it.photos || []).some(p => !checklistIsPhoto(p)) ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${it.photos.filter(p => !checklistIsPhoto(p)).map(d => checklistDocChip(d, null)).join('')}</div>` : ''}
               </div>
               <span class="badge" style="background:${st.bg};color:${st.color};flex-shrink:0;">${st.icon} ${st.label}</span>
             </div>`;

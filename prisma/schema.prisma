@@ -950,11 +950,12 @@ model PlansDrawingSet {
 // résolus à la lecture (src/services/checklistService.ts).
 // ─────────────────────────────────────────────
 
-// Bibliothèque : catégories de points, par phase (installation | dismantling)
+// Bibliothèque : catégories de points, par phase (preparation | installation | dismantling).
+// preparation = avant l'installation (onglet Infos du projet) ; installation = montage (handover).
 model ChecklistCategory {
   id        String                  @id @default(uuid())
   name      String
-  phase     String                  @default("installation") // installation | dismantling
+  phase     String                  @default("installation") // preparation | installation | dismantling
   sortOrder Int                     @default(0) @map("sort_order")
   createdAt DateTime                @default(now()) @map("created_at")
   items     ChecklistTemplateItem[]
@@ -1026,11 +1027,15 @@ model ProjectChecklistItem {
   @@map("project_checklist_items")
 }
 
+// Pièce jointe d'un point : photo (kind = photo) ou document PDF / Office (kind = document)
 model ProjectChecklistPhoto {
   id           String               @id @default(uuid())
   itemId       String               @map("item_id")
   photoUrl     String               @map("photo_url")
   publicId     String?              @map("public_id")
+  kind         String               @default("photo") // photo | document
+  fileName     String?              @map("file_name")
+  mimeType     String?              @map("mime_type")
   uploadedById String?              @map("uploaded_by")
   createdAt    DateTime             @default(now()) @map("created_at")
   item         ProjectChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)

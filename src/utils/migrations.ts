@@ -1075,4 +1075,54 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] check-list de montage : ${e.message}`);
   }
+  // ─── Check-list : documents joints (en plus des photos) ───
+  for (const sql of [
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'photo'`,
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "file_name" TEXT`,
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "mime_type" TEXT`,
+  ]) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch (e: any) {
+      logger.warn(`[migration] project_checklist_photos : ${e.message}`);
+    }
+  }
+  // ─── Check-list : la catégorie « Préparation et réception du site » passe dans la phase « preparation »
+  // (onglet Infos du projet, plus dans le handover). Une seule fois (repère checklists.preparationSplit dans
+  // app_settings) : dans la bibliothèque, et dans les check-lists installation déjà configurées, dont les
+  // points (statuts, photos, historique) sont déplacés dans une check-list « preparation » du même projet.
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        r RECORD;
+        prep_id TEXT;
+      BEGIN
+        IF EXISTS (SELECT 1 FROM "app_settings" WHERE "key" = 'checklists.preparationSplit') THEN
+          RETURN;
+        END IF;
+        UPDATE "checklist_categories" SET "phase" = 'preparation'
+          WHERE "phase" = 'installation' AND "name" = 'Préparation et réception du site';
+        FOR r IN
+          SELECT DISTINCT c."id", c."project_id", c."viewbox_type", c."configured_by", c."configured_at", c."validated_by", c."validated_at"
+          FROM "project_checklists" c
+          JOIN "project_checklist_items" i ON i."checklist_id" = c."id"
+          WHERE c."phase" = 'installation' AND i."category_name" = 'Préparation et réception du site'
+        LOOP
+          SELECT "id" INTO prep_id FROM "project_checklists" WHERE "project_id" = r."project_id" AND "phase" = 'preparation';
+          IF prep_id IS NULL THEN
+            prep_id := md5(random()::text || clock_timestamp()::text || r."id")::uuid::text;
+            INSERT INTO "project_checklists" ("id", "project_id", "phase", "viewbox_type", "configured_by", "configured_at", "validated_by", "validated_at", "created_at", "updated_at")
+            VALUES (prep_id, r."project_id", 'preparation', r."viewbox_type", r."configured_by", r."configured_at", r."validated_by", r."validated_at", now(), now());
+          END IF;
+          UPDATE "project_checklist_items" SET "checklist_id" = prep_id, "updated_at" = now()
+            WHERE "checklist_id" = r."id" AND "category_name" = 'Préparation et réception du site';
+        END LOOP;
+        INSERT INTO "app_settings" ("key", "value", "updated_at") VALUES ('checklists.preparationSplit', 'true'::jsonb, now());
+      END $$;
+    `);
+    logger.info('[migration] check-list : phase préparation séparée de l’installation (si pas déjà fait)');
+  } catch (e: any) {
+    logger.warn(`[migration] check-list préparation : ${e.message}`);
+  }
 }
