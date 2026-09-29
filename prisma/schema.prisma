@@ -227,6 +227,7 @@ model Project {
   plan2Ds          Plan2D[]
   plansModels      PlansModelVersion[]
   drawingSets      PlansDrawingSet[]
+  checklists       ProjectChecklist[]
 
   @@map("projects")
 }
@@ -940,4 +941,115 @@ model PlansDrawingSet {
 
   @@index([projectId])
   @@map("plans_drawing_sets")
+}
+
+// ─────────────────────────────────────────────
+// Check-list de montage (handover)
+// Tables créées par src/utils/migrations.ts (pas de db push au démarrage sur Railway).
+// Les ids utilisateur (configured_by, checked_by…) ne sont pas des relations : les noms sont
+// résolus à la lecture (src/services/checklistService.ts).
+// ─────────────────────────────────────────────
+
+// Bibliothèque : catégories de points, par phase (installation | dismantling)
+model ChecklistCategory {
+  id        String                  @id @default(uuid())
+  name      String
+  phase     String                  @default("installation") // installation | dismantling
+  sortOrder Int                     @default(0) @map("sort_order")
+  createdAt DateTime                @default(now()) @map("created_at")
+  items     ChecklistTemplateItem[]
+
+  @@map("checklist_categories")
+}
+
+model ChecklistTemplateItem {
+  id            String            @id @default(uuid())
+  categoryId    String            @map("category_id")
+  label         String
+  hint          String?           // précision affichée en petit sous le libellé
+  scope         String            @default("all") // all | permanent
+  photoRequired Boolean           @default(false) @map("photo_required")
+  critical      Boolean           @default(false)
+  optional      Boolean           @default(false) // « si présent » : non pré-coché par défaut
+  active        Boolean           @default(true)
+  sortOrder     Int               @default(0) @map("sort_order")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  category      ChecklistCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("checklist_template_items")
+}
+
+// Check-list d'un projet (une par phase). Les points sont une copie de la bibliothèque au moment
+// de la configuration : modifier la bibliothèque ensuite ne change jamais un projet existant.
+model ProjectChecklist {
+  id             String                 @id @default(uuid())
+  projectId      String                 @map("project_id")
+  phase          String                 @default("installation")
+  viewboxType    String                 @default("ephemere") @map("viewbox_type") // ephemere | permanente
+  boxesChecked   String?                @map("boxes_checked")
+  notes          String?
+  configuredById String?                @map("configured_by")
+  configuredAt   DateTime?              @map("configured_at")
+  validatedById  String?                @map("validated_by")
+  validatedAt    DateTime?              @map("validated_at")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+  project        Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items          ProjectChecklistItem[]
+
+  @@unique([projectId, phase])
+  @@map("project_checklists")
+}
+
+model ProjectChecklistItem {
+  id             String                  @id @default(uuid())
+  checklistId    String                  @map("checklist_id")
+  templateItemId String?                 @map("template_item_id") // null = point ajouté manuellement
+  categoryName   String                  @map("category_name")    // copie
+  label          String                                           // copie
+  hint           String?
+  photoRequired  Boolean                 @default(false) @map("photo_required")
+  critical       Boolean                 @default(false)
+  sortOrder      Int                     @default(0) @map("sort_order")
+  status         String                  @default("pending") // pending | ok | partial | nok | na
+  comment        String?
+  checkedById    String?                 @map("checked_by")
+  checkedAt      DateTime?               @map("checked_at")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+  checklist      ProjectChecklist        @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  photos         ProjectChecklistPhoto[]
+  logs           ProjectChecklistLog[]
+
+  @@index([checklistId])
+  @@map("project_checklist_items")
+}
+
+model ProjectChecklistPhoto {
+  id           String               @id @default(uuid())
+  itemId       String               @map("item_id")
+  photoUrl     String               @map("photo_url")
+  publicId     String?              @map("public_id")
+  uploadedById String?              @map("uploaded_by")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  item         ProjectChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("project_checklist_photos")
+}
+
+// Historique des changements de statut d'un point (qui, quand, ancien → nouveau)
+model ProjectChecklistLog {
+  id         String               @id @default(uuid())
+  itemId     String               @map("item_id")
+  fromStatus String?              @map("from_status")
+  toStatus   String               @map("to_status")
+  comment    String?
+  userId     String?              @map("user_id")
+  createdAt  DateTime             @default(now()) @map("created_at")
+  item       ProjectChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("project_checklist_logs")
 }

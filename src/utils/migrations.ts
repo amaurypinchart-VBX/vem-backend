@@ -938,4 +938,141 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] users.plans_access : ${e.message}`);
   }
+  // ─── Tables de la check-list de montage (handover) : bibliothèque + check-lists projet ───
+  // La bibliothèque n'est pas remplie ici : bouton « Charger la bibliothèque Viewbox » (POST /checklists/templates/seed).
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "checklist_categories" (
+        "id"         TEXT         NOT NULL,
+        "name"       TEXT         NOT NULL,
+        "phase"      TEXT         NOT NULL DEFAULT 'installation',
+        "sort_order" INTEGER      NOT NULL DEFAULT 0,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "checklist_categories_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "checklist_template_items" (
+        "id"             TEXT         NOT NULL,
+        "category_id"    TEXT         NOT NULL,
+        "label"          TEXT         NOT NULL,
+        "hint"           TEXT,
+        "scope"          TEXT         NOT NULL DEFAULT 'all',
+        "photo_required" BOOLEAN      NOT NULL DEFAULT false,
+        "critical"       BOOLEAN      NOT NULL DEFAULT false,
+        "optional"       BOOLEAN      NOT NULL DEFAULT false,
+        "active"         BOOLEAN      NOT NULL DEFAULT true,
+        "sort_order"     INTEGER      NOT NULL DEFAULT 0,
+        "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "checklist_template_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklists" (
+        "id"            TEXT         NOT NULL,
+        "project_id"    TEXT         NOT NULL,
+        "phase"         TEXT         NOT NULL DEFAULT 'installation',
+        "viewbox_type"  TEXT         NOT NULL DEFAULT 'ephemere',
+        "boxes_checked" TEXT,
+        "notes"         TEXT,
+        "configured_by" TEXT,
+        "configured_at" TIMESTAMP(3),
+        "validated_by"  TEXT,
+        "validated_at"  TIMESTAMP(3),
+        "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklists_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_items" (
+        "id"               TEXT         NOT NULL,
+        "checklist_id"     TEXT         NOT NULL,
+        "template_item_id" TEXT,
+        "category_name"    TEXT         NOT NULL,
+        "label"            TEXT         NOT NULL,
+        "hint"             TEXT,
+        "photo_required"   BOOLEAN      NOT NULL DEFAULT false,
+        "critical"         BOOLEAN      NOT NULL DEFAULT false,
+        "sort_order"       INTEGER      NOT NULL DEFAULT 0,
+        "status"           TEXT         NOT NULL DEFAULT 'pending',
+        "comment"          TEXT,
+        "checked_by"       TEXT,
+        "checked_at"       TIMESTAMP(3),
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_photos" (
+        "id"          TEXT         NOT NULL,
+        "item_id"     TEXT         NOT NULL,
+        "photo_url"   TEXT         NOT NULL,
+        "public_id"   TEXT,
+        "uploaded_by" TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_photos_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_logs" (
+        "id"          TEXT         NOT NULL,
+        "item_id"     TEXT         NOT NULL,
+        "from_status" TEXT,
+        "to_status"   TEXT         NOT NULL,
+        "comment"     TEXT,
+        "user_id"     TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_logs_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    for (const sql of [
+      `CREATE INDEX IF NOT EXISTS "checklist_template_items_category_id_idx" ON "checklist_template_items" ("category_id")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "project_checklists_project_id_phase_key" ON "project_checklists" ("project_id", "phase")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_items_checklist_id_idx" ON "project_checklist_items" ("checklist_id")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_photos_item_id_idx" ON "project_checklist_photos" ("item_id")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_logs_item_id_idx" ON "project_checklist_logs" ("item_id")`,
+    ]) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'checklist_template_items_category_id_fkey') THEN
+          ALTER TABLE "checklist_template_items"
+            ADD CONSTRAINT "checklist_template_items_category_id_fkey"
+            FOREIGN KEY ("category_id") REFERENCES "checklist_categories"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklists_project_id_fkey') THEN
+          ALTER TABLE "project_checklists"
+            ADD CONSTRAINT "project_checklists_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_items_checklist_id_fkey') THEN
+          ALTER TABLE "project_checklist_items"
+            ADD CONSTRAINT "project_checklist_items_checklist_id_fkey"
+            FOREIGN KEY ("checklist_id") REFERENCES "project_checklists"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_photos_item_id_fkey') THEN
+          ALTER TABLE "project_checklist_photos"
+            ADD CONSTRAINT "project_checklist_photos_item_id_fkey"
+            FOREIGN KEY ("item_id") REFERENCES "project_checklist_items"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_logs_item_id_fkey') THEN
+          ALTER TABLE "project_checklist_logs"
+            ADD CONSTRAINT "project_checklist_logs_item_id_fkey"
+            FOREIGN KEY ("item_id") REFERENCES "project_checklist_items"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] tables de la check-list de montage créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] check-list de montage : ${e.message}`);
+  }
 }

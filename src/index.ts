@@ -42,6 +42,7 @@ import translateRoutes from './routes/translate';
 import publicHandoverSignRoutes from './routes/publicHandoverSign';
 import publicCalendarRoutes from './routes/publicCalendar';
 import assistantRoutes from './routes/assistant';
+import checklistRoutes from './routes/checklists';
 
 const app  = express();
 const http = createServer(app);
@@ -97,6 +98,8 @@ app.use(`${API}/projects`,       authMiddleware, projectRoutes);
 app.use(`${API}/tasks`,          authMiddleware, taskRoutes);
 app.use(`${API}/tickets`,        authMiddleware, ticketRoutes);
 app.use(`${API}/handover`,       authMiddleware, handoverRoutes);
+// Check-list de montage (bibliothèque + check-list de chaque projet, affichée dans le handover)
+app.use(`${API}/checklists`,     authMiddleware, checklistRoutes);
 
 app.use(`${API}/daily-reports`,  authMiddleware, dailyRoutes);
 app.use(`${API}/warehouse`,      authMiddleware, warehouseRoutes);

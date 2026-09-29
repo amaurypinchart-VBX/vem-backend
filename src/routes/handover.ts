@@ -6,6 +6,7 @@ import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
+import { checklistSummaries } from '../services/checklistService';
 import crypto from 'crypto';
 
 const router = Router();
@@ -22,7 +23,12 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json({ success: true, data: handovers });
+    // Résumé de la check-list de montage (phase installation) du projet de chaque handover
+    const summaries = await checklistSummaries(handovers.map((h) => h.projectId));
+    res.json({
+      success: true,
+      data: handovers.map((h) => ({ ...h, checklistSummary: summaries.get(h.projectId) || null })),
+    });
   } catch (err) { next(err); }
 });
 
@@ -48,7 +54,8 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       },
     });
     if (!h) throw new AppError('Handover introuvable', 404);
-    res.json({ success: true, data: h });
+    const summaries = await checklistSummaries([h.projectId]);
+    res.json({ success: true, data: { ...h, checklistSummary: summaries.get(h.projectId) || null } });
   } catch (err) { next(err); }
 });
 
