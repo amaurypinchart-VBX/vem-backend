@@ -7,6 +7,8 @@ WORKDIR /build/plans
 COPY plans/package*.json ./
 RUN npm ci
 COPY plans ./
+# garde-fou IA de l'étude structure : fichier du backend, testé aussi par plans/tests/structure (sans dépendance)
+COPY src/services/structureAiGuard.ts /build/src/services/
 RUN npm run build
 
 # ── Étape 2 : backend VEM ──
