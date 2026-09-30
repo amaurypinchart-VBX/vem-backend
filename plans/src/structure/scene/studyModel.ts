@@ -93,7 +93,7 @@ function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {
 }
 
 /** Objet → charge linéique sur la rive la plus proche (à ≤ 300 mm du côté) ou charge ponctuelle au nœud le plus proche. */
-function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignment, label: string, modules: PlacedModule[], edge: EdgeItem[], point: PointItem[]) {
+export function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignment, label: string, modules: PlacedModule[], edge: EdgeItem[], point: PointItem[]) {
   const corners: Vec3[] = [];
   for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) corners.push([x, y, z]);
   const c: Vec3 = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
@@ -129,7 +129,11 @@ function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignm
   const near = sides.reduce((x, y) => (y.d < x.d ? y : x));
   const w = a.weight!;
   const lcase = loadCaseOf(a);
-  if (near.d <= 300 && w.unit !== 'kg/m²') {
+  // panneau vertical (mur, vitrage, habillage) donné en kg/m² : surface = longueur × hauteur, pas l'emprise au sol
+  const height = b[4] - b[1];
+  const thin = Math.min(b[3] - b[0], b[5] - b[2]);
+  const vertical = w.unit === 'kg/m²' && height >= 3 * thin && thin < 300;
+  if (near.d <= 300 && (w.unit !== 'kg/m²' || vertical)) {
     const along = near.side === 'v0' || near.side === 'v1';
     const [s0, len] = along ? [p.x0, p.x1 - p.x0] : [p.y0, p.y1 - p.y0];
     const ss = corners.map((x) => {
@@ -139,16 +143,16 @@ function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignm
     const from = Math.max(0, Math.min(...ss));
     const to = Math.min(len, Math.max(...ss));
     const L = to - from;
-    if (L > 50 && (w.unit === 'kg/m' || L > 1000)) {
-      const q = w.unit === 'kg/m' ? (w.value * G) / 1000 : (w.value * G) / L;
+    if (L > 50 && (w.unit === 'kg/m' || vertical || L > 1000)) {
+      const q = w.unit === 'kg/m' ? (w.value * G) / 1000 : vertical ? (w.value * G * height) / 1e6 : (w.value * G) / L;
       edge.push({ module: pm.id, side: near.side, from, to, level, q, loadCase: lcase === 'G7' ? 'G3' : lcase, label });
       return;
     }
   }
-  // charge ponctuelle (poids total ; kg/m² sur l'emprise en plan)
+  // charge ponctuelle (poids total ; kg/m² sur l'emprise en plan, ou sur la face d'un panneau vertical)
   let F = 0;
   if (w.unit === 'kg') F = w.value * G;
   else if (w.unit === 'kg/m') F = (w.value * G * Math.max(b[3] - b[0], b[5] - b[2])) / 1000;
-  else F = w.value * G * 1e-6 * (b[3] - b[0]) * (b[5] - b[2]);
+  else F = w.value * G * 1e-6 * (vertical ? Math.max(b[3] - b[0], b[5] - b[2]) * height : (b[3] - b[0]) * (b[5] - b[2]));
   point.push({ module: pm.id, u: lc.u, v: lc.v, level, F, loadCase: lcase, label });
 }

@@ -1133,3 +1133,22 @@ model StructReport {
   @@index([studyId])
   @@map("struct_reports")
 }
+
+// Journal des appels à l'IA de l'étude structure (identification, lecture de documents, rédaction, relecture).
+model StructAiCall {
+  id           String   @id @default(uuid())
+  kind         String
+  model        String
+  inputTokens  Int      @default(0) @map("input_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  costUsd      Float?   @map("cost_usd")
+  durationMs   Int      @default(0) @map("duration_ms")
+  ok           Boolean  @default(true)
+  error        String?
+  userId       String?  @map("user_id")
+  studyId      String?  @map("study_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("struct_ai_calls")
+}

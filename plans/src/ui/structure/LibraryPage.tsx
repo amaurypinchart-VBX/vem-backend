@@ -10,6 +10,10 @@ import { SEED } from '../../structure/library/seed';
 import type { VemUser } from '../../api/vem';
 import { vem } from '../../api/vem';
 import { downloadText } from '../common';
+import { panelMass } from '../../structure/core/composite';
+import { fmtNumber } from '../../structure/core/units';
+import { ReferenceExtract } from './ReferenceExtract';
+import { useAiStatus } from './aiUi';
 
 const KIND_LABEL: Record<LibraryKind, string> = {
   module_type: 'Gabarits de modules',
@@ -34,6 +38,7 @@ function summary(e: LibraryEntry): string {
   if (e.kind === 'section') return `A = ${(e.section.A / 100).toFixed(2).replace('.', ',')} cm² · ${e.material}`;
   if (e.kind === 'connection') return e.capacities.map((c) => c.label).slice(0, 3).join(' · ');
   if (e.kind === 'module_type') return `${e.nominal.long} × ${e.nominal.short} mm${e.template ? '' : ' — données inconnues'}`;
+  if (e.kind === 'material' && e.panel) return `panneau composé : ${e.panel.layers.map((l) => `${l.name} ${l.thickness} mm`).join(' + ')} → ${fmtNumber(panelMass(e.panel).kgPerM2, 1)} kg/m²`;
   return '';
 }
 
@@ -55,6 +60,11 @@ export function LibraryPage() {
     vem.me().then(setMe).catch(() => {});
   }, []);
   const canEdit = EDITORS.includes(me?.role ?? '');
+  const ai = useAiStatus();
+  const [aiCost, setAiCost] = useState<{ count: number; costUsd: number } | null>(null);
+  useEffect(() => {
+    if (ai?.enabled) vem.aiCalls().then(setAiCost).catch(() => {});
+  }, [ai?.enabled]);
   const all = useMemo(() => mergeLibrary(SEED, rows), [rows]);
   const list = all.filter((e) => (!kind || e.kind === kind) && (!q || `${e.name} ${e.key} ${summary(e)}`.toLowerCase().includes(q.toLowerCase())));
   const id = (e: LibraryEntry) => `${e.kind}:${e.key}`;
@@ -76,6 +86,21 @@ export function LibraryPage() {
 
   return (
     <div className="page">
+      {canEdit && ai?.enabled && (
+        <>
+          <ReferenceExtract
+            onImported={async () => {
+              await refresh();
+              setMsg('✓ Entrées importées (à vérifier)');
+            }}
+          />
+          {aiCost && (
+            <div className="hint" style={{ margin: '0 0 8px' }}>
+              IA de l’étude structure ({ai.model}) : {aiCost.count} appel(s) sur 30 jours, coût estimé ≈ {fmtNumber(aiCost.costUsd, 2)} $.
+            </div>
+          )}
+        </>
+      )}
       <div className="card">
         <div className="card-head">
           <h2>Bibliothèque structure</h2>

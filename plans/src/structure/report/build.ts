@@ -51,6 +51,8 @@ export interface ReportInput {
   images?: { view3d?: ReportImage; eta3d?: ReportImage };
   /** plan de calage A3 (planche du moteur de planches) : SVG rendu par l'appelant avec le numéro donné */
   calagePlan?: (pageLabel: string) => string;
+  /** textes rédigés par l'IA (contrôlés : aucun nombre hors des données du calcul), relus par l'utilisateur */
+  texts?: { description?: string; instructions?: string[]; conclusion?: string };
 }
 
 export interface ReportPage {
@@ -267,7 +269,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'heading', level: 2, num: '1.1', text: L.s11 });
   blocks.push({ t: 'para', text: L.basisText(inp.model.fileName, inp.model.date) });
   blocks.push({ t: 'para', text: L.descriptionTitle, bold: true, after: 0.6 });
-  blocks.push({ t: 'para', text: L.descriptionText(s.modules.length, levels) });
+  blocks.push({ t: 'para', text: inp.texts?.description?.trim() || L.descriptionText(s.modules.length, levels) });
+  if (inp.texts?.description?.trim()) blocks.push({ t: 'para', text: L.aiNote, size: SIZE.small, color: GREY });
   blocks.push({ t: 'kv', rows: [[L.moduleDims, moduleDims], [L.overallDims, overall]] });
   if (inp.images?.view3d) blocks.push({ t: 'figure', h: 78, svg: imageSvg(inp.images.view3d), caption: L.figure3d });
   const axesOpt = { x: [ax.x[0], ax.x[2]] as [number, number], y: [ax.y[0], ax.y[2]] as [number, number], labels: ['x', 'y'] as [string, string] };
@@ -286,6 +289,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
       L.snowNote,
+      ...(inp.texts?.instructions ?? []).map((t) => t.trim()).filter(Boolean),
     ],
   });
 
@@ -552,7 +556,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
 
   // ─── 5 conclusion ───
   blocks.push({ t: 'heading', level: 1, num: '5', text: L.ch5 });
-  blocks.push({ t: 'para', text: L.conclusion[verdict](N(maxEta)) });
+  blocks.push({ t: 'para', text: inp.texts?.conclusion?.trim() || L.conclusion[verdict](N(maxEta)) });
+  if (inp.texts?.conclusion?.trim()) blocks.push({ t: 'para', text: L.aiNote, size: SIZE.small, color: GREY });
   if (reasons.length) {
     blocks.push({ t: 'para', text: L.reasons, bold: true, after: 0.6 });
     blocks.push({ t: 'bullets', items: reasons });

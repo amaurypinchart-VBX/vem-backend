@@ -25,6 +25,11 @@ import type { StudyRunner } from '../../structure/worker/study';
 import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
 import { CalcPanel, ResultsPanel } from './CalcResults';
 import { ReportPanel } from './ReportPanel';
+import { useAiStatus } from './aiUi';
+import type { CompositePanel } from '../../structure/core/composite';
+import { panelEntry } from '../../structure/core/composite';
+import { studyFacts } from '../../structure/report/facts';
+import { bearingFrom } from '../../structure/core/ground';
 import type { BrowserHlrProvider } from '../../linework/provider';
 import type { ModelVersion, StudyRecord, VemUser } from '../../api/vem';
 import { PROJECT_ID, vem } from '../../api/vem';
@@ -95,6 +100,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error' | 'local'>('idle');
   const [error, setError] = useState('');
   const loaded = useRef(false);
+  const ai = useAiStatus();
 
   const refreshLibrary = useCallback(async () => {
     try {
@@ -347,6 +353,12 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           canEditLibrary={canEditLibrary}
           onAnswer={answer}
           onConfirmSuggested={confirmSuggested}
+          ai={ai}
+          studyId={study?.id ?? null}
+          onSavePanel={async (p: CompositePanel) => {
+            await vem.saveLibraryEntry(toPayload(panelEntry(p)));
+            await refreshLibrary();
+          }}
         />
       </div>
       {step === 'site' && (
@@ -383,7 +395,28 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         />
       )}
       <div style={{ display: step === 'results' ? 'block' : 'none' }}>
-        <ResultsPanel scene={scene} glassTest={glassTest} active={active && step === 'results'} recognition={recognition} run={run?.result ?? null} stale={stale} />
+        <ResultsPanel
+          scene={scene}
+          glassTest={glassTest}
+          active={active && step === 'results'}
+          recognition={recognition}
+          run={run?.result ?? null}
+          stale={stale}
+          ai={ai}
+          studyId={study?.id ?? null}
+          facts={() =>
+            run
+              ? studyFacts({
+                  lang: 'fr',
+                  run: run.result,
+                  inputs: studyInputs,
+                  calage: null,
+                  bearing: bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3,
+                  warnings: [...sceneModel.warnings, ...warnings],
+                })
+              : {}
+          }
+        />
       </div>
       {step === 'report' && (
         <ReportPanel
@@ -399,6 +432,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           model={model}
           study={study}
           me={me}
+          ai={ai}
         />
       )}
       {step === 'ground' && (

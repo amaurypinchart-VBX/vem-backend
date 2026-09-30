@@ -27,6 +27,9 @@ import { SheetSvg } from '../../src/sheets/SheetSvg';
 import { fitScale } from '../../src/sheets/scales';
 import { emptyTitleBlock } from '../../src/sheets/types';
 import { calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
+import { studyFacts } from '../../src/structure/report/facts';
+import { checkText } from '../../../src/services/structureAiGuard';
+import { VIEWBOX_STOCK } from '../../src/structure/core/ground';
 
 const inputs: StudyInputs = {
   modules: [vbx('VBX-01', 0, 0), vbx('VBX-02', 0, 2.5), vbx('VBX-03', 0, 0, 1)],
@@ -246,6 +249,48 @@ describe('rapport de l’étude structure', () => {
       expect(all).toContain({ fr: 'Portance du sol non renseignée', de: 'Zulässige Bodenpressung nicht angegeben', en: 'Ground bearing capacity not entered' }[lang]);
     }
   }, 120000);
+
+  it('données pour l’IA : un texte fait de ces valeurs passe le garde-fou, un chiffre inventé est rejeté', () => {
+    const facts = studyFacts({ lang: 'fr', run, inputs, calage, bearing: 200 });
+    const inst = facts.installation as Record<string, number>;
+    const fam = (facts.familles as Array<{ famille: string; eta_max: number }>)[0];
+    const hyp = facts.hypotheses as Record<string, number>;
+    const text = `L’installation compte ${inst.viewbox} Viewbox sur ${inst.niveaux} niveaux (${String(inst.emprise_x_m).replace('.', ',')} m). ${fam.famille} : η = ${String(fam.eta_max).replace('.', ',')}. Arrêt d’exploitation à ${String(hyp.vitesse_arret_exploitation_m_s).replace('.', ',')} m/s.`;
+    expect(checkText(text, facts)).toEqual([]);
+    expect(hyp.vitesse_arret_exploitation_m_s).toBe(17.9);
+    expect(checkText('Le taux maximal vaut 0,123.', facts)).toEqual([0.123]);
+  });
+
+  it('textes rédigés par l’IA dans le rapport : description et conclusion remplacées, mention du contrôle', () => {
+    const r = buildReport({ ...reportInput('fr', 'compact'), texts: { description: 'Description rédigée pour le test.', instructions: ['Consigne particulière du projet.'], conclusion: 'Conclusion rédigée pour le test.' } });
+    const all = r.pages.flatMap((p) => texts(p.svg)).join(' ');
+    expect(all).toContain('Description rédigée pour le test.');
+    expect(all).toContain('Consigne particulière du projet.');
+    expect(all).toContain('Conclusion rédigée pour le test.');
+    expect(all).toContain('aucun chiffre ne provient de l’IA');
+  });
+
+  it('calage sur le stock Viewbox standard : multiplex bouleau 18 / 36 mm, plaques de 40, 70 ou 100 cm', () => {
+    const c = computeCalage({
+      modules: [],
+      estimate: { ...ESTIMATE_DEFAULTS, loads: { moduleWeight: 0, ceiling: 0, floorFinish: 0, live: 0, roofLive: 0, extraPerModule: 0 } },
+      bearing: 0.2,
+      staticoConversion: false,
+      thicknesses: [18, 21, 24, 27, 30, 40],
+      stock: VIEWBOX_STOCK,
+      commercial: [],
+      longrine: { k: 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
+      diffusion: false,
+      reactions: run.ground,
+    });
+    for (const t of c.types) {
+      expect(t.chosen!.kind).toBe('plywood-stock');
+      expect([400, 700, 1000]).toContain(t.chosen!.footprint!.l);
+      expect(t.chosen!.materials[0].label).toMatch(/Multiplex bouleau \(stock, quantité à vérifier au dépôt\)/);
+    }
+    // fm,k du bouleau (fiche Metsä) dans le calcul de flexion
+    expect(c.types[0].chosen!.records.find((x) => x.key === 'ground.plate.bending')!.withValues).toContain('3,41 kN/cm²');
+  });
 
   it('pages écrites pour contrôle visuel (REPORT_SVG=1)', () => {
     if (!process.env.REPORT_SVG) return;

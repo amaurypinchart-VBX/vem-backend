@@ -11,6 +11,11 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import type { Recognition } from '../../structure/core/recognition';
 import { fmtNumber } from '../../structure/core/units';
 import type { CalcOptions, StudyRun } from '../../structure/studyRun';
+import { modelSegments } from '../../structure/core/templateView';
+import { familyName } from '../../structure/report/build';
+import { materialByKey } from '../../structure/core/materials';
+import type { AiState } from './aiUi';
+import { AiReviewCard } from './aiUi';
 
 const n = (v: number, d = 2) => fmtNumber(v, d);
 const VERDICT_COLOR: Record<Verdict, string> = { ok: 'var(--ok)', limit: 'var(--warn)', fail: 'var(--danger)', incomplete: 'var(--danger)' };
@@ -197,13 +202,19 @@ export interface ResultsPanelProps {
   recognition: Recognition;
   run: StudyRun | null;
   stale: boolean;
+  ai?: AiState | null;
+  studyId?: string | null;
+  /** données du calcul pour la relecture par l'IA */
+  facts?: () => Record<string, unknown>;
 }
 
-export function ResultsPanel({ scene, glassTest, active, recognition, run, stale }: ResultsPanelProps) {
+export function ResultsPanel({ scene, glassTest, active, recognition, run, stale, ai, studyId, facts }: ResultsPanelProps) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [family, setFamily] = useState<string | null>(null);
+  const [showBars, setShowBars] = useState(false);
+  const [bar, setBar] = useState<number | null>(null);
 
   // taux maxi par Viewbox → couleur de la Viewbox et de ses pièces
   const colors = useMemo(() => (run ? moduleEtaColors(run, scene, recognition, family) : new Map<string, number>()), [run, scene, recognition, family]);
@@ -226,6 +237,36 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
     viewerRef.current?.setColorOverlay(colors);
   }, [active, colors, hasRun]);
 
+  // barres du modèle de calcul colorées par le pire taux des vérifications qui les contiennent
+  const barItems = useMemo(() => {
+    const m = new Map<number, number[]>();
+    run?.index.items.forEach((it, t) => {
+      for (const k of it.members) {
+        if (!m.has(k)) m.set(k, []);
+        m.get(k)!.push(t);
+      }
+    });
+    return m;
+  }, [run]);
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || !active) return;
+    if (!run || !showBars) {
+      v.setBarOverlay(null);
+      v.onBarPick(null);
+      v.setVisibility(null);
+      return;
+    }
+    const seg = modelSegments(run.structure, (k) => {
+      const ts = barItems.get(k);
+      if (!ts?.length) return 0x9ca3af;
+      return etaColor(Math.max(...ts.map((t) => run.summary.states[t]?.eta ?? Infinity)));
+    });
+    v.setVisibility([], [], true);
+    v.setBarOverlay(seg.positions, seg.colors, 3);
+    v.onBarPick((k) => setBar(k));
+  }, [run, showBars, active, barItems]);
+
   if (!run)
     return (
       <div className="card">
@@ -241,6 +282,9 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
       <div className="card" style={{ position: 'sticky', top: 0 }}>
         <div ref={holder} style={{ height: 520 }} />
         <div className="card-body row hint" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <label className="row" title="Barres du modèle de calcul (gabarit de chaque Viewbox + liaisons), cliquables">
+            <input type="checkbox" checked={showBars} onChange={(e) => setShowBars(e.target.checked)} /> barres du calcul
+          </label>
           {[
             ['≤ 0,50', 0.4],
             ['≤ 0,90', 0.8],
@@ -252,8 +296,44 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
               <span style={{ width: 12, height: 12, borderRadius: 3, background: hex(etaColor(e as number)) }} /> {l as string}
             </span>
           ))}
-          <span>— pire taux de chaque Viewbox{family ? ` (${family})` : ''}</span>
+          <span>— {showBars ? 'pire taux de chaque barre (clic : ses vérifications)' : `pire taux de chaque Viewbox${family ? ` (${family})` : ''}`}</span>
         </div>
+        {showBars && bar !== null && run.structure.meta[bar] && (
+          <div className="card-body" style={{ borderTop: '1px solid var(--border)' }}>
+            {(() => {
+              const m = run.structure.meta[bar];
+              const sec = run.structure.fem.members[bar];
+              const ts = barItems.get(bar) ?? [];
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div>
+                    <b>{m.label}</b>{' '}
+                    <span className="hint">
+                      — {m.section} · {materialByKey(m.material)?.name ?? m.material}
+                      {m.massless ? ' · barre de liaison sans masse' : ''} · barre {sec.id}
+                    </span>
+                  </div>
+                  {ts.length ? (
+                    ts.map((t) => (
+                      <div key={t}>
+                        <div className="row" style={{ gap: 8 }}>
+                          <span>{run.index.items[t].label}</span>
+                          <Eta eta={run.summary.states[t]?.eta} />
+                          <span className="hint">
+                            {run.summary.states[t]?.combo} · {run.summary.states[t]?.governing}
+                          </span>
+                        </div>
+                        <Records records={run.summary.states[t]?.records ?? []} />
+                      </div>
+                    ))
+                  ) : (
+                    <div className="hint">Barre de liaison ou de contact : pas de vérification propre (ses efforts sont vérifiés par l’assemblage correspondant).</div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="card">
@@ -289,7 +369,7 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
             <tbody>
               {v.families.map((f) => (
                 <tr key={f.family} onClick={() => setFamily(f.family === family ? null : f.family)} style={{ cursor: 'pointer', background: f.family === family ? 'var(--bg-3)' : undefined }}>
-                  <td>{f.family}</td>
+                  <td>{familyName(f.family)}</td>
                   <td>{f.count}</td>
                   <td>
                     <Eta eta={st[f.item]?.eta} />
@@ -366,6 +446,7 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
             <Records records={[...(run.stability.sliding.record ? [run.stability.sliding.record] : []), ...pctx.records, ...run.loads.records]} />
           </div>
         </div>
+        {facts && !stale && <AiReviewCard ai={ai ?? null} facts={facts} studyId={studyId} />}
         {(run.warnings.length > 0 || run.summary.errors.length > 0) && (
           <div className="card">
             <div className="card-head">

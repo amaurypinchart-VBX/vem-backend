@@ -29,7 +29,10 @@ import { calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outline
 import type { Lang } from '../../structure/report/i18n';
 import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
 import type { StudyInputs, StudyRun } from '../../structure/studyRun';
-import type { ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
+import type { AiTexts, AiUsage, ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
+import { studyFacts } from '../../structure/report/facts';
+import type { AiState } from './aiUi';
+import { AiUsageNote } from './aiUi';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
 import { moduleEtaColors } from './CalcResults';
@@ -53,6 +56,7 @@ interface Props {
   model?: ModelVersion;
   study: StudyRecord | null;
   me: VemUser | null;
+  ai?: AiState | null;
 }
 
 interface Prepared {
@@ -93,7 +97,7 @@ async function captureViews(scene: LoadedScene, glassTest: GlassTest, colors: Ma
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
 
-export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me }: Props) {
+export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me, ai }: Props) {
   const [lang, setLang] = useState<Lang>('fr');
   const [variant, setVariant] = useState<ReportVariant>('compact');
   const [withPlan, setWithPlan] = useState(true);
@@ -106,6 +110,11 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   const [saved, setSaved] = useState<StructReportRecord[]>([]);
   const [page, setPage] = useState(0);
   const images = useRef<{ key: unknown; value: { view3d: ReportImage; eta3d: ReportImage } } | null>(null);
+  // textes rédigés par l'IA (contrôlés côté serveur), modifiables, dans la langue où ils ont été demandés
+  const [aiTexts, setAiTexts] = useState<(AiTexts & { lang: Lang }) | null>(null);
+  const [useAiTexts, setUseAiTexts] = useState(true);
+  const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   useEffect(() => {
     if (PROJECT_ID) vem.project(PROJECT_ID).then(setProject).catch(() => {});
@@ -142,7 +151,8 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     const v = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
     return v > 0 ? { value: v, label: BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset)?.label ?? '—' } : null;
   }, [hyp]);
-  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id]);
+  const texts = useAiTexts && aiTexts && aiTexts.lang === lang ? aiTexts : undefined;
+  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id, texts]);
   useEffect(() => {
     if (prepared && prepared.key !== key) setPrepared(null);
   }, [key, prepared]);
@@ -219,6 +229,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
         sceneWarnings: [],
         images: imgs,
         calagePlan: plan ?? undefined,
+        texts,
       });
       const L = LABELS[lang];
       const p: Prepared = { key, report, fileName: safeName(`${L.coverTitle} ${projectName} ${lang.toUpperCase()}${variant === 'detailed' ? ' +' : ''}.pdf`) };
@@ -231,6 +242,23 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     } finally {
       setBusy('');
     }
+  };
+
+  const writeTexts = async () => {
+    if (!run) return;
+    setAiBusy(true);
+    setError('');
+    try {
+      const tb = titleBlockFromProject(project, me);
+      const facts = studyFacts({ lang, run, inputs, calage, project: { name: tb.projectName, client: tb.client, address: tb.address }, bearing: bearing?.value ?? null });
+      const r = await vem.aiWrite({ lang, facts, studyId: study?.id ?? null });
+      setAiTexts({ ...r.texts, lang });
+      setAiUsage(r.usage);
+      setUseAiTexts(true);
+    } catch (e) {
+      setError(`IA : ${(e as Error).message}`);
+    }
+    setAiBusy(false);
   };
 
   const toPdf = async (pages: ReportOutput['pages'], title: string): Promise<Blob> => {
@@ -328,6 +356,31 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
               <input type="checkbox" checked={with3d} onChange={(e) => setWith3d(e.target.checked)} /> Vues 3D (modèle et taux de travail)
             </label>
             {!calage && <div className="hint" style={{ color: 'var(--warn)' }}>Calage non dimensionné (portance à renseigner à l’étape 2) : le rapport le signale.</div>}
+            {ai?.enabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                <div className="row">
+                  <button className="btn small" disabled={aiBusy || stale} onClick={() => void writeTexts()} title="Description de l’ouvrage, consignes particulières et conclusion, à partir des résultats du calcul">
+                    {aiBusy ? '🤖 Rédaction…' : aiTexts ? '↻ Rédiger à nouveau (IA)' : '🤖 Rédiger les textes (IA)'}
+                  </button>
+                  <AiUsageNote usage={aiUsage} />
+                </div>
+                {aiTexts && (
+                  <>
+                    <label className="row hint">
+                      <input type="checkbox" checked={useAiTexts} onChange={(e) => setUseAiTexts(e.target.checked)} /> utiliser ces textes dans le rapport
+                      {aiTexts.lang !== lang && <span style={{ color: 'var(--warn)' }}> — rédigés en {LANG_LABEL[aiTexts.lang]} : rédiger à nouveau pour {LANG_LABEL[lang]}</span>}
+                    </label>
+                    <span className="hint">Description de l’ouvrage</span>
+                    <textarea rows={5} value={aiTexts.description} onChange={(e) => setAiTexts({ ...aiTexts, description: e.target.value })} />
+                    <span className="hint">Consignes particulières (une par ligne)</span>
+                    <textarea rows={3} value={aiTexts.instructions.join('\n')} onChange={(e) => setAiTexts({ ...aiTexts, instructions: e.target.value.split('\n') })} />
+                    <span className="hint">Conclusion</span>
+                    <textarea rows={4} value={aiTexts.conclusion} onChange={(e) => setAiTexts({ ...aiTexts, conclusion: e.target.value })} />
+                    <span className="hint">Textes contrôlés : aucun chiffre qui ne vient pas du calcul. Relisez-les ; vos corrections sont reprises telles quelles.</span>
+                  </>
+                )}
+              </div>
+            )}
             <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
               <button className="btn small" disabled={!!busy || stale} onClick={() => void prepare()}>
                 {prepared ? '↻ Refaire l’aperçu' : 'Aperçu'}

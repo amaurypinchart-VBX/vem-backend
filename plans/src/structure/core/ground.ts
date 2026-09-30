@@ -67,6 +67,21 @@ export interface WoodPanel {
 /** Contreplaqué F40/30 non revêtu, court terme, classe de service 2 (statico 24-0571 § 3.12). */
 export const PLYWOOD_F40: WoodPanel = { fmk: 30, fc90k: 9, kmod: 0.9, gammaM: 1.3, rho: 600 };
 
+/**
+ * Multiplex bouleau (plaques de calage Viewbox, 18 et 36 mm) : flexion = plus faible valeur caractéristique des deux
+ * directions sur les épaisseurs 18 à 30 mm de la fiche Metsä (Birch Ply — technical data, 2024, p. 2 : 18 mm
+ * fm a 34,1 / fm b 40,2 N/mm², EN 789, 12 % d'humidité ; 36 mm hors du tableau, même valeur prise) ; compression
+ * transversale reprise du F40/30 (9 N/mm², non donnée par la fiche) ; masse 12,2 kg/m² en 18 mm → 680 kg/m³.
+ * Valeurs à confirmer pour le fournisseur réel des plaques.
+ */
+export const BIRCH_MULTIPLEX: WoodPanel = { fmk: 34.1, fc90k: 9, kmod: 0.9, gammaM: 1.3, rho: 680 };
+
+export type PanelMaterial = 'birch' | 'F40';
+export const PANELS: Record<PanelMaterial, { panel: WoodPanel; label: string }> = {
+  birch: { panel: BIRCH_MULTIPLEX, label: 'Multiplex bouleau' },
+  F40: { panel: PLYWOOD_F40, label: 'Contreplaqué F40/30' },
+};
+
 export interface PlateInput {
   /** réaction de calcul (ELU) et caractéristique (ELS) du groupe d'appuis (N) ; Rzk absent = Rz,Ed / rdToRk */
   RzEd: number;
@@ -197,8 +212,16 @@ export interface StockPlate {
   length: number;
   width: number;
   thickness: number;
+  /** pièces disponibles au dépôt ; 0 = quantité non renseignée (pas de contrôle de quantité) */
   quantity: number;
+  /** matériau de la plaque (défaut F40/30, comme avant les plaques de calage Viewbox) */
+  material?: PanelMaterial;
 }
+
+/** Plaques de calage Viewbox : multiplex bouleau 18 et 36 mm, 40 × 40, 70 × 70 et 100 × 100 cm (quantités à saisir). */
+export const VIEWBOX_STOCK: StockPlate[] = [400, 700, 1000].flatMap((side) =>
+  [18, 36].map((thickness) => ({ label: `Multiplex bouleau ${side / 10} × ${side / 10}`, length: side, width: side, thickness, quantity: 0, material: 'birch' as const })),
+);
 
 /** Plaques du stock : chaque dimension assez grande est recalculée à sa taille réelle (plus grande = plus de moment). */
 export function chooseFromStock(base: PlateInput, stock: StockPlate[], groups: number): Array<PlyChoice & { result: PlateResult }> {
@@ -207,11 +230,14 @@ export function chooseFromStock(base: PlateInput, stock: StockPlate[], groups: n
   stock.forEach((s, k) => {
     const side = Math.min(s.length, s.width);
     if (side < need || s.thickness < (base.minThickness ?? 12)) return;
-    const result = sizePlate({ ...base, side });
+    const result = sizePlate({ ...base, side, panel: PANELS[s.material ?? 'F40'].panel });
     const n = Math.max(1, Math.ceil((6 * result.Wreq) / (s.thickness * s.thickness) - 1e-9));
-    out.push({ t: s.thickness, n, stockIndex: k, needed: n * groups, available: s.quantity, result });
+    out.push({ t: s.thickness, n, stockIndex: k, needed: n * groups, available: s.quantity > 0 ? s.quantity : undefined, result });
   });
-  return out.sort((a, b) => Number(b.available! >= b.needed) - Number(a.available! >= a.needed) || a.n - b.n || a.n * a.t - b.n * b.t);
+  const enough = (c: PlyChoice) => (c.available === undefined || c.available >= c.needed ? 1 : 0);
+  // la plus petite plaque qui suffit, puis le moins de plaques empilées, puis la plus faible épaisseur totale
+  const area = (c: PlyChoice) => stock[c.stockIndex!].length * stock[c.stockIndex!].width;
+  return out.sort((a, b) => enough(b) - enough(a) || a.n - b.n || area(a) - area(b) || a.n * a.t - b.n * b.t);
 }
 
 // ─── tôle acier ───
@@ -560,18 +586,19 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
   // plaques du stock
   for (const c of chooseFromStock(base, g.stock ?? [], g.groups).slice(0, 2)) {
     const st = g.stock![c.stockIndex!];
+    const mat = PANELS[st.material ?? 'F40'];
     const remarks: string[] = [];
-    if (c.available! < c.needed) remarks.push(`stock insuffisant : ${c.needed} pièces nécessaires, ${c.available} disponibles`);
+    if (c.available !== undefined && c.available < c.needed) remarks.push(`stock insuffisant : ${c.needed} pièces nécessaires, ${c.available} disponibles`);
     if (c.n > maxPlies) remarks.push(`${c.n} plaques empilées (plus de ${maxPlies})`);
     if (c.result.etaC90 > 1) remarks.push('compression transversale dépassée sous l’appui');
     solutions.push({
       kind: 'plywood-stock',
-      title: `Plaques du stock${st.label ? ` « ${st.label} »` : ''}`,
+      title: `Plaques du stock${st.label ? ` « ${st.label} »` : ` (${mat.label})`}`,
       summary: `${c.n} × ${st.length / 10} × ${st.width / 10} × ${st.thickness} mm par ${g.label}`,
       feasible: !remarks.length && c.result.etaGround <= 1,
       remarks,
       eta: Math.max(c.result.etaGround, c.result.etaC90, (6 * c.result.Wreq) / (c.n * c.t * c.t)),
-      materials: [{ label: 'Contreplaqué (stock)', dims: `${st.length} × ${st.width} × ${st.thickness} mm`, quantity: c.needed, massKg: (st.length * st.width * st.thickness * PLYWOOD_F40.rho * c.needed) / 1e9 }],
+      materials: [{ label: `${mat.label} (stock${c.available === undefined ? ', quantité à vérifier au dépôt' : ''})`, dims: `${st.length} × ${st.width} × ${st.thickness} mm`, quantity: c.needed, massKg: (st.length * st.width * st.thickness * mat.panel.rho * c.needed) / 1e9 }],
       records: c.result.records,
       footprint: { l: st.length, w: st.width },
     });

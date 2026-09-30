@@ -91,6 +91,32 @@ http.createServer(async (req, res) => {
       studies.set(st.id, st);
       return json(res, st);
     }
+    // IA de l'étude structure : réponses simulées (le vrai serveur appelle Claude, avec contrôle des chiffres)
+    const usage = { model: 'mock', inputTokens: 1200, outputTokens: 300, costUsd: 0.01, durationMs: 800 };
+    if (a === '/structure/ai/status') return json(res, { enabled: process.env.AI !== '0', model: 'mock' });
+    if (a === '/structure/ai/calls') return json(res, { days: 30, count: 3, costUsd: 0.03, calls: [] });
+    if (a === '/structure/ai/identify' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      console.log(`[server] IA identify : ${b.type.label}, ${b.images?.length ?? 0} image(s) de ${b.images?.map((i) => i.data.length).join(' / ')} car.`);
+      return json(res, { suggestion: { role: 'load', nature: 'wall', material: null, section: null, weight: { value: 50, unit: 'kg/m' }, windClosed: true, confidence: 0.72, questions: ['La paroi est-elle vitrée ?'], rationale: 'Élément plan vertical le long d’un côté : mur léger.' }, usage });
+    }
+    if (a === '/structure/ai/group' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      return json(res, { groups: b.types.length >= 2 ? [{ keys: b.types.slice(0, 2).map((t) => t.key), label: 'même pièce', reason: 'même catégorie et dimensions proches' }] : [], usage });
+    }
+    if (a === '/structure/ai/review' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const n = b.facts?.installation?.viewbox;
+      return json(res, { alerts: [{ severity: 'info', message: `Les ${n} Viewbox sont reliées ; aucune incohérence de poids relevée.`, elements: [] }], dropped: 0, usage });
+    }
+    if (a === '/structure/ai/write' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const i = b.facts.installation;
+      return json(res, { texts: { description: `Installation de ${i.viewbox} Viewbox sur ${i.niveaux} niveaux, rédigée par l’IA simulée.`, instructions: ['Surveiller le vent pendant l’exploitation.'], conclusion: `Conclusion de l’IA simulée : ${b.facts.verdict.resultat}.` }, attempts: 1, usage });
+    }
+    if (a === '/structure/ai/material-search' && req.method === 'POST') {
+      return json(res, { name: 'Panneau mural', layers: [{ name: 'Nidaplast 8', material: 'PP', thicknessMm: 45, densityKgM3: 80, surfaceMassKgM2: null, url: 'https://example.com/nidaplast', title: 'Nidaplast', quote: 'densité 80 kg/m³', check: { verified: 'citation', missing: [] } }], frame: { name: 'profilé alu', kgPerM: 1.2, url: 'https://example.com/alu', title: 'alu', quote: '1,2 kg/m', check: { verified: 'quote', missing: [] } }, questions: [], notes: '', sources: [], usage });
+    }
     // rapports PDF d'une étude
     const rps = a.match(/^\/structure\/studies\/(\w+)\/reports$/);
     if (rps && req.method === 'GET') return json(res, [...reports.values()].filter((r) => r.studyId === rps[1]).reverse());

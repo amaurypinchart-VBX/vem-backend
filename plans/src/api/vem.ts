@@ -1,6 +1,8 @@
 // Accès à l'API VEM (même origine). Le jeton vient de l'URL (?token=, ouverture depuis VEM) ou de la
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
 import type { LibraryPayload, ServerLibraryRow } from '../structure/core/libraryStore';
+import type { ExtractResult, GroupProposal, IdentifySuggestion } from '../structure/core/ai';
+import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
 import type { FrontSide, Vec3 } from '../core/views';
 import { unpackPackage } from '../ingest/package';
@@ -182,6 +184,25 @@ export interface StructReportRecord {
   createdAt: string;
 }
 
+/** Jetons et coût estimé d'un appel à l'IA (journal struct_ai_calls). */
+export interface AiUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  durationMs: number;
+}
+export interface AiTexts {
+  description: string;
+  instructions: string[];
+  conclusion: string;
+}
+export interface AiAlert {
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  elements: string[];
+}
+
 /** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
@@ -238,6 +259,20 @@ export const vem = {
     return api<StructReportRecord>('POST', `/structure/studies/${studyId}/reports`, fd);
   },
   deleteReport: (id: string) => api<null>('DELETE', `/structure/reports/${id}`),
+  aiStatus: () => api<{ enabled: boolean; model: string }>('GET', '/structure/ai/status'),
+  aiIdentify: (body: unknown) => api<{ suggestion: IdentifySuggestion; usage: AiUsage }>('POST', '/structure/ai/identify', body),
+  aiGroup: (body: unknown) => api<{ groups: GroupProposal[]; usage: AiUsage }>('POST', '/structure/ai/group', body),
+  aiExtract: (pdf: File, reportRef: string, hint: string) => {
+    const fd = new FormData();
+    fd.append('reportRef', reportRef);
+    if (hint) fd.append('hint', hint);
+    fd.append('file', pdf, pdf.name);
+    return api<ExtractResult & { usage: AiUsage }>('POST', '/structure/ai/extract-reference', fd);
+  },
+  aiWrite: (body: unknown) => api<{ texts: AiTexts; attempts: number; usage: AiUsage }>('POST', '/structure/ai/write', body),
+  aiReview: (body: unknown) => api<{ alerts: AiAlert[]; dropped: number; usage: AiUsage }>('POST', '/structure/ai/review', body),
+  aiMaterial: (body: unknown) => api<MaterialSearchResult & { usage: AiUsage }>('POST', '/structure/ai/material-search', body),
+  aiCalls: () => api<{ days: number; count: number; costUsd: number }>('GET', '/structure/ai/calls'),
   getSetting: <T>(key: string) => api<T | null>('GET', `/settings/${key}`),
   saveSetting: <T>(key: string, value: T) => api<T>('PUT', `/settings/${key}`, { value }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),

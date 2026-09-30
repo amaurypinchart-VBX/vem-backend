@@ -160,7 +160,10 @@ export interface ModuleTypeEntry extends EntryBase {
 
 export interface MaterialEntry extends EntryBase {
   kind: 'material';
+  /** matériau du catalogue du module (clé) ; « PANEL » = panneau composé ci-dessous */
   material: string;
+  /** panneau composé (murs, habillages) : couches et cadre, poids surfacique calculé par l'outil */
+  panel?: import('./composite').CompositePanel;
 }
 
 /** Rôle d'un type de pièce dans le calcul (§5.4). */

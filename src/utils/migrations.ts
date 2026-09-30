@@ -1232,4 +1232,28 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table struct_reports : ${e.message}`);
   }
+  // journal des appels à l'IA de l'étude structure (jetons, coût estimé, durée)
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_ai_calls" (
+        "id"            TEXT             NOT NULL,
+        "kind"          TEXT             NOT NULL,
+        "model"         TEXT             NOT NULL,
+        "input_tokens"  INTEGER          NOT NULL DEFAULT 0,
+        "output_tokens" INTEGER          NOT NULL DEFAULT 0,
+        "cost_usd"      DOUBLE PRECISION,
+        "duration_ms"   INTEGER          NOT NULL DEFAULT 0,
+        "ok"            BOOLEAN          NOT NULL DEFAULT true,
+        "error"         TEXT,
+        "user_id"       TEXT,
+        "study_id"      TEXT,
+        "created_at"    TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_ai_calls_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "struct_ai_calls_created_at_idx" ON "struct_ai_calls" ("created_at")`);
+    logger.info('[migration] table struct_ai_calls créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_ai_calls : ${e.message}`);
+  }
 }

@@ -137,6 +137,10 @@ export class SceneViewer {
   private readonly pointer = new Vector2();
   private readonly resizeObserver: ResizeObserver;
   private pickHandler: ((p: PickInfo | null) => void) | null = null;
+  /** barres du modèle de calcul dessinées par-dessus le modèle (étude structure), cliquables */
+  private bars: LineSegments2 | null = null;
+  private barSegments: Float32Array | null = null;
+  private barPickHandler: ((index: number | null) => void) | null = null;
   private showMarkers = true;
   private disposed = false;
   /** parent d'origine du modèle (un autre viewer peut l'avoir) : on le lui rend à la fermeture */
@@ -395,6 +399,66 @@ export class SceneViewer {
     this.edges = new LineSegments(g, new LineBasicMaterial({ color: 0x1a1a1a }));
     this.edges.raycast = () => {};
     this.overlay.add(this.edges);
+  }
+
+  // ─── barres du modèle de calcul (étude structure) ───
+  /**
+   * Segments (x, y, z, x, y, z… en mm monde) dessinés par-dessus le modèle, toujours visibles, une couleur RGB 0–1 par
+   * extrémité ; null les retire. N'influence ni les matériaux ni l'isolation.
+   */
+  setBarOverlay(segments: Float32Array | null, colors?: Float32Array, widthPx = 3): void {
+    if (this.bars) {
+      this.overlay.remove(this.bars);
+      this.bars.geometry.dispose();
+      (this.bars.material as LineMaterial).dispose();
+      this.bars = null;
+    }
+    this.barSegments = segments && segments.length ? segments : null;
+    if (this.barSegments) {
+      const g = new LineSegmentsGeometry();
+      g.setPositions(this.barSegments);
+      if (colors) g.setColors(colors);
+      const m = new LineMaterial({ linewidth: widthPx, vertexColors: !!colors, color: colors ? 0xffffff : 0x1d4ed8, depthTest: false, transparent: true });
+      m.resolution.set(this.container.clientWidth || 1, this.container.clientHeight || 1);
+      this.bars = new LineSegments2(g, m);
+      this.bars.renderOrder = 20;
+      this.bars.raycast = () => {};
+      this.overlay.add(this.bars);
+    }
+    this.requestRender();
+  }
+
+  /** Clic sur une barre de la surcouche : indice du segment (ou null), à la place du choix d'un objet. */
+  onBarPick(handler: ((index: number | null) => void) | null): void {
+    this.barPickHandler = handler;
+  }
+
+  /** Segment le plus proche du pointeur à l'écran (8 px au plus). */
+  private pickBar(ev: PointerEvent): number | null {
+    const seg = this.barSegments;
+    if (!seg) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const px = ev.clientX - r.left;
+    const py = ev.clientY - r.top;
+    const a = new Vector3();
+    const b = new Vector3();
+    const toPx = (v: Vector3) => [((v.x + 1) / 2) * r.width, ((1 - v.y) / 2) * r.height, v.z] as const;
+    let best: number | null = null;
+    let bd = 8;
+    for (let k = 0; k < seg.length / 6; k++) {
+      a.set(seg[6 * k], seg[6 * k + 1], seg[6 * k + 2]).project(this.camera);
+      b.set(seg[6 * k + 3], seg[6 * k + 4], seg[6 * k + 5]).project(this.camera);
+      const [ax, ay, az] = toPx(a);
+      const [bx, by, bz] = toPx(b);
+      if (az > 1 && bz > 1) continue;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const l2 = dx * dx + dy * dy;
+      const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+      const d = Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+      if (d < bd) [bd, best] = [d, k];
+    }
+    return best;
   }
 
   // ─── face avant des Viewbox ───
@@ -687,6 +751,11 @@ export class SceneViewer {
     const d = this.downAt;
     this.downAt = null;
     if (!d || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 4 || ev.button !== 0) return; // glisser = orbite
+    if (this.barPickHandler && this.barSegments) {
+      const k = this.pickBar(ev);
+      this.barPickHandler(k);
+      if (k !== null) return;
+    }
     this.pickHandler?.(this.pick(ev));
   };
 
@@ -709,6 +778,7 @@ export class SceneViewer {
     this.renderer.domElement.style.height = h + 'px';
     this.persp.aspect = w / h;
     this.persp.updateProjectionMatrix();
+    (this.bars?.material as LineMaterial | undefined)?.resolution.set(w, h);
     const oh = this.ortho.top - this.ortho.bottom;
     this.setOrthoFrustum(oh > 0 ? oh : 1000);
     this.requestRender();
@@ -820,6 +890,8 @@ export class SceneViewer {
     this.scene3.remove(this.model.root);
     if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);
     this.edges?.geometry.dispose();
+    this.bars?.geometry.dispose();
+    (this.bars?.material as LineMaterial | undefined)?.dispose();
     for (const m of this.overlayMaterials.values()) m.dispose();
     this.renderer.dispose();
     el.remove();

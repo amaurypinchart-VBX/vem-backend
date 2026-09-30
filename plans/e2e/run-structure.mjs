@@ -61,6 +61,7 @@ console.log('Reconnaissance :', await counts());
 await shootAll('structure-reconnaissance');
 // file des types à renseigner : on répond à tout (valeurs proposées ou « ignorer »), mémorisé dans la bibliothèque
 let answered = 0;
+let askedAi = false;
 if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
   await page.getByRole('button', { name: /Traiter la file/ }).click();
   for (let k = 0; k < 30; k++) {
@@ -68,6 +69,22 @@ if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
     if (!(await page.getByText('Qu’est-ce que c’est ?').count())) break;
     const isModule = await page.getByText('Gabarit de calcul').count();
     const next = page.getByRole('button', { name: 'Valider et suivant' });
+    if (!isModule && !askedAi) {
+      // IA : proposition pour la pièce (images de la pièce envoyées), champs remplis, reste à valider
+      askedAi = true;
+      await page.getByRole('button', { name: '🤖 Demander à l’IA' }).click();
+      await page.getByText('Proposition de l’IA').waitFor({ timeout: 60000 });
+      console.log('IA identification :', (await page.getByText(/confiance \d+ %/).innerText()).trim());
+      await shootAll('structure-ia-identification');
+      await page.getByRole('button', { name: '⚙ Panneau composé' }).click();
+      await page.getByRole('button', { name: /Chercher les données sur internet/ }).isDisabled();
+      await page.getByPlaceholder(/Décrire le panneau/).fill('profilés alu 45 mm creux, Nidaplast 45 mm, parement 2 mm');
+      await page.getByRole('button', { name: /Chercher les données sur internet/ }).click();
+      await page.getByRole('button', { name: /Utiliser ce poids/ }).waitFor();
+      console.log('Panneau composé :', await page.getByRole('button', { name: /Utiliser ce poids/ }).innerText());
+      await shootAll('structure-ia-panneau');
+      await page.getByRole('button', { name: /Utiliser ce poids/ }).click();
+    }
     if (!isModule) await page.getByRole('button', { name: 'Ignorer (non structurel)' }).click();
     else if (await next.count()) await next.click();
     else await page.getByRole('button', { name: 'Valider', exact: true }).click();
@@ -78,6 +95,12 @@ if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
 await page.waitForTimeout(2600); // enregistrement automatique de l'étude (2 s)
 console.log(`Types traités : ${answered} ; ensuite :`, await counts(), (await page.getByText(/Étude enregistrée/).count()) ? '(étude enregistrée)' : '');
 await shootAll('structure-reconnue');
+// gabarit de calcul d'une Viewbox : barres dessinées en couleur, tableau des sections
+await page.locator('button.btn.ghost:visible', { hasText: /×.*Viewbox$/ }).first().click();
+await page.getByText('Chaque Viewbox de ce type est calculée avec ces barres').waitFor();
+await page.waitForTimeout(800);
+console.log('Gabarit :', (await page.locator('table.list').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 8));
+await shootAll('structure-gabarit');
 // 3. calcul complet (Workers) puis 4. résultats
 await page.getByRole('button', { name: /3\. Calcul/ }).click();
 await page.getByText('Calcul complet').first().waitFor();
@@ -102,6 +125,22 @@ await page.getByText('Les plus sollicités').waitFor();
 await page.locator('table.list').nth(1).locator('tbody tr').first().click();
 await page.waitForTimeout(400);
 await shootAll('structure-resultats');
+// barres du calcul colorées par taux, clic sur une barre ; relecture de cohérence par l'IA
+await page.locator('label:visible', { hasText: 'barres du calcul' }).click();
+await page.waitForTimeout(800);
+const canvas = page.locator('canvas:visible').first();
+const box = await canvas.boundingBox();
+for (const [fx, fy] of [[0.5, 0.5], [0.45, 0.55], [0.55, 0.45], [0.4, 0.6], [0.6, 0.4]]) {
+  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+  await page.waitForTimeout(300);
+  if (await page.getByText(/barre B|barre \w/).count()) break;
+}
+console.log('Barre cliquée :', (await page.getByText(/ · barre /).count()) ? (await page.getByText(/ · barre /).first().innerText()).slice(0, 120) : 'aucune');
+await shootAll('structure-barres');
+await page.locator('label:visible', { hasText: 'barres du calcul' }).click();
+await page.getByRole('button', { name: /Relire la cohérence/ }).click();
+await page.getByText(/aucune incohérence de poids relevée|Aucune incohérence/).first().waitFor({ timeout: 60000 });
+console.log('Relecture IA : OK');
 await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
 await page.getByText('Plan des appuis').waitFor({ timeout: 120000 });
 await page.waitForTimeout(800);
@@ -114,6 +153,9 @@ console.log('Fiche PDF du modèle :', dl2.suggestedFilename());
 await page.getByRole('button', { name: /6\. Rapport/ }).click();
 await page.getByText('Rapport PDF').first().waitFor();
 t0 = Date.now();
+await page.getByRole('button', { name: /Rédiger les textes \(IA\)/ }).click();
+await page.getByText('Description de l’ouvrage').first().waitFor({ timeout: 60000 });
+console.log('Textes IA :', (await page.locator('textarea').first().inputValue()).slice(0, 80));
 await page.getByRole('button', { name: 'Aperçu' }).click();
 await page.locator('img.report-page').waitFor({ timeout: 300000 });
 console.log(`Rapport préparé en ${((Date.now() - t0) / 1000).toFixed(1)} s :`, await page.getByText(/pages \(/).innerText());

@@ -7,7 +7,8 @@ import { computeCalage } from '../../structure/core/calage';
 import type { Estimate, EstimateModule } from '../../structure/core/estimate';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import type { CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
-import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, SUBGRADE_PRESETS, bearingFrom } from '../../structure/core/ground';
+import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
+import type { PanelMaterial } from '../../structure/core/ground';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
@@ -109,7 +110,8 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       .map((x) => parseFloat(x.replace(',', '.')))
       .filter((x) => x > 0)
       .sort((a, b) => a - b),
-    stock: stock.plates,
+    // stock de l'entrepôt ; tant qu'il n'est pas saisi : plaques de calage Viewbox (multiplex bouleau, quantités à vérifier)
+    stock: stock.plates.length ? stock.plates : VIEWBOX_STOCK,
     commercial: stock.commercial,
     longrine: { k: SUBGRADE_PRESETS.find((s) => s.key === h.subgrade)?.k ?? 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
     diffusion: h.diffusion,
@@ -221,14 +223,22 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
         <span className="hint">Partagé entre tous les projets. Les plaques du stock sont proposées en priorité.</span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <b style={{ fontSize: 12 }}>Plaques de contreplaqué F40/30</b>
+        <b style={{ fontSize: 12 }}>Plaques de calage</b>
+        {!draft.plates.length && <div className="hint">Stock non saisi : le calcul utilise les plaques Viewbox standard (multiplex bouleau 18 / 36 mm, 40 × 40, 70 × 70, 100 × 100 cm), quantités non contrôlées.</div>}
         {draft.plates.map((p, i) => (
           <div className="row" key={i}>
             <input type="text" style={{ width: 160 }} placeholder="nom" value={p.label ?? ''} onChange={(e) => setPlate(i, { label: e.target.value })} />
+            <select value={p.material ?? 'F40'} style={{ width: 150 }} onChange={(e) => setPlate(i, { material: e.target.value as PanelMaterial })}>
+              {(Object.keys(PANELS) as PanelMaterial[]).map((k) => (
+                <option key={k} value={k}>
+                  {PANELS[k].label}
+                </option>
+              ))}
+            </select>
             <Num value={p.length} onChange={(v) => setPlate(i, { length: v })} width={70} /> ×
             <Num value={p.width} onChange={(v) => setPlate(i, { width: v })} width={70} /> ×
             <Num value={p.thickness} onChange={(v) => setPlate(i, { thickness: v })} width={50} /> mm
-            <span className="hint">quantité</span>
+            <span className="hint" title="0 = non renseignée">quantité</span>
             <Num value={p.quantity} onChange={(v) => setPlate(i, { quantity: Math.round(v) })} width={60} />
             <button className="btn small ghost" onClick={() => setDraft({ ...draft, plates: draft.plates.filter((_, j) => j !== i) })}>
               ✕
@@ -236,8 +246,11 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
           </div>
         ))}
         <div>
-          <button className="btn small" onClick={() => setDraft({ ...draft, plates: [...draft.plates, { label: '', length: 1000, width: 1000, thickness: 27, quantity: 10 }] })}>
+          <button className="btn small" onClick={() => setDraft({ ...draft, plates: [...draft.plates, { label: '', length: 1000, width: 1000, thickness: 18, quantity: 0, material: 'birch' }] })}>
             + Plaque
+          </button>
+          <button className="btn small ghost" onClick={() => setDraft({ ...draft, plates: [...draft.plates, ...VIEWBOX_STOCK.filter((v) => !draft.plates.some((p) => p.length === v.length && p.thickness === v.thickness && p.material === v.material))] })}>
+            + Plaques Viewbox standard
           </button>
         </div>
         <b style={{ fontSize: 12 }}>Plaques de répartition du commerce (capacité du fabricant)</b>

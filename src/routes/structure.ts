@@ -3,12 +3,15 @@
 // sections, assemblages… ; la base de départ est dans le code du module, la table ne garde que ce que les
 // utilisateurs ont confirmé ou modifié) et études (une par version de modèle : affectations des pièces, hypothèses).
 // Rapports PDF : générés dans le navigateur, enregistrés sur Cloudinary (table struct_reports).
+// IA (/ai/*) : proposer, regrouper, lire un document, rédiger, relire — jamais calculer (services/structureAi.ts).
 // Tous les calculs se font dans le navigateur (public/plans, sources dans plans/src/structure).
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
+import { z } from 'zod';
+import * as ai from '../services/structureAi';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -243,6 +246,87 @@ router.delete('/reports/:id', async (req: AuthRequest, res: Response, next: Next
     await db.structReport.delete({ where: { id: report.id } });
     if (report.publicId) await deleteFromCloudinary(report.publicId, 'raw');
     res.json({ success: true, data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── IA (proposer, regrouper, lire un document, rédiger, relire : jamais calculer) ───
+
+const ctxOf = (req: AuthRequest, studyId?: string | null) => ({ userId: req.user?.id, studyId: studyId ?? null });
+const parseBody = <T>(schema: z.ZodType<T, any, any>, body: unknown): T => {
+  const r = schema.safeParse(body);
+  if (r.success === false) throw new AppError(`Demande IA invalide : ${r.error.message.slice(0, 200)}`, 400);
+  return (r as { data: T }).data;
+};
+// PDF envoyé tel quel à l'IA (limite de taille d'une requête Anthropic)
+const REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
+
+// GET /structure/ai/status — IA disponible (clé configurée) et modèle utilisé
+router.get('/ai/status', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: { enabled: ai.aiEnabled(), model: ai.STRUCTURE_MODEL } });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/identify — proposition pour un type de pièce inconnu (reste « proposé » jusqu'à validation)
+router.post('/ai/identify', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.IdentifyInput, req.body);
+    res.json({ success: true, data: await ai.identifyPart(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/group — types inconnus qui sont la même chose
+router.post('/ai/group', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.GroupInput, req.body);
+    res.json({ success: true, data: await ai.groupTypes(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/extract-reference — PDF de référence → entrées de bibliothèque proposées (revue avant import)
+router.post('/ai/extract-reference', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!canEditLibrary(req)) throw new AppError('Réservé aux admins, responsables techniques et ingénieurs', 403);
+    if (!req.file) throw new AppError('Fichier PDF manquant', 400);
+    if (req.file.mimetype !== 'application/pdf') throw new AppError('Le document doit être un PDF', 400);
+    if (req.file.size > REFERENCE_MAX_BYTES) throw new AppError('PDF de plus de 20 Mo : n’envoyer que les pages utiles (par exemple l’annexe de calcul, imprimée en PDF)', 413);
+    const reportRef = str(req.body?.reportRef, 60);
+    if (!reportRef) throw new AppError('Numéro ou nom du document requis', 400);
+    const data = await ai.extractReference(req.file.buffer, { reportRef, hint: str(req.body?.hint, 500) ?? undefined }, ctxOf(req));
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/write — textes du rapport (description, consignes, conclusion), sans chiffre hors des données
+router.post('/ai/write', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.WriteInput, req.body);
+    jsonSize(inp.facts, 200_000, 'Données');
+    res.json({ success: true, data: await ai.writeTexts(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/review — relecture de cohérence (alertes affichées, le calcul ne change pas)
+router.post('/ai/review', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.ReviewInput, req.body);
+    jsonSize(inp.facts, 200_000, 'Données');
+    res.json({ success: true, data: await ai.reviewStudy(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/material-search — données d'un panneau / matériau cherchées sur internet (sources citées)
+router.post('/ai/material-search', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.MaterialInput, req.body);
+    res.json({ success: true, data: await ai.searchMaterial(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// GET /structure/ai/calls — appels des 30 derniers jours et coût estimé
+router.get('/ai/calls', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: await ai.recentCalls(30) });
   } catch (err) { next(err); }
 });
 

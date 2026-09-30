@@ -9,6 +9,16 @@ import { NATURE_LABEL, NATURES_BY_ROLE, ROLE_LABEL, TEMPLATE_NATURES } from '../
 import type { PartType, Recognition, RecognitionStatus } from '../../structure/core/recognition';
 import { STATUS_COLOR, STATUS_LABEL } from '../../structure/core/recognition';
 import { MATERIALS } from '../../structure/core/materials';
+import { placeFromFrame } from '../../structure/core/assemble';
+import { templateSegments, templateSummary } from '../../structure/core/templateView';
+import { fmtNumber } from '../../structure/core/units';
+import type { GroupProposal, IdentifySuggestion } from '../../structure/core/ai';
+import { AI_CONFIDENCE_MIN, groupPayload, identifyPayload, suggestionToAssignment } from '../../structure/core/ai';
+import type { CompositePanel } from '../../structure/core/composite';
+import type { AiUsage } from '../../api/vem';
+import { vem } from '../../api/vem';
+import type { AiState } from './aiUi';
+import { AiUsageNote, CompositeEditor, captureTypeImages } from './aiUi';
 
 export interface AnswerOptions {
   scope: 'model' | 'project';
@@ -24,6 +34,11 @@ interface Props {
   canEditLibrary: boolean;
   onAnswer: (t: PartType, a: PartAssignment, opts: AnswerOptions) => Promise<void>;
   onConfirmSuggested: () => Promise<void>;
+  /** IA (clé configurée sur le serveur) : null = inconnue / indisponible */
+  ai?: AiState | null;
+  studyId?: string | null;
+  /** mémorise un panneau composé dans la bibliothèque */
+  onSavePanel?: (p: CompositePanel) => Promise<void>;
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -51,6 +66,11 @@ function PartForm({
   onSubmit,
   onClose,
   hasNext,
+  ai,
+  studyId,
+  onAskAi,
+  onSavePanel,
+  group,
 }: {
   type: PartType;
   library: LibraryEntry[];
@@ -58,6 +78,12 @@ function PartForm({
   onSubmit: (a: PartAssignment, opts: AnswerOptions, next: boolean) => Promise<void>;
   onClose: () => void;
   hasNext: boolean;
+  ai?: AiState | null;
+  studyId?: string | null;
+  onAskAi?: () => Promise<{ suggestion: IdentifySuggestion; usage: AiUsage }>;
+  onSavePanel?: (p: CompositePanel) => Promise<void>;
+  /** groupe proposé par l'IA auquel la réponse s'appliquera */
+  group?: GroupProposal | null;
 }) {
   const initial: PartAssignment = type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' });
   const [a, setA] = useState<PartAssignment>(initial);
@@ -65,10 +91,29 @@ function PartForm({
   const [memorize, setMemorize] = useState(canEditLibrary);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiResult, setAiResult] = useState<{ suggestion: IdentifySuggestion; usage: AiUsage } | null>(null);
+  const [composite, setComposite] = useState(false);
   useEffect(() => {
     setA(type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' }));
     setError('');
+    setAiResult(null);
+    setComposite(false);
   }, [type]);
+  const askAi = async () => {
+    if (!onAskAi) return;
+    setAiBusy(true);
+    setError('');
+    try {
+      const r = await onAskAi();
+      setAiResult(r);
+      // sous le seuil de confiance : rien n'est rempli, les questions sont affichées
+      if (r.suggestion.confidence >= AI_CONFIDENCE_MIN) setA(suggestionToAssignment(r.suggestion).assignment);
+    } catch (e) {
+      setError(`IA : ${(e as Error).message}`);
+    }
+    setAiBusy(false);
+  };
   const templates = library.filter((e): e is ModuleTypeEntry => e.kind === 'module_type' && !e.disabled);
   const sections = library.filter((e): e is SectionEntry => e.kind === 'section' && !e.disabled && !e.section.massless);
   const patch = (p: Partial<PartAssignment>) => setA((x) => ({ ...x, ...p }));
@@ -107,19 +152,53 @@ function PartForm({
             {type.moduleIds.length > 0 && <>Viewbox : {type.moduleIds.slice(0, 6).join(', ')}{type.moduleIds.length > 6 ? '…' : ''}</>}
           </div>
         </div>
-        {type.kind === 'module' ? (
-          <label className="row hint">
-            Gabarit de calcul
-            <select value={a.moduleTemplate ?? ''} style={{ maxWidth: 360 }} onChange={(e) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: e.target.value || undefined })}>
-              <option value="">— choisir —</option>
-              {templates.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.name}
-                  {t.status === 'unknown' ? ' (données inconnues)' : t.status === 'suggested' ? ' (à vérifier)' : ''}
-                </option>
+        {group && (
+          <div className="hint" style={{ color: 'var(--accent, #2563eb)' }}>
+            Groupe proposé par l’IA « {group.label} » : la réponse s’appliquera aux {group.keys.length} types du groupe. {group.reason}
+          </div>
+        )}
+        {aiResult && (
+          <div className="card" style={{ background: 'var(--bg-2)' }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="row">
+                <b>Proposition de l’IA</b>
+                <span className={`badge ${aiResult.suggestion.confidence >= AI_CONFIDENCE_MIN ? 'orange' : 'ko'}`}>
+                  confiance {Math.round(aiResult.suggestion.confidence * 100)} % — {aiResult.suggestion.confidence >= AI_CONFIDENCE_MIN ? 'champs remplis, à vérifier puis valider' : 'trop incertaine : reste inconnue'}
+                </span>
+                <AiUsageNote usage={aiResult.usage} />
+              </div>
+              <div className="hint">{aiResult.suggestion.rationale}</div>
+              {aiResult.suggestion.questions.map((q, k) => (
+                <div key={k} className="hint">
+                  ❓ {q}
+                </div>
               ))}
-            </select>
-          </label>
+              {aiResult.suggestion.confidence < AI_CONFIDENCE_MIN && (
+                <div>
+                  <button className="btn small ghost" onClick={() => setA(suggestionToAssignment(aiResult.suggestion).assignment)}>
+                    Remplir quand même avec la proposition
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {type.kind === 'module' ? (
+          <>
+            <label className="row hint">
+              Gabarit de calcul
+              <select value={a.moduleTemplate ?? ''} style={{ maxWidth: 360 }} onChange={(e) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: e.target.value || undefined })}>
+                <option value="">— choisir —</option>
+                {templates.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.name}
+                    {t.status === 'unknown' ? ' (données inconnues)' : t.status === 'suggested' ? ' (à vérifier)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <TemplateTable entry={templates.find((t) => t.key === a.moduleTemplate)} library={library} />
+          </>
         ) : (
           <>
             <label className="row hint">
@@ -234,7 +313,24 @@ function PartForm({
                     <input type="checkbox" checked={!!a.windClosed} onChange={(e) => patch({ windClosed: e.target.checked })} /> ferme la face au vent
                   </>
                 )}
+                <button className="btn small ghost" type="button" onClick={() => setComposite(!composite)} title="Poids au m² calculé à partir des couches du panneau">
+                  ⚙ Panneau composé
+                </button>
               </label>
+            )}
+            {composite && (
+              <CompositeEditor
+                library={library}
+                canEditLibrary={canEditLibrary}
+                ai={ai ?? null}
+                studyId={studyId}
+                onClose={() => setComposite(false)}
+                onSave={onSavePanel}
+                onUse={(kg, panel) => {
+                  patch({ weight: { value: kg, unit: 'kg/m²' }, windClosed: true, note: `panneau composé « ${panel.name} »` });
+                  setComposite(false);
+                }}
+              />
             )}
           </>
         )}
@@ -266,8 +362,13 @@ function PartForm({
               Ignorer (non structurel)
             </button>
           )}
-          <button className="btn ghost" disabled title="Arrive avec l’étape IA (S7)">
-            🤖 Demander à l’IA
+          <button
+            className="btn ghost"
+            disabled={!ai?.enabled || aiBusy || busy}
+            title={ai?.enabled ? 'Propose rôle, nature, matériau, section et poids (à vérifier) à partir des noms et de deux images de la pièce' : 'IA non configurée sur le serveur : répondre à la main'}
+            onClick={() => void askAi()}
+          >
+            {aiBusy ? '🤖 L’IA regarde la pièce…' : '🤖 Demander à l’IA'}
           </button>
         </div>
       </div>
@@ -275,11 +376,61 @@ function PartForm({
   );
 }
 
-export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested }: Props) {
+/**
+ * Barres du gabarit de calcul d'un type de Viewbox : le modèle SketchUp ne contient pas les barres acier internes,
+ * l'outil applique à chaque Viewbox ce gabarit (relevé sur les modèles SCIA statico).
+ */
+function TemplateTable({ entry, library }: { entry?: ModuleTypeEntry; library: LibraryEntry[] }) {
+  if (!entry) return null;
+  if (!entry.params) return <div className="hint" style={{ color: 'var(--danger)' }}>Ce type de module n’a pas encore de gabarit de calcul (données de structure inconnues).</div>;
+  const rows = templateSummary(entry, library);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="hint">
+        Chaque Viewbox de ce type est calculée avec ces barres (même modèle que les calculs SCIA des notes statico 24-0571 et 24-0569 : rives, traverses, poteaux,
+        réceptions de pied, assemblages semi-rigides) — les barres sont dessinées en couleur dans la vue 3D. Les liaisons entre Viewbox (boulons, contacts,
+        liaisons d’angle) sont ajoutées automatiquement au calcul.
+      </div>
+      <table className="list">
+        <thead>
+          <tr>
+            <th>Barres</th>
+            <th>Section</th>
+            <th>Matériau</th>
+            <th className="num">Nb</th>
+            <th className="num">Longueur</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.family}${r.section}`}>
+              <td>
+                <span className="chip">
+                  <i style={{ background: hex(r.color) }} />
+                  {r.label}
+                </span>
+              </td>
+              <td>{r.section}</td>
+              <td>{r.material}</td>
+              <td className="num">{r.count}</td>
+              <td className="num">{fmtNumber(r.length / 1e3, 1)} m</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [groups, setGroups] = useState<GroupProposal[] | null>(null);
+  const [groupUsage, setGroupUsage] = useState<AiUsage | null>(null);
+  const [activeGroup, setActiveGroup] = useState<GroupProposal | null>(null);
+  const [groupError, setGroupError] = useState('');
   const typeByNode = useMemo(() => {
     const m = new Map<string, PartType>();
     for (const t of recognition.types) for (const id of t.nodeIds) m.set(id, t);
@@ -329,10 +480,27 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
   }, [active]);
 
   const type = recognition.types.find((t) => t.key === selected) ?? null;
-  // la pièce choisie en avant, le reste en fantôme
+  const [showBars, setShowBars] = useState(true);
+  // Viewbox choisie : barres de son gabarit de calcul par-dessus le modèle (le modèle en transparence)
+  const bars = useMemo(() => {
+    if (!type || type.kind !== 'module' || !showBars) return null;
+    const entry = library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === type.assignment?.moduleTemplate);
+    if (!entry?.params) return null;
+    const placed = type.moduleIds.flatMap((id) => {
+      const f = scene.frames.get(id);
+      const info = scene.index.modules.find((m) => m.id === id);
+      const pm = f && info ? placeFromFrame(f, info.level, entry).module : null;
+      return pm ? [pm] : [];
+    });
+    return placed.length ? templateSegments(placed) : null;
+  }, [type, library, scene, showBars]);
+  // la pièce choisie en avant, le reste en fantôme ; gabarit : tout en fantôme sous les barres
   useEffect(() => {
-    viewerRef.current?.setVisibility(type ? type.nodeIds : null, [], !!type);
-  }, [type]);
+    const v = viewerRef.current;
+    if (!v) return;
+    v.setBarOverlay(bars?.positions ?? null, bars?.colors);
+    v.setVisibility(bars ? [] : type ? type.nodeIds : null, [], !!type);
+  }, [type, bars]);
 
   const queue = recognition.types.filter((t) => t.status === 'unknown' || t.status === 'suggested');
   const nextAfter = (key: string) => {
@@ -346,6 +514,11 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
         <div className="card-head">
           <h2>Vue 3D — statut des pièces</h2>
           <div className="spacer" style={{ flex: 1 }} />
+          {type?.kind === 'module' && (
+            <label className="row hint" title="Barres acier que l'outil calcule pour cette Viewbox">
+              <input type="checkbox" checked={showBars} onChange={(e) => setShowBars(e.target.checked)} /> barres du calcul
+            </label>
+          )}
           {STATUS_ORDER.map((s) => (
             <StatusBadge key={s} s={s} />
           ))}
@@ -387,6 +560,27 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
                   Confirmer toutes les propositions
                 </button>
               )}
+              {ai?.enabled && queue.filter((t) => t.kind === 'item').length >= 2 && (
+                <button
+                  className="btn small"
+                  disabled={busy}
+                  title="L’IA repère les types qui sont la même chose (une seule réponse pour le groupe)"
+                  onClick={async () => {
+                    setBusy(true);
+                    setGroupError('');
+                    try {
+                      const r = await vem.aiGroup({ types: groupPayload(queue.filter((t) => t.kind === 'item')), studyId: studyId ?? null });
+                      setGroups(r.groups);
+                      setGroupUsage(r.usage);
+                    } catch (e) {
+                      setGroupError(`IA : ${(e as Error).message}`);
+                    }
+                    setBusy(false);
+                  }}
+                >
+                  🤖 Regrouper les types identiques
+                </button>
+              )}
               {type && (
                 <button className="btn small ghost" onClick={() => setSelected(null)}>
                   Tout afficher
@@ -395,17 +589,71 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
             </div>
           </div>
         </div>
+        {(groups || groupError) && (
+          <div className="card">
+            <div className="card-head">
+              <h3>Types identiques (proposition de l’IA)</h3>
+              <div className="spacer" style={{ flex: 1 }} />
+              <AiUsageNote usage={groupUsage} />
+              <button className="btn small ghost" onClick={() => [setGroups(null), setGroupError(''), setActiveGroup(null)]}>
+                ✕
+              </button>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {groupError && <div className="error-box">{groupError}</div>}
+              {groups && !groups.length && <div className="hint">Aucun regroupement sûr : chaque type garde sa réponse.</div>}
+              {groups?.map((g, k) => {
+                const members = g.keys.map((key) => recognition.types.find((t) => t.key === key)).filter((t): t is PartType => !!t && (t.status === 'unknown' || t.status === 'suggested'));
+                if (members.length < 2) return null;
+                return (
+                  <div key={k} className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+                    <span>
+                      <b>{g.label}</b> — {members.map((t) => `${t.nodeIds.length} × ${t.label}`).join(' · ')}
+                      <div className="hint">{g.reason}</div>
+                    </span>
+                    <button
+                      className="btn small primary"
+                      onClick={() => {
+                        setActiveGroup({ ...g, keys: members.map((t) => t.key) });
+                        setSelected(members[0].key);
+                      }}
+                    >
+                      Répondre pour les {members.length}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {type && (
           <PartForm
             type={type}
             library={library}
             canEditLibrary={canEditLibrary}
             hasNext={!!nextAfter(type.key)}
-            onClose={() => setSelected(null)}
+            onClose={() => [setSelected(null), setActiveGroup(null)]}
+            ai={ai}
+            studyId={studyId}
+            onSavePanel={onSavePanel}
+            group={activeGroup?.keys.includes(type.key) ? activeGroup : null}
+            onAskAi={async () => {
+              const images = await captureTypeImages(scene, glassTest, type).catch(() => []);
+              viewerRef.current?.reclaim();
+              return vem.aiIdentify({ ...identifyPayload(type, library), images, studyId: studyId ?? null });
+            }}
             onSubmit={async (a, opts, next) => {
+              const inGroup = activeGroup?.keys.includes(type.key) ? activeGroup.keys : [type.key];
               const following = next ? nextAfter(type.key) : null;
-              await onAnswer(type, a, opts);
-              setSelected(following?.key ?? null);
+              for (const key of inGroup) {
+                const t = recognition.types.find((x) => x.key === key);
+                if (t) await onAnswer(t, a, opts);
+              }
+              if (inGroup.length > 1) {
+                setActiveGroup(null);
+                setGroups((gs) => gs?.filter((g) => !g.keys.some((k) => inGroup.includes(k))) ?? null);
+              }
+              setSelected(following && !inGroup.includes(following.key) ? following.key : null);
             }}
           />
         )}

@@ -230,6 +230,7 @@ export interface Labels {
   calagePlanTitle: string;
   heightWindWarning: (h: string, q: string) => string;
   bearingMissing: string;
+  aiNote: string;
   overturningFail: (combos: string, modules: string) => string;
   jacksYes: string;
   jacksNo: string;
@@ -245,6 +246,7 @@ export interface Labels {
 const FR: Labels = {
   heightWindWarning: (h, q) => `Hauteur de l’installation ${h} m > 8 m : DIN EN 13814 demande q = 0,30 kN/m² en service (valeur retenue : ${q} kN/m²).`,
   bearingMissing: 'Portance du sol non renseignée : calage non dimensionné.',
+  aiNote: 'Texte rédigé avec l’aide de l’IA à partir des résultats du calcul, puis relu ; aucun chiffre ne provient de l’IA (contrôle automatique).',
   overturningFail: (c, m) => `Basculement sous le vent hors service (${c}) : un appui de ${m} se soulève et l’ensemble devient instable — lest ou ancrage nécessaire.`,
   jacksYes: 'utilisés (capacité et sortie maximale à justifier)',
   jacksNo: 'non utilisés : angles posés directement sur le calage',
@@ -550,6 +552,7 @@ const FR: Labels = {
 const DE: Labels = {
   heightWindWarning: (h, q) => `Höhe der Anlage ${h} m > 8 m: DIN EN 13814 fordert q = 0,30 kN/m² in Betrieb (angesetzt: ${q} kN/m²).`,
   bearingMissing: 'Zulässige Bodenpressung nicht angegeben: Unterpallung nicht bemessen.',
+  aiNote: 'Text mit KI-Unterstützung aus den Berechnungsergebnissen verfasst und geprüft; keine Zahl stammt aus der KI (automatische Kontrolle).',
   overturningFail: (c, m) => `Kippen unter Wind außer Betrieb (${c}): ein Auflager von ${m} hebt ab und die Anlage wird instabil — Ballast oder Verankerung erforderlich.`,
   jacksYes: 'verwendet (Tragfähigkeit und maximale Auszugslänge nachzuweisen)',
   jacksNo: 'nicht verwendet: Ecken direkt unterpallt',
@@ -855,6 +858,7 @@ const DE: Labels = {
 const EN: Labels = {
   heightWindWarning: (h, q) => `Installation height ${h} m > 8 m: DIN EN 13814 requires q = 0.30 kN/m² in service (value used: ${q} kN/m²).`,
   bearingMissing: 'Ground bearing capacity not entered: packing not designed.',
+  aiNote: 'Text drafted with AI assistance from the calculation results, then reviewed; no figure comes from the AI (automatic check).',
   overturningFail: (c, m) => `Overturning under out-of-service wind (${c}): a support of ${m} lifts off and the installation becomes unstable — ballast or anchorage required.`,
   jacksYes: 'used (capacity and maximum extension to be justified)',
   jacksNo: 'not used: corners placed directly on the packing',
