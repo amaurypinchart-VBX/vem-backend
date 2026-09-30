@@ -187,6 +187,8 @@ export interface Labels {
   jacksText: string;
   ground: string;
   groundIntro: (source: string) => string;
+  /** public limité pour le sol (personnes, kg par personne, charge totale en kN) */
+  groundPublic: (persons: string, kg: string, load: string) => string;
   groundSourceSls: string;
   groundSourceStatico: string;
   groundCase: (type: string, bearing: string) => string;
@@ -492,6 +494,8 @@ const FR: Labels = {
     'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
   ground: 'Pression au sol et calage',
   groundIntro: (s) => `Les réactions sont regroupées par groupe d’appuis (angles posés sur la même plaque). ${s} La portance est à vérifier sur site par l’exploitant ; en cas de sol différent, le calage est à adapter.`,
+  groundPublic: (n, kg, q) =>
+    `Public limité pour le sol : ${n} personnes au plus sur toute l’installation (${kg} kg par personne, ${q} kN), nombre à faire respecter sur place par l’organisateur. Chaque groupe d’appuis reçoit au plus ce public serré au-dessus de lui ; la structure elle-même est vérifiée avec la charge d’exploitation réglementaire.`,
   groundSourceSls: 'Les réactions caractéristiques viennent des combinaisons ELS du calcul ; les réactions de calcul des combinaisons ELU.',
   groundSourceStatico: 'Les réactions de calcul (ELU) sont ramenées au niveau caractéristique par Rz,k = Rz,Ed / 1,35 (méthode statico).',
   groundCase: (t, b) => `Calage — ${t} — ${b} kN/m²`,
@@ -802,6 +806,8 @@ const DE: Labels = {
     'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
   ground: 'Bodenpressung und Unterpallung',
   groundIntro: (s) => `Die Auflagerreaktionen sind die resultierende Reaktion der jeweiligen Auflagergruppe (Ecken auf einer gemeinsamen Unterpallung). ${s} Die Bodenbelastbarkeit ist vor Ort zu prüfen; bei abweichenden Bodenverhältnissen ist die Unterpallung anzupassen.`,
+  groundPublic: (n, kg, q) =>
+    `Begrenzte Personenzahl für den Baugrund: höchstens ${n} Personen auf der gesamten Anlage (${kg} kg je Person, ${q} kN), vom Veranstalter vor Ort einzuhalten. Jede Auflagergruppe erhält höchstens diese Personen dicht gedrängt über ihr; das Tragwerk selbst ist mit der normativen Nutzlast nachgewiesen.`,
   groundSourceSls: 'Die charakteristischen Reaktionen stammen aus den GZG-Kombinationen, die Bemessungswerte aus den GZT-Kombinationen.',
   groundSourceStatico: 'Die Bemessungswerte werden näherungsweise mit γ = 1,35 auf ein charakteristisches Niveau zurückgerechnet (statico-Verfahren).',
   groundCase: (t, b) => `Unterpallung — ${t} — ${b} kN/m²`,
@@ -1112,6 +1118,8 @@ const EN: Labels = {
     'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',
   ground: 'Ground pressure and packing',
   groundIntro: (s) => `Reactions are summed per support group (corners standing on the same packing). ${s} The bearing capacity is to be checked on site by the operator; for different ground conditions, the packing is to be adapted.`,
+  groundPublic: (n, kg, q) =>
+    `Limited occupancy for the ground: at most ${n} persons on the whole installation (${kg} kg per person, ${q} kN), to be enforced on site by the organiser. Each support group receives at most these persons crowded above it; the structure itself is checked with the code imposed load.`,
   groundSourceSls: 'Characteristic reactions come from the SLS combinations of the analysis, design reactions from the ULS combinations.',
   groundSourceStatico: 'Design reactions (ULS) are converted to characteristic values with Rz,k = Rz,Ed / 1.35 (statico method).',
   groundCase: (t, b) => `Packing — ${t} — ${b} kN/m²`,

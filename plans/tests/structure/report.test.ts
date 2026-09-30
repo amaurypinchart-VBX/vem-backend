@@ -228,7 +228,9 @@ describe('rapport de l’étude structure', () => {
         stock: VIEWBOX_STOCK,
         reactions: run.ground,
         choices: { byType: { '1': [{ plate: k70, n: 1 }], '2': [] }, bySupport: { [first]: [{ plate: k70, n: 1 }, { plate: k100, n: 1 }] }, roadway },
+        publicLimit: { persons: 10, kg: 80 },
       });
+      expect(c.publicLimit!.load).toBeCloseTo(10 * 80 * 9.81, 9);
       expect(c.types.some((t) => t.custom)).toBe(true);
       for (const lang of ['de', 'en'] as const) {
         const r = buildReport({ ...reportInput(lang, 'detailed'), calage: c });

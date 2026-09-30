@@ -498,6 +498,10 @@ export function buildReport(inp: ReportInput): ReportOutput {
   // 3.x sol et calage
   h2(L.ground);
   blocks.push({ t: 'para', text: L.groundIntro(study.sls ? L.groundSourceSls : L.groundSourceStatico) });
+  if (inp.calage?.publicLimit) {
+    const p = inp.calage.publicLimit;
+    blocks.push({ t: 'para', text: L.groundPublic(String(p.persons), N(p.kg, 0), N(p.load / 1e3, 1)), bold: true });
+  }
   if (inp.calage) {
     const c = inp.calage;
     blocks.push({ t: 'figure', h: planHeight(mods.filter((m) => m.level === 0), 150, 90), svg: supportsSvg(mods, c.estimate.reactions, (v) => kN(v, 0)), caption: L.supportsFigure });

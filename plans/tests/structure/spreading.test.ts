@@ -2,9 +2,13 @@
 // conseil (« il faut 1,53 m² »), choix par type / par appui / plaques de roulage dans le calage, poids propre retenu
 // (pesée ou le plus lourd), portance en kg/m².
 import { describe, expect, it } from 'vitest';
-import { computeCalage } from '../../src/structure/core/calage';
+import { computeCalage, maxPublic } from '../../src/structure/core/calage';
 import type { CalageInput } from '../../src/structure/core/calage';
-import { ESTIMATE_DEFAULTS, VIEWBOX_STEEL_WEIGHT, estimateReactions, gridModules } from '../../src/structure/core/estimate';
+import { ESTIMATE_DEFAULTS, VIEWBOX_STEEL_WEIGHT, estimateReactions, fullPublic, gridModules, limitPublic } from '../../src/structure/core/estimate';
+import { sectionMap } from '../../src/structure/core/assemble';
+import { SEED } from '../../src/structure/library/seed';
+import { CALC_DEFAULTS, runStudy } from '../../src/structure/studyRun';
+import { createInlineStudyRunner } from '../../src/structure/worker/study';
 import { BIRCH_MULTIPLEX, C24_BEAMS, VIEWBOX_STOCK, bearingFrom, plateKey, sizePlate, stockLayer } from '../../src/structure/core/ground';
 import { adviseChain, bestStockLayers, checkChain, spreadLayer } from '../../src/structure/core/spreading';
 import { LOADS, study, vbx } from './studyHelpers';
@@ -189,5 +193,72 @@ describe('poids propre retenu', () => {
     const A = m[0].area;
     expect(estimateReactions(m, { ...ESTIMATE_DEFAULTS, loads: { ...loads, weightMode: 'weighed' } }).totalG).toBeCloseTo(2564 * 9.81, 6);
     expect(estimateReactions(m, { ...ESTIMATE_DEFAULTS, loads }).totalG).toBeCloseTo(VIEWBOX_STEEL_WEIGHT + 0.75e-3 * A, 6);
+  });
+});
+
+describe('public limité à un nombre de personnes', () => {
+  const W80 = 80 * 9.81;
+  const loads = { moduleWeight: 2564 * 9.81, ceiling: 0.35e-3, floorFinish: 0.4e-3, live: 3.5e-3, roofLive: 3.5e-3, extraPerModule: 0 };
+  const calm = { ...ESTIMATE_DEFAULTS, loads, windInService: 0, windOutOfService: 0, horizontalRatio: 0, sway: 0 };
+
+  it('estimation : chaque angle reçoit au plus tout le public serré au-dessus de lui, le total reprend le public limité', () => {
+    const m = gridModules(1, 1, [[1]], false);
+    const est = estimateReactions(m, calm);
+    const G = est.totalG;
+    const Qc = (3.5e-3 * m[0].area) / 4;
+    const ten = limitPublic(est, 10 * W80);
+    for (const r of ten.reactions) {
+      expect(r.Rk).toBeCloseTo(G / 4 + 10 * W80, 6);
+      expect(r.RkMin).toBeCloseTo(G / 4, 6);
+    }
+    expect(ten.verticalK).toBeCloseTo(G + 10 * W80, 6);
+    // 50 personnes : plus que ce qui tient au-dessus d'un angle à 3,5 kN/m² → public plein à chaque angle
+    for (const r of limitPublic(est, 50 * W80).reactions) expect(r.Rk).toBeCloseTo(G / 4 + Qc, 6);
+    expect(fullPublic(est)).toBeCloseTo(4 * Qc, 6);
+  });
+
+  it('calcul complet : public limité ≥ le même public réparti partout, et ≈ sans public pour 0 personne', async () => {
+    const base = { edgeItems: [], pointItems: [], library: SEED, sections: sectionMap(SEED), middleFeet: false, sls: true, options: CALC_DEFAULTS, blocking: [] };
+    const modules = [vbx('A', 0, 0), vbx('B', 0, 2.5)];
+    const full = await runStudy({ ...base, modules, loads: LOADS }, createInlineStudyRunner());
+    const load = 10 * W80;
+    const A = 2 * 5890 * 2490;
+    const spread = await runStudy({ ...base, modules, loads: { ...LOADS, live: load / A } }, createInlineStudyRunner());
+    const empty = await runStudy({ ...base, modules, loads: { ...LOADS, live: 0 } }, createInlineStudyRunner());
+    const lim = limitPublic(full.ground, load);
+    const zero = limitPublic(full.ground, 0);
+    full.ground.reactions.forEach((r, k) => {
+      expect(lim.reactions[k].Rk).toBeGreaterThanOrEqual(spread.ground.reactions[k].Rk - 1);
+      expect(lim.reactions[k].Rk).toBeLessThanOrEqual(r.Rk + 1e-6);
+      expect(lim.reactions[k].REd).toBeGreaterThanOrEqual(spread.ground.reactions[k].REd - 1);
+      // part du public tirée de CO1 / COd1 (calcul non linéaire, défauts d'aplomb différents) : à 1 % près
+      expect(Math.abs(zero.reactions[k].Rk - empty.ground.reactions[k].Rk)).toBeLessThan(0.01 * empty.ground.reactions[k].Rk);
+    });
+    expect(Math.abs(lim.verticalK! - spread.ground.verticalK!)).toBeLessThan(0.01 * spread.ground.verticalK!);
+  }, 120000);
+
+  it('public maximal : dichotomie sur le nombre de personnes avec le calage choisi', () => {
+    const inp: CalageInput = {
+      modules: gridModules(1, 1, [[1]], false),
+      estimate: { ...calm, windInService: 0.2e-3, windOutOfService: 0.37e-3, horizontalRatio: 0.1, sway: 1 / 200 },
+      bearing: bearingFrom(40, 'kN/m²'),
+      staticoConversion: false,
+      thicknesses: [18, 21, 24, 27, 30, 40],
+      stock: VIEWBOX_STOCK,
+      commercial: [],
+      longrine: { k: 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
+      diffusion: false,
+      choices: { byType: { '1': [{ plate: plateKey(plate(700, 36)), n: 1 }] } },
+    };
+    expect(computeCalage(inp).checks.some((c) => c.eta > 1)).toBe(true);
+    const mp = maxPublic(inp, 80)!;
+    expect(mp.full).toBe(false);
+    expect(mp.empty).toBe(false);
+    expect(mp.persons).toBeGreaterThan(0);
+    expect(mp.persons).toBeLessThan(mp.fullPersons);
+    const at = (persons: number) => computeCalage({ ...inp, publicLimit: { persons, kg: 80 } });
+    expect(at(mp.persons).checks.every((c) => c.eta <= 1)).toBe(true);
+    expect(at(mp.persons + 1).checks.some((c) => c.eta > 1)).toBe(true);
+    expect(at(mp.persons).publicLimit!.load).toBeCloseTo(mp.persons * W80, 9);
   });
 });

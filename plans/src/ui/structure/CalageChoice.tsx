@@ -200,7 +200,18 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
 }
 
 /** Diagnostic : chaque groupe d'appuis (par type et par calage) avec son état et la plaque à prendre, plaques de roulage. */
-export function CalageDiagnostic({ result, set, onSelect }: { result: CalageResult; set: ChoiceSetters; onSelect: (id: string) => void }) {
+export function CalageDiagnostic({
+  result,
+  set,
+  onSelect,
+  publicLine,
+}: {
+  result: CalageResult;
+  set: ChoiceSetters;
+  onSelect: (id: string) => void;
+  /** public prévu / public maximal avec ce calage */
+  publicLine?: { ok: boolean; text: string } | null;
+}) {
   const failing = result.checks.filter((c) => verdictOf(c.eta) === 'fail');
   const anyChoice = result.roadwayOn || !!Object.keys(set.choices.byType ?? {}).length || !!Object.keys(set.choices.bySupport ?? {}).length;
   const rw = result.roadway;
@@ -219,6 +230,14 @@ export function CalageDiagnostic({ result, set, onSelect }: { result: CalageResu
         )}
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {publicLine && (
+          <div className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
+            <span className={`badge ${publicLine.ok ? 'ok' : 'ko'}`} style={{ minWidth: 62, textAlign: 'center' }}>
+              public
+            </span>
+            <div style={{ fontSize: 13, lineHeight: 1.45 }}>{publicLine.text}</div>
+          </div>
+        )}
         {result.types.map((t) => {
           const worst = t.checks.reduce((a, c) => (c.eta > a.eta ? c : a), t.checks[0]);
           if (!worst) return null;

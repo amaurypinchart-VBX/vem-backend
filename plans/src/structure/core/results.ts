@@ -6,7 +6,7 @@
 import type { MemberFamily, StructuralModel } from './assemble';
 import { FAMILY_LABEL } from './assemble';
 import type { Combination } from './combos';
-import type { Estimate, GroupReaction, P2, SupportGroup } from './estimate';
+import type { ComboReaction, Estimate, GroupReaction, P2, SupportGroup } from './estimate';
 import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
@@ -357,7 +357,13 @@ export function studyVerdict(index: ItemIndex, summary: StudySummary, stab: Stab
  * Groupes d'appuis (angles distants de moins de `tolerance` en plan) et réactions extrêmes par groupe :
  * REd = max ELU de la somme du groupe, REdMin = min ELU et stabilité, Rk = max ELS (sinon REd / 1,35).
  */
-export function groundEstimate(s: StructuralModel, summary: StudySummary, combos: Combination[], tolerance = 100): Estimate {
+export function groundEstimate(
+  s: StructuralModel,
+  summary: StudySummary,
+  combos: Combination[],
+  tolerance = 100,
+  opts: { roofAccessible?: boolean; horizontalRatio?: number } = {},
+): Estimate {
   const pos = (k: number): P2 => {
     const n = s.fem.nodes[s.fem.supports[k].node];
     return [n.x, n.z];
@@ -415,5 +421,28 @@ export function groundEstimate(s: StructuralModel, summary: StudySummary, combos
   // charge verticale totale caractéristique : la combinaison ELS la plus lourde (sinon ELU / 1,35)
   const all = pts;
   const verticalK = sls.length ? Math.max(...sls.map((x) => sum(all, x.id)!)) : Math.max(...uls.map((x) => sum(all, x.id)! / 1.35));
-  return { groups, reactions, totalG: reactions.reduce((a, r) => a + r.G, 0), totalQ: reactions.reduce((a, r) => a + r.Q, 0), verticalK, method: 'fem', units: [], warnings: [], records: [] };
+
+  // public limité : part du public plein de chaque groupe, par direction, en service (Q1) et hors service (Q2), tirée des
+  // combinaisons ELU « public seul » (COd1 = γG' ΣG + γQ Q1.d) et de CO1 = γG ΣG : (R(COd1) − γG'/γG · R(CO1)) / γQ
+  const factor = (c: Combination, pre: string) => c.factors.find(([k]) => k.startsWith(pre))?.[1] ?? 0;
+  const co1 = combos.find((c) => c.id === 'CO1' && summary.reactions[c.id]);
+  const qOnly = (d: number | undefined, svc: 'in' | 'out') =>
+    combos.find((c) => c.cls === 'ULS' && c.direction === d && c.service === svc && summary.reactions[c.id] && factor(c, 'Q') > 0 && !c.factors.some(([k]) => k.startsWith('W')));
+  const qPart = (c: number[], x: Combination): number => {
+    const q = x.factors.find(([k]) => k.startsWith('Q'));
+    if (!q || !co1) return 0;
+    const ref = qOnly(x.direction, q[0].startsWith('Q2') ? 'out' : 'in');
+    if (!ref) return 0;
+    const gRef = factor(ref, 'G1');
+    const g1 = factor(co1, 'G1');
+    return Math.max(0, (sum(c, ref.id)! - (gRef / g1) * sum(c, co1.id)!) / factor(ref, 'Q'));
+  };
+  const used = [...uls, ...combos.filter((c) => c.cls === 'STAB' && summary.reactions[c.id]), ...sls];
+  const entry = (c: number[], x: Combination): ComboReaction => ({ combo: x.id, cls: x.cls, R: sum(c, x.id)!, gQ: factor(x, 'Q'), Q: qPart(c, x) });
+  reactions.forEach((r, g) => (r.combos = used.map((x) => entry(list[g], x))));
+  const totals = used.map((x) => entry(all, x));
+  // l'effort horizontal de la foule (H = V/10 au niveau des planchers) est dans la part du public : marge pour les planchers en hauteur
+  const top = Math.max(0, ...s.modules.map((m) => m.level)) + (opts.roofAccessible ? 1 : 0);
+  const publicCap = 1 + ((opts.horizontalRatio ?? 0.1) * top * 3080) / 2490;
+  return { groups, reactions, totalG: reactions.reduce((a, r) => a + r.G, 0), totalQ: reactions.reduce((a, r) => a + r.Q, 0), verticalK, method: 'fem', totals, publicCap, units: [], warnings: [], records: [] };
 }

@@ -3,7 +3,8 @@
 // Alimenté par le modèle analysé (onglet Étude structure) ou par une grille de Viewbox (calculateur rapide).
 import { useEffect, useMemo, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
-import { computeCalage } from '../../structure/core/calage';
+import type { PublicMax } from '../../structure/core/calage';
+import { computeCalage, maxPublic } from '../../structure/core/calage';
 import type { Estimate, EstimateModule } from '../../structure/core/estimate';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
@@ -47,6 +48,10 @@ export interface Hypotheses {
   thicknesses: string;
   /** poids propre des plaques de roulage (kg/m²) */
   roadwayKg: number;
+  /** public pour le sol : charge réglementaire (kN/m²) ou nombre de personnes limité sur toute l'installation */
+  publicMode: 'norm' | 'persons';
+  persons: number;
+  personKg: number;
   /** calage choisi par type d'appui ou par appui, plaques de roulage */
   calage?: CalageChoices;
 }
@@ -74,6 +79,9 @@ export const DEFAULT_HYP: Hypotheses = {
   subgrade: 'medium',
   thicknesses: '18, 21, 24, 27, 30, 40',
   roadwayKg: 0,
+  publicMode: 'norm',
+  persons: 10,
+  personKg: 80,
 };
 
 export interface StructureStock {
@@ -131,6 +139,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     longrine: { k: SUBGRADE_PRESETS.find((s) => s.key === h.subgrade)?.k ?? 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
     diffusion: h.diffusion,
     choices: h.calage,
+    ...(h.publicMode === 'persons' ? { publicLimit: { persons: Math.max(0, Math.round(h.persons)), kg: h.personKg } } : {}),
     roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
   };
 }
@@ -380,12 +389,27 @@ export function HypothesesForm({ hyp, setHyp, jacks = false }: { hyp: Hypotheses
           <Num value={hyp.ceiling} onChange={(v) => set('ceiling', v)} width={60} /> /
           <Num value={hyp.floorFinish} onChange={(v) => set('floorFinish', v)} width={60} /> kN/m²
         </Field>
-        <Field label="Exploitation des planchers">
+        <Field label="Exploitation des planchers" hint="3,5 kN/m² ≈ 357 kg/m² ≈ 4 à 5 personnes debout par m² (espace ouvert au public)">
           <Num value={hyp.live} onChange={(v) => set('live', v)} /> kN/m²
         </Field>
         <Field label="Exploitation des toitures accessibles">
           <Num value={hyp.roofLive} onChange={(v) => set('roofLive', v)} /> kN/m²
         </Field>
+        <Field
+          label="Public pour le sol et le calage"
+          hint="Nombre de personnes limité : l’organisateur s’engage à ne pas dépasser ce nombre sur toute l’installation (comptage / contrôle d’accès). La structure reste vérifiée avec la charge réglementaire."
+        >
+          <select value={hyp.publicMode} onChange={(e) => set('publicMode', e.target.value as Hypotheses['publicMode'])}>
+            <option value="norm">charge réglementaire ci-dessus (public libre)</option>
+            <option value="persons">nombre de personnes limité</option>
+          </select>
+        </Field>
+        {hyp.publicMode === 'persons' && (
+          <Field label="Personnes au plus (toute l’installation)" hint="Le calcul les place au pire endroit : toutes serrées au-dessus de l’appui le plus défavorable (3,5 kN/m² au plus).">
+            <Num value={hyp.persons} onChange={(v) => set('persons', Math.max(0, Math.round(v)))} width={60} /> ×
+            <Num value={hyp.personKg} onChange={(v) => set('personKg', Math.max(1, v))} width={50} /> kg = {n((Math.max(0, Math.round(hyp.persons)) * hyp.personKg * 9.81) / 1e3, 1)} kN
+          </Field>
+        )}
         <Field label="Murs, garde-corps, logo… par Viewbox">
           <Num value={hyp.extraKN} onChange={(v) => set('extraKN', v)} /> kN
         </Field>
@@ -460,6 +484,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [pointsBusy, setPointsBusy] = useState(false);
   const [showPoints, setShowPoints] = useState(false);
   const [planView, setPlanView] = useState<'check' | 'type'>('check');
+  const [maxPub, setMaxPub] = useState<PublicMax | null>(null);
 
   useEffect(() => {
     vem
@@ -486,6 +511,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         if (!modules.length) throw new Error('Aucune Viewbox à caler.');
         if (!(input.bearing > 0)) throw new Error('Portance admissible à renseigner.');
         setResult(computeCalage(input));
+        // public maximal avec ce calage (dichotomie sur le nombre de personnes)
+        setMaxPub(maxPublic(input, hyp.personKg));
         setError('');
       } catch (e) {
         setError((e as Error).message);
@@ -494,7 +521,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
       setPending(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [input, modules.length]);
+  }, [input, modules.length, hyp.personKg]);
 
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
 
@@ -509,6 +536,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     ['Poids d’une Viewbox', `${n(hyp.moduleWeightKg, 0)} kg pesés — retenu : ${hyp.weightMode === 'weighed' ? 'la pesée' : 'le plus lourd (modèle ou pesée)'}`],
     ['Plafond / sol', `${n(hyp.ceiling, 2)} / ${n(hyp.floorFinish, 2)} kN/m²`],
     ['Exploitation', `${n(hyp.live, 2)} kN/m² (toitures accessibles ${n(hyp.roofLive, 2)})`],
+    [
+      'Public pour le sol',
+      hyp.publicMode === 'persons'
+        ? `limité à ${Math.round(hyp.persons)} personnes × ${n(hyp.personKg, 0)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)`
+        : 'charge réglementaire (public libre)',
+    ],
     ['Vent en / hors service', `${n(hyp.windIn, 2)} / ${n(hyp.windOut, 2)} kN/m², cp ${n(hyp.cp, 1)}`],
     ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
     jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
@@ -596,6 +629,23 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const selCheck = result?.checks.find((c) => c.id === selected);
   const checkById = new Map((result?.checks ?? []).map((c) => [c.id, c]));
   const failing = result ? result.checks.filter((c) => verdictOf(c.eta) === 'fail').length : 0;
+  const persons = hyp.publicMode === 'persons' ? Math.max(0, Math.round(hyp.persons)) : null;
+  const publicLine = (() => {
+    if (!maxPub) return null;
+    const mx = `${maxPub.persons} personne${maxPub.persons > 1 ? 's' : ''}`;
+    if (persons !== null) {
+      const kn = n((persons * hyp.personKg * 9.81) / 1e3, 1);
+      if (maxPub.empty) return { ok: false, text: `Public limité à ${persons} personnes (${kn} kN) : même sans public, ce calage ne passe pas — changer les plaques ou prendre des plaques de roulage.` };
+      if (persons <= maxPub.persons) return { ok: true, text: `Public limité à ${persons} personnes (${kn} kN) : OK — ce calage accepte jusqu’à ${maxPub.full ? `la charge réglementaire complète (≈ ${maxPub.fullPersons} personnes)` : mx}.` };
+      return { ok: false, text: `Public limité à ${persons} personnes (${kn} kN) : trop pour ce calage — au plus ${mx}, ou des plaques plus grandes.` };
+    }
+    if (maxPub.full) return { ok: true, text: `Public libre : la charge réglementaire complète (≈ ${maxPub.fullPersons} personnes de ${n(hyp.personKg, 0)} kg) passe avec ce calage.` };
+    if (maxPub.empty) return { ok: false, text: 'Même sans public, ce calage ne passe pas : changer les plaques ou prendre des plaques de roulage.' };
+    return {
+      ok: false,
+      text: `Avec la charge réglementaire (≈ ${maxPub.fullPersons} personnes) ce calage ne passe pas. Pour le garder, limiter le public à ${mx} (Public pour le sol › nombre de personnes limité), ou changer les plaques.`,
+    };
+  })();
   const select = (id: string) => {
     setSelected(id);
     setPlanView('check');
@@ -655,6 +705,18 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <div className="v">{kN(Math.max(...result.estimate.reactions.map((r) => r.Rk)), 0)}</div>
               <div className="l">appui le plus chargé (Rz,k)</div>
             </div>
+            {maxPub && (
+              <div className={`stat ${publicLine?.ok ? '' : 'warn'}`}>
+                <div className="v">{persons !== null ? `${persons} / ${maxPub.persons}` : maxPub.full ? 'libre' : String(maxPub.persons)}</div>
+                <div className="l">
+                  {persons !== null
+                    ? 'personnes prévues / maximum avec ce calage'
+                    : maxPub.full
+                      ? `public : charge réglementaire admise (≈ ${maxPub.fullPersons} pers.)`
+                      : `personnes au plus avec ce calage (réglementaire ≈ ${maxPub.fullPersons})`}
+                </div>
+              </div>
+            )}
             <div className="stat">
               <div className="v">{n(kNm2(input.bearing), kNm2(input.bearing) < 10 ? 1 : 0)} kN/m²</div>
               <div className="l">portance admissible ({n(kgm2(input.bearing), 0)} kg/m²)</div>
@@ -741,7 +803,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             </div>
           </div>
 
-          <CalageDiagnostic result={result} set={choiceSet} onSelect={select} />
+          <CalageDiagnostic result={result} set={choiceSet} onSelect={select} publicLine={publicLine} />
 
           {roadway && (
             <div className="card">

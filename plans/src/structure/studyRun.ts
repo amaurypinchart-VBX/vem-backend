@@ -119,7 +119,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
       reasons: [...reasons, ...verdict.reasons],
       verdict: worstVerdict([verdict.verdict, plywood.blocked ? 'incomplete' : verdictOf(plywood.eta), reasons.length ? 'incomplete' : 'ok']),
     };
-    const ground = groundEstimate(structure, summary, combos);
+    const ground = groundEstimate(structure, summary, combos, 100, { roofAccessible: inp.loads.roofAccessible, horizontalRatio: inp.loads.horizontalRatio });
     const warnings = [...new Set([...structure.warnings, ...loads.warnings, ...summary.warnings])];
     return { structure, loads, combos, index, summary, stability: stab, verdict: verdictAll, plywood, ground, durationMs: performance.now() - t0, warnings };
   });

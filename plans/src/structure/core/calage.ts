@@ -6,7 +6,7 @@
 // rapport. Fonctions pures.
 import type { CalcRecord } from './records';
 import type { Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } from './estimate';
-import { estimateReactions } from './estimate';
+import { estimateReactions, fullPublic, limitPublic } from './estimate';
 import type { CommercialPlate, LongrineResult, MaterialLine, PlateResult, Solution, SpreadLayer, StockPlate, TimberBeam } from './ground';
 import { C24_BEAMS, PANELS, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended } from './ground';
 import type { RoadwayResult } from './roadway';
@@ -45,6 +45,10 @@ export interface CalageInput {
   choices?: CalageChoices;
   /** poids propre des plaques de roulage (N/mm²) */
   roadwayPlates?: number;
+  /** public limité à un nombre de personnes (toute l'installation) au lieu de la charge d'exploitation réglementaire */
+  publicLimit?: { persons: number; kg: number };
+  /** sans les phrases de diagnostic (recherche du public maximal) */
+  noAdvice?: boolean;
 }
 
 /** Vérification d'un appui sous sa propre réaction avec le calage qui lui est appliqué. */
@@ -107,13 +111,17 @@ export interface CalageResult {
   checks: SupportCheck[];
   roadway: RoadwayResult;
   roadwayOn: boolean;
+  /** public limité retenu pour le sol (charge totale en N) */
+  publicLimit?: { persons: number; kg: number; load: number };
 }
 
 const typeLabel = (corners: number, middle: boolean, jack = false) =>
   jack ? (middle ? 'vérin central' : 'vérin d’angle') : middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
 
 export function computeCalage(inp: CalageInput): CalageResult {
-  const est = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
+  const est0 = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
+  const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
+  const est = publicLoad === undefined ? est0 : limitPublic(est0, publicLoad);
   const warnings = [...new Set(est.warnings)];
   // pieds à vérin : décalés de 155 mm en diagonale depuis l'angle (réception de pied)
   const reach = 2 * inp.estimate.groupTolerance + (est.reactions.some((r) => r.group.jack) ? 250 : 0);
@@ -201,7 +209,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         const base = { Rzk: Rk, REd: r.REd, contact: [a1, a2] as [number, number], contactLabel, bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax };
         const chain = checkChain({ ...base, layers });
         const source = choices.bySupport?.[r.group.id] ? 'support' : choices.byType?.[key] ? 'type' : 'auto';
-        const advice = adviseChain(r.group.id, chain, layers, { base, stock: inp.stock, roadway: rw, roadwayOn, custom: !!part.refs });
+        const advice = inp.noAdvice ? '' : adviseChain(r.group.id, chain, layers, { base, stock: inp.stock, roadway: rw, roadwayOn, custom: !!part.refs });
         const c: SupportCheck = { ...chain, id: r.group.id, reaction: r, typeKey: key, source, layerList: layers, Rzk: Rk, REd: r.REd, advice };
         checkOf.set(r, c);
         return c;
@@ -350,7 +358,46 @@ export function computeCalage(inp: CalageInput): CalageResult {
     });
   if (!allPlates && !longrine)
     warnings.push('Aucune solution standard pour tous les appuis : la moins mauvaise est chiffrée, une étude de répartition spécifique est nécessaire.');
-  return { estimate: est, types, longrine, materials, allPlates, warnings, checks, roadway, roadwayOn };
+  return {
+    estimate: est,
+    types,
+    longrine,
+    materials,
+    allPlates,
+    warnings,
+    checks,
+    roadway,
+    roadwayOn,
+    ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
+  };
+}
+
+export interface PublicMax {
+  /** nombre de personnes maximal pour que tous les appuis passent avec le calage choisi (sinon automatique) */
+  persons: number;
+  /** le public réglementaire complet passe déjà ; ne passe pas même sans public */
+  full: boolean;
+  empty: boolean;
+  /** public réglementaire exprimé en personnes */
+  fullPersons: number;
+}
+
+/** Public maximal admissible (personnes de `kg` kg) avec le sol et le calage choisis : recherche par dichotomie. */
+export function maxPublic(inp: CalageInput, kg: number): PublicMax | null {
+  const est = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
+  if (!est.reactions.length || !est.reactions.every((r) => r.combos?.length) || !(kg > 0)) return null;
+  const fullPersons = Math.ceil(fullPublic(est) / (kg * 9.81) - 1e-9);
+  const ok = (persons: number) => computeCalage({ ...inp, reactions: est, publicLimit: { persons, kg }, noAdvice: true }).checks.every((c) => c.eta <= 1);
+  if (ok(fullPersons)) return { persons: fullPersons, full: true, empty: false, fullPersons };
+  if (!ok(0)) return { persons: 0, full: false, empty: true, fullPersons };
+  let lo = 0;
+  let hi = fullPersons;
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (ok(mid)) lo = mid;
+    else hi = mid;
+  }
+  return { persons: lo, full: false, empty: false, fullPersons };
 }
 
 function materialLabel(l: SpreadLayer): string {

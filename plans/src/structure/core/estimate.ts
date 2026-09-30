@@ -98,6 +98,16 @@ export interface SupportGroup {
   moduleIds: string[];
 }
 
+/** Réaction d'un groupe d'appuis dans une combinaison et part du public qu'elle contient (public limité). */
+export interface ComboReaction {
+  combo: string;
+  cls: 'SLS' | 'ULS' | 'STAB';
+  /** réaction (N) ; coefficient du public dans la combinaison (0 = sans public) ; public plein à cet appui (N, sans coefficient) */
+  R: number;
+  gQ: number;
+  Q: number;
+}
+
 export interface GroupReaction {
   group: SupportGroup;
   /** réaction caractéristique maxi / mini et de calcul maxi / mini (N) */
@@ -110,6 +120,8 @@ export interface GroupReaction {
   /** part verticale permanente et d'exploitation (N) */
   G: number;
   Q: number;
+  /** réaction dans chaque combinaison (public limité) */
+  combos?: ComboReaction[];
 }
 
 export interface Estimate {
@@ -121,6 +133,15 @@ export interface Estimate {
   verticalK?: number;
   /** origine des réactions : calcul complet (modèle 3D) ou estimation instantanée */
   method?: 'fem' | 'estimate';
+  /** somme de tous les appuis par combinaison (charge verticale totale avec un public limité) */
+  totals?: ComboReaction[];
+  /**
+   * public limité : un groupe d'appuis reçoit au plus publicCap × public limité (le public serré au-dessus de lui ; > 1
+   * quand la part du public du calcul complet comprend l'effort horizontal H = V/10 des planchers en hauteur)
+   */
+  publicCap?: number;
+  /** public limité appliqué (N) */
+  publicLimit?: number;
   /** ensembles reliés (basculement calculé séparément) */
   units: string[][];
   warnings: string[];
@@ -348,15 +369,22 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   };
 
   const extra = 1 + opt.extraFactor;
+  // réaction de chaque groupe dans chaque combinaison (public limité : part du public par groupe, sans coefficient)
+  const perGroup: ComboReaction[][] = groups.map(() => []);
+  const totals: ComboReaction[] = [];
   const scan = (design: boolean) => {
     const max = groups.map(() => ({ v: -Infinity, c: '' }));
     const min = groups.map(() => Infinity);
     for (const c of combos(design)) {
       const R = evaluate(c);
+      const cls = design ? 'ULS' : 'SLS';
+      const qOf = (g: number) => (c.useQaB ? parts[g].QaB : parts[g].Q);
       R.forEach((v, g) => {
         if (v * extra > max[g].v) max[g] = { v: v * extra, c: c.name };
         min[g] = Math.min(min[g], v);
+        perGroup[g].push({ combo: c.name, cls, R: v * extra, gQ: c.gQ * extra, Q: qOf(g) });
       });
+      totals.push({ combo: c.name, cls, R: R.reduce((a, v) => a + v, 0) * extra, gQ: c.gQ * extra, Q: groups.reduce((a, _, g) => a + qOf(g), 0) });
     }
     return { max, min };
   };
@@ -372,6 +400,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     comboK: k.max[i].c,
     G: parts[i].G,
     Q: parts[i].Q,
+    combos: perGroup[i],
   }));
   let outGroups = groups;
   if (opt.jacks) {
@@ -393,6 +422,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
           REdMin: r.REdMin / n,
           G: r.G / n,
           Q: r.Q / n,
+          combos: r.combos?.map((c) => ({ ...c, R: c.R / n, Q: c.Q / n })),
         });
       }
     });
@@ -420,7 +450,52 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       withValues: `vent en service ${fmtNumber(opt.windInService * 1e3, 2)} kN/m², hors service ${fmtNumber(opt.windOutOfService * 1e3, 2)} kN/m², cp ${fmtNumber(opt.cp, 1)} ; H = V/${fmtNumber(1 / opt.horizontalRatio, 0)} ; φ = 1/${fmtNumber(1 / opt.sway, 0)}`,
     },
   ];
-  return { groups: outGroups, reactions, totalG, totalQ, verticalK: (totalG + totalQ) * extra, method: 'estimate', units, warnings, records };
+  return { groups: outGroups, reactions, totalG, totalQ, verticalK: (totalG + totalQ) * extra, method: 'estimate', totals, publicCap: 1, units, warnings, records };
+}
+
+/**
+ * Public limité à `load` (N, personnes × poids) : chaque groupe d'appuis garde sa réaction avec le public plein, moins la
+ * part du public qui dépasse ce que le public limité peut lui apporter en se serrant au-dessus de lui (au plus
+ * load × publicCap, et jamais plus que le public plein) ; les minima sont pris sans public ; la charge verticale totale
+ * reprend load au lieu du public plein. Sans les réactions par combinaison : public plein conservé (prudent).
+ */
+export function limitPublic(est: Estimate, load: number): Estimate {
+  if (!est.reactions.length || !est.reactions.every((r) => r.combos?.length))
+    return { ...est, publicLimit: load, warnings: [...est.warnings, 'Public limité : réactions par combinaison indisponibles, public plein conservé (calcul complet à relancer).'] };
+  const cap = load * (est.publicCap ?? 1);
+  const occ = (c: ComboReaction, lim: number) => c.R - c.gQ * Math.max(0, c.Q - lim);
+  const none = (c: ComboReaction) => c.R - c.gQ * c.Q;
+  const best = (cs: ComboReaction[], f: (c: ComboReaction) => number): [number, string] => {
+    let v = -Infinity;
+    let name = '';
+    for (const c of cs) {
+      const x = f(c);
+      if (x > v) [v, name] = [x, c.combo];
+    }
+    return [v, name];
+  };
+  const reactions = est.reactions.map((r): GroupReaction => {
+    const cs = r.combos!;
+    const uls = cs.filter((c) => c.cls === 'ULS');
+    const sls = cs.filter((c) => c.cls === 'SLS');
+    const [REd, combo] = best(uls, (c) => occ(c, cap));
+    const REdMin = Math.min(...cs.filter((c) => c.cls !== 'SLS').map(none));
+    const [Rk, comboK] = sls.length ? best(sls, (c) => occ(c, cap)) : [REd / 1.35, `${combo} / 1,35`];
+    const RkMin = sls.length ? Math.min(...sls.map(none)) : REdMin / 1.35;
+    return { ...r, Rk, RkMin, REd, REdMin, combo, comboK, Q: Math.min(r.Q, cap) };
+  });
+  let verticalK = est.verticalK;
+  if (est.totals?.length) {
+    const sls = est.totals.filter((t) => t.cls === 'SLS');
+    verticalK = sls.length ? best(sls, (t) => occ(t, load))[0] : best(est.totals, (t) => occ(t, load))[0] / 1.35;
+  }
+  return { ...est, reactions, verticalK, totalQ: Math.min(est.totalQ, load), publicLimit: load };
+}
+
+/** Public plein (N) : la plus grande part de public d'une combinaison, tous appuis réunis. */
+export function fullPublic(est: Estimate): number {
+  const qs = (est.totals ?? []).filter((t) => t.gQ > 0).map((t) => t.Q);
+  return qs.length ? Math.max(...qs) : est.totalQ;
 }
 
 /** Position d'un pied à vérin : angle décalé de `off` le long de ses deux côtés, pied central décalé vers l'intérieur. */
