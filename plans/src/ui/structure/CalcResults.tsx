@@ -81,6 +81,8 @@ function Records({ records }: { records: CalcRecord[] }) {
 export interface CalcPanelProps {
   options: CalcOptions;
   setOptions: (o: CalcOptions) => void;
+  /** tige des pieds à vérin (bibliothèque VBX-JACK) */
+  jack?: { d: number; d3: number; fy: number; extensionMax: number; perModule: number } | null;
   modulesCount: number;
   blocking: string[];
   warnings: string[];
@@ -152,9 +154,38 @@ export function CalcPanel(p: CalcPanelProps) {
             Frottement disponible (glissement)
             <input type="number" step={0.05} min={0.05} max={1} value={o.friction} onChange={(e) => set('friction', Math.max(0.05, parseFloat(e.target.value) || 0.4))} style={{ width: 80 }} />
           </label>
-          <label className="row">
-            <input type="checkbox" checked={o.jacks} onChange={(e) => set('jacks', e.target.checked)} /> Pieds à vérins utilisés (appuis aux réceptions de pied)
-          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label className="row">
+              <input type="checkbox" checked={o.jacks} onChange={(e) => set('jacks', e.target.checked)} /> Pieds à vérin utilisés (appuis aux réceptions de pied)
+            </label>
+            {o.jacks && (
+              <div className="hint" style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {p.jack ? (
+                  <>
+                    <span>
+                      Tige Tr {n(p.jack.d, 0)} × 5 classe 10.9 (noyau {n(p.jack.d3, 1)} mm, fy {n(p.jack.fy, 0)} N/mm²), {n(p.jack.perModule, 0)} vérins par Viewbox (4 angles + milieu des 2 grands côtés), sortie{' '}
+                      {n(p.jack.extensionMax / 10, 0)} cm au plus.
+                    </span>
+                    <label className="row" style={{ gap: 6 }}>
+                      Sortie des tiges
+                      <input
+                        type="number"
+                        step={0.5}
+                        min={0.5}
+                        max={p.jack.extensionMax / 10}
+                        value={Math.min(o.jackExtension, p.jack.extensionMax) / 10}
+                        onChange={(e) => set('jackExtension', Math.min(p.jack!.extensionMax, Math.max(5, (parseFloat(e.target.value) || 0) * 10)))}
+                        style={{ width: 70 }}
+                      />{' '}
+                      cm (maxi {n(p.jack.extensionMax / 10, 0)} cm, calcul au plus défavorable par défaut)
+                    </label>
+                  </>
+                ) : (
+                  <span>Tige de vérin absente ou désactivée dans la bibliothèque (VBX-JACK).</span>
+                )}
+              </div>
+            )}
+          </div>
           <label className="row">
             <input type="checkbox" checked={o.upliftAll} onChange={(e) => set('upliftAll', e.target.checked)} /> Appui soulevé : plus de retenue horizontale (prudent)
           </label>

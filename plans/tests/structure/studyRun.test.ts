@@ -1,4 +1,4 @@
-// Enchaînement du calcul complet (étape 3) : verdict, plancher, vérins sans capacité → incomplet, empreinte des entrées
+// Enchaînement du calcul complet (étape 3) : verdict, plancher, pièce non modélisée → incomplet, empreinte des entrées
 // (résultat périmé), calage à partir des réactions du calcul.
 import { describe, expect, it } from 'vitest';
 import { sectionMap } from '../../src/structure/core/assemble';
@@ -59,8 +59,12 @@ describe('calcul complet d’une étude', () => {
     expect(pair.chosen).toBeTruthy();
   }, 120000);
 
-  it('vérins sans capacité connue, pièce porteuse non modélisée : verdict incomplet', async () => {
-    const run = await runStudy({ ...base, modules: [vbx('A', 0, 0)], edgeItems: [], options: { ...CALC_DEFAULTS, jacks: true }, blocking: ['2 pièce(s) porteuse(s) « Escalier » : pas encore modélisées'] }, createInlineStudyRunner());
+  it('pièce porteuse non modélisée : verdict incomplet ; vérin retiré de la bibliothèque : tiges bloquées', async () => {
+    const library = SEED.map((e) => (e.kind === 'connection' && e.key === 'VBX-JACK' ? { ...e, disabled: true } : e));
+    const run = await runStudy(
+      { ...base, modules: [vbx('A', 0, 0)], edgeItems: [], library, options: { ...CALC_DEFAULTS, jacks: true }, blocking: ['2 pièce(s) porteuse(s) « Escalier » : pas encore modélisées'] },
+      createInlineStudyRunner(),
+    );
     expect(run.verdict.verdict).toBe('incomplete');
     expect(run.verdict.reasons.some((r) => r.includes('VBX-JACK'))).toBe(true);
     expect(run.verdict.reasons.some((r) => r.includes('Escalier'))).toBe(true);

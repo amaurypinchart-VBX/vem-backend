@@ -65,9 +65,9 @@ export interface EdgeLoadTarget {
 
 export interface AssembleOptions {
   sections: ReadonlyMap<string, SectionEntry>;
-  /** pieds à vérin utilisés : appuis aux nœuds des réceptions de pied au lieu des angles */
+  /** pieds à vérin utilisés : appuis aux nœuds des réceptions de pied au lieu des angles, pieds centraux compris (6 par Viewbox) */
   jacks: boolean;
-  /** pieds centraux des grands côtés calés (appuis supplémentaires) */
+  /** pieds centraux des grands côtés calés (appuis supplémentaires ; toujours avec les vérins) */
   middleFeet: boolean;
   /** appui soulevé : libérer aussi les ressorts horizontaux (prudent) ou seulement le vertical (comme SCIA) */
   upliftReleases: 'all' | 'vertical';
@@ -93,7 +93,7 @@ export interface StructuralModel {
   lines: Map<string, EdgeLoadTarget[]>;
   faces: FaceInfo[];
   /** appuis : Viewbox et angle */
-  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' }>;
+  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle'; jack: boolean }>;
   /** modules sans rien au-dessus (toiture exposée, dernier niveau évacué) */
   topModules: Set<string>;
   baseY: number;
@@ -466,10 +466,10 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     const kh = pm.params.springs.supportHorizontal;
     const place = (key: string, corner: number, kind: 'corner' | 'foot' | 'middle') => {
       supports.push({ node: P(pm, key), dofs: [kh, 'fixed', kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
-      supportMeta.push({ module: pm.id, corner, kind });
+      supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks });
     };
     (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
-    if (opt.middleFeet) tpl.middleFeet.forEach((k, c) => place(k, 4 + c, 'middle'));
+    if (opt.middleFeet || opt.jacks) tpl.middleFeet.forEach((k, c) => place(k, 4 + c, 'middle'));
   }
   if (!supports.length) errors.push('Aucune Viewbox posée au sol : le modèle n’a pas d’appui.');
 

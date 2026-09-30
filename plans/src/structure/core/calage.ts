@@ -8,8 +8,9 @@ import type { CommercialPlate, LongrineResult, MaterialLine, PlateResult, Soluti
 import { C24_BEAMS, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended } from './ground';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
-export function contactArea(corners: number, middle: boolean): { a1: number; a2: number; confirmed: boolean } {
-  if (middle) return { a1: 150, a2: 150, confirmed: false };
+export function contactArea(corners: number, middle: boolean, jack = false): { a1: number; a2: number; confirmed: boolean } {
+  // platine de vérin 7-309-002 et réception centrale : 15 × 15 cm supposés
+  if (middle || jack) return { a1: 150, a2: 150, confirmed: false };
   if (corners <= 1) return { a1: 210, a2: 210, confirmed: true };
   if (corners === 2) return { a1: 420, a2: 210, confirmed: true };
   // 3 angles : surface prise comme pour 2 angles (côté de la sécurité)
@@ -39,6 +40,7 @@ export interface CalageType {
   label: string;
   corners: number;
   middle: boolean;
+  jack: boolean;
   reactions: GroupReaction[];
   RzEd: number;
   Rzk: number;
@@ -70,12 +72,14 @@ export interface CalageResult {
   warnings: string[];
 }
 
-const typeLabel = (corners: number, middle: boolean) =>
-  middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
+const typeLabel = (corners: number, middle: boolean, jack = false) =>
+  jack ? (middle ? 'vérin central' : 'vérin d’angle') : middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
 
 export function computeCalage(inp: CalageInput): CalageResult {
   const est = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
-  const warnings = [...est.warnings];
+  const warnings = [...new Set(est.warnings)];
+  // pieds à vérin : décalés de 155 mm en diagonale depuis l'angle (réception de pied)
+  const reach = 2 * inp.estimate.groupTolerance + (est.reactions.some((r) => r.group.jack) ? 250 : 0);
   const byType = new Map<string, GroupReaction[]>();
   for (const r of est.reactions) {
     const key = r.group.middle ? 'M' : String(r.group.corners);
@@ -87,13 +91,14 @@ export function computeCalage(inp: CalageInput): CalageResult {
     .map(([key, reactions]) => {
       const corners = reactions[0].group.corners;
       const middle = reactions[0].group.middle;
+      const jack = !!reactions[0].group.jack;
       const RzEd = Math.max(...reactions.map((r) => r.REd));
       const Rzk = Math.max(...reactions.map((r) => r.Rk));
-      const { a1, a2, confirmed } = contactArea(corners, middle);
-      if (!confirmed) warnings.push('Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).');
-      const label = typeLabel(corners, middle);
+      const { a1, a2, confirmed } = contactArea(corners, middle, jack);
+      if (!confirmed) warnings.push(jack ? 'Pieds à vérin : platine 15 × 15 cm supposée (7-309-002, à confirmer).' : 'Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).');
+      const label = typeLabel(corners, middle, jack);
       const d = designGroup({
-        label: middle ? 'pied central' : corners === 1 ? 'angle' : 'groupe',
+        label: jack ? 'vérin' : middle ? 'pied central' : corners === 1 ? 'angle' : 'groupe',
         groups: reactions.length,
         RzEd,
         Rzk: inp.staticoConversion ? undefined : Rzk,
@@ -122,7 +127,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         });
       }
       const ok = recommended(d.solutions);
-      return { key, label, corners, middle, reactions, RzEd, Rzk: d.plate.Rzk, a1, a2, plate: d.plate, solutions: d.solutions, chosen: ok ?? leastBad(d.solutions), standard: !!ok, extra };
+      return { key, label, corners, middle, jack, reactions, RzEd, Rzk: d.plate.Rzk, a1, a2, plate: d.plate, solutions: d.solutions, chosen: ok ?? leastBad(d.solutions), standard: !!ok, extra };
     });
 
   // ─── longrines sous les grands côtés des Viewbox posées au sol ───
@@ -136,7 +141,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       const d = Math.hypot(r.group.position[0] - p[0], r.group.position[1] - p[1]);
       if (d < bd) [bd, best] = [d, r];
     }
-    return bd <= 2 * inp.estimate.groupTolerance ? best : undefined;
+    return bd <= reach ? best : undefined;
   };
   const sides: Array<{ a: P2; b: P2 }> = [];
   for (const m of groundMods) {
@@ -169,9 +174,9 @@ export function computeCalage(inp: CalageInput): CalageResult {
       const n = share.get(g) ?? 1;
       loads.push({ x: k === 0 ? oh + 100 : L - oh - 100, Pk: g.Rk / n, PEd: g.REd / n });
     });
-    if (inp.estimate.middleFeet) {
+    if (inp.estimate.middleFeet || inp.estimate.jacks) {
       const mid: P2 = [(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2];
-      const g = est.reactions.find((r) => r.group.middle && Math.hypot(r.group.position[0] - mid[0], r.group.position[1] - mid[1]) <= 2 * inp.estimate.groupTolerance);
+      const g = est.reactions.find((r) => r.group.middle && Math.hypot(r.group.position[0] - mid[0], r.group.position[1] - mid[1]) <= reach);
       if (g) loads.push({ x: L / 2, Pk: g.Rk / g.group.moduleIds.length, PEd: g.REd / g.group.moduleIds.length });
     }
     const sum = loads.reduce((a, l) => a + l.PEd, 0);

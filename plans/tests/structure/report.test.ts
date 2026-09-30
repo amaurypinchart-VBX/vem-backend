@@ -74,21 +74,22 @@ function reportInput(lang: Lang, variant: 'compact' | 'detailed'): ReportInput {
 /** Textes des éléments <text> d'une page SVG. */
 const texts = (svg: string) => [...svg.matchAll(/<text\b[^>]*>([^<]*)<\/text>/g)].map((m) => m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'));
 
+const calageInputFor = () => ({
+  modules: [],
+  estimate: { ...ESTIMATE_DEFAULTS, loads: { moduleWeight: 0, ceiling: 0, floorFinish: 0, live: 0, roofLive: 0, extraPerModule: 0 } },
+  bearing: 0.2,
+  staticoConversion: false,
+  thicknesses: [18, 21, 24, 27, 30, 40],
+  stock: [],
+  commercial: [],
+  longrine: { k: 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
+  diffusion: false,
+});
+
 describe('rapport de l’étude structure', () => {
   beforeAll(async () => {
     run = await runStudy(inputs, createInlineStudyRunner());
-    calage = computeCalage({
-      modules: [],
-      estimate: { ...ESTIMATE_DEFAULTS, loads: { moduleWeight: 0, ceiling: 0, floorFinish: 0, live: 0, roofLive: 0, extraPerModule: 0 } },
-      bearing: 0.2,
-      staticoConversion: false,
-      thicknesses: [18, 21, 24, 27, 30, 40],
-      stock: [],
-      commercial: [],
-      longrine: { k: 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
-      diffusion: false,
-      reactions: run.ground,
-    });
+    calage = computeCalage({ ...calageInputFor(), reactions: run.ground });
   }, 180000);
 
   it('mesure des textes : largeurs d’Arimo, coupure des lignes à la largeur', () => {
@@ -187,6 +188,33 @@ describe('rapport de l’étude structure', () => {
       expect(all).toContain(lang === 'de' ? 'Nachweise der Tragfähigkeit' : 'Resistance checks');
       expect(all).toContain(lang === 'de' ? 'Bodenpressung und Unterpallung' : 'Ground pressure and packing');
     });
+
+  it('pieds à vérin : chapitre des tiges Tr 24 × 5 en français, traduit sans mot français en allemand et en anglais', async () => {
+    const study: StudyInputs = { ...inputs, options: { ...inputs.options, jacks: true } };
+    const jr = await runStudy(study, createInlineStudyRunner());
+    const jc = computeCalage({ ...calageInputFor(), reactions: jr.ground });
+    const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Sol légèrement déformable (prairie carrossable)'];
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const r = buildReport({ ...reportInput(lang, 'detailed'), study, run: jr, calage: jc });
+      const all = r.pages
+        .flatMap((p) => texts(p.svg))
+        .map((t) => own.reduce((x, o) => x.split(o).join(''), t))
+        .join('\n');
+      expect(all).not.toMatch(/NaN|undefined|Infinity|\[object/);
+      if (lang === 'fr') {
+        expect(all).toContain('Pieds à vérin (tiges Tr 24 × 5)');
+        expect(all).toContain('vérin d’angle');
+        expect(all).toContain('6 par Viewbox');
+        continue;
+      }
+      expect(all).toContain(lang === 'de' ? 'Spindelfuß' : 'Jack Tr 24 × 5');
+      const markers = FRENCH_MARKERS.filter((w) => !(lang === 'de' && ['des', 'service'].includes(w)) && !(lang === 'en' && ['service', 'charge'].includes(w)));
+      const found = markers.filter((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(all));
+      const context = found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)));
+      expect(context).toEqual([]);
+      expect(all.split('\n').filter((l) => /(^|[^\p{L}])(vérins?|Vérin|sortie|tiges?)([^\p{L}]|$)/u.test(l))).toEqual([]);
+    }
+  }, 180000);
 
   it('traduction des textes du moteur : libellés d’éléments, formules, typographie', () => {
     expect(translate('de', 'VBX-01 · rive plancher, grand côté 1, tronçon 3 (1,20 m)')).toBe('VBX-01 · Bodenrandträger, Längsseite 1, Abschnitt 3 (1,20 m)');

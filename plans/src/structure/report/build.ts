@@ -466,7 +466,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     }
   }
   // 3.x assemblages
-  const joint = (kind: 'corner' | 'vlink' | 'bolt', title: string, text: string) => {
+  const joint = (kind: 'corner' | 'vlink' | 'bolt' | 'jack', title: string, text: string) => {
     const fams = run.verdict.families.filter((f) => idx.items[f.item].kind === kind);
     if (!fams.length) return;
     h2(title);
@@ -494,6 +494,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   joint('corner', L.corners, L.cornersText);
   joint('vlink', L.vlinks, L.vlinksText);
   joint('bolt', L.bolts, L.boltsText);
+  joint('jack', L.jacksTitle, L.jacksText);
   // 3.x sol et calage
   h2(L.ground);
   blocks.push({ t: 'para', text: L.groundIntro(study.sls ? L.groundSourceSls : L.groundSourceStatico) });
@@ -684,11 +685,11 @@ function hintsFor(inp: ReportInput, L: Labels, ballast: number, ground: Verdict,
   const kinds = new Set(run.verdict.families.filter((f) => bad(f.verdict)).map((f) => run.index.items[f.item].kind));
   if (kinds.has('corner') || kinds.has('vlink')) out.push(L.hints.corners);
   if (kinds.has('member') || kinds.has('bolt')) out.push(L.hints.members);
+  if (kinds.has('jack')) out.push(L.hints.jacks);
   if (bad(verdictOf(run.plywood.eta))) out.push(L.hints.plywood);
   if (ground === 'fail') out.push(L.hints.ground);
   if (run.verdict.blocked.length || inp.study.blocking.length) out.push(L.hints.blocked);
-  if (inp.study.options.jacks) out.push(L.hints.jacks);
-  return out;
+  return [...new Set(out)];
 }
 
 function annex(blocks: Block[], inp: ReportInput, L: Labels, E: (s: string) => string, N: (v: number, d?: number) => string, kN: (v: number, d?: number) => string) {

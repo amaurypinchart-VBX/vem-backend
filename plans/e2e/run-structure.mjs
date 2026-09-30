@@ -30,7 +30,7 @@ page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page.goto(URL0);
 // 1. calage rapide : 3 × 2 emplacements, une rangée à 2 niveaux
 await page.getByRole('button', { name: /Calage rapide/ }).click();
-await page.getByText('Plan des appuis').waitFor();
+await page.getByText(/^Plan des appuis — /).waitFor();
 await page.getByText('Viewbox en largeur').locator('select').selectOption('2');
 await page.waitForTimeout(300);
 const cells = page.locator('table.list select');
@@ -48,6 +48,18 @@ console.log('Solutions « stock » proposées :', await page.locator('b', { hasT
 const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Fiche PDF' }).click()]);
 await dl.saveAs(shots + 'calage-rapide.pdf');
 console.log('Fiche PDF :', dl.suggestedFilename());
+// plaques de roulage : répartition uniforme (plaques acier 157 kg/m²), plan des appuis au sol en PDF
+await page.getByText('Plaques de roulage — répartition uniforme').waitFor();
+await page.getByText('Poids propre des plaques').locator('..').locator('input').fill('157');
+await page.waitForTimeout(600);
+console.log('Plaques de roulage :', (await page.locator('.card', { hasText: 'Plaques de roulage' }).locator('.stats').innerText()).replace(/\s+/g, ' '));
+await page.getByRole('button', { name: /Coordonnées des \d+ appuis/ }).click();
+console.log('Coordonnées :', await page.locator('.card', { hasText: 'Plaques de roulage' }).locator('table.list tbody tr').count(), 'appuis');
+await page.locator('.card', { hasText: 'Plaques de roulage' }).scrollIntoViewIfNeeded();
+await page.screenshot({ path: shots + 'structure-roulage.png' });
+const [dlp] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Plan des appuis au sol (PDF)' }).click()]);
+await dlp.saveAs(shots + 'appuis-rapide.pdf');
+console.log('Plan des appuis au sol :', dlp.suggestedFilename());
 
 // 2. modèle analysé → onglet Étude structure
 await page.getByRole('button', { name: '← Modèles' }).click();
@@ -163,7 +175,7 @@ await page.getByRole('button', { name: /Relire la cohérence/ }).click();
 await page.getByText(/aucune incohérence de poids relevée|Aucune incohérence/).first().waitFor({ timeout: 60000 });
 console.log('Relecture IA : OK');
 await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
-await page.getByText('Plan des appuis').waitFor({ timeout: 120000 });
+await page.getByText(/^Plan des appuis — /).waitFor({ timeout: 120000 });
 await page.waitForTimeout(800);
 await shootAll('structure-modele');
 console.log('Calage :', await page.getByText(/^Réactions : /).innerText());
@@ -199,6 +211,23 @@ await page.getByRole('button', { name: 'Enregistrer dans le projet' }).click();
 await page.getByText('Rapports enregistrés').waitFor();
 await page.locator('a', { hasText: 'Statische Vorbemessung' }).waitFor({ timeout: 300000 });
 console.log('Rapports enregistrés :', await page.locator('a', { hasText: '.pdf' }).count());
+// pieds à vérin : tiges Tr 24 × 5, sortie 5 cm, 6 par Viewbox → calcul, tiges vérifiées, calage sur platines
+await page.getByRole('button', { name: /3\. Calcul/ }).click();
+await page.getByText('Pieds à vérin utilisés').click();
+await page.getByText(/Tige Tr 24 × 5 classe 10\.9/).waitFor();
+console.log('Vérins :', (await page.getByText(/Tige Tr 24 × 5 classe 10\.9/).innerText()).trim());
+await page.getByRole('button', { name: /Relancer le calcul|Lancer le calcul/ }).click();
+await page.getByRole('button', { name: /Voir les résultats/ }).waitFor({ timeout: 600000 });
+await page.getByRole('button', { name: /Voir les résultats/ }).click();
+await page.getByText('Par famille').waitFor();
+console.log('Famille vérins :', (await page.locator('table.list:visible').first().locator('tbody tr', { hasText: 'Pieds à vérin' }).innerText()).replace(/\s+/g, ' '));
+await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
+await page.getByText('Plaques de roulage — répartition uniforme').waitFor({ timeout: 120000 });
+console.log('Types d’appui (vérins) :', await page.locator('.card-head .chip').allInnerTexts());
+await shootAll('structure-verins');
+const [dlv] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Plan des appuis au sol (PDF)' }).click()]);
+await dlv.saveAs(shots + 'appuis-verins.pdf');
+console.log('Plan des appuis (vérins) :', dlv.suggestedFilename());
 // Réglages › Bibliothèque structure : les réponses mémorisées y figurent
 await page.getByRole('button', { name: '← Modèles' }).click();
 await page.getByRole('button', { name: 'Réglages' }).click();

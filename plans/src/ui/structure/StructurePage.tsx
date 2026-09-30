@@ -21,6 +21,7 @@ import type { EdgeItem } from '../../structure/core/loads';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
 import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
+import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
 import type { StudyRunner } from '../../structure/worker/study';
 import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
 import { CalcPanel, ResultsPanel } from './CalcResults';
@@ -379,13 +380,14 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
               </div>
             </div>
           </div>
-          <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} />
+          <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} />
         </>
       )}
       {step === 'calc' && (
         <CalcPanel
           options={calcOpts}
           setOptions={setCalcOpts}
+          jack={jackSpec(connectionSet(library))}
           modulesCount={sceneModel.modules.length}
           blocking={sceneModel.errors}
           warnings={sceneModel.warnings}
@@ -449,6 +451,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           onHypChange={setHyp}
           showHypotheses={false}
           reactions={run && !stale ? run.result.ground : null}
+          jacks={calcOpts.jacks}
           intro={
             warnings.length ? (
               <div className="warnings">

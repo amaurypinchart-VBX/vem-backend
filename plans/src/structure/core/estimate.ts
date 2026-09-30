@@ -49,6 +49,12 @@ export interface EstimateOptions {
   groupTolerance: number;
   /** pieds centraux des grands côtés utilisés (modules posés au sol) */
   middleFeet: boolean;
+  /**
+   * pieds à vérin : 6 appuis par Viewbox posée au sol (4 pieds d'angle + 2 pieds centraux), chacun sur sa platine,
+   * décalés de `footOffset` vers l'intérieur ; un angle partagé par deux Viewbox devient deux vérins
+   */
+  jacks?: boolean;
+  footOffset?: number;
   /** hors service, le dernier niveau est évacué (en plus des terrasses) */
   evacuateTopLevel: boolean;
   /** majoration forfaitaire supplémentaire (0,1 = +10 %) */
@@ -77,6 +83,8 @@ export interface SupportGroup {
   /** nombre d'angles de Viewbox posés au sol dans le groupe (0 = pied central) */
   corners: number;
   middle: boolean;
+  /** pied à vérin (platine sous la tige) */
+  jack?: boolean;
   moduleIds: string[];
 }
 
@@ -99,6 +107,10 @@ export interface Estimate {
   reactions: GroupReaction[];
   totalG: number;
   totalQ: number;
+  /** charge verticale totale caractéristique (N) : combinaison ELS la plus lourde du calcul complet, sinon ΣG + ΣQ */
+  verticalK?: number;
+  /** origine des réactions : calcul complet (modèle 3D) ou estimation instantanée */
+  method?: 'fem' | 'estimate';
   /** ensembles reliés (basculement calculé séparément) */
   units: string[][];
   warnings: string[];
@@ -154,7 +166,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   const pts: Pt[] = [];
   modules.forEach((m, k) => {
     for (const c of m.corners) pts.push({ pos: c, module: k, level: m.level, middle: false });
-    if (opt.middleFeet && m.level === 0) for (const c of middlePoints(m.corners)) pts.push({ pos: c, module: k, level: 0, middle: true });
+    if ((opt.middleFeet || opt.jacks) && m.level === 0) for (const c of middlePoints(m.corners)) pts.push({ pos: c, module: k, level: 0, middle: true });
   });
   const uf = new UnionFind(pts.length);
   for (let i = 0; i < pts.length; i++)
@@ -203,9 +215,11 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   let totalG = 0;
   let totalQ = 0;
   const perModule = modules.map((m, k) => {
-    // poids d'une Viewbox standard (5 900 × 2 500) ramené à la surface du module (8400 : prorata, données inconnues)
+    // poids d'une Viewbox standard (5 900 × 2 500) ramené à la surface du module (8400 : prorata, données inconnues) ;
+    // le poids pesé comprend planchers et isolants : plafond et sol ne s'y ajoutent que s'ils le dépassent (comme le
+    // complément Gc du calcul complet)
     const weight = m.weight ?? L.moduleWeight * (m.area / (5900 * 2500));
-    const G = weight + (L.ceiling + L.floorFinish) * m.area + L.extraPerModule;
+    const G = Math.max(weight, (L.ceiling + L.floorFinish) * m.area) + L.extraPerModule;
     const Qfloor = L.live * m.area;
     const Qroof = m.roofAccessible ? L.roofLive * m.area : 0;
     const QaB = opt.evacuateTopLevel && isTop[k] ? 0 : Qfloor;
@@ -336,7 +350,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   };
   const ed = scan(true);
   const k = scan(false);
-  const reactions: GroupReaction[] = groups.map((g, i) => ({
+  let reactions: GroupReaction[] = groups.map((g, i) => ({
     group: g,
     Rk: k.max[i].v,
     RkMin: k.min[i],
@@ -347,6 +361,34 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     G: parts[i].G,
     Q: parts[i].Q,
   }));
+  let outGroups = groups;
+  if (opt.jacks) {
+    // un vérin par Viewbox posée au sol dans chaque groupe, à parts égales, à la position de sa réception de pied
+    const off = opt.footOffset ?? 155;
+    const split: GroupReaction[] = [];
+    reactions.forEach((r, g) => {
+      const own = ground[g].filter((i) => pts[i].level === 0);
+      const n = Math.max(1, own.length);
+      for (const i of own) {
+        const p = pts[i];
+        const m = modules[p.module];
+        split.push({
+          ...r,
+          group: { ...r.group, position: footPosition(m.corners, p.pos, p.middle, off), corners: p.middle ? 0 : 1, jack: true, moduleIds: [m.id] },
+          Rk: r.Rk / n,
+          RkMin: r.RkMin / n,
+          REd: r.REd / n,
+          REdMin: r.REdMin / n,
+          G: r.G / n,
+          Q: r.Q / n,
+        });
+      }
+    });
+    split.sort((a, b) => Math.round(a.group.position[1] / 500) - Math.round(b.group.position[1] / 500) || a.group.position[0] - b.group.position[0]);
+    split.forEach((r, i) => (r.group.id = `${r.group.middle ? 'M' : 'P'}${i + 1}`));
+    reactions = split;
+    outGroups = split.map((r) => r.group);
+  }
   if (reactions.some((r) => r.RkMin < 0)) warnings.push('Soulèvement possible d’un appui sous le vent hors service : lest ou ancrage à étudier (calcul complet).');
   const n0 = (x: number) => fmtNumber(x / 1e3, 1);
   const records: CalcRecord[] = [
@@ -354,7 +396,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       key: 'estimate.vertical',
       title: 'Charges verticales (surfaces tributaires)',
       clause: 'estimation — chaque Viewbox descend ses charges à ses 4 angles',
-      formula: 'G = poids Viewbox + (plafond + sol) · A + divers ; Q = q · A',
+      formula: 'G = max(poids Viewbox pesé, (plafond + sol) · A) + divers ; Q = q · A',
       withValues: `ΣG = ${n0(totalG)} kN ; ΣQ = ${n0(totalQ)} kN (${modules.length} Viewbox)`,
       result: totalG + totalQ,
     },
@@ -366,7 +408,25 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       withValues: `vent en service ${fmtNumber(opt.windInService * 1e3, 2)} kN/m², hors service ${fmtNumber(opt.windOutOfService * 1e3, 2)} kN/m², cp ${fmtNumber(opt.cp, 1)} ; H = V/${fmtNumber(1 / opt.horizontalRatio, 0)} ; φ = 1/${fmtNumber(1 / opt.sway, 0)}`,
     },
   ];
-  return { groups, reactions, totalG, totalQ, units, warnings, records };
+  return { groups: outGroups, reactions, totalG, totalQ, verticalK: (totalG + totalQ) * extra, method: 'estimate', units, warnings, records };
+}
+
+/** Position d'un pied à vérin : angle décalé de `off` le long de ses deux côtés, pied central décalé vers l'intérieur. */
+function footPosition(c: P2[], p: P2, middle: boolean, off: number): P2 {
+  const unit = (a: P2, b: P2): P2 => {
+    const d = dist(a, b) || 1;
+    return [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+  };
+  if (middle) {
+    const g: P2 = [c.reduce((s, q) => s + q[0], 0) / c.length, c.reduce((s, q) => s + q[1], 0) / c.length];
+    const u = unit(p, g);
+    return [p[0] + off * u[0], p[1] + off * u[1]];
+  }
+  const k = c.findIndex((q) => dist(q, p) < 1);
+  if (k < 0) return p;
+  const a = unit(c[k], c[(k + 1) % c.length]);
+  const b = unit(c[k], c[(k + c.length - 1) % c.length]);
+  return [p[0] + off * (a[0] + b[0]), p[1] + off * (a[1] + b[1])];
 }
 
 /** Installation en grille pour le calculateur sans modèle : nx Viewbox en longueur, ny en largeur, niveaux par case. */

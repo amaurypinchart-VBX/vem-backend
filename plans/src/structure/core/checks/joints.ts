@@ -5,11 +5,16 @@
 //   · liaison verticale entre Viewbox empilées (VBX-VERTICAL-PLATE, VBX-VERTICAL-CONTACT) : compression ≤ 176 kN,
 //     η = (H − 0,1 · Rz) / 5,81 kN (un plat par sens, frottement acier / acier), traction : capacité non renseignée ⛔ ;
 //   · boulons horizontaux M20-8.8 (VBX-HORIZONTAL-BOLT) : Fv / Fv,Rd + Ft / (1,4 Ft,Rd) ≤ 1 et Ft ≤ Ft,Rd
-//     (DIN EN 1993-1-8 tab. 3.4 ; pression diamétrale dans l'âme tw 9 mm non déterminante selon statico § 3.10).
+//     (DIN EN 1993-1-8 tab. 3.4 ; pression diamétrale dans l'âme tw 9 mm non déterminante selon statico § 3.10) ;
+//   · pieds à vérin (VBX-JACK) : tige Tr 24 × 5 classe 10.9, noyau d3 = 18,5 mm, sortie e ≤ 50 mm, console encastrée
+//     dans le pied et posée sur sa platine → Lcr = 2 · e, M = H · e ; section N / NRd + M / Mel,Rd ≤ 1 et flambement
+//     N / (χ NRd) + k · M / Mel,Rd ≤ 1 (EN 1993-1-1 6.3.3, annexe B tab. B.1 classe 3, Cm = 0,9 mode à nœuds
+//     déplaçables, courbe c des sections pleines), flexion élastique (acier de boulonnerie).
 // Fonctions pures ; N, N·mm.
 import type { ConnectionEntry, LibraryEntry } from '../library';
 import type { CalcRecord } from '../records';
 import { fmtNumber } from '../units';
+import { bucklingReduction } from '../catalog';
 import type { Forces } from './ec3';
 
 export interface JointResult {
@@ -29,11 +34,12 @@ export interface ConnectionSet {
   contact?: ConnectionEntry;
   plate?: ConnectionEntry;
   bolt?: ConnectionEntry;
+  jack?: ConnectionEntry;
 }
 
 export function connectionSet(library: readonly LibraryEntry[]): ConnectionSet {
   const get = (key: string) => library.find((e): e is ConnectionEntry => e.kind === 'connection' && e.key === key && !e.disabled);
-  return { corner: get('VBX-CORNER'), contact: get('VBX-VERTICAL-CONTACT'), plate: get('VBX-VERTICAL-PLATE'), bolt: get('VBX-HORIZONTAL-BOLT') };
+  return { corner: get('VBX-CORNER'), contact: get('VBX-VERTICAL-CONTACT'), plate: get('VBX-VERTICAL-PLATE'), bolt: get('VBX-HORIZONTAL-BOLT'), jack: get('VBX-JACK') };
 }
 
 const cap = (c: ConnectionEntry | undefined, key: string) => c?.capacities.find((x) => x.key === key)?.value;
@@ -128,6 +134,60 @@ export function checkBolt(c: ConnectionSet, f: Forces, label: string, combinatio
       clause: 'DIN EN 1993-1-8 tab. 3.4',
       formula: 'Fv,Ed / Fv,Rd + Ft,Ed / (1,4 · Ft,Rd) ≤ 1 ; Ft,Ed ≤ Ft,Rd',
       withValues: `Fv,Ed = ${kN(v)}, Ft,Ed = ${kN(t)} ; ${kN(v)} / ${kN(Fv)} + ${kN(t)} / (1,4 · ${kN(Ft)}) = ${f2(inter)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/** Tige de vérin retenue : sortie maxi et nombre par Viewbox (bibliothèque VBX-JACK), pour l'affichage. */
+export function jackSpec(c: ConnectionSet): { d: number; d3: number; fy: number; extensionMax: number; perModule: number } | null {
+  const j = c.jack;
+  const d3 = cap(j, 'd3');
+  const fy = cap(j, 'fyb');
+  const eMax = cap(j, 'extensionMax');
+  if (!usable(j) || !d3 || !fy || !eMax) return null;
+  return { d: cap(j, 'd') ?? 24, d3, fy, extensionMax: eMax, perModule: cap(j, 'perModule') ?? 6 };
+}
+
+const E_STEEL = 210000;
+
+/**
+ * Pied à vérin sous une réaction d'appui : N = réaction verticale (compression), H = réaction horizontale, sortie e.
+ * La tige travaille en console (encastrée dans la douille du pied, posée sur la platine) : Lcr = 2 · e, M = H · e.
+ */
+export function checkJack(c: ConnectionSet, R: { N: number; H: number }, extension: number, label: string, combination?: string, gammaM = 1.1): JointResult {
+  const spec = jackSpec(c);
+  if (!spec) return blocked('Pieds à vérin (VBX-JACK) : tige non renseignée dans la bibliothèque');
+  const e = extension;
+  if (e > spec.extensionMax + 1e-6) return blocked(`Vérin ${label} : sortie ${f2(e / 10, 1)} cm > ${f2(spec.extensionMax / 10, 1)} cm autorisés`);
+  const { d3, fy } = spec;
+  const A = (Math.PI * d3 * d3) / 4;
+  const W = (Math.PI * d3 ** 3) / 32;
+  const i = d3 / 4;
+  const Lcr = Math.max(2 * e, 1);
+  const lambda = Lcr / i / (Math.PI * Math.sqrt(E_STEEL / fy));
+  const chi = bucklingReduction(lambda, 'c');
+  const NRd = (A * fy) / gammaM;
+  const MRd = (W * fy) / gammaM;
+  const N = Math.max(0, R.N);
+  const M = R.H * e;
+  const n = N / (chi * NRd);
+  const Cm = 0.9;
+  const k = Math.min(Cm * (1 + 0.6 * lambda * n), Cm * (1 + 0.6 * n));
+  const section = N / NRd + M / MRd;
+  const buckling = n + k * (M / MRd);
+  const eta = Math.max(section, buckling);
+  return {
+    eta,
+    governing: buckling >= section ? 'N + M flambement' : 'N + M section',
+    parts: { section, buckling, N: N / NRd, M: M / MRd },
+    record: {
+      key: `jack.${label}`,
+      title: `Vérin Tr ${f2(spec.d, 0)} × 5 — ${label}`,
+      clause: 'EN 1993-1-1 6.2.1(7), 6.3.3 (6.61) annexe B',
+      formula: 'noyau d3 : A = π d3²/4, Wel = π d3³/32 ; Lcr = 2 · e ; M = H · e ; N / NRd + M / MRd ≤ 1 ; N / (χ NRd) + k · M / MRd ≤ 1, k = Cm (1 + 0,6 λ̄ n), Cm = 0,9',
+      withValues: `d3 = ${f2(d3, 1)} mm, fy = ${f2(fy, 0)} N/mm², e = ${f2(e / 10, 1)} cm ; A = ${f2(A, 0)} mm², Wel = ${f2(W, 0)} mm³ ; NRd = ${kN(NRd)}, MRd = ${f2(MRd / 1e3, 1)} kNmm ; λ̄ = ${f2(lambda)}, χ = ${f2(chi)} ; N = ${kN(N)}, H = ${kN(R.H)}, M = ${f2(M / 1e3, 1)} kNmm ; section ${f2(section)}, flambement ${f2(buckling)}`,
       eta,
       combination,
     },

@@ -13,6 +13,9 @@ import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, TYPE_COLORS } from '../../structure/report/groundSheet';
+import type { RoadwayResult } from '../../structure/core/roadway';
+import { kNm2, kgm2, planCoords, planOrigin, roadwayPressure, supportType } from '../../structure/core/roadway';
+import { pressureFill } from '../../structure/report/groundPoints';
 import type { Project } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
@@ -38,6 +41,8 @@ export interface Hypotheses {
   extraPct: number;
   subgrade: string;
   thicknesses: string;
+  /** poids propre des plaques de roulage (kg/m²) */
+  roadwayKg: number;
 }
 
 export const DEFAULT_HYP: Hypotheses = {
@@ -61,6 +66,7 @@ export const DEFAULT_HYP: Hypotheses = {
   extraPct: 0,
   subgrade: 'medium',
   thicknesses: '18, 21, 24, 27, 30, 40',
+  roadwayKg: 0,
 };
 
 export interface StructureStock {
@@ -80,8 +86,8 @@ function readStored(key: string): Partial<Hypotheses> {
   }
 }
 
-/** Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm). */
-export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock): CalageInput {
+/** Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm) ; `jacks` : 6 pieds à vérin par Viewbox. */
+export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
   return {
     modules,
@@ -98,7 +104,8 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       windInService: kNm2(h.windIn),
       windOutOfService: kNm2(h.windOut),
       cp: h.cp,
-      middleFeet: h.middleFeet,
+      middleFeet: h.middleFeet || jacks,
+      jacks,
       evacuateTopLevel: h.evacuateTop,
       extraFactor: h.extraPct / 100,
     },
@@ -283,7 +290,7 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
 }
 
 /** Formulaire « Site et hypothèses » (portance, charges, vent, options de calage). */
-export function HypothesesForm({ hyp, setHyp }: { hyp: Hypotheses; setHyp: (update: (h: Hypotheses) => Hypotheses) => void }) {
+export function HypothesesForm({ hyp, setHyp, jacks = false }: { hyp: Hypotheses; setHyp: (update: (h: Hypotheses) => Hypotheses) => void; jacks?: boolean }) {
   const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
   return (
@@ -360,8 +367,9 @@ export function HypothesesForm({ hyp, setHyp }: { hyp: Hypotheses; setHyp: (upda
         <Field label="Majoration forfaitaire">
           <Num value={hyp.extraPct} onChange={(v) => set('extraPct', v)} width={60} /> %
         </Field>
-        <label className="row hint">
-          <input type="checkbox" checked={hyp.middleFeet} onChange={(e) => set('middleFeet', e.target.checked)} /> Pieds centraux des grands côtés calés aussi
+        <label className="row hint" title={jacks ? 'pieds à vérin : 6 par Viewbox, pieds centraux compris' : undefined}>
+          <input type="checkbox" checked={hyp.middleFeet || jacks} disabled={jacks} onChange={(e) => set('middleFeet', e.target.checked)} /> Pieds centraux des grands côtés calés aussi
+          {jacks && ' (vérins : 6 par Viewbox)'}
         </label>
         <label className="row hint">
           <input type="checkbox" checked={hyp.evacuateTop} onChange={(e) => set('evacuateTop', e.target.checked)} /> Dernier niveau évacué par vent fort
@@ -389,9 +397,11 @@ export interface GroundPanelProps {
   showHypotheses?: boolean;
   /** réactions du calcul complet (sinon estimation instantanée) */
   reactions?: Estimate | null;
+  /** pieds à vérin (étape 3) : 6 appuis par Viewbox, chacun sur sa platine */
+  jacks?: boolean;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -406,6 +416,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [selected, setSelected] = useState<string | null>(null);
   const [showStock, setShowStock] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [pointsBusy, setPointsBusy] = useState(false);
+  const [showPoints, setShowPoints] = useState(false);
 
   useEffect(() => {
     vem
@@ -424,7 +436,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     }
   }, [hyp, storageKey, hypProp]);
 
-  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions]);
+  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks]);
   useEffect(() => {
     setPending(true);
     const t = setTimeout(() => {
@@ -451,7 +463,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     ['Exploitation', `${n(hyp.live, 2)} kN/m² (toitures accessibles ${n(hyp.roofLive, 2)})`],
     ['Vent en / hors service', `${n(hyp.windIn, 2)} / ${n(hyp.windOut, 2)} kN/m², cp ${n(hyp.cp, 1)}`],
     ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
-    ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
+    jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
     ['Viewbox', `${modules.length} (${Math.max(0, ...modules.map((m) => m.level)) + 1} niveau(x))`],
     ['Réactions', reactions ? 'calcul complet (modèle 3D, 2ᵉ ordre)' : 'estimation instantanée (surfaces tributaires)'],
   ];
@@ -483,6 +495,42 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPdfBusy(false);
   };
 
+  const roadway: RoadwayResult | null = useMemo(
+    () => (result ? roadwayPressure(modules, result.estimate, input.bearing, (hyp.roadwayKg * 9.81) / 1e6) : null),
+    [result, modules, input.bearing, hyp.roadwayKg],
+  );
+  const bearingLabel = `${n(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' ? 0 : 2)} ${hyp.bearingUnit} (${preset?.label ?? 'saisie'})`;
+  const exportPoints = async () => {
+    if (!result || !roadway) return;
+    setPointsBusy(true);
+    try {
+      const [{ renderToStaticMarkup }, { buildPdf, fontsUsed }, { loadFonts }, { groundPointsPages }] = await Promise.all([
+        import('react-dom/server'),
+        import('../../sheets/pdf/pdf'),
+        import('../../sheets/pdf/assets'),
+        import('../../structure/report/groundPoints'),
+      ]);
+      const name = project ? `${project.internalNumber ? project.internalNumber + ' · ' : ''}${project.name}` : 'Projet';
+      const svgs = groundPointsPages({
+        modules,
+        estimate: result.estimate,
+        roadway,
+        bearingLabel,
+        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString('fr-FR'), assumptions: [] },
+      }).map((p) => renderToStaticMarkup(p));
+      const fonts = await loadFonts(fontsUsed(svgs));
+      const pdf = await buildPdf(
+        svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })),
+        fonts,
+        { title: `Plan des appuis au sol — ${name}`, subject: source },
+      );
+      downloadBlob(`Plan des appuis au sol ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
+    } catch (e) {
+      setError(`PDF impossible : ${(e as Error).message}`);
+    }
+    setPointsBusy(false);
+  };
+
   const sel = result?.estimate.reactions.find((r) => r.group.id === selected);
   return (
     <div className="page">
@@ -507,8 +555,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <div className="l">appuis à caler</div>
             </div>
             <div className="stat">
-              <div className="v">{n((result.estimate.totalG + result.estimate.totalQ) / 1e3, 0)} kN</div>
-              <div className="l">charges verticales (G + Q)</div>
+              <div className="v">{n((result.estimate.verticalK ?? result.estimate.totalG + result.estimate.totalQ) / 1e3, 0)} kN</div>
+              <div className="l">charge verticale totale (ELS la plus lourde)</div>
             </div>
             <div className="stat">
               <div className="v">{kN(Math.max(...result.estimate.reactions.map((r) => r.Rk)), 0)}</div>
@@ -522,9 +570,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
 
           <div className="card">
             <div className="card-head">
-              <h2>Plan des appuis — estimation</h2>
+              <h2>{result.estimate.method === 'fem' ? 'Plan des appuis — calcul complet' : 'Plan des appuis — estimation'}</h2>
               <div className="spacer" style={{ flex: 1 }} />
-              {Object.entries({ '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
+              {Object.entries(jacks ? { '1': 'vérin d’angle', M: 'vérin central' } : { '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
                 .filter(([k]) => result.estimate.reactions.some((r) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners))) === k))
                 .map(([k, l]) => (
                   <span key={k} className="chip">
@@ -542,16 +590,127 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               </svg>
               {sel && (
                 <div className="hint" style={{ marginTop: 6 }}>
-                  <b>{sel.group.id}</b> : {sel.group.middle ? 'pied central' : `${sel.group.corners} angle(s)`} ({sel.group.moduleIds.join(', ')}) — Rz,k = {kN(sel.Rk)}{' '}
+                  <b>{sel.group.id}</b> : {sel.group.jack ? supportType(sel) : sel.group.middle ? 'pied central' : `${sel.group.corners} angle(s)`} ({sel.group.moduleIds.join(', ')}) — Rz,k = {kN(sel.Rk)}{' '}
                   (mini {kN(sel.RkMin)}), Rz,Ed = {kN(sel.REd)} — {sel.combo} ; dont G = {kN(sel.G)}, Q = {kN(sel.Q)}
                 </div>
               )}
               <div className="hint" style={{ marginTop: 6 }}>
-                Estimation par surfaces tributaires et basculement en bloc rigide : ordre de grandeur, remplacé par le calcul complet dans les
-                prochaines étapes de l’étude structure. {GROUND_NOTE}
+                {result.estimate.method === 'fem'
+                  ? 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
+                  : 'Estimation par surfaces tributaires et basculement en bloc rigide : ordre de grandeur, remplacé par le calcul complet de l’étude structure.'}{' '}
+                {GROUND_NOTE}
               </div>
             </div>
           </div>
+
+          {roadway && (
+            <div className="card">
+              <div className="card-head">
+                <h2>Plaques de roulage — répartition uniforme</h2>
+                <span className="hint">toute la surface couverte par des plaques jointives : charge verticale / surface</span>
+                <div className="spacer" style={{ flex: 1 }} />
+                <button className="btn primary small" disabled={pointsBusy} onClick={() => void exportPoints()}>
+                  {pointsBusy ? 'PDF…' : '⬇ Plan des appuis au sol (PDF)'}
+                </button>
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Field label="Poids propre des plaques" hint="acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD ≈ 15 kg/m² ; 0 = non compté">
+                  <Num value={hyp.roadwayKg} onChange={(v) => setHyp((h) => ({ ...h, roadwayKg: Math.max(0, v) }))} width={60} /> kg/m²
+                </Field>
+                <div className="stats">
+                  <div className="stat">
+                    <div className="v">{n(roadway.area / 1e6, 1)} m²</div>
+                    <div className="l">surface couverte</div>
+                  </div>
+                  <div className="stat">
+                    <div className="v">{n(roadway.load / 1e3, 0)} kN</div>
+                    <div className="l">charge verticale ({n(roadway.load / 9.81e3, 1)} t)</div>
+                  </div>
+                  <div className={`stat ${verdictOf(roadway.etaMean) === 'ok' ? '' : 'warn'}`}>
+                    <div className="v">{n(kNm2(roadway.mean), 2)} kN/m²</div>
+                    <div className="l">
+                      répartition uniforme ({n(kgm2(roadway.mean), 0)} kg/m²) — η {n(roadway.etaMean, 2)}
+                    </div>
+                  </div>
+                  {roadway.max && (
+                    <div className={`stat ${verdictOf(roadway.etaMax) === 'ok' ? '' : 'warn'}`}>
+                      <div className="v">{n(kNm2(roadway.max.q), 2)} kN/m²</div>
+                      <div className="l">
+                        emprise la plus chargée ({n(kgm2(roadway.max.q), 0)} kg/m²) — {roadway.max.stack.join(' + ')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <svg viewBox="0 0 1000 420" style={{ width: '100%', maxHeight: 460, background: '#fff', borderRadius: 6 }}>
+                  <GroundPlan
+                    modules={modules}
+                    reactions={result.estimate.reactions}
+                    x={0}
+                    y={0}
+                    w={1000}
+                    h={420}
+                    text={14}
+                    axes
+                    selected={selected}
+                    onSelect={setSelected}
+                    zoneFill={(m) => {
+                      const z = roadway.zones.find((x) => x.module === m.id);
+                      return z ? pressureFill(z.eta) : undefined;
+                    }}
+                    zoneLabel={(m, levels) => {
+                      const z = roadway.zones.find((x) => x.module === m.id);
+                      const lv = `${levels} niveau${levels > 1 ? 'x' : ''}`;
+                      return z ? [`${n(kNm2(z.q), 1)} kN/m²`, lv] : [lv];
+                    }}
+                  />
+                </svg>
+                <Records records={roadway.records} />
+                <div className="hint">
+                  Portance {bearingLabel}. Répartition uniforme : plaques rigides, jointives et bien posées ; si elles ne répartissent que sous chaque Viewbox, retenir l’emprise la plus chargée (teinte : pression /
+                  portance). Pression locale sous les platines et flexion des plaques non vérifiées.
+                </div>
+                <div>
+                  <button className="btn small ghost" onClick={() => setShowPoints(!showPoints)}>
+                    {showPoints ? 'Masquer les coordonnées' : `Coordonnées des ${result.estimate.reactions.length} appuis`}
+                  </button>
+                </div>
+                {showPoints && (
+                  <table className="list">
+                    <thead>
+                      <tr>
+                        <th>Point</th>
+                        <th>Type</th>
+                        <th>Viewbox au sol</th>
+                        <th className="num">x (m)</th>
+                        <th className="num">y (m)</th>
+                        <th className="num">Rz,k</th>
+                        <th className="num">Rz,Ed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const o = planOrigin(modules);
+                        return result.estimate.reactions.map((r) => {
+                          const [x, y] = planCoords(r.group.position, o);
+                          return (
+                            <tr key={r.group.id} onClick={() => setSelected(r.group.id)} style={{ cursor: 'pointer', background: selected === r.group.id ? 'rgba(96,165,250,.12)' : undefined }}>
+                              <td>{r.group.id}</td>
+                              <td>{supportType(r)}</td>
+                              <td>{r.group.moduleIds.filter((id) => modules.some((m) => m.id === id && m.level === 0)).join(', ') || r.group.moduleIds.join(', ')}</td>
+                              <td className="num">{n(x / 1e3, 2)}</td>
+                              <td className="num">{n(y / 1e3, 2)}</td>
+                              <td className="num">{kN(r.Rk)}</td>
+                              <td className="num">{kN(r.REd)}</td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
 
           {!!result.warnings.length && (
             <div className="warnings">

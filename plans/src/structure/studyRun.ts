@@ -23,8 +23,10 @@ import type { StudyRunner } from './worker/study';
 
 export interface CalcOptions {
   ec3Method: Ec3Method;
-  /** pieds à vérins utilisés (capacité inconnue : verdict incomplet) */
+  /** pieds à vérin utilisés : 6 appuis par Viewbox, tiges Tr 24 × 5 vérifiées (bibliothèque VBX-JACK) */
   jacks: boolean;
+  /** sortie des tiges (mm), au plus la sortie maxi de la bibliothèque (5 cm) */
+  jackExtension: number;
   /** calage statico : S275 et courbes a de l'annexe SCIA, contacts encastrés comme SCIA */
   calibration: boolean;
   /** appui soulevé : libérer aussi les ressorts horizontaux (prudent) */
@@ -35,7 +37,7 @@ export interface CalcOptions {
   internalPressure: boolean;
 }
 
-export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true };
+export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true };
 
 export interface StudyInputs {
   modules: PlacedModule[];
@@ -82,7 +84,14 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
   const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems });
   const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls });
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
-  const context = { structure, sections: [...inp.sections], connections: connectionSet(inp.library), ec3: { ...EC3_DEFAULTS, method: o.ec3Method }, calibration: o.calibration };
+  const context = {
+    structure,
+    sections: [...inp.sections],
+    connections: connectionSet(inp.library),
+    ec3: { ...EC3_DEFAULTS, method: o.ec3Method },
+    calibration: o.calibration,
+    jackExtension: o.jackExtension ?? CALC_DEFAULTS.jackExtension,
+  };
   return runner.run({ jobs, context, options: { secondOrder: true }, onProgress }, signal).then((summary) => {
     const index = buildItemIndex(structure, inp.sections);
     const stab = stability(summary, combos, o.friction);
@@ -104,10 +113,6 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
       label: 'Plancher',
     });
     const reasons = [...inp.blocking];
-    if (o.jacks) {
-      const jack = inp.library.find((e) => e.kind === 'connection' && e.key === 'VBX-JACK');
-      if (!jack || jack.status === 'unknown') reasons.push('Pieds à vérins utilisés : capacité des vérins non renseignée (VBX-JACK)');
-    }
     if (plywood.blocked) reasons.push(plywood.blocked);
     const verdictAll: StudyVerdict = {
       ...verdict,

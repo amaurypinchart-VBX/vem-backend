@@ -1,6 +1,6 @@
 // Résultats d'une étude (§10) : chaque tronçon de barre (EC3) et chaque assemblage Viewbox (angles, liaisons
 // verticales, boulons) est vérifié pour toutes les combinaisons ELU ; on garde le pire taux, sa combinaison et le détail
-// (formules avec valeurs) de ce cas. Stabilité : basculement (calcul non linéaire aux appuis en compression seule) et
+// (formules avec valeurs) de ce cas. Pieds à vérin : chaque appui (tige Tr 24) vérifié sous sa réaction. Stabilité : basculement (calcul non linéaire aux appuis en compression seule) et
 // glissement global (μ requis = Rh / Rz, statico 24-0571 § 4). Les résumés de plusieurs paquets de combinaisons
 // (Workers) se fusionnent. Réactions → groupes d'appuis pour le calage. Fonctions pures.
 import type { MemberFamily, StructuralModel } from './assemble';
@@ -11,14 +11,14 @@ import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
 import type { ConnectionSet } from './checks/joints';
-import { checkBolt, checkCorner, checkVerticalLink } from './checks/joints';
+import { checkBolt, checkCorner, checkJack, checkVerticalLink } from './checks/joints';
 import type { SectionEntry } from './library';
 import { materialByKey } from './materials';
 import type { CalcRecord, Verdict } from './records';
 import { verdictOf, worstVerdict } from './records';
 import { fmtNumber } from './units';
 
-export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt';
+export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt' | 'jack';
 
 export interface CheckItem {
   id: string;
@@ -29,6 +29,8 @@ export interface CheckItem {
   module: string;
   /** barres du modèle (coloration 3D) */
   members: number[];
+  /** appui du modèle (pieds à vérin) */
+  support?: number;
 }
 
 export interface ItemState {
@@ -46,6 +48,8 @@ export interface CheckContext {
   ec3: Ec3Options;
   /** calage statico : courbes de flambement de l'annexe SCIA */
   calibration: boolean;
+  /** sortie des tiges des pieds à vérin (mm) */
+  jackExtension?: number;
 }
 
 interface SpanMember {
@@ -115,6 +119,13 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
     else if (m.family === 'corner-link') items.push({ id: `vlink:${k}`, kind: 'vlink', family: 'Liaisons verticales entre Viewbox', label: m.label, module: m.module, members: [k] });
     else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: 'Boulons horizontaux M20', label: m.label, module: m.module, members: [k] });
   });
+  s.supportMeta.forEach((sm, k) => {
+    if (!sm.jack) return;
+    const node = s.fem.supports[k].node;
+    const members = s.fem.members.map((b, j) => ({ b, j })).filter(({ b, j }) => (b.i === node || b.j === node) && !s.meta[j].massless).map(({ j }) => j);
+    const label = sm.kind === 'middle' ? `${sm.module} · vérin central ${sm.corner - 3}` : `${sm.module} · vérin d’angle ${sm.corner + 1}`;
+    items.push({ id: `jack:${k}`, kind: 'jack', family: 'Pieds à vérin (tiges filetées)', label, module: sm.module, members, support: k });
+  });
   return { items, spans };
 }
 
@@ -170,6 +181,11 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     const curves = ctx.calibration && cal?.y && cal.z ? { y: cal.y, z: cal.z } : undefined;
     const r = checkSpan({ key: item.id, label: item.label, section: sec.section, material: mat, curves, length: m.spanLength, stations: spanStations(result, span), combination: combo.id }, ctx.ec3, detail);
     return { eta: r.eta, governing: r.governing, combo: combo.id, blocked: r.blocked, records: r.records };
+  }
+  if (item.kind === 'jack') {
+    const R = result.reactions[item.support!].R;
+    const j = checkJack(ctx.connections, { N: R[1], H: Math.hypot(R[0], R[2]) }, ctx.jackExtension ?? 50, item.label, combo.id, ctx.ec3.gammaM1);
+    return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');
   const j = item.kind === 'corner' ? checkCorner(ctx.connections, f, item.label, combo.id) : item.kind === 'vlink' ? checkVerticalLink(ctx.connections, f, item.label, combo.id) : checkBolt(ctx.connections, f, item.label, combo.id);
@@ -367,7 +383,8 @@ export function groundEstimate(s: StructuralModel, summary: StudySummary, combos
   const list = [...clusters.values()].sort((a, b) => Math.round(center(a)[1] / 500) - Math.round(center(b)[1] / 500) || center(a)[0] - center(b)[0]);
   const groups: SupportGroup[] = list.map((c, k) => {
     const middle = s.supportMeta[c[0]].kind === 'middle';
-    return { id: `${middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle ? 0 : c.length, middle, moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
+    const jack = s.supportMeta[c[0]].jack;
+    return { id: `${middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle ? 0 : c.length, middle, jack, moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
   });
   const sum = (c: number[], id: string) => {
     const R = summary.reactions[id];
@@ -395,5 +412,8 @@ export function groundEstimate(s: StructuralModel, summary: StudySummary, combos
     const G = sls.length ? (sum(c, 'ELS0') ?? 0) : (sum(c, 'CO1') ?? 0) / 1.35;
     return { group: groups[g], Rk, RkMin, REd, REdMin, combo, comboK, G, Q: Rk - G };
   });
-  return { groups, reactions, totalG: reactions.reduce((a, r) => a + r.G, 0), totalQ: reactions.reduce((a, r) => a + r.Q, 0), units: [], warnings: [], records: [] };
+  // charge verticale totale caractéristique : la combinaison ELS la plus lourde (sinon ELU / 1,35)
+  const all = pts;
+  const verticalK = sls.length ? Math.max(...sls.map((x) => sum(all, x.id)!)) : Math.max(...uls.map((x) => sum(all, x.id)! / 1.35));
+  return { groups, reactions, totalG: reactions.reduce((a, r) => a + r.G, 0), totalQ: reactions.reduce((a, r) => a + r.Q, 0), verticalK, method: 'fem', units: [], warnings: [], records: [] };
 }

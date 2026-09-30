@@ -59,7 +59,7 @@ export interface Capacity {
   key: string;
   label: string;
   value: number;
-  unit: 'N' | 'N·mm' | 'N/mm' | 'N·mm/rad' | '-';
+  unit: 'N' | 'N·mm' | 'N/mm' | 'N·mm/rad' | 'mm' | 'N/mm²' | '-';
   formula?: string;
   source: LibrarySource;
 }

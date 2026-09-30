@@ -26,10 +26,15 @@ interface PlanProps {
   text: number;
   selected?: string | null;
   onSelect?: (id: string) => void;
+  /** texte au centre de l'emprise au sol (sinon le nombre de niveaux) et teinte de l'emprise */
+  zoneLabel?: (m: EstimateModule, levels: number) => string[];
+  zoneFill?: (m: EstimateModule) => string | undefined;
+  /** repère d'implantation : origine en bas à gauche, x vers la droite, y vers le haut */
+  axes?: boolean;
 }
 
 /** Vue de dessus : emprises des Viewbox (nombre de niveaux au centre), groupes d'appuis colorés par type avec Rz,k. */
-export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect }: PlanProps) {
+export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes }: PlanProps) {
   const pts = modules.flatMap((m) => m.corners);
   if (!pts.length) return null;
   const minX = Math.min(...pts.map((p) => p[0]));
@@ -52,50 +57,107 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
     if (!e || m.level < e.m.level) stacks.set(k, { m, n: (e?.n ?? 0) + 1 });
     else e.n++;
   }
-  const r = Math.max(text * 0.9, 250 * s);
+  // pastilles plus petites quand des appuis sont très proches (vérins de Viewbox voisines, 31 cm)
+  const P = reactions.map((re) => [X(re.group.position[0]), Y(re.group.position[1])] as const);
+  let dmin = Infinity;
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) dmin = Math.min(dmin, Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]));
+  const r = Math.max(text * 0.45, Math.min(Math.max(text * 0.9, 250 * s), 0.4 * dmin));
   return (
     <g fontFamily={FONT_SANS}>
       {[...stacks.values()].map(({ m, n }) => {
         const c = m.corners;
         const cx = c.reduce((a, p) => a + p[0], 0) / 4;
         const cy = c.reduce((a, p) => a + p[1], 0) / 4;
+        const lines = zoneLabel?.(m, n) ?? [n > 1 ? `${n} niveaux` : m.level > 0 ? `niveau ${m.level}` : '1 niveau'];
         return (
           <g key={m.id}>
             <polygon
               points={c.map((p) => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join(' ')}
-              fill={m.level === 0 ? '#eef1f6' : 'none'}
+              fill={m.level === 0 ? (zoneFill?.(m) ?? '#eef1f6') : 'none'}
               stroke="#1a021d"
               strokeWidth={text * 0.08}
               strokeDasharray={m.level === 0 ? undefined : `${text * 0.4} ${text * 0.3}`}
             />
-            <text fontFamily={FONT_SANS} x={X(cx)} y={Y(cy) + text * 0.35} fontSize={text * 0.9} textAnchor="middle" fill="#6b7280">
-              {n > 1 ? `${n} niveaux` : m.level > 0 ? `niveau ${m.level}` : '1 niveau'}
-            </text>
-          </g>
-        );
-      })}
-      {reactions.map((re) => {
-        const [px, py] = re.group.position;
-        const col = TYPE_COLORS[typeKey(re)];
-        const sel = selected === re.group.id;
-        return (
-          <g key={re.group.id} onClick={onSelect ? () => onSelect(re.group.id) : undefined} style={onSelect ? { cursor: 'pointer' } : undefined}>
-            <circle cx={X(px)} cy={Y(py)} r={r} fill={col} stroke={sel ? '#111827' : '#ffffff'} strokeWidth={sel ? text * 0.2 : text * 0.08} />
-            {[
-              { t: re.group.id, yy: Y(py) - r - text * 0.3, size: text * 0.85, bold: true },
-              { t: `${n1(re.Rk / 1e3, 0)} kN`, yy: Y(py) + r + text * 0.95, size: text * 0.8, bold: false },
-            ].map((l, k) => (
-              <g key={k}>
-                {/* fond blanc : l'étiquette reste lisible sur les rives */}
-                <rect x={X(px) - l.t.length * l.size * 0.29} y={l.yy - l.size * 0.85} width={l.t.length * l.size * 0.58} height={l.size * 1.05} fill="#ffffff" />
-                <text fontFamily={FONT_SANS} x={X(px)} y={l.yy} fontSize={l.size} textAnchor="middle" fontWeight={l.bold ? 700 : undefined} fill="#111827">
-                  {l.t}
-                </text>
-              </g>
+            {lines.map((t, k) => (
+              <text
+                key={k}
+                fontFamily={FONT_SANS}
+                x={X(cx)}
+                y={Y(cy) + text * 0.35 + (k - (lines.length - 1) / 2) * text * 1.1}
+                fontSize={text * 0.9}
+                textAnchor="middle"
+                fontWeight={k === 0 && zoneLabel ? 700 : undefined}
+                fill={k === 0 && zoneLabel ? '#111827' : '#6b7280'}
+              >
+                {t}
+              </text>
             ))}
           </g>
         );
       })}
+      {reactions.map((re, k) => {
+        const col = TYPE_COLORS[typeKey(re)];
+        const sel = selected === re.group.id;
+        // appuis voisins très proches (vérins de Viewbox côte à côte) : étiquettes vers l'extérieur du groupe
+        const [qx, qy] = P[k];
+        const group = P.filter(([ox, oy]) => Math.hypot(ox - qx, oy - qy) < text * 3.5);
+        const gx = group.reduce((a, g) => a + g[0], 0) / group.length;
+        const gy = group.reduce((a, g) => a + g[1], 0) / group.length;
+        const sx = group.length < 2 || Math.abs(qx - gx) < text * 0.1 ? 0 : Math.sign(qx - gx);
+        const sy = group.length < 2 || Math.abs(qy - gy) < text * 0.1 ? 0 : Math.sign(qy - gy);
+        const lx = sx ? qx + sx * (r + text * 0.25) : qx;
+        const anchor = sx < 0 ? 'end' : sx > 0 ? 'start' : 'middle';
+        // deux lignes (numéro, charge) : à côté du point, au-dessus ou au-dessous
+        const [y1, y2] =
+          group.length < 2
+            ? [qy - r - text * 0.3, qy + r + text * 0.95]
+            : sx
+              ? [qy - text * 0.1 + sy * text * 0.8, qy + text * 0.8 + sy * text * 0.8]
+              : sy < 0
+                ? [qy - r - text * 1.15, qy - r - text * 0.3]
+                : [qy + r + text * 0.95, qy + r + text * 1.8];
+        const labels = [
+          { t: re.group.id, yy: y1, size: text * 0.85, bold: true },
+          { t: `${n1(re.Rk / 1e3, 0)} kN`, yy: y2, size: text * 0.8, bold: false },
+        ];
+        return (
+          <g key={re.group.id} onClick={onSelect ? () => onSelect(re.group.id) : undefined} style={onSelect ? { cursor: 'pointer' } : undefined}>
+            <circle cx={qx} cy={qy} r={r} fill={col} stroke={sel ? '#111827' : '#ffffff'} strokeWidth={sel ? text * 0.2 : text * 0.08} />
+            {labels.map((l, i) => {
+              const w = l.t.length * l.size * 0.58;
+              const x0 = anchor === 'end' ? lx - w : anchor === 'start' ? lx : lx - w / 2;
+              return (
+                <g key={i}>
+                  {/* fond blanc : l'étiquette reste lisible sur les rives */}
+                  <rect x={x0} y={l.yy - l.size * 0.85} width={w} height={l.size * 1.05} fill="#ffffff" />
+                  <text fontFamily={FONT_SANS} x={lx} y={l.yy} fontSize={l.size} textAnchor={anchor} fontWeight={l.bold ? 700 : undefined} fill="#111827">
+                    {l.t}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+      {axes && (
+        <g stroke="#111827" strokeWidth={text * 0.08} fill="none">
+          {/* origine ⊕ au coin bas gauche ; flèches x / y à côté, hors du plan */}
+          <circle cx={X(minX)} cy={Y(maxY)} r={r * 1.2} />
+          <path d={`M ${X(minX) - r * 1.8} ${Y(maxY)} H ${X(minX) + r * 1.8} M ${X(minX)} ${Y(maxY) - r * 1.8} V ${Y(maxY) + r * 1.8}`} />
+          <path
+            d={`M ${X(minX) - text * 2.6} ${Y(maxY) + text * 2.6} h ${text * 2} m ${-text * 0.5} ${-text * 0.25} l ${text * 0.5} ${text * 0.25} l ${-text * 0.5} ${text * 0.25} M ${X(minX) - text * 2.6} ${Y(maxY) + text * 2.6} v ${-text * 2} m ${-text * 0.25} ${text * 0.5} l ${text * 0.25} ${-text * 0.5} l ${text * 0.25} ${text * 0.5}`}
+          />
+          <text fontFamily={FONT_SANS} x={X(minX) - text * 0.45} y={Y(maxY) + text * 2.9} fontSize={text * 0.8} fill="#111827" stroke="none">
+            x
+          </text>
+          <text fontFamily={FONT_SANS} x={X(minX) - text * 2.85} y={Y(maxY) + text * 0.35} fontSize={text * 0.8} textAnchor="end" fill="#111827" stroke="none">
+            y
+          </text>
+          <text fontFamily={FONT_SANS} x={X(minX) - r * 1.9} y={Y(maxY) - r * 1.1} fontSize={text * 0.75} textAnchor="end" fill="#111827" stroke="none">
+            0,0
+          </text>
+        </g>
+      )}
     </g>
   );
 }
@@ -186,7 +248,8 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
   });
   y += info.assumptions.length * 3.6 + 3;
   // 2. plan des appuis
-  blocks.push(<g key="t2">{title('2. Plan des appuis (réactions caractéristiques estimées)', y)}</g>);
+  const fem = result.estimate.method === 'fem';
+  blocks.push(<g key="t2">{title(fem ? '2. Plan des appuis (réactions caractéristiques du calcul complet)' : '2. Plan des appuis (réactions caractéristiques estimées)', y)}</g>);
   const planH = 72;
   blocks.push(
     <g key="plan">
@@ -264,7 +327,9 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
   const notes = [
     ...result.warnings,
     GROUND_NOTE,
-    'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
+    fem
+      ? 'Réactions du calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
+      : 'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
     'Plaques : pression uniforme supposée sous la plaque (méthode statico) ; contreplaqué F40/30, kmod 0,9, γM 1,3.',
   ];
   for (const n of notes)
@@ -300,7 +365,7 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
       {blocks}
       <line x1={M} x2={W - M} y1={H - 12} y2={H - 12} stroke="#d1d5db" strokeWidth={0.2} />
       <text fontFamily={FONT_SANS} x={M} y={H - 8} fontSize={2.2} fill="#6b7280">
-        VEM · Plans Viewbox · Étude structure — estimation du calage (pré-étude, non vérifiée)
+        {`VEM · Plans Viewbox · Étude structure — ${fem ? 'calage' : 'estimation du calage'} (pré-étude, non vérifiée)`}
       </text>
       <text fontFamily={FONT_SANS} x={W - M} y={H - 8} fontSize={2.2} fill="#6b7280" textAnchor="end">
         1 / 1

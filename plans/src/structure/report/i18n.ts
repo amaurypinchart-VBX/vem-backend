@@ -183,6 +183,8 @@ export interface Labels {
   vlinksText: string;
   bolts: string;
   boltsText: string;
+  jacksTitle: string;
+  jacksText: string;
   ground: string;
   groundIntro: (source: string) => string;
   groundSourceSls: string;
@@ -251,7 +253,7 @@ const FR: Labels = {
   templateModified: (name, detail) => `Structure du type « ${name} » modifiée dans la bibliothèque par rapport aux notes statico de référence (${detail}) : à faire vérifier par un ingénieur.`,
   aiNote: 'Texte rédigé avec l’aide de l’IA à partir des résultats du calcul, puis relu ; aucun chiffre ne provient de l’IA (contrôle automatique).',
   overturningFail: (c, m) => `Basculement sous le vent hors service (${c}) : un appui de ${m} se soulève et l’ensemble devient instable — lest ou ancrage nécessaire.`,
-  jacksYes: 'utilisés (capacité et sortie maximale à justifier)',
+  jacksYes: 'utilisés : 6 par Viewbox, tiges Tr 24 × 5 classe 10.9, sortie ≤ 5 cm (vérifiées)',
   jacksNo: 'non utilisés : angles posés directement sur le calage',
   combosNote: (n) => `Directions x+ seulement ; les directions x−, y+ et y− sont identiques au sens près (${n} combinaisons calculées au total, liste complète dans la version détaillée).`,
   supportsFigure: 'Groupes d’appuis (couleur = type) et réaction caractéristique maximale Rz,k',
@@ -360,7 +362,7 @@ const FR: Labels = {
     'Les notices de montage, agréments et consignes d’exploitation des fabricants sont à respecter.',
   ],
   jacksForbidden: 'Les pieds à vérins intégrés des Viewbox ne doivent pas être utilisés (réceptions de pied surchargées) : les vérins sont retirés et les angles posés directement sur le calage.',
-  jacksUsed: 'Pieds à vérins utilisés : leur capacité et leur sortie maximale ne sont pas renseignées dans la bibliothèque — à justifier avant exploitation.',
+  jacksUsed: 'Pieds à vérin utilisés : 6 par Viewbox (4 angles + milieu des grands côtés), tiges Tr 24 × 5 classe 10.9 sorties de 5 cm au plus ; chaque tige est vérifiée en compression et flexion sous sa réaction. Filetage de la douille du pied non vérifié.',
   glazingNote: 'Vitrages : leur vérification (DIN 18008) ne fait pas partie de cette pré-étude.',
   impactNote: 'Les chocs de véhicules ou de personnes ne sont pas pris en compte : ils sont à empêcher par des mesures adaptées.',
   snowNote: 'La neige n’est pas prise en compte : elle est à empêcher par des mesures techniques ou organisationnelles.',
@@ -485,6 +487,9 @@ const FR: Labels = {
   vlinksText: 'Plats de liaison 100 × 10 mm (2 par côté, trou Ø 22) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
   bolts: 'Liaisons horizontales (boulons M20-8.8)',
   boltsText: 'Boulons M20-8.8 dans l’âme des UNP (tw = 9 mm), plancher et toiture : cisaillement, traction et interaction selon DIN EN 1993-1-8.',
+  jacksTitle: 'Pieds à vérin (tiges Tr 24 × 5)',
+  jacksText:
+    'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
   ground: 'Pression au sol et calage',
   groundIntro: (s) => `Les réactions sont regroupées par groupe d’appuis (angles posés sur la même plaque). ${s} La portance est à vérifier sur site par l’exploitant ; en cas de sol différent, le calage est à adapter.`,
   groundSourceSls: 'Les réactions caractéristiques viennent des combinaisons ELS du calcul ; les réactions de calcul des combinaisons ELU.',
@@ -523,7 +528,7 @@ const FR: Labels = {
     ground: 'Sol : plaques plus grandes, longrines sous les grands côtés, ou portance plus élevée à justifier.',
     plywood: 'Plancher : réduire l’exploitation ou ajouter une lisse intermédiaire.',
     blocked: 'Éléments non vérifiés : renseigner les données manquantes (reconnaissance, bibliothèque) puis relancer le calcul.',
-    jacks: 'Vérins : renseigner leur capacité dans la bibliothèque (VBX-JACK) ou poser les angles directement sur le calage.',
+    jacks: 'Vérins : ne pas dépasser 5 cm de sortie ; si une tige ou une réception de pied ne passe pas, réduire la sortie ou poser les angles directement sur le calage.',
   },
   annex: 'Annexe de calcul',
   b1: 'Modèle de calcul',
@@ -558,7 +563,7 @@ const DE: Labels = {
   templateModified: (name) => `Tragwerk des Typs „${name}“ in der Bibliothek gegenüber den statico-Referenzberechnungen geändert (Querschnitte im Anhang): von einem Ingenieur prüfen lassen.`,
   aiNote: 'Text mit KI-Unterstützung aus den Berechnungsergebnissen verfasst und geprüft; keine Zahl stammt aus der KI (automatische Kontrolle).',
   overturningFail: (c, m) => `Kippen unter Wind außer Betrieb (${c}): ein Auflager von ${m} hebt ab und die Anlage wird instabil — Ballast oder Verankerung erforderlich.`,
-  jacksYes: 'verwendet (Tragfähigkeit und maximale Auszugslänge nachzuweisen)',
+  jacksYes: 'verwendet: 6 je Viewbox, Gewindestangen Tr 24 × 5 Festigkeitsklasse 10.9, Auszug ≤ 5 cm (nachgewiesen)',
   jacksNo: 'nicht verwendet: Ecken direkt unterpallt',
   combosNote: (n) => `Nur Richtung x+; die Richtungen x−, y+ und y− sind bis auf das Vorzeichen gleich (insgesamt ${n} berechnete Kombinationen, vollständige Liste in der ausführlichen Fassung).`,
   supportsFigure: 'Auflagergruppen (Farbe = Typ) und maximale charakteristische Reaktion Rz,k',
@@ -667,7 +672,7 @@ const DE: Labels = {
     'Einbauvorschriften, bauaufsichtliche Zulassungen und Aufbau- bzw. Betriebshinweise der Hersteller sind zu beachten.',
   ],
   jacksForbidden: 'Die integrierten Spindelfüße der Viewbox dürfen nicht verwendet werden, da die Fußaufnahmen sonst überlastet wären. Die Spindeln sind zu entfernen und die Ecken direkt zu unterpallen.',
-  jacksUsed: 'Spindelfüße verwendet: Tragfähigkeit und maximale Auszugslänge sind in der Bibliothek nicht erfasst — vor Inbetriebnahme nachzuweisen.',
+  jacksUsed: 'Spindelfüße verwendet: 6 je Viewbox (4 Ecken + Mitte der Längsseiten), Gewindestangen Tr 24 × 5 Festigkeitsklasse 10.9 mit höchstens 5 cm Auszug; jede Spindel wird unter ihrer Auflagerkraft auf Druck und Biegung nachgewiesen. Gewinde der Fußhülse nicht nachgewiesen.',
   glazingNote: 'Verglasungen: der Nachweis nach DIN 18008 ist nicht Bestandteil dieser Vorbemessung.',
   impactNote: 'Personen- oder Fahrzeuganprall wird nicht berücksichtigt und ist durch geeignete Maßnahmen zu verhindern.',
   snowNote: 'Schneelasten werden nicht berücksichtigt und sind technisch / organisatorisch zu verhindern.',
@@ -792,6 +797,9 @@ const DE: Labels = {
   vlinksText: 'Verbindungslaschen 100 × 10 mm (2 je Seite, Loch Ø 22): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
   bolts: 'Nachweis der horizontalen Verschraubungen',
   boltsText: 'M20-8.8 im Steg der UNP (tw = 9 mm), Boden und Dach: Abscheren, Zug und Interaktion nach DIN EN 1993-1-8.',
+  jacksTitle: 'Nachweis der Spindelfüße (Tr 24 × 5)',
+  jacksText:
+    'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
   ground: 'Bodenpressung und Unterpallung',
   groundIntro: (s) => `Die Auflagerreaktionen sind die resultierende Reaktion der jeweiligen Auflagergruppe (Ecken auf einer gemeinsamen Unterpallung). ${s} Die Bodenbelastbarkeit ist vor Ort zu prüfen; bei abweichenden Bodenverhältnissen ist die Unterpallung anzupassen.`,
   groundSourceSls: 'Die charakteristischen Reaktionen stammen aus den GZG-Kombinationen, die Bemessungswerte aus den GZT-Kombinationen.',
@@ -830,7 +838,7 @@ const DE: Labels = {
     ground: 'Boden: größere Platten, Kanthölzer unter den Längsseiten oder höhere nachgewiesene Bodenpressung.',
     plywood: 'Boden: Verkehrslast reduzieren oder zusätzlichen Nebenträger anordnen.',
     blocked: 'Nicht nachgewiesene Bauteile: fehlende Angaben ergänzen (Erkennung, Bibliothek) und die Berechnung wiederholen.',
-    jacks: 'Spindeln: Tragfähigkeit in der Bibliothek erfassen (VBX-JACK) oder Ecken direkt unterpallen.',
+    jacks: 'Spindeln: höchstens 5 cm Auszug; reicht eine Spindel oder Fußaufnahme nicht aus, Auszug verringern oder Ecken direkt unterpallen.',
   },
   annex: 'EDV-Anhang',
   b1: 'Berechnungsmodell',
@@ -865,7 +873,7 @@ const EN: Labels = {
   templateModified: (name) => `Structure of type “${name}” modified in the library compared with the statico reference calculations (sections in the appendix): to be checked by an engineer.`,
   aiNote: 'Text drafted with AI assistance from the calculation results, then reviewed; no figure comes from the AI (automatic check).',
   overturningFail: (c, m) => `Overturning under out-of-service wind (${c}): a support of ${m} lifts off and the installation becomes unstable — ballast or anchorage required.`,
-  jacksYes: 'used (capacity and maximum extension to be justified)',
+  jacksYes: 'used: 6 per Viewbox, Tr 24 × 5 threaded rods grade 10.9, extension ≤ 5 cm (checked)',
   jacksNo: 'not used: corners placed directly on the packing',
   combosNote: (n) => `Direction x+ only; directions x−, y+ and y− are identical except for the sign (${n} combinations computed in total, full list in the detailed version).`,
   supportsFigure: 'Support groups (colour = type) and maximum characteristic reaction Rz,k',
@@ -974,7 +982,7 @@ const EN: Labels = {
     'Manufacturers’ installation instructions, approvals and operating instructions are to be followed.',
   ],
   jacksForbidden: 'The integrated jack feet of the Viewbox units must not be used (the foot receptacles would be overloaded): the jacks are removed and the corners placed directly on the packing.',
-  jacksUsed: 'Jack feet used: their capacity and maximum extension are not recorded in the library — to be justified before operation.',
+  jacksUsed: 'Jack feet used: 6 per Viewbox (4 corners + middle of the long sides), Tr 24 × 5 threaded rods grade 10.9 extended by 5 cm at most; each rod is checked in compression and bending under its reaction. Thread of the foot sleeve not checked.',
   glazingNote: 'Glazing: its verification (DIN 18008) is not covered by this pre-study.',
   impactNote: 'Vehicle or crowd impact is not considered and is to be prevented by suitable measures.',
   snowNote: 'Snow is not considered: it is to be prevented by technical or organisational measures.',
@@ -1099,6 +1107,9 @@ const EN: Labels = {
   vlinksText: 'Link plates 100 × 10 mm (2 per side, hole Ø 22): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; vertical column-to-column contact NRd = 176 kN (cover plate weld).',
   bolts: 'Horizontal connections (M20-8.8 bolts)',
   boltsText: 'M20-8.8 bolts in the web of the UPN edge beams (tw = 9 mm), floor and roof: shear, tension and interaction to DIN EN 1993-1-8.',
+  jacksTitle: 'Jack feet (Tr 24 × 5 rods)',
+  jacksText:
+    'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',
   ground: 'Ground pressure and packing',
   groundIntro: (s) => `Reactions are summed per support group (corners standing on the same packing). ${s} The bearing capacity is to be checked on site by the operator; for different ground conditions, the packing is to be adapted.`,
   groundSourceSls: 'Characteristic reactions come from the SLS combinations of the analysis, design reactions from the ULS combinations.',
@@ -1137,7 +1148,7 @@ const EN: Labels = {
     ground: 'Ground: larger plates, sleepers under the long sides, or a higher justified bearing pressure.',
     plywood: 'Floor: reduce the imposed load or add an intermediate secondary beam.',
     blocked: 'Unchecked elements: complete the missing data (recognition, library) and run the analysis again.',
-    jacks: 'Jacks: record their capacity in the library (VBX-JACK) or place the corners directly on the packing.',
+    jacks: 'Jacks: do not exceed 5 cm of extension; if a rod or a foot reception fails, reduce the extension or place the corners directly on the packing.',
   },
   annex: 'Calculation appendix',
   b1: 'Analysis model',

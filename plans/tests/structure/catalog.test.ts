@@ -125,7 +125,10 @@ describe('bibliothèque de départ', () => {
     expect(((45.82 + 58.75) / 18).toFixed(2)).toBe('5.81');
     expect(0.9 * (6.0 - 2.4) * 0.6 * 36 / 1.25).toBeCloseTo(56.0, 1);
     expect(((8 * 0.5 ** 2) / 4) * 23.5 / 3.6).toBeCloseTo(3.26, 2);
-    expect(SEED_CONNECTIONS.find((c) => c.key === 'VBX-JACK')!.status).toBe('unknown');
+    // vérins : tige Tr 24 × 5 classe 10.9, sortie 5 cm maxi, 6 par Viewbox (A. Pinchart 30.09.2026)
+    const jack = SEED_CONNECTIONS.find((c) => c.key === 'VBX-JACK')!;
+    expect(jack.status).toBe('known');
+    expect(Object.fromEntries(jack.capacities.map((c) => [c.key, c.value]))).toEqual({ d: 24, d3: 18.5, fyb: 900, extensionMax: 50, perModule: 6 });
   });
 
   it('valeurs par défaut de l’annexe B', () => {

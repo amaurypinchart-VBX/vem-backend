@@ -430,19 +430,30 @@ export const SEED_CONNECTIONS: ConnectionEntry[] = [
     kind: 'connection',
     key: 'VBX-JACK',
     name: 'Pieds à vérin intégrés des Viewbox',
-    // capacité inconnue : tant qu'elle n'est pas renseignée, « vérins utilisés » bloque le verdict
-    status: 'unknown',
-    composition: 'pied acier 7-355-014, tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (fy 900, fu 1 000 N/mm², 7-366-001), platine 7-309-002',
-    capacities: [],
+    // hypothèse de base (A. Pinchart 30.09.2026) : tige Tr 24 × 5, sortie 5 cm au plus, 6 vérins par Viewbox
+    status: 'known',
+    composition: 'pied acier 7-355-014, tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (fy 900, fu 1 000 N/mm², 7-366-001), platine 7-309-002 ; 6 par Viewbox (4 angles + milieu des 2 grands côtés)',
+    capacities: [
+      { key: 'd', label: 'diamètre nominal de la tige', value: 24, unit: 'mm', formula: 'Tr 24 × 5 (DIN 103)', source: { ref: 'user', note: 'A. Pinchart 30.09.2026' } },
+      { key: 'd3', label: 'diamètre du noyau', value: 18.5, unit: 'mm', formula: 'd3 = d − 2 · h3 = 24 − 2 · (0,5 · 5 + 0,25) (DIN 103-1)', source: { ref: 'standard:DIN 103-1' } },
+      { key: 'fyb', label: 'limite d’élasticité (classe 10.9)', value: 900, unit: 'N/mm²', source: { ref: 'user', note: 'A. Pinchart 29.09.2026 : classe 10.9' } },
+      { key: 'extensionMax', label: 'sortie maxi de la tige', value: 50, unit: 'mm', source: { ref: 'user', note: 'A. Pinchart 30.09.2026 : sortie 5 cm au plus' } },
+      { key: 'perModule', label: 'vérins par Viewbox', value: 6, unit: '-', formula: '4 angles + milieu des 2 grands côtés', source: { ref: 'user', note: 'A. Pinchart 30.09.2026' } },
+    ],
+    rule: {
+      check: 'jack',
+      text: 'tige console encastrée dans le pied, posée sur sa platine : Lcr = 2 · sortie, M = H · sortie ; compression + flexion sur le noyau (EC3 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique)',
+    },
     notes: [
-      'Hoka : vérins interdits, angles directement sur la plaque de calage (réceptions de pied surchargées)',
+      'Hoka : vérins interdits, angles directement sur la plaque de calage (réceptions de pied surchargées) — avec les vérins, les réceptions de pied sont vérifiées dans le calcul',
       'Qatar : sortie maxi 5 cm (§ 1.4.4) mais vérins interdits en § 3.6 / § 3.10',
-      'capacité à calculer selon la sortie (flambement de la tige, réception de pied) : phases S4 / S5',
+      'filetage de la douille du pied non vérifié (longueur en prise non renseignée) ; platine 7-309-002 prise 15 × 15 cm pour le calage (à confirmer)',
     ],
     source: [
       HOKA('A4'),
       { ref: 'drawing:ensemble VIEWBOX M16 60MM' },
       { ref: 'user', note: 'A. Pinchart 29.09.2026 : filetage trapézoïdal gros pas, classe 10.9' },
+      { ref: 'user', note: 'A. Pinchart 30.09.2026 : toujours des tiges Tr 24, sortie 5 cm maxi, 6 par Viewbox' },
       { ref: 'report:24-0569', page: '§ 1.4.4, § 3.6, § 3.10' },
     ],
   },

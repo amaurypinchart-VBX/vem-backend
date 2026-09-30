@@ -20,6 +20,8 @@ export interface StudyContextData {
   connections: ConnectionSet;
   ec3: Ec3Options;
   calibration: boolean;
+  /** sortie des tiges des pieds à vérin (mm) */
+  jackExtension?: number;
 }
 
 export interface StudyRequest {
