@@ -387,20 +387,27 @@ Format : {"name": "nom court du panneau", "layers": [{"name": "...", "material":
   const messages: any[] = [{ role: 'user', content: [{ type: 'text', text: `Panneau ou matériau décrit par l’utilisateur : ${inp.description}` }] }];
   let data: any;
   let usage = { input_tokens: 0, output_tokens: 0 };
+  let searches = 0;
   try {
     // la recherche peut demander plusieurs tours (« pause_turn ») : on relance avec la réponse partielle
     for (let turn = 0; turn < 4; turn++) {
       data = await anthropicRequest({ model: STRUCTURE_MODEL, max_tokens: 16000, system, messages, tools: [webSearchTool(STRUCTURE_MODEL)] }, { timeoutMs: 300000, retries: 1 });
       usage = { input_tokens: usage.input_tokens + (data.usage?.input_tokens ?? 0), output_tokens: usage.output_tokens + (data.usage?.output_tokens ?? 0) };
+      searches += data.usage?.server_tool_use?.web_search_requests ?? 0;
       if (data.stop_reason !== 'pause_turn') break;
       messages.push({ role: 'assistant', content: data.content });
     }
   } catch (e: any) {
     await logCall('material', ctx, { model: STRUCTURE_MODEL, durationMs: Date.now() - t0 }, false, e.message);
+    // recherche web désactivée par un administrateur de l'organisation Anthropic : message clair
+    if (/web search/i.test(e.message ?? '') && /not enabled|disabled/i.test(e.message ?? ''))
+      throw new AppError('Recherche internet désactivée pour votre organisation dans la console Anthropic (platform.claude.com › Settings › Capabilities) : l’activer, ou saisir les couches à la main.', 400);
     throw e;
   }
   const model = data.model ?? STRUCTURE_MODEL;
-  const u: Usage = { model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, costUsd: costOf(model, usage), durationMs: Date.now() - t0 };
+  // recherches facturées en plus des jetons : 10 $ les 1 000 (tarif Anthropic)
+  const tokens = costOf(model, usage);
+  const u: Usage = { model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, costUsd: tokens === null ? null : tokens + searches * 0.01, durationMs: Date.now() - t0 };
   await logCall('material', ctx, u, data.stop_reason !== 'refusal', data.stop_reason === 'refusal' ? 'stop_reason=refusal' : undefined);
   if (data.stop_reason === 'refusal') throw new AppError('L’IA a refusé de répondre à cette demande : saisir les couches à la main.', 422);
   if (data.stop_reason === 'max_tokens') throw new AppError('Réponse de l’IA coupée (trop longue) : décrire le panneau plus simplement.', 502);
