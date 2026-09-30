@@ -2,7 +2,7 @@
 // départ du module + entrées confirmées ou modifiées en ligne). Recherche, détail, désactivation, suppression,
 // modification des données (JSON), export / import. Écriture : admin, responsable technique, ingénieur.
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { LibraryEntry, LibraryKind, PartTypeEntry } from '../../structure/core/library';
+import type { LibraryEntry, LibraryKind, ModuleTypeEntry, PartTypeEntry } from '../../structure/core/library';
 import { NATURE_LABEL, ROLE_LABEL } from '../../structure/core/library';
 import type { ServerLibraryRow } from '../../structure/core/libraryStore';
 import { mergeLibrary, toPayload } from '../../structure/core/libraryStore';
@@ -14,6 +14,7 @@ import { panelMass } from '../../structure/core/composite';
 import { fmtNumber } from '../../structure/core/units';
 import { ReferenceExtract } from './ReferenceExtract';
 import { useAiStatus } from './aiUi';
+import { ViewboxStructure } from './ViewboxStructure';
 
 const KIND_LABEL: Record<LibraryKind, string> = {
   module_type: 'Gabarits de modules',
@@ -203,7 +204,20 @@ export function LibraryPage() {
                           {e.match && Object.keys(e.match).length ? ` · reconnue par ${Object.entries(e.match).map(([k, v]) => `${k} = ${v}`).join(' ; ')}` : ''}
                           {' · '}Sources : {e.source.map((s) => [s.ref, s.page, s.note].filter(Boolean).join(' ')).join(' ; ')}
                         </div>
-                        <pre style={{ fontSize: 11, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{JSON.stringify(toPayload(e).data, null, 2)}</pre>
+                        {e.kind === 'module_type' && (e as ModuleTypeEntry).params ? (
+                          <ViewboxStructure
+                            entry={e as ModuleTypeEntry}
+                            library={all}
+                            canEdit={canEdit}
+                            who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+                            onSaveEntries={async (entries) => {
+                              for (const x of entries) await vem.saveLibraryEntry(toPayload(x));
+                              await refresh();
+                            }}
+                          />
+                        ) : (
+                          <pre style={{ fontSize: 11, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{JSON.stringify(toPayload(e).data, null, 2)}</pre>
+                        )}
                       </td>
                     </tr>
                   )}

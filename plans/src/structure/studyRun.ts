@@ -11,7 +11,7 @@ import { checkPlywoodStrip } from './core/checks/plywood';
 import type { Combination } from './core/combos';
 import { buildCombinations, COMBO_DEFAULTS } from './core/combos';
 import type { Estimate } from './core/estimate';
-import type { LibraryEntry, ModuleTypeEntry, SectionEntry } from './core/library';
+import type { ConnectionEntry, LibraryEntry, ModuleTypeEntry, SectionEntry } from './core/library';
 import type { EdgeItem, LoadInputs, LoadModel, PointItem } from './core/loads';
 import { buildLoadCases } from './core/loads';
 import type { ItemIndex, StabilityResult, StudySummary, StudyVerdict } from './core/results';
@@ -121,11 +121,18 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
 }
 
 /** Empreinte des entrées : un résultat est périmé dès qu'elle change. */
+/** Empreinte courte d'un texte (FNV-1a) : un gabarit ou une section modifiés rendent le résultat « périmé ». */
+function hash(s: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
+}
+
 export function inputKey(inp: StudyInputs): string {
   const mods = inp.modules.map((m) => [m.id, m.level, m.templateKey, ...m.origin.map(Math.round), ...m.u.map((x) => Math.round(x * 1e4))].join(','));
   const lib = inp.library
     .filter((e) => e.kind === 'section' || e.kind === 'connection' || e.kind === 'module_type')
-    .map((e) => `${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? '')}`.length + e.key)
+    .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}`)}`)
     .join('|');
   return JSON.stringify([mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib]);
 }

@@ -95,12 +95,33 @@ if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
 await page.waitForTimeout(2600); // enregistrement automatique de l'étude (2 s)
 console.log(`Types traités : ${answered} ; ensuite :`, await counts(), (await page.getByText(/Étude enregistrée/).count()) ? '(étude enregistrée)' : '');
 await shootAll('structure-reconnue');
-// gabarit de calcul d'une Viewbox : barres dessinées en couleur, tableau des sections
+// structure d'une Viewbox : barres dessinées en couleur, sections par famille ; une famille choisie ressort en 3D
 await page.locator('button.btn.ghost:visible', { hasText: /×.*Viewbox$/ }).first().click();
-await page.getByText('Chaque Viewbox de ce type est calculée avec ces barres').waitFor();
+await page.getByText(/^Structure de la Viewbox — /).waitFor();
 await page.waitForTimeout(800);
-console.log('Gabarit :', (await page.locator('table.list').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 8));
+const famRows = page.locator('table.list:visible').first().locator('tbody tr');
+console.log('Structure :', (await famRows.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 8));
 await shootAll('structure-gabarit');
+await famRows.filter({ hasText: 'Rives de toiture' }).click();
+await page.waitForTimeout(600);
+await shootAll('structure-gabarit-famille');
+// modification : poteaux en RHS 120 × 80 × 5 S355 (section créée ici, propriétés calculées par l'outil)
+await page.getByRole('button', { name: '✎ Modifier la structure' }).click();
+await famRows.filter({ hasText: 'Poteaux d’angle' }).getByRole('button', { name: '＋' }).click();
+await page.getByPlaceholder('ex. RHS 120 × 80 × 5').fill('RHS 120 × 80 × 5');
+const secForm = page.locator('.card', { has: page.getByRole('heading', { name: 'Nouvelle section' }) }).last();
+await secForm.locator('select').nth(1).selectOption('S355');
+for (const [k, v] of [['h', '120'], ['b', '80'], ['t', '5']]) await secForm.getByLabel(k, { exact: true }).fill(v);
+await page.getByText(/Calculé par l’outil : A /).waitFor();
+console.log('Nouvelle section :', (await page.getByText(/Calculé par l’outil : A /).innerText()).trim());
+await shootAll('structure-nouvelle-section');
+await page.getByRole('button', { name: 'Créer la section et l’utiliser' }).click();
+await page.getByRole('heading', { name: 'Nouvelle section' }).waitFor({ state: 'detached' });
+await page.getByRole('button', { name: 'Enregistrer (ce type, tous les projets)' }).click();
+await page.getByText(/Fiche modifiée par rapport aux notes de référence/).waitFor();
+console.log('Structure modifiée :', (await page.getByText(/Fiche modifiée par rapport aux notes de référence/).innerText()).trim());
+console.log('Poteaux :', (await famRows.filter({ hasText: 'Poteaux d’angle' }).innerText()).replace(/\s+/g, ' '));
+await shootAll('structure-gabarit-modifie');
 // 3. calcul complet (Workers) puis 4. résultats
 await page.getByRole('button', { name: /3\. Calcul/ }).click();
 await page.getByText('Calcul complet').first().waitFor();
@@ -120,7 +141,7 @@ await shootAll('structure-calcul');
 await page.getByRole('button', { name: /Voir les résultats/ }).click();
 await page.getByText('Par famille').waitFor();
 await page.waitForTimeout(1500);
-console.log('Familles :', (await page.locator('table.list').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 12));
+console.log('Familles :', (await page.locator('table.list:visible').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 12));
 await page.getByText('Les plus sollicités').waitFor();
 await page.locator('table.list').nth(1).locator('tbody tr').first().click();
 await page.waitForTimeout(400);

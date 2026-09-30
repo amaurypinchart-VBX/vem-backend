@@ -98,15 +98,18 @@ export function viewboxTemplate(p: ViewboxTemplateParams, extras: RimExtras = {}
     const rim: TemplateFamily = floor ? 'rim-floor' : 'rim-roof';
     const sec: TemplateFamily = floor ? 'secondary-floor' : 'secondary-roof';
     const along = (base: number[], side: Side) => uniq([...base, ...(extras[side] ?? [])]);
-    chain(along(longU, 'v0').map((u) => [u, y0] as [number, number]), z, rim, p.sections.rim, `${lvl}:v0`);
-    chain(along(longU, 'v1').map((u) => [u, y1] as [number, number]), z, rim, p.sections.rim, `${lvl}:v1`);
-    chain(along(shortV, 'u0').map((v) => [x0, v] as [number, number]), z, rim, p.sections.rim, `${lvl}:u0`);
-    chain(along(shortV, 'u1').map((v) => [x1, v] as [number, number]), z, rim, p.sections.rim, `${lvl}:u1`);
+    // toiture : sections propres si elles sont données, sinon celles du plancher (notes statico)
+    const rimSec = floor ? p.sections.rim : (p.sections.rimRoof ?? p.sections.rim);
+    const secSec = floor ? p.sections.secondary : (p.sections.secondaryRoof ?? p.sections.secondary);
+    chain(along(longU, 'v0').map((u) => [u, y0] as [number, number]), z, rim, rimSec, `${lvl}:v0`);
+    chain(along(longU, 'v1').map((u) => [u, y1] as [number, number]), z, rim, rimSec, `${lvl}:v1`);
+    chain(along(shortV, 'u0').map((v) => [x0, v] as [number, number]), z, rim, rimSec, `${lvl}:u0`);
+    chain(along(shortV, 'u1').map((v) => [x1, v] as [number, number]), z, rim, rimSec, `${lvl}:u1`);
     // traverses (selon v) aux abscisses transverseX, lisses (selon u) aux ordonnées longitudinalY
     const vs = uniq([y0, y1, ...p.longitudinalY]);
     const us = uniq([x0, x1, ...p.transverseX]);
-    for (const u of p.transverseX) chain(vs.map((v) => [u, v] as [number, number]), z, sec, p.sections.secondary, `${lvl}:t${Math.round(u)}`);
-    for (const v of p.longitudinalY) chain(us.map((u) => [u, v] as [number, number]), z, sec, p.sections.secondary, `${lvl}:l${Math.round(v)}`);
+    for (const u of p.transverseX) chain(vs.map((v) => [u, v] as [number, number]), z, sec, secSec, `${lvl}:t${Math.round(u)}`);
+    for (const v of p.longitudinalY) chain(us.map((u) => [u, v] as [number, number]), z, sec, secSec, `${lvl}:l${Math.round(v)}`);
   }
   // poteaux d'angle, semi-rigides en flexion aux deux extrémités (torsion et translations encastrées)
   const k = p.springs.columnRotation;

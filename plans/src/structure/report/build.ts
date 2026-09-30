@@ -11,6 +11,7 @@ import type { CalcRecord, Verdict } from '../core/records';
 import { verdictOf, worstVerdict } from '../core/records';
 import type { ModuleTypeEntry } from '../core/library';
 import { designation } from '../core/library';
+import { lastModification } from '../core/viewboxEdit';
 import { materialByKey } from '../core/materials';
 import { speedOf } from '../core/wind';
 import type { StudyInputs, StudyRun } from '../studyRun';
@@ -170,6 +171,12 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const remarks: string[] = [...new Set([...inp.sceneWarnings, ...run.warnings, ...(inp.calage?.warnings ?? [])].map(E))];
   if (H > 8000 + 1 && loads.windInService < 0.3e-3 - 1e-9) remarks.unshift(L.heightWindWarning(N(H / 1e3, 1), N(loads.windInService * 1e3)));
   if (!inp.bearing) remarks.unshift(L.bearingMissing);
+  // structure d'un type de Viewbox modifiée dans la bibliothèque : toujours signalée en tête
+  for (const key of new Set(s.modules.map((m) => m.templateKey))) {
+    const t = inp.study.library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === key);
+    const mod = t && lastModification(t);
+    if (mod) remarks.unshift(L.templateModified(E(t.name), mod));
+  }
   // basculement : phrase courte (les messages du calcul sont au chapitre 4 et en annexe)
   const stabErrors = run.summary.errors.filter((e) => e.cls === 'STAB');
   const tipped = [...new Set(stabErrors.flatMap((e) => e.nodes.map((n) => n.split(':')[0])))].filter((m) => s.modules.some((q) => q.id === m));

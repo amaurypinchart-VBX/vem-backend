@@ -68,6 +68,21 @@ export interface RecognitionInput {
 /** Catégories des pièces propres au composant Viewbox, comprises dans son gabarit. */
 export const TEMPLATE_CATEGORIES: ReadonlySet<string> = new Set(['STRUCTURE', 'PLANCHER', 'TOIT', 'PIED']);
 
+/**
+ * Composant Viewbox entier (le corps du module, classé d'un seul bloc : « 7-962-016 VIEWBOX STANDARD… ») : sa boîte a
+ * la longueur et la largeur du module (± 150 mm) et toute sa hauteur (≥ 2 m). Il est compris dans le gabarit de sa
+ * Viewbox, comme ses rives, planchers et pieds ; un mur (épais de quelques cm) ou un plancher ne le sont pas par ce test.
+ */
+export function isViewboxBody(dims: ArrayLike<number>, expected: { long: number; short: number }): boolean {
+  const d = roundDims(dims);
+  const iL = d.findIndex((x) => Math.abs(x - expected.long) <= 150);
+  if (iL < 0) return false;
+  const rest = d.filter((_, k) => k !== iL);
+  const iS = rest.findIndex((x) => Math.abs(x - expected.short) <= 150);
+  if (iS < 0) return false;
+  return rest[1 - iS] >= 2000;
+}
+
 const kgPerM = (kNperM: number) => Math.round((kNperM * 1000) / 9.81);
 
 /** Proposition par catégorie du classement (toujours à confirmer). Valeurs de charge : annexe B. */
@@ -88,8 +103,10 @@ export function proposeFor(category: string | null, accessory: boolean): { assig
 }
 
 /** Donnée encore nécessaire au calcul (null = rien ne manque). */
-export function missingData(a: PartAssignment, templates: ReadonlyMap<string, ModuleTypeEntry>): string | null {
+export function missingData(a: PartAssignment, templates: ReadonlyMap<string, ModuleTypeEntry>, kind: 'module' | 'item' = 'module'): string | null {
   if (a.role === 'ignored' || a.role === 'wind') return null;
+  // pièce du modèle qui est la Viewbox elle-même : calculée par le gabarit de sa Viewbox (type de module)
+  if (a.nature === 'viewbox' && kind === 'item') return null;
   if (a.nature === 'viewbox') {
     const t = a.moduleTemplate ? templates.get(a.moduleTemplate) : undefined;
     if (!t) return 'gabarit de Viewbox à choisir';
@@ -129,7 +146,7 @@ export function recognize(input: RecognitionInput): Recognition {
     else out = { ...t, status: 'unknown', source: 'none', reason: 'inconnu : à renseigner' };
     if (out.assignment) {
       if (out.assignment.role === 'ignored' && out.status === 'known') out.status = 'ignored';
-      const missing = missingData(out.assignment, templates);
+      const missing = missingData(out.assignment, templates, t.kind);
       if (missing) out = { ...out, status: 'unknown', reason: missing };
     }
     return out;
@@ -168,6 +185,7 @@ export function recognize(input: RecognitionInput): Recognition {
   // ─── pièces ───
   const templateParts = new Map<string, string>();
   const byItemType = new Map<string, { nodes: NodeInfo[]; fp: Fingerprint }>();
+  const moduleById = new Map(index.modules.map((m) => [m.id, m]));
   for (const n of index.nodes) {
     if (n.role !== 'item') continue;
     const c = look.categoryOf(n.id);
@@ -178,6 +196,11 @@ export function recognize(input: RecognitionInput): Recognition {
     const g = input.geometry?.get(n.id);
     const b = n.bboxMm;
     const dims = g ?? (b ? [b[3] - b[0], b[4] - b[1], b[5] - b[2]] : [0, 0, 0]);
+    const mod = n.moduleId ? moduleById.get(n.moduleId) : undefined;
+    if (mod && !(c && input.accessoryCategories?.has(c)) && isViewboxBody(dims, mod.expected)) {
+      templateParts.set(n.id, mod.id);
+      continue;
+    }
     const fp: Fingerprint = { dims: roundDims(dims), materials: n.materialNames ?? [], category: c, triangles: n.triangles };
     const key = itemTypeKey(n, fp);
     const e = byItemType.get(key);

@@ -124,8 +124,12 @@ export interface ViewboxTemplateParams {
   /** écart entre deux modules juxtaposés (mm) */
   gap: number;
   sections: {
+    /** rives et traverses / lisses du plancher */
     rim: string;
     secondary: string;
+    /** rives et traverses / lisses de toiture (absent = celles du plancher, comme les notes statico) */
+    rimRoof?: string;
+    secondaryRoof?: string;
     column: string;
     footCorner: string;
     footPlate: string;

@@ -10,8 +10,8 @@ import type { PartType, Recognition, RecognitionStatus } from '../../structure/c
 import { STATUS_COLOR, STATUS_LABEL } from '../../structure/core/recognition';
 import { MATERIALS } from '../../structure/core/materials';
 import { placeFromFrame } from '../../structure/core/assemble';
-import { templateSegments, templateSummary } from '../../structure/core/templateView';
-import { fmtNumber } from '../../structure/core/units';
+import { templateSegments } from '../../structure/core/templateView';
+import type { TemplateFamily } from '../../structure/core/templates/viewboxEU';
 import type { GroupProposal, IdentifySuggestion } from '../../structure/core/ai';
 import { AI_CONFIDENCE_MIN, groupPayload, identifyPayload, suggestionToAssignment } from '../../structure/core/ai';
 import type { CompositePanel } from '../../structure/core/composite';
@@ -19,6 +19,7 @@ import type { AiUsage } from '../../api/vem';
 import { vem } from '../../api/vem';
 import type { AiState } from './aiUi';
 import { AiUsageNote, CompositeEditor, captureTypeImages } from './aiUi';
+import { ViewboxStructure } from './ViewboxStructure';
 
 export interface AnswerOptions {
   scope: 'model' | 'project';
@@ -39,6 +40,10 @@ interface Props {
   studyId?: string | null;
   /** mémorise un panneau composé dans la bibliothèque */
   onSavePanel?: (p: CompositePanel) => Promise<void>;
+  /** enregistre des entrées de bibliothèque (structure d'une Viewbox, sections) puis la recharge */
+  onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
+  /** nom de la personne connectée (trace des modifications de la bibliothèque) */
+  who?: string;
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -71,6 +76,11 @@ function PartForm({
   onAskAi,
   onSavePanel,
   group,
+  bodyTemplate,
+  who,
+  onSaveEntries,
+  highlight,
+  onHighlight,
 }: {
   type: PartType;
   library: LibraryEntry[];
@@ -84,6 +94,12 @@ function PartForm({
   onSavePanel?: (p: CompositePanel) => Promise<void>;
   /** groupe proposé par l'IA auquel la réponse s'appliquera */
   group?: GroupProposal | null;
+  /** type de Viewbox des modules de cette pièce (pièce = la Viewbox elle-même) */
+  bodyTemplate?: ModuleTypeEntry;
+  who: string;
+  onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
+  highlight: TemplateFamily | null;
+  onHighlight: (f: TemplateFamily | null) => void;
 }) {
   const initial: PartAssignment = type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' });
   const [a, setA] = useState<PartAssignment>(initial);
@@ -197,7 +213,23 @@ function PartForm({
                 ))}
               </select>
             </label>
-            <TemplateTable entry={templates.find((t) => t.key === a.moduleTemplate)} library={library} />
+            {(() => {
+              const entry = templates.find((t) => t.key === a.moduleTemplate);
+              return entry ? (
+                <ViewboxStructure
+                  entry={entry}
+                  library={library}
+                  canEdit={canEditLibrary}
+                  who={who}
+                  highlight={highlight}
+                  onHighlight={onHighlight}
+                  onSaveEntries={onSaveEntries}
+                  onUseType={(key) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: key })}
+                />
+              ) : (
+                <div className="hint">Choisir le type de Viewbox : sa fiche de structure (barres, sections, assemblages) s’affiche ici.</div>
+              );
+            })()}
           </>
         ) : (
           <>
@@ -293,7 +325,18 @@ function PartForm({
                 </label>
               </>
             )}
-            {a.role !== 'ignored' && (
+            {a.nature === 'viewbox' && (
+              <>
+                <div className="hint">
+                  C’est la Viewbox elle-même (son composant SketchUp) : rien à saisir ici, elle est calculée avec la structure de son type de Viewbox
+                  {bodyTemplate ? ` (${bodyTemplate.name})` : ''} — poids et barres ci-dessous.
+                </div>
+                {bodyTemplate && (
+                  <ViewboxStructure entry={bodyTemplate} library={library} canEdit={canEditLibrary} who={who} highlight={highlight} onHighlight={onHighlight} onSaveEntries={onSaveEntries} />
+                )}
+              </>
+            )}
+            {a.role !== 'ignored' && a.nature !== 'viewbox' && (
               <label className="row hint">
                 Poids
                 <input
@@ -376,53 +419,7 @@ function PartForm({
   );
 }
 
-/**
- * Barres du gabarit de calcul d'un type de Viewbox : le modèle SketchUp ne contient pas les barres acier internes,
- * l'outil applique à chaque Viewbox ce gabarit (relevé sur les modèles SCIA statico).
- */
-function TemplateTable({ entry, library }: { entry?: ModuleTypeEntry; library: LibraryEntry[] }) {
-  if (!entry) return null;
-  if (!entry.params) return <div className="hint" style={{ color: 'var(--danger)' }}>Ce type de module n’a pas encore de gabarit de calcul (données de structure inconnues).</div>;
-  const rows = templateSummary(entry, library);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div className="hint">
-        Chaque Viewbox de ce type est calculée avec ces barres (même modèle que les calculs SCIA des notes statico 24-0571 et 24-0569 : rives, traverses, poteaux,
-        réceptions de pied, assemblages semi-rigides) — les barres sont dessinées en couleur dans la vue 3D. Les liaisons entre Viewbox (boulons, contacts,
-        liaisons d’angle) sont ajoutées automatiquement au calcul.
-      </div>
-      <table className="list">
-        <thead>
-          <tr>
-            <th>Barres</th>
-            <th>Section</th>
-            <th>Matériau</th>
-            <th className="num">Nb</th>
-            <th className="num">Longueur</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.family}${r.section}`}>
-              <td>
-                <span className="chip">
-                  <i style={{ background: hex(r.color) }} />
-                  {r.label}
-                </span>
-              </td>
-              <td>{r.section}</td>
-              <td>{r.material}</td>
-              <td className="num">{r.count}</td>
-              <td className="num">{fmtNumber(r.length / 1e3, 1)} m</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel }: Props) {
+export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel, onSaveEntries, who = 'utilisateur' }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -481,19 +478,38 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
 
   const type = recognition.types.find((t) => t.key === selected) ?? null;
   const [showBars, setShowBars] = useState(true);
-  // Viewbox choisie : barres de son gabarit de calcul par-dessus le modèle (le modèle en transparence)
+  const [hiFamily, setHiFamily] = useState<TemplateFamily | null>(null);
+  useEffect(() => setHiFamily(null), [selected]);
+  // type de Viewbox d'une Viewbox (type de module) ou de la pièce qui est la Viewbox elle-même
+  const templateOf = (t: PartType | null): ModuleTypeEntry | undefined => {
+    if (!t) return undefined;
+    const key =
+      t.kind === 'module'
+        ? t.assignment?.moduleTemplate
+        : t.assignment?.nature === 'viewbox'
+          ? recognition.types.find((m) => m.kind === 'module' && m.moduleIds.some((id) => t.moduleIds.includes(id)))?.assignment?.moduleTemplate
+          : undefined;
+    return key ? library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === key) : undefined;
+  };
+  const shownTemplate = templateOf(type);
+  // Viewbox choisie : barres de son gabarit de calcul par-dessus le modèle (le modèle en transparence) ; une famille
+  // choisie dans la fiche ressort, les autres barres passent en gris clair
   const bars = useMemo(() => {
-    if (!type || type.kind !== 'module' || !showBars) return null;
-    const entry = library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === type.assignment?.moduleTemplate);
-    if (!entry?.params) return null;
+    if (!type || !showBars || !shownTemplate?.params) return null;
     const placed = type.moduleIds.flatMap((id) => {
       const f = scene.frames.get(id);
       const info = scene.index.modules.find((m) => m.id === id);
-      const pm = f && info ? placeFromFrame(f, info.level, entry).module : null;
+      const pm = f && info ? placeFromFrame(f, info.level, shownTemplate).module : null;
       return pm ? [pm] : [];
     });
-    return placed.length ? templateSegments(placed) : null;
-  }, [type, library, scene, showBars]);
+    if (!placed.length) return null;
+    const seg = templateSegments(placed);
+    if (hiFamily)
+      seg.families.forEach((f, k) => {
+        if (f !== hiFamily) seg.colors.fill(0.85, k * 6, k * 6 + 6);
+      });
+    return seg;
+  }, [type, shownTemplate, scene, showBars, hiFamily]);
   // la pièce choisie en avant, le reste en fantôme ; gabarit : tout en fantôme sous les barres
   useEffect(() => {
     const v = viewerRef.current;
@@ -514,7 +530,7 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
         <div className="card-head">
           <h2>Vue 3D — statut des pièces</h2>
           <div className="spacer" style={{ flex: 1 }} />
-          {type?.kind === 'module' && (
+          {shownTemplate?.params && (
             <label className="row hint" title="Barres acier que l'outil calcule pour cette Viewbox">
               <input type="checkbox" checked={showBars} onChange={(e) => setShowBars(e.target.checked)} /> barres du calcul
             </label>
@@ -525,8 +541,9 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
         </div>
         <div ref={holder} style={{ height: 560, position: 'relative' }} />
         <div className="card-body hint">
-          Clic sur une pièce : sa fiche s’ouvre et son type est isolé (le reste en transparence). Les pièces propres aux Viewbox (structure,
-          plancher, toiture, pieds : {recognition.templateParts.size}) sont comprises dans le gabarit et prennent la couleur de leur Viewbox.
+          Clic sur une pièce : sa fiche s’ouvre et son type est isolé (le reste en transparence). Les pièces propres aux Viewbox (composant Viewbox,
+          structure, plancher, toiture, pieds : {recognition.templateParts.size}) sont comprises dans la structure de leur type de Viewbox et prennent sa couleur ; un clic
+          dessus ouvre cette structure.
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -637,6 +654,11 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
             studyId={studyId}
             onSavePanel={onSavePanel}
             group={activeGroup?.keys.includes(type.key) ? activeGroup : null}
+            bodyTemplate={templateOf(type.kind === 'item' ? { ...type, assignment: { role: 'structural', nature: 'viewbox' } } : null)}
+            who={who}
+            onSaveEntries={onSaveEntries}
+            highlight={hiFamily}
+            onHighlight={setHiFamily}
             onAskAi={async () => {
               const images = await captureTypeImages(scene, glassTest, type).catch(() => []);
               viewerRef.current?.reclaim();

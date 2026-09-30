@@ -30,6 +30,8 @@ import { calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '.
 import { studyFacts } from '../../src/structure/report/facts';
 import { checkText } from '../../../src/services/structureAiGuard';
 import { VIEWBOX_STOCK } from '../../src/structure/core/ground';
+import type { ModuleTypeEntry } from '../../src/structure/core/library';
+import { editedModuleEntry, withSection } from '../../src/structure/core/viewboxEdit';
 
 const inputs: StudyInputs = {
   modules: [vbx('VBX-01', 0, 0), vbx('VBX-02', 0, 2.5), vbx('VBX-03', 0, 0, 1)],
@@ -259,6 +261,18 @@ describe('rapport de l’étude structure', () => {
     expect(checkText(text, facts)).toEqual([]);
     expect(hyp.vitesse_arret_exploitation_m_s).toBe(17.9);
     expect(checkText('Le taux maximal vaut 0,123.', facts)).toEqual([0.123]);
+  });
+
+  it('structure d’un type de Viewbox modifiée dans la bibliothèque : signalée en tête des remarques, dans les 3 langues', () => {
+    const vbxType = SEED.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === 'VIEWBOX-5900-EU')!;
+    const edited = editedModuleEntry(vbxType, { params: withSection(vbxType.params!, 'rimRoof', 'QHP100x5') }, { library: SEED, who: 'A. Pinchart', date: '30/09/2026' });
+    const library = SEED.map((e) => (e === vbxType ? edited : e));
+    const words = { fr: 'modifiée dans la bibliothèque', de: 'in der Bibliothek gegenüber', en: 'modified in the library' } as const;
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const all = buildReport({ ...reportInput(lang, 'compact'), study: { ...inputs, library } }).pages.flatMap((p) => texts(p.svg)).join(' ');
+      expect(all).toContain(words[lang]);
+      expect(buildReport(reportInput(lang, 'compact')).pages.flatMap((p) => texts(p.svg)).join(' ')).not.toContain(words[lang]);
+    }
   });
 
   it('textes rédigés par l’IA dans le rapport : description et conclusion remplacées, mention du contrôle', () => {

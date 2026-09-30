@@ -64,6 +64,11 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
       continue;
     }
     if (a.role === 'ignored') continue;
+    // la Viewbox elle-même (composant classé d'un bloc) : calculée par le gabarit de sa Viewbox
+    if (a.nature === 'viewbox') {
+      if (!t.moduleIds.length) errors.push(`${t.label} : Viewbox hors des modules numérotés (VBX-xx) — la numéroter dans SketchUp (extension viewbox_prep)`);
+      continue;
+    }
     if (a.role === 'structural') {
       unmodelled.set(NATURE_LABEL[a.nature], (unmodelled.get(NATURE_LABEL[a.nature]) ?? 0) + t.nodeIds.length);
       continue;

@@ -144,7 +144,7 @@ export interface ExtractResult {
 /** Écart relatif tolérable entre une propriété recalculée et la valeur imprimée (arrondis, rayons de congé). */
 export const SECTION_TOLERANCE = 0.03;
 
-const slug = (s: string) =>
+export const slug = (s: string) =>
   s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

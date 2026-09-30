@@ -359,6 +359,11 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
             await vem.saveLibraryEntry(toPayload(panelEntry(p)));
             await refreshLibrary();
           }}
+          who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+          onSaveEntries={async (entries) => {
+            for (const e of entries) await vem.saveLibraryEntry(toPayload(e));
+            await refreshLibrary();
+          }}
         />
       </div>
       {step === 'site' && (
