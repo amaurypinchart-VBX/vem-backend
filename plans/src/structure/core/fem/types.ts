@@ -50,6 +50,8 @@ export interface FemMember {
   endJ?: EndSpec;
   /** barre active seulement en traction (contreventement) ou en compression (contact) */
   nonlinear?: 'tensionOnly' | 'compressionOnly';
+  /** false = barre de liaison équivalente (boulon, contact de 10 mm) : pas de rigidité géométrique au 2ᵉ ordre */
+  geometric?: boolean;
   /** découpage interne en n éléments (effet P-δ au 2ᵉ ordre, efforts intermédiaires) */
   segments?: number;
   /** famille (rive, poteau, liaison…) : sert au rapport et aux vérifications */
@@ -125,6 +127,11 @@ export interface AnalysisOptions {
   tolerance?: number;
   /** points de sortie des efforts par élément (≥ 2, extrémités comprises) */
   stations?: number;
+  /**
+   * contacts et appuis unilatéraux : effort résiduel admis (N) — une barre en compression seule tendue de moins que
+   * cette valeur reste active. Défaut 1 N.
+   */
+  contactTolerance?: number;
 }
 
 export interface Station {

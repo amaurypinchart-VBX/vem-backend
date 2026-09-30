@@ -496,6 +496,7 @@ export const SEED_MODULES: ModuleTypeEntry[] = [
       middleFootX: 2950,
       boltLongX: [210, 2290, 3610, 5690],
       boltShortY: [210, 2290],
+      verticalContactX: [1360, 2950, 4540],
       gap: 10,
       sections: {
         rim: 'UNP220',

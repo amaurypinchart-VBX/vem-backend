@@ -119,6 +119,8 @@ export interface ViewboxTemplateParams {
   /** boulons horizontaux entre modules voisins : abscisses sur les grands côtés, ordonnées sur les petits */
   boltLongX: number[];
   boltShortY: number[];
+  /** contacts verticaux entre Viewbox empilées, le long des grands côtés (abscisses ; SCIA Druckkontakt_vertikal) */
+  verticalContactX?: number[];
   /** écart entre deux modules juxtaposés (mm) */
   gap: number;
   sections: {

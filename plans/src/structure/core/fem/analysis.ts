@@ -206,13 +206,13 @@ function linearPass(
   elements.forEach((e, k) => {
     if (!st.active[k]) return;
     let K = e.Kb;
-    if (secondOrder && st.N[k] !== 0) {
+    if (secondOrder && st.N[k] !== 0 && e.member.geometric !== false) {
       const g = localGeometric(e.member, e.frame.L, st.N[k]);
       K = new Float64Array(144);
       for (let t = 0; t < 144; t++) K[t] = e.Kb[t] + g[t];
     }
     const c = condense(e.member, K);
-    for (const d of c.flex?.regularized ?? []) warnings.add(`Barre ${e.member.id} : ddl ${DOF_NAMES[d % 6]} sans rigidité à l'extrémité ${d < 6 ? 'i' : 'j'} (stabilisé)`);
+    for (const d of c.flex?.regularized ?? []) warnings.add(`${REGULARIZED}${e.member.id} ${DOF_NAMES[d % 6]} ${d < 6 ? 'i' : 'j'}`);
     cond[k] = c;
     Ktot[k] = K;
     const Kg = toGlobal(c.K, e.frame.R);
@@ -291,8 +291,19 @@ function linearPass(
       throw new FemError('instability', `Instabilité au 2ᵉ ordre (charge critique dépassée) — cas ${set.id}, nœud ${node} (${DOF_NAMES[e.dof]})`, [node]);
     throw new FemError('mechanism', `Système instable (mécanisme) — cas ${set.id} : le nœud ${node} n'est pas tenu en ${DOF_NAMES[e.dof]}`, [node]);
   }
-  return { u: solveFactor(factor, rhs), cond, feq, Ktot };
+  const u = solveFactor(factor, rhs);
+  // mécanisme presque singulier (raideur résiduelle numérique) : déplacements démesurés
+  let worst = 0;
+  for (let t = 0; t < n * 6; t++) if (t % 6 < 3 && Math.abs(u[t]) > Math.abs(u[worst])) worst = t;
+  if (Math.abs(u[worst]) > MAX_DISPLACEMENT) {
+    const node = nodes[Math.floor(worst / 6)].id;
+    throw new FemError('mechanism', `Système presque instable (mécanisme) — cas ${set.id} : déplacement de ${Math.round(Math.abs(u[worst]) / 1e3)} m au nœud ${node} en ${DOF_NAMES[worst % 6]}`, [node]);
+  }
+  return { u, cond, feq, Ktot };
 }
+
+/** Déplacement au-delà duquel le système est tenu pour un mécanisme (mm). */
+const MAX_DISPLACEMENT = 1e4;
 
 /** Valeurs et vecteurs propres d'une petite matrice symétrique (Jacobi) ; vecteurs en colonnes. */
 function symEigen(a: Float64Array, n: number): { values: number[]; vectors: Float64Array } {
@@ -358,7 +369,8 @@ function recover(e: Element, pass: Pass, k: number): { endF: Float64Array; ub: F
 
 export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOptions = {}): AnalysisResult {
   const secondOrder = !!options.secondOrder;
-  const maxIt = options.maxIterations ?? 30;
+  const maxIt = options.maxIterations ?? 100;
+  const ntol = options.contactTolerance ?? 1;
   const tol = options.tolerance ?? 1e-6;
   const nst = Math.max(2, options.stations ?? 5);
   const { elements, nodes } = prep;
@@ -375,19 +387,55 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
   let pass: Pass | null = null;
   let iterations = 0;
   let recovered: Array<{ endF: Float64Array; ub: Float64Array } | null> = [];
+  // états déjà rencontrés (détection des cycles), meilleur état (plus petite violation), état figé en fin de calcul
+  const seen = new Set<string>();
+  let single = false;
+  let frozen = false;
+  let best: { active: Uint8Array; lifted: Uint8Array; violation: number; which: string[] } | null = null;
+  const stateKey = () => `${st.active.join('')}|${st.lifted.join('')}`;
+  type Change = { kind: 'member' | 'support'; index: number; severity: number };
+  const where = (c: Change) => (c.kind === 'member' ? nodes[elements[c.index].member.i].id : nodes[prep.model.supports[c.index].node].id);
+  const toggle = (c: Change) => {
+    if (c.kind === 'member') st.active[c.index] ^= 1;
+    else st.lifted[c.index] ^= 1;
+  };
+  const mostSevere = (cs: Change[]) => cs.reduce((a, b) => (b.severity > a.severity ? b : a));
+  // derniers changements d'état appliqués et état d'avant (retour arrière si l'état essayé est instable)
+  let lastApplied: Change[] = [];
+  let prevState: { active: Uint8Array; lifted: Uint8Array } | null = null;
   for (;;) {
     iterations++;
-    pass = linearPass(prep, set, loads, st, secondOrder, spinning, warnings);
+    try {
+      pass = linearPass(prep, set, loads, st, secondOrder, spinning, warnings);
+    } catch (e) {
+      if (!(e instanceof FemError) || (e.code !== 'mechanism' && e.code !== 'instability') || !prevState || !lastApplied.length) throw e;
+      st.active.set(prevState.active);
+      st.lifted.set(prevState.lifted);
+      if (lastApplied.length > 1 && iterations < maxIt) {
+        // plusieurs changements à la fois ont rendu le système instable : un seul, le plus marqué
+        single = true;
+        lastApplied = [mostSevere(lastApplied)];
+        toggle(lastApplied[0]);
+        if (secondOrder) prevU = null;
+        continue;
+      }
+      // un seul soulèvement (ou une seule ouverture de contact) rend la structure instable : basculement
+      const c = lastApplied[0];
+      const what = c.kind === 'support' ? `l'appui ${where(c)} se soulève` : `le contact ${where(c)} s'ouvre`;
+      throw new FemError(e.code, `Stabilité d'ensemble non assurée (cas ${set.id}) : ${what} et la structure devient instable (basculement) — ${e.message}`, e.nodes);
+    }
     recovered = elements.map((e, k) => (st.active[k] ? recover(e, pass!, k) : null));
     const u = pass.u;
     // réactions des appuis en compression seule
-    const changes: Array<{ kind: 'member' | 'support'; index: number; severity: number }> = [];
-    if (nonlinear) {
+    // violations exprimées en effort (N) : barre active dans le mauvais sens, barre inactive qui reprendrait un effort
+    // (allongement × EA / L), appui qui tire ou appui soulevé qui pénètre (raideur nominale 1e6 N/mm)
+    const changes: Change[] = [];
+    if (nonlinear && !frozen) {
       const R = reactionsOf(prep, set, recovered, st);
       prep.model.supports.forEach((s, k) => {
         if (!s.compressionOnly) return;
-        if (!st.lifted[k] && R[k].R[1] < -1e-3) changes.push({ kind: 'support', index: k, severity: -R[k].R[1] });
-        else if (st.lifted[k] && u[s.node * 6 + 1] < -1e-6) changes.push({ kind: 'support', index: k, severity: -u[s.node * 6 + 1] * 1e3 });
+        if (!st.lifted[k] && R[k].R[1] < -ntol) changes.push({ kind: 'support', index: k, severity: -R[k].R[1] });
+        else if (st.lifted[k] && u[s.node * 6 + 1] < -1e-6) changes.push({ kind: 'support', index: k, severity: -u[s.node * 6 + 1] * 1e6 });
       });
       elements.forEach((e, k) => {
         const nl = e.member.nonlinear;
@@ -395,13 +443,14 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
         if (st.active[k]) {
           const r = recovered[k]!;
           const N = (-r.endF[0] + r.endF[6]) / 2;
-          if ((nl === 'tensionOnly' && N < -1e-3) || (nl === 'compressionOnly' && N > 1e-3)) changes.push({ kind: 'member', index: k, severity: Math.abs(N) });
+          if ((nl === 'tensionOnly' && N < -ntol) || (nl === 'compressionOnly' && N > ntol)) changes.push({ kind: 'member', index: k, severity: Math.abs(N) });
         } else {
           // allongement de la barre inactive (projection des déplacements sur son axe)
           const R3 = e.frame.R;
           let el = 0;
           for (let d = 0; d < 3; d++) el += R3[d] * (u[e.member.j * 6 + d] - u[e.member.i * 6 + d]);
-          if ((nl === 'tensionOnly' && el > 1e-6) || (nl === 'compressionOnly' && el < -1e-6)) changes.push({ kind: 'member', index: k, severity: Math.abs(el) * 1e3 });
+          const F = (el * e.member.E * e.member.A) / e.frame.L;
+          if ((nl === 'tensionOnly' && F > ntol) || (nl === 'compressionOnly' && F < -ntol)) changes.push({ kind: 'member', index: k, severity: Math.abs(F) });
         }
       });
     }
@@ -424,18 +473,43 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
       prevU = u;
     }
     if (!changes.length && converged) break;
+    if (changes.length) {
+      const violation = changes.reduce((m, c) => Math.max(m, c.severity), 0);
+      if (!best || violation < best.violation) best = { active: st.active.slice(), lifted: st.lifted.slice(), violation, which: changes.map(where) };
+      // cycle : l'état revient. D'abord un seul changement à la fois ; si le cycle persiste, aucun état ne satisfait
+      // exactement toutes les conditions de contact : on retient le meilleur si son effort résiduel est négligeable
+      const key = stateKey();
+      if (seen.has(key)) {
+        if (!single) {
+          single = true;
+          seen.clear();
+        } else {
+          const limit = Math.max(100 * ntol, 1e-3 * maxReaction(prep, set));
+          if (best.violation > limit)
+            throw new FemError('no-convergence', `Contacts indéterminés (cas ${set.id}) : effort résiduel ${Math.round(best.violation)} N`, best.which.slice(0, 10));
+          st.active.set(best.active);
+          st.lifted.set(best.lifted);
+          frozen = true;
+          warnings.add(`Contact(s) à la limite (cas ${set.id}) : effort résiduel ${Math.round(best.violation)} N négligé (${best.which.slice(0, 3).join(', ')})`);
+          if (secondOrder) prevU = null;
+          continue;
+        }
+      }
+      seen.add(key);
+    }
     if (iterations >= maxIt)
       throw new FemError(
         'no-convergence',
         `Le calcul ne converge pas en ${maxIt} itérations (cas ${set.id})${changes.length ? ` : ${changes.length} barre(s) ou appui(s) changent encore d'état` : ''}`,
-        changes.slice(0, 10).map((c) => (c.kind === 'member' ? nodes[elements[c.index].member.i].id : nodes[prep.model.supports[c.index].node].id)),
+        changes.slice(0, 10).map(where),
       );
-    // au-delà de 10 itérations, un seul changement d'état à la fois (le plus marqué) pour éviter les oscillations
-    const apply = iterations > 10 && changes.length > 1 ? [changes.reduce((a, b) => (b.severity > a.severity ? b : a))] : changes;
-    for (const c of apply) {
-      if (c.kind === 'member') st.active[c.index] ^= 1;
-      else st.lifted[c.index] ^= 1;
+    // au-delà de 10 itérations ou après un cycle, un seul changement d'état à la fois (le plus marqué)
+    const apply = (single || iterations > 10) && changes.length > 1 ? [mostSevere(changes)] : changes;
+    if (apply.length) {
+      prevState = { active: st.active.slice(), lifted: st.lifted.slice() };
+      lastApplied = apply;
     }
+    for (const c of apply) toggle(c);
     if (secondOrder && apply.length) prevU = null;
   }
   const reactions = reactionsOf(prep, set, recovered, st);
@@ -462,6 +536,10 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
     return { id: m.id, active, endForces, stations };
   });
   if (spinning.size) warnings.add(`${spinning.size} nœud(s) dont une rotation n'est retenue par aucune barre (articulations) : rotation stabilisée`);
+  // ddl d'extrémité sans rigidité : un seul message
+  const reg = [...warnings].filter((w) => w.startsWith(REGULARIZED));
+  for (const w of reg) warnings.delete(w);
+  if (reg.length) warnings.add(`${reg.length} ddl d'extrémité de barre sans rigidité, stabilisés (${reg.slice(0, 3).map((w) => w.slice(REGULARIZED.length)).join(', ')}${reg.length > 3 ? '…' : ''})`);
   return {
     loadSet: set.id,
     displacements: pass.u.slice(0, prep.model.nodes.length * 6),
@@ -470,6 +548,26 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
     iterations,
     warnings: [...warnings],
   };
+}
+
+const REGULARIZED = '\u0000reg:';
+
+/** Ordre de grandeur des efforts du cas : somme des charges nodales et réparties (N), pour les tolérances. */
+function maxReaction(prep: Prepared, set: LoadSet): number {
+  let s = 0;
+  for (const ld of set.nodal) s += Math.hypot(ld.f[0], ld.f[1], ld.f[2]);
+  for (const ld of set.member) {
+    if (ld.kind === 'point') s += Math.abs(ld.P);
+    else {
+      const m = prep.model.members[ld.member];
+      if (!m) continue;
+      const a = prep.model.nodes[m.i];
+      const b = prep.model.nodes[m.j];
+      const L = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+      s += ((Math.abs(ld.q1) + Math.abs(ld.q2 ?? ld.q1)) / 2) * ((ld.b ?? L) - (ld.a ?? 0));
+    }
+  }
+  return s;
 }
 
 /** Réactions : somme des efforts des barres aboutissant à chaque nœud d'appui, moins les charges nodales. */
