@@ -22,6 +22,9 @@ async function loadProjectDetail(id) {
   const res = await api('GET', `/projects/${id}`);
   if (!res?.success) return;
   const p = res.data;
+  // Check-list « Préparation de l'installation » en haut de l'onglet Infos (js/15-checklists.js) :
+  // lancée tout de suite, pour ne pas dépendre du rendu du reste de la fiche
+  if (typeof loadChecklistCard === 'function') loadChecklistCard(id, 'prep');
 
   document.getElementById('detail-name').textContent = p.name;
   document.getElementById('detail-sub').textContent = `${p.internalNumber} · ${p.client?.name||''}`;
@@ -351,8 +354,6 @@ async function loadProjectDetail(id) {
 
   // Load tasks for detail
   loadDetailTasks(id);
-  // Check-list « Préparation de l'installation » en haut de l'onglet Infos (js/15-checklists.js)
-  loadChecklistCard(id, 'prep');
 }
 
 // ── taskCardHTML helper (used by global tasks view) ──
