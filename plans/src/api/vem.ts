@@ -167,6 +167,21 @@ export interface StudyRecord {
   updatedAt: string;
 }
 
+/** Rapport PDF d'une étude structure enregistré dans le projet (table struct_reports). */
+export interface StructReportRecord {
+  id: string;
+  studyId: string;
+  lang: string;
+  variant: string;
+  verdict: string | null;
+  pages: number | null;
+  fileName: string;
+  url: string;
+  sizeBytes: number | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
 /** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
@@ -215,6 +230,14 @@ export const vem = {
     api<StudyRecord>('POST', `/structure/project/${projectId}/studies`, body),
   saveStudy: (id: string, body: Partial<Pick<StudyRecord, 'name' | 'settings' | 'assignments' | 'resultsSummary' | 'status' | 'stale'>>) =>
     api<StudyRecord>('PUT', `/structure/studies/${id}`, body),
+  listReports: (studyId: string) => api<StructReportRecord[]>('GET', `/structure/studies/${studyId}/reports`),
+  uploadReport: (studyId: string, pdf: Blob, meta: { fileName: string; lang: string; variant: string; verdict: string; pages: number }) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(meta)) fd.append(k, String(v));
+    fd.append('file', pdf, meta.fileName);
+    return api<StructReportRecord>('POST', `/structure/studies/${studyId}/reports`, fd);
+  },
+  deleteReport: (id: string) => api<null>('DELETE', `/structure/reports/${id}`),
   getSetting: <T>(key: string) => api<T | null>('GET', `/settings/${key}`),
   saveSetting: <T>(key: string, value: T) => api<T>('PUT', `/settings/${key}`, { value }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),

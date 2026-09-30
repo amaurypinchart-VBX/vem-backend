@@ -52,7 +52,7 @@ export function checkPlywoodStrip(p: PlywoodInput): PlywoodResult {
     records: [
       {
         key: `plywood.${p.label}`,
-        title: `${p.label} — contreplaqué ${m.name}, bande de 1 m`,
+        title: `${p.label} — ${m.name.replace(/\s*\(.*\)\s*$/, '')}, bande de 1 m`,
         clause: 'DIN EN 1995-1-1 ; statico 24-0571 § 3.5',
         formula: 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = qEd · L / 2 ; mEd = qEd · L² / 8',
         withValues: `t = ${f2(t / 10, 1)} cm, L = ${f2(p.span / 10, 0)} cm, kmod = ${f2(p.kmod)} ; vRd = ${f2(vRd / 1e3)} kN/m, mRd = ${f2(mRd / 1e4)} kNcm/m ; qEd = ${qTxt} ; vEd = ${f2(vEd / 1e3)} kN/m, mEd = ${f2(mEd / 1e4)} kNcm/m`,

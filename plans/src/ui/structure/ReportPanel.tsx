@@ -1,0 +1,443 @@
+// Étape « 6. Rapport » : rapport PDF de l'étude (FR par défaut, DE, EN ; version compacte ou détaillée avec annexe),
+// vues 3D rendues par un viewer caché (modèle, taux de travail), plan de calage A3 fait avec le moteur de planches
+// (vue de dessus du niveau 0 calculée par le moteur 2D + plaques en surcouche), aperçu des pages, téléchargement,
+// enregistrement dans le projet (Cloudinary, 10 Mo au plus) et liste des rapports enregistrés.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { LoadedScene } from '../../scene/loadedScene';
+import type { GlassTest } from '../../linework/packets';
+import type { BrowserHlrProvider } from '../../linework/provider';
+import type { Linework2D } from '../../linework/types';
+import { subsetForLevel } from '../../core/subset';
+import { viewBasis } from '../../core/views';
+import { LineworkBank } from '../../sheets/bank';
+import type { ViewportData } from '../../sheets/SheetSvg';
+import { SheetSvg } from '../../sheets/SheetSvg';
+import { fitScale } from '../../sheets/scales';
+import { titleBlockFromProject, fmtDate } from '../../sheets/titleBlock';
+import type { ViewportItem } from '../../sheets/types';
+import { SceneViewer } from '../../viewer/SceneViewer';
+import type { CalageResult } from '../../structure/core/calage';
+import { computeCalage } from '../../structure/core/calage';
+import type { EstimateModule } from '../../structure/core/estimate';
+import { BEARING_PRESETS, bearingFrom } from '../../structure/core/ground';
+import type { Recognition } from '../../structure/core/recognition';
+import { VERDICT_LABEL } from '../../structure/core/records';
+import type { ReportImage, ReportOutput, ReportVariant } from '../../structure/report/build';
+import { buildReport } from '../../structure/report/build';
+import { calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outlineLinework } from '../../structure/report/calagePlan';
+import type { Lang } from '../../structure/report/i18n';
+import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
+import type { StudyInputs, StudyRun } from '../../structure/studyRun';
+import type { ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
+import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
+import { downloadBlob } from '../common';
+import { moduleEtaColors } from './CalcResults';
+import type { Hypotheses, StructureStock } from './GroundPanel';
+import { calageInput } from './GroundPanel';
+
+/** Version affichée dans les rapports. */
+export const STRUCTURE_VERSION = 'v1.0';
+const MAX_UPLOAD = 10 * 1024 * 1024;
+
+interface Props {
+  scene: LoadedScene;
+  provider: BrowserHlrProvider | null;
+  glassTest: GlassTest;
+  run: StudyRun | null;
+  stale: boolean;
+  inputs: StudyInputs;
+  hyp: Hypotheses;
+  modules: EstimateModule[];
+  recognition: Recognition;
+  model?: ModelVersion;
+  study: StudyRecord | null;
+  me: VemUser | null;
+}
+
+interface Prepared {
+  key: string;
+  report: ReportOutput;
+  fileName: string;
+}
+
+/** Captures 3D du rapport (modèle, taux de travail) par un viewer caché : JPEG, fond blanc. */
+async function captureViews(scene: LoadedScene, glassTest: GlassTest, colors: Map<string, number>): Promise<{ view3d: ReportImage; eta3d: ReportImage }> {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:1350px;height:900px;pointer-events:none;';
+  document.body.appendChild(host);
+  const viewer = new SceneViewer(host, scene, glassTest);
+  viewer.setFrontMarkers(false);
+  const toImage = async (blob: Blob, width: number, height: number): Promise<ReportImage> => {
+    const { pdfImageDataUrl } = await import('../../sheets/pdf/assets');
+    const url = URL.createObjectURL(blob);
+    try {
+      return { href: await pdfImageDataUrl(url, 0.85), width, height };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  try {
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    viewer.setVisibility(null);
+    const pose = viewer.poseFor('iso-sw', undefined, 1.5, 1.02, 'perspective');
+    const a = await viewer.capture({ size: 1800, background: 'white', marginPct: 2, pose });
+    viewer.setColorOverlay(colors);
+    const b = await viewer.capture({ size: 1800, background: 'white', marginPct: 2, pose });
+    return { view3d: await toImage(a.blob, a.width, a.height), eta3d: await toImage(b.blob, b.width, b.height) };
+  } finally {
+    viewer.dispose();
+    host.remove();
+  }
+}
+
+const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+
+export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me }: Props) {
+  const [lang, setLang] = useState<Lang>('fr');
+  const [variant, setVariant] = useState<ReportVariant>('compact');
+  const [withPlan, setWithPlan] = useState(true);
+  const [with3d, setWith3d] = useState(true);
+  const [project, setProject] = useState<Project | null>(null);
+  const [stock, setStock] = useState<StructureStock>({ plates: [], commercial: [] });
+  const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState<StructReportRecord[]>([]);
+  const [page, setPage] = useState(0);
+  const images = useRef<{ key: unknown; value: { view3d: ReportImage; eta3d: ReportImage } } | null>(null);
+
+  useEffect(() => {
+    if (PROJECT_ID) vem.project(PROJECT_ID).then(setProject).catch(() => {});
+    vem
+      .getSetting<StructureStock>(STRUCTURE_STOCK_KEY)
+      .then((s) => s && setStock({ plates: s.plates ?? [], commercial: s.commercial ?? [] }))
+      .catch(() => {});
+  }, []);
+  const refreshSaved = async () => {
+    if (!study) return;
+    try {
+      setSaved(await vem.listReports(study.id));
+    } catch {
+      /* liste indisponible (hors ligne) */
+    }
+  };
+  useEffect(() => {
+    void refreshSaved();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [study?.id]);
+
+  // calage avec les réactions du calcul (mêmes entrées que l'étape 5)
+  const calage = useMemo((): CalageResult | null => {
+    if (!run || stale || !modules.length) return null;
+    const input = { ...calageInput(modules, hyp, stock), reactions: run.ground };
+    if (!(input.bearing > 0)) return null;
+    try {
+      return computeCalage(input);
+    } catch {
+      return null;
+    }
+  }, [run, stale, modules, hyp, stock]);
+  const bearing = useMemo(() => {
+    const v = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
+    return v > 0 ? { value: v, label: BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset)?.label ?? '—' } : null;
+  }, [hyp]);
+  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id]);
+  useEffect(() => {
+    if (prepared && prepared.key !== key) setPrepared(null);
+  }, [key, prepared]);
+
+  const projectName = project ? `${project.internalNumber ? project.internalNumber + ' ' : ''}${project.name}` : (model?.fileName ?? 'Projet');
+
+  /** Plan de calage A3 : vue de dessus du niveau 0 par le moteur 2D (pieds, sinon planchers), plaques en surcouche. */
+  const planPage = async (l: Lang): Promise<((label: string) => string) | null> => {
+    if (!run || !calage) return null;
+    const lowest = Math.min(...scene.index.modules.map((m) => m.level));
+    const include = subsetForLevel(scene.index, lowest);
+    const plates = calagePlates(run.structure, calage, l);
+    const { sheet, notes, legend, viewport } = calageSheet({ lang: l, modelKey: scene.modelKey, include, plates, calage, bearing, jacks: inputs.options.jacks, number: '' });
+    const basis = viewBasis(viewport.request.view, scene.frames);
+    let data: ((vp: ViewportItem) => ViewportData) | null = null;
+    let lw: Linework2D | null = null;
+    if (provider) {
+      const bank = new LineworkBank(scene, provider);
+      let r = await bank.load(viewport);
+      if (!r) {
+        // pas de pieds dans le modèle : planchers et structure du niveau 0
+        viewport.request = { ...viewport.request, subset: { include, hideCategories: ['TOIT'] } };
+        r = await bank.load(viewport);
+      }
+      if (r) {
+        lw = r.lw;
+        viewport.lineworkKey = r.key;
+        data = (vp) => bank.data(vp);
+      }
+    }
+    if (!lw) {
+      lw = outlineLinework(run.structure, basis);
+      const fallback = lw;
+      data = () => ({ lw: fallback, basis });
+    }
+    fitCalageViewport(viewport, lw, plates, basis, fitScale);
+    const tb = calageTitleBlock(titleBlockFromProject(project, me), l);
+    const viewData = data!;
+    return (label: string) => renderToStaticMarkup(<SheetSvg sheet={{ ...sheet, number: label }} titleBlock={tb} notes={notes} legend={legend} viewData={viewData} />);
+  };
+
+  const prepare = async (): Promise<Prepared | null> => {
+    if (!run) return null;
+    setError('');
+    try {
+      let imgs: { view3d: ReportImage; eta3d: ReportImage } | undefined;
+      if (with3d) {
+        const ik = [run.durationMs, lang];
+        if (images.current && JSON.stringify(images.current.key) === JSON.stringify(ik)) imgs = images.current.value;
+        else {
+          setBusy('Vues 3D…');
+          imgs = await captureViews(scene, glassTest, moduleEtaColors(run, scene, recognition));
+          images.current = { key: ik, value: imgs };
+        }
+      }
+      setBusy('Plan de calage…');
+      const plan = withPlan ? await planPage(lang) : null;
+      setBusy('Mise en page…');
+      await new Promise((r) => setTimeout(r, 0));
+      const tb = titleBlockFromProject(project, me);
+      const report = buildReport({
+        lang,
+        variant,
+        project: { name: tb.projectName || model?.fileName || '', number: tb.projectNumber, client: tb.client, address: tb.address, installation: tb.projectDate },
+        author: tb.drawnBy,
+        date: new Date(),
+        model: { fileName: scene.index.source.fileName, date: model ? fmtDate(model.createdAt).replace(/ \/ /g, '.') : fmtDate(new Date()).replace(/ \/ /g, '.') },
+        version: STRUCTURE_VERSION,
+        study: inputs,
+        run,
+        calage,
+        bearing,
+        moduleWeightKg: hyp.moduleWeightKg,
+        sceneWarnings: [],
+        images: imgs,
+        calagePlan: plan ?? undefined,
+      });
+      const L = LABELS[lang];
+      const p: Prepared = { key, report, fileName: safeName(`${L.coverTitle} ${projectName} ${lang.toUpperCase()}${variant === 'detailed' ? ' +' : ''}.pdf`) };
+      setPrepared(p);
+      setPage(0);
+      return p;
+    } catch (e) {
+      setError(`Rapport impossible : ${(e as Error).message}`);
+      return null;
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toPdf = async (pages: ReportOutput['pages'], title: string): Promise<Blob> => {
+    const [{ buildPdf, fontsUsed }, { loadFonts }] = await Promise.all([import('../../sheets/pdf/pdf'), import('../../sheets/pdf/assets')]);
+    setBusy('PDF : polices…');
+    const fonts = await loadFonts(fontsUsed(pages.map((p) => p.svg)));
+    const pdf = await buildPdf(
+      pages.map((p) => ({ svg: p.svg, paper: 'A3' as const, size: p.size })),
+      fonts,
+      { title, subject: `VEM · Étude structure ${STRUCTURE_VERSION}` },
+      (d, n) => setBusy(`PDF : page ${d}/${n}…`),
+    );
+    return pdf.output('blob');
+  };
+
+  const download = async () => {
+    const p = prepared ?? (await prepare());
+    if (!p) return;
+    try {
+      downloadBlob(p.fileName, await toPdf(p.report.pages, p.fileName.replace(/\.pdf$/, '')));
+    } catch (e) {
+      setError(`PDF impossible : ${(e as Error).message}`);
+    }
+    setBusy('');
+  };
+
+  const downloadPlan = async () => {
+    setError('');
+    try {
+      setBusy('Plan de calage…');
+      const plan = await planPage(lang);
+      if (!plan) throw new Error('calage non dimensionné (portance ou calcul manquant)');
+      const L = LABELS[lang];
+      const name = safeName(`${L.calagePlan} ${projectName}.pdf`);
+      downloadBlob(name, await toPdf([{ svg: plan('C 1'), size: { w: 420, h: 297 } }], name.replace(/\.pdf$/, '')));
+    } catch (e) {
+      setError(`Plan de calage impossible : ${(e as Error).message}`);
+    }
+    setBusy('');
+  };
+
+  const save = async () => {
+    if (!study) return;
+    const p = prepared ?? (await prepare());
+    if (!p) return;
+    try {
+      const blob = await toPdf(p.report.pages, p.fileName.replace(/\.pdf$/, ''));
+      if (blob.size > MAX_UPLOAD) throw new Error(`PDF de ${(blob.size / 1e6).toFixed(1)} Mo : plus de 10 Mo, refusé par Cloudinary — décocher les vues 3D ou choisir la version compacte`);
+      setBusy('Envoi…');
+      await vem.uploadReport(study.id, blob, { fileName: p.fileName, lang, variant, verdict: p.report.verdict, pages: p.report.pages.length });
+      await refreshSaved();
+    } catch (e) {
+      setError(`Enregistrement impossible : ${(e as Error).message}`);
+    }
+    setBusy('');
+  };
+
+  if (!run)
+    return (
+      <div className="card">
+        <div className="card-body hint">Pas encore de résultat : lancer le calcul à l’étape 3, le rapport est fait à partir du calcul complet.</div>
+      </div>
+    );
+  const cur = prepared?.report.pages[page];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1fr) minmax(0, 2fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="card">
+          <div className="card-head">
+            <h3>Rapport PDF</h3>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {stale && <div className="error-box">Résultat périmé : les données ont changé depuis le calcul. Relancer l’étape 3 avant de faire le rapport.</div>}
+            <label className="row" style={{ justifyContent: 'space-between' }}>
+              Langue
+              <select value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
+                {LANGS.map((l) => (
+                  <option key={l} value={l}>
+                    {LANG_LABEL[l]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="row" style={{ justifyContent: 'space-between' }}>
+              Version
+              <select value={variant} onChange={(e) => setVariant(e.target.value as ReportVariant)}>
+                <option value="compact">Compacte (synthèse + chapitres)</option>
+                <option value="detailed">Détaillée (avec annexe de calcul)</option>
+              </select>
+            </label>
+            <label className="row hint">
+              <input type="checkbox" checked={withPlan} onChange={(e) => setWithPlan(e.target.checked)} /> Joindre le plan de calage A3
+            </label>
+            <label className="row hint">
+              <input type="checkbox" checked={with3d} onChange={(e) => setWith3d(e.target.checked)} /> Vues 3D (modèle et taux de travail)
+            </label>
+            {!calage && <div className="hint" style={{ color: 'var(--warn)' }}>Calage non dimensionné (portance à renseigner à l’étape 2) : le rapport le signale.</div>}
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button className="btn small" disabled={!!busy || stale} onClick={() => void prepare()}>
+                {prepared ? '↻ Refaire l’aperçu' : 'Aperçu'}
+              </button>
+              <button className="btn small primary" disabled={!!busy || stale} onClick={() => void download()}>
+                ⬇ PDF du rapport
+              </button>
+              <button className="btn small" disabled={!!busy || stale || !calage} onClick={() => void downloadPlan()} title="Plan de calage seul, pour l'équipe de montage">
+                ⬇ Plan de calage A3
+              </button>
+              <button className="btn small" disabled={!!busy || stale || !study} onClick={() => void save()} title={study ? 'PDF enregistré dans le projet' : 'Étude non enregistrée'}>
+                Enregistrer dans le projet
+              </button>
+            </div>
+            {busy && <div className="hint">{busy}</div>}
+            {error && <div className="error-box">{error}</div>}
+            {prepared && (
+              <div className="hint">
+                {VERDICT_LABEL[prepared.report.verdict]} · {prepared.report.pages.length} pages ({prepared.report.mainPages} + {prepared.report.annexPages} d’annexe + page de garde)
+              </div>
+            )}
+            <div className="hint">Pré-étude interne, non vérifiée par un ingénieur : filigrane sur chaque page.</div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Rapports enregistrés</h3>
+          </div>
+          <div className="card-body">
+            {saved.length ? (
+              <table className="list">
+                <tbody>
+                  {saved.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <a href={r.url} target="_blank" rel="noreferrer">
+                          {r.fileName}
+                        </a>
+                        <div className="hint">
+                          {new Date(r.createdAt).toLocaleString('fr-FR')} · {r.lang.toUpperCase()} · {r.variant === 'detailed' ? 'détaillée' : 'compacte'}
+                          {r.pages ? ` · ${r.pages} p.` : ''}
+                        </div>
+                      </td>
+                      <td>{r.verdict ? VERDICT_LABEL[r.verdict as keyof typeof VERDICT_LABEL] : ''}</td>
+                      <td>
+                        <button
+                          className="btn small ghost"
+                          onClick={async () => {
+                            if (!window.confirm(`Supprimer « ${r.fileName} » ?`)) return;
+                            try {
+                              await vem.deleteReport(r.id);
+                              await refreshSaved();
+                            } catch (e) {
+                              setError((e as Error).message);
+                            }
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="hint">Aucun rapport enregistré pour cette étude.</div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head">
+          <h3>Aperçu</h3>
+          <div className="spacer" style={{ flex: 1 }} />
+          {prepared && (
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn small ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                ◀
+              </button>
+              <span className="hint">
+                {page + 1} / {prepared.report.pages.length}
+              </span>
+              <button className="btn small ghost" disabled={page >= prepared.report.pages.length - 1} onClick={() => setPage(page + 1)}>
+                ▶
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+          {cur ? (
+            <img
+              className="report-page"
+              alt={`page ${page + 1}`}
+              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(cur.svg)}`}
+              style={{ width: '100%', maxWidth: cur.size.w > cur.size.h ? 1100 : 760, background: '#fff', boxShadow: '0 1px 6px rgba(0,0,0,.25)' }}
+            />
+          ) : (
+            <div className="hint">« Aperçu » prépare les pages (vues 3D, plan de calage, mise en page) sans télécharger.</div>
+          )}
+          {prepared && (
+            <div className="row" style={{ gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {prepared.report.pages.map((_, k) => (
+                <button key={k} className={`btn small ${k === page ? 'primary' : 'ghost'}`} onClick={() => setPage(k)} title={`page ${k + 1}`}>
+                  {k === 0 ? 'Garde' : k}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

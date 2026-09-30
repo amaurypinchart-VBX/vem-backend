@@ -85,7 +85,7 @@ const blockingMsgs = await page.locator('.warning.error .msg').allInnerTexts();
 if (blockingMsgs.length) console.log('Bloquant :', blockingMsgs);
 await shootAll('structure-calcul-avant');
 await page.getByRole('button', { name: /Lancer le calcul/ }).click({ timeout: 10000 });
-const t0 = Date.now();
+let t0 = Date.now();
 await Promise.race([
   page.getByRole('button', { name: /Voir les résultats/ }).waitFor({ timeout: 600000 }),
   page.locator('.error-box').waitFor({ timeout: 600000 }).then(async () => {
@@ -110,6 +110,32 @@ console.log('Calage :', await page.getByText(/^Réactions : /).innerText());
 const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Fiche PDF' }).click()]);
 await dl2.saveAs(shots + 'calage-modele.pdf');
 console.log('Fiche PDF du modèle :', dl2.suggestedFilename());
+// 6. Rapport : aperçu, PDF (FR compact puis DE détaillé), plan de calage A3 seul, enregistrement dans le projet
+await page.getByRole('button', { name: /6\. Rapport/ }).click();
+await page.getByText('Rapport PDF').first().waitFor();
+t0 = Date.now();
+await page.getByRole('button', { name: 'Aperçu' }).click();
+await page.locator('img.report-page').waitFor({ timeout: 300000 });
+console.log(`Rapport préparé en ${((Date.now() - t0) / 1000).toFixed(1)} s :`, await page.getByText(/pages \(/).innerText());
+await shootAll('structure-rapport');
+await page.getByRole('button', { name: '2', exact: true }).click();
+await page.waitForTimeout(500);
+await shootAll('structure-rapport-p2');
+const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: '⬇ PDF du rapport' }).click()]);
+await dl3.saveAs(shots + 'rapport-fr.pdf');
+console.log('Rapport PDF :', dl3.suggestedFilename());
+const [dl4] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: '⬇ Plan de calage A3' }).click()]);
+await dl4.saveAs(shots + 'plan-calage.pdf');
+console.log('Plan de calage :', dl4.suggestedFilename());
+await page.locator('label:has-text("Langue") select').selectOption('de');
+await page.locator('label:has-text("Version") select').selectOption('detailed');
+const [dl5] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: '⬇ PDF du rapport' }).click()]);
+await dl5.saveAs(shots + 'rapport-de.pdf');
+console.log('Rapport DE détaillé :', dl5.suggestedFilename());
+await page.getByRole('button', { name: 'Enregistrer dans le projet' }).click();
+await page.getByText('Rapports enregistrés').waitFor();
+await page.locator('a', { hasText: 'Statische Vorbemessung' }).waitFor({ timeout: 300000 });
+console.log('Rapports enregistrés :', await page.locator('a', { hasText: '.pdf' }).count());
 // Réglages › Bibliothèque structure : les réponses mémorisées y figurent
 await page.getByRole('button', { name: '← Modèles' }).click();
 await page.getByRole('button', { name: 'Réglages' }).click();

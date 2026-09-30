@@ -28,6 +28,7 @@ let failUploads = Number(process.env.FAIL_UPLOADS || 0);
 // étude structure : bibliothèque en ligne et études
 const library = new Map();
 const studies = new Map();
+const reports = new Map();
 let seqStruct = 0;
 const libraryRow = (b, prev) => ({
   id: prev?.id ?? `L${++seqStruct}`, kind: b.kind, key: b.key, name: b.name, data: b.data ?? {}, source: b.source ?? null,
@@ -90,6 +91,20 @@ http.createServer(async (req, res) => {
       studies.set(st.id, st);
       return json(res, st);
     }
+    // rapports PDF d'une étude
+    const rps = a.match(/^\/structure\/studies\/(\w+)\/reports$/);
+    if (rps && req.method === 'GET') return json(res, [...reports.values()].filter((r) => r.studyId === rps[1]).reverse());
+    if (rps && req.method === 'POST') {
+      const { fields, file } = multipart(req, await body(req));
+      const key = 'pdf-' + blobs.size;
+      blobs.set(key, { buf: file, type: 'application/pdf' });
+      const r = { id: `R${++seqStruct}`, studyId: rps[1], lang: fields.lang, variant: fields.variant, verdict: fields.verdict, pages: Number(fields.pages), fileName: fields.fileName, url: '/blob/' + key, sizeBytes: file.length, createdBy: 'u1', createdAt: new Date().toISOString() };
+      reports.set(r.id, r);
+      console.log(`[server] rapport ${r.id} : ${r.fileName}, ${r.pages} pages, ${file.length} octets`);
+      return json(res, r);
+    }
+    const rpd = a.match(/^\/structure\/reports\/(\w+)$/);
+    if (rpd && req.method === 'DELETE') { reports.delete(rpd[1]); return json(res, null); }
     const stu = a.match(/^\/structure\/studies\/(\w+)$/);
     if (stu && req.method === 'PUT') { const st = studies.get(stu[1]); Object.assign(st, JSON.parse((await body(req)).toString()), { updatedAt: new Date().toISOString() }); return json(res, st); }
     if (stu && req.method === 'GET') return json(res, studies.get(stu[1]));

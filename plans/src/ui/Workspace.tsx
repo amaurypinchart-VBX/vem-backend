@@ -215,7 +215,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       )}
       {scene && visited.has('structure') && (
         <div style={{ display: tab === 'structure' ? 'block' : 'none' }}>
-          <StructurePage scene={scene} model={model} glassTest={glassTest} rules={rules} framesVersion={framesVersion} active={tab === 'structure'} />
+          <StructurePage scene={scene} model={model} glassTest={glassTest} rules={rules} framesVersion={framesVersion} active={tab === 'structure'} provider={provider} />
         </div>
       )}
       {scene && provider && visited.has('2d') && (

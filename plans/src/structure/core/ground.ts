@@ -498,6 +498,8 @@ export interface Solution {
   eta: number;
   materials: MaterialLine[];
   records: CalcRecord[];
+  /** emprise d'une plaque sous le groupe d'appuis (mm), pour le plan de calage */
+  footprint?: { l: number; w: number };
 }
 
 export interface CommercialPlate {
@@ -552,6 +554,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       eta: Math.max(plate.etaGround, plate.etaC90, (6 * plate.Wreq) / (ply.n * ply.t * ply.t)),
       materials: [{ label: 'Contreplaqué F40/30', dims: `${plate.side} × ${plate.side} × ${ply.t} mm`, quantity: ply.needed, massKg: woodMass(plate.side, ply.t) * ply.needed }],
       records: plate.records,
+      footprint: { l: plate.side, w: plate.side },
     });
   }
   // plaques du stock
@@ -570,6 +573,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       eta: Math.max(c.result.etaGround, c.result.etaC90, (6 * c.result.Wreq) / (c.n * c.t * c.t)),
       materials: [{ label: 'Contreplaqué (stock)', dims: `${st.length} × ${st.width} × ${st.thickness} mm`, quantity: c.needed, massKg: (st.length * st.width * st.thickness * PLYWOOD_F40.rho * c.needed) / 1e9 }],
       records: c.result.records,
+      footprint: { l: st.length, w: st.width },
     });
   }
   // tôle acier
@@ -588,6 +592,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       eta: Math.max(plate.etaGround, steel.records[1].eta ?? Infinity),
       materials: steel.t ? [{ label: 'Tôle acier S235', dims: `${steel.side} × ${steel.side} × ${steel.t} mm`, quantity: g.groups, massKg: steel.massKg * g.groups }] : [],
       records: steel.records,
+      ...(steel.t ? { footprint: { l: steel.side, w: steel.side } } : {}),
     });
   }
   // plaques de répartition du commerce (capacité du fabricant)
@@ -615,6 +620,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
           eta: Math.max(Rzk / c.capacity, sigma / g.bearing),
         },
       ],
+      footprint: { l: c.length, w: c.width },
     });
   }
   let point: CalcRecord | undefined;

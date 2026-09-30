@@ -255,3 +255,16 @@ export interface PartTypeEntry extends EntryBase {
 }
 
 export type LibraryEntry = SectionEntry | ConnectionEntry | SpreadingEntry | StockEntry | ModuleTypeEntry | MaterialEntry | PartTypeEntry;
+
+/**
+ * Désignation technique d'une section ou d'un matériau de la bibliothèque, sans sa description d'usage :
+ * « UNP 220 (rives plancher / toiture) » → « UNP 220 » ; « Réception de pied d’angle (T soudé 215 × 10 / 130 × 15, …) »
+ * → « T soudé 215 × 10 / 130 × 15 ».
+ */
+export function designation(name: string): string {
+  const m = name.match(/^(.*?)\s*\((.*)\)\s*$/);
+  if (!m) return name;
+  const t = m[2].match(/T soudé [^,]*/);
+  if (t && !/^(UNP|UPE|IPE|HE[ABM]|QHP|RHP|SHS|RHS|CHS|QRO|RD|Plat|U plié|C plié)/.test(m[1])) return t[0];
+  return m[1];
+}

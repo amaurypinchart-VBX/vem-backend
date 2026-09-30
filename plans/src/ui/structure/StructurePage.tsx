@@ -24,6 +24,8 @@ import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
 import type { StudyRunner } from '../../structure/worker/study';
 import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
 import { CalcPanel, ResultsPanel } from './CalcResults';
+import { ReportPanel } from './ReportPanel';
+import type { BrowserHlrProvider } from '../../linework/provider';
 import type { ModelVersion, StudyRecord, VemUser } from '../../api/vem';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { Hypotheses } from './GroundPanel';
@@ -71,9 +73,11 @@ interface Props {
   rules: ClassificationRules;
   framesVersion: number;
   active: boolean;
+  /** moteur 2D (plan de calage du rapport) */
+  provider?: BrowserHlrProvider | null;
 }
 
-export function StructurePage({ scene, model, glassTest, rules, framesVersion, active }: Props) {
+export function StructurePage({ scene, model, glassTest, rules, framesVersion, active, provider = null }: Props) {
   const [step, setStep] = useState<Step>('recognition');
   const [me, setMe] = useState<VemUser | null>(null);
   const [rows, setRows] = useState<ServerLibraryRow[]>([]);
@@ -292,7 +296,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     calc: running ? 'warn' : run ? (stale ? 'warn' : 'ok') : sceneModel.errors.length ? 'bad' : 'todo',
     results: run ? (run.result.verdict.verdict === 'ok' ? 'ok' : run.result.verdict.verdict === 'limit' ? 'warn' : 'bad') : 'todo',
     ground: modules.length ? 'warn' : 'todo',
-    report: 'todo',
+    report: run && !stale ? 'ok' : 'todo',
   };
   const STEPS: Array<{ key: Step; label: string; soon?: string }> = [
     { key: 'recognition', label: '1. Reconnaissance' },
@@ -300,7 +304,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     { key: 'calc', label: '3. Calcul' },
     { key: 'results', label: '4. Résultats' },
     { key: 'ground', label: '5. Sol & calage' },
-    { key: 'report', label: '6. Rapport', soon: 'S6' },
+    { key: 'report', label: '6. Rapport' },
   ];
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Étude enregistrée', error: '✗ Non enregistrée', local: 'Étude non enregistrée (modèle sans version en ligne)' }[saveState];
 
@@ -382,12 +386,20 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         <ResultsPanel scene={scene} glassTest={glassTest} active={active && step === 'results'} recognition={recognition} run={run?.result ?? null} stale={stale} />
       </div>
       {step === 'report' && (
-        <div className="card">
-          <div className="card-body hint">
-            Rapport PDF complet (FR / DE / EN) : phase S6. La fiche de calage PDF est déjà disponible à l’étape 5.
-            {recognition.blocking > 0 && ` — ${recognition.blocking} type(s) de pièce encore inconnu(s) : le verdict serait « incomplet ».`}
-          </div>
-        </div>
+        <ReportPanel
+          scene={scene}
+          provider={provider}
+          glassTest={glassTest}
+          run={run?.result ?? null}
+          stale={stale}
+          inputs={studyInputs}
+          hyp={hyp}
+          modules={modules}
+          recognition={recognition}
+          model={model}
+          study={study}
+          me={me}
+        />
       )}
       {step === 'ground' && (
         <GroundPanel

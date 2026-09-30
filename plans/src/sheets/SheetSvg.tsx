@@ -354,7 +354,14 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
           })}
           {vp.overlays?.moduleOutlines &&
             overlays.map((o) => <path key={`o${o.moduleId}`} d={polyD(o.outline)} stroke="#000" strokeWidth={num(0.18 * s)} strokeDasharray={`${num(3 * s)} ${num(1.5 * s)}`} />)}
+          {vp.overlays?.calage &&
+            data?.basis &&
+            vp.overlays.calage.map((p) => {
+              const pts = p.corners.map((c) => projectPoint(data.basis!, c));
+              return <path key={`p${p.id}`} d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))} fill={p.color} fillOpacity={0.28} stroke={p.color} strokeWidth={num(0.3 * s)} />;
+            })}
         </g>
+        {vp.overlays?.calage && data?.basis && <CalageLabels plates={vp.overlays.calage} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.moduleNumbers &&
           numberLabels(overlays).map((o) => {
             const p = toPaper(o.center.x, o.center.y);
@@ -376,6 +383,43 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
             </g>
           ))}
       </g>
+    </g>
+  );
+}
+
+/** Étiquettes des plaques de calage (mm papier) : nom du groupe, plaque, réaction, sur fond blanc. */
+function CalageLabels({ plates, basis, toPaper }: { plates: NonNullable<NonNullable<ViewportItem['overlays']>['calage']>; basis: ViewBasis; toPaper: (x: number, y: number) => PointMm }) {
+  const size = 2.1;
+  const w = (t: string, sz: number) => t.length * sz * 0.52;
+  return (
+    <g fontFamily={FONT_SANS}>
+      {plates.map((p) => {
+        const a = projectPoint(basis, p.at);
+        const c = toPaper(a.x, a.y);
+        const ys = p.corners.map((q) => toPaper(projectPoint(basis, q).x, projectPoint(basis, q).y).y);
+        const top = Math.min(...ys) - 1.2;
+        const lines: Array<{ t: string; sz: number; bold?: boolean }> = [
+          { t: p.id, sz: size * 1.15, bold: true },
+          { t: p.label, sz: size },
+          ...(p.sub ? [{ t: p.sub, sz: size * 0.9 }] : []),
+        ];
+        let y = top - lines.reduce((s2, l) => s2 + l.sz * 1.2, 0);
+        return (
+          <g key={`l${p.id}`}>
+            {lines.map((l, i) => {
+              y += l.sz * 1.2;
+              return (
+                <g key={i}>
+                  <rect x={num(c.x - w(l.t, l.sz) / 2 - 0.4)} y={num(y - l.sz * 0.95)} width={num(w(l.t, l.sz) + 0.8)} height={num(l.sz * 1.2)} fill="#ffffff" fillOpacity={0.85} />
+                  <text x={num(c.x)} y={num(y)} fontSize={num(l.sz)} textAnchor="middle" fontFamily={FONT_SANS} fontWeight={l.bold ? 700 : undefined} fill={i === 0 ? p.color : '#111827'}>
+                    {l.t}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
     </g>
   );
 }

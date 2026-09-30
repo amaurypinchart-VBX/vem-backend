@@ -25,6 +25,23 @@ export function etaColor(eta: number | undefined): number {
 }
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
+/** Couleur de chaque Viewbox (et de ses pièces) selon son pire taux de travail, éventuellement pour une famille. */
+export function moduleEtaColors(run: StudyRun, scene: LoadedScene, recognition: Recognition, family: string | null = null): Map<string, number> {
+  const map = new Map<string, number>();
+  const byModule = new Map<string, number>();
+  run.index.items.forEach((it, t) => {
+    if (family && it.family !== family) return;
+    const e = run.summary.states[t]?.eta ?? Infinity;
+    byModule.set(it.module, Math.max(byModule.get(it.module) ?? 0, e));
+  });
+  for (const m of scene.index.modules) if (byModule.has(m.id)) map.set(m.nodeId, etaColor(byModule.get(m.id)));
+  for (const [nodeId, moduleId] of recognition.templateParts) {
+    const node = scene.index.modules.find((m) => m.id === moduleId);
+    if (node && map.has(node.nodeId)) map.set(nodeId, map.get(node.nodeId)!);
+  }
+  return map;
+}
+
 function Eta({ eta }: { eta: number | undefined }) {
   const w = eta !== undefined && Number.isFinite(eta) ? Math.min(1.2, eta) / 1.2 : 1;
   return (
@@ -189,22 +206,7 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
   const [family, setFamily] = useState<string | null>(null);
 
   // taux maxi par Viewbox → couleur de la Viewbox et de ses pièces
-  const colors = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!run) return map;
-    const byModule = new Map<string, number>();
-    run.index.items.forEach((it, t) => {
-      if (family && it.family !== family) return;
-      const e = run.summary.states[t]?.eta ?? Infinity;
-      byModule.set(it.module, Math.max(byModule.get(it.module) ?? 0, e));
-    });
-    for (const m of scene.index.modules) if (byModule.has(m.id)) map.set(m.nodeId, etaColor(byModule.get(m.id)));
-    for (const [nodeId, moduleId] of recognition.templateParts) {
-      const node = scene.index.modules.find((m) => m.id === moduleId);
-      if (node && map.has(node.nodeId)) map.set(nodeId, map.get(node.nodeId)!);
-    }
-    return map;
-  }, [run, scene, recognition, family]);
+  const colors = useMemo(() => (run ? moduleEtaColors(run, scene, recognition, family) : new Map<string, number>()), [run, scene, recognition, family]);
 
   // le cadre 3D n'existe qu'une fois un résultat disponible : la vue est créée à ce moment-là
   const hasRun = !!run;

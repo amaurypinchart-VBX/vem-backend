@@ -2,11 +2,13 @@
 // Module Plans Viewbox › Étude structure : bibliothèque partagée entre projets (types de pièces, gabarits de modules,
 // sections, assemblages… ; la base de départ est dans le code du module, la table ne garde que ce que les
 // utilisateurs ont confirmé ou modifié) et études (une par version de modèle : affectations des pièces, hypothèses).
+// Rapports PDF : générés dans le navigateur, enregistrés sur Cloudinary (table struct_reports).
 // Tous les calculs se font dans le navigateur (public/plans, sources dans plans/src/structure).
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
+import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -192,7 +194,54 @@ router.put('/studies/:id', async (req: AuthRequest, res: Response, next: NextFun
 
 router.delete('/studies/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const reports = await db.structReport.findMany({ where: { studyId: req.params.id }, select: { publicId: true } });
     await db.structStudy.delete({ where: { id: req.params.id } });
+    for (const r of reports) if (r.publicId) await deleteFromCloudinary(r.publicId, 'raw');
+    res.json({ success: true, data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── rapports PDF (générés dans le navigateur, enregistrés dans le projet) ───
+
+// Cloudinary refuse les fichiers de plus de 10 Mo : le module réduit les images avant l'envoi
+const REPORT_MAX_BYTES = 10 * 1024 * 1024;
+
+// GET /structure/studies/:id/reports — rapports enregistrés (les plus récents d'abord)
+router.get('/studies/:id/reports', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const reports = await db.structReport.findMany({ where: { studyId: req.params.id }, orderBy: { createdAt: 'desc' } });
+    res.json({ success: true, data: reports });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/studies/:id/reports — PDF du rapport (multipart « file ») + langue, version, verdict, pages
+router.post('/studies/:id/reports', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const study = await db.structStudy.findUnique({ where: { id: req.params.id }, select: { id: true, projectId: true } });
+    if (!study) throw new AppError('Étude introuvable', 404);
+    if (!req.file) throw new AppError('Fichier PDF manquant', 400);
+    if (req.file.mimetype !== 'application/pdf') throw new AppError('Le rapport doit être un PDF', 400);
+    if (req.file.size > REPORT_MAX_BYTES) throw new AppError('Rapport de plus de 10 Mo : refusé par Cloudinary', 413);
+    const lang = ['fr', 'de', 'en'].includes(req.body?.lang) ? req.body.lang : 'fr';
+    const variant = req.body?.variant === 'detailed' ? 'detailed' : 'compact';
+    const verdict = ['ok', 'limit', 'fail', 'incomplete'].includes(req.body?.verdict) ? req.body.verdict : null;
+    const pages = Number.isFinite(Number(req.body?.pages)) ? Math.max(0, Math.round(Number(req.body.pages))) : null;
+    const fileName = (str(req.body?.fileName, 200) ?? req.file.originalname ?? 'rapport.pdf').replace(/[\\/:*?"<>|]+/g, '-');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `plans/${study.projectId}/structure`, { resource_type: 'raw', public_id: `rapport-${Date.now()}.pdf` });
+    const report = await db.structReport.create({
+      data: { studyId: study.id, lang, variant, verdict, pages, fileName, url, publicId, sizeBytes: req.file.size, createdBy: req.user?.id ?? null },
+    });
+    res.json({ success: true, data: report });
+  } catch (err) { next(err); }
+});
+
+// DELETE /structure/reports/:id — rapport enregistré (et son fichier)
+router.delete('/reports/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const report = await db.structReport.findUnique({ where: { id: req.params.id } });
+    if (!report) throw new AppError('Rapport introuvable', 404);
+    await db.structReport.delete({ where: { id: report.id } });
+    if (report.publicId) await deleteFromCloudinary(report.publicId, 'raw');
     res.json({ success: true, data: null });
   } catch (err) { next(err); }
 });

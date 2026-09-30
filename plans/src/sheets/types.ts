@@ -50,6 +50,20 @@ interface ItemBase {
   locked?: boolean;
 }
 
+/** Plaque de calage dessinée à l'échelle sur un plan (étude structure) : emprise et étiquette, coordonnées monde (mm). */
+export interface CalagePlateSpec {
+  id: string;
+  /** « 2 × 55 × 55 × 40 mm » */
+  label: string;
+  /** « Rz,k 54 kN » */
+  sub?: string;
+  color: string;
+  /** contour en plan (monde, mm, Y vers le haut) */
+  corners: Vec3[];
+  /** point d'attache de l'étiquette (centre du groupe d'appuis) */
+  at: Vec3;
+}
+
 /** Unité montrée sur une vue de l'ensemble : ses Viewbox, encadrées, avec son nom. */
 export interface UnitOverlaySpec {
   name: string;
@@ -75,7 +89,7 @@ export interface ViewportItem extends ItemBase {
    * contour de chaque Viewbox (plan d'implantation), numéros de Viewbox (plan d'assemblage), cadre + nom de chaque
    * unité (vue aérienne de l'ensemble)
    */
-  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean };
+  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean; calage?: CalagePlateSpec[] };
   /** clé du calcul utilisé pour le rendu : si elle ne correspond plus, la vue est obsolète */
   lineworkKey?: string;
 }

@@ -18,6 +18,7 @@ import type { Material } from '../materials';
 import { steelStrength } from '../materials';
 import type { CalcRecord } from '../records';
 import { fmtNumber } from '../units';
+import { designation } from '../library';
 
 export interface Forces {
   /** traction + (N), efforts tranchants, torsion (N·mm), moments (N·mm, fibre −z / −y tendue positive) */
@@ -542,10 +543,10 @@ function checkSpanWith(inp: SpanInput, opt: Ec3Options, staticoMethod: boolean, 
     const f = secWhere.f;
     records.unshift({
       key: `${inp.key}.section`,
-      title: `${inp.label} — résistance de la section (${secWhere.key === '6.41' ? '(6.41)' : '6.2.1(7)'})`,
+      title: `${inp.label} — résistance de la section (${secWhere.key === '6.41' ? '6.41' : '6.2.1(7)'})`,
       clause: secWhere.key === '6.41' ? 'DIN EN 1993-1-1 6.2.9.1 (6.41)' : 'DIN EN 1993-1-1 6.2.1(7)',
       formula: secWhere.key === '6.41' ? '(My,Ed / MN,y,Rd)^α + (Mz,Ed / MN,z,Rd)^β ≤ 1' : 'NEd / NRd + My,Ed / My,Rd + Mz,Ed / Mz,Rd ≤ 1',
-      withValues: `${s.name}, ${inp.material.name} (fy = ${f2(fy / 10, 2)} kN/cm²), classe ${cls}${cls === 4 ? ` (contraintes réduites EN 1993-1-5 § 10 : paroi « ${rhoPart} », ρ = ${f2(rho)}, fy,réd = ${f2(fyN / 10, 2)} kN/cm²)` : ''}, γM0 = ${f2(g0)} ; x = ${f2(f.x / 1e3, 3)} m : N = ${kN(f.N)}, Vy = ${kN(f.Vy)}, Vz = ${kN(f.Vz)}, T = ${kNm(f.T)}, My = ${kNm(f.My)}, Mz = ${kNm(f.Mz)} ; Npl,Rd = ${kN(Npl)}, My,Rd = ${kNm(Mpy)}, Mz,Rd = ${kNm(Mpz)}, Vpl,y,Rd = ${kN(Vply)}, Vpl,z,Rd = ${kN(Vplz)} ; ${secWhere.text}`,
+      withValues: `${designation(s.name)}, ${designation(inp.material.name)} (fy = ${f2(fy / 10, 2)} kN/cm²), classe ${cls}${cls === 4 ? ` (contraintes réduites EN 1993-1-5 § 10 : paroi « ${rhoPart} », ρ = ${f2(rho)}, fy,réd = ${f2(fyN / 10, 2)} kN/cm²)` : ''}, γM0 = ${f2(g0)} ; x = ${f2(f.x / 1e3, 3)} m : N = ${kN(f.N)}, Vy = ${kN(f.Vy)}, Vz = ${kN(f.Vz)}, T = ${kNm(f.T)}, My = ${kNm(f.My)}, Mz = ${kNm(f.Mz)} ; Npl,Rd = ${kN(Npl)}, My,Rd = ${kNm(Mpy)}, Mz,Rd = ${kNm(Mpz)}, Vpl,y,Rd = ${kN(Vply)}, Vpl,z,Rd = ${kN(Vplz)} ; ${secWhere.text}`,
       eta: secEta,
       combination: inp.combination,
     });

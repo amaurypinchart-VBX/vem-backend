@@ -13,6 +13,7 @@ import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams
 import { materialByKey, steelStrength } from './materials';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } from './templates/viewboxEU';
 import { viewboxTemplate } from './templates/viewboxEU';
+import { fmtNumber } from './units';
 
 export interface PlacedModule {
   id: string;
@@ -397,7 +398,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
           const nb = P(B.pm, bb[lvl]);
           if (planDist(pos(na), pos(nb)) > gapTol + 10 || Math.abs(pos(na)[1] - pos(nb)[1]) > 20) continue;
           // grands côtés : deux demi-boulons à ressort k en série (SCIA) → k / 2 ; petits côtés : un boulon, un ressort k
-          addMember(na, nb, A.pm.params.sections.bolt, { family: 'bolt', module: A.pm.id, line: `bolt:${A.pm.id}/${B.pm.id}/${bolts}`, side: A.side, label: `boulon ${A.pm.id} / ${B.pm.id}` }, { endJ: boltEnd(long ? k / 2 : k), geometric: false });
+          addMember(na, nb, A.pm.params.sections.bolt, { family: 'bolt', module: A.pm.id, line: `bolt:${A.pm.id}/${B.pm.id}/${bolts}`, side: A.side, label: `boulon ${A.pm.id} / ${B.pm.id} · ${lvl === 'floor' ? 'plancher' : 'toiture'}, ${long ? 'x' : 'y'} = ${fmtNumber((ba.s + (long ? A.pm.params.x0 : A.pm.params.y0)) / 1e3, 2)} m` }, { endJ: boltEnd(long ? k / 2 : k), geometric: false });
           bolts++;
         }
     // contacts (SCIA Druckkontakt_horizontal) : de chaque angle au nœud en regard de l'autre rive, compression seule

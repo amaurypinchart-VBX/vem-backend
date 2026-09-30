@@ -1197,4 +1197,39 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table struct_studies : ${e.message}`);
   }
+  // rapports PDF enregistrés d'une étude (fichier sur Cloudinary)
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_reports" (
+        "id"             TEXT         NOT NULL,
+        "study_id"       TEXT         NOT NULL,
+        "lang"           TEXT         NOT NULL DEFAULT 'fr',
+        "variant"        TEXT         NOT NULL DEFAULT 'compact',
+        "verdict"        TEXT,
+        "pages"          INTEGER,
+        "file_name"      TEXT         NOT NULL,
+        "cloudinary_url" TEXT         NOT NULL,
+        "public_id"      TEXT,
+        "size_bytes"     INTEGER,
+        "created_by"     TEXT,
+        "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_reports_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "struct_reports_study_id_idx" ON "struct_reports" ("study_id")`);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'struct_reports_study_id_fkey') THEN
+          ALTER TABLE "struct_reports"
+            ADD CONSTRAINT "struct_reports_study_id_fkey"
+            FOREIGN KEY ("study_id") REFERENCES "struct_studies"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table struct_reports créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_reports : ${e.message}`);
+  }
 }

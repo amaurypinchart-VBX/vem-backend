@@ -1106,8 +1106,30 @@ model StructStudy {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reports StructReport[]
 
   @@index([projectId])
   @@map("struct_studies")
+}
+
+// Rapport PDF d'une étude structure enregistré dans le projet (fichier sur Cloudinary, < 10 Mo).
+model StructReport {
+  id        String   @id @default(uuid())
+  studyId   String   @map("study_id")
+  lang      String   @default("fr")
+  variant   String   @default("compact")
+  verdict   String?
+  pages     Int?
+  fileName  String   @map("file_name")
+  url       String   @map("cloudinary_url")
+  publicId  String?  @map("public_id")
+  sizeBytes Int?     @map("size_bytes")
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  study StructStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([studyId])
+  @@map("struct_reports")
 }
