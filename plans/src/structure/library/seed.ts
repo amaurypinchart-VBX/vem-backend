@@ -50,7 +50,8 @@ export const SEED_SECTIONS: SectionEntry[] = [
     section: {
       shape: 'UNP',
       fabrication: 'hot-rolled',
-      dims: { h: 220, b: 80, tw: 9, tf: 12.5 },
+      // r = rayon de congé (DIN 1026-1) : largeurs c de la classification (SCIA : âme 170, aile 58,5 mm)
+      dims: { h: 220, b: 80, tw: 9, tf: 12.5, r: 12.5 },
       curveY: 'c',
       curveZ: 'c',
       kgPerM: 29.4,

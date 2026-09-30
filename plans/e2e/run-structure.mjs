@@ -78,10 +78,35 @@ if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
 await page.waitForTimeout(2600); // enregistrement automatique de l'étude (2 s)
 console.log(`Types traités : ${answered} ; ensuite :`, await counts(), (await page.getByText(/Étude enregistrée/).count()) ? '(étude enregistrée)' : '');
 await shootAll('structure-reconnue');
+// 3. calcul complet (Workers) puis 4. résultats
+await page.getByRole('button', { name: /3\. Calcul/ }).click();
+await page.getByText('Calcul complet').first().waitFor();
+const blockingMsgs = await page.locator('.warning.error .msg').allInnerTexts();
+if (blockingMsgs.length) console.log('Bloquant :', blockingMsgs);
+await shootAll('structure-calcul-avant');
+await page.getByRole('button', { name: /Lancer le calcul/ }).click({ timeout: 10000 });
+const t0 = Date.now();
+await Promise.race([
+  page.getByRole('button', { name: /Voir les résultats/ }).waitFor({ timeout: 600000 }),
+  page.locator('.error-box').waitFor({ timeout: 600000 }).then(async () => {
+    throw new Error('Calcul en erreur : ' + (await page.locator('.error-box').innerText()));
+  }),
+]);
+console.log(`Calcul complet : ${((Date.now() - t0) / 1000).toFixed(1)} s —`, (await page.getByText(/passe|limite|ne passe pas|incomplet/).first().innerText()).trim(), '—', await page.getByText(/combinaisons en/).innerText());
+await shootAll('structure-calcul');
+await page.getByRole('button', { name: /Voir les résultats/ }).click();
+await page.getByText('Par famille').waitFor();
+await page.waitForTimeout(1500);
+console.log('Familles :', (await page.locator('table.list').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 12));
+await page.getByText('Les plus sollicités').waitFor();
+await page.locator('table.list').nth(1).locator('tbody tr').first().click();
+await page.waitForTimeout(400);
+await shootAll('structure-resultats');
 await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
 await page.getByText('Plan des appuis').waitFor({ timeout: 120000 });
 await page.waitForTimeout(800);
 await shootAll('structure-modele');
+console.log('Calage :', await page.getByText(/^Réactions : /).innerText());
 const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Fiche PDF' }).click()]);
 await dl2.saveAs(shots + 'calage-modele.pdf');
 console.log('Fiche PDF du modèle :', dl2.suggestedFilename());

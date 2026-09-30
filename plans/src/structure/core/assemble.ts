@@ -127,7 +127,7 @@ const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const planDist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 const SIDES: Side[] = ['u0', 'u1', 'v0', 'v1'];
 
-const FAMILY_LABEL: Record<MemberFamily, string> = {
+export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'rim-floor': 'rive plancher',
   'rim-roof': 'rive toiture',
   'secondary-floor': 'traverse / lisse plancher',
@@ -142,11 +142,48 @@ const FAMILY_LABEL: Record<MemberFamily, string> = {
   contact: 'contact d’angle',
 };
 
-export function assembleStructure(modules: PlacedModule[], opt: AssembleOptions): StructuralModel {
+/**
+ * Viewbox empilées : le plancher de celle du dessus est posé sur le haut de celle du dessous (topZ du gabarit). Un écart
+ * de modélisation jusqu'à 400 mm est corrigé, avec un avertissement au-delà de 20 mm.
+ */
+export function snapStacks(modules: PlacedModule[], gapTol: number, warnings: string[]): PlacedModule[] {
+  const out = modules.map((m) => ({ ...m, origin: [...m.origin] as Vec3 }));
+  const plan = (pm: PlacedModule) => {
+    const { x0, x1, y0, y1 } = pm.params;
+    return [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ].map(([u, v]) => add(add(pm.origin, mul(pm.u, u)), mul(pm.v, v)));
+  };
+  for (const U of [...out].sort((a, b) => a.level - b.level)) {
+    if (U.level === 0) continue;
+    const cu = plan(U);
+    let best: PlacedModule | null = null;
+    for (const L of out) {
+      if (L === U || L.level >= U.level) continue;
+      const cl = plan(L);
+      const shared = cu.filter((c) => cl.some((l) => planDist(c, l) <= gapTol + 10)).length;
+      if (shared >= 2 && (!best || L.origin[1] > best.origin[1])) best = L;
+    }
+    if (!best) continue;
+    const target = best.origin[1] + best.params.topZ;
+    const diff = U.origin[1] - target;
+    if (Math.abs(diff) > 400) continue;
+    if (Math.abs(diff) > 20) warnings.push(`${U.id} : posée ${Math.round(Math.abs(diff))} mm ${diff < 0 ? 'plus bas' : 'plus haut'} que le haut de ${best.id} dans le modèle (gabarit ${best.params.topZ} mm) — replacée sur ${best.id}.`);
+    U.origin[1] = target;
+  }
+  return out;
+}
+
+export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): StructuralModel {
   const gapTol = opt.gapTolerance ?? 30;
+  const earlyWarnings: string[] = [];
+  const modules = snapStacks(input, gapTol, earlyWarnings);
   // contacts : barres articulées (effort normal seul, défaut) ou barres encastrées comme dans SCIA (calage)
   const contactKind = (opt.contactModel ?? 'truss') === 'truss' ? ('truss' as const) : ('beam' as const);
-  const warnings: string[] = [];
+  const warnings: string[] = [...earlyWarnings];
   const errors: string[] = [];
   const nodes: FemNode[] = [];
   const members: FemMember[] = [];

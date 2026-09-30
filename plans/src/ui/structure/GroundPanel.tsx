@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import { computeCalage } from '../../structure/core/calage';
-import type { EstimateModule } from '../../structure/core/estimate';
+import type { Estimate, EstimateModule } from '../../structure/core/estimate';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import type { CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, SUBGRADE_PRESETS, bearingFrom } from '../../structure/core/ground';
@@ -374,9 +374,11 @@ export interface GroundPanelProps {
   hyp?: Hypotheses;
   onHypChange?: (h: Hypotheses) => void;
   showHypotheses?: boolean;
+  /** réactions du calcul complet (sinon estimation instantanée) */
+  reactions?: Estimate | null;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -409,7 +411,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     }
   }, [hyp, storageKey, hypProp]);
 
-  const input = useMemo(() => calageInput(modules, hyp, stock), [modules, hyp, stock]);
+  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions]);
   useEffect(() => {
     setPending(true);
     const t = setTimeout(() => {
@@ -438,6 +440,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
     ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
     ['Viewbox', `${modules.length} (${Math.max(0, ...modules.map((m) => m.level)) + 1} niveau(x))`],
+    ['Réactions', reactions ? 'calcul complet (modèle 3D, 2ᵉ ordre)' : 'estimation instantanée (surfaces tributaires)'],
   ];
 
   const exportPdf = async () => {
@@ -471,6 +474,11 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   return (
     <div className="page">
       {intro}
+      {reactions !== undefined && (
+        <div className="hint" style={{ margin: '4px 0' }}>
+          {reactions ? 'Réactions : calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico).' : 'Réactions : estimation instantanée (surfaces tributaires) — lancer le calcul complet (étape 3) pour les réactions du modèle 3D.'}
+        </div>
+      )}
       {showHypotheses && <HypothesesForm hyp={hyp} setHyp={setHyp} />}
       {error && <div className="error-box">{error}</div>}
       {pending && !result && <div className="hint">Calcul…</div>}

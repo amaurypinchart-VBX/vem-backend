@@ -60,6 +60,7 @@ export const DEFAULTS = {
   plateKmod: a(0.9, '−', 'kmod des plaques (court terme, NKL 2)', 'statico 24-0571 § 3.12'),
   timberGammaM: a(1.3, '−', 'γM bois', 'DIN EN 1995-1-1/NA'),
   steelFriction: a(0.1, '−', 'Frottement acier / acier dans les liaisons', 'statico 24-0571 § 3.9'),
+  groundFriction: a(0.4, '−', 'Frottement disponible calage / sol (glissement global)', 'valeur prudente à confirmer sur site (statico 24-0571 § 4 : μ requis seulement, 0,12)'),
   snow: a(0, '−', 'Neige prise en compte (0 = non)', 'statico 24-0571 § 2.3'),
 } as const;
 

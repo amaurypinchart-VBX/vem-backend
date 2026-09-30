@@ -107,6 +107,15 @@ describe('assemblage des Viewbox', () => {
     expect(m.topModules).toEqual(new Set(['U']));
   });
 
+  it('Viewbox du dessus posée trop bas dans le modèle : replacée sur celle du dessous, avec un avertissement', () => {
+    const low = vbx('U', 0, 0, 1, 0, [0, -280, 0]);
+    const m = assembleStructure([vbx('A', 0, 0), low], opt);
+    expect(m.errors).toEqual([]);
+    expect(m.warnings.some((w) => w.includes('280 mm plus bas'))).toBe(true);
+    expect(m.fem.members.filter((b) => b.tag === 'corner-link')).toHaveLength(4);
+    expect(low.origin[1]).toBe(3080 - 280); // l'entrée n'est pas modifiée
+  });
+
   it('Viewbox du dessus décalée : erreur bloquante ; décalée en plan : liaison manquante signalée', () => {
     const offset = assembleStructure([vbx('A', 0, 0), vbx('U', 1000, 0, 1)], opt);
     expect(offset.errors.length).toBe(4);

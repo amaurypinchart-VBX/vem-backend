@@ -1,0 +1,131 @@
+// Enchaînement du calcul complet d'une étude (étape « 3. Calcul ») : assemblage du modèle, cas de charge,
+// combinaisons, calcul aux éléments finis + vérifications (Workers), stabilité, verdict, réactions pour le calage.
+// Sans React : utilisé par la page et par les tests.
+import type { PlacedModule, StructuralModel } from './core/assemble';
+import { assembleStructure } from './core/assemble';
+import type { Ec3Method } from './core/checks/ec3';
+import { EC3_DEFAULTS } from './core/checks/ec3';
+import { connectionSet } from './core/checks/joints';
+import type { PlywoodResult } from './core/checks/plywood';
+import { checkPlywoodStrip } from './core/checks/plywood';
+import type { Combination } from './core/combos';
+import { buildCombinations, COMBO_DEFAULTS } from './core/combos';
+import type { Estimate } from './core/estimate';
+import type { LibraryEntry, ModuleTypeEntry, SectionEntry } from './core/library';
+import type { EdgeItem, LoadInputs, LoadModel, PointItem } from './core/loads';
+import { buildLoadCases } from './core/loads';
+import type { ItemIndex, StabilityResult, StudySummary, StudyVerdict } from './core/results';
+import { buildItemIndex, groundEstimate, stability, studyVerdict } from './core/results';
+import { verdictOf, worstVerdict } from './core/records';
+import { prepareJobs } from './core/study';
+import { DEFAULTS } from './library/defaults';
+import type { StudyRunner } from './worker/study';
+
+export interface CalcOptions {
+  ec3Method: Ec3Method;
+  /** pieds à vérins utilisés (capacité inconnue : verdict incomplet) */
+  jacks: boolean;
+  /** calage statico : S275 et courbes a de l'annexe SCIA, contacts encastrés comme SCIA */
+  calibration: boolean;
+  /** appui soulevé : libérer aussi les ressorts horizontaux (prudent) */
+  upliftAll: boolean;
+  /** frottement disponible pour le glissement global */
+  friction: number;
+  /** pression intérieure dans la vérification du plancher (installation ouverte) */
+  internalPressure: boolean;
+}
+
+export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true };
+
+export interface StudyInputs {
+  modules: PlacedModule[];
+  edgeItems: EdgeItem[];
+  pointItems: PointItem[];
+  library: LibraryEntry[];
+  sections: ReadonlyMap<string, SectionEntry>;
+  /** charges et vent (N, mm) */
+  loads: Omit<LoadInputs, 'edgeItems' | 'pointItems'>;
+  middleFeet: boolean;
+  /** réactions caractéristiques calculées (ELS), sinon Rd / 1,35 */
+  sls: boolean;
+  options: CalcOptions;
+  /** erreurs bloquantes venues du modèle (reconnaissance…) */
+  blocking: string[];
+}
+
+export interface StudyRun {
+  structure: StructuralModel;
+  loads: LoadModel;
+  combos: Combination[];
+  index: ItemIndex;
+  summary: StudySummary;
+  stability: StabilityResult;
+  verdict: StudyVerdict;
+  plywood: PlywoodResult;
+  ground: Estimate;
+  durationMs: number;
+  warnings: string[];
+}
+
+export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<StudyRun> {
+  const t0 = performance.now();
+  const o = inp.options;
+  const structure = assembleStructure(inp.modules, {
+    sections: inp.sections,
+    jacks: o.jacks,
+    middleFeet: inp.middleFeet,
+    upliftReleases: o.upliftAll ? 'all' : 'vertical',
+    calibration: o.calibration,
+    contactModel: o.calibration ? 'beam' : 'truss',
+  });
+  if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
+  const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems });
+  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls });
+  const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
+  const context = { structure, sections: [...inp.sections], connections: connectionSet(inp.library), ec3: { ...EC3_DEFAULTS, method: o.ec3Method }, calibration: o.calibration };
+  return runner.run({ jobs, context, options: { secondOrder: true }, onProgress }, signal).then((summary) => {
+    const index = buildItemIndex(structure, inp.sections);
+    const stab = stability(summary, combos, o.friction);
+    const verdict = studyVerdict(index, summary, stab);
+    // plancher : contreplaqué du gabarit (une couche, côté de la sécurité)
+    const tpl = inp.modules[0]?.params.plywood;
+    const plywood = checkPlywoodStrip({
+      material: tpl?.material ?? 'CP-F20/15',
+      thickness: tpl?.thickness ?? 18,
+      span: tpl?.maxSpan ?? 800,
+      kmod: 0.8,
+      gammaM: DEFAULTS.timberGammaM.value,
+      g: inp.loads.floorFinish,
+      q: inp.loads.live,
+      gammaG: COMBO_DEFAULTS.gammaGQ,
+      gammaQ: COMBO_DEFAULTS.gammaQ,
+      internal: o.internalPressure ? 0.8 * inp.loads.windOutOfService : 0,
+      gammaW: COMBO_DEFAULTS.gammaW,
+      label: 'Plancher',
+    });
+    const reasons = [...inp.blocking];
+    if (o.jacks) {
+      const jack = inp.library.find((e) => e.kind === 'connection' && e.key === 'VBX-JACK');
+      if (!jack || jack.status === 'unknown') reasons.push('Pieds à vérins utilisés : capacité des vérins non renseignée (VBX-JACK)');
+    }
+    if (plywood.blocked) reasons.push(plywood.blocked);
+    const verdictAll: StudyVerdict = {
+      ...verdict,
+      reasons: [...reasons, ...verdict.reasons],
+      verdict: worstVerdict([verdict.verdict, plywood.blocked ? 'incomplete' : verdictOf(plywood.eta), reasons.length ? 'incomplete' : 'ok']),
+    };
+    const ground = groundEstimate(structure, summary, combos);
+    const warnings = [...new Set([...structure.warnings, ...loads.warnings, ...summary.warnings])];
+    return { structure, loads, combos, index, summary, stability: stab, verdict: verdictAll, plywood, ground, durationMs: performance.now() - t0, warnings };
+  });
+}
+
+/** Empreinte des entrées : un résultat est périmé dès qu'elle change. */
+export function inputKey(inp: StudyInputs): string {
+  const mods = inp.modules.map((m) => [m.id, m.level, m.templateKey, ...m.origin.map(Math.round), ...m.u.map((x) => Math.round(x * 1e4))].join(','));
+  const lib = inp.library
+    .filter((e) => e.kind === 'section' || e.kind === 'connection' || e.kind === 'module_type')
+    .map((e) => `${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? '')}`.length + e.key)
+    .join('|');
+  return JSON.stringify([mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib]);
+}

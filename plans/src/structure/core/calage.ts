@@ -30,6 +30,8 @@ export interface CalageInput {
   commercial: CommercialPlate[];
   longrine: { k: number; beams: Array<Pick<TimberBeam, 'b' | 'h'>>; overhang: number; maxCount: number };
   diffusion: boolean;
+  /** réactions du calcul complet (groupes d'appuis) à la place de l'estimation instantanée */
+  reactions?: Estimate;
 }
 
 export interface CalageType {
@@ -72,7 +74,7 @@ const typeLabel = (corners: number, middle: boolean) =>
   middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
 
 export function computeCalage(inp: CalageInput): CalageResult {
-  const est = estimateReactions(inp.modules, inp.estimate);
+  const est = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
   const warnings = [...est.warnings];
   const byType = new Map<string, GroupReaction[]>();
   for (const r of est.reactions) {

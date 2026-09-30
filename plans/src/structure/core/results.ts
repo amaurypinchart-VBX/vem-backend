@@ -1,0 +1,399 @@
+// Résultats d'une étude (§10) : chaque tronçon de barre (EC3) et chaque assemblage Viewbox (angles, liaisons
+// verticales, boulons) est vérifié pour toutes les combinaisons ELU ; on garde le pire taux, sa combinaison et le détail
+// (formules avec valeurs) de ce cas. Stabilité : basculement (calcul non linéaire aux appuis en compression seule) et
+// glissement global (μ requis = Rh / Rz, statico 24-0571 § 4). Les résumés de plusieurs paquets de combinaisons
+// (Workers) se fusionnent. Réactions → groupes d'appuis pour le calage. Fonctions pures.
+import type { MemberFamily, StructuralModel } from './assemble';
+import { FAMILY_LABEL } from './assemble';
+import type { Combination } from './combos';
+import type { Estimate, GroupReaction, P2, SupportGroup } from './estimate';
+import type { AnalysisResult, Reaction } from './fem/types';
+import type { Ec3Options, StationForces } from './checks/ec3';
+import { checkSpan } from './checks/ec3';
+import type { ConnectionSet } from './checks/joints';
+import { checkBolt, checkCorner, checkVerticalLink } from './checks/joints';
+import type { SectionEntry } from './library';
+import { materialByKey } from './materials';
+import type { CalcRecord, Verdict } from './records';
+import { verdictOf, worstVerdict } from './records';
+import { fmtNumber } from './units';
+
+export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt';
+
+export interface CheckItem {
+  id: string;
+  kind: ItemKind;
+  /** famille affichée (« Rives plancher — UNP 220 », « Angles poteau / cadre »…) */
+  family: string;
+  label: string;
+  module: string;
+  /** barres du modèle (coloration 3D) */
+  members: number[];
+}
+
+export interface ItemState {
+  eta: number;
+  governing: string;
+  combo: string;
+  blocked?: string;
+  records: CalcRecord[];
+}
+
+export interface CheckContext {
+  structure: StructuralModel;
+  sections: ReadonlyMap<string, SectionEntry>;
+  connections: ConnectionSet;
+  ec3: Ec3Options;
+  /** calage statico : courbes de flambement de l'annexe SCIA */
+  calibration: boolean;
+}
+
+interface SpanMember {
+  member: number;
+  offset: number;
+  reversed: boolean;
+  length: number;
+}
+
+export interface ItemIndex {
+  items: CheckItem[];
+  /** tronçons : barres ordonnées le long du tronçon */
+  spans: Map<string, SpanMember[]>;
+}
+
+const memberLength = (s: StructuralModel, k: number) => {
+  const b = s.fem.members[k];
+  const A = s.fem.nodes[b.i];
+  const B = s.fem.nodes[b.j];
+  return Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);
+};
+
+/** Liste des vérifications de l'installation (tronçons de barres porteuses, assemblages). */
+export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string, SectionEntry>): ItemIndex {
+  const items: CheckItem[] = [];
+  const spans = new Map<string, SpanMember[]>();
+  const bySpan = new Map<string, number[]>();
+  s.meta.forEach((m, k) => {
+    if (m.massless) return;
+    if (!bySpan.has(m.span)) bySpan.set(m.span, []);
+    bySpan.get(m.span)!.push(k);
+  });
+  for (const [span, ks] of bySpan) {
+    // ordre le long du tronçon : chaînage par nœuds communs
+    const count = new Map<number, number>();
+    for (const k of ks) for (const n of [s.fem.members[k].i, s.fem.members[k].j]) count.set(n, (count.get(n) ?? 0) + 1);
+    let cur = [...count].find(([, c]) => c === 1)?.[0] ?? s.fem.members[ks[0]].i;
+    const left = new Set(ks);
+    const ordered: SpanMember[] = [];
+    let offset = 0;
+    while (left.size) {
+      const k = [...left].find((x) => s.fem.members[x].i === cur || s.fem.members[x].j === cur) ?? [...left][0];
+      left.delete(k);
+      const b = s.fem.members[k];
+      const reversed = b.j === cur;
+      const L = memberLength(s, k);
+      ordered.push({ member: k, offset, reversed, length: L });
+      offset += L;
+      cur = reversed ? b.i : b.j;
+    }
+    spans.set(span, ordered);
+    const m = s.meta[ks[0]];
+    const sec = sections.get(m.section);
+    items.push({
+      id: `span:${span}`,
+      kind: 'member',
+      family: `${capitalize(FAMILY_LABEL[m.family as MemberFamily] ?? m.family)} — ${sec?.section.name ?? m.section}`,
+      label: spanLabel(m.module, m.family as MemberFamily, m.line, span, offset),
+      module: m.module,
+      members: ordered.map((o) => o.member),
+    });
+  }
+  s.meta.forEach((m, k) => {
+    if (m.family === 'column')
+      for (const end of ['pied', 'tête'] as const)
+        items.push({ id: `corner:${k}:${end}`, kind: 'corner', family: 'Angles poteau / cadre', label: `${m.module} · angle ${Number(m.line.split(':').pop()) + 1}, ${end === 'pied' ? 'plancher' : 'toiture'}`, module: m.module, members: [k] });
+    else if (m.family === 'corner-link') items.push({ id: `vlink:${k}`, kind: 'vlink', family: 'Liaisons verticales entre Viewbox', label: m.label, module: m.module, members: [k] });
+    else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: 'Boulons horizontaux M20', label: m.label, module: m.module, members: [k] });
+  });
+  return { items, spans };
+}
+
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+const SIDE_LABEL: Record<string, string> = { v0: 'grand côté 1', v1: 'grand côté 2', u0: 'petit côté 1', u1: 'petit côté 2' };
+
+/** « A · rive plancher, grand côté 1, tronçon 3 (1,20 m) », « A · traverse plancher x = 1,14 m », « A · poteau 2 ». */
+function spanLabel(module: string, family: MemberFamily, line: string, span: string, length: number): string {
+  const what = FAMILY_LABEL[family] ?? family;
+  const tail = line.split('/').pop() ?? '';
+  const [, pos] = tail.split(':');
+  const piece = Number(span.split('#').pop());
+  const part = Number.isFinite(piece) ? `, tronçon ${piece + 1}` : '';
+  const len = ` (${fmtNumber(length / 1e3, 2)} m)`;
+  if (family === 'column') return `${module} · poteau ${Number(pos) + 1}${len}`;
+  if (SIDE_LABEL[pos]) return `${module} · ${what}, ${SIDE_LABEL[pos]}${part}${len}`;
+  if (pos?.startsWith('t')) return `${module} · ${what}, x = ${fmtNumber(Number(pos.slice(1)) / 1e3, 2)} m${part}${len}`;
+  if (pos?.startsWith('l')) return `${module} · ${what}, y = ${fmtNumber(Number(pos.slice(1)) / 1e3, 2)} m${part}${len}`;
+  return `${module} · ${what}${part}${len}`;
+}
+
+/** Efforts le long d'un tronçon (stations de ses barres mises bout à bout, sens du tronçon). */
+function spanStations(result: AnalysisResult, parts: SpanMember[]): StationForces[] {
+  const out: StationForces[] = [];
+  for (const p of parts) {
+    const r = result.members[p.member];
+    if (!r) continue;
+    for (const st of r.stations) {
+      const x = p.reversed ? p.offset + p.length - st.x : p.offset + st.x;
+      // barre à l'envers : l'axe local y change de sens (Mz, Vy) ; N, My inchangés
+      out.push({ x, N: st.N, Vy: p.reversed ? -st.Vy : st.Vy, Vz: p.reversed ? -st.Vz : st.Vz, T: p.reversed ? -st.T : st.T, My: st.My, Mz: p.reversed ? -st.Mz : st.Mz });
+    }
+  }
+  return out;
+}
+
+/** Évaluation d'une vérification pour une combinaison. */
+export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckItem, combo: Combination, result: AnalysisResult, detail: boolean): ItemState {
+  const s = ctx.structure;
+  const k = item.members[0];
+  const st = (end: 'first' | 'last') => {
+    const r = result.members[k].stations;
+    return r[end === 'first' ? 0 : r.length - 1];
+  };
+  if (item.kind === 'member') {
+    const m = s.meta[k];
+    const sec = ctx.sections.get(m.section);
+    const mat = materialByKey(m.material);
+    if (!sec || !mat) return { eta: Infinity, governing: 'bloqué', combo: combo.id, blocked: `${item.label} : section ou matériau inconnu`, records: [] };
+    const span = index.spans.get(item.id.slice(5))!;
+    const cal = sec.calibrationCurves;
+    const curves = ctx.calibration && cal?.y && cal.z ? { y: cal.y, z: cal.z } : undefined;
+    const r = checkSpan({ key: item.id, label: item.label, section: sec.section, material: mat, curves, length: m.spanLength, stations: spanStations(result, span), combination: combo.id }, ctx.ec3, detail);
+    return { eta: r.eta, governing: r.governing, combo: combo.id, blocked: r.blocked, records: r.records };
+  }
+  const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');
+  const j = item.kind === 'corner' ? checkCorner(ctx.connections, f, item.label, combo.id) : item.kind === 'vlink' ? checkVerticalLink(ctx.connections, f, item.label, combo.id) : checkBolt(ctx.connections, f, item.label, combo.id);
+  return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
+}
+
+export interface ComboOutcome {
+  combo: Combination;
+  result?: AnalysisResult;
+  /** erreur du calcul (mécanisme, instabilité, non-convergence) */
+  error?: { code: string; message: string; nodes: string[] };
+}
+
+export interface StudySummary {
+  /** pire état par vérification (même ordre que ItemIndex.items) */
+  states: Array<ItemState | null>;
+  /** réactions de chaque combinaison calculée */
+  reactions: Record<string, Reaction[]>;
+  errors: Array<{ combo: string; cls: Combination['cls']; code: string; message: string; nodes: string[] }>;
+  warnings: string[];
+  /** combinaisons calculées */
+  done: string[];
+}
+
+/** Résumé d'un paquet de combinaisons : pire taux par vérification (ELU), détail du cas déterminant. */
+export function summarize(ctx: CheckContext, index: ItemIndex, outcomes: ComboOutcome[]): StudySummary {
+  const states: Array<ItemState | null> = index.items.map(() => null);
+  const bestCombo: Array<ComboOutcome | null> = index.items.map(() => null);
+  const reactions: Record<string, Reaction[]> = {};
+  const errors: StudySummary['errors'] = [];
+  const warnings = new Set<string>();
+  for (const o of outcomes) {
+    if (o.error) {
+      errors.push({ combo: o.combo.id, cls: o.combo.cls, ...o.error });
+      continue;
+    }
+    const r = o.result!;
+    reactions[o.combo.id] = r.reactions;
+    for (const w of r.warnings) warnings.add(w);
+    if (o.combo.cls !== 'ULS') continue;
+    index.items.forEach((item, t) => {
+      const e = evaluateItem(ctx, index, item, o.combo, r, false);
+      const cur = states[t];
+      if (!cur || e.eta > cur.eta) {
+        states[t] = e;
+        bestCombo[t] = o;
+      }
+    });
+  }
+  // détail du cas déterminant
+  index.items.forEach((item, t) => {
+    const o = bestCombo[t];
+    if (o?.result) states[t] = evaluateItem(ctx, index, item, o.combo, o.result, true);
+  });
+  return { states, reactions, errors, warnings: [...warnings], done: outcomes.map((o) => o.combo.id) };
+}
+
+/** Fusion des résumés de plusieurs paquets (le pire l'emporte). */
+export function mergeSummaries(parts: StudySummary[]): StudySummary {
+  const n = parts[0]?.states.length ?? 0;
+  const states: Array<ItemState | null> = Array.from({ length: n }, (_, t) => parts.reduce<ItemState | null>((best, p) => (p.states[t] && (!best || p.states[t]!.eta > best.eta) ? p.states[t] : best), null));
+  return {
+    states,
+    reactions: Object.assign({}, ...parts.map((p) => p.reactions)),
+    errors: parts.flatMap((p) => p.errors),
+    warnings: [...new Set(parts.flatMap((p) => p.warnings))],
+    done: parts.flatMap((p) => p.done),
+  };
+}
+
+// ─── stabilité ───
+
+export interface StabilityResult {
+  overturning: { verdict: Verdict; text: string; combos: string[] };
+  sliding: { eta: number; muReq: number; combo: string; record?: CalcRecord };
+}
+
+/** Basculement (stabilité du calcul non linéaire) et glissement global (μ requis / μ disponible). */
+export function stability(summary: StudySummary, combos: Combination[], mu: number): StabilityResult {
+  const stab = combos.filter((c) => c.cls === 'STAB');
+  const failed = summary.errors.filter((e) => e.cls === 'STAB');
+  let muReq = 0;
+  let combo = '';
+  let H = 0;
+  let V = 0;
+  for (const c of stab) {
+    const R = summary.reactions[c.id];
+    if (!R) continue;
+    const s = R.reduce((a, r) => [a[0] + r.R[0], a[1] + r.R[1], a[2] + r.R[2]], [0, 0, 0]);
+    const h = Math.hypot(s[0], s[2]);
+    const m = s[1] > 0 ? h / s[1] : Infinity;
+    if (m > muReq || !combo) [muReq, combo, H, V] = [m, c.id, h, s[1]];
+  }
+  const eta = muReq / mu;
+  return {
+    overturning: failed.length
+      ? { verdict: 'fail', text: failed.map((e) => e.message).join(' ; '), combos: failed.map((e) => e.combo) }
+      : stab.every((c) => summary.reactions[c.id])
+        ? { verdict: 'ok', text: 'Système stable avec des appuis en compression seule (basculement vérifié dans le calcul non linéaire).', combos: [] }
+        : { verdict: 'incomplete', text: 'Combinaisons de stabilité non calculées.', combos: [] },
+    sliding: {
+      eta,
+      muReq,
+      combo,
+      record: combo
+        ? {
+            key: 'stability.sliding',
+            title: 'Glissement global',
+            clause: 'statico 24-0571 § 4',
+            formula: 'μ requis = √(ΣRx² + ΣRy²) / ΣRz ≤ μ disponible',
+            withValues: `${combo} : ${fmtNumber(H / 1e3)} kN / ${fmtNumber(V / 1e3)} kN = ${fmtNumber(muReq)} ; μ = ${fmtNumber(mu)} → η = ${fmtNumber(eta)}`,
+            eta,
+            combination: combo,
+          }
+        : undefined,
+    },
+  };
+}
+
+// ─── verdict, familles, classement ───
+
+export interface FamilyRow {
+  family: string;
+  count: number;
+  eta: number;
+  item: number;
+  verdict: Verdict;
+}
+
+export interface StudyVerdict {
+  verdict: Verdict;
+  families: FamilyRow[];
+  /** indices des vérifications, du plus chargé au moins chargé */
+  ranking: number[];
+  blocked: number[];
+  reasons: string[];
+}
+
+export function studyVerdict(index: ItemIndex, summary: StudySummary, stab: StabilityResult): StudyVerdict {
+  const fam = new Map<string, FamilyRow>();
+  const blocked: number[] = [];
+  index.items.forEach((it, t) => {
+    const s = summary.states[t];
+    const eta = s ? s.eta : NaN;
+    if (s?.blocked || !s) blocked.push(t);
+    const row = fam.get(it.family) ?? { family: it.family, count: 0, eta: -1, item: t, verdict: 'ok' as Verdict };
+    row.count++;
+    if (!(row.eta >= eta)) [row.eta, row.item] = [eta, t];
+    fam.set(it.family, row);
+  });
+  for (const r of fam.values()) r.verdict = blocked.some((t) => index.items[t].family === r.family) ? 'incomplete' : verdictOf(r.eta);
+  const ranking = index.items.map((_, t) => t).sort((a, b) => (summary.states[b]?.eta ?? Infinity) - (summary.states[a]?.eta ?? Infinity));
+  const reasons: string[] = [];
+  const ulsErrors = summary.errors.filter((e) => e.cls === 'ULS');
+  if (ulsErrors.length) reasons.push(...ulsErrors.map((e) => `${e.combo} : ${e.message}`));
+  if (blocked.length) reasons.push(`${blocked.length} vérification(s) bloquée(s) : ${[...new Set(blocked.map((t) => summary.states[t]?.blocked ?? `${index.items[t].label} non calculé`))].slice(0, 3).join(' ; ')}`);
+  if (stab.overturning.verdict === 'fail') reasons.push(`Basculement : ${stab.overturning.text} — lest ou ancrage nécessaire`);
+  if (stab.sliding.eta > 1) reasons.push(`Glissement global (${stab.sliding.combo}) : μ requis ${fmtNumber(stab.sliding.muReq)} > μ disponible ${fmtNumber(stab.sliding.muReq / stab.sliding.eta)} — lest, ancrage ou frottement à justifier`);
+  const vs: Verdict[] = [...fam.values()].map((r) => r.verdict);
+  vs.push(stab.overturning.verdict, verdictOf(stab.sliding.eta));
+  if (ulsErrors.some((e) => e.code === 'instability' || e.code === 'mechanism')) vs.push('fail');
+  else if (ulsErrors.length) vs.push('incomplete');
+  return { verdict: worstVerdict(vs), families: [...fam.values()].sort((a, b) => b.eta - a.eta), ranking, blocked, reasons };
+}
+
+// ─── réactions → groupes d'appuis (calage) ───
+
+/**
+ * Groupes d'appuis (angles distants de moins de `tolerance` en plan) et réactions extrêmes par groupe :
+ * REd = max ELU de la somme du groupe, REdMin = min ELU et stabilité, Rk = max ELS (sinon REd / 1,35).
+ */
+export function groundEstimate(s: StructuralModel, summary: StudySummary, combos: Combination[], tolerance = 100): Estimate {
+  const pos = (k: number): P2 => {
+    const n = s.fem.nodes[s.fem.supports[k].node];
+    return [n.x, n.z];
+  };
+  const pts = s.fem.supports.map((_, k) => k);
+  const parent = pts.map((k) => k);
+  const find = (k: number): number => (parent[k] === k ? k : (parent[k] = find(parent[k])));
+  for (const a of pts)
+    for (const b of pts) {
+      if (b <= a) continue;
+      const [ma, mb] = [s.supportMeta[a], s.supportMeta[b]];
+      if ((ma.kind === 'middle') !== (mb.kind === 'middle')) continue;
+      const [pa, pb] = [pos(a), pos(b)];
+      if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) <= tolerance) parent[find(a)] = find(b);
+    }
+  const clusters = new Map<number, number[]>();
+  for (const k of pts) {
+    const r = find(k);
+    if (!clusters.has(r)) clusters.set(r, []);
+    clusters.get(r)!.push(k);
+  }
+  const center = (c: number[]): P2 => [c.reduce((a, k) => a + pos(k)[0], 0) / c.length, c.reduce((a, k) => a + pos(k)[1], 0) / c.length];
+  const list = [...clusters.values()].sort((a, b) => Math.round(center(a)[1] / 500) - Math.round(center(b)[1] / 500) || center(a)[0] - center(b)[0]);
+  const groups: SupportGroup[] = list.map((c, k) => {
+    const middle = s.supportMeta[c[0]].kind === 'middle';
+    return { id: `${middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle ? 0 : c.length, middle, moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
+  });
+  const sum = (c: number[], id: string) => {
+    const R = summary.reactions[id];
+    return R ? c.reduce((a, k) => a + R[k].R[1], 0) : undefined;
+  };
+  const byCls = (cls: Combination['cls'][]) => combos.filter((c) => cls.includes(c.cls) && summary.reactions[c.id]);
+  const uls = byCls(['ULS']);
+  const low = byCls(['ULS', 'STAB']);
+  const sls = byCls(['SLS']);
+  const reactions: GroupReaction[] = list.map((c, g) => {
+    let [REd, combo] = [-Infinity, ''];
+    for (const x of uls) {
+      const v = sum(c, x.id)!;
+      if (v > REd) [REd, combo] = [v, x.id];
+    }
+    let REdMin = Infinity;
+    for (const x of low) REdMin = Math.min(REdMin, sum(c, x.id)!);
+    let [Rk, comboK, RkMin] = [-Infinity, '', Infinity];
+    for (const x of sls) {
+      const v = sum(c, x.id)!;
+      if (v > Rk) [Rk, comboK] = [v, x.id];
+      RkMin = Math.min(RkMin, v);
+    }
+    if (!sls.length) [Rk, comboK, RkMin] = [REd / 1.35, `${combo} / 1,35`, REdMin / 1.35];
+    const G = sls.length ? (sum(c, 'ELS0') ?? 0) : (sum(c, 'CO1') ?? 0) / 1.35;
+    return { group: groups[g], Rk, RkMin, REd, REdMin, combo, comboK, G, Q: Rk - G };
+  });
+  return { groups, reactions, totalG: reactions.reduce((a, r) => a + r.G, 0), totalQ: reactions.reduce((a, r) => a + r.Q, 0), units: [], warnings: [], records: [] };
+}

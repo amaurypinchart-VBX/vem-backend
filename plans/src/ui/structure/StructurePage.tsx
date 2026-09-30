@@ -15,6 +15,15 @@ import type { ServerLibraryRow } from '../../structure/core/libraryStore';
 import { mergeLibrary, partTypeEntry, toPayload } from '../../structure/core/libraryStore';
 import { SEED } from '../../structure/library/seed';
 import { itemBoxDims } from '../../structure/scene/geometry';
+import { studyModelFromScene } from '../../structure/scene/studyModel';
+import { sectionMap } from '../../structure/core/assemble';
+import type { EdgeItem } from '../../structure/core/loads';
+import { DEFAULTS } from '../../structure/library/defaults';
+import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
+import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
+import type { StudyRunner } from '../../structure/worker/study';
+import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
+import { CalcPanel, ResultsPanel } from './CalcResults';
 import type { ModelVersion, StudyRecord, VemUser } from '../../api/vem';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { Hypotheses } from './GroundPanel';
@@ -52,6 +61,7 @@ interface StudySettings {
   hyp?: Partial<Hypotheses>;
   roofAccessible?: boolean;
   fileName?: string;
+  calc?: Partial<CalcOptions>;
 }
 
 interface Props {
@@ -71,6 +81,13 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [assignments, setAssignments] = useState<Assignments>({});
   const [hyp, setHyp] = useState<Hypotheses>(DEFAULT_HYP);
   const [roof, setRoof] = useState(false);
+  const [calcOpts, setCalcOpts] = useState<CalcOptions>(CALC_DEFAULTS);
+  const [run, setRun] = useState<{ result: StudyRun; key: string } | null>(null);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [calcError, setCalcError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+  const runnerRef = useRef<StudyRunner | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error' | 'local'>('idle');
   const [error, setError] = useState('');
   const loaded = useRef(false);
@@ -114,6 +131,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         setAssignments((s.assignments ?? {}) as Assignments);
         setHyp({ ...DEFAULT_HYP, ...(st.hyp ?? {}) });
         setRoof(!!st.roofAccessible);
+        setCalcOpts({ ...CALC_DEFAULTS, ...(st.calc ?? {}) });
         setSaveState('saved');
       } catch (e) {
         setError(`Étude non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -136,8 +154,93 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const { modules, warnings } = useMemo(() => modulesFromScene(scene, roof), [scene, framesVersion, roof]);
 
+  // ─── calcul complet ───
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sceneModel = useMemo(() => studyModelFromScene(scene, recognition, library), [scene, recognition, library, framesVersion]);
+  const studyInputs = useMemo((): StudyInputs => {
+    const kNm2 = (v: number) => v * 1e-3;
+    // charge forfaitaire par Viewbox (hypothèses du calage) : répartie sur les 4 rives du plancher
+    const extra: EdgeItem[] =
+      hyp.extraKN > 0
+        ? sceneModel.modules.flatMap((m) => {
+            const p = m.params;
+            const q = (hyp.extraKN * 1e3) / (2 * (p.x1 - p.x0 + (p.y1 - p.y0)));
+            return (['u0', 'u1', 'v0', 'v1'] as const).map((side) => ({ module: m.id, side, from: 0, to: side[0] === 'v' ? p.x1 - p.x0 : p.y1 - p.y0, level: 'floor' as const, q, loadCase: 'G3' as const, label: 'charge forfaitaire' }));
+          })
+        : [];
+    return {
+      modules: sceneModel.modules,
+      edgeItems: [...sceneModel.edgeItems, ...extra],
+      pointItems: sceneModel.pointItems,
+      library,
+      sections: sectionMap(library),
+      loads: {
+        moduleWeight: hyp.moduleWeightKg * 9.81,
+        ceiling: kNm2(hyp.ceiling),
+        floorFinish: kNm2(hyp.floorFinish),
+        live: kNm2(hyp.live),
+        roofLive: kNm2(hyp.roofLive),
+        horizontalRatio: DEFAULTS.horizontalRatio.value,
+        roofAccessible: roof,
+        evacuateTopLevel: hyp.evacuateTop,
+        windInService: kNm2(hyp.windIn),
+        windOutOfService: kNm2(hyp.windOut),
+        cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },
+      },
+      middleFeet: hyp.middleFeet,
+      sls: !hyp.staticoConversion,
+      options: calcOpts,
+      blocking: sceneModel.errors,
+    };
+  }, [sceneModel, library, hyp, roof, calcOpts]);
+  const currentKey = useMemo(() => inputKey(studyInputs), [studyInputs]);
+  const stale = !!run && run.key !== currentKey;
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    runnerRef.current?.dispose();
+  }, []);
+  const startRun = async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner();
+    setRunning(true);
+    setCalcError('');
+    setProgress({ done: 0, total: 0 });
+    const key = currentKey;
+    try {
+      const result = await runStudy(studyInputs, runnerRef.current, (done, total) => setProgress({ done, total }), ctrl.signal);
+      setRun({ result, key });
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setCalcError((e as Error).message);
+    } finally {
+      if (abortRef.current === ctrl) setRunning(false);
+    }
+  };
+  const cancelRun = () => {
+    abortRef.current?.abort();
+    setRunning(false);
+  };
+
   // ─── enregistrement automatique (2 s après la dernière modification) ───
-  const summary = useMemo(() => ({ recognition: recognition.counts }), [recognition.counts]);
+  const summary = useMemo(
+    () => ({
+      recognition: recognition.counts,
+      ...(run
+        ? {
+            calc: {
+              at: new Date().toISOString(),
+              stale,
+              verdict: run.result.verdict.verdict,
+              reasons: run.result.verdict.reasons.slice(0, 5),
+              families: run.result.verdict.families.map((f) => ({ family: f.family, count: f.count, eta: Number.isFinite(f.eta) ? Math.round(f.eta * 1000) / 1000 : null, verdict: f.verdict })),
+              top: run.result.verdict.ranking.slice(0, 20).map((t) => ({ label: run.result.index.items[t].label, eta: run.result.summary.states[t]?.eta ?? null, combo: run.result.summary.states[t]?.combo })),
+            },
+          }
+        : {}),
+    }),
+    [recognition.counts, run, stale],
+  );
   useEffect(() => {
     if (!loaded.current || !study) return;
     setSaveState('saving');
@@ -145,7 +248,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       try {
         await vem.saveStudy(study.id, {
           assignments: assignments as unknown as Record<string, unknown>,
-          settings: { hyp, roofAccessible: roof, fileName: model?.fileName },
+          settings: { hyp, roofAccessible: roof, fileName: model?.fileName, calc: calcOpts },
           resultsSummary: summary,
         });
         setSaveState('saved');
@@ -155,7 +258,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [assignments, hyp, roof, study, summary, model?.fileName]);
+  }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts]);
 
   // la réponse est toujours gardée dans l'étude (un objet sans nom n'est reconnu ailleurs que « probablement », par
   // son empreinte) ; mémorisée, elle sert aussi aux autres modèles et projets
@@ -186,16 +289,16 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const stepState: Record<Step, StepState> = {
     recognition: recognition.counts.unknown ? 'bad' : recognition.counts.suggested ? 'warn' : 'ok',
     site: hyp.bearingValue > 0 ? 'ok' : 'bad',
-    calc: 'todo',
-    results: 'todo',
+    calc: running ? 'warn' : run ? (stale ? 'warn' : 'ok') : sceneModel.errors.length ? 'bad' : 'todo',
+    results: run ? (run.result.verdict.verdict === 'ok' ? 'ok' : run.result.verdict.verdict === 'limit' ? 'warn' : 'bad') : 'todo',
     ground: modules.length ? 'warn' : 'todo',
     report: 'todo',
   };
   const STEPS: Array<{ key: Step; label: string; soon?: string }> = [
     { key: 'recognition', label: '1. Reconnaissance' },
     { key: 'site', label: '2. Site & hypothèses' },
-    { key: 'calc', label: '3. Calcul', soon: 'S4–S5' },
-    { key: 'results', label: '4. Résultats', soon: 'S5' },
+    { key: 'calc', label: '3. Calcul' },
+    { key: 'results', label: '4. Résultats' },
     { key: 'ground', label: '5. Sol & calage' },
     { key: 'report', label: '6. Rapport', soon: 'S6' },
   ];
@@ -249,18 +352,39 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
               <label className="row hint">
                 <input type="checkbox" checked={roof} onChange={(e) => setRoof(e.target.checked)} /> Toitures sans Viewbox au-dessus accessibles (terrasses)
               </label>
-              <div className="hint">Lieu, zone de vent, exploitation et neige détaillés : phase S4 (calcul complet). Les valeurs ci-dessous servent déjà au calage.</div>
+              <div className="hint">
+                Ces valeurs servent au calcul complet (étape 3) et au calage (étape 5). Vent : pressions en service (DIN EN 13814) et hors service (EN 1991-1-4/NA, abattement 0,7), cp luv +0,8 / lee −0,5 /
+                parallèle −0,8, toiture −0,7 pour la stabilité ; neige non prise en compte (évacuation, comme les notes statico).
+              </div>
             </div>
           </div>
           <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} />
         </>
       )}
-      {(step === 'calc' || step === 'results' || step === 'report') && (
+      {step === 'calc' && (
+        <CalcPanel
+          options={calcOpts}
+          setOptions={setCalcOpts}
+          modulesCount={sceneModel.modules.length}
+          blocking={sceneModel.errors}
+          warnings={sceneModel.warnings}
+          running={running}
+          progress={progress}
+          run={run?.result ?? null}
+          stale={stale}
+          error={calcError}
+          onRun={() => void startRun()}
+          onCancel={cancelRun}
+          onShowResults={() => setStep('results')}
+        />
+      )}
+      <div style={{ display: step === 'results' ? 'block' : 'none' }}>
+        <ResultsPanel scene={scene} glassTest={glassTest} active={active && step === 'results'} recognition={recognition} run={run?.result ?? null} stale={stale} />
+      </div>
+      {step === 'report' && (
         <div className="card">
           <div className="card-body hint">
-            {step === 'calc' && 'Calcul complet (modèle filaire 3D des Viewbox, charges, vent, 2ᵉ ordre) : prochaines phases (S4–S5). Le moteur de calcul est prêt.'}
-            {step === 'results' && 'Résultats (taux de travail en couleurs, éléments les plus sollicités, réactions) : phase S5.'}
-            {step === 'report' && 'Rapport PDF complet (FR / DE / EN) : phase S6. La fiche de calage PDF est déjà disponible à l’étape 5.'}
+            Rapport PDF complet (FR / DE / EN) : phase S6. La fiche de calage PDF est déjà disponible à l’étape 5.
             {recognition.blocking > 0 && ` — ${recognition.blocking} type(s) de pièce encore inconnu(s) : le verdict serait « incomplet ».`}
           </div>
         </div>
@@ -273,6 +397,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           hyp={hyp}
           onHypChange={setHyp}
           showHypotheses={false}
+          reactions={run && !stale ? run.result.ground : null}
           intro={
             warnings.length ? (
               <div className="warnings">
