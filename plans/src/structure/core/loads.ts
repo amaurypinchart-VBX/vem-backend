@@ -56,6 +56,11 @@ export interface PointItem {
 export interface LoadInputs {
   /** poids pesé d'une Viewbox (N) : complément Gc si le modèle est plus léger */
   moduleWeight: number;
+  /**
+   * poids propre retenu : le plus lourd du modèle (barres + plafond + sol) et de la pesée (défaut, prudent), ou la pesée
+   * exactement (plafond et sol réduits d'autant, jamais sous le poids des barres seules)
+   */
+  weightMode?: 'max' | 'weighed';
   /** plafond, sol (N/mm²) */
   ceiling: number;
   floorFinish: number;
@@ -239,12 +244,21 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
   cases.push(g1.build('G1', 'Poids propre', 'G'));
 
   // ─── G2 plafonds, G4 sols ───
+  // poids pesé retenu : plafond et sol réduits pour que barres + plafond + sol = pesée
+  const finishFactor = new Map<string, number>();
+  for (const pm of model.modules) {
+    const p = tplOf(pm.id).params;
+    const fin = (inp.ceiling + inp.floorFinish) * (p.x1 - p.x0) * (p.y1 - p.y0);
+    const self = selfByModule.get(pm.id) ?? 0;
+    finishFactor.set(pm.id, inp.weightMode === 'weighed' && fin > 0 ? Math.max(0, Math.min(1, (inp.moduleWeight - self) / fin)) : 1);
+  }
   const g2 = new CaseBuilder(model);
   const g4 = new CaseBuilder(model);
   for (const pm of model.modules) {
     const tpl = tplOf(pm.id);
-    if (inp.ceiling > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceiling, DOWN);
-    if (inp.floorFinish > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorFinish, DOWN);
+    const k = finishFactor.get(pm.id)!;
+    if (inp.ceiling * k > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceiling * k, DOWN);
+    if (inp.floorFinish * k > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorFinish * k, DOWN);
   }
   const G2 = g2.build('G2', 'Plafonds', 'G');
   const G4 = g4.build('G4', 'Sols', 'G');
@@ -255,7 +269,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
     const tpl = tplOf(pm.id);
     const p = tpl.params;
     const area = (p.x1 - p.x0) * (p.y1 - p.y0);
-    const modelled = (selfByModule.get(pm.id) ?? 0) + (inp.ceiling + inp.floorFinish) * area;
+    const modelled = (selfByModule.get(pm.id) ?? 0) + (inp.ceiling + inp.floorFinish) * area * finishFactor.get(pm.id)!;
     const missing = inp.moduleWeight - modelled;
     if (missing <= 0) continue;
     // réparti uniformément sur les 4 rives du plancher
@@ -279,13 +293,19 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
     const area = (p.x1 - p.x0) * (p.y1 - p.y0);
     const self = selfByModule.get(first.id) ?? 0;
     const total = self + (inp.ceiling + inp.floorFinish) * area;
+    const k = finishFactor.get(first.id)!;
+    const weighed = inp.weightMode === 'weighed' && k < 1;
     records.push({
       key: 'loads.moduleWeight',
       title: 'Poids d’une Viewbox : modèle et pesée',
       clause: 'statico 24-0571 § 2.1',
-      formula: 'G1 (barres, 78,5 kN/m³) + G2 (plafond) + G4 (sol) ≥ poids pesé, sinon complément Gc sur les rives du plancher',
-      withValues: `${n(self / 1e3)} + ${n((inp.ceiling * area) / 1e3)} + ${n((inp.floorFinish * area) / 1e3)} = ${n(total / 1e3)} kN ; pesée ${n(inp.moduleWeight / 1e3)} kN${total >= inp.moduleWeight ? ' : modèle plus lourd, pas de complément' : ` : complément Gc = ${n((inp.moduleWeight - total) / 1e3)} kN`}`,
-      result: total,
+      formula: weighed
+        ? 'poids pesé retenu : G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol) = poids pesé'
+        : 'G1 (barres, 78,5 kN/m³) + G2 (plafond) + G4 (sol) ≥ poids pesé, sinon complément Gc sur les rives du plancher',
+      withValues: weighed
+        ? `${n(self / 1e3)} + ${n(k, 2)} · (${n((inp.ceiling * area) / 1e3)} + ${n((inp.floorFinish * area) / 1e3)}) = ${n((self + k * (total - self)) / 1e3)} kN ; pesée ${n(inp.moduleWeight / 1e3)} kN${self > inp.moduleWeight ? ' (barres seules plus lourdes que la pesée : plafond et sol ignorés)' : ''}`
+        : `${n(self / 1e3)} + ${n((inp.ceiling * area) / 1e3)} + ${n((inp.floorFinish * area) / 1e3)} = ${n(total / 1e3)} kN ; pesée ${n(inp.moduleWeight / 1e3)} kN${total >= inp.moduleWeight ? ' : modèle plus lourd, retenu (prudent)' : ` : complément Gc = ${n((inp.moduleWeight - total) / 1e3)} kN`}`,
+      result: weighed ? self + k * (total - self) : Math.max(total, inp.moduleWeight),
     });
   }
   const Gc = gc.build('Gc', 'Complément de poids', 'G');

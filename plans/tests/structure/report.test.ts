@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { sectionMap } from '../../src/structure/core/assemble';
 import { computeCalage } from '../../src/structure/core/calage';
 import type { CalageResult } from '../../src/structure/core/calage';
-import { ESTIMATE_DEFAULTS } from '../../src/structure/core/estimate';
+import { ESTIMATE_DEFAULTS, gridModules } from '../../src/structure/core/estimate';
 import { C24_BEAMS } from '../../src/structure/core/ground';
 import { SEED } from '../../src/structure/library/seed';
 import type { ReportInput } from '../../src/structure/report/build';
@@ -29,7 +29,7 @@ import { emptyTitleBlock } from '../../src/sheets/types';
 import { calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
 import { studyFacts } from '../../src/structure/report/facts';
 import { checkText } from '../../../src/services/structureAiGuard';
-import { VIEWBOX_STOCK } from '../../src/structure/core/ground';
+import { VIEWBOX_STOCK, plateKey } from '../../src/structure/core/ground';
 import type { ModuleTypeEntry } from '../../src/structure/core/library';
 import { editedModuleEntry, withSection } from '../../src/structure/core/viewboxEdit';
 
@@ -215,6 +215,36 @@ describe('rapport de l’étude structure', () => {
       expect(all.split('\n').filter((l) => /(^|[^\p{L}])(vérins?|Vérin|sortie|tiges?)([^\p{L}]|$)/u.test(l))).toEqual([]);
     }
   }, 180000);
+
+  it('calage choisi (plaques par type, un appui à part, plaques de roulage) : traduit sans mot français', () => {
+    const k70 = plateKey(VIEWBOX_STOCK.find((s) => s.length === 700 && s.thickness === 36)!);
+    const k100 = plateKey(VIEWBOX_STOCK.find((s) => s.length === 1000 && s.thickness === 18)!);
+    const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Sol légèrement déformable (prairie carrossable)'];
+    const first = run.ground.reactions[0].group.id;
+    for (const roadway of [false, true]) {
+      const c = computeCalage({
+        ...calageInputFor(),
+        modules: gridModules(1, 2, [[2], [1]], false),
+        stock: VIEWBOX_STOCK,
+        reactions: run.ground,
+        choices: { byType: { '1': [{ plate: k70, n: 1 }], '2': [] }, bySupport: { [first]: [{ plate: k70, n: 1 }, { plate: k100, n: 1 }] }, roadway },
+      });
+      expect(c.types.some((t) => t.custom)).toBe(true);
+      for (const lang of ['de', 'en'] as const) {
+        const r = buildReport({ ...reportInput(lang, 'detailed'), calage: c });
+        const all = r.pages
+          .flatMap((p) => texts(p.svg))
+          .map((t) => own.reduce((x, o) => x.split(o).join(''), t))
+          .join('\n');
+        expect(all).not.toMatch(/NaN|undefined|Infinity|\[object/);
+        const markers = FRENCH_MARKERS.filter((w) => !(lang === 'de' && ['des', 'service'].includes(w)) && !(lang === 'en' && ['service', 'charge'].includes(w)));
+        const found = markers.filter((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(all));
+        const context = found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)));
+        expect(context).toEqual([]);
+        expect(all.split('\n').filter((l) => /(^|[^\p{L}])(plaques?|roulage|choisi|emprise|pied|posé)([^\p{L}]|$)/iu.test(l))).toEqual([]);
+      }
+    }
+  });
 
   it('traduction des textes du moteur : libellés d’éléments, formules, typographie', () => {
     expect(translate('de', 'VBX-01 · rive plancher, grand côté 1, tronçon 3 (1,20 m)')).toBe('VBX-01 · Bodenrandträger, Längsseite 1, Abschnitt 3 (1,20 m)');

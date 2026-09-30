@@ -248,7 +248,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
         { title: L.colQty, w: 12, align: 'end' },
         { title: L.colMass, w: 14, align: 'end' },
       ],
-      rows: c.materials.length ? c.materials.map((m) => [E(m.label), m.dims, String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[L.noStandardSolution, '', '', '']],
+      rows: c.materials.length ? c.materials.map((m) => [E(m.label), E(m.dims), String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[L.noStandardSolution, '', '', '']],
     });
     return out;
   };

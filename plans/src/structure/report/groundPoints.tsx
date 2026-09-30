@@ -2,6 +2,7 @@
 // (numéro, réaction caractéristique), repère x / y, pression sous plaques de roulage (répartition uniforme sur toute
 // la surface et emprise la plus chargée), tableau des points avec leurs coordonnées. SVG en mm (210 × 297).
 import type { ReactElement } from 'react';
+import type { SupportCheck } from '../core/calage';
 import type { Estimate, EstimateModule } from '../core/estimate';
 import type { RoadwayResult } from '../core/roadway';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../core/roadway';
@@ -35,6 +36,8 @@ export interface GroundPointsInput {
   info: SheetInfo;
   /** libellé de la portance (« 200 kN/m² (prairie) ») */
   bearingLabel: string;
+  /** vérification de chaque appui avec son calage (colonne « Calage · pression au sol ») */
+  checks?: SupportCheck[];
 }
 
 const ROW = 2.4 * 1.55;
@@ -73,7 +76,8 @@ function Page({ info, page, pages, children }: { info: SheetInfo; page: number; 
   );
 }
 
-const COLS: Array<{ title: string; w: number; align?: 'end' }> = [
+type Col = { title: string; w: number; align?: 'end' };
+const COLS: Col[] = [
   { title: 'Point', w: 14 },
   { title: 'Type', w: 26 },
   { title: 'Viewbox au sol', w: 44 },
@@ -83,12 +87,38 @@ const COLS: Array<{ title: string; w: number; align?: 'end' }> = [
   { title: 'Rz,Ed (kN)', w: 22, align: 'end' },
   { title: 'Rz,k (t)', w: 20, align: 'end' },
 ];
+/** avec le calage vérifié de chaque appui */
+const COLS_CALAGE: Col[] = [
+  { title: 'Point', w: 11 },
+  { title: 'Type', w: 22 },
+  { title: 'Viewbox au sol', w: 27 },
+  { title: 'x (m)', w: 13, align: 'end' },
+  { title: 'y (m)', w: 13, align: 'end' },
+  { title: 'Rz,k (kN)', w: 17, align: 'end' },
+  { title: 'Rz,Ed (kN)', w: 18, align: 'end' },
+  { title: '  Calage · pression au sol', w: 65 },
+];
 
-function TableRows({ y, rows, header }: { y: number; rows: string[][]; header: boolean }) {
+/** « VBX-01/02/04/05 » : numéros de même préfixe regroupés (colonne étroite). */
+export function compactIds(ids: string[]): string {
+  const m = ids.map((id) => /^(.*?)(\d+)$/.exec(id));
+  if (ids.length > 1 && m.every((x) => x && x[1] === m[0]![1])) return m[0]![1] + m.map((x) => x![2]).join('/');
+  return ids.join(', ');
+}
+
+/** « 2 × 100×100×36 · 61 kN/m² ✔ » */
+function calageCell(c: SupportCheck, roadway: boolean): string {
+  const lay = c.layerList.length ? c.layerList.map((l) => (l.material === 'commercial' ? `${l.n} × ${l.label}` : `${l.n} × ${l.l / 10}×${l.w / 10}×${l.t}`)).join(' + ') : 'sans plaque';
+  const q = c.pressure * 1e3;
+  const mark = verdictOf(c.eta) === 'fail' ? ' — DÉPASSÉ' : verdictOf(c.eta) === 'limit' ? ' (limite)' : '';
+  return `  ${lay}${roadway ? ' + roulage' : ''} · ${n1(q, q < 10 ? 1 : 0)} kN/m²${mark}`;
+}
+
+function TableRows({ y, rows, header, cols = COLS }: { y: number; rows: string[][]; header: boolean; cols?: Col[] }) {
   const size = 2.4;
   const out: ReactElement[] = [];
   let cx = M;
-  COLS.forEach((c, i) => {
+  cols.forEach((c, i) => {
     const tx = c.align === 'end' ? cx + c.w - 1 : cx + 1;
     const anchor = c.align === 'end' ? 'end' : 'start';
     if (header)
@@ -106,7 +136,7 @@ function TableRows({ y, rows, header }: { y: number; rows: string[][]; header: b
     );
     cx += c.w;
   });
-  const total = COLS.reduce((a, c) => a + c.w, 0);
+  const total = cols.reduce((a, c) => a + c.w, 0);
   return (
     <g>
       {header && <line x1={M} x2={M + total} y1={y + size * 1.45} y2={y + size * 1.45} stroke="#9ca3af" strokeWidth={0.2} />}
@@ -116,14 +146,20 @@ function TableRows({ y, rows, header }: { y: number; rows: string[][]; header: b
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks }: GroundPointsInput): ReactElement[] {
   const o = planOrigin(modules);
   const zoneOf = new Map(roadway.zones.map((z) => [z.module, z]));
   const ground = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
+  const checkOf = new Map((checks ?? []).map((c) => [c.id, c]));
+  const roadwayOn = !!checks?.some((c) => c.steps.some((s) => s.dims === null));
+  const cols = checks?.length ? COLS_CALAGE : COLS;
   const rows = estimate.reactions.map((r) => {
     const [x, y] = planCoords(r.group.position, o);
     const ids = r.group.moduleIds.filter((id) => ground.has(id));
-    return [r.group.id, supportType(r), (ids.length ? ids : r.group.moduleIds).join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), n1(r.Rk / 1e3), n1(r.REd / 1e3), n1(r.Rk / 9.81e3, 2)];
+    const c = checkOf.get(r.group.id);
+    const last = checks?.length ? (c ? calageCell(c, roadwayOn) : '') : n1(r.Rk / 9.81e3, 2);
+    const list = ids.length ? ids : r.group.moduleIds;
+    return [r.group.id, supportType(r), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), n1(r.Rk / 1e3), n1(r.REd / 1e3), last];
   });
   const title = (t: string, y: number) => (
     <text fontFamily={FONT_SANS} x={M} y={y} fontSize={3.4} fontWeight={700} fill="#1a021d">
@@ -214,7 +250,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   const perPage = Math.floor((bottom - 38 - ROW) / ROW);
   for (let k = firstCount; k < rows.length; k += perPage) chunks.push(rows.slice(k, k + perPage));
   if (chunks.length > 1 && !chunks[chunks.length - 1].length) chunks.pop();
-  first.push(<TableRows key="tab" y={y} rows={chunks[0]} header />);
+  first.push(<TableRows key="tab" y={y} rows={chunks[0]} header cols={cols} />);
   const pages = chunks.length;
   const out = [
     <Page key={1} info={info} page={1} pages={pages}>
@@ -225,7 +261,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     out.push(
       <Page key={k + 2} info={info} page={k + 2} pages={pages}>
         <g>{title('3. Points d’appui (suite)', 34)}</g>
-        <TableRows y={36} rows={c} header />
+        <TableRows y={36} rows={c} header cols={cols} />
       </Page>,
     ),
   );

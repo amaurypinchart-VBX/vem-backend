@@ -12,7 +12,7 @@ import {
   sizePlate,
   steelPlate,
 } from '../../src/structure/core/ground';
-import { ESTIMATE_DEFAULTS, estimateReactions, gridModules } from '../../src/structure/core/estimate';
+import { ESTIMATE_DEFAULTS, VIEWBOX_STEEL_WEIGHT, estimateReactions, gridModules } from '../../src/structure/core/estimate';
 import type { EstimateOptions } from '../../src/structure/core/estimate';
 import { computeCalage } from '../../src/structure/core/calage';
 import { C24_BEAMS } from '../../src/structure/core/ground';
@@ -156,9 +156,9 @@ describe('estimation des réactions', () => {
   it('sans action horizontale : chaque angle reprend (G + Q)/4, les niveaux se cumulent', () => {
     const e = estimateReactions(gridModules(1, 1, [[3]], false), calm);
     const A = 5900 * 2500;
-    // poids pesé (planchers et isolants compris) : plafond et sol ne s'y ajoutent pas
-    const G = Math.max(loads.moduleWeight, (loads.ceiling + loads.floorFinish) * A);
-    expect(G).toBe(loads.moduleWeight);
+    // poids pesé (planchers et isolants compris) comparé à barres + plafond + sol, comme le calcul complet : le plus lourd
+    const G = Math.max(loads.moduleWeight, VIEWBOX_STEEL_WEIGHT + (loads.ceiling + loads.floorFinish) * A);
+    expect(G).toBeGreaterThan(loads.moduleWeight);
     const Q = loads.live * A;
     for (const r of e.reactions) {
       expect(r.Rk).toBeCloseTo((3 * (G + Q)) / 4, 6);
@@ -171,7 +171,7 @@ describe('estimation des réactions', () => {
     const opt: EstimateOptions = { ...calm, windOutOfService: kNm2(0.37) };
     const e = estimateReactions(gridModules(1, 1, [[1]], false), opt);
     const A = 5900 * 2500;
-    const G = Math.max(loads.moduleWeight, (loads.ceiling + loads.floorFinish) * A);
+    const G = Math.max(loads.moduleWeight, VIEWBOX_STEEL_WEIGHT + (loads.ceiling + loads.floorFinish) * A);
     // vent selon y (sur le grand côté) : largeur exposée 5 890 mm, bras de levier ± 1 245 mm
     const F = 1.35 * 0.37e-3 * 1.3 * 5890 * 3080;
     const dR = (F * 1540) / (4 * 1245);

@@ -187,6 +187,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       sections: sectionMap(library),
       loads: {
         moduleWeight: hyp.moduleWeightKg * 9.81,
+        weightMode: hyp.weightMode,
         ceiling: kNm2(hyp.ceiling),
         floorFinish: kNm2(hyp.floorFinish),
         live: kNm2(hyp.live),

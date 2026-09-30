@@ -43,9 +43,12 @@ export const BEARING_PRESETS: BearingPreset[] = [
   { key: 'roof', label: 'Toiture-terrasse', value: null, pointLoad: true, source: 'à renseigner (bureau d’études du bâtiment)' },
 ];
 
-/** Portance saisie dans une unité usuelle → N/mm². */
-export function bearingFrom(value: number, unit: 'kN/m²' | 't/m²' | 'kg/cm²'): number {
+export type BearingUnit = 'kN/m²' | 'kg/m²' | 't/m²' | 'kg/cm²';
+
+/** Portance saisie dans une unité usuelle → N/mm² (1 kN/m² ≈ 102 kg/m² ; 1 kg/cm² = 10 t/m²). */
+export function bearingFrom(value: number, unit: BearingUnit): number {
   if (unit === 'kN/m²') return value * 1e-3;
+  if (unit === 'kg/m²') return value * 9.81e-6;
   if (unit === 't/m²') return value * 9.81e-3;
   return value * 9.81e-2;
 }
@@ -216,6 +219,34 @@ export interface StockPlate {
   quantity: number;
   /** matériau de la plaque (défaut F40/30, comme avant les plaques de calage Viewbox) */
   material?: PanelMaterial;
+}
+
+/** Clé d'une plaque du stock (choix de calage enregistrés) : matériau et dimensions. */
+export const plateKey = (s: StockPlate) => `${s.material ?? 'F40'}:${s.length}x${s.width}x${s.thickness}`;
+
+/** « Multiplex bouleau 70 × 70 × 36 mm ». */
+export const stockPlateLabel = (s: StockPlate) => `${PANELS[s.material ?? 'F40'].label} ${s.length / 10} × ${s.width / 10} × ${s.thickness} mm`;
+
+/**
+ * Couche de calage sous un appui : n plaques identiques empilées (bois ou tôle, elles fléchissent séparément), ou
+ * plaque de répartition du commerce (charge admissible du fabricant, répartit sur toute sa surface).
+ */
+export interface SpreadLayer {
+  key: string;
+  label: string;
+  l: number;
+  w: number;
+  t: number;
+  n: number;
+  material: PanelMaterial | 'steel' | 'commercial';
+  capacity?: number;
+  /** masse d'une plaque (kg) */
+  massKg: number;
+}
+
+export function stockLayer(s: StockPlate, n: number): SpreadLayer {
+  const mat = s.material ?? 'F40';
+  return { key: plateKey(s), label: stockPlateLabel(s), l: s.length, w: s.width, t: s.thickness, n, material: mat, massKg: (s.length * s.width * s.thickness * PANELS[mat].panel.rho) / 1e9 };
 }
 
 /** Plaques de calage Viewbox : multiplex bouleau 18 et 36 mm, 40 × 40, 70 × 70 et 100 × 100 cm (quantités à saisir). */
@@ -504,7 +535,7 @@ export function chooseLongrine(
 
 // ─── synthèse par type de groupe d'appuis ───
 
-export type SolutionKind = 'plywood' | 'plywood-stock' | 'steel' | 'longrine' | 'diffusion' | 'commercial';
+export type SolutionKind = 'plywood' | 'plywood-stock' | 'steel' | 'longrine' | 'diffusion' | 'commercial' | 'custom' | 'roadway';
 
 export interface MaterialLine {
   label: string;
@@ -526,6 +557,8 @@ export interface Solution {
   records: CalcRecord[];
   /** emprise d'une plaque sous le groupe d'appuis (mm), pour le plan de calage */
   footprint?: { l: number; w: number };
+  /** couches de plaques sous chaque appui, du haut vers le bas (chaîne de répartition appui par appui) */
+  layers?: SpreadLayer[];
 }
 
 export interface CommercialPlate {
@@ -581,6 +614,18 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       materials: [{ label: 'Contreplaqué F40/30', dims: `${plate.side} × ${plate.side} × ${ply.t} mm`, quantity: ply.needed, massKg: woodMass(plate.side, ply.t) * ply.needed }],
       records: plate.records,
       footprint: { l: plate.side, w: plate.side },
+      layers: [
+        {
+          key: `cut:F40:${plate.side}x${plate.side}x${ply.t}`,
+          label: `Contreplaqué F40/30 ${s} × ${s} × ${ply.t} mm`,
+          l: plate.side,
+          w: plate.side,
+          t: ply.t,
+          n: ply.n,
+          material: 'F40',
+          massKg: woodMass(plate.side, ply.t),
+        },
+      ],
     });
   }
   // plaques du stock
@@ -601,6 +646,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       materials: [{ label: `${mat.label} (stock${c.available === undefined ? ', quantité à vérifier au dépôt' : ''})`, dims: `${st.length} × ${st.width} × ${st.thickness} mm`, quantity: c.needed, massKg: (st.length * st.width * st.thickness * mat.panel.rho * c.needed) / 1e9 }],
       records: c.result.records,
       footprint: { l: st.length, w: st.width },
+      layers: [stockLayer(st, c.n)],
     });
   }
   // tôle acier
@@ -619,7 +665,23 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
       eta: Math.max(plate.etaGround, steel.records[1].eta ?? Infinity),
       materials: steel.t ? [{ label: 'Tôle acier S235', dims: `${steel.side} × ${steel.side} × ${steel.t} mm`, quantity: g.groups, massKg: steel.massKg * g.groups }] : [],
       records: steel.records,
-      ...(steel.t ? { footprint: { l: steel.side, w: steel.side } } : {}),
+      ...(steel.t
+        ? {
+            footprint: { l: steel.side, w: steel.side },
+            layers: [
+              {
+                key: `steel:${steel.side}x${steel.side}x${steel.t}`,
+                label: `Tôle acier S235 ${steel.side / 10} × ${steel.side / 10} × ${steel.t} mm`,
+                l: steel.side,
+                w: steel.side,
+                t: steel.t,
+                n: 1,
+                material: 'steel' as const,
+                massKg: steel.massKg,
+              },
+            ],
+          }
+        : {}),
     });
   }
   // plaques de répartition du commerce (capacité du fabricant)
@@ -648,6 +710,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
         },
       ],
       footprint: { l: c.length, w: c.width },
+      layers: [{ key: `com:${c.label}`, label: c.label, l: c.length, w: c.width, t: 0, n: 1, material: 'commercial', capacity: c.capacity, massKg: c.massKg }],
     });
   }
   let point: CalcRecord | undefined;
@@ -669,7 +732,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
 
 /** Solution retenue : la première faisable dans l'ordre stock → contreplaqué → plaque du commerce → tôle. */
 export function recommended(solutions: Solution[]): Solution | undefined {
-  const order: SolutionKind[] = ['plywood-stock', 'plywood', 'commercial', 'steel', 'longrine', 'diffusion'];
+  const order: SolutionKind[] = ['custom', 'roadway', 'plywood-stock', 'plywood', 'commercial', 'steel', 'longrine', 'diffusion'];
   return [...solutions].filter((s) => s.feasible && verdictOf(s.eta) !== 'fail').sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
 }
 

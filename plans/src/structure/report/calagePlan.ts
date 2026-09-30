@@ -58,7 +58,7 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
       const at = (a: number, b: number): Vec3 => [cx + m.u[0] * a + m.v[0] * b, y, cz + m.u[2] * a + m.v[2] * b];
       out.push({
         id: r.group.id,
-        label: t.chosen ? translate(lang, t.chosen.summary.replace(/ par (angle|groupe|pied central)$/, '')) : '—',
+        label: t.chosen ? translate(lang, t.chosen.summary.replace(/ par (angle|groupe|pied central|vérin)/, '')) : '—',
         sub: `Rz,k ${N(r.Rk / 1e3)} kN`,
         color: TYPE_HEX[groupType(r)],
         corners: [at(-hu, -hv), at(hu, -hv), at(hu, hv), at(-hu, hv)],

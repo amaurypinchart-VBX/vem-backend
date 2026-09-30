@@ -31,10 +31,13 @@ interface PlanProps {
   zoneFill?: (m: EstimateModule) => string | undefined;
   /** repère d'implantation : origine en bas à gauche, x vers la droite, y vers le haut */
   axes?: boolean;
+  /** couleur de chaque appui (sinon celle de son type) et seconde ligne de son étiquette (sinon Rz,k) */
+  pointColor?: (r: GroupReaction) => string | undefined;
+  pointSub?: (r: GroupReaction) => string | undefined;
 }
 
 /** Vue de dessus : emprises des Viewbox (nombre de niveaux au centre), groupes d'appuis colorés par type avec Rz,k. */
-export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes }: PlanProps) {
+export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub }: PlanProps) {
   const pts = modules.flatMap((m) => m.corners);
   if (!pts.length) return null;
   const minX = Math.min(...pts.map((p) => p[0]));
@@ -96,7 +99,7 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
         );
       })}
       {reactions.map((re, k) => {
-        const col = TYPE_COLORS[typeKey(re)];
+        const col = pointColor?.(re) ?? TYPE_COLORS[typeKey(re)];
         const sel = selected === re.group.id;
         // appuis voisins très proches (vérins de Viewbox côte à côte) : étiquettes vers l'extérieur du groupe
         const [qx, qy] = P[k];
@@ -118,7 +121,7 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
                 : [qy + r + text * 0.95, qy + r + text * 1.8];
         const labels = [
           { t: re.group.id, yy: y1, size: text * 0.85, bold: true },
-          { t: `${n1(re.Rk / 1e3, 0)} kN`, yy: y2, size: text * 0.8, bold: false },
+          { t: pointSub?.(re) ?? `${n1(re.Rk / 1e3, 0)} kN`, yy: y2, size: text * 0.8, bold: false },
         ];
         return (
           <g key={re.group.id} onClick={onSelect ? () => onSelect(re.group.id) : undefined} style={onSelect ? { cursor: 'pointer' } : undefined}>
@@ -190,9 +193,28 @@ const W = 210;
 const H = 297;
 const M = 12;
 
+const TYPE_COLS: Array<{ title: string; w: number; align?: 'end' }> = [
+  { title: 'Type', w: 34 },
+  { title: 'Nb', w: 9, align: 'end' },
+  { title: 'Rz,k', w: 17, align: 'end' },
+  { title: 'Rz,Ed', w: 17, align: 'end' },
+  { title: '   Solution retenue', w: 76 },
+  { title: 'η', w: 9, align: 'end' },
+  { title: '  État', w: 24 },
+];
+
+/** Lignes d'un tableau : une cellule trop longue pour sa colonne passe à la ligne (Arimo ≈ 0,5 × corps par caractère). */
+export function tableLines(cols: Array<{ w: number }>, rows: string[][], size: number): string[][][] {
+  return rows.map((r) => r.map((t, i) => (t.length * size * 0.5 > cols[i].w - 1.5 ? wrap(t, Math.max(8, Math.floor((cols[i].w - 1.5) / (size * 0.5)))) : [t])));
+}
+
 function Table({ x, y, cols, rows, size }: { x: number; y: number; cols: Array<{ title: string; w: number; align?: 'end' }>; rows: string[][]; size: number }) {
   const lh = size * 1.55;
   const cells: ReactNode[] = [];
+  const lines = tableLines(cols, rows, size);
+  // première ligne de chaque rangée (rangées de plusieurs lignes)
+  const start: number[] = [];
+  lines.reduce((at, r) => (start.push(at), at + Math.max(1, ...r.map((c) => c.length))), 1);
   let cx = x;
   cols.forEach((c, i) => {
     const tx = c.align === 'end' ? cx + c.w - 1 : cx + 1;
@@ -201,11 +223,13 @@ function Table({ x, y, cols, rows, size }: { x: number; y: number; cols: Array<{
         {c.title}
       </text>,
     );
-    rows.forEach((r, k) =>
-      cells.push(
-        <text fontFamily={FONT_SANS} key={`c${i}-${k}`} x={tx} y={y + size + lh * (k + 1)} fontSize={size} textAnchor={c.align === 'end' ? 'end' : 'start'} fill="#111827">
-          {r[i]}
-        </text>,
+    lines.forEach((r, k) =>
+      r[i].forEach((t, j) =>
+        cells.push(
+          <text fontFamily={FONT_SANS} key={`c${i}-${k}-${j}`} x={tx} y={y + size + lh * (start[k] + j)} fontSize={size} textAnchor={c.align === 'end' ? 'end' : 'start'} fill="#111827">
+            {j ? `  ${t.trim()}` : t}
+          </text>,
+        ),
       ),
     );
     cx += c.w;
@@ -270,25 +294,9 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
     t.chosen ? n1(t.chosen.eta, 2) : '—',
     t.chosen ? (t.standard ? (verdictOf(t.chosen.eta) === 'limit' ? 'limite' : 'OK') : 'hors standard') : 'aucune',
   ]);
-  blocks.push(
-    <Table
-      key="types"
-      x={M}
-      y={y}
-      size={2.4}
-      cols={[
-        { title: 'Type', w: 34 },
-        { title: 'Nb', w: 9, align: 'end' },
-        { title: 'Rz,k', w: 17, align: 'end' },
-        { title: 'Rz,Ed', w: 17, align: 'end' },
-        { title: '   Solution retenue', w: 76 },
-        { title: 'η', w: 9, align: 'end' },
-        { title: '  État', w: 24 },
-      ]}
-      rows={rows.map((r) => [r[0], r[1], r[2], r[3], `   ${r[4]}`, r[5], `  ${r[6]}`])}
-    />,
-  );
-  y += 2.4 * 1.55 * (rows.length + 1) + 4;
+  const typeRows = rows.map((r) => [r[0], r[1], r[2], r[3], `   ${r[4]}`, r[5], `  ${r[6]}`]);
+  blocks.push(<Table key="types" x={M} y={y} size={2.4} cols={TYPE_COLS} rows={typeRows} />);
+  y += 2.4 * 1.55 * (tableLines(TYPE_COLS, typeRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 4;
   if (result.longrine) {
     blocks.push(
       <text fontFamily={FONT_SANS} key="lg" x={M} y={y} fontSize={body} fill="#111827">
@@ -301,26 +309,15 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
   blocks.push(<g key="t4">{title('4. Matériel à préparer', y)}</g>);
   y += 3;
   const mats = result.materials;
-  blocks.push(
-    <Table
-      key="mat"
-      x={M}
-      y={y}
-      size={2.4}
-      cols={[
-        { title: 'Désignation', w: 60 },
-        { title: 'Dimensions', w: 60 },
-        { title: 'Quantité', w: 26, align: 'end' },
-        { title: 'Masse totale', w: 40, align: 'end' },
-      ]}
-      rows={
-        mats.length
-          ? mats.map((m) => [m.label, m.dims, String(m.quantity), `${n1(m.massKg, 0)} kg`])
-          : [['aucune solution standard', '', '', '']]
-      }
-    />,
-  );
-  y += 2.4 * 1.55 * (Math.max(1, mats.length) + 1) + 5;
+  const matCols: Array<{ title: string; w: number; align?: 'end' }> = [
+    { title: 'Désignation', w: 60 },
+    { title: 'Dimensions', w: 60 },
+    { title: 'Quantité', w: 26, align: 'end' },
+    { title: 'Masse totale', w: 40, align: 'end' },
+  ];
+  const matRows = mats.length ? mats.map((m) => [m.label, m.dims, String(m.quantity), `${n1(m.massKg, 0)} kg`]) : [['aucune solution standard', '', '', '']];
+  blocks.push(<Table key="mat" x={M} y={y} size={2.4} cols={matCols} rows={matRows} />);
+  y += 2.4 * 1.55 * (tableLines(matCols, matRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 5;
   // 5. réserves
   blocks.push(<g key="t5">{title('5. Réserves', y)}</g>);
   y += 4.5;
@@ -330,7 +327,8 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
     fem
       ? 'Réactions du calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
       : 'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
-    'Plaques : pression uniforme supposée sous la plaque (méthode statico) ; contreplaqué F40/30, kmod 0,9, γM 1,3.',
+    'Plaques : pression uniforme sous l’emprise efficace (méthode statico ; une plaque trop mince ne compte que pour la partie qu’elle peut porter en flexion) ; bois kmod 0,9, γM 1,3.',
+    ...(result.roadwayOn ? [`Plaques de roulage jointives sur toute la surface : ${n1(result.roadway.load / 1e3, 0)} kN / ${n1(result.roadway.area / 1e6, 1)} m² = ${n1(result.roadway.mean * 1e3, 1)} kN/m² ; pression locale sur les plaques de roulage à vérifier avec leur fabricant.`] : []),
   ];
   for (const n of notes)
     for (const [k, line] of wrap(n, 125).entries()) {

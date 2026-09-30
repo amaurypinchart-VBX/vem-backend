@@ -22,9 +22,19 @@ export interface EstimateModule {
   weight?: number;
 }
 
+/**
+ * Poids des barres d'une Viewbox 5900 du gabarit statico (G1, 78,5 kN/m³), comme le calcul complet : le poids propre
+ * « le plus lourd » compare la pesée à barres + plafond + sol (vérifié contre le gabarit dans estimate.test).
+ */
+export const VIEWBOX_STEEL_WEIGHT = 16615;
+
 export interface EstimateLoads {
   /** poids d'une Viewbox (N) ; plafond, sol (N/mm²) ; exploitation des planchers et des toitures accessibles (N/mm²) */
   moduleWeight: number;
+  /** poids propre retenu : le plus lourd (barres + plafond + sol ou pesée, défaut) ou la pesée exactement */
+  weightMode?: 'max' | 'weighed';
+  /** poids des barres d'une Viewbox standard (N), ramené à la surface comme la pesée */
+  steelWeight?: number;
   ceiling: number;
   floorFinish: number;
   live: number;
@@ -216,10 +226,12 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   let totalQ = 0;
   const perModule = modules.map((m, k) => {
     // poids d'une Viewbox standard (5 900 × 2 500) ramené à la surface du module (8400 : prorata, données inconnues) ;
-    // le poids pesé comprend planchers et isolants : plafond et sol ne s'y ajoutent que s'ils le dépassent (comme le
-    // complément Gc du calcul complet)
-    const weight = m.weight ?? L.moduleWeight * (m.area / (5900 * 2500));
-    const G = Math.max(weight, (L.ceiling + L.floorFinish) * m.area) + L.extraPerModule;
+    // le poids pesé comprend planchers et isolants : « le plus lourd » le compare à barres + plafond + sol comme le
+    // calcul complet (complément Gc), « pesée » le retient tel quel
+    const ratio = m.area / (5900 * 2500);
+    const weight = m.weight ?? L.moduleWeight * ratio;
+    const modelled = (L.steelWeight ?? VIEWBOX_STEEL_WEIGHT) * ratio + (L.ceiling + L.floorFinish) * m.area;
+    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + L.extraPerModule;
     const Qfloor = L.live * m.area;
     const Qroof = m.roofAccessible ? L.roofLive * m.area : 0;
     const QaB = opt.evacuateTopLevel && isTop[k] ? 0 : Qfloor;
@@ -396,7 +408,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       key: 'estimate.vertical',
       title: 'Charges verticales (surfaces tributaires)',
       clause: 'estimation — chaque Viewbox descend ses charges à ses 4 angles',
-      formula: 'G = max(poids Viewbox pesé, (plafond + sol) · A) + divers ; Q = q · A',
+      formula: L.weightMode === 'weighed' ? 'G = poids Viewbox pesé + divers ; Q = q · A' : 'G = max(poids Viewbox pesé, barres + (plafond + sol) · A) + divers ; Q = q · A',
       withValues: `ΣG = ${n0(totalG)} kN ; ΣQ = ${n0(totalQ)} kN (${modules.length} Viewbox)`,
       result: totalG + totalQ,
     },

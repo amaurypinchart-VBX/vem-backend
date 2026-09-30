@@ -6,16 +6,18 @@ import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import { computeCalage } from '../../structure/core/calage';
 import type { Estimate, EstimateModule } from '../../structure/core/estimate';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
-import type { CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
+import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
 import type { PanelMaterial } from '../../structure/core/ground';
+import type { CalageChoices, LayerRef } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, TYPE_COLORS } from '../../structure/report/groundSheet';
-import type { RoadwayResult } from '../../structure/core/roadway';
-import { kNm2, kgm2, planCoords, planOrigin, roadwayPressure, supportType } from '../../structure/core/roadway';
+import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
+import type { ChoiceSetters } from './CalageChoice';
+import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice, checkColor } from './CalageChoice';
 import type { Project } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
@@ -23,9 +25,11 @@ import { downloadBlob } from '../common';
 export interface Hypotheses {
   bearingPreset: string;
   bearingValue: number;
-  bearingUnit: 'kN/m²' | 't/m²' | 'kg/cm²';
+  bearingUnit: BearingUnit;
   pointLoadKN: number;
   moduleWeightKg: number;
+  /** poids propre retenu : le plus lourd (modèle ou pesée) ou la pesée exactement */
+  weightMode: 'max' | 'weighed';
   ceiling: number;
   floorFinish: number;
   live: number;
@@ -43,6 +47,8 @@ export interface Hypotheses {
   thicknesses: string;
   /** poids propre des plaques de roulage (kg/m²) */
   roadwayKg: number;
+  /** calage choisi par type d'appui ou par appui, plaques de roulage */
+  calage?: CalageChoices;
 }
 
 export const DEFAULT_HYP: Hypotheses = {
@@ -51,6 +57,7 @@ export const DEFAULT_HYP: Hypotheses = {
   bearingUnit: 'kN/m²',
   pointLoadKN: 0,
   moduleWeightKg: 2564,
+  weightMode: 'max',
   ceiling: 0.35,
   floorFinish: 0.4,
   live: 3.5,
@@ -95,6 +102,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       ...ESTIMATE_DEFAULTS,
       loads: {
         moduleWeight: h.moduleWeightKg * 9.81,
+        weightMode: h.weightMode,
         ceiling: kNm2(h.ceiling),
         floorFinish: kNm2(h.floorFinish),
         live: kNm2(h.live),
@@ -122,7 +130,29 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     commercial: stock.commercial,
     longrine: { k: SUBGRADE_PRESETS.find((s) => s.key === h.subgrade)?.k ?? 0.03, beams: C24_BEAMS, overhang: 55, maxCount: 6 },
     diffusion: h.diffusion,
+    choices: h.calage,
+    roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
   };
+}
+
+/** « 200 kN/m² = 20 390 kg/m² = 2,04 kg/cm² » : la portance dans les trois unités (évite 400 kN/m² ≠ 400 kg/m²). */
+export function bearingConversions(value: number, unit: BearingUnit): string {
+  const q = bearingFrom(value, unit);
+  return `= ${fmtNumber(q * 1e3, q * 1e3 < 10 ? 2 : 0)} kN/m² = ${fmtNumber(kgm2(q), 0)} kg/m² = ${fmtNumber((q * 1e2) / 9.81, 2)} kg/cm²`;
+}
+
+function BearingInputs({ hyp, set }: { hyp: Hypotheses; set: <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => void }) {
+  return (
+    <>
+      <Num value={hyp.bearingValue} onChange={(v) => set('bearingValue', v)} />
+      <select value={hyp.bearingUnit} style={{ width: 90 }} onChange={(e) => set('bearingUnit', e.target.value as BearingUnit)}>
+        <option>kN/m²</option>
+        <option>kg/m²</option>
+        <option>t/m²</option>
+        <option>kg/cm²</option>
+      </select>
+    </>
+  );
 }
 
 function Num({ value, onChange, step = 0.05, width = 80 }: { value: number; onChange: (v: number) => void; step?: number; width?: number }) {
@@ -187,7 +217,11 @@ function SolutionRow({ s, chosen }: { s: Solution; chosen: boolean }) {
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
             <b>{s.title}</b> — {s.summary} {chosen && <span className="badge ok">retenue</span>}
-            {!s.feasible && <span className="badge orange" style={{ marginLeft: 6 }}>hors standard</span>}
+            {!s.feasible && (
+              <span className="badge orange" style={{ marginLeft: 6 }}>
+                {s.kind === 'custom' || s.kind === 'roadway' ? 'dépassé' : 'hors standard'}
+              </span>
+            )}
           </div>
           <div className="row">
             {Number.isFinite(s.eta) && <span className={`badge ${v === 'ok' ? 'ok' : v === 'limit' ? 'orange' : 'ko'}`}>η = {n(s.eta, 2)}</span>}
@@ -320,20 +354,27 @@ export function HypothesesForm({ hyp, setHyp, jacks = false }: { hyp: Hypotheses
           </select>
         </Field>
         <Field label="Portance admissible" hint={preset?.source}>
-          <Num value={hyp.bearingValue} onChange={(v) => set('bearingValue', v)} />
-          <select value={hyp.bearingUnit} style={{ width: 90 }} onChange={(e) => set('bearingUnit', e.target.value as Hypotheses['bearingUnit'])}>
-            <option>kN/m²</option>
-            <option>t/m²</option>
-            <option>kg/cm²</option>
-          </select>
+          <BearingInputs hyp={hyp} set={set} />
         </Field>
+        <div className="hint" style={{ fontSize: 11, alignSelf: 'center' }}>
+          {bearingConversions(hyp.bearingValue, hyp.bearingUnit)} (1 kN/m² ≈ 102 kg/m²)
+        </div>
         {preset?.pointLoad && (
           <Field label="Charge ponctuelle admissible">
             <Num value={hyp.pointLoadKN} onChange={(v) => set('pointLoadKN', v)} /> kN
           </Field>
         )}
-        <Field label="Poids d’une Viewbox (planchers + isolants)">
+        <Field label="Poids d’une Viewbox pesée (planchers + isolants)">
           <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
+        </Field>
+        <Field
+          label="Poids propre retenu"
+          hint="Le modèle pèse les barres acier (≈ 16,5 kN par Viewbox) + plafond + sol (≈ 11 kN) ≈ 27,6 kN (2 810 kg). « Le plus lourd » garde ce poids s’il dépasse la pesée ; « pesée » réduit plafond et sol pour retrouver exactement le poids pesé."
+        >
+          <select value={hyp.weightMode} onChange={(e) => set('weightMode', e.target.value as Hypotheses['weightMode'])}>
+            <option value="max">le plus lourd : modèle (barres + plafond + sol) ou pesée</option>
+            <option value="weighed">la pesée exactement ({n(hyp.moduleWeightKg, 0)} kg)</option>
+          </select>
         </Field>
         <Field label="Plafond + isolation / sol + isolation">
           <Num value={hyp.ceiling} onChange={(v) => set('ceiling', v)} width={60} /> /
@@ -418,6 +459,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pointsBusy, setPointsBusy] = useState(false);
   const [showPoints, setShowPoints] = useState(false);
+  const [planView, setPlanView] = useState<'check' | 'type'>('check');
 
   useEffect(() => {
     vem
@@ -456,9 +498,15 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
 
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
 
+  // « 4 000 kg/m² = 39 kN/m² (prairie) » : toujours aussi en kN/m²
+  const bearingText = () => {
+    const whole = hyp.bearingUnit === 'kN/m²' || hyp.bearingUnit === 'kg/m²';
+    const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);
+    return `${n(hyp.bearingValue, whole ? 0 : 2)} ${hyp.bearingUnit}${hyp.bearingUnit === 'kN/m²' ? '' : ` = ${n(q * 1e3, q * 1e3 < 10 ? 1 : 0)} kN/m²`} (${preset?.label ?? 'saisie'})`;
+  };
   const assumptions = (): Array<[string, string]> => [
-    ['Portance admissible', `${n(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' ? 0 : 2)} ${hyp.bearingUnit} (${preset?.label ?? 'saisie'})`],
-    ['Poids d’une Viewbox', `${n(hyp.moduleWeightKg, 0)} kg`],
+    ['Portance admissible', bearingText()],
+    ['Poids d’une Viewbox', `${n(hyp.moduleWeightKg, 0)} kg pesés — retenu : ${hyp.weightMode === 'weighed' ? 'la pesée' : 'le plus lourd (modèle ou pesée)'}`],
     ['Plafond / sol', `${n(hyp.ceiling, 2)} / ${n(hyp.floorFinish, 2)} kN/m²`],
     ['Exploitation', `${n(hyp.live, 2)} kN/m² (toitures accessibles ${n(hyp.roofLive, 2)})`],
     ['Vent en / hors service', `${n(hyp.windIn, 2)} / ${n(hyp.windOut, 2)} kN/m², cp ${n(hyp.cp, 1)}`],
@@ -495,11 +543,24 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPdfBusy(false);
   };
 
-  const roadway: RoadwayResult | null = useMemo(
-    () => (result ? roadwayPressure(modules, result.estimate, input.bearing, (hyp.roadwayKg * 9.81) / 1e6) : null),
-    [result, modules, input.bearing, hyp.roadwayKg],
-  );
-  const bearingLabel = `${n(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' ? 0 : 2)} ${hyp.bearingUnit} (${preset?.label ?? 'saisie'})`;
+  const roadway = result?.roadway ?? null;
+  // choix de calage (enregistrés avec les hypothèses)
+  const choices: CalageChoices = hyp.calage ?? {};
+  const setChoices = (update: (c: CalageChoices) => CalageChoices) => setHyp((h) => ({ ...h, calage: update(h.calage ?? {}) }));
+  const setIn = (map: Record<string, LayerRef[]> | undefined, k: string, v: LayerRef[] | undefined) => {
+    const out = { ...(map ?? {}) };
+    if (v === undefined) delete out[k];
+    else out[k] = v;
+    return out;
+  };
+  const choiceSet: ChoiceSetters = {
+    choices,
+    setType: (k, v) => setChoices((c) => ({ ...c, byType: setIn(c.byType, k, v) })),
+    setSupport: (id, v) => setChoices((c) => ({ ...c, bySupport: setIn(c.bySupport, id, v) })),
+    setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
+    reset: () => setChoices(() => ({})),
+  };
+  const bearingLabel = bearingText();
   const exportPoints = async () => {
     if (!result || !roadway) return;
     setPointsBusy(true);
@@ -516,6 +577,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         estimate: result.estimate,
         roadway,
         bearingLabel,
+        checks: result.checks,
         info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString('fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
@@ -531,7 +593,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPointsBusy(false);
   };
 
-  const sel = result?.estimate.reactions.find((r) => r.group.id === selected);
+  const selCheck = result?.checks.find((c) => c.id === selected);
+  const checkById = new Map((result?.checks ?? []).map((c) => [c.id, c]));
+  const failing = result ? result.checks.filter((c) => verdictOf(c.eta) === 'fail').length : 0;
+  const select = (id: string) => {
+    setSelected(id);
+    setPlanView('check');
+  };
   return (
     <div className="page">
       {intro}
@@ -541,6 +609,31 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         </div>
       )}
       {showHypotheses && <HypothesesForm hyp={hyp} setHyp={setHyp} />}
+      {!showHypotheses && (
+        <div className="card">
+          <div className="card-body row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <b>Sol</b>
+            <select
+              value={hyp.bearingPreset}
+              onChange={(e) => {
+                const p = BEARING_PRESETS.find((x) => x.key === e.target.value);
+                setHyp((h) => ({ ...h, bearingPreset: e.target.value, ...(p?.value ? { bearingValue: p.value * 1e3, bearingUnit: 'kN/m²' as const } : {}) }));
+              }}
+            >
+              {BEARING_PRESETS.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                  {p.value ? ` — ${p.value * 1e3} kN/m²` : ' — à renseigner'}
+                </option>
+              ))}
+            </select>
+            <span className="row" style={{ gap: 4 }}>
+              portance admissible <BearingInputs hyp={hyp} set={(k, v) => setHyp((h) => ({ ...h, [k]: v }))} />
+            </span>
+            <span className="hint">{bearingConversions(hyp.bearingValue, hyp.bearingUnit)}</span>
+          </div>
+        </div>
+      )}
       {error && <div className="error-box">{error}</div>}
       {pending && !result && <div className="hint">Calcul…</div>}
       {result && (
@@ -562,9 +655,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <div className="v">{kN(Math.max(...result.estimate.reactions.map((r) => r.Rk)), 0)}</div>
               <div className="l">appui le plus chargé (Rz,k)</div>
             </div>
-            <div className={`stat ${result.allPlates ? '' : 'warn'}`}>
-              <div className="v">{result.allPlates ? 'plaques' : result.longrine ? 'longrines' : 'à étudier'}</div>
-              <div className="l">solution retenue</div>
+            <div className="stat">
+              <div className="v">{n(kNm2(input.bearing), kNm2(input.bearing) < 10 ? 1 : 0)} kN/m²</div>
+              <div className="l">portance admissible ({n(kgm2(input.bearing), 0)} kg/m²)</div>
+            </div>
+            <div className={`stat ${failing ? 'warn' : ''}`}>
+              <div className="v">{failing ? `${failing} ✖` : 'OK'}</div>
+              <div className="l">{failing ? `appui(s) trop chargé(s) pour le sol ou les plaques` : `calage vérifié${result.roadwayOn ? ' (plaques de roulage)' : ''}`}</div>
             </div>
           </div>
 
@@ -572,28 +669,69 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             <div className="card-head">
               <h2>{result.estimate.method === 'fem' ? 'Plan des appuis — calcul complet' : 'Plan des appuis — estimation'}</h2>
               <div className="spacer" style={{ flex: 1 }} />
-              {Object.entries(jacks ? { '1': 'vérin d’angle', M: 'vérin central' } : { '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
-                .filter(([k]) => result.estimate.reactions.some((r) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners))) === k))
-                .map(([k, l]) => (
-                  <span key={k} className="chip">
-                    <i style={{ background: TYPE_COLORS[k] }} />
-                    {l}
-                  </span>
-                ))}
+              <div className="row" style={{ gap: 2 }}>
+                <button className={`tab ${planView === 'check' ? 'active' : ''}`} onClick={() => setPlanView('check')}>
+                  Pression au sol
+                </button>
+                <button className={`tab ${planView === 'type' ? 'active' : ''}`} onClick={() => setPlanView('type')}>
+                  Types d’appui
+                </button>
+              </div>
+              {planView === 'check'
+                ? (
+                    [
+                      ['ok', 'OK'],
+                      ['limit', 'limite (η 0,9–1)'],
+                      ['fail', 'dépassé'],
+                    ] as const
+                  ).map(([k, l]) => (
+                    <span key={k} className="chip">
+                      <i style={{ background: CHECK_COLORS[k] }} />
+                      {l}
+                    </span>
+                  ))
+                : Object.entries(jacks ? { '1': 'vérin d’angle', M: 'vérin central' } : { '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
+                    .filter(([k]) => result.estimate.reactions.some((r) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners))) === k))
+                    .map(([k, l]) => (
+                      <span key={k} className="chip">
+                        <i style={{ background: TYPE_COLORS[k] }} />
+                        {l}
+                      </span>
+                    ))}
               <button className="btn primary small" disabled={pdfBusy} onClick={() => void exportPdf()}>
                 {pdfBusy ? 'PDF…' : '⬇ Fiche PDF'}
               </button>
             </div>
             <div className="card-body">
               <svg viewBox="0 0 1000 420" style={{ width: '100%', maxHeight: 460, background: '#fff', borderRadius: 6 }}>
-                <GroundPlan modules={modules} reactions={result.estimate.reactions} x={0} y={0} w={1000} h={420} text={14} selected={selected} onSelect={setSelected} />
+                <GroundPlan
+                  modules={modules}
+                  reactions={result.estimate.reactions}
+                  x={0}
+                  y={0}
+                  w={1000}
+                  h={420}
+                  text={14}
+                  selected={selected}
+                  onSelect={select}
+                  {...(planView === 'check'
+                    ? {
+                        pointColor: (r) => {
+                          const c = checkById.get(r.group.id);
+                          return c ? checkColor(c.eta) : undefined;
+                        },
+                        pointSub: (r) => {
+                          const c = checkById.get(r.group.id);
+                          return c ? `${n(r.Rk / 1e3, 0)} kN · η ${n(c.eta, 2)}` : undefined;
+                        },
+                      }
+                    : {})}
+                />
               </svg>
-              {sel && (
-                <div className="hint" style={{ marginTop: 6 }}>
-                  <b>{sel.group.id}</b> : {sel.group.jack ? supportType(sel) : sel.group.middle ? 'pied central' : `${sel.group.corners} angle(s)`} ({sel.group.moduleIds.join(', ')}) — Rz,k = {kN(sel.Rk)}{' '}
-                  (mini {kN(sel.RkMin)}), Rz,Ed = {kN(sel.REd)} — {sel.combo} ; dont G = {kN(sel.G)}, Q = {kN(sel.Q)}
-                </div>
-              )}
+              <div className="hint" style={{ marginTop: 4 }}>
+                {planView === 'check' ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.' : 'Couleur = type d’appui.'}
+              </div>
+              {selCheck && <SupportPanel c={selCheck} result={result} stock={input.stock} set={choiceSet} onClose={() => setSelected(null)} />}
               <div className="hint" style={{ marginTop: 6 }}>
                 {result.estimate.method === 'fem'
                   ? 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
@@ -602,6 +740,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               </div>
             </div>
           </div>
+
+          <CalageDiagnostic result={result} set={choiceSet} onSelect={select} />
 
           {roadway && (
             <div className="card">
@@ -735,9 +875,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   {t.a1 / 10} × {t.a2 / 10} cm
                 </span>
                 <div className="spacer" style={{ flex: 1 }} />
-                <span className={`badge ${t.standard ? 'ok' : 'orange'}`}>{t.chosen ? (t.standard ? VERDICT_LABEL[verdictOf(t.chosen.eta)] : 'hors standard') : 'aucune solution'}</span>
+                <span className={`badge ${t.standard ? 'ok' : 'orange'}`}>
+                  {t.chosen ? (t.standard || t.chosen.kind === 'custom' || t.chosen.kind === 'roadway' ? VERDICT_LABEL[verdictOf(t.chosen.eta)] : 'hors standard') : 'aucune solution'}
+                </span>
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <TypeChoice t={t} result={result} stock={input.stock} set={choiceSet} onSelect={select} selected={selected} />
                 <table className="list" style={{ maxWidth: 520 }}>
                   <thead>
                     <tr>

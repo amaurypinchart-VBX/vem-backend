@@ -38,10 +38,43 @@ const PATTERNS: Rule[] = [
   [/posée (\d+) mm plus bas que le haut de/g, '$1 mm tiefer modelliert als die Oberkante von', 'modelled $1 mm lower than the top of'],
   [/posée (\d+) mm plus haut que le haut de/g, '$1 mm höher modelliert als die Oberkante von', 'modelled $1 mm higher than the top of'],
   [/(\d+) kg par tôle : manutention mécanique/g, '$1 kg je Blech: maschinelle Handhabung', '$1 kg per plate: mechanical handling'],
+  // calage appui par appui (spreading.ts)
+  [
+    /trop mince pour répartir sur toute la plaque : emprise efficace (\d+) × (\d+) cm \(il faudrait (\d+) mm par plaque\)/g,
+    'zu dünn, um über die ganze Platte zu verteilen: wirksame Fläche $1 × $2 cm (erforderlich $3 mm je Platte)',
+    'too thin to spread over the whole plate: effective footprint $1 × $2 cm ($3 mm per plate needed)',
+  ],
+  [/bois écrasé sous l’appui \(σc,90,d = ([\d,]+) > ([\d,]+) N\/mm²\) — tôle acier sous le pied/g, 'Holz unter dem Auflager überdrückt (σc,90,d = $1 > $2 N/mm²) — Stahlblech unter den Fuß', 'timber crushed under the support (σc,90,d = $1 > $2 N/mm²) — steel plate under the foot'],
+  [/appui (\d+) × (\d+) cm sur (\d+) × (\d+) cm : /g, 'Auflager $1 × $2 cm auf $3 × $4 cm: ', 'support $1 × $2 cm on $3 × $4 cm: '],
+  [/Calage choisi : la plaque « ([^»]+) » n’est plus dans le stock, elle est ignorée\./g, 'Gewählte Unterpallung: Platte „$1“ nicht mehr im Lager, ignoriert.', 'Chosen packing: plate “$1” no longer in stock, ignored.'],
 ];
 
 /** Expressions (appliquées de la plus longue à la plus courte). */
 const PHRASES: Rule[] = [
+  // calage appui par appui (spreading.ts, calage.ts)
+  ['Calage choisi, sur plaques de roulage', 'Gewählte Unterpallung, auf Fahrplatten', 'Chosen packing, on roadway plates'],
+  ['Calage choisi', 'Gewählte Unterpallung', 'Chosen packing'],
+  ['Plaques de roulage sur toute la surface', 'Fahrplatten auf der ganzen Fläche', 'Roadway plates over the whole area'],
+  ['Plaques de roulage jointives', 'Fugenlose Fahrplatten', 'Jointed roadway plates'],
+  [', sur plaques de roulage', ', auf Fahrplatten', ', on roadway plates'],
+  ['pied posé sur les plaques de roulage', 'Fuß direkt auf den Fahrplatten', 'foot placed on the roadway plates'],
+  ['pied posé directement au sol', 'Fuß direkt auf dem Boden', 'foot placed directly on the ground'],
+  ['Sans plaque', 'Ohne Platte', 'No plate'],
+  [' mm par vérin', ' mm je Spindelfuß', ' mm per jack'],
+  [' cm par vérin', ' cm je Spindelfuß', ' cm per jack'],
+  ['m² à couvrir (toute l’emprise au sol)', 'm² abzudecken (ganze Aufstandsfläche)', 'm² to cover (whole ground footprint)'],
+  ['Multiplex bouleau', 'Birken-Multiplex', 'Birch multiplex'],
+  ['Répartition par ', 'Lastverteilung durch ', 'Spreading by '],
+  ['méthode statico (porte-à-faux diagonal) ; emprise efficace si la plaque est trop mince', 'Verfahren statico (diagonale Auskragung); wirksame Fläche, wenn die Platte zu dünn ist', 'statico method (diagonal cantilever); effective footprint if the plate is too thin'],
+  ['capacité du fabricant, emprise = toute la plaque', 'Tragfähigkeit laut Hersteller, wirksame Fläche = ganze Platte', 'manufacturer capacity, footprint = whole plate'],
+  ['sinon emprise réduite jusqu’à MEd = MRd', 'sonst verkleinerte Fläche bis MEd = MRd', 'otherwise reduced footprint until MEd = MRd'],
+  ['toute la plaque répartit', 'die ganze Platte verteilt', 'the whole plate spreads'],
+  ['emprise efficace', 'wirksame Fläche', 'effective footprint'],
+  ['plaques de roulage jointives : charge verticale totale / surface couverte', 'fugenlose Fahrplatten: gesamte Vertikallast / bedeckte Fläche', 'jointed roadway plates: total vertical load / covered area'],
+  ['pression uniforme sous l’emprise efficace de la dernière couche', 'gleichmäßige Pressung unter der wirksamen Fläche der untersten Lage', 'uniform pressure under the effective footprint of the bottom layer'],
+  ['portance admissible', 'zulässige Bodenpressung', 'allowable bearing pressure'],
+  [' > charge admissible du fabricant ', ' > zulässige Last laut Hersteller ', ' > manufacturer allowable load '],
+  [' > charge ponctuelle admissible du support ', ' > zulässige Einzellast des Untergrunds ', ' > allowable point load of the support '],
   // familles et éléments
   ['Angles poteau / cadre', 'Eckverbindungen Stütze / Rahmen', 'Column-to-frame corners'],
   ['Angle poteau / cadre', 'Eckverbindung Stütze / Rahmen', 'Column-to-frame corner'],
