@@ -20,6 +20,8 @@ export interface PdfPage {
   /** SVG de la planche (renderToStaticMarkup de SheetSvg, sans édition) */
   svg: string;
   paper: Paper;
+  /** format explicite en mm (ex. A4 portrait 210 × 297 des fiches de l'étude structure) ; sinon celui de `paper` */
+  size?: { w: number; h: number };
 }
 
 export interface PdfMeta {
@@ -51,8 +53,9 @@ function base64(buf: ArrayBuffer): string {
 /** Document PDF du jeu de plans (une page par planche). */
 export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta, onPage?: (done: number, total: number) => void): Promise<jsPDF> {
   if (!pages.length) throw new Error('Aucune planche à exporter');
-  const size = (p: Paper): [number, number] => [PAPER_MM[p].w, PAPER_MM[p].h];
-  const pdf = new jsPDF({ unit: 'mm', format: size(pages[0].paper), orientation: 'landscape', compress: true, putOnlyUsedFonts: true });
+  const size = (p: PdfPage): [number, number] => (p.size ? [p.size.w, p.size.h] : [PAPER_MM[p.paper].w, PAPER_MM[p.paper].h]);
+  const orientation = (p: PdfPage) => (size(p)[0] >= size(p)[1] ? 'landscape' : 'portrait');
+  const pdf = new jsPDF({ unit: 'mm', format: size(pages[0]), orientation: orientation(pages[0]), compress: true, putOnlyUsedFonts: true });
   for (const [key, buf] of Object.entries(fonts) as Array<[FontKey, ArrayBuffer]>) {
     const [family, variant] = key.split('-') as [FontFamily, FontVariant];
     const file = `${family}-${FONT_FILE[variant]}.ttf`;
@@ -66,8 +69,8 @@ export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta
   document.body.appendChild(host);
   try {
     for (let i = 0; i < pages.length; i++) {
-      const [w, h] = size(pages[i].paper);
-      if (i > 0) pdf.addPage([w, h], 'landscape');
+      const [w, h] = size(pages[i]);
+      if (i > 0) pdf.addPage([w, h], orientation(pages[i]));
       host.innerHTML = pages[i].svg;
       const svg = host.querySelector('svg');
       if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);

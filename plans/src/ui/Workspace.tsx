@@ -1,4 +1,5 @@
-// Espace de travail d'un modèle analysé : Contrôle (inspecteur) · Vue 3D (isolation, captures) · Vues 2D (plans).
+// Espace de travail d'un modèle analysé : Contrôle (inspecteur) · Vue 3D (isolation, captures) · Vues 2D (plans) ·
+// Planches · Étude structure.
 // Le modèle 3D (paquet GLB) n'est chargé qu'à l'ouverture de la vue 3D ou des vues 2D.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -19,8 +20,9 @@ import { ProgressBar } from './common';
 import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
 import { SheetsPage } from './sheets/SheetsPage';
+import { StructurePage } from './structure/StructurePage';
 
-type Tab = 'control' | '3d' | '2d' | 'sheets';
+type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure';
 
 interface Props {
   index: SceneIndex;
@@ -152,6 +154,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           <button className={`tab ${tab === 'sheets' ? 'active' : ''}`} onClick={() => open('sheets')}>
             Planches A1
           </button>
+          <button className={`tab ${tab === 'structure' ? 'active' : ''}`} onClick={() => open('structure')}>
+            Étude structure
+          </button>
         </nav>
       </div>
       {error && (
@@ -206,6 +211,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             framesVersion={framesVersion}
             captures={settings.captures ?? []}
           />
+        </div>
+      )}
+      {scene && visited.has('structure') && (
+        <div style={{ display: tab === 'structure' ? 'block' : 'none' }}>
+          <StructurePage scene={scene} model={model} glassTest={glassTest} rules={rules} framesVersion={framesVersion} active={tab === 'structure'} />
         </div>
       )}
       {scene && provider && visited.has('2d') && (

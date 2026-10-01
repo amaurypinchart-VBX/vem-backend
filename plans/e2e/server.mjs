@@ -1,5 +1,5 @@
 // Faux backend VEM pour tester public/plans dans un vrai navigateur (outil de développement, hors production).
-// Mêmes routes que src/routes/plans.ts (+ projects, auth/me, settings). Données en mémoire.
+// Mêmes routes que src/routes/plans.ts et src/routes/structure.ts (+ projects, auth/me, settings). Données en mémoire.
 //   cd plans && npm run build && E2E_FIXTURE_OUT=e2e/fixture.zip npx vitest run tests/e2e-fixture.test.ts
 //   node e2e/server.mjs            (ZIP=/chemin/vers/un/export.zip pour un vrai modèle)
 //   node e2e/run-sheets.mjs        (autre terminal)
@@ -25,6 +25,16 @@ const project = {
   team: [{ role: 'sales_engineer', user: { id: 'u2', firstName: 'Norick', lastName: 'Palm', email: 'norick.palm@span-tech.com' } }],
 };
 let failUploads = Number(process.env.FAIL_UPLOADS || 0);
+// étude structure : bibliothèque en ligne et études
+const library = new Map();
+const studies = new Map();
+let seqStruct = 0;
+const libraryRow = (b, prev) => ({
+  id: prev?.id ?? `L${++seqStruct}`, kind: b.kind, key: b.key, name: b.name, data: b.data ?? {}, source: b.source ?? null,
+  keyStructRef: b.match?.structRef ?? null, keyArticle: b.match?.articleRef ?? null, keyDefinition: b.match?.definition ?? null,
+  keyFingerprint: b.match?.fingerprint ?? null, keyModuleType: b.match?.moduleType ?? null, disabled: !!b.disabled,
+  confirmedBy: 'u1', confirmedAt: new Date().toISOString(),
+});
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
@@ -58,6 +68,31 @@ http.createServer(async (req, res) => {
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
     if (a.startsWith('/settings/')) return json(res, null);
+    if (a === '/structure/library' && req.method === 'GET') return json(res, [...library.values()]);
+    if (a === '/structure/library' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const k = `${b.kind}:${b.key}`;
+      library.set(k, libraryRow(b, library.get(k)));
+      return json(res, library.get(k));
+    }
+    if (a === '/structure/library/import' && req.method === 'POST') {
+      const { entries } = JSON.parse((await body(req)).toString());
+      for (const b of entries) library.set(`${b.kind}:${b.key}`, libraryRow(b, library.get(`${b.kind}:${b.key}`)));
+      return json(res, { imported: entries.length });
+    }
+    const lib = a.match(/^\/structure\/library\/(\w+)$/);
+    if (lib && req.method === 'DELETE') { for (const [k, v] of library) if (v.id === lib[1]) library.delete(k); return json(res, null); }
+    if (a === '/structure/project/p1/studies' && req.method === 'GET') return json(res, [...studies.values()].reverse());
+    if (a === '/structure/project/p1/studies' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const now = new Date().toISOString();
+      const st = { id: `S${++seqStruct}`, projectId: 'p1', modelVersionId: null, name: 'Étude structure', settings: {}, assignments: {}, resultsSummary: {}, status: 'draft', stale: false, createdAt: now, updatedAt: now, ...b };
+      studies.set(st.id, st);
+      return json(res, st);
+    }
+    const stu = a.match(/^\/structure\/studies\/(\w+)$/);
+    if (stu && req.method === 'PUT') { const st = studies.get(stu[1]); Object.assign(st, JSON.parse((await body(req)).toString()), { updatedAt: new Date().toISOString() }); return json(res, st); }
+    if (stu && req.method === 'GET') return json(res, studies.get(stu[1]));
     if (a === '/plans/project/p1/models' && req.method === 'GET') return json(res, [...models.values()].map(list));
     if (a === '/plans/project/p1/models' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());

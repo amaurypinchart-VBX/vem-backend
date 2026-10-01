@@ -5,10 +5,12 @@ import type { Project } from './api/vem';
 import { PROJECT_ID, TOKEN, vem } from './api/vem';
 import { ModelsPage } from './ui/ModelsPage';
 import { SettingsPage } from './ui/SettingsPage';
+import { LibraryPage } from './ui/structure/LibraryPage';
 import { setDisplayRules } from './ui/common';
 
 export function App() {
   const [tab, setTab] = useState<'models' | 'settings'>('models');
+  const [settingsTab, setSettingsTab] = useState<'rules' | 'library'>('rules');
   const [project, setProject] = useState<Project | null>(null);
   const [rules, setRules] = useState<ClassificationRules>(DEFAULT_RULES);
   const [rulesKey, setRulesKey] = useState(0);
@@ -79,14 +81,25 @@ export function App() {
               <ModelsPage rules={rules} />
             </div>
             <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>
-              <SettingsPage
-                key={rulesKey}
-                rules={rules}
-                onSaved={(r) => {
-                  setDisplayRules(r);
-                  setRules(r);
-                }}
-              />
+              <nav className="tabs" style={{ maxWidth: 1400, margin: '0 auto 12px' }}>
+                <button className={`tab ${settingsTab === 'rules' ? 'active' : ''}`} onClick={() => setSettingsTab('rules')}>
+                  Classement des pièces
+                </button>
+                <button className={`tab ${settingsTab === 'library' ? 'active' : ''}`} onClick={() => setSettingsTab('library')}>
+                  Bibliothèque structure
+                </button>
+              </nav>
+              {settingsTab === 'library' && <LibraryPage />}
+              <div style={{ display: settingsTab === 'rules' ? 'block' : 'none' }}>
+                <SettingsPage
+                  key={rulesKey}
+                  rules={rules}
+                  onSaved={(r) => {
+                    setDisplayRules(r);
+                    setRules(r);
+                  }}
+                />
+              </div>
             </div>
           </>
         )}

@@ -177,6 +177,7 @@
   <div class="nav-section">
     <div class="nav-label">Admin</div>
     <div class="nav-item" onclick="goto('templates')"><span class="ni">📋</span>Templates tâches</div>
+    <div class="nav-item" onclick="goto('checklist-templates')"><span class="ni">☑️</span>Templates check-list</div>
     <div class="nav-item" onclick="goto('clients')"><span class="ni">🏢</span>Clients</div>
     <div class="nav-item" onclick="goto('team')"><span class="ni">👥</span>Équipe</div>
     <div class="nav-item" onclick="goto('notifs')"><span class="ni">🔔</span>Notifications<span class="nav-badge" id="notifs-badge">0</span></div>
@@ -377,10 +378,10 @@
     <div class="tab" onclick="switchTab(this,'dtab-briefing')">📋 Briefing</div>
     <div class="tab" onclick="switchTab(this,'dtab-files');loadDetailFiles(CURRENT_PROJECT_ID)">📁 Fichiers</div>
   </div>
-  <div id="dtab-info"><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
+  <div id="dtab-info"><div id="detail-prep-checklist-card"></div><div id="detail-info-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-tasks" style="display:none;"><div id="detail-tasks-content"><div class="empty"><div class="empty-title">Chargement...</div></div></div></div>
   <div id="dtab-daily" style="display:none;"><div id="detail-daily-content"><div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport</div></div></div></div>
-  <div id="dtab-handover" style="display:none;"><div id="detail-handover-content"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div></div></div>
+  <div id="dtab-handover" style="display:none;"><div id="detail-checklist-card"></div><div id="detail-handover-content"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-title">Aucun handover</div></div></div></div>
   <div id="dtab-remarks" style="display:none;"><div id="detail-remarks-content"><div class="empty"><div class="empty-icon">🔁</div><div class="empty-title">Aucune remarque</div></div></div></div>
   <div id="dtab-tickets" style="display:none;"><div id="detail-tickets-content"><div class="empty"><div class="empty-icon">🛠️</div><div class="empty-title">Aucun ticket</div></div></div></div>
   <div id="dtab-warehouse" style="display:none;"><div id="detail-warehouse-content"><div class="empty"><div class="empty-icon">📦</div><div class="empty-title">Aucune box</div></div></div></div>
@@ -503,6 +504,17 @@
   </div>
   <div id="templates-content">
     <div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Chargement...</div></div>
+  </div>
+</div>
+
+<!-- TEMPLATES CHECK-LIST DE MONTAGE (js/15-checklists.js) -->
+<div class="pg" id="pg-checklist-templates">
+  <div class="pg-head">
+    <div><div class="pg-title">☑️ Templates Check-list</div><div class="pg-sub">Points de contrôle du montage, copiés dans la check-list d'un projet à sa configuration</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;" id="clt-actions"></div>
+  </div>
+  <div id="checklist-templates-content">
+    <div class="empty"><div class="empty-icon">☑️</div><div class="empty-title">Chargement...</div></div>
   </div>
 </div>
 
@@ -1357,5 +1369,6 @@
 <script src="js/12-briefing-studio-core.js"></script>
 <script src="js/13-briefing-studio-slides.js"></script>
 <script src="js/14-briefing-autogen.js"></script>
+<script src="js/15-checklists.js"></script>
 </body>
 </html>

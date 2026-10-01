@@ -100,6 +100,15 @@ interface Entry {
   display: Material | Material[];
 }
 
+/**
+ * Matériau d'origine (GLB) de chaque maillage : plusieurs viewers partagent le même modèle et remplacent tour à tour
+ * les matériaux affichés (surlignage, surcouche de couleurs) ; chaque viewer part toujours de l'original.
+ */
+const SOURCE_MATERIALS = new WeakMap<Mesh, Material | Material[]>();
+
+/** Couleur des pièces absentes de la surcouche (gris clair). */
+const OVERLAY_DEFAULT = 0xd1d5db;
+
 export class SceneViewer {
   readonly renderer: WebGLRenderer;
   private readonly scene3 = new Scene();
@@ -169,9 +178,9 @@ export class SceneViewer {
       if (!mesh.isMesh) return;
       const nodeId = nodeIdOf(o) ?? '';
       const node = model.look.byId.get(nodeId);
-      const display = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => this.displayMaterial(m, isGlass))
-        : this.displayMaterial(mesh.material, isGlass);
+      const source = SOURCE_MATERIALS.get(mesh) ?? mesh.material;
+      SOURCE_MATERIALS.set(mesh, source);
+      const display = Array.isArray(source) ? source.map((m) => this.displayMaterial(m, isGlass)) : this.displayMaterial(source, isGlass);
       mesh.material = display;
       const e: Entry = {
         mesh,
@@ -297,8 +306,48 @@ export class SceneViewer {
 
   private currentMaterial(e: Entry): Material | Material[] {
     const hl = this.hovered === e.itemId || this.selected === e.itemId;
-    if (!hl) return e.display;
-    return Array.isArray(e.display) ? e.display.map((m) => this.highlightMaterial(m)) : this.highlightMaterial(e.display);
+    let base = e.display;
+    if (this.colorOverlay) {
+      const m = this.overlayMaterial(this.overlayColor(e));
+      base = Array.isArray(e.display) ? e.display.map(() => m) : m;
+    }
+    if (!hl) return base;
+    return Array.isArray(base) ? base.map((m) => this.highlightMaterial(m)) : this.highlightMaterial(base);
+  }
+
+  // ─── surcouche de couleurs (étude structure : statut de reconnaissance, taux de travail) ───
+  private colorOverlay: ReadonlyMap<string, number> | null = null;
+  private readonly overlayMaterials = new Map<number, Material>();
+  private readonly overlayColors = new Map<string, number>();
+
+  /**
+   * Colore chaque pièce d'une couleur unie (clé = nœud de la pièce, d'une Viewbox ou d'un de leurs parents), sans
+   * toucher aux matériaux du modèle ni à l'isolation ; null = retour aux matériaux du modèle.
+   */
+  setColorOverlay(colors: ReadonlyMap<string, number> | null): void {
+    this.colorOverlay = colors;
+    this.overlayColors.clear();
+    this.applyVisibility();
+  }
+
+  private overlayColor(e: Entry): number {
+    const hit = this.overlayColors.get(e.nodeId);
+    if (hit !== undefined) return hit;
+    const map = this.colorOverlay!;
+    let c = map.get(e.itemId);
+    for (let n = this.model.look.byId.get(e.nodeId); c === undefined && n; n = n.parentId ? this.model.look.byId.get(n.parentId) : undefined) c = map.get(n.id);
+    const color = c ?? OVERLAY_DEFAULT;
+    this.overlayColors.set(e.nodeId, color);
+    return color;
+  }
+
+  private overlayMaterial(color: number): Material {
+    let m = this.overlayMaterials.get(color);
+    if (!m) {
+      m = new MeshLambertMaterial({ color, side: DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+      this.overlayMaterials.set(color, m);
+    }
+    return m;
   }
 
   shownEntries(): Entry[] {
@@ -771,6 +820,7 @@ export class SceneViewer {
     this.scene3.remove(this.model.root);
     if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);
     this.edges?.geometry.dispose();
+    for (const m of this.overlayMaterials.values()) m.dispose();
     this.renderer.dispose();
     el.remove();
   }

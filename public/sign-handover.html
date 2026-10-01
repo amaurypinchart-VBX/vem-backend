@@ -43,6 +43,22 @@ canvas { display: block; width: 100%; height: 200px; background: #fff; border-ra
 .loading-spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #2a2f3a; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .label-hint { font-size: 11px; color: #8892a4; margin-top: 6px; }
+/* Check-list de montage */
+.cl-summary { font-size: 13px; color: #c5cad3; line-height: 1.7; margin-bottom: 10px; }
+.cl-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; margin-bottom: 12px; }
+.cl-alert { background: rgba(230,57,70,.12); border: 1px solid rgba(230,57,70,.4); color: #ff6b6b; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+.cl-cat { border: 1px solid #2a2f3a; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.cl-cat summary { display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer; font-weight: 700; font-size: 14px; list-style: none; background: #22262f; }
+.cl-cat summary::-webkit-details-marker { display: none; }
+.cl-cat summary .cl-count { margin-left: auto; font-size: 12px; font-weight: 600; color: #8892a4; white-space: nowrap; }
+.cl-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-top: 1px solid #2a2f3a; }
+.cl-item .zone-dot { margin-top: 5px; }
+.cl-meta { font-size: 11px; color: #8892a4; margin-top: 4px; }
+.cl-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.cl-photos img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid #2a2f3a; }
+.cl-critical { font-size: 10px; font-weight: 700; color: #ff6b6b; background: rgba(230,57,70,.15); border-radius: 99px; padding: 1px 7px; margin-left: 4px; white-space: nowrap; }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; padding: 12px; z-index: 100; cursor: zoom-out; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -63,6 +79,66 @@ const STATUS_COLORS = { ok:'#2dc653', remark:'#f4a261', defect:'#e63946', pendin
 const STATUS_LABELS = { ok:'OK', remark:'Remarque', defect:'Défaut', pending:'En attente' };
 
 function esc(s) { return String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+// ─── Check-list de montage (lecture seule, sans les points non applicables) ───
+const CL_COLORS = { ok:'#2dc653', partial:'#f4a261', nok:'#e63946', pending:'#8892a4' };
+const CL_LABELS = { ok:'OK', partial:'Partiel', nok:'Non fait', pending:'À vérifier' };
+const CL_VIEWBOX = { ephemere:'Éphémère', permanente:'Permanente' };
+function fmtDateTime(d) { return new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+/** Vignette Cloudinary (l'image entière s'ouvre au clic). */
+function thumbUrl(url) { return String(url).includes('/upload/') ? String(url).replace('/upload/', '/upload/c_fill,w_160,h_160,q_auto,f_auto/') : url; }
+function openImg(url) {
+  const o = document.createElement('div');
+  o.className = 'lightbox';
+  o.innerHTML = `<img src="${esc(url)}" alt="Photo">`;
+  o.onclick = () => o.remove();
+  document.body.appendChild(o);
+}
+function checklistHTML(cl) {
+  if (!cl || !cl.items || !cl.items.length) return '';
+  const st = cl.stats || {};
+  const groups = [];
+  for (const it of cl.items) {
+    if (!groups.length || groups[groups.length - 1].name !== it.categoryName) groups.push({ name: it.categoryName, items: [] });
+    groups[groups.length - 1].items.push(it);
+  }
+  const summary = [
+    `Viewbox ${esc(CL_VIEWBOX[cl.viewboxType] || cl.viewboxType)}`,
+    cl.boxesChecked ? `Boxes contrôlées : <strong>${esc(cl.boxesChecked)}</strong>` : '',
+    cl.validatedAt ? `✅ Validée le ${fmtDate(cl.validatedAt)}${cl.validatedBy ? ` par ${esc(cl.validatedBy)}` : ''}` : 'Check-list pas encore validée',
+  ].filter(Boolean).join('<br>');
+  return `<div class="card">
+    <div class="card-title">☑️ Check-list de montage (${cl.items.length} points)</div>
+    <div class="cl-summary">${summary}</div>
+    <div class="cl-stats">
+      <span style="color:${CL_COLORS.ok}">● ${st.ok || 0} OK</span>
+      ${st.partial ? `<span style="color:${CL_COLORS.partial}">● ${st.partial} Partiel</span>` : ''}
+      ${st.nok ? `<span style="color:${CL_COLORS.nok}">● ${st.nok} Non fait</span>` : ''}
+      ${st.pending ? `<span style="color:${CL_COLORS.pending}">● ${st.pending} À vérifier</span>` : ''}
+    </div>
+    ${st.criticalOpen ? `<div class="cl-alert">${st.criticalOpen} point(s) critique(s) non validé(s)</div>` : ''}
+    ${groups.map(g => {
+      const okCount = g.items.filter(it => it.status === 'ok').length;
+      const allOk = okCount === g.items.length;
+      return `<details class="cl-cat" ${allOk ? '' : 'open'}>
+        <summary><span>${allOk ? '✅' : '⚠️'}</span><span>${esc(g.name)}</span><span class="cl-count">${okCount}/${g.items.length} OK</span></summary>
+        ${g.items.map(it => {
+          const color = CL_COLORS[it.status] || '#8892a4';
+          return `<div class="cl-item">
+            <div class="zone-dot" style="background:${color}"></div>
+            <div style="flex:1;min-width:0;">
+              <div class="zone-name">${esc(it.label)}${it.critical ? '<span class="cl-critical">critique</span>' : ''}</div>
+              ${it.comment ? `<div class="zone-comment">${esc(it.comment)}</div>` : ''}
+              ${it.checkedBy && it.status !== 'pending' ? `<div class="cl-meta">Vérifié par ${esc(it.checkedBy)}${it.checkedAt ? ` — ${fmtDateTime(it.checkedAt)}` : ''}</div>` : ''}
+              ${(it.photos || []).length ? `<div class="cl-photos">${it.photos.map(u => `<img src="${esc(thumbUrl(u))}" data-full="${esc(u)}" loading="lazy" alt="Photo" onclick="openImg(this.dataset.full)">`).join('')}</div>` : ''}
+            </div>
+            <span class="zone-badge" style="background:${color}">${CL_LABELS[it.status] || esc(it.status)}</span>
+          </div>`;
+        }).join('')}
+      </details>`;
+    }).join('')}
+  </div>`;
+}
 function fmtDate(d) { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' }); }
 
 async function loadHandover() {
@@ -135,6 +211,8 @@ function renderSignaturePage(h) {
       <div class="card-title">🔍 Zones inspectées (${h.items.length})</div>
       ${zonesHTML}
     </div>` : ''}
+
+    ${checklistHTML(h.checklist)}
 
     ${h.generalNotes ? `<div class="card">
       <div class="card-title">📝 Remarques / Réservations</div>

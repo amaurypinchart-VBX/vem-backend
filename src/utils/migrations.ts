@@ -938,4 +938,263 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] users.plans_access : ${e.message}`);
   }
+  // ─── Tables de la check-list de montage (handover) : bibliothèque + check-lists projet ───
+  // La bibliothèque n'est pas remplie ici : bouton « Charger la bibliothèque Viewbox » (POST /checklists/templates/seed).
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "checklist_categories" (
+        "id"         TEXT         NOT NULL,
+        "name"       TEXT         NOT NULL,
+        "phase"      TEXT         NOT NULL DEFAULT 'installation',
+        "sort_order" INTEGER      NOT NULL DEFAULT 0,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "checklist_categories_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "checklist_template_items" (
+        "id"             TEXT         NOT NULL,
+        "category_id"    TEXT         NOT NULL,
+        "label"          TEXT         NOT NULL,
+        "hint"           TEXT,
+        "scope"          TEXT         NOT NULL DEFAULT 'all',
+        "photo_required" BOOLEAN      NOT NULL DEFAULT false,
+        "critical"       BOOLEAN      NOT NULL DEFAULT false,
+        "optional"       BOOLEAN      NOT NULL DEFAULT false,
+        "active"         BOOLEAN      NOT NULL DEFAULT true,
+        "sort_order"     INTEGER      NOT NULL DEFAULT 0,
+        "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "checklist_template_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklists" (
+        "id"            TEXT         NOT NULL,
+        "project_id"    TEXT         NOT NULL,
+        "phase"         TEXT         NOT NULL DEFAULT 'installation',
+        "viewbox_type"  TEXT         NOT NULL DEFAULT 'ephemere',
+        "boxes_checked" TEXT,
+        "notes"         TEXT,
+        "configured_by" TEXT,
+        "configured_at" TIMESTAMP(3),
+        "validated_by"  TEXT,
+        "validated_at"  TIMESTAMP(3),
+        "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklists_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_items" (
+        "id"               TEXT         NOT NULL,
+        "checklist_id"     TEXT         NOT NULL,
+        "template_item_id" TEXT,
+        "category_name"    TEXT         NOT NULL,
+        "label"            TEXT         NOT NULL,
+        "hint"             TEXT,
+        "photo_required"   BOOLEAN      NOT NULL DEFAULT false,
+        "critical"         BOOLEAN      NOT NULL DEFAULT false,
+        "sort_order"       INTEGER      NOT NULL DEFAULT 0,
+        "status"           TEXT         NOT NULL DEFAULT 'pending',
+        "comment"          TEXT,
+        "checked_by"       TEXT,
+        "checked_at"       TIMESTAMP(3),
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_photos" (
+        "id"          TEXT         NOT NULL,
+        "item_id"     TEXT         NOT NULL,
+        "photo_url"   TEXT         NOT NULL,
+        "public_id"   TEXT,
+        "uploaded_by" TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_photos_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "project_checklist_logs" (
+        "id"          TEXT         NOT NULL,
+        "item_id"     TEXT         NOT NULL,
+        "from_status" TEXT,
+        "to_status"   TEXT         NOT NULL,
+        "comment"     TEXT,
+        "user_id"     TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "project_checklist_logs_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    for (const sql of [
+      `CREATE INDEX IF NOT EXISTS "checklist_template_items_category_id_idx" ON "checklist_template_items" ("category_id")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "project_checklists_project_id_phase_key" ON "project_checklists" ("project_id", "phase")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_items_checklist_id_idx" ON "project_checklist_items" ("checklist_id")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_photos_item_id_idx" ON "project_checklist_photos" ("item_id")`,
+      `CREATE INDEX IF NOT EXISTS "project_checklist_logs_item_id_idx" ON "project_checklist_logs" ("item_id")`,
+    ]) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'checklist_template_items_category_id_fkey') THEN
+          ALTER TABLE "checklist_template_items"
+            ADD CONSTRAINT "checklist_template_items_category_id_fkey"
+            FOREIGN KEY ("category_id") REFERENCES "checklist_categories"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklists_project_id_fkey') THEN
+          ALTER TABLE "project_checklists"
+            ADD CONSTRAINT "project_checklists_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_items_checklist_id_fkey') THEN
+          ALTER TABLE "project_checklist_items"
+            ADD CONSTRAINT "project_checklist_items_checklist_id_fkey"
+            FOREIGN KEY ("checklist_id") REFERENCES "project_checklists"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_photos_item_id_fkey') THEN
+          ALTER TABLE "project_checklist_photos"
+            ADD CONSTRAINT "project_checklist_photos_item_id_fkey"
+            FOREIGN KEY ("item_id") REFERENCES "project_checklist_items"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_checklist_logs_item_id_fkey') THEN
+          ALTER TABLE "project_checklist_logs"
+            ADD CONSTRAINT "project_checklist_logs_item_id_fkey"
+            FOREIGN KEY ("item_id") REFERENCES "project_checklist_items"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] tables de la check-list de montage créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] check-list de montage : ${e.message}`);
+  }
+  // ─── Check-list : documents joints (en plus des photos) ───
+  for (const sql of [
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'photo'`,
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "file_name" TEXT`,
+    `ALTER TABLE "project_checklist_photos" ADD COLUMN IF NOT EXISTS "mime_type" TEXT`,
+  ]) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch (e: any) {
+      logger.warn(`[migration] project_checklist_photos : ${e.message}`);
+    }
+  }
+  // ─── Check-list : la catégorie « Préparation et réception du site » passe dans la phase « preparation »
+  // (onglet Infos du projet, plus dans le handover). Une seule fois (repère checklists.preparationSplit dans
+  // app_settings) : dans la bibliothèque, et dans les check-lists installation déjà configurées, dont les
+  // points (statuts, photos, historique) sont déplacés dans une check-list « preparation » du même projet.
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        r RECORD;
+        prep_id TEXT;
+      BEGIN
+        IF EXISTS (SELECT 1 FROM "app_settings" WHERE "key" = 'checklists.preparationSplit') THEN
+          RETURN;
+        END IF;
+        UPDATE "checklist_categories" SET "phase" = 'preparation'
+          WHERE "phase" = 'installation' AND "name" = 'Préparation et réception du site';
+        FOR r IN
+          SELECT DISTINCT c."id", c."project_id", c."viewbox_type", c."configured_by", c."configured_at", c."validated_by", c."validated_at"
+          FROM "project_checklists" c
+          JOIN "project_checklist_items" i ON i."checklist_id" = c."id"
+          WHERE c."phase" = 'installation' AND i."category_name" = 'Préparation et réception du site'
+        LOOP
+          SELECT "id" INTO prep_id FROM "project_checklists" WHERE "project_id" = r."project_id" AND "phase" = 'preparation';
+          IF prep_id IS NULL THEN
+            prep_id := md5(random()::text || clock_timestamp()::text || r."id")::uuid::text;
+            INSERT INTO "project_checklists" ("id", "project_id", "phase", "viewbox_type", "configured_by", "configured_at", "validated_by", "validated_at", "created_at", "updated_at")
+            VALUES (prep_id, r."project_id", 'preparation', r."viewbox_type", r."configured_by", r."configured_at", r."validated_by", r."validated_at", now(), now());
+          END IF;
+          UPDATE "project_checklist_items" SET "checklist_id" = prep_id, "updated_at" = now()
+            WHERE "checklist_id" = r."id" AND "category_name" = 'Préparation et réception du site';
+        END LOOP;
+        INSERT INTO "app_settings" ("key", "value", "updated_at") VALUES ('checklists.preparationSplit', 'true'::jsonb, now());
+      END $$;
+    `);
+    logger.info('[migration] check-list : phase préparation séparée de l’installation (si pas déjà fait)');
+  } catch (e: any) {
+    logger.warn(`[migration] check-list préparation : ${e.message}`);
+  }
+
+  // ─── Plans Viewbox › Étude structure : bibliothèque partagée et études ───
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_library_items" (
+        "id"              TEXT         NOT NULL,
+        "kind"            TEXT         NOT NULL,
+        "key"             TEXT         NOT NULL,
+        "name"            TEXT         NOT NULL,
+        "data"            JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "source"          TEXT,
+        "key_struct_ref"  TEXT,
+        "key_article"     TEXT,
+        "key_definition"  TEXT,
+        "key_fingerprint" TEXT,
+        "key_module_type" TEXT,
+        "disabled"        BOOLEAN      NOT NULL DEFAULT false,
+        "confirmed_by"    TEXT,
+        "confirmed_at"    TIMESTAMP(3),
+        "history"         JSONB        NOT NULL DEFAULT '[]'::jsonb,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_library_items_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    for (const sql of [
+      `CREATE UNIQUE INDEX IF NOT EXISTS "struct_library_items_kind_key_key" ON "struct_library_items" ("kind", "key")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_struct_ref_idx" ON "struct_library_items" ("key_struct_ref")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_article_idx" ON "struct_library_items" ("key_article")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_definition_idx" ON "struct_library_items" ("key_definition")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_fingerprint_idx" ON "struct_library_items" ("key_fingerprint")`,
+      `CREATE INDEX IF NOT EXISTS "struct_library_items_key_module_type_idx" ON "struct_library_items" ("key_module_type")`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] table struct_library_items créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_library_items : ${e.message}`);
+  }
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_studies" (
+        "id"               TEXT         NOT NULL,
+        "project_id"       TEXT         NOT NULL,
+        "model_version_id" TEXT,
+        "name"             TEXT         NOT NULL DEFAULT 'Étude structure',
+        "settings"         JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "assignments"      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "results_summary"  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "status"           TEXT         NOT NULL DEFAULT 'draft',
+        "stale"            BOOLEAN      NOT NULL DEFAULT false,
+        "created_by"       TEXT,
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_studies_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "struct_studies_project_id_idx" ON "struct_studies" ("project_id")`);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'struct_studies_project_id_fkey') THEN
+          ALTER TABLE "struct_studies"
+            ADD CONSTRAINT "struct_studies_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table struct_studies créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_studies : ${e.message}`);
+  }
 }

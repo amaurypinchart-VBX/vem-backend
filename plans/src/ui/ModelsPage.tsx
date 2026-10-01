@@ -13,6 +13,7 @@ import { PROJECT_ID, downloadPackage, downloadWithProgress, vem } from '../api/v
 import { Inspector } from './Inspector';
 import type { SaveState } from './Inspector';
 import { Workspace } from './Workspace';
+import { QuickGroundPage } from './structure/QuickGroundPage';
 import { ProgressBar } from './common';
 
 const MODEL_EXTS = ['zip', 'dae', 'glb'];
@@ -43,6 +44,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
   const [current, setCurrent] = useState<Current | null>(null);
   const [reload, setReload] = useState<{ busy: boolean; message?: string }>({ busy: false });
   const [dragOver, setDragOver] = useState(false);
+  const [quick, setQuick] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -255,6 +257,8 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
     );
   }
 
+  if (quick) return <QuickGroundPage onBack={() => setQuick(false)} />;
+
   const busy = job !== null;
   return (
     <div className="page">
@@ -266,6 +270,9 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
         <div className="card-head">
           <h2>Modèles 3D du projet</h2>
           <div className="spacer" />
+          <button className="btn small" onClick={() => setQuick(true)} title="Plaques de calage et charges au sol d'une grille de Viewbox, sans modèle 3D">
+            🧮 Calage rapide
+          </button>
           <button className="btn small ghost" onClick={() => void refresh()}>
             ↻ Actualiser
           </button>
