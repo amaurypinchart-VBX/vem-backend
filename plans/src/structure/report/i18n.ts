@@ -121,6 +121,8 @@ export interface Labels {
   softwareText: (version: string) => string;
   // chapitre 2
   ch2: string;
+  modsTitle: string;
+  modsText: string;
   s21: string;
   weighed: (kN: string, kg: string) => string;
   steelWeight: string;
@@ -342,7 +344,7 @@ const FR: Labels = {
   basisText: (f, d) => `La présente pré-étude repose sur le modèle SketchUp « ${f} » analysé dans VEM (version du ${d}) et sur les hypothèses saisies dans l’étude. Toutes les valeurs sont calculées par le moteur de l’outil (aucune valeur n’est estimée par l’IA).`,
   descriptionTitle: 'Description de l’ouvrage',
   descriptionText: (n, l) =>
-    `La construction est une construction temporaire modulaire (« Fliegender Bau ») composée de ${n} modules acier « Viewbox » juxtaposés${l > 1 ? ` et empilés sur ${l} niveaux` : ''}. Chaque Viewbox se compose d’un élément de plancher, de quatre poteaux boulonnés et d’un élément de toiture. Les éléments porteurs sont des profilés acier soudés ou boulonnés ; la stabilité est assurée par le poids propre et par les cadres (assemblages poteau / cadre semi-rigides). Les Viewbox voisines sont boulonnées entre elles (M20-8.8) et les Viewbox empilées reliées par leurs plats de liaison d’angle.`,
+    `La construction est une construction temporaire modulaire (« Fliegender Bau ») composée de ${n} modules acier « Viewbox » juxtaposés${l > 1 ? ` et empilés sur ${l} niveaux` : ''}. Chaque Viewbox se compose d’un élément de plancher, de quatre poteaux boulonnés et d’un élément de toiture. Les éléments porteurs sont des profilés acier soudés ou boulonnés ; la stabilité est assurée par le poids propre et par les cadres (assemblages poteau / cadre semi-rigides). Les Viewbox voisines sont boulonnées entre elles au plancher et en toiture (M16 × 150 dans les trous M20) et les Viewbox empilées reliées par des plats 100 × 10 boulonnés (2 × M20 par plat).`,
   outerDims: 'Dimensions extérieures',
   figure3d: 'Vue 3D du modèle',
   figurePlan: 'Vue en plan avec repères des Viewbox (les numéros superposés sont empilés)',
@@ -419,6 +421,8 @@ const FR: Labels = {
   softwareTitle: 'Logiciel',
   softwareText: (v) => `VEM · Plans Viewbox · Étude structure ${v} : modèle filaire 3D (barres, ressorts, contacts et appuis en compression seule), calcul au 2ᵉ ordre, vérifications DIN EN 1993 / 1995 et assemblages Viewbox.`,
   ch2: 'Hypothèses de charges',
+  modsTitle: 'Modifications de l’étude (hors modèle SketchUp)',
+  modsText: 'L’étude comprend les modifications suivantes, décidées lors de la pré-étude ; elles sont à reporter dans le modèle et sur le plan de montage, et à réaliser sur site :',
   s21: 'Charges permanentes',
   weighed: (k, g) => `Poids pesé d’une Viewbox (plancher, toiture, poteaux, planchers et isolants compris, sans murs ni garde-corps) : G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Poids propre des barres : sections et matériaux du modèle, acier 78,5 kN/m³ ; le complément jusqu’au poids pesé est réparti sur les rives du plancher.',
@@ -486,9 +490,9 @@ const FR: Labels = {
   corners: 'Assemblages poteau / cadre (angles)',
   cornersText: 'Platines de 10 mm soudées sur les rives, 4 × M16-8.8 par angle (entraxe 110 mm), 2 plats 180 × 50 × 15 mm intérieurs ; rigidité ≈ 3 500 kNcm/deg dans le modèle. Capacités ideaStatiCa (statico) : biaxial My, Mz ≤ 8,0 kNm ; uniaxial max ≤ 11,5 kNm et min ≤ 3,3 kNm ; N ≤ 70 kN ; la plus favorable des deux interactions est retenue.',
   vlinks: 'Liaisons verticales entre Viewbox empilées',
-  vlinksText: 'Plats de liaison 100 × 10 mm (2 par côté, trou Ø 22) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
-  bolts: 'Liaisons horizontales (boulons M20-8.8)',
-  boltsText: 'Boulons M20-8.8 dans l’âme des UNP (tw = 9 mm), plancher et toiture : cisaillement, traction et interaction selon DIN EN 1993-1-8.',
+  vlinksText: 'Plats de liaison 100 × 10 mm, 2 × M20-8.8 (2 par grand côté, 1 par petit côté, trou Ø 22) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; soulèvement repris par les boulons M20 des plats (TRd = 94,1 kN par plat) ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
+  bolts: 'Liaisons horizontales (boulons M16 × 150)',
+  boltsText: 'Boulons M16 × 150 (8.8) dans les trous Ø 22 de l’âme des UNP (tw = 9 mm), plancher et toiture : cisaillement, pression diamétrale (trou surdimensionné), poinçonnement, traction et interaction selon DIN EN 1993-1-8.',
   jacksTitle: 'Pieds à vérin (tiges Tr 24 × 5)',
   jacksText:
     'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
@@ -654,7 +658,7 @@ const DE: Labels = {
   basisText: (f, d) => `Dieser Vorbemessung liegen das in VEM ausgewertete SketchUp-Modell „${f}“ (Stand ${d}) und die in der Studie erfassten Annahmen zu Grunde. Alle Werte werden vom Rechenkern des Programms ermittelt (keine Werte aus der KI).`,
   descriptionTitle: 'Konstruktionsbeschreibung',
   descriptionText: (n, l) =>
-    `Die vorliegende Konstruktion ist ein modularer Fliegender Bau aus ${n} Stahl-Containermodulen („Viewbox“)${l > 1 ? ` in ${l} Geschossen` : ''}. Die Grundmodule bestehen aus einem Bodenelement, vier verschraubten Stützen und einem Dachelement. Die wesentlichen Tragelemente bilden die verschweißten bzw. verschraubten Stahlprofile; die Stabilität wird durch das Eigengewicht und die Rahmen (nachgiebige Eckverbindungen) sichergestellt. Benachbarte Viewboxen werden horizontal verschraubt (M20-8.8), übereinander stehende über ihre Eckverbindungslaschen verbunden.`,
+    `Die vorliegende Konstruktion ist ein modularer Fliegender Bau aus ${n} Stahl-Containermodulen („Viewbox“)${l > 1 ? ` in ${l} Geschossen` : ''}. Die Grundmodule bestehen aus einem Bodenelement, vier verschraubten Stützen und einem Dachelement. Die wesentlichen Tragelemente bilden die verschweißten bzw. verschraubten Stahlprofile; die Stabilität wird durch das Eigengewicht und die Rahmen (nachgiebige Eckverbindungen) sichergestellt. Benachbarte Viewboxen werden in Boden und Dach horizontal verschraubt (M16 × 150 in den M20-Bohrungen), übereinander stehende über verschraubte Laschen 100 × 10 (2 × M20 je Lasche) verbunden.`,
   outerDims: 'Äußere Abmessungen',
   figure3d: '3D-Ansicht des Modells',
   figurePlan: 'Draufsicht mit Bezeichnung der Viewboxen (übereinander stehende Nummern sind gestapelt)',
@@ -731,6 +735,8 @@ const DE: Labels = {
   softwareTitle: 'Software',
   softwareText: (v) => `VEM · Plans Viewbox · Étude structure ${v}: räumliches Stabwerksmodell (Stäbe, Federn, nur druckaktive Kontakte und Auflager), Berechnung nach Theorie II. Ordnung, Nachweise nach DIN EN 1993 / 1995 und der Viewbox-Verbindungen.`,
   ch2: 'Lastannahmen',
+  modsTitle: 'Änderungen der Berechnung (nicht im SketchUp-Modell)',
+  modsText: 'Die Berechnung enthält folgende, in der Vorbemessung festgelegte Änderungen; sie sind in das Modell und den Montageplan zu übernehmen und vor Ort auszuführen:',
   s21: 'Ständige Lasten',
   weighed: (k, g) => `Gewogenes Eigengewicht einer Viewbox (Boden-, Dacheinheit und Stützen inkl. Böden und Dämmung, ohne Wände und Geländer): G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Eigengewicht der Stäbe anhand der Material- und Querschnittsdefinitionen, Stahl 78,5 kN/m³; die Differenz zum gewogenen Gewicht wird auf die Bodenrandträger verteilt.',
@@ -798,9 +804,9 @@ const DE: Labels = {
   corners: 'Eckverbindung der Stütze mit den Boden- bzw. Dachelementen',
   cornersText: '10-mm-Flanschplatten an den Randträgern geschweißt, vier M16-8.8 je Ecke (Abstand 110 mm), zwei 180 × 50 × 15 mm Platten innenliegend; Nachgiebigkeit ca. 3 500 kNcm/deg im Gesamtmodell. Tragfähigkeiten aus ideaStatiCa (statico): zweiachsig My, Mz ≤ 8,0 kNm; einachsig max ≤ 11,5 kNm und min ≤ 3,3 kNm; N ≤ 70 kN; die günstigere Ausnutzung wird gewählt.',
   vlinks: 'Nachweis der vertikalen Verbindungen',
-  vlinksText: 'Verbindungslaschen 100 × 10 mm (2 je Seite, Loch Ø 22): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
+  vlinksText: 'Verbindungslaschen 100 × 10 mm, 2 × M20-8.8 (2 je Längsseite, 1 je Stirnseite, Loch Ø 22): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; Abheben über die M20 der Laschen (TRd = 94,1 kN je Lasche); vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
   bolts: 'Nachweis der horizontalen Verschraubungen',
-  boltsText: 'M20-8.8 im Steg der UNP (tw = 9 mm), Boden und Dach: Abscheren, Zug und Interaktion nach DIN EN 1993-1-8.',
+  boltsText: 'M16 × 150 (8.8) in den Bohrungen Ø 22 im Steg der UNP (tw = 9 mm), Boden und Dach: Abscheren, Lochleibung (übergroßes Loch), Durchstanzen, Zug und Interaktion nach DIN EN 1993-1-8.',
   jacksTitle: 'Nachweis der Spindelfüße (Tr 24 × 5)',
   jacksText:
     'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
@@ -966,7 +972,7 @@ const EN: Labels = {
   basisText: (f, d) => `This pre-study is based on the SketchUp model “${f}” analysed in VEM (version of ${d}) and on the assumptions entered in the study. All values are computed by the tool's calculation engine (no value is estimated by AI).`,
   descriptionTitle: 'Description of the structure',
   descriptionText: (n, l) =>
-    `The structure is a modular temporary structure (“Fliegender Bau”) made of ${n} steel “Viewbox” units placed side by side${l > 1 ? ` and stacked on ${l} levels` : ''}. Each Viewbox consists of a floor element, four bolted columns and a roof element. The load-bearing elements are welded or bolted steel sections; stability is provided by self-weight and by the frames (semi-rigid column-to-frame joints). Adjacent units are bolted together (M20-8.8) and stacked units are connected by their corner link plates.`,
+    `The structure is a modular temporary structure (“Fliegender Bau”) made of ${n} steel “Viewbox” units placed side by side${l > 1 ? ` and stacked on ${l} levels` : ''}. Each Viewbox consists of a floor element, four bolted columns and a roof element. The load-bearing elements are welded or bolted steel sections; stability is provided by self-weight and by the frames (semi-rigid column-to-frame joints). Adjacent units are bolted together at floor and roof level (M16 × 150 in the M20 holes) and stacked units are connected by bolted 100 × 10 plates (2 × M20 per plate).`,
   outerDims: 'Outer dimensions',
   figure3d: '3D view of the model',
   figurePlan: 'Plan view with Viewbox references (numbers shown together are stacked)',
@@ -1043,6 +1049,8 @@ const EN: Labels = {
   softwareTitle: 'Software',
   softwareText: (v) => `VEM · Plans Viewbox · Étude structure ${v}: 3D frame model (members, springs, compression-only contacts and supports), second-order analysis, checks to DIN EN 1993 / 1995 and of the Viewbox connections.`,
   ch2: 'Loads',
+  modsTitle: 'Changes made in the study (not in the SketchUp model)',
+  modsText: 'The study includes the following changes decided during the pre-study; they must be carried over to the model and the assembly plan, and carried out on site:',
   s21: 'Permanent loads',
   weighed: (k, g) => `Weighed self-weight of one Viewbox (floor, roof, columns, floors and insulation included, without walls or railings): G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Self-weight of the members from the sections and materials of the model, steel 78.5 kN/m³; the difference to the weighed weight is spread over the floor edge beams.',
@@ -1110,9 +1118,9 @@ const EN: Labels = {
   corners: 'Column-to-frame joints (corners)',
   cornersText: '10 mm flange plates welded to the edge beams, 4 × M16-8.8 per corner (spacing 110 mm), 2 inner plates 180 × 50 × 15 mm; stiffness ≈ 3 500 kNcm/deg in the model. ideaStatiCa capacities (statico): biaxial My, Mz ≤ 8.0 kNm; uniaxial max ≤ 11.5 kNm and min ≤ 3.3 kNm; N ≤ 70 kN; the more favourable interaction is used.',
   vlinks: 'Vertical connections between stacked units',
-  vlinksText: 'Link plates 100 × 10 mm (2 per side, hole Ø 22): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; vertical column-to-column contact NRd = 176 kN (cover plate weld).',
-  bolts: 'Horizontal connections (M20-8.8 bolts)',
-  boltsText: 'M20-8.8 bolts in the web of the UPN edge beams (tw = 9 mm), floor and roof: shear, tension and interaction to DIN EN 1993-1-8.',
+  vlinksText: 'Link plates 100 × 10 mm, 2 × M20-8.8 (2 per long side, 1 per short side, hole Ø 22): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; uplift carried by the M20 bolts of the plates (TRd = 94.1 kN per plate); vertical column-to-column contact NRd = 176 kN (cover plate weld).',
+  bolts: 'Horizontal connections (M16 × 150 bolts)',
+  boltsText: 'M16 × 150 (8.8) bolts in the Ø 22 holes of the UPN edge beam webs (tw = 9 mm), floor and roof: shear, bearing (oversize hole), punching, tension and interaction to DIN EN 1993-1-8.',
   jacksTitle: 'Jack feet (Tr 24 × 5 rods)',
   jacksText:
     'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',

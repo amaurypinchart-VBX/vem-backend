@@ -54,6 +54,8 @@ export interface ReportInput {
   calagePlan?: (pageLabel: string) => string;
   /** textes rédigés par l'IA (contrôlés : aucun nombre hors des données du calcul), relus par l'utilisateur */
   texts?: { description?: string; instructions?: string[]; conclusion?: string };
+  /** modifications de l'étude hors modèle SketchUp (lest, contreventements, Viewbox ajoutées…), en français */
+  modifications?: string[];
 }
 
 export interface ReportPage {
@@ -97,9 +99,10 @@ export function slidingBallast(run: StudyRun, mu: number): number {
 }
 
 /** Formule d'une combinaison avec les coefficients : « 1,10 ΣG + 1,35 Q1.1 ». */
-export function comboFormula(c: Combination, lang: Lang): string {
-  const G = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7'];
-  const f = new Map(c.factors);
+export function comboFormula(c: Combination, lang: Lang, cases?: ReadonlySet<string>): string {
+  // lest GB : écrit seulement s'il y en a dans l'étude
+  const G = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7', ...(cases?.has('GB') ? ['GB'] : [])];
+  const f = new Map(c.factors.filter(([id]) => id !== 'GB' || cases?.has('GB')));
   const gs = G.map((g) => f.get(g) ?? 0);
   const parts: string[] = [];
   if (gs.every((x) => x === gs[0])) parts.push(`${num(lang, gs[0])} ΣG`);
@@ -112,7 +115,7 @@ export function comboFormula(c: Combination, lang: Lang): string {
     });
     for (const [k, ids] of groups) parts.push(`${num(lang, k)} (${ids.join(' + ')})`);
   }
-  const rest = c.factors.filter(([id, k]) => !G.includes(id) && k);
+  const rest = [...f].filter(([id, k]) => !G.includes(id) && k);
   const byK = new Map<number, string[]>();
   for (const [id, k] of rest) {
     if (!byK.has(k)) byK.set(k, []);
@@ -337,6 +340,11 @@ export function buildReport(inp: ReportInput): ReportOutput {
 
   blocks.push({ t: 'heading', level: 2, num: '1.5', text: L.s15 });
   blocks.push({ t: 'para', text: L.materialsText });
+  if (inp.modifications?.length) {
+    blocks.push({ t: 'para', text: L.modsTitle, bold: true, after: 0.6 });
+    blocks.push({ t: 'para', text: L.modsText });
+    blocks.push({ t: 'bullets', items: inp.modifications.map((m) => E(m)) });
+  }
   blocks.push({ t: 'para', text: L.normsTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: L.norms, labelWidth: 32 });
   blocks.push({ t: 'para', text: L.docsTitle, bold: true, after: 0.6 });
@@ -393,7 +401,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'heading', level: 2, num: '2.5', text: L.s25 });
   blocks.push({ t: 'para', text: L.imperfection });
   blocks.push({ t: 'para', text: L.combosText });
-  const comboRows = (list: Combination[]): Cell[][] => list.map((c) => [c.id, L.comboClass[c.cls], comboFormula(c, lang)]);
+  const caseIds = new Set(run.loads.cases.map((x) => x.id));
+  const comboRows = (list: Combination[]): Cell[][] => list.map((c) => [c.id, L.comboClass[c.cls], comboFormula(c, lang, caseIds)]);
   // version compacte : une direction représentative (les 3 autres sont identiques au sens près)
   const shown = inp.variant === 'detailed' ? run.combos : run.combos.filter((c) => !c.direction || c.direction === 1);
   blocks.push({
@@ -798,7 +807,7 @@ function annex(blocks: Block[], inp: ReportInput, L: Labels, E: (s: string) => s
       { title: L.colClass, w: 16 },
       { title: L.colFactors, w: 72 },
     ],
-    rows: run.combos.map((c) => [c.id, L.comboClass[c.cls], comboFormula(c, inp.lang)]),
+    rows: run.combos.map((c) => [c.id, L.comboClass[c.cls], comboFormula(c, inp.lang, new Set(run.loads.cases.map((x) => x.id)))]),
   });
   blocks.push({ t: 'heading', level: 2, num: 'B.4', text: L.b4 });
   for (const f of run.verdict.families) {

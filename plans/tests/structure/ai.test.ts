@@ -188,3 +188,18 @@ describe('gabarit de calcul visible', () => {
     expect(Math.max(...seg.positions.filter((_, k) => k % 3 === 1))).toBeCloseTo(2790, 6);
   });
 });
+
+describe('garde-fou du conseil ingénieur', () => {
+  it('nombres permis : consignes, utilisateur, résultats d’outils (JSON lu comme données) ; pas ceux refusés', async () => {
+    const { advisorAllowedNumbers, unknownNumbers } = await import('../../../src/services/structureAiGuard');
+    const messages = [
+      { role: 'user' as const, content: [{ type: 'text', text: 'Le sol n’accepte que 400 kg/m²' }] },
+      { role: 'assistant' as const, content: [{ type: 'tool_use', id: 't1', name: 'etudier_sol', input: {} }] },
+      { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: JSON.stringify({ portance: { kN_m2: 3.92 }, positions: [210, 2290], public_maximal: { personnes: 37 } }) }] },
+      { role: 'user' as const, content: [{ type: 'text', text: '[Contrôle automatique de VEM] nombres refusés : 55' }] },
+    ];
+    const allowed = advisorAllowedNumbers('Module de 5,90 m', messages);
+    expect(unknownNumbers('Avec 400 kg/m² (3,92 kN/m²), au plus 37 personnes ; module de 5,90 m, trous à 2 290 mm.', allowed)).toEqual([]);
+    expect(unknownNumbers('Il faut 55 plaques et 1 200 kg de lest.', allowed)).toEqual([55, 1200]);
+  });
+});

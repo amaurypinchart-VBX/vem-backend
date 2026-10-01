@@ -1,5 +1,5 @@
 // Onglet « Étude structure » : 6 étapes (Reconnaissance · Site & hypothèses · Calcul · Résultats · Sol & calage ·
-// Rapport). L'étude (une par version de modèle) garde les réponses de la reconnaissance et les hypothèses ; elle est
+// Rapport) et le conseil ingénieur (IA + pistes du diagnostic + variantes). L'étude (une par version de modèle) garde les réponses de la reconnaissance et les hypothèses ; elle est
 // enregistrée 2 s après la dernière modification. La bibliothèque partagée = base de départ + entrées en ligne.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LoadedScene } from '../../scene/loadedScene';
@@ -16,10 +16,7 @@ import { mergeLibrary, partTypeEntry, toPayload } from '../../structure/core/lib
 import { SEED } from '../../structure/library/seed';
 import { itemBoxDims } from '../../structure/scene/geometry';
 import { studyModelFromScene } from '../../structure/scene/studyModel';
-import { sectionMap } from '../../structure/core/assemble';
-import type { EdgeItem } from '../../structure/core/loads';
-import { DEFAULTS } from '../../structure/library/defaults';
-import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
+import type { CalcOptions, StudyRun } from '../../structure/studyRun';
 import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
 import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
 import type { StudyRunner } from '../../structure/worker/study';
@@ -32,8 +29,16 @@ import { panelEntry } from '../../structure/core/composite';
 import { studyFacts } from '../../structure/report/facts';
 import { bearingFrom } from '../../structure/core/ground';
 import type { BrowserHlrProvider } from '../../linework/provider';
+import type { StudyMods } from '../../structure/core/mods';
+import { describeMods, placedToEstimate } from '../../structure/core/mods';
+import type { SectionEntry } from '../../structure/core/library';
+import { buildStudyInputs } from './studyInputs';
+import { AdvisorPanel } from './AdvisorPanel';
+import type { Variant } from './advisorTools';
+import { variantSource } from './advisorTools';
+import type { StructureStock } from './GroundPanel';
 import type { ModelVersion, StudyRecord, VemUser } from '../../api/vem';
-import { PROJECT_ID, vem } from '../../api/vem';
+import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import type { Hypotheses } from './GroundPanel';
 import { DEFAULT_HYP, GroundPanel, HypothesesForm } from './GroundPanel';
 import type { AnswerOptions } from './RecognitionStep';
@@ -59,7 +64,7 @@ export function modulesFromScene(scene: LoadedScene, roofAccessible: boolean): {
   return { modules, warnings };
 }
 
-type Step = 'recognition' | 'site' | 'calc' | 'results' | 'ground' | 'report';
+type Step = 'recognition' | 'site' | 'calc' | 'results' | 'ground' | 'report' | 'advisor';
 type StepState = 'ok' | 'warn' | 'bad' | 'todo';
 const STEP_ICON: Record<StepState, string> = { ok: '✔', warn: '⚠', bad: '✖', todo: '·' };
 const STEP_COLOR: Record<StepState, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--danger)', todo: 'var(--text-dim)' };
@@ -70,6 +75,8 @@ interface StudySettings {
   roofAccessible?: boolean;
   fileName?: string;
   calc?: Partial<CalcOptions>;
+  /** modifications de l'étude hors modèle SketchUp (conseil ingénieur) */
+  mods?: StudyMods;
 }
 
 interface Props {
@@ -92,6 +99,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [hyp, setHyp] = useState<Hypotheses>(DEFAULT_HYP);
   const [roof, setRoof] = useState(false);
   const [calcOpts, setCalcOpts] = useState<CalcOptions>(CALC_DEFAULTS);
+  const [mods, setMods] = useState<StudyMods>({});
+  const [stock, setStock] = useState<StructureStock>({ plates: [], commercial: [] });
   const [run, setRun] = useState<{ result: StudyRun; key: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -114,6 +123,10 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   // ─── chargement : utilisateur, bibliothèque, étude de ce modèle (créée au besoin, réponses du projet reprises) ───
   useEffect(() => {
     vem.me().then(setMe).catch(() => {});
+    vem
+      .getSetting<StructureStock>(STRUCTURE_STOCK_KEY)
+      .then((v) => v && setStock({ plates: v.plates ?? [], commercial: v.commercial ?? [] }))
+      .catch(() => {});
     void refreshLibrary();
     if (!PROJECT_ID || !model) {
       setSaveState('local');
@@ -143,6 +156,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         setHyp({ ...DEFAULT_HYP, ...(st.hyp ?? {}) });
         setRoof(!!st.roofAccessible);
         setCalcOpts({ ...CALC_DEFAULTS, ...(st.calc ?? {}) });
+        setMods(st.mods ?? {});
         setSaveState('saved');
       } catch (e) {
         setError(`Étude non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -168,50 +182,18 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   // ─── calcul complet ───
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const sceneModel = useMemo(() => studyModelFromScene(scene, recognition, library), [scene, recognition, library, framesVersion]);
-  const studyInputs = useMemo((): StudyInputs => {
-    const kNm2 = (v: number) => v * 1e-3;
-    // charge forfaitaire par Viewbox (hypothèses du calage) : répartie sur les 4 rives du plancher
-    const extra: EdgeItem[] =
-      hyp.extraKN > 0
-        ? sceneModel.modules.flatMap((m) => {
-            const p = m.params;
-            const q = (hyp.extraKN * 1e3) / (2 * (p.x1 - p.x0 + (p.y1 - p.y0)));
-            return (['u0', 'u1', 'v0', 'v1'] as const).map((side) => ({ module: m.id, side, from: 0, to: side[0] === 'v' ? p.x1 - p.x0 : p.y1 - p.y0, level: 'floor' as const, q, loadCase: 'G3' as const, label: 'charge forfaitaire' }));
-          })
-        : [];
-    return {
-      modules: sceneModel.modules,
-      edgeItems: [...sceneModel.edgeItems, ...extra],
-      pointItems: sceneModel.pointItems,
-      library,
-      sections: sectionMap(library),
-      loads: {
-        moduleWeight: hyp.moduleWeightKg * 9.81,
-        weightMode: hyp.weightMode,
-        ceiling: kNm2(hyp.ceiling),
-        floorFinish: kNm2(hyp.floorFinish),
-        live: kNm2(hyp.live),
-        roofLive: kNm2(hyp.roofLive),
-        horizontalRatio: DEFAULTS.horizontalRatio.value,
-        roofAccessible: roof,
-        evacuateTopLevel: hyp.evacuateTop,
-        windInService: kNm2(hyp.windIn),
-        windOutOfService: kNm2(hyp.windOut),
-        cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },
-      },
-      middleFeet: hyp.middleFeet,
-      sls: !hyp.staticoConversion,
-      options: calcOpts,
-      blocking: sceneModel.errors,
-    };
-  }, [sceneModel, library, hyp, roof, calcOpts]);
+  const inputsSource = useMemo(() => ({ sceneModel, library, hyp, roof, calc: calcOpts, mods }), [sceneModel, library, hyp, roof, calcOpts, mods]);
+  const built = useMemo(() => buildStudyInputs(inputsSource), [inputsSource]);
+  const studyInputs = built.inputs;
+  // Viewbox ajoutées par l'étude : aussi dans le calage
+  const groundModules = useMemo(() => [...modules, ...built.added.map(placedToEstimate)], [modules, built.added]);
   const currentKey = useMemo(() => inputKey(studyInputs), [studyInputs]);
   const stale = !!run && run.key !== currentKey;
   useEffect(() => () => {
     abortRef.current?.abort();
     runnerRef.current?.dispose();
   }, []);
-  const startRun = async () => {
+  const startRun = async (): Promise<StudyRun | null> => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -223,11 +205,38 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     try {
       const result = await runStudy(studyInputs, runnerRef.current, (done, total) => setProgress({ done, total }), ctrl.signal);
       setRun({ result, key });
+      return result;
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setCalcError((e as Error).message);
+      return null;
     } finally {
       if (abortRef.current === ctrl) setRunning(false);
     }
+  };
+  // conseil ingénieur : calcul de l'étude actuelle (celui affiché s'il est à jour)
+  const runRef = useRef(run);
+  runRef.current = run;
+  const keyRef = useRef(currentKey);
+  keyRef.current = currentKey;
+  const ensureRun = async (): Promise<StudyRun> => {
+    const r = runRef.current;
+    if (r && r.key === keyRef.current) return r.result;
+    const res = await startRun();
+    if (!res) throw new Error(calcError || 'Calcul de l’étude impossible (voir l’étape 3. Calcul).');
+    return res;
+  };
+  const sectionName = (key: string) => {
+    const e = studyInputs.sections.get(key) as SectionEntry | undefined;
+    return e?.section.name ?? key;
+  };
+  const applyVariant = (v: Variant) => {
+    const next = variantSource(inputsSource, v.changes);
+    setHyp(next.hyp);
+    setRoof(next.roof);
+    setCalcOpts(next.calc);
+    setMods(next.mods ?? {});
+    // variante calculée sur l'étude actuelle : son calcul devient celui de l'étude
+    if (v.run && v.baseKey === currentKey) setRun({ result: v.run, key: inputKey(buildStudyInputs(next).inputs) });
   };
   const cancelRun = () => {
     abortRef.current?.abort();
@@ -260,7 +269,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       try {
         await vem.saveStudy(study.id, {
           assignments: assignments as unknown as Record<string, unknown>,
-          settings: { hyp, roofAccessible: roof, fileName: model?.fileName, calc: calcOpts },
+          settings: { hyp, roofAccessible: roof, fileName: model?.fileName, calc: calcOpts, mods },
           resultsSummary: summary,
         });
         setSaveState('saved');
@@ -270,7 +279,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts]);
+  }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts, mods]);
 
   // la réponse est toujours gardée dans l'étude (un objet sans nom n'est reconnu ailleurs que « probablement », par
   // son empreinte) ; mémorisée, elle sert aussi aux autres modèles et projets
@@ -305,6 +314,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     results: run ? (run.result.verdict.verdict === 'ok' ? 'ok' : run.result.verdict.verdict === 'limit' ? 'warn' : 'bad') : 'todo',
     ground: modules.length ? 'warn' : 'todo',
     report: run && !stale ? 'ok' : 'todo',
+    advisor: run && !stale ? (run.result.verdict.verdict === 'ok' ? 'ok' : 'warn') : 'todo',
   };
   const STEPS: Array<{ key: Step; label: string; soon?: string }> = [
     { key: 'recognition', label: '1. Reconnaissance' },
@@ -313,6 +323,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     { key: 'results', label: '4. Résultats' },
     { key: 'ground', label: '5. Sol & calage' },
     { key: 'report', label: '6. Rapport' },
+    { key: 'advisor', label: '💬 Conseil ingénieur' },
   ];
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Étude enregistrée', error: '✗ Non enregistrée', local: 'Étude non enregistrée (modèle sans version en ligne)' }[saveState];
 
@@ -398,11 +409,24 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           stale={stale}
           error={calcError}
           onRun={() => void startRun()}
+          modsLines={describeMods(mods, sectionName)}
           onCancel={cancelRun}
           onShowResults={() => setStep('results')}
         />
       )}
       <div style={{ display: step === 'results' ? 'block' : 'none' }}>
+        {run && !stale && run.result.verdict.verdict !== 'ok' && (
+          <div className="card" style={{ marginBottom: 12, borderColor: 'var(--orange)' }}>
+            <div className="card-body row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <span>
+                Ça ne passe pas (ou de justesse) ? Le <b>conseil ingénieur</b> explique pourquoi et propose des solutions vérifiées par le calcul (lest, contreventements, calage, Viewbox en plus…).
+              </span>
+              <button className="btn small primary" onClick={() => setStep('advisor')}>
+                💬 Ouvrir le conseil ingénieur
+              </button>
+            </div>
+          </div>
+        )}
         <ResultsPanel
           scene={scene}
           glassTest={glassTest}
@@ -435,7 +459,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           stale={stale}
           inputs={studyInputs}
           hyp={hyp}
-          modules={modules}
+          modules={groundModules}
+          modifications={describeMods(mods, sectionName)}
           recognition={recognition}
           model={model}
           study={study}
@@ -443,9 +468,32 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           ai={ai}
         />
       )}
+      {step === 'advisor' && (
+        <AdvisorPanel
+          ai={ai}
+          studyId={study?.id ?? null}
+          run={run?.result ?? null}
+          stale={stale}
+          friction={calcOpts.friction}
+          mods={mods}
+          sectionName={sectionName}
+          context={() => ({
+            source: inputsSource,
+            ensureRun,
+            runner: () => (runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner()),
+            groundModules,
+            stock,
+          })}
+          currentKey={currentKey}
+          onApply={applyVariant}
+          onClearMods={() => setMods({})}
+          onRunStudy={() => void startRun()}
+          running={running}
+        />
+      )}
       {step === 'ground' && (
         <GroundPanel
-          modules={modules}
+          modules={groundModules}
           source={`Modèle ${scene.index.source.fileName}`}
           storageKey={`vem.structure.model.${scene.modelKey}`}
           hyp={hyp}

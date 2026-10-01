@@ -203,6 +203,24 @@ export interface AiAlert {
   elements: string[];
 }
 
+/** Message de la conversation avec le conseil ingénieur (format de l'API Claude : texte, outils, réflexion). */
+export interface AdvisorMessage {
+  role: 'user' | 'assistant';
+  content: Array<Record<string, unknown> & { type: string }>;
+}
+export interface AdvisorTurn {
+  append: AdvisorMessage[];
+  stopReason: string;
+  /** nombres de la réponse finale qui ne viennent d'aucun outil (après une relance) */
+  unverified: number[];
+  usage: AiUsage;
+}
+export interface AdvisorThread {
+  studyId: string;
+  messages: AdvisorMessage[];
+  variants: unknown[];
+}
+
 /** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
@@ -273,6 +291,9 @@ export const vem = {
   aiReview: (body: unknown) => api<{ alerts: AiAlert[]; dropped: number; usage: AiUsage }>('POST', '/structure/ai/review', body),
   aiMaterial: (body: unknown) => api<MaterialSearchResult & { usage: AiUsage }>('POST', '/structure/ai/material-search', body),
   aiCalls: () => api<{ days: number; count: number; costUsd: number }>('GET', '/structure/ai/calls'),
+  aiAdvisor: (messages: AdvisorMessage[], studyId: string | null) => api<AdvisorTurn>('POST', '/structure/ai/advisor', { messages, studyId }),
+  advisorThread: (studyId: string) => api<AdvisorThread>('GET', `/structure/studies/${studyId}/advisor`),
+  saveAdvisorThread: (studyId: string, body: { messages: AdvisorMessage[]; variants: unknown[] }) => api<{ updatedAt: string }>('PUT', `/structure/studies/${studyId}/advisor`, body),
   getSetting: <T>(key: string) => api<T | null>('GET', `/settings/${key}`),
   saveSetting: <T>(key: string, value: T) => api<T>('PUT', `/settings/${key}`, { value }),
   getRules: () => api<Partial<ClassificationRules> | null>('GET', `/settings/${RULES_SETTING_KEY}`),

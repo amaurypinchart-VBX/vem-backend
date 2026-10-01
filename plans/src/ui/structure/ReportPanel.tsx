@@ -57,6 +57,8 @@ interface Props {
   study: StudyRecord | null;
   me: VemUser | null;
   ai?: AiState | null;
+  /** modifications de l'étude hors modèle SketchUp (conseil ingénieur) */
+  modifications?: string[];
 }
 
 interface Prepared {
@@ -97,7 +99,7 @@ async function captureViews(scene: LoadedScene, glassTest: GlassTest, colors: Ma
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
 
-export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me, ai }: Props) {
+export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me, ai, modifications }: Props) {
   const [lang, setLang] = useState<Lang>('fr');
   const [variant, setVariant] = useState<ReportVariant>('compact');
   const [withPlan, setWithPlan] = useState(true);
@@ -152,7 +154,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     return v > 0 ? { value: v, label: BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset)?.label ?? '—' } : null;
   }, [hyp]);
   const texts = useAiTexts && aiTexts && aiTexts.lang === lang ? aiTexts : undefined;
-  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id, texts]);
+  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id, texts, modifications]);
   useEffect(() => {
     if (prepared && prepared.key !== key) setPrepared(null);
   }, [key, prepared]);
@@ -230,6 +232,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
         images: imgs,
         calagePlan: plan ?? undefined,
         texts,
+        modifications,
       });
       const L = LABELS[lang];
       const p: Prepared = { key, report, fileName: safeName(`${L.coverTitle} ${projectName} ${lang.toUpperCase()}${variant === 'detailed' ? ' +' : ''}.pdf`) };

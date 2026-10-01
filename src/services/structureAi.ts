@@ -57,6 +57,9 @@ async function logCall(kind: string, ctx: CallContext, u: Partial<Usage>, ok: bo
   }
 }
 
+/** Journal d'un tour du conseil ingénieur (structureAdvisor.ts). */
+export const logAdvisorCall = (ctx: CallContext, u: Partial<Usage>, ok: boolean, error?: string) => logCall('advisor', ctx, u, ok, error);
+
 interface AskResult {
   data: any;
   /** textes de la réponse mis bout à bout (les citations découpent le texte en plusieurs blocs) */

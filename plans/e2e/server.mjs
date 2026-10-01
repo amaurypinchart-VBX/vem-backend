@@ -29,6 +29,8 @@ let failUploads = Number(process.env.FAIL_UPLOADS || 0);
 const library = new Map();
 const studies = new Map();
 const reports = new Map();
+const advisorThreads = new Map();
+const advisorVariants = [];
 let seqStruct = 0;
 const libraryRow = (b, prev) => ({
   id: prev?.id ?? `L${++seqStruct}`, kind: b.kind, key: b.key, name: b.name, data: b.data ?? {}, source: b.source ?? null,
@@ -116,6 +118,44 @@ http.createServer(async (req, res) => {
     }
     if (a === '/structure/ai/material-search' && req.method === 'POST') {
       return json(res, { name: 'Panneau mural', layers: [{ name: 'Nidaplast 8', material: 'PP', thicknessMm: 45, densityKgM3: 80, surfaceMassKgM2: null, url: 'https://example.com/nidaplast', title: 'Nidaplast', quote: 'densité 80 kg/m³', check: { verified: 'citation', missing: [] } }], frame: { name: 'profilé alu', kgPerM: 1.2, url: 'https://example.com/alu', title: 'alu', quote: '1,2 kg/m', check: { verified: 'quote', missing: [] } }, questions: [], notes: '', sources: [], usage });
+    }
+    // conseil ingénieur : conversation simulée (le vrai serveur appelle Claude ; les outils tournent dans le navigateur)
+    const adv = a.match(/^\/structure\/studies\/(\w+)\/advisor$/);
+    if (adv && req.method === 'GET') return json(res, advisorThreads.get(adv[1]) ?? { studyId: adv[1], messages: [], variants: [] });
+    if (adv && req.method === 'PUT') { const b = JSON.parse((await body(req)).toString()); advisorThreads.set(adv[1], { studyId: adv[1], ...b }); return json(res, { updatedAt: new Date().toISOString() }); }
+    if (a === '/structure/ai/advisor' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const msgs = b.messages;
+      const last = msgs[msgs.length - 1];
+      const results = last.content.filter((c) => c.type === 'tool_result').map((c) => { try { return JSON.parse(c.content); } catch { return c.content; } });
+      const question = [...msgs].reverse().find((m) => m.role === 'user' && m.content.some((c) => c.type === 'text'))?.content.find((c) => c.type === 'text').text ?? '';
+      const tool = (name, input) => ({ type: 'tool_use', id: `tu_${++seqStruct}`, name, input });
+      const say = (text) => json(res, { append: [{ role: 'assistant', content: [{ type: 'thinking', thinking: 'Je relis le calcul et je vérifie la solution par une simulation.', signature: 'x' }, { type: 'text', text }] }], stopReason: 'end_turn', unverified: [], usage });
+      const call = (...uses) => json(res, { append: [{ role: 'assistant', content: [{ type: 'text', text: 'Je regarde le calcul.' }, ...uses] }], stopReason: 'tool_use', unverified: [], usage });
+      console.log(`[server] conseil ingénieur : ${msgs.length} messages, ${results.length} résultat(s) d'outil`);
+      if (/applique/i.test(question)) {
+        if (!results.length) return call(tool('appliquer_variante', { variante: [...advisorVariants].pop(), raison: 'la variante passe' }));
+        return say(results[0].appliquee ? `C’est appliqué : la variante ${results[0].variante} est maintenant l’étude.` : 'D’accord, je n’applique pas.');
+      }
+      if (/sol/i.test(question)) {
+        if (!results.length) return call(tool('etudier_sol', { portance: { valeur: 400, unite: 'kg/m²' } }));
+        const r = results[0];
+        const t = r.types_appui[0];
+        return say(`Avec **${r.portance.kg_m2} kg/m²** (${String(r.portance.kN_m2).replace('.', ',')} kN/m²), l’appui le plus chargé (${t.appui_le_plus_charge.appui}) pousse ${t.appui_le_plus_charge.pression_kg_m2} kg/m² sur le sol.\n- Solution : ${t.solution?.resume ?? 'aucune'}\n- Public maximal : ${r.public_maximal ? r.public_maximal.personnes : '?'} personnes`);
+      }
+      if (!results.length) return call(tool('etat_etude', {}), tool('diagnostic', {}));
+      const diag = results.find((r) => r && r.problemes);
+      if (diag) {
+        const piste = diag.problemes.flatMap((p) => p.pistes).find((x) => x.simulable);
+        if (!piste) return say('Tout passe déjà.');
+        return call(tool('simuler_variante', { titre: piste.titre, piste: piste.piste }));
+      }
+      const sim = results.find((r) => r && r.variante);
+      if (sim) {
+        advisorVariants.push(sim.variante);
+        return say(`La variante **${sim.variante}** donne : ${sim.comparaison.verdict_avant} → **${sim.comparaison.verdict_apres}**.\n- ${sim.changements.join('\n- ')}\nJe peux l’appliquer à l’étude si vous êtes d’accord.`);
+      }
+      return say('Je n’ai pas compris le résultat.');
     }
     // rapports PDF d'une étude
     const rps = a.match(/^\/structure\/studies\/(\w+)\/reports$/);

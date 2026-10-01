@@ -1,6 +1,7 @@
 // Cas de charge sur le modèle assemblé (§7), comme dans les modèles SCIA des notes statico :
 //   G1 poids propre des barres (78,5 kN/m³), Gc complément jusqu'au poids pesé d'une Viewbox (si le modèle est plus
-//   léger), G2 plafonds (toitures), G3 murs / vitrages / portes, G4 sols (planchers), G5 garde-corps, G7 logos ;
+//   léger), G2 plafonds (toitures), G3 murs / vitrages / portes, G4 sols (planchers), G5 garde-corps, G7 logos,
+//   GB lest ajouté (blocs béton, poids connus : compté comme le poids propre dans la stabilité) ;
 //   Q1.d exploitation en service (planchers + toitures accessibles) et H = V / 10 aux 4 angles de chaque plancher chargé,
 //   Q2.d hors service (sans les surfaces extérieures évacuées) ; W1.d vent en service, W2.d hors service sur les côtés
 //   exposés (luv +0,8, lee −0,5, parallèle −0,8 ; moitié à la rive du plancher, moitié à la rive de toiture) ;
@@ -37,7 +38,7 @@ export interface EdgeItem {
   level: 'floor' | 'roof';
   /** N/mm vers le bas */
   q: number;
-  loadCase: 'G3' | 'G5';
+  loadCase: 'G3' | 'G5' | 'GB';
   label: string;
 }
 
@@ -49,7 +50,7 @@ export interface PointItem {
   level: 'floor' | 'roof';
   /** N vers le bas */
   F: number;
-  loadCase: 'G3' | 'G5' | 'G7';
+  loadCase: 'G3' | 'G5' | 'G7' | 'GB';
   label: string;
 }
 
@@ -315,6 +316,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
     ['G3', new CaseBuilder(model)],
     ['G5', new CaseBuilder(model)],
     ['G7', new CaseBuilder(model)],
+    ['GB', new CaseBuilder(model)],
   ]);
   for (const it of inp.edgeItems) {
     if (!model.modules.some((m) => m.id === it.module)) continue;
@@ -343,6 +345,8 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
     if (best >= 0) byCase.get(it.loadCase)!.force(best, [0, -it.F, 0]);
   }
   cases.push(G2, byCase.get('G3')!.build('G3', 'Murs, vitrages, portes', 'G'), G4, byCase.get('G5')!.build('G5', 'Garde-corps', 'G'), byCase.get('G7')!.build('G7', 'Logos', 'G'), Gc);
+  const GB = byCase.get('GB')!.build('GB', 'Lest', 'G');
+  if (GB.nodal.length || GB.member.length) cases.push(GB);
 
   // ─── Q : exploitation et H = V / 10 aux angles des planchers chargés ───
   const topLevel = Math.max(0, ...model.modules.map((m) => m.level));

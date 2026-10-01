@@ -94,6 +94,8 @@ export interface CalcPanelProps {
   onRun: () => void;
   onCancel: () => void;
   onShowResults: () => void;
+  /** modifications de l'étude hors modèle SketchUp (conseil ingénieur) */
+  modsLines?: string[];
 }
 
 export function CalcPanel(p: CalcPanelProps) {
@@ -119,6 +121,16 @@ export function CalcPanel(p: CalcPanelProps) {
           Modèle filaire 3D des {p.modulesCount} Viewbox (gabarit relevé sur les modèles SCIA statico), charges et vent, 42 combinaisons statico (ELU, stabilité, ELS), 2ᵉ ordre avec défaut d’aplomb
           1/200, appuis et contacts en compression seule ; vérifications EC3 de chaque tronçon, assemblages Viewbox, stabilité, plancher.
         </div>
+        {!!p.modsLines?.length && (
+          <div className="hint">
+            <b>Modifications de l’étude (hors modèle SketchUp)</b> — onglet Conseil ingénieur :
+            <ul style={{ margin: '2px 0 0 16px', padding: 0 }}>
+              {p.modsLines.map((l, k) => (
+                <li key={k}>{l}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {p.blocking.length > 0 && (
           <div className="warnings">
             {p.blocking.map((w, k) => (

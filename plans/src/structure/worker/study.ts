@@ -6,6 +6,7 @@ import type { StructuralModel } from '../core/assemble';
 import type { Combination } from '../core/combos';
 import type { Ec3Options } from '../core/checks/ec3';
 import type { ConnectionSet } from '../core/checks/joints';
+import { boltDiameter } from '../core/checks/joints';
 import { analyzeLoadSet, prepare } from '../core/fem/analysis';
 import type { AnalysisOptions, FemModel, LoadSet } from '../core/fem/types';
 import { FemError } from '../core/fem/types';
@@ -42,7 +43,7 @@ export type StudyResponse =
 export function handleStudy(req: StudyRequest, post: (m: StudyResponse) => void): StudyResponse {
   try {
     const ctx = { ...req.context, sections: new Map(req.context.sections) };
-    const index = buildItemIndex(ctx.structure, ctx.sections);
+    const index = buildItemIndex(ctx.structure, ctx.sections, { boltDiameter: boltDiameter(ctx.connections) });
     const outcomes: ComboOutcome[] = [];
     const total = req.parts.reduce((s, p) => s + p.sets.length, 0);
     for (const part of req.parts) {

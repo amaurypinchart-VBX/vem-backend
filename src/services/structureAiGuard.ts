@@ -159,3 +159,34 @@ export function costOf(model: string, usage: { input_tokens?: number; output_tok
   return (input * p[1] + (usage.output_tokens ?? 0) * p[2]) / 1e6;
 }
 
+
+// ─── conseil ingénieur : nombres autorisés dans une réponse ───
+
+type AdvisorMsg = { role: 'user' | 'assistant'; content: any };
+
+/**
+ * Nombres qu'une réponse du conseil ingénieur peut citer : ceux des consignes, des messages de l'utilisateur et des
+ * résultats d'outils (un résultat JSON est lu comme donnée : « [210,2290] » donne 210 et 2290, pas 210,229).
+ */
+export function advisorAllowedNumbers(system: string, messages: AdvisorMsg[]): number[] {
+  const acc: number[] = numbersOf(system);
+  for (const m of messages) {
+    if (m.role !== 'user') continue;
+    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
+    for (const b of blocks ?? []) {
+      // relance du garde-fou : ses nombres (ceux refusés) ne deviennent pas autorisés
+      if (b.type === 'text' && !String(b.text).startsWith('[Contrôle automatique de VEM]')) numbersOf(b.text, acc);
+      if (b.type === 'tool_result') {
+        const parts: string[] = typeof b.content === 'string' ? [b.content] : (b.content ?? []).map((c: any) => String(c.text ?? ''));
+        for (const p of parts) {
+          try {
+            numbersOf(JSON.parse(p), acc);
+          } catch {
+            numbersOf(p, acc);
+          }
+        }
+      }
+    }
+  }
+  return acc;
+}

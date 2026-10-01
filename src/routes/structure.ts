@@ -3,7 +3,8 @@
 // sections, assemblages… ; la base de départ est dans le code du module, la table ne garde que ce que les
 // utilisateurs ont confirmé ou modifié) et études (une par version de modèle : affectations des pièces, hypothèses).
 // Rapports PDF : générés dans le navigateur, enregistrés sur Cloudinary (table struct_reports).
-// IA (/ai/*) : proposer, regrouper, lire un document, rédiger, relire — jamais calculer (services/structureAi.ts).
+// IA (/ai/*) : proposer, regrouper, lire un document, rédiger, relire — jamais calculer (services/structureAi.ts) ;
+// conseil ingénieur (/ai/advisor) : conversation dont les outils de calcul s'exécutent dans le navigateur (structureAdvisor.ts).
 // Tous les calculs se font dans le navigateur (public/plans, sources dans plans/src/structure).
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
@@ -12,6 +13,7 @@ import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
 import { z } from 'zod';
 import * as ai from '../services/structureAi';
+import * as advisor from '../services/structureAdvisor';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -320,6 +322,37 @@ router.post('/ai/material-search', async (req: AuthRequest, res: Response, next:
   try {
     const inp = parseBody(ai.MaterialInput, req.body);
     res.json({ success: true, data: await ai.searchMaterial(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/advisor — un tour du conseil ingénieur (le navigateur exécute les outils et renvoie leurs résultats)
+router.post('/ai/advisor', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(advisor.AdvisorInput, req.body);
+    jsonSize(inp.messages, 4_000_000, 'Conversation');
+    res.json({ success: true, data: await advisor.advisorTurn(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// GET / PUT /structure/studies/:id/advisor — conversation enregistrée avec l'étude (et variantes simulées)
+router.get('/studies/:id/advisor', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const t = await db.structAdvisorThread.findUnique({ where: { studyId: req.params.id } });
+    res.json({ success: true, data: t ?? { studyId: req.params.id, messages: [], variants: [] } });
+  } catch (err) { next(err); }
+});
+
+router.put('/studies/:id/advisor', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const study = await db.structStudy.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!study) throw new AppError('Étude introuvable', 404);
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const variants = Array.isArray(req.body?.variants) ? req.body.variants : [];
+    jsonSize(messages, 8_000_000, 'Conversation');
+    jsonSize(variants, 2_000_000, 'Variantes');
+    const data = { messages, variants, updatedBy: req.user?.id ?? null };
+    const t = await db.structAdvisorThread.upsert({ where: { studyId: req.params.id }, create: { studyId: req.params.id, ...data }, update: data });
+    res.json({ success: true, data: { studyId: t.studyId, updatedAt: t.updatedAt } });
   } catch (err) { next(err); }
 });
 

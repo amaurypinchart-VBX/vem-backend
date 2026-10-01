@@ -11,14 +11,15 @@ import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
 import type { ConnectionSet } from './checks/joints';
-import { checkBolt, checkCorner, checkJack, checkVerticalLink } from './checks/joints';
+import { checkBolt, checkBrace, checkCorner, checkJack, checkVerticalLink } from './checks/joints';
+import { checkTimberSpan } from './checks/ec5';
 import type { SectionEntry } from './library';
 import { materialByKey } from './materials';
 import type { CalcRecord, Verdict } from './records';
 import { verdictOf, worstVerdict } from './records';
 import { fmtNumber } from './units';
 
-export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt' | 'jack';
+export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt' | 'jack' | 'brace';
 
 export interface CheckItem {
   id: string;
@@ -72,13 +73,15 @@ const memberLength = (s: StructuralModel, k: number) => {
   return Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);
 };
 
+const BRACES = new Set(['bracing', 'raise-bracing']);
+
 /** Liste des vérifications de l'installation (tronçons de barres porteuses, assemblages). */
-export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string, SectionEntry>): ItemIndex {
+export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string, SectionEntry>, opts: { boltDiameter?: number } = {}): ItemIndex {
   const items: CheckItem[] = [];
   const spans = new Map<string, SpanMember[]>();
   const bySpan = new Map<string, number[]>();
   s.meta.forEach((m, k) => {
-    if (m.massless) return;
+    if (m.massless || BRACES.has(m.family)) return;
     if (!bySpan.has(m.span)) bySpan.set(m.span, []);
     bySpan.get(m.span)!.push(k);
   });
@@ -117,7 +120,8 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
       for (const end of ['pied', 'tête'] as const)
         items.push({ id: `corner:${k}:${end}`, kind: 'corner', family: 'Angles poteau / cadre', label: `${m.module} · angle ${Number(m.line.split(':').pop()) + 1}, ${end === 'pied' ? 'plancher' : 'toiture'}`, module: m.module, members: [k] });
     else if (m.family === 'corner-link') items.push({ id: `vlink:${k}`, kind: 'vlink', family: 'Liaisons verticales entre Viewbox', label: m.label, module: m.module, members: [k] });
-    else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: 'Boulons horizontaux M20', label: m.label, module: m.module, members: [k] });
+    else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: `Boulons horizontaux M${opts.boltDiameter ?? 20}`, label: m.label, module: m.module, members: [k] });
+    else if (BRACES.has(m.family)) items.push({ id: `brace:${k}`, kind: 'brace', family: m.family === 'bracing' ? 'Contreventements ajoutés (plat + ridoir)' : 'Contreventements de surélévation (plat + ridoir)', label: m.label, module: m.module, members: [k] });
   });
   s.supportMeta.forEach((sm, k) => {
     if (!sm.jack) return;
@@ -179,7 +183,8 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     const span = index.spans.get(item.id.slice(5))!;
     const cal = sec.calibrationCurves;
     const curves = ctx.calibration && cal?.y && cal.z ? { y: cal.y, z: cal.z } : undefined;
-    const r = checkSpan({ key: item.id, label: item.label, section: sec.section, material: mat, curves, length: m.spanLength, stations: spanStations(result, span), combination: combo.id }, ctx.ec3, detail);
+    const input = { key: item.id, label: item.label, section: sec.section, material: mat, curves, length: m.spanLength, stations: spanStations(result, span), combination: combo.id };
+    const r = mat.family === 'timber' ? checkTimberSpan(input, combo, detail) : checkSpan(input, ctx.ec3, detail);
     return { eta: r.eta, governing: r.governing, combo: combo.id, blocked: r.blocked, records: r.records };
   }
   if (item.kind === 'jack') {
@@ -188,7 +193,14 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');
-  const j = item.kind === 'corner' ? checkCorner(ctx.connections, f, item.label, combo.id) : item.kind === 'vlink' ? checkVerticalLink(ctx.connections, f, item.label, combo.id) : checkBolt(ctx.connections, f, item.label, combo.id);
+  const j =
+    item.kind === 'corner'
+      ? checkCorner(ctx.connections, f, item.label, combo.id)
+      : item.kind === 'vlink'
+        ? checkVerticalLink(ctx.connections, f, item.label, combo.id)
+        : item.kind === 'brace'
+          ? checkBrace(ctx.connections, f, item.label, combo.id)
+          : checkBolt(ctx.connections, f, item.label, combo.id);
   return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
 }
 

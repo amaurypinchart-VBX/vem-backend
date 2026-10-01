@@ -2,7 +2,7 @@
 //   CO1 = 1,35 ΣG ;
 //   par direction d : en service COd1 = 1,10 ΣG + 1,35 Q1.d, COd2 = 1,10 ΣG + 1,35 W1.d, COd3 = les deux ;
 //                     hors service COd01…COd03 idem avec Q2.d / W2.d ;
-//   stabilité COBd = 1,0 (G1 + Gc + G5) + 0,5 (G2 + G3 + G4) + 0 · G7 + 1,2 (W2.d + W0) ;
+//   stabilité COBd = 1,0 (G1 + Gc + G5 + GB lest) + 0,5 (G2 + G3 + G4) + 0 · G7 + 1,2 (W2.d + W0) ;
 //   ELS (réactions caractéristiques pour le sol, si la conversion Rd / 1,35 n'est pas retenue).
 // Défaut d'aplomb φ appliqué à la géométrie dans les deux axes à la fois, comme statico (dx, dy = ±5 mm/m) : le sens
 // suit la direction de la combinaison, l'autre axe reste positif. Fonctions pures.
@@ -43,8 +43,9 @@ export const COMBO_DEFAULTS: ComboOptions = {
 };
 
 /** Cas permanents : poids propre et complément, finitions (plafonds, murs, sols), garde-corps, logos. */
-const G_ALL = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7'];
-const G_SELF = ['G1', 'Gc', 'G5'];
+const G_ALL = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7', 'GB'];
+// lest (GB) : poids connu, compté comme le poids propre dans la stabilité
+const G_SELF = ['G1', 'Gc', 'G5', 'GB'];
 const G_FINISH = ['G2', 'G3', 'G4'];
 
 const swayOf = (d: Direction): readonly [1 | -1, 1 | -1] => (d === 2 ? [-1, 1] : d === 4 ? [1, -1] : [1, 1]);

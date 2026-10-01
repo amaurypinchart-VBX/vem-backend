@@ -26,9 +26,9 @@ function sleep(ms: number) {
 // le tool-use de l'assistant, qui a besoin des blocs `tool_use`, pas juste du texte).
 export async function anthropicRequest(
   body: Record<string, any>,
-  opts: { timeoutMs?: number; retries?: number } = {}
+  opts: { timeoutMs?: number; retries?: number; betas?: string[] } = {}
 ): Promise<any> {
-  const { timeoutMs = 30000, retries = 1 } = opts;
+  const { timeoutMs = 30000, retries = 1, betas } = opts;
   const apiKey = getApiKey();
 
   let lastErr: any;
@@ -40,6 +40,7 @@ export async function anthropicRequest(
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
+          ...(betas?.length ? { 'anthropic-beta': betas.join(',') } : {}),
         },
         body: JSON.stringify({ model: DEFAULT_MODEL, ...body }),
         signal: AbortSignal.timeout(timeoutMs),

@@ -26,7 +26,7 @@ export interface PlacedModule {
   templateKey: string;
 }
 
-export type MemberFamily = TemplateFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact';
+export type MemberFamily = TemplateFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact' | 'bracing' | 'raise-column' | 'raise-bracing';
 
 export interface MemberMeta {
   family: MemberFamily;
@@ -81,6 +81,29 @@ export interface AssembleOptions {
   /** boulons de toiture entre deux Viewbox qui portent chacune une Viewbox (défaut : non, comme statico) */
   roofBoltsUnderStack?: boolean;
   gapTolerance?: number;
+  /** contreventements ajoutés par l'étude : croix en plat + ridoir dans le plan d'un côté de Viewbox (traction seule) */
+  bracings?: BracingSpec[];
+  /** surélévation : un poteau sous chaque appui des Viewbox posées au sol */
+  raise?: RaiseSpec | null;
+}
+
+export interface BracingSpec {
+  module: string;
+  side: Side;
+  /** section du plat (défaut FLA60/6, assemblage VBX-BRACING) */
+  section?: string;
+}
+
+export interface RaiseSpec {
+  /** hauteur ajoutée sous les appuis (mm) */
+  height: number;
+  /** section des poteaux (clé de la bibliothèque ou section créée par l'étude) */
+  section: string;
+  /** liaison en tête avec la Viewbox : encastrée ou articulée ; pied toujours articulé (posé sur calage) */
+  top: 'rigid' | 'pinned';
+  /** croix de contreventement entre les poteaux, dans le plan de chaque côté des Viewbox au sol */
+  bracing: boolean;
+  braceSection?: string;
 }
 
 export interface StructuralModel {
@@ -127,6 +150,7 @@ const mul = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const planDist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 const SIDES: Side[] = ['u0', 'u1', 'v0', 'v1'];
+export const SIDE_NAME: Record<Side, string> = { v0: 'grand côté 1', v1: 'grand côté 2', u0: 'petit côté 1', u1: 'petit côté 2' };
 
 export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'rim-floor': 'rive plancher',
@@ -141,6 +165,9 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'vertical-contact': 'contact vertical',
   bolt: 'boulon horizontal',
   contact: 'contact d’angle',
+  bracing: 'contreventement ajouté',
+  'raise-column': 'poteau de surélévation',
+  'raise-bracing': 'contreventement de surélévation',
 };
 
 /**
@@ -425,6 +452,24 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     if (!bolts) warnings.push(`Aucune liaison horizontale entre ${A.pm.id} et ${B.pm.id} (perçages non alignés) : Viewbox reliées par contact seulement.`);
   }
 
+  // ─── contreventements ajoutés : deux diagonales tendues dans le plan du côté (plancher ↔ toiture) ───
+  for (const b of opt.bracings ?? []) {
+    const pm = modules.find((m) => m.id === b.module);
+    if (!pm) {
+      warnings.push(`Contreventement sur ${b.module} : Viewbox absente du modèle, ignoré.`);
+      continue;
+    }
+    const face = tplOf.get(pm)!.faces.find((f) => f.side === b.side)!;
+    const [c1, c2] = face.cornersFloor.map((k) => P(pm, k));
+    const [r1, r2] = face.cornersRoof.map((k) => P(pm, k));
+    const sec = b.section ?? 'FLA60/6';
+    for (const [i, j, t] of [
+      [c1, r2, 1],
+      [c2, r1, 2],
+    ] as const)
+      addMember(i, j, sec, { family: 'bracing', module: pm.id, line: `brace:${pm.id}/${b.side}/${t}`, side: b.side, label: `${pm.id} · contreventement ${SIDE_NAME[b.side]}, diagonale ${t}` }, { kind: 'truss', nonlinear: 'tensionOnly', geometric: false });
+  }
+
   // ─── Viewbox empilées : liaison d'angle de la toiture du dessous au plancher du dessus ───
   const topModules = new Set(modules.map((m) => m.id));
   for (const U of modules) {
@@ -459,17 +504,45 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     // les angles) ; les nœuds `contacts` du gabarit servent aux terrasses posées sur les toitures
   }
 
-  // ─── appuis des Viewbox posées au sol ───
+  // ─── appuis des Viewbox posées au sol (surélévation : poteau sous chaque appui, pied articulé sur le calage) ───
+  const raise = opt.raise && opt.raise.height > 0 ? opt.raise : null;
   for (const pm of modules) {
     if (pm.level !== 0) continue;
     const tpl = tplOf.get(pm)!;
     const kh = pm.params.springs.supportHorizontal;
+    const posts = new Map<number, number>();
     const place = (key: string, corner: number, kind: 'corner' | 'foot' | 'middle') => {
-      supports.push({ node: P(pm, key), dofs: [kh, 'fixed', kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
-      supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks });
+      let node = P(pm, key);
+      if (raise) {
+        const top = node;
+        nodes.push({ id: `${pm.id}:raise:${key}`, x: nodes[top].x, y: nodes[top].y - raise.height, z: nodes[top].z });
+        node = nodes.length - 1;
+        const pinned: EndSpec = ['rigid', 'rigid', 'rigid', 'rigid', 'free', 'free'];
+        addMember(node, top, raise.section, { family: 'raise-column', module: pm.id, line: `raise:${pm.id}/${corner}`, label: `${pm.id} · poteau de surélévation ${kind === 'middle' ? `central ${corner - 3}` : `d’angle ${corner + 1}`}` }, {
+          ref: pm.u,
+          endI: pinned,
+          endJ: raise.top === 'pinned' ? pinned : undefined,
+        });
+        posts.set(corner, node);
+      }
+      supports.push({ node, dofs: [kh, 'fixed', kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
+      supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks && !raise });
     };
     (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
     if (opt.middleFeet || opt.jacks) tpl.middleFeet.forEach((k, c) => place(k, 4 + c, 'middle'));
+    // croix entre les pieds des poteaux et la tête des poteaux voisins, dans le plan de chaque côté (angles 1-2, 2-3, 3-4, 4-1)
+    if (raise?.bracing)
+      for (let c = 0; c < 4; c++) {
+        const a = posts.get(c);
+        const b = posts.get((c + 1) % 4);
+        if (a === undefined || b === undefined) continue;
+        const topOf = (k: number) => members.find((m, x) => meta[x].family === 'raise-column' && m.i === k)!.j;
+        for (const [i, j, t] of [
+          [a, topOf(b), 1],
+          [b, topOf(a), 2],
+        ] as const)
+          addMember(i, j, raise.braceSection ?? 'FLA60/6', { family: 'raise-bracing', module: pm.id, line: `raise-brace:${pm.id}/${c}/${t}`, label: `${pm.id} · croix de surélévation ${c + 1}–${((c + 1) % 4) + 1}, diagonale ${t}` }, { kind: 'truss', nonlinear: 'tensionOnly', geometric: false });
+      }
   }
   if (!supports.length) errors.push('Aucune Viewbox posée au sol : le modèle n’a pas d’appui.');
 

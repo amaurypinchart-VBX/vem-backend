@@ -24,6 +24,9 @@ export const FAMILY_COLORS: Record<MemberFamily, number> = {
   'vertical-contact': 0x6b7280,
   bolt: 0x16a34a,
   contact: 0x9ca3af,
+  bracing: 0xdb2777,
+  'raise-column': 0x92400e,
+  'raise-bracing': 0xbe185d,
 };
 
 export interface TemplateFamilyRow {

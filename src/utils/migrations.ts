@@ -1256,4 +1256,31 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table struct_ai_calls : ${e.message}`);
   }
+  // conversation avec le conseil ingénieur IA d'une étude structure (messages de l'API Claude, résultats d'outils)
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "struct_advisor_threads" (
+        "study_id"   TEXT         NOT NULL,
+        "messages"   JSONB        NOT NULL DEFAULT '[]',
+        "variants"   JSONB        NOT NULL DEFAULT '[]',
+        "updated_by" TEXT,
+        "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "struct_advisor_threads_pkey" PRIMARY KEY ("study_id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'struct_advisor_threads_study_id_fkey') THEN
+          ALTER TABLE "struct_advisor_threads"
+            ADD CONSTRAINT "struct_advisor_threads_study_id_fkey"
+            FOREIGN KEY ("study_id") REFERENCES "struct_studies"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger.info('[migration] table struct_advisor_threads créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] table struct_advisor_threads : ${e.message}`);
+  }
 }
