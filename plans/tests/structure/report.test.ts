@@ -150,8 +150,8 @@ describe('rapport de l’étude structure', () => {
     expect(['ok', 'limit', 'fail']).toContain(r.verdict);
     const top = run.verdict.families[0];
     expect(all).toContain(`η = ${run.summary.states[top.item]!.eta.toFixed(2).replace('.', ',')}`);
-    // vent : vitesse d'arrêt d'exploitation 17,9 m/s, plan d'action vent fort
-    expect(all).toContain('17,9 m/s');
+    // vent : vitesse d'arrêt d'exploitation 17,8 m/s (arrondie vers le bas, comme statico), plan d'action vent fort
+    expect(all).toContain('17,8 m/s');
     expect(all).toContain('Plan d’action vent fort');
     // charges : vitrage lourd, logo
     expect(all).toContain('Vitrage lourd : 1,75 kN/m sur 5,9 m');
@@ -344,7 +344,7 @@ describe('rapport de l’étude structure', () => {
     const hyp = facts.hypotheses as Record<string, number>;
     const text = `L’installation compte ${inst.viewbox} Viewbox sur ${inst.niveaux} niveaux (${String(inst.emprise_x_m).replace('.', ',')} m). ${fam.famille} : η = ${String(fam.eta_max).replace('.', ',')}. Arrêt d’exploitation à ${String(hyp.vitesse_arret_exploitation_m_s).replace('.', ',')} m/s.`;
     expect(checkText(text, facts)).toEqual([]);
-    expect(hyp.vitesse_arret_exploitation_m_s).toBe(17.9);
+    expect(hyp.vitesse_arret_exploitation_m_s).toBe(17.8);
     expect(checkText('Le taux maximal vaut 0,123.', facts)).toEqual([0.123]);
   });
 
@@ -356,6 +356,16 @@ describe('rapport de l’étude structure', () => {
     for (const lang of ['fr', 'de', 'en'] as const) {
       const all = buildReport({ ...reportInput(lang, 'compact'), study: { ...inputs, library } }).pages.flatMap((p) => texts(p.svg)).join(' ');
       expect(all).toContain(words[lang]);
+      expect(buildReport(reportInput(lang, 'compact')).pages.flatMap((p) => texts(p.svg)).join(' ')).not.toContain(words[lang]);
+    }
+  });
+
+  it('pièce porteuse ignorée (escalier du modèle) : citée dans « Non vérifié », dans les 3 langues', () => {
+    const words = { fr: 'pièce porteuse exclue du calcul', de: 'tragendes Bauteil auf Wunsch', en: 'load-bearing part excluded' } as const;
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const all = buildReport({ ...reportInput(lang, 'compact'), ignoredParts: [{ label: 'STAIRWAYKIT WITH PLATEFORM#1', count: 1 }] }).pages.flatMap((p) => texts(p.svg)).join(' ');
+      expect(all).toContain(words[lang]);
+      expect(all).toContain('STAIRWAYKIT');
       expect(buildReport(reportInput(lang, 'compact')).pages.flatMap((p) => texts(p.svg)).join(' ')).not.toContain(words[lang]);
     }
   });

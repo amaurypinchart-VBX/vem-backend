@@ -22,6 +22,7 @@ import { computeCalage } from '../../structure/core/calage';
 import type { EstimateModule } from '../../structure/core/estimate';
 import { BEARING_PRESETS, bearingFrom } from '../../structure/core/ground';
 import type { Recognition } from '../../structure/core/recognition';
+import { ignoredStructural } from '../../structure/scene/studyModel';
 import { VERDICT_LABEL } from '../../structure/core/records';
 import type { ReportImage, ReportOutput, ReportVariant } from '../../structure/report/build';
 import { buildReport } from '../../structure/report/build';
@@ -229,6 +230,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
         bearing,
         moduleWeightKg: hyp.moduleWeightKg,
         sceneWarnings: [],
+        ignoredParts: ignoredStructural(recognition),
         images: imgs,
         calagePlan: plan ?? undefined,
         texts,

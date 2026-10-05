@@ -2,7 +2,7 @@
 // valeurs du calcul, déjà arrondies comme dans le rapport. Le serveur refuse tout texte qui contient un nombre absent
 // de ces données (garde-fou « aucun chiffre ne vient de l'IA »). Fonction pure.
 import type { CalageResult } from '../core/calage';
-import { speedOf } from '../core/wind';
+import { speedLimit } from '../core/wind';
 import type { StudyInputs, StudyRun } from '../studyRun';
 import { calageVerdict, familyName, slidingBallast } from './build';
 import type { Lang } from './i18n';
@@ -63,9 +63,9 @@ export function studyFacts(f: FactsInput): Record<string, unknown> {
       exploitation_kN_m2: r(loads.live * 1e3),
       vent_en_service_kN_m2: r(loads.windInService * 1e3),
       vent_hors_service_kN_m2: r(loads.windOutOfService * 1e3),
-      vitesse_arret_exploitation_m_s: r(speedOf(loads.windInService), 1),
-      vitesse_vigilance_m_s: r(0.75 * speedOf(loads.windInService), 1),
-      vitesse_limite_hors_service_m_s: r(speedOf(loads.windOutOfService), 1),
+      vitesse_arret_exploitation_m_s: speedLimit(loads.windInService),
+      vitesse_vigilance_m_s: speedLimit(loads.windInService, 0.75),
+      vitesse_limite_hors_service_m_s: speedLimit(loads.windOutOfService),
       frottement_sol: inputs.options.friction,
       portance_kN_m2: f.bearing ?? null,
       pieds_a_verins: inputs.options.jacks,

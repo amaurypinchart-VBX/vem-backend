@@ -83,7 +83,8 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     middleFeet: inp.middleFeet,
     upliftReleases: o.upliftAll ? 'all' : 'vertical',
     calibration: o.calibration,
-    contactModel: o.calibration ? 'beam' : 'truss',
+    // contacts : effort normal seul, comme l'annexe SCIA (« Zentrische Normalkraft »), aussi en calage statico
+    contactModel: 'truss',
     // Viewbox : boulonnées au plancher et en toiture (A. Pinchart 30.09.2026) ; calage statico : pas en toiture sous un étage
     roofBoltsUnderStack: !o.calibration,
     bracings: inp.bracings,

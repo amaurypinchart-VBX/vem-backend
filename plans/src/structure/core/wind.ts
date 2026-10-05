@@ -58,6 +58,11 @@ export function speedOf(q: number): number {
   return Math.sqrt((2 * q * 1e6) / 1.25);
 }
 
+/** Vitesse de consigne affichée (m/s) : arrondie au 0,1 inférieur, comme statico / TÜV (0,20 kN/m² → 17,8 m/s). */
+export function speedLimit(q: number, factor = 1): number {
+  return Math.floor(factor * speedOf(q) * 10 + 1e-9) / 10;
+}
+
 /** Contrôles du domaine d'emploi (altitude, zones) : avertissements affichés dans le rapport. */
 export function siteWarnings(site: WindSite): string[] {
   const w: string[] = [];
@@ -76,7 +81,7 @@ export function windRecords(site: WindSite, buildingHeightMm: number): CalcRecor
     title: 'Vent en service',
     clause: 'DIN EN 13814',
     formula: 'q = 0,20 kN/m² (h ≤ 8 m) ; 0,30 kN/m² (8 m < h ≤ 20 m)',
-    withValues: `vitesse d’arrêt d’exploitation : v = √(2 · 0,20 kN/m² / 1,25 kg/m³) = ${n(speedOf(0.2e-3), 1)} m/s`,
+    withValues: `vitesse d’arrêt d’exploitation : v = √(2 · 0,20 kN/m² / 1,25 kg/m³) = ${n(speedLimit(0.2e-3), 1)} m/s`,
   });
   if (site.terrain === 'inland') {
     const zone = WIND_ZONES[site.zone];

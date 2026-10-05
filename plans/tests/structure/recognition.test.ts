@@ -11,6 +11,7 @@ import { fromServer, mergeLibrary, partTypeEntry, toPayload } from '../../src/st
 import type { ServerLibraryRow } from '../../src/structure/core/libraryStore';
 import type { LibraryEntry } from '../../src/structure/core/library';
 import { SEED } from '../../src/structure/library/seed';
+import { ignoredStructural } from '../../src/structure/scene/studyModel';
 
 let seq = 0;
 function node(p: Partial<NodeInfo>): NodeInfo {
@@ -98,6 +99,18 @@ describe('reconnaissance', () => {
     expect(unk.nodeIds).toHaveLength(9);
     expect(r.blocking).toBe(1);
     expect(r.types[0].status).toBe('unknown');
+  });
+
+  it('escalier du modèle ignoré par l’utilisateur : listé comme pièce porteuse hors calcul ; un décor ignoré ne l’est pas', () => {
+    const stair = node({ name: 'StairwayKIT with plateform#1', definition: 'StairwayKIT with plateform#1', category: 'ESCALIER', triangles: 900 });
+    const plant = node({ name: 'Plante', definition: 'Plante', category: null, triangles: 50 });
+    const first = run(model(2, 'Viewbox M16', [stair, plant]));
+    const st = first.types.find((t) => t.category === 'ESCALIER')!;
+    const pl = first.types.find((t) => t.label.toUpperCase().includes('PLANTE'))!;
+    expect(st.assignment?.role).toBe('structural');
+    const ignored = { scope: 'model' as const, at: '', assignment: { role: 'ignored' as const, nature: 'decor' as const } };
+    const r = run(model(2, 'Viewbox M16', [stair, plant]), SEED, { [st.key]: ignored, [pl.key]: ignored });
+    expect(ignoredStructural(r)).toEqual([{ label: st.label, count: 1 }]);
   });
 
   it('critère S3 : la Viewbox confirmée et mémorisée n’est plus demandée dans un autre modèle', () => {

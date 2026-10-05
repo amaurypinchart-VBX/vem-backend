@@ -15,7 +15,7 @@ import { vbx } from './studyHelpers';
 
 function context(modules = [vbx('A', 0, 0), vbx('B', 5.9, 0)]) {
   const source: InputsSource = {
-    sceneModel: { modules, edgeItems: [], pointItems: [], errors: [], warnings: [] },
+    sceneModel: { modules, ignored: [], edgeItems: [], pointItems: [], errors: [], warnings: [] },
     library: SEED,
     hyp: { ...DEFAULT_HYP, evacuateTop: false },
     roof: false,

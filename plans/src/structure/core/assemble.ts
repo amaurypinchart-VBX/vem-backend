@@ -84,8 +84,8 @@ export interface AssembleOptions {
   /** calage statico : nuances et courbes de flambement de l'annexe SCIA (S275, courbes a) */
   calibration: boolean;
   /**
-   * contacts (angles voisins, Viewbox empilées) : 'truss' = compression seule sans cisaillement (défaut : l'effort
-   * horizontal passe par les boulons et les liaisons d'angle) ; 'beam' = barre encastrée comme dans SCIA
+   * contacts (angles voisins, Viewbox empilées) : 'truss' = compression seule sans cisaillement (défaut, comme les
+   * « Druckkontakt » de l'annexe SCIA, de type « Zentrische Normalkraft ») ; 'beam' = barre encastrée (variante)
    */
   contactModel?: 'truss' | 'beam';
   /** boulons de toiture entre deux Viewbox qui portent chacune une Viewbox (défaut : non, comme statico) */
@@ -221,7 +221,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   const gapTol = opt.gapTolerance ?? 30;
   const earlyWarnings: string[] = [];
   const modules = snapStacks(input, gapTol, earlyWarnings);
-  // contacts : barres articulées (effort normal seul, défaut) ou barres encastrées comme dans SCIA (calage)
+  // contacts : barres articulées (effort normal seul, défaut, comme SCIA) ou barres encastrées (variante)
   const contactKind = (opt.contactModel ?? 'truss') === 'truss' ? ('truss' as const) : ('beam' as const);
   const warnings: string[] = [...earlyWarnings];
   const errors: string[] = [];

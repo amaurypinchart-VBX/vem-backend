@@ -13,7 +13,7 @@ import type { ModuleTypeEntry } from '../core/library';
 import { designation } from '../core/library';
 import { lastModification } from '../core/viewboxEdit';
 import { materialByKey } from '../core/materials';
-import { speedOf } from '../core/wind';
+import { speedLimit } from '../core/wind';
 import type { StudyInputs, StudyRun } from '../studyRun';
 import type { Block, Cell, LaidPage, TableCell } from './doc';
 import { A4, BRAND, GREY, INK, PAGE, SIZE, VERDICT_COLORS, paginate, r2, renderPage, svgLine, svgRect, svgText, tocEntries, verdictIcon, watermarkSvg, wordmark } from './doc';
@@ -49,6 +49,8 @@ export interface ReportInput {
   moduleWeightKg: number;
   /** avertissements du modèle (reconnaissance, pièces au vent seules…) */
   sceneWarnings: string[];
+  /** pièces porteuses du modèle ignorées par l'utilisateur (escalier…) : listées dans « Non vérifié » */
+  ignoredParts?: Array<{ label: string; count: number }>;
   images?: { view3d?: ReportImage; eta3d?: ReportImage };
   /** plan de calage A3 (planche du moteur de planches) : SVG rendu par l'appelant avec le numéro donné */
   calagePlan?: (pageLabel: string) => string;
@@ -153,8 +155,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const ground = calageVerdict(inp.calage);
   const verdict = worstVerdict([run.verdict.verdict, ground.verdict]);
   const H = Math.max(...s.modules.map((m) => m.origin[1] + m.params.topZ)) - Math.min(...s.modules.map((m) => m.origin[1]));
-  const vStop = speedOf(loads.windInService);
-  const vOut = speedOf(loads.windOutOfService);
+  const vStop = speedLimit(loads.windInService);
+  const vWatch = speedLimit(loads.windInService, 0.75);
+  const vOut = speedLimit(loads.windOutOfService);
   const surfaces = loads.evacuateTopLevel && levels > 1 ? L.topLevelAndOutdoor : L.outdoorSurfaces;
   const ballast = slidingBallast(run, mu);
   const gTotal = run.loads.cases.filter((c) => c.group === 'G').reduce((a, c) => a - c.resultant[1], 0);
@@ -270,6 +273,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       L.notCoveredItems.logo,
       L.notCoveredItems.railings,
       ...study.blocking.map((b) => `${L.notCoveredItems.blocking} : ${E(b)}`),
+      ...(inp.ignoredParts ?? []).map((p) => L.notCoveredItems.ignored(p.label, p.count)),
     ],
   });
 
@@ -317,7 +321,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       { title: L.colAction, w: 80 },
     ],
     rows: [
-      [{ text: L.windPlan.watch[0], bold: true, color: VERDICT_COLORS.limit }, `≥ ${N(0.75 * vStop, 1)} m/s`, L.windPlan.watch[1]],
+      [{ text: L.windPlan.watch[0], bold: true, color: VERDICT_COLORS.limit }, `≥ ${N(vWatch, 1)} m/s`, L.windPlan.watch[1]],
       [{ text: L.windPlan.stop[0], bold: true, color: VERDICT_COLORS.fail }, `≥ ${N(vStop, 1)} m/s`, L.windPlan.stop[1]],
       [{ text: L.windPlan.limit[0], bold: true, color: VERDICT_COLORS.incomplete }, `≥ ${N(vOut, 1)} m/s`, L.windPlan.limit[1]],
     ],

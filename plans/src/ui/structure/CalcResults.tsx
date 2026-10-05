@@ -205,7 +205,7 @@ export function CalcPanel(p: CalcPanelProps) {
             <input type="checkbox" checked={o.internalPressure} onChange={(e) => set('internalPressure', e.target.checked)} /> Pression intérieure sur le plancher (installation ouverte)
           </label>
           <label className="row" title="S275 et courbes a pour les tubes, contacts encastrés : comme l'annexe SCIA des notes statico">
-            <input type="checkbox" checked={o.calibration} onChange={(e) => set('calibration', e.target.checked)} /> Calage statico (matériaux et contacts de l’annexe SCIA)
+            <input type="checkbox" checked={o.calibration} onChange={(e) => set('calibration', e.target.checked)} /> Calage statico (matériaux et courbes de flambement de l’annexe SCIA)
           </label>
         </div>
         {p.running && p.progress && (

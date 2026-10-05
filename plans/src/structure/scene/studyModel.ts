@@ -10,14 +10,32 @@ import type { LibraryEntry, ModuleTypeEntry, PartAssignment } from '../core/libr
 import { NATURE_LABEL } from '../core/library';
 import type { EdgeItem, PointItem } from '../core/loads';
 import type { Recognition } from '../core/recognition';
+import { proposeFor } from '../core/recognition';
 import type { Side } from '../core/templates/viewboxEU';
 
 export interface SceneStudyModel {
   modules: PlacedModule[];
+  /** pièces porteuses du modèle marquées « ignorées » (escalier, terrasse, poutre…) : hors calcul, citées dans le rapport */
+  ignored: IgnoredPart[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   errors: string[];
   warnings: string[];
+}
+
+export interface IgnoredPart {
+  label: string;
+  count: number;
+}
+
+const STRUCTURAL_NATURES = new Set(['beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace']);
+
+/** Types de pièces porteuses (catégorie ou nature structurelle) que l'utilisateur a choisi d'ignorer. */
+export function ignoredStructural(recognition: Recognition): IgnoredPart[] {
+  return recognition.types
+    .filter((t) => t.kind === 'item' && t.assignment?.role === 'ignored')
+    .filter((t) => STRUCTURAL_NATURES.has(t.assignment!.nature) || proposeFor(t.category, false)?.assignment.role === 'structural')
+    .map((t) => ({ label: t.label, count: t.nodeIds.length }));
 }
 
 const G = 9.81;
@@ -87,8 +105,11 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   for (const [nature, count] of unmodelled)
     errors.push(`${count} pièce(s) porteuse(s) « ${nature} » : pas encore modélisées dans le calcul complet (escaliers, terrasses, poutres ajoutées) — verdict incomplet`);
   for (const [label, count] of windOnly) warnings.push(`${label} (${count}) : surface au vent seule, pas encore appliquée au calcul (vent calculé sur les côtés des Viewbox)`);
+  const ignored = ignoredStructural(recognition);
+  for (const p of ignored)
+    warnings.push(`${p.label} (${p.count}) : pièce porteuse ignorée — ni son poids, ni l’exploitation, ni le vent, ni ses appuis sur les Viewbox ne sont dans le calcul (citée dans le rapport)`);
   if (!modules.length && !errors.length) errors.push('Aucune Viewbox calculable dans le modèle.');
-  return { modules, edgeItems, pointItems, errors, warnings };
+  return { modules, ignored, edgeItems, pointItems, errors, warnings };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {
