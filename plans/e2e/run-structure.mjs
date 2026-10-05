@@ -201,6 +201,11 @@ await dl3.saveAs(shots + 'rapport-fr.pdf');
 console.log('Rapport PDF :', dl3.suggestedFilename());
 const [dl4] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: '⬇ Plan de calage A3' }).click()]);
 await dl4.saveAs(shots + 'plan-calage.pdf');
+
+// plan de calage ajouté à un jeu de plans 2D (nouveau jeu), puis visible dans l'onglet Planches
+await page.getByRole('button', { name: '＋ Ajouter le plan de calage au jeu de plans' }).click();
+await page.getByText(/créé avec la planche|ajoutée au jeu/).waitFor({ timeout: 300000 });
+console.log('Plans 2D :', await page.getByText(/créé avec la planche|ajoutée au jeu/).innerText());
 console.log('Plan de calage :', dl4.suggestedFilename());
 await page.locator('label:has-text("Langue") select').selectOption('de');
 await page.locator('label:has-text("Version") select').selectOption('detailed');
