@@ -6,6 +6,7 @@ import type { StructuralModel } from '../core/assemble';
 import type { CalageResult } from '../core/calage';
 import { GROUND_NOTE } from '../core/ground';
 import type { Vec3 } from '../core/fem/types';
+import { groupTypeKey } from '../core/estimate';
 import type { LineworkRequest, Linework2D } from '../../linework/types';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import type { ViewBasis } from '../../core/views';
@@ -153,7 +154,7 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   const legend: LegendEntry[] = inp.calage.types.map((t) => ({
     key: `calage-${t.key}`,
     label: `${E(t.label)} — ${t.reactions.length}`,
-    color: TYPE_HEX[t.middle ? 'M' : String(Math.min(4, t.corners))],
+    color: TYPE_HEX[groupTypeKey(t)],
   }));
   return { sheet, notes, legend, viewport };
 }

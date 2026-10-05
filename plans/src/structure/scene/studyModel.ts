@@ -3,7 +3,7 @@
 // sur la rive du côté le plus proche ou au nœud le plus proche. Tout ce que le calcul ne sait pas encore modéliser
 // (pièces porteuses hors gabarit : escaliers, terrasses, poutres…) est une erreur bloquante (verdict « incomplet »).
 import type { LoadedScene } from '../../scene/loadedScene';
-import type { PlacedModule } from '../core/assemble';
+import type { PlacedModule, PlacedStair } from '../core/assemble';
 import { placeFromFrame } from '../core/assemble';
 import type { Vec3 } from '../core/fem/types';
 import type { LibraryEntry, ModuleTypeEntry, PartAssignment } from '../core/library';
@@ -12,11 +12,16 @@ import type { EdgeItem, PointItem } from '../core/loads';
 import type { Recognition } from '../core/recognition';
 import { proposeFor } from '../core/recognition';
 import type { Side } from '../core/templates/viewboxEU';
+import type { StairKitParams } from '../core/templates/stair';
+import { STAIR_KITS } from '../library/seed';
+import { endHeights } from './geometry';
 
 export interface SceneStudyModel {
   modules: PlacedModule[];
   /** pièces porteuses du modèle marquées « ignorées » (escalier, terrasse, poutre…) : hors calcul, citées dans le rapport */
   ignored: IgnoredPart[];
+  /** escaliers extérieurs (kit avec palier) placés contre une Viewbox */
+  stairs: PlacedStair[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   errors: string[];
@@ -36,6 +41,74 @@ export function ignoredStructural(recognition: Recognition): IgnoredPart[] {
     .filter((t) => t.kind === 'item' && t.assignment?.role === 'ignored')
     .filter((t) => STRUCTURAL_NATURES.has(t.assignment!.nature) || proposeFor(t.category, false)?.assignment.role === 'structural')
     .map((t) => ({ label: t.label, count: t.nodeIds.length }));
+}
+
+/**
+ * Escalier du modèle → escalier placé : le palier est contre le côté de Viewbox parallèle à la volée qui touche la
+ * boîte de l'objet (≤ 300 mm), au plancher de la Viewbox du dessus (ou au haut de celle du dessous) le plus proche de
+ * « haut de la boîte − garde-corps 1,25 m » ; la volée part du bout le plus bas (hauteur moyenne des sommets).
+ */
+export function placeStair(
+  b: readonly number[],
+  id: string,
+  label: string,
+  modules: PlacedModule[],
+  kit: StairKitParams,
+  heights?: (axis: 0 | 2) => { low: number; high: number } | null,
+): { stair: PlacedStair | null; reason?: string; warning?: string } {
+  const ext: [number, number] = [b[3] - b[0], b[5] - b[2]];
+  const axis: 0 | 2 = ext[0] >= ext[1] ? 0 : 2;
+  const [lo, hi] = axis === 0 ? [b[0], b[3]] : [b[2], b[5]];
+  const across: 0 | 2 = axis === 0 ? 2 : 0;
+  const [clo, chi] = across === 0 ? [b[0], b[3]] : [b[2], b[5]];
+  const target = b[4] - 1250;
+  let best: { pm: PlacedModule; side: Side; level: 'floor' | 'roof'; H: number; d: number; along: [number, number] } | null = null;
+  for (const pm of modules) {
+    const p = pm.params;
+    const W = p.y1 + p.y0;
+    const Lm = p.x1 + p.x0;
+    const sides: Array<{ side: Side; n: Vec3; at: number; along: Vec3; len: number }> = [
+      { side: 'u0', n: [-pm.u[0], 0, -pm.u[2]], at: 0, along: pm.v, len: W },
+      { side: 'u1', n: [pm.u[0], 0, pm.u[2]], at: Lm, along: pm.v, len: W },
+      { side: 'v0', n: [-pm.v[0], 0, -pm.v[2]], at: 0, along: pm.u, len: Lm },
+      { side: 'v1', n: [pm.v[0], 0, pm.v[2]], at: W, along: pm.u, len: Lm },
+    ];
+    for (const sd of sides) {
+      // côté parallèle à la volée, normale selon l'autre axe
+      if (Math.abs(sd.n[across]) < 0.99) continue;
+      const face = sd.side[0] === 'u' ? [pm.origin[0] + pm.u[0] * sd.at, pm.origin[2] + pm.u[2] * sd.at] : [pm.origin[0] + pm.v[0] * sd.at, pm.origin[2] + pm.v[2] * sd.at];
+      const faceAcross = across === 0 ? face[0] : face[1];
+      const sign = Math.sign(sd.n[across]);
+      const gap = sign > 0 ? clo - faceAcross : faceAcross - chi;
+      if (gap < -150 || gap > 300) continue;
+      // recouvrement le long de la volée
+      const a0 = (axis === 0 ? pm.origin[0] : pm.origin[2]) + sd.along[axis] * 0;
+      const a1 = a0 + sd.along[axis] * sd.len;
+      const ov = Math.min(hi, Math.max(a0, a1)) - Math.max(lo, Math.min(a0, a1));
+      if (ov < 1000) continue;
+      const options: Array<['floor' | 'roof', number]> = [];
+      if (pm.level > 0) options.push(['floor', pm.origin[1] + p.floorZ]);
+      options.push(['roof', pm.origin[1] + p.topZ]);
+      for (const [level, H] of options) {
+        const d = Math.abs(H - target) + (level === 'roof' ? 1 : 0);
+        if (!best || d < best.d) best = { pm, side: sd.side, level, H, d, along: [Math.min(a0, a1), Math.max(a0, a1)] };
+      }
+    }
+  }
+  if (!best) return { stair: null, reason: `${label} : aucun côté de Viewbox contre l’escalier (≤ 30 cm) — escalier non calculé.` };
+  if (best.d > 600) return { stair: null, reason: `${label} : hauteur du palier (≈ ${Math.round(target)} mm) sans plancher de Viewbox correspondant — escalier non calculé.` };
+  // bout du palier : le plus haut (sommets), sinon celui qui est le long de la Viewbox
+  const h = heights?.(axis);
+  let landingAtLow: boolean;
+  let warning: string | undefined;
+  if (h && Number.isFinite(h.low) && Number.isFinite(h.high) && Math.abs(h.high - h.low) > 300) landingAtLow = h.low > h.high;
+  else {
+    landingAtLow = Math.abs(lo - best.along[0]) <= Math.abs(hi - best.along[1]);
+    warning = `${label} : sens de la volée déduit de la position contre ${best.pm.id} (à vérifier).`;
+  }
+  const run: Vec3 = axis === 0 ? [landingAtLow ? 1 : -1, 0, 0] : [0, 0, landingAtLow ? 1 : -1];
+  const landingEnd = landingAtLow ? lo : -hi;
+  return { stair: { id, label, kit, module: best.pm.id, side: best.side, level: best.level, run, landingEnd }, warning };
 }
 
 const G = 9.81;
@@ -69,6 +142,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   // ─── objets ───
   const edgeItems: EdgeItem[] = [];
   const pointItems: PointItem[] = [];
+  const stairs: PlacedStair[] = [];
   const unmodelled = new Map<string, number>();
   const windOnly = new Map<string, number>();
   for (const t of recognition.types) {
@@ -85,6 +159,16 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     // la Viewbox elle-même (composant classé d'un bloc) : calculée par le gabarit de sa Viewbox
     if (a.nature === 'viewbox') {
       if (!t.moduleIds.length) errors.push(`${t.label} : Viewbox hors des modules numérotés (VBX-xx) — la numéroter dans SketchUp (extension viewbox_prep)`);
+      continue;
+    }
+    if (a.role === 'structural' && (a.nature === 'stair' || a.nature === 'landing')) {
+      for (const nodeId of t.nodeIds) {
+        const n = scene.look.byId.get(nodeId);
+        const r = n?.bboxMm ? placeStair(n.bboxMm, `ESC-${stairs.length + 1}`, t.label, modules, STAIR_KITS[0], (axis) => endHeights(scene, nodeId, axis)) : { stair: null, reason: `${t.label} : géométrie introuvable` };
+        if (r.stair) stairs.push(r.stair);
+        else errors.push(r.reason!);
+        if (r.warning) warnings.push(r.warning);
+      }
       continue;
     }
     if (a.role === 'structural') {
@@ -109,7 +193,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   for (const p of ignored)
     warnings.push(`${p.label} (${p.count}) : pièce porteuse ignorée — ni son poids, ni l’exploitation, ni le vent, ni ses appuis sur les Viewbox ne sont dans le calcul (citée dans le rapport)`);
   if (!modules.length && !errors.length) errors.push('Aucune Viewbox calculable dans le modèle.');
-  return { modules, ignored, edgeItems, pointItems, errors, warnings };
+  return { modules, ignored, stairs, edgeItems, pointItems, errors, warnings };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {

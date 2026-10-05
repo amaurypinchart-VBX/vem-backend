@@ -4,6 +4,7 @@
 // axe Y de SketchUp (= −z monde) vers le haut. Fonctions pures.
 import type { StructuralModel } from '../core/assemble';
 import type { GroupReaction } from '../core/estimate';
+import { groupTypeKey } from '../core/estimate';
 import type { EdgeItem } from '../core/loads';
 import type { Side } from '../core/templates/viewboxEU';
 import { moduleNumber } from '../../sheets/overlays';
@@ -237,8 +238,8 @@ export function etaLevelsSvg(mods: PlanModule[], etaOf: Map<string, number>, lev
   };
 }
 
-export const TYPE_HEX: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed' };
-export const groupType = (r: GroupReaction) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners)));
+export const TYPE_HEX: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed', E: '#0891b2' };
+export const groupType = (r: GroupReaction) => groupTypeKey(r.group);
 
 /** Plan des appuis : emprises du niveau 0, groupes colorés par type avec leur nom et Rz,k. */
 export function supportsSvg(mods: PlanModule[], reactions: GroupReaction[], fmtKN: (n: number) => string) {

@@ -16,7 +16,9 @@ import { adviseChain, checkChain, resolveLayers } from './spreading';
 import { verdictOf } from './records';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
-export function contactArea(corners: number, middle: boolean, jack = false): { a1: number; a2: number; confirmed: boolean } {
+export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
+  // pied d'escalier (platine Layher, talon de limon) : 15 × 15 cm (statico 24-0569 § 3.10.3, 24-0571 A34)
+  if (stair) return { a1: 150, a2: 150, confirmed: true };
   // platine de vérin 7-309-002 et réception centrale : 15 × 15 cm supposés
   if (middle || jack) return { a1: 150, a2: 150, confirmed: false };
   if (corners <= 1) return { a1: 210, a2: 210, confirmed: true };
@@ -71,6 +73,8 @@ export interface CalageType {
   corners: number;
   middle: boolean;
   jack: boolean;
+  /** pieds d'escalier */
+  stair?: boolean;
   reactions: GroupReaction[];
   RzEd: number;
   Rzk: number;
@@ -115,8 +119,8 @@ export interface CalageResult {
   publicLimit?: { persons: number; kg: number; load: number };
 }
 
-const typeLabel = (corners: number, middle: boolean, jack = false) =>
-  jack ? (middle ? 'vérin central' : 'vérin d’angle') : middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
+const typeLabel = (corners: number, middle: boolean, jack = false, stair = false) =>
+  stair ? 'pied d’escalier' : jack ? (middle ? 'vérin central' : 'vérin d’angle') : middle ? 'pied central' : corners === 1 ? 'angle seul' : `${corners} angles sur une plaque`;
 
 export function computeCalage(inp: CalageInput): CalageResult {
   const est0 = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
@@ -127,7 +131,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const reach = 2 * inp.estimate.groupTolerance + (est.reactions.some((r) => r.group.jack) ? 250 : 0);
   const byType = new Map<string, GroupReaction[]>();
   for (const r of est.reactions) {
-    const key = r.group.middle ? 'M' : String(r.group.corners);
+    const key = r.group.stair ? 'E' : r.group.middle ? 'M' : String(r.group.corners);
     if (!byType.has(key)) byType.set(key, []);
     byType.get(key)!.push(r);
   }
@@ -139,15 +143,17 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const rw = { mean: roadway.mean, area: roadway.area, load: roadway.load };
   const types: CalageType[] = [];
   const checkOf = new Map<GroupReaction, SupportCheck>();
-  for (const [key, all] of [...byType.entries()].sort((a, b) => (a[0] === 'M' ? 9 : Number(a[0])) - (b[0] === 'M' ? 9 : Number(b[0])))) {
+  const order = (k: string) => (k === 'E' ? 10 : k === 'M' ? 9 : Number(k));
+  for (const [key, all] of [...byType.entries()].sort((a, b) => order(a[0]) - order(b[0]))) {
     const corners = all[0].group.corners;
     const middle = all[0].group.middle;
+    const stair = !!all[0].group.stair;
     const jack = !!all[0].group.jack;
-    const { a1, a2, confirmed } = contactArea(corners, middle, jack);
+    const { a1, a2, confirmed } = contactArea(corners, middle, jack, stair);
     if (!confirmed) warnings.push(jack ? 'Pieds à vérin : platine 15 × 15 cm supposée (7-309-002, à confirmer).' : 'Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).');
-    const baseLabel = typeLabel(corners, middle, jack);
-    const unit = jack ? 'vérin' : middle ? 'pied central' : corners === 1 ? 'angle' : 'groupe';
-    const contactLabel = `${jack ? 'Platine de vérin' : middle ? 'Pied central' : corners === 1 ? 'Angle' : `${corners} angles`} ${a1 / 10} × ${a2 / 10} cm`;
+    const baseLabel = typeLabel(corners, middle, jack, stair);
+    const unit = stair ? 'pied d’escalier' : jack ? 'vérin' : middle ? 'pied central' : corners === 1 ? 'angle' : 'groupe';
+    const contactLabel = `${stair ? 'Pied d’escalier' : jack ? 'Platine de vérin' : middle ? 'Pied central' : corners === 1 ? 'Angle' : `${corners} angles`} ${a1 / 10} × ${a2 / 10} cm`;
     // appuis du type regroupés par calage : automatique, choix du type, choix propre à un appui
     const parts = new Map<string, { refs: LayerRef[] | null; reactions: GroupReaction[]; own: boolean }>();
     for (const r of all) {
@@ -247,6 +253,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         corners,
         middle,
         jack,
+        ...(stair ? { stair } : {}),
         reactions,
         RzEd,
         Rzk: d.plate.Rzk,
@@ -274,7 +281,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     let best: GroupReaction | undefined;
     let bd = Infinity;
     for (const r of est.reactions) {
-      if (r.group.middle) continue;
+      if (r.group.middle || r.group.stair) continue;
       const d = Math.hypot(r.group.position[0] - p[0], r.group.position[1] - p[1]);
       if (d < bd) [bd, best] = [d, r];
     }

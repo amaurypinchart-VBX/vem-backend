@@ -208,6 +208,16 @@ function rimLine(tpl: ViewboxTemplate, module: string, side: Side, level: 'floor
 
 const DOWN: Vec3 = [0, -1, 0];
 
+/** Longueur et direction en plan (unitaire, nulle pour une barre verticale) d'une barre du modèle. */
+function memberGeom(model: StructuralModel, k: number): { L: number; plan: Vec3 | null } {
+  const b = model.fem.members[k];
+  const A = model.fem.nodes[b.i];
+  const B = model.fem.nodes[b.j];
+  const L = Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);
+  const h = Math.hypot(B.x - A.x, B.z - A.z);
+  return { L, plan: h > 1e-6 ? [(B.x - A.x) / h, 0, (B.z - A.z) / h] : null };
+}
+
 export interface LoadModel {
   cases: LoadCase[];
   axes: Axes;
@@ -215,7 +225,12 @@ export interface LoadModel {
   warnings: string[];
 }
 
-export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadModel {
+/** coefficient de force du vent sur les profilés d'escalier (statico 18-0573 § 3.8.1 : wk = 1,3 · q) */
+const STAIR_CF = 1.3;
+
+export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections?: ReadonlyMap<string, { section: { dims: { h?: number } } }>): LoadModel {
+  const sectionHeight = new Map<string, number>();
+  for (const [k, e] of sections ?? []) if (e.section.dims.h) sectionHeight.set(k, e.section.dims.h);
   const warnings: string[] = [];
   const records: CalcRecord[] = [];
   const axes = installationAxes(model);
@@ -346,7 +361,25 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
     }
     if (best >= 0) byCase.get(it.loadCase)!.force(best, [0, -it.F, 0]);
   }
+  // ─── escaliers : garde-corps des limons et du palier (G5), marches et platelage (G6) ───
+  const stairs = model.stairs ?? [];
+  const g6 = new CaseBuilder(model);
+  for (const st of stairs) {
+    for (const k of st.railing) byCase.get('G5')!.member.push({ member: k, kind: 'distributed', dir: 'Y', q1: -st.kit.railing });
+    for (const b of st.bars) g6.member.push({ member: b.member, kind: 'distributed', dir: 'Y', q1: -st.kit.treads * b.width });
+  }
   cases.push(G2, byCase.get('G3')!.build('G3', 'Murs, vitrages, portes', 'G'), G4, byCase.get('G5')!.build('G5', 'Garde-corps', 'G'), byCase.get('G7')!.build('G7', 'Logos', 'G'), Gc);
+  if (stairs.length) {
+    cases.push(g6.build('G6', 'Marches et paliers d’escalier', 'G'));
+    for (const st of stairs)
+      records.push({
+        key: `loads.stair.${st.id}`,
+        title: `Escalier extérieur ${st.id} (${st.label})`,
+        clause: 'statico 24-0569 § 2.1 – 2.2',
+        formula: 'marches et platelage gk sur la volée et le palier (en plan) ; exploitation qk et H = V / 10 en service, escalier évacué hors service ; garde-corps sur les limons et le bord extérieur du palier',
+        withValues: `volée ${n(st.areas.flight / 1e6)} m², palier ${n(st.areas.landing / 1e6)} m² ; gk = ${n(st.kit.treads * 1e3)} kN/m² ; qk = ${n(inp.live * 1e3)} kN/m² ; garde-corps ${n(st.kit.railing)} kN/m ; palier à ${n(st.rise / 1e3)} m`,
+      });
+  }
   const GB = byCase.get('GB')!.build('GB', 'Lest', 'G');
   if (GB.nodal.length || GB.member.length) cases.push(GB);
 
@@ -374,6 +407,16 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
           for (const k of s.nodes) cb.force(model.nodeOf.get(`${pm.id}|${k}`)!, [dir[0] * H, 0, dir[2] * H]);
         }
       }
+      // escaliers : chargés en service seulement (surfaces extérieures évacuées hors service)
+      if (kind === 'Q1' && inp.live > 0)
+        for (const st of stairs)
+          for (const b of st.bars) {
+            const q = inp.live * b.width;
+            cb.member.push({ member: b.member, kind: 'distributed', dir: 'Y', q1: -q });
+            const H = (inp.horizontalRatio * q * memberGeom(model, b.member).L) / 2;
+            const m = model.fem.members[b.member];
+            for (const node of [m.i, m.j]) cb.force(node, [dir[0] * H, 0, dir[2] * H]);
+          }
       cases.push(cb.build(`${kind}.${d}`, `Exploitation ${label} ${DIRECTION_LABEL[d]}`, 'Q'));
     }
 
@@ -408,6 +451,20 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
             );
         }
       }
+      // escaliers (non habillés) : limons et cadre du palier, cf = 1,3 sur la hauteur du profilé (statico 18-0573 § 3.8.1)
+      for (const st of stairs)
+        for (const k of st.wind) {
+          const h = model.meta[k] ? sectionHeight.get(model.meta[k].section) ?? 200 : 200;
+          const { plan } = memberGeom(model, k);
+          const across = plan ? Math.abs(plan[0] * wd[2] - plan[2] * wd[0]) : 1;
+          const w = STAIR_CF * q * h * across;
+          if (w < 1e-9) continue;
+          for (const [axis, c] of [
+            ['X', wd[0]],
+            ['Z', wd[2]],
+          ] as const)
+            if (Math.abs(c) > 1e-12) cb.member.push({ member: k, kind: 'distributed', dir: axis, q1: w * c });
+        }
       cases.push(cb.build(`${kind}.${d}`, `Vent ${label} ${DIRECTION_LABEL[d]}`, 'W'));
     }
   // S : neige sur les toitures du dernier niveau (terrasses fermées par neige)

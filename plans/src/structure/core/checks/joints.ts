@@ -39,11 +39,24 @@ export interface ConnectionSet {
   bolt?: ConnectionEntry;
   jack?: ConnectionEntry;
   bracing?: ConnectionEntry;
+  stairHook?: ConnectionEntry;
+  stairLanding?: ConnectionEntry;
+  stairJack?: ConnectionEntry;
 }
 
 export function connectionSet(library: readonly LibraryEntry[]): ConnectionSet {
   const get = (key: string) => library.find((e): e is ConnectionEntry => e.kind === 'connection' && e.key === key && !e.disabled);
-  return { corner: get('VBX-CORNER'), contact: get('VBX-VERTICAL-CONTACT'), plate: get('VBX-VERTICAL-PLATE'), bolt: get('VBX-HORIZONTAL-BOLT'), jack: get('VBX-JACK'), bracing: get('VBX-BRACING') };
+  return {
+    corner: get('VBX-CORNER'),
+    contact: get('VBX-VERTICAL-CONTACT'),
+    plate: get('VBX-VERTICAL-PLATE'),
+    bolt: get('VBX-HORIZONTAL-BOLT'),
+    jack: get('VBX-JACK'),
+    bracing: get('VBX-BRACING'),
+    stairHook: get('STAIR-HOOK-LANDING'),
+    stairLanding: get('STAIR-LANDING-VBX'),
+    stairJack: get('STAIR-JACK-LAYHER60'),
+  };
 }
 
 const cap = (c: ConnectionEntry | undefined, key: string) => c?.capacities.find((x) => x.key === key)?.value;
@@ -285,6 +298,90 @@ export function checkJack(c: ConnectionSet, R: { N: number; H: number }, extensi
       clause: 'EN 1993-1-1 6.2.1(7), 6.3.3 (6.61) annexe B',
       formula: 'noyau d3 : A = π d3²/4, Wel = π d3³/32 ; Lcr = 2 · e ; M = H · e ; N / NRd + M / MRd ≤ 1 ; N / (χ NRd) + k · M / MRd ≤ 1, k = Cm (1 + 0,6 λ̄ n), Cm = 0,9',
       withValues: `d3 = ${f2(d3, 1)} mm, fy = ${f2(fy, 0)} N/mm², e = ${f2(e / 10, 1)} cm ; A = ${f2(A, 0)} mm², Wel = ${f2(W, 0)} mm³ ; NRd = ${kN(NRd)}, MRd = ${f2(MRd / 1e3, 1)} kNmm ; λ̄ = ${f2(lambda)}, χ = ${f2(chi)} ; N = ${kN(N)}, H = ${kN(R.H)}, M = ${f2(M / 1e3, 1)} kNmm ; section ${f2(section)}, flambement ${f2(buckling)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/** Accroche d'un limon au palier (STAIR-HOOK-LANDING, statico 24-0569 § 3.2) : effort tranchant vertical / Vz,Rd. */
+export function checkStairHook(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
+  const VRd = cap(c.stairHook, 'VzRd');
+  if (!usable(c.stairHook) || !VRd) return blocked('Accroche des limons (STAIR-HOOK-LANDING) : capacité absente de la bibliothèque');
+  const V = Math.abs(f.Vz);
+  const eta = V / VRd;
+  return {
+    eta,
+    governing: 'Vz crochets',
+    parts: { V: eta },
+    record: {
+      key: `stairhook.${label}`,
+      title: `Accroche du limon — ${label}`,
+      clause: 'statico 24-0569 § 3.2 (crochets 80 × 5 + 2 × M12-8.8)',
+      formula: 'Vz,Ed / Vz,Rd ≤ 1 ; Vz,Rd = 8 cm · (0,5 cm)² / 4 · fy / γM0 · 4 / 8 cm',
+      withValues: `N = ${kN(f.N)}, Vy = ${kN(f.Vy)}, Vz = ${kN(f.Vz)} ; ${kN(V)} / ${kN(VRd)} = ${f2(eta)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/**
+ * Attache du palier à la Viewbox (STAIR-LANDING-VBX, statico 24-0569 § 3.2) : par boulon M20, traction perpendiculaire
+ * à la Viewbox plus effort tranchant le long du côté repris par le capot plié (excentricité 10,5 cm, bras 2 × 5 cm) :
+ * FEd = N + V · 10,5 / 4 / (10 / 2) ≤ Ft,Rd (U 100 × 8) ; la compression passe par contact.
+ */
+export function checkStairLink(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
+  const FtRd = cap(c.stairLanding, 'FtRd');
+  if (!usable(c.stairLanding) || !FtRd) return blocked('Attache du palier (STAIR-LANDING-VBX) : capacité absente de la bibliothèque');
+  const N = Math.max(0, f.N);
+  const V = Math.abs(f.Vy);
+  const F = N + (V * 105) / 4 / 50;
+  const eta = F / FtRd;
+  return {
+    eta,
+    governing: N >= F - N ? 'traction boulon' : 'effort le long du côté',
+    parts: { N: N / FtRd, V: (F - N) / FtRd },
+    record: {
+      key: `stairlink.${label}`,
+      title: `Attache du palier — ${label}`,
+      clause: 'statico 24-0569 § 3.2 (2 × M20-8.8, capot 155 × 105 × 3 renforcé par un U 100 × 8)',
+      formula: 'FEd = Nt,Ed + V∥,Ed · 10,5 cm / 4 / (10 cm / 2) ≤ Ft,Rd',
+      withValues: `N = ${kN(f.N)}, V∥ = ${kN(f.Vy)} ; FEd = ${kN(N)} + ${kN(V)} · 10,5 / 4 / 5 = ${kN(F)} ≤ ${kN(FtRd)} → ${f2(eta)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/**
+ * Vérin Layher 60 sous un montant d'escalier (STAIR-JACK-LAYHER60, statico 18-0573 § 3.8.3) : sortie maxi h = 30 cm,
+ * Lcr = 2 · (h − écrou), M = H · h ; N / (χ Npl,Rd) + kyy · M / Mpl,Rd ≤ 1 (6.3.3, annexe B, Cmy 0,9, courbe c).
+ */
+export function checkLayherJack(c: ConnectionSet, R: { N: number; H: number }, label: string, combination?: string, gammaM = 1.1): JointResult {
+  const j = c.stairJack;
+  const [A, Wpl, i, fy, nut, h] = ['A', 'Wpl', 'i', 'fy', 'nut', 'extensionMax'].map((k) => cap(j, k));
+  if (!usable(j) || !A || !Wpl || !i || !fy || nut === undefined || !h) return blocked('Vérin Layher 60 (STAIR-JACK-LAYHER60) : données de la tige absentes de la bibliothèque');
+  const Lcr = 2 * (h - nut);
+  const lambda = Lcr / i / (Math.PI * Math.sqrt(E_STEEL / fy));
+  const chi = bucklingReduction(lambda, 'c');
+  const NRd = (A * fy) / gammaM;
+  const MRd = (Wpl * fy) / gammaM;
+  const N = Math.max(0, R.N);
+  const M = R.H * h;
+  const n = N / (chi * NRd);
+  const kyy = Math.min(0.9 * (1 + (lambda - 0.2) * n), 0.9 * (1 + 0.8 * n));
+  const eta = n + (kyy * M) / MRd;
+  return {
+    eta,
+    governing: 'N + M flambement',
+    parts: { N: n, M: M / MRd },
+    record: {
+      key: `stairjack.${label}`,
+      title: `Vérin Layher 60 — ${label}`,
+      clause: 'statico 18-0573 § 3.8.3 ; EN 1993-1-1 6.3.3 (6.61) annexe B',
+      formula: 'Lcr = 2 · (h − h écrou) ; M = H · h ; N / (χ Npl,Rd) + kyy · M / Mpl,Rd ≤ 1, kyy = Cmy (1 + (λ̄ − 0,2) n), Cmy = 0,9',
+      withValues: `h = ${f2(h / 10, 1)} cm, Lcr = ${f2(Lcr / 10, 1)} cm ; A = ${f2(A / 100)} cm², Wpl = ${f2(Wpl / 1000)} cm³, fy = ${f2(fy / 10)} kN/cm² ; Npl,Rd = ${kN(NRd)}, Mpl,Rd = ${f2(MRd / 1e4)} kNcm ; λ̄ = ${f2(lambda)}, χ = ${f2(chi)}, kyy = ${f2(kyy)} ; N = ${kN(N)}, H = ${kN(R.H)}, M = ${f2(M / 1e4)} kNcm ; ${f2(n)} + ${f2(kyy)} · ${f2(M / MRd)} = ${f2(eta)}`,
       eta,
       combination,
     },

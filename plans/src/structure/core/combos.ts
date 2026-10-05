@@ -45,11 +45,12 @@ export const COMBO_DEFAULTS: ComboOptions = {
   sls: true,
 };
 
-/** Cas permanents : poids propre et complément, finitions (plafonds, murs, sols), garde-corps, logos. */
-const G_ALL = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7', 'GB'];
+/** Cas permanents : poids propre et complément, finitions (plafonds, murs, sols), garde-corps, marches d'escalier, logos. */
+const G_ALL = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'GB'];
 // lest (GB) : poids connu, compté comme le poids propre dans la stabilité
 const G_SELF = ['G1', 'Gc', 'G5', 'GB'];
-const G_FINISH = ['G2', 'G3', 'G4'];
+// marches et platelage d'escalier (G6) : comme les finitions
+const G_FINISH = ['G2', 'G3', 'G4', 'G6'];
 
 const swayOf = (d: Direction): readonly [1 | -1, 1 | -1] => (d === 2 ? [-1, 1] : d === 4 ? [1, -1] : [1, 1]);
 

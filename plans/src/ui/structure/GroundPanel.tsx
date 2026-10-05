@@ -6,7 +6,7 @@ import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
 import type { Estimate, EstimateModule } from '../../structure/core/estimate';
-import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
+import { ESTIMATE_DEFAULTS, groupTypeKey } from '../../structure/core/estimate';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
 import type { PanelMaterial } from '../../structure/core/ground';
@@ -646,7 +646,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                     </span>
                   ))
                 : Object.entries(jacks ? { '1': 'vérin d’angle', M: 'vérin central' } : { '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
-                    .filter(([k]) => result.estimate.reactions.some((r) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners))) === k))
+                    .filter(([k]) => result.estimate.reactions.some((r) => groupTypeKey(r.group) === k))
                     .map(([k, l]) => (
                       <span key={k} className="chip">
                         <i style={{ background: TYPE_COLORS[k] }} />
@@ -822,7 +822,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             <div className="card" key={t.key}>
               <div className="card-head">
                 <span className="chip">
-                  <i style={{ background: TYPE_COLORS[t.middle ? 'M' : String(Math.min(4, t.corners))] }} />
+                  <i style={{ background: TYPE_COLORS[groupTypeKey(t)] }} />
                   {t.label}
                 </span>
                 <span className="hint">

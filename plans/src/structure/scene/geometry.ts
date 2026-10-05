@@ -32,3 +32,34 @@ export function itemBoxDims(scene: LoadedScene, ids: Iterable<string>): Map<stri
   }
   return out;
 }
+
+/**
+ * Hauteur moyenne des sommets d'un objet dans le premier et le dernier quart de sa boîte le long d'un axe du monde
+ * (0 = X, 2 = Z) : le palier d'un escalier est au bout le plus haut. null sans maillage.
+ */
+export function endHeights(scene: LoadedScene, id: string, axis: 0 | 2): { low: number; high: number } | null {
+  const obj = scene.objectsById.get(id);
+  if (!obj) return null;
+  const pts: Array<[number, number]> = [];
+  const v = new Vector3();
+  obj.updateWorldMatrix(true, true);
+  obj.traverse((o) => {
+    const pos = ((o as Mesh).geometry as BufferGeometry | undefined)?.attributes?.position;
+    if (!(o as Mesh).isMesh || !pos) return;
+    const step = Math.max(1, Math.floor(pos.count / 20000));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      pts.push([axis === 0 ? v.x : v.z, v.y]);
+    }
+  });
+  if (pts.length < 10) return null;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [a] of pts) [lo, hi] = [Math.min(lo, a), Math.max(hi, a)];
+  const q = (hi - lo) / 4;
+  const mean = (f: (a: number) => boolean) => {
+    const s = pts.filter(([a]) => f(a));
+    return s.length ? s.reduce((x, [, y]) => x + y, 0) / s.length : NaN;
+  };
+  return { low: mean((a) => a <= lo + q), high: mean((a) => a >= hi - q) };
+}

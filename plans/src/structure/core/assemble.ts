@@ -13,6 +13,8 @@ import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams
 import { materialByKey, steelStrength } from './materials';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } from './templates/viewboxEU';
 import { viewboxTemplate } from './templates/viewboxEU';
+import type { StairFamily, StairKitParams } from './templates/stair';
+import { stairGeometry } from './templates/stair';
 import { fmtNumber } from './units';
 
 export interface PlacedModule {
@@ -26,7 +28,7 @@ export interface PlacedModule {
   templateKey: string;
 }
 
-export type MemberFamily = TemplateFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact' | 'bracing' | 'raise-column' | 'raise-bracing';
+export type MemberFamily = TemplateFamily | StairFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact' | 'bracing' | 'raise-column' | 'raise-bracing';
 
 export interface MemberMeta {
   family: MemberFamily;
@@ -95,6 +97,42 @@ export interface AssembleOptions {
   bracings?: BracingSpec[];
   /** surélévation : un poteau sous chaque appui des Viewbox posées au sol */
   raise?: RaiseSpec | null;
+  /** escaliers extérieurs (kit avec palier) attachés à un côté de Viewbox */
+  stairs?: PlacedStair[];
+}
+
+/** Escalier du modèle placé contre une Viewbox (scene/studyModel). */
+export interface PlacedStair {
+  id: string;
+  /** nom de l'objet SketchUp */
+  label: string;
+  kit: StairKitParams;
+  /** Viewbox et côté portant le palier ; rive du plancher (Viewbox du dessus) ou de la toiture (Viewbox du dessous) */
+  module: string;
+  side: Side;
+  level: 'floor' | 'roof';
+  /** sens de la volée (monde, horizontal unitaire) : du palier vers le pied */
+  run: Vec3;
+  /** abscisse le long de `run` (monde, mm) du bout du palier opposé à la volée */
+  landingEnd: number;
+}
+
+/** Escalier assemblé : barres et appuis dans le modèle, pour les charges et les vérifications. */
+export interface StairModel {
+  id: string;
+  label: string;
+  kit: StairKitParams;
+  /** barres recevant marches / platelage (largeur d'influence en plan, mm) */
+  bars: Array<{ member: number; width: number; region: 'flight' | 'landing' }>;
+  railing: number[];
+  wind: number[];
+  /** accroches des limons (barre de prolongement, rotule au nœud i), attaches palier ↔ Viewbox */
+  hooks: number[];
+  links: number[];
+  /** appuis (indices dans fem.supports) */
+  supports: number[];
+  areas: { flight: number; landing: number };
+  rise: number;
 }
 
 export interface BracingSpec {
@@ -126,7 +164,9 @@ export interface StructuralModel {
   lines: Map<string, EdgeLoadTarget[]>;
   faces: FaceInfo[];
   /** appuis : Viewbox et angle */
-  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle'; jack: boolean }>;
+  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' | 'stair'; jack: boolean; label?: string }>;
+  /** escaliers extérieurs du modèle */
+  stairs: StairModel[];
   /** modules sans rien au-dessus (toiture exposée, dernier niveau évacué) */
   topModules: Set<string>;
   /** côtés extérieurs (libres sur au moins la moitié de leur longueur) de chaque Viewbox : plats d'empilement posables */
@@ -180,6 +220,12 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   bracing: 'contreventement ajouté',
   'raise-column': 'poteau de surélévation',
   'raise-bracing': 'contreventement de surélévation',
+  'stair-stringer': 'limon d’escalier',
+  'stair-landing': 'cadre de palier',
+  'stair-post': 'montant d’escalier',
+  'stair-head': 'attache de montant de palier',
+  'stair-step': 'marche (barre équivalente)',
+  'stair-link': 'attache du palier à la Viewbox',
 };
 
 /**
@@ -374,6 +420,37 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         }
     }
 
+  // ─── escaliers : perçages d'attache du palier sur le côté de la Viewbox (nœuds de rive ajoutés si besoin) ───
+  const stairAttach = new Map<PlacedStair, { f: FaceGeo; s: [number, number] }>();
+  for (const st of opt.stairs ?? []) {
+    const f = faceGeo.find((x) => x.pm.id === st.module && x.side === st.side);
+    if (!f) {
+      errors.push(`${st.label} : Viewbox ${st.module} absente du modèle — escalier non calculé.`);
+      continue;
+    }
+    const p = f.pm.params;
+    const long = f.side === 'v0' || f.side === 'v1';
+    const drill = (long ? p.boltLongX : p.boltShortY).map((x) => x - f.offset);
+    const sign = Math.sign(dot(f.dir, st.run)) || 1;
+    // abscisses le long du côté : premier perçage à ≈ 300 mm du bout du palier, second à l'écart du kit
+    const s1Target = (st.landingEnd + 303 - dot(f.a, st.run)) * sign;
+    const D = st.kit.boltSpacing;
+    let pair: [number, number] | null = null;
+    for (const a of drill)
+      for (const b of drill)
+        if (Math.abs((b - a) * sign - D) <= 50 && Math.abs(a - s1Target) <= 600 && (!pair || Math.abs(a - s1Target) < Math.abs(pair[0] - s1Target))) pair = [a, b];
+    if (!pair) {
+      pair = [s1Target, s1Target + sign * D];
+      if (pair.some((s) => s < 0 || s > f.length)) {
+        errors.push(`${st.label} : palier hors du côté de ${st.module} — escalier non calculé.`);
+        continue;
+      }
+      warnings.push(`${st.label} : aucun perçage de ${st.module} en face du palier — attaches placées à ${fmtNumber(pair[0] / 1e3, 2)} et ${fmtNumber(pair[1] / 1e3, 2)} m du coin (perçages à faire sur site).`);
+      for (const s of pair) addExtra(f, s);
+    }
+    stairAttach.set(st, { f, s: pair });
+  }
+
   // ─── gabarit posé sur chaque Viewbox ───
   const tplCache = new Map<string, ViewboxTemplate>();
   const tplOf = new Map<PlacedModule, ViewboxTemplate>();
@@ -558,6 +635,78 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   }
   if (!supports.length) errors.push('Aucune Viewbox posée au sol : le modèle n’a pas d’appui.');
 
+  // ─── escaliers extérieurs ───
+  // sol : sous les Viewbox posées au sol (surélévation : au pied des poteaux)
+  const ground = Math.min(...modules.filter((m) => m.level === 0).map((m) => m.origin[1]), Infinity) - (raise?.height ?? 0);
+  const stairs: StairModel[] = [];
+  for (const st of opt.stairs ?? []) {
+    const att = stairAttach.get(st);
+    if (!att || !Number.isFinite(ground)) continue;
+    const { f, s: pair } = att;
+    const pm = f.pm;
+    const rimKeys = st.level === 'floor' ? f.face!.rimFloor : f.face!.rimRoof;
+    const rimNode = (s: number) => {
+      const target = at(f, s);
+      let best = -1;
+      let bd = Infinity;
+      for (const k of rimKeys) {
+        const n = P(pm, k);
+        const d = planDist(pos(n), target);
+        if (d < bd) [best, bd] = [n, d];
+      }
+      return bd <= 5 ? best : -1;
+    };
+    const H = pm.origin[1] + (st.level === 'floor' ? pm.params.floorZ : pm.params.topZ);
+    const rise = H - ground;
+    const o = at(f, pair[0]);
+    const out = f.normal;
+    const geo = stairGeometry(st.kit, st.id, [o[0], H, o[2]], st.run, out, rise);
+    const local = new Map<string, number>();
+    for (const n of geo.nodes) {
+      nodes.push({ id: n.key, x: n.p[0], y: n.p[1], z: n.p[2] });
+      local.set(n.key, nodes.length - 1);
+    }
+    const idx = geo.members.map((m) =>
+      addMember(local.get(m.i)!, local.get(m.j)!, m.section, { family: m.family, module: st.id, line: m.line, label: m.label }, { endI: m.endI, endJ: m.endJ, ref: m.vertical ? st.run : undefined, geometric: m.family !== 'stair-step' }),
+    );
+    // attaches du palier : effort normal et effort tranchant horizontal, vertical et rotations libres (SCIA Ersatz_Anbindung)
+    const links: number[] = [];
+    geo.links.forEach((l, k) => {
+      const rn = rimNode(pair[k]);
+      if (rn < 0) {
+        errors.push(`${st.label} : nœud d'attache introuvable sur la rive de ${pm.id}.`);
+        return;
+      }
+      links.push(addMember(local.get(l.node)!, rn, st.kit.sections.link, { family: 'stair-link', module: st.id, line: `${st.id}/link:${k + 1}`, label: `${st.id} / ${pm.id} · attache du palier ${k + 1}` }, { endJ: ['rigid', 'rigid', 'free', 'free', 'free', 'free'], geometric: false }));
+    });
+    const across = Math.abs(out[0]) > 0.99 ? 0 : Math.abs(out[2]) > 0.99 ? 2 : -1;
+    if (across < 0) {
+      errors.push(`${st.label} : escalier non parallèle aux axes du modèle — non calculé.`);
+      continue;
+    }
+    const sup: number[] = [];
+    geo.supports.forEach((sp, k) => {
+      const dofs: FemSupport['dofs'] = sp.kind === 'post' ? ['fixed', 'fixed', 'fixed', 'free', 'free', 'free'] : across === 0 ? ['fixed', 'fixed', 'free', 'free', 'free', 'free'] : ['free', 'fixed', 'fixed', 'free', 'free', 'free'];
+      supports.push({ node: local.get(sp.node)!, dofs, compressionOnly: true, upliftReleases: 'vertical' });
+      supportMeta.push({ module: st.id, corner: k, kind: 'stair', jack: false, label: sp.label });
+      sup.push(supports.length - 1);
+    });
+    stairs.push({
+      id: st.id,
+      label: st.label,
+      kit: st.kit,
+      bars: geo.bars.map((b) => ({ member: idx[b.index], width: b.width, region: b.region })),
+      railing: geo.railingMembers.map((k) => idx[k]),
+      wind: geo.windMembers.map((k) => idx[k]),
+      hooks: geo.members.map((m, k) => (m.line.includes('/landing:ext:') ? idx[k] : -1)).filter((k) => k >= 0),
+      links,
+      supports: sup,
+      areas: geo.areas,
+      rise,
+    });
+    if (Math.abs(rise - 3080) > 50) warnings.push(`${st.label} : palier à ${fmtNumber(rise / 1e3, 2)} m du sol — kit relevé pour 3,08 m, volée recalculée à la même pente.`);
+  }
+
   // ─── tronçons de flambement : entre deux attaches d'une barre physique ───
   const linesOfNode = new Map<number, Set<string>>();
   meta.forEach((m, k) => {
@@ -644,6 +793,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     lines,
     faces,
     supportMeta,
+    stairs,
     topModules,
     outerSides,
     baseY: Math.min(...ys),

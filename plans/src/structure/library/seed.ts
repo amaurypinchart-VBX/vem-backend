@@ -5,6 +5,7 @@ import type { Section } from '../core/catalog';
 import type { ConnectionEntry, LibraryEntry, ModuleTypeEntry, SectionEntry, SpreadingEntry } from '../core/library';
 import { MATERIALS } from '../core/materials';
 import { KN, KN_PER_CM, KNCM_PER_DEG, KNM } from '../core/units';
+import type { StairKitParams } from '../core/templates/stair';
 
 const HOKA = (page: string, note?: string) => ({ ref: 'report:24-0571', page, note });
 const cm2 = 1e2;
@@ -442,7 +443,15 @@ export const SEED_CONNECTIONS: ConnectionEntry[] = [
     name: 'Pied de montant d’escalier sur vérin Layher 60',
     status: 'known',
     composition: 'couvercle 90 × 90 × 10 + fourreau 42,4 × 2,0 L = 460 mm (S235), vérin Layher 60',
-    capacities: [cap('extensionMax', 'sortie maxi du vérin', 300, '-', 'A14', 'constructivement limitée à 30 cm')],
+    capacities: [
+      cap('extensionMax', 'sortie maxi du vérin', 300, '-', 'A14', 'constructivement limitée à 30 cm'),
+      // tige du vérin Layher 60 (S235 JRH, fy,k = 28 kN/cm² Layher, courbe c) : statico 18-0573 § 3.8.3 (A62)
+      { key: 'A', label: 'section de la tige', value: 384, unit: 'mm²', source: { ref: 'report:18-0573', page: 'A62' } },
+      { key: 'Wpl', label: 'module plastique de la tige', value: 3260, unit: 'mm³', source: { ref: 'report:18-0573', page: 'A62' } },
+      { key: 'i', label: 'rayon de giration', value: 9.9, unit: 'mm', source: { ref: 'report:18-0573', page: 'A62' } },
+      { key: 'fy', label: 'limite d’élasticité (Layher)', value: 280, unit: 'N/mm²', source: { ref: 'report:18-0573', page: 'A62' } },
+      { key: 'nut', label: 'hauteur de l’écrou à ailettes', value: 32, unit: 'mm', source: { ref: 'report:18-0573', page: 'A62' } },
+    ],
     source: [HOKA('A14')],
   },
   {
@@ -496,6 +505,34 @@ export const SEED_SPREADING: SpreadingEntry[] = [
 ];
 
 /** Surfaces de contact (mm) d'un groupe d'angles posés sur une même plaque, et d'un pied d'escalier. */
+/**
+ * Kit escalier extérieur Viewbox (« StairwayKIT with plateform ») : géométrie du modèle SCIA de statico 24-0569
+ * (Qatar, annexe B 3.3–3.4) — limons à x 8,597 / 9,797 m (ligne de rive 8,395), palier 2,58 → 4,92 m, perçages 2,71 /
+ * 4,79 m, accroche 2,33 m, pied −1,78 m à 0,176 m, montants intermédiaires 1,103 m, 17 marches, 9 lattes ; charges
+ * § 2.1 (marches 0,42 kN/m²) ; garde-corps 0,10 kN/m (comme ceux des Viewbox).
+ */
+export const STAIR_KITS: StairKitParams[] = [
+  {
+    key: 'STAIR-KIT-VBX',
+    name: 'Escalier extérieur Viewbox avec palier (kit)',
+    width: 1200,
+    gap: 202,
+    boltSpacing: 2080,
+    landingMargin: 130,
+    hookExtension: 250,
+    runPerRise: 4110 / 2904,
+    footHeight: 176,
+    middlePost: 1227,
+    postInset: 38,
+    stepGoing: 242,
+    landingBars: 9,
+    sections: { stringer: 'U200x80x5-CF', post: 'QHP80x3-CF', head: 'U125x92x5-CF', step: 'AQ-STEP-EQ', link: 'QRO100x4-EQ' },
+    treads: 0.42e-3,
+    railing: 0.1,
+    source: 'statico 24-0569 (Qatar) annexe B 3.3–3.6 et § 2.1 ; 24-0571 (Hoka) § 3.2',
+  },
+];
+
 export const CONTACT_AREAS = {
   corner1: { a1: 210, a2: 210, source: HOKA('A28') },
   corner2: { a1: 420, a2: 210, source: HOKA('A30', 'la page A30 prend 42 × 42 pour σc,90 : erreur, 42 × 21 retenu') },

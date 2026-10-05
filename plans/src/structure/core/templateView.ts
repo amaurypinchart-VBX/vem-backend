@@ -27,6 +27,12 @@ export const FAMILY_COLORS: Record<MemberFamily, number> = {
   bracing: 0xdb2777,
   'raise-column': 0x92400e,
   'raise-bracing': 0xbe185d,
+  'stair-stringer': 0x0f766e,
+  'stair-landing': 0x14b8a6,
+  'stair-post': 0xb91c1c,
+  'stair-head': 0xf97316,
+  'stair-step': 0x94a3b8,
+  'stair-link': 0x111827,
 };
 
 export interface TemplateFamilyRow {

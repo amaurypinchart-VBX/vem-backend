@@ -3,14 +3,15 @@
 import type { ReactNode } from 'react';
 import type { CalageResult } from '../core/calage';
 import type { EstimateModule, GroupReaction } from '../core/estimate';
+import { groupTypeKey } from '../core/estimate';
 import { GROUND_NOTE } from '../core/ground';
 import { verdictOf } from '../core/records';
 import { fmtNumber } from '../core/units';
 import { FONT_SANS } from '../../sheets/template';
 import { LOGO_COLOR, VIEWBOX_WORDMARK } from '../../sheets/logos';
 
-export const TYPE_COLORS: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed' };
-export const typeKey = (r: GroupReaction) => (r.group.middle ? 'M' : String(Math.min(4, r.group.corners)));
+export const TYPE_COLORS: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed', E: '#0891b2' };
+export const typeKey = (r: GroupReaction) => groupTypeKey(r.group);
 
 const n1 = (v: number, d = 1) => fmtNumber(v, d);
 

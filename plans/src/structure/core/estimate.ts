@@ -97,8 +97,13 @@ export interface SupportGroup {
   middle: boolean;
   /** pied à vérin (platine sous la tige) */
   jack?: boolean;
+  /** pied d'escalier extérieur (montant sur vérin Layher, talon de limon) */
+  stair?: boolean;
   moduleIds: string[];
 }
+
+/** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier. */
+export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair'>) => (g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
 
 /** Réaction d'un groupe d'appuis dans une combinaison et part du public qu'elle contient (public limité). */
 export interface ComboReaction {

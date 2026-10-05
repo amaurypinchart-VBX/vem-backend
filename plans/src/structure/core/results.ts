@@ -11,7 +11,7 @@ import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
 import type { ConnectionSet } from './checks/joints';
-import { checkBolt, checkBrace, checkCorner, checkJack, checkStackShear, checkVerticalLink } from './checks/joints';
+import { checkBolt, checkBrace, checkCorner, checkJack, checkLayherJack, checkStackShear, checkStairHook, checkStairLink, checkVerticalLink } from './checks/joints';
 import { CORNER_SIDES } from './assemble';
 import { checkTimberSpan } from './checks/ec5';
 import type { SectionEntry } from './library';
@@ -20,7 +20,7 @@ import type { CalcRecord, Verdict } from './records';
 import { verdictOf, worstVerdict } from './records';
 import { fmtNumber } from './units';
 
-export type ItemKind = 'member' | 'corner' | 'vlink' | 'stack' | 'bolt' | 'jack' | 'brace';
+export type ItemKind = 'member' | 'corner' | 'vlink' | 'stack' | 'bolt' | 'jack' | 'brace' | 'stairhook' | 'stairlink' | 'stairjack';
 
 export interface CheckItem {
   id: string;
@@ -111,7 +111,7 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
       id: `span:${span}`,
       kind: 'member',
       family: `${capitalize(FAMILY_LABEL[m.family as MemberFamily] ?? m.family)} — ${sec?.section.name ?? m.section}`,
-      label: spanLabel(m.module, m.family as MemberFamily, m.line, span, offset),
+      label: m.family.startsWith('stair-') ? stairSpanLabel(m.label, span, offset, ks.length !== s.meta.filter((x) => x.line === m.line).length) : spanLabel(m.module, m.family as MemberFamily, m.line, span, offset),
       module: m.module,
       members: ordered.map((o) => o.member),
     });
@@ -135,6 +135,16 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
     const below = s.meta[ks[0]].label.split(' / ')[0];
     items.push({ id: `stack:${module}`, kind: 'stack', family: 'Glissement entre Viewbox empilées', label: `${below} / ${module} · plats d’empilement`, module, members: ks });
   }
+  // escaliers : accroches des limons, attaches du palier, vérins Layher des montants
+  for (const st of s.stairs ?? []) {
+    st.hooks.forEach((k, n) => items.push({ id: `stairhook:${k}`, kind: 'stairhook', family: 'Escalier — accroche des limons (crochets + 2 × M12)', label: `${st.id} · accroche du limon ${n === 0 ? 'côté Viewbox' : 'extérieur'}`, module: st.id, members: [k] }));
+    for (const k of st.links) items.push({ id: `stairlink:${k}`, kind: 'stairlink', family: 'Escalier — attache du palier à la Viewbox (M20)', label: s.meta[k].label, module: st.id, members: [k] });
+    for (const sp of st.supports) {
+      const sm = s.supportMeta[sp];
+      if (!/montant/.test(sm.label ?? '')) continue;
+      items.push({ id: `stairjack:${sp}`, kind: 'stairjack', family: 'Escalier — vérins Layher 60 des montants', label: sm.label!, module: st.id, members: [], support: sp });
+    }
+  }
   s.supportMeta.forEach((sm, k) => {
     if (!sm.jack) return;
     const node = s.fem.supports[k].node;
@@ -146,6 +156,12 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
 }
 
 const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** « ESC-1 · limon côté Viewbox, tronçon 3 (0,24 m) » : libellé de la barre d'escalier, tronçon si elle est coupée. */
+function stairSpanLabel(label: string, span: string, length: number, split: boolean): string {
+  const piece = Number(span.split('#').pop());
+  return `${label}${split && Number.isFinite(piece) ? `, tronçon ${piece + 1}` : ''} (${fmtNumber(length / 1e3, 2)} m)`;
+}
 
 const SIDE_LABEL: Record<string, string> = { v0: 'grand côté 1', v1: 'grand côté 2', u0: 'petit côté 1', u1: 'petit côté 2' };
 
@@ -198,6 +214,17 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     const input = { key: item.id, label: item.label, section: sec.section, material: mat, curves, length: m.spanLength, stations: spanStations(result, span), combination: combo.id };
     const r = mat.family === 'timber' ? checkTimberSpan(input, combo, detail) : checkSpan(input, ctx.ec3, detail);
     return { eta: r.eta, governing: r.governing, combo: combo.id, blocked: r.blocked, records: r.records };
+  }
+  if (item.kind === 'stairjack') {
+    const R = result.reactions[item.support!].R;
+    const j = checkLayherJack(ctx.connections, { N: R[1], H: Math.hypot(R[0], R[2]) }, item.label, combo.id, ctx.ec3.gammaM1);
+    return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
+  }
+  if (item.kind === 'stairhook' || item.kind === 'stairlink') {
+    // accroche : nœud i du prolongement (rotule) ; attache : extrémité côté palier
+    const f = st('first');
+    const j = item.kind === 'stairhook' ? checkStairHook(ctx.connections, f, item.label, combo.id) : checkStairLink(ctx.connections, f, item.label, combo.id);
+    return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   if (item.kind === 'jack') {
     const R = result.reactions[item.support!].R;
@@ -413,7 +440,7 @@ export function groundEstimate(
     for (const b of pts) {
       if (b <= a) continue;
       const [ma, mb] = [s.supportMeta[a], s.supportMeta[b]];
-      if ((ma.kind === 'middle') !== (mb.kind === 'middle')) continue;
+      if ((ma.kind === 'middle') !== (mb.kind === 'middle') || (ma.kind === 'stair') !== (mb.kind === 'stair')) continue;
       const [pa, pb] = [pos(a), pos(b)];
       if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) <= tolerance) parent[find(a)] = find(b);
     }
@@ -427,8 +454,9 @@ export function groundEstimate(
   const list = [...clusters.values()].sort((a, b) => Math.round(center(a)[1] / 500) - Math.round(center(b)[1] / 500) || center(a)[0] - center(b)[0]);
   const groups: SupportGroup[] = list.map((c, k) => {
     const middle = s.supportMeta[c[0]].kind === 'middle';
+    const stair = s.supportMeta[c[0]].kind === 'stair';
     const jack = s.supportMeta[c[0]].jack;
-    return { id: `${middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle ? 0 : c.length, middle, jack, moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
+    return { id: `${stair ? 'E' : middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle || stair ? 0 : c.length, middle, jack, ...(stair ? { stair } : {}), moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
   });
   const sum = (c: number[], id: string) => {
     const R = summary.reactions[id];

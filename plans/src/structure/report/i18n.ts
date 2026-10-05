@@ -189,6 +189,9 @@ export interface Labels {
   boltsText: string;
   jacksTitle: string;
   jacksText: string;
+  stairTitle: string;
+  stairText: (ids: string, modules: string) => string;
+  stairClad: string;
   ground: string;
   groundIntro: (source: string) => string;
   /** public limité pour le sol (personnes, kg par personne, charge totale en kN) */
@@ -498,6 +501,10 @@ const FR: Labels = {
   vlinksText: 'Plats de liaison 100 × 10 mm, 2 × M20-8.8 (4 par grand côté et 2 par petit côté, sur les faces extérieures seulement) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; soulèvement repris par les boulons M20 des plats (TRd = 94,1 kN par plat) ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
   bolts: 'Liaisons horizontales (boulons M16 × 150)',
   boltsText: 'Boulons M16 × 150 classe 10.9 passés dans les écrous M20 soudés de l’âme des UNP (passage 18 mm, tw = 9 mm), plancher et toiture : cisaillement, pression diamétrale, poinçonnement, traction et interaction selon DIN EN 1993-1-8.',
+  stairTitle: 'Escalier extérieur',
+  stairText: (ids, mods) =>
+    `${ids} : kit escalier Viewbox avec palier (modèle de statico 24-0569 § 3.2), palier boulonné au côté de ${mods}. Limons et cadre de palier en U plié 200 × 80 × 5 (S235), limons accrochés au palier (2 crochets en plat 80 × 5 + 2 × M12-8.8), palier attaché à la Viewbox par 2 × M20-8.8 (capot plié renforcé par un U 100 × 8), montants pendulaires QHP 80 × 3 sur vérins Layher 60 (sortie ≤ 30 cm), pieds de limon posés au sol. Marches et platelage 0,42 kN/m², exploitation et H = V / 10 en service (escalier évacué hors service), vent sur les limons et le cadre du palier (cf = 1,3, escalier non habillé). Marches : barres équivalentes sans masse entre les limons, comme le modèle SCIA.`,
+  stairClad: 'Escalier calculé non habillé : s’il est habillé (bâches, panneaux), le vent et le lest de ses pieds sont à vérifier (statico : 250 kg par pied d’escalier).',
   jacksTitle: 'Pieds à vérin (tiges Tr 24 × 5)',
   jacksText:
     'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
@@ -815,6 +822,10 @@ const DE: Labels = {
   vlinksText: 'Verbindungslaschen 100 × 10 mm, 2 × M20-8.8 (4 je Längsseite und 2 je Stirnseite, nur an den Außenseiten): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; Abheben über die M20 der Laschen (TRd = 94,1 kN je Lasche); vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
   bolts: 'Nachweis der horizontalen Verschraubungen',
   boltsText: 'M16 × 150, Festigkeitsklasse 10.9, durch die angeschweißten M20-Muttern im Steg der UNP (Durchgang 18 mm, tw = 9 mm), Boden und Dach: Abscheren, Lochleibung, Durchstanzen, Zug und Interaktion nach DIN EN 1993-1-8.',
+  stairTitle: 'Außentreppe',
+  stairText: (ids, mods) =>
+    `${ids}: Viewbox-Treppenbausatz mit Podest (Modell aus statico 24-0569 § 3.2), Podest seitlich an ${mods} verschraubt. Treppenwangen und Podestrahmen aus gekantetem U 200 × 80 × 5 (S235), Wangen am Podest eingehängt (2 Haken aus Flachstahl 80 × 5 + 2 × M12-8.8), Podest mit 2 × M20-8.8 an der Viewbox angeschlossen (Spaltabdeckung mit U 100 × 8 verstärkt), Pendelstützen QHP 80 × 3 auf Layher Fußspindeln 60 (Auszug ≤ 30 cm), Wangenfüße auf dem Boden. Treppenstufen und Belag 0,42 kN/m², Verkehrslast und H = V / 10 im Betrieb (Treppe außer Betrieb geräumt), Wind auf Wangen und Podestrahmen (cf = 1,3, Treppe unverkleidet). Stufen als masselose Ersatzstäbe zwischen den Wangen, wie im SCIA-Modell.`,
+  stairClad: 'Treppe unverkleidet berechnet: bei Verkleidung (Planen, Paneele) sind Wind und Ballastierung der Treppenfüße nachzuweisen (statico: 250 kg je Treppenfuß).',
   jacksTitle: 'Nachweis der Spindelfüße (Tr 24 × 5)',
   jacksText:
     'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
@@ -1132,6 +1143,10 @@ const EN: Labels = {
   vlinksText: 'Link plates 100 × 10 mm, 2 × M20-8.8 (4 per long side and 2 per short side, on the outer faces only): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; uplift carried by the M20 bolts of the plates (TRd = 94.1 kN per plate); vertical column-to-column contact NRd = 176 kN (cover plate weld).',
   bolts: 'Horizontal connections (M16 × 150 bolts)',
   boltsText: 'M16 × 150 grade 10.9 bolts through the welded M20 nuts of the UPN edge beam webs (18 mm passage, tw = 9 mm), floor and roof: shear, bearing, punching, tension and interaction to DIN EN 1993-1-8.',
+  stairTitle: 'External stair',
+  stairText: (ids, mods) =>
+    `${ids}: Viewbox stair kit with landing (model of statico 24-0569 § 3.2), landing bolted to the side of ${mods}. Stringers and landing frame in cold-formed U 200 × 80 × 5 (S235), stringers hooked onto the landing (2 hooks in flat 80 × 5 + 2 × M12-8.8), landing connected to the Viewbox by 2 × M20-8.8 (folded cover reinforced by a U 100 × 8), pendulum posts SHS 80 × 3 on Layher base jacks 60 (extension ≤ 30 cm), stringer feet resting on the ground. Treads and decking 0.42 kN/m², imposed load and H = V / 10 in service (stair evacuated out of service), wind on the stringers and the landing frame (cf = 1.3, stair not clad). Treads: massless equivalent bars between the stringers, as in the SCIA model.`,
+  stairClad: 'Stair calculated without cladding: if it is clad (tarpaulins, panels), the wind and the ballast of its feet are to be verified (statico: 250 kg per stair foot).',
   jacksTitle: 'Jack feet (Tr 24 × 5 rods)',
   jacksText:
     'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',

@@ -9,7 +9,8 @@ import { computeCalage } from '../../src/structure/core/calage';
 import type { CalageResult } from '../../src/structure/core/calage';
 import { ESTIMATE_DEFAULTS, gridModules } from '../../src/structure/core/estimate';
 import { C24_BEAMS } from '../../src/structure/core/ground';
-import { SEED } from '../../src/structure/library/seed';
+import { SEED, STAIR_KITS } from '../../src/structure/library/seed';
+import { placeStair } from '../../src/structure/scene/studyModel';
 import type { ReportInput } from '../../src/structure/report/build';
 import { buildReport, comboFormula, slidingBallast } from '../../src/structure/report/build';
 import { paginate } from '../../src/structure/report/doc';
@@ -238,6 +239,46 @@ describe('rapport de l’étude structure', () => {
       const context = found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)));
       expect(context).toEqual([]);
       expect(all.split('\n').filter((l) => /(^|[^\p{L}])(vérins?|Vérin|sortie|tiges?)([^\p{L}]|$)/u.test(l))).toEqual([]);
+    }
+  }, 180000);
+
+  it('escalier extérieur : placé contre la Viewbox du dessus, calculé, chapitre du rapport et pieds au calage, traduit sans mot français', async () => {
+    const placed = placeStair([-1080, -68, -9, 5900, 4335, 1581], 'ESC-1', 'Escalier test', inputs.modules, STAIR_KITS[0], () => ({ low: 600, high: 2800 }));
+    expect(placed.reason).toBeUndefined();
+    expect(placed.stair).toMatchObject({ module: 'VBX-03', side: 'v0', level: 'floor', run: [-1, 0, 0], landingEnd: -5900 });
+    const study: StudyInputs = { ...inputs, stairs: [placed.stair!] };
+    const sr = await runStudy(study, createInlineStudyRunner());
+    expect(sr.summary.errors).toEqual([]);
+    expect(sr.structure.errors).toEqual([]);
+    // palier attaché aux perçages x = 5,69 / 3,61 m du grand côté de VBX-03
+    const links = sr.structure.stairs[0].links.map((k) => sr.structure.fem.nodes[sr.structure.fem.members[k].j]);
+    expect(links.map((n) => Math.round(n.x)).sort((a, b) => a - b)).toEqual([3610, 5690]);
+    expect(sr.loads.cases.find((c) => c.id === 'G6')!.resultant[1]).toBeLessThan(0);
+    const fam = (re: RegExp) => sr.verdict.families.find((f) => re.test(f.family));
+    for (const re of [/^Limon/, /^Cadre de palier/, /^Montant d’escalier/, /accroche des limons/, /attache du palier/, /vérins Layher/]) expect(fam(re)?.eta).toBeGreaterThan(0);
+    expect(sr.ground.groups.filter((g) => g.stair)).toHaveLength(8);
+    const sc = computeCalage({ ...calageInputFor(), reactions: sr.ground });
+    expect(sc.types.some((t) => t.typeKey === 'E' && t.a1 === 150)).toBe(true);
+    const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Sol légèrement déformable (prairie carrossable)', 'Escalier test'];
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const r = buildReport({ ...reportInput(lang, 'detailed'), study, run: sr, calage: sc });
+      const all = r.pages
+        .flatMap((p) => texts(p.svg))
+        .map((t) => own.reduce((x, o) => x.split(o).join(''), t))
+        .join('\n');
+      expect(all).not.toMatch(/NaN|undefined|Infinity|\[object/);
+      if (lang === 'fr') {
+        expect(all).toContain('Escalier extérieur');
+        expect(all).toContain('Vérin Layher 60');
+        expect(all).toContain('pied d’escalier');
+        continue;
+      }
+      expect(all).toContain(lang === 'de' ? 'Außentreppe' : 'External stair');
+      const markers = FRENCH_MARKERS.filter((w) => !(lang === 'de' && ['des', 'service'].includes(w)) && !(lang === 'en' && ['service', 'charge'].includes(w)));
+      const found = markers.filter((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(all));
+      const context = found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)));
+      expect(context).toEqual([]);
+      expect(all.split('\n').filter((l) => /(^|[^\p{L}])(limons?|palier|escalier|montants?|crochets?)([^\p{L}]|$)/iu.test(l))).toEqual([]);
     }
   }, 180000);
 

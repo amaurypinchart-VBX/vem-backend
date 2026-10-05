@@ -391,16 +391,20 @@ function checkSpanWith(inp: SpanInput, opt: Ec3Options, staticoMethod: boolean, 
   // ─── section, à chaque station ───
   let secEta = 0;
   let secWhere: { f: StationForces; key: string; text: string } | null = null;
+  let tWhere: { f: StationForces; tau: number; eta: number } | null = null;
+  let vWhere: { f: StationForces; eta: number; red: number; axis: 'y' | 'z' } | null = null;
   const bump = (key: string, eta: number) => (parts[key] = Math.max(parts[key] ?? 0, eta));
   for (const f of stations) {
     const n = Math.abs(f.N) / Npl;
     const tau = torsionStress(s, f.T);
     const etaT = tau / tauRd;
     bump('T', etaT);
+    if (!tWhere || etaT > tWhere.eta) tWhere = { f, tau, eta: etaT };
     // torsion négligée sous 5 % (comme SCIA), sinon elle réduit la résistance à l'effort tranchant (6.26–6.28)
     const redT = etaT < 0.05 ? 1 : closed(s) ? Math.max(0, 1 - etaT) : Math.max(0, Math.sqrt(Math.max(0, 1 - tau / (1.25 * tauRd))));
     const vy = Math.abs(f.Vy) / (Vply * redT);
     const vz = Math.abs(f.Vz) / (Vplz * redT);
+    if (!vWhere || Math.max(vy, vz) > vWhere.eta) vWhere = { f, eta: Math.max(vy, vz), red: redT, axis: vz >= vy ? 'z' : 'y' };
     bump('Vy', vy);
     bump('Vz', vz);
     // effort tranchant > 50 % : limite d'élasticité réduite (1 − ρ) sur le moment correspondant
@@ -563,5 +567,31 @@ function checkSpanWith(inp: SpanInput, opt: Ec3Options, staticoMethod: boolean, 
     ['T', parts.T ?? 0],
   ];
   const [governing, eta] = cands.reduce((a, b) => (b[1] > a[1] ? b : a));
+  // torsion ou effort tranchant déterminants : leur propre formule (sinon le rapport n'imprimerait que la flexion)
+  if (detail && governing === 'T' && tWhere) {
+    const f = tWhere.f;
+    records.unshift({
+      key: `${inp.key}.torsion`,
+      title: `${inp.label} — torsion (6.23)`,
+      clause: 'DIN EN 1993-1-1 6.2.7 (6.23)',
+      formula: closed(s) ? 'τt,Ed = T / (2 · Am · t) ≤ τRd = fy / (√3 · γM0)' : 'τt,Ed = T · tmax / It ≤ τRd = fy / (√3 · γM0)',
+      withValues: `${designation(s.name)}, It = ${f2(s.It / 1e4)} cm⁴ ; x = ${f2(f.x / 1e3, 3)} m : T = ${kNm(f.T)} ; τt,Ed = ${f2(tWhere.tau / 10)} kN/cm² ; τRd = ${f2(tauRd / 10)} kN/cm² ; ${f2(tWhere.tau / 10)} / ${f2(tauRd / 10)} = ${f2(tWhere.eta)}`,
+      eta: tWhere.eta,
+      combination: inp.combination,
+    });
+  } else if (detail && (governing === 'Vz' || governing === 'Vy') && vWhere) {
+    const f = vWhere.f;
+    const V = vWhere.axis === 'z' ? f.Vz : f.Vy;
+    const Vpl = vWhere.axis === 'z' ? Vplz : Vply;
+    records.unshift({
+      key: `${inp.key}.shear`,
+      title: `${inp.label} — effort tranchant (6.17)`,
+      clause: 'DIN EN 1993-1-1 6.2.6 (6.17), 6.2.7 (6.26)',
+      formula: 'V,Ed / (k · Vpl,Rd) ≤ 1, k = réduction due à la torsion (1 si τt,Ed < 5 % τRd)',
+      withValues: `x = ${f2(f.x / 1e3, 3)} m : V${vWhere.axis},Ed = ${kN(V)} ; Vpl,${vWhere.axis},Rd = ${kN(Vpl)}, k = ${f2(vWhere.red)} ; ${f2(vWhere.eta)}`,
+      eta: vWhere.eta,
+      combination: inp.combination,
+    });
+  }
   return { eta, governing, cls, records, parts, method };
 }

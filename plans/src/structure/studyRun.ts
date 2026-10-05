@@ -1,7 +1,7 @@
 // Enchaînement du calcul complet d'une étude (étape « 3. Calcul ») : assemblage du modèle, cas de charge,
 // combinaisons, calcul aux éléments finis + vérifications (Workers), stabilité, verdict, réactions pour le calage.
 // Sans React : utilisé par la page et par les tests.
-import type { BracingSpec, PlacedModule, RaiseSpec, StructuralModel } from './core/assemble';
+import type { BracingSpec, PlacedModule, PlacedStair, RaiseSpec, StructuralModel } from './core/assemble';
 import { assembleStructure } from './core/assemble';
 import type { Ec3Method } from './core/checks/ec3';
 import { EC3_DEFAULTS } from './core/checks/ec3';
@@ -56,6 +56,8 @@ export interface StudyInputs {
   /** modifications de l'étude hors modèle SketchUp : contreventements ajoutés, surélévation */
   bracings?: BracingSpec[];
   raise?: RaiseSpec | null;
+  /** escaliers extérieurs du modèle (kit avec palier) */
+  stairs?: PlacedStair[];
   /** combinaisons à calculer (défaut : toutes) — recherche rapide du lest sur la stabilité seule */
   classes?: Array<'ULS' | 'STAB' | 'SLS'>;
 }
@@ -89,9 +91,10 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     roofBoltsUnderStack: !o.calibration,
     bracings: inp.bracings,
     raise: inp.raise,
+    stairs: inp.stairs,
   });
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
-  const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems });
+  const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems }, inp.sections);
   const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => !inp.classes || inp.classes.includes(c.cls));
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
   const context = {
@@ -149,5 +152,5 @@ export function inputKey(inp: StudyInputs): string {
     .filter((e) => e.kind === 'section' || e.kind === 'connection' || e.kind === 'module_type')
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}`)}`)
     .join('|');
-  return JSON.stringify([mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.classes ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-')).map((k) => JSON.stringify(inp.sections.get(k)!.section))]);
+  return JSON.stringify([mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.classes ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-')).map((k) => JSON.stringify(inp.sections.get(k)!.section))]);
 }

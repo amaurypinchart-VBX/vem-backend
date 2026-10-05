@@ -38,6 +38,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
     modules: sceneModel.modules,
     edgeItems: [...sceneModel.edgeItems, ...extra],
     pointItems: sceneModel.pointItems,
+    stairs: sceneModel.stairs,
     library,
     sections: sectionMap(library),
     loads: {

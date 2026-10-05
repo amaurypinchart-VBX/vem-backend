@@ -1,9 +1,10 @@
 // Calage S8 sur le vrai modèle SketchUp du projet statico 24-0569 « Viewbox – Qatar » (export viewbox_prep déposé dans
 // test-models/, non versionné, ou VEM_MODELS_DIR) : reconnaissance → modèle de l'étude → calcul complet, avec les
 // hypothèses de la note statico (murs 0,50 / vitrages 1,75 / garde-corps 0,10 kN/m, vent 0,41 kN/m² en et hors service,
-// appuis aux angles sans vérins). Écarts connus avec la note : escalier + palier absents du calcul (ignorés), pression
-// intérieure non appliquée à l'ensemble, position des murs seulement sur les plans statico, et un boulon B / C de plus
-// en y = 2,71 m (perçages alignés) qui soulage la rive de la Viewbox perpendiculaire. Ignoré sans le fichier.
+// appuis aux angles sans vérins), escalier ignoré puis calculé (kit escalier + palier, gabarit relevé sur le modèle SCIA).
+// Écarts connus avec la note : pression intérieure non appliquée à l'ensemble, position des murs seulement sur les plans
+// statico, et un boulon B / C de plus en y = 2,71 m (perçages alignés) qui soulage la rive de la Viewbox perpendiculaire.
+// Ignoré sans le fichier.
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ import { createInlineStudyRunner } from '../../src/structure/worker/study';
 const dir = process.env.VEM_MODELS_DIR ?? join(__dirname, '..', '..', '..', 'test-models');
 const file = join(dir, 'Qatar_Airways_2024_VEM_20261001-1529.zip');
 
-async function qatar(calibration: boolean) {
+async function qatar(calibration: boolean, stair: 'ignored' | 'computed' = 'ignored') {
   const buf = readFileSync(file);
   const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   const res = await ingest({ fileName: 'qatar.zip', data, sha256: 'local', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
@@ -39,7 +40,7 @@ async function qatar(calibration: boolean) {
   const first = recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments: {}, accessoryCategories });
   // l'escalier n'est pas encore modélisé : ignoré (comme l'a fait l'utilisateur), le reste = propositions par catégorie
   const assignments: Assignments = {};
-  for (const t of first.types) if (t.assignment?.nature === 'stair') assignments[t.key] = { scope: 'model', at: '', assignment: { role: 'ignored', nature: 'decor' } };
+  if (stair === 'ignored') for (const t of first.types) if (t.assignment?.nature === 'stair') assignments[t.key] = { scope: 'model', at: '', assignment: { role: 'ignored', nature: 'decor' } };
   const recognition = recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories });
   const sceneModel = studyModelFromScene(scene, recognition, library);
   const hyp = { ...DEFAULT_HYP, windIn: 0.41, windOut: 0.41 };
@@ -72,6 +73,36 @@ describe.skipIf(!existsSync(file))('calage statico 24-0569 sur le modèle Sketch
     expect(run.stability.sliding.muReq).toBeGreaterThan(0.2);
     expect(run.stability.sliding.muReq).toBeLessThan(0.3);
     expect(run.verdict.reasons).toEqual([]);
+  }, 600_000);
+
+  it('escalier calculé : charges, efforts des montants, des attaches et des pieds proches de statico 24-0569 § 3.2 / 3.10.3', async () => {
+    const { sceneModel, run } = await qatar(false, 'computed');
+    expect(sceneModel.stairs).toHaveLength(1);
+    expect(sceneModel.stairs[0]).toMatchObject({ module: 'VBX-06', level: 'floor' });
+    expect(run.summary.errors).toEqual([]);
+    const R = (id: string) => run.loads.cases.find((c) => c.id === id)!.resultant;
+    // exploitation totale avec escalier et palier : 337,84 kN chez statico ; marches G6 3,58 kN
+    expect(Math.abs(-R('Q1.1')[1] / 1e3 / 337.84 - 1)).toBeLessThan(0.02);
+    expect(Math.abs(-R('G6')[1] / 1e3 / 3.58 - 1)).toBeLessThan(0.15);
+    // ΣRz CO13 sur les 12 angles des Viewbox (statico 618,6 kN, l'escalier porte le reste)
+    const vbx = run.structure.supportMeta.map((m, k) => (m.kind === 'stair' ? -1 : k)).filter((k) => k >= 0);
+    const co13 = run.summary.reactions.CO13!;
+    expect(Math.abs(vbx.reduce((a, k) => a + co13[k].R[1], 0) / 1e3 / 618.6 - 1)).toBeLessThan(0.05);
+    const state = (re: RegExp) => run.index.items.map((it, t) => ({ it, st: run.summary.states[t]! })).filter(({ it }) => re.test(it.label));
+    // montants intermédiaires : NEd 11,71 kN chez statico ; pieds d'escalier Rz,Ed 11,71 kN (§ 3.10.3)
+    const mid = state(/pied de montant intermédiaire/).map(({ st }) => Number(/N = ([\d,]+) kN/.exec(st.records.map((r) => r.withValues).join(' '))?.[1].replace(',', '.')));
+    expect(Math.max(...mid)).toBeGreaterThan(9.5);
+    expect(Math.max(...mid)).toBeLessThan(13.5);
+    const stairGroups = run.ground.reactions.filter((r) => r.group.stair);
+    expect(stairGroups).toHaveLength(8);
+    expect(Math.max(...stairGroups.map((r) => r.REd)) / 1e3).toBeGreaterThan(9.5);
+    expect(Math.max(...stairGroups.map((r) => r.REd)) / 1e3).toBeLessThan(13.5);
+    // accroches (Vz,Ed 1,62 ≤ 5,88 kN), attaches du palier (FEd 7,75 ≤ 10,9 kN), limons (EC3 0,93)
+    for (const { st } of state(/accroche du limon/)) expect(st.eta).toBeLessThan(0.5);
+    for (const { st } of state(/attache du palier/)) expect(st.eta).toBeLessThan(1);
+    const stringer = run.verdict.families.find((f) => /^Limon/.test(f.family))!;
+    expect(stringer.eta).toBeGreaterThan(0.6);
+    expect(stringer.eta).toBeLessThan(1.05);
   }, 600_000);
 
   it('option « calage statico » : toutes les combinaisons convergent (contacts en effort normal seul, comme SCIA)', async () => {

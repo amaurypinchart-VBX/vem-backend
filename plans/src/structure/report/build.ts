@@ -102,9 +102,10 @@ export function slidingBallast(run: StudyRun, mu: number): number {
 
 /** Formule d'une combinaison avec les coefficients : « 1,10 ΣG + 1,35 Q1.1 ». */
 export function comboFormula(c: Combination, lang: Lang, cases?: ReadonlySet<string>): string {
-  // lest GB : écrit seulement s'il y en a dans l'étude
-  const G = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', 'G7', ...(cases?.has('GB') ? ['GB'] : [])];
-  const f = new Map(c.factors.filter(([id]) => id !== 'GB' || cases?.has('GB')));
+  // lest GB, marches d'escalier G6 : écrits seulement s'il y en a dans l'étude
+  const optional = ['G6', 'GB'];
+  const G = ['G1', 'Gc', 'G2', 'G3', 'G4', 'G5', ...(cases?.has('G6') ? ['G6'] : []), 'G7', ...(cases?.has('GB') ? ['GB'] : [])];
+  const f = new Map(c.factors.filter(([id]) => !optional.includes(id) || cases?.has(id)));
   const gs = G.map((g) => f.get(g) ?? 0);
   const parts: string[] = [];
   if (gs.every((x) => x === gs[0])) parts.push(`${num(lang, gs[0])} ΣG`);
@@ -272,6 +273,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       L.notCoveredItems.cladding,
       L.notCoveredItems.logo,
       L.notCoveredItems.railings,
+      ...((run.structure.stairs ?? []).length ? [L.notCoveredItems.steps, L.stairClad] : []),
       ...study.blocking.map((b) => `${L.notCoveredItems.blocking} : ${E(b)}`),
       ...(inp.ignoredParts ?? []).map((p) => L.notCoveredItems.ignored(p.label, p.count)),
     ],
@@ -432,12 +434,15 @@ export function buildReport(inp: ReportInput): ReportOutput {
   if (run.plywood.blocked) blocks.push({ t: 'para', text: E(run.plywood.blocked), color: VERDICT_COLORS.incomplete });
   for (const r of run.plywood.records) blocks.push(rec(r));
   // 3.2 barres
-  const memberFamilies = run.verdict.families.filter((f) => idx.items[f.item].kind === 'member');
+  // escaliers : chapitre à part
+  const stairIds = new Set((s.stairs ?? []).map((x) => x.id));
+  const inStair = (t: number) => stairIds.has(idx.items[t].module);
+  const memberFamilies = run.verdict.families.filter((f) => idx.items[f.item].kind === 'member' && !inStair(f.item));
   if (memberFamilies.length) {
     h2(L.viewbox);
     const used = new Map<string, { section: string; material: string; family: string }>();
     s.meta.forEach((m) => {
-      if (m.massless) return;
+      if (m.massless || stairIds.has(m.module)) return;
       const k = `${m.family}|${m.section}|${m.material}`;
       if (!used.has(k)) used.set(k, { section: study.sections.get(m.section)?.section.name ?? m.section, material: materialByKey(m.material)?.name ?? m.material, family: m.family });
     });
@@ -459,7 +464,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     blocks.push({ t: 'figure', h: Math.ceil(levels / 3) * Math.min(55, planHeight(mods, 150 / Math.min(levels, 3), 55) + 6), svg: etaLevelsSvg(mods, byModule, L.levelName, (v) => N(v)), caption: `${L.figureEtaMembers} — ${L.etaLegend}` });
     blocks.push({ t: 'eta', eta: Math.max(...memberFamilies.map((f) => f.eta)) });
     blocks.push({ t: 'para', text: L.mostLoaded, bold: true, after: 0.6 });
-    const top = run.verdict.ranking.filter((t) => idx.items[t].kind === 'member').slice(0, inp.variant === 'detailed' ? 25 : 12);
+    const top = run.verdict.ranking.filter((t) => idx.items[t].kind === 'member' && !inStair(t)).slice(0, inp.variant === 'detailed' ? 25 : 12);
     blocks.push({
       t: 'table',
       cols: [
@@ -508,6 +513,50 @@ export function buildReport(inp: ReportInput): ReportOutput {
   joint('vlink', L.vlinks, L.vlinksText);
   joint('bolt', L.bolts, L.boltsText);
   joint('jack', L.jacksTitle, L.jacksText);
+  // 3.x escaliers extérieurs : barres (EC3), accroches, attaches du palier, vérins Layher
+  if (stairIds.size) {
+    h2(L.stairTitle);
+    const stairs = s.stairs ?? [];
+    const attached = [...new Set(stairs.map((x) => s.meta[x.links[0]]?.label.split(' / ')[1]?.split(' · ')[0]).filter(Boolean))];
+    blocks.push({ t: 'para', text: L.stairText(stairs.map((x) => x.id).join(', '), attached.join(', ') || '—') });
+    const used = new Map<string, { section: string; material: string; family: string }>();
+    s.meta.forEach((m) => {
+      if (m.massless || !stairIds.has(m.module)) return;
+      const k = `${m.family}|${m.section}|${m.material}`;
+      if (!used.has(k)) used.set(k, { section: study.sections.get(m.section)?.section.name ?? m.section, material: materialByKey(m.material)?.name ?? m.material, family: m.family });
+    });
+    blocks.push({
+      t: 'table',
+      cols: [
+        { title: L.colRole, w: 40 },
+        { title: L.colSection, w: 40 },
+        { title: L.colMaterial, w: 20 },
+      ],
+      rows: [...used.values()].map((u) => [E(capitalize(FAMILY_ALL[u.family] ?? u.family)), E(designation(u.section)), E(designation(u.material))]),
+    });
+    const fams = run.verdict.families.filter((f) => inStair(f.item));
+    const items = run.verdict.ranking.filter((t) => inStair(t)).slice(0, inp.variant === 'detailed' ? 30 : 14);
+    blocks.push({
+      t: 'table',
+      cols: [
+        { title: L.colElement, w: 56 },
+        { title: L.colEta, w: 13, align: 'end' },
+        { title: L.colCombo, w: 11 },
+        { title: L.colCheck, w: 22 },
+      ],
+      rows: items.map((t) => [E(idx.items[t].label), etaCell(st[t]?.eta, !!st[t]?.blocked), st[t]?.combo ?? '—', E(governingLabel(st[t]?.governing))]),
+    });
+    if (fams.length) {
+      const worst = fams.reduce((a, f) => ((st[f.item]?.eta ?? Infinity) > (st[a.item]?.eta ?? Infinity) ? f : a));
+      const ws = st[worst.item];
+      blocks.push({ t: 'eta', eta: ws?.blocked ? undefined : ws?.eta, label: ws?.blocked ? L.verdict.incomplete : undefined, verdict: ws?.blocked || !ws ? 'incomplete' : undefined });
+    }
+    for (const f of fams) {
+      const state = st[f.item];
+      if (state?.blocked) blocks.push({ t: 'para', text: E(state.blocked), color: VERDICT_COLORS.incomplete });
+      for (const r of state?.records ?? []) blocks.push(rec(r));
+    }
+  }
   // 3.x sol et calage
   h2(L.ground);
   blocks.push({ t: 'para', text: L.groundIntro(study.sls ? L.groundSourceSls : L.groundSourceStatico) });
@@ -854,6 +903,10 @@ function annex(blocks: Block[], inp: ReportInput, L: Labels, E: (s: string) => s
 
 const FAMILY_ALL: Record<string, string> = {
   ...FAMILY_FR,
+  'stair-stringer': 'limon d’escalier',
+  'stair-landing': 'cadre de palier',
+  'stair-post': 'montant d’escalier',
+  'stair-head': 'attache de montant de palier',
   'corner-link': 'liaison verticale d’angle',
   'vertical-contact': 'contact vertical',
   bolt: 'boulon horizontal',
