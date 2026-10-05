@@ -49,6 +49,8 @@ export interface LayerResult {
   /** emprise efficace sous la couche (mm) : toute la plaque si elle est assez épaisse */
   footprint: [number, number];
   full: boolean;
+  /** plaque à fleur : emprise limitée par la position de la charge (pas par l'épaisseur) */
+  eccentric: boolean;
   /** pression uniforme sur toute la plaque : moment du porte-à-faux (N·mm/mm) ; moment résistant de la couche */
   MEdFull: number;
   MRd: number;
@@ -62,16 +64,19 @@ export interface LayerResult {
 /**
  * Emprise efficace d'une couche sous un appui a1 × a2 : pression uniforme sous l'emprise (a1 + λ(l − a1)) × (a2 + λ(w − a2)),
  * porte-à-faux diagonal e = λ · √(((l − a1)/2)² + ((w − a2)/2)²), MEd = Rz,Ed / A · e² / 2 ≤ fm,d · n · t² / 6 : le plus
- * grand λ ≤ 1 (MEd croît avec λ). λ = 1 : méthode statico, toute la plaque répartit.
+ * grand λ ≤ 1 (MEd croît avec λ). λ = 1 : méthode statico, toute la plaque répartit. Plaque posée excentrée (à fleur
+ * de la Viewbox) : `caps` = emprise centrée sur la charge au plus (B' = B − 2 e), la plaque au-delà ne compte pas.
  */
-export function spreadLayer(layer: SpreadLayer, contact: [number, number], REd: number): LayerResult {
+export function spreadLayer(layer: SpreadLayer, contact: [number, number], REd: number, caps: [number, number] = [Infinity, Infinity]): LayerResult {
   const { fmd, fc90d } = layerStrength(layer);
   const [c1, c2] = contact;
+  const l = Math.min(layer.l, Math.max(caps[0], c1));
+  const w = Math.min(layer.w, Math.max(caps[1], c2));
   // plaque plus petite que l'appui dans une direction : pas de porte-à-faux dans cette direction
-  const b1 = Math.min(c1, layer.l);
-  const b2 = Math.min(c2, layer.w);
-  const d1 = Math.max(0, layer.l - c1);
-  const d2 = Math.max(0, layer.w - c2);
+  const b1 = Math.min(c1, l);
+  const b2 = Math.min(c2, w);
+  const d1 = Math.max(0, l - c1);
+  const d2 = Math.max(0, w - c2);
   const at = (lam: number) => {
     const a = b1 + lam * d1;
     const b = b2 + lam * d2;
@@ -97,6 +102,7 @@ export function spreadLayer(layer: SpreadLayer, contact: [number, number], REd: 
     contact,
     footprint: [fp.a, fp.b],
     full: lam === 1,
+    eccentric: l < layer.l || w < layer.w,
     MEdFull: whole.M,
     MRd,
     tFull: fmd === null ? 0 : Math.sqrt((6 * whole.M) / (fmd * layer.n)),
@@ -127,6 +133,9 @@ export interface ChainInput {
   /** plaques de roulage : pression uniforme (N/mm²) sur toute la surface couverte (mm²) */
   roadway?: { mean: number; area: number } | null;
   pointLoadMax?: number;
+  /** plaques à fleur de la Viewbox : emprise efficace maximale (u, v) et distance de la charge au bord (mm) */
+  caps?: [number, number];
+  edgeDist?: [number, number];
 }
 
 export interface ChainResult {
@@ -163,14 +172,23 @@ export function checkChain(inp: ChainInput): ChainResult {
   const results: LayerResult[] = [];
   let etaC90 = 0;
   let etaCapacity = 0;
+  const caps = inp.caps ?? [Infinity, Infinity];
+  const capText = () => {
+    const d = Math.min(...(inp.edgeDist ?? [Infinity, Infinity]));
+    return Number.isFinite(d)
+      ? `à fleur de la Viewbox : charge à ${f(d / 10, 1)} cm du bord, la plaque ne répartit que sur ${f((2 * d) / 10, 0)} cm de large de ce côté (B' = B − 2 e)`
+      : 'plaque excentrée : emprise centrée sur la charge (B\' = B − 2 e)';
+  };
   for (const L of inp.layers) {
-    const r = spreadLayer(L, c, REd);
+    const r = spreadLayer(L, c, REd, caps);
     results.push(r);
     const lab = `${L.n > 1 ? `${L.n} × ` : ''}${L.label}`;
     let note: string | undefined;
+    if (r.eccentric) note = capText();
     if (!r.full) {
-      note = `trop mince pour répartir sur toute la plaque : emprise efficace ${dimsCm(r.footprint)} (il faudrait ${f(r.tFull, 0)} mm par plaque)`;
-      problems.push(`${lab} : ${note}`);
+      const thin = `trop mince pour répartir sur toute la plaque : emprise efficace ${dimsCm(r.footprint)} (il faudrait ${f(r.tFull, 0)} mm par plaque)`;
+      note = note ? `${note} ; ${thin}` : thin;
+      problems.push(`${lab} : ${thin}`);
     }
     if (r.fc90d !== null) {
       const eta = r.sigmaC90 / r.fc90d;
@@ -184,7 +202,10 @@ export function checkChain(inp: ChainInput): ChainResult {
     records.push({
       key: 'spread.layer',
       title: `Répartition par ${lab}`,
-      clause: L.material === 'commercial' ? 'capacité du fabricant, emprise = toute la plaque' : 'méthode statico (porte-à-faux diagonal) ; emprise efficace si la plaque est trop mince',
+      clause:
+        L.material === 'commercial'
+          ? 'capacité du fabricant, emprise = toute la plaque'
+          : `méthode statico (porte-à-faux diagonal) ; emprise efficace si la plaque est trop mince${r.eccentric ? ' ; plaque excentrée : EN 1997-1 annexe D' : ''}`,
       formula:
         L.material === 'commercial'
           ? 'Rz,k ≤ Fadm'
@@ -192,7 +213,7 @@ export function checkChain(inp: ChainInput): ChainResult {
       withValues:
         L.material === 'commercial'
           ? `${kN(Rzk)} ≤ ${kN(L.capacity ?? 0)}`
-          : `appui ${dimsCm(c)} sur ${cm(L.l)} × ${cm(L.w)} cm : MEd = ${f(r.MEdFull / 1e3, 2)} kNcm/cm ; MRd = ${f(r.MRd / 1e3, 2)} kNcm/cm → ${r.full ? 'toute la plaque répartit' : `emprise efficace ${dimsCm(r.footprint)}`}`,
+          : `appui ${dimsCm(c)} sur ${cm(L.l)} × ${cm(L.w)} cm${r.eccentric ? ` (${capText()})` : ''} : MEd = ${f(r.MEdFull / 1e3, 2)} kNcm/cm ; MRd = ${f(r.MRd / 1e3, 2)} kNcm/cm → ${r.full ? (r.eccentric ? `emprise efficace ${dimsCm(r.footprint)}` : 'toute la plaque répartit') : `emprise efficace ${dimsCm(r.footprint)}`}`,
       eta: L.material === 'commercial' ? Rzk / (L.capacity ?? Infinity) : Math.min(1, r.MEdFull / r.MRd),
     });
     steps.push(stepOf(`+ ${lab}`, r.footprint, note));

@@ -138,7 +138,7 @@ describe('choix du calage dans le calcul', () => {
     const r = computeCalage({ ...inp, choices: { byType: { '1': [{ plate: k70, n: 2 }] } } });
     expect(r.types).toHaveLength(1);
     expect(r.types[0].chosen!.kind).toBe('custom');
-    expect(r.types[0].chosen!.summary).toBe('2 × 70 × 70 × 36 mm par angle');
+    expect(r.types[0].chosen!.summary).toBe('2 × 70 × 70 × 36 mm par angle, centré sous l’appui');
     expect(r.materials).toEqual([expect.objectContaining({ label: 'Multiplex bouleau', dims: '700 × 700 × 36 mm', quantity: 8 })]);
     const s = computeCalage({ ...inp, choices: { byType: { '1': [{ plate: k70, n: 2 }] }, bySupport: { P1: [{ plate: k100, n: 1 }] } } });
     expect(s.types.map((t) => t.label)).toEqual(['angle seul', 'angle seul — P1']);

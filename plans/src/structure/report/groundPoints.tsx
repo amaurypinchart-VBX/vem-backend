@@ -7,16 +7,19 @@ import type { Estimate, EstimateModule } from '../core/estimate';
 import type { RoadwayResult } from '../core/roadway';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../core/roadway';
 import { verdictOf } from '../core/records';
-import { fmtNumber } from '../core/units';
 import { FONT_SANS } from '../../sheets/template';
 import { LOGO_COLOR, VIEWBOX_WORDMARK } from '../../sheets/logos';
 import type { SheetInfo } from './groundSheet';
-import { GroundPlan, wrap } from './groundSheet';
+import { GroundPlan, planPlates, wrap } from './groundSheet';
+import type { Lang } from './i18n';
+import { num } from './i18n';
+import { CALAGE_LABELS } from './calageI18n';
+import { translate } from './translate';
+import { layersShort } from './calagePlan';
 
 const W = 210;
 const H = 297;
 const M = 12;
-const n1 = (v: number, d = 1) => fmtNumber(v, d);
 
 /** Teinte d'une emprise selon sa pression rapportée à la portance (vert → orange → rouge). */
 export function pressureFill(eta: number): string {
@@ -27,7 +30,6 @@ export function pressureFill(eta: number): string {
   return '#fecaca';
 }
 
-const VERDICT_TEXT = { ok: 'OK', limit: 'limite', fail: 'dépassé', incomplete: '—' } as const;
 
 export interface GroundPointsInput {
   modules: EstimateModule[];
@@ -38,20 +40,22 @@ export interface GroundPointsInput {
   bearingLabel: string;
   /** vérification de chaque appui avec son calage (colonne « Calage · pression au sol ») */
   checks?: SupportCheck[];
+  lang?: Lang;
 }
 
 const ROW = 2.4 * 1.55;
 
-function Page({ info, page, pages, children }: { info: SheetInfo; page: number; pages: number; children: ReactElement | ReactElement[] }) {
+function Page({ info, page, pages, lang, children }: { info: SheetInfo; page: number; pages: number; lang: Lang; children: ReactElement | ReactElement[] }) {
+  const C = CALAGE_LABELS[lang];
   const logoW = 34;
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={`${W}mm`} height={`${H}mm`} viewBox={`0 0 ${W} ${H}`} fontFamily={FONT_SANS}>
       <rect x={0} y={0} width={W} height={H} fill="#ffffff" />
       <text fontFamily={FONT_SANS} x={W / 2} y={H / 2} fontSize={8} fill="#9ca3af" fillOpacity={0.18} textAnchor="middle" fontWeight={700} transform={`rotate(-55 ${W / 2} ${H / 2})`}>
-        PRÉ-ÉTUDE INTERNE — NON VÉRIFIÉE PAR UN INGÉNIEUR
+        {C.watermark}
       </text>
       <text fontFamily={FONT_SANS} x={M} y={M + 6} fontSize={6} fontWeight={700} fill="#1a021d">
-        PLAN DES APPUIS AU SOL
+        {C.pointsTitle}
       </text>
       <text fontFamily={FONT_SANS} x={M} y={M + 11.5} fontSize={3} fill="#111827">
         {info.project}
@@ -67,7 +71,7 @@ function Page({ info, page, pages, children }: { info: SheetInfo; page: number; 
       {children}
       <line x1={M} x2={W - M} y1={H - 12} y2={H - 12} stroke="#d1d5db" strokeWidth={0.2} />
       <text fontFamily={FONT_SANS} x={M} y={H - 8} fontSize={2.2} fill="#6b7280">
-        VEM · Plans Viewbox · Étude structure — appuis au sol et plaques de roulage (pré-étude, non vérifiée)
+        {C.footer}
       </text>
       <text fontFamily={FONT_SANS} x={W - M} y={H - 8} fontSize={2.2} fill="#6b7280" textAnchor="end">
         {`${page} / ${pages}`}
@@ -77,27 +81,32 @@ function Page({ info, page, pages, children }: { info: SheetInfo; page: number; 
 }
 
 type Col = { title: string; w: number; align?: 'end' };
-const COLS: Col[] = [
-  { title: 'Point', w: 14 },
-  { title: 'Type', w: 26 },
-  { title: 'Viewbox au sol', w: 44 },
-  { title: 'x (m)', w: 17, align: 'end' },
-  { title: 'y (m)', w: 17, align: 'end' },
-  { title: 'Rz,k (kN)', w: 22, align: 'end' },
-  { title: 'Rz,Ed (kN)', w: 22, align: 'end' },
-  { title: 'Rz,k (t)', w: 20, align: 'end' },
-];
-/** avec le calage vérifié de chaque appui */
-const COLS_CALAGE: Col[] = [
-  { title: 'Point', w: 11 },
-  { title: 'Type', w: 22 },
-  { title: 'Viewbox au sol', w: 27 },
-  { title: 'x (m)', w: 13, align: 'end' },
-  { title: 'y (m)', w: 13, align: 'end' },
-  { title: 'Rz,k (kN)', w: 17, align: 'end' },
-  { title: 'Rz,Ed (kN)', w: 18, align: 'end' },
-  { title: '  Calage · pression au sol', w: 65 },
-];
+const colsOf = (lang: Lang, calage: boolean): Col[] => {
+  const C = CALAGE_LABELS[lang].cols;
+  if (!calage)
+    return [
+      { title: C.point, w: 14 },
+      { title: C.type, w: 26 },
+      { title: C.modules, w: 44 },
+      { title: 'x (m)', w: 17, align: 'end' },
+      { title: 'y (m)', w: 17, align: 'end' },
+      { title: 'Rz,k (kN)', w: 22, align: 'end' },
+      { title: 'Rz,Ed (kN)', w: 22, align: 'end' },
+      { title: 'Rz,k (t)', w: 20, align: 'end' },
+    ];
+  // avec le calage vérifié de chaque appui (plaque, éventuellement partagée avec les vérins voisins)
+  return [
+    { title: C.point, w: 10 },
+    { title: C.type, w: 20 },
+    { title: C.modules, w: 24 },
+    { title: 'x (m)', w: 12, align: 'end' },
+    { title: 'y (m)', w: 12, align: 'end' },
+    { title: 'Rz,k (kN)', w: 15, align: 'end' },
+    { title: 'Rz,Ed (kN)', w: 16, align: 'end' },
+    { title: `  ${C.plate}`, w: 12 },
+    { title: `  ${C.calage}`, w: 65 },
+  ];
+};
 
 /** « VBX-01/02/04/05 » : numéros de même préfixe regroupés (colonne étroite). */
 export function compactIds(ids: string[]): string {
@@ -106,15 +115,17 @@ export function compactIds(ids: string[]): string {
   return ids.join(', ');
 }
 
-/** « 2 × 100×100×36 · 61 kN/m² ✔ » */
-function calageCell(c: SupportCheck, roadway: boolean): string {
-  const lay = c.layerList.length ? c.layerList.map((l) => (l.material === 'commercial' ? `${l.n} × ${l.label}` : `${l.n} × ${l.l / 10}×${l.w / 10}×${l.t}`)).join(' + ') : 'sans plaque';
+/** « 2 × 100 × 100 × 36 mm · 61 kN/m² » (▲ = plaque centrée, elle dépasse) */
+function calageCell(c: SupportCheck, roadway: boolean, lang: Lang): string {
+  const C = CALAGE_LABELS[lang];
+  const lay = c.layerList.length ? layersShort(c.layerList) : C.noPlate;
   const q = c.pressure * 1e3;
-  const mark = verdictOf(c.eta) === 'fail' ? ' — DÉPASSÉ' : verdictOf(c.eta) === 'limit' ? ' (limite)' : '';
-  return `  ${lay}${roadway ? ' + roulage' : ''} · ${n1(q, q < 10 ? 1 : 0)} kN/m²${mark}`;
+  const mark = verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : '';
+  const over = c.plan?.placement === 'centered' && c.plan.overhang > 5 ? ' ▲' : '';
+  return `  ${lay}${over}${roadway ? C.roadwaySuffix : ''} · ${num(lang, q, q < 10 ? 1 : 0)} kN/m²${mark}`;
 }
 
-function TableRows({ y, rows, header, cols = COLS }: { y: number; rows: string[][]; header: boolean; cols?: Col[] }) {
+function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; header: boolean; cols: Col[] }) {
   const size = 2.4;
   const out: ReactElement[] = [];
   let cx = M;
@@ -146,20 +157,26 @@ function TableRows({ y, rows, header, cols = COLS }: { y: number; rows: string[]
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, lang = 'fr' }: GroundPointsInput): ReactElement[] {
+  const C = CALAGE_LABELS[lang];
+  const R = C.roadwayRows;
+  const E = (t: string) => translate(lang, t);
+  const n1 = (v: number, d = 1) => num(lang, v, d);
   const o = planOrigin(modules);
   const zoneOf = new Map(roadway.zones.map((z) => [z.module, z]));
   const ground = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
-  const checkOf = new Map((checks ?? []).map((c) => [c.id, c]));
+  // plaque de chaque point : la vérification de l'appui de calage qui le contient (vérins voisins sur une même plaque)
+  const checkOf = new Map((checks ?? []).flatMap((c) => (c.members?.length ? c.members : [c.id]).map((id) => [id, c] as const)));
   const roadwayOn = !!checks?.some((c) => c.steps.some((s) => s.dims === null));
-  const cols = checks?.length ? COLS_CALAGE : COLS;
+  const cols = colsOf(lang, !!checks?.length);
   const rows = estimate.reactions.map((r) => {
     const [x, y] = planCoords(r.group.position, o);
     const ids = r.group.moduleIds.filter((id) => ground.has(id));
     const c = checkOf.get(r.group.id);
-    const last = checks?.length ? (c ? calageCell(c, roadwayOn) : '') : n1(r.Rk / 9.81e3, 2);
     const list = ids.length ? ids : r.group.moduleIds;
-    return [r.group.id, supportType(r), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), n1(r.Rk / 1e3), n1(r.REd / 1e3), last];
+    const head = [r.group.id, E(supportType(r)), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), n1(r.Rk / 1e3), n1(r.REd / 1e3)];
+    if (!checks?.length) return [...head, n1(r.Rk / 9.81e3, 2)];
+    return [...head, c && c.id !== r.group.id ? `  ${c.id}` : '', c ? calageCell(c, roadwayOn, lang) : ''];
   });
   const title = (t: string, y: number) => (
     <text fontFamily={FONT_SANS} x={M} y={y} fontSize={3.4} fontWeight={700} fill="#1a021d">
@@ -169,7 +186,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   // page 1 : plan, plaques de roulage, début du tableau
   const first: ReactElement[] = [];
   let y = 38;
-  first.push(<g key="t1">{title('1. Plan d’implantation des appuis (Rz,k caractéristique)', y)}</g>);
+  first.push(<g key="t1">{title(C.planTitle, y)}</g>);
   // hauteur du cadre selon les proportions de l'installation (installations allongées : plus de place au tableau)
   const pts = modules.flatMap((m) => m.corners);
   const dx = Math.max(1, Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0])));
@@ -187,16 +204,17 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         h={planH}
         text={2.2}
         axes
+        plates={checks?.length ? planPlates(checks) : undefined}
         zoneFill={(m) => (zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
           const z = zoneOf.get(m.id);
-          return z ? [`${n1(kNm2(z.q), 1)} kN/m²`, `${levels} niveau${levels > 1 ? 'x' : ''}`] : [`${levels} niveau${levels > 1 ? 'x' : ''}`];
+          return z ? [`${n1(kNm2(z.q), 1)} kN/m²`, C.levels(levels)] : [C.levels(levels)];
         }}
       />
     </g>,
   );
   y += planH + 5.5;
-  const legend = wrap('Coordonnées depuis le coin bas gauche de l’installation (x vers la droite, y vers le haut, vue de dessus SketchUp). Teinte des emprises : pression sous plaques rapportée à la portance.', 140);
+  const legend = wrap(C.coordsLegend, 140);
   legend.forEach((t, k) =>
     first.push(
       <text fontFamily={FONT_SANS} key={`leg${k}`} x={M} y={y + k * 3} fontSize={2.2} fill="#6b7280">
@@ -205,35 +223,31 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     ),
   );
   y += legend.length * 3 + 3;
-  first.push(<g key="t2">{title('2. Plaques de roulage — répartition uniforme', y)}</g>);
+  first.push(<g key="t2">{title(C.roadwayTitle, y)}</g>);
   y += 5;
-  const v = (eta: number) => VERDICT_TEXT[verdictOf(eta)];
+  const v = (eta: number) => C.verdictText[verdictOf(eta)];
   const lines: Array<[string, string]> = [
-    ['Surface couverte', `${n1(roadway.area / 1e6, 2)} m² (emprise des Viewbox posées au sol)`],
-    ['Charge verticale totale', `${n1(roadway.load / 1e3, 0)} kN (${n1(roadway.load / 9.81e3, 1)} t), combinaison caractéristique la plus lourde`],
-    ['Poids des plaques', roadway.plates > 0 ? `${n1(kNm2(roadway.plates), 2)} kN/m² (${n1(kgm2(roadway.plates), 0)} kg/m²)` : 'non compté'],
-    ['Pression uniforme', `${n1(kNm2(roadway.mean), 2)} kN/m² (${n1(kgm2(roadway.mean), 0)} kg/m²) — portance ${bearingLabel} : η = ${n1(roadway.etaMean, 2)} ${v(roadway.etaMean)}`],
+    [R.area, R.areaValue(n1(roadway.area / 1e6, 2))],
+    [R.load, R.loadValue(n1(roadway.load / 1e3, 0), n1(roadway.load / 9.81e3, 1))],
+    [R.plates, roadway.plates > 0 ? `${n1(kNm2(roadway.plates), 2)} kN/m² (${n1(kgm2(roadway.plates), 0)} kg/m²)` : R.notCounted],
+    [R.mean, `${n1(kNm2(roadway.mean), 2)} kN/m² (${n1(kgm2(roadway.mean), 0)} kg/m²) — ${R.bearing} ${bearingLabel} : η = ${n1(roadway.etaMean, 2)} ${v(roadway.etaMean)}`],
   ];
   if (roadway.max)
-    lines.push([
-      'Emprise la plus chargée',
-      `${roadway.max.stack.join(' + ')} : ${n1(kNm2(roadway.max.q), 2)} kN/m² (${n1(kgm2(roadway.max.q), 0)} kg/m²) — η = ${n1(roadway.etaMax, 2)} ${v(roadway.etaMax)}`,
-    ]);
+    lines.push([R.worst, `${roadway.max.stack.join(' + ')} : ${n1(kNm2(roadway.max.q), 2)} kN/m² (${n1(kgm2(roadway.max.q), 0)} kg/m²) — η = ${n1(roadway.etaMax, 2)} ${v(roadway.etaMax)}`]);
   lines.forEach(([k, t], i) =>
     first.push(
       <g key={`r${i}`}>
         <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={2.6} fill="#6b7280">
           {k}
         </text>
-        <text fontFamily={FONT_SANS} x={M + 42} y={y + i * 3.6} fontSize={2.6} fill="#111827" fontWeight={k === 'Pression uniforme' ? 700 : undefined}>
+        <text fontFamily={FONT_SANS} x={M + 42} y={y + i * 3.6} fontSize={2.6} fill="#111827" fontWeight={k === R.mean ? 700 : undefined}>
           {t}
         </text>
       </g>,
     ),
   );
   y += lines.length * 3.6 + 1;
-  const note =
-    'Répartition uniforme : plaques assez rigides, jointives et bien posées sur toute la surface ; si les plaques ne répartissent que sous chaque Viewbox, retenir l’emprise la plus chargée. La pression locale sous chaque platine et la flexion des plaques ne sont pas vérifiées ici.';
+  const note = C.roadwayNote;
   for (const [k, line] of wrap(note, 130).entries()) {
     first.push(
       <text fontFamily={FONT_SANS} key={`n${k}`} x={M} y={y + k * 3.2} fontSize={2.3} fill="#374151">
@@ -242,7 +256,22 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     );
   }
   y += wrap(note, 130).length * 3.2 + 4;
-  first.push(<g key="t3">{title(`3. Points d’appui (${rows.length})`, y)}</g>);
+  // références réglementaires du calage (Prüfbuch TÜV)
+  if (checks?.length) {
+    first.push(<g key="tl">{title(C.legalTitle, y)}</g>);
+    y += 4;
+    const jacks = estimate.reactions.some((r) => r.group.jack);
+    const legal = C.legal(jacks).flatMap((t) => wrap(t, 150).map((l, k) => (k ? `   ${l}` : `• ${l}`)));
+    legal.forEach((l, k) =>
+      first.push(
+        <text fontFamily={FONT_SANS} key={`lg${k}`} x={M} y={y + k * 2.8} fontSize={2.05} fill="#374151">
+          {l}
+        </text>,
+      ),
+    );
+    y += legal.length * 2.8 + 3;
+  }
+  first.push(<g key="t3">{title(C.pointsTableTitle(rows.length), y)}</g>);
   y += 2;
   const bottom = H - 16;
   const firstCount = Math.max(0, Math.floor((bottom - y - ROW) / ROW));
@@ -253,14 +282,14 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   first.push(<TableRows key="tab" y={y} rows={chunks[0]} header cols={cols} />);
   const pages = chunks.length;
   const out = [
-    <Page key={1} info={info} page={1} pages={pages}>
+    <Page key={1} info={info} page={1} pages={pages} lang={lang}>
       {first}
     </Page>,
   ];
   chunks.slice(1).forEach((c, k) =>
     out.push(
-      <Page key={k + 2} info={info} page={k + 2} pages={pages}>
-        <g>{title('3. Points d’appui (suite)', 34)}</g>
+      <Page key={k + 2} info={info} page={k + 2} pages={pages} lang={lang}>
+        <g>{title(C.pointsTableCont, 34)}</g>
         <TableRows y={36} rows={c} header cols={cols} />
       </Page>,
     ),

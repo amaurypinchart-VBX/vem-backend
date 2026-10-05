@@ -15,7 +15,10 @@ import type { ViewportData } from '../../sheets/SheetSvg';
 import { SheetSvg } from '../../sheets/SheetSvg';
 import { fitScale } from '../../sheets/scales';
 import { titleBlockFromProject, fmtDate } from '../../sheets/titleBlock';
-import type { ViewportItem } from '../../sheets/types';
+import type { DrawingSet, Sheet, ViewportItem } from '../../sheets/types';
+import { DEFAULT_GENERAL_NOTES } from '../../sheets/template';
+import { newId, renumber } from '../../sheets/generate';
+import { actions as sheetActions, useEditor } from '../../sheets/store';
 import { SceneViewer } from '../../viewer/SceneViewer';
 import type { CalageResult } from '../../structure/core/calage';
 import { computeCalage } from '../../structure/core/calage';
@@ -30,7 +33,7 @@ import { calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outline
 import type { Lang } from '../../structure/report/i18n';
 import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
 import type { StudyInputs, StudyRun } from '../../structure/studyRun';
-import type { AiTexts, AiUsage, ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
+import type { AiTexts, AiUsage, DrawingSetRecord, ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
 import { studyFacts } from '../../structure/report/facts';
 import type { AiState } from './aiUi';
 import { AiUsageNote } from './aiUi';
@@ -118,6 +121,20 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   const [useAiTexts, setUseAiTexts] = useState(true);
   const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  // jeux de plans 2D du projet (ajout du plan de calage) ; '' = nouveau jeu
+  const [sets, setSets] = useState<DrawingSetRecord[]>([]);
+  const [targetSet, setTargetSet] = useState('');
+  const [addInfo, setAddInfo] = useState('');
+  const refreshSets = async () => {
+    if (!PROJECT_ID) return;
+    try {
+      const list = await vem.listDrawingSets(PROJECT_ID);
+      setSets(list);
+      setTargetSet((t) => t || list.find((x) => x.modelVersionId === model?.id)?.id || list[0]?.id || '');
+    } catch {
+      /* liste indisponible */
+    }
+  };
 
   useEffect(() => {
     if (PROJECT_ID) vem.project(PROJECT_ID).then(setProject).catch(() => {});
@@ -134,6 +151,10 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
       /* liste indisponible (hors ligne) */
     }
   };
+  useEffect(() => {
+    void refreshSets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model?.id]);
   useEffect(() => {
     void refreshSaved();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,8 +183,8 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
 
   const projectName = project ? `${project.internalNumber ? project.internalNumber + ' ' : ''}${project.name}` : (model?.fileName ?? 'Projet');
 
-  /** Plan de calage A3 : vue de dessus du niveau 0 par le moteur 2D (pieds, sinon planchers), plaques en surcouche. */
-  const planPage = async (l: Lang): Promise<((label: string) => string) | null> => {
+  /** Planche du plan de calage A3 : vue de dessus du niveau 0 par le moteur 2D (pieds, sinon planchers), plaques en surcouche. */
+  const planSheet = async (l: Lang) => {
     if (!run || !calage) return null;
     const lowest = Math.min(...scene.index.modules.map((m) => m.level));
     const include = subsetForLevel(scene.index, lowest);
@@ -172,6 +193,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     const basis = viewBasis(viewport.request.view, scene.frames);
     let data: ((vp: ViewportItem) => ViewportData) | null = null;
     let lw: Linework2D | null = null;
+    let engine = false;
     if (provider) {
       const bank = new LineworkBank(scene, provider);
       let r = await bank.load(viewport);
@@ -184,6 +206,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
         lw = r.lw;
         viewport.lineworkKey = r.key;
         data = (vp) => bank.data(vp);
+        engine = true;
       }
     }
     if (!lw) {
@@ -192,9 +215,71 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
       data = () => ({ lw: fallback, basis });
     }
     fitCalageViewport(viewport, lw, plates, basis, fitScale);
+    return { sheet, notes, legend, viewData: data!, engine };
+  };
+
+  /** Plan de calage A3 rendu en SVG (rapport, PDF seul). */
+  const planPage = async (l: Lang): Promise<((label: string) => string) | null> => {
+    const p = await planSheet(l);
+    if (!p) return null;
     const tb = calageTitleBlock(titleBlockFromProject(project, me), l);
-    const viewData = data!;
-    return (label: string) => renderToStaticMarkup(<SheetSvg sheet={{ ...sheet, number: label }} titleBlock={tb} notes={notes} legend={legend} viewData={viewData} />);
+    return (label: string) => renderToStaticMarkup(<SheetSvg sheet={{ ...p.sheet, number: label }} titleBlock={tb} notes={p.notes} legend={p.legend} viewData={p.viewData} />);
+  };
+
+  /** Ajoute le plan de calage (planche A3) à un jeu de plans 2D du projet, ou en crée un. */
+  const addToDrawingSet = async () => {
+    setError('');
+    setAddInfo('');
+    try {
+      setBusy('Plan de calage…');
+      const p = await planSheet(lang);
+      if (!p) throw new Error('calage non dimensionné (portance ou calcul manquant)');
+      if (!p.engine) throw new Error('vue de dessus indisponible (moteur 2D non prêt) : réessayer dans un instant');
+      // identifiants propres à la planche ajoutée
+      const sheet: Sheet = structuredClone(p.sheet);
+      sheet.id = newId('s');
+      for (const it of sheet.items) it.id = newId(it.type[0]);
+      const L = LABELS[lang];
+      sheet.title = `${L.calagePlan} — ${new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : lang === 'de' ? 'de-DE' : 'fr-FR')}`;
+      setBusy('Jeu de plans…');
+      const open = useEditor.getState().doc;
+      if (targetSet && open?.id === targetSet) {
+        // jeu ouvert dans l'onglet « Planches » : ajouté dans l'éditeur (enregistrement automatique)
+        sheetActions.addSheet(sheet);
+        setAddInfo(`Planche ajoutée au jeu « ${open.title} » (onglet Planches A1).`);
+      } else if (targetSet) {
+        const rec = await vem.getDrawingSet(targetSet);
+        const data = rec.data as DrawingSet;
+        data.sheets.push(sheet);
+        renumber(data.sheets);
+        await vem.saveDrawingSet(rec.id, { title: rec.title, data: { ...data, updatedAt: new Date().toISOString() } });
+        setAddInfo(`Planche ${sheet.number} ajoutée au jeu « ${rec.title} » (onglet Planches A1).`);
+      } else {
+        if (!PROJECT_ID) throw new Error('projet VEM inconnu');
+        renumber([sheet]);
+        const title = `${L.calagePlan} ${projectName}`;
+        const data: DrawingSet = {
+          id: '',
+          projectId: PROJECT_ID,
+          modelVersionId: model?.id ?? null,
+          modelKey: scene.modelKey,
+          title,
+          templateId: 'viewbox',
+          titleBlock: titleBlockFromProject(project, me),
+          notes: DEFAULT_GENERAL_NOTES,
+          sheets: [sheet],
+          revision: 0,
+          updatedAt: new Date().toISOString(),
+        };
+        const rec = await vem.createDrawingSet(PROJECT_ID, { title, modelVersionId: model?.id ?? null, data });
+        setTargetSet(rec.id);
+        setAddInfo(`Nouveau jeu de plans « ${title} » créé avec la planche ${sheet.number} (onglet Planches A1).`);
+      }
+      await refreshSets();
+    } catch (e) {
+      setError(`Ajout aux plans 2D impossible : ${(e as Error).message}`);
+    }
+    setBusy('');
   };
 
   const prepare = async (): Promise<Prepared | null> => {
@@ -399,6 +484,24 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
               <button className="btn small" disabled={!!busy || stale || !study} onClick={() => void save()} title={study ? 'PDF enregistré dans le projet' : 'Étude non enregistrée'}>
                 Enregistrer dans le projet
               </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              <b style={{ fontSize: 13 }}>📐 Plan de calage dans les plans 2D</b>
+              <label className="row" style={{ justifyContent: 'space-between', gap: 6 }}>
+                Jeu de plans
+                <select value={targetSet} onChange={(e) => setTargetSet(e.target.value)}>
+                  {sets.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.title}
+                    </option>
+                  ))}
+                  <option value="">＋ Nouveau jeu « {LABELS[lang].calagePlan} »</option>
+                </select>
+              </label>
+              <button className="btn small" disabled={!!busy || stale || !calage || !provider} onClick={() => void addToDrawingSet()} title="Ajoute la planche A3 du plan de calage (plaques, types d’appui, matériel, références TÜV) dans la langue choisie ; modifiable ensuite dans l’onglet Planches A1">
+                ＋ Ajouter le plan de calage au jeu de plans
+              </button>
+              {addInfo && <div className="hint" style={{ color: 'var(--ok, #15803d)' }}>{addInfo}</div>}
             </div>
             {busy && <div className="hint">{busy}</div>}
             {error && <div className="error-box">{error}</div>}

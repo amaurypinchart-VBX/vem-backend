@@ -27,7 +27,7 @@ import { viewBasis } from '../../src/core/views';
 import { SheetSvg } from '../../src/sheets/SheetSvg';
 import { fitScale } from '../../src/sheets/scales';
 import { emptyTitleBlock } from '../../src/sheets/types';
-import { calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
+import { calagePlates, calageSheet, fitCalageViewport, layersShort, outlineLinework } from '../../src/structure/report/calagePlan';
 import { studyFacts } from '../../src/structure/report/facts';
 import { checkText } from '../../../src/services/structureAiGuard';
 import { VIEWBOX_STOCK, plateKey } from '../../src/structure/core/ground';
@@ -123,11 +123,11 @@ describe('rapport de l’étude structure', () => {
     expect(pages.filter((p) => p.prefix === 'A').map((p) => p.number)).toEqual(pages.filter((p) => p.prefix === 'A').map((_, k) => k + 1));
   });
 
-  it('version compacte en français : page de garde, synthèse, chapitres 1 à 5, 8 à 15 pages', () => {
+  it('version compacte en français : page de garde, synthèse, chapitres 1 à 5, 8 à 16 pages (références TÜV du calage comprises)', () => {
     const r = buildReport(reportInput('fr', 'compact'));
     expect(r.annexPages).toBe(0);
     expect(r.mainPages).toBeGreaterThanOrEqual(8);
-    expect(r.mainPages).toBeLessThanOrEqual(15);
+    expect(r.mainPages).toBeLessThanOrEqual(16);
     expect(r.pages).toHaveLength(r.mainPages + 1);
     const cover = texts(r.pages[0].svg).join('\n');
     expect(cover).toContain('Pré-étude structurelle');
@@ -364,12 +364,16 @@ describe('rapport de l’étude structure', () => {
   it('plan de calage A3 : une plaque par groupe d’appuis, à l’échelle, étiquetée ; page du rapport', () => {
     const plates = calagePlates(run.structure, calage, 'fr');
     expect(plates.map((p) => p.id).sort()).toEqual(run.ground.groups.map((g) => g.id).sort());
-    // plaque carrée du côté retenu, centrée sur le groupe
+    // plaque carrée du côté retenu, à fleur de la Viewbox sous un angle seul (elle part de l'angle) ou centrée (▲)
     const t = calage.types.find((x) => x.corners === 1)!;
     const p1 = plates.find((p) => p.id === t.reactions[0].group.id)!;
     const side = Math.hypot(p1.corners[1][0] - p1.corners[0][0], p1.corners[1][2] - p1.corners[0][2]);
     expect(side).toBeCloseTo(t.chosen!.footprint!.l, 6);
-    expect(p1.label).toBe(t.chosen!.summary.replace(' par angle', ''));
+    expect(p1.label).toBe(layersShort(t.chosen!.layers!));
+    // colonne de texte dans la planche : types, matériel, pose, références TÜV
+    const sheet = calageSheet({ lang: 'fr', modelKey: 'm', include: [], plates, calage, bearing: { value: 200, label: 'prairie' }, jacks: false, number: 'C 1' }).sheet;
+    const txt = sheet.items.filter((i) => i.type === 'text').map((i) => (i as { text: string }).text).join(' ');
+    for (const k of ['TYPES D’APPUI ET PLAQUES', 'MATÉRIEL À PRÉPARER', 'POSE DES PLAQUES', 'RÉFÉRENCES RÉGLEMENTAIRES (TÜV)', 'Prüfbuch n° 190060 B', 'Auflage 4.9']) expect(txt).toContain(k);
     const svg = planSvg('fr', 'A 17');
     expect(svg).toContain('A 17');
     for (const p of plates) expect(svg).toContain(`>${p.id}<`);

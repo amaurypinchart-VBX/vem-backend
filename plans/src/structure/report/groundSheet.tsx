@@ -1,10 +1,15 @@
 // Plan des appuis (écran et PDF) et fiche de calage A4 d'une page : hypothèses, plan, calage par type d'appui,
 // matériel à préparer, réserves. SVG en mm (viewBox 210 × 297), converti en PDF vectoriel par sheets/pdf/pdf.ts.
 import type { ReactNode } from 'react';
-import type { CalageResult } from '../core/calage';
-import type { EstimateModule, GroupReaction } from '../core/estimate';
+import type { CalageResult, SupportCheck } from '../core/calage';
+import type { EstimateModule, GroupReaction, P2 } from '../core/estimate';
 import { groupTypeKey } from '../core/estimate';
 import { GROUND_NOTE } from '../core/ground';
+import type { Lang } from './i18n';
+import { LABELS, num } from './i18n';
+import { CALAGE_LABELS } from './calageI18n';
+import { translate } from './translate';
+import { typeColor } from './calagePlan';
 import { verdictOf } from '../core/records';
 import { fmtNumber } from '../core/units';
 import { FONT_SANS } from '../../sheets/template';
@@ -35,11 +40,27 @@ interface PlanProps {
   /** couleur de chaque appui (sinon celle de son type) et seconde ligne de son étiquette (sinon Rz,k) */
   pointColor?: (r: GroupReaction) => string | undefined;
   pointSub?: (r: GroupReaction) => string | undefined;
+  /** plaques de calage à l'échelle, à leur place (sous les points) */
+  plates?: PlanPlate[];
+}
+
+/** Plaque de calage en plan (mêmes coordonnées que les Viewbox). */
+export interface PlanPlate {
+  id: string;
+  corners: P2[];
+  color: string;
+  /** centrée sous l'appui (dépasse de l'installation) */
+  centered?: boolean;
+}
+
+/** Plaques de calage des appuis (couche du dessous), pour les plans A4. */
+export function planPlates(checks: SupportCheck[]): PlanPlate[] {
+  return checks.filter((c) => c.plan).map((c) => ({ id: c.id, corners: c.plan!.corners, color: typeColor(c.typeKey), centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5 }));
 }
 
 /** Vue de dessus : emprises des Viewbox (nombre de niveaux au centre), groupes d'appuis colorés par type avec Rz,k. */
-export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub }: PlanProps) {
-  const pts = modules.flatMap((m) => m.corners);
+export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub, plates }: PlanProps) {
+  const pts = [...modules.flatMap((m) => m.corners), ...(plates ?? []).flatMap((p) => p.corners)];
   if (!pts.length) return null;
   const minX = Math.min(...pts.map((p) => p[0]));
   const maxX = Math.max(...pts.map((p) => p[0]));
@@ -99,6 +120,23 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
           </g>
         );
       })}
+      {(plates ?? []).map((p) => (
+        <g key={`pl${p.id}`}>
+          <polygon
+            points={p.corners.map((q) => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}
+            fill={p.color}
+            fillOpacity={0.22}
+            stroke={p.color}
+            strokeWidth={text * 0.09}
+            strokeDasharray={p.centered ? `${text * 0.35} ${text * 0.2}` : undefined}
+          />
+          {p.centered && (
+            <text fontFamily={FONT_SANS} x={X(Math.max(...p.corners.map((q) => q[0])))} y={Y(Math.min(...p.corners.map((q) => q[1]))) + text * 0.7} fontSize={text * 0.75} textAnchor="end" fill={p.color}>
+              ▲
+            </text>
+          )}
+        </g>
+      ))}
       {reactions.map((re, k) => {
         const col = pointColor?.(re) ?? TYPE_COLORS[typeKey(re)];
         const sel = selected === re.group.id;
@@ -194,15 +232,18 @@ const W = 210;
 const H = 297;
 const M = 12;
 
-const TYPE_COLS: Array<{ title: string; w: number; align?: 'end' }> = [
-  { title: 'Type', w: 34 },
-  { title: 'Nb', w: 9, align: 'end' },
-  { title: 'Rz,k', w: 17, align: 'end' },
-  { title: 'Rz,Ed', w: 17, align: 'end' },
-  { title: '   Solution retenue', w: 76 },
-  { title: 'η', w: 9, align: 'end' },
-  { title: '  État', w: 24 },
-];
+const typeCols = (lang: Lang): Array<{ title: string; w: number; align?: 'end' }> => {
+  const C = CALAGE_LABELS[lang].sheetCols;
+  return [
+    { title: C.type, w: 34 },
+    { title: C.count, w: 9, align: 'end' },
+    { title: 'Rz,k', w: 17, align: 'end' },
+    { title: 'Rz,Ed', w: 17, align: 'end' },
+    { title: `   ${C.solution}`, w: 76 },
+    { title: 'η', w: 9, align: 'end' },
+    { title: `  ${C.state}`, w: 24 },
+  ];
+};
 
 /** Lignes d'un tableau : une cellule trop longue pour sa colonne passe à la ligne (Arimo ≈ 0,5 × corps par caractère). */
 export function tableLines(cols: Array<{ w: number }>, rows: string[][], size: number): string[][][] {
@@ -244,8 +285,12 @@ function Table({ x, y, cols, rows, size }: { x: number; y: number; cols: Array<{
   );
 }
 
-/** Fiche de calage A4 portrait (une page). */
-export function GroundSheetSvg({ result, modules, info }: { result: CalageResult; modules: EstimateModule[]; info: SheetInfo }) {
+/** Fiche de calage A4 portrait (une page), en français, allemand ou anglais. */
+export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result: CalageResult; modules: EstimateModule[]; info: SheetInfo; lang?: Lang }) {
+  const C = CALAGE_LABELS[lang];
+  const L = LABELS[lang];
+  const E = (t: string) => translate(lang, t);
+  const N = (v: number, d = 1) => num(lang, v, d);
   const logoW = 34;
   const body = 2.6;
   const title = (t: string, y: number) => (
@@ -255,8 +300,8 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
   );
   let y = 38;
   const blocks: ReactNode[] = [];
-  // 1. hypothèses (deux colonnes)
-  blocks.push(<g key="t1">{title('1. Installation et hypothèses', y)}</g>);
+  // 1. hypothèses
+  blocks.push(<g key="t1">{title(C.s1, y)}</g>);
   y += 5;
   // une ligne par hypothèse (les valeurs sont parfois longues)
   info.assumptions.forEach(([k, v], i) => {
@@ -272,83 +317,92 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
     );
   });
   y += info.assumptions.length * 3.6 + 3;
-  // 2. plan des appuis
+  // 2. plan des appuis et des plaques
   const fem = result.estimate.method === 'fem';
-  blocks.push(<g key="t2">{title(fem ? '2. Plan des appuis (réactions caractéristiques du calcul complet)' : '2. Plan des appuis (réactions caractéristiques estimées)', y)}</g>);
-  const planH = 72;
+  blocks.push(<g key="t2">{title(C.s2(fem), y)}</g>);
+  const planH = 66;
   blocks.push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
-      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} />
+      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} plates={planPlates(result.checks)} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
     </g>,
   );
   y += planH + 8;
   // 3. calage par type
-  blocks.push(<g key="t3">{title('3. Calage par type d’appui', y)}</g>);
+  blocks.push(<g key="t3">{title(C.s3, y)}</g>);
   y += 3;
-  const rows = result.types.map((t) => [
-    t.label,
+  const cols = typeCols(lang);
+  const typeRows = result.types.map((t) => [
+    E(t.label),
     String(t.reactions.length),
-    `${n1(t.Rzk / 1e3)} kN`,
-    `${n1(t.RzEd / 1e3)} kN`,
-    t.chosen ? t.chosen.summary : '—',
-    t.chosen ? n1(t.chosen.eta, 2) : '—',
-    t.chosen ? (t.standard ? (verdictOf(t.chosen.eta) === 'limit' ? 'limite' : 'OK') : 'hors standard') : 'aucune',
+    `${N(t.Rzk / 1e3)} kN`,
+    `${N(t.RzEd / 1e3)} kN`,
+    `   ${t.chosen ? E(t.chosen.summary) : '—'}`,
+    t.chosen ? N(t.chosen.eta, 2) : '—',
+    `  ${t.chosen ? (t.standard ? (verdictOf(t.chosen.eta) === 'limit' ? C.stateLimit : C.stateOk) : C.stateOut) : C.stateNone}`,
   ]);
-  const typeRows = rows.map((r) => [r[0], r[1], r[2], r[3], `   ${r[4]}`, r[5], `  ${r[6]}`]);
-  blocks.push(<Table key="types" x={M} y={y} size={2.4} cols={TYPE_COLS} rows={typeRows} />);
-  y += 2.4 * 1.55 * (tableLines(TYPE_COLS, typeRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 4;
+  blocks.push(<Table key="types" x={M} y={y} size={2.4} cols={cols} rows={typeRows} />);
+  y += 2.4 * 1.55 * (tableLines(cols, typeRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 4;
   if (result.longrine) {
     blocks.push(
       <text fontFamily={FONT_SANS} key="lg" x={M} y={y} fontSize={body} fill="#111827">
-        {`Variante longrines : ${result.longrine.solution.summary} (η = ${n1(result.longrine.result.eta, 2)}).`}
+        {C.longrineVariant(E(result.longrine.solution.summary), N(result.longrine.result.eta, 2))}
       </text>,
     );
     y += 5;
   }
   // 4. matériel
-  blocks.push(<g key="t4">{title('4. Matériel à préparer', y)}</g>);
+  blocks.push(<g key="t4">{title(C.s4, y)}</g>);
   y += 3;
   const mats = result.materials;
+  const SC = C.sheetCols;
   const matCols: Array<{ title: string; w: number; align?: 'end' }> = [
-    { title: 'Désignation', w: 60 },
-    { title: 'Dimensions', w: 60 },
-    { title: 'Quantité', w: 26, align: 'end' },
-    { title: 'Masse totale', w: 40, align: 'end' },
+    { title: SC.designation, w: 60 },
+    { title: SC.dims, w: 60 },
+    { title: SC.qty, w: 26, align: 'end' },
+    { title: SC.mass, w: 40, align: 'end' },
   ];
-  const matRows = mats.length ? mats.map((m) => [m.label, m.dims, String(m.quantity), `${n1(m.massKg, 0)} kg`]) : [['aucune solution standard', '', '', '']];
+  const matRows = mats.length ? mats.map((m) => [E(m.label), E(m.dims), String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[C.none, '', '', '']];
   blocks.push(<Table key="mat" x={M} y={y} size={2.4} cols={matCols} rows={matRows} />);
   y += 2.4 * 1.55 * (tableLines(matCols, matRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 5;
-  // 5. réserves
-  blocks.push(<g key="t5">{title('5. Réserves', y)}</g>);
-  y += 4.5;
+  const jacks = result.estimate.reactions.some((r) => r.group.jack);
+  const para = (key: string, lines: string[], size: number, step: number, color = '#374151', width = 125) => {
+    for (const [i, n] of lines.entries())
+      for (const [k, line] of wrap(n, width).entries()) {
+        if (y > H - 16) return;
+        blocks.push(
+          <text fontFamily={FONT_SANS} key={`${key}${i}-${k}`} x={M + (k ? 3 : 0)} y={y} fontSize={size} fill={color}>
+            {k ? line : `• ${line}`}
+          </text>,
+        );
+        y += step;
+      }
+  };
+  // 5. références réglementaires (Prüfbuch TÜV)
+  blocks.push(<g key="t5">{title(C.s5, y)}</g>);
+  y += 4.2;
+  const tuvLine = !result.tuv.tuvMinimum ? C.tuvOff : result.tuv.ok === false ? C.tuvKo(result.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : result.tuv.ok ? C.tuvOk : '';
+  para('lg', [...C.legal(jacks), ...(tuvLine ? [tuvLine] : [])], 2.1, 2.9, '#374151', 140);
+  y += 2;
+  // 6. réserves
+  blocks.push(<g key="t6">{title(C.s6, y)}</g>);
+  y += 4.2;
   const notes = [
-    ...result.warnings,
-    GROUND_NOTE,
-    fem
-      ? 'Réactions du calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
-      : 'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
-    'Plaques : pression uniforme sous l’emprise efficace (méthode statico ; une plaque trop mince ne compte que pour la partie qu’elle peut porter en flexion) ; bois kmod 0,9, γM 1,3.',
-    ...(result.roadwayOn ? [`Plaques de roulage jointives sur toute la surface : ${n1(result.roadway.load / 1e3, 0)} kN / ${n1(result.roadway.area / 1e6, 1)} m² = ${n1(result.roadway.mean * 1e3, 1)} kN/m² ; pression locale sur les plaques de roulage à vérifier avec leur fabricant.`] : []),
+    ...result.warnings.map(E),
+    lang === 'fr' ? GROUND_NOTE : L.groundNote,
+    fem ? C.femNote : C.estimateNote,
+    C.platesNote,
+    ...(result.roadwayOn ? [C.roadwayUsed(N(result.roadway.load / 1e3, 0), N(result.roadway.area / 1e6, 1), N(result.roadway.mean * 1e3, 1))] : []),
   ];
-  for (const n of notes)
-    for (const [k, line] of wrap(n, 125).entries()) {
-      if (y > H - 20) break;
-      blocks.push(
-        <text fontFamily={FONT_SANS} key={`n${y}`} x={M + (k ? 3 : 0)} y={y} fontSize={2.3} fill="#374151">
-          {k ? line : `• ${line}`}
-        </text>,
-      );
-      y += 3.3;
-    }
+  para('n', notes, 2.2, 3.1);
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={`${W}mm`} height={`${H}mm`} viewBox={`0 0 ${W} ${H}`} fontFamily={FONT_SANS}>
       <rect x={0} y={0} width={W} height={H} fill="#ffffff" />
       <text fontFamily={FONT_SANS} x={W / 2} y={H / 2} fontSize={8} fill="#9ca3af" fillOpacity={0.18} textAnchor="middle" fontWeight={700} transform={`rotate(-55 ${W / 2} ${H / 2})`}>
-        PRÉ-ÉTUDE INTERNE — NON VÉRIFIÉE PAR UN INGÉNIEUR
+        {C.watermark}
       </text>
       <text fontFamily={FONT_SANS} x={M} y={M + 6} fontSize={6} fontWeight={700} fill="#1a021d">
-        FICHE DE CALAGE
+        {C.sheetTitle}
       </text>
       <text fontFamily={FONT_SANS} x={M} y={M + 11.5} fontSize={3} fill="#111827">
         {info.project}
@@ -364,7 +418,7 @@ export function GroundSheetSvg({ result, modules, info }: { result: CalageResult
       {blocks}
       <line x1={M} x2={W - M} y1={H - 12} y2={H - 12} stroke="#d1d5db" strokeWidth={0.2} />
       <text fontFamily={FONT_SANS} x={M} y={H - 8} fontSize={2.2} fill="#6b7280">
-        {`VEM · Plans Viewbox · Étude structure — ${fem ? 'calage' : 'estimation du calage'} (pré-étude, non vérifiée)`}
+        {C.footerSheet(fem)}
       </text>
       <text fontFamily={FONT_SANS} x={W - M} y={H - 8} fontSize={2.2} fill="#6b7280" textAnchor="end">
         1 / 1

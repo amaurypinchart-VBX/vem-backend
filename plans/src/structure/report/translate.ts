@@ -58,6 +58,32 @@ const PATTERNS: Rule[] = [
   [/aucun perçage de ([\w-]+) en face du palier — attaches placées à ([\d,]+) et ([\d,]+) m du coin \(perçages à faire sur site\)\./g, 'keine Bohrung von $1 gegenüber dem Podest — Anschlüsse bei $2 und $3 m von der Ecke (Bohrungen vor Ort herzustellen).', 'no drilling of $1 facing the landing — connections placed at $2 and $3 m from the corner (to be drilled on site).'],
   [/volée ([\d,]+) m², palier ([\d,]+) m² ; /g, 'Treppenlauf $1 m², Podest $2 m²; ', 'flight $1 m², landing $2 m²; '],
   [/ ; garde-corps ([\d,]+) kN\/m ; palier à ([\d,]+) m/g, '; Geländer $1 kN/m; Podest auf $2 m', '; railings $1 kN/m; landing at $2 m'],
+  // plaques partagées, position des plaques, Prüfbuch (placement.ts, calage.ts, tuv.ts)
+  [/(\d+) vérins d’angle sur une plaque/g, '$1 Eckspindeln auf einer Platte', '$1 corner jacks on one plate'],
+  [/(\d+) vérins centraux sur une plaque/g, '$1 Mittelspindeln auf einer Platte', '$1 middle jacks on one plate'],
+  [/(\d+) platines de vérin/g, '$1 Spindelfußplatten', '$1 jack base plates'],
+  [/, à fleur \((\d+)\) ou centré \((\d+)\)/g, ', bündig ($1) oder mittig ($2)', ', flush ($1) or centred ($2)'],
+  [
+    /à fleur de la Viewbox : charge à ([\d,]+) cm du bord, la plaque ne répartit que sur ([\d,]+) cm de large de ce côté \(B’ = B − 2 e\)/g,
+    'bündig mit der Viewbox: Last $1 cm vom Rand, die Platte verteilt auf dieser Seite nur über $2 cm Breite (B’ = B − 2 e)',
+    'flush with the Viewbox: load $1 cm from the edge, the plate only spreads over $2 cm on that side (B’ = B − 2 e)',
+  ],
+  [
+    /À fleur de la Viewbox, la plaque ne répartirait que sur (\d+) × (\d+) cm \(charge près du bord\) → ([^:]+) : plaque centrée sous l’appui, elle dépasse de (\d+) cm\./g,
+    'Bündig mit der Viewbox würde die Platte nur über $1 × $2 cm verteilen (Last nahe am Rand) → $3: Platte mittig unter dem Auflager, Überstand $4 cm.',
+    'Laid flush with the Viewbox, the plate would only spread over $1 × $2 cm (load close to the edge) → $3: plate centred under the support, overhang $4 cm.',
+  ],
+  [/→ Centrer la plaque sous l’appui \(elle dépasse alors de (\d+) cm\) : ([^,]+), OK\./g, '→ Platte mittig unter das Auflager legen (Überstand $1 cm): $2, OK.', '→ Centre the plate under the support (overhang $1 cm): $2, OK.'],
+  [/plaque ([\d,]+) × ([\d,]+) cm < ([\d,]+) × ([\d,]+) cm/g, 'Platte $1 × $2 cm < $3 × $4 cm', 'plate $1 × $2 cm < $3 × $4 cm'],
+  [/épaisseur 1 × ([\d,]+) \/ 2 × ([\d,]+) \/ 3 × ([\d,]+) cm/g, 'Dicke 1 × $1 / 2 × $2 / 3 × $3 cm', 'thickness 1 × $1 / 2 × $2 / 3 × $3 cm'],
+  [/Plaques du stock « ([^»]+) » selon le Prüfbuch/g, 'Lagerplatten „$1“ gemäß Prüfbuch', 'Stock plates “$1” as per the Prüfbuch'],
+  [
+    /Prüfbuch ([\w ]+), Auflage 4\.9 : la portance admissible doit être d’au moins 200 kN\/m² ; avec ([^,]+), l’installation sort du Prüfbuch \(étude spécifique du sol\)\./g,
+    'Prüfbuch $1, Auflage 4.9: die zulässige Bodenpressung muss mindestens 200 kN/m² betragen; mit $2 liegt die Anlage außerhalb des Prüfbuchs (gesonderte Baugrundbetrachtung).',
+    'Prüfbuch $1, condition 4.9: the allowable ground pressure must be at least 200 kN/m²; with $2 the installation is outside the Prüfbuch (specific ground study).',
+  ],
+  [/Calage inférieur au minimum du Prüfbuch ([\w ]+) \(plan ([\d-]+)\) pour /g, 'Unterpallung kleiner als das Minimum des Prüfbuchs $1 (Plan $2) für ', 'Packing smaller than the minimum of the Prüfbuch $1 (drawing $2) for '],
+  [/ : non prévu par le plan ([\d-]+) \(Prüfbuch : /g, ': im Plan $1 nicht vorgesehen (Prüfbuch: ', ': not provided for in drawing $1 (Prüfbuch: '],
   // calage appui par appui (spreading.ts)
   [
     /trop mince pour répartir sur toute la plaque : emprise efficace (\d+) × (\d+) cm \(il faudrait (\d+) mm par plaque\)/g,
@@ -125,6 +151,20 @@ const PHRASES: Rule[] = [
     'treads and decking gk on the flight and the landing (in plan); imposed load qk and H = V / 10 in service, stair evacuated out of service; railings on the stringers and the outer landing edge',
   ],
   ['Vérin Layher 60', 'Layher Fußspindel 60', 'Layher base jack 60'],
+  [' (stock, quantité à vérifier au dépôt)', ' (Lager, Menge im Lager prüfen)', ' (stock, quantity to be checked at the depot)'],
+  [' (stock)', ' (Lager)', ' (stock)'],
+  [', à fleur de la Viewbox', ', bündig mit der Viewbox', ', flush with the Viewbox'],
+  [', centré sous l’appui', ', mittig unter dem Auflager', ', centred under the support'],
+  [' selon le Prüfbuch (plan ', ' gemäß Prüfbuch (Plan ', ' as per the Prüfbuch (drawing '],
+  ['non conforme au Prüfbuch : ', 'nicht konform mit dem Prüfbuch: ', 'not compliant with the Prüfbuch: '],
+  ['conforme au Prüfbuch', 'konform mit dem Prüfbuch', 'compliant with the Prüfbuch'],
+  ['(minimum : ', '(Minimum: ', '(minimum: '],
+  ['aucune plaque ; Prüfbuch : ', 'keine Platte; Prüfbuch: ', 'no plate; Prüfbuch: '],
+  [' ; plaque excentrée : EN 1997-1 annexe D', '; ausmittige Platte: EN 1997-1 Anhang D', '; eccentric plate: EN 1997-1 Annex D'],
+  ['plaque excentrée : emprise centrée sur la charge (B’ = B − 2 e)', 'ausmittige Platte: zur Last zentrische Fläche (B’ = B − 2 e)', 'eccentric plate: area centred on the load (B’ = B − 2 e)'],
+  ['Platine de vérin', 'Spindelfußplatte', 'Jack base plate'],
+  [' (plaque centrée sous l’appui : à fleur de la Viewbox, aucune plaque ne suffit, la charge est trop près du bord).', ' (Platte mittig unter dem Auflager: bündig mit der Viewbox reicht keine Platte, die Last liegt zu nah am Rand).', ' (plate centred under the support: flush with the Viewbox no plate is enough, the load is too close to the edge).'],
+  [' (< Prüfbuch)', ' (< Prüfbuch)', ' (< Prüfbuch)'],
   // calage appui par appui (spreading.ts, calage.ts)
   ['Calage choisi, sur plaques de roulage', 'Gewählte Unterpallung, auf Fahrplatten', 'Chosen packing, on roadway plates'],
   ['Calage choisi', 'Gewählte Unterpallung', 'Chosen packing'],
@@ -454,6 +494,11 @@ function rules(lang: 'de' | 'en'): Array<[string | RegExp, string]> {
     COMPILED.set(lang, r);
   }
   return r;
+}
+
+/** Typographie de la langue : pas d'espace avant « : » et « ; » en allemand et en anglais. */
+export function typo(lang: Lang, text: string): string {
+  return lang === 'fr' ? text : text.replace(/ ([:;])(?=\s|$)/g, '$1');
 }
 
 /** Texte du moteur (français) → langue du rapport ; en français : inchangé. */

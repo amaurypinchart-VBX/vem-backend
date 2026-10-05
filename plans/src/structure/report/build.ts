@@ -6,6 +6,7 @@
 // Tous les chiffres viennent du calcul (StudyRun, CalageResult) : le rapport ne fait que les mettre en page.
 // Fonction pure : pages SVG A4 (+ le plan de calage A3 fourni par l'appelant).
 import type { CalageResult, CalageType } from '../core/calage';
+import { CALAGE_LABELS } from './calageI18n';
 import type { Combination } from '../core/combos';
 import type { CalcRecord, Verdict } from '../core/records';
 import { verdictOf, worstVerdict } from '../core/records';
@@ -350,6 +351,15 @@ export function buildReport(inp: ReportInput): ReportOutput {
   });
   blocks.push(...calageTables());
   blocks.push({ t: 'para', text: L.groundNote, size: SIZE.small, color: GREY });
+  // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573)
+  {
+    const CL = CALAGE_LABELS[inp.lang];
+    const c = inp.calage;
+    const tuvLine = !c ? '' : !c.tuv.tuvMinimum ? CL.tuvOff : c.tuv.ok === false ? CL.tuvKo(c.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : c.tuv.ok ? CL.tuvOk : '';
+    blocks.push({ t: 'para', text: CL.legalTitle, bold: true, after: 0.6 });
+    blocks.push({ t: 'bullets', items: CL.legal(study.options.jacks), size: SIZE.small });
+    if (tuvLine) blocks.push({ t: 'para', text: tuvLine, bold: true, size: SIZE.small, color: c?.tuv.ok === false ? VERDICT_COLORS.fail : undefined });
+  }
 
   blocks.push({ t: 'heading', level: 2, num: '1.5', text: L.s15 });
   blocks.push({ t: 'para', text: L.materialsText });
@@ -593,11 +603,17 @@ export function buildReport(inp: ReportInput): ReportOutput {
     let k = 0;
     for (const t of c.types) {
       blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: L.groundCase(E(t.label), N(inp.bearing?.value ?? 0, 0)) });
+      const CL = CALAGE_LABELS[inp.lang];
+      const placed = t.checks.filter((x) => x.plan);
+      const centered = placed.filter((x) => x.plan!.placement === 'centered');
       blocks.push({
         t: 'kv',
         rows: [
           [L.actions, `Rz,Ed ≤ ${kN(t.RzEd, 2)} ; Rz,k ≈ ${kN(t.Rzk, 2)} (${t.reactions.length} × ${E(t.label)})`],
           [L.contactArea, `a1 × a2 = ${N(t.a1 / 10, 0)} × ${N(t.a2 / 10, 0)} cm`],
+          [CL.timberRow, CL.timberValue],
+          ...(placed.length ? ([[CL.placementRow, CL.placementValue(placed.length - centered.length, centered.length, N(Math.max(0, ...centered.map((x) => x.plan!.overhang)) / 10, 0))]] as Array<[string, string]>) : []),
+          ...(c.tuv.tuvMinimum ? ([[CL.tuvRow, t.tuv ? E(t.tuv.text) : CL.tuvNone]] as Array<[string, string]>) : []),
         ],
       });
       blocks.push({
@@ -619,7 +635,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       });
       if (t.chosen) {
         blocks.push({ t: 'para', text: `${L.chosenSolution} : ${E(t.chosen.title)} — ${E(t.chosen.summary)}${t.chosen.remarks.length ? ` (${t.chosen.remarks.map(E).join(' ; ')})` : ''}`, bold: true });
-        if (t.chosen.kind !== 'plywood') for (const r of t.chosen.records) blocks.push(rec(r));
+        if (t.chosen.records !== t.plate.records) for (const r of t.chosen.records) blocks.push(rec(r));
         blocks.push({ t: 'eta', eta: t.chosen.eta, verdict: t.standard ? undefined : 'fail' });
       } else blocks.push({ t: 'para', text: L.noStandardSolution, color: VERDICT_COLORS.fail });
       const others = t.solutions.filter((x) => x !== t.chosen);

@@ -164,11 +164,13 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
   const own = set.choices.bySupport?.[c.id];
   const autoType = result.types.find((t) => t.typeKey === c.typeKey && !t.custom);
   const r = c.reaction;
+  const label = result.types.find((t) => t.checks.includes(c))?.label ?? supportType(r);
+  const over = c.plan && c.plan.placement === 'centered' ? Math.round(c.plan.overhang / 10) : 0;
   return (
     <div className="card support-panel" style={{ marginTop: 8, borderColor: checkColor(c.eta) }}>
       <div className="card-head">
         <h2>
-          {c.id} — {supportType(r)}
+          {c.id} — {label}
         </h2>
         <span className="hint">
           {r.group.moduleIds.join(', ')} · Rz,k = {kN(c.Rzk)} (mini {kN(r.RkMin)}) · Rz,Ed = {kN(c.REd)} · dont G = {kN(r.G)}, Q = {kN(r.Q)}
@@ -181,6 +183,11 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 13, lineHeight: 1.45 }}>{c.advice}</div>
+        <div className="hint">
+          {c.members.length > 1 || c.members[0] !== c.id ? `Une plaque sous ${c.members.length > 1 ? `les appuis ${c.members.join(', ')}` : `l’appui ${c.members[0]}`}. ` : ''}
+          {c.plan ? (c.plan.placement === 'flush' ? 'Plaque à fleur de la Viewbox (ne dépasse pas).' : `Plaque centrée sous l’appui : elle dépasse de ${over} cm.`) : ''}
+          {c.tuv ? ` Prüfbuch TÜV : ${c.tuv.text}.` : ''}
+        </div>
         <ChainTable c={c} />
         <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
           <span className="hint" style={{ minWidth: 140, paddingTop: 4 }}>
@@ -190,7 +197,7 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
             value={own}
             onChange={(v) => set.setSupport(c.id, v)}
             stock={stock}
-            inheritLabel={typeRefs !== undefined ? `Comme les autres « ${supportType(r)} » : ${refsText(typeRefs, stock)}` : autoLabel(autoType, result.roadwayOn)}
+            inheritLabel={typeRefs !== undefined ? `Comme les autres « ${label} » : ${refsText(typeRefs, stock)}` : autoLabel(autoType, result.roadwayOn)}
           />
         </div>
         <div className="hint">Pression au sol si le calage s’arrêtait à chaque étape ; la dernière ligne est celle vérifiée. Choix enregistré avec l’étude.</div>

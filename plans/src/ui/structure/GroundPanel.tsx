@@ -6,7 +6,7 @@ import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
 import type { Estimate, EstimateModule } from '../../structure/core/estimate';
-import { ESTIMATE_DEFAULTS, groupTypeKey } from '../../structure/core/estimate';
+import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
 import type { PanelMaterial } from '../../structure/core/ground';
@@ -14,7 +14,12 @@ import type { CalageChoices, LayerRef } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
-import { GroundPlan, TYPE_COLORS } from '../../structure/report/groundSheet';
+import { GroundPlan, planPlates } from '../../structure/report/groundSheet';
+import { typeColor } from '../../structure/report/calagePlan';
+import type { PlatePlacement } from '../../structure/core/placement';
+import type { Lang } from '../../structure/report/i18n';
+import { LANGS, LANG_LABEL, num } from '../../structure/report/i18n';
+import { CALAGE_LABELS } from '../../structure/report/calageI18n';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
 import type { ChoiceSetters } from './CalageChoice';
@@ -58,6 +63,10 @@ export interface Hypotheses {
   calage?: CalageChoices;
   /** neige au sol sk (kg/m²) ; 0 = pas de neige (été, ou neige empêchée / déblayée) */
   snowKgm2?: number;
+  /** pose des plaques : à fleur de la Viewbox, centrées si nécessaire (défaut) ; toujours à fleur ; centrées (statico) */
+  platePlacement?: PlatePlacement;
+  /** plaques minimales du Prüfbuch TÜV 190060 B (plan 18-0573-03) — défaut oui */
+  tuvMinimum?: boolean;
 }
 
 export const DEFAULT_HYP: Hypotheses = {
@@ -151,6 +160,8 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     choices: h.calage,
     ...(h.publicMode === 'persons' ? { publicLimit: { persons: Math.max(0, Math.round(h.persons)), kg: h.personKg } } : {}),
     roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
+    placement: h.platePlacement ?? 'auto',
+    tuvMinimum: h.tuvMinimum ?? true,
   };
 }
 
@@ -380,6 +391,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [pointsBusy, setPointsBusy] = useState(false);
   const [showPoints, setShowPoints] = useState(false);
   const [planView, setPlanView] = useState<'check' | 'type'>('check');
+  // langue des PDF de calage (fiche, plan des appuis)
+  const [pdfLang, setPdfLang] = useState<Lang>('fr');
   const [maxPub, setMaxPub] = useState<PublicMax | null>(null);
 
   useEffect(() => {
@@ -427,23 +440,56 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);
     return `${n(hyp.bearingValue, whole ? 0 : 2)} ${hyp.bearingUnit}${hyp.bearingUnit === 'kN/m²' ? '' : ` = ${n(q * 1e3, q * 1e3 < 10 ? 1 : 0)} kN/m²`} (${preset?.label ?? 'saisie'})`;
   };
-  const assumptions = (): Array<[string, string]> => [
-    ['Portance admissible', bearingText()],
-    ['Poids d’une Viewbox', `${n(hyp.moduleWeightKg, 0)} kg pesés — retenu : ${hyp.weightMode === 'weighed' ? 'la pesée' : 'le plus lourd (modèle ou pesée)'}`],
-    ['Plafond / sol', `${n(hyp.ceiling, 2)} / ${n(hyp.floorFinish, 2)} kN/m²`],
-    ['Exploitation', `${n(hyp.live, 2)} kN/m² (toitures accessibles ${n(hyp.roofLive, 2)})`],
-    [
-      'Public pour le sol',
-      hyp.publicMode === 'persons'
-        ? `limité à ${Math.round(hyp.persons)} personnes × ${n(hyp.personKg, 0)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)`
-        : 'charge réglementaire (public libre)',
-    ],
-    ['Vent en / hors service', `${n(hyp.windIn, 2)} / ${n(hyp.windOut, 2)} kN/m², cp ${n(hyp.cp, 1)}`],
-    ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
-    jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
-    ['Viewbox', `${modules.length} (${Math.max(0, ...modules.map((m) => m.level)) + 1} niveau(x))`],
-    ['Réactions', reactions ? 'calcul complet (modèle 3D, 2ᵉ ordre)' : 'estimation instantanée (surfaces tributaires)'],
-  ];
+  /** hypothèses de la fiche de calage, dans la langue du PDF */
+  const assumptions = (lang: Lang): Array<[string, string]> => {
+    const N = (v: number, d = 0) => num(lang, v, d);
+    const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
+    const bearing = `${N(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' || hyp.bearingUnit === 'kg/m²' ? 0 : 2)} ${hyp.bearingUnit}${hyp.bearingUnit === 'kN/m²' ? '' : ` = ${N(q, q < 10 ? 1 : 0)} kN/m²`}`;
+    const levels = Math.max(0, ...modules.map((m) => m.level)) + 1;
+    const placement = hyp.platePlacement ?? 'auto';
+    const T = {
+      fr: {
+        bearing: ['Portance admissible', `${bearing} (${preset?.label ?? 'saisie'})`],
+        weight: ['Poids d’une Viewbox', `${N(hyp.moduleWeightKg)} kg pesés — retenu : ${hyp.weightMode === 'weighed' ? 'la pesée' : 'le plus lourd (modèle ou pesée)'}`],
+        finishes: ['Plafond / sol', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
+        live: ['Exploitation', `${N(hyp.live, 2)} kN/m² (toitures accessibles ${N(hyp.roofLive, 2)})`],
+        pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)` : 'charge réglementaire (public libre)'],
+        wind: ['Vent en / hors service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
+        react: ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
+        feet: jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm ; vérins voisins sur une même plaque'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
+        place: ['Pose des plaques', { auto: 'à fleur de la Viewbox, centrées seulement si nécessaire', flush: 'toujours à fleur de la Viewbox', centered: 'centrées sous chaque appui (statico)' }[placement]],
+        vbx: ['Viewbox', `${modules.length} (${levels} niveau${levels > 1 ? 'x' : ''})`],
+        src: ['Réactions', reactions ? 'calcul complet (modèle 3D, 2ᵉ ordre)' : 'estimation instantanée (surfaces tributaires)'],
+      },
+      de: {
+        bearing: ['Zul. Bodenpressung', `${bearing} (${preset?.label ?? 'Eingabe'})`],
+        weight: ['Gewicht einer Viewbox', `${N(hyp.moduleWeightKg)} kg gewogen — angesetzt: ${hyp.weightMode === 'weighed' ? 'die Wägung' : 'das größere (Modell oder Wägung)'}`],
+        finishes: ['Decke / Boden', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
+        live: ['Verkehrslast', `${N(hyp.live, 2)} kN/m² (begehbare Dächer ${N(hyp.roofLive, 2)})`],
+        pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; Tragwerk mit der Normlast nachgewiesen)` : 'Normlast (freies Publikum)'],
+        wind: ['Wind in / außer Betrieb', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
+        react: ['Auflagerkraft für die Fläche', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'charakteristisch (GZG)'],
+        feet: jacks ? ['Spindelfüße', '6 je Viewbox (4 Ecken + 2 Mitte), Gewindestangen Tr 24 × 5, Auszug ≤ 5 cm; benachbarte Spindeln auf einer Platte'] : ['Mittelfüße', hyp.middleFeet ? 'verwendet' : 'nein (nur Ecken)'],
+        place: ['Lage der Platten', { auto: 'bündig mit der Viewbox, nur wenn nötig mittig', flush: 'immer bündig mit der Viewbox', centered: 'mittig unter jedem Auflager (statico)' }[placement]],
+        vbx: ['Viewbox', `${modules.length} (${levels} Ebene${levels > 1 ? 'n' : ''})`],
+        src: ['Auflagerkräfte', reactions ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)' : 'Sofortschätzung (Einzugsflächen)'],
+      },
+      en: {
+        bearing: ['Allowable bearing', `${bearing} (${preset?.label ?? 'entered'})`],
+        weight: ['Weight of one Viewbox', `${N(hyp.moduleWeightKg)} kg weighed — used: ${hyp.weightMode === 'weighed' ? 'the weighed value' : 'the heavier (model or weighing)'}`],
+        finishes: ['Ceiling / floor', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
+        live: ['Imposed load', `${N(hyp.live, 2)} kN/m² (accessible roofs ${N(hyp.roofLive, 2)})`],
+        pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; structure checked with the code load)` : 'code load (free public)'],
+        wind: ['Wind in / out of service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
+        react: ['Reaction for the area', hyp.staticoConversion ? 'Rz,Ed / 1.35 (statico)' : 'characteristic (SLS)'],
+        feet: jacks ? ['Jack feet', '6 per Viewbox (4 corners + 2 middle), Tr 24 × 5 rods, extension ≤ 5 cm; neighbouring jacks on one plate'] : ['Middle feet', hyp.middleFeet ? 'used' : 'no (corners only)'],
+        place: ['Plate laying', { auto: 'flush with the Viewbox, centred only where needed', flush: 'always flush with the Viewbox', centered: 'centred under each support (statico)' }[placement]],
+        vbx: ['Viewbox', `${modules.length} (${levels} level${levels > 1 ? 's' : ''})`],
+        src: ['Reactions', reactions ? 'full calculation (3D model, 2nd order)' : 'instant estimate (tributary areas)'],
+      },
+    }[lang];
+    return [T.bearing, T.weight, T.finishes, T.live, T.pub, T.wind, T.react, T.feet, T.place, T.vbx, T.src] as Array<[string, string]>;
+  };
 
   const exportPdf = async () => {
     if (!result) return;
@@ -460,12 +506,14 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         <GroundSheetSvg
           result={result}
           modules={modules}
-          info={{ project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString('fr-FR'), assumptions: assumptions() }}
+          info={{ project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: assumptions(pdfLang) }}
+          lang={pdfLang}
         />,
       );
       const fonts = await loadFonts(fontsUsed([svg]));
-      const pdf = await buildPdf([{ svg, paper: 'A3', size: { w: 210, h: 297 } }], fonts, { title: `Fiche de calage — ${name}`, subject: source });
-      downloadBlob(`Fiche de calage ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
+      const title = { fr: 'Fiche de calage', de: 'Unterpallungsblatt', en: 'Packing sheet' }[pdfLang];
+      const pdf = await buildPdf([{ svg, paper: 'A3', size: { w: 210, h: 297 } }], fonts, { title: `${title} — ${name}`, subject: source });
+      downloadBlob(`${title} ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
     } catch (e) {
       setError(`PDF impossible : ${(e as Error).message}`);
     }
@@ -489,7 +537,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
     reset: () => setChoices(() => ({})),
   };
-  const bearingLabel = bearingText();
+  const bearingLabel = pdfLang === 'fr' ? bearingText() : `${num(pdfLang, bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3, 0)} kN/m²`;
   const exportPoints = async () => {
     if (!result || !roadway) return;
     setPointsBusy(true);
@@ -507,23 +555,26 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         roadway,
         bearingLabel,
         checks: result.checks,
-        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString('fr-FR'), assumptions: [] },
+        lang: pdfLang,
+        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
+      const title = { fr: 'Plan des appuis au sol', de: 'Auflagerplan', en: 'Ground support plan' }[pdfLang];
       const pdf = await buildPdf(
         svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })),
         fonts,
-        { title: `Plan des appuis au sol — ${name}`, subject: source },
+        { title: `${title} — ${name}`, subject: source },
       );
-      downloadBlob(`Plan des appuis au sol ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
+      downloadBlob(`${title} ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
     } catch (e) {
       setError(`PDF impossible : ${(e as Error).message}`);
     }
     setPointsBusy(false);
   };
 
-  const selCheck = result?.checks.find((c) => c.id === selected);
-  const checkById = new Map((result?.checks ?? []).map((c) => [c.id, c]));
+  // appui de calage (plaque) d'un point : les vérins voisins partagent une plaque
+  const checkById = new Map((result?.checks ?? []).flatMap((c) => [c.id, ...c.members].map((id) => [id, c] as const)));
+  const selCheck = selected ? checkById.get(selected) : undefined;
   const failing = result ? result.checks.filter((c) => verdictOf(c.eta) === 'fail').length : 0;
   const persons = hyp.publicMode === 'persons' ? Math.max(0, Math.round(hyp.persons)) : null;
   const publicLine = (() => {
@@ -590,8 +641,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <div className="l">Viewbox</div>
             </div>
             <div className="stat">
-              <div className="v">{result.estimate.groups.length}</div>
-              <div className="l">appuis à caler</div>
+              <div className="v">{result.checks.length}</div>
+              <div className="l">plaques de calage ({result.estimate.groups.length} points d’appui)</div>
             </div>
             <div className="stat">
               <div className="v">{n((result.estimate.verticalK ?? result.estimate.totalG + result.estimate.totalQ) / 1e3, 0)} kN</div>
@@ -648,19 +699,43 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                       {l}
                     </span>
                   ))
-                : Object.entries(jacks ? { '1': 'vérin d’angle', M: 'vérin central' } : { '1': 'angle seul', '2': '2 angles', '3': '3 angles', '4': '4 angles', M: 'pied central' })
-                    .filter(([k]) => result.estimate.reactions.some((r) => groupTypeKey(r.group) === k))
-                    .map(([k, l]) => (
-                      <span key={k} className="chip">
-                        <i style={{ background: TYPE_COLORS[k] }} />
-                        {l}
-                      </span>
-                    ))}
+                : [...new Map(result.types.map((t) => [t.typeKey, t.label.split(' — ')[0]])).entries()].map(([k, l]) => (
+                    <span key={k} className="chip">
+                      <i style={{ background: typeColor(k) }} />
+                      {l}
+                    </span>
+                  ))}
+              <select value={pdfLang} onChange={(e) => setPdfLang(e.target.value as Lang)} title="Langue des PDF de calage (fiche, plan des appuis au sol)">
+                {LANGS.map((l) => (
+                  <option key={l} value={l}>
+                    {LANG_LABEL[l]}
+                  </option>
+                ))}
+              </select>
               <button className="btn primary small" disabled={pdfBusy} onClick={() => void exportPdf()}>
                 {pdfBusy ? 'PDF…' : '⬇ Fiche PDF'}
               </button>
             </div>
             <div className="card-body">
+              <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+                <label className="row" style={{ gap: 6 }} title="À fleur : la plaque ne dépasse pas de l’installation ; la charge n’étant pas au centre de la plaque, seule l’emprise centrée sur la charge compte (B’ = B − 2 e) — sous un angle extérieur, 2 × 15,5 cm avec vérins.">
+                  <b>Pose des plaques</b>
+                  <select value={hyp.platePlacement ?? 'auto'} onChange={(e) => setHyp((h) => ({ ...h, platePlacement: e.target.value as PlatePlacement }))}>
+                    <option value="auto">À fleur de la Viewbox, centrées si nécessaire (conseillé)</option>
+                    <option value="flush">Toujours à fleur de la Viewbox</option>
+                    <option value="centered">Centrées sous chaque appui (statico / TÜV)</option>
+                  </select>
+                </label>
+                <label className="row" style={{ gap: 6 }} title={CALAGE_LABELS.fr.legal(jacks).join('\n')}>
+                  <input type="checkbox" checked={hyp.tuvMinimum ?? true} onChange={(e) => setHyp((h) => ({ ...h, tuvMinimum: e.target.checked }))} />
+                  Plaques minimales du Prüfbuch TÜV 190060 B (plan 18-0573-03)
+                </label>
+                {result.tuv.tuvMinimum && (
+                  <span className={`badge ${result.tuv.ok === false || !result.tuv.bearingOk ? 'warn' : ''}`}>
+                    {!result.tuv.bearingOk ? 'portance < 200 kN/m² : hors Prüfbuch' : result.tuv.ok === false ? 'calage < minimum du Prüfbuch' : result.tuv.ok ? 'conforme au Prüfbuch' : 'Prüfbuch : non comparable'}
+                  </span>
+                )}
+              </div>
               <svg viewBox="0 0 1000 420" style={{ width: '100%', maxHeight: 460, background: '#fff', borderRadius: 6 }}>
                 <GroundPlan
                   modules={modules}
@@ -672,6 +747,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   text={14}
                   selected={selected}
                   onSelect={select}
+                  plates={planPlates(result.checks)}
                   {...(planView === 'check'
                     ? {
                         pointColor: (r) => {
@@ -683,11 +759,17 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                           return c ? `${n(r.Rk / 1e3, 0)} kN · η ${n(c.eta, 2)}` : undefined;
                         },
                       }
-                    : {})}
+                    : {
+                        pointColor: (r) => {
+                          const c = checkById.get(r.group.id);
+                          return c ? typeColor(c.typeKey) : undefined;
+                        },
+                      })}
                 />
               </svg>
               <div className="hint" style={{ marginTop: 4 }}>
-                {planView === 'check' ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.' : 'Couleur = type d’appui.'}
+                {planView === 'check' ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.' : 'Couleur = type d’appui.'}{' '}
+                Plaques dessinées à l’échelle à leur place (pointillés ▲ = plaque centrée, elle dépasse de la Viewbox) ; les vérins voisins sont sur une même plaque.
               </div>
               {selCheck && <SupportPanel c={selCheck} result={result} stock={input.stock} set={choiceSet} onClose={() => setSelected(null)} />}
               <div className="hint" style={{ marginTop: 6 }}>
@@ -825,9 +907,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             <div className="card" key={t.key}>
               <div className="card-head">
                 <span className="chip">
-                  <i style={{ background: TYPE_COLORS[groupTypeKey(t)] }} />
+                  <i style={{ background: typeColor(t.typeKey) }} />
                   {t.label}
                 </span>
+                {t.tuv && <span className={`badge ${t.tuv.ok === false ? 'warn' : ''}`} title={t.tuv.text}>{t.tuv.ok === false ? 'Prüfbuch ✖' : t.tuv.ok ? 'Prüfbuch ✔' : 'Prüfbuch —'}</span>}
                 <span className="hint">
                   {t.reactions.length} appui(s) — Rz,k maxi {kN(t.Rzk)}, Rz,Ed maxi {kN(t.RzEd)} (statico : Rz,Ed / 1,35 = {kN(t.RzEd / 1.35)}) — contact{' '}
                   {t.a1 / 10} × {t.a2 / 10} cm

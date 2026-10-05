@@ -128,9 +128,12 @@ describe('pieds à vérin', () => {
     const m1 = est.groups.find((g) => g.middle && g.moduleIds[0] === 'VBX-01' && g.position[1] < 1000)!;
     expect(m1.position[0]).toBeCloseTo(2950, 6);
     expect(m1.position[1]).toBeCloseTo(5 + 155, 6);
-    // calage : vérins d'angle et vérins centraux, chacun sur sa plaque
+    // calage : les deux vérins de l'angle partagé sur une même plaque, les autres chacun sur la sienne
     const cal = computeCalage(calageInput(mods, DEFAULT_HYP, { plates: [], commercial: [] }, true));
-    expect(cal.types.map((t) => t.label).sort()).toEqual(['vérin central', 'vérin d’angle']);
+    expect(cal.types.map((t) => t.label).sort()).toEqual(['2 vérins d’angle sur une plaque', 'vérin central', 'vérin d’angle']);
+    const pair = cal.checks.find((c) => c.members.length === 2)!;
+    expect(pair.members.every((id) => id.startsWith('P'))).toBe(true);
+    expect(pair.Rzk).toBeCloseTo(pair.members.reduce((s, id) => s + est.reactions.find((r) => r.group.id === id)!.Rk, 0), 0);
     expect(cal.warnings.some((w) => w.includes('platine 15 × 15 cm'))).toBe(true);
   });
 });
