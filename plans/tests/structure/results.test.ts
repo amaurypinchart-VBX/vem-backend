@@ -36,7 +36,8 @@ describe('étude complète (2 Viewbox au sol + 1 empilée)', () => {
     // chaque vérification a un taux fini, une combinaison ELU et son détail
     expect(summary.states.every((x) => x && Number.isFinite(x.eta) && !x.blocked && x.combo.startsWith('CO') && x.records.length > 0)).toBe(true);
     const kinds = new Set(index.items.map((i) => i.kind));
-    expect(kinds).toEqual(new Set(['member', 'corner', 'vlink', 'bolt']));
+    expect(kinds).toEqual(new Set(['member', 'corner', 'vlink', 'stack', 'bolt']));
+    expect(index.items.filter((i) => i.kind === 'stack')).toHaveLength(1);
     expect(index.items.filter((i) => i.kind === 'corner')).toHaveLength(24);
     expect(index.items.filter((i) => i.kind === 'vlink')).toHaveLength(4);
     const stab = stability(summary, s.combos, 0.4);

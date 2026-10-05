@@ -147,6 +147,8 @@ export interface Labels {
   impact: string;
   s23: string;
   snowText: string;
+  snowWith: (sk: string, s: string, kg: string) => string;
+  snowNoteWith: string;
   s24: string;
   windTwoStates: string;
   inServiceTitle: string;
@@ -447,6 +449,8 @@ const FR: Labels = {
   impact: 'Chocs : non pris en compte, à empêcher par des mesures adaptées.',
   s23: 'Neige',
   snowText: 'Le calcul ne prend pas en compte la neige ; en cas de chute de neige, elle est à empêcher par des mesures techniques ou organisationnelles.',
+  snowWith: (sk, s, kg) => `Neige au sol sk = ${sk} kN/m² ; sur les toitures du dernier niveau s = 0,8 · sk = ${s} kN/m² (${kg} kg/m², EN 1991-1-3), combinée seule et avec le vent hors service ou la foule (ψ0 = 0,5). Les terrasses enneigées sont fermées au public.`,
+  snowNoteWith: 'La neige est prise en compte sur les toitures (valeur ci-dessous) ; au-delà, déneiger.',
   s24: 'Vent',
   windTwoStates: 'La construction est dimensionnée pour deux états d’exploitation.',
   inServiceTitle: 'En service (DIN EN 13814)',
@@ -490,9 +494,9 @@ const FR: Labels = {
   corners: 'Assemblages poteau / cadre (angles)',
   cornersText: 'Platines de 10 mm soudées sur les rives, 4 × M16-8.8 par angle (entraxe 110 mm), 2 plats 180 × 50 × 15 mm intérieurs ; rigidité ≈ 3 500 kNcm/deg dans le modèle. Capacités ideaStatiCa (statico) : biaxial My, Mz ≤ 8,0 kNm ; uniaxial max ≤ 11,5 kNm et min ≤ 3,3 kNm ; N ≤ 70 kN ; la plus favorable des deux interactions est retenue.',
   vlinks: 'Liaisons verticales entre Viewbox empilées',
-  vlinksText: 'Plats de liaison 100 × 10 mm, 2 × M20-8.8 (2 par grand côté, 1 par petit côté, trou Ø 22) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; soulèvement repris par les boulons M20 des plats (TRd = 94,1 kN par plat) ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
+  vlinksText: 'Plats de liaison 100 × 10 mm, 2 × M20-8.8 (4 par grand côté et 2 par petit côté, sur les faces extérieures seulement) : HRd = 5,81 kN par plat et par sens, frottement acier / acier μ = 0,1 ; soulèvement repris par les boulons M20 des plats (TRd = 94,1 kN par plat) ; contact vertical poteau / poteau NRd = 176 kN (soudure du couvercle).',
   bolts: 'Liaisons horizontales (boulons M16 × 150)',
-  boltsText: 'Boulons M16 × 150 (8.8) dans les trous Ø 22 de l’âme des UNP (tw = 9 mm), plancher et toiture : cisaillement, pression diamétrale (trou surdimensionné), poinçonnement, traction et interaction selon DIN EN 1993-1-8.',
+  boltsText: 'Boulons M16 × 150 classe 10.9 passés dans les écrous M20 soudés de l’âme des UNP (passage 18 mm, tw = 9 mm), plancher et toiture : cisaillement, pression diamétrale, poinçonnement, traction et interaction selon DIN EN 1993-1-8.',
   jacksTitle: 'Pieds à vérin (tiges Tr 24 × 5)',
   jacksText:
     'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
@@ -761,6 +765,8 @@ const DE: Labels = {
   impact: 'Anprall: nicht berücksichtigt, durch geeignete Maßnahmen zu verhindern.',
   s23: 'Schneelasten',
   snowText: 'Die Bemessung erfolgt ohne Berücksichtigung von Schneelasten. Entsprechende Einwirkungen müssen bei ggf. auftretendem Schneefall technisch / organisatorisch verhindert werden.',
+  snowWith: (sk, s, kg) => `Schneelast auf dem Boden sk = ${sk} kN/m²; auf den Dächern des obersten Geschosses s = 0,8 · sk = ${s} kN/m² (${kg} kg/m², DIN EN 1991-1-3), allein sowie mit Wind außer Betrieb oder Personenlast kombiniert (ψ0 = 0,5). Verschneite Dachterrassen sind für Personen gesperrt.`,
+  snowNoteWith: 'Schneelasten werden auf den Dächern berücksichtigt (Wert siehe unten); darüber hinaus ist zu räumen.',
   s24: 'Windlasten',
   windTwoStates: 'Die Konstruktion wird für zwei Betriebszustände dimensioniert.',
   inServiceTitle: 'In Betrieb (DIN EN 13814)',
@@ -804,9 +810,9 @@ const DE: Labels = {
   corners: 'Eckverbindung der Stütze mit den Boden- bzw. Dachelementen',
   cornersText: '10-mm-Flanschplatten an den Randträgern geschweißt, vier M16-8.8 je Ecke (Abstand 110 mm), zwei 180 × 50 × 15 mm Platten innenliegend; Nachgiebigkeit ca. 3 500 kNcm/deg im Gesamtmodell. Tragfähigkeiten aus ideaStatiCa (statico): zweiachsig My, Mz ≤ 8,0 kNm; einachsig max ≤ 11,5 kNm und min ≤ 3,3 kNm; N ≤ 70 kN; die günstigere Ausnutzung wird gewählt.',
   vlinks: 'Nachweis der vertikalen Verbindungen',
-  vlinksText: 'Verbindungslaschen 100 × 10 mm, 2 × M20-8.8 (2 je Längsseite, 1 je Stirnseite, Loch Ø 22): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; Abheben über die M20 der Laschen (TRd = 94,1 kN je Lasche); vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
+  vlinksText: 'Verbindungslaschen 100 × 10 mm, 2 × M20-8.8 (4 je Längsseite und 2 je Stirnseite, nur an den Außenseiten): HRd = 5,81 kN je Lasche und Richtung, Reibung Stahl / Stahl μ = 0,1; Abheben über die M20 der Laschen (TRd = 94,1 kN je Lasche); vertikaler Druckkontakt Stütze / Stütze NRd = 176 kN (Deckelnaht).',
   bolts: 'Nachweis der horizontalen Verschraubungen',
-  boltsText: 'M16 × 150 (8.8) in den Bohrungen Ø 22 im Steg der UNP (tw = 9 mm), Boden und Dach: Abscheren, Lochleibung (übergroßes Loch), Durchstanzen, Zug und Interaktion nach DIN EN 1993-1-8.',
+  boltsText: 'M16 × 150, Festigkeitsklasse 10.9, durch die angeschweißten M20-Muttern im Steg der UNP (Durchgang 18 mm, tw = 9 mm), Boden und Dach: Abscheren, Lochleibung, Durchstanzen, Zug und Interaktion nach DIN EN 1993-1-8.',
   jacksTitle: 'Nachweis der Spindelfüße (Tr 24 × 5)',
   jacksText:
     'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
@@ -1075,6 +1081,8 @@ const EN: Labels = {
   impact: 'Impact: not considered, to be prevented by suitable measures.',
   s23: 'Snow',
   snowText: 'The design does not consider snow loads; in case of snowfall, they are to be prevented by technical or organisational measures.',
+  snowWith: (sk, s, kg) => `Ground snow load sk = ${sk} kN/m²; on the roofs of the top level s = 0.8 · sk = ${s} kN/m² (${kg} kg/m², EN 1991-1-3), combined alone and with out-of-service wind or crowd load (ψ0 = 0.5). Snow-covered roof terraces are closed to the public.`,
+  snowNoteWith: 'Snow is considered on the roofs (value below); beyond it, clear the snow.',
   s24: 'Wind',
   windTwoStates: 'The structure is designed for two operating states.',
   inServiceTitle: 'In service (DIN EN 13814)',
@@ -1118,9 +1126,9 @@ const EN: Labels = {
   corners: 'Column-to-frame joints (corners)',
   cornersText: '10 mm flange plates welded to the edge beams, 4 × M16-8.8 per corner (spacing 110 mm), 2 inner plates 180 × 50 × 15 mm; stiffness ≈ 3 500 kNcm/deg in the model. ideaStatiCa capacities (statico): biaxial My, Mz ≤ 8.0 kNm; uniaxial max ≤ 11.5 kNm and min ≤ 3.3 kNm; N ≤ 70 kN; the more favourable interaction is used.',
   vlinks: 'Vertical connections between stacked units',
-  vlinksText: 'Link plates 100 × 10 mm, 2 × M20-8.8 (2 per long side, 1 per short side, hole Ø 22): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; uplift carried by the M20 bolts of the plates (TRd = 94.1 kN per plate); vertical column-to-column contact NRd = 176 kN (cover plate weld).',
+  vlinksText: 'Link plates 100 × 10 mm, 2 × M20-8.8 (4 per long side and 2 per short side, on the outer faces only): HRd = 5.81 kN per plate and direction, steel-to-steel friction μ = 0.1; uplift carried by the M20 bolts of the plates (TRd = 94.1 kN per plate); vertical column-to-column contact NRd = 176 kN (cover plate weld).',
   bolts: 'Horizontal connections (M16 × 150 bolts)',
-  boltsText: 'M16 × 150 (8.8) bolts in the Ø 22 holes of the UPN edge beam webs (tw = 9 mm), floor and roof: shear, bearing (oversize hole), punching, tension and interaction to DIN EN 1993-1-8.',
+  boltsText: 'M16 × 150 grade 10.9 bolts through the welded M20 nuts of the UPN edge beam webs (18 mm passage, tw = 9 mm), floor and roof: shear, bearing, punching, tension and interaction to DIN EN 1993-1-8.',
   jacksTitle: 'Jack feet (Tr 24 × 5 rods)',
   jacksText:
     'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',

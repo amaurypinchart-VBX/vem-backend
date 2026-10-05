@@ -114,6 +114,7 @@ export function parseChanges(inp: Json, library: InputsSource['library']): Varia
   if (h.vent_hors_service_kN_m2 !== undefined) hyp.windOut = num(h.vent_hors_service_kN_m2, 'vent hors service', 0, 5);
   if (h.charge_forfaitaire_kN_par_viewbox !== undefined) hyp.extraKN = num(h.charge_forfaitaire_kN_par_viewbox, 'charge forfaitaire', 0, 500);
   if (h.pieds_centraux !== undefined) hyp.middleFeet = bool(h.pieds_centraux);
+  if (h.neige_sol_kg_m2 !== undefined) hyp.snowKgm2 = num(h.neige_sol_kg_m2, 'neige au sol', 0, 2000);
   if (Object.keys(hyp).length) out.hyp = hyp;
   if (h.toitures_accessibles !== undefined) out.roof = bool(h.toitures_accessibles);
   const o = (inp.options_calcul ?? {}) as Json;
@@ -178,7 +179,7 @@ export function changeLines(ch: VariantChanges, library: InputsSource['library']
     return c ? customSectionEntry(c).name : k;
   };
   const out: string[] = [];
-  const H: Record<string, string> = { live: 'exploitation (kN/m²)', roofLive: 'exploitation toiture (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', extraKN: 'charge forfaitaire (kN par Viewbox)', middleFeet: 'pieds centraux calés' };
+  const H: Record<string, string> = { live: 'exploitation (kN/m²)', roofLive: 'exploitation toiture (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', extraKN: 'charge forfaitaire (kN par Viewbox)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
   for (const [k, v] of Object.entries(ch.hyp ?? {})) out.push(`${H[k] ?? k} : ${typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v).replace('.', ',')}`);
   if (ch.roof !== undefined) out.push(`toitures accessibles : ${ch.roof ? 'oui' : 'non'}`);
   const C: Record<string, string> = { jacks: 'pieds à vérin', jackExtension: 'sortie des vérins (mm)', friction: 'frottement μ' };
@@ -260,6 +261,8 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
           vent_hors_service_kN_m2: h.windOut,
           poids_viewbox_kg: h.moduleWeightKg,
           charge_forfaitaire_kN_par_viewbox: h.extraKN,
+          neige_sol_kg_m2: h.snowKgm2 ?? 0,
+          neige_toitures_kg_m2: Math.round(0.8 * (h.snowKgm2 ?? 0)),
           portance: { valeur: h.bearingValue, unite: h.bearingUnit, kN_m2: r1(bearingFrom(h.bearingValue, h.bearingUnit) * 1e3), kg_m2: Math.round(kgm2(bearingFrom(h.bearingValue, h.bearingUnit))) },
           public_pour_le_sol: h.publicMode === 'persons' ? { personnes: h.persons, kg_par_personne: h.personKg } : 'charge réglementaire',
         },

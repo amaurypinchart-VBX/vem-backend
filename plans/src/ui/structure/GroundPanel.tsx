@@ -54,12 +54,14 @@ export interface Hypotheses {
   personKg: number;
   /** calage choisi par type d'appui ou par appui, plaques de roulage */
   calage?: CalageChoices;
+  /** neige au sol sk (kg/m²) ; 0 = pas de neige (été, ou neige empêchée / déblayée) */
+  snowKgm2?: number;
 }
 
 export const DEFAULT_HYP: Hypotheses = {
   bearingPreset: 'meadow',
-  bearingValue: 200,
-  bearingUnit: 'kN/m²',
+  bearingValue: 20390,
+  bearingUnit: 'kg/m²',
   pointLoadKN: 0,
   moduleWeightKg: 2564,
   weightMode: 'max',
@@ -82,6 +84,7 @@ export const DEFAULT_HYP: Hypotheses = {
   publicMode: 'norm',
   persons: 10,
   personKg: 80,
+  snowKgm2: 0,
 };
 
 export interface StructureStock {
@@ -101,6 +104,9 @@ function readStored(key: string): Partial<Hypotheses> {
   }
 }
 
+/** Neige sur les toitures du dernier niveau (N/mm²) : s = 0,8 · sk (EN 1991-1-3, toiture plate). */
+export const roofSnow = (h: Pick<Hypotheses, 'snowKgm2'>) => (0.8 * Math.max(0, h.snowKgm2 ?? 0) * 9.81) / 1e6;
+
 /** Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm) ; `jacks` : 6 pieds à vérin par Viewbox. */
 export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
@@ -116,6 +122,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
         live: kNm2(h.live),
         roofLive: kNm2(h.roofLive),
         extraPerModule: h.extraKN * 1e3,
+        snowRoof: roofSnow(h),
       },
       windInService: kNm2(h.windIn),
       windOutOfService: kNm2(h.windOut),
@@ -333,122 +340,8 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
 }
 
 /** Formulaire « Site et hypothèses » (portance, charges, vent, options de calage). */
-export function HypothesesForm({ hyp, setHyp, jacks = false }: { hyp: Hypotheses; setHyp: (update: (h: Hypotheses) => Hypotheses) => void; jacks?: boolean }) {
-  const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
-  const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
-  return (
-    <div className="card">
-      <div className="card-head">
-        <h2>Site et hypothèses</h2>
-        <div className="spacer" style={{ flex: 1 }} />
-        <button className="btn small ghost" onClick={() => setHyp(() => ({ ...DEFAULT_HYP }))}>
-          Valeurs par défaut
-        </button>
-      </div>
-      <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '8px 24px' }}>
-        <Field label="Type de sol / support">
-          <select
-            value={hyp.bearingPreset}
-            onChange={(e) => {
-              const p = BEARING_PRESETS.find((x) => x.key === e.target.value);
-              setHyp((h) => ({ ...h, bearingPreset: e.target.value, ...(p?.value ? { bearingValue: p.value * 1e3, bearingUnit: 'kN/m²' as const } : {}) }));
-            }}
-          >
-            {BEARING_PRESETS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-                {p.value ? ` — ${p.value * 1e3} kN/m²` : ' — à renseigner'}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Portance admissible" hint={preset?.source}>
-          <BearingInputs hyp={hyp} set={set} />
-        </Field>
-        <div className="hint" style={{ fontSize: 11, alignSelf: 'center' }}>
-          {bearingConversions(hyp.bearingValue, hyp.bearingUnit)} (1 kN/m² ≈ 102 kg/m²)
-        </div>
-        {preset?.pointLoad && (
-          <Field label="Charge ponctuelle admissible">
-            <Num value={hyp.pointLoadKN} onChange={(v) => set('pointLoadKN', v)} /> kN
-          </Field>
-        )}
-        <Field label="Poids d’une Viewbox pesée (planchers + isolants)">
-          <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
-        </Field>
-        <Field
-          label="Poids propre retenu"
-          hint="Le modèle pèse les barres acier (≈ 16,5 kN par Viewbox) + plafond + sol (≈ 11 kN) ≈ 27,6 kN (2 810 kg). « Le plus lourd » garde ce poids s’il dépasse la pesée ; « pesée » réduit plafond et sol pour retrouver exactement le poids pesé."
-        >
-          <select value={hyp.weightMode} onChange={(e) => set('weightMode', e.target.value as Hypotheses['weightMode'])}>
-            <option value="max">le plus lourd : modèle (barres + plafond + sol) ou pesée</option>
-            <option value="weighed">la pesée exactement ({n(hyp.moduleWeightKg, 0)} kg)</option>
-          </select>
-        </Field>
-        <Field label="Plafond + isolation / sol + isolation">
-          <Num value={hyp.ceiling} onChange={(v) => set('ceiling', v)} width={60} /> /
-          <Num value={hyp.floorFinish} onChange={(v) => set('floorFinish', v)} width={60} /> kN/m²
-        </Field>
-        <Field label="Exploitation des planchers" hint="3,5 kN/m² ≈ 357 kg/m² ≈ 4 à 5 personnes debout par m² (espace ouvert au public)">
-          <Num value={hyp.live} onChange={(v) => set('live', v)} /> kN/m²
-        </Field>
-        <Field label="Exploitation des toitures accessibles">
-          <Num value={hyp.roofLive} onChange={(v) => set('roofLive', v)} /> kN/m²
-        </Field>
-        <Field
-          label="Public pour le sol et le calage"
-          hint="Nombre de personnes limité : l’organisateur s’engage à ne pas dépasser ce nombre sur toute l’installation (comptage / contrôle d’accès). La structure reste vérifiée avec la charge réglementaire."
-        >
-          <select value={hyp.publicMode} onChange={(e) => set('publicMode', e.target.value as Hypotheses['publicMode'])}>
-            <option value="norm">charge réglementaire ci-dessus (public libre)</option>
-            <option value="persons">nombre de personnes limité</option>
-          </select>
-        </Field>
-        {hyp.publicMode === 'persons' && (
-          <Field label="Personnes au plus (toute l’installation)" hint="Le calcul les place au pire endroit : toutes serrées au-dessus de l’appui le plus défavorable (3,5 kN/m² au plus).">
-            <Num value={hyp.persons} onChange={(v) => set('persons', Math.max(0, Math.round(v)))} width={60} /> ×
-            <Num value={hyp.personKg} onChange={(v) => set('personKg', Math.max(1, v))} width={50} /> kg = {n((Math.max(0, Math.round(hyp.persons)) * hyp.personKg * 9.81) / 1e3, 1)} kN
-          </Field>
-        )}
-        <Field label="Murs, garde-corps, logo… par Viewbox">
-          <Num value={hyp.extraKN} onChange={(v) => set('extraKN', v)} /> kN
-        </Field>
-        <Field label="Vent en service / hors service" hint="en service : DIN EN 13814 (h ≤ 8 m) ; hors service : qp × 0,7 (zone 1, h ≤ 9,5 m par défaut)">
-          <Num value={hyp.windIn} onChange={(v) => set('windIn', v)} width={60} /> /
-          <Num value={hyp.windOut} onChange={(v) => set('windOut', v)} width={60} /> kN/m²
-        </Field>
-        <Field label="Sol sous longrines (réaction)" hint="valeurs indicatives, à confirmer">
-          <select value={hyp.subgrade} onChange={(e) => set('subgrade', e.target.value)}>
-            {SUBGRADE_PRESETS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Épaisseurs de contreplaqué du commerce">
-          <input type="text" style={{ width: 170 }} value={hyp.thicknesses} onChange={(e) => set('thicknesses', e.target.value)} /> mm
-        </Field>
-        <Field label="Majoration forfaitaire">
-          <Num value={hyp.extraPct} onChange={(v) => set('extraPct', v)} width={60} /> %
-        </Field>
-        <label className="row hint" title={jacks ? 'pieds à vérin : 6 par Viewbox, pieds centraux compris' : undefined}>
-          <input type="checkbox" checked={hyp.middleFeet || jacks} disabled={jacks} onChange={(e) => set('middleFeet', e.target.checked)} /> Pieds centraux des grands côtés calés aussi
-          {jacks && ' (vérins : 6 par Viewbox)'}
-        </label>
-        <label className="row hint">
-          <input type="checkbox" checked={hyp.evacuateTop} onChange={(e) => set('evacuateTop', e.target.checked)} /> Dernier niveau évacué par vent fort
-        </label>
-        <label className="row hint">
-          <input type="checkbox" checked={hyp.staticoConversion} onChange={(e) => set('staticoConversion', e.target.checked)} /> Surface des plaques avec Rz,Ed / 1,35 (comme statico)
-        </label>
-        <label className="row hint">
-          <input type="checkbox" checked={hyp.diffusion} onChange={(e) => set('diffusion', e.target.checked)} /> Proposer des couches continues (diffusion à 45°)
-        </label>
-      </div>
-    </div>
-  );
-}
+import { HypothesesForm } from './SiteForm';
+export { HypothesesForm };
 
 export interface GroundPanelProps {
   modules: EstimateModule[];

@@ -41,6 +41,8 @@ export interface EstimateLoads {
   roofLive: number;
   /** murs, garde-corps, logos… par module (N) */
   extraPerModule: number;
+  /** neige sur les toitures du dernier niveau (N/mm², coefficient de forme compris) */
+  snowRoof?: number;
 }
 
 export interface EstimateOptions {
@@ -182,6 +184,8 @@ interface Part {
   G: number;
   Q: number;
   QaB: number;
+  /** neige (toitures du dernier niveau, reprise par les angles) */
+  S?: number;
 }
 
 export function estimateReactions(modules: EstimateModule[], opt: EstimateOptions): Estimate {
@@ -242,9 +246,10 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   const isTop = modules.map((m) =>
     !modules.some((o) => o.level === m.level + 1 && o.corners.some((c) => m.corners.some((d) => dist(c, d) <= opt.groupTolerance))),
   );
-  const parts: Part[] = groups.map(() => ({ G: 0, Q: 0, QaB: 0 }));
+  const parts: Part[] = groups.map(() => ({ G: 0, Q: 0, QaB: 0, S: 0 }));
   let totalG = 0;
   let totalQ = 0;
+  let totalS = 0;
   const perModule = modules.map((m, k) => {
     // poids d'une Viewbox standard (5 900 × 2 500) ramené à la surface du module (8400 : prorata, données inconnues) ;
     // le poids pesé comprend planchers et isolants : « le plus lourd » le compare à barres + plafond + sol comme le
@@ -258,7 +263,9 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const QaB = opt.evacuateTopLevel && isTop[k] ? 0 : Qfloor;
     totalG += G;
     totalQ += Qfloor + Qroof;
-    return { G, Q: Qfloor + Qroof, QaB, floorG: L.floorFinish * m.area + 0.5 * weight, Qfloor };
+    const S = isTop[k] ? (L.snowRoof ?? 0) * m.area : 0;
+    totalS += S;
+    return { G, Q: Qfloor + Qroof, QaB, floorG: L.floorFinish * m.area + 0.5 * weight, Qfloor, S };
   });
   modules.forEach((_, k) => {
     const lm = perModule[k];
@@ -271,6 +278,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
         g.Q += Q / list.length;
         g.QaB += QaB / list.length;
       });
+    for (const { i } of cornerPts) parts[groupOfPoint[i]].S! += lm.S / cornerPts.length;
     if (midPts.length) {
       // plancher sur rive continue à trois appuis : 62,5 % aux pieds centraux, 37,5 % aux angles
       const QaBfloor = lm.QaB;
@@ -302,6 +310,8 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     windQ: number;
     withH: boolean;
     dir: P2 | null;
+    /** coefficient de la neige */
+    gS?: number;
   }
   const dirs: Array<{ n: string; d: P2 }> = [
     { n: 'x+', d: [1, 0] },
@@ -324,6 +334,11 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
         { name: `G + Q hors service + W hors service (${n})`, gG, gQ, useQaB: true, gW, windQ: opt.windOutOfService, withH: true, dir: d },
       );
     }
+    if ((L.snowRoof ?? 0) > 0) {
+      const psi = f(opt.gammaQ) * 0.5;
+      out.push({ name: design ? 'G + S (neige)' : 'G + S (neige)', gG: f(opt.gammaGQ), gQ: 0, useQaB: false, gW: 0, windQ: 0, withH: false, dir: null, gS: f(opt.gammaQ) });
+      for (const { n, d } of dirs) out.push({ name: `G + W hors service + ψ0 S (${n})`, gG: f(opt.gammaGQ), gQ: 0, useQaB: false, gW: f(opt.gammaW), windQ: opt.windOutOfService, withH: false, dir: d, gS: psi });
+    }
     return out;
   };
 
@@ -335,7 +350,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   });
 
   const evaluate = (c: Combo): number[] => {
-    const R = parts.map((p) => c.gG * p.G + c.gQ * (c.useQaB ? p.QaB : p.Q));
+    const R = parts.map((p) => c.gG * p.G + c.gQ * (c.useQaB ? p.QaB : p.Q) + (c.gS ?? 0) * (p.S ?? 0));
     if (!c.dir) return R;
     const d = c.dir;
     const perp: P2 = [-d[1], d[0]];
@@ -351,7 +366,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
         const proj = at.flatMap(({ m }) => m.corners.map((p) => p[0] * perp[0] + p[1] * perp[1]));
         const width = Math.max(...proj) - Math.min(...proj);
         const Fw = c.gW * c.windQ * opt.cp * width * h;
-        const V = at.reduce((s, { k }) => s + c.gG * perModule[k].G + c.gQ * (c.useQaB ? perModule[k].QaB : perModule[k].Q), 0);
+        const V = at.reduce((s, { k }) => s + c.gG * perModule[k].G + c.gQ * (c.useQaB ? perModule[k].QaB : perModule[k].Q) + (c.gS ?? 0) * perModule[k].S, 0);
         const Qlv = at.reduce((s, { k }) => s + c.gQ * (c.useQaB ? perModule[k].QaB : perModule[k].Q), 0);
         const Fh = c.withH ? opt.horizontalRatio * Qlv : 0;
         const Fi = opt.sway * V;
@@ -450,7 +465,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       withValues: `vent en service ${fmtNumber(opt.windInService * 1e3, 2)} kN/m², hors service ${fmtNumber(opt.windOutOfService * 1e3, 2)} kN/m², cp ${fmtNumber(opt.cp, 1)} ; H = V/${fmtNumber(1 / opt.horizontalRatio, 0)} ; φ = 1/${fmtNumber(1 / opt.sway, 0)}`,
     },
   ];
-  return { groups: outGroups, reactions, totalG, totalQ, verticalK: (totalG + totalQ) * extra, method: 'estimate', totals, publicCap: 1, units, warnings, records };
+  return { groups: outGroups, reactions, totalG, totalQ, verticalK: (totalG + Math.max(totalQ, totalS)) * extra, method: 'estimate', totals, publicCap: 1, units, warnings, records };
 }
 
 /**

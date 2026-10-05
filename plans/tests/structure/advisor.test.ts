@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { sectionMap } from '../../src/structure/core/assemble';
 import { rhs } from '../../src/structure/core/catalog';
-import { checkBolt, checkVerticalLink, connectionSet, platesPerCorner } from '../../src/structure/core/checks/joints';
+import { checkBolt, checkStackShear, checkVerticalLink, connectionSet, platesPerCorner } from '../../src/structure/core/checks/joints';
 import { checkTimberSpan } from '../../src/structure/core/checks/ec5';
 import { materialByKey } from '../../src/structure/core/materials';
 import { customSectionEntry, customSectionKey, describeMods, libraryWithMods, mergeMods } from '../../src/structure/core/mods';
@@ -30,27 +30,36 @@ const base = (modules = [vbx('A', 0, 0), vbx('B', 5.9, 0)]): StudyInputs => ({
   blocking: [],
 });
 
-describe('assemblages Viewbox (A. Pinchart 30.09.2026)', () => {
+describe('assemblages Viewbox (A. Pinchart 30.09 et 01.10.2026)', () => {
   const c = connectionSet(SEED);
-  it('boulons horizontaux M16 dans les trous M20 : cisaillement limité à 60,3 kN, traction 90,4 kN', () => {
-    expect(checkBolt(c, { ...F0, Vy: 60.3e3 }, 'b').eta).toBeCloseTo(1, 3);
-    expect(checkBolt(c, { ...F0, N: 90.4e3 }, 'b').eta).toBeCloseTo(1, 3);
-    expect(checkBolt(c, { ...F0, Vz: 30e3, N: 40e3 }, 'b').eta).toBeCloseTo(30 / 60.3 + 40 / (1.4 * 90.4), 3);
+  it('boulons horizontaux M16 10.9 dans les écrous M20 soudés : cisaillement 62,8 kN, traction 113 kN', () => {
+    expect(checkBolt(c, { ...F0, Vy: 62.8e3 }, 'b').eta).toBeCloseTo(1, 3);
+    expect(checkBolt(c, { ...F0, N: 113.0e3 }, 'b').eta).toBeCloseTo(1, 3);
+    expect(checkBolt(c, { ...F0, Vz: 30e3, N: 40e3 }, 'b').eta).toBeCloseTo(30 / 62.8 + 40 / (1.4 * 113.0), 3);
     expect(checkBolt(c, F0, 'b').record!.title).toContain('M16');
   });
-  it('plats d’empilement : 2 par grand côté et 1 par petit côté → 1 + ½ plat par angle, soulèvement repris', () => {
-    const n = platesPerCorner(c);
-    expect(n).toEqual({ alongU: 0.5, alongV: 1, TRd: 94.1e3 });
-    // soulèvement de 50 kN à un angle : 1,5 plat × 94,1 kN
+  it('plats d’empilement : 4 par grand côté, 2 par petit côté, faces extérieures seulement', () => {
+    // angle à l'extérieur des deux côtés : 2 plats du grand côté + 1 du petit côté
+    expect(platesPerCorner(c)).toEqual({ n: 3, TRd: 94.1e3 });
     const up = checkVerticalLink(c, { ...F0, N: 50e3 }, 'L');
     expect(up.blocked).toBeUndefined();
-    expect(up.eta).toBeCloseTo(50 / (1.5 * 94.1), 3);
-    // effort horizontal le long du grand côté (axe local z = u) : un demi-plat de petit côté, frottement 0,1 · Rz
-    const h = checkVerticalLink(c, { ...F0, N: -20e3, Vz: 4e3 }, 'L');
-    expect(h.eta).toBeCloseTo((4 - 0.1 * 20) / (0.5 * 5.81), 3);
-    // disposition statico (2 plats par côté) : une plaque entière par direction, comme la note 24-0569 § 3.7
-    const lib = libraryWithMods(SEED, { stackPlates: { perLongSide: 2, perShortSide: 2 } });
-    expect(checkVerticalLink(connectionSet(lib), { ...F0, N: -20e3, Vz: 4e3 }, 'L').eta).toBeCloseTo((4 - 2) / 5.81, 3);
+    expect(up.eta).toBeCloseTo(50 / (3 * 94.1), 3);
+    // grand côté contre une autre Viewbox : seul le petit côté porte des plats
+    expect(checkVerticalLink(c, { ...F0, N: 50e3 }, 'L', undefined, { long: false, short: true }).eta).toBeCloseTo(50 / 94.1, 3);
+    // angle enfermé : soulèvement non retenu (ne passe pas, pas « bloqué »)
+    const inside = checkVerticalLink(c, { ...F0, N: 50e3 }, 'L', undefined, { long: false, short: false });
+    expect(inside.eta).toBe(Infinity);
+    expect(inside.blocked).toBeUndefined();
+    expect(checkVerticalLink(c, { ...F0, N: -50e3 }, 'L', undefined, { long: false, short: false }).eta).toBeCloseTo(50 / 176, 3);
+    // glissement de toute la Viewbox du dessus : frottement 0,1 · ΣRz puis moitié des plats des côtés extérieurs
+    const all = { u0: true, u1: true, v0: true, v1: true };
+    expect(checkStackShear(c, { Hu: 10e3, Hv: 0, C: 20e3 }, all, 'S').eta).toBeCloseTo((10 - 2) / (2 * 5.81), 3);
+    expect(checkStackShear(c, { Hu: 0, Hv: 10e3, C: 20e3 }, all, 'S').eta).toBeCloseTo((10 - 2) / (4 * 5.81), 3);
+    expect(checkStackShear(c, { Hu: 10e3, Hv: 0, C: 20e3 }, { ...all, u0: false, u1: false }, 'S').eta).toBe(Infinity);
+    expect(checkStackShear(c, { Hu: 1e3, Hv: 0, C: 20e3 }, { ...all, u0: false, u1: false }, 'S').eta).toBe(0);
+    // nombre de plats modifié dans l'étude
+    const lib = libraryWithMods(SEED, { stackPlates: { perLongSide: 2, perShortSide: 1 } });
+    expect(platesPerCorner(connectionSet(lib))).toEqual({ n: 1.5, TRd: 94.1e3 });
   });
 });
 
@@ -104,6 +113,10 @@ describe('modifications de l’étude dans le calcul complet', () => {
     const links = run0.index.items.map((it, t) => ({ it, st: run0.summary.states[t] })).filter((x) => x.it.kind === 'vlink');
     expect(links).toHaveLength(4);
     expect(links.every((x) => !x.st?.blocked)).toBe(true);
+    const shear = run0.index.items.map((it, t) => ({ it, st: run0.summary.states[t] })).filter((x) => x.it.kind === 'stack');
+    expect(shear).toHaveLength(1);
+    expect(shear[0].st!.eta).toBeGreaterThanOrEqual(0);
+    expect(run0.structure.outerSides.get('A2')).toEqual({ u0: true, u1: true, v0: true, v1: true });
     // contreventement des grands côtés du bas + 2 Viewbox au sol de part et d'autre (petits côtés)
     const v = withMods(stack, {
       bracings: [
@@ -164,4 +177,32 @@ describe('modifications dans le rapport', () => {
         expect(t).not.toMatch(/lest|ajoutée|surélévation|tête|toutes|formé|tube carré/);
       }
   });
+});
+
+describe('neige', () => {
+  it('cas S sur les toitures du dernier niveau (0,8 · sk), combinaisons neige, estimation du sol', async () => {
+    const { buildCombinations, COMBO_DEFAULTS } = await import('../../src/structure/core/combos');
+    const { estimateReactions, ESTIMATE_DEFAULTS, gridModules } = await import('../../src/structure/core/estimate');
+    const sk = 66 * 9.81e-6; // 66 kg/m² au sol
+    const inputs = { ...base([vbx('A', 0, 0), vbx('A2', 0, 0, 1)]), loads: { ...LOADS, snowRoof: 0.8 * sk } };
+    const run = await runStudy(inputs, createInlineStudyRunner());
+    const S = run.loads.cases.find((c) => c.id === 'S')!;
+    // neige seulement sur la Viewbox du haut : 0,8 · sk · surface entre lignes de système
+    expect(-S.resultant[1]).toBeCloseTo(0.8 * sk * (5895 - 5) * (2495 - 5), 0);
+    const ids = run.combos.map((c) => c.id);
+    expect(ids).toContain('COS');
+    expect(ids).toContain('CO104');
+    expect(ids).toContain('ELSS');
+    expect(run.combos.find((c) => c.id === 'CO104')!.factors).toContainEqual(['S', 0.675]);
+    expect(run.combos.filter((c) => c.cls === 'STAB').every((c) => !c.factors.some(([id]) => id === 'S'))).toBe(true);
+    expect(run.summary.errors.filter((e) => e.cls === 'ULS')).toEqual([]);
+    expect(buildCombinations(COMBO_DEFAULTS).some((c) => c.factors.some(([id]) => id === 'S'))).toBe(false);
+    // estimation instantanée : la neige de la toiture du haut descend aux 4 angles
+    const mods = gridModules(1, 1, [[2]], false);
+    const loads = { moduleWeight: 2564 * 9.81, ceiling: 0, floorFinish: 0, live: 0, roofLive: 0, extraPerModule: 0 };
+    const est = estimateReactions(mods, { ...ESTIMATE_DEFAULTS, loads: { ...loads, snowRoof: 0.8 * sk } });
+    const tot = (name: string) => est.totals!.find((t) => t.combo === name && t.cls === 'SLS')!.R;
+    expect(tot('G + S (neige)') - tot('G')).toBeCloseTo(0.8 * sk * mods[1].area, -1);
+    expect(est.totals!.some((t) => t.combo.startsWith('G + W hors service + ψ0 S'))).toBe(true);
+  }, 180000);
 });

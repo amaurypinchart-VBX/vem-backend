@@ -72,6 +72,8 @@ export interface LoadInputs {
   roofAccessible: boolean;
   /** hors service : le dernier niveau est aussi évacué */
   evacuateTopLevel: boolean;
+  /** neige sur les toitures du dernier niveau (N/mm², déjà multipliée par le coefficient de forme 0,8) ; 0 = pas de neige */
+  snowRoof?: number;
   /** pressions du vent (N/mm²) : en service, hors service (déjà abattue) */
   windInService: number;
   windOutOfService: number;
@@ -408,6 +410,19 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs): LoadMod
       }
       cases.push(cb.build(`${kind}.${d}`, `Vent ${label} ${DIRECTION_LABEL[d]}`, 'W'));
     }
+  // S : neige sur les toitures du dernier niveau (terrasses fermées par neige)
+  if ((inp.snowRoof ?? 0) > 0) {
+    const sc = new CaseBuilder(model);
+    for (const id of model.topModules) panelLoad(sc, tplOf(id), id, 'roof', inp.snowRoof!, DOWN);
+    cases.push(sc.build('S', 'Neige sur les toitures', 'Q'));
+    records.push({
+      key: 'loads.snow',
+      title: 'Neige',
+      clause: 'EN 1991-1-3 § 5.2',
+      formula: 's = μ1 · Ce · Ct · sk = 0,8 · sk sur les toitures du dernier niveau',
+      withValues: `s = ${n(inp.snowRoof! * 1e3)} kN/m² (${n((inp.snowRoof! * 1e6) / 9.81, 0)} kg/m²)`,
+    });
+  }
   // W0 : succion des toitures du dernier niveau, hors service (stabilité)
   const w0 = new CaseBuilder(model);
   for (const id of model.topModules) panelLoad(w0, tplOf(id), id, 'roof', -inp.cp.roofStability * inp.windOutOfService, [0, 1, 0]);

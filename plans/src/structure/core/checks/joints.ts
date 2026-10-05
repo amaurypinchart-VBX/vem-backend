@@ -2,12 +2,11 @@
 //   · angle poteau / cadre (VBX-CORNER) aux deux extrémités de chaque poteau : η = min(η₂ₐₓ, η₁ₐₓ),
 //     η₂ₐₓ = max(|My|, |Mz|) / 8,0 kNm, η₁ₐₓ = max(max(|My|, |Mz|) / 11,5 ; min(|My|, |Mz|) / 3,3) ; traction ≤ 70 kN
 //     par les boulons, compression par contact poteau / couvercle ≤ 176 kN ;
-//   · liaison verticale entre Viewbox empilées (VBX-VERTICAL-PLATE, VBX-VERTICAL-CONTACT) : compression ≤ 176 kN ;
-//     par angle, les plats des deux demi-côtés voisins (2 par grand côté, 1 par petit côté : 1 + 0,5 par angle) :
-//     horizontal (H − 0,1 · Rz) / (n · 5,81 kN) dans chaque direction (un plat ne reprend que l'effort perpendiculaire
-//     à son côté, frottement acier / acier), soulèvement T / (n · TRd) avec TRd = min(cisaillement M20, pression
-//     diamétrale plat / âme, section nette) ;
-//   · boulons horizontaux (VBX-HORIZONTAL-BOLT, M16 × 150 dans les trous M20) : Fv / min(Fv,Rd ; Fb,Rd)
+//   · liaison verticale entre Viewbox empilées (VBX-VERTICAL-PLATE, VBX-VERTICAL-CONTACT) : compression ≤ 176 kN par
+//     angle ; soulèvement par les plats des demi-côtés extérieurs voisins (4 par grand côté, 2 par petit côté, faces
+//     extérieures seulement), TRd = min(cisaillement M20, pression diamétrale plat / âme, section nette) ; glissement de
+//     toute la Viewbox du dessus : (H − 0,1 · ΣRz) / (n · 5,81 kN) par direction (checkStackShear) ;
+//   · boulons horizontaux (VBX-HORIZONTAL-BOLT, M16 × 150 classe 10.9 dans les écrous M20 soudés) : Fv / min(Fv,Rd ; Fb,Rd)
 //     + Ft / (1,4 · min(Ft,Rd ; Bp,Rd)) ≤ 1 et Ft ≤ min(Ft,Rd ; Bp,Rd) (DIN EN 1993-1-8 tab. 3.4) ;
 //   · contreventements (VBX-BRACING, plat 60 × 6 + ridoir) : traction seule, N ≤ min des capacités (ridoir 39,8 kN) ;
 //   · pieds à vérin (VBX-JACK) : tige Tr 24 × 5 classe 10.9, noyau d3 = 18,5 mm, sortie e ≤ 50 mm, console encastrée
@@ -86,57 +85,94 @@ export function checkCorner(c: ConnectionSet, f: Forces, label: string, combinat
   };
 }
 
-/** Plats d'empilement repris par un angle : moitié des plats de chaque côté voisin (défaut statico : 1 par direction). */
-export function platesPerCorner(c: ConnectionSet): { alongU: number; alongV: number; TRd?: number } {
-  const long = cap(c.plate, 'perLongSide');
-  const short = cap(c.plate, 'perShortSide');
+/** Plats d'empilement de la bibliothèque : nombre par côté extérieur et résistance au soulèvement d'un plat. */
+export function stackPlates(c: ConnectionSet): { perLong: number; perShort: number; TRd?: number; HRd?: number; mu?: number } {
   const parts = ['FvRd_M20', 'FbRd_plate', 'FbRd_web', 'NuRd_plate'].map((k) => cap(c.plate, k)).filter((v): v is number => v !== undefined && v > 0);
-  // effort selon u (grand côté) : plats des petits côtés ; selon v : plats des grands côtés
-  return { alongU: short === undefined ? 1 : short / 2, alongV: long === undefined ? 1 : long / 2, TRd: parts.length ? Math.min(...parts) : undefined };
+  return { perLong: cap(c.plate, 'perLongSide') ?? 2, perShort: cap(c.plate, 'perShortSide') ?? 2, TRd: parts.length ? Math.min(...parts) : undefined, HRd: cap(c.plate, 'HRd'), mu: cap(c.plate, 'mu') };
+}
+
+/** Plats repris par un angle au soulèvement : moitié des plats de chacun des deux côtés voisins, s'ils sont extérieurs. */
+export function platesPerCorner(c: ConnectionSet, outer: { long: boolean; short: boolean } = { long: true, short: true }): { n: number; TRd?: number } {
+  const p = stackPlates(c);
+  return { n: (outer.long ? p.perLong / 2 : 0) + (outer.short ? p.perShort / 2 : 0), TRd: p.TRd };
 }
 
 /**
- * Liaison verticale entre une Viewbox et celle du dessus (barre de liaison d'angle : N, cisaillements ; axe local z le
- * long du grand côté u de la Viewbox du dessus, y le long du petit côté v).
+ * Liaison verticale à un angle entre une Viewbox et celle du dessus (barre de liaison d'angle) : compression par le
+ * contact poteau / poteau, soulèvement par les plats des demi-côtés extérieurs voisins. L'effort horizontal est vérifié
+ * pour toute la Viewbox (checkStackShear).
  */
-export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
-  const HRd = cap(c.plate, 'HRd');
-  const mu = cap(c.plate, 'mu');
+export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, combination?: string, outer?: { long: boolean; short: boolean }): JointResult {
   const NRd = minCapacity(c.contact);
-  if (!usable(c.plate) || HRd === undefined || mu === undefined) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
+  if (!usable(c.plate)) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
   if (!usable(c.contact) || !NRd) return blocked('Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
-  const n = platesPerCorner(c);
+  const { n, TRd } = platesPerCorner(c, outer);
   const T = Math.max(0, f.N);
-  if (T > 1e3 && !n.TRd)
-    return {
-      ...blocked(`Liaison verticale ${label} tendue (${kN(f.N)}) : soulèvement de la Viewbox du dessus, capacité des plats en traction non renseignée`),
-      parts: { N: Infinity },
-    };
   const C = Math.max(0, -f.N);
-  const Hu = Math.abs(f.Vz);
-  const Hv = Math.abs(f.Vy);
-  const cap1 = (H: number, count: number) => (count > 0 ? Math.max(0, H - mu * C) / (count * HRd) : H > 1e3 ? Infinity : 0);
-  const etaU = cap1(Hu, n.alongU);
-  const etaV = cap1(Hv, n.alongV);
-  const etaH = Math.max(etaU, etaV);
+  if (T > 1e3 && !TRd)
+    return { ...blocked(`Liaison verticale ${label} tendue (${kN(f.N)}) : capacité des plats en traction non renseignée`), parts: { T: Infinity } };
+  if (T > 1e3 && n <= 0)
+    return {
+      eta: Infinity,
+      governing: 'T soulèvement sans plat',
+      parts: { T: Infinity },
+      record: {
+        key: `vlink.${label}`,
+        title: `Liaison verticale — ${label}`,
+        clause: 'statico 24-0571 § 3.8–3.9',
+        formula: 'soulèvement T / (n · TRd), n = plats des demi-côtés extérieurs de l’angle',
+        withValues: `T = ${kN(T)} ; angle sans plat d’empilement (ses deux côtés sont contre d’autres Viewbox) : le soulèvement n’est retenu par rien`,
+        eta: Infinity,
+        combination,
+      },
+    };
   const etaN = C / NRd;
-  const nT = n.alongU + n.alongV;
-  const etaT = T > 0 && n.TRd ? T / (nT * n.TRd) : 0;
-  // soulèvement : les boulons des plats travaillent aussi au cisaillement horizontal (somme prudente)
-  const eta = Math.max(etaH + (T > 0 ? etaT : 0), etaN, etaT);
-  const governing = etaT > 0 && etaT >= etaH ? 'T soulèvement' : etaH >= etaN ? (etaU >= etaV ? 'H plats (petits côtés)' : 'H plats (grands côtés)') : 'N contact';
+  const etaT = T > 0 && TRd ? T / (n * TRd) : 0;
+  const eta = Math.max(etaN, etaT);
   return {
     eta,
-    governing,
-    parts: { H: etaH, Hu: etaU, Hv: etaV, N: etaN, T: etaT },
+    governing: etaT > etaN ? 'T soulèvement' : 'N contact',
+    parts: { N: etaN, T: etaT },
     record: {
       key: `vlink.${label}`,
       title: `Liaison verticale — ${label}`,
       clause: 'statico 24-0571 § 3.8–3.9, EN 1993-1-8 tab. 3.4',
-      formula: 'H : (H − μ · Rz) / (n · HRd) par direction (n = plats de l’angle) ; soulèvement T / (n · TRd) ; Rz / NRd (contact)',
-      withValues:
-        `Hu = ${kN(Hu)} (${f2(n.alongU, 1)} plat), Hv = ${kN(Hv)} (${f2(n.alongV, 1)} plat), Rz = ${kN(C)} ; (${kN(Hu)} − ${f2(mu, 1)} · ${kN(C)}) / (${f2(n.alongU, 1)} · ${kN(HRd)}) = ${f2(etaU)}, (${kN(Hv)} − ${f2(mu, 1)} · ${kN(C)}) / (${f2(n.alongV, 1)} · ${kN(HRd)}) = ${f2(etaV)} ; ${kN(C)} / ${kN(NRd)} = ${f2(etaN)}` +
-        (T > 0 && n.TRd ? ` ; T = ${kN(T)} / (${f2(nT, 1)} · ${kN(n.TRd)}) = ${f2(etaT)}` : ''),
+      formula: 'compression Rz / NRd (contact) ; soulèvement T / (n · TRd), n = plats des demi-côtés extérieurs de l’angle',
+      withValues: T > 0 && TRd ? `T = ${kN(T)} ; n = ${f2(n, 1)} plat(s), TRd = ${kN(TRd)} → ${f2(etaT)}` : `Rz = ${kN(C)} / ${kN(NRd)} = ${f2(etaN)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/**
+ * Glissement entre une Viewbox et celle du dessous (somme des 4 liaisons d'angle, dans les axes de la Viewbox du dessus) :
+ * frottement acier / acier sous le poids, le reste par les plats des côtés extérieurs perpendiculaires à l'effort ; un
+ * plat ne travaille que dans un sens (statico) → moitié des plats par sens.
+ */
+export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
+  const p = stackPlates(c);
+  if (!usable(c.plate) || !p.HRd || p.mu === undefined) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
+  // effort selon u (grand côté) : plats des petits côtés extérieurs ; selon v : plats des grands côtés extérieurs
+  const nU = ((outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0)) * p.perShort * 0.5;
+  const nV = ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5;
+  const H = Math.hypot(sum.Hu, sum.Hv);
+  const rest = Math.max(0, H - p.mu * sum.C);
+  const k = H > 0 ? rest / H : 0;
+  const one = (h: number, n: number) => (h * k <= 1 ? 0 : n > 0 ? (h * k) / (n * p.HRd!) : Infinity);
+  const etaU = one(Math.abs(sum.Hu), nU);
+  const etaV = one(Math.abs(sum.Hv), nV);
+  const eta = Math.max(etaU, etaV);
+  return {
+    eta,
+    governing: !Number.isFinite(eta) ? 'H sans plat dans cette direction' : etaU >= etaV ? 'H plats (petits côtés)' : 'H plats (grands côtés)',
+    parts: { Hu: etaU, Hv: etaV },
+    record: {
+      key: `stack.${label}`,
+      title: `Glissement entre Viewbox empilées — ${label}`,
+      clause: 'statico 24-0571 § 3.8–3.9',
+      formula: 'H = √(ΣHu² + ΣHv²) ; reste = max(0, H − μ · ΣRz) réparti selon u et v ; Hu,reste / (nu · HRd), Hv,reste / (nv · HRd) ; n = moitié des plats des côtés extérieurs (un plat par sens)',
+      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(p.mu, 1)} ; reste ${kN(rest)} ; nu = ${f2(nU, 1)}, nv = ${f2(nV, 1)} plat(s) de ${kN(p.HRd)} → ${f2(etaU)} / ${f2(etaV)}`,
       eta,
       combination,
     },

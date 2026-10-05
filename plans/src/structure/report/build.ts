@@ -298,7 +298,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...L.generalNotes.slice(3),
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
-      L.snowNote,
+      (study.loads.snowRoof ?? 0) > 0 ? L.snowNoteWith : L.snowNote,
       ...(inp.texts?.instructions ?? []).map((t) => t.trim()).filter(Boolean),
     ],
   });
@@ -386,7 +386,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'heading', level: 3, num: '2.2.2', text: L.s222 });
   blocks.push({ t: 'bullets', items: [L.horizontalText, L.handrail, L.impact] });
   blocks.push({ t: 'heading', level: 2, num: '2.3', text: L.s23 });
-  blocks.push({ t: 'para', text: L.snowText });
+  blocks.push({ t: 'para', text: (study.loads.snowRoof ?? 0) > 0 ? L.snowWith(N((study.loads.snowRoof! / 0.8) * 1e3), N(study.loads.snowRoof! * 1e3), N((study.loads.snowRoof! * 1e6) / 9.81, 0)) : L.snowText });
   blocks.push({ t: 'heading', level: 2, num: '2.4', text: L.s24 });
   blocks.push({ t: 'para', text: L.windTwoStates });
   blocks.push({ t: 'para', text: L.inServiceTitle, bold: true, after: 0.6 });

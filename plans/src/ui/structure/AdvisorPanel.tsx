@@ -157,7 +157,9 @@ export function AdvisorPanel(p: Props) {
     }, 1500);
     return () => clearTimeout(t);
   }, [messages, variants, p.studyId]);
-  useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [messages.length, busy]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, busy]);
 
   const issues = useMemo(() => (p.run && !p.stale ? diagnose(p.run, { friction: p.friction }) : []), [p.run, p.stale, p.friction]);
 

@@ -11,6 +11,7 @@ import type { CalcOptions, StudyInputs } from '../../structure/studyRun';
 import { withMods } from '../../structure/advisor/variant';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { Hypotheses } from './GroundPanel';
+import { roofSnow } from './GroundPanel';
 
 export interface InputsSource {
   sceneModel: SceneStudyModel;
@@ -49,6 +50,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
       horizontalRatio: DEFAULTS.horizontalRatio.value,
       roofAccessible: roof,
       evacuateTopLevel: hyp.evacuateTop,
+      snowRoof: roofSnow(hyp),
       windInService: kNm2(hyp.windIn),
       windOutOfService: kNm2(hyp.windOut),
       cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },

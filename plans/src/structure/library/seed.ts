@@ -334,53 +334,49 @@ export const SEED_CONNECTIONS: ConnectionEntry[] = [
     key: 'VBX-VERTICAL-PLATE',
     name: 'Plats de liaison verticale (Viewbox empilées)',
     status: 'known',
-    // disposition Viewbox (A. Pinchart 30.09.2026) : 4 plats sur les grands côtés (2 par côté) et 2 sur les petits (1 par
-    // côté), 10 mm, 2 × M20 chacun ; statico 24-0569 § 3.7 en comptait 8 (2 par côté)
-    composition: 'plats 100 × 10 L = 400 mm S235, trous Ø 22, 2 × M20-8.8 par plat (1 dans chaque Viewbox, entraxe 290 mm) ; 2 plats par grand côté et 1 par petit côté (6 par Viewbox empilée)',
+    // disposition Viewbox (A. Pinchart 01.10.2026) : 4 plats par grand côté et 2 par petit côté, sur les faces
+    // extérieures seulement (inaccessibles entre deux Viewbox), 10 mm, 2 × M20 chacun ; statico 24-0569 § 3.7 : 2 par côté
+    composition: 'plats 100 × 10 L = 400 mm S235, 2 × M20-8.8 par plat (1 dans chaque Viewbox, entraxe 290 mm) ; 4 plats par grand côté et 2 par petit côté, sur les faces extérieures seulement',
     capacities: [
       cap('HRd', 'effort horizontal par plat, perpendiculaire à son côté', 5.81 * KN, 'N', 'A24', '(45,82 kNcm + 58,75 kNcm) / 18 cm'),
       cap('FvRd_M20', 'cisaillement M20-8.8 (filetage dans le plan de cisaillement)', 94.1 * KN, 'N', 'A26', '0,6 · 80 kN/cm² · 2,45 cm² / 1,25'),
       { key: 'FbRd_plate', label: 'pression diamétrale dans le plat 10 mm (e1 = 55 mm, e2 = 50 mm)', value: 120.0 * KN, unit: 'N', formula: '2,5 · 0,83 · 36 kN/cm² · 2,0 cm · 1,0 cm / 1,25 (αd = e1 / 3 d0 = 55 / 66)', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
       { key: 'FbRd_web', label: 'pression diamétrale dans l’âme de l’UNP 220 (tw 9 mm)', value: 129.6 * KN, unit: 'N', formula: '2,5 · 1,0 · 36 kN/cm² · 2,0 cm · 0,9 cm / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
       { key: 'NuRd_plate', label: 'section nette du plat', value: 202.2 * KN, unit: 'N', formula: '0,9 · (10 cm − 2,2 cm) · 1,0 cm · 36 kN/cm² / 1,25', source: { ref: 'standard:EN 1993-1-1 6.2.3' } },
-      { key: 'perLongSide', label: 'plats par grand côté', value: 2, unit: '-', source: { ref: 'user', note: 'A. Pinchart 30.09.2026 : 4 plats sur les grands côtés' } },
-      { key: 'perShortSide', label: 'plats par petit côté', value: 1, unit: '-', source: { ref: 'user', note: 'A. Pinchart 30.09.2026 : 2 plats sur les petits côtés' } },
+      { key: 'perLongSide', label: 'plats par grand côté extérieur', value: 4, unit: '-', source: { ref: 'user', note: 'A. Pinchart 01.10.2026 : 4 sur les grands côtés, faces extérieures' } },
+      { key: 'perShortSide', label: 'plats par petit côté extérieur', value: 2, unit: '-', source: { ref: 'user', note: 'A. Pinchart 01.10.2026 : 2 sur les petits côtés, faces extérieures' } },
       cap('FtRd_M20', 'traction M20-8.8', 141.1 * KN, 'N', 'A24'),
       cap('mu', 'frottement acier / acier', 0.1, '-', 'A24'),
       cap('k_shear', 'raideur en cisaillement de la liaison d’angle (modèle)', 10 * KN_PER_CM, 'N/mm', 'B59–B78', 'Verbindung_Ecke : uy, uz nachgiebig 10 kN/cm'),
     ],
     rule: {
       check: 'verticalPlate',
-      text: 'par angle, plats des deux demi-côtés voisins : soulèvement T / (n · TRd), TRd = min(Fv,Rd M20 ; Fb,Rd plat ; Fb,Rd âme ; Nu,Rd) ; horizontal (H − 0,1 · Rz) / (n · 5,81 kN) dans chaque direction',
+      text: 'soulèvement par angle : T / (n · TRd), n = plats des demi-côtés extérieurs voisins, TRd = min(Fv,Rd M20 ; Fb,Rd plat ; Fb,Rd âme ; Nu,Rd) ; glissement entre les deux Viewbox (somme des 4 angles) : (H − 0,1 · ΣRz) / (n · 5,81 kN) par direction, n = plats des côtés extérieurs perpendiculaires à l’effort',
     },
-    notes: ['nombre de plats donné par Viewbox (30.09.2026), positions exactes le long des côtés à confirmer ; un plat ne reprend l’effort horizontal perpendiculaire à son côté que dans un sens (statico)'],
-    source: [HOKA('A24'), { ref: 'report:24-0569', page: '§ 3.7' }, { ref: 'user', note: 'A. Pinchart 30.09.2026 : 4 plats grands côtés, 2 petits côtés, 10 mm, 2 × M20' }],
+    notes: ['plats sur les faces extérieures seulement : une Viewbox du dessus entourée de voisines n’en a que sur ses côtés libres', 'un plat ne reprend l’effort horizontal perpendiculaire à son côté que dans un sens (statico) : moitié des plats par sens, prudent'],
+    source: [HOKA('A24'), { ref: 'report:24-0569', page: '§ 3.7' }, { ref: 'user', note: 'A. Pinchart 01.10.2026 : 4 plats par grand côté, 2 par petit côté, faces extérieures, 10 mm, 2 × M20' }],
   },
   {
     kind: 'connection',
     key: 'VBX-HORIZONTAL-BOLT',
     name: 'Boulons horizontaux entre Viewbox juxtaposées',
     status: 'known',
-    // pratique Viewbox (A. Pinchart 30.09.2026) : M16 de 150 mm dans les trous M20 des rives, plancher et toiture —
-    // statico les comptait en M20-8.8
-    composition: 'M16 × 150 mm classe 8.8 (à confirmer) dans les trous Ø 22 prévus pour M20, âme des UNP 220 (tw = 9 mm), serrant les Viewbox entre elles au plancher et en toiture',
+    // pratique Viewbox (A. Pinchart 30.09 et 01.10.2026) : M16 × 150 classe 10.9, passés dans les écrous M20 soudés des
+    // rives (passage 18 mm, peu de jeu), au plancher et en toiture — statico les comptait en M20-8.8
+    composition: 'M16 × 150 mm classe 10.9 passés dans les écrous M20 soudés des rives (passage Ø 18 mm), âme des UNP 220 (tw = 9 mm), serrant les Viewbox entre elles au plancher et en toiture',
     capacities: [
       { key: 'd', label: 'diamètre du boulon', value: 16, unit: 'mm', source: { ref: 'user', note: 'A. Pinchart 30.09.2026 : M16 de 150 mm' } },
-      { key: 'd0', label: 'diamètre du trou (prévu pour M20)', value: 22, unit: 'mm', source: { ref: 'report:24-0569', page: '§ 3.7', note: 'Bohrung Ø 22 mm' } },
-      { key: 'FtRd', label: 'traction M16-8.8', value: 90.4 * KN, unit: 'N', formula: '0,9 · 80 kN/cm² · 1,57 cm² / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
-      { key: 'FvRd', label: 'cisaillement M16-8.8 (filetage dans le plan de cisaillement)', value: 60.3 * KN, unit: 'N', formula: '0,6 · 80 kN/cm² · 1,57 cm² / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
-      { key: 'FbRd', label: 'pression diamétrale dans l’âme tw 9 mm, trou surdimensionné (× 0,8)', value: 82.9 * KN, unit: 'N', formula: '0,8 · 2,5 · 1,0 · 36 kN/cm² · 1,6 cm · 0,9 cm / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4 (3)' } },
+      { key: 'd0', label: 'passage (écrou M20 soudé)', value: 18, unit: 'mm', source: { ref: 'user', note: 'A. Pinchart 01.10.2026 : écrous M20 soudés, 18 mm pour passer' } },
+      { key: 'FtRd', label: 'traction M16-10.9', value: 113.0 * KN, unit: 'N', formula: '0,9 · 100 kN/cm² · 1,57 cm² / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
+      { key: 'FvRd', label: 'cisaillement M16-10.9 (filetage dans le plan de cisaillement, αv = 0,5)', value: 62.8 * KN, unit: 'N', formula: '0,5 · 100 kN/cm² · 1,57 cm² / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
+      { key: 'FbRd', label: 'pression diamétrale dans l’âme tw 9 mm (trou normal)', value: 103.7 * KN, unit: 'N', formula: '2,5 · 1,0 · 36 kN/cm² · 1,6 cm · 0,9 cm / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
       { key: 'BpRd', label: 'poinçonnement de l’âme sous la tête ou l’écrou', value: 124.0 * KN, unit: 'N', formula: '0,6 · π · 2,54 cm · 0,9 cm · 36 kN/cm² / 1,25', source: { ref: 'standard:EN 1993-1-8 tab. 3.4' } },
       { key: 'length', label: 'longueur du boulon', value: 150, unit: 'mm', source: { ref: 'user', note: 'A. Pinchart 30.09.2026' } },
       cap('k', 'raideur des ressorts du modèle (ux, uy, uz)', 50 * KN_PER_CM, 'N/mm', 'B59'),
     ],
     rule: { check: 'bolt', text: 'DIN EN 1993-1-8 tab. 3.4 : Fv / min(Fv,Rd ; Fb,Rd) + Ft / (1,4 · min(Ft,Rd ; Bp,Rd)) ≤ 1' },
-    source: [HOKA('A25'), { ref: 'user', note: 'A. Pinchart 30.09.2026 : M16 de 150 mm dans les trous M20, plancher et toiture' }],
-    notes: [
-      'jeu de 6 mm (M16 dans Ø 22) : les Viewbox peuvent glisser de quelques millimètres avant de porter — serrer les boulons à fond',
-      'classe 8.8 supposée (comme les M16 des angles, plan 7-364-27) : à confirmer',
-      'Qatar § 3.8 : une position de boulon n’existe pas en série et doit être percée sur site',
-    ],
+    source: [HOKA('A25'), { ref: 'user', note: 'A. Pinchart 30.09.2026 : M16 de 150 mm, plancher et toiture' }, { ref: 'user', note: 'A. Pinchart 01.10.2026 : classe 10.9, écrous M20 soudés, passage 18 mm' }],
+    notes: ['Qatar § 3.8 : une position de boulon n’existe pas en série et doit être percée sur site'],
   },
   {
     kind: 'connection',

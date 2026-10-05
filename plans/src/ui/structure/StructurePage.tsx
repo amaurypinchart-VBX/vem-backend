@@ -379,22 +379,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }}
         />
       </div>
-      {step === 'site' && (
-        <>
-          <div className="card">
-            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label className="row hint">
-                <input type="checkbox" checked={roof} onChange={(e) => setRoof(e.target.checked)} /> Toitures sans Viewbox au-dessus accessibles (terrasses)
-              </label>
-              <div className="hint">
-                Ces valeurs servent au calcul complet (étape 3) et au calage (étape 5). Vent : pressions en service (DIN EN 13814) et hors service (EN 1991-1-4/NA, abattement 0,7), cp luv +0,8 / lee −0,5 /
-                parallèle −0,8, toiture −0,7 pour la stabilité ; neige non prise en compte (évacuation, comme les notes statico).
-              </div>
-            </div>
-          </div>
-          <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} />
-        </>
-      )}
+      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} roof={roof} setRoof={setRoof} />}
       {step === 'calc' && (
         <CalcPanel
           options={calcOpts}

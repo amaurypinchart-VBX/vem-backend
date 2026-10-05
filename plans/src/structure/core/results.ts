@@ -11,7 +11,8 @@ import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
 import type { ConnectionSet } from './checks/joints';
-import { checkBolt, checkBrace, checkCorner, checkJack, checkVerticalLink } from './checks/joints';
+import { checkBolt, checkBrace, checkCorner, checkJack, checkStackShear, checkVerticalLink } from './checks/joints';
+import { CORNER_SIDES } from './assemble';
 import { checkTimberSpan } from './checks/ec5';
 import type { SectionEntry } from './library';
 import { materialByKey } from './materials';
@@ -19,7 +20,7 @@ import type { CalcRecord, Verdict } from './records';
 import { verdictOf, worstVerdict } from './records';
 import { fmtNumber } from './units';
 
-export type ItemKind = 'member' | 'corner' | 'vlink' | 'bolt' | 'jack' | 'brace';
+export type ItemKind = 'member' | 'corner' | 'vlink' | 'stack' | 'bolt' | 'jack' | 'brace';
 
 export interface CheckItem {
   id: string;
@@ -123,6 +124,17 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
     else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: `Boulons horizontaux M${opts.boltDiameter ?? 20}`, label: m.label, module: m.module, members: [k] });
     else if (BRACES.has(m.family)) items.push({ id: `brace:${k}`, kind: 'brace', family: m.family === 'bracing' ? 'Contreventements ajoutés (plat + ridoir)' : 'Contreventements de surélévation (plat + ridoir)', label: m.label, module: m.module, members: [k] });
   });
+  // glissement entre Viewbox empilées : les 4 liaisons d'angle d'une Viewbox du dessus ensemble
+  const links = new Map<string, number[]>();
+  s.meta.forEach((m, k) => {
+    if (m.family !== 'corner-link') return;
+    if (!links.has(m.module)) links.set(m.module, []);
+    links.get(m.module)!.push(k);
+  });
+  for (const [module, ks] of links) {
+    const below = s.meta[ks[0]].label.split(' / ')[0];
+    items.push({ id: `stack:${module}`, kind: 'stack', family: 'Glissement entre Viewbox empilées', label: `${below} / ${module} · plats d’empilement`, module, members: ks });
+  }
   s.supportMeta.forEach((sm, k) => {
     if (!sm.jack) return;
     const node = s.fem.supports[k].node;
@@ -192,12 +204,26 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     const j = checkJack(ctx.connections, { N: R[1], H: Math.hypot(R[0], R[2]) }, ctx.jackExtension ?? 50, item.label, combo.id, ctx.ec3.gammaM1);
     return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
+  const outer = s.outerSides?.get(item.module) ?? { u0: true, u1: true, v0: true, v1: true };
+  if (item.kind === 'stack') {
+    // somme des 4 liaisons d'angle (même repère local : z selon u, y selon v de la Viewbox du dessus)
+    const sum = { Hu: 0, Hv: 0, C: 0 };
+    for (const mk of item.members) {
+      const f0 = result.members[mk].stations[0];
+      sum.Hu += f0.Vz;
+      sum.Hv += f0.Vy;
+      sum.C += Math.max(0, -f0.N);
+    }
+    const j = checkStackShear(ctx.connections, sum, outer, item.label, combo.id);
+    return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
+  }
   const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');
+  const cs = CORNER_SIDES[s.meta[k].corner ?? 0];
   const j =
     item.kind === 'corner'
       ? checkCorner(ctx.connections, f, item.label, combo.id)
       : item.kind === 'vlink'
-        ? checkVerticalLink(ctx.connections, f, item.label, combo.id)
+        ? checkVerticalLink(ctx.connections, f, item.label, combo.id, { long: outer[cs.long], short: outer[cs.short] })
         : item.kind === 'brace'
           ? checkBrace(ctx.connections, f, item.label, combo.id)
           : checkBolt(ctx.connections, f, item.label, combo.id);

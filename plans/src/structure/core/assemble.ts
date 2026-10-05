@@ -42,7 +42,17 @@ export interface MemberMeta {
   label: string;
   /** côté du module (rives, boulons) */
   side?: Side;
+  /** liaison d'angle entre Viewbox empilées : numéro d'angle de la Viewbox du dessus (0…3) */
+  corner?: number;
 }
+
+/** Côtés voisins d'un angle du gabarit (angles 0…3 = (x0, y0), (x1, y0), (x1, y1), (x0, y1)) : grand côté, petit côté. */
+export const CORNER_SIDES: Array<{ long: Side; short: Side }> = [
+  { long: 'v0', short: 'u0' },
+  { long: 'v0', short: 'u1' },
+  { long: 'v1', short: 'u1' },
+  { long: 'v1', short: 'u0' },
+];
 
 export interface FaceInfo {
   module: string;
@@ -119,6 +129,8 @@ export interface StructuralModel {
   supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle'; jack: boolean }>;
   /** modules sans rien au-dessus (toiture exposée, dernier niveau évacué) */
   topModules: Set<string>;
+  /** côtés extérieurs (libres sur au moins la moitié de leur longueur) de chaque Viewbox : plats d'empilement posables */
+  outerSides: Map<string, Record<Side, boolean>>;
   baseY: number;
   topY: number;
   warnings: string[];
@@ -495,7 +507,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
       }
       topModules.delete(best.L.id);
       const sh = U.params.springs.cornerLinkShear;
-      addMember(best.n, nu, U.params.sections.cornerLink, { family: 'corner-link', module: U.id, line: `link:${U.id}/${c}`, label: `${best.L.id} / ${U.id} · liaison d’angle ${c + 1}` }, {
+      addMember(best.n, nu, U.params.sections.cornerLink, { family: 'corner-link', module: U.id, line: `link:${U.id}/${c}`, corner: c, label: `${best.L.id} / ${U.id} · liaison d’angle ${c + 1}` }, {
         ref: U.u,
         endJ: ['rigid', sh, sh, 'free', 'free', 'free'],
       });
@@ -610,6 +622,13 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     if (s < f.length - 1) exposed.push([s, f.length]);
     return { module: f.pm.id, side: f.side, normal: f.normal, length: f.length, exposed, top: f.pm.origin[1] + f.pm.params.topZ };
   });
+  const outerSides = new Map<string, Record<Side, boolean>>();
+  for (const f of faces) {
+    const free = f.exposed.reduce((a, [p, q]) => a + q - p, 0);
+    const rec = outerSides.get(f.module) ?? { u0: false, u1: false, v0: false, v1: false };
+    rec[f.side] = free >= f.length / 2;
+    outerSides.set(f.module, rec);
+  }
   const ys = nodes.map((n) => n.y);
   // limite d'élasticité : épaisseur maxi des sections utilisées (contrôle des tranches d'épaisseur)
   for (const key of new Set(meta.map((m) => m.section))) {
@@ -626,6 +645,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     faces,
     supportMeta,
     topModules,
+    outerSides,
     baseY: Math.min(...ys),
     topY: Math.max(...ys),
     warnings,

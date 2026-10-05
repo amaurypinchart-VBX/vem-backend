@@ -134,19 +134,20 @@ function memberRemedies(run: StudyRun, items: Array<{ item: CheckItem; eta: numb
     out.push({ id: 'jack', title: `Sortir moins les vérins (${e / 10} cm)`, detail: 'La tige Tr 24 travaille en console : le moment vaut H × sortie. Caler plus haut (plaques) pour sortir les tiges de moins de 5 cm, ou poser les angles directement sur le calage.', action: 'simulate', changes: { calc: { jackExtension: e } } });
     out.push({ id: 'nojack', title: 'Sans vérins : angles posés sur le calage', detail: 'Comme statico Hoka : les angles reposent directement sur les plaques de calage.', action: 'simulate', changes: { calc: { jacks: false } } });
   }
-  if (kind === 'vlink') {
+  if (kind === 'vlink' || kind === 'stack') {
     const T = first.governing.startsWith('T');
     out.push({
       id: 'plates',
       title: T ? 'Plus de plats d’empilement (soulèvement)' : 'Plus de plats d’empilement',
-      detail: 'Passer à 2 plats 100 × 10 (2 × M20) par côté, comme statico : chaque angle reprend alors un plat entier dans chaque direction.',
+      detail: 'Passer à 6 plats par grand côté et 3 par petit côté sur les faces extérieures (perçages et écrous à prévoir). Un angle enfermé entre d’autres Viewbox n’a pas de plat : l’ouvrir sur l’extérieur ou le lester.',
       action: 'simulate',
-      changes: { mods: { stackPlates: { perLongSide: 2, perShortSide: 2 } } },
+      special: true,
+      changes: { mods: { stackPlates: { perLongSide: 6, perShortSide: 3 } } },
     });
-    if (T) out.push({ id: 'upper-ballast', title: 'Lester la Viewbox du dessus', detail: 'Le soulèvement de la Viewbox du dessus vient du vent : un lest sur son plancher le réduit (quantité à chercher par le calcul).', action: 'ballast', modules: modules.slice(0, 4) });
+    out.push({ id: 'upper-ballast', title: 'Lester la Viewbox du dessus', detail: T ? 'Le soulèvement de la Viewbox du dessus vient du vent : un lest sur son plancher le réduit (quantité à chercher par le calcul).' : 'Plus de poids sur la Viewbox du dessus = plus de frottement entre les deux Viewbox (quantité à chercher par le calcul).', action: 'ballast', modules: modules.slice(0, 4) });
   }
   if (kind === 'bolt')
-    out.push({ id: 'bolt', title: 'Boulon supplémentaire entre les Viewbox', detail: 'Ajouter une position de boulon (perçage sur site, comme statico Qatar § 3.8) ou passer en M20-8.8 dans les trous M20 : le calcul actuel suppose des M16 × 150 (8.8).', action: 'info' });
+    out.push({ id: 'bolt', title: 'Boulon supplémentaire entre les Viewbox', detail: 'Ajouter une position de boulon (perçage sur site, comme statico Qatar § 3.8) : le calcul compte les M16 × 150 classe 10.9 dans les écrous M20 soudés.', action: 'info' });
   if (family === 'raise-column') out.push({ id: 'raise', title: 'Poteaux de surélévation plus forts ou contreventés', detail: 'Choisir une section plus forte (tube carré plus épais ou plus large, acier S355) ou ajouter des croix entre les poteaux.', action: 'info' });
   if (family === 'column' || family === 'rim-floor' || family === 'rim-roof' || family === 'secondary-floor' || family === 'secondary-roof')
     out.push({ id: 'section', title: 'Renfort de la barre (Viewbox spéciale)', detail: `Pièce de série de la Viewbox : un renfort (section plus forte) demande une fabrication spéciale ; préférer d’abord contreventement, lest ou réduction des charges.`, action: 'info', special: true });

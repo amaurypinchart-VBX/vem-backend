@@ -31,6 +31,9 @@ export interface ComboOptions {
   stability: { gammaG: number; finishes: number; logo: number; gammaW: number };
   /** combinaisons ELS caractéristiques (réactions pour le sol) */
   sls: boolean;
+  /** neige sur les toitures (cas S) : combinaisons avec la neige seule, ou accompagnant le vent ou la foule (ψ0 = 0,5) */
+  snow?: boolean;
+  psi0Snow?: number;
 }
 
 export const COMBO_DEFAULTS: ComboOptions = {
@@ -81,13 +84,25 @@ export function buildCombinations(o: ComboOptions = COMBO_DEFAULTS): Combination
       service: 'out',
       factors: [...G_SELF.map((g) => [g, s.gammaG] as const), ...G_FINISH.map((g) => [g, s.finishes] as const), ['G7', s.logo], [`W2.${d}`, s.gammaW], ['W0', s.gammaW]],
     });
+  if (o.snow) {
+    const psi = o.psi0Snow ?? 0.5;
+    const ps = Math.round(psi * o.gammaQ * 1000) / 1000;
+    out.push({ id: 'COS', label: `${o.gammaGQ} ΣG + ${o.gammaQ} S (neige)`, cls: 'ULS', factors: [...G(o.gammaGQ), ['S', o.gammaQ]], sway: [1, 1] });
+    for (const d of DIRECTIONS) {
+      const base = { cls: 'ULS' as const, sway: swayOf(d), direction: d };
+      out.push({ ...base, service: 'out', id: `CO${d}04`, label: `${o.gammaGQ} ΣG + ${o.gammaW} W2.${d} + ${ps} S (hors service, neige, ${DIRECTION_LABEL[d]})`, factors: [...G(o.gammaGQ), [`W2.${d}`, o.gammaW], ['S', ps]] });
+      out.push({ ...base, service: 'in', id: `CO${d}05`, label: `${o.gammaGQ} ΣG + ${o.gammaQ} Q1.${d} + ${ps} S (en service, neige, ${DIRECTION_LABEL[d]})`, factors: [...G(o.gammaGQ), [`Q1.${d}`, o.gammaQ], ['S', ps]] });
+    }
+  }
   if (o.sls) {
     out.push({ id: 'ELS0', label: 'ΣG (caractéristique)', cls: 'SLS', factors: G(1), sway: [1, 1] });
     for (const d of DIRECTIONS) {
       out.push({ id: `ELS${d}1`, label: `ΣG + Q1.${d} + W1.${d}`, cls: 'SLS', sway: swayOf(d), direction: d, service: 'in', factors: [...G(1), [`Q1.${d}`, 1], [`W1.${d}`, 1]] });
       out.push({ id: `ELS${d}2`, label: `ΣG + Q2.${d} + W2.${d}`, cls: 'SLS', sway: swayOf(d), direction: d, service: 'out', factors: [...G(1), [`Q2.${d}`, 1], [`W2.${d}`, 1]] });
       out.push({ id: `ELS${d}3`, label: `ΣG + W2.${d} + W0`, cls: 'SLS', sway: swayOf(d), direction: d, service: 'out', factors: [...G(1), [`W2.${d}`, 1], ['W0', 1]] });
+      if (o.snow) out.push({ id: `ELS${d}4`, label: `ΣG + Q1.${d} + S`, cls: 'SLS', sway: swayOf(d), direction: d, service: 'in', factors: [...G(1), [`Q1.${d}`, 1], ['S', 1]] });
     }
+    if (o.snow) out.push({ id: 'ELSS', label: 'ΣG + S (neige)', cls: 'SLS', factors: [...G(1), ['S', 1]], sway: [1, 1] });
   }
   return out;
 }

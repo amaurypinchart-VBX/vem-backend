@@ -189,6 +189,31 @@ describe('rapport de l’étude structure', () => {
       expect(all).toContain(lang === 'de' ? 'Bodenpressung und Unterpallung' : 'Ground pressure and packing');
     });
 
+  it('neige et modifications de l’étude : écrites en français, traduites sans mot français en allemand et en anglais', async () => {
+    const study: StudyInputs = { ...inputs, loads: { ...inputs.loads, snowRoof: 0.8 * 66 * 9.81e-6 } };
+    const sr = await runStudy(study, createInlineStudyRunner());
+    const sc = computeCalage({ ...calageInputFor(), reactions: sr.ground });
+    const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Sol légèrement déformable (prairie carrossable)'];
+    const modifications = ['lest de 800 kg sur le plancher de VBX-01', 'contreventement en croix (plat 60 × 6 + ridoir) sur VBX-02, grand côté 1'];
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const r = buildReport({ ...reportInput(lang, 'detailed'), study, run: sr, calage: sc, modifications });
+      const all = r.pages
+        .flatMap((p) => texts(p.svg))
+        .map((t) => own.reduce((x, o) => x.split(o).join(''), t))
+        .join('\n');
+      if (lang === 'fr') {
+        expect(all).toContain('0,8 · sk');
+        expect(all).toContain('lest de 800 kg');
+        expect(all).toContain('COS');
+        continue;
+      }
+      const markers = FRENCH_MARKERS.filter((w) => !(lang === 'de' && ['des', 'service'].includes(w)) && !(lang === 'en' && ['service', 'charge'].includes(w)));
+      const found = markers.filter((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(all));
+      expect(found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)))).toEqual([]);
+      expect(all).not.toMatch(/neige|Neige|lest de/);
+    }
+  }, 180000);
+
   it('pieds à vérin : chapitre des tiges Tr 24 × 5 en français, traduit sans mot français en allemand et en anglais', async () => {
     const study: StudyInputs = { ...inputs, options: { ...inputs.options, jacks: true } };
     const jr = await runStudy(study, createInlineStudyRunner());

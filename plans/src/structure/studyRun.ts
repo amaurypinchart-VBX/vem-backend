@@ -91,7 +91,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
   });
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
   const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems });
-  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls }).filter((c) => !inp.classes || inp.classes.includes(c.cls));
+  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => !inp.classes || inp.classes.includes(c.cls));
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
   const context = {
     structure,

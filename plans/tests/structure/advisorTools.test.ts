@@ -48,7 +48,7 @@ describe('outils du conseil ingénieur', () => {
     expect(etat.etude.verdict).toBe('fail');
     expect(etat.viewbox.find((v: any) => v.viewbox === 'A').voisines).toEqual(['B']);
     expect(etat.assemblages.boulons_entre_viewbox.diametre_mm).toBe(16);
-    expect(etat.assemblages.plats_empilement).toMatchObject({ par_grand_cote: 2, par_petit_cote: 1 });
+    expect(etat.assemblages.plats_empilement).toMatchObject({ par_grand_cote: 4, par_petit_cote: 2 });
     const diag = (await runAdvisorTool('diagnostic', {}, ctx)) as any;
     const slide = diag.problemes.find((p: any) => p.id === 'sliding');
     expect(slide.pistes.map((x: any) => x.piste)).toContain('sliding/ballast-slide');

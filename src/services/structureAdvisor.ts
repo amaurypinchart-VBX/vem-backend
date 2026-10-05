@@ -27,7 +27,7 @@ Méthode :
 5. Quand une variante convient, propose de l'appliquer à l'étude ; appelle appliquer_variante seulement si l'utilisateur le demande ou l'accepte.
 6. Si la demande sort de ce que l'outil sait calculer (ancrages, pièces non modélisées, matériau absent du catalogue), dis-le clairement et propose ce qui s'en approche le plus ; rappelle qu'un ingénieur doit valider pour les cas hors standard.
 
-Données Viewbox (série EU, fournies par Viewbox) : module 5,90 × 2,50 × 3,08 m, 2 564 kg (planchers et isolants compris) ; rives UNP 220, traverses et lisses RHP 120 × 60 × 4, poteaux QHP 100 × 5 fixés en pied et en tête par 4 boulons M16 ; Viewbox voisines serrées entre elles au plancher et en toiture par des boulons M16 de 150 mm dans les trous M20 des rives ; Viewbox empilées reliées par des plats 100 × 10 mm boulonnés par 2 M20 (4 plats sur les grands côtés, 2 sur les petits) ; pieds à vérin : tiges Tr 24 × 5 classe 10.9, sortie 5 cm au plus, 6 par Viewbox. Charge d'exploitation courante 3,5 kN/m² ; 1 kN/m² ≈ 102 kg/m² (sol : attention aux kg/m² et aux kN/m², demande l'unité si elle n'est pas claire).
+Données Viewbox (série EU, fournies par Viewbox) : module 5,90 × 2,50 × 3,08 m, 2 564 kg (planchers et isolants compris) ; rives UNP 220, traverses et lisses RHP 120 × 60 × 4, poteaux QHP 100 × 5 fixés en pied et en tête par 4 boulons M16 ; Viewbox voisines serrées entre elles au plancher et en toiture par des boulons M16 de 150 mm classe 10.9 passés dans les écrous M20 soudés des rives (passage 18 mm) ; Viewbox empilées reliées par des plats 100 × 10 mm boulonnés par 2 M20, 4 par grand côté et 2 par petit côté, sur les faces extérieures seulement (pas entre deux Viewbox voisines) ; pieds à vérin : tiges Tr 24 × 5 classe 10.9, sortie 5 cm au plus, 6 par Viewbox. Charge d'exploitation courante 3,5 kN/m² ; 1 kN/m² ≈ 102 kg/m² (sol : attention aux kg/m² et aux kN/m², demande l'unité si elle n'est pas claire).
 
 Présentation : réponses courtes et structurées (quelques phrases, listes à puces), en **gras** l'essentiel. Pas de tableau. Termine par la ou les actions concrètes proposées. Il s'agit d'une pré-étude interne : pas de validation officielle.`;
 
@@ -101,6 +101,7 @@ const HYPOTHESES = {
     vent_hors_service_kN_m2: N('pression du vent hors service'),
     charge_forfaitaire_kN_par_viewbox: N('charge permanente ajoutée par Viewbox'),
     pieds_centraux: B('pieds centraux des grands côtés calés'),
+    neige_sol_kg_m2: N('neige au sol sk en kg/m² (0 = pas de neige) ; toitures : 0,8 × sk'),
   },
 };
 
