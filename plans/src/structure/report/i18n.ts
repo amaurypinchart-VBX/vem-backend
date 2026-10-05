@@ -192,6 +192,15 @@ export interface Labels {
   stairTitle: string;
   stairText: (ids: string, modules: string) => string;
   stairClad: string;
+  closedLevels: string;
+  closedLevelsNote: (list: string) => string;
+  beyondPrufbuch: (levels: number) => string;
+  stairCladCalc: string;
+  stairFeetTitle: string;
+  stairFeetText: (mu: string) => string;
+  stairFeetCols: { foot: string; rz: string; rh: string; need: string };
+  stairFeetLifted: string;
+  stairFeetInstruction: (list: string) => string;
   ground: string;
   groundIntro: (source: string) => string;
   /** public limité pour le sol (personnes, kg par personne, charge totale en kN) */
@@ -505,6 +514,15 @@ const FR: Labels = {
   stairText: (ids, mods) =>
     `${ids} : kit escalier Viewbox avec palier (modèle de statico 24-0569 § 3.2), palier boulonné au côté de ${mods}. Limons et cadre de palier en U plié 200 × 80 × 5 (S235), limons accrochés au palier (2 crochets en plat 80 × 5 + 2 × M12-8.8), palier attaché à la Viewbox par 2 × M20-8.8 (capot plié renforcé par un U 100 × 8), montants pendulaires QHP 80 × 3 sur vérins Layher 60 (sortie ≤ 30 cm), pieds de limon posés au sol. Marches et platelage 0,42 kN/m², exploitation et H = V / 10 en service (escalier évacué hors service), vent sur les limons et le cadre du palier (cf = 1,3, escalier non habillé). Marches : barres équivalentes sans masse entre les limons, comme le modèle SCIA.`,
   stairClad: 'Escalier calculé non habillé : s’il est habillé (bâches, panneaux), le vent et le lest de ses pieds sont à vérifier (statico : 250 kg par pied d’escalier).',
+  closedLevels: 'Niveaux fermés au public (sans exploitation)',
+  closedLevelsNote: (list) => `${list} : fermé(s) au public et calculé(s) sans exploitation — l’accès doit être physiquement condamné et signalé.`,
+  beyondPrufbuch: (n) => `Installation de ${n} niveaux : hors du domaine du livre d’examen TÜV 190060 B (2 niveaux au plus) — justification particulière et réception par l’autorité nécessaires.`,
+  stairCladCalc: 'Escalier calculé habillé sous les limons et le palier : vent sur toute la hauteur jusqu’au sol (cf = 1,3).',
+  stairFeetTitle: 'Lest des pieds d’escalier (glissement)',
+  stairFeetText: (mu) => `Combinaisons de stabilité (charges permanentes favorables 1,0, vent 1,2), comme statico 24-0569 § 4 : lest = max(0 ; Rh / μ − Rz), μ = ${mu}.`,
+  stairFeetCols: { foot: 'Pied', rz: 'Rz (stabilité)', rh: 'Rh', need: 'Lest nécessaire' },
+  stairFeetLifted: 'pied soulevé : à lester ou ancrer',
+  stairFeetInstruction: (list) => `Pieds d’escalier à lester (glissement) : ${list}.`,
   jacksTitle: 'Pieds à vérin (tiges Tr 24 × 5)',
   jacksText:
     'Tige filetée trapézoïdale Tr 24 × 5 classe 10.9 (noyau d3 = 18,5 mm, fy = 900 N/mm²), sortie e ≤ 5 cm, 6 vérins par Viewbox. Console encastrée dans la douille du pied et posée sur sa platine : Lcr = 2 · e, M = H · e ; compression et flexion sur le noyau (EN 1993-1-1 6.2.1(7), 6.3.3 annexe B, courbe c, flexion élastique), γM = 1,10. Les réceptions de pied sont vérifiées avec les barres.',
@@ -826,6 +844,15 @@ const DE: Labels = {
   stairText: (ids, mods) =>
     `${ids}: Viewbox-Treppenbausatz mit Podest (Modell aus statico 24-0569 § 3.2), Podest seitlich an ${mods} verschraubt. Treppenwangen und Podestrahmen aus gekantetem U 200 × 80 × 5 (S235), Wangen am Podest eingehängt (2 Haken aus Flachstahl 80 × 5 + 2 × M12-8.8), Podest mit 2 × M20-8.8 an der Viewbox angeschlossen (Spaltabdeckung mit U 100 × 8 verstärkt), Pendelstützen QHP 80 × 3 auf Layher Fußspindeln 60 (Auszug ≤ 30 cm), Wangenfüße auf dem Boden. Treppenstufen und Belag 0,42 kN/m², Verkehrslast und H = V / 10 im Betrieb (Treppe außer Betrieb geräumt), Wind auf Wangen und Podestrahmen (cf = 1,3, Treppe unverkleidet). Stufen als masselose Ersatzstäbe zwischen den Wangen, wie im SCIA-Modell.`,
   stairClad: 'Treppe unverkleidet berechnet: bei Verkleidung (Planen, Paneele) sind Wind und Ballastierung der Treppenfüße nachzuweisen (statico: 250 kg je Treppenfuß).',
+  closedLevels: 'Für Publikum gesperrte Geschosse (ohne Verkehrslast)',
+  closedLevelsNote: (list) => `${list}: für Publikum gesperrt und ohne Verkehrslast berechnet — der Zugang ist baulich zu verschließen und zu kennzeichnen.`,
+  beyondPrufbuch: (n) => `Anlage mit ${n} Geschossen: außerhalb des Prüfbuchs TÜV 190060 B (höchstens 2 Geschosse) — gesonderter Nachweis und Abnahme durch die Behörde erforderlich.`,
+  stairCladCalc: 'Treppe unterhalb der Wangen und des Podests verkleidet berechnet: Wind auf der ganzen Höhe bis zum Boden (cf = 1,3).',
+  stairFeetTitle: 'Ballastierung der Treppenfüße (Gleiten)',
+  stairFeetText: (mu) => `Kombinationen der Lagesicherheit (günstige ständige Lasten 1,0, Wind 1,2), wie statico 24-0569 § 4: Ballast = max(0; Rh / μ − Rz), μ = ${mu}.`,
+  stairFeetCols: { foot: 'Fuß', rz: 'Rz (Lagesicherheit)', rh: 'Rh', need: 'Erforderlicher Ballast' },
+  stairFeetLifted: 'Fuß hebt ab: ballastieren oder verankern',
+  stairFeetInstruction: (list) => `Zu ballastierende Treppenfüße (Gleiten): ${list}.`,
   jacksTitle: 'Nachweis der Spindelfüße (Tr 24 × 5)',
   jacksText:
     'Trapezgewindestange Tr 24 × 5 Festigkeitsklasse 10.9 (Kerndurchmesser d3 = 18,5 mm, fy = 900 N/mm²), Auszug e ≤ 5 cm, 6 Spindeln je Viewbox. Kragarm, in der Fußhülse eingespannt und auf der Fußplatte aufgelagert: Lcr = 2 · e, M = H · e; Druck und Biegung im Kernquerschnitt (EN 1993-1-1 6.2.1(7), 6.3.3 Anhang B, Knicklinie c, elastische Biegung), γM = 1,10. Die Fußaufnahmen werden mit den Stäben nachgewiesen.',
@@ -1147,6 +1174,15 @@ const EN: Labels = {
   stairText: (ids, mods) =>
     `${ids}: Viewbox stair kit with landing (model of statico 24-0569 § 3.2), landing bolted to the side of ${mods}. Stringers and landing frame in cold-formed U 200 × 80 × 5 (S235), stringers hooked onto the landing (2 hooks in flat 80 × 5 + 2 × M12-8.8), landing connected to the Viewbox by 2 × M20-8.8 (folded cover reinforced by a U 100 × 8), pendulum posts SHS 80 × 3 on Layher base jacks 60 (extension ≤ 30 cm), stringer feet resting on the ground. Treads and decking 0.42 kN/m², imposed load and H = V / 10 in service (stair evacuated out of service), wind on the stringers and the landing frame (cf = 1.3, stair not clad). Treads: massless equivalent bars between the stringers, as in the SCIA model.`,
   stairClad: 'Stair calculated without cladding: if it is clad (tarpaulins, panels), the wind and the ballast of its feet are to be verified (statico: 250 kg per stair foot).',
+  closedLevels: 'Levels closed to the public (no imposed load)',
+  closedLevelsNote: (list) => `${list}: closed to the public and calculated without imposed load — access must be physically closed off and signposted.`,
+  beyondPrufbuch: (n) => `Installation with ${n} levels: outside the scope of the TÜV inspection book 190060 B (2 levels at most) — specific verification and acceptance by the authority required.`,
+  stairCladCalc: 'Stair calculated as clad below the stringers and the landing: wind over the whole height down to the ground (cf = 1.3).',
+  stairFeetTitle: 'Ballast of the stair feet (sliding)',
+  stairFeetText: (mu) => `Stability combinations (favourable permanent loads 1.0, wind 1.2), as statico 24-0569 § 4: ballast = max(0; Rh / μ − Rz), μ = ${mu}.`,
+  stairFeetCols: { foot: 'Foot', rz: 'Rz (stability)', rh: 'Rh', need: 'Ballast needed' },
+  stairFeetLifted: 'foot lifting off: to be ballasted or anchored',
+  stairFeetInstruction: (list) => `Stair feet to be ballasted (sliding): ${list}.`,
   jacksTitle: 'Jack feet (Tr 24 × 5 rods)',
   jacksText:
     'Trapezoidal threaded rod Tr 24 × 5 grade 10.9 (core d3 = 18.5 mm, fy = 900 N/mm²), extension e ≤ 5 cm, 6 jacks per Viewbox. Cantilever clamped in the foot sleeve and resting on its base plate: Lcr = 2 · e, M = H · e; compression and bending on the core (EN 1993-1-1 6.2.1(7), 6.3.3 Annex B, curve c, elastic bending), γM = 1.10. The foot receptions are checked with the members.',

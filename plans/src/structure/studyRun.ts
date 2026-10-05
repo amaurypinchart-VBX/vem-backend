@@ -35,9 +35,11 @@ export interface CalcOptions {
   friction: number;
   /** pression intérieure dans la vérification du plancher (installation ouverte) */
   internalPressure: boolean;
+  /** escaliers habillés sous les limons et le palier (bâches, panneaux) : vent sur l'habillage */
+  stairClad?: boolean;
 }
 
-export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true };
+export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true, stairClad: false };
 
 export interface StudyInputs {
   modules: PlacedModule[];
@@ -72,6 +74,8 @@ export interface StudyRun {
   verdict: StudyVerdict;
   plywood: PlywoodResult;
   ground: Estimate;
+  /** lest de chaque pied d'escalier contre le glissement (combinaisons de stabilité) */
+  stairFeet: StairFootBallast[];
   durationMs: number;
   warnings: string[];
 }
@@ -94,7 +98,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     stairs: inp.stairs,
   });
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
-  const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems }, inp.sections);
+  const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems, stairClad: !!o.stairClad }, inp.sections);
   const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => !inp.classes || inp.classes.includes(c.cls));
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
   const context = {
@@ -134,8 +138,45 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     };
     const ground = groundEstimate(structure, summary, combos, 100, { roofAccessible: inp.loads.roofAccessible, horizontalRatio: inp.loads.horizontalRatio });
     const warnings = [...new Set([...structure.warnings, ...loads.warnings, ...summary.warnings])];
-    return { structure, loads, combos, index, summary, stability: stab, verdict: verdictAll, plywood, ground, durationMs: performance.now() - t0, warnings };
+    const stairFeet = stairFootBallast(structure, summary, combos, o.friction);
+    return { structure, loads, combos, index, summary, stability: stab, verdict: verdictAll, plywood, ground, stairFeet, durationMs: performance.now() - t0, warnings };
   });
+}
+
+export interface StairFootBallast {
+  stair: string;
+  label: string;
+  /** réaction verticale et horizontale de la combinaison déterminante (N), lest nécessaire (N) */
+  Rz: number;
+  Rh: number;
+  need: number;
+  combo: string;
+  /** pied soulevé dans une combinaison de stabilité : à lester ou ancrer (valeur non déterminée par le calcul) */
+  lifted: boolean;
+}
+
+/**
+ * Lest de chaque pied d'escalier (montants, talons de limon) contre le glissement, comme statico 24-0569 § 4 :
+ * combinaisons de stabilité (G favorables 1,0, vent 1,2), lest = max(0 ; Rh / μ − Rz).
+ */
+export function stairFootBallast(s: StructuralModel, summary: StudySummary, combos: Combination[], mu: number): StairFootBallast[] {
+  const out: StairFootBallast[] = [];
+  for (const st of s.stairs ?? [])
+    for (const k of st.supports) {
+      let worst: StairFootBallast | null = null;
+      for (const c of combos) {
+        if (c.cls !== 'STAB') continue;
+        const r = summary.reactions[c.id]?.[k];
+        if (!r) continue;
+        const Rz = Math.max(0, r.R[1]);
+        const Rh = Math.hypot(r.R[0], r.R[2]);
+        const need = Math.max(0, Rh / mu - Rz);
+        const cur = { stair: st.id, label: s.supportMeta[k].label ?? `${st.id} · pied ${k + 1}`, Rz, Rh, need, combo: c.id, lifted: r.lifted };
+        if (!worst || cur.need > worst.need || (cur.lifted && !worst.lifted)) worst = cur;
+      }
+      if (worst) out.push(worst);
+    }
+  return out;
 }
 
 /** Empreinte des entrées : un résultat est périmé dès qu'elle change. */

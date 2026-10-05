@@ -160,6 +160,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const vWatch = speedLimit(loads.windInService, 0.75);
   const vOut = speedLimit(loads.windOutOfService);
   const surfaces = loads.evacuateTopLevel && levels > 1 ? L.topLevelAndOutdoor : L.outdoorSurfaces;
+  const closedNames = (loads.closedLevels ?? []).filter((l) => l > 0 && l < levels).map((l) => L.levelName(l)).join(', ');
   const ballast = slidingBallast(run, mu);
   const gTotal = run.loads.cases.filter((c) => c.group === 'G').reduce((a, c) => a - c.resultant[1], 0);
   const maxEta = Math.max(0, ...run.verdict.families.map((f) => (Number.isFinite(f.eta) ? f.eta : 0)), Number.isFinite(run.plywood.eta) ? run.plywood.eta : 0, run.stability.sliding.eta);
@@ -273,7 +274,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       L.notCoveredItems.cladding,
       L.notCoveredItems.logo,
       L.notCoveredItems.railings,
-      ...((run.structure.stairs ?? []).length ? [L.notCoveredItems.steps, L.stairClad] : []),
+      ...((run.structure.stairs ?? []).length ? [L.notCoveredItems.steps, study.options.stairClad ? L.stairCladCalc : L.stairClad] : []),
       ...study.blocking.map((b) => `${L.notCoveredItems.blocking} : ${E(b)}`),
       ...(inp.ignoredParts ?? []).map((p) => L.notCoveredItems.ignored(p.label, p.count)),
     ],
@@ -305,6 +306,12 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
       (study.loads.snowRoof ?? 0) > 0 ? L.snowNoteWith : L.snowNote,
+      ...(closedNames ? [L.closedLevelsNote(closedNames)] : []),
+      ...(levels >= 3 ? [L.beyondPrufbuch(levels)] : []),
+      ...(() => {
+        const feet = (run.stairFeet ?? []).filter((f) => f.lifted || f.need > 0);
+        return feet.length ? [L.stairFeetInstruction(feet.map((f) => `${E(f.label)} ${f.lifted ? `(${L.stairFeetLifted})` : `${N(Math.ceil(f.need / GRAVITY / 10) * 10, 0)} kg`}`).join(', '))] : [];
+      })(),
       ...(inp.texts?.instructions ?? []).map((t) => t.trim()).filter(Boolean),
     ],
   });
@@ -385,6 +392,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     rows: [
       [L.liveText, `qk = ${N(loads.live * 1e3)} kN/m²`],
       ...(loads.roofAccessible ? ([[L.roofLive, `qk = ${N(loads.roofLive * 1e3)} kN/m²`]] as Array<[string, string]>) : []),
+      ...(closedNames ? ([[L.closedLevels, closedNames]] as Array<[string, string]>) : []),
     ],
     labelWidth: 70,
   });
@@ -555,6 +563,21 @@ export function buildReport(inp: ReportInput): ReportOutput {
       const state = st[f.item];
       if (state?.blocked) blocks.push({ t: 'para', text: E(state.blocked), color: VERDICT_COLORS.incomplete });
       for (const r of state?.records ?? []) blocks.push(rec(r));
+    }
+    // lest des pieds contre le glissement
+    if (run.stairFeet?.length) {
+      blocks.push({ t: 'para', text: L.stairFeetTitle, bold: true, after: 0.6 });
+      blocks.push({ t: 'para', text: L.stairFeetText(N(study.options.friction, 2)) });
+      blocks.push({
+        t: 'table',
+        cols: [
+          { title: L.stairFeetCols.foot, w: 46 },
+          { title: L.stairFeetCols.rz, w: 18, align: 'end' },
+          { title: L.stairFeetCols.rh, w: 14, align: 'end' },
+          { title: L.stairFeetCols.need, w: 22, align: 'end' },
+        ],
+        rows: run.stairFeet.map((f) => [E(f.label), kN(f.Rz, 2), kN(f.Rh, 2), f.lifted ? L.stairFeetLifted : f.need > 0 ? `${N(Math.ceil(f.need / GRAVITY / 10) * 10, 0)} kg (${f.combo})` : '—']),
+      });
     }
   }
   // 3.x sol et calage

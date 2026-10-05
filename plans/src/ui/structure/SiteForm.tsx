@@ -111,9 +111,11 @@ export interface HypothesesFormProps {
   /** toitures accessibles au public (étude complète) */
   roof?: boolean;
   setRoof?: (v: boolean) => void;
+  /** nombre de niveaux de Viewbox du modèle */
+  levels?: number;
 }
 
-export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof }: HypothesesFormProps) {
+export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, levels = 1 }: HypothesesFormProps) {
   const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
   const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);
@@ -214,6 +216,12 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof }: Hy
         >
           <Num value={kgOf(hyp.live)} onChange={(v) => set('live', kNOf(v))} /> kg/m²
         </Q>
+        {Array.from({ length: Math.max(0, levels - 1) }, (_, k) => k + 1).map((lv) => (
+          <Check key={lv} checked={(hyp.closedLevels ?? []).includes(lv)} onChange={(v) => set('closedLevels', v ? [...new Set([...(hyp.closedLevels ?? []), lv])].sort() : (hyp.closedLevels ?? []).filter((x) => x !== lv))}>
+            <b>Niveau {lv} fermé au public</b>
+            <div className="hint">Étage non accessible (stockage, décor, comme le 3ᵉ niveau Pall Mall) : pas de charge du public sur son plancher. L’accès doit être physiquement fermé.</div>
+          </Check>
+        ))}
         {setRoof && (
           <Check checked={!!roof} onChange={setRoof}>
             <b>Toitures ouvertes au public (terrasses)</b>

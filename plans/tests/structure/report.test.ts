@@ -246,7 +246,7 @@ describe('rapport de l’étude structure', () => {
     const placed = placeStair([-1080, -68, -9, 5900, 4335, 1581], 'ESC-1', 'Escalier test', inputs.modules, STAIR_KITS[0], () => ({ low: 600, high: 2800 }));
     expect(placed.reason).toBeUndefined();
     expect(placed.stair).toMatchObject({ module: 'VBX-03', side: 'v0', level: 'floor', run: [-1, 0, 0], landingEnd: -5900 });
-    const study: StudyInputs = { ...inputs, stairs: [placed.stair!] };
+    const study: StudyInputs = { ...inputs, stairs: [placed.stair!], options: { ...inputs.options, stairClad: true } };
     const sr = await runStudy(study, createInlineStudyRunner());
     expect(sr.summary.errors).toEqual([]);
     expect(sr.structure.errors).toEqual([]);
@@ -271,6 +271,8 @@ describe('rapport de l’étude structure', () => {
         expect(all).toContain('Escalier extérieur');
         expect(all).toContain('Vérin Layher 60');
         expect(all).toContain('pied d’escalier');
+        expect(all).toContain('Lest des pieds d’escalier (glissement)');
+        expect(all).toContain('Escalier calculé habillé');
         continue;
       }
       expect(all).toContain(lang === 'de' ? 'Außentreppe' : 'External stair');
@@ -281,6 +283,22 @@ describe('rapport de l’étude structure', () => {
       expect(all.split('\n').filter((l) => /(^|[^\p{L}])(limons?|palier|escalier|montants?|crochets?)([^\p{L}]|$)/iu.test(l))).toEqual([]);
     }
   }, 180000);
+
+  it('3 niveaux, le dernier fermé au public (Pall Mall partie C) : pas d’exploitation en haut, hors Prüfbuch signalé, 3 langues', async () => {
+    const mods = [vbx('C1', 0, 0, 0), vbx('C2', 0, 0, 1), vbx('C3', 0, 0, 2)];
+    const study: StudyInputs = { ...inputs, modules: mods, edgeItems: [], pointItems: [], loads: { ...inputs.loads, closedLevels: [2] } };
+    const r3 = await runStudy(study, createInlineStudyRunner());
+    const open = await runStudy({ ...study, loads: { ...study.loads, closedLevels: [] } }, createInlineStudyRunner());
+    const Q = (r: StudyRun) => -r.loads.cases.find((c) => c.id === 'Q1.1')!.resultant[1];
+    // un plancher de moins chargé : 2 / 3 de l'exploitation
+    expect(Q(r3) / Q(open)).toBeCloseTo(2 / 3, 3);
+    const c3 = computeCalage({ ...calageInputFor(), reactions: r3.ground });
+    const words = { fr: ['fermé(s) au public', 'hors du domaine du livre d’examen TÜV'], de: ['für Publikum gesperrt', 'außerhalb des Prüfbuchs'], en: ['closed to the public', 'outside the scope of the TÜV'] } as const;
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const all = buildReport({ ...reportInput(lang, 'compact'), study, run: r3, calage: c3 }).pages.flatMap((p) => texts(p.svg)).join(' ');
+      for (const w of words[lang]) expect(all).toContain(w);
+    }
+  }, 240000);
 
   it('calage choisi (plaques par type, un appui à part, plaques de roulage) : traduit sans mot français', () => {
     const k70 = plateKey(VIEWBOX_STOCK.find((s) => s.length === 700 && s.thickness === 36)!);

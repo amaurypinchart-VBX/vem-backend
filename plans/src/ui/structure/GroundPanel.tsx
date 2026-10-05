@@ -41,6 +41,8 @@ export interface Hypotheses {
   cp: number;
   middleFeet: boolean;
   evacuateTop: boolean;
+  /** niveaux fermés au public (pas d'exploitation) : 1 = premier étage… */
+  closedLevels?: number[];
   staticoConversion: boolean;
   diffusion: boolean;
   extraPct: number;
@@ -75,6 +77,7 @@ export const DEFAULT_HYP: Hypotheses = {
   cp: 1.3,
   middleFeet: false,
   evacuateTop: true,
+  closedLevels: [],
   staticoConversion: false,
   diffusion: false,
   extraPct: 0,

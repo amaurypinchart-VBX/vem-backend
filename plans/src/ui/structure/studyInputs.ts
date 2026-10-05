@@ -51,6 +51,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
       horizontalRatio: DEFAULTS.horizontalRatio.value,
       roofAccessible: roof,
       evacuateTopLevel: hyp.evacuateTop,
+      closedLevels: hyp.closedLevels ?? [],
       snowRoof: roofSnow(hyp),
       windInService: kNm2(hyp.windIn),
       windOutOfService: kNm2(hyp.windOut),

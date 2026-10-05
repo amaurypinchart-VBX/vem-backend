@@ -8,6 +8,7 @@ import { placeFromFrame } from '../core/assemble';
 import type { Vec3 } from '../core/fem/types';
 import type { LibraryEntry, ModuleTypeEntry, PartAssignment } from '../core/library';
 import { NATURE_LABEL } from '../core/library';
+import { fmtNumber } from '../core/units';
 import type { EdgeItem, PointItem } from '../core/loads';
 import type { Recognition } from '../core/recognition';
 import { proposeFor } from '../core/recognition';
@@ -62,7 +63,7 @@ export function placeStair(
   const across: 0 | 2 = axis === 0 ? 2 : 0;
   const [clo, chi] = across === 0 ? [b[0], b[3]] : [b[2], b[5]];
   const target = b[4] - 1250;
-  let best: { pm: PlacedModule; side: Side; level: 'floor' | 'roof'; H: number; d: number; along: [number, number] } | null = null;
+  let best: { pm: PlacedModule; side: Side; level: 'floor' | 'roof'; H: number; d: number; along: [number, number]; depth: number } | null = null;
   for (const pm of modules) {
     const p = pm.params;
     const W = p.y1 + p.y0;
@@ -91,7 +92,9 @@ export function placeStair(
       options.push(['roof', pm.origin[1] + p.topZ]);
       for (const [level, H] of options) {
         const d = Math.abs(H - target) + (level === 'roof' ? 1 : 0);
-        if (!best || d < best.d) best = { pm, side: sd.side, level, H, d, along: [Math.min(a0, a1), Math.max(a0, a1)] };
+        // profondeur de l'escalier depuis la ligne de système de la rive (5 mm à l'intérieur de la face)
+        const depth = (sign > 0 ? chi - faceAcross : faceAcross - clo) + 5;
+        if (!best || d < best.d) best = { pm, side: sd.side, level, H, d, along: [Math.min(a0, a1), Math.max(a0, a1)], depth };
       }
     }
   }
@@ -108,10 +111,30 @@ export function placeStair(
   }
   const run: Vec3 = axis === 0 ? [landingAtLow ? 1 : -1, 0, 0] : [0, 0, landingAtLow ? 1 : -1];
   const landingEnd = landingAtLow ? lo : -hi;
-  return { stair: { id, label, kit, module: best.pm.id, side: best.side, level: best.level, run, landingEnd }, warning };
+  // dimensions mesurées sur la boîte de l'objet (garde-corps et débords du kit déduits) : largeur entre limons, volée
+  const notes: string[] = warning ? [warning] : [];
+  const W = best.depth - kit.gap - kit.outerRail;
+  let k = kit;
+  if (Math.abs(W - kit.width) > 60) {
+    if (W < 600 || W > 2500) return { stair: null, reason: `${label} : largeur mesurée ${Math.round(W)} mm hors du domaine du kit (0,60 à 2,50 m) — escalier non calculé.` };
+    k = { ...kit, width: Math.round(W / 10) * 10 };
+    notes.push(`${label} : largeur entre limons mesurée ${fmt(k.width)} m (kit ${fmt(kit.width)} m), mêmes profilés.`);
+  }
+  const L = hi - lo - (kit.landingEndOffset + kit.landingMargin + kit.boltSpacing + kit.landingMargin + kit.hookExtension + kit.footOverhang);
+  const rise = best.H - Math.min(...modules.filter((m) => m.level === 0).map((m) => m.origin[1]));
+  const kitL = (rise - kit.footHeight) * kit.runPerRise;
+  let flight: number | undefined;
+  if (Math.abs(L - kitL) > 150) {
+    const slope = (Math.atan2(rise - kit.footHeight, L) * 180) / Math.PI;
+    if (L <= 0 || slope < 25 || slope > 45) return { stair: null, reason: `${label} : volée mesurée ${fmt(Math.max(0, L))} m pour ${fmt(rise)} m de hauteur (pente hors de 25° à 45°) — escalier non calculé.` };
+    flight = Math.round(L / 10) * 10;
+    notes.push(`${label} : volée mesurée ${fmt(flight)} m en plan (pente ${Math.round(slope)}°), mêmes profilés que le kit.`);
+  }
+  return { stair: { id, label, kit: k, module: best.pm.id, side: best.side, level: best.level, run, landingEnd, ...(flight !== undefined ? { flight } : {}) }, warning: notes.join(' ') || undefined };
 }
 
 const G = 9.81;
+const fmt = (mm: number) => fmtNumber(mm / 1e3, 2);
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 export function studyModelFromScene(scene: LoadedScene, recognition: Recognition, library: readonly LibraryEntry[]): SceneStudyModel {

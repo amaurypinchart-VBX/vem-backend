@@ -379,13 +379,14 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }}
         />
       </div>
-      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} roof={roof} setRoof={setRoof} />}
+      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} roof={roof} setRoof={setRoof} levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))} />}
       {step === 'calc' && (
         <CalcPanel
           options={calcOpts}
           setOptions={setCalcOpts}
           jack={jackSpec(connectionSet(library))}
           modulesCount={sceneModel.modules.length}
+          stairs={sceneModel.stairs.length}
           blocking={sceneModel.errors}
           warnings={sceneModel.warnings}
           running={running}

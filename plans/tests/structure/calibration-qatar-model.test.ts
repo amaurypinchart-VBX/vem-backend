@@ -6,7 +6,7 @@
 // statico, et un boulon B / C de plus en y = 2,71 m (perçages alignés) qui soulage la rive de la Viewbox perpendiculaire.
 // Ignoré sans le fichier.
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ingest } from '../../src/ingest/pipeline';
 import { inlineRunner } from '../../src/ingest/cleanup';
@@ -28,7 +28,7 @@ import { createInlineStudyRunner } from '../../src/structure/worker/study';
 const dir = process.env.VEM_MODELS_DIR ?? join(__dirname, '..', '..', '..', 'test-models');
 const file = join(dir, 'Qatar_Airways_2024_VEM_20261001-1529.zip');
 
-async function qatar(calibration: boolean, stair: 'ignored' | 'computed' = 'ignored') {
+async function qatar(calibration: boolean, stair: 'ignored' | 'computed' = 'ignored', stairClad = false) {
   const buf = readFileSync(file);
   const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   const res = await ingest({ fileName: 'qatar.zip', data, sha256: 'local', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
@@ -44,7 +44,7 @@ async function qatar(calibration: boolean, stair: 'ignored' | 'computed' = 'igno
   const recognition = recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories });
   const sceneModel = studyModelFromScene(scene, recognition, library);
   const hyp = { ...DEFAULT_HYP, windIn: 0.41, windOut: 0.41 };
-  const { inputs } = buildStudyInputs({ sceneModel, library, hyp, roof: false, calc: { ...CALC_DEFAULTS, calibration } });
+  const { inputs } = buildStudyInputs({ sceneModel, library, hyp, roof: false, calc: { ...CALC_DEFAULTS, calibration, stairClad } });
   return { first, sceneModel, run: await runStudy(inputs, createInlineStudyRunner()) };
 }
 
@@ -103,6 +103,18 @@ describe.skipIf(!existsSync(file))('calage statico 24-0569 sur le modèle Sketch
     const stringer = run.verdict.families.find((f) => /^Limon/.test(f.family))!;
     expect(stringer.eta).toBeGreaterThan(0.6);
     expect(stringer.eta).toBeLessThan(1.05);
+  }, 600_000);
+
+  it('escalier habillé : vent sur l’habillage, lest des pieds du même ordre que statico (250 kg par pied d’escalier)', async () => {
+    const open = (await qatar(false, 'computed')).run;
+    const clad = (await qatar(false, 'computed', true)).run;
+    const kg = (r: typeof open) => Math.max(...r.stairFeet.map((f) => f.need / 9.81));
+    writeFileSync(join(dir, 'qatar-stair-feet.txt'), [...open.stairFeet, ...clad.stairFeet].map((f) => `${f.label} Rz ${(f.Rz / 1e3).toFixed(2)} Rh ${(f.Rh / 1e3).toFixed(2)} lest ${(f.need / 9.81).toFixed(0)} kg ${f.combo}${f.lifted ? ' soulevé' : ''}`).join('\n'));
+    expect(open.stairFeet).toHaveLength(8);
+    expect(clad.stairFeet.some((f) => f.lifted)).toBe(false);
+    expect(kg(clad)).toBeGreaterThan(kg(open));
+    expect(kg(clad)).toBeGreaterThan(50);
+    expect(kg(clad)).toBeLessThan(600);
   }, 600_000);
 
   it('option « calage statico » : toutes les combinaisons convergent (contacts en effort normal seul, comme SCIA)', async () => {

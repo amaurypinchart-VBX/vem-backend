@@ -72,6 +72,8 @@ export interface LoadInputs {
   roofAccessible: boolean;
   /** hors service : le dernier niveau est aussi évacué */
   evacuateTopLevel: boolean;
+  /** niveaux fermés au public (pas d'exploitation sur leur plancher, en et hors service) */
+  closedLevels?: number[];
   /** neige sur les toitures du dernier niveau (N/mm², déjà multipliée par le coefficient de forme 0,8) ; 0 = pas de neige */
   snowRoof?: number;
   /** pressions du vent (N/mm²) : en service, hors service (déjà abattue) */
@@ -80,6 +82,8 @@ export interface LoadInputs {
   cp: { windward: number; leeward: number; parallel: number; roofStability: number };
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
+  /** escaliers habillés sous les limons et le palier : vent sur l'habillage (cf 1,3, moitié par face) */
+  stairClad?: boolean;
 }
 
 export interface Axes {
@@ -398,7 +402,8 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
         const area = (p.x1 - p.x0) * (p.y1 - p.y0);
         const surfaces: Array<{ level: 'floor' | 'roof'; q: number; nodes: string[] }> = [];
         const floorEvacuated = kind === 'Q2' && inp.evacuateTopLevel && pm.level === topLevel && topLevel > 0;
-        if (inp.live > 0 && !floorEvacuated) surfaces.push({ level: 'floor', q: inp.live, nodes: tpl.cornerFloor });
+        const closed = inp.closedLevels?.includes(pm.level) ?? false;
+        if (inp.live > 0 && !floorEvacuated && !closed) surfaces.push({ level: 'floor', q: inp.live, nodes: tpl.cornerFloor });
         // toiture accessible (terrasse) : surface extérieure, évacuée hors service
         if (kind === 'Q1' && inp.roofAccessible && inp.roofLive > 0 && model.topModules.has(pm.id)) surfaces.push({ level: 'roof', q: inp.roofLive, nodes: tpl.cornerRoof });
         for (const s of surfaces) {
@@ -451,10 +456,14 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
             );
         }
       }
-      // escaliers (non habillés) : limons et cadre du palier, cf = 1,3 sur la hauteur du profilé (statico 18-0573 § 3.8.1)
+      // escaliers : limons et cadre du palier, cf = 1,3 sur la hauteur du profilé (statico 18-0573 § 3.8.1) ; habillés
+      // (bâches, panneaux sous les limons et le palier) : cf = 1,3 sur la hauteur jusqu'au sol, moitié à chaque face
       for (const st of stairs)
         for (const k of st.wind) {
-          const h = model.meta[k] ? sectionHeight.get(model.meta[k].section) ?? 200 : 200;
+          const b = model.fem.members[k];
+          const yMid = (model.fem.nodes[b.i].y + model.fem.nodes[b.j].y) / 2;
+          const profile = model.meta[k] ? sectionHeight.get(model.meta[k].section) ?? 200 : 200;
+          const h = inp.stairClad ? Math.max(profile, (yMid - st.groundY) / 2) : profile;
           const { plan } = memberGeom(model, k);
           const across = plan ? Math.abs(plan[0] * wd[2] - plan[2] * wd[0]) : 1;
           const w = STAIR_CF * q * h * across;

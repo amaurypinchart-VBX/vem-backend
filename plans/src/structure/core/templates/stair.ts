@@ -35,6 +35,11 @@ export interface StairKitParams {
   /** giron des marches (nombre de marches = volée / giron, arrondi) ; lattes du palier */
   stepGoing: number;
   landingBars: number;
+  /** relevés sur le modèle SketchUp du kit : débord du palier au-delà du cadre (bout de la boîte), débord de la boîte
+   * au-delà du pied des limons, garde-corps extérieur au-delà du limon extérieur — pour mesurer largeur et volée */
+  landingEndOffset: number;
+  footOverhang: number;
+  outerRail: number;
   sections: { stringer: string; post: string; head: string; step: string; link: string };
   /** marches et platelage (N/mm²), garde-corps (N/mm) */
   treads: number;
@@ -69,12 +74,6 @@ export interface StairSupport {
 }
 
 /** Barre recevant les charges surfaciques des marches / du palier : largeur d'influence (mm, en plan). */
-export interface StairLoadBar {
-  member: number;
-  width: number;
-  region: 'flight' | 'landing';
-}
-
 export interface StairGeometry {
   nodes: StairNode[];
   members: StairMember[];
@@ -100,7 +99,7 @@ const PINNED: EndSpec = ['rigid', 'rigid', 'rigid', 'rigid', 'free', 'free'];
  * Escalier dans son repère local, converti en monde : `origin` (perçage extérieur, ligne de système, niveau du palier),
  * `run` et `out` unitaires horizontaux, `rise` = hauteur du palier au-dessus du sol (mm).
  */
-export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run: Vec3, out: Vec3, rise: number): StairGeometry {
+export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run: Vec3, out: Vec3, rise: number, flight?: number): StairGeometry {
   const nodes = new Map<string, StairNode>();
   const at = (r: number, w: number, z: number): Vec3 => [origin[0] + run[0] * r + out[0] * w, origin[1] + z - rise, origin[2] + run[2] * r + out[2] * w];
   const node = (r: number, w: number, z: number) => {
@@ -122,14 +121,17 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
   const r0 = -m0;
   const r1 = D + m0;
   const rHook = r1 + kit.hookExtension;
-  const L = Math.max(0, (H - kit.footHeight) * kit.runPerRise);
+  // volée : mesurée sur le modèle si elle est donnée, sinon à la pente du kit
+  const L = Math.max(0, flight ?? (H - kit.footHeight) * kit.runPerRise);
   const rFoot = rHook + L;
   const zOn = (r: number) => H - ((r - rHook) / L) * (H - kit.footHeight);
   const nSteps = Math.max(1, Math.round(L / kit.stepGoing));
   const going = L / nSteps;
   const stepR = Array.from({ length: nSteps }, (_, k) => rHook + going * (k + 0.5));
   const barR = Array.from({ length: kit.landingBars }, (_, k) => (kit.landingBars === 1 ? D / 2 : (D * k) / (kit.landingBars - 1)));
-  const rMid = rHook + kit.middlePost;
+  // montants intermédiaires : à la même proportion de la volée que dans le kit (aucun si la volée est courte)
+  const kitL = (3080 - kit.footHeight) * kit.runPerRise;
+  const rMid = L >= 2500 ? rHook + (kit.middlePost * L) / kitL : Infinity;
   const S = kit.sections;
 
   // ─── palier : cadre, lattes ───

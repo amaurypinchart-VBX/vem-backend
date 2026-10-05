@@ -84,6 +84,8 @@ export interface CalcPanelProps {
   /** tige des pieds à vérin (bibliothèque VBX-JACK) */
   jack?: { d: number; d3: number; fy: number; extensionMax: number; perModule: number } | null;
   modulesCount: number;
+  /** escaliers extérieurs calculés */
+  stairs: number;
   blocking: string[];
   warnings: string[];
   running: boolean;
@@ -201,6 +203,11 @@ export function CalcPanel(p: CalcPanelProps) {
           <label className="row">
             <input type="checkbox" checked={o.upliftAll} onChange={(e) => set('upliftAll', e.target.checked)} /> Appui soulevé : plus de retenue horizontale (prudent)
           </label>
+          {p.stairs > 0 && (
+            <label className="row" title="Bâches ou panneaux sous les limons et le palier : le vent agit sur toute la hauteur jusqu'au sol (statico : lest des pieds d'escalier si habillé)">
+              <input type="checkbox" checked={!!o.stairClad} onChange={(e) => set('stairClad', e.target.checked)} /> Escalier habillé (bâches ou panneaux sous les limons et le palier)
+            </label>
+          )}
           <label className="row">
             <input type="checkbox" checked={o.internalPressure} onChange={(e) => set('internalPressure', e.target.checked)} /> Pression intérieure sur le plancher (installation ouverte)
           </label>

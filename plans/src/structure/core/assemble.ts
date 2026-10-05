@@ -115,6 +115,8 @@ export interface PlacedStair {
   run: Vec3;
   /** abscisse le long de `run` (monde, mm) du bout du palier opposé à la volée */
   landingEnd: number;
+  /** longueur de la volée en plan mesurée sur le modèle (mm) ; absente = pente du kit */
+  flight?: number;
 }
 
 /** Escalier assemblé : barres et appuis dans le modèle, pour les charges et les vérifications. */
@@ -133,6 +135,8 @@ export interface StairModel {
   supports: number[];
   areas: { flight: number; landing: number };
   rise: number;
+  /** cote du sol sous l'escalier (monde, mm) */
+  groundY: number;
 }
 
 export interface BracingSpec {
@@ -660,7 +664,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     const rise = H - ground;
     const o = at(f, pair[0]);
     const out = f.normal;
-    const geo = stairGeometry(st.kit, st.id, [o[0], H, o[2]], st.run, out, rise);
+    const geo = stairGeometry(st.kit, st.id, [o[0], H, o[2]], st.run, out, rise, st.flight);
     const local = new Map<string, number>();
     for (const n of geo.nodes) {
       nodes.push({ id: n.key, x: n.p[0], y: n.p[1], z: n.p[2] });
@@ -703,8 +707,9 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
       supports: sup,
       areas: geo.areas,
       rise,
+      groundY: ground,
     });
-    if (Math.abs(rise - 3080) > 50) warnings.push(`${st.label} : palier à ${fmtNumber(rise / 1e3, 2)} m du sol — kit relevé pour 3,08 m, volée recalculée à la même pente.`);
+    if (Math.abs(rise - 3080) > 50 && st.flight === undefined) warnings.push(`${st.label} : palier à ${fmtNumber(rise / 1e3, 2)} m du sol — kit relevé pour 3,08 m, volée recalculée à la même pente.`);
   }
 
   // ─── tronçons de flambement : entre deux attaches d'une barre physique ───
