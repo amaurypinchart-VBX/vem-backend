@@ -22,6 +22,7 @@ import { anthropicRequest } from './aiService';
 import { notifyTubizeTruckMovement } from './telegramService';
 import { createWarehouseTask } from './warehouseAppService';
 import { generateProjectReport } from './projectReportService';
+import { accessibleProjectIds, isProjectScoped, projectScopeWhere } from '../middleware/projectAccess';
 
 const MAX_ROWS = 20;
 const MAX_ITERATIONS = 8;
@@ -33,22 +34,31 @@ export interface AssistantUser {
   role: string;
 }
 
-// Résout une référence de projet (id, n° interne ou nom partiel) vers un id réel.
-async function resolveProjectId(ref?: string): Promise<string | undefined> {
+// Résout une référence de projet (id, n° interne ou nom partiel) vers un id réel, parmi les projets
+// visibles par l'utilisateur (installer / site_manager / worker : leurs projets seulement, voir middleware/projectAccess.ts).
+async function resolveProjectId(ref: string | undefined, user: AssistantUser): Promise<string | undefined> {
   if (!ref) return undefined;
-  const byId = await prisma.project.findUnique({ where: { id: ref }, select: { id: true } }).catch(() => null);
+  const scope = projectScopeWhere(user);
+  const byId = await prisma.project.findFirst({ where: { id: ref, ...scope }, select: { id: true } }).catch(() => null);
   if (byId) return byId.id;
   const byInternalNumber = await prisma.project.findFirst({
-    where: { internalNumber: { equals: ref, mode: 'insensitive' } },
+    where: { internalNumber: { equals: ref, mode: 'insensitive' }, ...scope },
     select: { id: true },
   });
   if (byInternalNumber) return byInternalNumber.id;
   const byName = await prisma.project.findFirst({
-    where: { name: { contains: ref, mode: 'insensitive' } },
+    where: { name: { contains: ref, mode: 'insensitive' }, ...scope },
     select: { id: true },
     orderBy: { updatedAt: 'desc' },
   });
   return byName?.id;
+}
+
+// Filtre projectId d'une liste : le projet résolu, sinon les projets visibles par l'utilisateur (undefined = tous).
+async function projectFilter(projectId: string | undefined, user: AssistantUser): Promise<string | { in: string[] } | undefined> {
+  if (projectId) return projectId;
+  const ids = await accessibleProjectIds(user);
+  return ids === null ? undefined : { in: ids };
 }
 
 // Résout une référence utilisateur (id, email ou "prénom nom" approximatif).
@@ -120,8 +130,8 @@ const TOOLS: Tool[] = [
       to: z.string().optional(),
       search: z.string().optional(),
     }),
-    resolve: async (input) => {
-      const where: any = {};
+    resolve: async (input, user) => {
+      const where: any = { ...projectScopeWhere(user) };
       if (input.status) where.status = input.status;
       if (input.search) where.name = { contains: input.search, mode: 'insensitive' };
       if (input.from || input.to) {
@@ -149,8 +159,8 @@ const TOOLS: Tool[] = [
       required: ['projectRef'],
     },
     zodSchema: z.object({ projectRef: z.string() }),
-    resolve: async (input) => {
-      const id = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const id = await resolveProjectId(input.projectRef, user);
       if (!id) return { error: 'Projet introuvable' };
       return prisma.project.findUnique({
         where: { id },
@@ -175,11 +185,12 @@ const TOOLS: Tool[] = [
       },
     },
     zodSchema: z.object({ projectRef: z.string().optional(), status: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (input.projectRef && !projectId) return { error: 'Projet introuvable' };
       const where: any = {};
-      if (projectId) where.projectId = projectId;
+      const pf = await projectFilter(projectId, user);
+      if (pf) where.projectId = pf;
       if (input.status) where.status = input.status;
       return prisma.task.findMany({
         where, take: MAX_ROWS, orderBy: { taskDate: 'asc' },
@@ -203,11 +214,12 @@ const TOOLS: Tool[] = [
       },
     },
     zodSchema: z.object({ projectRef: z.string().optional(), status: z.string().optional(), urgency: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (input.projectRef && !projectId) return { error: 'Projet introuvable' };
       const where: any = {};
-      if (projectId) where.projectId = projectId;
+      const pf = await projectFilter(projectId, user);
+      if (pf) where.projectId = pf;
       if (input.status) where.status = input.status;
       if (input.urgency) where.urgency = input.urgency;
       return prisma.ticket.findMany({
@@ -231,11 +243,12 @@ const TOOLS: Tool[] = [
       },
     },
     zodSchema: z.object({ projectRef: z.string().optional(), status: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (input.projectRef && !projectId) return { error: 'Projet introuvable' };
       const where: any = {};
-      if (projectId) where.projectId = projectId;
+      const pf = await projectFilter(projectId, user);
+      if (pf) where.projectId = pf;
       if (input.status) where.status = input.status;
       return prisma.truck.findMany({
         where, take: MAX_ROWS, orderBy: { loadingDate: 'asc' },
@@ -255,11 +268,12 @@ const TOOLS: Tool[] = [
       properties: { projectRef: { type: 'string' } },
     },
     zodSchema: z.object({ projectRef: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (input.projectRef && !projectId) return { error: 'Projet introuvable' };
       const where: any = {};
-      if (projectId) where.projectId = projectId;
+      const pf = await projectFilter(projectId, user);
+      if (pf) where.projectId = pf;
       return prisma.teamBooking.findMany({
         where, take: MAX_ROWS, orderBy: { onSiteStart: 'asc' },
         select: {
@@ -279,11 +293,12 @@ const TOOLS: Tool[] = [
       properties: { projectRef: { type: 'string' } },
     },
     zodSchema: z.object({ projectRef: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (input.projectRef && !projectId) return { error: 'Projet introuvable' };
       const where: any = {};
-      if (projectId) where.projectId = projectId;
+      const pf = await projectFilter(projectId, user);
+      if (pf) where.projectId = pf;
       return prisma.hotelBooking.findMany({
         where, take: MAX_ROWS, orderBy: { checkin: 'asc' },
         select: {
@@ -307,8 +322,8 @@ const TOOLS: Tool[] = [
       required: ['projectRef'],
     },
     zodSchema: z.object({ projectRef: z.string(), from: z.string().optional(), to: z.string().optional() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const where: any = { projectId };
       if (input.from || input.to) {
@@ -334,7 +349,7 @@ const TOOLS: Tool[] = [
       properties: { search: { type: 'string' } },
     },
     zodSchema: z.object({ search: z.string().optional() }),
-    resolve: async (input) => {
+    resolve: async (input, user) => {
       const where: any = {};
       if (input.search) where.name = { contains: input.search, mode: 'insensitive' };
       return prisma.client.findMany({
@@ -354,7 +369,7 @@ const TOOLS: Tool[] = [
       },
     },
     zodSchema: z.object({ role: z.string().optional(), search: z.string().optional() }),
-    resolve: async (input) => {
+    resolve: async (input, user) => {
       const where: any = { isActive: true };
       if (input.role) where.role = input.role;
       if (input.search) where.OR = [
@@ -466,6 +481,8 @@ const TOOLS: Tool[] = [
           technicalManagerId: technicalManagerId || null,
           createdById: user.id,
           internalNumber: `VEM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+          // rôle limité à ses projets : ajouté à l'équipe, sinon il ne verrait plus le projet créé
+          ...(isProjectScoped(user) ? { team: { create: [{ userId: user.id, role: user.role }] } } : {}),
         },
       });
       logger.info(`[assistant] create_project par ${user.id} -> ${project.id} (${project.internalNumber})`);
@@ -495,7 +512,7 @@ const TOOLS: Tool[] = [
       phase: z.string().optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const userId = await resolveUserRef(input.userRef);
       if (!userId) return { error: `Utilisateur introuvable : ${input.userRef}` };
@@ -551,7 +568,7 @@ const TOOLS: Tool[] = [
       notes: z.string().optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const truck = await prisma.truck.create({
         data: {
@@ -619,7 +636,7 @@ const TOOLS: Tool[] = [
       notes: z.string().optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const userId = await resolveUserRef(input.userRef);
       if (!userId) return { error: `Utilisateur introuvable : ${input.userRef}` };
@@ -675,7 +692,7 @@ const TOOLS: Tool[] = [
       notes: z.string().optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const userIds: string[] = [];
       for (const ref of input.userRefs) {
@@ -728,7 +745,7 @@ const TOOLS: Tool[] = [
       assignedToRef: z.string().optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       let assignedToId: string | undefined;
       if (input.assignedToRef) {
@@ -779,7 +796,7 @@ const TOOLS: Tool[] = [
     resolve: async (input, user) => {
       let projectId: string | undefined;
       if (input.projectRef) {
-        projectId = await resolveProjectId(input.projectRef);
+        projectId = await resolveProjectId(input.projectRef, user);
         if (!projectId) return { error: 'Projet introuvable' };
       }
       let assignedToId: string | undefined;
@@ -841,7 +858,7 @@ const TOOLS: Tool[] = [
       entries: z.array(z.object({ entryTime: z.string().optional(), description: z.string() })).optional(),
     }),
     resolve: async (input, user) => {
-      const projectId = await resolveProjectId(input.projectRef);
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const report = await prisma.dailyReport.create({
         data: {
@@ -868,8 +885,8 @@ const TOOLS: Tool[] = [
       required: ['projectRef'],
     },
     zodSchema: z.object({ projectRef: z.string() }),
-    resolve: async (input) => {
-      const projectId = await resolveProjectId(input.projectRef);
+    resolve: async (input, user) => {
+      const projectId = await resolveProjectId(input.projectRef, user);
       if (!projectId) return { error: 'Projet introuvable' };
       const report = await generateProjectReport(projectId);
       return { text: report.text, projectId };

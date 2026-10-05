@@ -3,14 +3,19 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { assertProjectAccess, projectIdFilter, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les tâches de leurs projets (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await prisma.task.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, date, status, assignedToId } = req.query;
     const where: any = {};
-    if (projectId)    where.projectId    = String(projectId);
+    const projectFilter = await projectIdFilter(req.user, projectId);
+    if (projectFilter) where.projectId = projectFilter;
     if (status)       where.status       = String(status);
     if (assignedToId) where.assignedToId = String(assignedToId);
     if (req.user!.role === 'worker') where.assignedToId = req.user!.id;
@@ -29,6 +34,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = { ...req.body };
+    if (body.projectId) await assertProjectAccess(req.user, String(body.projectId));
 
     // Date de tâche tolérante : si manquante, invalide, ou vide → aujourd'hui.
     let parsedDate = new Date();
@@ -55,6 +61,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (req.body?.projectId) await assertProjectAccess(req.user, String(req.body.projectId));
     const task = await prisma.task.update({ where: { id: req.params.id }, data: req.body });
     res.json({ success: true, data: task });
   } catch (err) { next(err); }

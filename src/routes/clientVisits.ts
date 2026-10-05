@@ -9,8 +9,12 @@ import { AppError } from '../utils/AppError';
 import { generateVisitReportPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
+import { assertProjectAccess, projectIdFilter, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await prisma.clientVisit.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 // Pas de cache : ces données changent à chaque ajout de point
 router.use((_req, res, next) => {
@@ -22,7 +26,8 @@ router.use((_req, res, next) => {
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const where: any = {};
-    if (req.query.projectId) where.projectId = String(req.query.projectId);
+    const projectFilter = await projectIdFilter(req.user, req.query.projectId);
+    if (projectFilter) where.projectId = projectFilter;
 
     const visits = await prisma.clientVisit.findMany({
       where,
@@ -63,6 +68,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
   try {
     const { projectId, clientId, title, visitDate, notes } = req.body;
     if (!projectId || !title) throw new AppError('projectId et title requis', 400);
+    await assertProjectAccess(req.user, String(projectId));
 
     const v = await prisma.clientVisit.create({
       data: {

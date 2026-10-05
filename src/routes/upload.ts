@@ -3,8 +3,16 @@ import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { upload, uploadToCloudinary } from '../services/cloudinaryService';
 import { prisma } from '../config/database';
+import { projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('projectId', projectIdParamGuard);
+router.param('taskId', projectParamGuard(async (id) => (await prisma.task.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('ticketId', projectParamGuard(async (id) => (await prisma.ticket.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('handoverId', projectParamGuard(async (id) => (await prisma.handover.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('reportId', projectParamGuard(async (id) => (await prisma.dailyReport.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 // POST /upload/photo — single photo
 router.post('/photo', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {

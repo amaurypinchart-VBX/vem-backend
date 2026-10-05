@@ -1,8 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { generateBriefingDraft } from '../services/briefingAI';
+import { projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('projectId', projectIdParamGuard);
+router.param('id', projectParamGuard(async (id) => (await prisma.briefing.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 // ═══════════════════════════════════════════════════════════
 // LISTE des briefings d'un projet

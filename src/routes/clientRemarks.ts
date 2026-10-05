@@ -3,13 +3,19 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { upload, uploadToCloudinary } from '../services/cloudinaryService';
+import { assertProjectAccess, projectIdFilter, projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
 
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await (prisma as any).clientRemark.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('projectId', projectIdParamGuard);
+
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const projectFilter = await projectIdFilter(req.user, req.query.projectId);
     const remarks = await (prisma as any).clientRemark.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: projectFilter ? { projectId: projectFilter } : {},
       orderBy: [{ status:'asc' }, { priority:'desc' }, { createdAt:'desc' }],
       include: {
         assignedToUser: { select: { firstName:true, lastName:true } },
@@ -37,6 +43,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (req.body?.projectId) await assertProjectAccess(req.user, String(req.body.projectId));
     const remark = await (prisma as any).clientRemark.create({
       data: { ...req.body, createdBy: req.user!.id },
     });
@@ -46,6 +53,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (req.body?.projectId) await assertProjectAccess(req.user, String(req.body.projectId));
     const data: any = { ...req.body };
     if (req.body.status === 'resolved') {
       data.resolvedAt = new Date();

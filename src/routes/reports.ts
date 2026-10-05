@@ -6,6 +6,7 @@ import { AppError } from '../utils/AppError';
 import { generateDailyReportPdf, generateHandoverPdf } from '../services/pdfService';
 import { logger } from '../utils/logger';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
+import { assertProjectAccess } from '../middleware/projectAccess';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunct
       },
     });
     if (!r) throw new AppError('Rapport introuvable', 404);
+    await assertProjectAccess(req.user, r.projectId);
 
     logger.info(`[pdf-daily] Génération pour ${r.id} — ${r.entries.length} entrées, ${r.photos.length} photos`);
 
@@ -75,6 +77,7 @@ router.get('/handover/:id', async (req: AuthRequest, res: Response, next: NextFu
       },
     });
     if (!h) throw new AppError('Handover introuvable', 404);
+    await assertProjectAccess(req.user, h.projectId);
 
     // On fusionne les deux sources de photos par item (legacy + nouvelle)
     const items = h.items.map((it: any) => ({

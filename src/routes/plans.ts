@@ -8,9 +8,17 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
+import { projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
 const db = prisma as any; // modèle ajouté au schéma ; client typé régénéré au build Docker
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+// (« :id » = version de modèle ou jeu de plans selon la route)
+router.param('projectId', projectIdParamGuard);
+router.param('id', projectParamGuard(async (id) =>
+  (await db.plansModelVersion.findUnique({ where: { id }, select: { projectId: true } }))?.projectId
+  ?? (await db.plansDrawingSet.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 const LIST_SELECT = {
   id: true, projectId: true, sourceFileId: true, fileName: true, sha256: true, sizeBytes: true,

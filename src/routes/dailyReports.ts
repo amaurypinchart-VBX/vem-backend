@@ -5,8 +5,13 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateDailyReportPdf } from '../services/pdfService';
 import { sendDailyReport } from '../services/emailService';
+import { assertProjectAccess, projectIdFilter, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await prisma.dailyReport.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('photoId', projectParamGuard(async (id) => (await prisma.dailyReportPhoto.findUnique({ where: { id }, select: { report: { select: { projectId: true } } } }))?.report.projectId));
 
 // Désactive le cache HTTP sur tout ce module : les daily reports changent à
 // chaque sauvegarde et il faut que les listes/détails affichent la version la
@@ -22,8 +27,9 @@ router.use((_req, res, next) => {
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const projectFilter = await projectIdFilter(req.user, req.query.projectId);
     const reports = await prisma.dailyReport.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: projectFilter ? { projectId: projectFilter } : {},
       orderBy: { reportDate: 'desc' },
       include: {
         createdBy: { select: { firstName:true, lastName:true } },
@@ -57,6 +63,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { entries = [], checklist = [], taskHours = [], ...data } = req.body;
+    if (data.projectId) await assertProjectAccess(req.user, String(data.projectId));
     const reportDate = new Date(data.reportDate);
 
     // Le métier autorise plusieurs rapports par projet pour la même date
@@ -88,6 +95,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   try {
     const { entries, checklist, taskHours, ...scalars } = req.body;
     const id = req.params.id;
+    if (scalars.projectId) await assertProjectAccess(req.user, String(scalars.projectId));
 
     // Si on reçoit des entries, une checklist ou des taskHours, on les remplace (delete + create)
     if (Array.isArray(entries)) {

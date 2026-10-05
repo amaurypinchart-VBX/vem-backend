@@ -7,15 +7,21 @@ import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { checklistSummaries, handoverChecklist, checklistPdfData } from '../services/checklistService';
+import { assertProjectAccess, projectIdFilter, projectParamGuard } from '../middleware/projectAccess';
 import crypto from 'crypto';
 
 const router = Router();
 
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await prisma.handover.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('itemId', projectParamGuard(async (id) => (await prisma.handoverItem.findUnique({ where: { id }, select: { handover: { select: { projectId: true } } } }))?.handover.projectId));
+
 // GET /handover — liste tous les handovers (filtrés par projet si ?projectId=)
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const projectFilter = await projectIdFilter(req.user, req.query.projectId);
     const handovers = await prisma.handover.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: projectFilter ? { projectId: projectFilter } : {},
       include: {
         project: { select: { name: true, internalNumber: true } },
         siteManager: { select: { firstName: true, lastName: true } },
@@ -70,6 +76,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
       handoverDate,
       ...handoverData
     } = req.body;
+    if (handoverData.projectId) await assertProjectAccess(req.user, String(handoverData.projectId));
 
     const h = await prisma.handover.create({
       data: {
@@ -109,6 +116,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       siteManagerUser,
       ...data
     } = req.body;
+    if (data.projectId) await assertProjectAccess(req.user, String(data.projectId));
 
     const h = await prisma.handover.update({
       where: { id: req.params.id },

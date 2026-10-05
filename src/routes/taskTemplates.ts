@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { assertProjectAccess } from '../middleware/projectAccess';
 
 const router = Router();
 
@@ -301,6 +302,7 @@ router.post('/apply', async (req: AuthRequest, res: Response, next: NextFunction
     if (!projectId) {
       return res.status(400).json({ success: false, error: 'projectId requis' });
     }
+    await assertProjectAccess(req.user, String(projectId));
 
     let normalizedItems: Array<{ templateId: string; taskDate: string | null; assigneeId: string | null }> = [];
 

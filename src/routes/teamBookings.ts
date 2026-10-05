@@ -5,8 +5,14 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { accessibleProjectIds, projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('projectId', projectIdParamGuard);
+router.param('id', projectParamGuard(async (id) => (await (prisma as any).teamBooking.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('hotelId', projectParamGuard(async (id) => (await (prisma as any).hotelBooking.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 router.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -149,7 +155,7 @@ router.post('/projects/:projectId/hotel-bookings', async (req: AuthRequest, res:
   } catch (err) { next(err); }
 });
 
-router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.patch('/hotel-bookings/:hotelId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = req.body || {};
     const data: any = {};
@@ -163,11 +169,11 @@ router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next
       if (body[k] !== undefined) data[k] = body[k] ? new Date(body[k]) : null;
     }
     if (Array.isArray(body.userIds)) {
-      await (prisma as any).hotelBookingOccupant.deleteMany({ where: { hotelBookingId: req.params.id } });
+      await (prisma as any).hotelBookingOccupant.deleteMany({ where: { hotelBookingId: req.params.hotelId } });
       data.occupants = { create: body.userIds.filter((u: any) => !!u).map((uid: string) => ({ userId: uid })) };
     }
     const hotel = await (prisma as any).hotelBooking.update({
-      where: { id: req.params.id },
+      where: { id: req.params.hotelId },
       data,
       include: {
         occupants: {
@@ -179,9 +185,9 @@ router.patch('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next
   } catch (err) { next(err); }
 });
 
-router.delete('/hotel-bookings/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.delete('/hotel-bookings/:hotelId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    await (prisma as any).hotelBooking.delete({ where: { id: req.params.id } });
+    await (prisma as any).hotelBooking.delete({ where: { id: req.params.hotelId } });
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -191,9 +197,11 @@ router.get('/bookings/calendar', async (req: AuthRequest, res: Response, next: N
     const from = req.query.from ? new Date(String(req.query.from)) : new Date();
     const to   = req.query.to   ? new Date(String(req.query.to))   : new Date(Date.now() + 90*86400000);
     const roleFilter = req.query.role ? String(req.query.role) : null;
+    const allowedIds = await accessibleProjectIds(req.user);
 
     const raw = await (prisma as any).teamBooking.findMany({
       where: {
+        ...(allowedIds ? { projectId: { in: allowedIds } } : {}),
         OR: [
           { onSiteStart:  { lte: to }, onSiteEnd:    { gte: from } },
           { outboundDate: { lte: to,  gte: from } },
@@ -212,4 +220,4 @@ router.get('/bookings/calendar', async (req: AuthRequest, res: Response, next: N
   } catch (err) { next(err); }
 });
 
-export default router;
+export default router;

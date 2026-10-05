@@ -14,9 +14,19 @@ import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cl
 import { z } from 'zod';
 import * as ai from '../services/structureAi';
 import * as advisor from '../services/structureAdvisor';
+import { projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+// (« :id » = étude ou rapport ; entrée de bibliothèque : ni l'un ni l'autre, pas de projet, on laisse passer)
+const studyProjectId = async (id?: string | null): Promise<string | undefined> =>
+  id ? (await db.structStudy.findUnique({ where: { id }, select: { projectId: true } }))?.projectId : undefined;
+router.param('projectId', projectIdParamGuard);
+router.param('id', projectParamGuard(async (id) =>
+  (await studyProjectId(id))
+  ?? (await studyProjectId((await db.structReport.findUnique({ where: { id }, select: { studyId: true } }))?.studyId))));
 
 const KINDS = ['module_type', 'part_type', 'material', 'section', 'connection', 'spreading', 'stock'];
 // écriture de la bibliothèque : mêmes profils que les réglages « plans.* »

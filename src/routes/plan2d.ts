@@ -1,8 +1,13 @@
 import { Router, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../config/database';
+import { projectIdParamGuard, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les données de leurs projets (voir middleware/projectAccess.ts)
+router.param('projectId', projectIdParamGuard);
+router.param('id', projectParamGuard(async (id) => (await prisma.plan2D.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 // ═══════════════════════════════════════════════════════════
 // LISTE des plans 2D d'un projet

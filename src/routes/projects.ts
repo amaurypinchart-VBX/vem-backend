@@ -12,13 +12,20 @@ import { generateProjectReportPdf } from '../services/pdfService';
 import { deleteFromCloudinary } from '../services/cloudinaryService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { getProjectTaskHours } from '../services/taskHours';
+import { accessibleProjectIds, isProjectScoped, projectIdParamGuard, projectParamGuard, projectScopeWhere } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les projets où ils sont affectés (voir middleware/projectAccess.ts)
+router.param('id', projectIdParamGuard);
+router.param('memberId', projectParamGuard(async (id) => (await prisma.projectTeam.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('truckId', projectParamGuard(async (id) => (await prisma.truck.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+router.param('fileId', projectParamGuard(async (id) => (await prisma.projectFile.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { status, search } = req.query;
-    const where: any = {};
+    const where: any = { AND: [projectScopeWhere(req.user)] };
     if (status) where.status = status;
     if (search) where.OR = [
       { name: { contains: String(search), mode: 'insensitive' } },
@@ -80,10 +87,12 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 // confonde pas "reorder" avec un id de projet.
 router.patch('/reorder', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { orders } = req.body; // [{ id: string, sortOrder: number }, ...]
+    let { orders } = req.body; // [{ id: string, sortOrder: number }, ...]
     if (!Array.isArray(orders)) {
       return res.status(400).json({ success: false, error: 'orders doit être un tableau' });
     }
+    const allowedIds = await accessibleProjectIds(req.user);
+    if (allowedIds) orders = orders.filter((o: any) => allowedIds.includes(o?.id));
     await prisma.$transaction(
       orders.map((o: any) =>
         prisma.project.update({
@@ -145,6 +154,11 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { siteManagerIds = [], engineerIds = [], ...data } = req.body;
+    // Rôle limité à ses projets : il est ajouté à l'équipe du projet qu'il crée, sinon il ne le verrait plus.
+    const me = req.user!;
+    const selfMember = isProjectScoped(me) && !siteManagerIds.includes(me.id) && !engineerIds.includes(me.id)
+      ? [{ userId: me.id, role: me.role, isLead: false }]
+      : [];
     const project = await prisma.project.create({
       data: {
         ...data,
@@ -158,6 +172,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
           create: [
             ...siteManagerIds.map((uid: string) => ({ userId: uid, role: 'site_manager', isLead: true })),
             ...engineerIds.map((uid: string) => ({ userId: uid, role: 'engineer' })),
+            ...selfMember,
           ],
         },
       },

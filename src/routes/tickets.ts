@@ -4,15 +4,29 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { sendTicketAssigned } from '../services/emailService';
+import { accessibleProjectIds, assertProjectAccess, projectParamGuard } from '../middleware/projectAccess';
 
 const router = Router();
+
+// installer / site_manager / worker : uniquement les tickets de leurs projets, plus les tickets sans projet
+// (voir middleware/projectAccess.ts)
+router.param('id', projectParamGuard(async (id) => (await prisma.ticket.findUnique({ where: { id }, select: { projectId: true } }))?.projectId));
+
+/** Filtre projet d'une liste de tickets : projet demandé (accès vérifié), sinon projets accessibles + sans projet. */
+async function ticketProjectWhere(req: AuthRequest): Promise<any> {
+  if (req.query.projectId) {
+    await assertProjectAccess(req.user, String(req.query.projectId));
+    return { projectId: String(req.query.projectId) };
+  }
+  const ids = await accessibleProjectIds(req.user);
+  return ids === null ? {} : { OR: [{ projectId: { in: ids } }, { projectId: null }] };
+}
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { projectId, status, urgency, assignedToId } = req.query;
-    const where: any = {};
-    if (projectId)    where.projectId    = String(projectId);
+    const { status, urgency, assignedToId } = req.query;
+    const where: any = await ticketProjectWhere(req);
     if (status)       where.status = { in: Array.isArray(status) ? status : [status] };
     if (urgency)      where.urgency      = String(urgency);
     if (assignedToId) where.assignedToId = String(assignedToId);
@@ -33,7 +47,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
 router.get('/stats', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const pid = req.query.projectId ? { projectId: String(req.query.projectId) } : {};
+    const pid = await ticketProjectWhere(req);
     const [open, inProg, resolved, critical] = await Promise.all([
       prisma.ticket.count({ where: { ...pid, status: 'open' } }),
       prisma.ticket.count({ where: { ...pid, status: 'in_progress' } }),
@@ -63,6 +77,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
 
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    if (req.body?.projectId) await assertProjectAccess(req.user, String(req.body.projectId));
     const ticket = await prisma.ticket.create({
       data: {
         ...req.body,
@@ -109,6 +124,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
   try {
     const old = await prisma.ticket.findUnique({ where: { id: req.params.id } });
     if (!old) throw new AppError('Ticket introuvable', 404);
+    if (req.body?.projectId) await assertProjectAccess(req.user, String(req.body.projectId));
 
     const updateData: any = { ...req.body };
     if (updateData.plannedDate) updateData.plannedDate = new Date(updateData.plannedDate);

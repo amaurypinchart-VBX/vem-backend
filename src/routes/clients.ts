@@ -3,6 +3,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { projectScopeWhere } from '../middleware/projectAccess';
 
 const router = Router();
 
@@ -50,6 +51,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       where: { id: req.params.id },
       include: {
         projects: {
+          where: projectScopeWhere(req.user), // installer / site_manager / worker : seulement leurs projets
           select: { id: true, name: true, internalNumber: true, status: true, installationStart: true },
           orderBy: { installationStart: 'desc' },
         },
