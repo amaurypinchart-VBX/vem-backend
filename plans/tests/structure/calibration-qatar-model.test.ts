@@ -43,7 +43,8 @@ async function qatar(calibration: boolean, stair: 'ignored' | 'computed' = 'igno
   if (stair === 'ignored') for (const t of first.types) if (t.assignment?.nature === 'stair') assignments[t.key] = { scope: 'model', at: '', assignment: { role: 'ignored', nature: 'decor' } };
   const recognition = recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories });
   const sceneModel = studyModelFromScene(scene, recognition, library);
-  const hyp = { ...DEFAULT_HYP, windIn: 0.41, windOut: 0.41 };
+  // hypothèses statico 24-0569 : 3,5 kN/m² à tous les niveaux, vent 0,41 kN/m²
+  const hyp = { ...DEFAULT_HYP, liveGround: 3.5, windIn: 0.41, windOut: 0.41 };
   const { inputs } = buildStudyInputs({ sceneModel, library, hyp, roof: false, calc: { ...CALC_DEFAULTS, calibration, stairClad } });
   return { first, sceneModel, run: await runStudy(inputs, createInlineStudyRunner()) };
 }

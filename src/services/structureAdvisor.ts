@@ -22,12 +22,12 @@ Règle absolue sur les chiffres : tu ne calcules rien de tête. Tous les efforts
 Méthode :
 1. Commence par etat_etude (et diagnostic si quelque chose ne passe pas) avant de répondre sur l'étude.
 2. Ne dis jamais « ça passe » pour une solution qui n'a pas été simulée : simule-la (simuler_variante, chercher_lest, etudier_sol) et cite le résultat.
-3. Classe tes propositions du plus simple au plus lourd pour un chantier Viewbox : consignes d'exploitation (public limité, évacuation des terrasses, vitesse de vent d'arrêt) → calage et répartition au sol (plaques, plaques de roulage) → lest (blocs béton sur les planchers du bas) → contreventements (croix en plat 60 × 6 + ridoir ¾″ dans une face pleine) → Viewbox ajoutées pour élargir la base → pièces renforcées (Viewbox spéciale, fabrication).
+3. Classe tes propositions du plus simple au plus lourd pour un chantier Viewbox : consignes d'exploitation (public limité, évacuation des terrasses, vitesse de vent d'arrêt) → calage et répartition au sol (plaques, plaques de roulage) → lest (blocs béton sur les planchers du rez-de-chaussée seulement) → contreventements (croix en plat 60 × 6 + ridoir ¾″ dans une face pleine) → Viewbox ajoutées pour élargir la base → pièces renforcées (Viewbox spéciale, fabrication).
 4. Pour chaque proposition simulée, donne le résultat (verdict, η avant → après) et ce que ça implique sur site (où poser le lest, quelles faces sont fermées par une croix, quelles plaques, combien).
 5. Quand une variante convient, propose de l'appliquer à l'étude ; appelle appliquer_variante seulement si l'utilisateur le demande ou l'accepte.
 6. Si la demande sort de ce que l'outil sait calculer (ancrages, pièces non modélisées, matériau absent du catalogue), dis-le clairement et propose ce qui s'en approche le plus ; rappelle qu'un ingénieur doit valider pour les cas hors standard.
 
-Données Viewbox (série EU, fournies par Viewbox) : module 5,90 × 2,50 × 3,08 m, 2 564 kg (planchers et isolants compris) ; rives UNP 220, traverses et lisses RHP 120 × 60 × 4, poteaux QHP 100 × 5 fixés en pied et en tête par 4 boulons M16 ; Viewbox voisines serrées entre elles au plancher et en toiture par des boulons M16 de 150 mm classe 10.9 passés dans les écrous M20 soudés des rives (passage 18 mm) ; Viewbox empilées reliées par des plats 100 × 10 mm boulonnés par 2 M20, 4 par grand côté et 2 par petit côté, sur les faces extérieures seulement (pas entre deux Viewbox voisines) ; pieds à vérin : tiges Tr 24 × 5 classe 10.9, sortie 5 cm au plus, 6 par Viewbox. Charge d'exploitation courante 3,5 kN/m² ; 1 kN/m² ≈ 102 kg/m² (sol : attention aux kg/m² et aux kN/m², demande l'unité si elle n'est pas claire).
+Données Viewbox (série EU, fournies par Viewbox) : module 5,90 × 2,50 × 3,08 m, 2 564 kg (planchers et isolants compris) ; rives UNP 220, traverses et lisses RHP 120 × 60 × 4, poteaux QHP 100 × 5 fixés en pied et en tête par 4 boulons M16 ; Viewbox voisines serrées entre elles au plancher et en toiture par des boulons M16 de 150 mm classe 10.9 passés dans les écrous M20 soudés des rives (passage 18 mm) ; Viewbox empilées reliées par des plats 100 × 10 mm boulonnés par 2 M20, 4 par grand côté et 2 par petit côté, sur les faces extérieures seulement (pas entre deux Viewbox voisines) ; pieds à vérin : tiges Tr 24 × 5 classe 10.9, sortie 5 cm au plus, 6 par Viewbox. Charges d'exploitation du calcul de type statico 18-0573 (Prüfbuch TÜV) : rez-de-chaussée 5,0 kN/m², étages 3,5 kN/m² (pas de foule dense) ; le lest ne se pose que dans les Viewbox du rez-de-chaussée (statico 18-0573 § 5.3), jamais sur une Viewbox d'étage ; frottement au sol 0,6 (bois sur béton ou asphalte, couches de bois vissées entre elles et au pied) ou 0,4 (bois sur bois, acier sur bois, couches non liées) selon DIN EN 13814 ; 1 kN/m² ≈ 102 kg/m² (sol : attention aux kg/m² et aux kN/m², demande l'unité si elle n'est pas claire).
 
 Présentation : réponses courtes et structurées (quelques phrases, listes à puces), en **gras** l'essentiel. Pas de tableau. Termine par la ou les actions concrètes proposées. Il s'agit d'une pré-étude interne : pas de validation officielle.`;
 
@@ -68,7 +68,7 @@ const MODIFICATIONS = {
         required: ['barres'],
       },
     },
-    lest: { type: 'array', description: 'Lest posé sur le plancher (kg par Viewbox).', items: { type: 'object', properties: { viewbox: S('identifiant VBX-…'), kg: N('masse en kg') }, required: ['viewbox', 'kg'] } },
+    lest: { type: 'array', description: 'Lest posé sur le plancher d’une Viewbox du rez-de-chaussée (kg par Viewbox) ; interdit sur une Viewbox d’étage.', items: { type: 'object', properties: { viewbox: S('identifiant VBX-…'), kg: N('masse en kg') }, required: ['viewbox', 'kg'] } },
     contreventements: {
       type: 'array',
       description: 'Croix en plat 60 × 6 + ridoir dans le plan d’un côté (face fermée).',
@@ -93,7 +93,8 @@ const HYPOTHESES = {
   type: 'object',
   description: 'Hypothèses du site à changer pour la variante (unités indiquées).',
   properties: {
-    exploitation_kN_m2: N('charge d’exploitation des planchers'),
+    exploitation_kN_m2: N('charge d’exploitation des planchers des étages'),
+    exploitation_rdc_kN_m2: N('charge d’exploitation du plancher du rez-de-chaussée (5,0 kN/m² par défaut)'),
     exploitation_toiture_kN_m2: N('charge d’exploitation des toitures accessibles'),
     toitures_accessibles: B('toitures sans Viewbox au-dessus ouvertes au public'),
     evacuer_dernier_niveau: B('dernier niveau évacué hors service'),

@@ -200,7 +200,7 @@ export function supportGeometry(g: PlateGroup, modules: EstimateModule[]): Suppo
   }
   const p = r.group.position;
   // pied d'escalier : platine 15 × 15 cm hors des Viewbox, plaque centrée
-  if (r.group.stair) return { u, v, center: [dot(p, u), dot(p, v)], contact: [JACK_PLATE, JACK_PLATE], sides: [{ side: 'both', edge: dot(p, u) }, { side: 'both', edge: dot(p, v) }] };
+  if (r.group.stair || r.group.terrace) return { u, v, center: [dot(p, u), dot(p, v)], contact: [JACK_PLATE, JACK_PLATE], sides: [{ side: 'both', edge: dot(p, u) }, { side: 'both', edge: dot(p, v) }] };
   const sides: [AxisSide, AxisSide] = [axisSide(p, u, mods), axisSide(p, v, mods)];
   const base = r.group.middle ? JACK_PLATE : CORNER_CONTACT;
   let contact: [number, number] = r.group.middle ? [base, base] : [sides[0].side === 'both' ? 2 * base : base, sides[1].side === 'both' ? 2 * base : base];

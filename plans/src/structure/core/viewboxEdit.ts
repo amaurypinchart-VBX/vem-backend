@@ -151,6 +151,8 @@ export function templateChanges(before: ModuleTypeEntry, after: ModuleTypeEntry,
   if (a.springs.cornerLinkShear !== b.springs.cornerLinkShear) out.push(`liaisons d’angle ${k(a.springs.cornerLinkShear, toUser.stiffness)} → ${k(b.springs.cornerLinkShear, toUser.stiffness)} kN/cm`);
   if (a.springs.boltTranslation !== b.springs.boltTranslation) out.push(`boulons ${k(a.springs.boltTranslation, toUser.stiffness)} → ${k(b.springs.boltTranslation, toUser.stiffness)} kN/cm`);
   if (a.springs.supportHorizontal !== b.springs.supportHorizontal) out.push(`appuis horizontaux ${k(a.springs.supportHorizontal, toUser.stiffness)} → ${k(b.springs.supportHorizontal, toUser.stiffness)} kN/cm`);
+  if (a.springs.supportVertical !== b.springs.supportVertical)
+    out.push(`appuis verticaux ${a.springs.supportVertical ? `${k(a.springs.supportVertical, toUser.stiffness)} kN/cm` : 'rigides'} → ${b.springs.supportVertical ? `${k(b.springs.supportVertical, toUser.stiffness)} kN/cm` : 'rigides'}`);
   const pa = a.plywood;
   const pb = b.plywood;
   if (pa.floorLayers !== pb.floorLayers || pa.thickness !== pb.thickness || pa.material !== pb.material)

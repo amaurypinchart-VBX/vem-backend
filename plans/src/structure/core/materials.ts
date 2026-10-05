@@ -80,6 +80,17 @@ export const MATERIALS: Material[] = [
     source: 'DIN EN 338 ; E, G, ρ : annexe SCIA statico 24-0571 p. B13',
   },
   {
+    key: 'C30',
+    name: 'Bois massif C30',
+    family: 'timber',
+    E: 12000,
+    G: 750,
+    nu: 0,
+    rho: 460,
+    strength: { fmk: 30, ft0k: 18, ft90k: 0.4, fc0k: 23, fc90k: 2.7, fvk: 4.0 },
+    source: 'DIN EN 338 ; solives des éléments terrasse statico 18-0573 § 3.5.3',
+  },
+  {
     key: 'GL24h',
     name: 'Lamellé-collé GL24h',
     family: 'timber',

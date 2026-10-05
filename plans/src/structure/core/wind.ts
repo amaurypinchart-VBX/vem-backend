@@ -1,6 +1,7 @@
 // Vent (§7.3) : en service selon DIN EN 13814 (pression forfaitaire par hauteur), hors service selon DIN EN 1991-1-4/NA
-// (pression de pointe, profil mixte de l'intérieur des terres) abattue de 0,7 pour les constructions temporaires
-// (MVV TB Anlage B 2.1/2). Les profils de côte et d'îles ne sont pas programmés : la pression est alors à saisir.
+// (pression de pointe des profils mixtes de l'annexe NA.B : intérieur des terres, côte et îles de la Baltique, îles de la
+// mer du Nord) abattue de 0,7 pour les constructions temporaires (MVV TB Anlage B 2.1/2) ; hors de ces profils (autre
+// pays, site exposé) la pression est saisie à la main.
 // Fonctions pures ; pressions en N/mm² (1 kN/m² = 1e-3 N/mm²), hauteurs en mm.
 import type { CalcRecord } from './records';
 import { fmtNumber } from './units';
@@ -15,6 +16,7 @@ export const WIND_ZONES: Record<WindZone, { vb0: number; qb: number }> = {
   4: { vb0: 30.0, qb: 0.56 },
 };
 
+/** intérieur des terres ; côte (bande de 5 km) et îles de la Baltique ; îles de la mer du Nord ; pression saisie */
 export type Terrain = 'inland' | 'coast' | 'island' | 'manual';
 
 export interface WindSite {
@@ -22,7 +24,7 @@ export interface WindSite {
   terrain: Terrain;
   /** altitude du site (m) */
   altitude: number;
-  /** pression hors service saisie (N/mm²) quand le profil n'est pas programmé (côte, îles, hors Allemagne) */
+  /** pression hors service saisie (N/mm²) quand le profil n'est pas programmé (hors Allemagne, site exposé) */
   manualQp?: number;
   /** abattement des constructions temporaires hors service */
   temporaryFactor: number;
@@ -31,20 +33,38 @@ export interface WindSite {
 export const DEFAULT_SITE: WindSite = { zone: 1, terrain: 'inland', altitude: 100, temporaryFactor: 0.7 };
 
 /**
- * Pression de pointe hors service à la hauteur z (mm), abattue (N/mm²). Intérieur des terres, profil mixte II/III :
- * qp = 1,5 qb (z ≤ 7 m) ; 1,7 qb (z / 10)^0,37 (7 < z ≤ 50 m). Lève une erreur si le profil n'est pas programmé.
+ * Pression de pointe hors service à la hauteur z (mm), abattue (N/mm²) — DIN EN 1991-1-4/NA, annexe NA.B.3.3 :
+ *   intérieur des terres (profil mixte II/III) : qp = 1,5 qb (z ≤ 7 m) ; 1,7 qb (z / 10)^0,37 (7 < z ≤ 50 m) ;
+ *   côte et îles de la Baltique (profil mixte I/II) : qp = 1,8 qb (z ≤ 4 m) ; 2,3 qb (z / 10)^0,27 (4 < z ≤ 50 m) ;
+ *   îles de la mer du Nord (zone 4) : qp = 1,1 kN/m² (z ≤ 2 m) ; 1,5 kN/m² (z / 10)^0,19 (2 < z ≤ 50 m).
+ * statico 18-0573 § 2.4 (zone 4, côte, h = 6 m) : 0,7 · 2,3 · 0,56 · 0,6^0,27 = 0,79 kN/m².
  */
 export function peakPressure(site: WindSite, zMm: number): number {
-  if (site.terrain !== 'inland') {
+  if (site.terrain === 'manual') {
     if (site.manualQp && site.manualQp > 0) return site.manualQp;
-    throw new Error('Vent hors service : profil de côte / d’île non programmé — saisir la pression de pointe (kN/m²).');
+    throw new Error('Vent hors service : pression de pointe à saisir (kN/m²).');
   }
   const z = zMm / 1000;
   if (z > 50) throw new Error('Vent : hauteur supérieure à 50 m hors du domaine des profils programmés.');
   const qb = WIND_ZONES[site.zone].qb;
-  const qp = z <= 7 ? 1.5 * qb : 1.7 * qb * (z / 10) ** 0.37;
+  const qp = qpProfile(site.terrain, qb, z);
   return (qp * site.temporaryFactor) / 1e3;
 }
+
+/** Pression de pointe non abattue (kN/m²) d'un profil de l'annexe NA.B à la hauteur z (m). */
+function qpProfile(terrain: Exclude<Terrain, 'manual'>, qb: number, z: number): number {
+  if (terrain === 'coast') return z <= 4 ? 1.8 * qb : 2.3 * qb * (z / 10) ** 0.27;
+  if (terrain === 'island') return z <= 2 ? 1.1 : 1.5 * (z / 10) ** 0.19;
+  return z <= 7 ? 1.5 * qb : 1.7 * qb * (z / 10) ** 0.37;
+}
+
+/** Libellé d'un profil de vent (interface, rapport). */
+export const TERRAIN_LABEL: Record<Terrain, string> = {
+  inland: 'intérieur des terres',
+  coast: 'côte et îles de la Baltique',
+  island: 'îles de la mer du Nord',
+  manual: 'pression saisie',
+};
 
 /** Vent en service (DIN EN 13814) : 0,20 kN/m² jusqu'à 8 m, 0,30 kN/m² jusqu'à 20 m ; au-delà : non couvert. */
 export function inServicePressure(topMm: number): number {
@@ -68,7 +88,8 @@ export function siteWarnings(site: WindSite): string[] {
   const w: string[] = [];
   if (site.terrain === 'inland' && site.altitude > 800 && site.zone <= 2)
     w.push(`Altitude ${site.altitude} m > 800 m en zone ${site.zone} : au-delà du domaine des rapports de référence (majoration NA à appliquer).`);
-  if (site.terrain !== 'inland') w.push('Profil de vent de côte / d’île : pression de pointe saisie à la main, à justifier.');
+  if (site.terrain === 'manual') w.push('Pression de pointe saisie à la main, à justifier.');
+  if (site.terrain === 'island' && site.zone !== 4) w.push('Îles de la mer du Nord : zone de vent 4.');
   return w;
 }
 
@@ -83,18 +104,20 @@ export function windRecords(site: WindSite, buildingHeightMm: number): CalcRecor
     formula: 'q = 0,20 kN/m² (h ≤ 8 m) ; 0,30 kN/m² (8 m < h ≤ 20 m)',
     withValues: `vitesse d’arrêt d’exploitation : v = √(2 · 0,20 kN/m² / 1,25 kg/m³) = ${n(speedLimit(0.2e-3), 1)} m/s`,
   });
-  if (site.terrain === 'inland') {
+  if (site.terrain !== 'manual') {
     const zone = WIND_ZONES[site.zone];
     const qp = peakPressure(site, buildingHeightMm);
+    const [low, f1, f2, zmin] = site.terrain === 'coast' ? ['1,8', '2,3', '0,27', 4] : site.terrain === 'island' ? ['1,1 kN/m²', '1,5 kN/m²', '0,19', 2] : ['1,5', '1,7', '0,37', 7];
+    const qbTxt = site.terrain === 'island' ? '' : ` · ${n(zone.qb)}`;
     out.push({
       key: 'wind.outOfService',
-      title: 'Vent hors service',
-      clause: 'DIN EN 1991-1-4/NA, MVV TB Anlage B 2.1/2',
-      formula: h <= 7 ? 'qp = 0,7 · 1,5 · qb' : 'qp = 0,7 · 1,7 · qb · (z / 10)^0,37',
+      title: `Vent hors service (${TERRAIN_LABEL[site.terrain]})`,
+      clause: 'DIN EN 1991-1-4/NA annexe NA.B.3.3, MVV TB Anlage B 2.1/2',
+      formula: h <= zmin ? `qp = 0,7 · ${low}${site.terrain === 'island' ? '' : ' · qb'}` : `qp = 0,7 · ${f1}${site.terrain === 'island' ? '' : ' · qb'} · (z / 10)^${f2}`,
       withValues:
-        h <= 7
-          ? `zone ${site.zone} : vb,0 = ${n(zone.vb0, 1)} m/s, qb = ${n(zone.qb)} kN/m² ; qp = 0,7 · 1,5 · ${n(zone.qb)} = ${n(qp * 1e3)} kN/m² (h = ${n(h)} m)`
-          : `zone ${site.zone} : vb,0 = ${n(zone.vb0, 1)} m/s, qb = ${n(zone.qb)} kN/m² ; qp = 0,7 · 1,7 · ${n(zone.qb)} · (${n(h)} / 10)^0,37 = ${n(qp * 1e3)} kN/m²`,
+        h <= zmin
+          ? `zone ${site.zone} : vb,0 = ${n(zone.vb0, 1)} m/s, qb = ${n(zone.qb)} kN/m² ; qp = 0,7 · ${low}${qbTxt} = ${n(qp * 1e3)} kN/m² (h = ${n(h)} m)`
+          : `zone ${site.zone} : vb,0 = ${n(zone.vb0, 1)} m/s, qb = ${n(zone.qb)} kN/m² ; qp = 0,7 · ${f1}${qbTxt} · (${n(h)} / 10)^${f2} = ${n(qp * 1e3)} kN/m²`,
       result: qp,
     });
   } else

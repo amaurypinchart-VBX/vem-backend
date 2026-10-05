@@ -32,7 +32,7 @@ import type { BrowserHlrProvider } from '../../linework/provider';
 import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
-import { buildStudyInputs } from './studyInputs';
+import { buildStudyInputs, groundExtras } from './studyInputs';
 import { AdvisorPanel } from './AdvisorPanel';
 import type { Variant } from './advisorTools';
 import { variantSource } from './advisorTools';
@@ -186,7 +186,13 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const built = useMemo(() => buildStudyInputs(inputsSource), [inputsSource]);
   const studyInputs = built.inputs;
   // Viewbox ajoutées par l'étude : aussi dans le calage
-  const groundModules = useMemo(() => [...modules, ...built.added.map(placedToEstimate)], [modules, built.added]);
+  // Viewbox portant un élément terrasse sur leur toiture : son poids et son public descendent par elles
+  const groundModules = useMemo(() => {
+    const roofT = new Set(sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module));
+    return [...modules.map((m) => (roofT.has(m.id) ? { ...m, terrace: true } : m)), ...built.added.map(placedToEstimate)];
+  }, [modules, built.added, sceneModel.terraces]);
+  // pieds des éléments terrasse posés au sol : appuis du calage en plus de ceux des Viewbox
+  const extraSupports = useMemo(() => groundExtras(studyInputs), [studyInputs]);
   const currentKey = useMemo(() => inputKey(studyInputs), [studyInputs]);
   const stale = !!run && run.key !== currentKey;
   useEffect(() => () => {
@@ -487,6 +493,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           showHypotheses={false}
           reactions={run && !stale ? run.result.ground : null}
           jacks={calcOpts.jacks}
+          extraSupports={extraSupports}
           intro={
             warnings.length ? (
               <div className="warnings">

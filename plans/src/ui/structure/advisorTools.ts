@@ -8,7 +8,7 @@ import type { EstimateModule } from '../../structure/core/estimate';
 import type { Side } from '../../structure/core/templates/viewboxEU';
 import { SIDE_NAME } from '../../structure/core/assemble';
 import type { AddSide, CustomSectionSpec, SectionSlot, StudyMods } from '../../structure/core/mods';
-import { customSectionEntry, describeMods, mergeMods, placedToEstimate } from '../../structure/core/mods';
+import { BALLAST_RULE, customSectionEntry, describeMods, mergeMods, placedToEstimate } from '../../structure/core/mods';
 import type { ConnectionEntry, SectionEntry } from '../../structure/core/library';
 import { MATERIALS } from '../../structure/core/materials';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
@@ -21,7 +21,7 @@ import { diagnose, slidingBallastN } from '../../structure/advisor/diagnose';
 import type { RunDigest } from '../../structure/advisor/digest';
 import { compareDigests, runDigest } from '../../structure/advisor/digest';
 import type { InputsSource } from './studyInputs';
-import { buildStudyInputs } from './studyInputs';
+import { buildStudyInputs, groundExtras } from './studyInputs';
 import type { StructureStock } from './GroundPanel';
 import { calageInput } from './GroundPanel';
 
@@ -108,6 +108,7 @@ export function parseChanges(inp: Json, library: InputsSource['library']): Varia
   const h = (inp.hypotheses ?? {}) as Json;
   const hyp: Record<string, unknown> = {};
   if (h.exploitation_kN_m2 !== undefined) hyp.live = num(h.exploitation_kN_m2, 'exploitation', 0, 20);
+  if (h.exploitation_rdc_kN_m2 !== undefined) hyp.liveGround = num(h.exploitation_rdc_kN_m2, 'exploitation du rez-de-chaussée', 0, 20);
   if (h.exploitation_toiture_kN_m2 !== undefined) hyp.roofLive = num(h.exploitation_toiture_kN_m2, 'exploitation toiture', 0, 20);
   if (h.evacuer_dernier_niveau !== undefined) hyp.evacuateTop = bool(h.evacuer_dernier_niveau);
   if (h.vent_en_service_kN_m2 !== undefined) hyp.windIn = num(h.vent_en_service_kN_m2, 'vent en service', 0, 5);
@@ -179,7 +180,7 @@ export function changeLines(ch: VariantChanges, library: InputsSource['library']
     return c ? customSectionEntry(c).name : k;
   };
   const out: string[] = [];
-  const H: Record<string, string> = { live: 'exploitation (kN/m²)', roofLive: 'exploitation toiture (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', extraKN: 'charge forfaitaire (kN par Viewbox)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
+  const H: Record<string, string> = { live: 'exploitation des étages (kN/m²)', liveGround: 'exploitation du rez-de-chaussée (kN/m²)', roofLive: 'exploitation toiture (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', extraKN: 'charge forfaitaire (kN par Viewbox)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
   for (const [k, v] of Object.entries(ch.hyp ?? {})) out.push(`${H[k] ?? k} : ${typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v).replace('.', ',')}`);
   if (ch.roof !== undefined) out.push(`toitures accessibles : ${ch.roof ? 'oui' : 'non'}`);
   const C: Record<string, string> = { jacks: 'pieds à vérin', jackExtension: 'sortie des vérins (mm)', friction: 'frottement μ' };
@@ -254,6 +255,7 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
         etude: runDigest(run, friction),
         hypotheses: {
           exploitation_kN_m2: h.live,
+          exploitation_rdc_kN_m2: h.liveGround ?? 5,
           exploitation_toiture_kN_m2: h.roofLive,
           toitures_accessibles: src.roof,
           evacuer_dernier_niveau_hors_service: h.evacuateTop,
@@ -358,6 +360,7 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
       const ground = run0.structure.modules.filter((m) => m.level === 0).map((m) => m.id);
       const mods = Array.isArray(input.viewbox) && input.viewbox.length ? (input.viewbox as string[]) : ground;
       for (const m of mods) if (!run0.structure.modules.some((x) => x.id === m)) fail(`Viewbox ${m} inconnue`);
+      for (const m of mods) if (!ground.includes(m)) fail(`Viewbox ${m} à l’étage : ${BALLAST_RULE}`);
       const maxKg = Math.min(20000, num(input.max_kg_par_viewbox ?? 5000, 'max_kg_par_viewbox', 100, 20000));
       const step = 100;
       const withKg = (kg: number): VariantChanges => stackChanges(baseChanges, { mods: { ballast: mods.map((module) => ({ module, kg })) } });
@@ -418,7 +421,7 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
       if (input.plaques_roulage !== undefined) hyp.calage = { ...(hyp.calage ?? {}), roadway: bool(input.plaques_roulage) };
       const addedIds = new Set(run.structure.modules.map((m) => m.id));
       const modules = [...ctx.groundModules.filter((m) => addedIds.has(m.id)), ...run.structure.modules.filter((m) => !ctx.groundModules.some((g) => g.id === m.id)).map(placedToEstimate)];
-      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks), reactions: run.ground };
+      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks, groundExtras(buildStudyInputs(vs).inputs)), reactions: run.ground };
       const cal = computeCalage(cin);
       const mp = maxPublic(cin, hyp.personKg);
       const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);

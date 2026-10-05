@@ -20,6 +20,8 @@ export interface EstimateModule {
   roofAccessible?: boolean;
   /** poids propre de ce module s'il diffère du poids par défaut (N) */
   weight?: number;
+  /** élément terrasse posé sur sa toiture (poids propre `terraceG`, public `live` en service) */
+  terrace?: boolean;
 }
 
 /**
@@ -38,7 +40,11 @@ export interface EstimateLoads {
   ceiling: number;
   floorFinish: number;
   live: number;
+  /** exploitation du rez-de-chaussée (N/mm²), sinon `live` — statico 18-0573 § 2.2.1 : 5,0 kN/m² */
+  liveGround?: number;
   roofLive: number;
+  /** terrasses posées sur les toitures : poids propre (cadre, solives, platelage, N/mm²) ; exploitation = `live` */
+  terraceG?: number;
   /** murs, garde-corps, logos… par module (N) */
   extraPerModule: number;
   /** neige sur les toitures du dernier niveau (N/mm², coefficient de forme compris) */
@@ -99,11 +105,13 @@ export interface SupportGroup {
   jack?: boolean;
   /** pied d'escalier extérieur (montant sur vérin Layher, talon de limon) */
   stair?: boolean;
+  /** pied d'un élément terrasse posé au sol (angle ou milieu d'un grand côté, platine de vérin) */
+  terrace?: boolean;
   moduleIds: string[];
 }
 
-/** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier. */
-export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair'>) => (g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
+/** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier, « T » / « TM » pied de terrasse. */
+export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair' | 'terrace'>) => (g.terrace ? (g.middle ? 'TM' : 'T') : g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
 
 /** Réaction d'un groupe d'appuis dans une combinaison et part du public qu'elle contient (public limité). */
 export interface ComboReaction {
@@ -262,9 +270,11 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const ratio = m.area / (5900 * 2500);
     const weight = m.weight ?? L.moduleWeight * ratio;
     const modelled = (L.steelWeight ?? VIEWBOX_STEEL_WEIGHT) * ratio + (L.ceiling + L.floorFinish) * m.area;
-    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + L.extraPerModule;
-    const Qfloor = L.live * m.area;
-    const Qroof = m.roofAccessible ? L.roofLive * m.area : 0;
+    const Gterrace = m.terrace ? (L.terraceG ?? 0) * m.area : 0;
+    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + L.extraPerModule + Gterrace;
+    const Qfloor = (m.level === 0 ? L.liveGround ?? L.live : L.live) * m.area;
+    // toiture accessible (terrasse sur le toit) ; élément terrasse posé dessus : son poids et le public des étages
+    const Qroof = m.roofAccessible ? L.roofLive * m.area : m.terrace ? L.live * m.area : 0;
     const QaB = opt.evacuateTopLevel && isTop[k] ? 0 : Qfloor;
     totalG += G;
     totalQ += Qfloor + Qroof;
@@ -561,4 +571,113 @@ export function gridModules(nx: number, ny: number, levels: number[][], roofAcce
         });
     }
   return out;
+}
+
+/** Appui ajouté au calage hors des Viewbox (pied d'un élément terrasse posé au sol) : charges caractéristiques (N). */
+export interface AddedSupport {
+  label: string;
+  position: P2;
+  middle: boolean;
+  G: number;
+  Q: number;
+}
+
+/**
+ * Ajoute des appuis (pieds de terrasse) aux réactions : un appui à moins de `tol` d'un groupe de même nature (angle ou
+ * pied central, hors escaliers) s'y ajoute (plaque commune), sinon il forme son propre groupe « T » / « TM ».
+ * Par combinaison : ELU 1,35 G (sans public) ou 1,10 G + γQ · Q, ELS G (+ Q), stabilité 1,0 G — côté de la sécurité.
+ */
+export function addSupports(est: Estimate, extras: readonly AddedSupport[] | undefined, tol = 100): Estimate {
+  if (!extras?.length) return est;
+  const reactions: GroupReaction[] = est.reactions.map((r) => ({ ...r, combos: r.combos?.map((c) => ({ ...c })) }));
+  const add = (c: ComboReaction, G: number, Q: number) => {
+    if (c.cls === 'STAB') c.R += G;
+    else if (c.cls === 'SLS') c.R += G + (c.gQ > 0 ? c.gQ * Q : 0);
+    else c.R += c.gQ > 0 ? 1.1 * G + c.gQ * Q : 1.35 * G;
+    if (c.gQ > 0) c.Q += Q;
+  };
+  const refresh = (r: GroupReaction) => {
+    const cs = r.combos;
+    if (!cs?.length) return;
+    const sls = cs.filter((c) => c.cls === 'SLS');
+    const uls = cs.filter((c) => c.cls === 'ULS');
+    const top = (l: ComboReaction[]) => l.reduce((a, c) => (c.R > a.R ? c : a));
+    if (uls.length) {
+      const u = top(uls);
+      r.REd = u.R;
+      r.combo = u.combo;
+    }
+    r.REdMin = Math.min(...cs.filter((c) => c.cls !== 'SLS').map((c) => c.R));
+    if (sls.length) {
+      const k = top(sls);
+      r.Rk = k.R;
+      r.comboK = k.combo;
+      r.RkMin = Math.min(...sls.map((c) => c.R));
+    } else {
+      r.Rk = r.REd / 1.35;
+      r.RkMin = r.REdMin / 1.35;
+    }
+  };
+  let n = 0;
+  for (const x of extras) {
+    let best: GroupReaction | undefined;
+    let bd = Infinity;
+    for (const r of reactions) {
+      if (r.group.stair || r.group.middle !== x.middle) continue;
+      const d = Math.hypot(r.group.position[0] - x.position[0], r.group.position[1] - x.position[1]);
+      if (d < bd) [bd, best] = [d, r];
+    }
+    if (best && bd <= tol) {
+      best.G += x.G;
+      best.Q += x.Q;
+      if (best.combos?.length) {
+        for (const c of best.combos) add(c, x.G, x.Q);
+        refresh(best);
+      } else {
+        best.Rk += x.G + x.Q;
+        best.REd += Math.max(1.35 * x.G, 1.1 * x.G + 1.35 * x.Q);
+        best.RkMin += x.G;
+        best.REdMin += x.G;
+      }
+      continue;
+    }
+    n++;
+    const combos: ComboReaction[] = [
+      { combo: 'CO1 : 1,35 G', cls: 'ULS', R: 1.35 * x.G, gQ: 0, Q: 0 },
+      { combo: '1,10 G + 1,35 Q', cls: 'ULS', R: 1.1 * x.G + 1.35 * x.Q, gQ: 1.35, Q: x.Q },
+      { combo: 'G + Q', cls: 'SLS', R: x.G + x.Q, gQ: 1, Q: x.Q },
+      { combo: 'G', cls: 'SLS', R: x.G, gQ: 0, Q: 0 },
+      { combo: 'G (stabilité)', cls: 'STAB', R: x.G, gQ: 0, Q: 0 },
+    ];
+    const r: GroupReaction = {
+      group: { id: `${x.middle ? 'TM' : 'T'}${n}`, position: x.position, corners: 0, middle: x.middle, terrace: true, moduleIds: [x.label.split(' · ')[0]] },
+      Rk: 0,
+      RkMin: 0,
+      REd: 0,
+      REdMin: 0,
+      combo: '',
+      comboK: '',
+      G: x.G,
+      Q: x.Q,
+      combos,
+    };
+    refresh(r);
+    reactions.push(r);
+  }
+  const G = extras.reduce((a, x) => a + x.G, 0);
+  const Q = extras.reduce((a, x) => a + x.Q, 0);
+  const totals = est.totals?.map((t) => {
+    const c = { ...t };
+    add(c, G, Q);
+    return c;
+  });
+  return {
+    ...est,
+    groups: reactions.map((r) => r.group),
+    reactions,
+    totalG: est.totalG + G,
+    totalQ: est.totalQ + Q,
+    verticalK: est.verticalK === undefined ? undefined : est.verticalK + G + Q,
+    totals,
+  };
 }

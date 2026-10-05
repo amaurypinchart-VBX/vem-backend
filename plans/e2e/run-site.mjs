@@ -37,7 +37,12 @@ const row = (label) => page.locator('div', { has: page.getByText(label, { exact:
 await row('Poids que le sol supporte (portance)').locator('input').fill('400');
 await page.waitForTimeout(300);
 console.log('Portance :', (await page.getByText(/= [\d,]+ kN\/m² = [\d,]+ tonnes par m²/).innerText()).trim());
-await page.getByRole('button', { name: /^Zone 2 : \d+ km\/h/ }).click();
+// zone 2 de l'intérieur des terres (1re ligne), puis zone 4 côte (statico 18-0573 : 0,79 kN/m² à 6 m)
+await page.getByRole('button', { name: /^Zone 4 : \d+ km\/h/ }).nth(1).click();
+await page.waitForTimeout(200);
+console.log('Vent zone 4 côte :', await row('Tempête à supporter, installation vide').locator('input').inputValue(), 'km/h');
+await page.getByRole('button', { name: /^Zone 2 : \d+ km\/h/ }).first().click();
+console.log('Public RDC :', await row('Charge du public au rez-de-chaussée').locator('input').inputValue(), 'kg/m² ; étages', await row('Charge du public aux étages').locator('input').inputValue(), 'kg/m²');
 await page.getByRole('button', { name: /Allemagne zone 1, plaine/ }).click();
 await page.waitForTimeout(300);
 console.log('Vent hors service :', await row('Tempête à supporter, installation vide').locator('input').inputValue(), 'km/h —', (await page.getByText(/^= [\d,]+ kN\/m²$/).allInnerTexts()).join(' / '));

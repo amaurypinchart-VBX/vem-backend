@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { BearingUnit } from '../../structure/core/ground';
 import { BEARING_PRESETS, SUBGRADE_PRESETS, bearingFrom } from '../../structure/core/ground';
-import { DEFAULT_SITE, peakPressure } from '../../structure/core/wind';
+import { DEFAULT_SITE, TERRAIN_LABEL, peakPressure } from '../../structure/core/wind';
 import type { WindZone } from '../../structure/core/wind';
 import { fmtNumber } from '../../structure/core/units';
 import type { Hypotheses } from './GroundPanel';
@@ -210,8 +210,15 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, leve
 
       <Section icon="👥" title="Le public" intro="Les personnes sur les planchers (et les terrasses) pèsent sur la structure et poussent aussi un peu de côté quand elles bougent.">
         <Q
-          label="Charge du public sur les planchers"
-          help={`Valeur réglementaire pour un espace ouvert au public : 357 kg par m², soit environ ${n(persons(3.5), 1)} personnes de ${PERSON_KG} kg par m² (une foule serrée). Ne la baisser que si l’accès est vraiment limité.`}
+          label="Charge du public au rez-de-chaussée"
+          help={`Calcul de type statico 18-0573 (Prüfbuch TÜV) : 5,0 kN/m² au rez-de-chaussée (« 500 kg/m² » dans la note), public sans foule dense, soit environ ${n(persons(5), 1)} personnes de ${PERSON_KG} kg par m². Ne la baisser que si l’accès est vraiment limité.`}
+          conv={`= ${n(hyp.liveGround ?? 5, 2)} kN/m² ≈ ${n(persons(hyp.liveGround ?? 5), 1)} personnes par m²`}
+        >
+          <Num value={kgOf(hyp.liveGround ?? 5)} onChange={(v) => set('liveGround', kNOf(v))} /> kg/m²
+        </Q>
+        <Q
+          label="Charge du public aux étages"
+          help={`Valeur réglementaire pour un étage ouvert au public sans foule dense (DIN EN 13814, statico 18-0573) : 357 kg par m², soit environ ${n(persons(3.5), 1)} personnes de ${PERSON_KG} kg par m². L’organisateur empêche une foule dense (personnel formé).`}
           conv={`= ${n(hyp.live, 2)} kN/m² ≈ ${n(persons(hyp.live), 1)} personnes par m²`}
         >
           <Num value={kgOf(hyp.live)} onChange={(v) => set('live', kNOf(v))} /> kg/m²
@@ -270,22 +277,26 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, leve
           help={
             <>
               Rafale la plus forte attendue sur le site pendant la durée de l’installation. Par défaut : intérieur des terres, Allemagne zone 1, hauteur jusqu’à 9,5 m, avec la réduction des constructions
-              temporaires. Près de la mer, en montagne ou en zone plus ventée : choisir la zone ou demander au bureau d’études.
-              <div className="row" style={{ gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                {zones.map((z) => {
-                  const qz = peakPressure({ ...DEFAULT_SITE, zone: z }, 9500) * 1e3;
-                  return (
-                    <button key={z} className="btn small ghost" onClick={() => set('windOut', Math.round(qz * 1000) / 1000)}>
-                      Zone {z} : {n(kmhOf(qz))} km/h
-                    </button>
-                  );
-                })}
-              </div>
+              temporaires. Près de la mer (bande de 5 km), sur une île ou en zone plus ventée : choisir la ligne et la zone, ou demander au bureau d’études.
+              {(['inland', 'coast', 'island'] as const).map((terrain) => (
+                <div key={terrain} className="row" style={{ gap: 4, flexWrap: 'wrap', marginTop: 4, alignItems: 'center' }}>
+                  <span style={{ minWidth: 170 }}>{TERRAIN_LABEL[terrain]} :</span>
+                  {(terrain === 'island' ? ([4] as WindZone[]) : zones).map((z) => {
+                    const qz = peakPressure({ ...DEFAULT_SITE, zone: z, terrain }, 9500) * 1e3;
+                    const on = (hyp.windProfile ?? 'inland') === terrain && Math.abs(hyp.windOut - Math.round(qz * 1000) / 1000) < 1e-6;
+                    return (
+                      <button key={z} className={`btn small ${on ? '' : 'ghost'}`} onClick={() => setHyp((h) => ({ ...h, windOut: Math.round(qz * 1000) / 1000, windProfile: terrain }))}>
+                        Zone {z} : {n(kmhOf(qz))} km/h
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </>
           }
           conv={`= ${n(hyp.windOut, 2)} kN/m²`}
         >
-          <Num value={kmhOf(hyp.windOut)} onChange={(v) => set('windOut', qOf(v))} width={60} /> km/h
+          <Num value={kmhOf(hyp.windOut)} onChange={(v) => setHyp((h) => ({ ...h, windOut: qOf(v), windProfile: Math.abs(qOf(v) - h.windOut) > 1e-6 ? 'manual' : h.windProfile }))} width={60} /> km/h
         </Q>
         <Check checked={hyp.evacuateTop} onChange={(v) => set('evacuateTop', v)}>
           <b>Le dernier niveau est vidé par vent fort</b>

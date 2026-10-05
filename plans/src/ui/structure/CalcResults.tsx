@@ -11,6 +11,7 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import type { Recognition } from '../../structure/core/recognition';
 import { fmtNumber } from '../../structure/core/units';
 import type { CalcOptions, StudyRun } from '../../structure/studyRun';
+import type { ElementChecks } from '../../structure/core/checks/facade';
 import { modelSegments } from '../../structure/core/templateView';
 import { familyName } from '../../structure/report/build';
 import { materialByKey } from '../../structure/core/materials';
@@ -164,10 +165,19 @@ export function CalcPanel(p: CalcPanelProps) {
               ))}
             </select>
           </label>
-          <label className="row" style={{ justifyContent: 'space-between' }} title="frottement calage / sol pour le glissement global (valeur prudente à confirmer)">
+          <label className="row" style={{ justifyContent: 'space-between' }} title="frottement calage / sol pour le glissement global (DIN EN 13814 tab. 3, statico 18-0573 § 4)">
             Frottement disponible (glissement)
-            <input type="number" step={0.05} min={0.05} max={1} value={o.friction} onChange={(e) => set('friction', Math.max(0.05, parseFloat(e.target.value) || 0.4))} style={{ width: 80 }} />
+            <input type="number" step={0.05} min={0.05} max={1} value={o.friction} onChange={(e) => set('friction', Math.max(0.05, parseFloat(e.target.value) || 0.6))} style={{ width: 80 }} />
           </label>
+          <div className="hint" style={{ marginTop: -4 }}>
+            0,6 : bois sur béton ou asphalte, couches de bois vissées entre elles et au pied · 0,4 : bois sur bois, acier sur bois, couches non liées (DIN EN 13814 tab. 3, statico 18-0573 § 4).{' '}
+            <button className="btn small ghost" onClick={() => set('friction', 0.6)}>
+              0,6
+            </button>{' '}
+            <button className="btn small ghost" onClick={() => set('friction', 0.4)}>
+              0,4
+            </button>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label className="row">
               <input type="checkbox" checked={o.jacks} onChange={(e) => set('jacks', e.target.checked)} /> Pieds à vérin utilisés (appuis aux réceptions de pied)
@@ -211,8 +221,8 @@ export function CalcPanel(p: CalcPanelProps) {
           <label className="row">
             <input type="checkbox" checked={o.internalPressure} onChange={(e) => set('internalPressure', e.target.checked)} /> Pression intérieure sur le plancher (installation ouverte)
           </label>
-          <label className="row" title="S275 et courbes a pour les tubes, contacts encastrés : comme l'annexe SCIA des notes statico">
-            <input type="checkbox" checked={o.calibration} onChange={(e) => set('calibration', e.target.checked)} /> Calage statico (matériaux et courbes de flambement de l’annexe SCIA)
+          <label className="row" title="Appuis de l'annexe SCIA Hoka / Qatar (50 kN/cm horizontalement, rigides verticalement), pas de boulons de toiture sous un étage ; sinon appuis du calcul de type 18-0573 (100 / 1 000 kN/cm)">
+            <input type="checkbox" checked={o.calibration} onChange={(e) => set('calibration', e.target.checked)} /> Calage statico (appuis et assemblages des annexes SCIA Hoka / Qatar)
           </label>
         </div>
         {p.running && p.progress && (
@@ -437,6 +447,21 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
                 </td>
                 <td className="hint">qEd statico</td>
               </tr>
+              {[
+                ['Façades et garde-corps (18-0573 § 3.6 – 3.7)', run.facade],
+                ['Éléments terrasse (18-0573 § 3.5)', run.terraces],
+              ]
+                .filter(([, c]) => (c as ElementChecks | undefined)?.records.length)
+                .map(([label, c]) => (
+                  <tr key={label as string}>
+                    <td>{label as string}</td>
+                    <td>{(c as ElementChecks).records.length}</td>
+                    <td>
+                      <Eta eta={(c as ElementChecks).eta} />
+                    </td>
+                    <td className="hint">vent du site / exploitation</td>
+                  </tr>
+                ))}
               <tr>
                 <td>Glissement global (μ requis {n(run.stability.sliding.muReq)})</td>
                 <td>—</td>
@@ -451,6 +476,38 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
             Basculement : {run.stability.overturning.text}
           </div>
         </div>
+        {[
+          ['Façades et garde-corps', run.facade],
+          ['Éléments terrasse', run.terraces],
+        ]
+          .filter(([, c]) => {
+            const x = c as ElementChecks | undefined;
+            return x && (x.records.length || x.notes.length || x.failures.length || x.missing.length);
+          })
+          .map(([title, c]) => {
+            const x = c as ElementChecks;
+            return (
+              <div className="card" key={title as string}>
+                <div className="card-head">
+                  <h3>{title as string}</h3>
+                  <span className="hint">statico 18-0573 (Prüfbuch TÜV)</span>
+                </div>
+                <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[...x.failures, ...x.missing].map((m, k) => (
+                    <div key={`f${k}`} className="hint" style={{ color: 'var(--danger)' }}>
+                      {m}
+                    </div>
+                  ))}
+                  {x.notes.map((m, k) => (
+                    <div key={`n${k}`} className="hint" style={{ color: 'var(--warn)' }}>
+                      ⚠ {m}
+                    </div>
+                  ))}
+                  <Records records={x.records} />
+                </div>
+              </div>
+            );
+          })}
         <div className="card">
           <div className="card-head">
             <h3>Les plus sollicités{family ? ` — ${family}` : ''}</h3>

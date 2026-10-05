@@ -53,7 +53,7 @@ export function bearingFrom(value: number, unit: BearingUnit): number {
   return value * 9.81e-2;
 }
 
-export const GROUND_NOTE = 'Portance à vérifier sur site par l’exploitant.';
+export const GROUND_NOTE = 'Portance à vérifier sur site par l’exploitant. Calage valable sur sol légèrement compressible (prairie carrossable) ; sol dur (béton, asphalte) : seul le frottement compte ; sol détrempé : étude particulière (statico 18-0573 § 3.9).';
 
 // ─── plaques de contreplaqué (méthode statico) ───
 

@@ -147,6 +147,8 @@ export interface ViewboxTemplateParams {
     boltTranslation: number;
     /** appuis horizontaux (glissement sur la plaque de calage) : N/mm */
     supportHorizontal: number;
+    /** appuis verticaux (compression seule) : N/mm ; absent = appui rigide */
+    supportVertical?: number;
   };
   plywood: { floorLayers: number; roofLayers: number; thickness: number; material: string; maxSpan: number };
 }

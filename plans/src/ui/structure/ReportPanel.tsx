@@ -42,6 +42,7 @@ import { downloadBlob } from '../common';
 import { moduleEtaColors } from './CalcResults';
 import type { Hypotheses, StructureStock } from './GroundPanel';
 import { calageInput } from './GroundPanel';
+import { groundExtras } from './studyInputs';
 
 /** Version affichée dans les rapports. */
 export const STRUCTURE_VERSION = 'v1.0';
@@ -163,14 +164,14 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   // calage avec les réactions du calcul (mêmes entrées que l'étape 5)
   const calage = useMemo((): CalageResult | null => {
     if (!run || stale || !modules.length) return null;
-    const input = { ...calageInput(modules, hyp, stock), reactions: run.ground };
+    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), reactions: run.ground };
     if (!(input.bearing > 0)) return null;
     try {
       return computeCalage(input);
     } catch {
       return null;
     }
-  }, [run, stale, modules, hyp, stock]);
+  }, [run, stale, modules, hyp, stock, inputs]);
   const bearing = useMemo(() => {
     const v = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
     return v > 0 ? { value: v, label: BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset)?.label ?? '—' } : null;

@@ -35,8 +35,12 @@ export const TUV_PLATES: TuvPlate[] = [
   { containers: 4, Rzk: 260e3, side: 1150, t: [78, 55, 45] },
 ];
 
+/** statico 18-0573 § 3.9.3 : « Mittig unter Terrassenelement », Rz,k = 56,2 kN → 55 × 55 cm, 3,3 / 2,4 / 1,9 cm. */
+export const TUV_TERRACE_MIDDLE: TuvPlate = { containers: 0, Rzk: 56.2e3, side: 550, t: [33, 24, 19] };
+
 /** Plaque minimale du Prüfbuch pour un appui de n containers (angles ou vérins d'angle) ; aucune pour un pied central. */
-export function tuvPlate(containers: number, middle: boolean): TuvPlate | null {
+export function tuvPlate(containers: number, middle: boolean, terraceMiddle = false): TuvPlate | null {
+  if (terraceMiddle) return TUV_TERRACE_MIDDLE;
   if (middle || containers < 1) return null;
   return TUV_PLATES[Math.min(4, containers) - 1];
 }
@@ -59,8 +63,8 @@ export interface TuvCheck {
  * résistant en flexion) d'au moins la taille du tableau, chaque plaque au moins l'épaisseur donnée pour ce nombre de
  * plaques empilées. Une pyramide est jugée sur sa couche du dessous.
  */
-export function tuvConformity(containers: number, middle: boolean, layers: SpreadLayer[]): TuvCheck | null {
-  const plate = tuvPlate(containers, middle);
+export function tuvConformity(containers: number, middle: boolean, layers: SpreadLayer[], terraceMiddle = false): TuvCheck | null {
+  const plate = tuvPlate(containers, middle, terraceMiddle);
   if (!plate) return null;
   const req = tuvPlateText(plate);
   const bottom = layers[layers.length - 1];

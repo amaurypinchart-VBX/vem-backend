@@ -231,11 +231,11 @@ export interface Labels {
   // annexe
   annex: string;
   b1: string;
-  modelCounts: (nodes: number, members: number, supports: number) => string;
+  modelCounts: (nodes: number, members: number, supports: number, kh: string, kv: string | null) => string;
   sectionsAnnex: string;
   materialsAnnex: string;
   springsTitle: string;
-  springs: Array<[string, string]>;
+  springs: (kh: string, kv: string | null) => Array<[string, string]>;
   b2: string;
   colCase: string;
   colLabel: string;
@@ -415,7 +415,7 @@ const FR: Labels = {
   jacks: 'Pieds à vérins',
   bearing: 'Portance admissible du sol',
   bearingValue: (v, l) => `${v} kN/m² (${l})`,
-  groundNote: 'Portance à vérifier sur site par l’exploitant.',
+  groundNote: 'Portance à vérifier sur site par l’exploitant. Calage valable sur sol légèrement compressible (prairie carrossable) ; sol dur (béton, asphalte) : seul le frottement compte ; sol détrempé : étude particulière (statico 18-0573 § 3.9).',
   s15: 'Matériaux, normes, documentation et logiciel',
   materialsText: 'Acier S235 et S275 (profilés et tubes), contreplaqué F20/15 (planchers, toitures), contreplaqué F40/30 (calage), bois C24 (longrines). Les matériaux de chaque vérification sont indiqués au chapitre 3.',
   normsTitle: 'Normes',
@@ -570,16 +570,16 @@ const FR: Labels = {
   },
   annex: 'Annexe de calcul',
   b1: 'Modèle de calcul',
-  modelCounts: (n, m, s) => `${n} nœuds, ${m} barres, ${s} appuis (compression seule, ressorts horizontaux 50 kN/cm).`,
+  modelCounts: (n, m, s, kh, kv) => `${n} nœuds, ${m} barres, ${s} appuis (compression seule, ressorts horizontaux ${kh} kN/cm${kv ? `, verticaux ${kv} kN/cm` : ''}).`,
   sectionsAnnex: 'Sections',
   materialsAnnex: 'Matériaux',
   springsTitle: 'Liaisons du modèle',
-  springs: [
+  springs: (kh, kv) => [
     ['Poteau / cadre', 'rotation semi-rigide 3 500 kNcm/deg (ideaStatiCa)'],
     ['Boulon horizontal', '50 kN/cm par demi-boulon (grands côtés : deux en série), rotations libres'],
     ['Liaison d’angle empilée', 'QRO 100 × 4 sans masse, 10 kN/cm en cisaillement'],
     ['Contact d’angle', 'barre en compression seule, sans masse'],
-    ['Appui', 'compression seule, 50 kN/cm horizontalement, libéré s’il se soulève'],
+    ['Appui', `compression seule${kv ? ` (${kv} kN/cm)` : ''}, ${kh} kN/cm horizontalement, libéré s’il se soulève`],
   ],
   b2: 'Cas de charge',
   colCase: 'Cas',
@@ -745,7 +745,7 @@ const DE: Labels = {
   jacks: 'Spindelfüße',
   bearing: 'Zulässige Bodenpressung',
   bearingValue: (v, l) => `${v} kN/m² (${l})`,
-  groundNote: 'Die Bodenbelastbarkeit ist eigenverantwortlich vor Ort durch den Betreiber zu prüfen.',
+  groundNote: 'Die Bodenbelastbarkeit ist eigenverantwortlich vor Ort durch den Betreiber zu prüfen. Unterpallung gilt nur bei leicht nachgiebigem Untergrund (befahrbare Wiesen); bei festem Untergrund nur Reibung beachten; bei aufgeweichten Untergründen gesonderte Betrachtung (statico 18-0573 § 3.9).',
   s15: 'Materialien, Vorschriften, Literatur und Software',
   materialsText: 'Stahl S235 und S275 (Profile und Hohlprofile), Sperrholz F20/15 (Böden, Dächer), Sperrholz F40/30 (Unterpallung), Holz C24 (Kanthölzer). Die Materialien sind den Einzelnachweisen in Kapitel 3 zu entnehmen.',
   normsTitle: 'Vorschriften',
@@ -900,16 +900,16 @@ const DE: Labels = {
   },
   annex: 'EDV-Anhang',
   b1: 'Berechnungsmodell',
-  modelCounts: (n, m, s) => `${n} Knoten, ${m} Stäbe, ${s} Auflager (nur druckaktiv, horizontale Federn 50 kN/cm).`,
+  modelCounts: (n, m, s, kh, kv) => `${n} Knoten, ${m} Stäbe, ${s} Auflager (nur druckaktiv, horizontale Federn ${kh} kN/cm${kv ? `, vertikal ${kv} kN/cm` : ''}).`,
   sectionsAnnex: 'Querschnitte',
   materialsAnnex: 'Materialien',
   springsTitle: 'Verbindungen im Modell',
-  springs: [
+  springs: (kh, kv) => [
     ['Stütze / Rahmen', 'nachgiebige Einspannung 3 500 kNcm/deg (ideaStatiCa)'],
     ['Horizontale Schraube', '50 kN/cm je halber Schraube (Längsseiten: zwei in Reihe), Rotationen frei'],
     ['Eckverbindung gestapelt', 'QRO 100 × 4 masselos, 10 kN/cm Schub'],
     ['Druckkontakt Ecke', 'nur druckaktiver Stab, masselos'],
-    ['Auflager', 'nur druckaktiv, horizontal 50 kN/cm, bei Abheben gelöst'],
+    ['Auflager', `nur druckaktiv${kv ? ` (${kv} kN/cm)` : ''}, horizontal ${kh} kN/cm, bei Abheben gelöst`],
   ],
   b2: 'Lastfälle',
   colCase: 'LF',
@@ -1075,7 +1075,7 @@ const EN: Labels = {
   jacks: 'Jack feet',
   bearing: 'Allowable ground bearing pressure',
   bearingValue: (v, l) => `${v} kN/m² (${l})`,
-  groundNote: 'Bearing capacity to be checked on site by the operator.',
+  groundNote: 'Bearing capacity to be checked on site by the operator. Packing valid on slightly compressible ground (trafficable meadow); hard ground (concrete, asphalt): only friction matters; soaked ground: specific study (statico 18-0573 § 3.9).',
   s15: 'Materials, standards, documents and software',
   materialsText: 'Steel S235 and S275 (sections and hollow sections), plywood F20/15 (floors, roofs), plywood F40/30 (packing), timber C24 (sleepers). The material of each check is stated in chapter 3.',
   normsTitle: 'Standards',
@@ -1230,16 +1230,16 @@ const EN: Labels = {
   },
   annex: 'Calculation appendix',
   b1: 'Analysis model',
-  modelCounts: (n, m, s) => `${n} nodes, ${m} members, ${s} supports (compression only, horizontal springs 50 kN/cm).`,
+  modelCounts: (n, m, s, kh, kv) => `${n} nodes, ${m} members, ${s} supports (compression only, horizontal springs ${kh} kN/cm${kv ? `, vertical ${kv} kN/cm` : ''}).`,
   sectionsAnnex: 'Sections',
   materialsAnnex: 'Materials',
   springsTitle: 'Connections in the model',
-  springs: [
+  springs: (kh, kv) => [
     ['Column / frame', 'semi-rigid rotation 3 500 kNcm/deg (ideaStatiCa)'],
     ['Horizontal bolt', '50 kN/cm per half bolt (long sides: two in series), free rotations'],
     ['Stacked corner link', 'massless SHS 100 × 4, 10 kN/cm in shear'],
     ['Corner contact', 'compression-only member, massless'],
-    ['Support', 'compression only, 50 kN/cm horizontally, released when lifting off'],
+    ['Support', `compression only${kv ? ` (${kv} kN/cm)` : ''}, ${kh} kN/cm horizontally, released when lifting off`],
   ],
   b2: 'Load cases',
   colCase: 'Case',

@@ -12,6 +12,13 @@ import { withMods } from '../../structure/advisor/variant';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { Hypotheses } from './GroundPanel';
 import { roofSnow } from './GroundPanel';
+import { TERRACE, terraceSupports } from '../../structure/core/terrace';
+import type { AddedSupport } from '../../structure/core/estimate';
+
+/** Appuis du calage hors des Viewbox : pieds des éléments terrasse posés au sol (5,0 kN/m² au rez-de-chaussée). */
+export function groundExtras(inp: Pick<StudyInputs, 'terraces' | 'loads'>): AddedSupport[] {
+  return terraceSupports(inp.terraces ?? [], inp.loads.liveGround ?? inp.loads.live);
+}
 
 export interface InputsSource {
   sceneModel: SceneStudyModel;
@@ -39,6 +46,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
     edgeItems: [...sceneModel.edgeItems, ...extra],
     pointItems: sceneModel.pointItems,
     stairs: sceneModel.stairs,
+    terraces: sceneModel.terraces,
     library,
     sections: sectionMap(library),
     loads: {
@@ -47,6 +55,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
       ceiling: kNm2(hyp.ceiling),
       floorFinish: kNm2(hyp.floorFinish),
       live: kNm2(hyp.live),
+      liveGround: kNm2(hyp.liveGround ?? DEFAULTS.liveLoadGround.value * 1e3),
       roofLive: kNm2(hyp.roofLive),
       horizontalRatio: DEFAULTS.horizontalRatio.value,
       roofAccessible: roof,
@@ -55,6 +64,9 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
       snowRoof: roofSnow(hyp),
       windInService: kNm2(hyp.windIn),
       windOutOfService: kNm2(hyp.windOut),
+      windProfile: hyp.windProfile,
+      roofTerraces: sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module!),
+      terraceG: TERRACE.selfWeight + TERRACE.deck,
       cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },
     },
     middleFeet: hyp.middleFeet,

@@ -8,6 +8,7 @@ import { KN, KN_PER_CM, KNCM_PER_DEG, KNM } from '../core/units';
 import type { StairKitParams } from '../core/templates/stair';
 
 const HOKA = (page: string, note?: string) => ({ ref: 'report:24-0571', page, note });
+const STATIC_TUV = (page: string, note?: string) => ({ ref: 'report:18-0573', page, note });
 const cm2 = 1e2;
 const cm3 = 1e3;
 const cm4 = 1e4;
@@ -63,15 +64,14 @@ export const SEED_SECTIONS: SectionEntry[] = [
     key: 'QHP100x5',
     name: 'QHP 100×5 (poteaux)',
     material: 'S275',
-    // tubes formés à froid imposés par statico (§ 1.2) : courbe c par défaut, a dans l'annexe SCIA
-    calibrationCurves: { y: 'a', z: 'a' },
-    source: [HOKA('B5'), HOKA('A4', 'kaltgefertigte Hohlprofile')],
+    // statico 18-0573 (calcul de type visé TÜV), annexe SCIA « Stütze » : QRO100X5 S 275, courbes a / a (Hoka : idem)
+    source: [STATIC_TUV('B8', 'QRO100X5, S 275, courbes a'), HOKA('B5'), HOKA('A4', 'kaltgefertigte Hohlprofile')],
     section: {
       shape: 'SHS',
       fabrication: 'cold-formed',
       dims: { h: 100, b: 100, t: 5 },
-      curveY: 'c',
-      curveZ: 'c',
+      curveY: 'a',
+      curveZ: 'a',
       kgPerM: 14.8,
       ...cm({ A: 18.8, Iy: 281, Iz: 281, Wely: 56.3, Welz: 56.3, Wply: 66.7, Wplz: 66.7, It: 433 }),
     },
@@ -79,17 +79,15 @@ export const SEED_SECTIONS: SectionEntry[] = [
   section({
     key: 'RHP120x60x4',
     name: 'RHP 120×60×4 (traverses et lisses plancher / toiture)',
-    // S235 dans le texte statico (prudent, défaut) ; S275 dans l'annexe SCIA et sur le plan Spantech 7-364-27
-    material: 'S235',
-    calibrationMaterial: 'S275',
-    calibrationCurves: { y: 'a', z: 'a' },
-    source: [HOKA('A21', 'S235 dans le texte'), HOKA('B6', 'S275, courbes a'), { ref: 'drawing:7-364-27', note: '120x60 = S275' }],
+    // statico 18-0573 § 3.1.3 et annexe SCIA « CS2 » : RRO120X60X4 S 275, courbes a / a ; plan Spantech 7-364-27 : S275
+    material: 'S275',
+    source: [STATIC_TUV('A25', 'QHP 120x60x4 S275'), STATIC_TUV('B7', 'RRO120X60X4, S 275, courbes a'), HOKA('B6', 'S275, courbes a'), { ref: 'drawing:7-364-27', note: '120x60 = S275' }],
     section: {
       shape: 'RHS',
       fabrication: 'cold-formed',
       dims: { h: 120, b: 60, t: 4 },
-      curveY: 'c',
-      curveZ: 'c',
+      curveY: 'a',
+      curveZ: 'a',
       kgPerM: 10.6,
       ...cm({ A: 13.5, Iy: 247, Iz: 82.7, Wely: 41.1, Welz: 27.6, Wply: 51.5, Wplz: 31.6, It: 199 }),
     },
@@ -584,7 +582,9 @@ export const SEED_MODULES: ModuleTypeEntry[] = [
         columnRotation: 3500 * KNCM_PER_DEG,
         cornerLinkShear: 10 * KN_PER_CM,
         boltTranslation: 50 * KN_PER_CM,
-        supportHorizontal: 50 * KN_PER_CM,
+        // statico 18-0573 annexe SCIA § 3.9 « Knotenauflager » : X / Y 100 kN/cm, Z 1 000 kN/cm en compression seule
+        supportHorizontal: 100 * KN_PER_CM,
+        supportVertical: 1000 * KN_PER_CM,
       },
       plywood: { floorLayers: 2, roofLayers: 1, thickness: 18, material: 'CP-F20/15', maxSpan: 800 },
     },
@@ -592,6 +592,7 @@ export const SEED_MODULES: ModuleTypeEntry[] = [
       { ref: 'user', note: 'A. Pinchart 29.09.2026 : 2 564 kg planchers + isolants compris' },
       HOKA('A8', 'GWaage ≈ 20 kN (toit + plancher + poteaux, sans murs)'),
       HOKA('B13–B82', 'nœuds, barres, articulations, appuis'),
+      STATIC_TUV('B36–B37', 'appuis : 100 kN/cm en X / Y, 1 000 kN/cm en compression seule en Z'),
       { ref: 'drawing:7-364-27', note: 'toiture 886,432 kg ; ensemble planchers + isolants 2 563,752 kg' },
     ],
   },

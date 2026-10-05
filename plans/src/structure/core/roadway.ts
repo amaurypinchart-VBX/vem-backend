@@ -117,6 +117,7 @@ export const planCoords = (p: P2, o: { x: number; y: number }): P2 => [p[0] - o.
 /** Libellé du type d'un appui. */
 export function supportType(r: GroupReaction): string {
   const g = r.group;
+  if (g.terrace) return g.middle ? 'pied central de terrasse' : 'pied d’angle de terrasse';
   if (g.stair) return 'pied d’escalier';
   if (g.jack) return g.middle ? 'vérin central' : 'vérin d’angle';
   if (g.middle) return 'pied central';

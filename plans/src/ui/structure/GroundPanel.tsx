@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
-import type { Estimate, EstimateModule } from '../../structure/core/estimate';
+import type { AddedSupport, Estimate, EstimateModule } from '../../structure/core/estimate';
+import { TERRACE } from '../../structure/core/terrace';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
@@ -17,6 +18,7 @@ import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, planPlates } from '../../structure/report/groundSheet';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
+import type { Terrain } from '../../structure/core/wind';
 import type { Lang } from '../../structure/report/i18n';
 import { LANGS, LANG_LABEL, num } from '../../structure/report/i18n';
 import { CALAGE_LABELS } from '../../structure/report/calageI18n';
@@ -38,11 +40,16 @@ export interface Hypotheses {
   weightMode: 'max' | 'weighed';
   ceiling: number;
   floorFinish: number;
+  /** exploitation des étages (kN/m²) */
   live: number;
+  /** exploitation du rez-de-chaussée (kN/m²) : 5,0 dans le calcul de type statico 18-0573 (EG 500 kg/m²) */
+  liveGround?: number;
   roofLive: number;
   extraKN: number;
   windIn: number;
   windOut: number;
+  /** profil du vent hors service choisi (texte du rapport) ; « manual » = vitesse saisie */
+  windProfile?: Terrain;
   cp: number;
   middleFeet: boolean;
   evacuateTop: boolean;
@@ -79,6 +86,7 @@ export const DEFAULT_HYP: Hypotheses = {
   ceiling: 0.35,
   floorFinish: 0.4,
   live: 3.5,
+  liveGround: 5,
   roofLive: 3.5,
   extraKN: 0,
   windIn: 0.2,
@@ -120,10 +128,11 @@ function readStored(key: string): Partial<Hypotheses> {
 export const roofSnow = (h: Pick<Hypotheses, 'snowKgm2'>) => (0.8 * Math.max(0, h.snowKgm2 ?? 0) * 9.81) / 1e6;
 
 /** Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm) ; `jacks` : 6 pieds à vérin par Viewbox. */
-export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false): CalageInput {
+export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = []): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
   return {
     modules,
+    ...(extraSupports.length ? { extraSupports } : {}),
     estimate: {
       ...ESTIMATE_DEFAULTS,
       loads: {
@@ -132,9 +141,11 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
         ceiling: kNm2(h.ceiling),
         floorFinish: kNm2(h.floorFinish),
         live: kNm2(h.live),
+        liveGround: kNm2(h.liveGround ?? DEFAULT_HYP.liveGround!),
         roofLive: kNm2(h.roofLive),
         extraPerModule: h.extraKN * 1e3,
         snowRoof: roofSnow(h),
+        terraceG: TERRACE.selfWeight + TERRACE.deck,
       },
       windInService: kNm2(h.windIn),
       windOutOfService: kNm2(h.windOut),
@@ -371,9 +382,11 @@ export interface GroundPanelProps {
   reactions?: Estimate | null;
   /** pieds à vérin (étape 3) : 6 appuis par Viewbox, chacun sur sa platine */
   jacks?: boolean;
+  /** appuis hors des Viewbox (pieds des éléments terrasse posés au sol) */
+  extraSupports?: AddedSupport[];
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -412,7 +425,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     }
   }, [hyp, storageKey, hypProp]);
 
-  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks]);
+  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks, extraSupports]);
   useEffect(() => {
     setPending(true);
     const t = setTimeout(() => {

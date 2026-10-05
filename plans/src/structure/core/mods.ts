@@ -177,7 +177,12 @@ export interface ModsOutput extends ModsInput {
   /** Viewbox ajoutées (pour le calage) */
   added: PlacedModule[];
   warnings: string[];
+  /** modifications non admises (lest sur une Viewbox d'étage) : verdict incomplet tant qu'elles restent */
+  errors: string[];
 }
+
+/** statico 18-0573 § 1.3 / § 5.3 : « Ballast darf nur in den unteren Containern (EG) angeordnet werden. » */
+export const BALLAST_RULE = 'le lest ne se pose que dans les Viewbox du rez-de-chaussée (statico 18-0573 § 5.3)';
 
 const SLOT_PARAM: Record<SectionSlot, keyof PlacedModule['params']['sections']> = {
   'rim-floor': 'rim',
@@ -191,6 +196,7 @@ const SLOT_PARAM: Record<SectionSlot, keyof PlacedModule['params']['sections']> 
 
 export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutput {
   const warnings: string[] = [];
+  const errors: string[] = [];
   const sections = new Map(inp.sections);
   for (const c of mods?.customSections ?? []) {
     try {
@@ -242,6 +248,10 @@ export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutp
       if (!m) warnings.push(`Lest sur ${b.module} : Viewbox introuvable, ignoré.`);
       continue;
     }
+    if (m.level > 0) {
+      errors.push(`Lest de ${fmtNumber(b.kg, 0)} kg sur ${b.module} (étage) : non admis, ${BALLAST_RULE} — retirer ce lest`);
+      continue;
+    }
     const p = m.params;
     const Lu = p.x1 - p.x0;
     const Lv = p.y1 - p.y0;
@@ -256,9 +266,9 @@ export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutp
   const raise = mods?.raise && mods.raise.height > 0 ? mods.raise : null;
   if (raise && !sections.has(raise.section)) {
     warnings.push(`Surélévation : section ${raise.section} absente de la bibliothèque, ignorée.`);
-    return { modules, edgeItems, sections, bracings, raise: null, added, warnings };
+    return { modules, edgeItems, sections, bracings, raise: null, added, warnings, errors };
   }
-  return { modules, edgeItems, sections, bracings, raise, added, warnings };
+  return { modules, edgeItems, sections, bracings, raise, added, warnings, errors };
 }
 
 /** Bibliothèque de l'étude : nombre de plats d'empilement modifié. */

@@ -20,7 +20,8 @@ const base: StudyInputs = {
   loads: LOADS,
   middleFeet: false,
   sls: true,
-  options: CALC_DEFAULTS,
+  // frottement bois / bois 0,4 (DIN EN 13814 tab. 3)
+  options: { ...CALC_DEFAULTS, friction: 0.4 },
   blocking: [],
 };
 

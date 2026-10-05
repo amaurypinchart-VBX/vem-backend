@@ -263,7 +263,15 @@ export function ViewboxStructure({ entry, library, canEdit, who, highlight, onHi
           ) : (
             n(toUser.stiffness(params.springs.supportHorizontal))
           )}{' '}
-          kN/cm.
+          kN/cm · appuis verticaux (compression seule){' '}
+          {editing ? (
+            <Num value={toUser.stiffness(params.springs.supportVertical ?? 0)} onChange={(v) => patch({ springs: { ...params.springs, supportVertical: v > 0 ? fromUser.stiffness(v) : undefined } })} width={70} />
+          ) : params.springs.supportVertical ? (
+            n(toUser.stiffness(params.springs.supportVertical))
+          ) : (
+            'rigides'
+          )}{' '}
+          {params.springs.supportVertical || editing ? 'kN/cm' : ''}.
         </div>
         <div className="hint">
           <b>Plancher</b> —{' '}

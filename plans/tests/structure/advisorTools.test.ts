@@ -3,7 +3,10 @@
 import { describe, expect, it } from 'vitest';
 import { SEED } from '../../src/structure/library/seed';
 import { placedToEstimate } from '../../src/structure/core/mods';
-import { CALC_DEFAULTS, runStudy } from '../../src/structure/studyRun';
+import { CALC_DEFAULTS as DEFAULT_CALC, runStudy } from '../../src/structure/studyRun';
+
+// frottement bois / bois 0,4 (DIN EN 13814 tab. 3) : sans lest, ces petites études glissent
+const CALC_DEFAULTS = { ...DEFAULT_CALC, friction: 0.4 };
 import type { StudyRun } from '../../src/structure/studyRun';
 import { createInlineStudyRunner } from '../../src/structure/worker/study';
 import type { AdvisorContext, Variant } from '../../src/ui/structure/advisorTools';
@@ -15,7 +18,7 @@ import { vbx } from './studyHelpers';
 
 function context(modules = [vbx('A', 0, 0), vbx('B', 5.9, 0)]) {
   const source: InputsSource = {
-    sceneModel: { modules, ignored: [], stairs: [], edgeItems: [], pointItems: [], errors: [], warnings: [] },
+    sceneModel: { modules, ignored: [], stairs: [], terraces: [], edgeItems: [], pointItems: [], errors: [], warnings: [] },
     library: SEED,
     hyp: { ...DEFAULT_HYP, evacuateTop: false },
     roof: false,

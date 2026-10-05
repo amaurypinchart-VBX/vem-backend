@@ -238,7 +238,7 @@ export function etaLevelsSvg(mods: PlanModule[], etaOf: Map<string, number>, lev
   };
 }
 
-export const TYPE_HEX: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed', M2: '#a855f7', E: '#0891b2' };
+export const TYPE_HEX: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed', M2: '#a855f7', E: '#0891b2', T: '#65a30d', TM: '#4d7c0f' };
 export const groupType = (r: GroupReaction) => groupTypeKey(r.group);
 
 /** Plan des appuis : emprises du niveau 0, groupes colorés par type avec leur nom et Rz,k. */

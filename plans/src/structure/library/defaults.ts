@@ -27,7 +27,8 @@ export const DEFAULTS = {
   railing: a(0.1 * KN_PER_M, 'kN/m', 'Garde-corps', 'statico 24-0571 § 2.1'),
   steps: a(0.42 * KN_PER_M2, 'kN/m²', 'Marches', 'statico 24-0571 § 2.1'),
   // exploitation
-  liveLoad: a(3.5 * KN_PER_M2, 'kN/m²', 'Exploitation publique', 'DIN EN 13814 ; statico 24-0571 § 2.2.1'),
+  liveLoad: a(3.5 * KN_PER_M2, 'kN/m²', 'Exploitation publique des étages', 'DIN EN 13814 ; statico 18-0573 § 2.2.1 (OG, sans foule dense) ; 24-0571 § 2.2.1'),
+  liveLoadGround: a(5 * KN_PER_M2, 'kN/m²', 'Exploitation publique du rez-de-chaussée', 'statico 18-0573 § 2.2.1 (EG 500 kg/m²) ; Prüfbuch 190060 B'),
   horizontalRatio: a(0.1, '−', 'Charge horizontale d’exploitation H = V / 10', 'DIN EN 13814 ; statico 24-0571 § 2.2.2'),
   handrail: a(0.5 * KN_PER_M, 'kN/m', 'Main courante', 'DIN EN 13814 ; statico 24-0571 § 2.2.2'),
   // vent
@@ -60,7 +61,13 @@ export const DEFAULTS = {
   plateKmod: a(0.9, '−', 'kmod des plaques (court terme, NKL 2)', 'statico 24-0571 § 3.12'),
   timberGammaM: a(1.3, '−', 'γM bois', 'DIN EN 1995-1-1/NA'),
   steelFriction: a(0.1, '−', 'Frottement acier / acier dans les liaisons', 'statico 24-0571 § 3.9'),
-  groundFriction: a(0.4, '−', 'Frottement disponible calage / sol (glissement global)', 'valeur prudente à confirmer sur site (statico 24-0571 § 4 : μ requis seulement, 0,12)'),
+  groundFriction: a(
+    0.6,
+    '−',
+    'Frottement disponible calage / sol (glissement global)',
+    'DIN EN 13814 tab. 3 ; statico 18-0573 § 1.3 et § 4 : 0,6 bois / béton ou asphalte, couches de bois vissées entre elles et au pied (0,4 bois / bois ou acier / bois, couches non liées)',
+  ),
+  groundFrictionLoose: a(0.4, '−', 'Frottement bois / bois, acier / bois (couches non liées)', 'DIN EN 13814 tab. 3 ; statico 18-0573 § 4'),
   snow: a(0, '−', 'Neige prise en compte (0 = non)', 'statico 24-0571 § 2.3'),
 } as const;
 

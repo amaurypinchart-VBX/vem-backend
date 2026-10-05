@@ -13,7 +13,8 @@ const statico = { ...EC3_DEFAULTS, method: 'statico' as const };
 const classic = { ...EC3_DEFAULTS, method: 'classic' as const };
 const S275 = materialByKey('S275')!;
 const S235 = materialByKey('S235')!;
-const col = seedSection('QHP100x5').section;
+// poteau QHP 100 × 5 en courbe c (tube formé à froid) : la bibliothèque suit l'annexe SCIA 18-0573 (courbe a)
+const col = { ...seedSection('QHP100x5').section, curveY: 'c' as const, curveZ: 'c' as const };
 const unp = seedSection('UNP220').section;
 
 describe('EC3 — impressions SCIA statico (Qatar)', () => {

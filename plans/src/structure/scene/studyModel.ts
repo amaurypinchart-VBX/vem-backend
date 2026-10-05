@@ -1,7 +1,8 @@
 // Modèle SketchUp analysé → entrées du calcul complet : Viewbox placées (repère de chaque Viewbox, type de la
 // reconnaissance → gabarit de la bibliothèque) et objets portés (murs, vitrages, portes, garde-corps, logos) en charges
-// sur la rive du côté le plus proche ou au nœud le plus proche. Tout ce que le calcul ne sait pas encore modéliser
-// (pièces porteuses hors gabarit : escaliers, terrasses, poutres…) est une erreur bloquante (verdict « incomplet »).
+// sur la rive du côté le plus proche ou au nœud le plus proche ; escaliers extérieurs (kit) et éléments terrasse
+// (statico 18-0573 § 3.5) placés. Tout ce que le calcul ne sait pas encore modéliser (autres pièces porteuses hors
+// gabarit : poutres, poteaux ajoutés…) est une erreur bloquante (verdict « incomplet »).
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { PlacedModule, PlacedStair } from '../core/assemble';
 import { placeFromFrame } from '../core/assemble';
@@ -15,6 +16,8 @@ import { proposeFor } from '../core/recognition';
 import type { Side } from '../core/templates/viewboxEU';
 import type { StairKitParams } from '../core/templates/stair';
 import { STAIR_KITS } from '../library/seed';
+import type { PlacedTerrace } from '../core/terrace';
+import { placeTerrace } from '../core/terrace';
 import { endHeights } from './geometry';
 
 export interface SceneStudyModel {
@@ -23,6 +26,8 @@ export interface SceneStudyModel {
   ignored: IgnoredPart[];
   /** escaliers extérieurs (kit avec palier) placés contre une Viewbox */
   stairs: PlacedStair[];
+  /** éléments terrasse : posés au sol ou sur la toiture d'une Viewbox */
+  terraces: PlacedTerrace[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   errors: string[];
@@ -166,6 +171,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const edgeItems: EdgeItem[] = [];
   const pointItems: PointItem[] = [];
   const stairs: PlacedStair[] = [];
+  const terraces: PlacedTerrace[] = [];
   const unmodelled = new Map<string, number>();
   const windOnly = new Map<string, number>();
   for (const t of recognition.types) {
@@ -194,6 +200,15 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
       }
       continue;
     }
+    if (a.role === 'structural' && a.nature === 'terrace') {
+      for (const nodeId of t.nodeIds) {
+        const n = scene.look.byId.get(nodeId);
+        const r = n?.bboxMm ? placeTerrace(n.bboxMm, `TER-${terraces.length + 1}`, t.label, modules) : { terrace: null, reason: `${t.label} : géométrie introuvable` };
+        if (r.terrace) terraces.push(r.terrace);
+        else errors.push(r.reason!);
+      }
+      continue;
+    }
     if (a.role === 'structural') {
       unmodelled.set(NATURE_LABEL[a.nature], (unmodelled.get(NATURE_LABEL[a.nature]) ?? 0) + t.nodeIds.length);
       continue;
@@ -210,13 +225,13 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     }
   }
   for (const [nature, count] of unmodelled)
-    errors.push(`${count} pièce(s) porteuse(s) « ${nature} » : pas encore modélisées dans le calcul complet (escaliers, terrasses, poutres ajoutées) — verdict incomplet`);
+    errors.push(`${count} pièce(s) porteuse(s) « ${nature} » : pas encore modélisées dans le calcul complet (poutres, poteaux ajoutés) — verdict incomplet`);
   for (const [label, count] of windOnly) warnings.push(`${label} (${count}) : surface au vent seule, pas encore appliquée au calcul (vent calculé sur les côtés des Viewbox)`);
   const ignored = ignoredStructural(recognition);
   for (const p of ignored)
     warnings.push(`${p.label} (${p.count}) : pièce porteuse ignorée — ni son poids, ni l’exploitation, ni le vent, ni ses appuis sur les Viewbox ne sont dans le calcul (citée dans le rapport)`);
   if (!modules.length && !errors.length) errors.push('Aucune Viewbox calculable dans le modèle.');
-  return { modules, ignored, stairs, edgeItems, pointItems, errors, warnings };
+  return { modules, ignored, stairs, terraces, edgeItems, pointItems, errors, warnings };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {
@@ -278,7 +293,8 @@ export function placeItem(b: readonly number[], moduleId: string | null, a: Part
     const L = to - from;
     if (L > 50 && (w.unit === 'kg/m' || vertical || L > 1000)) {
       const q = w.unit === 'kg/m' ? (w.value * G) / 1000 : vertical ? (w.value * G * height) / 1e6 : (w.value * G) / L;
-      edge.push({ module: pm.id, side: near.side, from, to, level, q, loadCase: lcase === 'G7' ? 'G3' : lcase, label });
+      const nature = a.nature === 'wall' || a.nature === 'glazing' || a.nature === 'door' || a.nature === 'railing' ? a.nature : undefined;
+      edge.push({ module: pm.id, side: near.side, from, to, level, q, loadCase: lcase === 'G7' ? 'G3' : lcase, label, ...(nature ? { nature } : {}) });
       return;
     }
   }

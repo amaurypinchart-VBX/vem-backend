@@ -2,7 +2,8 @@
 //   G1 poids propre des barres (78,5 kN/m³), Gc complément jusqu'au poids pesé d'une Viewbox (si le modèle est plus
 //   léger), G2 plafonds (toitures), G3 murs / vitrages / portes, G4 sols (planchers), G5 garde-corps, G7 logos,
 //   GB lest ajouté (blocs béton, poids connus : compté comme le poids propre dans la stabilité) ;
-//   Q1.d exploitation en service (planchers + toitures accessibles) et H = V / 10 aux 4 angles de chaque plancher chargé,
+//   Q1.d exploitation en service (planchers : rez-de-chaussée 5,0, étages 3,5 kN/m² comme statico 18-0573 § 2.2.1 ;
+//   toitures accessibles, éléments terrasse) et H = V / 10 aux 4 angles de chaque plancher chargé,
 //   Q2.d hors service (sans les surfaces extérieures évacuées) ; W1.d vent en service, W2.d hors service sur les côtés
 //   exposés (luv +0,8, lee −0,5, parallèle −0,8 ; moitié à la rive du plancher, moitié à la rive de toiture) ;
 //   W0 succion des toitures du dernier niveau (stabilité).
@@ -40,6 +41,8 @@ export interface EdgeItem {
   q: number;
   loadCase: 'G3' | 'G5' | 'GB';
   label: string;
+  /** nature de l'objet (vérification des éléments de façade, statico 18-0573 § 3.6 – 3.7) */
+  nature?: 'wall' | 'glazing' | 'door' | 'railing';
 }
 
 /** Charge ponctuelle (logo, équipement) : au nœud le plus proche du module, au niveau donné. */
@@ -65,8 +68,10 @@ export interface LoadInputs {
   /** plafond, sol (N/mm²) */
   ceiling: number;
   floorFinish: number;
-  /** exploitation des planchers et des toitures accessibles (N/mm²) ; H = ratio · V */
+  /** exploitation des planchers des étages et des toitures accessibles (N/mm²) ; H = ratio · V */
   live: number;
+  /** exploitation du plancher des Viewbox posées au sol (N/mm²), sinon `live` — statico 18-0573 § 2.2.1 : 5,0 kN/m² */
+  liveGround?: number;
   roofLive: number;
   horizontalRatio: number;
   roofAccessible: boolean;
@@ -79,11 +84,19 @@ export interface LoadInputs {
   /** pressions du vent (N/mm²) : en service, hors service (déjà abattue) */
   windInService: number;
   windOutOfService: number;
+  /** profil du vent hors service retenu (texte du rapport ; sans effet sur le calcul) */
+  windProfile?: import('./wind').Terrain;
   cp: { windward: number; leeward: number; parallel: number; roofStability: number };
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   /** escaliers habillés sous les limons et le palier : vent sur l'habillage (cf 1,3, moitié par face) */
   stairClad?: boolean;
+  /**
+   * éléments terrasse posés sur la toiture de ces Viewbox (statico 18-0573 § 3.5, 24-0571 § 3.7) : poids propre
+   * `terraceG` (N/mm²) sur la toiture (avec les plafonds, G2), public des étages `live` en service, évacués hors service
+   */
+  roofTerraces?: string[];
+  terraceG?: number;
 }
 
 export interface Axes {
@@ -281,8 +294,18 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const k = finishFactor.get(pm.id)!;
     if (inp.ceiling * k > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceiling * k, DOWN);
     if (inp.floorFinish * k > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorFinish * k, DOWN);
+    if (inp.roofTerraces?.includes(pm.id) && (inp.terraceG ?? 0) > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.terraceG!, DOWN);
   }
-  const G2 = g2.build('G2', 'Plafonds', 'G');
+  const terraces = (inp.roofTerraces ?? []).filter((id) => model.modules.some((m) => m.id === id));
+  if (terraces.length)
+    records.push({
+      key: 'loads.terraces',
+      title: 'Éléments terrasse posés sur les toitures',
+      clause: 'statico 18-0573 § 3.5 ; 24-0571 § 3.7',
+      formula: 'poids propre (cadre, solives, platelage) sur la toiture de la Viewbox du dessous, avec les plafonds (G2) ; public des étages et H = V / 10 en service, terrasse évacuée hors service',
+      withValues: `${terraces.join(', ')} : g = ${n((inp.terraceG ?? 0) * 1e3)} kN/m² ; q = ${n(inp.live * 1e3)} kN/m²`,
+    });
+  const G2 = g2.build('G2', terraces.length ? 'Plafonds et terrasses' : 'Plafonds', 'G');
   const G4 = g4.build('G4', 'Sols', 'G');
 
   // ─── Gc : complément jusqu'au poids pesé (le modèle ne descend jamais sous le poids réel) ───
@@ -403,9 +426,12 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
         const surfaces: Array<{ level: 'floor' | 'roof'; q: number; nodes: string[] }> = [];
         const floorEvacuated = kind === 'Q2' && inp.evacuateTopLevel && pm.level === topLevel && topLevel > 0;
         const closed = inp.closedLevels?.includes(pm.level) ?? false;
-        if (inp.live > 0 && !floorEvacuated && !closed) surfaces.push({ level: 'floor', q: inp.live, nodes: tpl.cornerFloor });
-        // toiture accessible (terrasse) : surface extérieure, évacuée hors service
-        if (kind === 'Q1' && inp.roofAccessible && inp.roofLive > 0 && model.topModules.has(pm.id)) surfaces.push({ level: 'roof', q: inp.roofLive, nodes: tpl.cornerRoof });
+        const live = pm.level === 0 ? inp.liveGround ?? inp.live : inp.live;
+        if (live > 0 && !floorEvacuated && !closed) surfaces.push({ level: 'floor', q: live, nodes: tpl.cornerFloor });
+        // toiture accessible (terrasse) : surface extérieure, évacuée hors service ; élément terrasse posé sur la toiture
+        const roofOpen = inp.roofAccessible && inp.roofLive > 0 && model.topModules.has(pm.id);
+        if (kind === 'Q1' && roofOpen) surfaces.push({ level: 'roof', q: inp.roofLive, nodes: tpl.cornerRoof });
+        else if (kind === 'Q1' && inp.live > 0 && inp.roofTerraces?.includes(pm.id)) surfaces.push({ level: 'roof', q: inp.live, nodes: tpl.cornerRoof });
         for (const s of surfaces) {
           panelLoad(cb, tpl, pm.id, s.level, s.q, DOWN);
           const H = (inp.horizontalRatio * s.q * area) / s.nodes.length;

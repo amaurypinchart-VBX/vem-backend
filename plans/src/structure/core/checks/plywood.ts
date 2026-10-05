@@ -2,6 +2,8 @@
 // sécurité) comme bande de 1 m sur deux appuis, portée ≤ 80 cm, KLED moyen, NKL 2 (kmod 0,8), γM 1,3 ;
 // vRd = b · t · kmod · fv,k / 1,5 / γM, mRd = b · t² / 6 · kmod · fm,k / γM ;
 // qEd = γG,Q · g + γQ · q (+ γW · 0,8 · qp de pression intérieure si l'installation est ouverte).
+// Variante statico 18-0573 § 3.4.4 (plancher du rez-de-chaussée à 5,0 kN/m²) : poutre continue sur trois travées
+// (vEd = 0,617 · qEd · L, mEd = 0,117 · qEd · L²), KLED court (kmod 0,9), qEd = 1,35 · (g + q).
 // Fonctions pures ; N, mm.
 import { materialByKey } from '../materials';
 import type { CalcRecord } from '../records';
@@ -23,6 +25,9 @@ export interface PlywoodInput {
   internal: number;
   gammaW: number;
   label: string;
+  /** 1 travée (statico 24-0571, défaut) ou 3 travées continues (statico 18-0573 § 3.4.4) */
+  spans?: 1 | 3;
+  clause?: string;
 }
 
 export interface PlywoodResult {
@@ -43,8 +48,9 @@ export function checkPlywoodStrip(p: PlywoodInput): PlywoodResult {
   const vRd = (b * t * p.kmod * fv) / 1.5 / p.gammaM;
   const mRd = ((b * t * t) / 6) * p.kmod * (fm / p.gammaM);
   const qEd = p.gammaG * p.g + p.gammaQ * p.q + p.gammaW * p.internal;
-  const vEd = (qEd * b * p.span) / 2;
-  const mEd = (qEd * b * p.span * p.span) / 8;
+  const three = p.spans === 3;
+  const vEd = three ? 0.617 * qEd * b * p.span : (qEd * b * p.span) / 2;
+  const mEd = three ? 0.117 * qEd * b * p.span * p.span : (qEd * b * p.span * p.span) / 8;
   const eta = Math.max(vEd / vRd, mEd / mRd);
   const qTxt = `${f2(p.gammaG)} · ${f2(p.g * 1e3)} + ${f2(p.gammaQ)} · ${f2(p.q * 1e3)}${p.internal ? ` + ${f2(p.gammaW)} · ${f2(p.internal * 1e3)}` : ''} = ${f2(qEd * 1e3)} kN/m²`;
   return {
@@ -52,9 +58,11 @@ export function checkPlywoodStrip(p: PlywoodInput): PlywoodResult {
     records: [
       {
         key: `plywood.${p.label}`,
-        title: `${p.label} — ${m.name.replace(/\s*\(.*\)\s*$/, '')}, bande de 1 m`,
-        clause: 'DIN EN 1995-1-1 ; statico 24-0571 § 3.5',
-        formula: 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = qEd · L / 2 ; mEd = qEd · L² / 8',
+        title: `${p.label} — ${m.name.replace(/\s*\(.*\)\s*$/, '')}, bande de 1 m${three ? ', trois travées' : ''}`,
+        clause: p.clause ?? 'DIN EN 1995-1-1 ; statico 24-0571 § 3.5',
+        formula: three
+          ? 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = 0,617 · qEd · L ; mEd = 0,117 · qEd · L²'
+          : 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = qEd · L / 2 ; mEd = qEd · L² / 8',
         withValues: `t = ${f2(t / 10, 1)} cm, L = ${f2(p.span / 10, 0)} cm, kmod = ${f2(p.kmod)} ; vRd = ${f2(vRd / 1e3)} kN/m, mRd = ${f2(mRd / 1e4)} kNcm/m ; qEd = ${qTxt} ; vEd = ${f2(vEd / 1e3)} kN/m, mEd = ${f2(mEd / 1e4)} kNcm/m`,
         eta,
       },

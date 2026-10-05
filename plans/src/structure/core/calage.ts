@@ -6,7 +6,8 @@
 // rapport. Fonctions pures.
 import type { CalcRecord } from './records';
 import type { Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } from './estimate';
-import { estimateReactions, fullPublic, limitPublic } from './estimate';
+import type { AddedSupport } from './estimate';
+import { addSupports, estimateReactions, fullPublic, limitPublic } from './estimate';
 import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
 import { C24_BEAMS, PANELS, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
@@ -47,6 +48,8 @@ export interface CalageInput {
   diffusion: boolean;
   /** réactions du calcul complet (groupes d'appuis) à la place de l'estimation instantanée */
   reactions?: Estimate;
+  /** appuis hors des Viewbox ajoutés au calage (pieds des éléments terrasse posés au sol) */
+  extraSupports?: AddedSupport[];
   /** calage choisi par type d'appui ou par appui, plaques de roulage */
   choices?: CalageChoices;
   /** poids propre des plaques de roulage (N/mm²) */
@@ -163,10 +166,11 @@ const typeLabel = (corners: number, middle: boolean, jack = false, stair = false
         : `${corners} angles sur une plaque`;
 
 /** Clé du type d'appui de calage : nombre d'angles (1…4) ou pied central (M, M2 = deux vérins centraux sur une plaque). */
-export const calageTypeKey = (r: GroupReaction, members = 1) => (r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners)));
+export const calageTypeKey = (r: GroupReaction, members = 1) =>
+  r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
 
 export function computeCalage(inp: CalageInput): CalageResult {
-  const est0 = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
+  const est0 = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
   const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
   const est = limit(est0);
@@ -191,26 +195,32 @@ export function computeCalage(inp: CalageInput): CalageResult {
   if (choices.roadway && !roadwayOn) warnings.push('Plaques de roulage : emprise au sol des Viewbox inconnue, non prises en compte.');
   const rw = { mean: roadway.mean, area: roadway.area, load: roadway.load };
   const types: CalageType[] = [];
-  const order = (k: string) => (k === 'E' ? 20 : k.startsWith('M') ? 9 + k.length : Number(k));
+  const order = (k: string) => (k === 'E' ? 20 : k === 'T' ? 18 : k === 'TM' ? 19 : k.startsWith('M') ? 9 + k.length : Number(k));
   for (const [key, all] of [...byType.entries()].sort((a, b) => order(a[0]) - order(b[0]))) {
     const r0 = all[0].reaction;
     const middle = r0.group.middle;
     const jack = !!r0.group.jack;
-    const stair = !!r0.group.stair;
+    const terrace = !!r0.group.terrace;
+    // pied de terrasse : platine de vérin centrée, comme un pied d'escalier
+    const stair = !!r0.group.stair || terrace;
     const n = middle ? all[0].members.length : r0.group.corners;
-    // pied d'escalier : pas de plaque minimale du Prüfbuch (traité comme un pied central)
+    // pied d'escalier : pas de plaque minimale du Prüfbuch (traité comme un pied central) ; terrasse : milieu 55 × 55
     const containers = stair ? 0 : jack ? all[0].members.length : r0.group.corners;
     const geos = new Map(all.map((g) => [g, supportGeometry(g, inp.modules)]));
     // surface de contact du type : la plus petite des appuis du type (côté de la sécurité)
     const smallest = [...geos.values()].reduce((a, g) => (g.contact[0] * g.contact[1] < a.contact[0] * a.contact[1] ? g : a));
     const [a1, a2] = [Math.max(...smallest.contact), Math.min(...smallest.contact)];
+    if (terrace) {
+      const w = 'Pieds des éléments terrasse : platine de vérin 15 × 15 cm supposée (à confirmer).';
+      if (!warnings.includes(w)) warnings.push(w);
+    }
     if (!stair && (jack || middle)) {
       const w = jack ? 'Pieds à vérin : platine 15 × 15 cm supposée (7-309-002, à confirmer).' : 'Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).';
       if (!warnings.includes(w)) warnings.push(w);
     }
-    const baseLabel = typeLabel(n, middle, jack, stair);
-    const unit = stair ? 'pied d’escalier' : jack ? (n > 1 ? 'groupe' : 'vérin') : middle ? 'pied central' : r0.group.corners === 1 ? 'angle' : 'groupe';
-    const contactLabelOf = (g: SupportGeometry) => `${stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
+    const baseLabel = terrace ? (middle ? 'pied central de terrasse' : 'pied d’angle de terrasse') : typeLabel(n, middle, jack, stair);
+    const unit = terrace ? 'pied de terrasse' : stair ? 'pied d’escalier' : jack ? (n > 1 ? 'groupe' : 'vérin') : middle ? 'pied central' : r0.group.corners === 1 ? 'angle' : 'groupe';
+    const contactLabelOf = (g: SupportGeometry) => `${terrace ? 'Pied de terrasse' : stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
     // appuis du type regroupés par calage : automatique, choix du type, choix propre à un appui
     const parts = new Map<string, { refs: LayerRef[] | null; groups: PlateGroup[]; own: boolean }>();
     for (const g of all) {
@@ -242,7 +252,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         commercial: inp.commercial,
       });
       // plaques aux dimensions minimales du Prüfbuch (plan 18-0573-03) : du stock si possible, sinon contreplaqué F40/30 découpé
-      const tp = tuvOn ? tuvPlate(containers, middle || stair) : null;
+      const tp = tuvOn ? tuvPlate(containers, middle || stair, terrace && middle) : null;
       if (tp) {
         const stockOk = inp.stock
           .filter((st) => Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
@@ -312,7 +322,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         return { r, geo, Rk, base: placement === 'flush' ? flushBase : base, flushBase, centeredBase: base, chain, atFlush, atCenter, placement, eccentric, bottom };
       };
       const passes = (layers: SpreadLayer[]) => part.groups.every((g) => evaluate(g, layers).chain.eta <= 1);
-      const conformTuv = (layers: SpreadLayer[]) => tuvConformity(containers, middle || stair, layers)?.ok === true;
+      const conformTuv = (layers: SpreadLayer[]) => tuvConformity(containers, middle || stair, layers, terrace && middle)?.ok === true;
       const auto0 = recommended(d.solutions);
       let autoChosen = auto0 ?? leastBad(d.solutions);
       if (!part.refs && !roadwayOn) {
@@ -364,7 +374,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
           geometry: e.geo,
           plan,
           placement: e.placement,
-          tuv: tuvOn ? tuvConformity(containers, middle || stair, layers) : null,
+          tuv: tuvOn ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null,
         };
       });
       const worst = checks.reduce((a, c) => (c.eta > a.eta ? c : a));
@@ -415,7 +425,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       }
       const standard = verdictOf(worst.eta) !== 'fail' && (custom || !!chosen?.feasible);
       const ids = reactions.map((r) => r.group.id);
-      const tuv = tuvOn ? tuvConformity(containers, middle || stair, layers) : null;
+      const tuv = tuvOn ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null;
       types.push({
         key: pk === 'auto' ? key : `${key}:${pk}`,
         label: part.own ? `${baseLabel} — ${ids.join(', ')}` : baseLabel,
@@ -452,7 +462,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     let best: GroupReaction | undefined;
     let bd = Infinity;
     for (const r of est.reactions) {
-      if (r.group.middle || r.group.stair) continue;
+      if (r.group.middle || r.group.stair || r.group.terrace) continue;
       const d = Math.hypot(r.group.position[0] - p[0], r.group.position[1] - p[1]);
       if (d < bd) [bd, best] = [d, r];
     }
@@ -572,10 +582,10 @@ export interface PublicMax {
 
 /** Public maximal admissible (personnes de `kg` kg) avec le sol et le calage choisis : recherche par dichotomie. */
 export function maxPublic(inp: CalageInput, kg: number): PublicMax | null {
-  const est = inp.reactions ?? estimateReactions(inp.modules, inp.estimate);
+  const est = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
   if (!est.reactions.length || !est.reactions.every((r) => r.combos?.length) || !(kg > 0)) return null;
   const fullPersons = Math.ceil(fullPublic(est) / (kg * 9.81) - 1e-9);
-  const ok = (persons: number) => computeCalage({ ...inp, reactions: est, publicLimit: { persons, kg }, noAdvice: true }).checks.every((c) => c.eta <= 1);
+  const ok = (persons: number) => computeCalage({ ...inp, reactions: est, extraSupports: undefined, publicLimit: { persons, kg }, noAdvice: true }).checks.every((c) => c.eta <= 1);
   if (ok(fullPersons)) return { persons: fullPersons, full: true, empty: false, fullPersons };
   if (!ok(0)) return { persons: 0, full: false, empty: true, fullPersons };
   let lo = 0;

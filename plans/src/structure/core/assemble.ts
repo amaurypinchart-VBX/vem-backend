@@ -7,7 +7,7 @@
 //   · appuis des Viewbox au sol : aux angles (ou aux pieds sur vérins), ressorts horizontaux 50 kN/cm, vertical en
 //     compression seule.
 // Les côtés restés libres reçoivent le vent (intervalles exposés). Fonction pure ; repère monde Y vers le haut.
-import type { EndSpec, FemMember, FemModel, FemNode, FemSupport, Vec3 } from './fem/types';
+import type { EndSpec, FemMember, FemModel, FemNode, FemSupport, SupportDof, Vec3 } from './fem/types';
 import type { ModuleFrame } from '../../core/views';
 import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams } from './library';
 import { materialByKey, steelStrength } from './materials';
@@ -15,7 +15,10 @@ import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } f
 import { viewboxTemplate } from './templates/viewboxEU';
 import type { StairFamily, StairKitParams } from './templates/stair';
 import { stairGeometry } from './templates/stair';
-import { fmtNumber } from './units';
+import { fmtNumber, KN_PER_CM } from './units';
+
+/** raideur horizontale des appuis des annexes SCIA Hoka / Qatar (calage statico) : 50 kN/cm */
+const HOKA_SUPPORT_K = 50 * KN_PER_CM;
 
 export interface PlacedModule {
   id: string;
@@ -602,7 +605,10 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   for (const pm of modules) {
     if (pm.level !== 0) continue;
     const tpl = tplOf.get(pm)!;
-    const kh = pm.params.springs.supportHorizontal;
+    // calage statico : appuis de l'annexe SCIA Hoka / Qatar (50 kN/cm horizontalement, rigides verticalement) ;
+    // sinon ceux du gabarit (Viewbox 5900 : statico 18-0573, 100 kN/cm en X / Y, 1 000 kN/cm en Z)
+    const kh = opt.calibration ? HOKA_SUPPORT_K : pm.params.springs.supportHorizontal;
+    const kv: SupportDof = opt.calibration ? 'fixed' : (pm.params.springs.supportVertical ?? 'fixed');
     const posts = new Map<number, number>();
     const place = (key: string, corner: number, kind: 'corner' | 'foot' | 'middle') => {
       let node = P(pm, key);
@@ -618,7 +624,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         });
         posts.set(corner, node);
       }
-      supports.push({ node, dofs: [kh, 'fixed', kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
+      supports.push({ node, dofs: [kh, kv, kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
       supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks && !raise });
     };
     (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));

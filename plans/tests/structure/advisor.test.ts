@@ -8,7 +8,10 @@ import { checkTimberSpan } from '../../src/structure/core/checks/ec5';
 import { materialByKey } from '../../src/structure/core/materials';
 import { customSectionEntry, customSectionKey, describeMods, libraryWithMods, mergeMods } from '../../src/structure/core/mods';
 import type { StudyInputs } from '../../src/structure/studyRun';
-import { CALC_DEFAULTS, runStudy } from '../../src/structure/studyRun';
+import { CALC_DEFAULTS as DEFAULT_CALC, runStudy } from '../../src/structure/studyRun';
+
+// frottement bois / bois 0,4 (DIN EN 13814 tab. 3) : sans lest, ces petites études glissent
+const CALC_DEFAULTS = { ...DEFAULT_CALC, friction: 0.4 };
 import { createInlineStudyRunner } from '../../src/structure/worker/study';
 import { SEED } from '../../src/structure/library/seed';
 import { diagnose, slidingBallastN } from '../../src/structure/advisor/diagnose';

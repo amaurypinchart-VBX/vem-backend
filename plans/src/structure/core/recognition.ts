@@ -97,6 +97,7 @@ export function proposeFor(category: string | null, accessory: boolean): { assig
   if (category === 'GARDE-CORPS')
     return { assignment: { role: 'load', nature: 'railing', windClosed: false, weight: { value: kgPerM(0.1), unit: 'kg/m' } }, reason: 'catégorie garde-corps : 0,10 kN/m, non habillé' };
   if (category === 'ESCALIER') return { assignment: { role: 'structural', nature: 'stair' }, reason: 'catégorie escalier : gabarit escalier de la bibliothèque' };
+  if (category === 'TERRASSE' || category === 'TERRACE') return { assignment: { role: 'structural', nature: 'terrace' }, reason: 'catégorie terrasse : élément terrasse 5,9 × 2,5 m (statico 18-0573 § 3.5)' };
   if (category === 'STRUCTURE') return { assignment: { role: 'structural', nature: 'beam' }, reason: 'catégorie structure : pièce porteuse hors Viewbox' };
   if (accessory) return { assignment: { role: 'load', nature: 'other', windClosed: true, weight: { value: kgPerM(0.5), unit: 'kg/m' } }, reason: 'accessoire de façade : 0,50 kN/m, face fermée au vent' };
   return null;

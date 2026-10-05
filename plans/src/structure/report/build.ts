@@ -21,6 +21,7 @@ import { A4, BRAND, GREY, INK, PAGE, SIZE, VERDICT_COLORS, paginate, r2, renderP
 import { etaLevelsSvg, faceStates, facesSvg, imageSvg, planModules, planSvg, plateSvg, supportsSvg } from './figures';
 import type { Labels, Lang } from './i18n';
 import { LABELS, num } from './i18n';
+import { TUV_LABELS } from './tuvI18n';
 import { ellipsis, textWidth, wrapText } from './metrics';
 import { translate } from './translate';
 
@@ -132,6 +133,7 @@ export function comboFormula(c: Combination, lang: Lang, cases?: ReadonlySet<str
 export function buildReport(inp: ReportInput): ReportOutput {
   const { lang, run, study } = inp;
   const L: Labels = LABELS[lang];
+  const T = TUV_LABELS[lang];
   const E = (s: string) => translate(lang, s);
   const N = (v: number, d = 2) => num(lang, v, d);
   const kN = (v: number, d = 1) => `${N(v / 1e3, d)} kN`;
@@ -177,7 +179,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const moduleDims = entry ? L.approxDims(N(entry.nominal.long / 1e3), N(entry.nominal.short / 1e3), N((entry.params?.topZ ?? 3080) / 1e3)) : '—';
 
   // remarques (avertissements du calcul et du modèle, contrôles du rapport)
-  const remarks: string[] = [...new Set([...inp.sceneWarnings, ...run.warnings, ...(inp.calage?.warnings ?? [])].map(E))];
+  // longueur > 30 m : consigne du § 1.2, pas de doublon dans les remarques
+  const remarks: string[] = [...new Set([...inp.sceneWarnings, ...run.warnings.filter((w) => !w.startsWith('Longueur de l’installation')), ...(inp.calage?.warnings ?? [])].map(E))];
   if (H > 8000 + 1 && loads.windInService < 0.3e-3 - 1e-9) remarks.unshift(L.heightWindWarning(N(H / 1e3, 1), N(loads.windInService * 1e3)));
   if (!inp.bearing) remarks.unshift(L.bearingMissing);
   // structure d'un type de Viewbox modifiée dans la bibliothèque : toujours signalée en tête
@@ -205,7 +208,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.installation, L.modulesOnLevels(s.modules.length, levels)],
       [L.overallDims, overall],
       [L.totalPermanent, `ΣG = ${kN(gTotal, 0)}`],
-      [L.imposed, `${N(loads.live * 1e3)} kN/m²`],
+      [L.imposed, T.imposedLevels(N((loads.liveGround ?? loads.live) * 1e3), N(loads.live * 1e3))],
       [L.windInOut, `${N(loads.windInService * 1e3)} / ${N(loads.windOutOfService * 1e3)} kN/m²`],
       ...(inp.bearing ? ([[L.bearing, L.bearingValue(N(inp.bearing.value, 0), inp.bearing.label)]] as Array<[string, string]>) : []),
     ],
@@ -215,6 +218,14 @@ export function buildReport(inp: ReportInput): ReportOutput {
     return [E(familyName(f.family)), String(f.count), etaCell(state?.eta, !!state?.blocked || !state), E(idx.items[f.item].label), state?.combo ?? '—'];
   });
   familyRows.push([L.plywoodRow, '—', etaCell(run.plywood.eta, !!run.plywood.blocked), L.floors, '—']);
+  for (const [label, c] of [
+    [T.facadeTitle, run.facade],
+    [T.terraceTitle, run.terraces],
+  ] as const)
+    if (c?.records.length) {
+      const worst = c.records.reduce((a, r) => ((r.eta ?? 0) > (a.eta ?? 0) ? r : a));
+      familyRows.push([label, String(c.records.length), c.failures.length ? verdictCell('fail') : etaCell(c.eta), E(worst.title), '—']);
+    }
   familyRows.push([L.slidingRow(N(mu)), '—', etaCell(run.stability.sliding.eta), `${L.slidingValue(N(run.stability.sliding.muReq), N(mu))}`, run.stability.sliding.combo || '—']);
   familyRows.push([L.overturningRow, '—', verdictCell(run.stability.overturning.verdict), overturnText, run.stability.overturning.combos.join(', ') || '—']);
   if (inp.calage) familyRows.push([L.groundRow, String(inp.calage.estimate.groups.length), ground.verdict === 'fail' ? verdictCell('fail') : etaCell(ground.eta), ground.worst ? E(ground.worst.label) : '—', ground.worst?.reactions[0]?.combo ?? '—']);
@@ -309,6 +320,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
       (study.loads.snowRoof ?? 0) > 0 ? L.snowNoteWith : L.snowNote,
       ...(closedNames ? [L.closedLevelsNote(closedNames)] : []),
       ...(levels >= 3 ? [L.beyondPrufbuch(levels)] : []),
+      ...(dimA > 30000 + 1 ? [T.beyond30m(N(dimA / 1e3, 1))] : []),
+      T.frictionNote(N(mu), mu >= 0.6 - 1e-9),
+      T.ballastGroundOnly,
       ...(() => {
         const feet = (run.stairFeet ?? []).filter((f) => f.lifted || f.need > 0);
         return feet.length ? [L.stairFeetInstruction(feet.map((f) => `${E(f.label)} ${f.lifted ? `(${L.stairFeetLifted})` : `${N(Math.ceil(f.need / GRAVITY / 10) * 10, 0)} kg`}`).join(', '))] : [];
@@ -400,7 +414,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({
     t: 'kv',
     rows: [
-      [L.liveText, `qk = ${N(loads.live * 1e3)} kN/m²`],
+      [T.liveGround, `qk = ${N((loads.liveGround ?? loads.live) * 1e3)} kN/m²`],
+      [T.liveUpper, `qk = ${N(loads.live * 1e3)} kN/m²`],
       ...(loads.roofAccessible ? ([[L.roofLive, `qk = ${N(loads.roofLive * 1e3)} kN/m²`]] as Array<[string, string]>) : []),
       ...(closedNames ? ([[L.closedLevels, closedNames]] as Array<[string, string]>) : []),
     ],
@@ -416,7 +431,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'para', text: L.inServiceTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: [['q', `${N(loads.windInService * 1e3)} kN/m² (h = ${N(H / 1e3, 1)} m)`]], labelWidth: 20 });
   blocks.push({ t: 'para', text: L.outOfServiceTitle, bold: true, after: 0.6 });
-  blocks.push({ t: 'para', text: L.outOfServiceText });
+  blocks.push({ t: 'para', text: loads.windProfile ? T.outOfService[loads.windProfile] : L.outOfServiceText });
   blocks.push({ t: 'kv', rows: [['qp,k', `${N(loads.windOutOfService * 1e3)} kN/m²`]], labelWidth: 20 });
   blocks.push({ t: 'para', text: L.cpTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: L.cpRows.map(([a, b]) => [lang === 'en' ? a.replace(/(\d),(\d)/g, '$1.$2') : a, b] as [string, string]), labelWidth: 26 });
@@ -590,8 +605,25 @@ export function buildReport(inp: ReportInput): ReportOutput {
       });
     }
   }
+  // 3.x éléments de façade et garde-corps, éléments terrasse (justifications du calcul de type statico 18-0573)
+  for (const [title, intro, c] of [
+    [T.facadeTitle, T.facadeIntro, run.facade],
+    [T.terraceTitle, T.terraceIntro, run.terraces],
+  ] as const) {
+    if (!c || !(c.records.length || c.notes.length || c.failures.length || c.missing.length)) continue;
+    h2(title);
+    blocks.push({ t: 'para', text: intro });
+    for (const m of [...c.failures, ...c.missing]) blocks.push({ t: 'para', text: E(m), color: VERDICT_COLORS.fail });
+    if (c.records.length) blocks.push({ t: 'eta', eta: c.eta });
+    for (const r of c.records) blocks.push(rec(r));
+    if (c.notes.length) {
+      blocks.push({ t: 'para', text: T.facadeNotes, bold: true, after: 0.6 });
+      blocks.push({ t: 'bullets', items: c.notes.map(E), size: SIZE.small });
+    }
+  }
   // 3.x sol et calage
   h2(L.ground);
+  blocks.push({ t: 'para', text: T.groundRule, size: SIZE.small });
   blocks.push({ t: 'para', text: L.groundIntro(study.sls ? L.groundSourceSls : L.groundSourceStatico) });
   if (inp.calage?.publicLimit) {
     const p = inp.calage.publicLimit;
@@ -805,7 +837,11 @@ function annex(blocks: Block[], inp: ReportInput, L: Labels, E: (s: string) => s
   blocks.push({ t: 'series', prefix: 'B' });
   blocks.push({ t: 'heading', level: 1, num: 'B', text: L.annex });
   blocks.push({ t: 'heading', level: 2, num: 'B.1', text: L.b1 });
-  blocks.push({ t: 'para', text: L.modelCounts(s.fem.nodes.length, s.fem.members.length, s.fem.supports.length) });
+  // raideurs des appuis du modèle (premier appui de Viewbox : 18-0573 100 / 1 000 kN/cm, calage statico 50 kN/cm / rigide)
+  const sup = s.fem.supports.find((_, k) => s.supportMeta[k]?.kind !== 'stair') ?? s.fem.supports[0];
+  const kh = typeof sup?.dofs[0] === 'number' ? N(sup.dofs[0] / 100, 0) : '—';
+  const kv = typeof sup?.dofs[1] === 'number' ? N(sup.dofs[1] / 100, 0) : null;
+  blocks.push({ t: 'para', text: L.modelCounts(s.fem.nodes.length, s.fem.members.length, s.fem.supports.length, kh, kv) });
   // sections et matériaux utilisés
   const secKeys = [...new Set(s.meta.filter((m) => !m.massless).map((m) => m.section))];
   const cm = (v: number | undefined, p: number, d = 1) => (v === undefined ? '—' : N(v / 10 ** p, d));
@@ -857,7 +893,7 @@ function annex(blocks: Block[], inp: ReportInput, L: Labels, E: (s: string) => s
     }),
   });
   blocks.push({ t: 'para', text: L.springsTitle, bold: true, after: 0.6 });
-  blocks.push({ t: 'kv', rows: L.springs, labelWidth: 44, size: SIZE.small });
+  blocks.push({ t: 'kv', rows: L.springs(kh, kv), labelWidth: 44, size: SIZE.small });
   // longueurs par famille
   const fam = new Map<string, { n: number; len: number }>();
   s.meta.forEach((m, k) => {

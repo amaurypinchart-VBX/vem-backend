@@ -139,12 +139,18 @@ function memberRemedies(run: StudyRun, items: Array<{ item: CheckItem; eta: numb
     out.push({
       id: 'plates',
       title: T ? 'Plus de plats d’empilement (soulèvement)' : 'Plus de plats d’empilement',
-      detail: 'Passer à 6 plats par grand côté et 3 par petit côté sur les faces extérieures (perçages et écrous à prévoir). Un angle enfermé entre d’autres Viewbox n’a pas de plat : l’ouvrir sur l’extérieur ou le lester.',
+      detail: 'Passer à 6 plats par grand côté et 3 par petit côté sur les faces extérieures (perçages et écrous à prévoir). Un angle enfermé entre d’autres Viewbox n’a pas de plat : l’ouvrir sur l’extérieur ou contreventer.',
       action: 'simulate',
       special: true,
       changes: { mods: { stackPlates: { perLongSide: 6, perShortSide: 3 } } },
     });
-    out.push({ id: 'upper-ballast', title: 'Lester la Viewbox du dessus', detail: T ? 'Le soulèvement de la Viewbox du dessus vient du vent : un lest sur son plancher le réduit (quantité à chercher par le calcul).' : 'Plus de poids sur la Viewbox du dessus = plus de frottement entre les deux Viewbox (quantité à chercher par le calcul).', action: 'ballast', modules: modules.slice(0, 4) });
+    // pas de lest sur la Viewbox du dessus : statico 18-0573 § 5.3, lest seulement au rez-de-chaussée
+    out.push({
+      id: 'brace-stack',
+      title: T ? 'Contreventer la Viewbox du dessus (soulèvement)' : 'Contreventer la Viewbox du dessus',
+      detail: 'Le lest n’est admis que dans les Viewbox du rez-de-chaussée (statico 18-0573 § 5.3) : contre le soulèvement ou le glissement de la Viewbox du dessus, ajouter des plats d’empilement ou contreventer ses côtés.',
+      action: 'info',
+    });
   }
   if (kind === 'bolt')
     out.push({ id: 'bolt', title: 'Boulon supplémentaire entre les Viewbox', detail: 'Ajouter une position de boulon (perçage sur site, comme statico Qatar § 3.8) : le calcul compte les M16 × 150 classe 10.9 dans les écrous M20 soudés.', action: 'info' });
@@ -257,7 +263,9 @@ export function diagnose(run: StudyRun, opts: { friction: number }): Issue[] {
         action: 'simulate',
         changes: { mods: { ballast: ground.map((module) => ({ module, kg: per })) } },
       });
-    remedies.push({ id: 'friction', title: 'Frottement justifié (tapis anti-glisse)', detail: 'Avec des tapis caoutchouc certifiés sous le calage, μ 0,6 est courant : à justifier par la fiche du fabricant.', action: 'simulate', changes: { calc: { friction: 0.6 } } });
+    if (opts.friction < 0.6)
+      remedies.push({ id: 'friction', title: 'Frottement 0,6 (bois sur béton, couches vissées)', detail: 'DIN EN 13814 tab. 3 / statico 18-0573 § 4 : μ 0,6 entre bois et béton ou asphalte si les couches de bois sont vissées entre elles et au pied.', action: 'simulate', changes: { calc: { friction: 0.6 } } });
+    else remedies.push({ id: 'friction', title: 'Frottement plus élevé (tapis anti-glisse)', detail: 'Au-delà de μ 0,6 : tapis caoutchouc certifiés sous le calage, à justifier par la fiche du fabricant.', action: 'info' });
     remedies.push({ id: 'stops', title: 'Butées ou ancrages', detail: 'Butées contre un élément fixe ou ancrages : non modélisés.', action: 'info' });
     issues.push({
       id: 'sliding',

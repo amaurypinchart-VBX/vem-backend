@@ -9,7 +9,7 @@ export function withMods(inp: StudyInputs, mods: StudyMods | undefined): { input
   if (!mods || !Object.keys(mods).length) return { inputs: inp, added: [], warnings: [] };
   const r = applyMods({ modules: inp.modules, edgeItems: inp.edgeItems, sections: inp.sections }, mods);
   return {
-    inputs: { ...inp, modules: r.modules, edgeItems: r.edgeItems, sections: r.sections, library: libraryWithMods(inp.library, mods), bracings: r.bracings, raise: r.raise },
+    inputs: { ...inp, modules: r.modules, edgeItems: r.edgeItems, sections: r.sections, library: libraryWithMods(inp.library, mods), bracings: r.bracings, raise: r.raise, blocking: [...inp.blocking, ...r.errors] },
     added: r.added,
     warnings: r.warnings,
   };
