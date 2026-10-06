@@ -23,6 +23,12 @@ export interface SvgToDxfOptions {
   mode: 'paper' | 'real';
   /** fenêtres de vue de la planche (mode « real ») */
   viewports?: DxfViewport[];
+  /** document où écrire (jeu entier dans un seul DXF), sinon un nouveau */
+  doc?: DxfDocument;
+  /** décalage de la planche dans le DXF (unités DXF), coin bas gauche */
+  origin?: { x: number; y: number };
+  /** nom de la planche écrit au-dessus de son bloc (calque VBX-PLANCHES) */
+  label?: string;
 }
 
 /** Matrice affine SVG [a, b, c, d, e, f] : x' = a x + c y + e, y' = b x + d y + f. */
@@ -413,7 +419,9 @@ const numAttr = (el: Element, name: string, def = 0) => {
 };
 
 export function svgToDxf(svg: Element, opt: SvgToDxfOptions): DxfDocument {
-  const doc = new DxfDocument();
+  const doc = opt.doc ?? new DxfDocument();
+  const x0 = opt.origin?.x ?? 0;
+  const y0 = opt.origin?.y ?? 0;
   const vps = new Map((opt.viewports ?? []).filter((v) => v.scale > 0).map((v) => [v.id, v]));
   const S = Math.max(1, ...[...vps.values()].map((v) => v.scale));
   const H = opt.paper.h;
@@ -421,13 +429,13 @@ export function svgToDxf(svg: Element, opt: SvgToDxfOptions): DxfDocument {
 
   /** mm papier → unités DXF (y vers le haut), et facteur d'échelle de la sortie. */
   const mapper = (vpId: string | null): { at: (x: number, y: number) => [number, number]; k: number } | null => {
-    if (!real) return { at: (x, y) => [x, H - y], k: 1 };
+    if (!real) return { at: (x, y) => [x0 + x, y0 + H - y], k: 1 };
     const vp = vpId ? vps.get(vpId) : undefined;
     if (!vp) return null;
     const cx = vp.rect.x + vp.rect.w / 2;
     const cy = vp.rect.y + vp.rect.h / 2;
     const s = vp.scale;
-    return { at: (x, y) => [cx * S + (x - cx) * s, (H - cy) * S - (y - cy) * s], k: s };
+    return { at: (x, y) => [x0 + cx * S + (x - cx) * s, y0 + (H - cy) * S - (y - cy) * s], k: s };
   };
 
   const byId = (id: string): Element | null => svg.querySelector(`[id="${id.replace(/"/g, '')}"]`);
@@ -688,7 +696,13 @@ export function svgToDxf(svg: Element, opt: SvgToDxfOptions): DxfDocument {
   // le SVG racine est en mm papier (viewBox 0 0 w h)
   const vb = (svg.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
   if (vb.length === 4 && vb[2] > 0 && Math.abs(vb[2] - opt.paper.w) > 1e-6) root.m = [opt.paper.w / vb[2], 0, 0, opt.paper.h / vb[3], -vb[0] * (opt.paper.w / vb[2]), -vb[1] * (opt.paper.h / vb[3])];
+  const start = doc.entityCount;
   walk(svg, root);
+  if (opt.label && doc.entityCount > start) {
+    // 10 mm papier au-dessus de la planche, majuscules de 7 mm papier
+    const k = real ? S : 1;
+    doc.text(x0, y0 + (H + 10) * k, opt.label, { style: doc.textStyle('VBX-SANS-GRAS', FONT_FILES['SANS-GRAS']), height: 7 * k }, { layer: 'VBX-PLANCHES', color: 0 });
+  }
   return doc;
 }
 

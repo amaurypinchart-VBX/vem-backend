@@ -33,8 +33,10 @@ const n = await page.locator('.sheet-thumb').count();
 for (const [scope, mode, file] of [
   ['La planche affichée', 'Planche complète', 'planche.dxf'],
   ['La planche affichée', 'Vues en grandeur réelle', 'planche-reelle.dxf'],
-  ['Tout le jeu', 'Vues en grandeur réelle', 'jeu-reel.zip'],
-  ['Tout le jeu', 'Planche complète', 'jeu.zip'],
+  ['un \\.zip avec', 'Vues en grandeur réelle', 'jeu-reel.zip'],
+  ['un \\.zip avec', 'Planche complète', 'jeu.zip'],
+  ['dans un seul', 'Planche complète', 'jeu-complet.dxf'],
+  ['dans un seul', 'Vues en grandeur réelle', 'jeu-complet-reel.dxf'],
 ]) {
   await page.getByRole('button', { name: '⬇ DXF', exact: true }).click();
   const dlg = page.getByRole('dialog', { name: 'Export DXF' });

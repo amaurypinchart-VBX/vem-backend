@@ -12,7 +12,7 @@ import { DEFAULT_LINE_STYLE } from '../src/linework/types';
 import type { Linework2D } from '../src/linework/types';
 import type { Vec3 } from '../src/core/views';
 import { clipPolyline, parseColor, parsePath, parseTransform } from '../src/sheets/dxf/svgToDxf';
-import { sheetDxf, zipDxf } from '../src/sheets/dxf/export';
+import { setDxf, sheetDxf, zipDxf } from '../src/sheets/dxf/export';
 import { aciOf, lineweightOf } from '../src/sheets/dxf/writer';
 import { unzipSync, strFromU8 } from 'fflate';
 
@@ -268,5 +268,43 @@ describe('DXF : grandeur réelle', () => {
     const z = unzipSync(zipDxf([f, f]));
     expect(Object.keys(z)).toEqual(['P-001_Jeu_A1.1_grandeur-reelle.dxf', 'P-001_Jeu_A1.1_grandeur-reelle_2.dxf']);
     expect(strFromU8(z['P-001_Jeu_A1.1_grandeur-reelle.dxf'])).toBe(f.dxf);
+  });
+});
+
+describe('DXF : tout le jeu dans un seul fichier', () => {
+  const second: Sheet = { ...sheet, id: 's2', number: 'A1.2', title: 'Short side' };
+  const cover: Sheet = { ...sheet, id: 's0', number: 'A0.1', title: 'Cover', items: sheet.items.filter((i) => i.type !== 'viewport' && i.type !== 'dimension') };
+  const render = (s: Sheet) => renderToStaticMarkup(createElement(SheetSvg, { sheet: s, titleBlock: emptyTitleBlock(), notes: '', legend, viewData: () => ({ lw, basis }) }));
+  const set = [cover, sheet, second].map((s) => ({ sheet: s, markup: render(s) }));
+
+  it('planches côte à côte, 100 mm papier entre deux, nom de chaque planche au-dessus', () => {
+    const f = setDxf(set, 'paper', () => true, 'P-001_Jeu')!;
+    save('jeu-complet.dxf', f.dxf);
+    expect(f.name).toBe('P-001_Jeu_jeu-complet_planches.dxf');
+    expect(f.sheets).toBe(3);
+    const ents = entities(f.dxf);
+    const labels = ents.filter((e) => get(e, 8) === 'VBX-PLANCHES');
+    expect(labels.map((e) => get(e, 1))).toEqual(['A0.1 Cover', 'A1.1 Extract - Plan View - Façade « é »', 'A1.2 Short side']);
+    expect(labels.map((e) => Number(get(e, 10)))).toEqual([0, 941, 1882]);
+    // la silhouette de la 3e planche = celle de la planche seule décalée de 2 × (841 + 100)
+    const alone = entities(sheetDxf(sheet, render(sheet), 'paper', () => true, 'X')!.dxf).find((e) => get(e, 8) === 'VBX-VUE-SILHOUETTE')!;
+    const third = ents.filter((e) => get(e, 8) === 'VBX-VUE-SILHOUETTE')[1];
+    all(third, 10).forEach((x, i) => expect(x).toBeCloseTo(all(alone, 10)[i] + 1882, 6));
+    all(third, 20).forEach((y, i) => expect(y).toBeCloseTo(all(alone, 20)[i], 6));
+  });
+
+  it('grandeur réelle : planches sans vue ignorées, blocs à l’échelle de leur plus grande vue', () => {
+    const f = setDxf(set, 'real', () => true, 'P-001_Jeu')!;
+    save('jeu-complet-reel.dxf', f.dxf);
+    expect(f.name).toBe('P-001_Jeu_jeu-complet_grandeur-reelle.dxf');
+    expect(f.sheets).toBe(2);
+    const sils = entities(f.dxf).filter((e) => get(e, 8) === 'VBX-VUE-SILHOUETTE');
+    expect(sils).toHaveLength(2);
+    expect(Math.min(...all(sils[1], 10)) - Math.min(...all(sils[0], 10))).toBeCloseTo((841 + 100) * 25, 6);
+    for (const s of sils) expect(Math.max(...all(s, 10)) - Math.min(...all(s, 10))).toBeCloseTo(5900, 2);
+  });
+
+  it('rien à exporter : null', () => {
+    expect(setDxf([set[0]], 'real', () => true, 'X')).toBeNull();
   });
 });

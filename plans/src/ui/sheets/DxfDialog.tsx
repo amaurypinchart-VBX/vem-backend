@@ -1,14 +1,17 @@
-// Choix de l'export DXF : planche affichée ou tout le jeu, planche à l'échelle papier ou vues en grandeur réelle.
+// Choix de l'export DXF : planche affichée, tout le jeu (un seul .dxf ou un .zip), planche à l'échelle papier ou vues en grandeur réelle.
 import { useEffect, useState } from 'react';
 import type { DxfMode } from '../../sheets/dxf/export';
 
+/** « sheet » : la planche affichée ; « zip » : un .dxf par planche dans un .zip ; « single » : tout le jeu dans un seul .dxf. */
+export type DxfScope = 'sheet' | 'zip' | 'single';
+
 export interface DxfChoice {
-  all: boolean;
+  scope: DxfScope;
   mode: DxfMode;
 }
 
 export function DxfDialog({ sheetLabel, sheetCount, onExport, onClose }: { sheetLabel: string; sheetCount: number; onExport: (c: DxfChoice) => void; onClose: () => void }) {
-  const [all, setAll] = useState(false);
+  const [scope, setScope] = useState<DxfScope>('sheet');
   const [mode, setMode] = useState<DxfMode>('paper');
   useEffect(() => {
     // la fenêtre garde le clavier : les raccourcis de l'éditeur ne touchent pas la planche derrière
@@ -33,11 +36,15 @@ export function DxfDialog({ sheetLabel, sheetCount, onExport, onClose }: { sheet
           <fieldset>
             <legend>Planches</legend>
             <label className="check">
-              <input type="radio" name="dxf-scope" checked={!all} onChange={() => setAll(false)} />
+              <input type="radio" name="dxf-scope" checked={scope === 'sheet'} onChange={() => setScope('sheet')} />
               La planche affichée ({sheetLabel}) — un fichier .dxf
             </label>
             <label className="check">
-              <input type="radio" name="dxf-scope" checked={all} onChange={() => setAll(true)} />
+              <input type="radio" name="dxf-scope" checked={scope === 'single'} onChange={() => setScope('single')} />
+              Tout le jeu ({sheetCount} planche{sheetCount > 1 ? 's' : ''}) dans un seul .dxf — planches côte à côte, dans l’ordre du jeu
+            </label>
+            <label className="check">
+              <input type="radio" name="dxf-scope" checked={scope === 'zip'} onChange={() => setScope('zip')} />
               Tout le jeu ({sheetCount} planche{sheetCount > 1 ? 's' : ''}) — un .zip avec un .dxf par planche
             </label>
           </fieldset>
@@ -65,7 +72,7 @@ export function DxfDialog({ sheetLabel, sheetCount, onExport, onClose }: { sheet
           <button className="btn small ghost" onClick={onClose}>
             Annuler
           </button>
-          <button className="btn small primary" onClick={() => onExport({ all, mode })}>
+          <button className="btn small primary" onClick={() => onExport({ scope, mode })}>
             ⬇ Télécharger
           </button>
         </div>

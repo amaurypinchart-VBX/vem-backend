@@ -448,19 +448,20 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     }
   };
 
-  /** DXF de la planche affichée ou du jeu (un .zip) : planche à l'échelle papier ou vues en grandeur réelle. */
-  const exportDxf = async ({ all, mode }: DxfChoice) => {
+  /** DXF de la planche affichée ou du jeu (un seul .dxf ou un .zip) : planche à l'échelle papier ou vues en grandeur réelle. */
+  const exportDxf = async ({ scope, mode }: DxfChoice) => {
     setDxfOpen(false);
-    const sheets = all ? doc.sheets : [sheet];
+    const sheets = scope === 'sheet' ? [sheet] : doc.sheets;
     try {
       setBusy('DXF : calcul des vues…');
       const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
       await Promise.all(vps.map((vp) => bank.load(vp)));
       const missing = vps.filter((vp) => !bank.data(vp).lw).length;
       if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (absentes du DXF). Exporter quand même ?`)) return;
-      const { sheetDxf, zipDxf, safeFileName } = await import('../../sheets/dxf/export');
+      const { sheetDxf, setDxf, zipDxf, safeFileName } = await import('../../sheets/dxf/export');
       const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}`;
-      const files = [];
+      const computed = (vp: ViewportItem) => !!bank.data(vp).lw;
+      const rendered = [];
       for (const [n, s] of sheets.entries()) {
         setBusy(`DXF : planche ${n + 1}/${sheets.length}…`);
         await new Promise((r) => setTimeout(r, 0));
@@ -474,13 +475,19 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             viewData={(vp) => bank.data(vp)}
           />,
         );
-        const f = sheetDxf(s, markup, mode, (vp) => !!bank.data(vp).lw, base);
-        if (f) files.push(f);
+        rendered.push({ sheet: s, markup });
       }
-      if (!files.length) {
-        window.alert(mode === 'real' ? 'Aucune vue calculée à exporter en grandeur réelle (planches sans vue 2D).' : 'Rien à exporter.');
+      const empty = () => window.alert(mode === 'real' ? 'Aucune vue calculée à exporter en grandeur réelle (planches sans vue 2D).' : 'Rien à exporter.');
+      if (scope === 'single') {
+        setBusy('DXF : assemblage du jeu…');
+        await new Promise((r) => setTimeout(r, 0));
+        const f = setDxf(rendered, mode, computed, base);
+        if (!f) return empty();
+        downloadBlob(f.name, new Blob([f.dxf], { type: 'application/dxf' }));
         return;
       }
+      const files = rendered.map((r) => sheetDxf(r.sheet, r.markup, mode, computed, base)).filter((f) => f !== null);
+      if (!files.length) return empty();
       if (files.length === 1) downloadBlob(files[0].name, new Blob([files[0].dxf], { type: 'application/dxf' }));
       else downloadBlob(safeFileName(`${base}_DXF${mode === 'real' ? '_grandeur-reelle' : ''}.zip`), new Blob([zipDxf(files) as BlobPart], { type: 'application/zip' }));
     } catch (e) {
