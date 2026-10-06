@@ -74,7 +74,8 @@ export function placeStair(
   const across: 0 | 2 = axis === 0 ? 2 : 0;
   const [clo, chi] = across === 0 ? [b[0], b[3]] : [b[2], b[5]];
   const target = b[4] - 1250;
-  let best: { pm: PlacedModule; side: Side; level: 'floor' | 'roof'; H: number; d: number; along: [number, number]; depth: number } | null = null;
+  type Candidate = { pm: PlacedModule; side: Side; level: 'floor' | 'roof'; H: number; d: number; along: [number, number]; depth: number };
+  const candidates: Candidate[] = [];
   for (const pm of modules) {
     const p = pm.params;
     const W = p.y1 + p.y0;
@@ -101,25 +102,33 @@ export function placeStair(
       const options: Array<['floor' | 'roof', number]> = [];
       if (pm.level > 0) options.push(['floor', pm.origin[1] + p.floorZ]);
       options.push(['roof', pm.origin[1] + p.topZ]);
-      for (const [level, H] of options) {
-        const d = Math.abs(H - target) + (level === 'roof' ? 1 : 0);
-        // profondeur de l'escalier depuis la ligne de système de la rive (5 mm à l'intérieur de la face)
-        const depth = (sign > 0 ? chi - faceAcross : faceAcross - clo) + 5;
-        if (!best || d < best.d) best = { pm, side: sd.side, level, H, d, along: [Math.min(a0, a1), Math.max(a0, a1)], depth };
-      }
+      // profondeur de l'escalier depuis la ligne de système de la rive (5 mm à l'intérieur de la face)
+      const depth = (sign > 0 ? chi - faceAcross : faceAcross - clo) + 5;
+      for (const [level, H] of options) candidates.push({ pm, side: sd.side, level, H, d: Math.abs(H - target) + (level === 'roof' ? 1 : 0), along: [Math.min(a0, a1), Math.max(a0, a1)], depth });
     }
   }
-  if (!best) return { stair: null, reason: `${label} : aucun côté de Viewbox contre l’escalier (≤ 30 cm) — escalier non calculé.` };
-  if (best.d > 600) return { stair: null, reason: `${label} : hauteur du palier (≈ ${Math.round(target)} mm) sans plancher de Viewbox correspondant — escalier non calculé.` };
-  // bout du palier : le plus haut (sommets), sinon celui qui est le long de la Viewbox
+  if (!candidates.length) return { stair: null, reason: `${label} : aucun côté de Viewbox contre l’escalier (≤ 30 cm) — escalier non calculé.` };
+  const dMin = Math.min(...candidates.map((c) => c.d));
+  if (dMin > 600) return { stair: null, reason: `${label} : hauteur du palier (≈ ${Math.round(target)} mm) sans plancher de Viewbox correspondant — escalier non calculé.` };
+  // Viewbox au bon niveau le long de l'escalier (plusieurs quand l'escalier longe une rangée de Viewbox)
+  const level = candidates.filter((c) => c.d <= dMin + 50);
+  // bout du palier : le plus haut (sommets), sinon celui qui est le long des Viewbox
   const h = heights?.(axis);
   let landingAtLow: boolean;
   let warning: string | undefined;
   if (h && Number.isFinite(h.low) && Number.isFinite(h.high) && Math.abs(h.high - h.low) > 300) landingAtLow = h.low > h.high;
   else {
-    landingAtLow = Math.abs(lo - best.along[0]) <= Math.abs(hi - best.along[1]);
-    warning = `${label} : sens de la volée déduit de la position contre ${best.pm.id} (à vérifier).`;
+    const span: [number, number] = [Math.min(...level.map((c) => c.along[0])), Math.max(...level.map((c) => c.along[1]))];
+    landingAtLow = Math.abs(lo - span[0]) <= Math.abs(hi - span[1]);
+    warning = `${label} : sens de la volée déduit de la position contre ${level.map((c) => c.pm.id).join(', ')} (à vérifier).`;
   }
+  // la Viewbox qui porte le palier = celle dont le côté reçoit les deux attaches (≈ 303 mm du bout du palier + écart du kit)
+  const s1 = landingAtLow ? lo + 303 : hi - 303;
+  const s2 = landingAtLow ? s1 + kit.boltSpacing : s1 - kit.boltSpacing;
+  const attach: [number, number] = [Math.min(s1, s2), Math.max(s1, s2)];
+  const cover = (c: Candidate) => Math.min(attach[1], c.along[1]) - Math.max(attach[0], c.along[0]);
+  let best = level[0];
+  for (const c of level) if (cover(c) > cover(best) + 1 || (Math.abs(cover(c) - cover(best)) <= 1 && c.d < best.d)) best = c;
   const run: Vec3 = axis === 0 ? [landingAtLow ? 1 : -1, 0, 0] : [0, 0, landingAtLow ? 1 : -1];
   const landingEnd = landingAtLow ? lo : -hi;
   // dimensions mesurées sur la boîte de l'objet (garde-corps et débords du kit déduits) : largeur entre limons, volée

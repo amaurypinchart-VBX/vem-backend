@@ -211,6 +211,21 @@ function checkCustomVerticalLink(c: ConnectionSet, j: CustomJoint, f: Forces, la
   };
 }
 
+/**
+ * Effort horizontal laissé aux plats (ou pièces) après frottement μ · ΣRz, par direction. Résistances des deux
+ * directions : reste = max(0, H − μ · ΣRz) réparti selon u et v au prorata (statico). Une direction sans plat
+ * (côtés contre d'autres Viewbox) : le frottement la reprend entièrement (cercle de Coulomb, |Hv| ≤ μ · ΣRz) et
+ * les plats de l'autre direction prennent le reste, |Hu| − √((μ · ΣRz)² − Hv²).
+ */
+function slideRest(Hu: number, Hv: number, F: number, RU: number, RV: number): { u: number; v: number; rest: number } {
+  const [au, av] = [Math.abs(Hu), Math.abs(Hv)];
+  const H = Math.hypot(au, av);
+  const rest = Math.max(0, H - F);
+  if (RU > 0 === RV > 0 || rest <= 0) return { u: H > 0 ? (au * rest) / H : 0, v: H > 0 ? (av * rest) / H : 0, rest };
+  if (RU > 0) return av <= F ? { u: Math.max(0, au - Math.sqrt(F * F - av * av)), v: 0, rest } : { u: au, v: av - F, rest };
+  return au <= F ? { u: 0, v: Math.max(0, av - Math.sqrt(F * F - au * au)), rest } : { u: au - F, v: av, rest };
+}
+
 export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
   if (c.custom) return checkCustomStackShear(c, c.custom, sum, outer, label, combination);
   const p = stackPlates(c);
@@ -218,12 +233,10 @@ export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number;
   // effort selon u (grand côté) : plats des petits côtés extérieurs ; selon v : plats des grands côtés extérieurs
   const nU = ((outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0)) * p.perShort * 0.5;
   const nV = ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5;
-  const H = Math.hypot(sum.Hu, sum.Hv);
-  const rest = Math.max(0, H - p.mu * sum.C);
-  const k = H > 0 ? rest / H : 0;
-  const one = (h: number, n: number) => (h * k <= 1 ? 0 : n > 0 ? (h * k) / (n * p.HRd!) : Infinity);
-  const etaU = one(Math.abs(sum.Hu), nU);
-  const etaV = one(Math.abs(sum.Hv), nV);
+  const { u, v, rest } = slideRest(sum.Hu, sum.Hv, p.mu * sum.C, nU, nV);
+  const one = (h: number, n: number) => (h <= 1 ? 0 : n > 0 ? h / (n * p.HRd!) : Infinity);
+  const etaU = one(u, nU);
+  const etaV = one(v, nV);
   const eta = Math.max(etaU, etaV);
   return {
     eta,
@@ -233,8 +246,8 @@ export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number;
       key: `stack.${label}`,
       title: `Glissement entre Viewbox empilées — ${label}`,
       clause: 'statico 24-0571 § 3.8–3.9',
-      formula: 'H = √(ΣHu² + ΣHv²) ; reste = max(0, H − μ · ΣRz) réparti selon u et v ; Hu,reste / (nu · HRd), Hv,reste / (nv · HRd) ; n = moitié des plats des côtés extérieurs (un plat par sens)',
-      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(p.mu, 1)} ; reste ${kN(rest)} ; nu = ${f2(nU, 1)}, nv = ${f2(nV, 1)} plat(s) de ${kN(p.HRd)} → ${f2(etaU)} / ${f2(etaV)}`,
+      formula: 'H = √(ΣHu² + ΣHv²) ; reste = max(0, H − μ · ΣRz) réparti selon u et v (direction sans plat : reprise par le frottement, cercle de Coulomb) ; Hu,reste / (nu · HRd), Hv,reste / (nv · HRd) ; n = moitié des plats des côtés extérieurs (un plat par sens)',
+      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(p.mu, 1)} ; reste ${kN(rest)} (Hu ${kN(u)}, Hv ${kN(v)}) ; nu = ${f2(nU, 1)}, nv = ${f2(nV, 1)} plat(s) de ${kN(p.HRd)} → ${f2(etaU)} / ${f2(etaV)}`,
       eta,
       combination,
     },
@@ -251,12 +264,10 @@ function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: numb
   const plV = j.replaces || !p.HRd ? 0 : ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5 * p.HRd;
   const RU = pieces * j.slideLong + plU;
   const RV = pieces * j.slideShort + plV;
-  const H = Math.hypot(sum.Hu, sum.Hv);
-  const rest = Math.max(0, H - mu * sum.C);
-  const k = H > 0 ? rest / H : 0;
-  const one = (h: number, R: number) => (h * k <= 1 ? 0 : R > 0 ? (h * k) / R : Infinity);
-  const etaU = one(Math.abs(sum.Hu), RU);
-  const etaV = one(Math.abs(sum.Hv), RV);
+  const { u, v, rest } = slideRest(sum.Hu, sum.Hv, mu * sum.C, RU, RV);
+  const one = (h: number, R: number) => (h <= 1 ? 0 : R > 0 ? h / R : Infinity);
+  const etaU = one(u, RU);
+  const etaV = one(v, RV);
   const eta = Math.max(etaU, etaV);
   return {
     eta,
@@ -267,7 +278,7 @@ function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: numb
       title: `Glissement entre Viewbox empilées (« ${j.name} ») — ${label}`,
       clause: `méthode des composants, EN 1993-1-8 — ${j.qualification}`,
       formula: `reste = max(0, H − μ · ΣRz) ; Hu,reste / (4 · n · Rd,u${j.replaces ? '' : ' + plats'}), Hv,reste / (4 · n · Rd,v${j.replaces ? '' : ' + plats'})`,
-      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(mu, 1)} ; reste ${kN(rest)} ; ${f2(pieces, 0)} pièce(s) : Ru = ${kN(RU)}, Rv = ${kN(RV)} → ${f2(etaU)} / ${f2(etaV)}`,
+      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(mu, 1)} ; reste ${kN(rest)} (Hu ${kN(u)}, Hv ${kN(v)}) ; ${f2(pieces, 0)} pièce(s) : Ru = ${kN(RU)}, Rv = ${kN(RV)} → ${f2(etaU)} / ${f2(etaV)}`,
       eta,
       combination,
     },
