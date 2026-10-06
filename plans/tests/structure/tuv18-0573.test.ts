@@ -62,6 +62,9 @@ describe('statico 18-0573 : hypothèses', () => {
   it('longueur de l’installation : 6 Viewbox bout à bout = 35,4 m (> 30 m)', () => {
     const mods = Array.from({ length: 6 }, (_, k) => vbx(`V${k}`, k * 5.9, 0));
     expect(installationLength(mods) / 1e3).toBeCloseTo(35.4, 1);
+    // trois ensembles séparés de 11,8 m (Xiaomi Paris 2026) : 11,8 m, pas la distance entre les deux bouts
+    const apart = [0, 20, 40].flatMap((x) => [vbx(`A${x}`, x, 0), vbx(`B${x}`, x + 5.9, 0), vbx(`C${x}`, x, 2.5, 1)]);
+    expect(installationLength(apart) / 1e3).toBeCloseTo(11.8, 1);
   });
 });
 

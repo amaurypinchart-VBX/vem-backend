@@ -1,6 +1,8 @@
 // Enchaînement du calcul complet d'une étude (étape « 3. Calcul ») : assemblage du modèle, cas de charge,
 // combinaisons, calcul aux éléments finis + vérifications (Workers), stabilité, verdict, réactions pour le calage.
 // Sans React : utilisé par la page et par les tests.
+import type { P2 } from './core/estimate';
+import { polygonDistance } from '../core/installUnits';
 import type { CornerSupport, BracingSpec, ModelMember, PlacedModule, PlacedStair, RaiseSpec, StructuralModel } from './core/assemble';
 import { assembleStructure } from './core/assemble';
 import type { Ec3Method } from './core/checks/ec3';
@@ -176,7 +178,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
 }
 
 /**
- * Planchers en contreplaqué du gabarit (une couche, côté de la sécurité) : étages comme statico 24-0571 § 3.5 (une
+ * Planchers en contreplaqué du gabarit (couches croisées vissées du gabarit, une seule en calage statico) : étages comme statico 24-0571 § 3.5 (une
  * travée, kmod 0,8, pression intérieure en option) ; rez-de-chaussée chargé à plus que les étages (5,0 kN/m²) comme
  * statico 18-0573 § 3.4.4, qui fixe cette charge : trois travées, kmod 0,9, qEd = 1,35 · (g + q).
  */
@@ -195,7 +197,9 @@ export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'optio
  */
 export function plywoodStrip(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>, target: 'ground' | 'upper', q: number): PlywoodResult {
   const tpl = inp.modules[0]?.params.plywood;
-  const common = { material: tpl?.material ?? 'CP-F20/15', thickness: tpl?.thickness ?? 18, span: tpl?.maxSpan ?? 800, gammaM: DEFAULTS.timberGammaM.value, g: inp.loads.floorFinish + (inp.loads.floorExtra ?? 0) };
+  // couches du plancher (2 × 18 mm croisées sur la Viewbox) ; une seule dans le calage statico, comme ses notes
+  const layers = inp.options.calibration ? 1 : (tpl?.floorLayers ?? 1);
+  const common = { material: tpl?.material ?? 'CP-F20/15', thickness: tpl?.thickness ?? 18, layers, span: tpl?.maxSpan ?? 800, gammaM: DEFAULTS.timberGammaM.value, g: inp.loads.floorFinish + (inp.loads.floorExtra ?? 0) };
   if (target === 'upper' || !(q > inp.loads.live))
     return checkPlywoodStrip({
       ...common,
@@ -274,9 +278,13 @@ export function facadeItems(inp: Pick<StudyInputs, 'edgeItems' | 'modules' | 'lo
 }
 
 /** Plus grande dimension en plan de l'installation (mm), dans les axes des Viewbox. */
+/**
+ * Longueur de l'installation (mm, dans ses axes) : plus grande longueur d'un ensemble de Viewbox reliées entre elles
+ * (empreintes à moins de 300 mm en plan, empilées comprises) ; des ensembles séparés ne s'additionnent pas.
+ */
 export function installationLength(modules: readonly PlacedModule[]): number {
   if (!modules.length) return 0;
-  const pts = modules.flatMap((m) => {
+  const corners = modules.map((m) => {
     const L = m.params.x0 + m.params.x1;
     const W = m.params.y0 + m.params.y1;
     return [
@@ -284,14 +292,18 @@ export function installationLength(modules: readonly PlacedModule[]): number {
       [L, 0],
       [L, W],
       [0, W],
-    ].map(([a, b]) => [m.origin[0] + m.u[0] * a + m.v[0] * b, m.origin[2] + m.u[2] * a + m.v[2] * b]);
+    ].map(([a, b]) => [m.origin[0] + m.u[0] * a + m.v[0] * b, m.origin[2] + m.u[2] * a + m.v[2] * b] as P2);
   });
+  const parent = modules.map((_, i) => i);
+  const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+  for (let i = 0; i < modules.length; i++) for (let j = i + 1; j < modules.length; j++) if (root(i) !== root(j) && polygonDistance(corners[i], corners[j]) <= 300) parent[root(j)] = root(i);
   const u = modules[0].u;
   const ax: Array<[number, number]> = [
     [u[0], u[2]],
     [-u[2], u[0]],
   ];
-  return Math.max(...ax.map(([x, z]) => Math.max(...pts.map((p) => p[0] * x + p[1] * z)) - Math.min(...pts.map((p) => p[0] * x + p[1] * z))));
+  const length = (pts: P2[]) => Math.max(...ax.map(([x, z]) => Math.max(...pts.map((p) => p[0] * x + p[1] * z)) - Math.min(...pts.map((p) => p[0] * x + p[1] * z))));
+  return Math.max(...[...new Set(modules.map((_, i) => root(i)))].map((r) => length(corners.flatMap((c, i) => (root(i) === r ? c : [])))));
 }
 
 /** Empreinte des entrées : un résultat est périmé dès qu'elle change. */

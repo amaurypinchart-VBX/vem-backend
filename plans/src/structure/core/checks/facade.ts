@@ -146,7 +146,9 @@ export function checkFacade(inp: FacadeInput): ElementChecks {
         notes.push(`Vitrages 44.1 du rez-de-chaussée : flèche ${f(w, 0)} mm > 25 mm sous le vent (aptitude au service non satisfaite, résistance assurée) — à évaluer par l’exploitant (statico 18-0573 § 3.6.3.1)`);
     }
     if (t44.length && !bad.length) notes.push(`${t44.join(', ')} : verre 44.1 seulement au rez-de-chaussée sans risque de chute`);
-    notes.push('Les fenêtres coulissantes vitrées existantes ne sont pas admises (statico 18-0573 § 1.2)');
+    // seulement si le modèle contient des fenêtres coulissantes (nom de l'article)
+    if (inp.items.some((i) => /coulissant|sliding|schiebe/i.test(i.label)))
+      notes.push('Les fenêtres coulissantes vitrées existantes ne sont pas admises (statico 18-0573 § 1.2)');
   }
 
   if (walls.length) {

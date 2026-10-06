@@ -37,8 +37,9 @@ describe('calcul complet d’une étude', () => {
     expect(run.verdict.verdict).toBe('fail');
     const ok = await runStudy({ ...base, options: { ...CALC_DEFAULTS, friction: 0.6 } }, createInlineStudyRunner());
     expect(['ok', 'limit']).toContain(ok.verdict.verdict);
-    expect(run.plywood.eta).toBeGreaterThan(0.8); // qEd avec pression intérieure ≈ 5,6 kN/m²
-    expect(run.plywood.eta).toBeLessThan(0.95);
+    // qEd avec pression intérieure ≈ 5,6 kN/m², 2 couches croisées de 18 mm (une seule couche : 0,8 à 0,95)
+    expect(run.plywood.eta).toBeGreaterThan(0.4);
+    expect(run.plywood.eta).toBeLessThan(0.475);
     expect(run.loads.cases.find((c) => c.id === 'G3')!.resultant[1]).toBeCloseTo(-1.75 * 5890, 6);
     // calage : 6 groupes (4 angles seuls + 2 paires au raccord), réactions du calcul utilisées telles quelles
     expect(run.ground.groups.map((g) => g.corners).sort()).toEqual([1, 1, 1, 1, 2, 2]);

@@ -33,5 +33,11 @@ describe('escalier le long d’une rangée de Viewbox', () => {
     expect(r.parts.Hv).toBe(0);
     // Hv plus grand que le frottement : rien ne le retient
     expect(checkStackShear(c, { Hu: 10e3, Hv: 3e3, C: 20e3 }, middle, 'S').eta).toBe(Infinity);
+    // les 4 Viewbox du dessus boulonnées entre elles glissent d'un bloc : plats des 8 petits côtés et des 2 grands
+    // côtés extérieurs du groupe (4 plats par grand côté, moitié par sens)
+    const group = { modules: ['A', 'B', 'C', 'D'], shortSides: 8, longSides: 2 };
+    const g = checkStackShear(c, { Hu: 0, Hv: 30e3, C: 100e3 }, middle, 'S', undefined, group);
+    expect(g.eta).toBeCloseTo((30 - 10) / (2 * 4 * 0.5 * 5.81), 3);
+    expect(g.record?.title).toMatch(/groupe A, B, C, D boulonnées entre elles/);
   });
 });

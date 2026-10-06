@@ -16,6 +16,7 @@ import { lastModification } from '../core/viewboxEdit';
 import { materialByKey } from '../core/materials';
 import { speedLimit } from '../core/wind';
 import type { StudyInputs, StudyRun } from '../studyRun';
+import { installationLength } from '../studyRun';
 import type { CapacityCriterion } from '../capacity';
 import type { Block, Cell, LaidPage, TableCell } from './doc';
 import { A4, BRAND, GREY, INK, PAGE, SIZE, VERDICT_COLORS, paginate, r2, renderPage, svgLine, svgRect, svgText, tocEntries, verdictIcon, watermarkSvg, wordmark } from './doc';
@@ -176,6 +177,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const pts = mods.flatMap((m) => m.corners);
   const ext = (a: number[]) => Math.max(...pts.map((p) => proj(p, a))) - Math.min(...pts.map((p) => proj(p, a)));
   const [dimA, dimB] = [ext(ax.x), ext(ax.y)].sort((a, b) => b - a);
+  // plus grand ensemble de Viewbox reliées (des ensembles séparés ne s'additionnent pas)
+  const lengthMax = installationLength(study.modules);
   const overall = L.approxDims(N(dimA / 1e3, 1), N(dimB / 1e3, 1), N(H / 1e3, 1));
   const moduleDims = entry ? L.approxDims(N(entry.nominal.long / 1e3), N(entry.nominal.short / 1e3), N((entry.params?.topZ ?? 3080) / 1e3)) : '—';
 
@@ -360,7 +363,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       (study.loads.snowRoof ?? 0) > 0 ? L.snowNoteWith : L.snowNote,
       ...(closedNames ? [L.closedLevelsNote(closedNames)] : []),
       ...(levels >= 3 ? [L.beyondPrufbuch(levels)] : []),
-      ...(dimA > 30000 + 1 ? [T.beyond30m(N(dimA / 1e3, 1))] : []),
+      ...(lengthMax > 30000 + 1 ? [T.beyond30m(N(lengthMax / 1e3, 1))] : []),
       T.frictionNote(N(mu), mu >= 0.6 - 1e-9),
       T.ballastGroundOnly,
       ...(() => {

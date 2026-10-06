@@ -211,6 +211,9 @@ function checkCustomVerticalLink(c: ConnectionSet, j: CustomJoint, f: Forces, la
   };
 }
 
+/** « · groupe VBX-13, VBX-14 boulonnées entre elles » */
+const groupText = (g?: StackGroup) => (g ? ` · groupe ${g.modules.join(', ')} boulonnées entre elles` : '');
+
 /**
  * Effort horizontal laissé aux plats (ou pièces) après frottement μ · ΣRz, par direction. Résistances des deux
  * directions : reste = max(0, H − μ · ΣRz) réparti selon u et v au prorata (statico). Une direction sans plat
@@ -226,13 +229,21 @@ function slideRest(Hu: number, Hv: number, F: number, RU: number, RV: number): {
   return au <= F ? { u: 0, v: Math.max(0, av - Math.sqrt(F * F - au * au)), rest } : { u: au - F, v: av, rest };
 }
 
-export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
-  if (c.custom) return checkCustomStackShear(c, c.custom, sum, outer, label, combination);
+/** Viewbox du dessus boulonnées entre elles qui glissent d'un bloc : nombre de petits / grands côtés extérieurs du groupe. */
+export interface StackGroup {
+  modules: string[];
+  shortSides: number;
+  longSides: number;
+}
+
+export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string, group?: StackGroup): JointResult {
+  if (c.custom) return checkCustomStackShear(c, c.custom, sum, outer, label, combination, group);
   const p = stackPlates(c);
   if (!usable(c.plate) || !p.HRd || p.mu === undefined) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
   // effort selon u (grand côté) : plats des petits côtés extérieurs ; selon v : plats des grands côtés extérieurs
-  const nU = ((outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0)) * p.perShort * 0.5;
-  const nV = ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5;
+  const [shortSides, longSides] = group ? [group.shortSides, group.longSides] : [(outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0), (outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)];
+  const nU = shortSides * p.perShort * 0.5;
+  const nV = longSides * p.perLong * 0.5;
   const { u, v, rest } = slideRest(sum.Hu, sum.Hv, p.mu * sum.C, nU, nV);
   const one = (h: number, n: number) => (h <= 1 ? 0 : n > 0 ? h / (n * p.HRd!) : Infinity);
   const etaU = one(u, nU);
@@ -244,7 +255,7 @@ export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number;
     parts: { Hu: etaU, Hv: etaV },
     record: {
       key: `stack.${label}`,
-      title: `Glissement entre Viewbox empilées — ${label}`,
+      title: `Glissement entre Viewbox empilées — ${label}${groupText(group)}`,
       clause: 'statico 24-0571 § 3.8–3.9',
       formula: 'H = √(ΣHu² + ΣHv²) ; reste = max(0, H − μ · ΣRz) réparti selon u et v (direction sans plat : reprise par le frottement, cercle de Coulomb) ; Hu,reste / (nu · HRd), Hv,reste / (nv · HRd) ; n = moitié des plats des côtés extérieurs (un plat par sens)',
       withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(p.mu, 1)} ; reste ${kN(rest)} (Hu ${kN(u)}, Hv ${kN(v)}) ; nu = ${f2(nU, 1)}, nv = ${f2(nV, 1)} plat(s) de ${kN(p.HRd)} → ${f2(etaU)} / ${f2(etaV)}`,
@@ -255,13 +266,14 @@ export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number;
 }
 
 /** Glissement entre Viewbox empilées avec une liaison personnalisée : pièces aux 4 angles (et plats s'ils restent). */
-function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
+function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string, group?: StackGroup): JointResult {
   if (j.slideLong === null || j.slideShort === null) return blocked(`Liaison « ${j.name} » : résistance au glissement incomplète (${j.missing.slice(0, 3).join(' ; ')})`);
   const p = stackPlates(c);
   const mu = p.mu ?? 0.1;
-  const pieces = 4 * j.perCorner;
-  const plU = j.replaces || !p.HRd ? 0 : ((outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0)) * p.perShort * 0.5 * p.HRd;
-  const plV = j.replaces || !p.HRd ? 0 : ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5 * p.HRd;
+  const pieces = 4 * j.perCorner * (group?.modules.length ?? 1);
+  const [shortSides, longSides] = group ? [group.shortSides, group.longSides] : [(outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0), (outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)];
+  const plU = j.replaces || !p.HRd ? 0 : shortSides * p.perShort * 0.5 * p.HRd;
+  const plV = j.replaces || !p.HRd ? 0 : longSides * p.perLong * 0.5 * p.HRd;
   const RU = pieces * j.slideLong + plU;
   const RV = pieces * j.slideShort + plV;
   const { u, v, rest } = slideRest(sum.Hu, sum.Hv, mu * sum.C, RU, RV);
@@ -275,7 +287,7 @@ function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: numb
     parts: { Hu: etaU, Hv: etaV },
     record: {
       key: `stack.${label}`,
-      title: `Glissement entre Viewbox empilées (« ${j.name} ») — ${label}`,
+      title: `Glissement entre Viewbox empilées (« ${j.name} ») — ${label}${groupText(group)}`,
       clause: `méthode des composants, EN 1993-1-8 — ${j.qualification}`,
       formula: `reste = max(0, H − μ · ΣRz) ; Hu,reste / (4 · n · Rd,u${j.replaces ? '' : ' + plats'}), Hv,reste / (4 · n · Rd,v${j.replaces ? '' : ' + plats'})`,
       withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(mu, 1)} ; reste ${kN(rest)} (Hu ${kN(u)}, Hv ${kN(v)}) ; ${f2(pieces, 0)} pièce(s) : Ru = ${kN(RU)}, Rv = ${kN(RV)} → ${f2(etaU)} / ${f2(etaV)}`,

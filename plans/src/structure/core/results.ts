@@ -33,6 +33,11 @@ export interface CheckItem {
   members: number[];
   /** appui du modèle (pieds à vérin) */
   support?: number;
+  /**
+   * glissement entre Viewbox empilées : Viewbox du dessus boulonnées entre elles (côte à côte, même sens), qui glissent
+   * d'un bloc ; liaisons d'angle de tout le groupe avec le signe de leurs axes u / v dans le repère de cette Viewbox
+   */
+  stackGroup?: { modules: string[]; links: Array<{ member: number; su: number; sv: number }> };
 }
 
 export interface ItemState {
@@ -133,9 +138,32 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
     if (!links.has(m.module)) links.set(m.module, []);
     links.get(m.module)!.push(k);
   });
+  // Viewbox du dessus boulonnées entre elles (boulons de rive, axes parallèles) : groupes qui glissent d'un bloc
+  const axis = (module: string, side: 'u1' | 'v1') => s.faces.find((f) => f.module === module && f.side === side)?.normal;
+  const dot2 = (a?: readonly number[], b?: readonly number[]) => (a && b ? a[0] * b[0] + a[2] * b[2] : 0);
+  const parent = new Map([...links.keys()].map((m) => [m, m]));
+  const find = (m: string): string => (parent.get(m) === m ? m : find(parent.get(m)!));
+  for (const m of s.meta) {
+    if (m.family !== 'bolt') continue;
+    const [a, b] = m.line.slice('bolt:'.length).split('/');
+    if (!links.has(a) || !links.has(b) || Math.abs(dot2(axis(a, 'u1'), axis(b, 'u1'))) < 0.99) continue;
+    parent.set(find(a), find(b));
+  }
   for (const [module, ks] of links) {
     const below = s.meta[ks[0]].label.split(' / ')[0];
-    items.push({ id: `stack:${module}`, kind: 'stack', family: 'Glissement entre Viewbox empilées', label: `${below} / ${module} · plats d’empilement`, module, members: ks });
+    const group = [...links.keys()].filter((m) => find(m) === find(module));
+    const [u, v] = [axis(module, 'u1'), axis(module, 'v1')];
+    const stackGroup =
+      group.length > 1
+        ? {
+            modules: group,
+            links: group.flatMap((m) => {
+              const [su, sv] = [Math.sign(dot2(axis(m, 'u1'), u)) || 1, Math.sign(dot2(axis(m, 'v1'), v)) || 1];
+              return links.get(m)!.map((member) => ({ member, su, sv }));
+            }),
+          }
+        : undefined;
+    items.push({ id: `stack:${module}`, kind: 'stack', family: 'Glissement entre Viewbox empilées', label: `${below} / ${module} · plats d’empilement`, module, members: ks, ...(stackGroup ? { stackGroup } : {}) });
   }
   // escaliers : accroches des limons, attaches du palier, vérins Layher des montants
   for (const st of s.stairs ?? []) {
@@ -237,15 +265,24 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
   // Viewbox modifiée par l'étude : ses assemblages recalculés / indicatifs / inconnus
   const cons = (item.module && ctx.moduleConnections?.[item.module]) || ctx.connections;
   if (item.kind === 'stack') {
-    // somme des 4 liaisons d'angle (même repère local : z selon u, y selon v de la Viewbox du dessus)
+    // somme des 4 liaisons d'angle (même repère local : z selon u, y selon v de la Viewbox du dessus) ; Viewbox
+    // boulonnées entre elles avec les mêmes assemblages : tout le groupe, plats de ses faces extérieures
+    const consOf = (m: string) => ctx.moduleConnections?.[m] || ctx.connections;
+    const g = item.stackGroup?.modules.every((m) => consOf(m) === cons) ? item.stackGroup : undefined;
     const sum = { Hu: 0, Hv: 0, C: 0 };
-    for (const mk of item.members) {
-      const f0 = result.members[mk].stations[0];
-      sum.Hu += f0.Vz;
-      sum.Hv += f0.Vy;
+    for (const { member, su, sv } of g?.links ?? item.members.map((member) => ({ member, su: 1, sv: 1 }))) {
+      const f0 = result.members[member].stations[0];
+      sum.Hu += su * f0.Vz;
+      sum.Hv += sv * f0.Vy;
       sum.C += Math.max(0, -f0.N);
     }
-    const j = checkStackShear(cons, sum, outer, item.label, combo.id);
+    const sides = (m: string) => s.outerSides?.get(m) ?? { u0: true, u1: true, v0: true, v1: true };
+    const group = g && {
+      modules: g.modules,
+      shortSides: g.modules.reduce((a, m) => a + (sides(m).u0 ? 1 : 0) + (sides(m).u1 ? 1 : 0), 0),
+      longSides: g.modules.reduce((a, m) => a + (sides(m).v0 ? 1 : 0) + (sides(m).v1 ? 1 : 0), 0),
+    };
+    const j = checkStackShear(cons, sum, outer, item.label, combo.id, group);
     return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');

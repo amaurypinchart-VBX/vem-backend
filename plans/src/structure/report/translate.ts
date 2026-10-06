@@ -307,6 +307,8 @@ const PHRASES: Rule[] = [
   ['angle sans plat d’empilement (ses deux côtés sont contre d’autres Viewbox) : le soulèvement n’est retenu par rien', 'Ecke ohne Stapellasche (beide Seiten an anderen Viewboxen): Abheben nicht gehalten', 'corner without stacking plate (both sides against other units): uplift not restrained'],
   ['Glissement entre Viewbox empilées', 'Gleiten zwischen gestapelten Viewboxen', 'Sliding between stacked units'],
   [' · plats d’empilement', ' · Stapellaschen', ' · stacking plates'],
+  [' boulonnées entre elles', ' untereinander verschraubt', ' bolted together'],
+  [' · groupe ', ' · Gruppe ', ' · group '],
   ['T soulèvement sans plat', 'T Abheben ohne Lasche', 'T uplift without plate'],
   ['H sans plat dans cette direction', 'H ohne Lasche in dieser Richtung', 'H without plate in this direction'],
   [' reste ', ' Rest ', ' remainder '],
@@ -364,6 +366,8 @@ const PHRASES: Rule[] = [
   ['soulèvement de la Viewbox du dessus, capacité en traction non renseignée', 'Abheben der oberen Viewbox, Zugtragfähigkeit nicht erfasst', 'uplift of the upper Viewbox, tension capacity not recorded'],
   // plancher
   [' — contreplaqué ', ' — Sperrholz ', ' — plywood '],
+  [' ; n couches croisées vissées, non collées : chacune porte qEd / n (valeurs de la direction faible pour chacune) ; η = max(vEd / (n · vRd) ; mEd / (n · mRd))', '; n kreuzweise verschraubte, nicht verklebte Lagen: jede trägt qEd / n (Werte der schwachen Richtung für jede); η = max(vEd / (n · vRd); mEd / (n · mRd))', '; n crossed layers, screwed, not glued: each carries qEd / n (weak-direction values for each); η = max(vEd / (n · vRd); mEd / (n · mRd))'],
+  [/, (\d+) couches croisées/g, ', $1 kreuzweise Lagen', ', $1 crossed layers'],
   [', bande de 1 m', ', 1-m-Streifen', ', 1 m strip'],
   ['résistances du contreplaqué', 'Festigkeiten des Sperrholzes', 'strengths of the plywood'],
   ['Plancher', 'Boden', 'Floor'],

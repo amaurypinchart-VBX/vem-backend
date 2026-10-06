@@ -22,7 +22,7 @@ import { createInlineStudyRunner } from '../../src/structure/worker/study';
 const file = join(__dirname, '..', '..', 'reference-reports', 'Xiaomi_Paris_2026_VEM_20260929-0951.zip');
 
 describe.skipIf(!existsSync(file))('modèle Xiaomi Paris 2026 (escalier contre une rangée de Viewbox empilées)', () => {
-  it('palier porté par VBX-16, escalier et glissement des Viewbox empilées calculés, verdict complet', async () => {
+  it('palier porté par VBX-16, escalier et glissement des Viewbox empilées calculés, verdict complet, longueur par ensemble, plancher 2 couches', async () => {
     const buf = readFileSync(file);
     const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
     const res = await ingest({ fileName: 'xiaomi.zip', data, sha256: 'local', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
@@ -42,5 +42,13 @@ describe.skipIf(!existsSync(file))('modèle Xiaomi Paris 2026 (escalier contre u
     expect(run.verdict.families.filter((f) => f.verdict === 'incomplete')).toEqual([]);
     expect(run.verdict.families.find((f) => /^Limon/.test(f.family))?.eta).toBeGreaterThan(0);
     expect(run.verdict.families.find((f) => f.family === 'Glissement entre Viewbox empilées')?.eta).toBeLessThan(1);
+    // les 4 Viewbox du dessus (VBX-13 à 16) boulonnées entre elles : un seul groupe pour le glissement
+    const stacks = run.index.items.filter((it) => it.kind === 'stack');
+    expect(stacks.map((it) => it.stackGroup?.modules.length)).toEqual([4, 4, 4, 4]);
+    // 3 ensembles séparés, le plus long 11,8 m : pas de remarque « > 30 m » ; pas de fenêtre coulissante dans le modèle
+    expect(run.warnings.filter((w) => /> 30 m/.test(w))).toEqual([]);
+    expect(run.facade.notes.filter((n) => /coulissantes/.test(n))).toEqual([]);
+    // plancher : 2 couches croisées de 18 mm
+    expect(run.plywood.records[0].title).toMatch(/2 couches croisées/);
   }, 600_000);
 });
