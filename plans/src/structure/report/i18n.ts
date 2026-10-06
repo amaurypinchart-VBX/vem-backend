@@ -263,6 +263,26 @@ export interface Labels {
   colFamily: string;
   colMembers: string;
   colLength: string;
+  /** charge d'exploitation maximale admissible (synthèse) */
+  cap: {
+    title: string;
+    intro: string;
+    colLevel: string;
+    colStudy: string;
+    colMax: string;
+    ground: string;
+    upper: string;
+    kinds: { floor: string; structure: string; ground: string };
+    /** « plus de » devant une valeur jamais atteinte */
+    above: string;
+    line: (level: string, kg: string, kN: string, persons: string) => string;
+    governing: (kind: string, detail: string) => string;
+    noLimit: string;
+    footer: string;
+  };
+  /** poids du plafond / sol : part comprise dans le poids pesé, ajout éventuel */
+  finishIncluded: (kN: string) => string;
+  finishExtra: (kN: string) => string;
 }
 
 const FR: Labels = {
@@ -440,7 +460,7 @@ const FR: Labels = {
   modsText: 'L’étude comprend les modifications suivantes, décidées lors de la pré-étude ; elles sont à reporter dans le modèle et sur le plan de montage, et à réaliser sur site :',
   s21: 'Charges permanentes',
   weighed: (k, g) => `Poids pesé d’une Viewbox (plancher, toiture, poteaux, planchers et isolants compris, sans murs ni garde-corps) : G ≈ ${k} kN (${g} kg).`,
-  steelWeight: 'Poids propre des barres : sections et matériaux du modèle, acier 78,5 kN/m³ ; le complément jusqu’au poids pesé est réparti sur les rives du plancher.',
+  steelWeight: 'Poids propre des barres : sections et matériaux du modèle, acier 78,5 kN/m³ ; plafond et sol du modèle ajustés pour que le total soit égal au poids pesé (complément sur les rives du plancher si le modèle est plus léger).',
   ceiling: 'Plafond et isolation',
   walls: 'Murs, vitrages, portes',
   wallsNone: 'aucun',
@@ -593,6 +613,23 @@ const FR: Labels = {
   none: 'aucun',
   calagePlan: 'Plan de calage',
   calagePlanTitle: 'Plan de calage — niveau 0',
+  cap: {
+    title: 'Charge d’exploitation maximale admissible',
+    intro: 'Charge d’exploitation la plus forte que l’installation supporte sur les planchers, Viewbox, assemblages et calage inchangés (les autres charges restant celles de l’étude) : plancher bois par sa formule, structure et sol par des calculs complets à charge croissante.',
+    colLevel: 'Plancher',
+    colStudy: 'Étude',
+    colMax: 'Maximum',
+    ground: 'Rez-de-chaussée',
+    upper: 'Étages',
+    kinds: { floor: 'Plancher bois', structure: 'Structure', ground: 'Sol et calage' },
+    above: 'plus de ',
+    line: (level, kg, kN, persons) => `${level} : jusqu’à ${kg} kg/m² = ${kN} kN/m², soit environ ${persons} personnes de 80 kg par m²`,
+    governing: (kind, detail) => ` — déterminant : ${kind.toLowerCase()}${detail}`,
+    noLimit: ' — aucune limite atteinte jusqu’à cette charge',
+    footer: '« ≈ » : valeur interpolée entre deux calculs ; « > » : aucune limite atteinte jusqu’à cette charge. Le toit d’une Viewbox ne reçoit jamais de public. Ce rapport, ses consignes et son calage restent établis pour la charge de l’étude : une exploitation à une charge plus forte demande un nouveau calcul avec cette charge.',
+  },
+  finishIncluded: (kN) => `gk ≈ ${kN} kN/m², compris dans le poids pesé`,
+  finishExtra: (kN) => ` + ${kN} kN/m² ajoutés`,
 };
 
 const DE: Labels = {
@@ -770,7 +807,7 @@ const DE: Labels = {
   modsText: 'Die Berechnung enthält folgende, in der Vorbemessung festgelegte Änderungen; sie sind in das Modell und den Montageplan zu übernehmen und vor Ort auszuführen:',
   s21: 'Ständige Lasten',
   weighed: (k, g) => `Gewogenes Eigengewicht einer Viewbox (Boden-, Dacheinheit und Stützen inkl. Böden und Dämmung, ohne Wände und Geländer): G ≈ ${k} kN (${g} kg).`,
-  steelWeight: 'Eigengewicht der Stäbe anhand der Material- und Querschnittsdefinitionen, Stahl 78,5 kN/m³; die Differenz zum gewogenen Gewicht wird auf die Bodenrandträger verteilt.',
+  steelWeight: 'Eigengewicht der Stäbe anhand der Material- und Querschnittsdefinitionen, Stahl 78,5 kN/m³; Decke und Boden des Modells so angepasst, dass die Summe dem gewogenen Gewicht entspricht (Ergänzung auf den Bodenrandträgern, wenn das Modell leichter ist).',
   ceiling: 'Deckenverkleidung inkl. Dämmung',
   walls: 'Wände, Verglasungen, Türen',
   wallsNone: 'keine',
@@ -923,6 +960,23 @@ const DE: Labels = {
   none: 'keine',
   calagePlan: 'Unterpallungsplan',
   calagePlanTitle: 'Unterpallungsplan — EG',
+  cap: {
+    title: 'Maximal zulässige Verkehrslast',
+    intro: 'Größte Verkehrslast auf den Böden, die die Anlage bei unveränderten Viewbox, Verbindungen und Unterpallung aufnimmt (übrige Lasten wie in der Berechnung): Holzboden nach Formel, Tragwerk und Baugrund durch vollständige Berechnungen mit steigender Last.',
+    colLevel: 'Boden',
+    colStudy: 'Berechnung',
+    colMax: 'Maximum',
+    ground: 'Erdgeschoss',
+    upper: 'Obergeschosse',
+    kinds: { floor: 'Holzboden', structure: 'Tragwerk', ground: 'Baugrund und Unterpallung' },
+    above: 'über ',
+    line: (level, kg, kN, persons) => `${level}: bis ${kg} kg/m² = ${kN} kN/m², d. h. etwa ${persons} Personen zu 80 kg je m²`,
+    governing: (kind, detail) => ` — maßgebend: ${kind}${detail}`,
+    noLimit: ' — bis zu dieser Last keine Grenze erreicht',
+    footer: '„≈“: zwischen zwei Berechnungen interpolierter Wert; „>“: bis zu dieser Last keine Grenze erreicht. Das Dach einer Viewbox wird nie von Publikum betreten. Dieser Bericht, seine Auflagen und seine Unterpallung gelten für die Last der Berechnung: ein Betrieb mit höherer Last erfordert eine neue Berechnung mit dieser Last.',
+  },
+  finishIncluded: (kN) => `gk ≈ ${kN} kN/m², im gewogenen Gewicht enthalten`,
+  finishExtra: (kN) => ` + ${kN} kN/m² zusätzlich`,
 };
 
 const EN: Labels = {
@@ -1100,7 +1154,7 @@ const EN: Labels = {
   modsText: 'The study includes the following changes decided during the pre-study; they must be carried over to the model and the assembly plan, and carried out on site:',
   s21: 'Permanent loads',
   weighed: (k, g) => `Weighed self-weight of one Viewbox (floor, roof, columns, floors and insulation included, without walls or railings): G ≈ ${k} kN (${g} kg).`,
-  steelWeight: 'Self-weight of the members from the sections and materials of the model, steel 78.5 kN/m³; the difference to the weighed weight is spread over the floor edge beams.',
+  steelWeight: 'Self-weight of the members from the sections and materials of the model, steel 78.5 kN/m³; ceiling and floor of the model adjusted so that the total equals the weighed weight (complement on the floor edge beams if the model is lighter).',
   ceiling: 'Ceiling and insulation',
   walls: 'Walls, glazing, doors',
   wallsNone: 'none',
@@ -1253,6 +1307,23 @@ const EN: Labels = {
   none: 'none',
   calagePlan: 'Packing plan',
   calagePlanTitle: 'Packing plan — ground level',
+  cap: {
+    title: 'Maximum allowable imposed load',
+    intro: 'Highest imposed load on the floors that the installation carries with the same Viewbox, connections and packing (other loads as in the study): timber floor by its formula, structure and ground by complete analyses at increasing load.',
+    colLevel: 'Floor',
+    colStudy: 'Study',
+    colMax: 'Maximum',
+    ground: 'Ground floor',
+    upper: 'Upper floors',
+    kinds: { floor: 'Timber floor', structure: 'Structure', ground: 'Ground and packing' },
+    above: 'over ',
+    line: (level, kg, kN, persons) => `${level}: up to ${kg} kg/m² = ${kN} kN/m², i.e. about ${persons} persons of 80 kg per m²`,
+    governing: (kind, detail) => ` — governing: ${kind.toLowerCase()}${detail}`,
+    noLimit: ' — no limit reached up to this load',
+    footer: '“≈”: value interpolated between two analyses; “>”: no limit reached up to this load. The roof of a Viewbox never carries public. This report, its instructions and its packing are established for the load of the study: operating at a higher load requires a new analysis with that load.',
+  },
+  finishIncluded: (kN) => `gk ≈ ${kN} kN/m², included in the weighed weight`,
+  finishExtra: (kN) => ` + ${kN} kN/m² added`,
 };
 
 export const LABELS: Record<Lang, Labels> = { fr: FR, de: DE, en: EN };

@@ -111,7 +111,7 @@ await shootAll('structure-reconnue');
 await page.locator('button.btn.ghost:visible', { hasText: /×.*Viewbox$/ }).first().click();
 await page.getByText(/^Structure de la Viewbox — /).waitFor();
 await page.waitForTimeout(800);
-const famRows = page.locator('table.list:visible').first().locator('tbody tr');
+const famRows = page.locator('table.list:not(.cap):visible').first().locator('tbody tr');
 console.log('Structure :', (await famRows.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 8));
 await shootAll('structure-gabarit');
 await famRows.filter({ hasText: 'Rives de toiture' }).click();
@@ -152,10 +152,14 @@ console.log(`Calcul complet : ${((Date.now() - t0) / 1000).toFixed(1)} s —`, (
 await shootAll('structure-calcul');
 await page.getByRole('button', { name: /Voir les résultats/ }).click();
 await page.getByText('Par famille').waitFor();
+// charge d'exploitation maximale : cherchée après le calcul (calculs complets à charge croissante)
+t0 = Date.now();
+await page.getByText(/étude à [\d  ]+ kg\/m² → maximum/).first().waitFor({ timeout: 600000 });
+console.log(`Charge maximale (${((Date.now() - t0) / 1000).toFixed(1)} s) :`, (await page.getByText(/étude à [\d  ]+ kg\/m² → maximum/).allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')), '—', (await page.getByText(/^Limité par|^Aucune limite/).allInnerTexts()).join(' / '));
 await page.waitForTimeout(1500);
-console.log('Familles :', (await page.locator('table.list:visible').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 12));
+console.log('Familles :', (await page.locator('table.list:not(.cap):visible').first().locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).slice(0, 12));
 await page.getByText('Les plus sollicités').waitFor();
-await page.locator('table.list').nth(1).locator('tbody tr').first().click();
+await page.locator('table.list:not(.cap)').nth(1).locator('tbody tr').first().click();
 await page.waitForTimeout(400);
 await shootAll('structure-resultats');
 // barres du calcul colorées par taux, clic sur une barre ; relecture de cohérence par l'IA
@@ -225,7 +229,7 @@ await page.getByRole('button', { name: /Relancer le calcul|Lancer le calcul/ }).
 await page.getByRole('button', { name: /Voir les résultats/ }).waitFor({ timeout: 600000 });
 await page.getByRole('button', { name: /Voir les résultats/ }).click();
 await page.getByText('Par famille').waitFor();
-console.log('Famille vérins :', (await page.locator('table.list:visible').first().locator('tbody tr', { hasText: 'Pieds à vérin' }).innerText()).replace(/\s+/g, ' '));
+console.log('Famille vérins :', (await page.locator('table.list:not(.cap):visible').first().locator('tbody tr', { hasText: 'Pieds à vérin' }).innerText()).replace(/\s+/g, ' '));
 await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
 await page.getByText('Plaques de roulage — répartition uniforme').waitFor({ timeout: 120000 });
 console.log('Types d’appui (vérins) :', await page.locator('.card-head .chip').allInnerTexts());

@@ -61,6 +61,7 @@ export function studyFacts(f: FactsInput): Record<string, unknown> {
     charges_ponctuelles: inputs.pointItems.map((p) => ({ objet: p.label, viewbox: p.module, kN: r(p.F / 1e3) })),
     hypotheses: {
       exploitation_kN_m2: r(loads.live * 1e3),
+      exploitation_rdc_kN_m2: r((loads.liveGround ?? loads.live) * 1e3),
       vent_en_service_kN_m2: r(loads.windInService * 1e3),
       vent_hors_service_kN_m2: r(loads.windOutOfService * 1e3),
       vitesse_arret_exploitation_m_s: speedLimit(loads.windInService),
@@ -86,6 +87,14 @@ export function studyFacts(f: FactsInput): Record<string, unknown> {
       combinaison: st[x.item]?.combo ?? null,
     })),
     plancher: { eta: r(run.plywood.eta) },
+    charge_maximale_admissible: (run.capacity?.levels ?? []).map((l) => ({
+      plancher: l.target === 'ground' ? 'rez-de-chaussée' : 'étages',
+      charge_etude_kg_m2: Math.round((l.q0 * 1e6) / 9.81),
+      maximum_kg_m2: Math.round((l.qMax * 1e6) / 9.81),
+      maximum_kN_m2: r(l.qMax * 1e3),
+      aucune_limite_atteinte: l.above,
+      determinant: l.above ? null : { floor: 'plancher bois', structure: 'structure', ground: 'sol et calage' }[l.governing],
+    })),
     stabilite: {
       basculement: L.verdict[run.stability.overturning.verdict],
       glissement: { mu_requis: r(run.stability.sliding.muReq), mu_disponible: inputs.options.friction, eta: r(run.stability.sliding.eta), combinaison: run.stability.sliding.combo },

@@ -1,5 +1,5 @@
 // Test navigateur de l'onglet « 2. Site & hypothèses » expliqué (kg, km/h, neige) : saisie d'une portance de 400 kg/m²,
-// zone de vent, neige, terrasses ; valeurs reprises après rechargement. Captures dans e2e/shots/site-*.png.
+// zone de vent, neige, revêtement de sol ajouté ; valeurs reprises après rechargement. Captures dans e2e/shots/site-*.png.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -47,7 +47,8 @@ await page.getByRole('button', { name: /Allemagne zone 1, plaine/ }).click();
 await page.waitForTimeout(300);
 console.log('Vent hors service :', await row('Tempête à supporter, installation vide').locator('input').inputValue(), 'km/h —', (await page.getByText(/^= [\d,]+ kN\/m²$/).allInnerTexts()).join(' / '));
 console.log('Neige :', (await page.getByText(/^toitures : /).innerText()).trim());
-await page.getByText('Toitures ouvertes au public (terrasses)').click();
+await row('Revêtement de sol en plus (par m²)').locator('input').fill('30');
+console.log('Murs / vitrages :', (await page.getByText(/Dans ce modèle :/).innerText().catch(() => 'aucun objet porté')).trim());
 await page.getByText('Options avancées du calage').click();
 await shootAll('site-saisi');
 await page.waitForTimeout(2600);
@@ -56,6 +57,6 @@ await page.getByRole('button', { name: 'Ouvrir' }).first().click().catch(() => {
 await page.getByRole('button', { name: 'Étude structure' }).click();
 await page.getByRole('button', { name: /2\. Site & hypothèses/ }).click();
 await page.getByText('Poids que le sol supporte (portance)').waitFor();
-console.log('Après rechargement : portance', await row('Poids que le sol supporte (portance)').locator('input').inputValue(), '; neige', await row('Neige au sol sur le site').locator('input').inputValue(), 'kg/m²');
+console.log('Après rechargement : portance', await row('Poids que le sol supporte (portance)').locator('input').inputValue(), '; neige', await row('Neige au sol sur le site').locator('input').inputValue(), 'kg/m² ; sol en plus', await row('Revêtement de sol en plus (par m²)').locator('input').inputValue(), 'kg/m²');
 if (errors.length) throw new Error(`Erreurs navigateur : ${errors.join(' | ')}`);
 await browser.close();

@@ -91,6 +91,8 @@ export interface CalcPanelProps {
   warnings: string[];
   running: boolean;
   progress: { done: number; total: number } | null;
+  /** recherche de la charge maximale admissible en cours (calculs complets) */
+  capProgress?: { done: number; total: number } | null;
   run: StudyRun | null;
   stale: boolean;
   error: string;
@@ -233,6 +235,14 @@ export function CalcPanel(p: CalcPanelProps) {
             <span className="hint">
               {p.progress.done} / {p.progress.total} combinaisons
             </span>
+          </div>
+        )}
+        {!p.running && p.capProgress && (
+          <div className="progress-row">
+            <div className="progress">
+              <div style={{ width: `${(100 * p.capProgress.done) / Math.max(1, p.capProgress.total)}%` }} />
+            </div>
+            <span className="hint">Charge maximale admissible : calculs à charge croissante… (les résultats sont déjà disponibles)</span>
           </div>
         )}
         {p.error && <div className="error-box">{p.error}</div>}

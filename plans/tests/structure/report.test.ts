@@ -91,6 +91,18 @@ describe('rapport de l’étude structure', () => {
   beforeAll(async () => {
     run = await runStudy(inputs, createInlineStudyRunner());
     calage = computeCalage({ ...calageInputFor(), reactions: run.ground });
+    // charge maximale admissible (cherchée après le calcul dans l'application) : imprimée dans la synthèse
+    const label = run.index.items[run.verdict.ranking[0]].label;
+    run = {
+      ...run,
+      capacity: {
+        levels: [
+          { target: 'ground', q0: 5e-3, qMax: 7.85e-3, above: false, governing: 'structure', governingLabel: label, runs: 3, criteria: [{ key: 'floor', q: 8.2e-3, above: false, approx: false }, { key: 'structure', q: 7.85e-3, above: false, approx: false, governing: label }, { key: 'ground', q: 9.1e-3, above: false, approx: true }] },
+          { target: 'upper', q0: 3.5e-3, qMax: 14.7e-3, above: true, governing: 'floor', runs: 4, criteria: [{ key: 'floor', q: 14.7e-3, above: true, approx: false }, { key: 'structure', q: 14.7e-3, above: true, approx: false }] },
+        ],
+        notes: ['Garde-corps : au-delà de 357 kg/m² (3,5 kN/m²) sur une surface bordée de garde-corps, main courante à 1,0 kN/m à justifier (statico 18-0573 § 3.7).'],
+      },
+    };
   }, 180000);
 
   it('mesure des textes : largeurs d’Arimo, coupure des lignes à la largeur', () => {
@@ -157,6 +169,10 @@ describe('rapport de l’étude structure', () => {
     // charges : vitrage lourd, logo
     expect(all).toContain('Vitrage lourd : 1,75 kN/m sur 5,9 m');
     expect(all).toContain('Logo : 0,40 kN');
+    // charge d'exploitation maximale admissible
+    expect(all).toContain('Charge d’exploitation maximale admissible');
+    expect(all).toContain('jusqu’à 800 kg/m²');
+    expect(all).toContain('plus de 1 498 kg/m²');
   });
 
   it('version détaillée : annexe B (sections, cas de charge, combinaisons, vérifications, réactions)', () => {

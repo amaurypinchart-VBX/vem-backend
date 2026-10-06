@@ -8,6 +8,7 @@ import { computeCalage, maxPublic } from '../../structure/core/calage';
 import type { AddedSupport, Estimate, EstimateModule } from '../../structure/core/estimate';
 import { TERRACE } from '../../structure/core/terrace';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
+import { DEFAULTS } from '../../structure/library/defaults';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
 import type { PanelMaterial } from '../../structure/core/ground';
@@ -35,16 +36,16 @@ export interface Hypotheses {
   bearingValue: number;
   bearingUnit: BearingUnit;
   pointLoadKN: number;
+  /** poids pesé d'une Viewbox (kg) : structure, plancher, sol, plafond et isolants compris */
   moduleWeightKg: number;
-  /** poids propre retenu : le plus lourd (modèle ou pesée) ou la pesée exactement */
-  weightMode: 'max' | 'weighed';
-  ceiling: number;
-  floorFinish: number;
+  /** plafond / isolation et revêtement de sol ajoutés en plus du poids pesé (kN/m², 0 = Viewbox standard) */
+  ceilingExtra?: number;
+  floorExtra?: number;
   /** exploitation des étages (kN/m²) */
   live: number;
   /** exploitation du rez-de-chaussée (kN/m²) : 5,0 dans le calcul de type statico 18-0573 (EG 500 kg/m²) */
   liveGround?: number;
-  roofLive: number;
+  /** calage rapide sans modèle seulement : murs, vitrages… par Viewbox (kN) ; une étude les prend dans le modèle */
   extraKN: number;
   windIn: number;
   windOut: number;
@@ -82,12 +83,10 @@ export const DEFAULT_HYP: Hypotheses = {
   bearingUnit: 'kg/m²',
   pointLoadKN: 0,
   moduleWeightKg: 2564,
-  weightMode: 'max',
-  ceiling: 0.35,
-  floorFinish: 0.4,
+  ceilingExtra: 0,
+  floorExtra: 0,
   live: 3.5,
   liveGround: 5,
-  roofLive: 3.5,
   extraKN: 0,
   windIn: 0.2,
   windOut: 0.37,
@@ -127,8 +126,12 @@ function readStored(key: string): Partial<Hypotheses> {
 /** Neige sur les toitures du dernier niveau (N/mm²) : s = 0,8 · sk (EN 1991-1-3, toiture plate). */
 export const roofSnow = (h: Pick<Hypotheses, 'snowKgm2'>) => (0.8 * Math.max(0, h.snowKgm2 ?? 0) * 9.81) / 1e6;
 
-/** Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm) ; `jacks` : 6 pieds à vérin par Viewbox. */
-export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = []): CalageInput {
+/**
+ * Entrées du calcul à partir des hypothèses saisies (unités d'affichage → N, mm) ; `jacks` : 6 pieds à vérin par
+ * Viewbox. Le poids pesé est retenu tel quel (tout compris) ; murs, vitrages… : portés par chaque module d'après le
+ * modèle (`EstimateModule.carried`), ou forfait par Viewbox du calage rapide sans modèle (`withoutModel`).
+ */
+export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
   return {
     modules,
@@ -137,13 +140,16 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       ...ESTIMATE_DEFAULTS,
       loads: {
         moduleWeight: h.moduleWeightKg * 9.81,
-        weightMode: h.weightMode,
-        ceiling: kNm2(h.ceiling),
-        floorFinish: kNm2(h.floorFinish),
+        weightMode: 'weighed',
+        ceiling: DEFAULTS.ceiling.value,
+        floorFinish: DEFAULTS.floorFinish.value,
+        ceilingExtra: kNm2(h.ceilingExtra ?? 0),
+        floorExtra: kNm2(h.floorExtra ?? 0),
         live: kNm2(h.live),
         liveGround: kNm2(h.liveGround ?? DEFAULT_HYP.liveGround!),
-        roofLive: kNm2(h.roofLive),
-        extraPerModule: h.extraKN * 1e3,
+        // le toit d'une Viewbox ne reçoit jamais de public (terrasse posée dessus : `EstimateModule.terrace`)
+        roofLive: 0,
+        extraPerModule: withoutModel ? h.extraKN * 1e3 : 0,
         snowRoof: roofSnow(h),
         terraceG: TERRACE.selfWeight + TERRACE.deck,
       },
@@ -384,9 +390,11 @@ export interface GroundPanelProps {
   jacks?: boolean;
   /** appuis hors des Viewbox (pieds des éléments terrasse posés au sol) */
   extraSupports?: AddedSupport[];
+  /** calage rapide sans modèle : murs, vitrages… saisis en forfait par Viewbox */
+  withoutModel?: boolean;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -425,7 +433,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     }
   }, [hyp, storageKey, hypProp]);
 
-  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks, extraSupports]);
+  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel]);
   useEffect(() => {
     setPending(true);
     const t = setTimeout(() => {
@@ -460,12 +468,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     const bearing = `${N(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' || hyp.bearingUnit === 'kg/m²' ? 0 : 2)} ${hyp.bearingUnit}${hyp.bearingUnit === 'kN/m²' ? '' : ` = ${N(q, q < 10 ? 1 : 0)} kN/m²`}`;
     const levels = Math.max(0, ...modules.map((m) => m.level)) + 1;
     const placement = hyp.platePlacement ?? 'auto';
+    const extras = (hyp.ceilingExtra ?? 0) > 0 || (hyp.floorExtra ?? 0) > 0 ? [((hyp.ceilingExtra ?? 0) * 1000) / 9.81, ((hyp.floorExtra ?? 0) * 1000) / 9.81] : null;
     const T = {
       fr: {
         bearing: ['Portance admissible', `${bearing} (${preset?.label ?? 'saisie'})`],
-        weight: ['Poids d’une Viewbox', `${N(hyp.moduleWeightKg)} kg pesés — retenu : ${hyp.weightMode === 'weighed' ? 'la pesée' : 'le plus lourd (modèle ou pesée)'}`],
-        finishes: ['Plafond / sol', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
-        live: ['Exploitation', `${N(hyp.live, 2)} kN/m² (toitures accessibles ${N(hyp.roofLive, 2)})`],
+        weight: ['Poids d’une Viewbox', `${N(hyp.moduleWeightKg)} kg pesés (plancher, sol, plafond et isolants compris)${extras ? ` + plafond ${N(extras[0])} kg/m² + sol ${N(extras[1])} kg/m² en plus` : ''}`],
+        finishes: ['Murs, vitrages, garde-corps', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg par Viewbox` : 'd’après le modèle, objet par objet'],
+        live: ['Exploitation', `rez-de-chaussée ${N(hyp.liveGround ?? 5, 2)} kN/m², étages ${N(hyp.live, 2)} kN/m²`],
         pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)` : 'charge réglementaire (public libre)'],
         wind: ['Vent en / hors service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
@@ -476,9 +485,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
       },
       de: {
         bearing: ['Zul. Bodenpressung', `${bearing} (${preset?.label ?? 'Eingabe'})`],
-        weight: ['Gewicht einer Viewbox', `${N(hyp.moduleWeightKg)} kg gewogen — angesetzt: ${hyp.weightMode === 'weighed' ? 'die Wägung' : 'das größere (Modell oder Wägung)'}`],
-        finishes: ['Decke / Boden', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
-        live: ['Verkehrslast', `${N(hyp.live, 2)} kN/m² (begehbare Dächer ${N(hyp.roofLive, 2)})`],
+        weight: ['Gewicht einer Viewbox', `${N(hyp.moduleWeightKg)} kg gewogen (inkl. Boden, Bodenbelag, Decke und Dämmung)${extras ? ` + Decke ${N(extras[0])} kg/m² + Boden ${N(extras[1])} kg/m² zusätzlich` : ''}`],
+        finishes: ['Wände, Verglasungen, Geländer', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg je Viewbox` : 'aus dem Modell, Bauteil für Bauteil'],
+        live: ['Verkehrslast', `Erdgeschoss ${N(hyp.liveGround ?? 5, 2)} kN/m², Obergeschosse ${N(hyp.live, 2)} kN/m²`],
         pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; Tragwerk mit der Normlast nachgewiesen)` : 'Normlast (freies Publikum)'],
         wind: ['Wind in / außer Betrieb', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Auflagerkraft für die Fläche', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'charakteristisch (GZG)'],
@@ -489,9 +498,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
       },
       en: {
         bearing: ['Allowable bearing', `${bearing} (${preset?.label ?? 'entered'})`],
-        weight: ['Weight of one Viewbox', `${N(hyp.moduleWeightKg)} kg weighed — used: ${hyp.weightMode === 'weighed' ? 'the weighed value' : 'the heavier (model or weighing)'}`],
-        finishes: ['Ceiling / floor', `${N(hyp.ceiling, 2)} / ${N(hyp.floorFinish, 2)} kN/m²`],
-        live: ['Imposed load', `${N(hyp.live, 2)} kN/m² (accessible roofs ${N(hyp.roofLive, 2)})`],
+        weight: ['Weight of one Viewbox', `${N(hyp.moduleWeightKg)} kg weighed (floor, floor finish, ceiling and insulation included)${extras ? ` + ceiling ${N(extras[0])} kg/m² + floor ${N(extras[1])} kg/m² in addition` : ''}`],
+        finishes: ['Walls, glazing, railings', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg per Viewbox` : 'from the model, item by item'],
+        live: ['Imposed load', `ground floor ${N(hyp.liveGround ?? 5, 2)} kN/m², upper floors ${N(hyp.live, 2)} kN/m²`],
         pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; structure checked with the code load)` : 'code load (free public)'],
         wind: ['Wind in / out of service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Reaction for the area', hyp.staticoConversion ? 'Rz,Ed / 1.35 (statico)' : 'characteristic (SLS)'],
@@ -618,7 +627,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
           {reactions ? 'Réactions : calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico).' : 'Réactions : estimation instantanée (surfaces tributaires) — lancer le calcul complet (étape 3) pour les réactions du modèle 3D.'}
         </div>
       )}
-      {showHypotheses && <HypothesesForm hyp={hyp} setHyp={setHyp} />}
+      {showHypotheses && <HypothesesForm hyp={hyp} setHyp={setHyp} withoutModel={withoutModel} />}
       {!showHypotheses && (
         <div className="card">
           <div className="card-body row" style={{ gap: 10, flexWrap: 'wrap' }}>

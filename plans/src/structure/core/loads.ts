@@ -68,6 +68,12 @@ export interface LoadInputs {
   /** plafond, sol (N/mm²) */
   ceiling: number;
   floorFinish: number;
+  /**
+   * plafond / isolation et revêtement de sol ajoutés à une Viewbox standard (N/mm²) : en plus du poids pesé, jamais
+   * réduits par la pesée
+   */
+  ceilingExtra?: number;
+  floorExtra?: number;
   /** exploitation des planchers des étages et des toitures accessibles (N/mm²) ; H = ratio · V */
   live: number;
   /** exploitation du plancher des Viewbox posées au sol (N/mm²), sinon `live` — statico 18-0573 § 2.2.1 : 5,0 kN/m² */
@@ -240,6 +246,8 @@ export interface LoadModel {
   axes: Axes;
   records: CalcRecord[];
   warnings: string[];
+  /** part du plafond et du sol du modèle retenue pour que barres + plafond + sol = poids pesé (1re Viewbox, ≤ 1) */
+  finishFactor?: number;
 }
 
 /** coefficient de force du vent sur les profilés d'escalier (statico 18-0573 § 3.8.1 : wk = 1,3 · q) */
@@ -294,6 +302,8 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const k = finishFactor.get(pm.id)!;
     if (inp.ceiling * k > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceiling * k, DOWN);
     if (inp.floorFinish * k > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorFinish * k, DOWN);
+    if ((inp.ceilingExtra ?? 0) > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceilingExtra!, DOWN);
+    if ((inp.floorExtra ?? 0) > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorExtra!, DOWN);
     if (inp.roofTerraces?.includes(pm.id) && (inp.terraceG ?? 0) > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.terraceG!, DOWN);
   }
   const terraces = (inp.roofTerraces ?? []).filter((id) => model.modules.some((m) => m.id === id));
@@ -345,7 +355,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
       title: 'Poids d’une Viewbox : modèle et pesée',
       clause: 'statico 24-0571 § 2.1',
       formula: weighed
-        ? 'poids pesé retenu : G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol) = poids pesé'
+        ? 'poids pesé (plancher, sol, plafond et isolants compris) = G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol)'
         : 'G1 (barres, 78,5 kN/m³) + G2 (plafond) + G4 (sol) ≥ poids pesé, sinon complément Gc sur les rives du plancher',
       withValues: weighed
         ? `${n(self / 1e3)} + ${n(k, 2)} · (${n((inp.ceiling * area) / 1e3)} + ${n((inp.floorFinish * area) / 1e3)}) = ${n((self + k * (total - self)) / 1e3)} kN ; pesée ${n(inp.moduleWeight / 1e3)} kN${self > inp.moduleWeight ? ' (barres seules plus lourdes que la pesée : plafond et sol ignorés)' : ''}`
@@ -528,7 +538,8 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     formula: 'w = −cp · q · h / 2 par rive (plancher et toiture) ; cp luv / lee / parallèle',
     withValues: `h = ${n(H / 1e3)} m ; q en service ${n(inp.windInService * 1e3)} kN/m², hors service ${n(inp.windOutOfService * 1e3)} kN/m² ; cp ${n(inp.cp.windward, 1)} / ${n(inp.cp.leeward, 1)} / ${n(inp.cp.parallel, 1)}`,
   });
-  return { cases, axes, records, warnings };
+  const k0 = model.modules[0] ? finishFactor.get(model.modules[0].id) : undefined;
+  return { cases, axes, records, warnings, ...(k0 !== undefined ? { finishFactor: k0 } : {}) };
 }
 
 /** Combinaison linéaire de cas de charge → cas du solveur. */

@@ -109,15 +109,14 @@ export function parseChanges(inp: Json, library: InputsSource['library']): Varia
   const hyp: Record<string, unknown> = {};
   if (h.exploitation_kN_m2 !== undefined) hyp.live = num(h.exploitation_kN_m2, 'exploitation', 0, 20);
   if (h.exploitation_rdc_kN_m2 !== undefined) hyp.liveGround = num(h.exploitation_rdc_kN_m2, 'exploitation du rez-de-chaussée', 0, 20);
-  if (h.exploitation_toiture_kN_m2 !== undefined) hyp.roofLive = num(h.exploitation_toiture_kN_m2, 'exploitation toiture', 0, 20);
   if (h.evacuer_dernier_niveau !== undefined) hyp.evacuateTop = bool(h.evacuer_dernier_niveau);
   if (h.vent_en_service_kN_m2 !== undefined) hyp.windIn = num(h.vent_en_service_kN_m2, 'vent en service', 0, 5);
   if (h.vent_hors_service_kN_m2 !== undefined) hyp.windOut = num(h.vent_hors_service_kN_m2, 'vent hors service', 0, 5);
-  if (h.charge_forfaitaire_kN_par_viewbox !== undefined) hyp.extraKN = num(h.charge_forfaitaire_kN_par_viewbox, 'charge forfaitaire', 0, 500);
+  if (h.plafond_en_plus_kg_m2 !== undefined) hyp.ceilingExtra = (num(h.plafond_en_plus_kg_m2, 'plafond en plus', 0, 500) * 9.81) / 1000;
+  if (h.sol_en_plus_kg_m2 !== undefined) hyp.floorExtra = (num(h.sol_en_plus_kg_m2, 'sol en plus', 0, 500) * 9.81) / 1000;
   if (h.pieds_centraux !== undefined) hyp.middleFeet = bool(h.pieds_centraux);
   if (h.neige_sol_kg_m2 !== undefined) hyp.snowKgm2 = num(h.neige_sol_kg_m2, 'neige au sol', 0, 2000);
   if (Object.keys(hyp).length) out.hyp = hyp;
-  if (h.toitures_accessibles !== undefined) out.roof = bool(h.toitures_accessibles);
   const o = (inp.options_calcul ?? {}) as Json;
   const calc: VariantChanges['calc'] = {};
   if (o.pieds_a_verin !== undefined) calc.jacks = bool(o.pieds_a_verin);
@@ -180,7 +179,7 @@ export function changeLines(ch: VariantChanges, library: InputsSource['library']
     return c ? customSectionEntry(c).name : k;
   };
   const out: string[] = [];
-  const H: Record<string, string> = { live: 'exploitation des étages (kN/m²)', liveGround: 'exploitation du rez-de-chaussée (kN/m²)', roofLive: 'exploitation toiture (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', extraKN: 'charge forfaitaire (kN par Viewbox)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
+  const H: Record<string, string> = { live: 'exploitation des étages (kN/m²)', liveGround: 'exploitation du rez-de-chaussée (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', ceilingExtra: 'plafond en plus (kN/m²)', floorExtra: 'sol en plus (kN/m²)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
   for (const [k, v] of Object.entries(ch.hyp ?? {})) out.push(`${H[k] ?? k} : ${typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v).replace('.', ',')}`);
   if (ch.roof !== undefined) out.push(`toitures accessibles : ${ch.roof ? 'oui' : 'non'}`);
   const C: Record<string, string> = { jacks: 'pieds à vérin', jackExtension: 'sortie des vérins (mm)', friction: 'frottement μ' };
@@ -256,13 +255,14 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
         hypotheses: {
           exploitation_kN_m2: h.live,
           exploitation_rdc_kN_m2: h.liveGround ?? 5,
-          exploitation_toiture_kN_m2: h.roofLive,
-          toitures_accessibles: src.roof,
           evacuer_dernier_niveau_hors_service: h.evacuateTop,
           vent_en_service_kN_m2: h.windIn,
           vent_hors_service_kN_m2: h.windOut,
           poids_viewbox_kg: h.moduleWeightKg,
-          charge_forfaitaire_kN_par_viewbox: h.extraKN,
+          poids_viewbox_comprend: 'structure, plancher, sol, plafond et isolants (murs, vitrages, garde-corps, logos : objets du modèle, en plus)',
+          plafond_en_plus_kg_m2: Math.round(((h.ceilingExtra ?? 0) * 1000) / 9.81),
+          sol_en_plus_kg_m2: Math.round(((h.floorExtra ?? 0) * 1000) / 9.81),
+          toit_des_viewbox: 'jamais de public (public à l’étage seulement sur une Viewbox posée au-dessus ou un élément terrasse du modèle)',
           neige_sol_kg_m2: h.snowKgm2 ?? 0,
           neige_toitures_kg_m2: Math.round(0.8 * (h.snowKgm2 ?? 0)),
           portance: { valeur: h.bearingValue, unite: h.bearingUnit, kN_m2: r1(bearingFrom(h.bearingValue, h.bearingUnit) * 1e3), kg_m2: Math.round(kgm2(bearingFrom(h.bearingValue, h.bearingUnit))) },

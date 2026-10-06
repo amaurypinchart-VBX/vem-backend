@@ -108,14 +108,15 @@ export interface HypothesesFormProps {
   hyp: Hypotheses;
   setHyp: (update: (h: Hypotheses) => Hypotheses) => void;
   jacks?: boolean;
-  /** toitures accessibles au public (étude complète) */
-  roof?: boolean;
-  setRoof?: (v: boolean) => void;
   /** nombre de niveaux de Viewbox du modèle */
   levels?: number;
+  /** calage rapide sans modèle : murs, vitrages… en forfait par Viewbox */
+  withoutModel?: boolean;
+  /** objets portés par les Viewbox d'après le modèle (murs, vitrages, garde-corps, logos, lest) */
+  carried?: { count: number; kg: number };
 }
 
-export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, levels = 1 }: HypothesesFormProps) {
+export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, withoutModel = false, carried }: HypothesesFormProps) {
   const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
   const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);
@@ -180,31 +181,54 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, leve
         )}
       </Section>
 
-      <Section icon="📦" title="Les Viewbox et ce qu’elles portent" intro="Le poids propre des Viewbox et de tout ce qui est fixé dessus (murs, vitrages, logos…) appuie sur la structure et sur le sol.">
-        <Q label="Poids d’une Viewbox" help="Pesée Viewbox : 2 564 kg, planchers et isolants compris. À changer seulement pour une Viewbox différente.">
+      <Section
+        icon="📦"
+        title="Les Viewbox et ce qu’elles portent"
+        intro="Le poids pesé d’une Viewbox comprend tout : structure acier, plancher, sol, plafond et isolants. Ce qui est fixé dessus (murs, vitrages, portes, garde-corps, logos) est compté en plus, objet par objet."
+      >
+        <Q
+          label="Poids d’une Viewbox (pesée)"
+          help="Pesée Viewbox : 2 564 kg, structure, plancher, sol, plafond et isolants compris. Le calcul retient exactement ce poids. À changer seulement pour une Viewbox différente."
+          conv={`= ${n((hyp.moduleWeightKg * G) / 1000, 1)} kN`}
+        >
           <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
         </Q>
-        <Q
-          label="Quel poids retenir ?"
-          help="Le modèle de calcul additionne les barres acier, le plafond et le sol (≈ 2 810 kg). « Le plus lourd » garde la valeur la plus défavorable (conseillé) ; « la pesée » retient exactement le poids pesé."
-        >
-          <select value={hyp.weightMode} onChange={(e) => set('weightMode', e.target.value as Hypotheses['weightMode'])}>
-            <option value="max">le plus lourd (conseillé)</option>
-            <option value="weighed">la pesée exactement ({n(hyp.moduleWeightKg)} kg)</option>
-          </select>
+        {withoutModel ? (
+          <Q
+            label="Murs, vitrages, garde-corps par Viewbox"
+            help="Calage rapide sans modèle : poids moyen de ce qui est fixé sur chaque Viewbox (murs, vitrages, portes, garde-corps, logos). Dans une étude, ils sont pris dans le modèle SketchUp."
+            conv={`= ${n(hyp.extraKN, 1)} kN par Viewbox`}
+          >
+            <Num value={(hyp.extraKN * 1000) / G} onChange={(v) => set('extraKN', (v * G) / 1000)} /> kg
+          </Q>
+        ) : (
+          <Q
+            label="Murs, vitrages, portes, garde-corps, logos"
+            help={
+              <>
+                Comptés d’après le modèle SketchUp, objet par objet (une Viewbox sans mur ne porte rien, une autre peut porter 10 murs et 5 vitrages) : poids de chaque type à l’étape 1
+                « Reconnaissance ».
+                {carried && carried.count > 0 && (
+                  <>
+                    {' '}
+                    Dans ce modèle : <b>{carried.count}</b> objet{carried.count > 1 ? 's' : ''}, <b>{n(carried.kg)} kg</b> au total.
+                  </>
+                )}
+              </>
+            }
+          >
+            <span className="hint">d’après le modèle</span>
+          </Q>
+        )}
+        <div style={{ fontWeight: 600, marginTop: 10 }}>En option : poids ajouté à une Viewbox standard</div>
+        <div className="hint" style={{ lineHeight: 1.45 }}>
+          À remplir seulement si on ajoute quelque chose qui n’est pas dans la pesée (deuxième isolation, faux plafond lourd, plancher surélevé, parquet, moquette épaisse…). 0 = Viewbox standard.
+        </div>
+        <Q label="Plafond ou isolation en plus (par m²)" help="Ajouté sous la toiture de chaque Viewbox, en plus du poids pesé." conv={`= ${n(hyp.ceilingExtra ?? 0, 2)} kN/m² ≈ ${n(kgOf(hyp.ceilingExtra ?? 0) * 14.75)} kg par Viewbox`}>
+          <Num value={kgOf(hyp.ceilingExtra ?? 0)} onChange={(v) => set('ceilingExtra', kNOf(Math.max(0, v)))} /> kg/m²
         </Q>
-        <Q label="Plafond et isolation (par m²)" help="Poids du faux plafond et de l’isolant de toiture, réparti sur chaque m²." conv={`= ${n(hyp.ceiling, 2)} kN/m²`}>
-          <Num value={kgOf(hyp.ceiling)} onChange={(v) => set('ceiling', kNOf(v))} /> kg/m²
-        </Q>
-        <Q label="Sol et isolation (par m²)" help="Poids du plancher fini (revêtement, isolant) sur chaque m²." conv={`= ${n(hyp.floorFinish, 2)} kN/m²`}>
-          <Num value={kgOf(hyp.floorFinish)} onChange={(v) => set('floorFinish', kNOf(v))} /> kg/m²
-        </Q>
-        <Q
-          label="Poids supplémentaire par Viewbox"
-          help="Murs, garde-corps, logos, mobilier lourd… qui ne sont pas dans le modèle SketchUp. Ceux du modèle sont déjà comptés (étape 1)."
-          conv={`= ${n(hyp.extraKN, 1)} kN par Viewbox`}
-        >
-          <Num value={(hyp.extraKN * 1000) / G} onChange={(v) => set('extraKN', (v * G) / 1000)} /> kg
+        <Q label="Revêtement de sol en plus (par m²)" help="Ajouté sur le plancher de chaque Viewbox, en plus du poids pesé." conv={`= ${n(hyp.floorExtra ?? 0, 2)} kN/m² ≈ ${n(kgOf(hyp.floorExtra ?? 0) * 14.75)} kg par Viewbox`}>
+          <Num value={kgOf(hyp.floorExtra ?? 0)} onChange={(v) => set('floorExtra', kNOf(Math.max(0, v)))} /> kg/m²
         </Q>
       </Section>
 
@@ -229,15 +253,10 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, roof, setRoof, leve
             <div className="hint">Étage non accessible (stockage, décor, comme le 3ᵉ niveau Pall Mall) : pas de charge du public sur son plancher. L’accès doit être physiquement fermé.</div>
           </Check>
         ))}
-        {setRoof && (
-          <Check checked={!!roof} onChange={setRoof}>
-            <b>Toitures ouvertes au public (terrasses)</b>
-            <div className="hint">Les toits sans Viewbox au-dessus reçoivent alors aussi du public (valeur ci-dessous). Par neige ou vent fort, les terrasses sont fermées.</div>
-          </Check>
-        )}
-        <Q label="Charge du public sur les terrasses" help="Même règle que les planchers ; seulement si les toitures sont ouvertes au public." conv={`= ${n(hyp.roofLive, 2)} kN/m² ≈ ${n(persons(hyp.roofLive), 1)} personnes par m²`}>
-          <Num value={kgOf(hyp.roofLive)} onChange={(v) => set('roofLive', kNOf(v))} /> kg/m²
-        </Q>
+        <div className="hint" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', lineHeight: 1.45 }}>
+          Le toit d’une Viewbox ne reçoit jamais de public. Il y a du public à l’étage seulement sur une Viewbox posée au-dessus, ou sur un élément terrasse dessiné dans le modèle (même
+          charge que les étages).
+        </div>
         <Q
           label="Public pour le sol et le calage"
           help="Si l’organisateur s’engage à ne pas dépasser un nombre de personnes sur toute l’installation (comptage, contrôle d’accès), le calage au sol peut être fait pour ce nombre. La structure reste vérifiée avec la charge réglementaire ci-dessus."

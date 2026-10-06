@@ -4,7 +4,7 @@
 import type { PlacedModule } from '../../structure/core/assemble';
 import { sectionMap } from '../../structure/core/assemble';
 import type { LibraryEntry } from '../../structure/core/library';
-import type { EdgeItem } from '../../structure/core/loads';
+import type { EdgeItem, PointItem } from '../../structure/core/loads';
 import type { StudyMods } from '../../structure/core/mods';
 import type { SceneStudyModel } from '../../structure/scene/studyModel';
 import type { CalcOptions, StudyInputs } from '../../structure/studyRun';
@@ -20,6 +20,15 @@ export function groundExtras(inp: Pick<StudyInputs, 'terraces' | 'loads'>): Adde
   return terraceSupports(inp.terraces ?? [], inp.loads.liveGround ?? inp.loads.live);
 }
 
+/** Poids porté par chaque Viewbox (N) : murs, vitrages, portes, garde-corps, logos, lest — objets du modèle et de l'étude. */
+export function carriedWeights(inp: { edgeItems: readonly EdgeItem[]; pointItems: readonly PointItem[] }): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (m: string, N: number) => out.set(m, (out.get(m) ?? 0) + N);
+  for (const i of inp.edgeItems) add(i.module, i.q * Math.abs(i.to - i.from));
+  for (const i of inp.pointItems) add(i.module, i.F);
+  return out;
+}
+
 export interface InputsSource {
   sceneModel: SceneStudyModel;
   library: LibraryEntry[];
@@ -30,35 +39,32 @@ export interface InputsSource {
 }
 
 export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; added: PlacedModule[]; warnings: string[] } {
-  const { sceneModel, library, hyp, roof, calc } = src;
+  const { sceneModel, library, hyp, calc } = src;
   const kNm2 = (v: number) => v * 1e-3;
-  // charge forfaitaire par Viewbox (hypothèses du calage) : répartie sur les 4 rives du plancher
-  const extra: EdgeItem[] =
-    hyp.extraKN > 0
-      ? sceneModel.modules.flatMap((m) => {
-          const p = m.params;
-          const q = (hyp.extraKN * 1e3) / (2 * (p.x1 - p.x0 + (p.y1 - p.y0)));
-          return (['u0', 'u1', 'v0', 'v1'] as const).map((side) => ({ module: m.id, side, from: 0, to: side[0] === 'v' ? p.x1 - p.x0 : p.y1 - p.y0, level: 'floor' as const, q, loadCase: 'G3' as const, label: 'charge forfaitaire' }));
-        })
-      : [];
+  // murs, vitrages, portes, garde-corps, logos : objet par objet d'après le modèle (étape 1), jamais en forfait
   const base: StudyInputs = {
     modules: sceneModel.modules,
-    edgeItems: [...sceneModel.edgeItems, ...extra],
+    edgeItems: sceneModel.edgeItems,
     pointItems: sceneModel.pointItems,
     stairs: sceneModel.stairs,
     terraces: sceneModel.terraces,
     library,
     sections: sectionMap(library),
     loads: {
+      // poids pesé = tout compris (structure, plancher, sol, plafond, isolants) : plafond et sol du modèle réduits pour
+      // que barres + plafond + sol = pesée ; calage statico : le plus lourd du modèle et de la pesée, comme SCIA
       moduleWeight: hyp.moduleWeightKg * 9.81,
-      weightMode: hyp.weightMode,
-      ceiling: kNm2(hyp.ceiling),
-      floorFinish: kNm2(hyp.floorFinish),
+      weightMode: calc.calibration ? 'max' : 'weighed',
+      ceiling: DEFAULTS.ceiling.value,
+      floorFinish: DEFAULTS.floorFinish.value,
+      ceilingExtra: kNm2(hyp.ceilingExtra ?? 0),
+      floorExtra: kNm2(hyp.floorExtra ?? 0),
       live: kNm2(hyp.live),
       liveGround: kNm2(hyp.liveGround ?? DEFAULTS.liveLoadGround.value * 1e3),
-      roofLive: kNm2(hyp.roofLive),
+      // le toit d'une Viewbox ne reçoit jamais de public : seulement une Viewbox posée dessus ou un élément terrasse
+      roofLive: 0,
       horizontalRatio: DEFAULTS.horizontalRatio.value,
-      roofAccessible: roof,
+      roofAccessible: false,
       evacuateTopLevel: hyp.evacuateTop,
       closedLevels: hyp.closedLevels ?? [],
       snowRoof: roofSnow(hyp),

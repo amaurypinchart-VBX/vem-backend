@@ -16,6 +16,7 @@ import { lastModification } from '../core/viewboxEdit';
 import { materialByKey } from '../core/materials';
 import { speedLimit } from '../core/wind';
 import type { StudyInputs, StudyRun } from '../studyRun';
+import type { CapacityCriterion } from '../capacity';
 import type { Block, Cell, LaidPage, TableCell } from './doc';
 import { A4, BRAND, GREY, INK, PAGE, SIZE, VERDICT_COLORS, paginate, r2, renderPage, svgLine, svgRect, svgText, tocEntries, verdictIcon, watermarkSvg, wordmark } from './doc';
 import { etaLevelsSvg, faceStates, facesSvg, imageSvg, planModules, planSvg, plateSvg, supportsSvg } from './figures';
@@ -241,6 +242,45 @@ export function buildReport(inp: ReportInput): ReportOutput {
     ],
     rows: familyRows,
   });
+  // charge d'exploitation maximale admissible (plancher bois, structure, sol avec le calage)
+  const cap = run.capacity;
+  if (cap?.levels.length || cap?.notes.length) {
+    const kg = (q: number) => N((q * 1e6) / GRAVITY, 0);
+    const levelName = (t: 'ground' | 'upper') => (t === 'ground' ? L.cap.ground : L.cap.upper);
+    const cell = (c: CapacityCriterion | undefined, bold = false): TableCell => (c ? { text: `${c.above ? '> ' : c.approx ? '≈ ' : ''}${kg(c.q)} kg/m²`, bold } : { text: '—' });
+    blocks.push({ t: 'heading', level: 3, num: '', text: L.cap.title });
+    blocks.push({ t: 'para', text: L.cap.intro, size: SIZE.small });
+    if (cap.levels.length)
+      blocks.push({
+        t: 'table',
+        cols: [
+          { title: L.cap.colLevel, w: 21 },
+          { title: L.cap.colStudy, w: 17, align: 'end' },
+          { title: L.cap.kinds.floor, w: 19, align: 'end' },
+          { title: L.cap.kinds.structure, w: 19, align: 'end' },
+          { title: L.cap.kinds.ground, w: 19, align: 'end' },
+          { title: L.cap.colMax, w: 22, align: 'end' },
+        ],
+        rows: cap.levels.map((l) => [
+          levelName(l.target),
+          `${kg(l.q0)} kg/m²`,
+          ...(['floor', 'structure', 'ground'] as const).map((k) => cell(l.criteria.find((c) => c.key === k), k === l.governing)),
+          { text: `${l.above ? '> ' : ''}${kg(l.qMax)} kg/m²`, bold: true, color: VERDICT_COLORS[l.qMax >= l.q0 - 1e-9 ? 'ok' : 'fail'] },
+        ]),
+      });
+    blocks.push({
+      t: 'bullets',
+      items: [
+        ...cap.levels.map(
+          (l) =>
+            L.cap.line(levelName(l.target), `${l.above ? L.cap.above : ''}${kg(l.qMax)}`, N(l.qMax * 1e3), N((l.qMax * 1e6) / GRAVITY / 80, 1)) +
+            (l.above ? L.cap.noLimit : L.cap.governing(L.cap.kinds[l.governing], l.governingLabel ? ` (${E(l.governingLabel)})` : '')),
+        ),
+        ...cap.notes.map(E),
+      ],
+    });
+    blocks.push({ t: 'para', text: L.cap.footer, size: SIZE.small });
+  }
   if (inp.images?.eta3d) blocks.push({ t: 'figure', h: 70, svg: imageSvg(inp.images.eta3d), caption: `${L.figureEta} — ${L.etaLegend}` });
   const calageTables = (): Block[] => {
     if (!inp.calage) return [{ t: 'para', text: L.bearingMissing, color: VERDICT_COLORS.incomplete }];
@@ -396,14 +436,17 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'para', text: L.weighed(N((inp.moduleWeightKg * GRAVITY) / 1e3, 2), N(inp.moduleWeightKg, 0)) });
   blocks.push({ t: 'para', text: L.steelWeight });
   for (const r of run.loads.records.filter((x) => x.key === 'loads.moduleWeight')) blocks.push(rec(r));
+  // plafond et sol : compris dans le poids pesé (réduits pour que barres + plafond + sol = pesée), plus les ajouts
+  const finish = (g: number, extra = 0) =>
+    (loads.weightMode === 'weighed' ? L.finishIncluded(N(g * 1e3 * Math.min(1, run.loads.finishFactor ?? 1))) : `gk = ${N(g * 1e3)} kN/m²`) + (extra > 0 ? L.finishExtra(N(extra * 1e3)) : '');
   const walls = aggregateEdges(study.edgeItems.filter((i) => i.loadCase === 'G3'));
   const rails = aggregateEdges(study.edgeItems.filter((i) => i.loadCase === 'G5'));
   const points = aggregatePoints(study.pointItems);
   blocks.push({
     t: 'kv',
     rows: [
-      [L.ceiling, `gk = ${N(loads.ceiling * 1e3)} kN/m²`],
-      [L.floor, `gk = ${N(loads.floorFinish * 1e3)} kN/m²`],
+      [L.ceiling, finish(loads.ceiling, loads.ceilingExtra)],
+      [L.floor, finish(loads.floorFinish, loads.floorExtra)],
       [L.walls, walls.length ? walls.map((w) => L.wallRow(E(w.label), N(w.q), N(w.length / 1e3, 1))).join(' ; ') : L.wallsNone],
       [L.railings, rails.length ? rails.map((w) => L.wallRow(E(w.label), N(w.q), N(w.length / 1e3, 1))).join(' ; ') : L.wallsNone],
       [L.logos, points.length ? points.map((p) => L.pointRow(E(p.label), N(p.F / 1e3))).join(' ; ') : L.wallsNone],

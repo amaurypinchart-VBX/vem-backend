@@ -87,6 +87,8 @@ export interface StudyRun {
   terraces: ElementChecks;
   durationMs: number;
   warnings: string[];
+  /** charge d'exploitation maximale admissible (cherchée après le calcul, par calculs complets successifs) */
+  capacity?: import('./capacity').LiveCapacity;
 }
 
 export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<StudyRun> {
@@ -157,25 +159,36 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
  * statico 18-0573 § 3.4.4, qui fixe cette charge : trois travées, kmod 0,9, qEd = 1,35 · (g + q).
  */
 export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>): PlywoodResult {
+  const qg = inp.loads.liveGround ?? inp.loads.live;
+  if (!(qg > inp.loads.live)) return plywoodStrip(inp, 'upper', inp.loads.live);
+  const ground = plywoodStrip(inp, 'ground', qg);
+  const parts = inp.modules.some((m) => m.level > 0) ? [ground, plywoodStrip(inp, 'upper', inp.loads.live)] : [ground];
+  const blocked = parts.find((x) => x.blocked)?.blocked;
+  return { eta: Math.max(...parts.map((x) => x.eta)), records: parts.flatMap((x) => x.records), ...(blocked ? { blocked } : {}) };
+}
+
+/**
+ * Bande de plancher sous la charge d'exploitation q (N/mm²) : étage, ou rez-de-chaussée (trois travées, statico
+ * 18-0573 § 3.4.4) quand q dépasse la charge des étages ; g = sol compris dans la pesée + revêtement ajouté.
+ */
+export function plywoodStrip(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>, target: 'ground' | 'upper', q: number): PlywoodResult {
   const tpl = inp.modules[0]?.params.plywood;
-  const common = { material: tpl?.material ?? 'CP-F20/15', thickness: tpl?.thickness ?? 18, span: tpl?.maxSpan ?? 800, gammaM: DEFAULTS.timberGammaM.value, g: inp.loads.floorFinish };
-  const upper = () =>
-    checkPlywoodStrip({
+  const common = { material: tpl?.material ?? 'CP-F20/15', thickness: tpl?.thickness ?? 18, span: tpl?.maxSpan ?? 800, gammaM: DEFAULTS.timberGammaM.value, g: inp.loads.floorFinish + (inp.loads.floorExtra ?? 0) };
+  if (target === 'upper' || !(q > inp.loads.live))
+    return checkPlywoodStrip({
       ...common,
       kmod: 0.8,
-      q: inp.loads.live,
+      q,
       gammaG: COMBO_DEFAULTS.gammaGQ,
       gammaQ: COMBO_DEFAULTS.gammaQ,
       internal: inp.options.internalPressure ? 0.8 * inp.loads.windOutOfService : 0,
       gammaW: COMBO_DEFAULTS.gammaW,
       label: 'Plancher',
     });
-  const qg = inp.loads.liveGround ?? inp.loads.live;
-  if (!(qg > inp.loads.live)) return upper();
-  const ground = checkPlywoodStrip({
+  return checkPlywoodStrip({
     ...common,
     kmod: 0.9,
-    q: qg,
+    q,
     gammaG: 1.35,
     gammaQ: 1.35,
     internal: 0,
@@ -184,9 +197,6 @@ export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'optio
     spans: 3,
     clause: 'DIN EN 1995-1-1 ; statico 18-0573 § 3.4.4',
   });
-  const parts = inp.modules.some((m) => m.level > 0) ? [ground, upper()] : [ground];
-  const blocked = parts.find((x) => x.blocked)?.blocked;
-  return { eta: Math.max(...parts.map((x) => x.eta)), records: parts.flatMap((x) => x.records), ...(blocked ? { blocked } : {}) };
 }
 
 export interface StairFootBallast {

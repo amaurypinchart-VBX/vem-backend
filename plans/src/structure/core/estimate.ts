@@ -22,6 +22,8 @@ export interface EstimateModule {
   weight?: number;
   /** élément terrasse posé sur sa toiture (poids propre `terraceG`, public `live` en service) */
   terrace?: boolean;
+  /** murs, vitrages, portes, garde-corps, logos, lest… portés par ce module d'après le modèle (N) */
+  carried?: number;
 }
 
 /**
@@ -39,6 +41,9 @@ export interface EstimateLoads {
   steelWeight?: number;
   ceiling: number;
   floorFinish: number;
+  /** plafond / isolation et revêtement de sol ajoutés en plus du poids pesé (N/mm²) */
+  ceilingExtra?: number;
+  floorExtra?: number;
   live: number;
   /** exploitation du rez-de-chaussée (N/mm²), sinon `live` — statico 18-0573 § 2.2.1 : 5,0 kN/m² */
   liveGround?: number;
@@ -271,7 +276,8 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const weight = m.weight ?? L.moduleWeight * ratio;
     const modelled = (L.steelWeight ?? VIEWBOX_STEEL_WEIGHT) * ratio + (L.ceiling + L.floorFinish) * m.area;
     const Gterrace = m.terrace ? (L.terraceG ?? 0) * m.area : 0;
-    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + L.extraPerModule + Gterrace;
+    const added = ((L.ceilingExtra ?? 0) + (L.floorExtra ?? 0)) * m.area;
+    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + added + (m.carried ?? 0) + L.extraPerModule + Gterrace;
     const Qfloor = (m.level === 0 ? L.liveGround ?? L.live : L.live) * m.area;
     // toiture accessible (terrasse sur le toit) ; élément terrasse posé dessus : son poids et le public des étages
     const Qroof = m.roofAccessible ? L.roofLive * m.area : m.terrace ? L.live * m.area : 0;
@@ -280,7 +286,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     totalQ += Qfloor + Qroof;
     const S = isTop[k] ? (L.snowRoof ?? 0) * m.area : 0;
     totalS += S;
-    return { G, Q: Qfloor + Qroof, QaB, floorG: L.floorFinish * m.area + 0.5 * weight, Qfloor, S };
+    return { G, Q: Qfloor + Qroof, QaB, floorG: (L.floorFinish + (L.floorExtra ?? 0)) * m.area + 0.5 * weight, Qfloor, S };
   });
   modules.forEach((_, k) => {
     const lm = perModule[k];
@@ -546,8 +552,11 @@ function footPosition(c: P2[], p: P2, middle: boolean, off: number): P2 {
   return [p[0] + off * (a[0] + b[0]), p[1] + off * (a[1] + b[1])];
 }
 
-/** Installation en grille pour le calculateur sans modèle : nx Viewbox en longueur, ny en largeur, niveaux par case. */
-export function gridModules(nx: number, ny: number, levels: number[][], roofAccessible: boolean, long = 5900, short = 2500, gap = 10): EstimateModule[] {
+/**
+ * Installation en grille pour le calculateur sans modèle : nx Viewbox en longueur, ny en largeur, niveaux par case ;
+ * dernier niveau : toiture accessible (`true`, calculs statico) ou élément terrasse posé sur la toiture (`'terrace'`)
+ */
+export function gridModules(nx: number, ny: number, levels: number[][], roofAccessible: boolean | 'terrace', long = 5900, short = 2500, gap = 10): EstimateModule[] {
   const out: EstimateModule[] = [];
   for (let j = 0; j < ny; j++)
     for (let i = 0; i < nx; i++) {
@@ -567,7 +576,8 @@ export function gridModules(nx: number, ny: number, levels: number[][], roofAcce
           ],
           area: long * short,
           height: 3080,
-          roofAccessible: roofAccessible && lv === n - 1,
+          roofAccessible: roofAccessible === true && lv === n - 1,
+          ...(roofAccessible === 'terrace' && lv === n - 1 ? { terrace: true } : {}),
         });
     }
   return out;

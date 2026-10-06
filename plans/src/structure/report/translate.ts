@@ -418,6 +418,12 @@ const PHRASES: Rule[] = [
   ['erf. h', 'erf. h', 'req. h'],
   ['zul. σB', 'zul. σB', 'allow. σB'],
   // charges et vent
+  ['poids pesé (plancher, sol, plafond et isolants compris) = G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol)', 'gewogenes Gewicht (inkl. Boden, Bodenbelag, Decke und Dämmung) = G1 (Stäbe, 78,5 kN/m³) + k · (G2 Decke + G4 Boden)', 'weighed weight (floor, floor finish, ceiling and insulation included) = G1 (members, 78,5 kN/m³) + k · (G2 ceiling + G4 floor)'],
+  [' (barres seules plus lourdes que la pesée : plafond et sol ignorés)', ' (Stäbe allein schwerer als die Wägung: Decke und Boden entfallen)', ' (members alone heavier than the weighed weight: ceiling and floor ignored)'],
+  [' : modèle plus lourd, retenu (prudent)', ': Modell schwerer, angesetzt (auf der sicheren Seite)', ': model heavier, used (conservative)'],
+  ['Garde-corps : au-delà de 357 kg/m² (3,5 kN/m²) sur une surface bordée de garde-corps, main courante à 1,0 kN/m à justifier (statico 18-0573 § 3.7).', 'Geländer: über 357 kg/m² (3,5 kN/m²) auf einer von Geländern umgebenen Fläche ist der Handlauf für 1,0 kN/m nachzuweisen (statico 18-0573 § 3.7).', 'Railings: above 357 kg/m² (3,5 kN/m²) on an area bordered by railings, the handrail must be justified for 1,0 kN/m (statico 18-0573 § 3.7).'],
+  ['Charge maximale non cherchée : le calcul de l’étude a des vérifications bloquées ou en erreur.', 'Maximale Last nicht ermittelt: die Berechnung enthält blockierte oder fehlerhafte Nachweise.', 'Maximum load not searched: the analysis has blocked or failed checks.'],
+  ['Charge maximale non calculée : ', 'Maximale Last nicht berechnet: ', 'Maximum load not calculated: '],
   ['Poids d’une Viewbox : modèle et pesée', 'Gewicht einer Viewbox: Modell und Wägung', 'Weight of one Viewbox: model and weighing'],
   ['G1 (barres, 78,5 kN/m³) + G2 (plafond) + G4 (sol) ≥ poids pesé, sinon complément Gc sur les rives du plancher', 'G1 (Stäbe, 78,5 kN/m³) + G2 (Decke) + G4 (Boden) ≥ gewogenes Gewicht, sonst Ergänzung Gc auf den Bodenrandträgern', 'G1 (members, 78,5 kN/m³) + G2 (ceiling) + G4 (floor) ≥ weighed weight, otherwise complement Gc on the floor edge beams'],
   [' : modèle plus lourd, pas de complément', ': Modell schwerer, keine Ergänzung', ': model heavier, no complement'],

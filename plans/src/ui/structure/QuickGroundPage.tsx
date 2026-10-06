@@ -40,7 +40,7 @@ export function QuickGroundPage({ onBack }: { onBack: () => void }) {
       ny,
       levels: Array.from({ length: ny }, (_, j) => Array.from({ length: nx }, (_, i) => g.levels[j]?.[i] ?? 1)),
     }));
-  const modules = useMemo(() => gridModules(grid.nx, grid.ny, grid.levels, grid.roof), [grid]);
+  const modules = useMemo(() => gridModules(grid.nx, grid.ny, grid.levels, grid.roof ? 'terrace' : false), [grid]);
   const setCell = (i: number, j: number, v: number) => setGrid((g) => ({ ...g, levels: g.levels.map((row, jj) => row.map((x, ii) => (ii === i && jj === j ? v : x))) }));
   const intro = (
     <div className="card">
@@ -70,8 +70,8 @@ export function QuickGroundPage({ onBack }: { onBack: () => void }) {
             </select>
           </label>
           <label className="row hint">
-            <input type="checkbox" checked={grid.roof} onChange={(e) => setGrid({ ...grid, roof: e.target.checked })} /> Toitures du dernier niveau accessibles
-            (terrasses)
+            <input type="checkbox" checked={grid.roof} onChange={(e) => setGrid({ ...grid, roof: e.target.checked })} /> Élément terrasse posé sur le dernier
+            niveau (public sur le toit)
           </label>
         </div>
         <table className="list" style={{ width: 'auto' }}>
@@ -101,5 +101,5 @@ export function QuickGroundPage({ onBack }: { onBack: () => void }) {
       </div>
     </div>
   );
-  return <GroundPanel modules={modules} source="Calage rapide (grille de Viewbox, sans modèle)" storageKey={`vem.structure.quick.${PROJECT_ID}`} intro={intro} />;
+  return <GroundPanel modules={modules} source="Calage rapide (grille de Viewbox, sans modèle)" storageKey={`vem.structure.quick.${PROJECT_ID}`} intro={intro} withoutModel />;
 }

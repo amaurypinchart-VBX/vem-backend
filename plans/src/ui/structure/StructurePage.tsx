@@ -16,12 +16,16 @@ import { mergeLibrary, partTypeEntry, toPayload } from '../../structure/core/lib
 import { SEED } from '../../structure/library/seed';
 import { itemBoxDims } from '../../structure/scene/geometry';
 import { studyModelFromScene } from '../../structure/scene/studyModel';
-import type { CalcOptions, StudyRun } from '../../structure/studyRun';
+import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
 import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
 import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
 import type { StudyRunner } from '../../structure/worker/study';
 import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
 import { CalcPanel, ResultsPanel } from './CalcResults';
+import { CapacityCard } from './CapacityCard';
+import type { LiveCapacity } from '../../structure/capacity';
+import { liveCapacity } from '../../structure/capacity';
+import { computeCalage } from '../../structure/core/calage';
 import { ReportPanel } from './ReportPanel';
 import { useAiStatus } from './aiUi';
 import type { CompositePanel } from '../../structure/core/composite';
@@ -32,7 +36,7 @@ import type { BrowserHlrProvider } from '../../linework/provider';
 import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
-import { buildStudyInputs, groundExtras } from './studyInputs';
+import { buildStudyInputs, carriedWeights, groundExtras } from './studyInputs';
 import { AdvisorPanel } from './AdvisorPanel';
 import type { Variant } from './advisorTools';
 import { variantSource } from './advisorTools';
@@ -40,7 +44,7 @@ import type { StructureStock } from './GroundPanel';
 import type { ModelVersion, StudyRecord, VemUser } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import type { Hypotheses } from './GroundPanel';
-import { DEFAULT_HYP, GroundPanel, HypothesesForm } from './GroundPanel';
+import { DEFAULT_HYP, GroundPanel, HypothesesForm, calageInput } from './GroundPanel';
 import type { AnswerOptions } from './RecognitionStep';
 import { RecognitionStep } from './RecognitionStep';
 
@@ -107,6 +111,9 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [calcError, setCalcError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const runnerRef = useRef<StudyRunner | null>(null);
+  // charge d'exploitation maximale : cherchée après chaque calcul (calculs complets successifs)
+  const capAbortRef = useRef<AbortController | null>(null);
+  const [capProgress, setCapProgress] = useState<{ done: number; total: number } | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error' | 'local'>('idle');
   const [error, setError] = useState('');
   const loaded = useRef(false);
@@ -177,7 +184,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   );
   // framesVersion : les repères des Viewbox ont été recalculés (face avant modifiée)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { modules, warnings } = useMemo(() => modulesFromScene(scene, roof), [scene, framesVersion, roof]);
+  // le toit d'une Viewbox ne reçoit jamais de public (seuls les éléments terrasse du modèle en portent)
+  const { modules, warnings } = useMemo(() => modulesFromScene(scene, false), [scene, framesVersion]);
 
   // ─── calcul complet ───
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,20 +195,52 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const studyInputs = built.inputs;
   // Viewbox ajoutées par l'étude : aussi dans le calage
   // Viewbox portant un élément terrasse sur leur toiture : son poids et son public descendent par elles
+  // murs, vitrages, garde-corps, logos, lest du modèle et de l'étude : portés par leur Viewbox (estimation instantanée)
+  const carriedBy = useMemo(() => carriedWeights(studyInputs), [studyInputs]);
   const groundModules = useMemo(() => {
     const roofT = new Set(sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module));
-    return [...modules.map((m) => (roofT.has(m.id) ? { ...m, terrace: true } : m)), ...built.added.map(placedToEstimate)];
-  }, [modules, built.added, sceneModel.terraces]);
+    return [...modules, ...built.added.map(placedToEstimate)].map((m) => ({ ...m, carried: carriedBy.get(m.id) ?? 0, ...(roofT.has(m.id) ? { terrace: true } : {}) }));
+  }, [modules, built.added, sceneModel.terraces, carriedBy]);
+  const carriedTotal = useMemo(() => {
+    const N = [...carriedWeights(sceneModel).values()].reduce((a, b) => a + b, 0);
+    return { count: sceneModel.edgeItems.length + sceneModel.pointItems.length, kg: N / 9.81 };
+  }, [sceneModel]);
   // pieds des éléments terrasse posés au sol : appuis du calage en plus de ceux des Viewbox
   const extraSupports = useMemo(() => groundExtras(studyInputs), [studyInputs]);
   const currentKey = useMemo(() => inputKey(studyInputs), [studyInputs]);
   const stale = !!run && run.key !== currentKey;
   useEffect(() => () => {
     abortRef.current?.abort();
+    capAbortRef.current?.abort();
     runnerRef.current?.dispose();
   }, []);
+  const searchCapacity = async (inputs: StudyInputs, result: StudyRun) => {
+    capAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    capAbortRef.current = ctrl;
+    setCapProgress({ done: 0, total: 0 });
+    // sol : calage (plaques choisies, sinon standard) refait avec les réactions de chaque calcul ; public limité en
+    // personnes ou portance absente : sol non compté
+    const withGround = bearingFrom(hyp.bearingValue, hyp.bearingUnit) > 0 && hyp.publicMode !== 'persons';
+    const groundEta = (r: StudyRun, inp: StudyInputs) => {
+      const res = computeCalage({ ...calageInput(groundModules, hyp, stock, calcOpts.jacks, groundExtras(inp)), reactions: r.ground, noAdvice: true });
+      return res.checks.length ? Math.max(...res.checks.map((c) => c.eta)) : null;
+    };
+    let capacity: LiveCapacity;
+    try {
+      runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner();
+      capacity = await liveCapacity(inputs, result, runnerRef.current, { ...(withGround ? { groundEta } : {}), onProgress: (done, total) => setCapProgress({ done, total }), signal: ctrl.signal });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+      capacity = { levels: [], notes: [`Charge maximale non calculée : ${(e as Error).message}`] };
+    } finally {
+      if (capAbortRef.current === ctrl) setCapProgress(null);
+    }
+    setRun((r) => (r && r.result === result ? { ...r, result: { ...result, capacity } } : r));
+  };
   const startRun = async (): Promise<StudyRun | null> => {
     abortRef.current?.abort();
+    capAbortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner();
@@ -211,6 +251,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     try {
       const result = await runStudy(studyInputs, runnerRef.current, (done, total) => setProgress({ done, total }), ctrl.signal);
       setRun({ result, key });
+      void searchCapacity(studyInputs, result);
       return result;
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setCalcError((e as Error).message);
@@ -242,10 +283,15 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     setCalcOpts(next.calc);
     setMods(next.mods ?? {});
     // variante calculée sur l'étude actuelle : son calcul devient celui de l'étude
-    if (v.run && v.baseKey === currentKey) setRun({ result: v.run, key: inputKey(buildStudyInputs(next).inputs) });
+    if (v.run && v.baseKey === currentKey) {
+      const inputs = buildStudyInputs(next).inputs;
+      setRun({ result: v.run, key: inputKey(inputs) });
+      void searchCapacity(inputs, v.run);
+    }
   };
   const cancelRun = () => {
     abortRef.current?.abort();
+    capAbortRef.current?.abort();
     setRunning(false);
   };
 
@@ -262,6 +308,11 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
               reasons: run.result.verdict.reasons.slice(0, 5),
               families: run.result.verdict.families.map((f) => ({ family: f.family, count: f.count, eta: Number.isFinite(f.eta) ? Math.round(f.eta * 1000) / 1000 : null, verdict: f.verdict })),
               top: run.result.verdict.ranking.slice(0, 20).map((t) => ({ label: run.result.index.items[t].label, eta: run.result.summary.states[t]?.eta ?? null, combo: run.result.summary.states[t]?.combo })),
+              ...(run.result.capacity
+                ? {
+                    maxLive: run.result.capacity.levels.map((l) => ({ level: l.target, studyKgm2: Math.round((l.q0 * 1e6) / 9.81), maxKgm2: Math.round((l.qMax * 1e6) / 9.81), above: l.above, governing: l.governing })),
+                  }
+                : {}),
             },
           }
         : {}),
@@ -385,7 +436,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }}
         />
       </div>
-      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} roof={roof} setRoof={setRoof} levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))} />}
+      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} carried={carriedTotal} levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))} />}
       {step === 'calc' && (
         <CalcPanel
           options={calcOpts}
@@ -397,6 +448,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           warnings={sceneModel.warnings}
           running={running}
           progress={progress}
+          capProgress={capProgress}
           run={run?.result ?? null}
           stale={stale}
           error={calcError}
@@ -419,6 +471,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
             </div>
           </div>
         )}
+        {run && !stale && <CapacityCard capacity={run.result.capacity} progress={capProgress} />}
         <ResultsPanel
           scene={scene}
           glassTest={glassTest}

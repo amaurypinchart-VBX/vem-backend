@@ -177,7 +177,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     return v > 0 ? { value: v, label: BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset)?.label ?? '—' } : null;
   }, [hyp]);
   const texts = useAiTexts && aiTexts && aiTexts.lang === lang ? aiTexts : undefined;
-  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, stale, calage?.materials, project?.id, texts, modifications]);
+  const key = JSON.stringify([lang, variant, withPlan, with3d, run?.durationMs, !!run?.capacity, stale, calage?.materials, project?.id, texts, modifications]);
   useEffect(() => {
     if (prepared && prepared.key !== key) setPrepared(null);
   }, [key, prepared]);
@@ -423,6 +423,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
           </div>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {stale && <div className="error-box">Résultat périmé : les données ont changé depuis le calcul. Relancer l’étape 3 avant de faire le rapport.</div>}
+            {!stale && !run.capacity && <div className="hint">Charge d’exploitation maximale encore en calcul (étape 4) : elle sera dans le rapport dès qu’elle sera prête (refaire l’aperçu).</div>}
             <label className="row" style={{ justifyContent: 'space-between' }}>
               Langue
               <select value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
