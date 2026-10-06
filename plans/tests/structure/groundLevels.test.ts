@@ -9,6 +9,7 @@ import { gridModules } from '../../src/structure/core/estimate';
 import { formatLevel, levelAt, levelSurvey, parseLevel, withLevel } from '../../src/structure/core/groundLevels';
 import { calageLevelMarks, calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
 import { groundPointsPages } from '../../src/structure/report/groundPoints';
+import { compactModuleIds } from '../../src/structure/report/groundSheet';
 import { DEFAULT_HYP, calageInput } from '../../src/ui/structure/GroundPanel';
 import { levelOrder } from '../../src/ui/structure/GroundLevels';
 import { SheetSvg } from '../../src/sheets/SheetSvg';
@@ -121,6 +122,9 @@ describe('niveaux du sol : calage, plan A3 et plan des appuis', () => {
     const plates = calagePlates(s, cal, 'fr');
     const { sheet, notes, legend, viewport } = calageSheet({ lang: 'fr', modelKey: 'm', include: [], plates, levels: marks, calage: cal, bearing: { value: 200, label: 'prairie' }, jacks: true, number: 'C 1' });
     expect(viewport.overlays?.levels).toHaveLength(marks.length);
+    // numéros des Viewbox sur le plan de calage (surcouche du moteur de planches)
+    expect(viewport.overlays?.moduleNumbers).toBe(true);
+    expect(compactModuleIds(['VBX-04', 'VBX-01'])).toBe('VBX-01/04');
     const txt = sheet.items.filter((i) => i.type === 'text').map((i) => (i as { text: string }).text).join(' ');
     expect(txt).toContain('NIVEAUX DU SOL (RELEVÉ)');
     expect(txt).toContain('Référence = point le plus haut');

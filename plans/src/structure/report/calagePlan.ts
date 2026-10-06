@@ -185,7 +185,7 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
     label: inp.title ?? L.calagePlanTitle,
     showLabel: true,
     renderStyle: 'trait',
-    overlays: { moduleOutlines: true, calage: inp.plates, ...(inp.levels?.length ? { levels: inp.levels } : {}) },
+    overlays: { moduleOutlines: true, moduleNumbers: true, calage: inp.plates, ...(inp.levels?.length ? { levels: inp.levels } : {}) },
   };
   const c = inp.calage;
   // ─── colonne de texte ───

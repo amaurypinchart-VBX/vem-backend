@@ -58,6 +58,14 @@ export function planPlates(checks: SupportCheck[]): PlanPlate[] {
   return checks.filter((c) => c.plan).map((c) => ({ id: c.id, corners: c.plan!.corners, color: typeColor(c.typeKey), centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5 }));
 }
 
+/** « VBX-01/04 » : numéros des Viewbox d'une même emprise, triés (même préfixe regroupé). */
+export function compactModuleIds(ids: string[]): string {
+  const sorted = [...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const m = sorted.map((id) => /^(.*?)(\d+)$/.exec(id));
+  if (sorted.length > 1 && m.every((x) => x && x[1] === m[0]![1])) return m[0]![1] + m.map((x) => x![2]).join('/');
+  return sorted.join(', ');
+}
+
 /** Vue de dessus : emprises des Viewbox (nombre de niveaux au centre), groupes d'appuis colorés par type avec Rz,k. */
 export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub, plates }: PlanProps) {
   const pts = [...modules.flatMap((m) => m.corners), ...(plates ?? []).flatMap((p) => p.corners)];
@@ -73,14 +81,18 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
   const X = (v: number) => ox + (v - minX) * s;
   const Y = (v: number) => oy + (v - minY) * s;
   // niveaux par emprise (Viewbox empilées au même endroit)
-  const stacks = new Map<string, { m: EstimateModule; n: number }>();
+  const stacks = new Map<string, { m: EstimateModule; n: number; ids: string[] }>();
   for (const m of modules) {
     const cx = Math.round(m.corners.reduce((a, p) => a + p[0], 0) / 4 / 200);
     const cy = Math.round(m.corners.reduce((a, p) => a + p[1], 0) / 4 / 200);
     const k = `${cx},${cy}`;
     const e = stacks.get(k);
-    if (!e || m.level < e.m.level) stacks.set(k, { m, n: (e?.n ?? 0) + 1 });
-    else e.n++;
+    if (!e) stacks.set(k, { m, n: 1, ids: [m.id] });
+    else {
+      e.n++;
+      e.ids.push(m.id);
+      if (m.level < e.m.level) e.m = m;
+    }
   }
   // pastilles plus petites quand des appuis sont très proches (vérins de Viewbox voisines, 31 cm)
   const P = reactions.map((re) => [X(re.group.position[0]), Y(re.group.position[1])] as const);
@@ -89,11 +101,12 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
   const r = Math.max(text * 0.45, Math.min(Math.max(text * 0.9, 250 * s), 0.4 * dmin));
   return (
     <g fontFamily={FONT_SANS}>
-      {[...stacks.values()].map(({ m, n }) => {
+      {[...stacks.values()].map(({ m, n, ids }) => {
         const c = m.corners;
         const cx = c.reduce((a, p) => a + p[0], 0) / 4;
         const cy = c.reduce((a, p) => a + p[1], 0) / 4;
-        const lines = zoneLabel?.(m, n) ?? [n > 1 ? `${n} niveaux` : m.level > 0 ? `niveau ${m.level}` : '1 niveau'];
+        // numéro des Viewbox de l'emprise (empilées : « VBX-01/04 »), puis le texte de l'appelant
+        const lines = [compactModuleIds(ids), ...(zoneLabel?.(m, n) ?? [n > 1 ? `${n} niveaux` : m.level > 0 ? `niveau ${m.level}` : '1 niveau'])];
         return (
           <g key={m.id}>
             <polygon
@@ -111,8 +124,8 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
                 y={Y(cy) + text * 0.35 + (k - (lines.length - 1) / 2) * text * 1.1}
                 fontSize={text * 0.9}
                 textAnchor="middle"
-                fontWeight={k === 0 && zoneLabel ? 700 : undefined}
-                fill={k === 0 && zoneLabel ? '#111827' : '#6b7280'}
+                fontWeight={k === 0 || (k === 1 && zoneLabel) ? 700 : undefined}
+                fill={k === 0 ? '#1a021d' : k === 1 && zoneLabel ? '#111827' : '#6b7280'}
               >
                 {t}
               </text>

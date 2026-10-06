@@ -29,6 +29,7 @@ import { ignoredStructural } from '../../structure/scene/studyModel';
 import { VERDICT_LABEL } from '../../structure/core/records';
 import type { ReportImage, ReportOutput, ReportVariant } from '../../structure/report/build';
 import { buildReport } from '../../structure/report/build';
+import { moduleOverlays } from '../../sheets/overlays';
 import { calageLevelMarks, calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outlineLinework } from '../../structure/report/calagePlan';
 import type { Lang } from '../../structure/report/i18n';
 import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
@@ -214,7 +215,10 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     if (!lw) {
       lw = outlineLinework(run.structure, basis);
       const fallback = lw;
-      data = () => ({ lw: fallback, basis });
+      // contours et numéros des Viewbox du niveau le plus bas (comme le moteur 2D)
+      const ids = new Set(scene.index.modules.filter((m) => m.level === lowest).map((m) => m.id));
+      const overlays = moduleOverlays(scene.frames.values(), ids, basis);
+      data = () => ({ lw: fallback, basis, overlays });
     }
     fitCalageViewport(viewport, lw, plates, basis, fitScale);
     return { sheet, notes, legend, viewData: data!, engine };

@@ -365,8 +365,27 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
         {vp.overlays?.levels && data?.basis && <LevelMarks marks={vp.overlays.levels} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.moduleNumbers &&
           numberLabels(overlays).map((o) => {
-            const p = toPaper(o.center.x, o.center.y);
-            const size = Math.max(5, Math.min(40, o.minSize / s / 2.2));
+            // plan de calage : centre du quart haut gauche de la Viewbox (les étiquettes des plaques sont au-dessus des
+            // plaques, donc dans la moitié basse ou hors de la Viewbox), plus petit
+            const calage = !!vp.overlays?.calage;
+            let at = o.center;
+            if (calage) {
+              const ol = overlays.find((x) => x.moduleId === o.key.split('+')[0])?.outline;
+              if (ol && ol.length >= 6) {
+                const e1 = [ol[2] - ol[0], ol[3] - ol[1]];
+                const e2 = [ol[4] - ol[2], ol[5] - ol[3]];
+                let best: { x: number; y: number; px: number; py: number } | null = null;
+                for (const a of [-1, 1])
+                  for (const b of [-1, 1]) {
+                    const q = { x: o.center.x + (a * e1[0] + b * e2[0]) / 4, y: o.center.y + (a * e1[1] + b * e2[1]) / 4 };
+                    const pp = toPaper(q.x, q.y);
+                    if (!best || pp.y < best.py - 0.5 || (Math.abs(pp.y - best.py) <= 0.5 && pp.x < best.px)) best = { ...q, px: pp.x, py: pp.y };
+                  }
+                if (best) at = { x: best.x, y: best.y };
+              }
+            }
+            const p = toPaper(at.x, at.y);
+            const size = calage ? Math.max(4, Math.min(9, o.minSize / s / 3.2)) : Math.max(5, Math.min(40, o.minSize / s / 2.2));
             return (
               <text key={`n${o.key}`} data-dxf="VBX-NUMEROS" x={num(p.x)} y={num(p.y + size * 0.35)} fontSize={num(size)} textAnchor="middle" fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
                 {o.label}
