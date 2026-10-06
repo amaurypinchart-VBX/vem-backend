@@ -1,5 +1,5 @@
 // Test navigateur des appuis manquants (étape 3) : VBX-04 posée en décalé, deux angles sur les rives de VBX-2, deux
-// angles dans le vide → carte « Appuis manquants » (plan + propositions), « Ajouter les appuis proposés et les
+// angles en porte-à-faux → carte « Porte-à-faux » (plan + propositions), « Ajouter les appuis proposés et les
 // dimensionner », puis calcul complet. Fixture : E2E_FIXTURE_VBX4='[8000,0,2800]' E2E_FIXTURE_OUT=e2e/fixture-offset.zip
 // npx vitest run tests/e2e-fixture.test.ts ; serveur : ZIP=e2e/fixture-offset.zip node e2e/server.mjs.
 import { chromium } from 'playwright-core';
@@ -48,18 +48,18 @@ if (await page.getByRole('button', { name: /Traiter la file/ }).count()) {
   }
 }
 await page.getByRole('button', { name: /3\. Calcul/ }).click();
-const card = page.locator('.card', { hasText: /Appuis manquants — \d+ angle/ });
+const card = page.locator('.card', { hasText: /(Appuis manquants|Porte-à-faux) — \d+ angle/ });
 await card.waitFor({ timeout: 20000 });
 console.log('Carte :', (await card.locator('h3').innerText()).trim());
 console.log('Propositions :', await card.locator('li').allInnerTexts());
 console.log('Plan : angles rouges', await card.locator('svg circle').count(), '; poteaux proposés', await card.locator('svg rect').count());
 await shootAll('supports-manquants');
-await card.getByRole('button', { name: /Ajouter les appuis proposés et les dimensionner/ }).click();
+await card.getByRole('button', { name: /Ajouter .*appui.* dimensionner/ }).click();
 await page.getByText(/Appuis ajoutés aux modifications de l’étude/).waitFor({ timeout: 300000 });
 const after = page.locator('.card', { hasText: 'Appuis ajoutés par l’étude' }).first();
 console.log('Dimensionnement :', (await after.locator('.hint').first().innerText()).replace(/\s+/g, ' '));
 console.log('Appuis ajoutés :', await after.locator('li').allInnerTexts());
-console.log('Encore dans le vide :', await page.locator('.card', { hasText: /Appuis manquants — / }).count());
+console.log('Encore sans appui :', await page.locator('.card', { hasText: /(Appuis manquants|Porte-à-faux) — / }).count());
 await shootAll('supports-ajoutes');
 await page.getByRole('button', { name: /Lancer le calcul|Relancer le calcul/ }).click();
 await page.getByRole('button', { name: 'Voir les résultats →' }).waitFor({ timeout: 300000 });

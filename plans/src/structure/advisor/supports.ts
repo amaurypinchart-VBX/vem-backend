@@ -65,13 +65,15 @@ export async function sizeAddedSupports(base: StudyInputs, mods: StudyMods, runn
     let changed = false;
     supports = supports.map((a) => {
       const r = etas.get(supportKey(a));
-      if (!r || r.eta <= 1 || !Number.isFinite(r.eta)) return a;
+      if (!r || r.eta <= 1) return a;
       const cur = inputs.sections.get(r.section);
       const up = cur ? strongerSections(cur) : [];
-      const next = up.find((c) => c.section.Wely >= cur!.section.Wely * Math.min(r.eta, 3) * 0.95) ?? up[up.length - 1];
+      // dépassement non chiffrable (section de classe 4 trop élancée…) : comme un taux de 3
+      const f = Number.isFinite(r.eta) ? Math.min(r.eta, 3) : 3;
+      const next = up.find((c) => c.section.Wely >= cur!.section.Wely * f * 0.95) ?? up[up.length - 1];
       if (!next) return a;
       changed = true;
-      note(`${a.module} angle ${a.corner + 1} : ${designation(cur!.name)} η ${fmtNumber(r.eta, 2)} → ${designation(next.name)}.`);
+      note(`${a.module} angle ${a.corner + 1} : ${designation(cur!.name)} η ${Number.isFinite(r.eta) ? fmtNumber(r.eta, 2) : '∞'} → ${designation(next.name)}.`);
       return { ...a, section: next.key };
     });
     if (!changed) {

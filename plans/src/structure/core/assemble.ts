@@ -50,7 +50,8 @@ export type MemberFamily =
   | 'model-column'
   | 'support-post'
   | 'transfer-beam'
-  | 'model-link';
+  | 'model-link'
+  | 'rim-bearing';
 
 export interface MemberMeta {
   family: MemberFamily;
@@ -168,6 +169,12 @@ export interface UnsupportedCorner {
   /** angle de toiture le plus proche (en plan) sur lequel l'angle pourrait être posé en déplaçant la Viewbox */
   nearest: { module: string; corner: number; distance: number } | null;
   proposal: CornerSupport;
+  /**
+   * porte-à-faux (mm, en plan, jusqu'à l'appui le plus proche) : la Viewbox a au moins 3 appuis non alignés ailleurs
+   * (angles, rives, croisements de rives), l'angle n'est pas bloquant et le calcul vérifie le porte-à-faux ; absent =
+   * angle dans le vide bloquant
+   */
+  cantilever?: number;
   /** phrase pour l'interface et le rapport */
   text: string;
 }
@@ -308,6 +315,7 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'support-post': 'poteau d’appui ajouté',
   'transfer-beam': 'poutre de reprise ajoutée',
   'model-link': 'attache de poutre du modèle',
+  'rim-bearing': 'appui rive sur rive',
 };
 
 /** Tolérances de pose d'un angle de Viewbox (mm, en plan) : sur une rive de toiture, sur une poutre du modèle. */
@@ -664,8 +672,72 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         ? `${U.id} angle ${c + 1} : posé sur la toiture de ${over.id} hors de ses angles et de ses rives — ajouter une poutre de reprise rive à rive sous l’angle (ou déplacer ${U.id}${near && near.distance <= 600 ? ` de ${fmtNumber(near.distance / 10, 0)} cm sur l’angle ${near.corner + 1} de ${near.module}` : ''}).`
         : `${U.id} angle ${c + 1} : rien dessous jusqu’au sol (${fmtNumber(height / 1e3, 2)} m) — ajouter un poteau d’appui${near && near.distance <= 600 ? ` (ou déplacer ${U.id} de ${fmtNumber(near.distance / 10, 0)} cm sur l’angle ${near.corner + 1} de ${near.module})` : ''}, ou dessiner la poutre / le poteau dans SketchUp.`;
       unsupported.push({ module: U.id, corner: c, position: cw, height, over: over?.id ?? null, nearest: near, proposal, text });
-      errors.push(`${U.id} : angle ${c + 1} posé dans le vide (ni angle ni rive de Viewbox, ni poutre dessous).`);
     });
+  }
+
+  // ─── appuis rive sur rive : la rive de plancher d'une Viewbox du dessus croise une rive de toiture du dessous (Viewbox
+  // tournée), ou passe sur un angle de toiture (empilement décalé) — cale ou plat d'appui, compression seule ───
+  const bearings: Array<{ U: PlacedModule; fu: FaceGeo; s: number; L: PlacedModule; fl: FaceGeo; t: number; p: Vec3 }> = [];
+  // (calage statico : comme le modèle SCIA, les Viewbox empilées ne se touchent qu'aux angles)
+  for (const U of opt.calibration ? [] : modules) {
+    if (U.level === 0) continue;
+    const yU = U.origin[1] + U.params.floorZ;
+    for (const fu of faceGeo.filter((f) => f.pm === U))
+      for (const fl of faceGeo) {
+        const L = fl.pm;
+        if (L === U) continue;
+        const dz = yU - (L.origin[1] + L.params.roofZ);
+        if (dz < 150 || dz > 450) continue;
+        const cross = fu.dir[0] * fl.dir[2] - fu.dir[2] * fl.dir[0];
+        const cands: Array<[number, number]> = [];
+        if (Math.abs(cross) > 0.1) {
+          // intersection en plan : fu.a + s · fu.dir = fl.a + t · fl.dir
+          const d: Vec3 = [fl.a[0] - fu.a[0], 0, fl.a[2] - fu.a[2]];
+          const sU = (d[0] * fl.dir[2] - d[2] * fl.dir[0]) / cross;
+          const tL = (d[0] * fu.dir[2] - d[2] * fu.dir[0]) / cross;
+          if (tL > -RIM_TOL && tL < fl.length + RIM_TOL) cands.push([sU, Math.max(0, Math.min(fl.length, tL))]);
+        } else if (Math.abs(dot([fl.a[0] - fu.a[0], 0, fl.a[2] - fu.a[2]], fu.normal)) <= RIM_TOL) {
+          // rives parallèles l'une sur l'autre : angles de la rive du dessous sous la rive du dessus
+          for (const t of [0, fl.length]) cands.push([along(fu, at(fl, t)), t]);
+        }
+        for (const [sU, tL] of cands) {
+          if (sU <= 20 || sU >= fu.length - 20) continue; // angle du dessus : traité par les angles
+          const p = at(fu, sU);
+          if (bearings.some((b) => b.U === U && planDist(b.p, p) <= 50)) continue;
+          addExtra(fu, sU);
+          addExtra(fl, tL);
+          bearings.push({ U, fu, s: sU, L: fl.pm, fl, t: tL, p });
+          covered.add(L);
+        }
+      }
+  }
+  // angle dans le vide : bloquant, sauf si la Viewbox est portée par au moins 3 appuis non alignés ailleurs (porte-à-faux,
+  // vérifié par le calcul ; l'appui proposé reste possible)
+  for (const U of modules) {
+    if (U.level === 0) continue;
+    const voids = unsupported.filter((x) => x.module === U.id);
+    if (!voids.length) continue;
+    const pts = [
+      ...cornersOf(U, U.params.floorZ).filter((_, c) => landings.has(`${U.id}|${c}`)),
+      ...bearings.filter((b) => b.U === U).map((b) => b.p),
+    ];
+    let spread = 0;
+    for (const a of pts)
+      for (const b of pts) {
+        const L = planDist(a, b);
+        if (L < 500) continue;
+        for (const c of pts) spread = Math.max(spread, Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / L);
+      }
+    const stable = pts.length >= 3 && spread >= 500;
+    for (const v of voids) {
+      if (!stable) {
+        errors.push(`${U.id} : angle ${v.corner + 1} posé dans le vide (ni angle ni rive de Viewbox, ni poutre dessous).`);
+        continue;
+      }
+      v.cantilever = Math.min(...pts.map((q) => planDist(q, v.position)));
+      v.text = `${U.id} angle ${v.corner + 1} : en porte-à-faux de ${fmtNumber(v.cantilever / 1e3, 2)} m au-delà de son dernier appui — vérifié par le calcul ; si ça ne passe pas : ${v.proposal.kind === 'post' ? 'poteau d’appui sous l’angle' : 'poutre de reprise sous l’angle'}.`;
+    }
+    if (stable) warnings.push(`${U.id} en porte-à-faux (angle${voids.length > 1 ? 's' : ''} ${voids.map((v) => v.corner + 1).join(', ')}, ${fmtNumber(Math.max(...voids.map((v) => v.cantilever!)) / 1e3, 2)} m) : porté par ses autres angles et les croisements de rives, vérifié par le calcul.`);
   }
   for (const a of opt.addedSupports ?? [])
     if (!usedAdded.has(`${a.module}|${a.corner}`) && modules.some((m) => m.id === a.module)) warnings.push(`${a.module} angle ${a.corner + 1} : déjà porté, appui ajouté ignoré.`);
@@ -1021,6 +1093,18 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     });
     // pas de contacts verticaux le long des rives entre Viewbox empilées (statico Qatar : les efforts passent par
     // les angles) ; les nœuds `contacts` du gabarit servent aux terrasses posées sur les toitures
+  }
+  for (const b of bearings) {
+    const lower = rimNodeAt(b.fl, 'roof', b.t);
+    const upper = rimNodeAt(b.fu, 'floor', b.s);
+    if (lower < 0 || upper < 0 || lower === upper) continue;
+    topModules.delete(b.L.id);
+    addMember(lower, upper, b.U.params.sections.cornerLink, { family: 'rim-bearing', module: b.U.id, line: `bearing:${b.U.id}/${upper}`, label: `${b.L.id} / ${b.U.id} · appui rive sur rive` }, { kind: 'truss', nonlinear: 'compressionOnly', geometric: false });
+  }
+  if (bearings.length) {
+    const by = new Map<string, number>();
+    for (const b of bearings) by.set(`${b.U.id} sur ${b.L.id}`, (by.get(`${b.U.id} sur ${b.L.id}`) ?? 0) + 1);
+    warnings.push(`Appuis rive sur rive (croisement de rives ou angle sous une rive, compression seule) : ${[...by].map(([k, n]) => `${k} × ${n}`).join(', ')} — cale ou plat d’appui à prévoir à chaque croisement.`);
   }
   if (landedOn.length)
     warnings.push(`Angles posés hors des angles de Viewbox : ${landedOn.join(' ; ')} — rive ou poutre vérifiée en flexion, liaison vérifiée comme les plats d’empilement : perçages et attache à détailler.`);

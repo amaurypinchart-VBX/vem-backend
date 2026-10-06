@@ -38,6 +38,7 @@ export const FAMILY_COLORS: Record<MemberFamily, number> = {
   'support-post': 0xf97316,
   'transfer-beam': 0xf97316,
   'model-link': 0x111827,
+  'rim-bearing': 0x111827,
 };
 
 export interface TemplateFamilyRow {

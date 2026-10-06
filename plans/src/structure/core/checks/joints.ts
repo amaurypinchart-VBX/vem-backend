@@ -159,7 +159,8 @@ export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, co
       },
     };
   const etaN = C / NRd;
-  const etaT = T > 0 && TRd ? T / (n * TRd) : 0;
+  // soulèvement ≤ 1 kN à un angle sans plat : négligé (comme le seuil ci-dessus), pas de division par zéro
+  const etaT = T > 0 && TRd && n > 0 ? T / (n * TRd) : 0;
   const eta = Math.max(etaN, etaT);
   return {
     eta,
@@ -170,7 +171,7 @@ export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, co
       title: `Liaison verticale — ${label}`,
       clause: 'statico 24-0571 § 3.8–3.9, EN 1993-1-8 tab. 3.4',
       formula: 'compression Rz / NRd (contact) ; soulèvement T / (n · TRd), n = plats des demi-côtés extérieurs de l’angle',
-      withValues: T > 0 && TRd ? `T = ${kN(T)} ; n = ${f2(n, 1)} plat(s), TRd = ${kN(TRd)} → ${f2(etaT)}` : `Rz = ${kN(C)} / ${kN(NRd)} = ${f2(etaN)}`,
+      withValues: T > 0 && TRd && n > 0 ? `T = ${kN(T)} ; n = ${f2(n, 1)} plat(s), TRd = ${kN(TRd)} → ${f2(etaT)}` : `Rz = ${kN(C)} / ${kN(NRd)} = ${f2(etaN)}`,
       eta,
       combination,
     },

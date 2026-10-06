@@ -53,14 +53,22 @@ export function SupportsCard(p: SupportsCardProps) {
   const levels = [...new Set(p.modules.map((m) => m.level))].sort((a, b) => a - b);
   const levelColor = (l: number) => ['#94a3b8', '#3b82f6', '#8b5cf6', '#ec4899'][Math.min(l, 3)];
   const fs = Math.max(W, H) / 45;
+  const blocking = p.unsupported.filter((u) => u.cantilever === undefined);
+  const cantilevers = p.unsupported.filter((u) => u.cantilever !== undefined);
   const supportAt = (s: { module: string; corner: number }) => {
     const U = byId.get(s.module);
     return U ? cornerOf(U, s.corner) : null;
   };
   return (
-    <div className="card" style={{ marginBottom: 12, borderColor: p.unsupported.length ? 'var(--red, #dc2626)' : undefined }}>
+    <div className="card" style={{ marginBottom: 12, borderColor: blocking.length ? 'var(--red, #dc2626)' : cantilevers.length ? 'var(--orange, #f97316)' : undefined }}>
       <div className="card-head">
-        <h3>{p.unsupported.length ? `Appuis manquants — ${p.unsupported.length} angle(s) de Viewbox posé(s) dans le vide` : 'Appuis ajoutés par l’étude'}</h3>
+        <h3>
+          {blocking.length
+            ? `Appuis manquants — ${blocking.length} angle(s) de Viewbox posé(s) dans le vide`
+            : cantilevers.length
+              ? `Porte-à-faux — ${cantilevers.length} angle(s) de Viewbox sans appui dessous, vérifiés par le calcul`
+              : 'Appuis ajoutés par l’étude'}
+        </h3>
       </div>
       <div className="card-body" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <svg viewBox={`${minX} ${minZ} ${W} ${H}`} style={{ width: 420, maxWidth: '100%', height: 'auto', background: 'var(--bg-soft, rgba(127,127,127,0.06))', borderRadius: 6 }}>
@@ -112,8 +120,8 @@ export function SupportsCard(p: SupportsCardProps) {
                 ) : (
                   <rect x={u.position[0] - fs / 2} y={u.position[2] - fs / 2} width={fs} height={fs} fill="none" stroke="#f97316" strokeWidth={fs / 5} />
                 )}
-                <circle cx={u.position[0]} cy={u.position[2]} r={fs * 0.45} fill="#dc2626" />
-                <text x={u.position[0] + fs * 0.6} y={u.position[2] - fs * 0.5} fontSize={fs * 0.85} fill="#dc2626">
+                <circle cx={u.position[0]} cy={u.position[2]} r={fs * 0.45} fill={u.cantilever === undefined ? '#dc2626' : '#f97316'} />
+                <text x={u.position[0] + fs * 0.6} y={u.position[2] - fs * 0.5} fontSize={fs * 0.85} fill={u.cantilever === undefined ? '#dc2626' : '#f97316'}>
                   {u.module}·{u.corner + 1}
                 </text>
               </g>
@@ -121,21 +129,38 @@ export function SupportsCard(p: SupportsCardProps) {
           })}
         </svg>
         <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {p.unsupported.length > 0 && (
+          {blocking.length > 0 && (
             <>
               <div className="hint">
                 Un angle de Viewbox du dessus doit porter sur quelque chose : un angle ou une rive de toiture d’une Viewbox du dessous, une poutre ou un poteau dessiné dans le modèle. Ces angles-ci ne portent sur
-                rien (● rouge sur le plan) : le calcul ne peut pas être lancé. Pour chacun, l’outil propose l’appui le plus simple (en orange : □ poteau jusqu’au sol, ┅ poutre de reprise posée de rive à rive
-                sur la toiture de la Viewbox du dessous) :
+                rien et la Viewbox n’a pas assez d’autres appuis (● rouge sur le plan) : le calcul ne peut pas être lancé. Pour chacun, l’outil propose l’appui le plus simple (en orange : □ poteau jusqu’au
+                sol, ┅ poutre de reprise posée de rive à rive sur la toiture de la Viewbox du dessous) :
               </div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {p.unsupported.map((u) => (
+                {blocking.map((u) => (
                   <li key={`${u.module}${u.corner}`}>{u.text}</li>
                 ))}
               </ul>
+            </>
+          )}
+          {cantilevers.length > 0 && (
+            <>
+              <div className="hint">
+                Ces angles ne portent sur rien (● orange) mais leur Viewbox est tenue par au moins trois autres appuis (angles, rives, croisements de rives où une cale ou un plat d’appui est à prévoir) : c’est un
+                porte-à-faux, le calcul complet le vérifie. Si le résultat ne passe pas, un appui peut être ajouté sous chaque angle :
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {cantilevers.map((u) => (
+                  <li key={`${u.module}${u.corner}`}>{u.text}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {p.unsupported.length > 0 && (
+            <>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn small primary" disabled={p.sizing?.running || !p.canEdit} onClick={p.onAddAndSize}>
-                  ＋ Ajouter les appuis proposés et les dimensionner
+                <button className={`btn small ${blocking.length ? 'primary' : ''}`} disabled={p.sizing?.running || !p.canEdit} onClick={p.onAddAndSize}>
+                  {blocking.length ? '＋ Ajouter les appuis proposés et les dimensionner' : '＋ Ajouter quand même un appui sous ces angles et les dimensionner'}
                 </button>
                 <span className="hint">Le calcul complet choisit le profil (du gabarit Viewbox, puis plus fort du catalogue si η &gt; 1).</span>
               </div>

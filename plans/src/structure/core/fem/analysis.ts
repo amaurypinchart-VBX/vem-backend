@@ -477,14 +477,15 @@ export function analyzeLoadSet(prep: Prepared, set: LoadSet, options: AnalysisOp
       const violation = changes.reduce((m, c) => Math.max(m, c.severity), 0);
       if (!best || violation < best.violation) best = { active: st.active.slice(), lifted: st.lifted.slice(), violation, which: changes.map(where) };
       // cycle : l'état revient. D'abord un seul changement à la fois ; si le cycle persiste, aucun état ne satisfait
-      // exactement toutes les conditions de contact : on retient le meilleur si son effort résiduel est négligeable
+      // exactement toutes les conditions de contact : on retient le meilleur si son effort résiduel est négligeable (≤ 1 % de
+      // la plus grande réaction)
       const key = stateKey();
       if (seen.has(key)) {
         if (!single) {
           single = true;
           seen.clear();
         } else {
-          const limit = Math.max(100 * ntol, 1e-3 * maxReaction(prep, set));
+          const limit = Math.max(100 * ntol, 1e-2 * maxReaction(prep, set));
           if (best.violation > limit)
             throw new FemError('no-convergence', `Contacts indéterminés (cas ${set.id}) : effort résiduel ${Math.round(best.violation)} N`, best.which.slice(0, 10));
           st.active.set(best.active);

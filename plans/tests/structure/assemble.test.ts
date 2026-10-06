@@ -116,14 +116,16 @@ describe('assemblage des Viewbox', () => {
     expect(low.origin[1]).toBe(3080 - 280); // l'entrée n'est pas modifiée
   });
 
-  it('Viewbox du dessus décalée : angles sur la rive, angles dans le vide bloquants ; décalée en plan : liaison manquante signalée', () => {
+  it('Viewbox du dessus décalée : angles sur la rive, porte-à-faux vérifié ; décalée en plan : liaison manquante signalée', () => {
     const offset = assembleStructure([vbx('A', 0, 0), vbx('U', 1000, 0, 1)], opt);
-    // angles 1 et 4 sur les rives de A, angles 2 et 3 au-delà de A : dans le vide, poteau proposé
-    expect(offset.errors.length).toBe(2);
-    expect(offset.unsupported.map((u) => [u.corner, u.proposal.kind])).toEqual([
-      [1, 'post'],
-      [2, 'post'],
+    // angles 1 et 4 sur les rives de A, rives de U sur les angles de A : angles 2 et 3 en porte-à-faux de 1 m, vérifiés
+    // par le calcul (non bloquants), poteau proposé
+    expect(offset.errors).toEqual([]);
+    expect(offset.unsupported.map((u) => [u.corner, u.proposal.kind, Math.round(u.cantilever!)])).toEqual([
+      [1, 'post', 1000],
+      [2, 'post', 1000],
     ]);
+    expect(offset.meta.filter((m) => m.family === 'rim-bearing')).toHaveLength(2);
     expect(offset.fem.members.filter((b) => b.tag === 'corner-link')).toHaveLength(2);
     const staggered = assembleStructure([vbx('A', 0, 0), vbx('B', 1200, 2500)], opt);
     expect(staggered.warnings.some((w) => w.includes('Aucune liaison horizontale'))).toBe(true);

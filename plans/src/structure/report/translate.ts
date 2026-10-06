@@ -319,6 +319,8 @@ const PHRASES: Rule[] = [
   ['poteau de surélévation', 'Aufständerungsstütze', 'raising post'],
   ['croix de surélévation', 'Verband der Aufständerung', 'raising bracing'],
   ['contreventement ajouté', 'zusätzlicher Verband', 'added bracing'],
+  ['appui rive sur rive', 'Auflager Randträger auf Randträger', 'rim-on-rim bearing'],
+  ['cale ou plat d’appui à prévoir à chaque croisement', 'Futterblech oder Auflagerplatte an jeder Kreuzung vorsehen', 'packing or bearing plate required at each crossing'],
   ['poutre de reprise ajoutée', 'zusätzlicher Abfangträger', 'added transfer beam'],
   ['poteau d’appui ajouté', 'zusätzliche Stütze', 'added support post'],
   ['poteau d’appui', 'Stütze', 'support post'],

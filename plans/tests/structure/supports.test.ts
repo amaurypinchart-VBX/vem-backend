@@ -49,7 +49,7 @@ describe('appuis des Viewbox du dessus', () => {
     expect(run.index.items.some((i) => i.kind === 'vlink')).toBe(true);
   });
 
-  it('Viewbox en porte-à-faux : angles dans le vide → poteaux proposés, puis calculés et calés', async () => {
+  it('Viewbox en porte-à-faux : poteaux proposés, puis calculés et calés', async () => {
     const mods0 = inputs([vbx('A', 0, 0), vbx('A2', 0, 2.5), vbx('E', 3, 0, 1), vbx('E2', 3, 2.5, 1)]);
     const s0 = assembleStudy(mods0);
     expect(s0.unsupported.map((u) => [u.module, u.corner, u.proposal.kind])).toEqual([
@@ -59,8 +59,10 @@ describe('appuis des Viewbox du dessus', () => {
       ['E2', 2, 'post'],
     ]);
     expect(s0.unsupported[0].height).toBeCloseTo(3080, 0);
-    expect(s0.unsupported[0].text).toMatch(/ajouter un poteau d’appui/);
-    expect(s0.errors.some((e) => /E : angle 2 posé dans le vide/.test(e))).toBe(true);
+    // E porte sur ses angles 1 et 4 (rives de A) et sur les angles de A sous ses rives : porte-à-faux de 3 m, non bloquant
+    expect(s0.errors).toEqual([]);
+    expect(Math.round(s0.unsupported[0].cantilever!)).toBe(3000);
+    expect(s0.unsupported[0].text).toMatch(/porte-à-faux de 3,00 m .* poteau d’appui sous l’angle/);
     // la proposition acceptée (modification de l'étude) → appuis au sol de type « R »
     const mods = { supports: s0.unsupported.map((u) => u.proposal) };
     expect(describeMods(mods)[0]).toMatch(/poteau d’appui QHP100x5 sous E angle 2, jusqu’au sol/);
@@ -97,15 +99,34 @@ describe('appuis des Viewbox du dessus', () => {
   });
 
   it('dimensionnement des appuis proposés : profil renforcé jusqu’à η ≤ 1', async () => {
-    const base = inputs([vbx('A', 0, 0), vbx('G', 0, 2.5), vbx('K', 0, 5), turned('H', 3000, -500, 1)]);
-    const r = await sizeAddedSupports(base, {}, createInlineStudyRunner());
+    const base = inputs([vbx('A', 0, 0), vbx('A2', 0, 2.5), vbx('E', 3, 0, 1), vbx('E2', 3, 2.5, 1)]);
+    const proposals = assembleStudy(base).unsupported.map((u) => u.proposal);
+    // poteaux volontairement trop faibles (tube 60 × 60 × 2) : profil plus fort du catalogue jusqu'à η ≤ 1
+    const r = await sizeAddedSupports(base, { supports: proposals.map((a) => ({ ...a, section: 'CAT-SHS60x60x2' })) }, createInlineStudyRunner());
+    expect(r.steps.join(' ')).toMatch(/η [\d,]+ → /);
     expect(r.ok).toBe(true);
     expect(r.supports).toHaveLength(4);
-    // UNP 220 de la rive (η ≈ 1,05) → profil UPN plus fort du catalogue
-    expect(r.supports.some((a) => a.section?.startsWith('CAT-UPN'))).toBe(true);
-    expect(r.steps.join(' ')).toMatch(/UNP 220 η 1,0\d → UPN 240/);
+    expect(r.supports.every((a) => a.section !== 'CAT-SHS60x60x2')).toBe(true);
     const etas = addedSupportEtas(r.run!);
     expect(Math.max(...[...etas.values()].map((x) => x.eta))).toBeLessThanOrEqual(1);
+  }, 180000);
+
+  it('montage du test VEM 2026-10-01 : 3 Viewbox en ligne, une alignée dessus, deux tournées en porte-à-faux de 90 cm', async () => {
+    // VBX-04 / VBX-06 tournées de 90° (5,90 m sur 5,00 m de profondeur derrière VBX-05) : appuis rive sur rive aux
+    // croisements (les cales du modèle), angles 2 et 3 en porte-à-faux de 0,90 m vérifiés par le calcul
+    const inp = inputs([vbx('VBX-01', 0, 0), vbx('VBX-03', 0, 2.5), vbx('VBX-02', 0, 5), vbx('VBX-05', 0, 0, 1), turned('VBX-04', 2500, -2500, 1), turned('VBX-06', 5000, -2500, 1)]);
+    const s = assembleStudy(inp);
+    expect(s.errors).toEqual([]);
+    expect(s.unsupported.map((u) => [u.module, u.corner, Math.round(u.cantilever! / 10) * 10])).toEqual([
+      ['VBX-04', 1, 900],
+      ['VBX-04', 2, 900],
+      ['VBX-06', 1, 900],
+      ['VBX-06', 2, 900],
+    ]);
+    expect(s.meta.filter((m) => m.family === 'rim-bearing')).toHaveLength(8);
+    const run = await runStudy(inp, createInlineStudyRunner());
+    expect(run.summary.errors).toEqual([]);
+    expect(run.stability.overturning.verdict).toBe('ok');
   }, 120000);
 
   it('Viewbox posée sur deux poutres dessinées dans le modèle (pont au-dessus d’un passage)', async () => {
