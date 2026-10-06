@@ -43,6 +43,8 @@ a { color: var(--info); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-2); }
 .btn.small { padding: 4px 8px; font-size: 11px; }
 .btn.ghost { background: transparent; }
+.btn.danger { color: #fca5a5; border-color: rgba(220, 38, 38, .5); }
+.btn.danger:hover:not(:disabled) { background: rgba(220, 38, 38, .15); }
 
 .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .card-head { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
@@ -203,6 +205,15 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .thumb-title { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .thumb-actions { display: flex; gap: 2px; width: 100%; }
 .thumb-actions .btn { padding: 2px 5px; }
+.sheet-thumb:not(.on):not(:hover) .thumb-actions { display: none; }
+.sheet-thumb.dragging { opacity: .45; }
+.sheet-thumb.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+.sheet-thumb.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+.sheet-organize { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.levels-card { margin-top: 8px; }
+.level-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; margin: 8px 0; border: 1px solid var(--accent); border-radius: 6px; background: rgba(96, 165, 250, .08); }
+.level-editor input.invalid { border-color: #dc2626; }
+.levels-table input { padding: 2px 4px; }
 .sheet-canvas { position: relative; overflow: hidden; background: #5b6170; cursor: default; touch-action: none; user-select: none; }
 .sheet-canvas.tool-label, .sheet-canvas.tool-text, .sheet-canvas.tool-dim { cursor: crosshair; }
 .sheet-paper { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 4px 24px rgba(0, 0, 0, .35); background: #fff; }

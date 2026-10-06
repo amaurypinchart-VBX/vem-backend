@@ -18,6 +18,8 @@ import type { PlateGroup, PlatePlacement, PlatePlan, SupportGeometry } from './p
 import { flushCaps, plateGroups, platePlan, supportGeometry } from './placement';
 import type { TuvCheck } from './tuv';
 import { TUV, tuvConformity, tuvPlate } from './tuv';
+import type { GroundLevel, LevelSurvey } from './groundLevels';
+import { JACK_MAX_EXTENSION, levelSurvey } from './groundLevels';
 import { verdictOf } from './records';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
@@ -65,6 +67,9 @@ export interface CalageInput {
   placement?: PlatePlacement;
   /** préférer un calage conforme au minimum du Prüfbuch TÜV (plan 18-0573-03) et signaler les écarts (défaut oui) */
   tuvMinimum?: boolean;
+  /** niveaux du sol relevés sous les pieds (mm, relatifs) et sortie de vérin vérifiée (mm, défaut 50) */
+  levels?: GroundLevel[];
+  jackMax?: number;
 }
 
 /** Vérification d'un appui de calage (une plaque) sous sa propre réaction avec le calage qui lui est appliqué. */
@@ -146,6 +151,8 @@ export interface CalageResult {
   placement: PlatePlacement;
   /** Prüfbuch : portance ≥ 200 kN/m², calage conforme partout (null : rien de comparable) */
   tuv: { bearingOk: boolean; ok: boolean | null; tuvMinimum: boolean };
+  /** niveaux du sol relevés et rattrapage par pied (null : aucun relevé saisi) */
+  levels: LevelSurvey | null;
 }
 
 const typeLabel = (corners: number, middle: boolean, jack = false, stair = false) =>
@@ -567,6 +574,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
     tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn },
+    levels: inp.levels?.length ? levelSurvey(est.reactions.map((r) => ({ id: r.group.id, position: r.group.position, jack: !!r.group.jack })), inp.levels, inp.jackMax ?? JACK_MAX_EXTENSION) : null,
   };
 }
 

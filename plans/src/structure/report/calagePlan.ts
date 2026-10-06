@@ -14,10 +14,11 @@ import type { ViewBasis } from '../../core/views';
 import { projectPoint } from '../../core/views';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { wrapText as sheetWrap } from '../../sheets/SheetSvg';
-import type { CalagePlateSpec, RectMm, Sheet, SheetItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import type { CalagePlateSpec, LevelMarkSpec, RectMm, Sheet, SheetItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import { formatLevel } from '../core/groundLevels';
 import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { TYPE_HEX } from './figures';
-import { CALAGE_LABELS } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS } from './calageI18n';
 import type { SpreadLayer } from '../core/ground';
 import { TUV } from '../core/tuv';
 import type { Lang } from './i18n';
@@ -87,6 +88,24 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
   return out;
 }
 
+/** Couleurs des repères de niveau : référence (point haut), relevé, au-delà de la sortie de vérin. */
+export const LEVEL_MARK_COLORS = { ref: '#15803d', known: '#0e7490', over: '#dc2626' };
+
+/** Repères ▽ des niveaux du sol relevés (pieds sans relevé : rien), à la cote du dessous des Viewbox. */
+export function calageLevelMarks(s: Pick<StructuralModel, 'baseY'>, calage: CalageResult, lang: Lang = 'fr'): LevelMarkSpec[] {
+  const lv = calage.levels;
+  if (!lv?.known) return [];
+  return lv.rows
+    .filter((r) => r.level !== undefined)
+    .map((r) => ({
+      id: r.id,
+      text: formatLevel(r.level!),
+      ...(r.makeUp ? { sub: `↑${r.makeUp}${r.shims ? ` · ${LEVEL_LABELS[lang].shim} ${r.shims}` : ''}` } : {}),
+      color: r.shims ? LEVEL_MARK_COLORS.over : r.level === lv.ref ? LEVEL_MARK_COLORS.ref : LEVEL_MARK_COLORS.known,
+      at: [r.position[0], s.baseY, r.position[1]] as Vec3,
+    }));
+}
+
 /** Contour des Viewbox du niveau 0 comme traits d'une vue (quand le moteur 2D ne peut rien dessiner). */
 export function outlineLinework(s: Pick<StructuralModel, 'modules' | 'baseY'>, basis: ViewBasis): Linework2D {
   const polylines: Float64Array[] = [];
@@ -128,6 +147,8 @@ export interface CalageSheetInput {
   /** nœuds du niveau 0 (Viewbox et pieds) */
   include: string[];
   plates: CalagePlateSpec[];
+  /** repères des niveaux du sol relevés (calageLevelMarks) */
+  levels?: LevelMarkSpec[];
   calage: CalageResult;
   bearing: { value: number; label: string } | null;
   jacks: boolean;
@@ -164,7 +185,7 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
     label: inp.title ?? L.calagePlanTitle,
     showLabel: true,
     renderStyle: 'trait',
-    overlays: { moduleOutlines: true, calage: inp.plates },
+    overlays: { moduleOutlines: true, calage: inp.plates, ...(inp.levels?.length ? { levels: inp.levels } : {}) },
   };
   const c = inp.calage;
   // ─── colonne de texte ───
@@ -193,6 +214,18 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   if (inp.bearing) lay.push({ text: `${L.bearing} : ${L.bearingValue(N(inp.bearing.value), inp.bearing.label)}` });
   lay.push({ text: `${L.jacks} : ${inp.jacks ? L.jacksYes : L.jacksNo}` });
   blocks.push({ title: C.layingTitle, lines: lay });
+  // niveaux du sol relevés : référence, dénivelé, pente, rattrapage (vérins / cales)
+  const sv = c.levels;
+  if (sv?.known && sv.ref !== undefined) {
+    const V = LEVEL_LABELS[inp.lang];
+    const lv: Block['lines'] = [{ text: V.legend }, { text: V.ref(formatLevel(sv.ref), sv.refIds.join(', ')), color: LEVEL_MARK_COLORS.ref }];
+    if (sv.known > 1) lv.push({ text: V.spread(N(sv.spread ?? 0)) });
+    if (sv.slope) lv.push({ text: V.slope(N(sv.slope.pct, 1), sv.slope.a, sv.slope.b) });
+    if (inp.jacks) lv.push(sv.overJack.length ? { text: V.jacksOver(N(sv.jackMax), sv.overJack.join(', ')), color: LEVEL_MARK_COLORS.over, bold: true } : { text: V.jacksOk(N(sv.jackMax)) });
+    else if ((sv.maxMakeUp ?? 0) > 0) lv.push({ text: V.shimsNoJack(N(sv.maxMakeUp!)) });
+    if (sv.known < sv.rows.length) lv.push({ text: V.unknown(sv.rows.length - sv.known) });
+    blocks.push({ title: V.title, lines: lv });
+  }
   const tuvLine = !c.tuv.tuvMinimum ? C.tuvOff : c.tuv.ok === false ? C.tuvKo(c.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : c.tuv.ok ? C.tuvOk : '';
   blocks.push({
     title: C.legalTitle,

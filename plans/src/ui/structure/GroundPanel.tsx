@@ -30,6 +30,8 @@ import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice, checkColor } 
 import type { Project } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
+import type { GroundLevel } from '../../structure/core/groundLevels';
+import { GroundLevelsCard, LEVEL_COLORS, levelPointStyle } from './GroundLevels';
 
 export interface Hypotheses {
   bearingPreset: string;
@@ -75,6 +77,8 @@ export interface Hypotheses {
   platePlacement?: PlatePlacement;
   /** plaques minimales du Prüfbuch TÜV 190060 B (plan 18-0573-03) — défaut oui */
   tuvMinimum?: boolean;
+  /** niveaux du sol relevés sous les pieds (mm, relatifs ; pied sans relevé = absent) */
+  groundLevels?: GroundLevel[];
 }
 
 export const DEFAULT_HYP: Hypotheses = {
@@ -179,6 +183,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
     placement: h.platePlacement ?? 'auto',
     tuvMinimum: h.tuvMinimum ?? true,
+    ...(h.groundLevels?.length ? { levels: h.groundLevels } : {}),
   };
 }
 
@@ -392,9 +397,13 @@ export interface GroundPanelProps {
   extraSupports?: AddedSupport[];
   /** calage rapide sans modèle : murs, vitrages… saisis en forfait par Viewbox */
   withoutModel?: boolean;
+  /** sortie de tige de vérin vérifiée par le calcul (mm) : rattrapage des niveaux pris par les vérins jusque-là */
+  jackMax?: number;
+  /** ouvre l'étape où le plan de calage A3 s'ajoute à un jeu de plans 2D */
+  onSendToPlans?: () => void;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false, jackMax, onSendToPlans }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -411,7 +420,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pointsBusy, setPointsBusy] = useState(false);
   const [showPoints, setShowPoints] = useState(false);
-  const [planView, setPlanView] = useState<'check' | 'type'>('check');
+  const [planView, setPlanView] = useState<'check' | 'type' | 'level'>('check');
   // langue des PDF de calage (fiche, plan des appuis)
   const [pdfLang, setPdfLang] = useState<Lang>('fr');
   const [maxPub, setMaxPub] = useState<PublicMax | null>(null);
@@ -433,7 +442,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     }
   }, [hyp, storageKey, hypProp]);
 
-  const input = useMemo(() => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined }), [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel]);
+  const input = useMemo(
+    () => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined, ...(jackMax ? { jackMax } : {}) }),
+    [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel, jackMax],
+  );
   useEffect(() => {
     setPending(true);
     const t = setTimeout(() => {
@@ -577,6 +589,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         roadway,
         bearingLabel,
         checks: result.checks,
+        levels: result.levels,
         lang: pdfLang,
         info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
@@ -707,6 +720,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 <button className={`tab ${planView === 'type' ? 'active' : ''}`} onClick={() => setPlanView('type')}>
                   Types d’appui
                 </button>
+                <button className={`tab ${planView === 'level' ? 'active' : ''}`} onClick={() => setPlanView('level')} title="Niveaux du sol relevés sous chaque pied (mm) : cliquer un pied et taper sa valeur">
+                  Niveaux du sol{hyp.groundLevels?.length ? ` (${result.levels?.known ?? 0})` : ''}
+                </button>
               </div>
               {planView === 'check'
                 ? (
@@ -721,7 +737,21 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                       {l}
                     </span>
                   ))
-                : [...new Map(result.types.map((t) => [t.typeKey, t.label.split(' — ')[0]])).entries()].map(([k, l]) => (
+                : planView === 'level'
+                  ? (
+                      [
+                        ['ref', 'référence (point haut)'],
+                        ['known', 'relevé'],
+                        ['over', 'au-delà du vérin'],
+                        ['unknown', 'inconnu'],
+                      ] as const
+                    ).map(([k, l]) => (
+                      <span key={k} className="chip">
+                        <i style={{ background: LEVEL_COLORS[k] }} />
+                        {l}
+                      </span>
+                    ))
+                  : [...new Map(result.types.map((t) => [t.typeKey, t.label.split(' — ')[0]])).entries()].map(([k, l]) => (
                     <span key={k} className="chip">
                       <i style={{ background: typeColor(k) }} />
                       {l}
@@ -768,9 +798,14 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   h={420}
                   text={14}
                   selected={selected}
-                  onSelect={select}
+                  onSelect={planView === 'level' ? setSelected : select}
                   plates={planPlates(result.checks)}
-                  {...(planView === 'check'
+                  {...(planView === 'level'
+                    ? {
+                        pointColor: (r) => levelPointStyle(result, hyp.groundLevels, r).color,
+                        pointSub: (r) => levelPointStyle(result, hyp.groundLevels, r).sub,
+                      }
+                    : planView === 'check'
                     ? {
                         pointColor: (r) => {
                           const c = checkById.get(r.group.id);
@@ -790,10 +825,26 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 />
               </svg>
               <div className="hint" style={{ marginTop: 4 }}>
-                {planView === 'check' ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.' : 'Couleur = type d’appui.'}{' '}
+                {planView === 'level'
+                  ? 'Niveau du sol relevé sous chaque pied (mm, valeurs relatives) ; ↑ = rehausse à apporter pour poser la Viewbox de niveau (le point le plus haut sert de référence).'
+                  : planView === 'check'
+                    ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.'
+                    : 'Couleur = type d’appui.'}{' '}
                 Plaques dessinées à l’échelle à leur place (pointillés ▲ = plaque centrée, elle dépasse de la Viewbox) ; les vérins voisins sont sur une même plaque.
               </div>
-              {selCheck && <SupportPanel c={selCheck} result={result} stock={input.stock} set={choiceSet} onClose={() => setSelected(null)} />}
+              {planView === 'level' && (
+                <GroundLevelsCard
+                  result={result}
+                  modules={modules}
+                  levels={hyp.groundLevels}
+                  onChange={(lv: GroundLevel[]) => setHyp((h) => ({ ...h, groundLevels: lv }))}
+                  selected={selected}
+                  onSelect={setSelected}
+                  jacks={jacks}
+                  onSendToPlans={onSendToPlans}
+                />
+              )}
+              {selCheck && planView !== 'level' && <SupportPanel c={selCheck} result={result} stock={input.stock} set={choiceSet} onClose={() => setSelected(null)} />}
               <div className="hint" style={{ marginTop: 6 }}>
                 {result.estimate.method === 'fem'
                   ? 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'

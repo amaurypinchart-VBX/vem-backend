@@ -289,13 +289,48 @@ export const actions = {
       renumber(d.sheets as Sheet[]);
     });
   },
+  /**
+   * Monter / descendre d'un rang. Jeu séparé en unités : au bord de sa série, la planche passe d'abord dans la série
+   * voisine (elle en prend l'unité et la numérotation) sans changer de place, puis s'y déplace.
+   */
   moveSheet(id: string, delta: -1 | 1) {
     useEditor.getState().apply('Déplacer la planche', (d) => {
       const i = d.sheets.findIndex((s) => s.id === id);
       const j = i + delta;
       if (i < 0 || j < 0 || j >= d.sheets.length) return;
+      const s = d.sheets[i];
+      const other = d.sheets[j];
+      if (d.units?.length && (other.unit ?? 0) !== (s.unit ?? 0)) {
+        if (other.unit) s.unit = other.unit;
+        else delete s.unit;
+      } else {
+        d.sheets.splice(i, 1);
+        d.sheets.splice(j, 0, s);
+      }
+      renumber(d.sheets as Sheet[]);
+    });
+  },
+  /**
+   * Glisser-déposer : la planche est posée avant ou après la planche `targetId` ; dans un jeu séparé en unités, elle
+   * rejoint la série (unité) de cette planche.
+   */
+  moveSheetTo(id: string, targetId: string, after: boolean) {
+    if (id === targetId) return;
+    useEditor.getState().apply('Déplacer la planche', (d) => {
+      const i = d.sheets.findIndex((s) => s.id === id);
+      if (i < 0) return;
       const [s] = d.sheets.splice(i, 1);
-      d.sheets.splice(j, 0, s);
+      const t = d.sheets.findIndex((x) => x.id === targetId);
+      if (t < 0) {
+        d.sheets.splice(i, 0, s);
+        return;
+      }
+      d.sheets.splice(after ? t + 1 : t, 0, s);
+      if (d.units?.length) {
+        const unit = d.sheets[after ? t : t + 1].unit;
+        if (unit) s.unit = unit;
+        else delete s.unit;
+      }
       renumber(d.sheets as Sheet[]);
     });
   },

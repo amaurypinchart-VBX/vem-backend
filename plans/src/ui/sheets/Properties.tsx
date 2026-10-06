@@ -644,6 +644,52 @@ export function PropertiesPanel({
                 </select>
               </Field>
             )}
+            <div className="prop-field">
+              <span>Organiser le jeu</span>
+              {(() => {
+                const i = doc.sheets.findIndex((x) => x.id === sheet.id);
+                return (
+                  <div className="sheet-organize">
+                    <button className="btn small" disabled={i <= 0} onClick={() => actions.moveSheet(sheet.id, -1)}>
+                      ↑ Monter
+                    </button>
+                    <button className="btn small" disabled={i >= doc.sheets.length - 1} onClick={() => actions.moveSheet(sheet.id, 1)}>
+                      ↓ Descendre
+                    </button>
+                    <select
+                      value=""
+                      title="Placer cette planche juste après une autre"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '__first') actions.moveSheetTo(sheet.id, doc.sheets.find((x) => x.id !== sheet.id)!.id, false);
+                        else if (v) actions.moveSheetTo(sheet.id, v, true);
+                      }}
+                    >
+                      <option value="">Déplacer après…</option>
+                      <option value="__first">— en tête du jeu</option>
+                      {doc.sheets
+                        .filter((x) => x.id !== sheet.id)
+                        .map((x) => (
+                          <option key={x.id} value={x.id}>
+                            {x.number} · {x.title}
+                          </option>
+                        ))}
+                    </select>
+                    <button className="btn small" onClick={() => actions.duplicateSheet(sheet.id)}>
+                      ⧉ Dupliquer
+                    </button>
+                    <button
+                      className="btn small danger"
+                      disabled={doc.sheets.length === 1}
+                      onClick={() => window.confirm(`Supprimer la planche ${sheet.number} (${sheet.title}) ?\n\nCtrl+Z pour annuler.`) && actions.deleteSheet(sheet.id)}
+                    >
+                      🗑 Supprimer la planche
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="hint">Ou glisser les vignettes de la colonne de gauche pour réordonner (une planche posée dans une autre unité en prend la numérotation).</div>
             <div className="hint" style={{ marginTop: 8 }}>
               Format {sheet.paper} paysage. Clique un élément pour le modifier ; Maj + clic pour en sélectionner plusieurs. Molette : zoom · molette enfoncée ou
               Espace + glisser : se déplacer · Suppr : supprimer · Ctrl+Z / Ctrl+Y : annuler / rétablir · Ctrl+C / Ctrl+V : copier / coller (aussi d’une

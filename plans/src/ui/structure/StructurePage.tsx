@@ -632,6 +632,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           reactions={run && !stale ? run.result.ground : null}
           jacks={calcOpts.jacks}
           extraSupports={extraSupports}
+          jackMax={calcOpts.jackExtension}
+          onSendToPlans={() => setStep('report')}
           intro={
             warnings.length ? (
               <div className="warnings">

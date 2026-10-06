@@ -74,6 +74,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   /** choix d'une image 3D : image à remplacer, ou null = nouvelle image */
   const [picker, setPicker] = useState<{ itemId: string | null } | null>(null);
   const [dxfOpen, setDxfOpen] = useState(false);
+  // glisser-déposer des planches dans la colonne des vignettes
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
   const bankTick = useBank(bank);
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
@@ -688,32 +691,57 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             {!!doc.units?.length && (i === 0 || doc.sheets[i - 1].unit !== s.unit) && (
               <div className="sheet-group">{s.unit ? unitTitle(s.unit, doc.units.find((u) => u.n === s.unit)?.name) : 'Vue d’ensemble'}</div>
             )}
-            <div className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}`} onClick={() => useEditor.getState().setSheet(s.id)}>
+            <div
+              className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}${drop?.id === s.id ? (drop.after ? ' drop-after' : ' drop-before') : ''}${dragId === s.id ? ' dragging' : ''}`}
+              onClick={() => useEditor.getState().setSheet(s.id)}
+              draggable
+              title="Glisser pour déplacer la planche dans le jeu"
+              onDragStart={(e) => {
+                setDragId(s.id);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', s.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setDrop(null);
+              }}
+              onDragOver={(e) => {
+                if (!dragId || dragId === s.id) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                const after = e.clientY > r.top + r.height / 2;
+                if (drop?.id !== s.id || drop.after !== after) setDrop({ id: s.id, after });
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragId && drop) actions.moveSheetTo(dragId, drop.id, drop.after);
+                setDragId(null);
+                setDrop(null);
+              }}
+            >
               <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
                 <span className="thumb-title">{s.kind === 'cover' ? 'Couverture' : (s.items.find((x) => x.type === 'viewport' && (x as ViewportItem).label) as ViewportItem | undefined)?.label ?? s.title}</span>
-                {s.id === sheet.id && (
-                  <span className="thumb-actions" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn small ghost" disabled={i === 0} onClick={() => actions.moveSheet(s.id, -1)} title="Monter">
+                <span className="thumb-actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="btn small ghost" disabled={i === 0} onClick={() => actions.moveSheet(s.id, -1)} title="Monter la planche">
                       ↑
                     </button>
-                    <button className="btn small ghost" disabled={i === doc.sheets.length - 1} onClick={() => actions.moveSheet(s.id, 1)} title="Descendre">
+                    <button className="btn small ghost" disabled={i === doc.sheets.length - 1} onClick={() => actions.moveSheet(s.id, 1)} title="Descendre la planche">
                       ↓
                     </button>
-                    <button className="btn small ghost" onClick={() => actions.duplicateSheet(s.id)} title="Dupliquer">
+                    <button className="btn small ghost" onClick={() => actions.duplicateSheet(s.id)} title="Dupliquer la planche">
                       ⧉
                     </button>
                     <button
                       className="btn small ghost"
                       disabled={doc.sheets.length === 1}
-                      onClick={() => window.confirm(`Supprimer la planche ${s.number} ?`) && actions.deleteSheet(s.id)}
-                      title="Supprimer"
+                      onClick={() => window.confirm(`Supprimer la planche ${s.number} (${s.title}) ?\n\nCtrl+Z pour annuler.`) && actions.deleteSheet(s.id)}
+                      title="Supprimer la planche"
                     >
                       🗑
                     </button>
                   </span>
-                )}
               </div>
             </div>
             </Fragment>

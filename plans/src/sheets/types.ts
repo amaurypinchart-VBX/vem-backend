@@ -64,6 +64,18 @@ export interface CalagePlateSpec {
   at: Vec3;
 }
 
+/** Niveau du sol relevé sous un pied (plan de calage) : repère ▽ avec sa valeur et la rehausse à apporter. */
+export interface LevelMarkSpec {
+  id: string;
+  /** « −15 » (mm) */
+  text: string;
+  /** « ↑15 » */
+  sub?: string;
+  color: string;
+  /** pied (monde, mm, Y vers le haut) */
+  at: Vec3;
+}
+
 /** Unité montrée sur une vue de l'ensemble : ses Viewbox, encadrées, avec son nom. */
 export interface UnitOverlaySpec {
   name: string;
@@ -89,7 +101,7 @@ export interface ViewportItem extends ItemBase {
    * contour de chaque Viewbox (plan d'implantation), numéros de Viewbox (plan d'assemblage), cadre + nom de chaque
    * unité (vue aérienne de l'ensemble)
    */
-  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean; calage?: CalagePlateSpec[] };
+  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean; calage?: CalagePlateSpec[]; levels?: LevelMarkSpec[] };
   /** clé du calcul utilisé pour le rendu : si elle ne correspond plus, la vue est obsolète */
   lineworkKey?: string;
 }

@@ -13,7 +13,9 @@ import type { SheetInfo } from './groundSheet';
 import { GroundPlan, planPlates, wrap } from './groundSheet';
 import type { Lang } from './i18n';
 import { num } from './i18n';
-import { CALAGE_LABELS } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS } from './calageI18n';
+import type { LevelSurvey } from '../core/groundLevels';
+import { formatLevel } from '../core/groundLevels';
 import { translate } from './translate';
 import { layersShort } from './calagePlan';
 
@@ -40,6 +42,8 @@ export interface GroundPointsInput {
   bearingLabel: string;
   /** vérification de chaque appui avec son calage (colonne « Calage · pression au sol ») */
   checks?: SupportCheck[];
+  /** niveaux du sol relevés (colonnes « Niv. » et « ↑ » quand au moins un pied est relevé) */
+  levels?: LevelSurvey | null;
   lang?: Lang;
 }
 
@@ -81,8 +85,16 @@ function Page({ info, page, pages, lang, children }: { info: SheetInfo; page: nu
 }
 
 type Col = { title: string; w: number; align?: 'end' };
-const colsOf = (lang: Lang, calage: boolean): Col[] => {
+const colsOf = (lang: Lang, calage: boolean, levels = false): Col[] => {
   const C = CALAGE_LABELS[lang].cols;
+  if (levels) {
+    // niveaux relevés : deux colonnes après y, prises sur les plus larges
+    const V = LEVEL_LABELS[lang];
+    const base = colsOf(lang, calage).map((c) => ({ ...c }));
+    if (calage) base[8].w -= 18;
+    else base[2].w -= 18;
+    return [...base.slice(0, 5), { title: `${V.col} (mm)`, w: 11, align: 'end' }, { title: V.makeUpCol, w: 7, align: 'end' }, ...base.slice(5)];
+  }
   if (!calage)
     return [
       { title: C.point, w: 14 },
@@ -157,7 +169,7 @@ function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; hea
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, lang = 'fr' }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr' }: GroundPointsInput): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const R = C.roadwayRows;
   const E = (t: string) => translate(lang, t);
@@ -168,13 +180,19 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   // plaque de chaque point : la vérification de l'appui de calage qui le contient (vérins voisins sur une même plaque)
   const checkOf = new Map((checks ?? []).flatMap((c) => (c.members?.length ? c.members : [c.id]).map((id) => [id, c] as const)));
   const roadwayOn = !!checks?.some((c) => c.steps.some((s) => s.dims === null));
-  const cols = colsOf(lang, !!checks?.length);
+  const withLevels = !!levels?.known;
+  const cols = colsOf(lang, !!checks?.length, withLevels);
+  const levelCells = (id: string): string[] => {
+    const lr = levels?.rows.find((x) => x.id === id);
+    if (!withLevels) return [];
+    return lr?.level === undefined ? ['—', ''] : [formatLevel(lr.level), lr.makeUp ? `${lr.makeUp}${lr.shims ? '*' : ''}` : '0'];
+  };
   const rows = estimate.reactions.map((r) => {
     const [x, y] = planCoords(r.group.position, o);
     const ids = r.group.moduleIds.filter((id) => ground.has(id));
     const c = checkOf.get(r.group.id);
     const list = ids.length ? ids : r.group.moduleIds;
-    const head = [r.group.id, E(supportType(r)), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), n1(r.Rk / 1e3), n1(r.REd / 1e3)];
+    const head = [r.group.id, E(supportType(r)), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), ...levelCells(r.group.id), n1(r.Rk / 1e3), n1(r.REd / 1e3)];
     if (!checks?.length) return [...head, n1(r.Rk / 9.81e3, 2)];
     return [...head, c && c.id !== r.group.id ? `  ${c.id}` : '', c ? calageCell(c, roadwayOn, lang) : ''];
   });
@@ -215,6 +233,13 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   );
   y += planH + 5.5;
   const legend = wrap(C.coordsLegend, 140);
+  if (withLevels) {
+    const V = LEVEL_LABELS[lang];
+    const extra = [V.legend, V.ref(formatLevel(levels!.ref!), levels!.refIds.join(', '))];
+    if (levels!.overJack.length) extra.push(`* ${V.jacksOver(n1(levels!.jackMax, 0), levels!.overJack.join(', '))}`);
+    if (levels!.known < levels!.rows.length) extra.push(V.unknown(levels!.rows.length - levels!.known));
+    for (const t of extra) legend.push(...wrap(t, 140));
+  }
   legend.forEach((t, k) =>
     first.push(
       <text fontFamily={FONT_SANS} key={`leg${k}`} x={M} y={y + k * 3} fontSize={2.2} fill="#6b7280">

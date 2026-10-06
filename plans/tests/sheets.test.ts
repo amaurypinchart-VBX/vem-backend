@@ -126,6 +126,57 @@ describe('éditeur : historique', () => {
   });
 });
 
+describe('éditeur : organiser les planches', () => {
+  const mk = (id: string, unit?: number): Sheet => ({ id, number: '', title: id, paper: 'A1', orientation: 'landscape', kind: 'standard', items: [], ...(unit ? { unit } : {}) });
+  const load = (sheets: Sheet[], units = true) => {
+    renumber(sheets);
+    useEditor.getState().load({
+      id: 'd',
+      projectId: 'p',
+      modelVersionId: null,
+      modelKey: 'k',
+      title: 'Jeu',
+      templateId: 'viewbox',
+      titleBlock: emptyTitleBlock(),
+      notes: '',
+      sheets,
+      ...(units ? { units: [{ n: 1, name: 'U1', moduleIds: [], commonIds: [] }, { n: 2, name: 'U2', moduleIds: [], commonIds: [] }] } : {}),
+      revision: 0,
+      updatedAt: '',
+    });
+  };
+  const state = () => useEditor.getState().doc!.sheets.map((s) => `${s.id}:${s.number}`);
+
+  it('monter / descendre : au bord d’une série, la planche passe dans la série voisine puis s’y déplace', () => {
+    load([mk('a'), mk('b', 1), mk('c', 1), mk('d', 2)]);
+    expect(state()).toEqual(['a:A0.1', 'b:A1.1', 'c:A1.2', 'd:A2.1']);
+    actions.moveSheet('d', -1);
+    expect(state()).toEqual(['a:A0.1', 'b:A1.1', 'c:A1.2', 'd:A1.3']);
+    actions.moveSheet('d', -1);
+    expect(state()).toEqual(['a:A0.1', 'b:A1.1', 'd:A1.2', 'c:A1.3']);
+    actions.moveSheet('b', -1);
+    expect(state()).toEqual(['a:A0.1', 'b:A0.2', 'd:A1.1', 'c:A1.2']);
+    useEditor.getState().undo();
+    expect(state()).toEqual(['a:A0.1', 'b:A1.1', 'd:A1.2', 'c:A1.3']);
+    // jeu sans unités : simple échange
+    load([mk('a'), mk('b'), mk('c')], false);
+    actions.moveSheet('c', -1);
+    expect(state()).toEqual(['a:A0.1', 'c:A0.2', 'b:A0.3']);
+  });
+
+  it('glisser-déposer avant / après une planche : elle rejoint sa série ; suppression annulable', () => {
+    load([mk('a'), mk('b', 1), mk('c', 1), mk('d', 2)]);
+    actions.moveSheetTo('a', 'd', true);
+    expect(state()).toEqual(['b:A1.1', 'c:A1.2', 'd:A2.1', 'a:A2.2']);
+    actions.moveSheetTo('a', 'b', false);
+    expect(state()).toEqual(['a:A1.1', 'b:A1.2', 'c:A1.3', 'd:A2.1']);
+    actions.deleteSheet('b');
+    expect(state()).toEqual(['a:A1.1', 'c:A1.2', 'd:A2.1']);
+    useEditor.getState().undo();
+    expect(state()).toEqual(['a:A1.1', 'b:A1.2', 'c:A1.3', 'd:A2.1']);
+  });
+});
+
 describe('cartouche et rendu', () => {
   it('pré-remplit le cartouche depuis le projet VEM', () => {
     const tb = titleBlockFromProject(

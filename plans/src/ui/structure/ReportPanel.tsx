@@ -29,7 +29,7 @@ import { ignoredStructural } from '../../structure/scene/studyModel';
 import { VERDICT_LABEL } from '../../structure/core/records';
 import type { ReportImage, ReportOutput, ReportVariant } from '../../structure/report/build';
 import { buildReport } from '../../structure/report/build';
-import { calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outlineLinework } from '../../structure/report/calagePlan';
+import { calageLevelMarks, calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outlineLinework } from '../../structure/report/calagePlan';
 import type { Lang } from '../../structure/report/i18n';
 import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
 import type { StudyInputs, StudyRun } from '../../structure/studyRun';
@@ -164,7 +164,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   // calage avec les réactions du calcul (mêmes entrées que l'étape 5)
   const calage = useMemo((): CalageResult | null => {
     if (!run || stale || !modules.length) return null;
-    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), reactions: run.ground };
+    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), reactions: run.ground, jackMax: inputs.options.jackExtension };
     if (!(input.bearing > 0)) return null;
     try {
       return computeCalage(input);
@@ -190,7 +190,8 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
     const lowest = Math.min(...scene.index.modules.map((m) => m.level));
     const include = subsetForLevel(scene.index, lowest);
     const plates = calagePlates(run.structure, calage, l);
-    const { sheet, notes, legend, viewport } = calageSheet({ lang: l, modelKey: scene.modelKey, include, plates, calage, bearing, jacks: inputs.options.jacks, number: '' });
+    const levels = calageLevelMarks(run.structure, calage, l);
+    const { sheet, notes, legend, viewport } = calageSheet({ lang: l, modelKey: scene.modelKey, include, plates, levels, calage, bearing, jacks: inputs.options.jacks, number: '' });
     const basis = viewBasis(viewport.request.view, scene.frames);
     let data: ((vp: ViewportItem) => ViewportData) | null = null;
     let lw: Linework2D | null = null;

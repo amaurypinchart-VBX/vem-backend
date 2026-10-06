@@ -329,3 +329,65 @@ const EN: CalageDocLabels = {
 };
 
 export const CALAGE_LABELS: Record<Lang, CalageDocLabels> = { fr: FR, de: DE, en: EN };
+
+/** Textes des niveaux du sol relevés (plan de calage A3, plan des appuis au sol). */
+export interface LevelDocLabels {
+  title: string;
+  legend: string;
+  /** cales en plus sous la platine (repère du plan) */
+  shim: string;
+  ref: (level: string, ids: string) => string;
+  spread: (mm: string) => string;
+  slope: (pct: string, a: string, b: string) => string;
+  jacksOk: (max: string) => string;
+  jacksOver: (max: string, ids: string) => string;
+  shimsNoJack: (mm: string) => string;
+  unknown: (n: number) => string;
+  col: string;
+  makeUpCol: string;
+}
+
+export const LEVEL_LABELS: Record<Lang, LevelDocLabels> = {
+  fr: {
+    title: 'NIVEAUX DU SOL (RELEVÉ)',
+    legend: 'Triangle : niveau du sol relevé sous le pied (mm, relatif) ; ↑ rehausse à apporter pour poser la Viewbox de niveau ; « cale » : cales en plus sous la platine du vérin.',
+    shim: 'cale',
+    ref: (l, ids) => `Référence = point le plus haut : ${l} mm (${ids}), calage de base ; chaque autre pied est rehaussé de (référence − niveau).`,
+    spread: (mm) => `Dénivelé total relevé : ${mm} mm.`,
+    slope: (p, a, b) => `Pente la plus forte : ${p} % (${a} → ${b}).`,
+    jacksOk: (m) => `Rattrapage pris par la sortie des vérins (≤ ${m} mm, sortie vérifiée), le vérin du point haut à sa sortie minimale.`,
+    jacksOver: (m, ids) => `Rattrapage supérieur à la sortie de vérin vérifiée (${m} mm) sous ${ids} : cales en plus sous la platine (plaques entières, vissées).`,
+    shimsNoJack: (mm) => `Rattrapage par cales sous les angles (au plus ${mm} mm), plaques entières empilées et vissées.`,
+    unknown: (n) => `${n} pied${n > 1 ? 's' : ''} sans relevé : niveau à mesurer sur place.`,
+    col: 'Niv.',
+    makeUpCol: '↑',
+  },
+  de: {
+    title: 'BODENHÖHEN (AUFMASS)',
+    legend: 'Dreieck: gemessene Bodenhöhe unter dem Fuß (mm, relativ); ↑ Ausgleich, um die Viewbox waagerecht aufzustellen; „Unterl.“: zusätzliche Unterlage unter der Spindelfußplatte.',
+    shim: 'Unterl.',
+    ref: (l, ids) => `Bezug = höchster Punkt: ${l} mm (${ids}), Grundunterpallung; jeder andere Fuß wird um (Bezug − Höhe) angehoben.`,
+    spread: (mm) => `Gemessener Höhenunterschied: ${mm} mm.`,
+    slope: (p, a, b) => `Größtes Gefälle: ${p} % (${a} → ${b}).`,
+    jacksOk: (m) => `Ausgleich über den Spindelauszug (≤ ${m} mm, nachgewiesener Auszug), Spindel am höchsten Punkt im kleinsten Auszug.`,
+    jacksOver: (m, ids) => `Ausgleich größer als der nachgewiesene Spindelauszug (${m} mm) unter ${ids}: zusätzliche Unterlagen unter der Fußplatte (ganze Platten, verschraubt).`,
+    shimsNoJack: (mm) => `Ausgleich durch Unterlagen unter den Ecken (höchstens ${mm} mm), ganze Platten gestapelt und verschraubt.`,
+    unknown: (n) => `${n} Fuß/Füße ohne Aufmaß: Höhe vor Ort messen.`,
+    col: 'Höhe',
+    makeUpCol: '↑',
+  },
+  en: {
+    title: 'GROUND LEVELS (SURVEY)',
+    legend: 'Triangle: ground level surveyed under the foot (mm, relative); ↑ packing to add to set the Viewbox level; “shim”: extra packing under the jack base plate.',
+    shim: 'shim',
+    ref: (l, ids) => `Datum = highest point: ${l} mm (${ids}), base packing; every other foot is raised by (datum − level).`,
+    spread: (mm) => `Total level difference surveyed: ${mm} mm.`,
+    slope: (p, a, b) => `Steepest slope: ${p} % (${a} → ${b}).`,
+    jacksOk: (m) => `Made up by the jack extension (≤ ${m} mm, checked extension), the jack at the highest point at its minimum extension.`,
+    jacksOver: (m, ids) => `Make-up larger than the checked jack extension (${m} mm) under ${ids}: extra packing under the base plate (whole plates, screwed).`,
+    shimsNoJack: (mm) => `Made up by packing under the corners (${mm} mm at most), whole plates stacked and screwed.`,
+    unknown: (n) => `${n} foot/feet without survey: level to be measured on site.`,
+    col: 'Lvl',
+    makeUpCol: '↑',
+  },
+};

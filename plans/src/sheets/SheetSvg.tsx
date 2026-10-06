@@ -362,6 +362,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
             })}
         </g>
         {vp.overlays?.calage && data?.basis && <CalageLabels plates={vp.overlays.calage} basis={data.basis} toPaper={toPaper} />}
+        {vp.overlays?.levels && data?.basis && <LevelMarks marks={vp.overlays.levels} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.moduleNumbers &&
           numberLabels(overlays).map((o) => {
             const p = toPaper(o.center.x, o.center.y);
@@ -413,6 +414,53 @@ function CalageLabels({ plates, basis, toPaper }: { plates: NonNullable<NonNulla
                   <rect x={num(c.x - w(l.t, l.sz) / 2 - 0.4)} y={num(y - l.sz * 0.95)} width={num(w(l.t, l.sz) + 0.8)} height={num(l.sz * 1.2)} fill="#ffffff" fillOpacity={0.85} />
                   <text x={num(c.x)} y={num(y)} fontSize={num(l.sz)} textAnchor="middle" fontFamily={FONT_SANS} fontWeight={l.bold ? 700 : undefined} fill={i === 0 ? p.color : '#111827'}>
                     {l.t}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Repères des niveaux du sol relevés (mm papier) : ▽ dont la pointe est sur le pied, valeur en mm et rehausse ↑ à côté,
+ * sur fond blanc ; des pieds voisins (vérins sous une même plaque) écartent leurs étiquettes vers l'extérieur du groupe.
+ */
+function LevelMarks({ marks, basis, toPaper }: { marks: NonNullable<NonNullable<ViewportItem['overlays']>['levels']>; basis: ViewBasis; toPaper: (x: number, y: number) => PointMm }) {
+  const size = 2.0;
+  const t = 1.3;
+  const w = (s: string, sz: number) => s.length * sz * 0.55;
+  const pts = marks.map((m) => {
+    const a = projectPoint(basis, m.at);
+    return toPaper(a.x, a.y);
+  });
+  return (
+    <g fontFamily={FONT_SANS} data-dxf="VBX-NIVEAUX">
+      {marks.map((m, i) => {
+        const p = pts[i];
+        const near = pts.filter((q) => Math.hypot(q.x - p.x, q.y - p.y) < 9);
+        const gx = near.reduce((a, q) => a + q.x, 0) / near.length;
+        const gy = near.reduce((a, q) => a + q.y, 0) / near.length;
+        const sx = near.length > 1 && Math.abs(p.x - gx) > 0.05 ? Math.sign(p.x - gx) : 1;
+        const sy = near.length > 1 && Math.abs(p.y - gy) > 0.05 ? Math.sign(p.y - gy) : 1;
+        const anchor = sx < 0 ? 'end' : 'start';
+        const tx = p.x + sx * (t + 0.6);
+        const ty = sy < 0 ? p.y - t - 0.4 - (m.sub ? size * 0.95 : 0) : p.y + size * 0.35;
+        const lines = [{ s: m.text, sz: size, bold: true }, ...(m.sub ? [{ s: m.sub, sz: size * 0.85, bold: false }] : [])];
+        return (
+          <g key={`lv${m.id}`}>
+            <path d={`M${num(p.x)} ${num(p.y)}L${num(p.x - t * 0.6)} ${num(p.y - t)}L${num(p.x + t * 0.6)} ${num(p.y - t)}Z`} fill="#ffffff" stroke={m.color} strokeWidth={0.25} />
+            {lines.map((l, k) => {
+              const y = ty + k * size * 0.95;
+              const lw = w(l.s, l.sz);
+              return (
+                <g key={k}>
+                  <rect x={num(anchor === 'end' ? tx - lw - 0.3 : tx - 0.3)} y={num(y - l.sz * 0.85)} width={num(lw + 0.6)} height={num(l.sz * 1.05)} fill="#ffffff" fillOpacity={0.85} />
+                  <text x={num(tx)} y={num(y)} fontSize={num(l.sz)} textAnchor={anchor} fontFamily={FONT_SANS} fontWeight={l.bold ? 700 : undefined} fill={m.color}>
+                    {l.s}
                   </text>
                 </g>
               );
