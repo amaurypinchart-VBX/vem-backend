@@ -35,6 +35,8 @@ import type { DimensionItem } from '../../sheets/types';
 import { PropertiesPanel } from './Properties';
 import { downloadBlob, downloadText } from '../common';
 import { CapturePicker } from './CapturePicker';
+import { DxfDialog } from './DxfDialog';
+import type { DxfChoice } from './DxfDialog';
 import type { PickableImage } from '../../sheets/images';
 import { insertRect, otherImagesOfSet } from '../../sheets/images';
 import { DETAILS, detailRect } from '../../sheets/details';
@@ -71,6 +73,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [syncMessage, setSyncMessage] = useState('');
   /** choix d'une image 3D : image à remplacer, ou null = nouvelle image */
   const [picker, setPicker] = useState<{ itemId: string | null } | null>(null);
+  const [dxfOpen, setDxfOpen] = useState(false);
   const bankTick = useBank(bank);
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
@@ -442,6 +445,48 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     }
   };
 
+  /** DXF de la planche affichée ou du jeu (un .zip) : planche à l'échelle papier ou vues en grandeur réelle. */
+  const exportDxf = async ({ all, mode }: DxfChoice) => {
+    setDxfOpen(false);
+    const sheets = all ? doc.sheets : [sheet];
+    try {
+      setBusy('DXF : calcul des vues…');
+      const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+      await Promise.all(vps.map((vp) => bank.load(vp)));
+      const missing = vps.filter((vp) => !bank.data(vp).lw).length;
+      if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (absentes du DXF). Exporter quand même ?`)) return;
+      const { sheetDxf, zipDxf, safeFileName } = await import('../../sheets/dxf/export');
+      const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}`;
+      const files = [];
+      for (const [n, s] of sheets.entries()) {
+        setBusy(`DXF : planche ${n + 1}/${sheets.length}…`);
+        await new Promise((r) => setTimeout(r, 0));
+        // les images 3D ne gardent que leur cadre dans le DXF
+        const markup = renderToStaticMarkup(
+          <SheetSvg
+            sheet={s}
+            titleBlock={doc.titleBlock}
+            notes={doc.notes}
+            legend={legend}
+            viewData={(vp) => bank.data(vp)}
+          />,
+        );
+        const f = sheetDxf(s, markup, mode, (vp) => !!bank.data(vp).lw, base);
+        if (f) files.push(f);
+      }
+      if (!files.length) {
+        window.alert(mode === 'real' ? 'Aucune vue calculée à exporter en grandeur réelle (planches sans vue 2D).' : 'Rien à exporter.');
+        return;
+      }
+      if (files.length === 1) downloadBlob(files[0].name, new Blob([files[0].dxf], { type: 'application/dxf' }));
+      else downloadBlob(safeFileName(`${base}_DXF${mode === 'real' ? '_grandeur-reelle' : ''}.zip`), new Blob([zipDxf(files) as BlobPart], { type: 'application/zip' }));
+    } catch (e) {
+      window.alert(`Export DXF impossible : ${(e as Error).message}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const newSheet = () => {
     const s: Sheet = {
       id: newId('s'),
@@ -597,6 +642,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small ghost" disabled={!!busy} onClick={() => void exportPdf(false)} title="La planche affichée en PDF vectoriel">
           ⬇ PDF planche
         </button>
+        <button className="btn small ghost" disabled={!!busy} onClick={() => setDxfOpen(true)} title="Plans en DXF pour AutoCAD / architectes : planche complète ou vues en grandeur réelle (1 unité = 1 mm)">
+          ⬇ DXF
+        </button>
         <button className="btn small ghost" onClick={exportSvg} title="La planche affichée au format SVG (format exact, vectoriel)">
           ⬇ SVG
         </button>
@@ -705,6 +753,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           syncMessage={syncMessage}
         />
       </div>
+      {dxfOpen && <DxfDialog sheetLabel={`${sheet.number} ${sheet.title}`.trim()} sheetCount={doc.sheets.length} onExport={(c) => void exportDxf(c)} onClose={() => setDxfOpen(false)} />}
       {picker && (
         <CapturePicker
           title={pickerItem ? 'Changer l’image 3D' : 'Ajouter une image 3D'}

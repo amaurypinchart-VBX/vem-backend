@@ -339,26 +339,26 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
           {vp.overlays?.statusColors &&
             overlays.map((o) =>
               vp.overlays?.statusColors?.[o.moduleId] ? (
-                <path key={`f${o.moduleId}`} d={polyD(o.outline)} fill={vp.overlays.statusColors[o.moduleId]} fillOpacity={0.35} stroke="none" />
+                <path key={`f${o.moduleId}`} d={polyD(o.outline)} fill={vp.overlays.statusColors[o.moduleId]} fillOpacity={0.35} stroke="none" data-dxf="VBX-STATUTS" />
               ) : null,
             )}
           {paths.map(({ key, d }) => {
             if (!d) return null;
             if (key.startsWith('category:')) {
               const color = categoryColors.get(key.slice(9)) ?? '#888';
-              return <path key={key} d={d} stroke={color} strokeWidth={num(STROKE_MM.category * s)} strokeLinecap="butt" opacity={0.9} />;
+              return <path key={key} d={d} stroke={color} strokeWidth={num(STROKE_MM.category * s)} strokeLinecap="butt" opacity={0.9} data-dxf={dxfLayer(key)} />;
             }
-            if (key.startsWith('mark:')) return <path key={key} d={d} stroke={markColor(key, categoryColors)} strokeWidth={num(STROKE_MM.mark * s)} />;
+            if (key.startsWith('mark:')) return <path key={key} d={d} stroke={markColor(key, categoryColors)} strokeWidth={num(STROKE_MM.mark * s)} data-dxf={dxfLayer(key)} />;
             const w = STROKE_MM[key as 'silhouette' | 'visible' | 'fine' | 'hidden'] ?? 0.18;
-            return <path key={key} d={d} stroke="#000" strokeWidth={num(w * s)} strokeDasharray={key === 'hidden' ? `${num(1.2 * s)} ${num(0.8 * s)}` : undefined} />;
+            return <path key={key} d={d} stroke="#000" strokeWidth={num(w * s)} strokeDasharray={key === 'hidden' ? `${num(1.2 * s)} ${num(0.8 * s)}` : undefined} data-dxf={dxfLayer(key)} />;
           })}
           {vp.overlays?.moduleOutlines &&
-            overlays.map((o) => <path key={`o${o.moduleId}`} d={polyD(o.outline)} stroke="#000" strokeWidth={num(0.18 * s)} strokeDasharray={`${num(3 * s)} ${num(1.5 * s)}`} />)}
+            overlays.map((o) => <path key={`o${o.moduleId}`} d={polyD(o.outline)} stroke="#000" strokeWidth={num(0.18 * s)} strokeDasharray={`${num(3 * s)} ${num(1.5 * s)}`} data-dxf="VBX-CONTOURS-MODULES" />)}
           {vp.overlays?.calage &&
             data?.basis &&
             vp.overlays.calage.map((p) => {
               const pts = p.corners.map((c) => projectPoint(data.basis!, c));
-              return <path key={`p${p.id}`} d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))} fill={p.color} fillOpacity={0.28} stroke={p.color} strokeWidth={num(0.3 * s)} />;
+              return <path key={`p${p.id}`} d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))} fill={p.color} fillOpacity={0.28} stroke={p.color} strokeWidth={num(0.3 * s)} data-dxf="VBX-CALAGE" />;
             })}
         </g>
         {vp.overlays?.calage && data?.basis && <CalageLabels plates={vp.overlays.calage} basis={data.basis} toPaper={toPaper} />}
@@ -367,7 +367,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
             const p = toPaper(o.center.x, o.center.y);
             const size = Math.max(5, Math.min(40, o.minSize / s / 2.2));
             return (
-              <text key={`n${o.key}`} x={num(p.x)} y={num(p.y + size * 0.35)} fontSize={num(size)} textAnchor="middle" fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
+              <text key={`n${o.key}`} data-dxf="VBX-NUMEROS" x={num(p.x)} y={num(p.y + size * 0.35)} fontSize={num(size)} textAnchor="middle" fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
                 {o.label}
               </text>
             );
@@ -375,7 +375,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
         {vp.overlays?.units &&
           !vp.overlays.hideUnits &&
           unitFrames(overlays, vp.overlays.units, toPaper).map((u, i) => (
-            <g key={`u${i}`}>
+            <g key={`u${i}`} data-dxf="VBX-UNITES">
               <rect {...rectAttrs(u.rect)} fill="none" stroke="#1a021d" strokeWidth={0.35} strokeDasharray="8 1.5 1.5 1.5" />
               <text x={num(u.rect.x)} y={num(u.rect.y + u.rect.h + UNIT_FRAME.textGap + UNIT_FRAME.text)} fontSize={UNIT_FRAME.text} fontFamily={FONT_SERIF} fontWeight={700} fill="#1a021d">
                 {u.name}
@@ -392,7 +392,7 @@ function CalageLabels({ plates, basis, toPaper }: { plates: NonNullable<NonNulla
   const size = 2.1;
   const w = (t: string, sz: number) => t.length * sz * 0.52;
   return (
-    <g fontFamily={FONT_SANS}>
+    <g fontFamily={FONT_SANS} data-dxf="VBX-CALAGE">
       {plates.map((p) => {
         const a = projectPoint(basis, p.at);
         const c = toPaper(a.x, a.y);
@@ -432,10 +432,38 @@ function polyD(pl: Float64Array): string {
 
 function ViewTitle({ text, pos, size }: { text: string; pos: PointMm; size: number }) {
   return (
-    <T x={pos.x} top={pos.y} size={size}>
-      {text}
-    </T>
+    <g data-dxf="VBX-TITRES">
+      <T x={pos.x} top={pos.y} size={size}>
+        {text}
+      </T>
+    </g>
   );
+}
+
+/** Calque DXF d'un jeu de traits de vue. */
+function dxfLayer(key: string): string {
+  if (key.startsWith('category:')) return `VBX-CATEGORIE-${key.slice(9)}`;
+  if (key.startsWith('mark:')) return key === 'mark:CROSS' ? 'VBX-REPERE-MURS' : `VBX-REPERE-${key.slice(5)}`;
+  return { silhouette: 'VBX-VUE-SILHOUETTE', visible: 'VBX-VUE-VISIBLE', fine: 'VBX-VUE-FIN', hidden: 'VBX-VUE-CACHE' }[key] ?? `VBX-VUE-${key}`;
+}
+
+/** Calque DXF par type d'élément (export DXF : attribut data-dxf, data-vp = fenêtre de vue suivie). */
+const ITEM_DXF_LAYER: Record<SheetItem['type'], string> = {
+  viewport: 'VBX-VUES',
+  image3d: 'VBX-IMAGES-3D',
+  label: 'VBX-ANNOTATIONS',
+  dimension: 'VBX-COTES',
+  text: 'VBX-TEXTES',
+  shape: 'VBX-FORMES',
+  detail: 'VBX-DETAILS',
+  logo: 'VBX-LOGOS',
+};
+
+function itemViewport(item: SheetItem): string | undefined {
+  if (item.type === 'viewport') return item.id;
+  if (item.type === 'dimension') return item.viewportId;
+  if (item.type === 'label' && item.viewportId && item.anchor3d) return item.viewportId;
+  return undefined;
 }
 
 /** Position papier de l'ancre d'un repère (suit la vue si le repère est ancré sur un point 3D). */
@@ -692,7 +720,12 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         body = <Logo shape={item.logo === 'vb' ? VB_LOGO : VIEWBOX_WORDMARK} rect={item.rect} />;
         break;
     }
-    if (!editing) return <g key={item.id}>{body}</g>;
+    if (!editing)
+      return (
+        <g key={item.id} data-dxf={ITEM_DXF_LAYER[item.type]} data-vp={itemViewport(item)}>
+          {body}
+        </g>
+      );
     const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
     const b = itemBounds(item, anchor, k, dimBoxOf(item));
     return (
@@ -767,10 +800,12 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     >
       <rect x={0} y={0} width={paper.w} height={paper.h} fill="#fff" />
       {sheet.kind === 'cover' ? (
-        <CoverBand tb={titleBlock} sheet={sheet} k={k} />
+        <g data-dxf="VBX-CARTOUCHE">
+          <CoverBand tb={titleBlock} sheet={sheet} k={k} />
+        </g>
       ) : (
-        <g>
-          <rect {...rectAttrs(scaleRect(FRAME, k))} fill="none" stroke="#000" strokeWidth={num(0.18 * k)} />
+        <g data-dxf="VBX-CARTOUCHE">
+          <rect {...rectAttrs(scaleRect(FRAME, k))} fill="none" stroke="#000" strokeWidth={num(0.18 * k)} data-dxf="VBX-CADRE" />
           <rect {...rectAttrs(scaleRect(TITLE_BOX, k))} fill="#fff" stroke="#000" strokeWidth={num(0.18 * k)} />
           <T x={(TITLE_BOX.x + 0.8) * k} top={(TITLE_BOX.y + 5.3) * k} size={4.6 * k}>
             {sheet.title}
