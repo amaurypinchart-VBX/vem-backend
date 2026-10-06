@@ -263,6 +263,13 @@ class MainSmokeTest < Minitest::Test
     assert_equal ['MUR-LOURD', 'manuel'], PREP.category_for(lone_door)
     assert_equal ['PORTE-ORANGERIE', 'manuel'], PREP.category_for(model.entities.to_a[4])
 
+    # ── Structure d'une Viewbox (attribut d'instance) : poteaux 5 m, rives du plancher UPN 160, poteaux S355 ──
+    vbx1 = model.entities.to_a[0]
+    UI.inputs = [['5000', 'UPN 160', 'gabarit', 'gabarit', 'gabarit', 'gabarit', 'gabarit', 'S355', '18', 'Enregistrer']]
+    PREP.edit_structure(model, [vbx1])
+    assert_equal({ 'v' => 1, 'topZ' => 5000, 'sections' => { 'rim-floor' => 'CAT-UPN160' }, 'grades' => { 'column' => 'S355' } }, JSON.parse(vbx1.get_attribute('viewbox', 'structParams')))
+    assert_nil model.entities.to_a[1].get_attribute('viewbox', 'structParams') # l'autre instance du même composant reste standard
+
     # ── Export ──
     a = PREP.analyze(model)
     assert_equal 1, a.orphans.size # la porte condamnée (MUR-LOURD) est loin de toute Viewbox
@@ -286,6 +293,10 @@ class MainSmokeTest < Minitest::Test
 
       assert_equal %w[VBX-01 VBX-02], manifest['modules'].map { |m| m['id'] }
       m1 = manifest['modules'][0]
+      assert_equal 1, manifest['structSchemaVersion']
+      assert_equal 5000, m1['structParams']['topZ']
+      assert_equal({ 'rim-floor' => 'CAT-UPN160' }, m1['structParams']['sections'])
+      assert_nil manifest['modules'][1]['structParams']
       assert_equal 'Viewbox M16 5900', m1['type']
       assert_equal [5900.0, 2500.0], m1['nominalPlanMm']
       frame = m1['accessories'].find { |x| x['definition'] == 'VBXM16FULL' }

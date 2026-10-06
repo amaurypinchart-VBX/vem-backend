@@ -24,6 +24,7 @@ import type { PlacedTerrace } from './core/terrace';
 import { checkTerraces } from './core/terrace';
 import { DEFAULTS } from './library/defaults';
 import type { StudyRunner } from './worker/study';
+import type { JointRevalidation } from './core/jointRevalidation';
 
 export interface CalcOptions {
   ec3Method: Ec3Method;
@@ -68,6 +69,10 @@ export interface StudyInputs {
   terraces?: PlacedTerrace[];
   /** combinaisons à calculer (défaut : toutes) — recherche rapide du lest sur la stabilité seule */
   classes?: Array<'ULS' | 'STAB' | 'SLS'>;
+  /** seulement ces combinaisons (essais rapides de l'optimiseur sur les combinaisons déterminantes) */
+  comboIds?: string[];
+  /** assemblages des Viewbox modifiées par l'étude (statuts, capacités recalculées ou indicatives) */
+  joints?: JointRevalidation;
 }
 
 export interface StudyRun {
@@ -110,12 +115,13 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
   });
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
   const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems, stairClad: !!o.stairClad }, inp.sections);
-  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => !inp.classes || inp.classes.includes(c.cls));
+  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => (!inp.classes || inp.classes.includes(c.cls)) && (!inp.comboIds || inp.comboIds.includes(c.id)));
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
   const context = {
     structure,
     sections: [...inp.sections],
     connections: connectionSet(inp.library),
+    ...(inp.joints ? { moduleConnections: inp.joints.perModule } : {}),
     ec3: { ...EC3_DEFAULTS, method: o.ec3Method },
     calibration: o.calibration,
     jackExtension: o.jackExtension ?? CALC_DEFAULTS.jackExtension,
@@ -126,6 +132,9 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     const verdict = studyVerdict(index, summary, stab);
     const plywood = floorPlywood(inp);
     const reasons = [...inp.blocking];
+    // assemblages hors gabarit inconnus : leurs vérifications sont bloquées (incomplet) ; indicatifs : « limite » au mieux
+    const joints = inp.joints;
+    const jointReasons = joints?.reasons ?? [];
     if (plywood.blocked) reasons.push(plywood.blocked);
     // éléments de façade et terrasses : justifications du calcul de type statico 18-0573, ramenées au site
     const facade = checkFacade({ items: facadeItems(inp), qIn: inp.loads.windInService, qOut: inp.loads.windOutOfService, liveGround: inp.loads.liveGround ?? inp.loads.live, live: inp.loads.live, raise: inp.raise?.height });
@@ -134,8 +143,9 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     const etaOf = (c: ElementChecks) => (c.records.length ? verdictOf(c.eta) : 'ok');
     const verdictAll: StudyVerdict = {
       ...verdict,
-      reasons: [...reasons, ...facade.failures, ...terraces.failures, ...verdict.reasons],
+      reasons: [...reasons, ...facade.failures, ...terraces.failures, ...verdict.reasons, ...jointReasons],
       verdict: worstVerdict([
+        joints?.cap === 'limit' ? 'limit' : 'ok',
         verdict.verdict,
         plywood.blocked ? 'incomplete' : verdictOf(plywood.eta),
         etaOf(facade),
@@ -281,10 +291,12 @@ function hash(s: string): string {
 }
 
 export function inputKey(inp: StudyInputs): string {
-  const mods = inp.modules.map((m) => [m.id, m.level, m.templateKey, ...m.origin.map(Math.round), ...m.u.map((x) => Math.round(x * 1e4))].join(','));
+  // paramètres par Viewbox : une Viewbox modifiée par l'étude (poteaux, sections, nuances) change le résultat
+  const mods = inp.modules.map((m) => [m.id, m.level, m.templateKey, ...m.origin.map(Math.round), ...m.u.map((x) => Math.round(x * 1e4)), hash(JSON.stringify(m.params)), Math.round(m.weightDelta ?? 0)].join(','));
   const lib = inp.library
     .filter((e) => e.kind === 'section' || e.kind === 'connection' || e.kind === 'module_type')
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}:${(e as SectionEntry).material ?? ''}`)}`)
     .join('|');
-  return JSON.stringify([mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.classes ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-')).map((k) => JSON.stringify(inp.sections.get(k)!.section))]);
+  const joints = inp.joints ? inp.joints.rows.map((r) => `${r.connection}:${r.status}:${r.modules.join('+')}:${r.capacities.map((c) => Math.round(c.after ?? 0)).join('/')}`) : [];
+  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
 }

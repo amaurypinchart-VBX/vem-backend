@@ -47,6 +47,8 @@ export interface CheckContext {
   structure: StructuralModel;
   sections: ReadonlyMap<string, SectionEntry>;
   connections: ConnectionSet;
+  /** assemblages propres aux Viewbox modifiées par l'étude (hors gabarit), par Viewbox */
+  moduleConnections?: Record<string, ConnectionSet>;
   ec3: Ec3Options;
   /** calage statico : courbes de flambement de l'annexe SCIA */
   calibration: boolean;
@@ -232,6 +234,8 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
     return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   const outer = s.outerSides?.get(item.module) ?? { u0: true, u1: true, v0: true, v1: true };
+  // Viewbox modifiée par l'étude : ses assemblages recalculés / indicatifs / inconnus
+  const cons = (item.module && ctx.moduleConnections?.[item.module]) || ctx.connections;
   if (item.kind === 'stack') {
     // somme des 4 liaisons d'angle (même repère local : z selon u, y selon v de la Viewbox du dessus)
     const sum = { Hu: 0, Hv: 0, C: 0 };
@@ -241,19 +245,19 @@ export function evaluateItem(ctx: CheckContext, index: ItemIndex, item: CheckIte
       sum.Hv += f0.Vy;
       sum.C += Math.max(0, -f0.N);
     }
-    const j = checkStackShear(ctx.connections, sum, outer, item.label, combo.id);
+    const j = checkStackShear(cons, sum, outer, item.label, combo.id);
     return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
   }
   const f = item.kind === 'corner' ? st(item.id.endsWith('pied') ? 'first' : 'last') : st('first');
   const cs = CORNER_SIDES[s.meta[k].corner ?? 0];
   const j =
     item.kind === 'corner'
-      ? checkCorner(ctx.connections, f, item.label, combo.id)
+      ? checkCorner(cons, f, item.label, combo.id)
       : item.kind === 'vlink'
-        ? checkVerticalLink(ctx.connections, f, item.label, combo.id, { long: outer[cs.long], short: outer[cs.short] })
+        ? checkVerticalLink(cons, f, item.label, combo.id, { long: outer[cs.long], short: outer[cs.short] })
         : item.kind === 'brace'
-          ? checkBrace(ctx.connections, f, item.label, combo.id)
-          : checkBolt(ctx.connections, f, item.label, combo.id);
+          ? checkBrace(cons, f, item.label, combo.id)
+          : checkBolt(cons, f, item.label, combo.id);
   return { eta: j.eta, governing: j.governing, combo: combo.id, blocked: j.blocked, records: detail && j.record ? [j.record] : [] };
 }
 

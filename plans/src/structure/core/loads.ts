@@ -262,8 +262,9 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
   const tplCache = new Map<string, ViewboxTemplate>();
   const tplOf = (id: string) => {
     const pm = model.modules.find((m) => m.id === id)!;
-    let t = tplCache.get(pm.templateKey);
-    if (!t) tplCache.set(pm.templateKey, (t = viewboxTemplate(pm.params)));
+    const key = `${pm.templateKey}|${JSON.stringify(pm.params)}`;
+    let t = tplCache.get(key);
+    if (!t) tplCache.set(key, (t = viewboxTemplate(pm.params)));
     return t;
   };
   const cases: LoadCase[] = [];
@@ -289,11 +290,13 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
   // ─── G2 plafonds, G4 sols ───
   // poids pesé retenu : plafond et sol réduits pour que barres + plafond + sol = pesée
   const finishFactor = new Map<string, number>();
+  // poids pesé de la Viewbox standard + écart des barres d'une Viewbox modifiée par l'étude (profils, poteaux)
+  const weightOf = (pm: { weightDelta?: number }) => inp.moduleWeight + (pm.weightDelta ?? 0);
   for (const pm of model.modules) {
     const p = tplOf(pm.id).params;
     const fin = (inp.ceiling + inp.floorFinish) * (p.x1 - p.x0) * (p.y1 - p.y0);
     const self = selfByModule.get(pm.id) ?? 0;
-    finishFactor.set(pm.id, inp.weightMode === 'weighed' && fin > 0 ? Math.max(0, Math.min(1, (inp.moduleWeight - self) / fin)) : 1);
+    finishFactor.set(pm.id, inp.weightMode === 'weighed' && fin > 0 ? Math.max(0, Math.min(1, (weightOf(pm) - self) / fin)) : 1);
   }
   const g2 = new CaseBuilder(model);
   const g4 = new CaseBuilder(model);
@@ -325,7 +328,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const p = tpl.params;
     const area = (p.x1 - p.x0) * (p.y1 - p.y0);
     const modelled = (selfByModule.get(pm.id) ?? 0) + (inp.ceiling + inp.floorFinish) * area * finishFactor.get(pm.id)!;
-    const missing = inp.moduleWeight - modelled;
+    const missing = weightOf(pm) - modelled;
     if (missing <= 0) continue;
     // réparti uniformément sur les 4 rives du plancher
     const perim = 2 * (p.x1 - p.x0 + (p.y1 - p.y0));
@@ -363,6 +366,15 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
       result: weighed ? self + k * (total - self) : Math.max(total, inp.moduleWeight),
     });
   }
+  const modified = model.modules.filter((pm) => pm.weightDelta);
+  if (modified.length)
+    records.push({
+      key: 'loads.modifiedWeight',
+      title: 'Viewbox modifiées par l’étude : poids',
+      clause: 'pesée de la Viewbox standard + écart des barres acier (profils, hauteur des poteaux)',
+      formula: 'poids = pesée + Σ A · L · ρ · g (barres modifiées) − Σ A · L · ρ · g (barres du gabarit)',
+      withValues: modified.map((pm) => `${pm.id} : ${n(inp.moduleWeight / 1e3)} ${pm.weightDelta! >= 0 ? '+' : '−'} ${n(Math.abs(pm.weightDelta!) / 1e3)} = ${n(weightOf(pm) / 1e3)} kN`).join(' ; '),
+    });
   const Gc = gc.build('Gc', 'Complément de poids', 'G');
 
   // ─── G3 murs, G5 garde-corps, G7 logos ───

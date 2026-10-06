@@ -38,6 +38,10 @@ import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
 import { buildStudyInputs, carriedWeights, groundExtras } from './studyInputs';
 import { AdvisorPanel } from './AdvisorPanel';
+import { VariantsPanel } from './VariantsPanel';
+import { AccessoriesPanel } from './AccessoriesPanel';
+import type { JointDesign } from '../../structure/core/jointDesign';
+import type { AdvisorMessage } from '../../api/vem';
 import type { Variant } from './advisorTools';
 import { variantSource } from './advisorTools';
 import type { StructureStock } from './GroundPanel';
@@ -68,7 +72,7 @@ export function modulesFromScene(scene: LoadedScene, roofAccessible: boolean): {
   return { modules, warnings };
 }
 
-type Step = 'recognition' | 'site' | 'calc' | 'results' | 'ground' | 'report' | 'advisor';
+type Step = 'recognition' | 'site' | 'calc' | 'results' | 'ground' | 'report' | 'variants' | 'accessories' | 'advisor';
 type StepState = 'ok' | 'warn' | 'bad' | 'todo';
 const STEP_ICON: Record<StepState, string> = { ok: '✔', warn: '⚠', bad: '✖', todo: '·' };
 const STEP_COLOR: Record<StepState, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--danger)', todo: 'var(--text-dim)' };
@@ -104,6 +108,12 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [roof, setRoof] = useState(false);
   const [calcOpts, setCalcOpts] = useState<CalcOptions>(CALC_DEFAULTS);
   const [mods, setMods] = useState<StudyMods>({});
+  // conversation du conseil ingénieur et variantes (partagées avec l'onglet Variantes), enregistrées avec l'étude
+  const [messages, setMessages] = useState<AdvisorMessage[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const threadLoaded = useRef(false);
+  // variante demandée depuis un autre onglet (accessoire calculé dans l'étude) : calculée par l'onglet Variantes
+  const [variantRequest, setVariantRequest] = useState<{ id: number; title: string; changes: import('../../structure/advisor/diagnose').VariantChanges } | null>(null);
   const [stock, setStock] = useState<StructureStock>({ plates: [], commercial: [] });
   const [run, setRun] = useState<{ result: StudyRun; key: string } | null>(null);
   const [running, setRunning] = useState(false);
@@ -199,8 +209,13 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const carriedBy = useMemo(() => carriedWeights(studyInputs), [studyInputs]);
   const groundModules = useMemo(() => {
     const roofT = new Set(sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module));
-    return [...modules, ...built.added.map(placedToEstimate)].map((m) => ({ ...m, carried: carriedBy.get(m.id) ?? 0, ...(roofT.has(m.id) ? { terrace: true } : {}) }));
-  }, [modules, built.added, sceneModel.terraces, carriedBy]);
+    // Viewbox modifiées par l'étude : hauteur des poteaux et écart de poids des barres
+    const placed = new Map(studyInputs.modules.map((pm) => [pm.id, pm]));
+    return [...modules, ...built.added.map(placedToEstimate)].map((m) => {
+      const pm = placed.get(m.id);
+      return { ...m, ...(pm ? { height: pm.params.topZ } : {}), carried: (carriedBy.get(m.id) ?? 0) + (pm?.weightDelta ?? 0), ...(roofT.has(m.id) ? { terrace: true } : {}) };
+    });
+  }, [modules, built.added, sceneModel.terraces, carriedBy, studyInputs.modules]);
   const carriedTotal = useMemo(() => {
     const N = [...carriedWeights(sceneModel).values()].reduce((a, b) => a + b, 0);
     return { count: sceneModel.edgeItems.length + sceneModel.pointItems.length, kg: N / 9.81 };
@@ -338,6 +353,26 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     return () => clearTimeout(t);
   }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts, mods]);
 
+  useEffect(() => {
+    threadLoaded.current = false;
+    if (!study?.id) return;
+    vem
+      .advisorThread(study.id)
+      .then((t) => {
+        setMessages(t.messages ?? []);
+        setVariants(((t.variants ?? []) as Variant[]).map((v) => ({ ...v, run: undefined })));
+      })
+      .catch(() => {})
+      .finally(() => (threadLoaded.current = true));
+  }, [study?.id]);
+  useEffect(() => {
+    if (!threadLoaded.current || !study?.id) return;
+    const t = setTimeout(() => {
+      void vem.saveAdvisorThread(study.id, { messages, variants: variants.map(({ run: _run, ...v }) => v) }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [messages, variants, study?.id]);
+
   // la réponse est toujours gardée dans l'étude (un objet sans nom n'est reconnu ailleurs que « probablement », par
   // son empreinte) ; mémorisée, elle sert aussi aux autres modèles et projets
   const keep = (list: Array<{ t: PartType; a: PartAssignment }>, scope: 'model' | 'project') =>
@@ -372,6 +407,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     ground: modules.length ? 'warn' : 'todo',
     report: run && !stale ? 'ok' : 'todo',
     advisor: run && !stale ? (run.result.verdict.verdict === 'ok' ? 'ok' : 'warn') : 'todo',
+    variants: variants.length ? 'ok' : 'todo',
+    accessories: library.some((e) => e.kind === 'joint_design') ? 'ok' : 'todo',
   };
   const STEPS: Array<{ key: Step; label: string; soon?: string }> = [
     { key: 'recognition', label: '1. Reconnaissance' },
@@ -380,6 +417,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     { key: 'results', label: '4. Résultats' },
     { key: 'ground', label: '5. Sol & calage' },
     { key: 'report', label: '6. Rapport' },
+    { key: 'variants', label: '🧪 Variantes' },
+    { key: 'accessories', label: '🔩 Accessoires' },
     { key: 'advisor', label: '💬 Conseil ingénieur' },
   ];
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Étude enregistrée', error: '✗ Non enregistrée', local: 'Étude non enregistrée (modèle sans version en ligne)' }[saveState];
@@ -534,6 +573,52 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           onClearMods={() => setMods({})}
           onRunStudy={() => void startRun()}
           running={running}
+          messages={messages}
+          setMessages={setMessages}
+          variants={variants}
+          setVariants={setVariants}
+        />
+      )}
+      {step === 'variants' && (
+        <VariantsPanel
+          source={inputsSource}
+          run={run?.result ?? null}
+          stale={stale}
+          currentKey={currentKey}
+          variants={variants}
+          setVariants={setVariants}
+          runner={() => (runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner())}
+          onApply={(v) => {
+            applyVariant(v);
+            setVariants((list) => list.map((x) => (x.id === v.id ? { ...x, applied: true } : x)));
+          }}
+          onRunStudy={() => void startRun()}
+          running={running}
+          who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+          request={variantRequest}
+          onRequestDone={() => setVariantRequest(null)}
+          renderResults={(r) => (
+            <ResultsPanel scene={scene} glassTest={glassTest} active={active && step === 'variants'} recognition={recognition} run={r} stale={false} ai={ai} studyId={study?.id ?? null} facts={() => ({})} />
+          )}
+        />
+      )}
+      {step === 'accessories' && (
+        <AccessoriesPanel
+          library={library}
+          canEdit={canEditLibrary}
+          who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+          ai={ai}
+          studyId={study?.id ?? null}
+          stackedCount={studyInputs.modules.filter((m) => m.level > 0).length}
+          run={run?.result ?? null}
+          onSave={async (e) => {
+            await vem.saveLibraryEntry(toPayload(e));
+            await refreshLibrary();
+          }}
+          onUseInStudy={(d: JointDesign) => {
+            setVariantRequest({ id: Date.now(), title: `Liaison « ${d.name} »`, changes: { mods: { stackJoint: { design: d } } } });
+            setStep('variants');
+          }}
         />
       )}
       {step === 'ground' && (

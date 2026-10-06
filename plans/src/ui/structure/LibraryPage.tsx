@@ -24,6 +24,7 @@ const KIND_LABEL: Record<LibraryKind, string> = {
   connection: 'Assemblages',
   spreading: 'Matériaux de calage',
   stock: 'Stock',
+  joint_design: 'Accessoires et liaisons',
 };
 const ORIGIN_LABEL = { seed: 'base de départ', override: 'base modifiée', user: 'ajoutée' } as const;
 const EDITORS = ['admin', 'technical_manager', 'engineer'];

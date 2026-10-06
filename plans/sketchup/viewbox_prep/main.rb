@@ -239,6 +239,8 @@ module Viewbox
       end
       lines << "Objets posés sur une Viewbox (rattachés par leur position) : #{a.attached.size}" if a.attached.any?
       lines << "⚠ Accessoires hors de toute Viewbox : #{a.orphans.map { |e| label(e) }.uniq.first(10).join(', ')}" if a.orphans.any?
+      modified = (a.named + a.candidates).count { |m| C.parse_struct(m.get_attribute(DICT, 'structParams')) }
+      lines << "Viewbox modifiées (Structure…) : #{modified}" if modified > 0
       lines << "Éléments communs (COMMUN_) : #{a.common.size}"
       lines << "Contexte / ignorés (non exportés) : #{a.context.size}"
       lines << "Autres objets libres : #{a.others.map { |e| label(e) }.uniq.first(10).join(', ')}" if a.others.any?
@@ -304,6 +306,7 @@ module Viewbox
         },
         'units' => 'mm',
         'upAxis' => 'Z',
+        'structSchemaVersion' => 1,
         'modules' => modules.map do |m|
           defn = definition_of(m)
           tr = m.transformation.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
@@ -312,7 +315,9 @@ module Viewbox
           {
             'id' => C.module_id(m.name), 'definition' => defn.name.to_s, 'tag' => tag_name(m), 'level' => a.levels[m] || 0,
             'type' => module_type(defn), 'nominalPlanMm' => nominal_dims(defn),
-            'transform' => tr, 'bboxWorld' => bbox_json(m.bounds), 'accessories' => items
+            'transform' => tr, 'bboxWorld' => bbox_json(m.bounds), 'accessories' => items,
+            # Viewbox modifiée (« Structure… ») : attribut de l'instance, seulement les valeurs hors standard
+            'structParams' => C.parse_struct(m.get_attribute(DICT, 'structParams'))
           }
         end,
         'common' => (a.common + a.attached + a.orphans + a.others).map do |e|
@@ -479,6 +484,47 @@ module Viewbox
       fail_with(e)
     end
 
+    # Structure d'une ou plusieurs Viewbox (attribut d'instance : deux instances d'un même composant peuvent différer).
+    # Seules les valeurs hors standard sont gardées ; VEM les reprend sans poser de question.
+    def self.edit_structure(model, selection)
+      mods = selection.select { |e| C.module_id(e.name) || standard_size?(e) }
+      if mods.empty?
+        UI.messagebox('Viewbox — structure : sélectionne une ou plusieurs Viewbox (VBX-xx).')
+        return
+      end
+      cur = C.parse_struct(mods.first.get_attribute(DICT, 'structParams')) || {}
+      secs = cur['sections'] || {}
+      grades = cur['grades'] || {}
+      list = lambda do |slot|
+        here = C.struct_section_text(secs[slot])
+        ([C::STANDARD] + C.struct_choices(slot) + [here]).uniq.join('|')
+      end
+      prompts = ['Hauteur des poteaux (mm, standard 3080)'] + C::STRUCT_SLOTS.map { |s| C::STRUCT_SLOT_LABELS[s] } +
+                ['Nuance des rives', 'Nuance des poteaux', 'Contreplaqué du plancher (mm)', 'Action']
+      defaults = [(cur['topZ'] || C::STANDARD_TOP_Z).to_s] + C::STRUCT_SLOTS.map { |s| C.struct_section_text(secs[s]) } +
+                 [grades['rim-floor'] || C::STANDARD, grades['column'] || C::STANDARD, (cur['plywood'] || C::STANDARD_PLYWOOD).to_s, 'Enregistrer']
+      lists = [''] + C::STRUCT_SLOTS.map { |s| list.call(s) } +
+              [([C::STANDARD] + C::GRADES).join('|'), ([C::STANDARD] + C::GRADES).join('|'), '18|21|24|27|30', 'Enregistrer|Rétablir les valeurs standard']
+      res = UI.inputbox(prompts, defaults, lists, "Viewbox — structure de #{mods.size} Viewbox (#{C.struct_summary(C.parse_struct(mods.first.get_attribute(DICT, 'structParams')))})")
+      return unless res
+      params = nil
+      unless res.last == 'Rétablir les valeurs standard'
+        values = {
+          'topZ' => res[0],
+          'sections' => C::STRUCT_SLOTS.each_with_index.to_h { |s, i| [s, res[1 + i]] },
+          'grades' => { 'rim-floor' => res[6], 'rim-roof' => res[6], 'column' => res[7] }.reject { |_, g| g == C::STANDARD },
+          'plywood' => res[8]
+        }
+        params = C.struct_params(values)
+      end
+      model.start_operation('Viewbox : structure', true)
+      mods.each { |m| set_or_clear(m, 'structParams', params ? JSON.generate(params) : nil) }
+      model.commit_operation
+      UI.messagebox("#{mods.map { |m| label(m) }.join(', ')} : #{C.struct_summary(params)}.\n\nVEM reprend ces paramètres dans l'étude structure (onglet Variantes, origine « SketchUp »).")
+    rescue StandardError => e
+      fail_with(e)
+    end
+
     def self.fail_with(e)
       puts "[Viewbox] ERREUR : #{e.message}\n#{e.backtrace&.first(8)&.join("\n")}"
       UI.messagebox("Viewbox — erreur : #{e.message}\n\nDétails dans la console Ruby (Extensions › Developer › Ruby Console).")
@@ -495,11 +541,14 @@ module Viewbox
       menu.add_item('Contrôler le modèle') { control_only }
       menu.add_item('Réviser les catégories…') { show_review_dialog }
       menu.add_item('Préparer & exporter pour VEM…') { prepare_and_export }
+      menu.add_item('Structure des Viewbox sélectionnées…') { edit_structure(Sketchup.active_model, Sketchup.active_model.selection.select { |e| container?(e) }) }
       UI.add_context_menu_handler do |context_menu|
         model = Sketchup.active_model
         sel = model.selection.select { |e| container?(e) }
         next if sel.empty?
-        context_menu.add_submenu('Viewbox').add_item('Catégorie / désignation…') { edit_selection(model, sel) }
+        sub = context_menu.add_submenu('Viewbox')
+        sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
+        sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) } if sel.all? { |e| C.module_id(e.name) || standard_size?(e) }
       end
       file_loaded(__FILE__)
     end

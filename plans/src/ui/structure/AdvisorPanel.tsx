@@ -110,6 +110,11 @@ interface Props {
   onClearMods: () => void;
   onRunStudy: () => void;
   running: boolean;
+  /** conversation et variantes de l'étude (partagées avec l'onglet Variantes, enregistrées par la page) */
+  messages: AdvisorMessage[];
+  setMessages: (m: AdvisorMessage[]) => void;
+  variants: Variant[];
+  setVariants: (v: Variant[]) => void;
 }
 
 interface PendingApply {
@@ -119,8 +124,7 @@ interface PendingApply {
 }
 
 export function AdvisorPanel(p: Props) {
-  const [messages, setMessages] = useState<AdvisorMessage[]>([]);
-  const [variants, setVariants] = useState<Variant[]>([]);
+  const { messages, setMessages, variants, setVariants } = p;
   const [flags, setFlags] = useState<Record<number, number[]>>({});
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -129,34 +133,10 @@ export function AdvisorPanel(p: Props) {
   const [usage, setUsage] = useState<{ costUsd: number | null; durationMs: number; model: string; inputTokens: number; outputTokens: number } | null>(null);
   const variantsRef = useRef<Variant[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const loaded = useRef(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   variantsRef.current = variants;
   const aiOn = !!p.ai?.enabled;
 
-  // ─── conversation enregistrée avec l'étude ───
-  useEffect(() => {
-    loaded.current = false;
-    if (!p.studyId) {
-      loaded.current = true;
-      return;
-    }
-    vem
-      .advisorThread(p.studyId)
-      .then((t) => {
-        setMessages(t.messages ?? []);
-        setVariants(((t.variants ?? []) as Variant[]).map((v) => ({ ...v, run: undefined })));
-      })
-      .catch(() => {})
-      .finally(() => (loaded.current = true));
-  }, [p.studyId]);
-  useEffect(() => {
-    if (!loaded.current || !p.studyId) return;
-    const t = setTimeout(() => {
-      void vem.saveAdvisorThread(p.studyId!, { messages, variants: variants.map(({ run: _run, ...v }) => v) }).catch(() => {});
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [messages, variants, p.studyId]);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, busy]);

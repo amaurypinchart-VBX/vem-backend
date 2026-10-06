@@ -2,7 +2,7 @@
 // sections lues dans un document recalculées par l'outil, capacités converties, panneaux composés, données envoyées
 // pour la rédaction, gabarit de calcul rendu visible. Aucun appel réel à l'API ici.
 import { describe, expect, it } from 'vitest';
-import { checkText, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from '../../../src/services/structureAiGuard';
+import { checkText, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from '../../../src/services/structureAiGuard';
 import type { ExtractedConnection, ExtractedSection } from '../../src/structure/core/ai';
 import { AI_CONFIDENCE_MIN, connectionFromExtract, identifyPayload, sectionFromExtract, suggestionToAssignment } from '../../src/structure/core/ai';
 import { panelFromSearch, panelMass } from '../../src/structure/core/composite';
@@ -201,5 +201,20 @@ describe('garde-fou du conseil ingénieur', () => {
     const allowed = advisorAllowedNumbers('Module de 5,90 m', messages);
     expect(unknownNumbers('Avec 400 kg/m² (3,92 kN/m²), au plus 37 personnes ; module de 5,90 m, trous à 2 290 mm.', allowed)).toEqual([]);
     expect(unknownNumbers('Il faut 55 plaques et 1 200 kg de lest.', allowed)).toEqual([55, 1200]);
+  });
+});
+
+describe('assistant des accessoires : proposition sans valeur inventée', () => {
+  it('les valeurs absentes des données sont retirées (à renseigner), les autres gardées', () => {
+    const data = { messages: ['plaque de 15 mm, un M20 qui passe dans la platine de pied'], design: { components: [{ id: 'C', t: 15 }] }, recognition: { plates: [{ t: 15, length: 200, width: 80 }] } };
+    const proposal = { perCorner: 2, components: [{ id: 'C', kind: 'plate', t: 15, width: 80, length: 200, grade: 'S355' }, { id: 'B', kind: 'bolt', d: 20, grade: '8.8' }, { id: 'W', kind: 'weld', a: 6, length: 120 }], paths: { uplift: [{ component: 'C', mode: 'plate-bending', lever: 45 }] } };
+    const r = cleanProposalNumbers(proposal, data);
+    expect(r.proposal.components[0]).toEqual({ id: 'C', kind: 'plate', t: 15, width: 80, length: 200, grade: 'S355' });
+    expect(r.proposal.components[1].d).toBe(20);
+    expect(r.proposal.components[2]).toEqual({ id: 'W', kind: 'weld' });
+    expect((r.proposal.paths.uplift[0] as { lever?: number }).lever).toBeUndefined();
+    expect(r.removed).toEqual(['components[2].a = 6', 'components[2].length = 120', 'paths.uplift[0].lever = 45']);
+    // petits entiers (comptages) toujours admis
+    expect(r.proposal.perCorner).toBe(2);
   });
 });

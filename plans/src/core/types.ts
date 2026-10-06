@@ -97,6 +97,8 @@ export interface ModuleInfo {
   bboxMm: BBox;
   itemIds: string[];
   detectedBy: 'name' | 'dimensions';
+  /** Viewbox modifiée dans SketchUp (« Structure… ») : hauteur des poteaux, sections, nuances, contreplaqué */
+  structParams?: import('./manifest').StructParams;
 }
 
 export interface LevelInfo {

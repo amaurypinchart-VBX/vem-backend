@@ -190,3 +190,35 @@ export function advisorAllowedNumbers(system: string, messages: AdvisorMsg[]): n
   }
   return acc;
 }
+
+/**
+ * Proposition structurée de l'IA (pièce de liaison : composants, chemins d'effort) : toute valeur numérique absente des
+ * données fournies (texte de l'utilisateur, dessin reconnu, formulaire) est retirée — la donnée redevient « à
+ * renseigner » au lieu d'être inventée. Renvoie la proposition nettoyée et les chemins des valeurs retirées.
+ */
+export function cleanProposalNumbers<T>(proposal: T, data: unknown): { proposal: T; removed: string[] } {
+  // « M20 » dans le texte de l'utilisateur donne aussi le diamètre 20 du boulon
+  const bolts = [...JSON.stringify(data ?? null).matchAll(/(?<![\p{L}\p{N}])M(\d{1,2})(?![\p{N}])/gu)].map((m) => Number(m[1]));
+  const allowed = [...numbersOf(data), ...bolts];
+  const removed: string[] = [];
+  const walk = (v: unknown, path: string): unknown => {
+    if (typeof v === 'number') {
+      if (unknownNumbers(String(v), allowed).length) {
+        removed.push(`${path} = ${v}`);
+        return undefined;
+      }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`));
+    if (v && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+        const w = walk(x, path ? `${path}.${k}` : k);
+        if (w !== undefined) out[k] = w;
+      }
+      return out;
+    }
+    return v;
+  };
+  return { proposal: walk(proposal, '') as T, removed };
+}

@@ -4,7 +4,7 @@
 // Fonctions pures.
 import type { MemberFamily, PlacedModule, StructuralModel } from './assemble';
 import { FAMILY_LABEL } from './assemble';
-import type { LibraryEntry, ModuleTypeEntry, SectionEntry } from './library';
+import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams } from './library';
 import { designation } from './library';
 import { materialByKey } from './materials';
 import type { TemplateFamily } from './templates/viewboxEU';
@@ -82,15 +82,36 @@ export function templateSummary(entry: ModuleTypeEntry, library: readonly Librar
   return [...rows.values()];
 }
 
+/**
+ * Poids des barres acier du gabarit d'une Viewbox (N) : Σ A · L · ρ · g des barres avec masse (sections de la
+ * bibliothèque, matériau de la section). Sert à l'écart de poids d'une Viewbox modifiée par rapport à la pesée.
+ */
+export function templateSteelWeight(params: ViewboxTemplateParams, sections: ReadonlyMap<string, SectionEntry>): number {
+  const t = viewboxTemplate(params);
+  const nodes = new Map(t.nodes.map((n) => [n.key, n]));
+  let W = 0;
+  for (const m of t.members) {
+    const s = sections.get(m.section);
+    if (!s || s.section.massless) continue;
+    const rho = materialByKey(s.material)?.rho ?? 7850;
+    const a = nodes.get(m.i)!;
+    const b = nodes.get(m.j)!;
+    // g = 10 m/s² comme le poids propre G1 du calcul (78,5 kN/m³)
+    W += s.section.A * Math.hypot(b.u - a.u, b.v - a.v, b.z - a.z) * rho * 1e-8;
+  }
+  return W;
+}
+
 /** Segments monde (x, y, z, x, y, z, … en mm) et couleurs RGB 0–1 du gabarit placé sur chaque Viewbox. */
 export function templateSegments(modules: readonly PlacedModule[]): { positions: Float32Array; colors: Float32Array; families: TemplateFamily[] } {
   const pos: number[] = [];
   const col: number[] = [];
   const families: TemplateFamily[] = [];
-  const cache = new Map<string, ReturnType<typeof viewboxTemplate>>();
+  // une Viewbox modifiée par l'étude (poteaux plus hauts…) a ses propres paramètres
+  const cache = new Map<ViewboxTemplateParams, ReturnType<typeof viewboxTemplate>>();
   for (const pm of modules) {
-    let t = cache.get(pm.templateKey);
-    if (!t) cache.set(pm.templateKey, (t = viewboxTemplate(pm.params)));
+    let t = cache.get(pm.params);
+    if (!t) cache.set(pm.params, (t = viewboxTemplate(pm.params)));
     const nodes = new Map(t.nodes.map((n) => [n.key, n]));
     const w = (u: number, v: number, z: number) => [pm.origin[0] + pm.u[0] * u + pm.v[0] * v, pm.origin[1] + z, pm.origin[2] + pm.u[2] * u + pm.v[2] * v];
     for (const m of t.members) {

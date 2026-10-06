@@ -116,6 +116,18 @@ http.createServer(async (req, res) => {
       const i = b.facts.installation;
       return json(res, { texts: { description: `Installation de ${i.viewbox} Viewbox sur ${i.niveaux} niveaux, rédigée par l’IA simulée.`, instructions: ['Surveiller le vent pendant l’exploitation.'], conclusion: `Conclusion de l’IA simulée : ${b.facts.verdict.resultat}.` }, attempts: 1, usage });
     }
+    if (a === '/structure/ai/joint' && req.method === 'POST') {
+      // assistant simulé : reprend les composants du formulaire, propose le chemin du soulèvement, pose les questions
+      const b = JSON.parse((await body(req)).toString());
+      const d = b.design;
+      const bolt = d.components.find((c) => c.kind === 'bolt');
+      return json(res, {
+        reply: `J’ai compris : la pièce ${d.components[0]?.id ?? ''} passe sous le gousset et le boulon ${bolt?.id ?? ''} la tient depuis la platine de pied. Pour la calculer il me manque surtout la classe du boulon et la soudure du gousset.`,
+        questions: ['Quelle est la classe du boulon (8.8 ou 10.9) ?', 'Quelle est la gorge et la longueur de la soudure du gousset ?'],
+        proposal: { function: { antiSlide: true, antiUplift: true, carriesCompression: false }, principle: 'positive', replaces: 'verticalLink', perCorner: 1, paths: d.paths },
+        usage,
+      });
+    }
     if (a === '/structure/ai/material-search' && req.method === 'POST') {
       return json(res, { name: 'Panneau mural', layers: [{ name: 'Nidaplast 8', material: 'PP', thicknessMm: 45, densityKgM3: 80, surfaceMassKgM2: null, url: 'https://example.com/nidaplast', title: 'Nidaplast', quote: 'densité 80 kg/m³', check: { verified: 'citation', missing: [] } }], frame: { name: 'profilé alu', kgPerM: 1.2, url: 'https://example.com/alu', title: 'alu', quote: '1,2 kg/m', check: { verified: 'quote', missing: [] } }, questions: [], notes: '', sources: [], usage });
     }

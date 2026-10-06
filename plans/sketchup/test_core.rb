@@ -60,6 +60,24 @@ class CoreTest < Minitest::Test
     assert C.plan_dims_ok?(2600, 6000, 150.0)
   end
 
+  def test_struct_params
+    assert_equal 'CAT-UPN160', C.struct_section_key('UPN 160')
+    assert_equal 'CAT-SHS120x120x5', C.struct_section_key('SHS 120 × 120 × 5'.delete(' ').sub('SHS', 'SHS '))
+    assert_equal 'UNP220', C.struct_section_key('UNP220')
+    assert_nil C.struct_section_key('gabarit')
+    assert_nil C.struct_section_key('  ')
+    assert_equal 'UPN 160', C.struct_section_text('CAT-UPN160')
+    assert_equal 'gabarit', C.struct_section_text(nil)
+    p = C.struct_params('topZ' => '5000', 'sections' => { 'rim-floor' => 'UPN 160', 'column' => 'gabarit' }, 'grades' => { 'column' => 'S355', 'rim-roof' => 'gabarit' }, 'plywood' => '18')
+    assert_equal({ 'v' => 1, 'topZ' => 5000, 'sections' => { 'rim-floor' => 'CAT-UPN160' }, 'grades' => { 'column' => 'S355' } }, p)
+    assert_nil C.struct_params('topZ' => '3080', 'sections' => { 'rim-floor' => 'gabarit' }, 'plywood' => '18')
+    assert_equal 'Viewbox modifiée (3 paramètres)', C.struct_summary(p)
+    assert_equal 'Viewbox standard', C.struct_summary(nil)
+    assert_equal p, C.parse_struct(JSON.generate(p))
+    assert_nil C.parse_struct('pas du json')
+    assert_nil C.parse_struct('{"v":1}')
+  end
+
   def test_zip_is_readable
     Dir.mktmpdir do |dir|
       src = File.join(dir, 'src')

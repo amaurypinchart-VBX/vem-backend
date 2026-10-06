@@ -26,7 +26,7 @@ import {
 } from '../core/classification';
 import { checkPlanDims, groupLevels, levelLabel, nearestSize, suspectScaleFactor } from '../core/units';
 import type { Manifest, ManifestEntry, ManifestModule } from '../core/manifest';
-import { asCategory, BBoxLookup, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
+import { asCategory, BBoxLookup, cleanStructParams, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
 import { stableId } from '../core/hash';
 
 export interface CleanupStats {
@@ -453,6 +453,8 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       detectedBy,
     };
     if (mm?.type) info.type = mm.type;
+    const sp = cleanStructParams(mm?.structParams);
+    if (sp) info.structParams = sp;
     moduleInfos.push(info);
   }
   const badDims = moduleInfos.filter((m) => !m.dimsOk);

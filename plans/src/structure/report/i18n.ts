@@ -123,6 +123,10 @@ export interface Labels {
   ch2: string;
   modsTitle: string;
   modsText: string;
+  jointsTitle: string;
+  jointsText: string;
+  jointStatus: Record<'template' | 'recalculated' | 'indicative' | 'unknown' | 'user', string>;
+  prototypeNote: string;
   s21: string;
   weighed: (kN: string, kg: string) => string;
   steelWeight: string;
@@ -458,6 +462,10 @@ const FR: Labels = {
   ch2: 'Hypothèses de charges',
   modsTitle: 'Modifications de l’étude (hors modèle SketchUp)',
   modsText: 'L’étude comprend les modifications suivantes, décidées lors de la pré-étude ; elles sont à reporter dans le modèle et sur le plan de montage, et à réaliser sur site :',
+  jointsTitle: 'Assemblages hors gabarit et liaisons personnalisées',
+  jointsText: 'Les capacités des assemblages Viewbox ne valent que pour le gabarit d’origine. Pour les Viewbox modifiées, chaque assemblage concerné est recalculé (EN 1993-1-8), réduit par une règle prudente (indicatif) ou signalé inconnu ; une pièce de liaison nouvelle est calculée par la méthode des composants. Aucune de ces capacités n’a été vérifiée par un ingénieur :',
+  jointStatus: { template: 'valide (gabarit)', recalculated: 'recalculé', indicative: 'indicatif — à valider par un ingénieur', unknown: 'capacité inconnue', user: 'capacité saisie — non vérifiée' },
+  prototypeNote: 'Pièce prototype non qualifiée : calcul analytique seulement, essai de qualification recommandé (glissement, arrachement) avant toute utilisation sur chantier.',
   s21: 'Charges permanentes',
   weighed: (k, g) => `Poids pesé d’une Viewbox (plancher, toiture, poteaux, planchers et isolants compris, sans murs ni garde-corps) : G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Poids propre des barres : sections et matériaux du modèle, acier 78,5 kN/m³ ; plafond et sol du modèle ajustés pour que le total soit égal au poids pesé (complément sur les rives du plancher si le modèle est plus léger).',
@@ -805,6 +813,10 @@ const DE: Labels = {
   ch2: 'Lastannahmen',
   modsTitle: 'Änderungen der Berechnung (nicht im SketchUp-Modell)',
   modsText: 'Die Berechnung enthält folgende, in der Vorbemessung festgelegte Änderungen; sie sind in das Modell und den Montageplan zu übernehmen und vor Ort auszuführen:',
+  jointsTitle: 'Anschlüsse außerhalb der Vorlage und Sonderverbindungen',
+  jointsText: 'Die Tragfähigkeiten der Viewbox-Anschlüsse gelten nur für die Originalvorlage. Bei geänderten Viewboxen wird jeder betroffene Anschluss neu berechnet (EN 1993-1-8), mit einer vorsichtigen Regel abgemindert (Richtwert) oder als unbekannt gekennzeichnet; ein neues Verbindungsteil wird mit der Komponentenmethode berechnet. Keiner dieser Werte wurde von einem Ingenieur geprüft:',
+  jointStatus: { template: 'gültig (Vorlage)', recalculated: 'neu berechnet', indicative: 'Richtwert — von einem Ingenieur zu prüfen', unknown: 'Tragfähigkeit unbekannt', user: 'eingegebene Tragfähigkeit — nicht geprüft' },
+  prototypeNote: 'Nicht qualifiziertes Prototypteil: nur analytisch berechnet, Qualifikationsversuch (Gleiten, Ausziehen) vor jedem Einsatz auf der Baustelle empfohlen.',
   s21: 'Ständige Lasten',
   weighed: (k, g) => `Gewogenes Eigengewicht einer Viewbox (Boden-, Dacheinheit und Stützen inkl. Böden und Dämmung, ohne Wände und Geländer): G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Eigengewicht der Stäbe anhand der Material- und Querschnittsdefinitionen, Stahl 78,5 kN/m³; Decke und Boden des Modells so angepasst, dass die Summe dem gewogenen Gewicht entspricht (Ergänzung auf den Bodenrandträgern, wenn das Modell leichter ist).',
@@ -1152,6 +1164,10 @@ const EN: Labels = {
   ch2: 'Loads',
   modsTitle: 'Changes made in the study (not in the SketchUp model)',
   modsText: 'The study includes the following changes decided during the pre-study; they must be carried over to the model and the assembly plan, and carried out on site:',
+  jointsTitle: 'Connections outside the template and custom connections',
+  jointsText: 'The capacities of the Viewbox connections only apply to the original template. For modified units, each affected connection is recalculated (EN 1993-1-8), reduced by a cautious rule (indicative) or flagged as unknown; a new connection part is calculated with the component method. None of these capacities has been checked by an engineer:',
+  jointStatus: { template: 'valid (template)', recalculated: 'recalculated', indicative: 'indicative — to be validated by an engineer', unknown: 'unknown capacity', user: 'capacity entered — not verified' },
+  prototypeNote: 'Unqualified prototype part: analytical calculation only, qualification test (sliding, pull-out) recommended before any use on site.',
   s21: 'Permanent loads',
   weighed: (k, g) => `Weighed self-weight of one Viewbox (floor, roof, columns, floors and insulation included, without walls or railings): G ≈ ${k} kN (${g} kg).`,
   steelWeight: 'Self-weight of the members from the sections and materials of the model, steel 78.5 kN/m³; ceiling and floor of the model adjusted so that the total equals the weighed weight (complement on the floor edge beams if the model is lighter).',

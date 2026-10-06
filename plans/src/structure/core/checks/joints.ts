@@ -32,7 +32,25 @@ const f2 = (v: number, d = 2) => fmtNumber(v, d);
 const kN = (v: number) => `${f2(v / 1e3)} kN`;
 const kNm = (v: number) => `${f2(v / 1e6)} kNm`;
 
+/** Liaison personnalisée entre Viewbox empilées (atelier des accessoires, S11) : résistances d'une pièce. */
+export interface CustomJoint {
+  key: string;
+  name: string;
+  /** pièces par angle ; remplace les plats d'origine (sinon s'y ajoute) */
+  perCorner: number;
+  replaces: boolean;
+  /** résistance d'une pièce (N) : 0 = ne retient rien dans cette direction, null = données manquantes */
+  uplift: number | null;
+  slideLong: number | null;
+  slideShort: number | null;
+  status: 'recalculated' | 'indicative' | 'unknown';
+  qualification: string;
+  missing: string[];
+}
+
 export interface ConnectionSet {
+  /** liaison personnalisée à la place (ou en plus) des plats d'empilement */
+  custom?: CustomJoint;
   corner?: ConnectionEntry;
   contact?: ConnectionEntry;
   plate?: ConnectionEntry;
@@ -89,8 +107,8 @@ export function checkCorner(c: ConnectionSet, f: Forces, label: string, combinat
     record: {
       key: `corner.${label}`,
       title: `Angle poteau / cadre — ${label}`,
-      clause: 'statico 24-0571 § 3.7 (ideaStatiCa)',
-      formula: 'η = min(max(|My|, |Mz|) / 8,0 kNm ; max(max(|My|, |Mz|) / 11,5 kNm ; min(|My|, |Mz|) / 3,3 kNm)) ; traction N / 70 kN, compression N / 176 kN (contact)',
+      clause: j!.status === 'suggested' ? 'statico 24-0571 § 3.7 (ideaStatiCa) — capacités hors gabarit, indicatives' : 'statico 24-0571 § 3.7 (ideaStatiCa)',
+      formula: `η = min(max(|My|, |Mz|) / ${f2(Mb / 1e6, 1)} kNm ; max(max(|My|, |Mz|) / ${f2(M1 / 1e6, 1)} kNm ; min(|My|, |Mz|) / ${f2(M2 / 1e6, 1)} kNm)) ; traction N / ${f2(N0 / 1e3, 0)} kN, compression N / ${Ncontact ? f2(Ncontact / 1e3, 0) : '—'} kN (contact)`,
       withValues: `My = ${kNm(f.My)}, Mz = ${kNm(f.Mz)}, N = ${kN(f.N)} ; η₂ₐₓ = ${f2(biax)}, η₁ₐₓ = ${f2(uniax)} → ${f2(etaM)} ; ηN = ${f2(etaN)}`,
       eta,
       combination,
@@ -116,6 +134,7 @@ export function platesPerCorner(c: ConnectionSet, outer: { long: boolean; short:
  * pour toute la Viewbox (checkStackShear).
  */
 export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, combination?: string, outer?: { long: boolean; short: boolean }): JointResult {
+  if (c.custom) return checkCustomVerticalLink(c, c.custom, f, label, combination, outer);
   const NRd = minCapacity(c.contact);
   if (!usable(c.plate)) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
   if (!usable(c.contact) || !NRd) return blocked('Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
@@ -163,7 +182,36 @@ export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, co
  * frottement acier / acier sous le poids, le reste par les plats des côtés extérieurs perpendiculaires à l'effort ; un
  * plat ne travaille que dans un sens (statico) → moitié des plats par sens.
  */
+/** Liaison personnalisée à un angle : compression par le contact poteau / poteau, soulèvement par les pièces. */
+function checkCustomVerticalLink(c: ConnectionSet, j: CustomJoint, f: Forces, label: string, combination?: string, outer?: { long: boolean; short: boolean }): JointResult {
+  const NRd = minCapacity(c.contact);
+  if (!usable(c.contact) || !NRd) return blocked('Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
+  if (j.uplift === null) return blocked(`Liaison « ${j.name} » : résistance au soulèvement incomplète (${j.missing.slice(0, 3).join(' ; ')})`);
+  const T = Math.max(0, f.N);
+  const C = Math.max(0, -f.N);
+  const plates = j.replaces ? { n: 0, TRd: 0 } : platesPerCorner(c, outer);
+  const R = j.perCorner * j.uplift + (plates.n && plates.TRd ? plates.n * plates.TRd : 0);
+  const etaN = C / NRd;
+  const etaT = T > 1e3 ? (R > 0 ? T / R : Infinity) : 0;
+  const eta = Math.max(etaN, etaT);
+  return {
+    eta,
+    governing: etaT > etaN ? (R > 0 ? 'T soulèvement (liaison personnalisée)' : 'T soulèvement : rien ne retient') : 'N contact',
+    parts: { N: etaN, T: etaT },
+    record: {
+      key: `vlink.${label}`,
+      title: `Liaison verticale (« ${j.name} ») — ${label}`,
+      clause: `méthode des composants, EN 1993-1-8 — ${j.qualification}`,
+      formula: `compression Rz / NRd (contact) ; soulèvement T / (n · Rd,pièce${j.replaces ? '' : ' + plats d’origine'})`,
+      withValues: T > 1e3 ? `T = ${kN(T)} ; ${f2(j.perCorner, 1)} pièce(s) × ${kN(j.uplift)}${plates.n ? ` + ${f2(plates.n, 1)} plat(s) × ${kN(plates.TRd ?? 0)}` : ''} = ${kN(R)} → ${f2(etaT)}` : `Rz = ${kN(C)} / ${kN(NRd)} = ${f2(etaN)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
 export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
+  if (c.custom) return checkCustomStackShear(c, c.custom, sum, outer, label, combination);
   const p = stackPlates(c);
   if (!usable(c.plate) || !p.HRd || p.mu === undefined) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
   // effort selon u (grand côté) : plats des petits côtés extérieurs ; selon v : plats des grands côtés extérieurs
@@ -186,6 +234,39 @@ export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number;
       clause: 'statico 24-0571 § 3.8–3.9',
       formula: 'H = √(ΣHu² + ΣHv²) ; reste = max(0, H − μ · ΣRz) réparti selon u et v ; Hu,reste / (nu · HRd), Hv,reste / (nv · HRd) ; n = moitié des plats des côtés extérieurs (un plat par sens)',
       withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(p.mu, 1)} ; reste ${kN(rest)} ; nu = ${f2(nU, 1)}, nv = ${f2(nV, 1)} plat(s) de ${kN(p.HRd)} → ${f2(etaU)} / ${f2(etaV)}`,
+      eta,
+      combination,
+    },
+  };
+}
+
+/** Glissement entre Viewbox empilées avec une liaison personnalisée : pièces aux 4 angles (et plats s'ils restent). */
+function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string): JointResult {
+  if (j.slideLong === null || j.slideShort === null) return blocked(`Liaison « ${j.name} » : résistance au glissement incomplète (${j.missing.slice(0, 3).join(' ; ')})`);
+  const p = stackPlates(c);
+  const mu = p.mu ?? 0.1;
+  const pieces = 4 * j.perCorner;
+  const plU = j.replaces || !p.HRd ? 0 : ((outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0)) * p.perShort * 0.5 * p.HRd;
+  const plV = j.replaces || !p.HRd ? 0 : ((outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)) * p.perLong * 0.5 * p.HRd;
+  const RU = pieces * j.slideLong + plU;
+  const RV = pieces * j.slideShort + plV;
+  const H = Math.hypot(sum.Hu, sum.Hv);
+  const rest = Math.max(0, H - mu * sum.C);
+  const k = H > 0 ? rest / H : 0;
+  const one = (h: number, R: number) => (h * k <= 1 ? 0 : R > 0 ? (h * k) / R : Infinity);
+  const etaU = one(Math.abs(sum.Hu), RU);
+  const etaV = one(Math.abs(sum.Hv), RV);
+  const eta = Math.max(etaU, etaV);
+  return {
+    eta,
+    governing: !Number.isFinite(eta) ? 'H : rien ne retient dans cette direction' : etaU >= etaV ? 'H le long du grand côté (liaison personnalisée)' : 'H le long du petit côté (liaison personnalisée)',
+    parts: { Hu: etaU, Hv: etaV },
+    record: {
+      key: `stack.${label}`,
+      title: `Glissement entre Viewbox empilées (« ${j.name} ») — ${label}`,
+      clause: `méthode des composants, EN 1993-1-8 — ${j.qualification}`,
+      formula: `reste = max(0, H − μ · ΣRz) ; Hu,reste / (4 · n · Rd,u${j.replaces ? '' : ' + plats'}), Hv,reste / (4 · n · Rd,v${j.replaces ? '' : ' + plats'})`,
+      withValues: `ΣHu = ${kN(sum.Hu)}, ΣHv = ${kN(sum.Hv)}, ΣRz = ${kN(sum.C)}, μ = ${f2(mu, 1)} ; reste ${kN(rest)} ; ${f2(pieces, 0)} pièce(s) : Ru = ${kN(RU)}, Rv = ${kN(RV)} → ${f2(etaU)} / ${f2(etaV)}`,
       eta,
       combination,
     },

@@ -18,7 +18,7 @@ import * as advisor from '../services/structureAdvisor';
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
 
-const KINDS = ['module_type', 'part_type', 'material', 'section', 'connection', 'spreading', 'stock'];
+const KINDS = ['module_type', 'part_type', 'material', 'section', 'connection', 'spreading', 'stock', 'joint_design'];
 // écriture de la bibliothèque : mêmes profils que les réglages « plans.* »
 const LIBRARY_EDITORS = ['admin', 'technical_manager', 'engineer'];
 const canEditLibrary = (req: AuthRequest) => LIBRARY_EDITORS.includes(req.user?.role ?? '');
@@ -322,6 +322,15 @@ router.post('/ai/material-search', async (req: AuthRequest, res: Response, next:
   try {
     const inp = parseBody(ai.MaterialInput, req.body);
     res.json({ success: true, data: await ai.searchMaterial(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
+// POST /structure/ai/joint — assistant de l'atelier des accessoires : propose composants et chemin d'effort, ne calcule rien
+router.post('/ai/joint', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.JointInput, req.body);
+    jsonSize(inp, 400_000, 'Données');
+    res.json({ success: true, data: await ai.jointAssist(inp, ctxOf(req, inp.studyId)) });
   } catch (err) { next(err); }
 });
 

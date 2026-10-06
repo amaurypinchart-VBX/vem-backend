@@ -13,7 +13,7 @@ import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { anthropicRequest } from './aiService';
 import type { Citation, IdentifyLike, IdentifyOptions } from './structureAiGuard';
-import { checkText, citationsOf, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from './structureAiGuard';
+import { checkText, citationsOf, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from './structureAiGuard';
 
 const db = prisma as any;
 
@@ -445,6 +445,81 @@ Format : {"name": "nom court du panneau", "layers": [{"name": "...", "material":
 }
 
 /** Appels récents et coût estimé (page Bibliothèque). */
+// ─── assistant de l'atelier des accessoires (liaison personnalisée, S11) ───
+
+export const JointInput = z.object({
+  messages: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(6000) })).min(1).max(40),
+  design: z.record(z.any()),
+  recognition: z.record(z.any()).nullable().optional(),
+  calc: z.record(z.any()).nullable().optional(),
+  studyId: z.string().max(60).nullable().optional(),
+});
+export type JointInputT = z.infer<typeof JointInput>;
+
+const JointStep = z.object({ component: z.string().max(20), mode: z.string().max(30), count: z.number().optional(), bolt: z.string().max(20).optional(), plate: z.string().max(20).optional(), lever: z.number().optional(), planes: z.number().optional(), note: z.string().max(300).optional() });
+const JointOut = z.object({
+  reply: z.string().max(4000),
+  questions: z.array(z.string().max(400)).max(10).default([]),
+  proposal: z
+    .object({
+      description: z.string().max(2000).optional(),
+      function: z.object({ antiSlide: z.boolean(), antiUplift: z.boolean(), carriesCompression: z.boolean() }).optional(),
+      principle: z.enum(['positive', 'friction', 'mixed']).optional(),
+      replaces: z.enum(['verticalLink', 'horizontalLink', 'none']).optional(),
+      perCorner: z.number().optional(),
+      components: z.array(z.record(z.any())).max(20).optional(),
+      paths: z.record(z.array(JointStep).max(12)).optional(),
+      stiffness: z.object({ slide: z.number().optional(), uplift: z.number().optional(), play: z.number().optional() }).optional(),
+    })
+    .nullable()
+    .optional(),
+});
+
+const MODES = ['bolt-shear', 'bolt-tension', 'bolt-punching', 'thread', 'plate-bearing', 'plate-net', 'plate-gross', 'plate-bending', 'plate-hinges', 'weld', 'friction', 'contact'];
+
+/**
+ * Un tour de l'assistant : il comprend la pièce décrite (texte, dessin reconnu, formulaire), propose ses composants et
+ * son chemin d'effort, et pose les questions sur ce qui manque. Il ne calcule aucune résistance (le moteur de l'outil
+ * le fait) ; toute valeur de la proposition absente des données est retirée, tout nombre inventé dans la réponse la
+ * fait rejeter (un nouvel essai, puis 422).
+ */
+export async function jointAssist(inp: JointInputT, ctx: CallContext) {
+  const system = `${BASE_RULES}
+Contexte : liaisons entre Viewbox empilées. La liaison d'origine = 4 plats 100 × 10 × 400 mm S235 par grand côté et 2 par petit côté (faces extérieures), un M20-8.8 dans l'âme de la rive UNP 220 de chaque Viewbox. Sur l'angle de toiture de la Viewbox du dessous est soudé un gousset trapézoïdal ; la Viewbox du dessus repose par ses pieds d'angle (réception de pied avec platine de 15 mm, trou pour le vérin).
+Tâche : aider l'utilisateur (non ingénieur) à décrire une nouvelle pièce de liaison pour que le moteur de l'outil la calcule par la méthode des composants (EN 1993-1-8). Tu proposes :
+- les composants : {"id","kind":"plate","label","t","width","length","grade","hole":{"d0","e1","e2"},"existing"} ; {"id","kind":"bolt","label","d","grade":"4.6|5.6|8.8|10.9","threadInShear","preload":"none|controlled","tappedLength"} ; {"id","kind":"weld","label","a","length","grade"} ; {"id","kind":"contact","label","area","mu","surface"} ;
+- pour chaque direction (uplift, slideLong, slideShort, compression) le chemin d'effort = la liste ordonnée des maillons qui travaillent : {"component","mode","count","bolt","plate","lever"} avec mode parmi ${MODES.join(', ')} (bolt-* et thread et friction : composant boulon ; plate-* : plaque ; weld : soudure ; contact : contact). « plate-bearing » donne le boulon qui appuie (« bolt ») ; « bolt-punching » la plaque sous la tête (« plate ») ; « plate-bending » le bras de levier (« lever », mm) ;
+- la fonction (antiSlide, antiUplift, carriesCompression), le principe (positive = forme/butée, friction = serrage, mixed), « replaces » (verticalLink si la pièce remplace les plats d'empilement), les pièces par angle (perCorner).
+Règles : tu ne donnes JAMAIS de résistance, de taux ni de verdict (le moteur calcule, ses résultats sont dans « calc ») ; dans la proposition tu n'utilises que des valeurs dites par l'utilisateur, lues sur le dessin reconnu ou déjà dans le formulaire — sinon tu laisses le champ vide et tu poses la question. La géométrie ne donne ni la nuance, ni la classe et le serrage des boulons, ni les soudures, ni μ : pose ces questions. Si un frottement n'est pas garanti (pas de boulons précontraints), dis-le. Si une direction n'a pas de chemin d'effort, dis que la pièce ne retient rien dans cette direction. Réponds en français simple, phrases courtes, sans jargon inutile, en reprenant les ids des composants du formulaire quand ils existent.
+Format : {"reply": "...", "questions": ["..."], "proposal": {…} ou null}`;
+  const data = { messages: inp.messages.filter((m) => m.role === 'user').map((m) => m.text), design: inp.design, recognition: inp.recognition ?? null, calc: inp.calc ?? null };
+  const convo = inp.messages.map((m) => `${m.role === 'user' ? 'Utilisateur' : 'Assistant'} : ${m.text}`).join('\n\n');
+  let feedback = '';
+  let total: Usage | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await ask('joint', ctx, system, [{ type: 'text', text: `Formulaire actuel :\n${JSON.stringify(inp.design)}\n\nDessin reconnu :\n${JSON.stringify(inp.recognition ?? null)}\n\nRésultat du moteur :\n${JSON.stringify(inp.calc ?? null)}\n\nConversation :\n${convo}${feedback}` }], 16000, 180000);
+    total = total ? { ...r.usage, inputTokens: total.inputTokens + r.usage.inputTokens, outputTokens: total.outputTokens + r.usage.outputTokens, costUsd: (total.costUsd ?? 0) + (r.usage.costUsd ?? 0), durationMs: total.durationMs + r.usage.durationMs } : r.usage;
+    const out = parseJson(r.text, JointOut);
+    const bad = [...new Set([...checkText(out.reply, data), ...out.questions.flatMap((q) => checkText(q, data))])];
+    if (bad.length && attempt === 0) {
+      logger.warn(`[structureAi] assistant liaison : chiffres hors données (${bad.join(', ')}), nouvel essai`);
+      feedback = `\n\nTa réponse précédente a été rejetée : elle contenait des nombres absents des données (${bad.join(' ; ')}). Ne donne aucun chiffre qui ne vient pas de l'utilisateur, du dessin ou du moteur.`;
+      continue;
+    }
+    if (bad.length) throw new AppError('Réponse de l’assistant rejetée : elle contenait des chiffres qui ne viennent ni de toi ni du calcul. Reformuler la question.', 422);
+    let proposal = out.proposal ?? null;
+    let removed: string[] = [];
+    if (proposal) {
+      const c = cleanProposalNumbers(proposal, data);
+      proposal = c.proposal;
+      removed = c.removed;
+      if (proposal.paths) for (const [k, steps] of Object.entries(proposal.paths)) proposal.paths[k] = steps.filter((s) => MODES.includes(s.mode));
+    }
+    return { reply: out.reply, questions: [...out.questions, ...(removed.length ? [`Valeurs retirées de la proposition (pas données par toi ni lues sur le dessin) : ${removed.join(', ')} — à renseigner.`] : [])], proposal, usage: total };
+  }
+  throw new AppError('Assistant indisponible', 502);
+}
+
 export async function recentCalls(days = 30) {
   const since = new Date(Date.now() - days * 86400000);
   const rows = await db.structAiCall.findMany({ where: { createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, take: 200 });

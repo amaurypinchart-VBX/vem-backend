@@ -231,6 +231,38 @@ describe('rapport de l’étude structure', () => {
     }
   }, 180000);
 
+  it('Viewbox modifiées (S10) et liaison personnalisée (S11) : assemblages hors gabarit au rapport, traduits sans mot français', async () => {
+    const { withMods } = await import('../../src/structure/advisor/variant');
+    const { describeMods } = await import('../../src/structure/core/mods');
+    const { JOINT_TEMPLATES, designFromTemplate } = await import('../../src/structure/core/jointDesign');
+    const clamp = designFromTemplate(JOINT_TEMPLATES.find((t) => t.key === 'JD-ORIGINE-PLAT')!, 'JD-TEST', 'Plat test');
+    clamp.qualification = 'prototype';
+    const mods = { sections: [{ slot: 'rim-floor' as const, section: 'CAT-UPN160' }], geometry: [{ topZ: 3500, modules: ['VBX-01'] }], grades: [{ slot: 'column' as const, material: 'S355' }], stackJoint: { design: clamp } };
+    const v = withMods(inputs, mods);
+    expect(v.warnings).toEqual([]);
+    const sr = await runStudy(v.inputs, createInlineStudyRunner());
+    const modifications = describeMods(mods, (k) => v.inputs.sections.get(k)?.section.name ?? k);
+    const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Plat test', 'Sol légèrement déformable (prairie carrossable)'];
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      const r = buildReport({ ...reportInput(lang, 'detailed'), study: v.inputs, run: sr, calage: null, modifications });
+      const all = r.pages
+        .flatMap((p) => texts(p.svg))
+        .map((t) => own.reduce((x, o) => x.split(o).join(''), t))
+        .join('\n');
+      if (lang === 'fr') {
+        expect(all).toContain('Assemblages hors gabarit et liaisons personnalisées');
+        expect(all).toContain('hauteur des poteaux 3 500 mm');
+        expect(all).toMatch(/Pièce prototype non qualifiée/);
+        continue;
+      }
+      const markers = FRENCH_MARKERS.filter((w) => !(lang === 'de' && ['des', 'service'].includes(w)) && !(lang === 'en' && ['service', 'charge'].includes(w)));
+      const found = markers.filter((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(all));
+      const lines = all.split('\n').filter((l) => markers.some((w) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)));
+      if (process.env.DUMP_FR) fs.writeFileSync(`/tmp/claude-1000/-workspaces-vem-backend/901802f3-63aa-4771-9a5b-900ea60f2865/scratchpad/fr-${lang}.txt`, [...new Set(lines)].join('\n'));
+      expect(found.map((w) => all.split('\n').find((l) => new RegExp(`(^|[^\\p{L}])${w}([^\\p{L}]|$)`, 'iu').test(l)))).toEqual([]);
+    }
+  }, 180000);
+
   it('pieds à vérin : chapitre des tiges Tr 24 × 5 en français, traduit sans mot français en allemand et en anglais', async () => {
     const study: StudyInputs = { ...inputs, options: { ...inputs.options, jacks: true } };
     const jr = await runStudy(study, createInlineStudyRunner());

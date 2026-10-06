@@ -168,6 +168,83 @@ module Viewbox
         end
       end
 
+      # ─── Structure d'une Viewbox modifiée (dialogue « Structure… », attribut d'instance) ───
+      # Mêmes clés que l'étude structure de VEM (structure/core/mods.ts, core/manifest.ts StructParams).
+      STRUCT_SLOTS = %w[rim-floor rim-roof secondary-floor secondary-roof column].freeze
+      STRUCT_SLOT_LABELS = {
+        'rim-floor' => 'Rives du plancher', 'rim-roof' => 'Rives de toiture',
+        'secondary-floor' => 'Traverses / lisses du plancher', 'secondary-roof' => 'Traverses / lisses de toiture',
+        'column' => 'Poteaux'
+      }.freeze
+      STANDARD = 'gabarit'.freeze
+      STANDARD_TOP_Z = 3080
+      STANDARD_PLYWOOD = 18
+      GRADES = %w[S235 S275 S355].freeze
+      # Sections proposées (catalogue du commerce de VEM : « UPN 160 » → clé « CAT-UPN160 ») ; texte libre accepté.
+      STRUCT_CHOICES = {
+        'rim' => ['UPN 120', 'UPN 140', 'UPN 160', 'UPN 180', 'UPN 200', 'UPN 220', 'UPN 240', 'UPN 260', 'UPN 280', 'UPN 300',
+                  'IPE 160', 'IPE 180', 'IPE 200', 'IPE 220', 'IPE 240', 'IPE 270', 'IPE 300', 'HEA 160', 'HEA 180', 'HEA 200', 'HEA 220', 'HEA 240'],
+        'secondary' => ['RHS 100x50x4', 'RHS 100x60x4', 'RHS 120x60x3', 'RHS 120x60x4', 'RHS 150x50x4', 'RHS 150x75x4', 'RHS 140x70x5', 'RHS 160x80x4', 'RHS 160x80x5', 'RHS 150x100x5'],
+        'column' => ['SHS 80x80x5', 'SHS 100x100x4', 'SHS 100x100x5', 'SHS 100x100x8', 'SHS 100x100x10', 'SHS 120x120x5', 'SHS 120x120x6', 'SHS 120x120x8', 'SHS 140x140x5', 'SHS 150x150x5', 'SHS 150x150x6']
+      }.freeze
+      LIBRARY_SECTION_RE = /\A(UNP220|QHP100x5|RHP120x60x4|CAT-[\w.,x-]+|ETUDE-[\w.,x-]+|SEC-[\w.,x-]+)\z/
+
+      def self.struct_choices(slot)
+        STRUCT_CHOICES[slot.start_with?('rim') ? 'rim' : slot.start_with?('secondary') ? 'secondary' : 'column']
+      end
+
+      # « UPN 160 » → « CAT-UPN160 » ; clé de bibliothèque gardée telle quelle ; vide / « gabarit » → nil.
+      def self.struct_section_key(text)
+        t = text.to_s.strip
+        return nil if t.empty? || t.casecmp?(STANDARD)
+        return t if t =~ LIBRARY_SECTION_RE
+        "CAT-#{t.gsub(/\s+/, '').gsub('×', 'x')}"
+      end
+
+      # Clé → texte du dialogue (« CAT-UPN160 » → « UPN 160 »).
+      def self.struct_section_text(key)
+        return STANDARD if key.nil? || key.to_s.empty?
+        k = key.to_s.sub(/\ACAT-/, '')
+        k.sub(/\A(UPN|IPE|HEA|HEB|HEM|SHS|RHS|CHS)(\d)/, '\\1 \\2')
+      end
+
+      # Valeurs du dialogue → paramètres (seulement ce qui diffère du standard), nil = Viewbox standard.
+      # values : { 'topZ' => '5000', 'sections' => { slot => texte }, 'grades' => { slot => 'S355' | 'gabarit' }, 'plywood' => '21' }
+      def self.struct_params(values)
+        out = { 'v' => 1 }
+        top = values['topZ'].to_s.tr(',', '.').to_f.round
+        out['topZ'] = top if top > 0 && top != STANDARD_TOP_Z
+        secs = {}
+        (values['sections'] || {}).each do |slot, text|
+          next unless STRUCT_SLOTS.include?(slot)
+          k = struct_section_key(text)
+          secs[slot] = k if k
+        end
+        out['sections'] = secs unless secs.empty?
+        grades = {}
+        (values['grades'] || {}).each { |slot, g| grades[slot] = g if STRUCT_SLOTS.include?(slot) && GRADES.include?(g.to_s) }
+        out['grades'] = grades unless grades.empty?
+        ply = values['plywood'].to_s.tr(',', '.').to_f.round
+        out['plywood'] = ply if ply > 0 && ply != STANDARD_PLYWOOD
+        out.size > 1 ? out : nil
+      end
+
+      # Nombre de paramètres modifiés : « Viewbox standard » / « Viewbox modifiée (3 paramètres) ».
+      def self.struct_summary(params)
+        return 'Viewbox standard' unless params
+        n = (params['topZ'] ? 1 : 0) + (params['plywood'] ? 1 : 0) + (params['sections'] || {}).size + (params['grades'] || {}).size
+        n.zero? ? 'Viewbox standard' : "Viewbox modifiée (#{n} paramètre#{n > 1 ? 's' : ''})"
+      end
+
+      # Attribut d'instance (texte JSON) → paramètres ; invalide = standard.
+      def self.parse_struct(text)
+        return nil if text.nil? || text.to_s.strip.empty?
+        h = JSON.parse(text.to_s)
+        h.is_a?(Hash) && h.size > 1 ? h : nil
+      rescue JSON::ParserError
+        nil
+      end
+
       # Zippe tout le contenu d'un dossier (chemins relatifs, avec sous-dossiers de textures).
       # (chemins relatifs obtenus par glob "base:" : sous Windows, le dossier temporaire peut s'écrire
       # de deux façons, C:/Users/NOM~1/… et C:/Users/Nom/…, ce qui cassait un simple retrait de préfixe)

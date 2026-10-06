@@ -19,6 +19,7 @@ export interface StudyContextData {
   structure: StructuralModel;
   sections: Array<[string, SectionEntry]>;
   connections: ConnectionSet;
+  moduleConnections?: Record<string, ConnectionSet>;
   ec3: Ec3Options;
   calibration: boolean;
   /** sortie des tiges des pieds à vérin (mm) */

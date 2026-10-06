@@ -291,6 +291,8 @@ export const vem = {
   aiReview: (body: unknown) => api<{ alerts: AiAlert[]; dropped: number; usage: AiUsage }>('POST', '/structure/ai/review', body),
   aiMaterial: (body: unknown) => api<MaterialSearchResult & { usage: AiUsage }>('POST', '/structure/ai/material-search', body),
   aiCalls: () => api<{ days: number; count: number; costUsd: number }>('GET', '/structure/ai/calls'),
+  /** assistant de l'atelier des accessoires : propose composants et chemin d'effort (ne calcule rien) */
+  aiJoint: (body: unknown) => api<{ reply: string; questions: string[]; proposal: Partial<import('../structure/core/jointDesign').JointDesign> | null; usage: AiUsage }>('POST', '/structure/ai/joint', body),
   aiAdvisor: (messages: AdvisorMessage[], studyId: string | null) => api<AdvisorTurn>('POST', '/structure/ai/advisor', { messages, studyId }),
   advisorThread: (studyId: string) => api<AdvisorThread>('GET', `/structure/studies/${studyId}/advisor`),
   saveAdvisorThread: (studyId: string, body: { messages: AdvisorMessage[]; variants: unknown[] }) => api<{ updatedAt: string }>('PUT', `/structure/studies/${studyId}/advisor`, body),

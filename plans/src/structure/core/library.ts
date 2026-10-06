@@ -2,7 +2,7 @@
 // partagé entre projets (table struct_library_items, phase S3). Chaque donnée garde sa source (rapport et page).
 import type { Section } from './catalog';
 
-export type LibraryKind = 'module_type' | 'part_type' | 'material' | 'section' | 'connection' | 'spreading' | 'stock';
+export type LibraryKind = 'module_type' | 'part_type' | 'material' | 'section' | 'connection' | 'spreading' | 'stock' | 'joint_design';
 
 /** known = confirmé par un humain ; suggested = proposé (heuristique, IA, données non vérifiées) ; unknown = à renseigner */
 export type LibraryStatus = 'known' | 'suggested' | 'unknown';
@@ -263,7 +263,13 @@ export interface PartTypeEntry extends EntryBase {
   category?: string | null;
 }
 
-export type LibraryEntry = SectionEntry | ConnectionEntry | SpreadingEntry | StockEntry | ModuleTypeEntry | MaterialEntry | PartTypeEntry;
+/** Accessoire / liaison personnalisée (atelier des accessoires, S11) : pièce décrite par ses composants. */
+export interface JointDesignEntry extends EntryBase {
+  kind: 'joint_design';
+  design: import('./jointDesign').JointDesign;
+}
+
+export type LibraryEntry = SectionEntry | ConnectionEntry | SpreadingEntry | StockEntry | ModuleTypeEntry | MaterialEntry | PartTypeEntry | JointDesignEntry;
 
 /**
  * Désignation technique d'une section ou d'un matériau de la bibliothèque, sans sa description d'usage :

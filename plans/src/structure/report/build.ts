@@ -422,6 +422,22 @@ export function buildReport(inp: ReportInput): ReportOutput {
     blocks.push({ t: 'para', text: L.modsText });
     blocks.push({ t: 'bullets', items: inp.modifications.map((m) => E(m)) });
   }
+  // assemblages des Viewbox modifiées et liaison personnalisée (statut, raisons, capacités, formules)
+  if (study.joints?.rows.length) {
+    blocks.push({ t: 'para', text: L.jointsTitle, bold: true, after: 0.6 });
+    blocks.push({ t: 'para', text: L.jointsText });
+    const capTxt = (c: { label: string; before?: number; after?: number; unit: string }) => {
+      const k = c.unit === 'N·mm' ? 1e6 : 1e3;
+      const u = c.unit === 'N·mm' ? 'kNm' : 'kN';
+      return `${E(c.label)} ${c.before !== undefined ? `${N(c.before / k, 2)} → ` : ''}${c.after !== undefined ? N(c.after / k, 2) : '—'} ${u}`;
+    };
+    blocks.push({
+      t: 'bullets',
+      items: study.joints.rows.map((r) => `${E(r.name)} (${r.modules.join(', ')}) : ${L.jointStatus[r.status]} — ${r.reasons.map((x) => E(x)).join(' ; ')}${r.capacities.length ? ` — ${r.capacities.map(capTxt).join(' ; ')}` : ''}`),
+    });
+    if (study.joints.rows.some((r) => r.reasons.some((x) => x.includes('prototype')))) blocks.push({ t: 'para', text: L.prototypeNote, bold: true, color: VERDICT_COLORS.limit });
+    for (const r of study.joints.rows) for (const x of r.records.slice(0, 12)) blocks.push(rec(x));
+  }
   blocks.push({ t: 'para', text: L.normsTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: L.norms, labelWidth: 32 });
   blocks.push({ t: 'para', text: L.docsTitle, bold: true, after: 0.6 });

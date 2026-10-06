@@ -6,6 +6,7 @@ import { sectionMap } from '../../structure/core/assemble';
 import type { LibraryEntry } from '../../structure/core/library';
 import type { EdgeItem, PointItem } from '../../structure/core/loads';
 import type { StudyMods } from '../../structure/core/mods';
+import { mergeMods } from '../../structure/core/mods';
 import type { SceneStudyModel } from '../../structure/scene/studyModel';
 import type { CalcOptions, StudyInputs } from '../../structure/studyRun';
 import { withMods } from '../../structure/advisor/variant';
@@ -80,5 +81,6 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
     options: calc,
     blocking: sceneModel.errors,
   };
-  return withMods(base, src.mods);
+  // modifications de SketchUp (« Structure… ») d'abord, puis celles de l'étude et des variantes (elles l'emportent)
+  return withMods(base, sceneModel.structMods ? mergeMods(sceneModel.structMods, src.mods) : src.mods);
 }

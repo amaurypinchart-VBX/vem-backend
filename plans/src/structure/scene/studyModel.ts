@@ -19,6 +19,8 @@ import { STAIR_KITS } from '../library/seed';
 import type { PlacedTerrace } from '../core/terrace';
 import { placeTerrace } from '../core/terrace';
 import { endHeights } from './geometry';
+import type { StudyMods } from '../core/mods';
+import { modsCount, modsFromStructParams } from '../core/mods';
 
 export interface SceneStudyModel {
   modules: PlacedModule[];
@@ -32,6 +34,8 @@ export interface SceneStudyModel {
   pointItems: PointItem[];
   errors: string[];
   warnings: string[];
+  /** Viewbox modifiées dans SketchUp (« Structure… ») : modifications reprises par l'étude, sans question */
+  structMods?: StudyMods;
 }
 
 export interface IgnoredPart {
@@ -231,7 +235,12 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   for (const p of ignored)
     warnings.push(`${p.label} (${p.count}) : pièce porteuse ignorée — ni son poids, ni l’exploitation, ni le vent, ni ses appuis sur les Viewbox ne sont dans le calcul (citée dans le rapport)`);
   if (!modules.length && !errors.length) errors.push('Aucune Viewbox calculable dans le modèle.');
-  return { modules, ignored, stairs, terraces, edgeItems, pointItems, errors, warnings };
+  // Viewbox modifiées dans SketchUp : leurs paramètres de structure (attribut d'instance) entrent dans l'étude
+  const placed = new Set(modules.map((m) => m.id));
+  const custom = scene.index.modules.filter((m) => m.structParams && placed.has(m.id)).map((m) => ({ id: m.id, params: m.structParams! }));
+  const structMods = custom.length ? modsFromStructParams(custom) : undefined;
+  if (structMods && modsCount(structMods)) warnings.push(`${custom.length} Viewbox modifiée(s) dans SketchUp (${custom.map((c) => c.id).join(', ')}) : paramètres de structure repris (hauteur, profils, nuances).`);
+  return { modules, ignored, stairs, terraces, edgeItems, pointItems, errors, warnings, ...(structMods ? { structMods } : {}) };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {

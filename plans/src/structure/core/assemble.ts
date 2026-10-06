@@ -29,6 +29,11 @@ export interface PlacedModule {
   v: Vec3;
   params: ViewboxTemplateParams;
   templateKey: string;
+  /**
+   * poids de la Viewbox modifiée par l'étude moins celui de son gabarit (N, barres acier : profils plus lourds,
+   * poteaux plus hauts) — ajouté au poids pesé, qui ne vaut que pour la Viewbox standard
+   */
+  weightDelta?: number;
 }
 
 export type MemberFamily = TemplateFamily | StairFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact' | 'bracing' | 'raise-column' | 'raise-bracing';
@@ -239,7 +244,24 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
  * Viewbox empilées : le plancher de celle du dessus est posé sur le haut de celle du dessous (topZ du gabarit). Un écart
  * de modélisation jusqu'à 400 mm est corrigé, avec un avertissement au-delà de 20 mm.
  */
-export function snapStacks(modules: PlacedModule[], gapTol: number, warnings: string[]): PlacedModule[] {
+/** Part de l'emprise en plan de U au-dessus de L (grille de 5 × 5 points, intérieurs à 50 mm des bords). */
+export function planOverlap(U: PlacedModule, L: PlacedModule): number {
+  const { x0, x1, y0, y1 } = U.params;
+  let inside = 0;
+  for (let i = 0; i < 5; i++)
+    for (let j = 0; j < 5; j++) {
+      const u = x0 + ((x1 - x0) * (i + 0.5)) / 5;
+      const v = y0 + ((y1 - y0) * (j + 0.5)) / 5;
+      const p: Vec3 = [U.origin[0] + U.u[0] * u + U.v[0] * v, 0, U.origin[2] + U.u[2] * u + U.v[2] * v];
+      const d: Vec3 = [p[0] - L.origin[0], 0, p[2] - L.origin[2]];
+      const lu = d[0] * L.u[0] + d[2] * L.u[2];
+      const lv = d[0] * L.v[0] + d[2] * L.v[2];
+      if (lu > L.params.x0 + 50 && lu < L.params.x1 - 50 && lv > L.params.y0 + 50 && lv < L.params.y1 - 50) inside++;
+    }
+  return inside / 25;
+}
+
+export function snapStacks(modules: PlacedModule[], gapTol: number, warnings: string[], maxShift = 400): PlacedModule[] {
   const out = modules.map((m) => ({ ...m, origin: [...m.origin] as Vec3 }));
   const plan = (pm: PlacedModule) => {
     const { x0, x1, y0, y1 } = pm.params;
@@ -258,13 +280,14 @@ export function snapStacks(modules: PlacedModule[], gapTol: number, warnings: st
       if (L === U || L.level >= U.level) continue;
       const cl = plan(L);
       const shared = cu.filter((c) => cl.some((l) => planDist(c, l) <= gapTol + 10)).length;
-      if (shared >= 2 && (!best || L.origin[1] > best.origin[1])) best = L;
+      // posée dessus : angles communs ET recouvrement en plan (une voisine de même niveau partage aussi deux angles)
+      if (shared >= 2 && planOverlap(U, L) > 0.25 && (!best || L.origin[1] > best.origin[1])) best = L;
     }
     if (!best) continue;
     const target = best.origin[1] + best.params.topZ;
     const diff = U.origin[1] - target;
-    if (Math.abs(diff) > 400) continue;
-    if (Math.abs(diff) > 20) warnings.push(`${U.id} : posée ${Math.round(Math.abs(diff))} mm ${diff < 0 ? 'plus bas' : 'plus haut'} que le haut de ${best.id} dans le modèle (gabarit ${best.params.topZ} mm) — replacée sur ${best.id}.`);
+    if (Math.abs(diff) > maxShift) continue;
+    if (Math.abs(diff) > 20 && maxShift <= 400) warnings.push(`${U.id} : posée ${Math.round(Math.abs(diff))} mm ${diff < 0 ? 'plus bas' : 'plus haut'} que le haut de ${best.id} dans le modèle (gabarit ${best.params.topZ} mm) — replacée sur ${best.id}.`);
     U.origin[1] = target;
   }
   return out;
@@ -463,7 +486,8 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   const tplOf = new Map<PlacedModule, ViewboxTemplate>();
   for (const pm of modules) {
     const ex = extras.get(pm) ?? {};
-    const key = `${pm.templateKey}|${SIDES.map((sd) => [...new Set(ex[sd] ?? [])].sort((a, b) => a - b).join(',')).join('|')}`;
+    // une Viewbox modifiée par l'étude (sections, poteaux) a ses propres paramètres : la clé les contient
+    const key = `${pm.templateKey}|${JSON.stringify(pm.params)}|${SIDES.map((sd) => [...new Set(ex[sd] ?? [])].sort((a, b) => a - b).join(',')).join('|')}`;
     let tpl = tplCache.get(key);
     if (!tpl) tplCache.set(key, (tpl = viewboxTemplate(pm.params, ex)));
     tplOf.set(pm, tpl);

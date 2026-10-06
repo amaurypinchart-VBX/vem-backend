@@ -40,10 +40,54 @@ export interface ManifestModule {
   transform?: number[];
   bboxWorld?: ManifestBBox;
   accessories?: ManifestEntry[];
+  /** Viewbox modifiée, saisie dans SketchUp (« Structure… ») : seulement les valeurs différentes du standard */
+  structParams?: StructParams | null;
+}
+
+/** Familles de barres de la Viewbox modifiables depuis SketchUp (mêmes clés que l'étude structure). */
+export const STRUCT_SLOTS = ['rim-floor', 'rim-roof', 'secondary-floor', 'secondary-roof', 'column'] as const;
+export type StructSlot = (typeof STRUCT_SLOTS)[number];
+
+/** Paramètres de structure d'une instance de Viewbox (attribut d'instance `viewbox_struct` de l'extension). */
+export interface StructParams {
+  v?: number;
+  /** haut de la Viewbox = hauteur des poteaux (mm) */
+  topZ?: number;
+  /** section par famille de barres : clé de la bibliothèque ou du catalogue (« CAT-UPN160 ») */
+  sections?: Partial<Record<StructSlot, string>>;
+  /** nuance par famille de barres (S235, S275, S355) */
+  grades?: Partial<Record<StructSlot, string>>;
+  /** épaisseur du contreplaqué du plancher (mm) */
+  plywood?: number;
+}
+
+/** Lecture tolérante des paramètres de structure (champ absent ou invalide = Viewbox standard). */
+export function cleanStructParams(raw: unknown): StructParams | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const out: StructParams = {};
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && Number.isFinite(parseFloat(v)) ? parseFloat(v) : undefined);
+  const topZ = num(r.topZ);
+  if (topZ && topZ > 0) out.topZ = Math.round(topZ);
+  const ply = num(r.plywood);
+  if (ply && ply > 0) out.plywood = Math.round(ply);
+  for (const k of ['sections', 'grades'] as const) {
+    const m = r[k];
+    if (!m || typeof m !== 'object') continue;
+    const o: Partial<Record<StructSlot, string>> = {};
+    for (const slot of STRUCT_SLOTS) {
+      const v = (m as Record<string, unknown>)[slot];
+      if (typeof v === 'string' && v.trim() && v !== 'gabarit') o[slot] = v.trim();
+    }
+    if (Object.keys(o).length) out[k] = o;
+  }
+  return Object.keys(out).length ? { v: 1, ...out } : null;
 }
 
 export interface Manifest {
   schema: string;
+  /** version des paramètres de structure (`structParams` des modules) */
+  structSchemaVersion?: number;
   source?: { file?: string; sketchupVersion?: string; exportedAt?: string; extensionVersion?: string };
   units?: string;
   upAxis?: string;
