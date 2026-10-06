@@ -36,7 +36,21 @@ export interface PlacedModule {
   weightDelta?: number;
 }
 
-export type MemberFamily = TemplateFamily | StairFamily | 'corner-link' | 'vertical-contact' | 'bolt' | 'contact' | 'bracing' | 'raise-column' | 'raise-bracing';
+export type MemberFamily =
+  | TemplateFamily
+  | StairFamily
+  | 'corner-link'
+  | 'vertical-contact'
+  | 'bolt'
+  | 'contact'
+  | 'bracing'
+  | 'raise-column'
+  | 'raise-bracing'
+  | 'model-beam'
+  | 'model-column'
+  | 'support-post'
+  | 'transfer-beam'
+  | 'model-link';
 
 export interface MemberMeta {
   family: MemberFamily;
@@ -107,6 +121,55 @@ export interface AssembleOptions {
   raise?: RaiseSpec | null;
   /** escaliers extérieurs (kit avec palier) attachés à un côté de Viewbox */
   stairs?: PlacedStair[];
+  /** poutres et poteaux porteurs dessinés dans le modèle SketchUp (hors gabarit Viewbox) */
+  members?: ModelMember[];
+  /** appuis ajoutés par l'étude sous des angles de Viewbox posés dans le vide */
+  addedSupports?: CornerSupport[];
+}
+
+/**
+ * Poutre ou poteau porteur dessiné dans le modèle SketchUp : axe de la barre (centre de sa boîte orientée), section de
+ * la bibliothèque. Extrémités reliées à la rive de Viewbox la plus proche, à une autre barre du modèle ou au sol
+ * (articulées, torsion retenue) ; un angle de Viewbox posé dessus y est relié par une liaison d'angle.
+ */
+export interface ModelMember {
+  id: string;
+  label: string;
+  nature: 'beam' | 'column';
+  section: string;
+  /** extrémités de l'axe (monde, mm, Y vers le haut) */
+  a: Vec3;
+  b: Vec3;
+  /** hauteur de la section (mm) : ce qui est posé dessus est à depth / 2 au-dessus de l'axe */
+  depth?: number;
+}
+
+/** Appui ajouté par l'étude sous un angle de Viewbox posé dans le vide (proposition de l'outil, acceptée). */
+export interface CornerSupport {
+  /** Viewbox du dessus et numéro d'angle (0…3) */
+  module: string;
+  corner: number;
+  /** poteau jusqu'au sol, ou poutre de reprise posée sur la toiture de la Viewbox du dessous (rive à rive, petit côté) */
+  kind: 'post' | 'transfer';
+  /** section (défaut : poteau de la Viewbox, rive de toiture de la Viewbox du dessous) */
+  section?: string;
+}
+
+/** Angle d'une Viewbox du dessus posé sur rien : où il est, ce qu'il y a dessous, ce que l'outil propose. */
+export interface UnsupportedCorner {
+  module: string;
+  corner: number;
+  /** angle du plancher (monde, mm) */
+  position: Vec3;
+  /** hauteur de l'angle au-dessus du sol (mm) */
+  height: number;
+  /** Viewbox dont la toiture est sous l'angle en plan (poutre de reprise possible), sinon null (poteau jusqu'au sol) */
+  over: string | null;
+  /** angle de toiture le plus proche (en plan) sur lequel l'angle pourrait être posé en déplaçant la Viewbox */
+  nearest: { module: string; corner: number; distance: number } | null;
+  proposal: CornerSupport;
+  /** phrase pour l'interface et le rapport */
+  text: string;
 }
 
 /** Escalier du modèle placé contre une Viewbox (scene/studyModel). */
@@ -176,7 +239,7 @@ export interface StructuralModel {
   lines: Map<string, EdgeLoadTarget[]>;
   faces: FaceInfo[];
   /** appuis : Viewbox et angle */
-  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' | 'stair'; jack: boolean; label?: string }>;
+  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' | 'stair' | 'post'; jack: boolean; label?: string }>;
   /** escaliers extérieurs du modèle */
   stairs: StairModel[];
   /** modules sans rien au-dessus (toiture exposée, dernier niveau évacué) */
@@ -185,6 +248,8 @@ export interface StructuralModel {
   outerSides: Map<string, Record<Side, boolean>>;
   baseY: number;
   topY: number;
+  /** angles de Viewbox du dessus posés dans le vide (erreurs bloquantes) et appui proposé pour chacun */
+  unsupported: UnsupportedCorner[];
   warnings: string[];
   errors: string[];
 }
@@ -238,7 +303,18 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'stair-head': 'attache de montant de palier',
   'stair-step': 'marche (barre équivalente)',
   'stair-link': 'attache du palier à la Viewbox',
+  'model-beam': 'poutre du modèle',
+  'model-column': 'poteau du modèle',
+  'support-post': 'poteau d’appui ajouté',
+  'transfer-beam': 'poutre de reprise ajoutée',
+  'model-link': 'attache de poutre du modèle',
 };
+
+/** Tolérances de pose d'un angle de Viewbox (mm, en plan) : sur une rive de toiture, sur une poutre du modèle. */
+const RIM_TOL = 100;
+const MEMBER_TOL = 150;
+/** distance maxi (3D) entre l'extrémité d'une poutre du modèle et la rive / la barre à laquelle elle est reliée */
+const END_TOL = 700;
 
 /**
  * Viewbox empilées : le plancher de celle du dessus est posé sur le haut de celle du dessous (topZ du gabarit). Un écart
@@ -280,8 +356,10 @@ export function snapStacks(modules: PlacedModule[], gapTol: number, warnings: st
       if (L === U || L.level >= U.level) continue;
       const cl = plan(L);
       const shared = cu.filter((c) => cl.some((l) => planDist(c, l) <= gapTol + 10)).length;
-      // posée dessus : angles communs ET recouvrement en plan (une voisine de même niveau partage aussi deux angles)
-      if (shared >= 2 && planOverlap(U, L) > 0.25 && (!best || L.origin[1] > best.origin[1])) best = L;
+      // posée dessus : angles communs ET recouvrement en plan (une voisine de même niveau partage aussi deux angles) ;
+      // empilement décalé ou Viewbox tournée (angles sur les rives) : recouvrement d'au moins un dixième de l'emprise
+      const overlap = planOverlap(U, L);
+      if (((shared >= 2 && overlap > 0.25) || overlap >= 0.1) && (!best || L.origin[1] > best.origin[1])) best = L;
     }
     if (!best) continue;
     const target = best.origin[1] + best.params.topZ;
@@ -450,6 +528,192 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         }
     }
 
+  // ─── angles des Viewbox du dessus : sur quoi chacun est posé (avant les gabarits : un angle sur une rive y ajoute un nœud) ───
+  // ordre : angle de toiture d'une Viewbox du dessous (statico), rive de toiture (empilement décalé, Viewbox tournée),
+  // poutre / poteau dessiné dans le modèle, appui ajouté par l'étude (poteau jusqu'au sol, poutre de reprise) ; sinon
+  // l'angle est dans le vide : erreur bloquante avec l'appui proposé.
+  const groundY = Math.min(...modules.filter((m) => m.level === 0).map((m) => m.origin[1]), Infinity);
+  const modelMembers = opt.members ?? [];
+  type Landing =
+    | { kind: 'corner' }
+    | { kind: 'rim'; L: PlacedModule; f: FaceGeo; s: number }
+    | { kind: 'member'; member: number; t: number }
+    | { kind: 'post'; section: string }
+    | { kind: 'transfer'; L: PlacedModule; f0: FaceGeo; s0: number; f1: FaceGeo; s1: number; section: string };
+  const landings = new Map<string, Landing>();
+  const unsupported: UnsupportedCorner[] = [];
+  const memberBreaks: number[][] = modelMembers.map(() => []);
+  const addedByCorner = new Map((opt.addedSupports ?? []).map((a) => [`${a.module}|${a.corner}`, a]));
+  const usedAdded = new Set<string>();
+  const planLocal = (pm: PlacedModule, p: Vec3) => {
+    const d: Vec3 = [p[0] - pm.origin[0], 0, p[2] - pm.origin[2]];
+    return { u: dot(d, pm.u), v: dot(d, pm.v) };
+  };
+  const insidePlan = (pm: PlacedModule, p: Vec3) => {
+    const l = planLocal(pm, p);
+    return l.u > pm.params.x0 && l.u < pm.params.x1 && l.v > pm.params.y0 && l.v < pm.params.y1;
+  };
+  const lerp = (a: Vec3, b: Vec3, t: number): Vec3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const mmLength = (mm: ModelMember) => Math.hypot(mm.b[0] - mm.a[0], mm.b[1] - mm.a[1], mm.b[2] - mm.a[2]);
+  const isColumn = (mm: ModelMember) => mm.nature === 'column';
+  for (const U of modules) {
+    if (U.level === 0) continue;
+    cornersOf(U, U.params.floorZ).forEach((cw, c) => {
+      const key = `${U.id}|${c}`;
+      // 1. angle de toiture d'une Viewbox du dessous
+      const onCorner = modules.some(
+        (L) =>
+          L !== U &&
+          cornersOf(L, L.params.roofZ).some((l) => {
+            const dz = cw[1] - l[1];
+            return dz >= 150 && dz <= 450 && planDist(cw, l) <= gapTol + 10;
+          }),
+      );
+      if (onCorner) {
+        landings.set(key, { kind: 'corner' });
+        return;
+      }
+      // 2. rive de toiture d'une Viewbox du dessous (angle en travée)
+      let rim: { L: PlacedModule; f: FaceGeo; s: number; d: number } | null = null;
+      for (const f of faceGeo) {
+        const L = f.pm;
+        if (L === U) continue;
+        const dz = cw[1] - (L.origin[1] + L.params.roofZ);
+        if (dz < 150 || dz > 450) continue;
+        const d = Math.abs(dot([cw[0] - f.a[0], 0, cw[2] - f.a[2]], f.normal));
+        const s = along(f, cw);
+        if (d > RIM_TOL || s <= 20 || s >= f.length - 20) continue;
+        if (!rim || d < rim.d) rim = { L, f, s, d };
+      }
+      if (rim) {
+        addExtra(rim.f, rim.s);
+        covered.add(rim.L);
+        landings.set(key, { kind: 'rim', L: rim.L, f: rim.f, s: rim.s });
+        return;
+      }
+      // 3. poutre ou tête de poteau du modèle sous l'angle
+      let onMember: { member: number; t: number; score: number } | null = null;
+      modelMembers.forEach((mm, k) => {
+        if (isColumn(mm)) {
+          const t = mm.a[1] > mm.b[1] ? 0 : 1;
+          const top = t === 0 ? mm.a : mm.b;
+          const d = planDist(cw, top);
+          const dz = cw[1] - top[1];
+          if (d <= MEMBER_TOL && dz >= -100 && dz <= 600 && (!onMember || d + Math.abs(dz) < onMember.score)) onMember = { member: k, t, score: d + Math.abs(dz) };
+          return;
+        }
+        const ab: Vec3 = [mm.b[0] - mm.a[0], 0, mm.b[2] - mm.a[2]];
+        const L2 = ab[0] * ab[0] + ab[2] * ab[2];
+        if (L2 < 1) return;
+        const t = Math.max(0, Math.min(1, ((cw[0] - mm.a[0]) * ab[0] + (cw[2] - mm.a[2]) * ab[2]) / L2));
+        const p = lerp(mm.a, mm.b, t);
+        const d = planDist(cw, p);
+        const dz = cw[1] - (p[1] + (mm.depth ?? 0) / 2);
+        if (d <= MEMBER_TOL && dz >= -100 && dz <= 600 && (!onMember || d + Math.abs(dz) < onMember.score)) onMember = { member: k, t, score: d + Math.abs(dz) };
+      });
+      if (onMember) {
+        const { member, t } = onMember as { member: number; t: number };
+        memberBreaks[member].push(t);
+        landings.set(key, { kind: 'member', member, t });
+        return;
+      }
+      // Viewbox dont la toiture est sous l'angle (en plan) : la plus haute
+      const over =
+        modules
+          .filter((L) => L !== U && L.origin[1] + L.params.roofZ < cw[1] - 100 && insidePlan(L, cw))
+          .sort((a, b) => b.origin[1] + b.params.roofZ - (a.origin[1] + a.params.roofZ))[0] ?? null;
+      // 4. appui ajouté par l'étude
+      const added = addedByCorner.get(key);
+      if (added) {
+        usedAdded.add(key);
+        if (added.kind === 'post' && !over) {
+          landings.set(key, { kind: 'post', section: added.section ?? U.params.sections.column });
+          return;
+        }
+        if (added.kind === 'transfer' && over) {
+          const f0 = faceGeo.find((f) => f.pm === over && f.side === 'v0')!;
+          const f1 = faceGeo.find((f) => f.pm === over && f.side === 'v1')!;
+          const [s0, s1] = [along(f0, cw), along(f1, cw)];
+          addExtra(f0, s0);
+          addExtra(f1, s1);
+          covered.add(over);
+          landings.set(key, { kind: 'transfer', L: over, f0, s0, f1, s1, section: added.section ?? over.params.sections.rimRoof ?? over.params.sections.rim });
+          if (cw[1] - (over.origin[1] + over.params.roofZ) > 450)
+            warnings.push(`${U.id} angle ${c + 1} : ${fmtNumber((cw[1] - (over.origin[1] + over.params.topZ)) / 10, 0)} cm entre le haut de ${over.id} et l’angle — rehausse sur la poutre de reprise à détailler.`);
+          return;
+        }
+        warnings.push(
+          added.kind === 'post'
+            ? `${U.id} angle ${c + 1} : poteau d’appui ajouté impossible (${over?.id} est dessous) — remplacé par la proposition ci-dessous.`
+            : `${U.id} angle ${c + 1} : poutre de reprise impossible (aucune Viewbox dessous) — remplacée par la proposition ci-dessous.`,
+        );
+      }
+      // 5. dans le vide : appui proposé
+      let nearest: UnsupportedCorner['nearest'] = null;
+      for (const L of modules) {
+        if (L === U || L.origin[1] + L.params.roofZ >= cw[1] - 100) continue;
+        cornersOf(L, L.params.roofZ).forEach((l, lc) => {
+          const d = planDist(cw, l);
+          if (!nearest || d < nearest.distance) nearest = { module: L.id, corner: lc, distance: d };
+        });
+      }
+      const height = Number.isFinite(groundY) ? cw[1] - groundY : cw[1];
+      const proposal: CornerSupport = over ? { module: U.id, corner: c, kind: 'transfer', section: over.params.sections.rimRoof ?? over.params.sections.rim } : { module: U.id, corner: c, kind: 'post', section: U.params.sections.column };
+      const near = nearest as UnsupportedCorner['nearest'];
+      const text = over
+        ? `${U.id} angle ${c + 1} : posé sur la toiture de ${over.id} hors de ses angles et de ses rives — ajouter une poutre de reprise rive à rive sous l’angle (ou déplacer ${U.id}${near && near.distance <= 600 ? ` de ${fmtNumber(near.distance / 10, 0)} cm sur l’angle ${near.corner + 1} de ${near.module}` : ''}).`
+        : `${U.id} angle ${c + 1} : rien dessous jusqu’au sol (${fmtNumber(height / 1e3, 2)} m) — ajouter un poteau d’appui${near && near.distance <= 600 ? ` (ou déplacer ${U.id} de ${fmtNumber(near.distance / 10, 0)} cm sur l’angle ${near.corner + 1} de ${near.module})` : ''}, ou dessiner la poutre / le poteau dans SketchUp.`;
+      unsupported.push({ module: U.id, corner: c, position: cw, height, over: over?.id ?? null, nearest: near, proposal, text });
+      errors.push(`${U.id} : angle ${c + 1} posé dans le vide (ni angle ni rive de Viewbox, ni poutre dessous).`);
+    });
+  }
+  for (const a of opt.addedSupports ?? [])
+    if (!usedAdded.has(`${a.module}|${a.corner}`) && modules.some((m) => m.id === a.module)) warnings.push(`${a.module} angle ${a.corner + 1} : déjà porté, appui ajouté ignoré.`);
+
+  // ─── poutres et poteaux du modèle : à quoi chaque extrémité est reliée ───
+  // Viewbox portées par la barre exclues (une poutre porte ce qui est posé dessus, elle s'appuie sur le reste) ;
+  // sol (≤ 30 cm), sinon la rive (plancher ou toiture) ou l'autre barre du modèle la plus proche (≤ 70 cm).
+  type EndAttach = { kind: 'ground' } | { kind: 'landing' } | { kind: 'rim'; f: FaceGeo; z: number; s: number } | { kind: 'member'; member: number; t: number } | { kind: 'free' };
+  const carriedBy = modelMembers.map((_, k) => new Set([...landings].filter(([, l]) => l.kind === 'member' && l.member === k).map(([key]) => key.split('|')[0])));
+  const memberEnds: EndAttach[][] = modelMembers.map((mm, k) =>
+    ([0, 1] as const).map((t): EndAttach => {
+      const p = t === 0 ? mm.a : mm.b;
+      const len = mmLength(mm);
+      // tête de poteau sous un angle de Viewbox : reliée par la liaison d'angle (une poutre, elle, doit être portée)
+      if (isColumn(mm) && p[1] > (t === 0 ? mm.b[1] : mm.a[1]) && memberBreaks[k].some((x) => Math.abs(x - t) * len <= 300)) return { kind: 'landing' };
+      const bottom = p[1] - (isColumn(mm) ? 0 : (mm.depth ?? 0) / 2);
+      if (Number.isFinite(groundY) && bottom - groundY <= 300 && (!isColumn(mm) || p[1] <= Math.max(mm.a[1], mm.b[1]) - 1)) return { kind: 'ground' };
+      let best: { a: EndAttach; d: number } | null = null;
+      for (const f of faceGeo) {
+        if (carriedBy[k].has(f.pm.id)) continue;
+        for (const z of [f.pm.params.floorZ, f.pm.params.roofZ]) {
+          const s = Math.max(0, Math.min(f.length, along(f, p)));
+          const q = at(f, s);
+          const d = Math.hypot(p[0] - q[0], p[1] - (f.pm.origin[1] + z), p[2] - q[2]);
+          if (d <= END_TOL && (!best || d < best.d)) best = { a: { kind: 'rim', f, z, s }, d };
+        }
+      }
+      modelMembers.forEach((o, j) => {
+        if (j === k) return;
+        const ab: Vec3 = [o.b[0] - o.a[0], o.b[1] - o.a[1], o.b[2] - o.a[2]];
+        const L2 = dot(ab, ab);
+        if (L2 < 1) return;
+        const tt = Math.max(0, Math.min(1, dot([p[0] - o.a[0], p[1] - o.a[1], p[2] - o.a[2]], ab) / L2));
+        const q = lerp(o.a, o.b, tt);
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+        if (d <= END_TOL && (!best || d < best.d)) best = { a: { kind: 'member', member: j, t: tt }, d };
+      });
+      if (!best) {
+        errors.push(`${mm.id} « ${mm.label} » : extrémité à ${fmtNumber(p[1] / 1e3, 2)} m de haut reliée à rien (ni Viewbox ni autre barre à moins de ${END_TOL / 10} cm, ni sol).`);
+        return { kind: 'free' };
+      }
+      const a = (best as { a: EndAttach }).a;
+      if (a.kind === 'rim') addExtra(a.f, a.s);
+      if (a.kind === 'member') memberBreaks[a.member].push(a.t);
+      return a;
+    }),
+  );
+
   // ─── escaliers : perçages d'attache du palier sur le côté de la Viewbox (nœuds de rive ajoutés si besoin) ───
   const stairAttach = new Map<PlacedStair, { f: FaceGeo; s: [number, number] }>();
   for (const st of opt.stairs ?? []) {
@@ -525,6 +789,89 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   for (const f of faceGeo) f.face = tplOf.get(f.pm)!.faces.find((x) => x.side === f.side)!;
   const P = (pm: PlacedModule, key: string) => nodeOf.get(`${pm.id}|${key}`)!;
   const pos = (i: number): Vec3 => [nodes[i].x, nodes[i].y, nodes[i].z];
+  // nœud de rive (plancher ou toiture) d'une Viewbox le plus proche de l'abscisse s d'un côté
+  const rimNodeAt = (f: FaceGeo, level: 'floor' | 'roof', s: number) => {
+    const target = at(f, s);
+    let best = -1;
+    let bd = Infinity;
+    for (const k of level === 'floor' ? f.face!.rimFloor : f.face!.rimRoof) {
+      const n = P(f.pm, k);
+      const d = planDist(pos(n), target);
+      if (d < bd) [best, bd] = [n, d];
+    }
+    return best;
+  };
+  // appuis au sol hors Viewbox (pieds de poteaux) : raideurs des appuis des Viewbox, rotation d'axe vertical retenue
+  // (platine sur calage) pour que le poteau articulé ne tourne pas librement sur lui-même
+  const ground0 = modules.find((m) => m.level === 0);
+  const groundSupport = (node: number, module: string, corner: number, label: string) => {
+    const kh = opt.calibration ? HOKA_SUPPORT_K : (ground0?.params.springs.supportHorizontal ?? HOKA_SUPPORT_K);
+    const kv: SupportDof = opt.calibration ? 'fixed' : (ground0?.params.springs.supportVertical ?? 'fixed');
+    supports.push({ node, dofs: [kh, kv, kh, 'free', 'fixed', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
+    supportMeta.push({ module, corner, kind: 'post', jack: false, label });
+  };
+  const pinnedEnd: EndSpec = ['rigid', 'rigid', 'rigid', 'rigid', 'free', 'free'];
+  const groundLevel = groundY - (opt.raise && opt.raise.height > 0 ? opt.raise.height : 0);
+
+  // ─── poutres et poteaux du modèle : nœuds (extrémités, appuis d'angles, attaches d'autres barres), barres ───
+  const memberNodes: Array<Array<{ t: number; n: number }>> = modelMembers.map((mm, k) => {
+    const len = mmLength(mm);
+    const list: Array<{ t: number; n: number }> = [];
+    for (const t of [0, 1, ...memberBreaks[k]].sort((x, y) => x - y)) {
+      const last = list[list.length - 1];
+      if (last && (t - last.t) * len < 20) {
+        if (t === 1 && last.t !== 0) last.t = 1;
+        continue;
+      }
+      list.push({ t, n: -1 });
+    }
+    for (const e of list) {
+      const p = lerp(mm.a, mm.b, e.t);
+      nodes.push({ id: `${mm.id}:${Math.round(e.t * len)}`, x: p[0], y: p[1], z: p[2] });
+      e.n = nodes.length - 1;
+    }
+    return list;
+  });
+  const nodeOnMember = (k: number, t: number) =>
+    memberNodes[k].filter((e) => e.n >= 0).reduce<{ t: number; n: number } | null>((b, e) => (!b || Math.abs(e.t - t) < Math.abs(b.t - t) ? e : b), null)?.n ?? -1;
+  // extrémités reliées à une rive ou à une autre barre : la barre reste droite, une attache rigide sans masse va de son
+  // bout au nœud porteur (le même nœud si moins de 2 cm)
+  const endLinks: Array<{ k: number; from: number; to: number }> = [];
+  modelMembers.forEach((_, k) =>
+    ([0, 1] as const).forEach((x) => {
+      const end = memberEnds[k][x];
+      if (end.kind !== 'rim' && end.kind !== 'member') return;
+      const e = x === 0 ? memberNodes[k][0] : memberNodes[k][memberNodes[k].length - 1];
+      const target = end.kind === 'rim' ? rimNodeAt(end.f, end.z === end.f.pm.params.floorZ ? 'floor' : 'roof', end.s) : nodeOnMember(end.member, end.t);
+      if (target < 0) return;
+      const [p, q] = [pos(e.n), pos(target)];
+      if (Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) <= 20) e.n = target;
+      else endLinks.push({ k, from: target, to: e.n });
+    }),
+  );
+  modelMembers.forEach((mm, k) => {
+    const list = memberNodes[k];
+    const column = isColumn(mm);
+    const [endA, endB] = memberEnds[k];
+    const released = (e: EndAttach) => e.kind === 'rim' || e.kind === 'member' || e.kind === 'ground';
+    for (let x = 0; x + 1 < list.length; x++) {
+      const [i, j] = [list[x].n, list[x + 1].n];
+      if (i < 0 || j < 0 || i === j) continue;
+      addMember(i, j, mm.section, { family: column ? 'model-column' : 'model-beam', module: mm.id, line: `model:${mm.id}`, label: `${mm.id} « ${mm.label} »` }, {
+        endI: x === 0 && released(endA) ? pinnedEnd : undefined,
+        endJ: x + 2 === list.length && released(endB) ? pinnedEnd : undefined,
+        ref: column ? [1, 0, 0] : undefined,
+      });
+    }
+    for (const l of endLinks.filter((x) => x.k === k))
+      addMember(l.from, l.to, ground0?.params.sections.cornerLink ?? modules[0].params.sections.cornerLink, { family: 'model-link', module: mm.id, line: `model-link:${mm.id}/${l.to}`, label: `${mm.id} · attache` }, { geometric: false, ref: column ? [1, 0, 0] : undefined });
+    ([endA, endB] as const).forEach((e, x) => {
+      if (e.kind !== 'ground') return;
+      const n = x === 0 ? list[0].n : list[list.length - 1].n;
+      if (n >= 0) groundSupport(n, mm.id, x, `${mm.id} · pied ${x === 0 ? 1 : 2}`);
+    });
+  });
+  if (modelMembers.length) warnings.push(`${modelMembers.length} poutre(s) / poteau(x) du modèle calculé(s) : extrémités articulées sur la rive ou la barre la plus proche, poids propre compris, vent sur ces barres non compté — attaches à détailler.`);
 
   // ─── Viewbox juxtaposées : boulons alignés, contacts aux angles ───
   // boulon : barre encastrée côté i (console, comme les demi-boulons SCIA), ressorts en translation et rotations libres
@@ -592,37 +939,91 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
 
   // ─── Viewbox empilées : liaison d'angle de la toiture du dessous au plancher du dessus ───
   const topModules = new Set(modules.map((m) => m.id));
+  const landedOn: string[] = [];
   for (const U of modules) {
     if (U.level === 0) continue;
     const tplU = tplOf.get(U)!;
     tplU.cornerFloor.forEach((ck, c) => {
       const nu = P(U, ck);
-      let best: { L: PlacedModule; n: number; d: number } | null = null;
-      for (const L of modules) {
-        if (L === U) continue;
-        const tplL = tplOf.get(L)!;
-        for (const rk of tplL.cornerRoof) {
-          const nl = P(L, rk);
-          const dz = pos(nu)[1] - pos(nl)[1];
-          const d = planDist(pos(nu), pos(nl));
-          if (dz < 150 || dz > 450 || d > gapTol + 10) continue;
-          if (!best || d < best.d) best = { L, n: nl, d };
+      const land = landings.get(`${U.id}|${c}`);
+      if (!land) return; // angle dans le vide : erreur et proposition déjà faites
+      const sh = U.params.springs.cornerLinkShear;
+      const link = (below: number, carrier: string, how: string) =>
+        addMember(below, nu, U.params.sections.cornerLink, { family: 'corner-link', module: U.id, line: `link:${U.id}/${c}`, corner: c, label: `${carrier} / ${U.id} · liaison d’angle ${c + 1}${how}` }, {
+          ref: U.u,
+          endJ: ['rigid', sh, sh, 'free', 'free', 'free'],
+        });
+      if (land.kind === 'corner') {
+        let best: { L: PlacedModule; n: number; d: number } | null = null;
+        for (const L of modules) {
+          if (L === U) continue;
+          const tplL = tplOf.get(L)!;
+          for (const rk of tplL.cornerRoof) {
+            const nl = P(L, rk);
+            const dz = pos(nu)[1] - pos(nl)[1];
+            const d = planDist(pos(nu), pos(nl));
+            if (dz < 150 || dz > 450 || d > gapTol + 10) continue;
+            if (!best || d < best.d) best = { L, n: nl, d };
+          }
         }
-      }
-      if (!best) {
-        errors.push(`${U.id} : aucun angle de Viewbox sous son angle ${c + 1} (empilement décalé ou appui non modélisé).`);
+        if (!best) {
+          errors.push(`${U.id} : aucun angle de Viewbox sous son angle ${c + 1} (empilement décalé ou appui non modélisé).`);
+          return;
+        }
+        topModules.delete(best.L.id);
+        link(best.n, best.L.id, '');
         return;
       }
-      topModules.delete(best.L.id);
-      const sh = U.params.springs.cornerLinkShear;
-      addMember(best.n, nu, U.params.sections.cornerLink, { family: 'corner-link', module: U.id, line: `link:${U.id}/${c}`, corner: c, label: `${best.L.id} / ${U.id} · liaison d’angle ${c + 1}` }, {
-        ref: U.u,
-        endJ: ['rigid', sh, sh, 'free', 'free', 'free'],
-      });
+      if (land.kind === 'rim') {
+        topModules.delete(land.L.id);
+        link(rimNodeAt(land.f, 'roof', land.s), land.L.id, ` (sur la rive, ${SIDE_NAME[land.f.side]})`);
+        landedOn.push(`${U.id} angle ${c + 1} sur la rive de toiture de ${land.L.id} (${SIDE_NAME[land.f.side]}, à ${fmtNumber(land.s / 1e3, 2)} m de son angle)`);
+        return;
+      }
+      if (land.kind === 'member') {
+        const mm = modelMembers[land.member];
+        const below = nodeOnMember(land.member, land.t);
+        if (below < 0 || below === nu) return;
+        link(below, mm.id, ` (sur ${isColumn(mm) ? 'le poteau' : 'la poutre'} « ${mm.label} »)`);
+        landedOn.push(`${U.id} angle ${c + 1} sur ${isColumn(mm) ? 'le poteau' : 'la poutre'} ${mm.id} « ${mm.label} »`);
+        return;
+      }
+      if (land.kind === 'post') {
+        const p = pos(nu);
+        nodes.push({ id: `${U.id}:post:${c}`, x: p[0], y: groundLevel, z: p[2] });
+        const g = nodes.length - 1;
+        // pied articulé sur le calage, tête boulonnée sous l'angle (prolongement du poteau de la Viewbox)
+        addMember(g, nu, land.section, { family: 'support-post', module: U.id, line: `post:${U.id}/${c}`, label: `${U.id} · poteau d’appui ajouté sous l’angle ${c + 1}` }, { ref: U.u, endI: pinnedEnd });
+        groundSupport(g, U.id, c, `${U.id} · poteau d’appui ajouté, angle ${c + 1}`);
+        return;
+      }
+      // poutre de reprise posée sur la toiture de la Viewbox du dessous, de rive à rive (petit côté), sous l'angle
+      const n0 = rimNodeAt(land.f0, 'roof', land.s0);
+      const n1 = rimNodeAt(land.f1, 'roof', land.s1);
+      const [p0, p1] = [pos(n0), pos(n1)];
+      const d01: Vec3 = [p1[0] - p0[0], 0, p1[2] - p0[2]];
+      const L01 = Math.hypot(d01[0], d01[2]);
+      const pu = pos(nu);
+      const t = Math.max(0, Math.min(1, ((pu[0] - p0[0]) * d01[0] + (pu[2] - p0[2]) * d01[2]) / (L01 * L01)));
+      let mid: number;
+      if (t * L01 < 20) mid = n0;
+      else if ((1 - t) * L01 < 20) mid = n1;
+      else {
+        const q = lerp(p0, p1, t);
+        nodes.push({ id: `${U.id}:transfer:${c}`, x: q[0], y: q[1], z: q[2] });
+        mid = nodes.length - 1;
+        const meta0 = { family: 'transfer-beam' as const, module: land.L.id, line: `transfer:${U.id}/${c}`, label: `${land.L.id} · poutre de reprise sous ${U.id} angle ${c + 1}` };
+        addMember(n0, mid, land.section, meta0, { endI: pinnedEnd });
+        addMember(mid, n1, land.section, meta0, { endJ: pinnedEnd });
+      }
+      topModules.delete(land.L.id);
+      link(mid, land.L.id, ' (sur la poutre de reprise)');
     });
     // pas de contacts verticaux le long des rives entre Viewbox empilées (statico Qatar : les efforts passent par
     // les angles) ; les nœuds `contacts` du gabarit servent aux terrasses posées sur les toitures
   }
+  if (landedOn.length)
+    warnings.push(`Angles posés hors des angles de Viewbox : ${landedOn.join(' ; ')} — rive ou poutre vérifiée en flexion, liaison vérifiée comme les plats d’empilement : perçages et attache à détailler.`);
 
   // ─── appuis des Viewbox posées au sol (surélévation : poteau sous chaque appui, pied articulé sur le calage) ───
   const raise = opt.raise && opt.raise.height > 0 ? opt.raise : null;
@@ -833,6 +1234,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     outerSides,
     baseY: Math.min(...ys),
     topY: Math.max(...ys),
+    unsupported,
     warnings,
     errors,
   };

@@ -63,3 +63,41 @@ export function endHeights(scene: LoadedScene, id: string, axis: 0 | 2): { low: 
   };
   return { low: mean((a) => a <= lo + q), high: mean((a) => a >= hi - q) };
 }
+
+/**
+ * Axe d'une pièce allongée (poutre, poteau) : centre de sa boîte orientée dans ses propres axes, prolongé de part et
+ * d'autre sur sa plus grande dimension (monde, mm). `depth` = dimension de la section la plus proche de la verticale.
+ * null si la pièce n'est pas une barre (plus grande dimension < 2 × la suivante) ou sans maillage.
+ */
+export function itemBar(scene: LoadedScene, id: string): { a: [number, number, number]; b: [number, number, number]; depth: number } | null {
+  const obj = scene.objectsById.get(id);
+  if (!obj) return null;
+  obj.updateWorldMatrix(true, true);
+  const p = new Vector3();
+  const q = new Quaternion();
+  const s = new Vector3();
+  obj.matrixWorld.decompose(p, q, s);
+  const frame = new Matrix4().compose(p, q, new Vector3(1, 1, 1));
+  const inv = frame.clone().invert();
+  const m = new Matrix4();
+  const v = new Vector3();
+  const box = new Box3();
+  obj.traverse((o) => {
+    const pos = ((o as Mesh).geometry as BufferGeometry | undefined)?.attributes?.position;
+    if (!(o as Mesh).isMesh || !pos) return;
+    m.multiplyMatrices(inv, o.matrixWorld);
+    for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(m));
+  });
+  if (box.isEmpty()) return null;
+  const size = box.getSize(new Vector3()).toArray();
+  const order = [0, 1, 2].sort((x, y) => size[y] - size[x]);
+  if (size[order[0]] < 2 * size[order[1]]) return null;
+  const k = order[0];
+  const center = box.getCenter(new Vector3());
+  const lo = center.clone().setComponent(k, box.min.getComponent(k)).applyMatrix4(frame);
+  const hi = center.clone().setComponent(k, box.max.getComponent(k)).applyMatrix4(frame);
+  // hauteur de la section : axe local (hors axe de la barre) le plus proche de la verticale du monde
+  const axes = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].map((a) => a.applyQuaternion(q));
+  const j = order.slice(1).reduce((x, y) => (Math.abs(axes[y].y) > Math.abs(axes[x].y) ? y : x));
+  return { a: lo.toArray() as [number, number, number], b: hi.toArray() as [number, number, number], depth: size[j] };
+}

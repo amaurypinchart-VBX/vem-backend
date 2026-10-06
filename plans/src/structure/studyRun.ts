@@ -1,7 +1,7 @@
 // Enchaînement du calcul complet d'une étude (étape « 3. Calcul ») : assemblage du modèle, cas de charge,
 // combinaisons, calcul aux éléments finis + vérifications (Workers), stabilité, verdict, réactions pour le calage.
 // Sans React : utilisé par la page et par les tests.
-import type { BracingSpec, PlacedModule, PlacedStair, RaiseSpec, StructuralModel } from './core/assemble';
+import type { CornerSupport, BracingSpec, ModelMember, PlacedModule, PlacedStair, RaiseSpec, StructuralModel } from './core/assemble';
 import { assembleStructure } from './core/assemble';
 import type { Ec3Method } from './core/checks/ec3';
 import { EC3_DEFAULTS } from './core/checks/ec3';
@@ -67,6 +67,10 @@ export interface StudyInputs {
   stairs?: PlacedStair[];
   /** éléments terrasse du modèle (au sol : appuis du calage ; sur toiture : charges `loads.roofTerraces`) */
   terraces?: PlacedTerrace[];
+  /** poutres et poteaux porteurs dessinés dans le modèle */
+  members?: ModelMember[];
+  /** appuis ajoutés par l'étude sous des angles de Viewbox posés dans le vide (poteau, poutre de reprise) */
+  addedSupports?: CornerSupport[];
   /** combinaisons à calculer (défaut : toutes) — recherche rapide du lest sur la stabilité seule */
   classes?: Array<'ULS' | 'STAB' | 'SLS'>;
   /** seulement ces combinaisons (essais rapides de l'optimiseur sur les combinaisons déterminantes) */
@@ -96,10 +100,10 @@ export interface StudyRun {
   capacity?: import('./capacity').LiveCapacity;
 }
 
-export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<StudyRun> {
-  const t0 = performance.now();
+/** Modèle filaire de l'étude (assemblage seul, sans calcul) : aussi utilisé avant le calcul pour trouver les angles dans le vide. */
+export function assembleStudy(inp: StudyInputs): StructuralModel {
   const o = inp.options;
-  const structure = assembleStructure(inp.modules, {
+  return assembleStructure(inp.modules, {
     sections: inp.sections,
     jacks: o.jacks,
     middleFeet: inp.middleFeet,
@@ -112,7 +116,15 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     bracings: inp.bracings,
     raise: inp.raise,
     stairs: inp.stairs,
+    members: inp.members,
+    addedSupports: inp.addedSupports,
   });
+}
+
+export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<StudyRun> {
+  const t0 = performance.now();
+  const o = inp.options;
+  const structure = assembleStudy(inp);
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
   const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems, stairClad: !!o.stairClad }, inp.sections);
   const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => (!inp.classes || inp.classes.includes(c.cls)) && (!inp.comboIds || inp.comboIds.includes(c.id)));
@@ -298,5 +310,5 @@ export function inputKey(inp: StudyInputs): string {
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}:${(e as SectionEntry).material ?? ''}`)}`)
     .join('|');
   const joints = inp.joints ? inp.joints.rows.map((r) => `${r.connection}:${r.status}:${r.modules.join('+')}:${r.capacities.map((c) => Math.round(c.after ?? 0)).join('/')}`) : [];
-  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
+  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
 }

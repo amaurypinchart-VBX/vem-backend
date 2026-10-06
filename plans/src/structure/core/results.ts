@@ -444,7 +444,7 @@ export function groundEstimate(
     for (const b of pts) {
       if (b <= a) continue;
       const [ma, mb] = [s.supportMeta[a], s.supportMeta[b]];
-      if ((ma.kind === 'middle') !== (mb.kind === 'middle') || (ma.kind === 'stair') !== (mb.kind === 'stair')) continue;
+      if ((ma.kind === 'middle') !== (mb.kind === 'middle') || (ma.kind === 'stair') !== (mb.kind === 'stair') || (ma.kind === 'post') !== (mb.kind === 'post')) continue;
       const [pa, pb] = [pos(a), pos(b)];
       if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) <= tolerance) parent[find(a)] = find(b);
     }
@@ -458,9 +458,11 @@ export function groundEstimate(
   const list = [...clusters.values()].sort((a, b) => Math.round(center(a)[1] / 500) - Math.round(center(b)[1] / 500) || center(a)[0] - center(b)[0]);
   const groups: SupportGroup[] = list.map((c, k) => {
     const middle = s.supportMeta[c[0]].kind === 'middle';
-    const stair = s.supportMeta[c[0]].kind === 'stair';
+    // pied de poteau (ajouté par l'étude ou du modèle) : calé comme un pied d'escalier (platine 15 × 15 cm)
+    const post = s.supportMeta[c[0]].kind === 'post';
+    const stair = s.supportMeta[c[0]].kind === 'stair' || post;
     const jack = s.supportMeta[c[0]].jack;
-    return { id: `${stair ? 'E' : middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle || stair ? 0 : c.length, middle, jack, ...(stair ? { stair } : {}), moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
+    return { id: `${post ? 'R' : stair ? 'E' : middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle || stair ? 0 : c.length, middle, jack, ...(stair ? { stair } : {}), ...(post ? { post } : {}), moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
   });
   const sum = (c: number[], id: string) => {
     const R = summary.reactions[id];

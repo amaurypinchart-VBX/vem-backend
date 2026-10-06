@@ -36,7 +36,11 @@ import type { BrowserHlrProvider } from '../../linework/provider';
 import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
-import { buildStudyInputs, carriedWeights, groundExtras } from './studyInputs';
+import { buildStudyInputs, carriedWeights, groundExtras, studyBase } from './studyInputs';
+import { SupportsCard } from './SupportsCard';
+import { designation } from '../../structure/core/library';
+import { addedSupportEtas, sizeAddedSupports, supportKey } from '../../structure/advisor/supports';
+import { assembleStudy } from '../../structure/studyRun';
 import { AdvisorPanel } from './AdvisorPanel';
 import { VariantsPanel } from './VariantsPanel';
 import { AccessoriesPanel } from './AccessoriesPanel';
@@ -203,6 +207,15 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const inputsSource = useMemo(() => ({ sceneModel, library, hyp, roof, calc: calcOpts, mods }), [sceneModel, library, hyp, roof, calcOpts, mods]);
   const built = useMemo(() => buildStudyInputs(inputsSource), [inputsSource]);
   const studyInputs = built.inputs;
+  // assemblage seul (sans calcul) : angles de Viewbox posés dans le vide et appui proposé pour chacun
+  const precheck = useMemo(() => {
+    try {
+      return assembleStudy(studyInputs);
+    } catch {
+      return null;
+    }
+  }, [studyInputs]);
+  const [sizing, setSizing] = useState<{ running: boolean; steps: string[] } | null>(null);
   // Viewbox ajoutées par l'étude : aussi dans le calage
   // Viewbox portant un élément terrasse sur leur toiture : son poids et son public descendent par elles
   // murs, vitrages, garde-corps, logos, lest du modèle et de l'étude : portés par leur Viewbox (estimation instantanée)
@@ -273,6 +286,27 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       return null;
     } finally {
       if (abortRef.current === ctrl) setRunning(false);
+    }
+  };
+  // appuis proposés sous les angles dans le vide : ajoutés aux modifications de l'étude puis dimensionnés par le calcul
+  const addSupports = async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    runnerRef.current ??= typeof Worker !== 'undefined' ? createStudyWorkerPool() : createInlineStudyRunner();
+    const steps: string[] = [];
+    setSizing({ running: true, steps });
+    try {
+      const { base, mods: all } = studyBase(inputsSource);
+      const r = await sizeAddedSupports(base, all ?? {}, runnerRef.current, { signal: ctrl.signal, onStep: (t) => {
+          steps.push(t);
+          setSizing({ running: true, steps: [...steps] });
+        },
+      });
+      setSizing({ running: false, steps: [...r.steps, 'Appuis ajoutés aux modifications de l’étude : lancer le calcul complet pour le verdict.'] });
+      setMods((m) => ({ ...m, supports: r.supports }));
+    } catch (e) {
+      setSizing({ running: false, steps: [...steps, (e as Error).name === 'AbortError' ? 'Annulé.' : `Erreur : ${(e as Error).message}`] });
     }
   };
   // conseil ingénieur : calcul de l'étude actuelle (celui affiché s'il est à jour)
@@ -476,6 +510,21 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         />
       </div>
       {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} carried={carriedTotal} levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))} />}
+      {step === 'calc' && (
+        <SupportsCard
+          modules={studyInputs.modules}
+          members={studyInputs.members ?? []}
+          unsupported={precheck?.unsupported ?? []}
+          added={(mods.supports ?? []).map((a) => {
+            const r = run && !stale ? addedSupportEtas(run.result).get(supportKey(a)) : undefined;
+            return { ...a, eta: r?.eta, sectionName: designation(r ? sectionName(r.section) : a.section ? sectionName(a.section) : a.kind === 'post' ? 'QHP 100 × 5' : 'UNP 220') };
+          })}
+          sizing={sizing}
+          canEdit
+          onAddAndSize={() => void addSupports()}
+          onRemove={(a) => setMods((m) => ({ ...m, supports: a ? (m.supports ?? []).filter((x) => supportKey(x) !== supportKey(a)) : undefined }))}
+        />
+      )}
       {step === 'calc' && (
         <CalcPanel
           options={calcOpts}

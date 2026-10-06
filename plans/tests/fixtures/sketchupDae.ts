@@ -79,6 +79,8 @@ export interface FixtureOptions {
   unitName?: string;
   twoSided?: boolean;
   edges?: boolean;
+  /** position de VBX-04 (défaut : sur VBX-01) — empilement décalé pour l'essai des appuis manquants */
+  vbx4At?: [number, number, number];
 }
 
 export function makeSketchupDae(opts: FixtureOptions = {}): string {
@@ -132,7 +134,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
         <node id="N_vbx1" name="VBX-01">${translate(0, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
         <node id="N_vbx2" name="VBX-2">${translate(5900, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
         <node id="N_vbx3" name="VBX-03">${rotZ90(17500, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
-        <node id="N_vbx4" name="VBX-04">${translate(0, 0, 2800)}<instance_node url="#DEF_viewbox"/></node>
+        <node id="N_vbx4" name="VBX-04">${translate(...(opts.vbx4At ?? [0, 0, 2800]))}<instance_node url="#DEF_viewbox"/></node>
         <node id="N_stair" name="COMMUN_ESCALIER-01">${instGeom(geoms.stair)}</node>
         <node id="N_orphan" name="PORTE-DOUBLE orpheline">${instGeom(geoms.orphan)}</node>
         <node id="N_spatial" name="MUR-LEGER_spatial">${instGeom(geoms.spatial)}</node>

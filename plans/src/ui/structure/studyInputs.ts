@@ -40,6 +40,12 @@ export interface InputsSource {
 }
 
 export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; added: PlacedModule[]; warnings: string[] } {
+  const { base, mods } = studyBase(src);
+  return withMods(base, mods);
+}
+
+/** Entrées avant les modifications de l'étude, et ces modifications (SketchUp « Structure… » puis étude / variante). */
+export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMods | undefined } {
   const { sceneModel, library, hyp, calc } = src;
   const kNm2 = (v: number) => v * 1e-3;
   // murs, vitrages, portes, garde-corps, logos : objet par objet d'après le modèle (étape 1), jamais en forfait
@@ -49,6 +55,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
     pointItems: sceneModel.pointItems,
     stairs: sceneModel.stairs,
     terraces: sceneModel.terraces,
+    members: sceneModel.members ?? [],
     library,
     sections: sectionMap(library),
     loads: {
@@ -82,5 +89,5 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
     blocking: sceneModel.errors,
   };
   // modifications de SketchUp (« Structure… ») d'abord, puis celles de l'étude et des variantes (elles l'emportent)
-  return withMods(base, sceneModel.structMods ? mergeMods(sceneModel.structMods, src.mods) : src.mods);
+  return { base, mods: sceneModel.structMods ? mergeMods(sceneModel.structMods, src.mods) : src.mods };
 }

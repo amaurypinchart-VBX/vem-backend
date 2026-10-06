@@ -33,6 +33,11 @@ export const FAMILY_COLORS: Record<MemberFamily, number> = {
   'stair-head': 0xf97316,
   'stair-step': 0x94a3b8,
   'stair-link': 0x111827,
+  'model-beam': 0x78350f,
+  'model-column': 0x78350f,
+  'support-post': 0xf97316,
+  'transfer-beam': 0xf97316,
+  'model-link': 0x111827,
 };
 
 export interface TemplateFamilyRow {

@@ -17,7 +17,7 @@ export function withMods(inp: StudyInputs, mods: StudyMods | undefined): { input
   const sj = applyStackJoint({ modules: r.modules, library, joints: reval.rows.length ? reval : undefined }, mods.stackJoint);
   const joints = sj.joints;
   return {
-    inputs: { ...inp, modules: sj.modules, edgeItems: r.edgeItems, sections: r.sections, library, bracings: r.bracings, raise: r.raise, blocking: [...inp.blocking, ...r.errors], ...(joints && joints.rows.length ? { joints } : {}) },
+    inputs: { ...inp, modules: sj.modules, edgeItems: r.edgeItems, sections: r.sections, library, bracings: r.bracings, raise: r.raise, ...(r.supports.length ? { addedSupports: r.supports } : {}), blocking: [...inp.blocking, ...r.errors], ...(joints && joints.rows.length ? { joints } : {}) },
     added: r.added,
     warnings: [...r.warnings, ...sj.warnings],
   };

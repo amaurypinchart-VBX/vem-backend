@@ -110,13 +110,15 @@ export interface SupportGroup {
   jack?: boolean;
   /** pied d'escalier extérieur (montant sur vérin Layher, talon de limon) */
   stair?: boolean;
+  /** pied de poteau hors Viewbox (poteau d'appui ajouté, poteau du modèle) : avec `stair`, calé comme un pied d'escalier */
+  post?: boolean;
   /** pied d'un élément terrasse posé au sol (angle ou milieu d'un grand côté, platine de vérin) */
   terrace?: boolean;
   moduleIds: string[];
 }
 
 /** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier, « T » / « TM » pied de terrasse. */
-export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair' | 'terrace'>) => (g.terrace ? (g.middle ? 'TM' : 'T') : g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
+export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair' | 'terrace' | 'post'>) => (g.terrace ? (g.middle ? 'TM' : 'T') : g.post ? 'R' : g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
 
 /** Réaction d'un groupe d'appuis dans une combinaison et part du public qu'elle contient (public limité). */
 export interface ComboReaction {

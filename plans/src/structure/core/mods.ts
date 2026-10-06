@@ -2,7 +2,7 @@
 // sections renforcées, lest, contreventements, Viewbox ajoutées, surélévation. Appliquées aux entrées du calcul avant
 // l'assemblage ; le rapport les liste. Les sections « paramétriques » (tube, rond, bois…) sont calculées avec le
 // catalogue, jamais données par l'IA. Fonctions pures ; N, mm.
-import type { PlacedModule, RaiseSpec } from './assemble';
+import type { CornerSupport, PlacedModule, RaiseSpec } from './assemble';
 import { SIDE_NAME, planOverlap, snapStacks } from './assemble';
 import { catalogEntry } from './sectionCatalog';
 import { templateSteelWeight } from './templateView';
@@ -68,6 +68,8 @@ export interface StudyMods {
   plywood?: { thickness: number } | null;
   /** liaison personnalisée entre Viewbox empilées (atelier des accessoires) à la place des plats d'empilement */
   stackJoint?: StackJointMod | null;
+  /** appuis ajoutés sous des angles de Viewbox posés dans le vide : poteau jusqu'au sol, poutre de reprise */
+  supports?: CornerSupport[];
 }
 
 /** Épaisseurs de contreplaqué proposées (mm). */
@@ -82,7 +84,7 @@ export const EMPTY_MODS: StudyMods = {};
 
 export function modsCount(m: StudyMods | undefined): number {
   if (!m) return 0;
-  return (m.sections?.length ?? 0) + (m.ballast?.length ?? 0) + (m.bracings?.length ?? 0) + (m.addedModules?.length ?? 0) + (m.raise ? 1 : 0) + (m.stackPlates ? 1 : 0) + (m.geometry?.length ?? 0) + (m.grades?.length ?? 0) + (m.jointCapacities?.length ?? 0) + (m.plywood ? 1 : 0) + (m.stackJoint ? 1 : 0);
+  return (m.sections?.length ?? 0) + (m.ballast?.length ?? 0) + (m.bracings?.length ?? 0) + (m.addedModules?.length ?? 0) + (m.raise ? 1 : 0) + (m.stackPlates ? 1 : 0) + (m.geometry?.length ?? 0) + (m.grades?.length ?? 0) + (m.jointCapacities?.length ?? 0) + (m.plywood ? 1 : 0) + (m.stackJoint ? 1 : 0) + (m.supports?.length ?? 0);
 }
 
 /**
@@ -115,7 +117,9 @@ export function mergeMods(a: StudyMods | undefined, b: StudyMods | undefined): S
   const geometry = new Map([...(A.geometry ?? []), ...(B.geometry ?? [])].map((x) => [(x.modules ?? []).join(','), x]));
   const grades = new Map([...(A.grades ?? []), ...(B.grades ?? [])].map((x) => [`${x.slot}|${(x.modules ?? []).join(',')}`, x]));
   const caps = new Map([...(A.jointCapacities ?? []), ...(B.jointCapacities ?? [])].map((x) => [`${x.connection}|${x.key}|${(x.modules ?? []).join(',')}`, x]));
+  const supports = new Map([...(A.supports ?? []), ...(B.supports ?? [])].map((x) => [`${x.module}|${x.corner}`, x]));
   const out: StudyMods = {};
+  if (supports.size) out.supports = [...supports.values()];
   if (caps.size) out.jointCapacities = [...caps.values()];
   if (geometry.size) out.geometry = [...geometry.values()];
   if (grades.size) out.grades = [...grades.values()];
@@ -227,6 +231,8 @@ export interface ModsInput {
 export interface ModsOutput extends ModsInput {
   bracings: Array<{ module: string; side: Side }>;
   raise: RaiseSpec | null;
+  /** appuis ajoutés sous des angles de Viewbox (section absente → section par défaut) */
+  supports: CornerSupport[];
   /** Viewbox ajoutées (pour le calage) */
   added: PlacedModule[];
   warnings: string[];
@@ -403,12 +409,17 @@ export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutp
     if (!ids.has(b.module)) warnings.push(`Contreventement sur ${b.module} : Viewbox introuvable, ignoré.`);
     return ids.has(b.module);
   });
+  const supports = (mods?.supports ?? []).map((a) => {
+    if (!a.section || ensureSection(sections, a.section)) return a;
+    warnings.push(`Appui ajouté sous ${a.module} angle ${a.corner + 1} : section ${a.section} absente de la bibliothèque, section par défaut.`);
+    return { module: a.module, corner: a.corner, kind: a.kind };
+  });
   const raise = mods?.raise && mods.raise.height > 0 ? mods.raise : null;
   if (raise && !ensureSection(sections, raise.section)) {
     warnings.push(`Surélévation : section ${raise.section} absente de la bibliothèque, ignorée.`);
-    return { modules, edgeItems, sections, bracings, raise: null, added, warnings, errors, original };
+    return { modules, edgeItems, sections, bracings, raise: null, supports, added, warnings, errors, original };
   }
-  return { modules, edgeItems, sections, bracings, raise, added, warnings, errors, original };
+  return { modules, edgeItems, sections, bracings, raise, supports, added, warnings, errors, original };
 }
 
 /** Bibliothèque de l'étude : nombre de plats d'empilement modifié. */
@@ -457,6 +468,12 @@ export function describeMods(m: StudyMods | undefined, sectionName: (key: string
       `liaison entre Viewbox empilées : « ${m.stackJoint.design.name} », ${fmtNumber(m.stackJoint.perCorner ?? m.stackJoint.design.perCorner, 1)} pièce(s) par angle${m.stackJoint.design.replaces === 'verticalLink' ? ' à la place des plats d’empilement' : ' en plus des plats d’empilement'}${m.stackJoint.modules?.length ? ` (${m.stackJoint.modules.join(', ')})` : ''}`,
     );
   for (const c of m.jointCapacities ?? []) out.push(`capacité saisie ${c.connection} ${c.key} = ${fmtNumber(c.value / (c.key.startsWith('M') ? 1e6 : 1e3), 2)} ${c.key.startsWith('M') ? 'kNm' : 'kN'}${c.by ? ` par ${c.by}` : ''} (non vérifiée)`);
+  for (const s of m.supports ?? [])
+    out.push(
+      s.kind === 'post'
+        ? `poteau d’appui${s.section ? ` ${sectionName(s.section)}` : ''} sous ${s.module} angle ${s.corner + 1}, jusqu’au sol`
+        : `poutre de reprise${s.section ? ` ${sectionName(s.section)}` : ''} sous ${s.module} angle ${s.corner + 1}, posée de rive à rive sur la toiture de la Viewbox du dessous`,
+    );
   if (m.raise) out.push(`surélévation de ${fmtNumber(m.raise.height / 10, 0)} cm sur poteaux ${sectionName(m.raise.section)}, tête ${m.raise.top === 'rigid' ? 'encastrée' : 'articulée'}, ${m.raise.bracing ? 'avec' : 'sans'} croix de contreventement`);
   return out;
 }

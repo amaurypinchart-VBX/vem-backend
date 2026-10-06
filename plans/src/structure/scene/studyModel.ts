@@ -1,10 +1,10 @@
 // Modèle SketchUp analysé → entrées du calcul complet : Viewbox placées (repère de chaque Viewbox, type de la
 // reconnaissance → gabarit de la bibliothèque) et objets portés (murs, vitrages, portes, garde-corps, logos) en charges
 // sur la rive du côté le plus proche ou au nœud le plus proche ; escaliers extérieurs (kit) et éléments terrasse
-// (statico 18-0573 § 3.5) placés. Tout ce que le calcul ne sait pas encore modéliser (autres pièces porteuses hors
-// gabarit : poutres, poteaux ajoutés…) est une erreur bloquante (verdict « incomplet »).
+// (statico 18-0573 § 3.5) placés ; poutres et poteaux porteurs dessinés → barres du calcul (axe de la pièce). Ce que le
+// calcul ne sait pas encore modéliser (contreventements, platelages dessinés…) est une erreur bloquante (« incomplet »).
 import type { LoadedScene } from '../../scene/loadedScene';
-import type { PlacedModule, PlacedStair } from '../core/assemble';
+import type { ModelMember, PlacedModule, PlacedStair } from '../core/assemble';
 import { placeFromFrame } from '../core/assemble';
 import type { Vec3 } from '../core/fem/types';
 import type { LibraryEntry, ModuleTypeEntry, PartAssignment } from '../core/library';
@@ -18,7 +18,7 @@ import type { StairKitParams } from '../core/templates/stair';
 import { STAIR_KITS } from '../library/seed';
 import type { PlacedTerrace } from '../core/terrace';
 import { placeTerrace } from '../core/terrace';
-import { endHeights } from './geometry';
+import { endHeights, itemBar } from './geometry';
 import type { StudyMods } from '../core/mods';
 import { modsCount, modsFromStructParams } from '../core/mods';
 
@@ -30,6 +30,8 @@ export interface SceneStudyModel {
   stairs: PlacedStair[];
   /** éléments terrasse : posés au sol ou sur la toiture d'une Viewbox */
   terraces: PlacedTerrace[];
+  /** poutres et poteaux porteurs dessinés dans le modèle (axe de la pièce, section de la reconnaissance) */
+  members?: ModelMember[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   errors: string[];
@@ -176,6 +178,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const pointItems: PointItem[] = [];
   const stairs: PlacedStair[] = [];
   const terraces: PlacedTerrace[] = [];
+  const members: ModelMember[] = [];
   const unmodelled = new Map<string, number>();
   const windOnly = new Map<string, number>();
   for (const t of recognition.types) {
@@ -213,6 +216,25 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
       }
       continue;
     }
+    // poutre / poteau porteur : barre du calcul le long de la pièce (articulée à ses extrémités sur ce qui la porte)
+    if (a.role === 'structural' && (a.nature === 'beam' || a.nature === 'column')) {
+      if (!a.section) {
+        errors.push(`${t.label} : section de la ${a.nature === 'beam' ? 'poutre' : 'colonne'} à choisir (étape 1).`);
+        continue;
+      }
+      for (const nodeId of t.nodeIds) {
+        const bar = itemBar(scene, nodeId);
+        if (!bar) {
+          errors.push(`${t.label} : pièce pas assez allongée pour être calculée comme une barre (longueur < 2 × section).`);
+          continue;
+        }
+        const len = Math.hypot(bar.b[0] - bar.a[0], bar.b[1] - bar.a[1], bar.b[2] - bar.a[2]);
+        const vertical = Math.abs(bar.b[1] - bar.a[1]) > 0.7 * len;
+        const n = members.filter((m) => (m.nature === 'column') === vertical).length + 1;
+        members.push({ id: `${vertical ? 'POT' : 'POU'}-${n}`, label: t.label, nature: vertical ? 'column' : 'beam', section: a.section, a: bar.a, b: bar.b, depth: bar.depth });
+      }
+      continue;
+    }
     if (a.role === 'structural') {
       unmodelled.set(NATURE_LABEL[a.nature], (unmodelled.get(NATURE_LABEL[a.nature]) ?? 0) + t.nodeIds.length);
       continue;
@@ -229,7 +251,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     }
   }
   for (const [nature, count] of unmodelled)
-    errors.push(`${count} pièce(s) porteuse(s) « ${nature} » : pas encore modélisées dans le calcul complet (poutres, poteaux ajoutés) — verdict incomplet`);
+    errors.push(`${count} pièce(s) porteuse(s) « ${nature} » : pas encore modélisées dans le calcul complet — verdict incomplet (les marquer « ignorées » si elles ne portent rien)`);
   for (const [label, count] of windOnly) warnings.push(`${label} (${count}) : surface au vent seule, pas encore appliquée au calcul (vent calculé sur les côtés des Viewbox)`);
   const ignored = ignoredStructural(recognition);
   for (const p of ignored)
@@ -240,7 +262,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const custom = scene.index.modules.filter((m) => m.structParams && placed.has(m.id)).map((m) => ({ id: m.id, params: m.structParams! }));
   const structMods = custom.length ? modsFromStructParams(custom) : undefined;
   if (structMods && modsCount(structMods)) warnings.push(`${custom.length} Viewbox modifiée(s) dans SketchUp (${custom.map((c) => c.id).join(', ')}) : paramètres de structure repris (hauteur, profils, nuances).`);
-  return { modules, ignored, stairs, terraces, edgeItems, pointItems, errors, warnings, ...(structMods ? { structMods } : {}) };
+  return { modules, ignored, stairs, terraces, members, edgeItems, pointItems, errors, warnings, ...(structMods ? { structMods } : {}) };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {

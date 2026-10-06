@@ -116,9 +116,15 @@ describe('assemblage des Viewbox', () => {
     expect(low.origin[1]).toBe(3080 - 280); // l'entrée n'est pas modifiée
   });
 
-  it('Viewbox du dessus décalée : erreur bloquante ; décalée en plan : liaison manquante signalée', () => {
+  it('Viewbox du dessus décalée : angles sur la rive, angles dans le vide bloquants ; décalée en plan : liaison manquante signalée', () => {
     const offset = assembleStructure([vbx('A', 0, 0), vbx('U', 1000, 0, 1)], opt);
-    expect(offset.errors.length).toBe(4);
+    // angles 1 et 4 sur les rives de A, angles 2 et 3 au-delà de A : dans le vide, poteau proposé
+    expect(offset.errors.length).toBe(2);
+    expect(offset.unsupported.map((u) => [u.corner, u.proposal.kind])).toEqual([
+      [1, 'post'],
+      [2, 'post'],
+    ]);
+    expect(offset.fem.members.filter((b) => b.tag === 'corner-link')).toHaveLength(2);
     const staggered = assembleStructure([vbx('A', 0, 0), vbx('B', 1200, 2500)], opt);
     expect(staggered.warnings.some((w) => w.includes('Aucune liaison horizontale'))).toBe(true);
   });

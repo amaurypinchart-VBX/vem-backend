@@ -65,7 +65,7 @@ export interface SupportEnvelope {
   support: number;
   module: string;
   corner: number;
-  kind: 'corner' | 'foot' | 'middle' | 'stair';
+  kind: 'corner' | 'foot' | 'middle' | 'stair' | 'post';
   /** réaction verticale maxi / mini (N, vers le haut positive) et combinaison */
   max: number;
   maxCombo: string;

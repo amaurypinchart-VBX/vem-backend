@@ -174,7 +174,7 @@ const typeLabel = (corners: number, middle: boolean, jack = false, stair = false
 
 /** Clé du type d'appui de calage : nombre d'angles (1…4) ou pied central (M, M2 = deux vérins centraux sur une plaque). */
 export const calageTypeKey = (r: GroupReaction, members = 1) =>
-  r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
+  r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.post ? 'R' : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
 
 export function computeCalage(inp: CalageInput): CalageResult {
   const est0 = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
@@ -202,7 +202,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
   if (choices.roadway && !roadwayOn) warnings.push('Plaques de roulage : emprise au sol des Viewbox inconnue, non prises en compte.');
   const rw = { mean: roadway.mean, area: roadway.area, load: roadway.load };
   const types: CalageType[] = [];
-  const order = (k: string) => (k === 'E' ? 20 : k === 'T' ? 18 : k === 'TM' ? 19 : k.startsWith('M') ? 9 + k.length : Number(k));
+  const order = (k: string) => (k === 'R' ? 21 : k === 'E' ? 20 : k === 'T' ? 18 : k === 'TM' ? 19 : k.startsWith('M') ? 9 + k.length : Number(k));
   for (const [key, all] of [...byType.entries()].sort((a, b) => order(a[0]) - order(b[0]))) {
     const r0 = all[0].reaction;
     const middle = r0.group.middle;
@@ -225,9 +225,9 @@ export function computeCalage(inp: CalageInput): CalageResult {
       const w = jack ? 'Pieds à vérin : platine 15 × 15 cm supposée (7-309-002, à confirmer).' : 'Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).';
       if (!warnings.includes(w)) warnings.push(w);
     }
-    const baseLabel = terrace ? (middle ? 'pied central de terrasse' : 'pied d’angle de terrasse') : typeLabel(n, middle, jack, stair);
-    const unit = terrace ? 'pied de terrasse' : stair ? 'pied d’escalier' : jack ? (n > 1 ? 'groupe' : 'vérin') : middle ? 'pied central' : r0.group.corners === 1 ? 'angle' : 'groupe';
-    const contactLabelOf = (g: SupportGeometry) => `${terrace ? 'Pied de terrasse' : stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
+    const baseLabel = terrace ? (middle ? 'pied central de terrasse' : 'pied d’angle de terrasse') : r0.group.post ? 'pied de poteau' : typeLabel(n, middle, jack, stair);
+    const unit = terrace ? 'pied de terrasse' : r0.group.post ? 'pied de poteau' : stair ? 'pied d’escalier' : jack ? (n > 1 ? 'groupe' : 'vérin') : middle ? 'pied central' : r0.group.corners === 1 ? 'angle' : 'groupe';
+    const contactLabelOf = (g: SupportGeometry) => `${terrace ? 'Pied de terrasse' : r0.group.post ? 'Pied de poteau' : stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
     // appuis du type regroupés par calage : automatique, choix du type, choix propre à un appui
     const parts = new Map<string, { refs: LayerRef[] | null; groups: PlateGroup[]; own: boolean }>();
     for (const g of all) {
