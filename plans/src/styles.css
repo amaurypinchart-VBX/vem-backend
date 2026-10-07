@@ -199,6 +199,7 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sync-banner b { color: var(--info); font-weight: 600; }
 .sheet-body { flex: 1; display: grid; grid-template-columns: 190px minmax(0, 1fr) 300px; min-height: 0; }
 .sheet-pages { overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--border); }
+.sheet-pages > * { flex-shrink: 0; }
 .sheet-thumb { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; cursor: pointer; background: var(--bg-3); }
 .sheet-thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .thumb-foot { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; flex-wrap: wrap; }
