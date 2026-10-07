@@ -13,13 +13,19 @@ import type { Assignments, PartType } from '../../structure/core/recognition';
 import { recognize } from '../../structure/core/recognition';
 import type { ServerLibraryRow } from '../../structure/core/libraryStore';
 import { mergeLibrary, partTypeEntry, toPayload } from '../../structure/core/libraryStore';
-import { SEED } from '../../structure/library/seed';
+import { SEED, SEED_MODULES } from '../../structure/library/seed';
+const SEED_VIEWBOX = SEED_MODULES.find((m) => m.key === 'VIEWBOX-5900-EU')!;
+import { sectionMap } from '../../structure/core/assemble';
 import { itemBoxDims } from '../../structure/scene/geometry';
 import { studyModelFromScene } from '../../structure/scene/studyModel';
 import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
 import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
 import type { LibraryEntry } from '../../structure/core/library';
 import { estimateTypeFields, isCustomType, moduleTypes } from '../../structure/core/moduleTypes';
+import type { FrameExtraction } from '../../structure/core/frameExtract';
+import { extractFrame, structureCheck } from '../../structure/core/frameExtract';
+import { moduleStructureMesh } from '../../structure/scene/frameFromScene';
+import { moduleTypeKey } from '../../structure/core/signature';
 import { DEFAULTS } from '../../structure/library/defaults';
 import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
 import type { StudyRunner } from '../../structure/worker/study';
@@ -197,9 +203,33 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const canEditLibrary = LIBRARY_EDITORS.includes(me?.role ?? '');
   const accessory = useMemo(() => compileRules(rules).accessoryKeys, [rules]);
   const dims = useMemo(() => itemBoxDims(scene, scene.index.nodes.filter((n) => n.role === 'item').map((n) => n.id)), [scene]);
+  // structure dessinée de chaque type de module (S12.5) : relevée sur la première box du type, une fois par scène
+  const drawnStructures = useMemo(() => {
+    const out = new Map<string, FrameExtraction>();
+    const first = new Map<string, string>();
+    for (const m of scene.index.modules) if (!first.has(moduleTypeKey(m))) first.set(moduleTypeKey(m), m.id);
+    for (const [key, id] of first) {
+      try {
+        const mesh = moduleStructureMesh(scene, id);
+        if (mesh?.members.length) out.set(key, extractFrame(mesh.members, { ...mesh.dims, base: SEED_VIEWBOX.params!, file: scene.index.source.fileName, date: new Date().toLocaleDateString('fr-BE') }));
+      } catch {
+        // relevé impossible : comportement d'avant S12 (taille seule)
+      }
+    }
+    return out;
+  }, [scene]);
+  const structures = useMemo(() => {
+    const sections = sectionMap(library);
+    const out: Record<string, ReturnType<typeof structureCheck>> = {};
+    for (const [key, ex] of drawnStructures) {
+      const lib = [...library, ...ex.newSections.filter((x) => !library.some((e) => e.key === x.key))];
+      out[key] = structureCheck(ex, lib, ex.newSections.length ? sectionMap(lib) : sections);
+    }
+    return out;
+  }, [drawnStructures, library]);
   const recognition = useMemo(
-    () => recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories: accessory }),
-    [scene, dims, library, assignments, accessory],
+    () => recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories: accessory, structures }),
+    [scene, dims, library, assignments, accessory, structures],
   );
   // framesVersion : les repères des Viewbox ont été recalculés (face avant modifiée)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -524,6 +554,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
             await refreshLibrary();
           }}
           who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+          drawnStructures={drawnStructures}
           onSaveEntries={async (entries) => {
             for (const e of entries) await vem.saveLibraryEntry(toPayload(e));
             await refreshLibrary();

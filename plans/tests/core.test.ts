@@ -29,6 +29,10 @@ describe('classification par le nom', () => {
     expect(categoryFromName('VITRE-SEAMLESS_#7-230-044', rules)).toBe('VITRE-SEAMLESS');
     expect(categoryFromName('Mur léger 2500', rules)).toBe('MUR-LEGER');
     expect(categoryFromName('Wall Heavy', rules)).toBe('MUR-LOURD');
+    expect(categoryFromName('7-632-029 TERRACE PLATFORM - VIEWBOX M16', rules)).toBe('TERRASSE');
+    // réglages enregistrés avant la catégorie TERRASSE : elle est ajoutée après ESCALIER
+    const saved = mergeRules({ categories: DEFAULT_RULES.categories.filter((c) => c.key !== 'TERRASSE') });
+    expect(saved.categories.map((c) => c.key).indexOf('TERRASSE')).toBe(saved.categories.map((c) => c.key).indexOf('ESCALIER') + 1);
     expect(categoryFromName('VBX-03|PORTE-SIMPLE|02', rules)).toBe('PORTE-SIMPLE');
     expect(categoryFromName('Full Sliding Door', rules)).toBe('PORTE-COULISSANTE');
     expect(categoryFromName('Full Slidding door', rules)).toBe('PORTE-COULISSANTE');

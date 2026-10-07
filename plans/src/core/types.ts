@@ -18,6 +18,7 @@ export const BUILTIN_CATEGORIES = [
   'TOIT',
   'PIED',
   'ESCALIER',
+  'TERRASSE',
   'GARDE-CORPS',
 ] as const;
 

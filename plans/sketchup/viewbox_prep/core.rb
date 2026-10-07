@@ -29,6 +29,8 @@ module Viewbox
         ['MUR-LOURD', [/MUR[-_ ]?LOURD/, /WALL[-_ ]?HEAVY/, /HEAVY[-_ ]?WALL/]],
         ['GARDE-CORPS', [/GARDE[-_ ]?CORPS/, /RAILING/, /HANDRAIL/, /BALUSTRADE/]],
         ['ESCALIER', [/ESCALIER/, /STAIR/]],
+        # élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
+        ['TERRASSE', [/TERRASS/, /TERRACE/]],
         ['PIED', [/(\A|[^A-Z])PIED/, /VERIN/, /(\A|[^A-Z])JACK/, /LEVEL+ING/, /(\A|[^A-Z])FEET/, /(\A|[^A-Z])FOOT([^A-Z]|\z)/]],
         ['TOIT', [/TOIT/, /ROOF/]],
         ['PLANCHER', [/PLANCHER/, /FLOOR[-_ ]?(PANEL|MODULE)/]],

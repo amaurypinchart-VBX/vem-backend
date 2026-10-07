@@ -25,7 +25,7 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.2.0'.freeze
+    VERSION = '1.2.1'.freeze
     DICT = 'viewbox'.freeze
     C = Core
 

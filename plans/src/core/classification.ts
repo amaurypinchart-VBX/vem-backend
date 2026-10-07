@@ -26,6 +26,8 @@ export const DEFAULT_RULES: ClassificationRules = {
     { key: 'MUR-LOURD', patterns: ['MUR[-_ ]?LOURD', 'WALL[-_ ]?HEAVY', 'HEAVY[-_ ]?WALL'], accessory: true },
     { key: 'GARDE-CORPS', patterns: ['GARDE[-_ ]?CORPS', 'RAILING', 'HANDRAIL', 'BALUSTRADE'] },
     { key: 'ESCALIER', patterns: ['ESCALIER', 'STAIR'] },
+    // élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
+    { key: 'TERRASSE', patterns: ['TERRASS', 'TERRACE'] },
     { key: 'PIED', patterns: ['(^|[^A-Z])PIED', 'VERIN', '(^|[^A-Z])JACK', 'LEVEL+ING', '(^|[^A-Z])FEET', '(^|[^A-Z])FOOT([^A-Z]|$)'] },
     { key: 'TOIT', patterns: ['TOIT', 'ROOF'] },
     { key: 'PLANCHER', patterns: ['PLANCHER', 'FLOOR[-_ ]?(PANEL|MODULE)'] },
@@ -146,6 +148,12 @@ export function mergeRules(saved: (Partial<ClassificationRules> & { moduleDims?:
     moduleSizes: Array.isArray(saved.moduleSizes) && saved.moduleSizes.length ? saved.moduleSizes : base.moduleSizes,
     moduleToleranceMm: saved.moduleToleranceMm ?? moduleDims?.toleranceMm ?? base.moduleToleranceMm,
   };
+  // catégories intégrées ajoutées après coup (TERRASSE) : reprises dans des réglages enregistrés avant elles
+  if (!merged.categories.some((c) => c.key === 'TERRASSE')) {
+    const t = base.categories.find((c) => c.key === 'TERRASSE')!;
+    const at = merged.categories.findIndex((c) => c.key === 'ESCALIER');
+    merged.categories = at >= 0 ? [...merged.categories.slice(0, at + 1), t, ...merged.categories.slice(at + 1)] : [t, ...merged.categories];
+  }
   // Anciens réglages (une seule taille "moduleDims") : conservée en tête de liste.
   if (moduleDims?.long && moduleDims?.short && !saved.moduleSizes) {
     const legacy = { label: `Viewbox ${moduleDims.long}`, long: moduleDims.long, short: moduleDims.short };

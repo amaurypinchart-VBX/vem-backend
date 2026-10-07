@@ -16,6 +16,7 @@ import { templateSteelWeight, templateSummary } from '../../structure/core/templ
 import { KN, KNCM_PER_DEG, KNM, fmtNumber } from '../../structure/core/units';
 import { slug } from '../../structure/core/ai';
 import { deckSpan } from '../../structure/studyRun';
+import type { FrameExtraction } from '../../structure/core/frameExtract';
 import { NewSectionForm, Num } from './ViewboxStructure';
 
 const f = (v: number, d = 0) => fmtNumber(v, d);
@@ -40,7 +41,7 @@ const ROLE_FAMILIES: Record<FrameRole, CatalogFamily[]> = {
   none: [],
 };
 
-type Start = 'parametric' | 'viewbox';
+type Start = 'model' | 'parametric' | 'viewbox';
 type CornerModel = 'semi' | 'rigid' | 'pinned';
 
 export interface FrameWorkshopProps {
@@ -52,6 +53,8 @@ export interface FrameWorkshopProps {
   who: string;
   /** type existant à modifier (sinon nouveau) */
   entry?: ModuleTypeEntry;
+  /** structure relevée sur le modèle SketchUp (départ « Depuis le modèle SketchUp ») */
+  extraction?: FrameExtraction | null;
   onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
   /** type enregistré : le module y est rattaché */
   onUseType: (key: string) => void;
@@ -97,9 +100,10 @@ function defaultSpec(dims: FrameWorkshopProps['dims'], base: ModuleTypeEntry): P
 export function FrameWorkshop(p: FrameWorkshopProps) {
   const base = vbx(p.library);
   const [name, setName] = useState(p.entry?.name ?? p.defaultName);
-  const [start, setStart] = useState<Start>(p.entry?.params?.frame?.origin === 'preset-viewbox' ? 'viewbox' : 'parametric');
+  const fromModel = !p.entry && !!p.extraction?.params;
+  const [start, setStart] = useState<Start>(p.entry?.params?.frame?.origin === 'preset-viewbox' ? 'viewbox' : fromModel ? 'model' : p.entry?.params?.frame?.origin === 'mesh' ? 'model' : 'parametric');
   const [spec, setSpec] = useState<ParametricSpec>(() => defaultSpec(p.dims, base));
-  const [params, setParams] = useState<FrameParams>(() => (p.entry?.params?.frame ? (p.entry.params as FrameParams) : parametricFrame(defaultSpec(p.dims, base))));
+  const [params, setParams] = useState<FrameParams>(() => (p.entry?.params?.frame ? (p.entry.params as FrameParams) : fromModel ? p.extraction!.params! : parametricFrame(defaultSpec(p.dims, base))));
   const [weightKg, setWeightKg] = useState<number | null>(p.entry?.weighedN ? Math.round(p.entry.weighedN / 9.81) : null);
   const [foot, setFoot] = useState(p.entry?.footContact ?? { a1: 210, a2: 210 });
   const [conn, setConn] = useState<NonNullable<ModuleTypeEntry['connections']>>(p.entry?.connections ?? { plate: undefined });
@@ -118,6 +122,7 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
   const chooseStart = (s: Start) => {
     setStart(s);
     if (s === 'viewbox') setParams({ ...base.params!, frame: { ...viewboxPresetFrame(base.params!), origin: 'preset-viewbox' } });
+    else if (s === 'model' && p.extraction?.params) setParams(p.extraction.params);
     else setParams(parametricFrame(spec));
   };
   const frame = params.frame;
@@ -173,7 +178,12 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
     ? [!cornerEntry && copyOf('VBX-CORNER', 'CORNER', 'Angle poteau / cadre'), !contactEntry && copyOf('VBX-VERTICAL-CONTACT', 'CONTACT', 'Contact poteau / cadre'), frame.joints.side.model === 'bolts' && copyOf('VBX-HORIZONTAL-BOLT', 'BOLT', 'Boulons entre modules')].filter((e): e is ConnectionEntry => !!e)
     : [];
   const typed = [cornerEntry, contactEntry, ...reused].filter((e): e is ConnectionEntry => !!e);
-  const library = useMemo(() => (typed.length ? [...p.library.filter((e) => !typed.some((t) => t.key === e.key)), ...typed] : p.library), [p.library, JSON.stringify(typed)]); // eslint-disable-line react-hooks/exhaustive-deps
+  // sections relevées sur le modèle (SEC-SKP-…) : proposées, enregistrées avec le type
+  const measured = useMemo(() => (p.extraction?.newSections ?? []).filter((x) => !p.library.some((e) => e.key === x.key)), [p.extraction, p.library]);
+  const library = useMemo(() => {
+    const extra = [...typed, ...measured];
+    return extra.length ? [...p.library.filter((e) => !extra.some((t) => t.key === e.key)), ...extra] : p.library;
+  }, [p.library, JSON.stringify(typed), measured]); // eslint-disable-line react-hooks/exhaustive-deps
   const connections = {
     ...conn,
     ...Object.fromEntries(reused.map((e) => [e.key.endsWith('-CORNER') ? 'corner' : e.key.endsWith('-CONTACT') ? 'contact' : 'bolt', e.key])),
@@ -253,7 +263,8 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
     setError('');
     try {
       const extra = [...sections.values()].filter((s) => s.key.startsWith('CAT-') && !p.library.some((e) => e.key === s.key) && frame.bars.some((b) => b.section === s.key));
-      await p.onSaveEntries([...extra, ...typed, entry]);
+      const used = measured.filter((m) => frame.bars.some((b) => b.section === m.key));
+      await p.onSaveEntries([...extra, ...used, ...typed, entry]);
       p.onUseType(entry.key);
       p.onClose();
     } catch (e) {
@@ -301,6 +312,11 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
         </label>
         <div className="row" style={{ gap: 6 }}>
           <span className="hint">Départ :</span>
+          {p.extraction?.params && (
+            <button className={`btn small ${start === 'model' ? '' : 'ghost'}`} onClick={() => chooseStart('model')}>
+              Depuis le modèle SketchUp
+            </button>
+          )}
           <button className={`btn small ${start === 'parametric' ? '' : 'ghost'}`} onClick={() => chooseStart('parametric')}>
             Grille paramétrique
           </button>
@@ -308,6 +324,26 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
             Partir de la Viewbox 5900
           </button>
         </div>
+
+        {start === 'model' && p.extraction && (
+          <div className="card" style={{ background: 'var(--bg-2)' }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <b>Relevé sur le modèle SketchUp</b>
+              <div className="hint">
+                {p.extraction.bars.filter((b) => b.role !== 'other').length} barres porteuses relevées, {p.extraction.pieces.length} pièces non porteuses (plats, goussets, panneaux) laissées de côté · excentricité maxi{' '}
+                {f(p.extraction.maxEccentricity)} mm entre les axes dessinés et les lignes de système.
+              </div>
+              <div className="hint">
+                Sections : celles du catalogue sont reconnues à ± 2 mm ; les autres sont relevées sur le dessin (« relevé sur le modèle ») — à confirmer ou à remplacer ci-dessous.
+              </div>
+              {[...p.extraction.warnings, ...p.extraction.bars.flatMap((b) => b.warnings.map((w) => `${b.source.definition ?? b.source.name ?? b.id} : ${w}`))].slice(0, 8).map((w, k) => (
+                <div key={k} style={{ color: 'var(--warn)' }}>
+                  ⚠ {w}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {start === 'parametric' && (
           <div className="card" style={{ background: 'var(--bg-2)' }}>

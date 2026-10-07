@@ -25,6 +25,10 @@ class CoreTest < Minitest::Test
     assert_equal 'PORTE-DOUBLE', C.category('Double Door')
     assert_equal 'PORTE-COULISSANTE', C.category('Full Slidding door')
     assert_equal 'MUR-LEGER', C.category('Mur léger')
+    # élément terrasse 5,9 × 2,5 m : catégorie, donc jamais pris pour une Viewbox
+    assert_equal 'TERRASSE', C.category('7-632-029 TERRACE PLATFORM - VIEWBOX M16')
+    assert_equal 'TERRASSE', C.category('Terrasse VIP')
+    assert_equal 'ESCALIER', C.category('STAIRWAYKIT WITH PLATEFORM')
     assert_nil C.category('Untagged')
     assert_nil C.category('Layer0')
   end

@@ -22,6 +22,7 @@ import { AiUsageNote, CompositeEditor, captureTypeImages } from './aiUi';
 import { ViewboxStructure } from './ViewboxStructure';
 import { CustomTypeSheet, FrameWorkshop } from './FrameWorkshop';
 import { isCustomType } from '../../structure/core/moduleTypes';
+import type { FrameExtraction } from '../../structure/core/frameExtract';
 
 export interface AnswerOptions {
   scope: 'model' | 'project';
@@ -46,6 +47,8 @@ interface Props {
   onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
   /** nom de la personne connectée (trace des modifications de la bibliothèque) */
   who?: string;
+  /** structure dessinée relevée par type de module (S12.5) */
+  drawnStructures?: ReadonlyMap<string, FrameExtraction>;
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -85,6 +88,7 @@ function PartForm({
   onHighlight,
   moduleDims,
   onPreviewType,
+  extraction,
 }: {
   type: PartType;
   library: LibraryEntry[];
@@ -108,6 +112,7 @@ function PartForm({
   moduleDims?: { long: number; short: number; height: number };
   /** aperçu 3D d'un type en cours de description dans l'atelier */
   onPreviewType?: (e: ModuleTypeEntry | null) => void;
+  extraction?: FrameExtraction | null;
 }) {
   const initial: PartAssignment = type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' });
   const [a, setA] = useState<PartAssignment>(initial);
@@ -226,6 +231,31 @@ function PartForm({
                 ))}
               </select>
             </label>
+            {(type.structureWarning || type.structureDiffs?.length) && (
+              <div className="card" style={{ background: 'var(--bg-2)' }}>
+                <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <b style={{ color: 'var(--warn)' }}>⚠ {type.structureWarning ?? 'La structure dessinée n’est pas celle du type proposé par la taille'}</b>
+                  <details>
+                    <summary className="hint">Voir les écarts ({type.structureDiffs?.length ?? 0})</summary>
+                    {(type.structureDiffs ?? []).map((d, k) => (
+                      <div key={k} className="hint">
+                        • {d}
+                      </div>
+                    ))}
+                  </details>
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    <button className="btn small" onClick={() => setWorkshop({})}>
+                      🏗 Créer un type de structure à partir du modèle
+                    </button>
+                    {templates.find((t) => t.key === 'VIEWBOX-5900-EU') && (
+                      <button className="btn small ghost" onClick={() => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: 'VIEWBOX-5900-EU' })}>
+                        C’est bien une Viewbox standard (écart de dessin)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {!workshop && (
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 <button className="btn small ghost" onClick={() => setWorkshop({})} title="La structure dessinée n’est pas une Viewbox standard : décrire ses profils, assemblages et plancher">
@@ -242,6 +272,7 @@ function PartForm({
                 canEdit={canEditLibrary}
                 who={who}
                 entry={workshop.entry}
+                extraction={extraction}
                 onSaveEntries={onSaveEntries}
                 onUseType={(key) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: key })}
                 onPreview={onPreviewType}
@@ -456,7 +487,7 @@ function PartForm({
   );
 }
 
-export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel, onSaveEntries, who = 'utilisateur' }: Props) {
+export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel, onSaveEntries, who = 'utilisateur', drawnStructures }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -708,6 +739,7 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
             onHighlight={setHiFamily}
             moduleDims={moduleDimsOf(type)}
             onPreviewType={setPreviewType}
+            extraction={type.kind === 'module' ? (drawnStructures?.get(type.key) ?? null) : null}
             onAskAi={async () => {
               const images = await captureTypeImages(scene, glassTest, type).catch(() => []);
               viewerRef.current?.reclaim();

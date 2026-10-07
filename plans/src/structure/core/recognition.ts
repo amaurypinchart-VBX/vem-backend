@@ -41,6 +41,10 @@ export interface PartType {
   assignment?: PartAssignment;
   libraryEntry?: PartTypeEntry;
   reason: string;
+  /** structure dessinée différente du type retenu (réponse locale ou type SketchUp gardés) : avertissement non bloquant */
+  structureWarning?: string;
+  /** écarts entre la structure dessinée et le type proposé par la taille (« Voir les écarts ») */
+  structureDiffs?: string[];
 }
 
 export interface Recognition {
@@ -63,6 +67,11 @@ export interface RecognitionInput {
   assignments: Assignments;
   /** catégories « accessoire de façade » (personnalisées comprises) */
   accessoryCategories?: ReadonlySet<string>;
+  /**
+   * structure dessinée de chaque type de module (S12.5) : nombre de barres porteuses relevées et conformité à chaque
+   * type de la bibliothèque (clé du type) ; absent = pas de structure relevée (comportement d'avant S12)
+   */
+  structures?: Record<string, { bars: number; byTemplate: Record<string, { ok: boolean; differences: string[] }> }>;
 }
 
 /** Catégories des pièces propres au composant Viewbox, comprises dans son gabarit. */
@@ -163,7 +172,22 @@ export function recognize(input: RecognitionInput): Recognition {
   for (const [key, mods] of byModuleType) {
     const m0 = mods[0];
     const template = [...templates.values()].find((t) => Math.abs(t.nominal.long - m0.expected.long) <= 50 && Math.abs(t.nominal.short - m0.expected.short) <= 50 && t.template !== 'viewbox-us');
-    const proposal = template
+    // élément terrasse numéroté comme une Viewbox par une ancienne extension (≤ 1.2.0) : ce n'est pas une Viewbox
+    const m0Node = index.nodes.find((n) => n.id === m0.nodeId);
+    const terraceLike = /TERRAC|TERRASS/i.test(`${m0.type ?? ''} ${m0Node?.definition ?? ''} ${m0Node?.name ?? ''}`);
+    // structure dessinée (≥ 8 barres porteuses) : la taille ne suffit plus, le dessin doit être conforme au type
+    const drawn = input.structures?.[key];
+    const checked = drawn && drawn.bars >= 8 ? drawn.byTemplate : null;
+    const sizeOk = !template || !checked || !checked[template.key] || checked[template.key].ok;
+    // type personnalisé de la bibliothèque dont la structure est conforme au dessin
+    const custom = checked ? [...templates.values()].find((t) => t.template === 'frame' && checked[t.key]?.ok) : undefined;
+    const proposal = terraceLike
+      ? null
+      : custom
+        ? { assignment: { role: 'structural' as const, nature: 'viewbox' as const, moduleTemplate: custom.key }, reason: `structure dessinée conforme au type « ${custom.name} »` }
+        : !sizeOk
+          ? null
+          : template
       ? { assignment: { role: 'structural' as const, nature: 'viewbox' as const, moduleTemplate: template.key }, reason: `dimensions ${m0.expected.long} × ${m0.expected.short} : ${template.name}` }
       : null;
     types.push(
@@ -181,6 +205,23 @@ export function recognize(input: RecognitionInput): Recognition {
         proposal,
       ),
     );
+    // structure dessinée différente du type retenu
+    {
+      const cur = types[types.length - 1];
+      const chosen = cur.assignment?.moduleTemplate;
+      const conf = checked && chosen ? checked[chosen] : undefined;
+      const sizeDiffs = checked && template && !sizeOk ? checked[template.key].differences : undefined;
+      if (conf && !conf.ok && cur.source === 'library' && key.startsWith('SIZE:'))
+        // réponse mémorisée par la taille seule : la taille n'identifie pas une structure
+        types[types.length - 1] = { ...cur, status: 'unknown', source: 'none', assignment: undefined, libraryEntry: undefined, reason: `structure dessinée différente de « ${templates.get(chosen!)?.name ?? chosen} » : ${conf.differences[0]}`, structureDiffs: conf.differences };
+      else if (conf && !conf.ok) types[types.length - 1] = { ...cur, structureWarning: `structure dessinée différente de « ${templates.get(chosen!)?.name ?? chosen} » : ${conf.differences[0]}`, structureDiffs: conf.differences };
+      else if (!cur.assignment && sizeDiffs) types[types.length - 1] = { ...cur, reason: `n’est pas une ${template!.name} : ${sizeDiffs[0]}`, structureDiffs: sizeDiffs };
+    }
+    if (terraceLike && types[types.length - 1].status === 'unknown')
+      types[types.length - 1] = {
+        ...types[types.length - 1],
+        reason: 'élément terrasse pris pour une Viewbox par une ancienne extension SketchUp : réexporter le modèle avec l’extension 1.2.1 (catégorie TERRASSE)',
+      };
   }
 
   // ─── pièces ───

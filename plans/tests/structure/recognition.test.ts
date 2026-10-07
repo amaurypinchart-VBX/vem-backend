@@ -222,3 +222,31 @@ describe('bibliothèque en ligne', () => {
     expect(disabled.find((x) => x.key === 'VIEWBOX-8400-EU')!.disabled).toBe(true);
   });
 });
+
+describe('S12.5 — structure dessinée et type proposé', () => {
+  const diff = { ok: false, differences: ['plancher : 5 traverse(s), aucune lisse ; Viewbox 5900 : 4 traverse(s) + 2 lisse(s)'] };
+  it('structure non conforme : plus de proposition « Viewbox 5900 » par la taille, raison = premier écart', () => {
+    const r = recognize({ index: model(2, 'Box light'), look: makeLookup(model(2, 'Box light')), library: SEED, assignments: {}, accessoryCategories: new Set(), structures: { 'SIZE:5900x2500': { bars: 22, byTemplate: { 'VIEWBOX-5900-EU': diff } } } });
+    const m = r.types.find((t) => t.kind === 'module')!;
+    expect(m.status).toBe('unknown');
+    expect(m.reason).toMatch(/n’est pas une Viewbox 5900 × 2500 .* 5 traverse/);
+    expect(m.structureDiffs).toEqual(diff.differences);
+  });
+  it('type personnalisé conforme : proposé ; moins de 8 barres relevées : comportement d’avant (taille)', () => {
+    const custom = { kind: 'module_type', key: 'TYPE-LIGHT', name: 'Box Light', status: 'known', template: 'frame', family: 'other', nominal: { long: 5900, short: 2500, height: 3300 }, params: SEED.find((e) => e.key === 'VIEWBOX-5900-EU')!.kind === 'module_type' ? (SEED.find((e) => e.key === 'VIEWBOX-5900-EU') as never as { params: object }).params : undefined, source: [] } as never as LibraryEntry;
+    const lib = [...SEED, custom];
+    const idx = model(1, 'Box light');
+    const r = recognize({ index: idx, look: makeLookup(idx), library: lib, assignments: {}, accessoryCategories: new Set(), structures: { 'SIZE:5900x2500': { bars: 22, byTemplate: { 'VIEWBOX-5900-EU': diff, 'TYPE-LIGHT': { ok: true, differences: [] } } } } });
+    expect(r.types.find((t) => t.kind === 'module')!.assignment?.moduleTemplate).toBe('TYPE-LIGHT');
+    const few = recognize({ index: idx, look: makeLookup(idx), library: SEED, assignments: {}, accessoryCategories: new Set(), structures: { 'SIZE:5900x2500': { bars: 3, byTemplate: { 'VIEWBOX-5900-EU': diff } } } });
+    expect(few.types.find((t) => t.kind === 'module')!.assignment?.moduleTemplate).toBe('VIEWBOX-5900-EU');
+  });
+  it('réponse donnée pour ce modèle gardée, avec un avertissement non bloquant', () => {
+    const idx = model(1, 'Box light');
+    const a: Assignments = { 'SIZE:5900x2500': { scope: 'model', at: '', assignment: { role: 'structural', nature: 'viewbox', moduleTemplate: 'VIEWBOX-5900-EU' } } };
+    const r = recognize({ index: idx, look: makeLookup(idx), library: SEED, assignments: a, accessoryCategories: new Set(), structures: { 'SIZE:5900x2500': { bars: 22, byTemplate: { 'VIEWBOX-5900-EU': diff } } } });
+    const m = r.types.find((t) => t.kind === 'module')!;
+    expect(m.status).toBe('known');
+    expect(m.structureWarning).toMatch(/structure dessinée différente/);
+  });
+});
