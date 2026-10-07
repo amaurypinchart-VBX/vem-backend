@@ -45,16 +45,8 @@ await page.getByRole('button', { name: /Créer un type de structure/ }).click();
 const ws = page.locator('.card', { has: page.getByRole('heading', { name: '🏗 Atelier structure' }) }).last();
 await ws.waitFor();
 await ws.getByLabel('Nom du type').fill('Viewbox Light V4');
-// angles boulonnés : capacités saisies (valeurs de test, non vérifiées)
-await ws.locator('select').filter({ hasText: 'saisir les capacités' }).selectOption('__typed');
-for (const [l, v] of [
-  ['N', '70'],
-  ['M biaxial', '8'],
-  ['M dominant', '11,5'],
-  ['M secondaire', '3,3'],
-  ['Compression contact', '176'],
-])
-  await ws.getByLabel(l, { exact: true }).fill(v);
+// mêmes boulons M16 que la Viewbox : assemblages Viewbox repris (indicatifs)
+await ws.getByLabel('Reprendre les assemblages Viewbox').check();
 await page.waitForTimeout(800);
 console.log('Contrôles :', (await ws.locator('.card', { hasText: 'Contrôles' }).last().innerText()).replace(/\s+/g, ' '));
 console.log('Barres :', (await ws.locator('table').first().innerText()).replace(/\t/g, ' | ').split('\n').slice(0, 8));

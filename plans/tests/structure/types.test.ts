@@ -18,7 +18,7 @@ import { CALC_DEFAULTS, floorPlywood, runStudy } from '../../src/structure/study
 import { createInlineStudyRunner } from '../../src/structure/worker/study';
 import { DEFAULT_HYP, calageInput } from '../../src/ui/structure/GroundPanel';
 import { buildReport } from '../../src/structure/report/build';
-import { FRENCH_MARKERS } from '../../src/structure/report/translate';
+import { FRENCH_MARKERS, translate } from '../../src/structure/report/translate';
 import { placedToEstimate } from '../../src/structure/core/mods';
 import { LOADS } from './studyHelpers';
 
@@ -246,5 +246,18 @@ describe('S12.3 — données par type de module', () => {
         }
       }
   }, 300_000);
+
+  it('assemblages Viewbox repris (mêmes boulons M16) : capacités Viewbox, indicatives, note traduite', () => {
+    const copy2 = (key: string, from: string): ConnectionEntry => ({ ...(SEED.find((e) => e.key === from) as ConnectionEntry), key, name: `${key} (repris de la Viewbox)`, status: 'suggested', source: [{ ref: `copy:${from}`, note: 'mêmes boulons' }] });
+    const T: ModuleTypeEntry = { ...LIGHT, connections: { corner: 'R-CORNER', contact: 'R-CONTACT', bolt: 'R-BOLT' } };
+    const lib: LibraryEntry[] = [...SEED, T, copy2('R-CORNER', 'VBX-CORNER'), copy2('R-CONTACT', 'VBX-VERTICAL-CONTACT'), copy2('R-BOLT', 'VBX-HORIZONTAL-BOLT')];
+    const tc = typeChecks({ modules: [place('L-01', T, 0, 0)], library: lib, sections });
+    expect(tc.perModule['L-01'].corner?.capacities).toEqual((SEED.find((e) => e.key === 'VBX-CORNER') as ConnectionEntry).capacities);
+    expect(tc.cap).toBe('limit');
+    const note = tc.notes.find((n) => /repris de la Viewbox \(mêmes boulons\)/.test(n))!;
+    expect(note).toBeTruthy();
+    expect(translate('de', note)).toMatch(/von der Viewbox übernommen \(gleiche Schrauben\), Tragfähigkeiten indikativ/);
+    expect(translate('en', note)).toMatch(/taken from the Viewbox \(same bolts\), indicative capacities/);
+  });
 });
 

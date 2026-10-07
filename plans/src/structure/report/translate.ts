@@ -41,6 +41,10 @@ const PATTERNS: Rule[] = [
   [/posée (\d+) mm plus haut que le haut de/g, '$1 mm höher modelliert als die Oberkante von', 'modelled $1 mm higher than the top of'],
   [/(\d+) kg par tôle : manutention mécanique/g, '$1 kg je Blech: maschinelle Handhabung', '$1 kg per plate: mechanical handling'],
   // types de structure personnalisés (S12 : core/loads.ts, core/moduleTypes.ts, checks/joints.ts, assemble.ts, calage.ts)
+  [/ « (.+?) » \(repris de la Viewbox\)/g, ' « $1 » (von der Viewbox übernommen)', ' « $1 » (taken from the Viewbox)'],
+  [/Angle poteau \/ cadre « /g, 'Stützen-/Rahmenecke « ', 'Column / frame corner « '],
+  [/Contact poteau \/ cadre « /g, 'Kontakt Stütze / Rahmen « ', 'Column / frame contact « '],
+  [/Boulons entre modules « /g, 'Schrauben zwischen Modulen « ', 'Bolts between modules « '],
   [/Poids d’un module « (.+?) » : poids calculé, non pesé/g, 'Gewicht eines Moduls « $1 »: berechnet, nicht gewogen', 'Weight of one module « $1 »: calculated, not weighed'],
   [/Poids d’un module « (.+?) » : modèle et pesée/g, 'Gewicht eines Moduls « $1 »: Modell und Wägung', 'Weight of one module « $1 »: model and weighing'],
   ['barres du type (78,5 kN/m³) + plafond + sol (plancher du type compris, jamais en double)', 'Stäbe des Typs (78,5 kN/m³) + Decke + Boden (Boden des Typs inbegriffen, nie doppelt)', 'members of the type (78,5 kN/m³) + ceiling + floor (floor of the type included, never twice)'],
@@ -49,6 +53,7 @@ const PATTERNS: Rule[] = [
   ['poids pesé = G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol)', 'gewogenes Gewicht = G1 (Stäbe, 78,5 kN/m³) + k · (G2 Decke + G4 Boden)', 'weighed weight = G1 (members, 78,5 kN/m³) + k · (G2 ceiling + G4 floor)'],
   [/(.+?) : type de structure non couvert par une note de calcul de référence — pré-étude à faire confirmer par un ingénieur\./g, '$1: Tragwerkstyp ohne Referenz-Typenstatik — Vorabzug, durch einen Tragwerksplaner zu bestätigen.', '$1: structure type not covered by a reference calculation — preliminary study to be confirmed by an engineer.'],
   [/(.+?) : assemblage « (.+?) » saisi, non vérifié\./g, '$1: Verbindung « $2 » eingegeben, nicht geprüft.', '$1: connection « $2 » entered, not verified.'],
+  [/(.+?) : assemblage « (.+?) » repris de la Viewbox \(mêmes boulons\), capacités indicatives\./g, '$1: Verbindung « $2 » von der Viewbox übernommen (gleiche Schrauben), Tragfähigkeiten indikativ.', '$1: connection « $2 » taken from the Viewbox (same bolts), indicative capacities.'],
   [/(.+?) : assemblage « (.+?) » inconnu\./g, '$1: Verbindung « $2 » unbekannt.', '$1: connection « $2 » unknown.'],
   [/(.+?) : section\(s\) relevée\(s\) sur le modèle, à confirmer \((.+)\)\./g, '$1: aus dem Modell übernommene(r) Querschnitt(e), zu bestätigen ($2).', '$1: section(s) measured on the model, to be confirmed ($2).'],
   [/(.+?) : angles poteau \/ cadre soudés supposés pleine résistance — à justifier\./g, '$1: geschweißte Stützen-/Rahmenecken als voll tragfähig angenommen — nachzuweisen.', '$1: welded column / frame corners assumed full strength — to be justified.'],

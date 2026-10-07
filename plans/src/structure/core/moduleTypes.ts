@@ -184,7 +184,10 @@ export function typeChecks(inp: {
     // assemblages saisis ou indicatifs : « limite » au mieux
     for (const k of [c.corner, c.contact, c.plate, c.bolt, c.jack, c.bracing]) {
       const e = k ? inp.library.find((x): x is ConnectionEntry => x.kind === 'connection' && x.key === k) : undefined;
-      if (e && e.status !== 'known') out.notes.push(`${name} : assemblage « ${e.name} » ${e.status === 'unknown' ? 'inconnu' : 'saisi, non vérifié'}.`);
+      if (e && e.status !== 'known')
+        out.notes.push(
+          `${name} : assemblage « ${e.name} » ${e.status === 'unknown' ? 'inconnu' : e.source.some((x) => x.ref.startsWith('copy:')) ? 'repris de la Viewbox (mêmes boulons), capacités indicatives' : 'saisi, non vérifié'}.`,
+        );
     }
     if (fr) {
       if (fr.joints.column.model === 'rigid')

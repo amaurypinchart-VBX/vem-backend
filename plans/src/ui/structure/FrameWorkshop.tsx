@@ -153,9 +153,33 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
           source: [{ ref: 'user', note: `saisi le ${today()} par ${p.who}` }],
         }
       : null;
-  const typed = [cornerEntry, contactEntry].filter((e): e is ConnectionEntry => !!e);
+  // assemblages de la Viewbox repris (mêmes boulons M16) : capacités Viewbox, indicatives pour ce type (plats et profils différents)
+  const [reuse, setReuse] = useState(() => !!p.entry?.connections?.corner?.endsWith('-CORNER') && !!p.library.find((e) => e.key === p.entry?.connections?.corner)?.source.some((x) => x.ref.startsWith('copy:')));
+  const copyOf = (from: string, suffix: string, what: string): ConnectionEntry | null => {
+    const e = p.library.find((x): x is ConnectionEntry => x.kind === 'connection' && x.key === from);
+    return e
+      ? {
+          ...e,
+          key: `${key}-${suffix}`,
+          name: `${what} « ${name} » (repris de la Viewbox)`,
+          status: 'suggested',
+          origin: undefined,
+          id: undefined,
+          source: [{ ref: `copy:${from}`, note: `assemblage Viewbox repris le ${today()} par ${p.who} : mêmes boulons, plats et profils du type à confirmer — capacités indicatives` }],
+        }
+      : null;
+  };
+  const reused = reuse
+    ? [!cornerEntry && copyOf('VBX-CORNER', 'CORNER', 'Angle poteau / cadre'), !contactEntry && copyOf('VBX-VERTICAL-CONTACT', 'CONTACT', 'Contact poteau / cadre'), frame.joints.side.model === 'bolts' && copyOf('VBX-HORIZONTAL-BOLT', 'BOLT', 'Boulons entre modules')].filter((e): e is ConnectionEntry => !!e)
+    : [];
+  const typed = [cornerEntry, contactEntry, ...reused].filter((e): e is ConnectionEntry => !!e);
   const library = useMemo(() => (typed.length ? [...p.library.filter((e) => !typed.some((t) => t.key === e.key)), ...typed] : p.library), [p.library, JSON.stringify(typed)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const connections = { ...conn, ...(cornerEntry ? { corner: cornerEntry.key } : {}), ...(contactEntry ? { contact: contactEntry.key } : {}) };
+  const connections = {
+    ...conn,
+    ...Object.fromEntries(reused.map((e) => [e.key.endsWith('-CORNER') ? 'corner' : e.key.endsWith('-CONTACT') ? 'contact' : 'bolt', e.key])),
+    ...(cornerEntry ? { corner: cornerEntry.key } : {}),
+    ...(contactEntry ? { contact: contactEntry.key } : {}),
+  };
   const sections = useMemo(() => frameSections([{ params }], sectionMap(library)), [params, library]);
   const check = useMemo(() => checkFrame(params, sections, { footContact: foot, connections }), [params, sections, foot, connections]);
   const steel = useMemo(() => {
@@ -399,6 +423,11 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
         <div className="card" style={{ background: 'var(--bg-2)' }}>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <b>Assemblages</b>
+            <label className="row hint" style={{ flexWrap: 'wrap' }}>
+              <input type="checkbox" checked={reuse} onChange={(e) => setReuse(e.target.checked)} aria-label="Reprendre les assemblages Viewbox" />
+              Mêmes assemblages que la Viewbox (mêmes boulons M16) : reprendre ses capacités (angles, contact, boulons entre modules)
+              {reuse && <span className="badge orange">indicatif : plats et profils de ce type différents → verdict « limite » au mieux</span>}
+            </label>
             <div className="row hint" style={{ flexWrap: 'wrap' }}>
               Angles poteau / cadre
               {(['semi', 'rigid', 'pinned'] as CornerModel[]).map((m) => (
