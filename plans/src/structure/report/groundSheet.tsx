@@ -391,12 +391,14 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
         y += step;
       }
   };
-  // 5. références réglementaires (Prüfbuch TÜV)
-  blocks.push(<g key="t5">{title(C.s5, y)}</g>);
-  y += 4.2;
-  const tuvLine = !result.tuv.tuvMinimum ? C.tuvOff : result.tuv.ok === false ? C.tuvKo(result.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : result.tuv.ok ? C.tuvOk : '';
-  para('lg', [...C.legal(jacks), ...(tuvLine ? [tuvLine] : [])], 2.1, 2.9, '#374151', 140);
-  y += 2;
+  // 5. références réglementaires (Prüfbuch TÜV) : seulement avec des Viewbox
+  if (!result.tuv.notApplicable) {
+    blocks.push(<g key="t5">{title(C.s5, y)}</g>);
+    y += 4.2;
+    const tuvLine = !result.tuv.tuvMinimum ? C.tuvOff : result.tuv.ok === false ? C.tuvKo(result.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : result.tuv.ok ? C.tuvOk : '';
+    para('lg', [...C.legal(jacks), ...(tuvLine ? [tuvLine] : [])], 2.1, 2.9, '#374151', 140);
+    y += 2;
+  }
   // 6. réserves
   blocks.push(<g key="t6">{title(C.s6, y)}</g>);
   y += 4.2;

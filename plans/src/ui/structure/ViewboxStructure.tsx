@@ -35,7 +35,7 @@ const today = () => new Date().toLocaleDateString('fr-BE');
 /** Assemblages propres aux Viewbox vérifiés par le calcul (capacités de la bibliothèque). */
 const VIEWBOX_JOINTS = ['VBX-CORNER', 'VBX-VERTICAL-CONTACT', 'VBX-VERTICAL-PLATE', 'VBX-HORIZONTAL-BOLT'];
 
-function Num({ value, onChange, width = 80, label }: { value: number; onChange: (v: number) => void; width?: number; label?: string }) {
+export function Num({ value, onChange, width = 80, label }: { value: number; onChange: (v: number) => void; width?: number; label?: string }) {
   const [text, setText] = useState(String(value).replace('.', ','));
   useEffect(() => setText(String(value).replace('.', ',')), [value]);
   return (
@@ -380,7 +380,7 @@ const VALUE_FIELDS: Array<{ k: keyof NonNullable<UserSectionInput['values']>; la
   { k: 'kgPerM', label: 'kg/m' },
 ];
 
-function NewSectionForm({ who, onSave, onCancel }: { who: string; onSave: (s: SectionEntry) => Promise<void>; onCancel: () => void }) {
+export function NewSectionForm({ who, onSave, onCancel }: { who: string; onSave: (s: SectionEntry) => Promise<void>; onCancel: () => void }) {
   const [x, setX] = useState<UserSectionInput>({ designation: '', shape: 'RHS', dims: {}, material: 'S235', values: {} });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

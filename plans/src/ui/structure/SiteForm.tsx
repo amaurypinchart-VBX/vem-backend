@@ -114,9 +114,13 @@ export interface HypothesesFormProps {
   withoutModel?: boolean;
   /** objets portés par les Viewbox d'après le modèle (murs, vitrages, garde-corps, logos, lest) */
   carried?: { count: number; kg: number };
+  /** types de structure personnalisés de l'étude (S12) : poids calculé (kg) affiché, pesée facultative */
+  customTypes?: Array<{ key: string; name: string; computedKg: number; count: number }>;
+  /** l'étude contient des Viewbox (sinon la pesée Viewbox ne sert pas) */
+  hasViewbox?: boolean;
 }
 
-export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, withoutModel = false, carried }: HypothesesFormProps) {
+export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, withoutModel = false, carried, customTypes = [], hasViewbox = true }: HypothesesFormProps) {
   const set = <K extends keyof Hypotheses>(k: K, v: Hypotheses[K]) => setHyp((h) => ({ ...h, [k]: v }));
   const preset = BEARING_PRESETS.find((p) => p.key === hyp.bearingPreset);
   const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);
@@ -186,13 +190,45 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
         title="Les Viewbox et ce qu’elles portent"
         intro="Le poids pesé d’une Viewbox comprend tout : structure acier, plancher, sol, plafond et isolants. Ce qui est fixé dessus (murs, vitrages, portes, garde-corps, logos) est compté en plus, objet par objet."
       >
-        <Q
-          label="Poids d’une Viewbox (pesée)"
-          help="Pesée Viewbox : 2 564 kg, structure, plancher, sol, plafond et isolants compris. Le calcul retient exactement ce poids. À changer seulement pour une Viewbox différente."
-          conv={`= ${n((hyp.moduleWeightKg * G) / 1000, 1)} kN`}
-        >
-          <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
-        </Q>
+        {hasViewbox && (
+          <Q
+            label="Poids d’une Viewbox (pesée)"
+            help="Pesée Viewbox : 2 564 kg, structure, plancher, sol, plafond et isolants compris. Le calcul retient exactement ce poids. À changer seulement pour une Viewbox différente."
+            conv={`= ${n((hyp.moduleWeightKg * G) / 1000, 1)} kN`}
+          >
+            <Num value={hyp.moduleWeightKg} onChange={(v) => set('moduleWeightKg', v)} /> kg
+          </Q>
+        )}
+        {customTypes.map((t) => {
+          const w = hyp.moduleWeights?.[t.key];
+          return (
+            <Q
+              key={t.key}
+              label={`Poids d’un module « ${t.name} » (${t.count})`}
+              help="Type de structure personnalisé. Sans pesée, l’outil calcule le poids : barres du type + plafond + sol (le plancher du type compté une seule fois). Une pesée saisie le remplace (structure, plancher, sol, plafond et isolants compris)."
+              conv={w ? `= ${n((w * G) / 1000, 1)} kN pesés` : `calculé ≈ ${n(t.computedKg)} kg (sans pesée)`}
+            >
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="pesée (kg)"
+                aria-label={`Pesée ${t.name}`}
+                value={w ?? ''}
+                style={{ width: 90 }}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value.replace(',', '.'));
+                  setHyp((h) => {
+                    const ws = { ...(h.moduleWeights ?? {}) };
+                    if (Number.isFinite(v) && v > 0) ws[t.key] = v;
+                    else delete ws[t.key];
+                    return { ...h, moduleWeights: ws };
+                  });
+                }}
+              />{' '}
+              kg
+            </Q>
+          );
+        })}
         {withoutModel ? (
           <Q
             label="Murs, vitrages, garde-corps par Viewbox"

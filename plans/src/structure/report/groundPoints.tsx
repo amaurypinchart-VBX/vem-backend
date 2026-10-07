@@ -45,6 +45,8 @@ export interface GroundPointsInput {
   /** niveaux du sol relevés (colonnes « Niv. » et « ↑ » quand au moins un pied est relevé) */
   levels?: LevelSurvey | null;
   lang?: Lang;
+  /** aucune Viewbox (types de structure personnalisés) : pas de références TÜV */
+  noTuv?: boolean;
 }
 
 const ROW = 2.4 * 1.55;
@@ -169,7 +171,7 @@ function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; hea
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr' }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false }: GroundPointsInput): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const R = C.roadwayRows;
   const E = (t: string) => translate(lang, t);
@@ -282,7 +284,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   }
   y += wrap(note, 130).length * 3.2 + 4;
   // références réglementaires du calage (Prüfbuch TÜV)
-  if (checks?.length) {
+  if (checks?.length && !noTuv) {
     first.push(<g key="tl">{title(C.legalTitle, y)}</g>);
     y += 4;
     const jacks = estimate.reactions.some((r) => r.group.jack);

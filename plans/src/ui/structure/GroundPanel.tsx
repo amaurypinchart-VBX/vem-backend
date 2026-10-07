@@ -593,6 +593,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         checks: result.checks,
         levels: result.levels,
         lang: pdfLang,
+        noTuv: !!result.tuv.notApplicable,
         info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
@@ -777,13 +778,16 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   <select value={hyp.platePlacement ?? 'auto'} onChange={(e) => setHyp((h) => ({ ...h, platePlacement: e.target.value as PlatePlacement }))}>
                     <option value="auto">À fleur de la Viewbox, centrées si nécessaire (conseillé)</option>
                     <option value="flush">Toujours à fleur de la Viewbox</option>
-                    <option value="centered">Centrées sous chaque appui (statico / TÜV)</option>
+                    <option value="centered">{result.tuv.notApplicable ? 'Centrées sous chaque appui' : 'Centrées sous chaque appui (statico / TÜV)'}</option>
                   </select>
                 </label>
-                <label className="row" style={{ gap: 6 }} title={CALAGE_LABELS.fr.legal(jacks).join('\n')}>
-                  <input type="checkbox" checked={hyp.tuvMinimum ?? true} onChange={(e) => setHyp((h) => ({ ...h, tuvMinimum: e.target.checked }))} />
-                  Plaques minimales du Prüfbuch TÜV 190060 B (plan 18-0573-03)
-                </label>
+                {/* Prüfbuch TÜV : seulement pour des Viewbox (types de structure personnalisés : non applicable) */}
+                {!result.tuv.notApplicable && (
+                  <label className="row" style={{ gap: 6 }} title={CALAGE_LABELS.fr.legal(jacks).join('\n')}>
+                    <input type="checkbox" checked={hyp.tuvMinimum ?? true} onChange={(e) => setHyp((h) => ({ ...h, tuvMinimum: e.target.checked }))} />
+                    Plaques minimales du Prüfbuch TÜV 190060 B (plan 18-0573-03)
+                  </label>
+                )}
                 {result.tuv.tuvMinimum && (
                   <span className={`badge ${result.tuv.ok === false || !result.tuv.bearingOk ? 'warn' : ''}`}>
                     {!result.tuv.bearingOk ? 'portance < 200 kN/m² : hors Prüfbuch' : result.tuv.ok === false ? 'calage < minimum du Prüfbuch' : result.tuv.ok ? 'conforme au Prüfbuch' : 'Prüfbuch : non comparable'}

@@ -20,6 +20,8 @@ import { vem } from '../../api/vem';
 import type { AiState } from './aiUi';
 import { AiUsageNote, CompositeEditor, captureTypeImages } from './aiUi';
 import { ViewboxStructure } from './ViewboxStructure';
+import { CustomTypeSheet, FrameWorkshop } from './FrameWorkshop';
+import { isCustomType } from '../../structure/core/moduleTypes';
 
 export interface AnswerOptions {
   scope: 'model' | 'project';
@@ -81,6 +83,8 @@ function PartForm({
   onSaveEntries,
   highlight,
   onHighlight,
+  moduleDims,
+  onPreviewType,
 }: {
   type: PartType;
   library: LibraryEntry[];
@@ -100,6 +104,10 @@ function PartForm({
   onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
   highlight: TemplateFamily | null;
   onHighlight: (f: TemplateFamily | null) => void;
+  /** dimensions mesurées du module (atelier structure) */
+  moduleDims?: { long: number; short: number; height: number };
+  /** aperçu 3D d'un type en cours de description dans l'atelier */
+  onPreviewType?: (e: ModuleTypeEntry | null) => void;
 }) {
   const initial: PartAssignment = type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' });
   const [a, setA] = useState<PartAssignment>(initial);
@@ -110,12 +118,17 @@ function PartForm({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiResult, setAiResult] = useState<{ suggestion: IdentifySuggestion; usage: AiUsage } | null>(null);
   const [composite, setComposite] = useState(false);
+  // atelier structure (S12) : nouveau type, ou type personnalisé à modifier
+  const [workshop, setWorkshop] = useState<{ entry?: ModuleTypeEntry } | null>(null);
   useEffect(() => {
     setA(type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' }));
     setError('');
     setAiResult(null);
     setComposite(false);
-  }, [type]);
+    setWorkshop(null);
+    // une bibliothèque rechargée (type enregistré dans l'atelier) redonne un objet neuf : ne pas effacer la réponse en cours
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type.key, JSON.stringify(type.assignment ?? null), type.status]);
   const askAi = async () => {
     if (!onAskAi) return;
     setAiBusy(true);
@@ -213,8 +226,32 @@ function PartForm({
                 ))}
               </select>
             </label>
+            {!workshop && (
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                <button className="btn small ghost" onClick={() => setWorkshop({})} title="La structure dessinée n’est pas une Viewbox standard : décrire ses profils, assemblages et plancher">
+                  🏗 Créer un type de structure (atelier)
+                </button>
+                <span className="hint">si la structure n’est pas une Viewbox standard (autres profils, traverses seules, autres assemblages…)</span>
+              </div>
+            )}
+            {workshop && (
+              <FrameWorkshop
+                defaultName={type.label}
+                dims={moduleDims ?? { long: 5900, short: 2500, height: 3080 }}
+                library={library}
+                canEdit={canEditLibrary}
+                who={who}
+                entry={workshop.entry}
+                onSaveEntries={onSaveEntries}
+                onUseType={(key) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: key })}
+                onPreview={onPreviewType}
+                onClose={() => setWorkshop(null)}
+              />
+            )}
             {(() => {
               const entry = templates.find((t) => t.key === a.moduleTemplate);
+              if (entry && isCustomType(entry))
+                return <CustomTypeSheet entry={entry} library={library} canEdit={canEditLibrary} onEdit={() => setWorkshop({ entry })} />;
               return entry ? (
                 <ViewboxStructure
                   entry={entry}
@@ -477,6 +514,13 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
   }, [active]);
 
   const type = recognition.types.find((t) => t.key === selected) ?? null;
+  // dimensions d'un module (boîte du repère du module, pieds exclus) : départ de l'atelier structure
+  const moduleDimsOf = (t: PartType) => {
+    const fr = t.kind === 'module' ? scene.frames.get(t.moduleIds[0]) : undefined;
+    if (!fr) return undefined;
+    const d = [fr.max[0] - fr.min[0], fr.max[1] - fr.min[1]].sort((x, y) => y - x);
+    return { long: d[0], short: d[1], height: fr.max[2] - fr.min[2] };
+  };
   const [showBars, setShowBars] = useState(true);
   const [hiFamily, setHiFamily] = useState<TemplateFamily | null>(null);
   useEffect(() => setHiFamily(null), [selected]);
@@ -491,7 +535,10 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
           : undefined;
     return key ? library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === key) : undefined;
   };
-  const shownTemplate = templateOf(type);
+  // atelier structure : le type en cours de description remplace le type choisi dans l'aperçu 3D
+  const [previewType, setPreviewType] = useState<ModuleTypeEntry | null>(null);
+  useEffect(() => setPreviewType(null), [selected]);
+  const shownTemplate = previewType ?? templateOf(type);
   // Viewbox choisie : barres de son gabarit de calcul par-dessus le modèle (le modèle en transparence) ; une famille
   // choisie dans la fiche ressort, les autres barres passent en gris clair
   const bars = useMemo(() => {
@@ -659,6 +706,8 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
             onSaveEntries={onSaveEntries}
             highlight={hiFamily}
             onHighlight={setHiFamily}
+            moduleDims={moduleDimsOf(type)}
+            onPreviewType={setPreviewType}
             onAskAi={async () => {
               const images = await captureTypeImages(scene, glassTest, type).catch(() => []);
               viewerRef.current?.reclaim();

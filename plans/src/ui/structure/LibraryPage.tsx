@@ -15,6 +15,8 @@ import { fmtNumber } from '../../structure/core/units';
 import { ReferenceExtract } from './ReferenceExtract';
 import { useAiStatus } from './aiUi';
 import { ViewboxStructure } from './ViewboxStructure';
+import { CustomTypeSheet, FrameWorkshop } from './FrameWorkshop';
+import { isCustomType } from '../../structure/core/moduleTypes';
 
 const KIND_LABEL: Record<LibraryKind, string> = {
   module_type: 'Gabarits de modules',
@@ -49,6 +51,7 @@ export function LibraryPage() {
   const [me, setMe] = useState<VemUser | null>(null);
   const [kind, setKind] = useState<LibraryKind | ''>('');
   const [q, setQ] = useState('');
+  const [editType, setEditType] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ key: string; text: string } | null>(null);
   const [msg, setMsg] = useState('');
@@ -205,7 +208,26 @@ export function LibraryPage() {
                           {e.match && Object.keys(e.match).length ? ` · reconnue par ${Object.entries(e.match).map(([k, v]) => `${k} = ${v}`).join(' ; ')}` : ''}
                           {' · '}Sources : {e.source.map((s) => [s.ref, s.page, s.note].filter(Boolean).join(' ')).join(' ; ')}
                         </div>
-                        {e.kind === 'module_type' && (e as ModuleTypeEntry).params ? (
+                        {e.kind === 'module_type' && isCustomType(e as ModuleTypeEntry) ? (
+                          editType === e.key ? (
+                            <FrameWorkshop
+                              defaultName={e.name}
+                              dims={(e as ModuleTypeEntry).nominal}
+                              library={all}
+                              canEdit={canEdit}
+                              who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
+                              entry={e as ModuleTypeEntry}
+                              onSaveEntries={async (entries) => {
+                                for (const x of entries) await vem.saveLibraryEntry(toPayload(x));
+                                await refresh();
+                              }}
+                              onUseType={() => {}}
+                              onClose={() => setEditType(null)}
+                            />
+                          ) : (
+                            <CustomTypeSheet entry={e as ModuleTypeEntry} library={all} canEdit={canEdit} onEdit={() => setEditType(e.key)} />
+                          )
+                        ) : e.kind === 'module_type' && (e as ModuleTypeEntry).params ? (
                           <ViewboxStructure
                             entry={e as ModuleTypeEntry}
                             library={all}

@@ -227,10 +227,12 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
     blocks.push({ title: V.title, lines: lv });
   }
   const tuvLine = !c.tuv.tuvMinimum ? C.tuvOff : c.tuv.ok === false ? C.tuvKo(c.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : c.tuv.ok ? C.tuvOk : '';
-  blocks.push({
-    title: C.legalTitle,
-    lines: [...C.legal(inp.jacks).map((text) => ({ text: `• ${text}` })), ...(tuvLine ? [{ text: tuvLine, bold: true, color: c.tuv.ok === false ? '#b91c1c' : undefined }] : [])],
-  });
+  // références TÜV : seulement avec des Viewbox
+  if (!c.tuv.notApplicable)
+    blocks.push({
+      title: C.legalTitle,
+      lines: [...C.legal(inp.jacks).map((text) => ({ text: `• ${text}` })), ...(tuvLine ? [{ text: tuvLine, bold: true, color: c.tuv.ok === false ? '#b91c1c' : undefined }] : [])],
+    });
   blocks.push({ lines: [{ text: inp.lang === 'fr' ? GROUND_NOTE : L.groundNote }, { text: L.watermark, bold: true }] });
   // taille du texte : la plus grande qui tient dans la colonne
   const swatch = 4;

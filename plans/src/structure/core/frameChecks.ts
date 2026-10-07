@@ -45,6 +45,7 @@ export function checkFrame(params: FrameParams, sections: ReadonlyMap<string, Se
   if (!entry?.footContact) out.missing.push('surface d’appui d’un pied');
   const c = entry?.connections ?? {};
   if (fr.joints.column.model === 'semi' && !c.corner) out.missing.push('capacités des angles poteau / cadre boulonnés');
+  if (fr.joints.column.model === 'semi' && !c.contact) out.missing.push('compression du poteau sur le cadre (contact)');
   if (fr.joints.side.model === 'bolts' && !c.bolt) out.missing.push('capacités des boulons entre modules côte à côte');
   if (!c.plate && !c.stackDesign) out.missing.push('liaison d’empilement (si des modules sont empilés)');
   if (fr.joints.column.model === 'rigid') out.warnings.push('Angles soudés : supposés pleine résistance, à justifier — verdict « limite » au mieux.');

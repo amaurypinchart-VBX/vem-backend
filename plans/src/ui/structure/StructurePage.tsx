@@ -18,6 +18,9 @@ import { itemBoxDims } from '../../structure/scene/geometry';
 import { studyModelFromScene } from '../../structure/scene/studyModel';
 import type { CalcOptions, StudyInputs, StudyRun } from '../../structure/studyRun';
 import { CALC_DEFAULTS, inputKey, runStudy } from '../../structure/studyRun';
+import type { LibraryEntry } from '../../structure/core/library';
+import { estimateTypeFields, isCustomType, moduleTypes } from '../../structure/core/moduleTypes';
+import { DEFAULTS } from '../../structure/library/defaults';
 import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
 import type { StudyRunner } from '../../structure/worker/study';
 import { createInlineStudyRunner, createStudyWorkerPool } from '../../structure/worker/study';
@@ -57,15 +60,17 @@ import type { AnswerOptions } from './RecognitionStep';
 import { RecognitionStep } from './RecognitionStep';
 
 /** Viewbox du modèle → modules de l'estimation (emprise en plan, niveau, surface). */
-export function modulesFromScene(scene: LoadedScene, roofAccessible: boolean): { modules: EstimateModule[]; warnings: string[] } {
+export function modulesFromScene(scene: LoadedScene, roofAccessible: boolean, library: readonly LibraryEntry[] = []): { modules: EstimateModule[]; warnings: string[] } {
   const warnings: string[] = [];
+  // longueur d'un type de structure personnalisé de la bibliothèque : ses données sont connues (S12)
+  const customSize = (long: number) => library.some((e) => e.kind === 'module_type' && isCustomType(e) && Math.abs(e.nominal.long - long) <= 50);
   const idx = scene.index;
   const modules: EstimateModule[] = [];
   for (const m of idx.modules) {
     const fp = moduleFootprint(idx, m.id, scene.frames);
     if (!fp) continue;
     modules.push({ id: m.id, level: m.level, corners: fp, area: m.planDimsMm[0] * m.planDimsMm[1], height: 3080, roofAccessible: false });
-    if (Math.abs(m.expected.long - 5900) > 50) warnings.push(`${m.id} (${m.expected.label}) : données de structure inconnues, poids pris au prorata de la surface.`);
+    if (Math.abs(m.expected.long - 5900) > 50 && !customSize(m.expected.long)) warnings.push(`${m.id} (${m.expected.label}) : données de structure inconnues, poids pris au prorata de la surface.`);
   }
   // toitures accessibles : Viewbox sans rien au-dessus
   if (roofAccessible)
@@ -199,7 +204,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   // framesVersion : les repères des Viewbox ont été recalculés (face avant modifiée)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // le toit d'une Viewbox ne reçoit jamais de public (seuls les éléments terrasse du modèle en portent)
-  const { modules, warnings } = useMemo(() => modulesFromScene(scene, false), [scene, framesVersion]);
+  const { modules, warnings } = useMemo(() => modulesFromScene(scene, false, library), [scene, framesVersion, library]);
 
   // ─── calcul complet ───
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -224,11 +229,27 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     const roofT = new Set(sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module));
     // Viewbox modifiées par l'étude : hauteur des poteaux et écart de poids des barres
     const placed = new Map(studyInputs.modules.map((pm) => [pm.id, pm]));
+    // types de structure personnalisés (S12) : poids, acier, sol et surface d'appui de leur type
+    const types = moduleTypes(studyInputs.modules, studyInputs.library, studyInputs.sections, { viewboxKg: hyp.moduleWeightKg, weights: hyp.moduleWeights });
     return [...modules, ...built.added.map(placedToEstimate)].map((m) => {
       const pm = placed.get(m.id);
-      return { ...m, ...(pm ? { height: pm.params.topZ } : {}), carried: (carriedBy.get(m.id) ?? 0) + (pm?.weightDelta ?? 0), ...(roofT.has(m.id) ? { terrace: true } : {}) };
+      const own = pm ? estimateTypeFields(pm, types, DEFAULTS.ceiling.value, DEFAULTS.floorFinish.value) : {};
+      // poids calculé d'un type sans pesée : déjà avec ses barres modifiées
+      const delta = own.weightMode === 'computed' ? 0 : (pm?.weightDelta ?? 0);
+      return { ...m, ...(pm ? { height: pm.params.topZ } : {}), ...own, carried: (carriedBy.get(m.id) ?? 0) + delta, ...(roofT.has(m.id) ? { terrace: true } : {}) };
     });
-  }, [modules, built.added, sceneModel.terraces, carriedBy, studyInputs.modules]);
+  }, [modules, built.added, sceneModel.terraces, carriedBy, studyInputs.modules, studyInputs.library, studyInputs.sections, hyp.moduleWeightKg, hyp.moduleWeights]);
+  // types de structure personnalisés de l'étude : poids calculé (barres + plafond + sol) pour l'étape 2
+  const customTypeRows = useMemo(() => {
+    const types = moduleTypes(studyInputs.modules, studyInputs.library, studyInputs.sections, { viewboxKg: hyp.moduleWeightKg, weights: {} });
+    return [...types.values()]
+      .filter((t) => t.family === 'other')
+      .map((t) => {
+        const pm = studyInputs.modules.find((m) => m.templateKey === t.key)!;
+        const area = (pm.params.x1 - pm.params.x0) * (pm.params.y1 - pm.params.y0);
+        return { key: t.key, name: t.name, count: t.modules.length, computedKg: (t.steel + (DEFAULTS.ceiling.value + Math.max(DEFAULTS.floorFinish.value, t.deck)) * area) / 9.81 };
+      });
+  }, [studyInputs.modules, studyInputs.library, studyInputs.sections, hyp.moduleWeightKg]);
   const carriedTotal = useMemo(() => {
     const N = [...carriedWeights(sceneModel).values()].reduce((a, b) => a + b, 0);
     return { count: sceneModel.edgeItems.length + sceneModel.pointItems.length, kg: N / 9.81 };
@@ -509,7 +530,17 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }}
         />
       </div>
-      {step === 'site' && <HypothesesForm hyp={hyp} setHyp={(u) => setHyp((h) => u(h))} jacks={calcOpts.jacks} carried={carriedTotal} levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))} />}
+      {step === 'site' && (
+        <HypothesesForm
+          hyp={hyp}
+          setHyp={(u) => setHyp((h) => u(h))}
+          jacks={calcOpts.jacks}
+          carried={carriedTotal}
+          levels={1 + Math.max(0, ...sceneModel.modules.map((m) => m.level))}
+          customTypes={customTypeRows}
+          hasViewbox={!sceneModel.modules.length || customTypeRows.reduce((a, t) => a + t.count, 0) < sceneModel.modules.length}
+        />
+      )}
       {step === 'calc' && (
         <SupportsCard
           modules={studyInputs.modules}
