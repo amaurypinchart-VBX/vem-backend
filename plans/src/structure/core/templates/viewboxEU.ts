@@ -64,6 +64,8 @@ export interface ViewboxTemplate {
   cornerRoof: string[];
   footNodes: string[];
   middleFeet: string[];
+  /** nœuds de la rive plancher au droit des pieds centraux (cale posée directement sous l'UNP, sans vérin) */
+  middleRim: string[];
   params: ViewboxTemplateParams;
 }
 
@@ -134,13 +136,16 @@ export function viewboxTemplate(p: ViewboxTemplateParams, extras: RimExtras = {}
   });
   // réceptions centrales des grands côtés
   const middleFeet: string[] = [];
+  const middleRim: string[] = [];
   for (const [v, fv] of [
     [y0, feetV[0]],
     [y1, feetV[1]],
   ]) {
     const m = node(p.middleFootX, fv, p.floorZ);
     middleFeet.push(m);
-    members.push({ family: 'foot-middle', section: p.sections.footMiddle, i: m, j: node(p.middleFootX, v, p.floorZ), line: `footmid:${Math.round(v)}` });
+    const r = node(p.middleFootX, v, p.floorZ);
+    middleRim.push(r);
+    members.push({ family: 'foot-middle', section: p.sections.footMiddle, i: m, j: r, line: `footmid:${Math.round(v)}` });
   }
   const rimNodes = (side: Side, z: number) => {
     const line = `${z === p.floorZ ? 'floor' : 'roof'}:${side}`;
@@ -177,6 +182,7 @@ export function viewboxTemplate(p: ViewboxTemplateParams, extras: RimExtras = {}
     cornerRoof: corners.map(([u, v]) => nodeKey(u, v, p.roofZ)),
     footNodes,
     middleFeet,
+    middleRim,
     params: p,
   };
 }

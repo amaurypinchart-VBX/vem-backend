@@ -104,6 +104,11 @@ export interface AssembleOptions {
   jacks: boolean;
   /** pieds centraux des grands côtés calés (appuis supplémentaires ; toujours avec les vérins) */
   middleFeet: boolean;
+  /**
+   * sans vérins : cale du milieu posée directement sous la rive (UNP) au lieu de sous la réception centrale, 155 mm à
+   * l'intérieur — la réaction n'est plus excentrée, la rive ne travaille plus en torsion
+   */
+  middleUnderRim?: boolean;
   /** appui soulevé : libérer aussi les ressorts horizontaux (prudent) ou seulement le vertical (comme SCIA) */
   upliftReleases: 'all' | 'vertical';
   /** calage statico : nuances et courbes de flambement de l'annexe SCIA (S275, courbes a) */
@@ -1137,7 +1142,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
       supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks && !raise });
     };
     (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
-    if (opt.middleFeet || opt.jacks) tpl.middleFeet.forEach((k, c) => place(k, 4 + c, 'middle'));
+    if (opt.middleFeet || opt.jacks) (opt.middleUnderRim && !opt.jacks ? tpl.middleRim : tpl.middleFeet).forEach((k, c) => place(k, 4 + c, 'middle'));
     // croix entre les pieds des poteaux et la tête des poteaux voisins, dans le plan de chaque côté (angles 1-2, 2-3, 3-4, 4-1)
     if (raise?.bracing)
       for (let c = 0; c < 4; c++) {

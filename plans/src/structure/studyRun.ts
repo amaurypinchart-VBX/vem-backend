@@ -44,6 +44,8 @@ export interface CalcOptions {
   internalPressure: boolean;
   /** escaliers habillés sous les limons et le palier (bâches, panneaux) : vent sur l'habillage */
   stairClad?: boolean;
+  /** sans vérins, pieds centraux calés : cale directement sous la rive (UNP) au lieu de sous la réception centrale */
+  middleUnderRim?: boolean;
 }
 
 export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true, stairClad: false };
@@ -109,6 +111,7 @@ export function assembleStudy(inp: StudyInputs): StructuralModel {
     sections: inp.sections,
     jacks: o.jacks,
     middleFeet: inp.middleFeet,
+    middleUnderRim: o.middleUnderRim,
     upliftReleases: o.upliftAll ? 'all' : 'vertical',
     calibration: o.calibration,
     // contacts : effort normal seul, comme l'annexe SCIA (« Zentrische Normalkraft »), aussi en calage statico
@@ -188,7 +191,8 @@ export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'optio
   const ground = plywoodStrip(inp, 'ground', qg);
   const parts = inp.modules.some((m) => m.level > 0) ? [ground, plywoodStrip(inp, 'upper', inp.loads.live)] : [ground];
   const blocked = parts.find((x) => x.blocked)?.blocked;
-  return { eta: Math.max(...parts.map((x) => x.eta)), records: parts.flatMap((x) => x.records), ...(blocked ? { blocked } : {}) };
+  const build = parts.find((x) => x.build)?.build;
+  return { eta: Math.max(...parts.map((x) => x.eta)), records: parts.flatMap((x) => x.records), ...(build ? { build } : {}), ...(blocked ? { blocked } : {}) };
 }
 
 /**

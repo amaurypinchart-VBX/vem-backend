@@ -40,6 +40,8 @@ export interface PlywoodResult {
   eta: number;
   blocked?: string;
   records: CalcRecord[];
+  /** plancher vérifié : nombre de couches croisées et épaisseur d'une couche (mm) */
+  build?: { layers: number; thickness: number };
 }
 
 const f2 = (v: number, d = 2) => fmtNumber(v, d);
@@ -64,6 +66,7 @@ export function checkPlywoodStrip(p: PlywoodInput): PlywoodResult {
   const qTxt = `${f2(p.gammaG)} · ${f2(p.g * 1e3)} + ${f2(p.gammaQ)} · ${f2(p.q * 1e3)}${p.internal ? ` + ${f2(p.gammaW)} · ${f2(p.internal * 1e3)}` : ''} = ${f2(qEd * 1e3)} kN/m²`;
   return {
     eta,
+    build: { layers: n, thickness: t },
     records: [
       {
         key: `plywood.${p.label}`,
@@ -73,7 +76,7 @@ export function checkPlywoodStrip(p: PlywoodInput): PlywoodResult {
           (three
             ? 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = 0,617 · qEd · L ; mEd = 0,117 · qEd · L²'
             : 'vRd = b · t · kmod · fv,k / 1,5 / γM ; mRd = b · t² / 6 · kmod · fm,k / γM ; vEd = qEd · L / 2 ; mEd = qEd · L² / 8') + (n > 1 ? LAYERS_FORMULA : ''),
-        withValues: `t = ${f2(t / 10, 1)} cm, L = ${f2(p.span / 10, 0)} cm, kmod = ${f2(p.kmod)} ; vRd = ${f2(vRd / 1e3)} kN/m, mRd = ${f2(mRd / 1e4)} kNcm/m ; qEd = ${qTxt} ; vEd = ${f2(vEd / 1e3)} kN/m, mEd = ${f2(mEd / 1e4)} kNcm/m${n > 1 ? ` ; n = ${n} → η = max(${f2(vEd / 1e3)} / ${f2((n * vRd) / 1e3)} ; ${f2(mEd / 1e4)} / ${f2((n * mRd) / 1e4)})` : ''}`,
+        withValues: `t = ${f2(t / 10, 1)} cm${n > 1 ? ` (${n} × ${f2(t / 10, 1)} = ${f2((n * t) / 10, 1)} cm)` : ''}, L = ${f2(p.span / 10, 0)} cm, kmod = ${f2(p.kmod)} ; vRd = ${f2(vRd / 1e3)} kN/m, mRd = ${f2(mRd / 1e4)} kNcm/m ; qEd = ${qTxt} ; vEd = ${f2(vEd / 1e3)} kN/m, mEd = ${f2(mEd / 1e4)} kNcm/m${n > 1 ? ` ; n = ${n} → η = max(${f2(vEd / 1e3)} / ${f2((n * vRd) / 1e3)} ; ${f2(mEd / 1e4)} / ${f2((n * mRd) / 1e4)})` : ''}`,
         eta,
       },
     ],

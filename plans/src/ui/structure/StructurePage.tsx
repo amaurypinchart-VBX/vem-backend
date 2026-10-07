@@ -541,6 +541,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           stale={stale}
           error={calcError}
           onRun={() => void startRun()}
+          middleFeet={hyp.middleFeet}
           modsLines={describeMods(mods, sectionName)}
           onCancel={cancelRun}
           onShowResults={() => setStep('results')}
@@ -569,6 +570,11 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           stale={stale}
           ai={ai}
           studyId={study?.id ?? null}
+          friction={calcOpts.friction}
+          onSimulate={(title, changes) => {
+            setVariantRequest({ id: Date.now(), title, changes });
+            setStep('variants');
+          }}
           facts={() =>
             run
               ? studyFacts({

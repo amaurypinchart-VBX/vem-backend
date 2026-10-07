@@ -15,6 +15,9 @@ import type { ElementChecks } from '../../structure/core/checks/facade';
 import { modelSegments } from '../../structure/core/templateView';
 import { familyName } from '../../structure/report/build';
 import { materialByKey } from '../../structure/core/materials';
+import type { VariantChanges } from '../../structure/advisor/diagnose';
+import type { ModuleExplain } from '../../structure/advisor/explain';
+import { BAND_TEXT, explainModule } from '../../structure/advisor/explain';
 import type { AiState } from './aiUi';
 import { AiReviewCard } from './aiUi';
 
@@ -46,6 +49,24 @@ export function moduleEtaColors(run: StudyRun, scene: LoadedScene, recognition: 
     if (node && map.has(node.nodeId)) map.set(nodeId, map.get(node.nodeId)!);
   }
   return map;
+}
+
+/** Viewbox d'un objet cliqué dans la vue 3D : le module lui-même, une de ses pièces ou un objet qui lui est rattaché. */
+export function moduleOfNode(scene: LoadedScene, recognition: Recognition, nodeId: string | null | undefined): string | null {
+  if (!nodeId) return null;
+  const byNode = new Map(scene.index.nodes.map((n) => [n.id, n]));
+  let id: string | null = nodeId;
+  for (let guard = 0; id && guard < 64; guard++) {
+    const mod = scene.index.modules.find((m) => m.nodeId === id);
+    if (mod) return mod.id;
+    const tp = recognition.templateParts.get(id);
+    if (tp) return tp;
+    const n = byNode.get(id);
+    if (!n) return null;
+    if (n.moduleId && n.assignment !== 'common') return n.moduleId;
+    id = n.parentId;
+  }
+  return null;
 }
 
 function Eta({ eta }: { eta: number | undefined }) {
@@ -101,6 +122,8 @@ export interface CalcPanelProps {
   onShowResults: () => void;
   /** modifications de l'étude hors modèle SketchUp (conseil ingénieur) */
   modsLines?: string[];
+  /** pieds du milieu calés (Site & hypothèses › options avancées) */
+  middleFeet?: boolean;
 }
 
 export function CalcPanel(p: CalcPanelProps) {
@@ -212,6 +235,12 @@ export function CalcPanel(p: CalcPanelProps) {
               </div>
             )}
           </div>
+          {!o.jacks && (
+            <label className="row" title="Sans vérins : la cale du milieu du grand côté est posée directement sous la rive (UNP) et non sous la réception centrale, 155 mm à l’intérieur — la rive n’est plus tordue par l’appui du milieu">
+              <input type="checkbox" checked={!!o.middleUnderRim} disabled={!p.middleFeet} onChange={(e) => set('middleUnderRim', e.target.checked)} /> Cale du milieu directement sous la rive (UNP)
+              {!p.middleFeet && <span className="hint">&nbsp;— pieds du milieu non calés (Site & hypothèses › options avancées)</span>}
+            </label>
+          )}
           <label className="row">
             <input type="checkbox" checked={o.upliftAll} onChange={(e) => set('upliftAll', e.target.checked)} /> Appui soulevé : plus de retenue horizontale (prudent)
           </label>
@@ -276,18 +305,33 @@ export interface ResultsPanelProps {
   studyId?: string | null;
   /** données du calcul pour la relecture par l'IA */
   facts?: () => Record<string, unknown>;
+  /** frottement de l'étude (pistes de la fiche Viewbox) */
+  friction?: number;
+  /** « Simuler » une piste de la fiche Viewbox : variante calculée et comparée (onglet Variantes) */
+  onSimulate?: (title: string, changes: VariantChanges) => void;
 }
 
-export function ResultsPanel({ scene, glassTest, active, recognition, run, stale, ai, studyId, facts }: ResultsPanelProps) {
+export function ResultsPanel({ scene, glassTest, active, recognition, run, stale, ai, studyId, facts, friction, onSimulate }: ResultsPanelProps) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [family, setFamily] = useState<string | null>(null);
   const [showBars, setShowBars] = useState(false);
   const [bar, setBar] = useState<number | null>(null);
+  // Viewbox cliquée : sa fiche (pourquoi cette couleur, risque, pistes)
+  const [focus, setFocus] = useState<string | null>(null);
+  useEffect(() => setFocus(null), [run]);
+  const fiche = useMemo(() => (run && focus ? explainModule(run, focus, { friction: friction ?? 0.6 }) : null), [run, focus, friction]);
 
-  // taux maxi par Viewbox → couleur de la Viewbox et de ses pièces
-  const colors = useMemo(() => (run ? moduleEtaColors(run, scene, recognition, family) : new Map<string, number>()), [run, scene, recognition, family]);
+  // taux maxi par Viewbox → couleur de la Viewbox et de ses pièces ; Viewbox cliquée : les autres en gris clair
+  const colors = useMemo(() => {
+    if (!run) return new Map<string, number>();
+    const m = moduleEtaColors(run, scene, recognition, family);
+    if (!focus) return m;
+    const keep = new Set([scene.index.modules.find((x) => x.id === focus)?.nodeId, ...[...recognition.templateParts].filter(([, mod]) => mod === focus).map(([k]) => k)]);
+    for (const k of m.keys()) if (!keep.has(k)) m.set(k, 0xd1d5db);
+    return m;
+  }, [run, scene, recognition, family, focus]);
 
   // le cadre 3D n'existe qu'une fois un résultat disponible : la vue est créée à ce moment-là
   const hasRun = !!run;
@@ -306,6 +350,16 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
     viewerRef.current?.reclaim();
     viewerRef.current?.setColorOverlay(colors);
   }, [active, colors, hasRun]);
+  // clic sur une Viewbox : sa fiche ; clic dans le vide : plus de fiche
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || !active || !run) return;
+    v.onPick((p) => {
+      setFocus(moduleOfNode(scene, recognition, p?.nodeId));
+      setBar(null);
+    });
+    return () => v.onPick(null);
+  }, [active, run, scene, recognition, hasRun]);
 
   // barres du modèle de calcul colorées par le pire taux des vérifications qui les contiennent
   const barItems = useMemo(() => {
@@ -321,21 +375,39 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
   useEffect(() => {
     const v = viewerRef.current;
     if (!v || !active) return;
-    if (!run || !showBars) {
+    if (!run || (!showBars && !focus)) {
       v.setBarOverlay(null);
       v.onBarPick(null);
       v.setVisibility(null);
       return;
     }
-    const seg = modelSegments(run.structure, (k) => {
+    const colorOf = (k: number) => {
       const ts = barItems.get(k);
       if (!ts?.length) return 0x9ca3af;
       return etaColor(Math.max(...ts.map((t) => run.summary.states[t]?.eta ?? Infinity)));
-    });
-    v.setVisibility([], [], true);
-    v.setBarOverlay(seg.positions, seg.colors, 3);
+    };
+    if (showBars) {
+      const seg = modelSegments(run.structure, colorOf);
+      v.setVisibility([], [], true);
+      v.setBarOverlay(seg.positions, seg.colors, 3);
+    } else {
+      // Viewbox cliquée : ses barres vérifiées par-dessus le modèle, colorées par leur taux (où est la pièce orange / rouge)
+      const own = run.structure.meta.map((m, k) => (m.module === focus && barItems.has(k) ? k : -1)).filter((k) => k >= 0);
+      const all = modelSegments(run.structure, colorOf);
+      const pos = new Float32Array(own.length * 6);
+      const col = new Float32Array(own.length * 6);
+      own.forEach((k, i) => {
+        pos.set(all.positions.subarray(k * 6, k * 6 + 6), i * 6);
+        col.set(all.colors.subarray(k * 6, k * 6 + 6), i * 6);
+      });
+      v.setVisibility(null);
+      v.setBarOverlay(pos, col, 4);
+      const ownBar = (i: number | null) => setBar(i === null ? null : own[i]);
+      v.onBarPick(ownBar);
+      return;
+    }
     v.onBarPick((k) => setBar(k));
-  }, [run, showBars, active, barItems]);
+  }, [run, showBars, active, barItems, focus]);
 
   if (!run)
     return (
@@ -366,9 +438,9 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
               <span style={{ width: 12, height: 12, borderRadius: 3, background: hex(etaColor(e as number)) }} /> {l as string}
             </span>
           ))}
-          <span>— {showBars ? 'pire taux de chaque barre (clic : ses vérifications)' : `pire taux de chaque Viewbox${family ? ` (${family})` : ''}`}</span>
+          <span>— {showBars ? 'pire taux de chaque barre (clic : ses vérifications)' : focus ? `barres de ${focus} (clic : ses vérifications)` : `pire taux de chaque Viewbox${family ? ` (${family})` : ''} — cliquer une Viewbox pour savoir pourquoi`}</span>
         </div>
-        {showBars && bar !== null && run.structure.meta[bar] && (
+        {(showBars || focus) && bar !== null && run.structure.meta[bar] && (
           <div className="card-body" style={{ borderTop: '1px solid var(--border)' }}>
             {(() => {
               const m = run.structure.meta[bar];
@@ -406,6 +478,13 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
         )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {fiche ? (
+          <ModuleCard fiche={fiche} onClose={() => setFocus(null)} onSimulate={onSimulate} />
+        ) : (
+          <div className="hint" style={{ padding: '0 4px' }}>
+            👆 Cliquer une Viewbox dans la vue 3D : pourquoi elle est verte, jaune, orange ou rouge, ce qui se passerait au-delà de 1, quoi changer, et où se situe statico.
+          </div>
+        )}
         <div className="card">
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: VERDICT_COLOR[v.verdict] }}>{VERDICT_LABEL[v.verdict]}</div>
@@ -450,7 +529,10 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
                 </tr>
               ))}
               <tr>
-                <td>Plancher contreplaqué (bande de 1 m)</td>
+                <td>
+                  Plancher contreplaqué
+                  {pctx.build && (pctx.build.layers > 1 ? ` ${pctx.build.layers} × ${n(pctx.build.thickness, 0)} mm = ${n(pctx.build.layers * pctx.build.thickness, 0)} mm` : ` ${n(pctx.build.thickness, 0)} mm (1 couche)`)} (bande de 1 m)
+                </td>
                 <td>—</td>
                 <td>
                   <Eta eta={pctx.blocked ? undefined : pctx.eta} />
@@ -584,6 +666,131 @@ export function ResultsPanel({ scene, glassTest, active, recognition, run, stale
               ))}
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── fiche d'une Viewbox (clic dans la vue 3D) ───
+
+function ModuleCard({ fiche, onClose, onSimulate }: { fiche: ModuleExplain; onClose: () => void; onSimulate?: (title: string, changes: VariantChanges) => void }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const w = fiche.worst;
+  const color = hex(etaColor(w ? fiche.eta : 0));
+  return (
+    <div className="card" style={{ borderColor: color, borderWidth: 2 }}>
+      <div className="card-head">
+        <h3>
+          {fiche.module} <span className="hint">— {fiche.level ? `niveau ${fiche.level}` : 'rez-de-chaussée'}</span>
+        </h3>
+        <div style={{ flex: 1 }} />
+        {w && <Eta eta={fiche.eta} />}
+        <button className="btn small ghost" onClick={onClose} title="Fermer la fiche">
+          ✕
+        </button>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="hint" style={{ color }}>
+          {BAND_TEXT[fiche.band]}
+        </div>
+        <div className="hint">{fiche.supports}</div>
+        {w ? (
+          <>
+            <div>
+              <div>
+                <b>Ce qui donne la couleur :</b> {w.item.label}
+              </div>
+              <div className="hint">{w.what}</div>
+            </div>
+            <div>
+              <b>Ce qui est vérifié :</b> {w.check}
+            </div>
+            <div>
+              <b>Dans quel cas :</b> {w.scenario}
+            </div>
+            {fiche.causes.length > 0 && (
+              <div>
+                <b>Pourquoi c’est chargé :</b>
+                <ul style={{ margin: '2px 0 0 18px', padding: 0 }}>
+                  {fiche.causes.map((c, k) => (
+                    <li key={k}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div style={{ color: fiche.eta > 1 ? 'var(--danger)' : undefined }}>
+              <b>Le risque :</b> {w.risk.replace(/^Si η dépasse 1 : /, `si η dépasse 1, `)}
+            </div>
+            {w.statico && (
+              <div className="hint">
+                <b>Pour situer — statico :</b> {w.statico}
+              </div>
+            )}
+            {fiche.remedies.length > 0 && (
+              <div>
+                <b>Ce qu’on peut changer :</b>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                  {fiche.remedies.map((r) => (
+                    <div key={r.id} style={{ borderLeft: '3px solid var(--border)', paddingLeft: 8 }}>
+                      <div className="row" style={{ gap: 8 }}>
+                        <b>{r.title}</b>
+                        {r.special && <span className="badge orange">pièce spéciale</span>}
+                        <div style={{ flex: 1 }} />
+                        {r.action === 'simulate' && r.changes && onSimulate && (
+                          <button className="btn small" onClick={() => onSimulate(r.title, r.changes!)} title="Calculer cette variante et la comparer à l’étude (onglet Variantes)">
+                            🧪 Simuler
+                          </button>
+                        )}
+                      </div>
+                      <div className="hint">{r.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {fiche.eta <= 0.9 && <div className="hint">Rien à changer pour cette Viewbox : toutes ses vérifications gardent une réserve.</div>}
+            <div>
+              <b>Toutes ses vérifications</b> <span className="hint">(une ligne par famille, clic : formules)</span>
+              <table className="list">
+                <tbody>
+                  {fiche.families.map((f) => (
+                    <Fragment key={f.t}>
+                      <tr onClick={() => setOpen(open === f.t ? null : f.t)} style={{ cursor: 'pointer' }}>
+                        <td>
+                          {f.item.family}
+                          <div className="hint">{f.item.label}</div>
+                        </td>
+                        <td>
+                          <Eta eta={f.state.eta} />
+                        </td>
+                        <td className="hint">
+                          {f.state.combo} · {f.state.governing}
+                        </td>
+                      </tr>
+                      {open === f.t && (
+                        <tr>
+                          <td colSpan={3}>
+                            <div className="hint" style={{ marginBottom: 4 }}>
+                              {f.what} {f.check} {f.risk}
+                            </div>
+                            <div className="hint" style={{ marginBottom: 4 }}>
+                              {f.scenario}
+                            </div>
+                            {f.state.blocked && <div style={{ color: 'var(--danger)' }}>{f.state.blocked}</div>}
+                            <Records records={f.state.records} />
+                            {f.statico && <div className="hint">statico : {f.statico}</div>}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="hint">Aucune vérification propre à cette Viewbox dans le calcul.</div>
         )}
       </div>
     </div>

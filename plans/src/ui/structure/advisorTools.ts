@@ -182,7 +182,7 @@ export function changeLines(ch: VariantChanges, library: InputsSource['library']
   const H: Record<string, string> = { live: 'exploitation des étages (kN/m²)', liveGround: 'exploitation du rez-de-chaussée (kN/m²)', evacuateTop: 'dernier niveau évacué', windIn: 'vent en service (kN/m²)', windOut: 'vent hors service (kN/m²)', ceilingExtra: 'plafond en plus (kN/m²)', floorExtra: 'sol en plus (kN/m²)', middleFeet: 'pieds centraux calés', snowKgm2: 'neige au sol (kg/m²)' };
   for (const [k, v] of Object.entries(ch.hyp ?? {})) out.push(`${H[k] ?? k} : ${typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v).replace('.', ',')}`);
   if (ch.roof !== undefined) out.push(`toitures accessibles : ${ch.roof ? 'oui' : 'non'}`);
-  const C: Record<string, string> = { jacks: 'pieds à vérin', jackExtension: 'sortie des vérins (mm)', friction: 'frottement μ' };
+  const C: Record<string, string> = { jacks: 'pieds à vérin', jackExtension: 'sortie des vérins (mm)', friction: 'frottement μ', middleUnderRim: 'cale du milieu directement sous la rive (UNP)' };
   for (const [k, v] of Object.entries(ch.calc ?? {})) out.push(`${C[k] ?? k} : ${typeof v === 'boolean' ? (v ? 'oui' : 'non') : String(v).replace('.', ',')}`);
   out.push(...describeMods(ch.mods, names));
   return out;

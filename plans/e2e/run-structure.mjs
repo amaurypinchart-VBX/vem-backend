@@ -175,6 +175,22 @@ for (const [fx, fy] of [[0.5, 0.5], [0.45, 0.55], [0.55, 0.45], [0.4, 0.6], [0.6
 console.log('Barre cliquée :', (await page.getByText(/ · barre /).count()) ? (await page.getByText(/ · barre /).first().innerText()).slice(0, 120) : 'aucune');
 await shootAll('structure-barres');
 await page.locator('label:visible', { hasText: 'barres du calcul' }).click();
+// clic sur une Viewbox : sa fiche (pourquoi cette couleur, risque, pistes, statico)
+await page.waitForTimeout(500);
+for (const [fx, fy] of [[0.5, 0.5], [0.45, 0.55], [0.55, 0.45], [0.4, 0.6], [0.6, 0.4], [0.35, 0.5], [0.65, 0.5]]) {
+  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+  await page.waitForTimeout(400);
+  if (await page.getByText('Ce qui donne la couleur :').count()) break;
+}
+if (!(await page.getByText('Ce qui donne la couleur :').count())) throw new Error('fiche Viewbox absente après clic');
+const fiche = page.locator('.card', { has: page.getByText('Ce qui donne la couleur :') }).first();
+console.log('Fiche Viewbox :', (await fiche.innerText()).replace(/\s+/g, ' ').slice(0, 700));
+await page.evaluate(() => (document.querySelector('main').scrollTop = 0));
+await page.screenshot({ path: shots + 'structure-fiche-viewbox.png' });
+await fiche.locator('table.list tbody tr').first().click();
+await page.waitForTimeout(300);
+await shootAll('structure-fiche');
+await fiche.getByTitle('Fermer la fiche').click();
 await page.getByRole('button', { name: /Relire la cohérence/ }).click();
 await page.getByText(/aucune incohérence de poids relevée|Aucune incohérence/).first().waitFor({ timeout: 60000 });
 console.log('Relecture IA : OK');
