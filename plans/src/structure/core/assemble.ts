@@ -12,7 +12,7 @@ import type { ModuleFrame } from '../../core/views';
 import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams } from './library';
 import { materialByKey, steelStrength } from './materials';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } from './templates/viewboxEU';
-import { viewboxTemplate } from './templates/viewboxEU';
+import { moduleTemplate } from './templates/frameModule';
 import type { StairFamily, StairKitParams } from './templates/stair';
 import { stairGeometry } from './templates/stair';
 import { fmtNumber, KN_PER_CM } from './units';
@@ -69,6 +69,8 @@ export interface MemberMeta {
   side?: Side;
   /** liaison d'angle entre Viewbox empilées : numéro d'angle de la Viewbox du dessus (0…3) */
   corner?: number;
+  /** poteau d'un type personnalisé : contrôle « angle poteau / cadre » ('corner') ou aucun (angle soudé / articulé) */
+  joint?: 'corner' | 'none';
 }
 
 /** Côtés voisins d'un angle du gabarit (angles 0…3 = (x0, y0), (x1, y0), (x1, y1), (x0, y1)) : grand côté, petit côté. */
@@ -302,6 +304,8 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'foot-corner': 'réception de pied',
   'foot-plate': 'plat de réception',
   'foot-middle': 'réception centrale',
+  'frame-brace': 'diagonale',
+  'frame-other': 'barre porteuse',
   'corner-link': 'liaison verticale d’angle',
   'vertical-contact': 'contact vertical',
   bolt: 'boulon horizontal',
@@ -830,7 +834,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     // une Viewbox modifiée par l'étude (sections, poteaux) a ses propres paramètres : la clé les contient
     const key = `${pm.templateKey}|${JSON.stringify(pm.params)}|${SIDES.map((sd) => [...new Set(ex[sd] ?? [])].sort((a, b) => a - b).join(',')).join('|')}`;
     let tpl = tplCache.get(key);
-    if (!tpl) tplCache.set(key, (tpl = viewboxTemplate(pm.params, ex)));
+    if (!tpl) tplCache.set(key, (tpl = moduleTemplate(pm.params, ex)));
     tplOf.set(pm, tpl);
     for (const n of tpl.nodes) {
       const [x, y, z] = worldOf(pm, n.u, n.v, n.z);
@@ -846,8 +850,8 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         nodeOf.get(`${pm.id}|${tm.i}`)!,
         nodeOf.get(`${pm.id}|${tm.j}`)!,
         tm.section,
-        { family: tm.family, module: pm.id, line: `${pm.id}/${tm.line}`, side: /^(floor|roof):(u0|u1|v0|v1)$/.test(tm.line) ? (tm.line.split(':')[1] as Side) : undefined },
-        { endI: tm.endI, endJ: tm.endJ, ref: vertical ? pm.u : undefined },
+        { family: tm.family, module: pm.id, line: `${pm.id}/${tm.line}`, side: /^(floor|roof):(u0|u1|v0|v1)$/.test(tm.line) ? (tm.line.split(':')[1] as Side) : undefined, ...(tm.joint ? { joint: tm.joint } : {}) },
+        { endI: tm.endI, endJ: tm.endJ, ref: vertical ? pm.u : undefined, ...(tm.roll ? { roll: tm.roll } : {}), ...(tm.tensionOnly ? { nonlinear: 'tensionOnly' as const } : {}) },
       );
       // lignes horizontales pour la répartition des charges
       if (!vertical) {

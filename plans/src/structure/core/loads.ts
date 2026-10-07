@@ -14,7 +14,7 @@ import type { DistributedLoad, LoadSet, NodalLoad, Vec3, Vec6 } from './fem/type
 import { materialByKey } from './materials';
 import type { CalcRecord } from './records';
 import type { Side, ViewboxTemplate } from './templates/viewboxEU';
-import { viewboxTemplate } from './templates/viewboxEU';
+import { moduleTemplate } from './templates/frameModule';
 import { fmtNumber } from './units';
 
 export type LoadGroup = 'G' | 'Q' | 'W';
@@ -201,6 +201,15 @@ function panelLoad(cb: CaseBuilder, tpl: ViewboxTemplate, module: string, level:
     if (c.level !== level) continue;
     const a = c.u1 - c.u0;
     const b = c.v1 - c.v0;
+    // plancher portant dans un seul sens (type personnalisé, S12) : chaque ligne d'appui reçoit la demi-portée, uniforme
+    if (c.span === 'u') {
+      for (const u of [c.u0, c.u1]) cb.profile(`${module}|${z}|u=${Math.round(u)}`, [[c.v0, (p * a) / 2], [c.v1, (p * a) / 2]], dir);
+      continue;
+    }
+    if (c.span === 'v') {
+      for (const v of [c.v0, c.v1]) cb.profile(`${module}|${z}|v=${Math.round(v)}`, [[c.u0, (p * b) / 2], [c.u1, (p * b) / 2]], dir);
+      continue;
+    }
     const h = Math.min(a, b) / 2;
     const q = p * h;
     const edge = (s0: number, s1: number): Array<[number, number]> =>
@@ -264,7 +273,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const pm = model.modules.find((m) => m.id === id)!;
     const key = `${pm.templateKey}|${JSON.stringify(pm.params)}`;
     let t = tplCache.get(key);
-    if (!t) tplCache.set(key, (t = viewboxTemplate(pm.params)));
+    if (!t) tplCache.set(key, (t = moduleTemplate(pm.params)));
     return t;
   };
   const cases: LoadCase[] = [];

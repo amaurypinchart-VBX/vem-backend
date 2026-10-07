@@ -123,11 +123,28 @@ export function buildItemIndex(s: StructuralModel, sections: ReadonlyMap<string,
       members: ordered.map((o) => o.member),
     });
   }
+  // poteau coupé en tronçons (type personnalisé) : angle poteau / cadre au bas du tronçon du bas et au haut de celui du haut
+  const colEnds = new Map<string, { bottom: number; top: number; yb: number; yt: number }>();
   s.meta.forEach((m, k) => {
-    if (m.family === 'column')
+    if (m.family !== 'column') return;
+    const b = s.fem.members[k];
+    const [ya, yb] = [s.fem.nodes[b.i].y, s.fem.nodes[b.j].y];
+    const e = colEnds.get(m.line) ?? { bottom: k, top: k, yb: Math.min(ya, yb), yt: Math.max(ya, yb) };
+    if (Math.min(ya, yb) < e.yb) [e.bottom, e.yb] = [k, Math.min(ya, yb)];
+    if (Math.max(ya, yb) > e.yt) [e.top, e.yt] = [k, Math.max(ya, yb)];
+    colEnds.set(m.line, e);
+  });
+  s.meta.forEach((m, k) => {
+    if (m.family === 'column') {
+      // angle soudé ou articulé d'un type personnalisé : pas de contrôle d'assemblage d'angle
+      if (m.joint === 'none') return;
+      const pos = Number(m.line.split(':').pop());
+      const where = Number.isFinite(pos) ? `angle ${pos + 1}` : `poteau ${m.line.split(':').pop()}`;
+      const e = colEnds.get(m.line)!;
       for (const end of ['pied', 'tête'] as const)
-        items.push({ id: `corner:${k}:${end}`, kind: 'corner', family: 'Angles poteau / cadre', label: `${m.module} · angle ${Number(m.line.split(':').pop()) + 1}, ${end === 'pied' ? 'plancher' : 'toiture'}`, module: m.module, members: [k] });
-    else if (m.family === 'corner-link') items.push({ id: `vlink:${k}`, kind: 'vlink', family: 'Liaisons verticales entre Viewbox', label: m.label, module: m.module, members: [k] });
+        if ((end === 'pied' ? e.bottom : e.top) === k)
+          items.push({ id: `corner:${k}:${end}`, kind: 'corner', family: 'Angles poteau / cadre', label: `${m.module} · ${where}, ${end === 'pied' ? 'plancher' : 'toiture'}`, module: m.module, members: [k] });
+    } else if (m.family === 'corner-link') items.push({ id: `vlink:${k}`, kind: 'vlink', family: 'Liaisons verticales entre Viewbox', label: m.label, module: m.module, members: [k] });
     else if (m.family === 'bolt') items.push({ id: `bolt:${k}`, kind: 'bolt', family: `Boulons horizontaux M${opts.boltDiameter ?? 20}`, label: m.label, module: m.module, members: [k] });
     else if (BRACES.has(m.family)) items.push({ id: `brace:${k}`, kind: 'brace', family: m.family === 'bracing' ? 'Contreventements ajoutés (plat + ridoir)' : 'Contreventements de surélévation (plat + ridoir)', label: m.label, module: m.module, members: [k] });
   });
@@ -203,7 +220,7 @@ function spanLabel(module: string, family: MemberFamily, line: string, span: str
   const piece = Number(span.split('#').pop());
   const part = Number.isFinite(piece) ? `, tronçon ${piece + 1}` : '';
   const len = ` (${fmtNumber(length / 1e3, 2)} m)`;
-  if (family === 'column') return `${module} · poteau ${Number(pos) + 1}${len}`;
+  if (family === 'column') return Number.isFinite(Number(pos)) ? `${module} · poteau ${Number(pos) + 1}${len}` : `${module} · poteau ${pos}${part}${len}`;
   if (SIDE_LABEL[pos]) return `${module} · ${what}, ${SIDE_LABEL[pos]}${part}${len}`;
   if (pos?.startsWith('t')) return `${module} · ${what}, x = ${fmtNumber(Number(pos.slice(1)) / 1e3, 2)} m${part}${len}`;
   if (pos?.startsWith('l')) return `${module} · ${what}, y = ${fmtNumber(Number(pos.slice(1)) / 1e3, 2)} m${part}${len}`;

@@ -151,18 +151,135 @@ export interface ViewboxTemplateParams {
     supportVertical?: number;
   };
   plywood: { floorLayers: number; roofLayers: number; thickness: number; material: string; maxSpan: number };
+  /**
+   * structure explicite d'un type personnalisé (S12, gabarit 'frame') : barres, pieds, plancher, assemblages. Les
+   * champs d'enveloppe ci-dessus restent remplis (déduits du frame) pour l'assemblage, les charges et le calage.
+   */
+  frame?: FrameLayout;
+}
+
+// ─── S12 : structure explicite d'un type de module (repère du gabarit : u grand côté, v petit côté, z vers le haut) ───
+
+export type FrameRole =
+  | 'rim-floor'
+  | 'rim-roof'
+  | 'transverse-floor'
+  | 'transverse-roof'
+  | 'stringer-floor'
+  | 'stringer-roof'
+  | 'column'
+  | 'foot'
+  | 'brace'
+  | 'other'
+  | 'none';
+
+export const FRAME_ROLES: readonly FrameRole[] = ['rim-floor', 'rim-roof', 'transverse-floor', 'transverse-roof', 'stringer-floor', 'stringer-roof', 'column', 'foot', 'brace', 'other', 'none'];
+
+export const FRAME_ROLE_LABEL: Record<FrameRole, string> = {
+  'rim-floor': 'rive du plancher',
+  'rim-roof': 'rive de toiture',
+  'transverse-floor': 'traverse du plancher',
+  'transverse-roof': 'traverse de toiture',
+  'stringer-floor': 'lisse du plancher',
+  'stringer-roof': 'lisse de toiture',
+  column: 'poteau',
+  foot: 'réception de pied',
+  brace: 'diagonale',
+  other: 'autre barre porteuse',
+  none: 'non porteur',
+};
+
+/** extrémité d'une barre en flexion : rigide, articulée (torsion retenue) ou semi-rigide (N·mm/rad) */
+export type FrameEnd = 'rigid' | 'pinned' | { semi: number };
+
+export interface FrameBar {
+  /** stable (« T-R-03 », ou id de la pièce SketchUp) */
+  id: string;
+  role: FrameRole;
+  /** u, v, z sur la ligne de système (mm) */
+  a: [number, number, number];
+  b: [number, number, number];
+  /** clé bibliothèque / catalogue (CAT-…, SEC-…, ETUDE-…) */
+  section: string;
+  /** S235 | S275 | S355 (sinon matériau de la section) */
+  grade?: string;
+  /** rotation de la section autour de son axe (rad) : profil posé à plat, U ouvert vers l'intérieur… */
+  roll?: number;
+  /** défaut selon le rôle et les assemblages du type */
+  ends?: [FrameEnd, FrameEnd];
+  /** diagonale en plat / câble : traction seule */
+  tensionOnly?: boolean;
+  /** rives et poteaux de façade */
+  side?: 'u0' | 'u1' | 'v0' | 'v1';
+  /** poteau d'angle (ordre des angles du gabarit : (x0, y0), (x1, y0), (x1, y1), (x0, y1)) */
+  corner?: 0 | 1 | 2 | 3;
+  /** réception de pied : T d'angle, plat, réception centrale (défaut : déduit de la position) */
+  footPart?: 'corner' | 'plate' | 'middle';
+  /** barre physique (longueurs de flambement, libellés) ; défaut déduit du rôle et de la position */
+  line?: string;
+  source?: { node?: string; definition?: string; name?: string; eccentricity?: number; sectionStatus: 'library' | 'catalogue' | 'measured' | 'user' };
+}
+
+export interface FrameFoot {
+  id: string;
+  u: number;
+  v: number;
+  kind: 'corner' | 'middle' | 'other';
+  corner?: 0 | 1 | 2 | 3;
+  /** nœud du plancher qui reçoit le pied (défaut : nœud de rive / de barre le plus proche au plancher) */
+  z?: number;
+}
+
+export interface DeckSpec {
+  /** clé matériau (CP-F20/15, CP-F40/30, bouleau, acier…) */
+  material: string;
+  thickness: number;
+  layers: number;
+  /** grille (enveloppe 45°, comme la Viewbox) ou portée dans un sens */
+  span: 'two-way' | 'u' | 'v';
+  /** plancher non contreplaqué justifié hors outil (fiche fabricant) : « Non vérifié », verdict plafonné */
+  justifiedElsewhere?: boolean;
+  /** portée maxi saisie (mm) */
+  maxSpan?: number;
+}
+
+export interface FrameLayout {
+  v: 1;
+  origin: 'sketchup' | 'mesh' | 'preset-viewbox' | 'parametric' | 'editor';
+  bars: FrameBar[];
+  feet: FrameFoot[];
+  deck: { floor: DeckSpec | null; roof: DeckSpec | null };
+  joints: {
+    column: { model: 'semi' | 'rigid' | 'pinned'; stiffness?: number; fullStrengthDeclared?: boolean };
+    /** traverses / lisses ↔ rives */
+    secondary: { model: 'rigid' | 'pinned' };
+    side: { model: 'bolts' | 'contact-only' | 'custom' };
+  };
+  /** relevé : tolérance de recalage, écarts, avertissements (affichés et repris dans le rapport) */
+  survey?: { snapTol: number; maxEccentricity: number; warnings: string[]; extractedFrom?: string; extractedAt?: string };
 }
 
 export interface ModuleTypeEntry extends EntryBase {
   kind: 'module_type';
-  /** gabarit de calcul (null = inconnu : l'outil demande) */
-  template: 'viewbox-eu' | 'viewbox-us' | null;
+  /** gabarit de calcul (null = inconnu : l'outil demande) ; 'frame' = structure explicite (`params.frame`, S12) */
+  template: 'viewbox-eu' | 'viewbox-us' | 'frame' | null;
+  /** famille : 'viewbox' (défaut si absent : données Viewbox, TÜV, statico) ou 'other' (type personnalisé) */
+  family?: 'viewbox' | 'other';
   params?: ViewboxTemplateParams;
   /** dimensions nominales en plan et hauteur hors tout (mm) */
   nominal: { long: number; short: number; height: number };
-  /** poids d'une unité (planchers et isolants compris, sans murs) — contrôle du gabarit ± 10 % */
+  /** poids d'une unité (planchers et isolants compris, sans murs) — contrôle du gabarit ± 10 % ; absent = calculé */
   weighedN?: number;
+  /** assemblages du type : clés de la bibliothèque (connection / joint_design) ; absent = VBX-* si Viewbox, sinon inconnu */
+  connections?: { corner?: string; contact?: string; plate?: string; bolt?: string; jack?: string; bracing?: string; stackDesign?: string };
+  /** surface de contact d'un pied sur le calage (mm) ; absent = règles Viewbox si Viewbox, sinon inconnue */
+  footContact?: { a1: number; a2: number; jack?: { a1: number; a2: number } };
+  /** signatures des dessins SketchUp reconnus comme ce type (structure relevée conforme) */
+  drawings?: string[];
 }
+
+/** Famille d'un type de module (absent = Viewbox, comme avant S12). */
+export const moduleFamily = (e: Pick<ModuleTypeEntry, 'family'> | null | undefined): 'viewbox' | 'other' => e?.family ?? 'viewbox';
 
 export interface MaterialEntry extends EntryBase {
   kind: 'material';

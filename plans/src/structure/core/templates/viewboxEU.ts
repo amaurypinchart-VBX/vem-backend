@@ -6,7 +6,18 @@
 import type { EndSpec } from '../fem/types';
 import type { ViewboxTemplateParams } from '../library';
 
-export type TemplateFamily = 'rim-floor' | 'rim-roof' | 'secondary-floor' | 'secondary-roof' | 'column' | 'foot-corner' | 'foot-plate' | 'foot-middle';
+export type TemplateFamily =
+  | 'rim-floor'
+  | 'rim-roof'
+  | 'secondary-floor'
+  | 'secondary-roof'
+  | 'column'
+  | 'foot-corner'
+  | 'foot-plate'
+  | 'foot-middle'
+  // types personnalisés (S12, `frameModule.ts`) : diagonales, autres barres porteuses
+  | 'frame-brace'
+  | 'frame-other';
 
 export interface TemplateNode {
   key: string;
@@ -24,6 +35,12 @@ export interface TemplateMember {
   endJ?: EndSpec;
   /** barre physique (une rive, une ligne de traverses, un poteau…) : longueurs de flambement */
   line: string;
+  /** rotation de la section autour de son axe (rad) : profil posé à plat, U ouvert vers l'intérieur… */
+  roll?: number;
+  /** poteau : contrôle « angle poteau / cadre » ('corner', défaut d'un poteau) ou aucun (angle soudé / articulé) */
+  joint?: 'corner' | 'none';
+  /** diagonale en plat / câble : traction seule */
+  tensionOnly?: boolean;
 }
 
 /** Côté du module : u = 0, u = L, v = 0, v = W. */
@@ -52,6 +69,8 @@ export interface TemplatePanel {
   u1: number;
   v0: number;
   v1: number;
+  /** plancher portant dans un seul sens (d'une ligne à l'autre) ; absent = enveloppe 45° (grille, Viewbox) */
+  span?: 'u' | 'v';
 }
 
 export interface ViewboxTemplate {
@@ -69,8 +88,8 @@ export interface ViewboxTemplate {
   params: ViewboxTemplateParams;
 }
 
-const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x * 1000) / 1000))].sort((a, b) => a - b);
-const nodeKey = (u: number, v: number, z: number) => `${Math.round(u)}:${Math.round(v)}:${Math.round(z)}`;
+export const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x * 1000) / 1000))].sort((a, b) => a - b);
+export const nodeKey = (u: number, v: number, z: number) => `${Math.round(u)}:${Math.round(v)}:${Math.round(z)}`;
 
 /** Nœuds supplémentaires sur les rives (abscisse locale le long de la rive), aux deux niveaux : jonctions en T. */
 export type RimExtras = Partial<Record<Side, number[]>>;

@@ -8,7 +8,7 @@ import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams
 import { designation } from './library';
 import { materialByKey } from './materials';
 import type { TemplateFamily } from './templates/viewboxEU';
-import { viewboxTemplate } from './templates/viewboxEU';
+import { moduleTemplate } from './templates/frameModule';
 
 /** Couleur d'affichage de chaque famille de barres. */
 export const FAMILY_COLORS: Record<MemberFamily, number> = {
@@ -20,6 +20,8 @@ export const FAMILY_COLORS: Record<MemberFamily, number> = {
   'foot-corner': 0xea580c,
   'foot-plate': 0xf59e0b,
   'foot-middle': 0x65a30d,
+  'frame-brace': 0xbe123c,
+  'frame-other': 0x57534e,
   'corner-link': 0x111827,
   'vertical-contact': 0x6b7280,
   bolt: 0x16a34a,
@@ -55,7 +57,7 @@ export interface TemplateFamilyRow {
 /** Barres du gabarit d'un type de Viewbox, par famille : ce que l'outil calcule pour chaque Viewbox de ce type. */
 export function templateSummary(entry: ModuleTypeEntry, library: readonly LibraryEntry[]): TemplateFamilyRow[] {
   if (!entry.params) return [];
-  const t = viewboxTemplate(entry.params);
+  const t = moduleTemplate(entry.params);
   const nodes = new Map(t.nodes.map((n) => [n.key, n]));
   const sections = new Map(library.filter((e): e is SectionEntry => e.kind === 'section').map((e) => [e.key, e]));
   const rows = new Map<string, TemplateFamilyRow>();
@@ -93,7 +95,7 @@ export function templateSummary(entry: ModuleTypeEntry, library: readonly Librar
  * bibliothèque, matériau de la section). Sert à l'écart de poids d'une Viewbox modifiée par rapport à la pesée.
  */
 export function templateSteelWeight(params: ViewboxTemplateParams, sections: ReadonlyMap<string, SectionEntry>): number {
-  const t = viewboxTemplate(params);
+  const t = moduleTemplate(params);
   const nodes = new Map(t.nodes.map((n) => [n.key, n]));
   let W = 0;
   for (const m of t.members) {
@@ -114,10 +116,10 @@ export function templateSegments(modules: readonly PlacedModule[]): { positions:
   const col: number[] = [];
   const families: TemplateFamily[] = [];
   // une Viewbox modifiée par l'étude (poteaux plus hauts…) a ses propres paramètres
-  const cache = new Map<ViewboxTemplateParams, ReturnType<typeof viewboxTemplate>>();
+  const cache = new Map<ViewboxTemplateParams, ReturnType<typeof moduleTemplate>>();
   for (const pm of modules) {
     let t = cache.get(pm.params);
-    if (!t) cache.set(pm.params, (t = viewboxTemplate(pm.params)));
+    if (!t) cache.set(pm.params, (t = moduleTemplate(pm.params)));
     const nodes = new Map(t.nodes.map((n) => [n.key, n]));
     const w = (u: number, v: number, z: number) => [pm.origin[0] + pm.u[0] * u + pm.v[0] * v, pm.origin[1] + z, pm.origin[2] + pm.u[2] * u + pm.v[2] * v];
     for (const m of t.members) {
