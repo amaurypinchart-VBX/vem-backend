@@ -26,6 +26,8 @@ import { LABELS, num } from './i18n';
 import { TUV_LABELS } from './tuvI18n';
 import { ellipsis, textWidth, wrapText } from './metrics';
 import { translate } from './translate';
+import { CUSTOM_LABELS, neutralText } from './customI18n';
+import { isCustomType, typeEntryOf } from '../core/moduleTypes';
 
 export type ReportVariant = 'compact' | 'detailed';
 
@@ -170,6 +172,10 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const gTotal = run.loads.cases.filter((c) => c.group === 'G').reduce((a, c) => a - c.resultant[1], 0);
   const maxEta = Math.max(0, ...run.verdict.families.map((f) => (Number.isFinite(f.eta) ? f.eta : 0)), Number.isFinite(run.plywood.eta) ? run.plywood.eta : 0, run.stability.sliding.eta);
   const entry = inp.study.library.find((e): e is ModuleTypeEntry => e.kind === 'module_type' && e.key === s.modules[0]?.templateKey);
+  // types de structure personnalisés (S12) : sans Viewbox, ni Prüfbuch TÜV, ni notes statico, ni pesée Viewbox
+  const CX = CUSTOM_LABELS[lang];
+  const customTypes = [...new Set(study.modules.map((m) => m.templateKey))].map((k) => typeEntryOf(study.library, k)).filter((e): e is ModuleTypeEntry => isCustomType(e));
+  const noVbx = study.modules.length > 0 && study.modules.every((m) => isCustomType(typeEntryOf(study.library, m.templateKey)));
 
   // dimensions de l'ensemble dans les axes de l'installation
   const ax = run.loads.axes;
@@ -328,10 +334,11 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...(hasGlazing ? [L.notCoveredItems.glazing] : []),
       L.notCoveredItems.cladding,
       L.notCoveredItems.logo,
-      L.notCoveredItems.railings,
+      ...(noVbx ? [] : [L.notCoveredItems.railings]),
       ...((run.structure.stairs ?? []).length ? [L.notCoveredItems.steps, study.options.stairClad ? L.stairCladCalc : L.stairClad] : []),
       ...study.blocking.map((b) => `${L.notCoveredItems.blocking} : ${E(b)}`),
       ...(inp.ignoredParts ?? []).map((p) => L.notCoveredItems.ignored(p.label, p.count)),
+      ...(run.types?.notVerified ?? []).map((n) => `${CX.notVerifiedTitle} : ${E(n)}`),
     ],
   });
 
@@ -356,7 +363,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     t: 'bullets',
     items: [
       ...L.generalNotes.slice(0, 3),
-      study.options.jacks ? L.jacksUsed : L.jacksForbidden,
+      noVbx ? CX.jacks : study.options.jacks ? L.jacksUsed : L.jacksForbidden,
       ...L.generalNotes.slice(3),
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
@@ -365,7 +372,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...(levels >= 3 ? [L.beyondPrufbuch(levels)] : []),
       ...(lengthMax > 30000 + 1 ? [T.beyond30m(N(lengthMax / 1e3, 1))] : []),
       T.frictionNote(N(mu), mu >= 0.6 - 1e-9),
-      T.ballastGroundOnly,
+      noVbx ? CX.ballast : T.ballastGroundOnly,
+      ...(customTypes.length ? [CX.reserve, CX.modelling, ...(run.types?.notes ?? []).filter((n) => !/non couvert par une note/.test(n)).map(E)] : []),
       ...(() => {
         const feet = (run.stairFeet ?? []).filter((f) => f.lifted || f.need > 0);
         return feet.length ? [L.stairFeetInstruction(feet.map((f) => `${E(f.label)} ${f.lifted ? `(${L.stairFeetLifted})` : `${N(Math.ceil(f.need / GRAVITY / 10) * 10, 0)} kg`}`).join(', '))] : [];
@@ -408,8 +416,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   });
   blocks.push(...calageTables());
   blocks.push({ t: 'para', text: L.groundNote, size: SIZE.small, color: GREY });
-  // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573)
-  {
+  // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573) : seulement avec des Viewbox
+  if (!noVbx) {
     const CL = CALAGE_LABELS[inp.lang];
     const c = inp.calage;
     const tuvLine = !c ? '' : !c.tuv.tuvMinimum ? CL.tuvOff : c.tuv.ok === false ? CL.tuvKo(c.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : c.tuv.ok ? CL.tuvOk : '';
@@ -444,7 +452,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'para', text: L.normsTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: L.norms, labelWidth: 32 });
   blocks.push({ t: 'para', text: L.docsTitle, bold: true, after: 0.6 });
-  blocks.push({ t: 'bullets', items: L.docs });
+  blocks.push({ t: 'bullets', items: [...(noVbx ? [] : L.docs), ...CX.docs(customTypes.map((e) => e.name))] });
   blocks.push({ t: 'para', text: L.softwareTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'para', text: L.softwareText(inp.version) });
 
@@ -452,9 +460,12 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'pagebreak' });
   blocks.push({ t: 'heading', level: 1, num: '2', text: L.ch2 });
   blocks.push({ t: 'heading', level: 2, num: '2.1', text: L.s21 });
-  blocks.push({ t: 'para', text: L.weighed(N((inp.moduleWeightKg * GRAVITY) / 1e3, 2), N(inp.moduleWeightKg, 0)) });
-  blocks.push({ t: 'para', text: L.steelWeight });
-  for (const r of run.loads.records.filter((x) => x.key === 'loads.moduleWeight')) blocks.push(rec(r));
+  if (!noVbx) {
+    blocks.push({ t: 'para', text: L.weighed(N((inp.moduleWeightKg * GRAVITY) / 1e3, 2), N(inp.moduleWeightKg, 0)) });
+    blocks.push({ t: 'para', text: L.steelWeight });
+  }
+  if (customTypes.length) blocks.push({ t: 'para', text: CX.weightIntro });
+  for (const r of run.loads.records.filter((x) => x.key === 'loads.moduleWeight' || x.key.startsWith('loads.moduleWeight:'))) blocks.push(rec(r));
   // plafond et sol : compris dans le poids pesé (réduits pour que barres + plafond + sol = pesée), plus les ajouts
   const finish = (g: number, extra = 0) =>
     (loads.weightMode === 'weighed' ? L.finishIncluded(N(g * 1e3 * Math.min(1, run.loads.finishFactor ?? 1))) : `gk = ${N(g * 1e3)} kN/m²`) + (extra > 0 ? L.finishExtra(N(extra * 1e3)) : '');
@@ -485,7 +496,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   });
   blocks.push({ t: 'para', text: L.outOfServiceLive(loads.evacuateTopLevel && levels > 1 ? L.evacuatedTop : L.evacuatedOutdoor) });
   blocks.push({ t: 'heading', level: 3, num: '2.2.2', text: L.s222 });
-  blocks.push({ t: 'bullets', items: [L.horizontalText, L.handrail, L.impact] });
+  blocks.push({ t: 'bullets', items: [L.horizontalText, ...(noVbx ? [] : [L.handrail]), L.impact] });
   blocks.push({ t: 'heading', level: 2, num: '2.3', text: L.s23 });
   blocks.push({ t: 'para', text: (study.loads.snowRoof ?? 0) > 0 ? L.snowWith(N((study.loads.snowRoof! / 0.8) * 1e3), N(study.loads.snowRoof! * 1e3), N((study.loads.snowRoof! * 1e6) / 9.81, 0)) : L.snowText });
   blocks.push({ t: 'heading', level: 2, num: '2.4', text: L.s24 });
@@ -784,6 +795,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   if (inp.variant === 'detailed') annex(blocks, inp, L, E, N, kN);
 
   // ─── pages ───
+  // installation sans Viewbox : dernières références statico / TÜV retirées des textes
+  if (noVbx) for (let k = 0; k < blocks.length; k++) blocks[k] = neutralBlock(blocks[k]);
   const laid = paginate(blocks, N);
   const mainPages = laid.filter((p) => p.prefix === 'A').length;
   const annexPages = laid.filter((p) => p.prefix === 'B').length;
@@ -1051,6 +1064,27 @@ const FAMILY_ALL: Record<string, string> = {
 };
 
 /** Page de garde : logo, titre, avertissement, données du projet, verdict, sommaire. */
+/** Textes d'un bloc sans références statico / TÜV (installation sans Viewbox). */
+function neutralBlock(b: Block): Block {
+  const cell = (c: TableCell | string): TableCell | string => (typeof c === 'string' ? neutralText(c) : { ...c, text: neutralText(c.text) });
+  switch (b.t) {
+    case 'para':
+      return { ...b, text: neutralText(b.text) };
+    case 'bullets':
+      return { ...b, items: b.items.map(neutralText).filter((x) => x) };
+    case 'kv':
+      return { ...b, rows: b.rows.map(([a, c]) => [neutralText(a), neutralText(c)] as [string, string]) };
+    case 'table':
+      return { ...b, cols: b.cols.map((c) => ({ ...c, title: neutralText(c.title) })), rows: b.rows.map((r) => r.map((c) => cell(c as TableCell | string))) as typeof b.rows, ...(b.note ? { note: neutralText(b.note) } : {}) };
+    case 'record':
+      return { ...b, rec: { ...b.rec, title: neutralText(b.rec.title), clause: neutralText(b.rec.clause), formula: neutralText(b.rec.formula), withValues: neutralText(b.rec.withValues) } };
+    case 'callout':
+      return { ...b, title: neutralText(b.title), lines: b.lines.map(neutralText) };
+    default:
+      return b;
+  }
+}
+
 function renderCover(inp: ReportInput, L: Labels, verdict: Verdict, reasons: string[], toc: ReportOutput['toc'], counts: { main: number; annex: number }): string {
   const W = A4.w;
   const x = PAGE.left;

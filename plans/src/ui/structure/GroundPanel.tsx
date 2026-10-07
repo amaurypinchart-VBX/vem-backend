@@ -40,6 +40,8 @@ export interface Hypotheses {
   pointLoadKN: number;
   /** poids pesé d'une Viewbox (kg) : structure, plancher, sol, plafond et isolants compris */
   moduleWeightKg: number;
+  /** pesée d'une unité par type de structure personnalisé (kg, clé du type) ; absent = poids calculé (S12) */
+  moduleWeights?: Record<string, number>;
   /** plafond / isolation et revêtement de sol ajoutés en plus du poids pesé (kN/m², 0 = Viewbox standard) */
   ceilingExtra?: number;
   floorExtra?: number;

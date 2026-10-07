@@ -5,6 +5,7 @@ import type { StudyMods } from '../core/mods';
 import { applyMods, libraryWithMods } from '../core/mods';
 import { revalidateJoints } from '../core/jointRevalidation';
 import { applyStackJoint } from '../core/stackJoint';
+import { isCustomType, typeEntryOf } from '../core/moduleTypes';
 import type { StudyInputs } from '../studyRun';
 
 export function withMods(inp: StudyInputs, mods: StudyMods | undefined): { inputs: StudyInputs; added: PlacedModule[]; warnings: string[] } {
@@ -12,7 +13,9 @@ export function withMods(inp: StudyInputs, mods: StudyMods | undefined): { input
   const r = applyMods({ modules: inp.modules, edgeItems: inp.edgeItems, sections: inp.sections }, mods);
   const library = libraryWithMods(inp.library, mods);
   // assemblages des Viewbox modifiées : gabarit / recalculé / indicatif / inconnu
-  const reval = revalidateJoints({ modules: r.modules, original: r.original, sections: r.sections, library, user: mods.jointCapacities });
+  // types personnalisés (S12) : assemblages du type, pas de revalidation Viewbox
+  const original = new Map([...r.original].filter(([id]) => !isCustomType(typeEntryOf(library, r.modules.find((m) => m.id === id)?.templateKey ?? ''))));
+  const reval = revalidateJoints({ modules: r.modules, original, sections: r.sections, library, user: mods.jointCapacities });
   // liaison personnalisée entre Viewbox empilées (atelier des accessoires)
   const sj = applyStackJoint({ modules: r.modules, library, joints: reval.rows.length ? reval : undefined }, mods.stackJoint);
   const joints = sj.joints;

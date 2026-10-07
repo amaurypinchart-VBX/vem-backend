@@ -6,7 +6,9 @@
 // `viewboxPresetFrame` décrit la Viewbox 5900 EU en barres : `frameTemplate` de ce préréglage redonne exactement
 // `viewboxTemplate` (test d'équivalence). Fonctions pures.
 import type { EndSpec } from '../fem/types';
-import type { DeckSpec, FrameBar, FrameEnd, FrameFoot, FrameLayout, FrameRole, ViewboxTemplateParams } from '../library';
+import type { DeckSpec, FrameBar, FrameEnd, FrameFoot, FrameLayout, FrameRole, SectionEntry, ViewboxTemplateParams } from '../library';
+import { catalogEntry } from '../sectionCatalog';
+import { gradedSection } from '../mods';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, TemplateMember, TemplatePanel, ViewboxTemplate } from './viewboxEU';
 import { nodeKey, uniq, viewboxTemplate } from './viewboxEU';
 
@@ -301,6 +303,26 @@ export function frameTemplate(p: FrameParams, extras: RimExtras = {}): ViewboxTe
     middleRim,
     params: p,
   };
+}
+
+/**
+ * Sections des barres des types personnalisés absentes de la bibliothèque : catalogue du commerce (CAT-…) et nuances
+ * (« CAT-UPN160@S355 »). Même table rendue s'il n'y a rien à ajouter (Viewbox seules : entrées inchangées).
+ */
+export function frameSections(modules: readonly { params: ViewboxTemplateParams }[], sections: ReadonlyMap<string, SectionEntry>): ReadonlyMap<string, SectionEntry> {
+  const need = new Set<string>();
+  for (const m of modules) for (const b of m.params.frame?.bars ?? []) if (b.role !== 'none') need.add(b.grade ? `${b.section}@${b.grade}` : b.section);
+  const missing = [...need].filter((k) => !sections.has(k));
+  if (!missing.length) return sections;
+  const out = new Map(sections);
+  for (const k of missing) {
+    const [base, grade] = k.split('@');
+    const e = out.get(base) ?? catalogEntry(base);
+    if (!e) continue;
+    out.set(base, e);
+    if (grade) out.set(k, gradedSection(e, grade));
+  }
+  return out;
 }
 
 /** Viewbox 5900 EU décrite en barres explicites (préréglage « Partir de la Viewbox 5900 » de l'atelier). */

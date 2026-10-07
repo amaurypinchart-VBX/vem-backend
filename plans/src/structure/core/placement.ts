@@ -202,10 +202,12 @@ export function supportGeometry(g: PlateGroup, modules: EstimateModule[]): Suppo
   // pied d'escalier : platine 15 × 15 cm hors des Viewbox, plaque centrée
   if (r.group.stair || r.group.terrace) return { u, v, center: [dot(p, u), dot(p, v)], contact: [JACK_PLATE, JACK_PLATE], sides: [{ side: 'both', edge: dot(p, u) }, { side: 'both', edge: dot(p, v) }] };
   const sides: [AxisSide, AxisSide] = [axisSide(p, u, mods), axisSide(p, v, mods)];
-  const base = r.group.middle ? JACK_PLATE : CORNER_CONTACT;
-  let contact: [number, number] = r.group.middle ? [base, base] : [sides[0].side === 'both' ? 2 * base : base, sides[1].side === 'both' ? 2 * base : base];
+  // surface de contact d'un angle : celle du type du module (S12), sinon 21 × 21 cm (Viewbox) ; la plus petite des modules
+  const own2 = mods.map((m) => m.contact).filter((c): c is { a1: number; a2: number } => !!c);
+  const [bu, bv] = r.group.middle ? [JACK_PLATE, JACK_PLATE] : own2.length ? [Math.min(...own2.map((c) => c.a1)), Math.min(...own2.map((c) => c.a2))] : [CORNER_CONTACT, CORNER_CONTACT];
+  let contact: [number, number] = r.group.middle ? [bu, bv] : [sides[0].side === 'both' ? 2 * bu : bu, sides[1].side === 'both' ? 2 * bv : bv];
   // 3 angles : surface prise comme pour 2 angles (côté de la sécurité)
-  if (!r.group.middle && Math.min(4, r.group.corners) === 3) contact = [2 * base, base];
+  if (!r.group.middle && Math.min(4, r.group.corners) === 3) contact = [2 * bu, bv];
   const at = (k: 0 | 1) => {
     const s = sides[k];
     const pc = dot(p, k ? v : u);

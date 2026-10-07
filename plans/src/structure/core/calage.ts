@@ -150,7 +150,8 @@ export interface CalageResult {
   publicLimit?: { persons: number; kg: number; load: number };
   placement: PlatePlacement;
   /** Prüfbuch : portance ≥ 200 kN/m², calage conforme partout (null : rien de comparable) */
-  tuv: { bearingOk: boolean; ok: boolean | null; tuvMinimum: boolean };
+  /** `notApplicable` : aucune Viewbox (types personnalisés seulement) — ni Prüfbuch ni texte TÜV / statico */
+  tuv: { bearingOk: boolean; ok: boolean | null; tuvMinimum: boolean; notApplicable?: true };
   /** niveaux du sol relevés et rattrapage par pied (null : aucun relevé saisi) */
   levels: LevelSurvey | null;
 }
@@ -182,12 +183,17 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
   const est = limit(est0);
   const placementMode: PlatePlacement = inp.placement ?? 'auto';
-  const tuvOn = inp.tuvMinimum ?? true;
+  // Prüfbuch TÜV 190060 B : seulement sous des Viewbox (types personnalisés S12 : « non comparable », aucun texte TÜV)
+  const custom = new Set(inp.modules.filter((m) => m.family === 'other').map((m) => m.id));
+  const viewboxPresent = !inp.modules.length || inp.modules.some((m) => m.family !== 'other');
+  const tuvOn = (inp.tuvMinimum ?? true) && viewboxPresent;
+  const unknownContact = inp.modules.filter((m) => m.contact === null).map((m) => m.id);
   // appuis de calage : vérins voisins sur une même plaque, réactions additionnées par combinaison (avant le public limité)
   const groups0 = plateGroups(est0.reactions, inp.modules, inp.estimate.groupTolerance);
   const plateEst = limit({ ...est0, reactions: groups0.map((g) => g.reaction) });
   const groups: PlateGroup[] = groups0.map((g, k) => ({ reaction: plateEst.reactions[k], members: g.members }));
   const warnings = [...new Set([...est.warnings, ...plateEst.warnings])];
+  if (unknownContact.length) warnings.push(`Surface d’appui d’un pied à renseigner pour ${unknownContact.join(', ')} (type de structure personnalisé) : calage indicatif, 21 × 21 cm supposés.`);
   const reach = 2 * inp.estimate.groupTolerance + (est.reactions.some((r) => r.group.jack) ? 250 : 0);
   const byType = new Map<string, PlateGroup[]>();
   for (const g of groups) {
@@ -214,6 +220,8 @@ export function computeCalage(inp: CalageInput): CalageResult {
     // pied d'escalier : pas de plaque minimale du Prüfbuch (traité comme un pied central) ; terrasse : milieu 55 × 55
     const containers = stair ? 0 : jack ? all[0].members.length : r0.group.corners;
     const geos = new Map(all.map((g) => [g, supportGeometry(g, inp.modules)]));
+    // appuis qui ne portent que des Viewbox : comparables au Prüfbuch
+    const vbxOnly = all.every((g) => g.reaction.group.moduleIds.every((id) => !custom.has(id)));
     // surface de contact du type : la plus petite des appuis du type (côté de la sécurité)
     const smallest = [...geos.values()].reduce((a, g) => (g.contact[0] * g.contact[1] < a.contact[0] * a.contact[1] ? g : a));
     const [a1, a2] = [Math.max(...smallest.contact), Math.min(...smallest.contact)];
@@ -259,7 +267,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
         commercial: inp.commercial,
       });
       // plaques aux dimensions minimales du Prüfbuch (plan 18-0573-03) : du stock si possible, sinon contreplaqué F40/30 découpé
-      const tp = tuvOn ? tuvPlate(containers, middle || stair, terrace && middle) : null;
+      const tp = tuvOn && vbxOnly ? tuvPlate(containers, middle || stair, terrace && middle) : null;
       if (tp) {
         const stockOk = inp.stock
           .filter((st) => Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
@@ -381,7 +389,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
           geometry: e.geo,
           plan,
           placement: e.placement,
-          tuv: tuvOn ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null,
+          tuv: tuvOn && vbxOnly ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null,
         };
       });
       const worst = checks.reduce((a, c) => (c.eta > a.eta ? c : a));
@@ -432,7 +440,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       }
       const standard = verdictOf(worst.eta) !== 'fail' && (custom || !!chosen?.feasible);
       const ids = reactions.map((r) => r.group.id);
-      const tuv = tuvOn ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null;
+      const tuv = tuvOn && vbxOnly ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null;
       types.push({
         key: pk === 'auto' ? key : `${key}:${pk}`,
         label: part.own ? `${baseLabel} — ${ids.join(', ')}` : baseLabel,
@@ -573,7 +581,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     roadwayOn,
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
-    tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn },
+    tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(viewboxPresent ? {} : { notApplicable: true }) },
     levels: inp.levels?.length ? levelSurvey(est.reactions.map((r) => ({ id: r.group.id, position: r.group.position, jack: !!r.group.jack })), inp.levels, inp.jackMax ?? JACK_MAX_EXTENSION) : null,
   };
 }

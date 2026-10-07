@@ -49,6 +49,11 @@ export interface CustomJoint {
 }
 
 export interface ConnectionSet {
+  /**
+   * type de structure personnalisé (S12) : nom du type, cité quand un assemblage manque — jamais de repli sur les
+   * assemblages Viewbox (VBX-*)
+   */
+  typeName?: string;
   /** liaison personnalisée à la place (ou en plus) des plats d'empilement */
   custom?: CustomJoint;
   corner?: ConnectionEntry;
@@ -81,6 +86,8 @@ const cap = (c: ConnectionEntry | undefined, key: string) => c?.capacities.find(
 const usable = (c: ConnectionEntry | undefined) => !!c && c.status !== 'unknown';
 const minCapacity = (c: ConnectionEntry | undefined) => (c && c.capacities.length ? Math.min(...c.capacities.filter((x) => x.unit === 'N').map((x) => x.value)) : undefined);
 const blocked = (reason: string): JointResult => ({ eta: Infinity, governing: 'bloqué', blocked: reason, parts: {} });
+/** assemblage absent : message Viewbox, ou « capacité inconnue — <type> : <assemblage> » pour un type personnalisé */
+const lacking = (c: ConnectionSet, what: string, viewbox: string): JointResult => blocked(c.typeName ? `Capacité inconnue — ${c.typeName} : ${what}` : viewbox);
 
 /** Angle poteau / cadre, efforts à une extrémité du poteau. */
 export function checkCorner(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
@@ -89,7 +96,7 @@ export function checkCorner(c: ConnectionSet, f: Forces, label: string, combinat
   const Mb = cap(j, 'M_biax');
   const M1 = cap(j, 'M_uniax_max');
   const M2 = cap(j, 'M_uniax_min');
-  if (!usable(j) || !N0 || !Mb || !M1 || !M2) return blocked('Angle Viewbox (VBX-CORNER) : capacités absentes de la bibliothèque');
+  if (!usable(j) || !N0 || !Mb || !M1 || !M2) return lacking(c, 'angle poteau / cadre', 'Angle Viewbox (VBX-CORNER) : capacités absentes de la bibliothèque');
   const hi = Math.max(Math.abs(f.My), Math.abs(f.Mz));
   const lo = Math.min(Math.abs(f.My), Math.abs(f.Mz));
   const biax = hi / Mb;
@@ -97,7 +104,7 @@ export function checkCorner(c: ConnectionSet, f: Forces, label: string, combinat
   const etaM = Math.min(biax, uniax);
   const Ncontact = minCapacity(c.contact);
   const tension = f.N > 0;
-  if (!tension && !Ncontact) return blocked('Contact poteau / couvercle (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
+  if (!tension && !Ncontact) return lacking(c, 'contact poteau / cadre en compression', 'Contact poteau / couvercle (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
   const etaN = tension ? f.N / N0 : -f.N / Ncontact!;
   const eta = Math.max(etaM, etaN);
   return {
@@ -136,8 +143,8 @@ export function platesPerCorner(c: ConnectionSet, outer: { long: boolean; short:
 export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, combination?: string, outer?: { long: boolean; short: boolean }): JointResult {
   if (c.custom) return checkCustomVerticalLink(c, c.custom, f, label, combination, outer);
   const NRd = minCapacity(c.contact);
-  if (!usable(c.plate)) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
-  if (!usable(c.contact) || !NRd) return blocked('Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
+  if (!usable(c.plate)) return lacking(c, 'liaison d’empilement', 'Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
+  if (!usable(c.contact) || !NRd) return lacking(c, 'contact vertical entre modules empilés', 'Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
   const { n, TRd } = platesPerCorner(c, outer);
   const T = Math.max(0, f.N);
   const C = Math.max(0, -f.N);
@@ -186,7 +193,7 @@ export function checkVerticalLink(c: ConnectionSet, f: Forces, label: string, co
 /** Liaison personnalisée à un angle : compression par le contact poteau / poteau, soulèvement par les pièces. */
 function checkCustomVerticalLink(c: ConnectionSet, j: CustomJoint, f: Forces, label: string, combination?: string, outer?: { long: boolean; short: boolean }): JointResult {
   const NRd = minCapacity(c.contact);
-  if (!usable(c.contact) || !NRd) return blocked('Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
+  if (!usable(c.contact) || !NRd) return lacking(c, 'contact vertical entre modules empilés', 'Contact vertical (VBX-VERTICAL-CONTACT) : capacité absente de la bibliothèque');
   if (j.uplift === null) return blocked(`Liaison « ${j.name} » : résistance au soulèvement incomplète (${j.missing.slice(0, 3).join(' ; ')})`);
   const T = Math.max(0, f.N);
   const C = Math.max(0, -f.N);
@@ -239,7 +246,7 @@ export interface StackGroup {
 export function checkStackShear(c: ConnectionSet, sum: { Hu: number; Hv: number; C: number }, outer: Record<'u0' | 'u1' | 'v0' | 'v1', boolean>, label: string, combination?: string, group?: StackGroup): JointResult {
   if (c.custom) return checkCustomStackShear(c, c.custom, sum, outer, label, combination, group);
   const p = stackPlates(c);
-  if (!usable(c.plate) || !p.HRd || p.mu === undefined) return blocked('Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
+  if (!usable(c.plate) || !p.HRd || p.mu === undefined) return lacking(c, 'liaison d’empilement', 'Plats de liaison verticale (VBX-VERTICAL-PLATE) : capacités absentes de la bibliothèque');
   // effort selon u (grand côté) : plats des petits côtés extérieurs ; selon v : plats des grands côtés extérieurs
   const [shortSides, longSides] = group ? [group.shortSides, group.longSides] : [(outer.u0 ? 1 : 0) + (outer.u1 ? 1 : 0), (outer.v0 ? 1 : 0) + (outer.v1 ? 1 : 0)];
   const nU = shortSides * p.perShort * 0.5;
@@ -301,7 +308,7 @@ function checkCustomStackShear(c: ConnectionSet, j: CustomJoint, sum: { Hu: numb
 export function checkBolt(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
   const FtB = cap(c.bolt, 'FtRd');
   const FvB = cap(c.bolt, 'FvRd');
-  if (!usable(c.bolt) || !FtB || !FvB) return blocked('Boulons horizontaux (VBX-HORIZONTAL-BOLT) : capacités absentes de la bibliothèque');
+  if (!usable(c.bolt) || !FtB || !FvB) return lacking(c, 'liaison entre modules côte à côte', 'Boulons horizontaux (VBX-HORIZONTAL-BOLT) : capacités absentes de la bibliothèque');
   const Fb = cap(c.bolt, 'FbRd');
   const Bp = cap(c.bolt, 'BpRd');
   const Fv = Fb ? Math.min(FvB, Fb) : FvB;
@@ -336,7 +343,7 @@ export function boltDiameter(c: ConnectionSet): number {
 /** Contreventement en plat + ridoir : traction seule (barre tendue du modèle). */
 export function checkBrace(c: ConnectionSet, f: Forces, label: string, combination?: string): JointResult {
   const NRd = minCapacity(c.bracing);
-  if (!usable(c.bracing) || !NRd) return blocked('Contreventement (VBX-BRACING) : capacités absentes de la bibliothèque');
+  if (!usable(c.bracing) || !NRd) return lacking(c, 'contreventement', 'Contreventement (VBX-BRACING) : capacités absentes de la bibliothèque');
   const T = Math.max(0, f.N);
   const eta = T / NRd;
   return {
@@ -373,7 +380,7 @@ const E_STEEL = 210000;
  */
 export function checkJack(c: ConnectionSet, R: { N: number; H: number }, extension: number, label: string, combination?: string, gammaM = 1.1): JointResult {
   const spec = jackSpec(c);
-  if (!spec) return blocked('Pieds à vérin (VBX-JACK) : tige non renseignée dans la bibliothèque');
+  if (!spec) return lacking(c, 'pieds à vérin', 'Pieds à vérin (VBX-JACK) : tige non renseignée dans la bibliothèque');
   const e = extension;
   if (e > spec.extensionMax + 1e-6) return blocked(`Vérin ${label} : sortie ${f2(e / 10, 1)} cm > ${f2(spec.extensionMax / 10, 1)} cm autorisés`);
   const { d3, fy } = spec;

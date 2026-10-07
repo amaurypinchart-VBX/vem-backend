@@ -10,6 +10,7 @@ import type { StudyInputs, StudyRun } from '../studyRun';
 import { runStudy } from '../studyRun';
 import type { StudyRunner } from '../worker/study';
 import type { MemberFamily } from '../core/assemble';
+import { moduleKg } from '../core/moduleTypes';
 import type { SectionSlot } from '../core/mods';
 import { PLYWOOD_THICKNESSES, mergeMods, SLOT_LABEL } from '../core/mods';
 import type { SectionEntry } from '../core/library';
@@ -200,7 +201,8 @@ function leversFor(run: StudyRun, inputs: StudyInputs, problem: { key: string; i
   }
   // ─── plancher : contreplaqué plus épais ───
   if (problem.key === 'plywood') {
-    const t0 = inputs.modules[0]?.params.plywood.thickness ?? 18;
+    // le plus mince des planchers de l'étude (types personnalisés : épaisseur de leur plancher)
+    const t0 = Math.min(...inputs.modules.map((m) => m.params.frame?.deck.floor?.thickness ?? m.params.plywood.thickness), Infinity) || 18;
     for (const t of PLYWOOD_THICKNESSES.filter((x) => x > t0)) out.push({ id: `plywood:${t}`, title: `plancher en contreplaqué de ${t} mm`, changes: { mods: { plywood: { thickness: t } } }, category: 'structure', special: true });
   }
   // ─── pistes du diagnostic pour ce problème (en tête pour un assemblage ou la stabilité : contreventer d'abord) ───
@@ -238,7 +240,11 @@ export function costOf(inputs: StudyInputs, base: StudyInputs, changes: VariantC
     const H = pm ? pm.params.roofZ - pm.params.floorZ : 2790;
     kg += 2 * (Math.hypot(L, H) / 1e3) * 2.83 + 6;
   }
-  kg += (mods.addedModules ?? []).length * 2564;
+  // module ajouté : poids de son type (Viewbox : pesée des hypothèses)
+  for (const a of mods.addedModules ?? []) {
+    const from = base.modules.find((m) => m.id === a.from) ?? inputs.modules.find((m) => m.id === a.from);
+    kg += from ? moduleKg(from, inputs.loads, inputs.sections) : inputs.loads.moduleWeight / 9.81;
+  }
   if (mods.stackPlates) kg += 0; // plats ajoutés : quelques kg, comptés en pièces
   let pieces = 0;
   for (const s of mods.sections ?? []) pieces += (s.modules?.length ?? inputs.modules.length) * (s.slot.startsWith('rim') ? 4 : s.slot === 'column' ? 4 : 6);

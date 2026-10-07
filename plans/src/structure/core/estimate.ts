@@ -24,6 +24,16 @@ export interface EstimateModule {
   terrace?: boolean;
   /** murs, vitrages, portes, garde-corps, logos, lest… portés par ce module d'après le modèle (N) */
   carried?: number;
+  /**
+   * type de structure personnalisé (S12) : pas de Prüfbuch TÜV ni de données statico ; poids d'acier du type (N) et
+   * mode de poids ('computed' = barres + plafond + sol, sans pesée) ; surface de contact d'un pied (null = inconnue)
+   */
+  family?: 'other';
+  steelWeight?: number;
+  weightMode?: 'weighed' | 'computed';
+  /** sol du type (N/mm²) quand il diffère du sol des hypothèses */
+  floorFinish?: number;
+  contact?: { a1: number; a2: number } | null;
 }
 
 /**
@@ -275,11 +285,14 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     // le poids pesé comprend planchers et isolants : « le plus lourd » le compare à barres + plafond + sol comme le
     // calcul complet (complément Gc), « pesée » le retient tel quel
     const ratio = m.area / (5900 * 2500);
-    const weight = m.weight ?? L.moduleWeight * ratio;
-    const modelled = (L.steelWeight ?? VIEWBOX_STEEL_WEIGHT) * ratio + (L.ceiling + L.floorFinish) * m.area;
+    // type personnalisé (S12) : poids et acier de son type, jamais ceux de la Viewbox ramenés à la surface
+    const floorFinish = m.floorFinish ?? L.floorFinish;
+    const modelled = m.family === 'other' ? (m.steelWeight ?? 0) + (L.ceiling + floorFinish) * m.area : (L.steelWeight ?? VIEWBOX_STEEL_WEIGHT) * ratio + (L.ceiling + L.floorFinish) * m.area;
+    const weight = m.weight ?? (m.family === 'other' ? modelled : L.moduleWeight * ratio);
     const Gterrace = m.terrace ? (L.terraceG ?? 0) * m.area : 0;
     const added = ((L.ceilingExtra ?? 0) + (L.floorExtra ?? 0)) * m.area;
-    const G = (L.weightMode === 'weighed' ? weight : Math.max(weight, modelled)) + added + (m.carried ?? 0) + L.extraPerModule + Gterrace;
+    const own = m.weightMode === 'computed' ? modelled : m.weightMode === 'weighed' || L.weightMode === 'weighed' ? weight : Math.max(weight, modelled);
+    const G = own + added + (m.carried ?? 0) + L.extraPerModule + Gterrace;
     const Qfloor = (m.level === 0 ? L.liveGround ?? L.live : L.live) * m.area;
     // toiture accessible (terrasse sur le toit) ; élément terrasse posé dessus : son poids et le public des étages
     const Qroof = m.roofAccessible ? L.roofLive * m.area : m.terrace ? L.live * m.area : 0;

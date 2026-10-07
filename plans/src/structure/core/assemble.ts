@@ -327,6 +327,15 @@ export const FAMILY_LABEL: Record<MemberFamily, string> = {
   'rim-bearing': 'appui rive sur rive',
 };
 
+/**
+ * Écart vertical admis entre la toiture d'un module et le plancher du module posé dessus (lignes de système, mm) :
+ * e = (topZ − roofZ) du dessous + floorZ du dessus, intervalle [e − 140 ; e + 160] — Viewbox : e = 290, [150 ; 450].
+ */
+export function stackBand(L: Pick<PlacedModule, 'params'>, U: Pick<PlacedModule, 'params'>): [number, number] {
+  const e = L.params.topZ - L.params.roofZ + U.params.floorZ;
+  return [e - 140, e + 160];
+}
+
 /** Tolérances de pose d'un angle de Viewbox (mm, en plan) : sur une rive de toiture, sur une poutre du modèle. */
 const RIM_TOL = 100;
 const MEMBER_TOL = 150;
@@ -500,7 +509,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         if (L === U) continue;
         for (const l of cornersOf(L, L.params.roofZ)) {
           const d = planDist(c, l);
-          if (c[1] - l[1] > 150 && c[1] - l[1] < 450 && d <= gapTol + 10 && d < bd) [best, bd] = [L, d];
+          if (c[1] - l[1] > stackBand(L, U)[0] && c[1] - l[1] < stackBand(L, U)[1] && d <= gapTol + 10 && d < bd) [best, bd] = [L, d];
         }
       }
       if (best) covered.add(best);
@@ -583,7 +592,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
           L !== U &&
           cornersOf(L, L.params.roofZ).some((l) => {
             const dz = cw[1] - l[1];
-            return dz >= 150 && dz <= 450 && planDist(cw, l) <= gapTol + 10;
+            return dz >= stackBand(L, U)[0] && dz <= stackBand(L, U)[1] && planDist(cw, l) <= gapTol + 10;
           }),
       );
       if (onCorner) {
@@ -596,7 +605,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         const L = f.pm;
         if (L === U) continue;
         const dz = cw[1] - (L.origin[1] + L.params.roofZ);
-        if (dz < 150 || dz > 450) continue;
+        if (dz < stackBand(L, U)[0] || dz > stackBand(L, U)[1]) continue;
         const d = Math.abs(dot([cw[0] - f.a[0], 0, cw[2] - f.a[2]], f.normal));
         const s = along(f, cw);
         if (d > RIM_TOL || s <= 20 || s >= f.length - 20) continue;
@@ -655,7 +664,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
           addExtra(f1, s1);
           covered.add(over);
           landings.set(key, { kind: 'transfer', L: over, f0, s0, f1, s1, section: added.section ?? over.params.sections.rimRoof ?? over.params.sections.rim });
-          if (cw[1] - (over.origin[1] + over.params.roofZ) > 450)
+          if (cw[1] - (over.origin[1] + over.params.roofZ) > stackBand(over, U)[1])
             warnings.push(`${U.id} angle ${c + 1} : ${fmtNumber((cw[1] - (over.origin[1] + over.params.topZ)) / 10, 0)} cm entre le haut de ${over.id} et l’angle — rehausse sur la poutre de reprise à détailler.`);
           return;
         }
@@ -696,7 +705,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         const L = fl.pm;
         if (L === U) continue;
         const dz = yU - (L.origin[1] + L.params.roofZ);
-        if (dz < 150 || dz > 450) continue;
+        if (dz < stackBand(L, U)[0] || dz > stackBand(L, U)[1]) continue;
         const cross = fu.dir[0] * fl.dir[2] - fu.dir[2] * fl.dir[0];
         const cands: Array<[number, number]> = [];
         if (Math.abs(cross) > 0.1) {
@@ -1021,6 +1030,8 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   // ─── Viewbox empilées : liaison d'angle de la toiture du dessous au plancher du dessus ───
   const topModules = new Set(modules.map((m) => m.id));
   const landedOn: string[] = [];
+  // modules empilés de types différents (S12) : liaison à détailler
+  const mixed = new Set<string>();
   for (const U of modules) {
     if (U.level === 0) continue;
     const tplU = tplOf.get(U)!;
@@ -1043,7 +1054,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
             const nl = P(L, rk);
             const dz = pos(nu)[1] - pos(nl)[1];
             const d = planDist(pos(nu), pos(nl));
-            if (dz < 150 || dz > 450 || d > gapTol + 10) continue;
+            if (dz < stackBand(L, U)[0] || dz > stackBand(L, U)[1] || d > gapTol + 10) continue;
             if (!best || d < best.d) best = { L, n: nl, d };
           }
         }
@@ -1053,10 +1064,12 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
         }
         topModules.delete(best.L.id);
         link(best.n, best.L.id, '');
+        if (best.L.templateKey !== U.templateKey) mixed.add(`${best.L.id} / ${U.id}`);
         return;
       }
       if (land.kind === 'rim') {
         topModules.delete(land.L.id);
+        if (land.L.templateKey !== U.templateKey) mixed.add(`${land.L.id} / ${U.id}`);
         link(rimNodeAt(land.f, 'roof', land.s), land.L.id, ` (sur la rive, ${SIDE_NAME[land.f.side]})`);
         landedOn.push(`${U.id} angle ${c + 1} sur la rive de toiture de ${land.L.id} (${SIDE_NAME[land.f.side]}, à ${fmtNumber(land.s / 1e3, 2)} m de son angle)`);
         return;
@@ -1117,6 +1130,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   }
   if (landedOn.length)
     warnings.push(`Angles posés hors des angles de Viewbox : ${landedOn.join(' ; ')} — rive ou poutre vérifiée en flexion, liaison vérifiée comme les plats d’empilement : perçages et attache à détailler.`);
+  if (mixed.size) warnings.push(`Modules de types différents empilés (${[...mixed].join(', ')}) : liaison entre types différents à détailler.`);
 
   // ─── appuis des Viewbox posées au sol (surélévation : poteau sous chaque appui, pied articulé sur le calage) ───
   const raise = opt.raise && opt.raise.height > 0 ? opt.raise : null;

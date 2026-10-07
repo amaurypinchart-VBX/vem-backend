@@ -103,6 +103,15 @@ export interface LoadInputs {
    */
   roofTerraces?: string[];
   terraceG?: number;
+  /**
+   * types de structure personnalisés (S12), par clé de type (`PlacedModule.templateKey`) ; absent = Viewbox, données
+   * globales ci-dessus. Poids pesé du type (N) ; mode 'computed' = pas de pesée : barres + plafond + sol, sans complément ;
+   * sol du type (N/mm²) = max(sol des hypothèses ; plancher du type) — jamais les deux ; nom du type (notes de calcul)
+   */
+  moduleWeightByType?: Record<string, number>;
+  weightModeByType?: Record<string, 'weighed' | 'computed'>;
+  floorFinishByType?: Record<string, number>;
+  typeNames?: Record<string, string>;
 }
 
 export interface Axes {
@@ -299,13 +308,15 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
   // ─── G2 plafonds, G4 sols ───
   // poids pesé retenu : plafond et sol réduits pour que barres + plafond + sol = pesée
   const finishFactor = new Map<string, number>();
-  // poids pesé de la Viewbox standard + écart des barres d'une Viewbox modifiée par l'étude (profils, poteaux)
-  const weightOf = (pm: { weightDelta?: number }) => inp.moduleWeight + (pm.weightDelta ?? 0);
+  // poids pesé de la Viewbox standard (ou du type personnalisé) + écart des barres d'une Viewbox modifiée par l'étude
+  const weightOf = (pm: { weightDelta?: number; templateKey: string }) => (inp.moduleWeightByType?.[pm.templateKey] ?? inp.moduleWeight) + (pm.weightDelta ?? 0);
+  const modeOf = (pm: { templateKey: string }) => inp.weightModeByType?.[pm.templateKey] ?? inp.weightMode;
+  const floorOf = (pm: { templateKey: string }) => inp.floorFinishByType?.[pm.templateKey] ?? inp.floorFinish;
   for (const pm of model.modules) {
     const p = tplOf(pm.id).params;
-    const fin = (inp.ceiling + inp.floorFinish) * (p.x1 - p.x0) * (p.y1 - p.y0);
+    const fin = (inp.ceiling + floorOf(pm)) * (p.x1 - p.x0) * (p.y1 - p.y0);
     const self = selfByModule.get(pm.id) ?? 0;
-    finishFactor.set(pm.id, inp.weightMode === 'weighed' && fin > 0 ? Math.max(0, Math.min(1, (weightOf(pm) - self) / fin)) : 1);
+    finishFactor.set(pm.id, modeOf(pm) === 'weighed' && fin > 0 ? Math.max(0, Math.min(1, (weightOf(pm) - self) / fin)) : 1);
   }
   const g2 = new CaseBuilder(model);
   const g4 = new CaseBuilder(model);
@@ -313,7 +324,7 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const tpl = tplOf(pm.id);
     const k = finishFactor.get(pm.id)!;
     if (inp.ceiling * k > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceiling * k, DOWN);
-    if (inp.floorFinish * k > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorFinish * k, DOWN);
+    if (floorOf(pm) * k > 0) panelLoad(g4, tpl, pm.id, 'floor', floorOf(pm) * k, DOWN);
     if ((inp.ceilingExtra ?? 0) > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.ceilingExtra!, DOWN);
     if ((inp.floorExtra ?? 0) > 0) panelLoad(g4, tpl, pm.id, 'floor', inp.floorExtra!, DOWN);
     if (inp.roofTerraces?.includes(pm.id) && (inp.terraceG ?? 0) > 0) panelLoad(g2, tpl, pm.id, 'roof', inp.terraceG!, DOWN);
@@ -336,7 +347,9 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
     const tpl = tplOf(pm.id);
     const p = tpl.params;
     const area = (p.x1 - p.x0) * (p.y1 - p.y0);
-    const modelled = (selfByModule.get(pm.id) ?? 0) + (inp.ceiling + inp.floorFinish) * area * finishFactor.get(pm.id)!;
+    // type sans pesée : poids calculé (barres + plafond + sol), pas de complément
+    if (modeOf(pm) === 'computed') continue;
+    const modelled = (selfByModule.get(pm.id) ?? 0) + (inp.ceiling + floorOf(pm)) * area * finishFactor.get(pm.id)!;
     const missing = weightOf(pm) - modelled;
     if (missing <= 0) continue;
     // réparti uniformément sur les 4 rives du plancher
@@ -354,7 +367,9 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
       );
     }
   }
-  const first = model.modules[0];
+  // note « Poids d'une Viewbox » : première Viewbox (types personnalisés : notes par type ci-dessous)
+  const custom = (pm: { templateKey: string }) => !!inp.weightModeByType?.[pm.templateKey];
+  const first = model.modules.find((pm) => !custom(pm));
   if (first) {
     const p = first.params;
     const area = (p.x1 - p.x0) * (p.y1 - p.y0);
@@ -374,6 +389,33 @@ export function buildLoadCases(model: StructuralModel, inp: LoadInputs, sections
         : `${n(self / 1e3)} + ${n((inp.ceiling * area) / 1e3)} + ${n((inp.floorFinish * area) / 1e3)} = ${n(total / 1e3)} kN ; pesée ${n(inp.moduleWeight / 1e3)} kN${total >= inp.moduleWeight ? ' : modèle plus lourd, retenu (prudent)' : ` : complément Gc = ${n((inp.moduleWeight - total) / 1e3)} kN`}`,
       result: weighed ? self + k * (total - self) : Math.max(total, inp.moduleWeight),
     });
+  }
+  for (const key of [...new Set(model.modules.filter(custom).map((pm) => pm.templateKey))]) {
+    const pm = model.modules.find((m) => m.templateKey === key)!;
+    const p = pm.params;
+    const area = (p.x1 - p.x0) * (p.y1 - p.y0);
+    const self = selfByModule.get(pm.id) ?? 0;
+    const k = finishFactor.get(pm.id)!;
+    const name = inp.typeNames?.[key] ?? key;
+    const [c, f] = [inp.ceiling * area, floorOf(pm) * area];
+    if (modeOf(pm) === 'computed')
+      records.push({
+        key: `loads.moduleWeight:${key}`,
+        title: `Poids d’un module « ${name} » : poids calculé, non pesé`,
+        clause: 'barres du type (78,5 kN/m³) + plafond + sol (plancher du type compris, jamais en double)',
+        formula: 'G = G1 (barres) + G2 (plafond) + G4 (sol = max(sol des hypothèses ; plancher du type))',
+        withValues: `${n(self / 1e3)} + ${n(c / 1e3)} + ${n(f / 1e3)} = ${n((self + c + f) / 1e3)} kN`,
+        result: self + c + f,
+      });
+    else
+      records.push({
+        key: `loads.moduleWeight:${key}`,
+        title: `Poids d’un module « ${name} » : modèle et pesée`,
+        clause: 'pesée saisie pour ce type',
+        formula: 'poids pesé = G1 (barres, 78,5 kN/m³) + k · (G2 plafond + G4 sol)',
+        withValues: `${n(self / 1e3)} + ${n(k, 2)} · (${n(c / 1e3)} + ${n(f / 1e3)}) = ${n((self + k * (c + f)) / 1e3)} kN ; pesée ${n(weightOf({ templateKey: key }) / 1e3)} kN`,
+        result: Math.max(self + k * (c + f), weightOf({ templateKey: key })),
+      });
   }
   const modified = model.modules.filter((pm) => pm.weightDelta);
   if (modified.length)

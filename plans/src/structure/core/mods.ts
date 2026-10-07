@@ -12,7 +12,7 @@ import type { StackJointMod } from './stackJoint';
 import type { Fabrication, Section, SectionProps } from './catalog';
 import { chs, rectangle, rhs, roundBar } from './catalog';
 import type { EstimateModule } from './estimate';
-import type { ConnectionEntry, LibraryEntry, SectionEntry, ViewboxTemplateParams } from './library';
+import type { ConnectionEntry, FrameBar, FrameLayout, LibraryEntry, SectionEntry, ViewboxTemplateParams } from './library';
 import type { EdgeItem } from './loads';
 import { materialByKey } from './materials';
 import type { Side } from './templates/viewboxEU';
@@ -255,6 +255,23 @@ const SLOT_PARAM: Record<SectionSlot, keyof PlacedModule['params']['sections']> 
   'foot-middle': 'footMiddle',
 };
 
+/** Rôles des barres d'un type personnalisé (S12) correspondant à un emplacement de section des modifications. */
+const SLOT_ROLES: Record<SectionSlot, (b: FrameBar) => boolean> = {
+  'rim-floor': (b) => b.role === 'rim-floor',
+  'rim-roof': (b) => b.role === 'rim-roof',
+  'secondary-floor': (b) => b.role === 'transverse-floor' || b.role === 'stringer-floor',
+  'secondary-roof': (b) => b.role === 'transverse-roof' || b.role === 'stringer-roof',
+  column: (b) => b.role === 'column',
+  'foot-corner': (b) => b.role === 'foot' && b.footPart !== 'middle',
+  'foot-middle': (b) => b.role === 'foot' && b.footPart === 'middle',
+};
+
+/** Barres d'un type personnalisé modifiées pour un emplacement ({} pour une Viewbox : rien d'autre ne change). */
+function frameSlot(p: ViewboxTemplateParams, slot: SectionSlot, f: (b: FrameBar) => FrameBar): { frame?: FrameLayout } {
+  if (!p.frame) return {};
+  return { frame: { ...p.frame, bars: p.frame.bars.map((b) => (SLOT_ROLES[slot](b) ? f(b) : b)) } };
+}
+
 /** Section d'une modification : bibliothèque de l'étude, sinon catalogue du commerce (ajoutée à l'étude). */
 function ensureSection(sections: Map<string, SectionEntry>, key: string): boolean {
   if (sections.has(key)) return true;
@@ -341,7 +358,7 @@ export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutp
       if (s.slot === 'rim-floor' && !sec.rimRoof) sec.rimRoof = sec.rim;
       if (s.slot === 'secondary-floor' && !sec.secondaryRoof) sec.secondaryRoof = sec.secondary;
       (sec as Record<string, string>)[SLOT_PARAM[s.slot]] = s.section;
-      return { ...m, params: { ...m.params, sections: sec } };
+      return { ...m, params: { ...m.params, sections: sec, ...frameSlot(m.params, s.slot, (b) => ({ ...b, section: s.section, grade: undefined })) } };
     });
   }
   // nuances : la section de la famille dans l'autre nuance (clé « …@S355 »)
@@ -364,14 +381,26 @@ export function applyMods(inp: ModsInput, mods: StudyMods | undefined): ModsOutp
       const d = gradedSection(e, g.material);
       sections.set(d.key, d);
       (sec as Record<string, string>)[field] = d.key;
-      return { ...m, params: { ...m.params, sections: sec } };
+      // type personnalisé : nuance portée par chaque barre du groupe (section « …@S355 » ajoutée à l'étude)
+      const fr = frameSlot(m.params, g.slot, (b) => {
+        const be = sections.get(b.section.split('@')[0]);
+        if (be) sections.set(`${be.key}@${g.material}`, gradedSection(be, g.material));
+        return { ...b, section: b.section.split('@')[0], grade: g.material };
+      });
+      return { ...m, params: { ...m.params, sections: sec, ...fr } };
     });
   }
   // contreplaqué du plancher plus épais (toutes les Viewbox)
   const ply = mods?.plywood;
   if (ply && ply.thickness > 0) {
     if (!(ply.thickness >= 12 && ply.thickness <= 60)) warnings.push(`Contreplaqué de ${ply.thickness} mm hors des limites de l’outil (12 à 60 mm) : ignoré.`);
-    else modules = modules.map((m) => ({ ...m, params: { ...m.params, plywood: { ...m.params.plywood, thickness: ply.thickness } } }));
+    else
+      modules = modules.map((m) => {
+        const fr = m.params.frame;
+        // type personnalisé : épaisseur du plancher du frame aussi
+        const frame = fr?.deck.floor ? { frame: { ...fr, deck: { ...fr.deck, floor: { ...fr.deck.floor, thickness: ply.thickness } } } } : {};
+        return { ...m, params: { ...m.params, plywood: { ...m.params.plywood, thickness: ply.thickness }, ...frame } };
+      });
   }
   // écart de poids des Viewbox modifiées (barres, contreplaqué) par rapport à leur gabarit
   modules = modules.map((m) => {

@@ -15,6 +15,8 @@ import type { Hypotheses } from './GroundPanel';
 import { roofSnow } from './GroundPanel';
 import { TERRACE, terraceSupports } from '../../structure/core/terrace';
 import type { AddedSupport } from '../../structure/core/estimate';
+import { moduleTypes, typeLoadInputs } from '../../structure/core/moduleTypes';
+import { frameSections } from '../../structure/core/templates/frameModule';
 
 /** Appuis du calage hors des Viewbox : pieds des éléments terrasse posés au sol (5,0 kN/m² au rez-de-chaussée). */
 export function groundExtras(inp: Pick<StudyInputs, 'terraces' | 'loads'>): AddedSupport[] {
@@ -48,6 +50,9 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
 export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMods | undefined } {
   const { sceneModel, library, hyp, calc } = src;
   const kNm2 = (v: number) => v * 1e-3;
+  // types de structure personnalisés (S12) : sections de leurs barres (catalogue, nuances), poids et sol par type
+  const sections = frameSections(sceneModel.modules, sectionMap(library));
+  const types = moduleTypes(sceneModel.modules, library, sections, { viewboxKg: hyp.moduleWeightKg, weights: hyp.moduleWeights });
   // murs, vitrages, portes, garde-corps, logos : objet par objet d'après le modèle (étape 1), jamais en forfait
   const base: StudyInputs = {
     modules: sceneModel.modules,
@@ -57,7 +62,7 @@ export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMo
     terraces: sceneModel.terraces,
     members: sceneModel.members ?? [],
     library,
-    sections: sectionMap(library),
+    sections,
     loads: {
       // poids pesé = tout compris (structure, plancher, sol, plafond, isolants) : plafond et sol du modèle réduits pour
       // que barres + plafond + sol = pesée ; calage statico : le plus lourd du modèle et de la pesée, comme SCIA
@@ -82,6 +87,7 @@ export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMo
       roofTerraces: sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module!),
       terraceG: TERRACE.selfWeight + TERRACE.deck,
       cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },
+      ...typeLoadInputs(types, DEFAULTS.floorFinish.value),
     },
     middleFeet: hyp.middleFeet,
     sls: !hyp.staticoConversion,
