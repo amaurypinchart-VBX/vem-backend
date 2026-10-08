@@ -322,6 +322,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
         moduleWeightKg: hyp.moduleWeightKg,
         sceneWarnings: [],
         ignoredParts: ignoredStructural(recognition),
+        aiPending: recognition.types.filter((t) => t.source === 'ai').length,
         images: imgs,
         calagePlan: plan ?? undefined,
         texts,

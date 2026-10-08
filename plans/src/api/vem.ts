@@ -279,6 +279,7 @@ export const vem = {
   deleteReport: (id: string) => api<null>('DELETE', `/structure/reports/${id}`),
   aiStatus: () => api<{ enabled: boolean; model: string }>('GET', '/structure/ai/status'),
   aiIdentify: (body: unknown) => api<{ suggestion: IdentifySuggestion; usage: AiUsage }>('POST', '/structure/ai/identify', body),
+  aiModel: (body: unknown) => api<{ analysis: import('../structure/core/ai').ModelAnalysisOut; removed: string[]; usage: AiUsage }>('POST', '/structure/ai/model', body),
   aiGroup: (body: unknown) => api<{ groups: GroupProposal[]; usage: AiUsage }>('POST', '/structure/ai/group', body),
   aiExtract: (pdf: File, reportRef: string, hint: string) => {
     const fd = new FormData();

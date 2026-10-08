@@ -2,7 +2,7 @@
 // sections lues dans un document recalculées par l'outil, capacités converties, panneaux composés, données envoyées
 // pour la rédaction, gabarit de calcul rendu visible. Aucun appel réel à l'API ici.
 import { describe, expect, it } from 'vitest';
-import { checkText, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from '../../../src/services/structureAiGuard';
+import { checkText, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract, normalizeModelAnalysis } from '../../../src/services/structureAiGuard';
 import type { ExtractedConnection, ExtractedSection } from '../../src/structure/core/ai';
 import { AI_CONFIDENCE_MIN, connectionFromExtract, identifyPayload, sectionFromExtract, suggestionToAssignment } from '../../src/structure/core/ai';
 import { panelFromSearch, panelMass } from '../../src/structure/core/composite';
@@ -216,5 +216,62 @@ describe('assistant des accessoires : proposition sans valeur inventée', () => 
     expect(r.removed).toEqual(['components[2].a = 6', 'components[2].length = 120', 'paths.uplift[0].lever = 45']);
     // petits entiers (comptages) toujours admis
     expect(r.proposal.perCorner).toBe(2);
+  });
+});
+
+describe('S12.6 — analyse IA du modèle : garde-fou', () => {
+  const opts = {
+    moduleTypes: ['VIEWBOX-5900-EU', 'TYPE-LIGHT'],
+    barGroups: { 'rim-floor|SEC-SKP-A': ['SEC-SKP-A', 'CAT-UPN160', 'CAT-UPN140'] },
+    frameRoles: ['rim-floor', 'rim-roof', 'transverse-floor', 'column', 'other'],
+    natures: { structural: ['viewbox', 'beam', 'terrace'], load: ['wall', 'glazing', 'other'], wind: ['sign'], ignored: ['decor'] },
+    materials: [{ key: 'S235' }],
+    sections: [{ key: 'UNP220' }],
+    productKeys: ['def:MUR', 'def:PORTE'],
+    data: { modules: [{ dims: [5912, 2504] }], groups: [{ dims: [153, 80, 4] }] },
+  };
+  const base = {
+    structure: {
+      verdict: 'new-type',
+      moduleType: 'TYPE-INVENTE',
+      confidence: 0.9,
+      reasons: ['rives C 153 × 80 au lieu de 220 mm, portée 7 400 mm'],
+      barGroups: [
+        { group: 'rim-floor|SEC-SKP-A', role: 'rim-floor', section: 'CAT-IPE300', roll: 'open-in', confidence: 0.8, note: 'C plié 153' },
+        { group: 'inconnu', role: 'column', section: null, roll: null, confidence: 0.9, note: '' },
+      ],
+      joints: { column: 'semi', stack: 'clamp', side: 'unknown', evidence: 'pas de plat visible' },
+      deck: { span: 'u', material: 'BOIS-INVENTE' },
+    },
+    products: [
+      { typeKey: 'def:MUR', role: 'load', nature: 'robot', material: null, section: null, windClosed: true, weight: { value: 40, unit: 'kg/m²' }, confidence: 0.9, questions: [], rationale: 'panneau de 42 mm' },
+      { typeKey: 'def:INCONNU', role: 'load', nature: 'wall', material: null, section: null, windClosed: true, weight: null, confidence: 0.9, questions: [], rationale: '' },
+    ],
+    groups: [{ keys: ['def:MUR', 'def:PORTE', 'def:X'], label: 'murs', reason: '2 définitions pour 3 murs de 999 mm' }],
+    alerts: ['ce mur a la taille d’une porte (2 100 mm)'],
+    questions: [],
+  };
+  it('valeurs hors listes supprimées (confiance ≤ 0,4), section hors candidats supprimée, type hors bibliothèque supprimé', () => {
+    const { analysis, removed } = normalizeModelAnalysis(structuredClone(base), opts);
+    expect(analysis.structure.moduleType).toBeNull();
+    expect(analysis.structure.confidence).toBeLessThanOrEqual(0.4);
+    expect(analysis.structure.barGroups).toHaveLength(1);
+    expect(analysis.structure.barGroups[0].section).toBeNull();
+    expect(analysis.structure.barGroups[0].confidence).toBeLessThanOrEqual(0.4);
+    expect(analysis.structure.deck.material).toBeNull();
+    expect(analysis.products.map((p) => p.typeKey)).toEqual(['def:MUR']);
+    expect(analysis.products[0].nature).toBe('wall');
+    expect(analysis.products[0].confidence).toBeLessThanOrEqual(0.4);
+    expect(analysis.groups[0].keys).toEqual(['def:MUR', 'def:PORTE']);
+    expect(removed.length).toBeGreaterThan(3);
+  });
+  it('nombre inventé retiré des textes, nombres des données gardés', () => {
+    const { analysis } = normalizeModelAnalysis(structuredClone(base), opts);
+    expect(analysis.structure.reasons[0]).toContain('153 × 80');
+    expect(analysis.structure.reasons[0]).not.toContain('7 400');
+    expect(analysis.structure.reasons[0]).not.toMatch(/\b220\b/);
+    expect(analysis.alerts[0]).toContain('…');
+    expect(analysis.groups[0].reason).not.toContain('999');
+    expect(analysis.products[0].rationale).not.toContain('42');
   });
 });

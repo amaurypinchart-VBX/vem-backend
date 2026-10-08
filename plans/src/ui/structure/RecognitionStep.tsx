@@ -1,6 +1,7 @@
 // Étape « Reconnaissance » : vue 3D colorée par statut (vert connu, orange proposé, rouge inconnu, gris ignoré),
 // liste des types de pièces (une réponse vaut pour toutes les instances), panneau « Qu'est-ce que c'est ? ».
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import { SceneViewer } from '../../viewer/SceneViewer';
@@ -23,6 +24,7 @@ import { ViewboxStructure } from './ViewboxStructure';
 import { CustomTypeSheet, FrameWorkshop } from './FrameWorkshop';
 import { isCustomType } from '../../structure/core/moduleTypes';
 import type { FrameExtraction } from '../../structure/core/frameExtract';
+import type { FrameProposal } from '../../structure/core/ai';
 
 export interface AnswerOptions {
   scope: 'model' | 'project';
@@ -49,6 +51,14 @@ interface Props {
   who?: string;
   /** structure dessinée relevée par type de module (S12.5) */
   drawnStructures?: ReadonlyMap<string, FrameExtraction>;
+  /** panneau de l'analyse IA du modèle (S12.6), en tête de la colonne */
+  aiPanel?: ReactNode;
+  /** propositions de l'IA pour la structure dessinée (atelier) */
+  aiFrame?: FrameProposal | null;
+  /** type à ouvrir (demandé par le panneau IA ; n change à chaque demande) */
+  openKey?: { key: string; n: number } | null;
+  /** change après des captures hors écran : la vue 3D reprend la scène */
+  reclaimKey?: number;
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -89,6 +99,7 @@ function PartForm({
   moduleDims,
   onPreviewType,
   extraction,
+  aiFrame,
 }: {
   type: PartType;
   library: LibraryEntry[];
@@ -113,6 +124,7 @@ function PartForm({
   /** aperçu 3D d'un type en cours de description dans l'atelier */
   onPreviewType?: (e: ModuleTypeEntry | null) => void;
   extraction?: FrameExtraction | null;
+  aiFrame?: FrameProposal | null;
 }) {
   const initial: PartAssignment = type.assignment ?? (type.kind === 'module' ? { role: 'structural', nature: 'viewbox' } : { role: 'load', nature: 'other' });
   const [a, setA] = useState<PartAssignment>(initial);
@@ -186,6 +198,23 @@ function PartForm({
             {type.moduleIds.length > 0 && <>Viewbox : {type.moduleIds.slice(0, 6).join(', ')}{type.moduleIds.length > 6 ? '…' : ''}</>}
           </div>
         </div>
+        {type.source === 'ai' && type.ai && (
+          <div className="card" style={{ background: 'var(--bg-2)' }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="row">
+                <b>🤖 Proposé par l’analyse IA du modèle</b>
+                <span className={`badge ${type.ai.confidence >= AI_CONFIDENCE_MIN ? 'orange' : 'ko'}`}>
+                  confiance {Math.round(type.ai.confidence * 100)} % — {type.ai.confidence >= AI_CONFIDENCE_MIN ? 'à vérifier puis valider' : 'trop incertaine : reste inconnue'}
+                </span>
+              </div>
+              {type.ai.questions.map((q, k) => (
+                <div key={k} className="hint">
+                  ❓ {q}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {group && (
           <div className="hint" style={{ color: 'var(--accent, #2563eb)' }}>
             Groupe proposé par l’IA « {group.label} » : la réponse s’appliquera aux {group.keys.length} types du groupe. {group.reason}
@@ -273,6 +302,7 @@ function PartForm({
                 who={who}
                 entry={workshop.entry}
                 extraction={extraction}
+                aiFrame={aiFrame}
                 onSaveEntries={onSaveEntries}
                 onUseType={(key) => patch({ role: 'structural', nature: 'viewbox', moduleTemplate: key })}
                 onPreview={onPreviewType}
@@ -487,7 +517,7 @@ function PartForm({
   );
 }
 
-export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel, onSaveEntries, who = 'utilisateur', drawnStructures }: Props) {
+export function RecognitionStep({ scene, glassTest, active, recognition, library, canEditLibrary, onAnswer, onConfirmSuggested, ai, studyId, onSavePanel, onSaveEntries, who = 'utilisateur', drawnStructures, aiPanel, aiFrame, openKey, reclaimKey }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -544,6 +574,15 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  useEffect(() => {
+    if (openKey) setSelected(openKey.key);
+  }, [openKey]);
+  useEffect(() => {
+    if (!reclaimKey) return;
+    viewerRef.current?.reclaim();
+    viewerRef.current?.setColorOverlay(recognition.colors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reclaimKey]);
   const type = recognition.types.find((t) => t.key === selected) ?? null;
   // dimensions d'un module (boîte du repère du module, pieds exclus) : départ de l'atelier structure
   const moduleDimsOf = (t: PartType) => {
@@ -625,6 +664,7 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {aiPanel}
         <div className="card">
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div>
@@ -740,6 +780,7 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
             moduleDims={moduleDimsOf(type)}
             onPreviewType={setPreviewType}
             extraction={type.kind === 'module' ? (drawnStructures?.get(type.key) ?? null) : null}
+            aiFrame={type.kind === 'module' && aiFrame?.moduleKey === type.key ? aiFrame : null}
             onAskAi={async () => {
               const images = await captureTypeImages(scene, glassTest, type).catch(() => []);
               viewerRef.current?.reclaim();
@@ -781,6 +822,7 @@ export function RecognitionStep({ scene, glassTest, active, recognition, library
                   >
                     <span>
                       <b>
+                        {t.source === 'ai' && <span title="proposé par l’analyse IA, à valider">🤖 </span>}
                         {t.nodeIds.length} × {t.label}
                       </b>
                       <span className="hint"> — {t.reason}</span>

@@ -57,6 +57,8 @@ export interface ReportInput {
   sceneWarnings: string[];
   /** pièces porteuses du modèle ignorées par l'utilisateur (escalier…) : listées dans « Non vérifié » */
   ignoredParts?: Array<{ label: string; count: number }>;
+  /** types encore sur une proposition de l'analyse IA (non confirmée) : « Non vérifié » */
+  aiPending?: number;
   images?: { view3d?: ReportImage; eta3d?: ReportImage };
   /** plan de calage A3 (planche du moteur de planches) : SVG rendu par l'appelant avec le numéro donné */
   calagePlan?: (pageLabel: string) => string;
@@ -338,6 +340,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ...((run.structure.stairs ?? []).length ? [L.notCoveredItems.steps, study.options.stairClad ? L.stairCladCalc : L.stairClad] : []),
       ...study.blocking.map((b) => `${L.notCoveredItems.blocking} : ${E(b)}`),
       ...(inp.ignoredParts ?? []).map((p) => L.notCoveredItems.ignored(p.label, p.count)),
+      ...(inp.aiPending ? [L.notCoveredItems.aiPending(inp.aiPending)] : []),
       ...(run.types?.notVerified ?? []).map((n) => `${CX.notVerifiedTitle} : ${E(n)}`),
     ],
   });

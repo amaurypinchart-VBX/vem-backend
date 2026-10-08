@@ -12,8 +12,8 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { anthropicRequest } from './aiService';
-import type { Citation, IdentifyLike, IdentifyOptions } from './structureAiGuard';
-import { checkText, citationsOf, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, numbersIn, verifyExtract } from './structureAiGuard';
+import type { Citation, IdentifyLike, IdentifyOptions, ModelAnalysisLike } from './structureAiGuard';
+import { checkText, citationsOf, cleanProposalNumbers, costOf, normalizeGroups, normalizeIdentify, normalizeModelAnalysis, numbersIn, verifyExtract } from './structureAiGuard';
 
 const db = prisma as any;
 
@@ -518,6 +518,101 @@ Format : {"reply": "...", "questions": ["..."], "proposal": {…} ou null}`;
     return { reply: out.reply, questions: [...out.questions, ...(removed.length ? [`Valeurs retirées de la proposition (pas données par toi ni lues sur le dessin) : ${removed.join(', ')} — à renseigner.`] : [])], proposal, usage: total };
   }
   throw new AppError('Assistant indisponible', 502);
+}
+
+// ─── analyse du modèle entier (S12.6) ───
+
+export const ModelAnalysisInput = z.object({
+  /** inventaire des modules, structure relevée par l'outil, produits, listes permises : données neutres */
+  modules: z.array(z.record(z.any())).max(40),
+  structure: z.record(z.any()).nullable(),
+  products: z.array(z.record(z.any())).max(400),
+  options: z.object({
+    moduleTypes: z.array(z.object({ key: z.string().max(80), name: z.string().max(200), summary: z.string().max(400).optional() })).max(80),
+    barGroups: z.record(z.array(z.string().max(80)).max(4)),
+    frameRoles: z.array(z.string().max(40)).max(20),
+    natures: z.record(z.array(z.string().max(40)).max(30)),
+    materials: z.array(z.object({ key: z.string().max(40), name: z.string().max(120) })).max(80),
+    sections: z.array(z.object({ key: z.string().max(80), name: z.string().max(200) })).max(400),
+    joints: z.record(z.array(z.string().max(40)).max(10)),
+  }),
+  images: z.array(ImageIn).max(6).optional(),
+  /** réponses de l'utilisateur aux questions de l'analyse précédente (une relance ciblée) */
+  answers: z.array(z.object({ question: z.string().max(500), answer: z.string().max(1000) })).max(20).optional(),
+  studyId: z.string().max(60).nullable().optional(),
+});
+export type ModelAnalysisInputT = z.infer<typeof ModelAnalysisInput>;
+
+const ModelAnalysisOut = z.object({
+  structure: z.object({
+    verdict: z.enum(['viewbox', 'library-type', 'new-type', 'unsure']),
+    moduleType: z.string().nullable().optional(),
+    confidence: z.number(),
+    reasons: z.array(z.string()).max(12).default([]),
+    barGroups: z
+      .array(z.object({ group: z.string(), role: z.string(), section: z.string().nullable(), roll: z.enum(['edge', 'flat', 'open-in', 'open-out']).nullable(), confidence: z.number(), note: z.string().max(600).default('') }))
+      .max(60)
+      .default([]),
+    joints: z.object({
+      column: z.enum(['semi', 'rigid', 'pinned', 'unknown']),
+      stack: z.enum(['plates', 'corner-casting', 'clamp', 'bolted', 'none', 'unknown']),
+      side: z.enum(['bolts', 'contact-only', 'custom', 'unknown']),
+      evidence: z.string().max(1500).default(''),
+    }),
+    deck: z.object({ span: z.enum(['u', 'v', 'two-way', 'unknown']), material: z.string().nullable() }),
+  }),
+  products: z
+    .array(
+      z.object({
+        typeKey: z.string(),
+        role: z.string(),
+        nature: z.string(),
+        material: z.string().nullable().default(null),
+        section: z.string().nullable().default(null),
+        windClosed: z.boolean().nullable().default(null),
+        weight: z.object({ value: z.number(), unit: z.enum(['kg/m', 'kg/m²', 'kg']) }).nullable().default(null),
+        confidence: z.number(),
+        questions: z.array(z.string()).max(6).default([]),
+        rationale: z.string().max(1500).default(''),
+      }),
+    )
+    .max(400)
+    .default([]),
+  groups: z.array(z.object({ keys: z.array(z.string()).max(60), label: z.string().max(200), reason: z.string().max(600) })).max(60).default([]),
+  alerts: z.array(z.string().max(600)).max(30).default([]),
+  questions: z.array(z.string().max(500)).max(12).default([]),
+});
+export type ModelAnalysisOutT = z.infer<typeof ModelAnalysisOut>;
+
+export async function analyzeModel(inp: ModelAnalysisInputT, ctx: CallContext) {
+  const system = `${BASE_RULES.replace('faites de modules acier Viewbox de 5,90 × 2,50 × 3,08 m, juxtaposés et empilés.', 'faites de modules acier juxtaposés et empilés : des Viewbox, ou d’autres structures modulaires du même principe (box rectangulaire avec cadre bas, cadre haut et poteaux, posée sur ses pieds) mais avec d’autres profils, grilles et assemblages.')}
+Tâche : analyser TOUT le modèle SketchUp en une fois et proposer :
+1. la structure : est-ce une Viewbox standard, un type déjà dans la bibliothèque (« moduleTypes ») ou un nouveau type ? Pour un nouveau type, le rôle de chaque groupe de barres relevé par l'outil (« structure.groupes », clés exactes « group ») parmi « frameRoles », la section parmi les SEULES sections candidates mesurées par l'outil pour ce groupe (« options.barGroups[group] », sinon null), le sens de pose (edge = sur chant, flat = à plat, open-in / open-out = U ouvert vers l'intérieur / l'extérieur), et la nature probable des assemblages (poteaux / cadres, empilement, juxtaposition) d'après les indices visibles (plats, goussets, perçages relevés), en le disant dans « evidence ». Si les modules ne sont pas encore reliés entre eux, dis quelle famille de liaison serait la plus adaptée parmi la liste et pourquoi (en mots, sans chiffre) ;
+2. les produits (« products », clés exactes « typeKey ») : rôle, nature, matériau, section (listes permises), face fermée au vent, regroupement des types identiques ;
+3. les incohérences (« alerts ») et les questions à poser (« questions »).
+Règles : choisis uniquement dans les listes fournies ; ne donne aucune capacité, raideur ou dimension ; les seuls nombres que tu peux écrire sont ceux des données envoyées. Poids d'un produit : seulement si la bibliothèque ne le donne pas, estimation d'ordre de grandeur (l'utilisateur confirmera). « confidence » entre 0 et 1 (sous 0,5 si tu hésites, avec des questions). Textes en français simple, 1 à 3 phrases.
+Format : {"structure": {"verdict": "viewbox|library-type|new-type|unsure", "moduleType": "clé ou null", "confidence": 0.0, "reasons": ["..."], "barGroups": [{"group": "...", "role": "...", "section": "clé ou null", "roll": "edge|flat|open-in|open-out" ou null, "confidence": 0.0, "note": "..."}], "joints": {"column": "semi|rigid|pinned|unknown", "stack": "plates|corner-casting|clamp|bolted|none|unknown", "side": "bolts|contact-only|custom|unknown", "evidence": "..."}, "deck": {"span": "u|v|two-way|unknown", "material": "clé ou null"}}, "products": [{"typeKey": "...", "role": "...", "nature": "...", "material": null, "section": null, "windClosed": null, "weight": null, "confidence": 0.0, "questions": [], "rationale": "..."}], "groups": [{"keys": ["..."], "label": "...", "reason": "..."}], "alerts": ["..."], "questions": ["..."]}`;
+  const data = { modules: inp.modules, structure: inp.structure, products: inp.products, answers: inp.answers ?? [] };
+  const content: any[] = [];
+  for (const img of inp.images ?? []) {
+    content.push({ type: 'image', source: { type: 'base64', media_type: img.media, data: img.data } });
+    content.push({ type: 'text', text: `Image ci-dessus : ${img.caption}` });
+  }
+  content.push({ type: 'text', text: `Listes permises :\n${JSON.stringify(inp.options)}\n\nModèle :\n${JSON.stringify(data)}` });
+  if (inp.answers?.length) content.push({ type: 'text', text: `Réponses de l'utilisateur à tes questions précédentes :\n${inp.answers.map((a) => `- ${a.question} → ${a.answer}`).join('\n')}` });
+  const r = await ask('model', ctx, system, content, 32000, 300000);
+  const out = parseJson(r.text, ModelAnalysisOut);
+  const { analysis, removed } = normalizeModelAnalysis(out as ModelAnalysisOutT & ModelAnalysisLike, {
+    moduleTypes: inp.options.moduleTypes.map((m) => m.key),
+    barGroups: inp.options.barGroups,
+    frameRoles: inp.options.frameRoles,
+    natures: inp.options.natures,
+    materials: inp.options.materials.map((m) => ({ key: String(m.key) })),
+    sections: inp.options.sections.map((m) => ({ key: String(m.key) })),
+    productKeys: inp.products.map((p) => String(p.typeKey ?? '')),
+    data,
+  });
+  return { analysis, removed, usage: r.usage };
 }
 
 export async function recentCalls(days = 30) {

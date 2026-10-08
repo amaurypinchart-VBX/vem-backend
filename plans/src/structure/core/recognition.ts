@@ -21,6 +21,8 @@ export interface StoredAssignment {
   scope: 'model' | 'project';
   at: string;
   by?: string;
+  /** proposition acceptée de l'analyse IA du modèle (identifiant de l'analyse) : retirée par « Annuler l'analyse IA » */
+  ai?: string;
 }
 export type Assignments = Record<string, StoredAssignment>;
 
@@ -37,8 +39,10 @@ export interface PartType {
   /** clés à mémoriser dans la bibliothèque pour reconnaître ce type ailleurs */
   signature: LibraryMatch;
   status: RecognitionStatus;
-  source: 'local' | 'library' | 'fingerprint' | 'proposal' | 'none';
+  source: 'local' | 'library' | 'fingerprint' | 'proposal' | 'ai' | 'none';
   assignment?: PartAssignment;
+  /** proposition de l'analyse IA du modèle (S12.6) : identifiant de l'analyse, confiance, questions */
+  ai?: { analysisId: string; confidence: number; questions: string[] };
   libraryEntry?: PartTypeEntry;
   reason: string;
   /** structure dessinée différente du type retenu (réponse locale ou type SketchUp gardés) : avertissement non bloquant */
@@ -72,6 +76,20 @@ export interface RecognitionInput {
    * type de la bibliothèque (clé du type) ; absent = pas de structure relevée (comportement d'avant S12)
    */
   structures?: Record<string, { bars: number; byTemplate: Record<string, { ok: boolean; differences: string[] }> }>;
+  /**
+   * propositions de l'analyse IA du modèle (S12.6), par clé de type : jamais au-dessus d'une réponse humaine (locale ou
+   * bibliothèque) ; confiance ≥ 0,5 = « proposé », sinon le type reste inconnu avec les questions de l'IA
+   */
+  ai?: Record<string, AiTypeProposal>;
+}
+
+export interface AiTypeProposal {
+  assignment: PartAssignment;
+  status: 'suggested' | 'unknown';
+  reason: string;
+  confidence: number;
+  questions: string[];
+  analysisId: string;
 }
 
 /** Catégories des pièces propres au composant Viewbox, comprises dans son gabarit. */
@@ -139,6 +157,7 @@ export function recognize(input: RecognitionInput): Recognition {
 
   const resolve = (t: Omit<PartType, 'status' | 'source' | 'reason'>, proposal: { assignment: PartAssignment; reason: string } | null, fpKey?: string, triangles?: number): PartType => {
     const local = input.assignments[t.key];
+    const aiP = input.ai?.[t.key];
     let out: PartType;
     const exact = parts.find(
       (e) =>
@@ -150,6 +169,8 @@ export function recognize(input: RecognitionInput): Recognition {
     const probable = !exact && fpKey ? parts.find((e) => e.match?.fingerprint === fpKey && trianglesClose(e.triangles ?? 0, triangles ?? 0)) : undefined;
     if (local) out = { ...t, status: 'known', source: 'local', assignment: local.assignment, reason: local.scope === 'project' ? 'réponse donnée pour ce projet' : 'réponse donnée pour ce modèle' };
     else if (exact) out = { ...t, status: 'known', source: 'library', assignment: exact.assignment, libraryEntry: exact, reason: `bibliothèque : ${exact.name}` };
+    else if (aiP)
+      out = { ...t, status: aiP.status, source: 'ai', assignment: aiP.assignment, reason: aiP.reason, ai: { analysisId: aiP.analysisId, confidence: aiP.confidence, questions: aiP.questions } };
     else if (probable)
       out = { ...t, status: 'suggested', source: 'fingerprint', assignment: probable.assignment, libraryEntry: probable, reason: `ressemble à « ${probable.name} » (même empreinte)` };
     else if (proposal) out = { ...t, status: 'suggested', source: 'proposal', assignment: proposal.assignment, reason: proposal.reason };
@@ -157,7 +178,7 @@ export function recognize(input: RecognitionInput): Recognition {
     if (out.assignment) {
       if (out.assignment.role === 'ignored' && out.status === 'known') out.status = 'ignored';
       const missing = missingData(out.assignment, templates, t.kind);
-      if (missing) out = { ...out, status: 'unknown', reason: missing };
+      if (missing) out = { ...out, status: 'unknown', reason: out.source === 'ai' ? `${out.reason} — ${missing}` : missing };
     }
     return out;
   };

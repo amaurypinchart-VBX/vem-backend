@@ -102,6 +102,47 @@ http.createServer(async (req, res) => {
       console.log(`[server] IA identify : ${b.type.label}, ${b.images?.length ?? 0} image(s) de ${b.images?.map((i) => i.data.length).join(' / ')} car.`);
       return json(res, { suggestion: { role: 'load', nature: 'wall', material: null, section: null, weight: { value: 50, unit: 'kg/m' }, windClosed: true, confidence: 0.72, questions: ['La paroi est-elle vitrée ?'], rationale: 'Élément plan vertical le long d’un côté : mur léger.' }, usage });
     }
+    if (a === '/structure/ai/model' && req.method === 'POST') {
+      // analyse du modèle simulée (S12.6) : nouveau type, traverses de toiture confirmées, clamp proposé, produits
+      const b = JSON.parse((await body(req)).toString());
+      const size = Buffer.byteLength(JSON.stringify(b));
+      console.log(`[server] IA modèle : ${b.modules.length} type(s) de module, ${b.structure?.groups.length ?? 0} groupe(s) de barres, ${b.products.length} produit(s), ${b.images?.length ?? 0} image(s), ${(size / 1e6).toFixed(2)} Mo, réponses ${b.answers?.length ?? 0}`);
+      const g = b.structure?.groups ?? [];
+      const products = b.products
+        .filter((p) => p.status !== 'known')
+        .slice(0, 30)
+        .map((p, k) => ({
+          typeKey: p.typeKey,
+          role: p.category === 'STRUCTURE' ? 'ignored' : 'load',
+          nature: p.category === 'STRUCTURE' ? 'decor' : 'other',
+          material: null,
+          section: null,
+          windClosed: null,
+          weight: null,
+          confidence: k % 4 === 3 ? 0.35 : 0.75,
+          questions: k % 4 === 3 ? ['À quoi sert cette pièce ?'] : [],
+          rationale: p.category === 'STRUCTURE' ? 'petite pièce de liaison, comprise dans le type de box' : 'élément posé dans la box, sans rôle porteur',
+        }));
+      return json(res, {
+        analysis: {
+          structure: {
+            verdict: g.length ? 'new-type' : 'viewbox',
+            moduleType: g.length ? null : 'VIEWBOX-5900-EU',
+            confidence: 0.7,
+            reasons: g.length ? ['traverses seules, sans lisses, rives en C : ce n’est pas une Viewbox standard'] : ['même grille que la Viewbox'],
+            barGroups: g.map((x) => ({ group: x.group, role: x.roleGuess, section: x.current, roll: null, confidence: 0.8, note: '' })),
+            joints: { column: 'semi', stack: 'clamp', side: 'custom', evidence: 'aucun plat d’empilement dessiné ; un clamp en tête serrerait les box entre elles' },
+            deck: { span: 'u', material: null },
+          },
+          products,
+          groups: [],
+          alerts: ['les panneaux de toiture sont exportés hors du composant de la box'],
+          questions: b.answers?.length ? [] : ['Les box seront-elles empilées ?'],
+        },
+        removed: [],
+        usage,
+      });
+    }
     if (a === '/structure/ai/group' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());
       return json(res, { groups: b.types.length >= 2 ? [{ keys: b.types.slice(0, 2).map((t) => t.key), label: 'même pièce', reason: 'même catégorie et dimensions proches' }] : [], usage });

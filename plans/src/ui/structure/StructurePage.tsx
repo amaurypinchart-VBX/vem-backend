@@ -36,7 +36,10 @@ import type { LiveCapacity } from '../../structure/capacity';
 import { liveCapacity } from '../../structure/capacity';
 import { computeCalage } from '../../structure/core/calage';
 import { ReportPanel } from './ReportPanel';
-import { useAiStatus } from './aiUi';
+import { captureModelImages, useAiStatus } from './aiUi';
+import type { AnalysisModule, StoredAnalysis } from '../../structure/core/ai';
+import { acceptProposal, analysisToProposals, estimateAnalysisCost, modelAnalysisPayload, snapshotBefore, undoAnalysis } from '../../structure/core/ai';
+import { ModelAnalysisPanel } from './ModelAnalysisPanel';
 import type { CompositePanel } from '../../structure/core/composite';
 import { panelEntry } from '../../structure/core/composite';
 import { studyFacts } from '../../structure/report/facts';
@@ -100,6 +103,8 @@ interface StudySettings {
   calc?: Partial<CalcOptions>;
   /** modifications de l'étude hors modèle SketchUp (conseil ingénieur) */
   mods?: StudyMods;
+  /** dernière analyse IA du modèle (S12.6) */
+  aiAnalysis?: StoredAnalysis | null;
 }
 
 interface Props {
@@ -123,6 +128,12 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const [roof, setRoof] = useState(false);
   const [calcOpts, setCalcOpts] = useState<CalcOptions>(CALC_DEFAULTS);
   const [mods, setMods] = useState<StudyMods>({});
+  // analyse IA du modèle (S12.6) : propositions, jamais retenues sans clic
+  const [aiAnalysis, setAiAnalysis] = useState<StoredAnalysis | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [reclaim, setReclaim] = useState(0);
+  const [openKey, setOpenKey] = useState<{ key: string; n: number } | null>(null);
   // conversation du conseil ingénieur et variantes (partagées avec l'onglet Variantes), enregistrées avec l'étude
   const [messages, setMessages] = useState<AdvisorMessage[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -189,6 +200,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
         setRoof(!!st.roofAccessible);
         setCalcOpts({ ...CALC_DEFAULTS, ...(st.calc ?? {}) });
         setMods(st.mods ?? {});
+        setAiAnalysis(st.aiAnalysis ?? null);
         setSaveState('saved');
       } catch (e) {
         setError(`Étude non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -227,10 +239,86 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     }
     return out;
   }, [drawnStructures, library]);
-  const recognition = useMemo(
+  // reconnaissance sans l'IA (réponses humaines, bibliothèque, empreinte, catégorie), puis avec ses propositions
+  const baseRecognition = useMemo(
     () => recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories: accessory, structures }),
     [scene, dims, library, assignments, accessory, structures],
   );
+  const aiProposals = useMemo(() => (aiAnalysis ? analysisToProposals(aiAnalysis, baseRecognition, library) : null), [aiAnalysis, baseRecognition, library]);
+  const recognition = useMemo(
+    () =>
+      aiProposals && Object.keys(aiProposals.recognition).length
+        ? recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments, accessoryCategories: accessory, structures, ai: aiProposals.recognition })
+        : baseRecognition,
+    [aiProposals, baseRecognition, scene, dims, library, assignments, accessory, structures],
+  );
+  // données de l'analyse IA : modules mesurés, structure relevée du premier type de module qui en a une
+  const analysisModules = useMemo<AnalysisModule[]>(
+    () =>
+      scene.index.modules.flatMap((m) => {
+        const f = scene.frames.get(m.id);
+        if (!f) return [];
+        const d = [f.max[0] - f.min[0], f.max[1] - f.min[1]].sort((x, y) => y - x);
+        return [{ id: m.id, typeKey: moduleTypeKey(m), level: m.level, dims: { long: d[0], short: d[1], height: f.max[2] - f.min[2] } }];
+      }),
+    [scene, framesVersion],
+  );
+  const analysisInput = () => {
+    const keys = [...drawnStructures.keys()];
+    const key = keys.find((k) => drawnStructures.get(k)?.params && structures[k] && !Object.values(structures[k].byTemplate).some((c) => c.ok)) ?? keys.find((k) => drawnStructures.get(k)?.params);
+    const drawn = key ? { moduleKey: key, extraction: drawnStructures.get(key)! } : null;
+    return { drawn, payload: modelAnalysisPayload({ recognition: baseRecognition, modules: analysisModules, library, drawn, structures }) };
+  };
+  const runAnalysis = async (answers?: Array<{ question: string; answer: string }>) => {
+    setAiBusy(true);
+    setAiError('');
+    try {
+      const { drawn, payload } = analysisInput();
+      const firstModule = drawn ? scene.index.modules.find((m) => moduleTypeKey(m) === drawn.moduleKey) : scene.index.modules[0];
+      const unknown = baseRecognition.types.filter((t) => t.kind === 'item' && t.status === 'unknown');
+      const images = await captureModelImages(scene, glassTest, {
+        moduleNodeId: firstModule?.nodeId,
+        structureNodes: drawn ? [...new Set(drawn.extraction.bars.filter((b) => b.role !== 'none').map((b) => b.source.node))] : [],
+        unknown,
+      }).catch(() => []);
+      setReclaim((x) => x + 1);
+      const r = await vem.aiModel({ ...payload, images, ...(answers?.length ? { answers } : {}), studyId: study?.id ?? null });
+      const prev = answers?.length ? aiAnalysis : null;
+      const keys = [...r.analysis.products.map((x) => x.typeKey), ...baseRecognition.types.filter((t) => t.kind === 'module').map((t) => t.key)];
+      const fresh = snapshotBefore(assignments, keys);
+      setAiAnalysis({
+        id: prev?.id ?? `IA-${Date.now().toString(36)}`,
+        at: new Date().toISOString(),
+        model: r.usage.model,
+        costUsd: (prev?.costUsd ?? 0) + (r.usage.costUsd ?? 0),
+        out: r.analysis,
+        removed: r.removed,
+        moduleKey: drawn?.moduleKey ?? null,
+        groups: payload.structure?.groups ?? [],
+        refused: prev?.refused ?? [],
+        // relance avec les réponses : même analyse, l'instantané d'avant la première est gardé
+        before: prev ? { ...fresh, ...prev.before } : fresh,
+        relaunched: !!prev,
+      });
+    } catch (e) {
+      setAiError(`IA : ${(e as Error).message}`);
+    }
+    setAiBusy(false);
+  };
+  const acceptAi = (key: string, force = false) => {
+    if (!aiAnalysis || !aiProposals) return;
+    const a = aiProposals.recognition[key]?.assignment ?? aiProposals.products.find((x) => x.typeKey === key)?.assignment ?? (aiProposals.frame?.moduleKey === key && aiProposals.frame.moduleTemplate ? { role: 'structural' as const, nature: 'viewbox' as const, moduleTemplate: aiProposals.frame.moduleTemplate } : undefined);
+    if (!a) return;
+    setAssignments((x) => acceptProposal(x, key, a, aiAnalysis.id, me?.id, undefined, force));
+  };
+  const acceptAllAi = () => {
+    if (!aiAnalysis || !aiProposals) return;
+    setAssignments((x) => {
+      let next = x;
+      for (const [k, p] of Object.entries(aiProposals.recognition)) if (p.status === 'suggested') next = acceptProposal(next, k, p.assignment, aiAnalysis.id, me?.id);
+      return next;
+    });
+  };
   // framesVersion : les repères des Viewbox ont été recalculés (face avant modifiée)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // le toit d'une Viewbox ne reçoit jamais de public (seuls les éléments terrasse du modèle en portent)
@@ -426,7 +514,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       try {
         await vem.saveStudy(study.id, {
           assignments: assignments as unknown as Record<string, unknown>,
-          settings: { hyp, roofAccessible: roof, fileName: model?.fileName, calc: calcOpts, mods },
+          settings: { hyp, roofAccessible: roof, fileName: model?.fileName, calc: calcOpts, mods, aiAnalysis },
           resultsSummary: summary,
         });
         setSaveState('saved');
@@ -436,7 +524,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts, mods]);
+  }, [assignments, hyp, roof, study, summary, model?.fileName, calcOpts, mods, aiAnalysis]);
 
   useEffect(() => {
     threadLoaded.current = false;
@@ -463,7 +551,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   const keep = (list: Array<{ t: PartType; a: PartAssignment }>, scope: 'model' | 'project') =>
     setAssignments((x) => {
       const next = { ...x };
-      for (const { t, a } of list) next[t.key] = { assignment: a, scope, at: new Date().toISOString(), by: me?.id };
+      // réponse partie d'une proposition de l'analyse IA : « Annuler l'analyse IA » la retire aussi
+      for (const { t, a } of list) next[t.key] = { assignment: a, scope, at: new Date().toISOString(), by: me?.id, ...(t.source === 'ai' && t.ai ? { ai: t.ai.analysisId } : {}) };
       return next;
     });
 
@@ -555,6 +644,36 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }}
           who={[me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'utilisateur'}
           drawnStructures={drawnStructures}
+          reclaimKey={reclaim}
+          openKey={openKey}
+          aiFrame={aiProposals?.frame ?? null}
+          aiPanel={
+            <ModelAnalysisPanel
+              ai={ai}
+              analysis={aiAnalysis}
+              proposals={aiProposals}
+              assignments={assignments}
+              library={library}
+              busy={aiBusy}
+              error={aiError}
+              estimate={() => {
+                try {
+                  return estimateAnalysisCost(analysisInput().payload, 5, ai?.model).costUsd;
+                } catch {
+                  return null;
+                }
+              }}
+              onRun={(answers) => void runAnalysis(answers)}
+              onAccept={acceptAi}
+              onAcceptAll={acceptAllAi}
+              onRefuse={(k) => setAiAnalysis((x) => (x ? { ...x, refused: [...new Set([...x.refused, k])] } : x))}
+              onUndo={() => {
+                if (aiAnalysis) setAssignments((x) => undoAnalysis(x, aiAnalysis));
+                setAiAnalysis(null);
+              }}
+              onOpen={(key) => setOpenKey((o) => ({ key, n: (o?.n ?? 0) + 1 }))}
+            />
+          }
           onSaveEntries={async (entries) => {
             for (const e of entries) await vem.saveLibraryEntry(toPayload(e));
             await refreshLibrary();

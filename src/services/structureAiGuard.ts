@@ -222,3 +222,129 @@ export function cleanProposalNumbers<T>(proposal: T, data: unknown): { proposal:
   };
   return { proposal: walk(proposal, '') as T, removed };
 }
+
+
+// ─── analyse IA du modèle entier (S12.6) ───
+
+/** Texte où chaque nombre absent des données est remplacé par « … » (l'IA ne cite que des chiffres mesurés par l'outil). */
+export function stripUnknownNumbers(text: string, allowed: readonly number[]): { text: string; removed: number[] } {
+  const bad = unknownNumbers(text, allowed);
+  if (!bad.length) return { text, removed: [] };
+  const re = /(?<![\p{L}\p{N}_.,/·-])([−-]?)(\d{1,3}(?:[   ]\d{3})+|\d+)(?:[.,](\d+))?(?![\p{L}\p{N}_/-]|[.,]\d)/gu;
+  const removed: number[] = [];
+  const out = text.replace(re, (m, sign: string, int: string, dec?: string) => {
+    const v = (sign ? -1 : 1) * Number(`${int.replace(/[   ]/g, '')}${dec ? `.${dec}` : ''}`);
+    if (bad.some((b) => close(b, v))) {
+      removed.push(v);
+      return '…';
+    }
+    return m;
+  });
+  return { text: out, removed };
+}
+
+export interface ModelAnalysisLike {
+  structure: {
+    verdict: string;
+    moduleType?: string | null;
+    confidence: number;
+    reasons: string[];
+    barGroups: Array<{ group: string; role: string; section: string | null; roll: string | null; confidence: number; note: string }>;
+    joints: { column: string; stack: string; side: string; evidence: string };
+    deck: { span: string; material: string | null };
+  };
+  products: Array<{
+    typeKey: string;
+    role: string;
+    nature: string;
+    material: string | null;
+    section: string | null;
+    windClosed: boolean | null;
+    weight: { value: number; unit: string } | null;
+    confidence: number;
+    questions: string[];
+    rationale: string;
+  }>;
+  groups: Array<{ keys: string[]; label: string; reason: string }>;
+  alerts: string[];
+  questions: string[];
+}
+
+export interface ModelAnalysisOptions {
+  /** clés des types de module de la bibliothèque */
+  moduleTypes: string[];
+  /** groupes de barres relevés : clé → sections candidates mesurées par l'outil */
+  barGroups: Record<string, string[]>;
+  frameRoles: string[];
+  natures: Record<string, string[]>;
+  materials: Array<{ key: string }>;
+  sections: Array<{ key: string }>;
+  /** types de produits du modèle (clés de la reconnaissance) */
+  productKeys: string[];
+  /** données envoyées : seuls nombres que les textes peuvent citer */
+  data: unknown;
+}
+
+/**
+ * Contrôle de l'analyse du modèle : clés hors listes supprimées (confiance plafonnée à 0,4), section hors des candidats
+ * mesurés du groupe supprimée, type de module hors bibliothèque supprimé, nombres absents des données retirés des
+ * textes. Le poids d'un produit reste une estimation d'ordre de grandeur (affichée « estimation IA — à confirmer »).
+ */
+export function normalizeModelAnalysis<T extends ModelAnalysisLike>(out: T, opt: ModelAnalysisOptions): { analysis: T; removed: string[] } {
+  const removed: string[] = [];
+  const allowed = numbersOf(opt.data);
+  const clean = (t: string, where: string) => {
+    const r = stripUnknownNumbers(t ?? '', allowed);
+    if (r.removed.length) removed.push(`${where} : ${r.removed.join(', ')}`);
+    return r.text;
+  };
+  const s = { ...out.structure };
+  s.confidence = Math.max(0, Math.min(1, Number.isFinite(s.confidence) ? s.confidence : 0));
+  if (s.moduleType && !opt.moduleTypes.includes(s.moduleType)) {
+    removed.push(`type de module « ${s.moduleType} » hors bibliothèque`);
+    s.moduleType = null;
+    s.confidence = Math.min(s.confidence, 0.4);
+  }
+  s.reasons = (s.reasons ?? []).map((r, k) => clean(r, `structure.reasons[${k}]`));
+  s.barGroups = (s.barGroups ?? [])
+    .filter((g) => {
+      if (opt.barGroups[g.group]) return true;
+      removed.push(`groupe de barres « ${g.group} » inconnu`);
+      return false;
+    })
+    .map((g) => {
+      const r = { ...g, confidence: Math.max(0, Math.min(1, Number.isFinite(g.confidence) ? g.confidence : 0)) };
+      if (!opt.frameRoles.includes(r.role)) {
+        removed.push(`rôle « ${r.role} » hors liste (${g.group})`);
+        r.role = 'other';
+        r.confidence = Math.min(r.confidence, 0.4);
+      }
+      if (r.section && !opt.barGroups[g.group].includes(r.section)) {
+        removed.push(`section « ${r.section} » hors des candidats mesurés (${g.group})`);
+        r.section = null;
+        r.confidence = Math.min(r.confidence, 0.4);
+      }
+      r.note = clean(r.note, `barGroups.${g.group}`);
+      return r;
+    });
+  s.joints = { ...s.joints, evidence: clean(s.joints?.evidence ?? '', 'joints.evidence') };
+  if (s.deck?.material && !opt.materials.some((m) => m.key === s.deck.material)) s.deck = { ...s.deck, material: null };
+  const keys = new Set(opt.productKeys);
+  const products = (out.products ?? [])
+    .filter((p) => keys.has(p.typeKey))
+    .map((p) => {
+      const r = normalizeIdentify({ ...p, questions: p.questions ?? [] }, { natures: opt.natures, materials: opt.materials, sections: opt.sections });
+      r.rationale = clean(r.rationale, `products.${p.typeKey}`);
+      r.questions = r.questions.map((q, k) => clean(q, `products.${p.typeKey}.questions[${k}]`));
+      return r;
+    });
+  const analysis = {
+    ...out,
+    structure: s,
+    products,
+    groups: normalizeGroups({ groups: out.groups ?? [] }, keys).map((g) => ({ ...g, reason: clean(g.reason, 'groups') })),
+    alerts: (out.alerts ?? []).map((a, k) => clean(a, `alerts[${k}]`)),
+    questions: (out.questions ?? []).map((q, k) => clean(q, `questions[${k}]`)),
+  };
+  return { analysis, removed };
+}

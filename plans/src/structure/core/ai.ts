@@ -6,10 +6,11 @@
 // Fonctions pures.
 import type { Section, SectionProps, SectionShape, BucklingCurve, Fabrication } from './catalog';
 import { chs, coldFormedU, rectangle, rhs, roundBar, weldedT } from './catalog';
-import type { Capacity, ConnectionEntry, LibraryEntry, PartAssignment, PartNature, PartRole, SectionEntry, WeightUnit } from './library';
-import { NATURES_BY_ROLE, designation } from './library';
+import type { Capacity, ConnectionEntry, FrameRole, LibraryEntry, ModuleTypeEntry, PartAssignment, PartNature, PartRole, SectionEntry, WeightUnit } from './library';
+import { FRAME_ROLES, NATURES_BY_ROLE, designation, moduleFamily } from './library';
 import { MATERIALS } from './materials';
-import type { PartType } from './recognition';
+import type { AiTypeProposal, Assignments, PartType, Recognition, RecognitionInput, StoredAssignment } from './recognition';
+import type { FrameExtraction } from './frameExtract';
 
 // ─── identification ───
 
@@ -50,11 +51,16 @@ export function identifyPayload(t: PartType, library: readonly LibraryEntry[]): 
       instances: t.nodeIds.length,
       modules: t.moduleIds.slice(0, 20),
     },
-    options: {
-      natures: NATURES_BY_ROLE,
-      materials: MATERIALS.filter((m) => m.family !== 'massless').map((m) => ({ key: m.key, name: m.name })),
-      sections: library.filter((e): e is SectionEntry => e.kind === 'section' && !e.disabled && !e.section.massless).map((e) => ({ key: e.key, name: e.name })),
-    },
+    options: identifyOptions(library),
+  };
+}
+
+/** Réponses permises d'une identification (rôles / natures, matériaux, sections de la bibliothèque). */
+export function identifyOptions(library: readonly LibraryEntry[]): IdentifyPayload['options'] {
+  return {
+    natures: NATURES_BY_ROLE,
+    materials: MATERIALS.filter((m) => m.family !== 'massless').map((m) => ({ key: m.key, name: m.name })),
+    sections: library.filter((e): e is SectionEntry => e.kind === 'section' && !e.disabled && !e.section.massless).map((e) => ({ key: e.key, name: e.name })),
   };
 }
 
@@ -288,4 +294,377 @@ export function connectionFromExtract(x: ExtractedConnection, reportRef: string)
       source,
     })),
   };
+}
+
+// ─── analyse du modèle entier (S12.6) ───
+// Un appel pour tout le modèle : la structure (Viewbox, type de la bibliothèque ou nouveau type, rôle et section de
+// chaque groupe de barres relevé par l'outil, assemblages probables), les produits, les regroupements, les incohérences
+// et les questions. Tout revient « proposé par l'IA » : une réponse humaine n'est jamais remplacée (désaccord = alerte
+// « l'IA pense que… »), rien n'est retenu sans clic, et « Annuler l'analyse IA » remet les réponses d'avant.
+
+/** Module du modèle tel que l'écran le connaît (repère mesuré, niveau). */
+export interface AnalysisModule {
+  id: string;
+  typeKey: string;
+  level: number;
+  dims: { long: number; short: number; height: number };
+}
+
+export interface AnalysisBarGroup {
+  group: string;
+  roleGuess: FrameRole;
+  /** barres du frame relevé (ids) */
+  bars: string[];
+  count: number;
+  lengths: [number, number];
+  shape: string | null;
+  dims: Record<string, number> | null;
+  current: string | null;
+  /** nom lisible de la section retenue (« C 153 × 80 × 4 (relevé) ») */
+  currentName: string | null;
+  candidates: Array<{ key: string; name: string; diff: string; match: boolean }>;
+}
+
+export interface ModelAnalysisPayload {
+  modules: Array<Record<string, unknown>>;
+  structure: { moduleKey: string; groups: AnalysisBarGroup[]; pieces: number; maxEccentricity: number; warnings: string[] } | null;
+  products: Array<Record<string, unknown>>;
+  options: {
+    moduleTypes: Array<{ key: string; name: string; summary?: string }>;
+    barGroups: Record<string, string[]>;
+    frameRoles: string[];
+    natures: Record<PartRole, PartNature[]>;
+    materials: Array<{ key: string; name: string }>;
+    sections: Array<{ key: string; name: string }>;
+    joints: Record<string, string[]>;
+  };
+}
+
+export const JOINT_MODELS = {
+  column: ['semi', 'rigid', 'pinned', 'unknown'],
+  stack: ['plates', 'corner-casting', 'clamp', 'bolted', 'none', 'unknown'],
+  side: ['bolts', 'contact-only', 'custom', 'unknown'],
+} as const;
+
+const r0 = (x: number) => Math.round(x);
+const len = (b: { a: readonly number[]; b: readonly number[] }) => Math.hypot(b.b[0] - b.a[0], b.b[1] - b.a[1], b.b[2] - b.a[2]);
+
+/** Groupes de barres relevées : même rôle proposé + même section retenue (ou même coupe mesurée). */
+export function barGroups(ex: FrameExtraction): AnalysisBarGroup[] {
+  const g = new Map<string, AnalysisBarGroup>();
+  for (const b of ex.bars) {
+    if (b.role === 'none') continue;
+    const k = `${b.role}|${b.sectionKey ?? (b.section ? `${b.section.shape}:${Object.values(b.section.dims).join('x')}` : '?')}`;
+    let row = g.get(k);
+    if (!row) {
+      const cands = b.candidates.slice(0, 3).map((c) => ({ key: c.entry.key, name: c.entry.section.name, diff: c.diff, match: c.match }));
+      row = {
+        group: `G${g.size + 1}`,
+        roleGuess: b.role,
+        bars: [],
+        count: 0,
+        lengths: [Infinity, 0],
+        shape: b.section?.shape ?? null,
+        dims: b.section ? (Object.fromEntries(Object.entries(b.section.dims).map(([n, v]) => [n, Math.round((v as number) * 10) / 10])) as Record<string, number>) : null,
+        current: b.sectionKey,
+        currentName: b.sectionKey ? (ex.newSections.find((x) => x.key === b.sectionKey)?.section.name ?? b.candidates.find((c) => c.entry.key === b.sectionKey)?.entry.section.name ?? b.sectionKey) : null,
+        candidates: cands,
+      };
+      g.set(k, row);
+    }
+    const L = r0(len(b.measured));
+    row.bars.push(b.id);
+    row.count++;
+    row.lengths = [Math.min(row.lengths[0], L), Math.max(row.lengths[1], L)];
+  }
+  return [...g.values()];
+}
+
+/** Sections permises pour un groupe : la section retenue par l'outil et ses (au plus) 3 candidats du catalogue. */
+export const groupSectionKeys = (g: AnalysisBarGroup) => [...new Set([...(g.current ? [g.current] : []), ...g.candidates.map((c) => c.key)])];
+
+/** Ce que l'analyse IA reçoit (sans les images, ajoutées par l'écran). Fonction pure, testée (< 5 Mo). */
+export function modelAnalysisPayload(input: {
+  recognition: Pick<Recognition, 'types'>;
+  modules: readonly AnalysisModule[];
+  library: readonly LibraryEntry[];
+  /** structure relevée du type de module analysé (le premier qui a une structure dessinée) */
+  drawn?: { moduleKey: string; extraction: FrameExtraction } | null;
+  structures?: RecognitionInput['structures'];
+}): ModelAnalysisPayload {
+  const { recognition, modules, library } = input;
+  const lib = library.filter((e) => !e.disabled);
+  const moduleTypes = lib.filter((e): e is ModuleTypeEntry => e.kind === 'module_type' && !!e.template);
+  const types = recognition.types;
+  const answerOf = (t: PartType) =>
+    t.assignment
+      ? Object.fromEntries(
+          Object.entries({ role: t.assignment.role, nature: t.assignment.nature, material: t.assignment.material, section: t.assignment.section, moduleTemplate: t.assignment.moduleTemplate, windClosed: t.assignment.windClosed, weight: t.assignment.weight }).filter(([, v]) => v !== undefined),
+        )
+      : null;
+  const modulesOut = types
+    .filter((t) => t.kind === 'module')
+    .map((t) => {
+      const ms = modules.filter((m) => m.typeKey === t.key);
+      const d = ms[0]?.dims;
+      const levels = [...new Set(ms.map((m) => m.level))].sort((a, b) => a - b);
+      const conf = input.structures?.[t.key];
+      return {
+        typeKey: t.key,
+        label: t.label,
+        definition: t.sample?.definition ?? null,
+        count: t.moduleIds.length,
+        ids: t.moduleIds.slice(0, 40),
+        ...(d ? { dims: { long: r0(d.long), short: r0(d.short), height: r0(d.height) } } : {}),
+        levels,
+        stacked: ms.filter((m) => m.level > 0).length,
+        status: t.status,
+        answer: answerOf(t),
+        ...(conf
+          ? {
+              drawnBars: conf.bars,
+              conformity: Object.fromEntries(Object.entries(conf.byTemplate).map(([k, c]) => [k, { ok: c.ok, differences: c.differences.slice(0, 5) }])),
+            }
+          : {}),
+      };
+    });
+  const ex = input.drawn?.extraction;
+  const groups = ex ? barGroups(ex) : [];
+  const structure = ex
+    ? {
+        moduleKey: input.drawn!.moduleKey,
+        groups,
+        pieces: ex.pieces.length,
+        maxEccentricity: r0(ex.maxEccentricity),
+        warnings: ex.warnings.slice(0, 10),
+      }
+    : null;
+  const products = types
+    .filter((t) => t.kind === 'item')
+    .slice(0, 400)
+    .map((t) => ({
+      typeKey: t.key,
+      label: t.label,
+      category: t.category,
+      definition: t.sample?.definition ?? null,
+      articleRef: t.sample?.articleRef ?? null,
+      materials: t.fingerprint?.materials.slice(0, 8) ?? [],
+      ...(t.fingerprint ? { dims: [...t.fingerprint.dims].map(r0), triangles: t.fingerprint.triangles } : {}),
+      instances: t.nodeIds.length,
+      modules: t.moduleIds.slice(0, 12),
+      status: t.status,
+      answer: answerOf(t),
+    }));
+  const base = identifyOptions(library);
+  const groupSections = new Set(groups.flatMap(groupSectionKeys));
+  const sectionNames = new Map(lib.filter((e): e is SectionEntry => e.kind === 'section').map((e) => [e.key, e.section.name]));
+  for (const g of groups) for (const c of g.candidates) sectionNames.set(c.key, c.name);
+  return {
+    modules: modulesOut,
+    structure,
+    products,
+    options: {
+      moduleTypes: moduleTypes.map((e) => ({
+        key: e.key,
+        name: e.name,
+        summary: `${e.nominal.long} × ${e.nominal.short} × ${e.nominal.height} mm, ${moduleFamily(e) === 'viewbox' ? 'Viewbox' : 'type personnalisé'}${e.template === 'frame' ? ', structure en barres' : ''}`,
+      })),
+      barGroups: Object.fromEntries(groups.map((g) => [g.group, groupSectionKeys(g)])),
+      frameRoles: [...FRAME_ROLES],
+      natures: base.natures,
+      materials: base.materials,
+      sections: [...base.sections, ...[...groupSections].filter((k) => !base.sections.some((s) => s.key === k)).map((k) => ({ key: k, name: sectionNames.get(k) ?? k }))],
+      joints: { column: [...JOINT_MODELS.column], stack: [...JOINT_MODELS.stack], side: [...JOINT_MODELS.side] },
+    },
+  };
+}
+
+/** Réponse de l'analyse (déjà normalisée par le serveur). */
+export interface ModelAnalysisOut {
+  structure: {
+    verdict: 'viewbox' | 'library-type' | 'new-type' | 'unsure';
+    moduleType?: string | null;
+    confidence: number;
+    reasons: string[];
+    barGroups: Array<{ group: string; role: string; section: string | null; roll: 'edge' | 'flat' | 'open-in' | 'open-out' | null; confidence: number; note: string }>;
+    joints: { column: (typeof JOINT_MODELS.column)[number]; stack: (typeof JOINT_MODELS.stack)[number]; side: (typeof JOINT_MODELS.side)[number]; evidence: string };
+    deck: { span: 'u' | 'v' | 'two-way' | 'unknown'; material: string | null };
+  };
+  products: Array<IdentifySuggestion & { typeKey: string }>;
+  groups: GroupProposal[];
+  alerts: string[];
+  questions: string[];
+}
+
+/** Analyse gardée avec l'étude (`settings.aiAnalysis`, la dernière seulement). */
+export interface StoredAnalysis {
+  id: string;
+  at: string;
+  model: string;
+  costUsd: number | null;
+  out: ModelAnalysisOut;
+  removed: string[];
+  /** module analysé et ses groupes de barres (pour appliquer les propositions à l'atelier) */
+  moduleKey: string | null;
+  groups: AnalysisBarGroup[];
+  /** décisions ligne par ligne : clé de type / « G3 » / « structure » → refusé */
+  refused: string[];
+  /** réponses d'avant l'analyse pour les types qu'elle propose (null = pas de réponse) : « Annuler l'analyse IA » */
+  before: Record<string, StoredAssignment | null>;
+  /** relance avec les réponses déjà faite (une seule) */
+  relaunched?: boolean;
+}
+
+export interface ProductProposal {
+  typeKey: string;
+  label: string;
+  assignment: PartAssignment;
+  status: 'suggested' | 'unknown';
+  confidence: number;
+  rationale: string;
+  questions: string[];
+  /** réponse humaine présente : la proposition n'est pas appliquée ; désaccord éventuel en clair */
+  human: boolean;
+  disagree?: string;
+}
+
+export interface FrameProposal {
+  moduleKey: string;
+  verdict: ModelAnalysisOut['structure']['verdict'];
+  /** type de la bibliothèque proposé pour le module (Viewbox / type déjà connu) */
+  moduleTemplate: string | null;
+  confidence: number;
+  reasons: string[];
+  /** barre du frame relevé → rôle et section proposés */
+  bars: Record<string, { role: FrameRole; section: string | null; group: string; roll: string | null; note: string; confidence: number }>;
+  groups: Array<{ group: string; roleGuess: FrameRole; role: FrameRole; section: string | null; sectionName: string | null; current: string | null; currentName: string | null; count: number; confidence: number; note: string; roll: string | null }>;
+  joints: ModelAnalysisOut['structure']['joints'];
+  deckSpan: 'u' | 'v' | 'two-way' | null;
+}
+
+export interface AnalysisProposals {
+  products: ProductProposal[];
+  /** propositions à donner à `recognize` (types sans réponse humaine, propositions refusées exclues) */
+  recognition: Record<string, AiTypeProposal>;
+  frame: FrameProposal | null;
+  groups: GroupProposal[];
+  alerts: string[];
+  questions: string[];
+}
+
+const HUMAN: ReadonlySet<PartType['source']> = new Set(['local', 'library']);
+const same = (a: PartAssignment, b: PartAssignment) => a.role === b.role && a.nature === b.nature && (a.moduleTemplate ?? null) === (b.moduleTemplate ?? null);
+
+/**
+ * Réponse de l'analyse → propositions. `base` = la reconnaissance SANS les propositions IA (réponses humaines,
+ * bibliothèque, empreinte, catégorie). Le poids : celui de la bibliothèque / de la catégorie d'abord ; un poids de l'IA
+ * n'est repris qu'à défaut, marqué « estimation IA — à confirmer ».
+ */
+export function analysisToProposals(a: StoredAnalysis, base: Pick<Recognition, 'types'>, library: readonly LibraryEntry[] = []): AnalysisProposals {
+  const refused = new Set(a.refused);
+  const byKey = new Map(base.types.map((t) => [t.key, t]));
+  const products: ProductProposal[] = [];
+  const rec: Record<string, AiTypeProposal> = {};
+  const alerts = [...a.out.alerts];
+  const name = (k?: string | null) => (k ? (library.find((e) => e.key === k)?.name ?? k) : '');
+  for (const p of a.out.products) {
+    const t = byKey.get(p.typeKey);
+    if (!t || t.kind !== 'item') continue;
+    const s = suggestionToAssignment(p);
+    const as = { ...s.assignment };
+    const prior = t.assignment;
+    if (prior?.weight && as.role === 'load') as.weight = prior.weight;
+    else if (as.weight) as.note = `${as.note ?? ''} — poids : estimation IA, à confirmer`.slice(0, 500);
+    const human = HUMAN.has(t.source);
+    const pr: ProductProposal = { typeKey: t.key, label: t.label, assignment: as, status: s.status, confidence: p.confidence, rationale: p.rationale, questions: p.questions ?? [], human };
+    if (human && prior && !same(prior, as)) {
+      pr.disagree = `l’IA pense que « ${t.label} » est ${as.role === 'ignored' ? 'à ignorer' : `${as.role} / ${as.nature}`} (réponse actuelle : ${prior.role} / ${prior.nature})`;
+      alerts.push(pr.disagree);
+    }
+    products.push(pr);
+    if (!human && !refused.has(t.key))
+      rec[t.key] = { assignment: as, status: s.status, reason: `proposé par l’IA (${Math.round(p.confidence * 100)} %) : ${p.rationale}`.slice(0, 400), confidence: p.confidence, questions: p.questions ?? [], analysisId: a.id };
+  }
+  // structure : le type de module analysé
+  let frame: FrameProposal | null = null;
+  const st = a.out.structure;
+  const mk = a.moduleKey ?? base.types.find((t) => t.kind === 'module')?.key ?? null;
+  const mt = mk ? byKey.get(mk) : undefined;
+  if (mk && mt) {
+    const moduleTemplate = (st.verdict === 'viewbox' || st.verdict === 'library-type') && st.moduleType ? st.moduleType : st.verdict === 'viewbox' ? 'VIEWBOX-5900-EU' : null;
+    const bars: FrameProposal['bars'] = {};
+    const groups: FrameProposal['groups'] = [];
+    for (const g of a.groups) {
+      const pg = st.barGroups.find((x) => x.group === g.group);
+      if (!pg || refused.has(g.group)) continue;
+      const role = (FRAME_ROLES as readonly string[]).includes(pg.role) ? (pg.role as FrameRole) : g.roleGuess;
+      const section = pg.section && groupSectionKeys(g).includes(pg.section) ? pg.section : null;
+      const sectionName = section ? (section === g.current ? g.currentName : (g.candidates.find((c) => c.key === section)?.name ?? section)) : null;
+      groups.push({ group: g.group, roleGuess: g.roleGuess, role, section, sectionName, current: g.current, currentName: g.currentName ?? g.current, count: g.count, confidence: pg.confidence, note: pg.note, roll: pg.roll });
+      for (const id of g.bars) bars[id] = { role, section, group: g.group, roll: pg.roll, note: pg.note, confidence: pg.confidence };
+    }
+    frame = {
+      moduleKey: mk,
+      verdict: st.verdict,
+      moduleTemplate,
+      confidence: st.confidence,
+      reasons: st.reasons,
+      bars,
+      groups,
+      joints: st.joints,
+      deckSpan: st.deck.span === 'unknown' ? null : st.deck.span,
+    };
+    if (moduleTemplate && !refused.has('structure')) {
+      const as: PartAssignment = { role: 'structural', nature: 'viewbox', moduleTemplate, note: `proposé par l’IA (confiance ${Math.round(st.confidence * 100)} %) : ${st.reasons.join(' ')}`.slice(0, 500) };
+      const status = st.confidence >= AI_CONFIDENCE_MIN ? 'suggested' : 'unknown';
+      if (HUMAN.has(mt.source)) {
+        if (mt.assignment && !same(mt.assignment, as)) alerts.push(`l’IA pense que « ${mt.label} » est « ${name(moduleTemplate)} » (réponse actuelle : « ${name(mt.assignment.moduleTemplate) || mt.assignment.nature} »)`);
+      } else rec[mk] = { assignment: as, status, reason: `proposé par l’IA (${Math.round(st.confidence * 100)} %) : ${name(moduleTemplate)}`, confidence: st.confidence, questions: [], analysisId: a.id };
+    }
+  }
+  return { products, recognition: rec, frame, groups: a.out.groups.filter((g) => !refused.has(`group:${g.label}`)), alerts, questions: a.out.questions };
+}
+
+/** Réponses d'avant l'analyse pour les types qu'elle touche (instantané pour « Annuler l'analyse IA »). */
+export function snapshotBefore(assignments: Assignments, keys: Iterable<string>): Record<string, StoredAssignment | null> {
+  const out: Record<string, StoredAssignment | null> = {};
+  for (const k of keys) out[k] = assignments[k] ? structuredClone(assignments[k]) : null;
+  return out;
+}
+
+/** Accepter une proposition : réponse locale du modèle, marquée de l'analyse (annulable). */
+export function acceptProposal(assignments: Assignments, typeKey: string, assignment: PartAssignment, analysisId: string, by?: string, at = new Date().toISOString(), force = false): Assignments {
+  // réponse humaine : jamais écrasée, sauf « Appliquer sa proposition » (force, sur confirmation ; l'annulation la remet)
+  if (!force && assignments[typeKey] && assignments[typeKey].ai !== analysisId) return assignments;
+  return { ...assignments, [typeKey]: { assignment, scope: 'model', at, ...(by ? { by } : {}), ai: analysisId } };
+}
+
+/** « Annuler l'analyse IA » : les réponses acceptées depuis l'analyse retirées, celles d'avant remises à l'identique. */
+export function undoAnalysis(assignments: Assignments, a: Pick<StoredAnalysis, 'id' | 'before'>): Assignments {
+  const next: Assignments = { ...assignments };
+  for (const [k, v] of Object.entries(assignments)) {
+    if (v.ai !== a.id) continue;
+    const prev = a.before[k];
+    if (prev) next[k] = structuredClone(prev);
+    else delete next[k];
+  }
+  return next;
+}
+
+/** Applique les propositions de structure acceptées aux barres d'un frame relevé (rôle + section). */
+export function applyFrameProposal<B extends { id: string; role: FrameRole; section: string }>(bars: readonly B[], fp: FrameProposal): B[] {
+  return bars.map((b) => {
+    const p = fp.bars[b.id];
+    if (!p) return b;
+    return { ...b, role: p.role, ...(p.section ? { section: p.section } : {}) };
+  });
+}
+
+/** Coût estimé avant le lancement (ordre de grandeur, tarif du modèle par défaut) : jetons ≈ caractères / 3,5. */
+export function estimateAnalysisCost(payload: ModelAnalysisPayload, images: number, model = ''): { tokensIn: number; costUsd: number } {
+  // même table que le journal du serveur (structureAiGuard.costOf), $ par million de jetons
+  const price = /opus-5-5/.test(model) ? { input: 4, output: 20 } : /sonnet/.test(model) ? { input: 3, output: 15 } : /haiku/.test(model) ? { input: 1, output: 5 } : { input: 5, output: 25 };
+  const tokensIn = Math.round(JSON.stringify(payload).length / 3.5) + 3000 + images * 1600;
+  const tokensOut = 4000 + 60 * payload.products.length;
+  return { tokensIn, costUsd: (tokensIn * price.input + tokensOut * price.output) / 1e6 };
 }

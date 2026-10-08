@@ -66,7 +66,7 @@ export interface Labels {
   outdoorSurfaces: string;
   topLevelAndOutdoor: string;
   notCovered: string;
-  notCoveredItems: { glazing: string; cladding: string; logo: string; steps: string; decking: string; railings: string; blocking: string; ignored: (label: string, n: number) => string };
+  notCoveredItems: { glazing: string; cladding: string; logo: string; steps: string; decking: string; railings: string; blocking: string; ignored: (label: string, n: number) => string; aiPending: (n: number) => string };
   reasons: string;
   // chapitre 1
   ch1: string;
@@ -376,6 +376,7 @@ const FR: Labels = {
     railings: 'Garde-corps : justifiés dans l’étude de base statico 18-0573 (main courante 0,50 kN/m).',
     blocking: 'Éléments non modélisés (verdict incomplet)',
     ignored: (label, n) => `« ${label} » (${n}) : pièce porteuse exclue du calcul à la demande de l’utilisateur — son poids, son exploitation, le vent qu’elle reçoit et ses appuis sur les Viewbox ne sont pas pris en compte ; justification séparée nécessaire.`,
+    aiPending: (n) => `${n} type(s) de pièces sur une proposition de l’analyse automatique du modèle, non confirmée par l’utilisateur.`,
   },
   reasons: 'Motifs',
   ch1: 'Remarques préliminaires, bases et consignes',
@@ -727,6 +728,7 @@ const DE: Labels = {
     railings: 'Geländer: nachgewiesen in der Grundstatik statico 18-0573 (Holmlast 0,50 kN/m).',
     blocking: 'Nicht modellierte Bauteile (Vorbemessung unvollständig)',
     ignored: (label, n) => `„${label}“ (${n}): tragendes Bauteil auf Wunsch des Anwenders nicht berechnet – Eigengewicht, Verkehrslast, Wind und Auflagerkräfte auf die Viewboxen sind nicht berücksichtigt; gesonderter Nachweis erforderlich.`,
+    aiPending: (n) => `${n} Bauteiltyp(en) nach einem Vorschlag der automatischen Modellanalyse, vom Anwender nicht bestätigt.`,
   },
   reasons: 'Gründe',
   ch1: 'Vorbemerkungen, Grundlagen und Hinweise',
@@ -1078,6 +1080,7 @@ const EN: Labels = {
     railings: 'Railings: verified in the statico base study 18-0573 (handrail load 0.50 kN/m).',
     blocking: 'Elements not modelled (incomplete verdict)',
     ignored: (label, n) => `“${label}” (${n}): load-bearing part excluded from the calculation at the user’s request — its self-weight, imposed load, wind and support forces on the Viewbox are not included; separate verification required.`,
+    aiPending: (n) => `${n} part type(s) based on a proposal of the automatic model analysis, not confirmed by the user.`,
   },
   reasons: 'Reasons',
   ch1: 'Preliminary remarks, basis and instructions',

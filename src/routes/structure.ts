@@ -277,6 +277,14 @@ router.post('/ai/identify', async (req: AuthRequest, res: Response, next: NextFu
   } catch (err) { next(err); }
 });
 
+// POST /structure/ai/model — analyse du modèle entier : structure, produits, regroupements, alertes (tout « proposé »)
+router.post('/ai/model', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const inp = parseBody(ai.ModelAnalysisInput, req.body);
+    res.json({ success: true, data: await ai.analyzeModel(inp, ctxOf(req, inp.studyId)) });
+  } catch (err) { next(err); }
+});
+
 // POST /structure/ai/group — types inconnus qui sont la même chose
 router.post('/ai/group', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

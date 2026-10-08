@@ -86,6 +86,77 @@ export async function captureTypeImages(scene: LoadedScene, glassTest: GlassTest
   return out;
 }
 
+/**
+ * Images de l'analyse du modèle (S12.6), 6 au plus, JPEG ≤ 1 600 px : vue d'ensemble, une box seule, sa structure
+ * (barres porteuses seules), la box vue de dessous, et une planche contact des produits inconnus (vignettes numérotées,
+ * le numéro renvoie à la clé du type dans la légende).
+ */
+export async function captureModelImages(
+  scene: LoadedScene,
+  glassTest: GlassTest,
+  o: { moduleNodeId?: string; structureNodes?: string[]; unknown: PartType[] },
+): Promise<Array<{ media: 'image/jpeg'; data: string; caption: string }>> {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:1170px;height:900px;pointer-events:none;';
+  document.body.appendChild(host);
+  const viewer = new SceneViewer(host, scene, glassTest);
+  viewer.setFrontMarkers(false);
+  const out: Array<{ media: 'image/jpeg'; data: string; caption: string }> = [];
+  try {
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const shot = async (caption: string, kind: 'iso-sw' | 'iso-ne' = 'iso-sw', size = 1600) => {
+      const pose = viewer.poseFor(kind, undefined, 1.3, 1.05, 'perspective');
+      const r = await viewer.capture({ size, background: 'white', marginPct: 4, pose });
+      out.push({ media: 'image/jpeg', data: await jpegBase64(r.blob, 1600), caption });
+    };
+    viewer.setVisibility(null);
+    await shot('vue d’ensemble du modèle');
+    if (o.moduleNodeId) {
+      viewer.setVisibility([o.moduleNodeId]);
+      await shot('une box seule');
+      if (o.structureNodes?.length) {
+        viewer.setVisibility(o.structureNodes);
+        await shot('la structure de cette box seule (profils porteurs, sans panneaux)');
+        await shot('la structure de cette box vue de l’autre côté', 'iso-ne');
+      }
+    }
+    // planche contact : 12 types inconnus au plus, 4 × 3 vignettes numérotées
+    const list = o.unknown.slice(0, 12);
+    if (list.length) {
+      const cell = 400;
+      const cols = 4;
+      const c = document.createElement('canvas');
+      c.width = cols * cell;
+      c.height = Math.ceil(list.length / cols) * cell;
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      for (let k = 0; k < list.length; k++) {
+        viewer.setVisibility([list[k].nodeIds[0]]);
+        const pose = viewer.poseFor('iso-sw', undefined, 1, 1.1, 'perspective');
+        const r = await viewer.capture({ size: cell, background: 'white', marginPct: 6, pose });
+        const bmp = await createImageBitmap(r.blob);
+        const s = Math.min(cell / bmp.width, cell / bmp.height);
+        const x = (k % cols) * cell;
+        const y = Math.floor(k / cols) * cell;
+        g.drawImage(bmp, x + (cell - bmp.width * s) / 2, y + (cell - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+        bmp.close();
+        g.strokeStyle = '#ccc';
+        g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+        g.fillStyle = '#111';
+        g.font = 'bold 28px sans-serif';
+        g.fillText(String(k + 1), x + 10, y + 34);
+      }
+      const blob = await new Promise<Blob>((res) => c.toBlob((b) => res(b!), 'image/jpeg', 0.85));
+      out.push({ media: 'image/jpeg', data: await jpegBase64(blob, 1600), caption: `planche des produits inconnus : ${list.map((t, k) => `${k + 1} = ${t.key}`).join(' ; ')}` });
+    }
+  } finally {
+    viewer.dispose();
+    host.remove();
+  }
+  return out.slice(0, 6);
+}
+
 const CHECK_LABEL: Record<string, { text: string; color: string }> = {
   citation: { text: 'valeur retrouvée dans la source', color: 'var(--ok)' },
   quote: { text: 'valeur dans l’extrait recopié (à vérifier)', color: 'var(--warn)' },

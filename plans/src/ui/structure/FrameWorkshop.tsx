@@ -14,7 +14,8 @@ import type { FrameParams, ParametricSpec } from '../../structure/core/templates
 import { frameSections, parametricFrame, viewboxPresetFrame } from '../../structure/core/templates/frameModule';
 import { templateSteelWeight, templateSummary } from '../../structure/core/templateView';
 import { KN, KNCM_PER_DEG, KNM, fmtNumber } from '../../structure/core/units';
-import { slug } from '../../structure/core/ai';
+import type { FrameProposal } from '../../structure/core/ai';
+import { applyFrameProposal, slug } from '../../structure/core/ai';
 import { deckSpan } from '../../structure/studyRun';
 import type { FrameExtraction } from '../../structure/core/frameExtract';
 import { NewSectionForm, Num } from './ViewboxStructure';
@@ -55,6 +56,8 @@ export interface FrameWorkshopProps {
   entry?: ModuleTypeEntry;
   /** structure relevée sur le modèle SketchUp (départ « Depuis le modèle SketchUp ») */
   extraction?: FrameExtraction | null;
+  /** propositions de l'analyse IA du modèle pour cette structure (rôles, sections, assemblages) — appliquées sur clic */
+  aiFrame?: FrameProposal | null;
   onSaveEntries?: (entries: LibraryEntry[]) => Promise<void>;
   /** type enregistré : le module y est rattaché */
   onUseType: (key: string) => void;
@@ -124,6 +127,27 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
     if (s === 'viewbox') setParams({ ...base.params!, frame: { ...viewboxPresetFrame(base.params!), origin: 'preset-viewbox' } });
     else if (s === 'model' && p.extraction?.params) setParams(p.extraction.params);
     else setParams(parametricFrame(spec));
+  };
+  const [aiApplied, setAiApplied] = useState(false);
+  const applyAi = () => {
+    const fp = p.aiFrame;
+    if (!fp) return;
+    setParams((x) => {
+      const fr = x.frame;
+      const deck = fp.deckSpan && fr.deck.floor ? { ...fr.deck, floor: { ...fr.deck.floor, span: fp.deckSpan } } : fr.deck;
+      const column = fp.joints.column !== 'unknown' ? { ...fr.joints.column, model: fp.joints.column } : fr.joints.column;
+      const side = fp.joints.side !== 'unknown' ? { model: fp.joints.side } : fr.joints.side;
+      return {
+        ...x,
+        frame: {
+          ...fr,
+          bars: applyFrameProposal(fr.bars, fp).map((b) => (fp.bars[b.id] ? { ...b, source: { ...(b.source ?? {}), sectionStatus: b.source?.sectionStatus ?? 'measured' } } : b)),
+          deck,
+          joints: { ...fr.joints, column: column.model === 'semi' ? { ...column, stiffness: column.stiffness ?? base.params!.springs.columnRotation } : column, side },
+        },
+      };
+    });
+    setAiApplied(true);
   };
   const frame = params.frame;
   const setFrame = (fr: Partial<FrameParams['frame']>) => setParams((x) => ({ ...x, frame: { ...x.frame, ...fr } }));
@@ -325,6 +349,38 @@ export function FrameWorkshop(p: FrameWorkshopProps) {
           </button>
         </div>
 
+        {p.aiFrame && start === 'model' && (
+          <div className="card" style={{ background: 'var(--bg-2)' }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <b>🤖 Propositions de l’analyse IA</b>
+              {p.aiFrame.groups
+                .filter((g) => g.role !== g.roleGuess || (g.section && g.section !== g.current))
+                .map((g) => (
+                  <div key={g.group} className="hint">
+                    • {g.count} × {FRAME_ROLE_LABEL[g.roleGuess]} → {FRAME_ROLE_LABEL[g.role]}
+                    {g.section && g.section !== g.current ? `, section ${g.sectionName ?? g.section}` : ''} ({Math.round(g.confidence * 100)} %){g.note ? ` — ${g.note}` : ''}
+                  </div>
+                ))}
+              <div className="hint">
+                Assemblages : angles {p.aiFrame.joints.column}, côte à côte {p.aiFrame.joints.side}, empilement {p.aiFrame.joints.stack}
+                {p.aiFrame.joints.evidence ? ` — ${p.aiFrame.joints.evidence}` : ''}
+              </div>
+              {(p.aiFrame.joints.stack === 'clamp' || p.aiFrame.joints.side === 'custom') && (
+                <div className="hint">Clamp / liaison spéciale : la décrire dans l’onglet « 🔩 Accessoires » puis la choisir ci-dessous (capacités calculées par l’outil).</div>
+              )}
+              <div>
+                <button className="btn small" disabled={aiApplied} onClick={applyAi}>
+                  {aiApplied ? '✔ Propositions appliquées (modifiables ci-dessous)' : 'Appliquer les propositions de l’IA'}
+                </button>{' '}
+                {aiApplied && (
+                  <button className="btn small ghost" onClick={() => [chooseStart('model'), setAiApplied(false)]}>
+                    ↩ Revenir au relevé
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {start === 'model' && p.extraction && (
           <div className="card" style={{ background: 'var(--bg-2)' }}>
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
