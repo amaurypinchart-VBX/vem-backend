@@ -70,8 +70,6 @@ const where = (i: ImportIssue) => (i.article ? `${i.where} (${i.article})` : i.w
 
 /** Questions qui ne viennent pas d'une ligne précise (à partir des réponses du 12/10/2026). */
 const OPEN_QUESTIONS = [
-  'Portes coulissantes : j’ai mis le kit de la porte double (7-632-022 + 7-632-018 + 2 × 7-632-017), en « à confirmer ». Quel est le bon kit — et pour la coulissante 5700 (7-625-020) ? Et 7-625-023 « Sliding doors Lavado 85 × 185 », est-ce une porte de box ?',
-  'Spare « toujours un peu plus » : quincaillerie et plaques de jonction à + 30 %, EPDM à + 1 (couvre 6059 et 6060). D’accord ?',
   'Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?',
   'Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?',
   'Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?',

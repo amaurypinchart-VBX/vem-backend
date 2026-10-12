@@ -384,7 +384,7 @@ export const DECISIONS: Decision[] = [
     by: 'Amaury',
     text:
       'Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → ' +
-      '7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → marches aussi (kit de la porte double en attendant, à confirmer). ' +
+      '7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → le kit de la porte double en double (2 + 2 + 4). ' +
       'Le type de porte vient de la désignation du catalogue.',
     apply: (ctx) => {
       const kit = (article: string, qty: number, per: 'porte_simple' | 'porte_double', old: string) => {
@@ -410,11 +410,11 @@ export const DECISIONS: Decision[] = [
       kit('7-632-022', 1, 'porte_double', 'kit:7-632-022@7-199-066/produit');
       kit('7-632-018', 1, 'porte_double', 'kit:7-632-018@7-199-066/produit');
       kit('7-632-017', 2, 'porte_double', 'kit:7-632-017@7-199-066/produit');
-      // portes coulissantes : marches aussi (Amaury 12.10.2026) ; kit de la porte double (largeur ≈ 2,3 m), à confirmer
+      // portes coulissantes : le kit de la porte double, chaque marche en double (Amaury 12.10.2026)
       for (const [article, qty] of [
-        ['7-632-022', 1],
-        ['7-632-018', 1],
-        ['7-632-017', 2],
+        ['7-632-022', 2],
+        ['7-632-018', 2],
+        ['7-632-017', 4],
       ] as const)
         add(ctx, {
           kind: 'kit',
@@ -424,8 +424,8 @@ export const DECISIONS: Decision[] = [
           qty,
           per: 'porte_coulissante',
           unit: 'pce',
-          confidence: 'a_confirmer',
-          remark: 'Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.',
+          confidence: 'confirme',
+          remark: 'Porte coulissante : mêmes marches que la porte double, en double (Amaury 12.10.2026).',
           source: 'decision',
           group: 'marches-portes',
         });
@@ -438,7 +438,7 @@ export const DECISIONS: Decision[] = [
   {
     id: 'toujours-un-peu-plus',
     date: '2026-10-12',
-    by: 'Amaury (« rajoute toujours un peu plus que trouvé, comme là »)',
+    by: 'Amaury (« rajoute toujours un peu plus que trouvé, comme là », + 30 % confirmé)',
     text:
       'Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui ' +
       'couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).',
@@ -480,6 +480,15 @@ export const DECISIONS: Decision[] = [
         ra.group = rb.group = `additionne:${ra.article}`;
         ctx.log.details.push(`${a} + ${b} : s’additionnent`);
       }
+    },
+  },
+  {
+    id: 'pieds-6059',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text: 'Pieds 6059 : on garde 15 (4 box côte à côte × 6 pieds, pieds communs fusionnés) ; le « 10 » du classeur n’est pas une règle.',
+    apply: (ctx) => {
+      ctx.log.details.push('aucune règle modifiée : le nombre de pieds vient de la topologie');
     },
   },
 ];

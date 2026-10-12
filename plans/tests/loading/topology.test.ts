@@ -201,7 +201,7 @@ describe.skipIf(!real('6059') || !real('6060') || !real('Klokgebouw'))('chantier
     expect(t.islands).toEqual([expect.objectContaining({ regime: 'connecte', covered: true })]);
     expect(t.counts.jonction_grand_cote?.value).toBe(3);
     expect(t.counts.jonction_toit_grand_cote?.value).toBe(3);
-    // le classeur note 10 pieds : 4 box côte à côte donnent 15 pieds au gabarit 6 / box (écart signalé, algorithme non tordu)
+    // 4 box côte à côte × 6 pieds, pieds communs fusionnés = 15 (Amaury 12.10.2026 : on garde 15, le « 10 » du classeur n'est pas une règle)
     expect(t.counts.pied?.value).toBe(15);
     expect([qty(t, '7-637-020'), qty(t, '7-636-008'), qty(t, '7-199-066'), qty(t, '7-962-016')]).toEqual([13, 11, 1, 4]);
   }, 120000);

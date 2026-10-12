@@ -73,7 +73,8 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(rule('acc:4-700-096@module_toit[connecte,suspendu]')?.active).toBe(false);
     expect(rule('acc:4-700-039@jonction_grand_cote')).toMatchObject({ qty: 5, spare: { type: 'pourcent', valeur: 30 } });
     expect(rule('acc:4-700-097@jonction_toit_petit_cote')).toMatchObject({ qty: 1, spare: { type: 'fixe', valeur: 1 } });
-    expect(rule('kit:7-632-022@porte_coulissante')?.confidence).toBe('a_confirmer');
+    expect(rule('kit:7-632-022@porte_coulissante')).toMatchObject({ qty: 2, confidence: 'confirme' });
+    expect(rule('kit:7-632-017@porte_coulissante')?.qty).toBe(4);
     // « toujours un peu plus » : jamais moins que livré sur les points de calage
     for (const r of seed.rules.filter((x) => x.active))
       for (const c of r.calibration) if (c.predit !== undefined && c.livre !== undefined) expect(c.predit, `${r.key} ${c.chantier}`).toBeGreaterThanOrEqual(c.livre);

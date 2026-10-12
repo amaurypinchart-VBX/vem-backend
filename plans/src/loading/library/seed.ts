@@ -2680,11 +2680,11 @@ export const SEED_RULES: LoadingRule[] = [
     "trigger": {},
     "article": "7-632-022",
     "articleName": "PLATFORM STEP 2200x1000x150 |7024| - VIEWBOX",
-    "qty": 1,
+    "qty": 2,
     "per": "porte_coulissante",
     "unit": "pce",
-    "confidence": "a_confirmer",
-    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "confidence": "confirme",
+    "remark": "Porte coulissante : mêmes marches que la porte double, en double (Amaury 12.10.2026).",
     "source": "decision",
     "group": "marches-portes",
     "key": "kit:7-632-022@porte_coulissante",
@@ -2697,11 +2697,11 @@ export const SEED_RULES: LoadingRule[] = [
     "trigger": {},
     "article": "7-632-018",
     "articleName": "PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX",
-    "qty": 1,
+    "qty": 2,
     "per": "porte_coulissante",
     "unit": "pce",
-    "confidence": "a_confirmer",
-    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "confidence": "confirme",
+    "remark": "Porte coulissante : mêmes marches que la porte double, en double (Amaury 12.10.2026).",
     "source": "decision",
     "group": "marches-portes",
     "key": "kit:7-632-018@porte_coulissante",
@@ -2714,11 +2714,11 @@ export const SEED_RULES: LoadingRule[] = [
     "trigger": {},
     "article": "7-632-017",
     "articleName": "PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX",
-    "qty": 2,
+    "qty": 4,
     "per": "porte_coulissante",
     "unit": "pce",
-    "confidence": "a_confirmer",
-    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "confidence": "confirme",
+    "remark": "Porte coulissante : mêmes marches que la porte double, en double (Amaury 12.10.2026).",
     "source": "decision",
     "group": "marches-portes",
     "key": "kit:7-632-017@porte_coulissante",
@@ -3003,7 +3003,7 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "id": "marches-toutes-portes",
     "date": "2026-10-12",
     "by": "Amaury",
-    "text": "Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → marches aussi (kit de la porte double en attendant, à confirmer). Le type de porte vient de la désignation du catalogue.",
+    "text": "Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → le kit de la porte double en double (2 + 2 + 4). Le type de porte vient de la désignation du catalogue.",
     "applied": true,
     "details": [
       "ajout kit:7-632-017@porte_simple",
@@ -3023,7 +3023,7 @@ export const SEED_DECISIONS: DecisionLog[] = [
   {
     "id": "toujours-un-peu-plus",
     "date": "2026-10-12",
-    "by": "Amaury (« rajoute toujours un peu plus que trouvé, comme là »)",
+    "by": "Amaury (« rajoute toujours un peu plus que trouvé, comme là », + 30 % confirmé)",
     "text": "Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).",
     "applied": true,
     "details": [
@@ -3046,6 +3046,16 @@ export const SEED_DECISIONS: DecisionLog[] = [
       "acc:4-700-075@4.4.2/produit + acc:4-700-075@box[standalone] : s’additionnent",
       "acc:4-157-003@4.4.2/produit + acc:4-157-003@box : s’additionnent",
       "acc:4-157-004@4.4.2/produit + acc:4-157-004@box : s’additionnent"
+    ]
+  },
+  {
+    "id": "pieds-6059",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "Pieds 6059 : on garde 15 (4 box côte à côte × 6 pieds, pieds communs fusionnés) ; le « 10 » du classeur n’est pas une règle.",
+    "applied": true,
+    "details": [
+      "aucune règle modifiée : le nombre de pieds vient de la topologie"
     ]
   }
 ];

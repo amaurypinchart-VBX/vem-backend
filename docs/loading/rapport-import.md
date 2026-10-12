@@ -6,20 +6,18 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
 - Catalogue : 214 références (48 « gros produits »)
-- Règles : 87 lues, **66 actives** (44 confirmées, 21 à confirmer, 1 hypothèses), 21 remplacées ou doublons gardés pour l'historique
+- Règles : 87 lues, **66 actives** (47 confirmées, 18 à confirmer, 1 hypothèses), 21 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
-- Décisions appliquées : 16 / 16
+- Décisions appliquées : 17 / 17
 
 ## Questions pour Amaury
 
-1. Portes coulissantes : j’ai mis le kit de la porte double (7-632-022 + 7-632-018 + 2 × 7-632-017), en « à confirmer ». Quel est le bon kit — et pour la coulissante 5700 (7-625-020) ? Et 7-625-023 « Sliding doors Lavado 85 × 185 », est-ce une porte de box ?
-2. Spare « toujours un peu plus » : quincaillerie et plaques de jonction à + 30 %, EPDM à + 1 (couvre 6059 et 6060). D’accord ?
-3. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
-4. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?
-5. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
-6. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
-7. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
-8. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `7-355-014`, `7-355-015`, `7-632-001`, `7-632-002`, `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`, `4-700-097`.
+1. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
+2. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?
+3. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
+4. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
+5. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
+6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `7-355-014`, `7-355-015`, `7-632-001`, `7-632-002`, `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`, `4-700-097`.
 
 ## Décisions appliquées par-dessus le classeur
 
@@ -75,7 +73,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
   - acc:4-700-067@10mm/cote_vitre_court : spare « texte » → + 50 % (6060 : 4 → 6)
   - acc:4-700-074@10mm/cote_vitre_long : spare « texte » → + 50 % (6060 : 2 → 3)
   - ajout acc:4-700-072@10mm/porte_coulissante
-- **2026-10-12 — Amaury** : Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → marches aussi (kit de la porte double en attendant, à confirmer). Le type de porte vient de la désignation du catalogue.
+- **2026-10-12 — Amaury** : Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → le kit de la porte double en double (2 + 2 + 4). Le type de porte vient de la désignation du catalogue.
   - ajout kit:7-632-017@porte_simple
   - kit:7-632-017@7-199-067/produit → remplacée par kit:7-632-017@porte_simple
   - ajout kit:7-632-022@porte_double
@@ -88,7 +86,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
   - ajout kit:7-632-018@porte_coulissante
   - ajout kit:7-632-017@porte_coulissante
   - portes du catalogue : 7-625-013 simple, 7-625-017 simple, 7-625-018 double, 7-625-019 double, 7-625-020 coulissante, 7-625-022 simple, 7-625-014 simple, 7-625-021 coulissante, 7-625-023 coulissante, 7-199-067 simple, 7-199-066 double
-- **2026-10-12 — Amaury (« rajoute toujours un peu plus que trouvé, comme là »)** : Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).
+- **2026-10-12 — Amaury (« rajoute toujours un peu plus que trouvé, comme là », + 30 % confirmé)** : Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).
   - acc:4-700-040@bord : + 30 %
   - acc:4-700-039@jonction_grand_cote : + 30 %
   - acc:4-700-039@jonction_petit_cote : + 30 %
@@ -100,6 +98,8 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
   - acc:4-700-075@4.4.2/produit + acc:4-700-075@box[standalone] : s’additionnent
   - acc:4-157-003@4.4.2/produit + acc:4-157-003@box : s’additionnent
   - acc:4-157-004@4.4.2/produit + acc:4-157-004@box : s’additionnent
+- **2026-10-12 — Amaury** : Pieds 6059 : on garde 15 (4 box côte à côte × 6 pieds, pieds communs fusionnés) ; le « 10 » du classeur n’est pas une règle.
+  - aucune règle modifiée : le nombre de pieds vient de la topologie
 
 ## Interprétations faites à l’import
 
@@ -184,9 +184,9 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-022@porte_double` |
 | 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-018@porte_double` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 2 | par porte double |  |  | confirmé | `kit:7-632-017@porte_double` |
-| 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par porte coulissante |  |  | à confirmer | `kit:7-632-022@porte_coulissante` |
-| 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 1 | par porte coulissante |  |  | à confirmer | `kit:7-632-018@porte_coulissante` |
-| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 2 | par porte coulissante |  |  | à confirmer | `kit:7-632-017@porte_coulissante` |
+| 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-022@porte_coulissante` |
+| 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-018@porte_coulissante` |
+| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 4 | par porte coulissante |  |  | confirmé | `kit:7-632-017@porte_coulissante` |
 
 ### Quincaillerie / liaison
 
