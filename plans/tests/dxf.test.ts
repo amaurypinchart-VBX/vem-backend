@@ -13,7 +13,7 @@ import type { Linework2D } from '../src/linework/types';
 import type { Vec3 } from '../src/core/views';
 import { clipPolyline, parseColor, parsePath, parseTransform } from '../src/sheets/dxf/svgToDxf';
 import { setDxf, sheetDxf, zipDxf } from '../src/sheets/dxf/export';
-import { aciOf, lineweightOf } from '../src/sheets/dxf/writer';
+import { aciOf, cleanLoop, lineweightOf } from '../src/sheets/dxf/writer';
 import { unzipSync, strFromU8 } from 'fflate';
 
 const basis = { right: [1, 0, 0] as Vec3, up: [0, 1, 0] as Vec3, toward: [0, 0, 1] as Vec3 };
@@ -229,6 +229,32 @@ describe('DXF : planche', () => {
     expect(img.map((e) => e.type)).toEqual(['LWPOLYLINE']);
     // aucun remplissage blanc (fond de planche, cartouche)
     expect(ents.filter((e) => e.type === 'HATCH' && get(e, 420) === String(0xffffff))).toEqual([]);
+    // aucun segment de longueur nulle dans les contours (DWG TrueView plantait à l'ouverture) ; un point de départ
+    for (const h of ents.filter((e) => e.type === 'HATCH')) {
+      const c = h.codes;
+      let paths = 0;
+      for (let i = 0; i < c.length; i++) {
+        if (c[i][0] !== 93) continue;
+        paths++;
+        const nv = Number(c[i][1]);
+        const pts: Array<[number, number]> = [];
+        for (let k = 0; k < nv; k++) pts.push([Number(c[i + 1 + 2 * k][1]), Number(c[i + 2 + 2 * k][1])]);
+        expect(pts.length).toBeGreaterThanOrEqual(3);
+        pts.forEach((p, k) => {
+          const q = pts[(k + 1) % pts.length];
+          expect(Math.hypot(q[0] - p[0], q[1] - p[1])).toBeGreaterThan(0.01);
+        });
+      }
+      expect(paths).toBe(Number(get(h, 91)));
+      expect(get(h, 98)).toBe('1');
+    }
+  });
+});
+
+describe('DXF : contours de remplissage', () => {
+  it('point final répété et points confondus retirés', () => {
+    expect(cleanLoop([0, 0, 10, 0, 10, 0.004, 10, 10, 0, 10, 0, 0])).toEqual([0, 0, 10, 0, 10, 10, 0, 10]);
+    expect(cleanLoop([0, 0, 1, 0, 1, 1])).toEqual([0, 0, 1, 0, 1, 1]);
   });
 });
 

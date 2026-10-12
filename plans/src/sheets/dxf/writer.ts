@@ -105,6 +105,18 @@ const n = (v: number) => {
   return Object.is(r, -0) ? '0' : String(r);
 };
 
+/** Contour fermé x0, y0, x1, y1… sans points consécutifs confondus (< 0,01 unité) ni point final égal au premier. */
+export function cleanLoop(l: ArrayLike<number>, tol = 0.01): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < l.length; i += 2) {
+    const k = out.length;
+    if (k && Math.abs(l[i] - out[k - 2]) <= tol && Math.abs(l[i + 1] - out[k - 1]) <= tol) continue;
+    out.push(l[i], l[i + 1]);
+  }
+  while (out.length > 6 && Math.abs(out[0] - out[out.length - 2]) <= tol && Math.abs(out[1] - out[out.length - 1]) <= tol) out.length -= 2;
+  return out;
+}
+
 /** Texte d'une entité TEXT : une ligne, « %% » échappé (codes de contrôle AutoCAD). */
 function textValue(s: string): string {
   return s.replace(/[\r\n]+/g, ' ').replace(/%%/g, '%%%');
@@ -221,9 +233,13 @@ export class DxfDocument {
     this.body.push(out.join('\n'));
   }
 
-  /** Remplissage plein : contours fermés (règle pair-impair, les trous sont des contours intérieurs). */
+  /**
+   * Remplissage plein : contours fermés (règle pair-impair, les trous sont des contours intérieurs). Chaque contour est
+   * nettoyé : points consécutifs confondus et point final répété (segment de longueur nulle) retirés — DWG TrueView /
+   * AutoCAD plantent à l'ouverture sur un contour de remplissage qui en contient.
+   */
   hatch(loops: Array<ArrayLike<number>>, st: DxfStyle) {
-    const valid = loops.filter((l) => l.length >= 6);
+    const valid = loops.map((l) => cleanLoop(l)).filter((l) => l.length >= 6);
     if (!valid.length) return;
     const out = this.common('HATCH', 'AcDbHatch', st, true);
     out.push('10', '0', '20', '0', '30', '0', '210', '0', '220', '0', '230', '1', '2', 'SOLID', '70', '1', '71', '0', '91', String(valid.length));
@@ -235,7 +251,8 @@ export class DxfDocument {
       }
       out.push('97', '0');
     }
-    out.push('75', '0', '76', '1', '47', '1', '98', '0');
+    // un point de départ (comme AutoCAD) : premier sommet du contour extérieur
+    out.push('75', '0', '76', '1', '47', '1', '98', '1', '10', n(valid[0][0]), '20', n(valid[0][1]));
     this.body.push(out.join('\n'));
   }
 
