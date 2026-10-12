@@ -70,12 +70,14 @@ const where = (i: ImportIssue) => (i.article ? `${i.where} (${i.article})` : i.w
 
 /** Questions qui ne viennent pas d'une ligne précise (à partir des réponses du 12/10/2026). */
 const OPEN_QUESTIONS = [
-  'EPDM de toit : tu as répondu « ça dépend quel EPDM ». Pour chaque réf. — 4-700-096 (57×32×5900), 4-700-045 (50×40×5900, substitut), 4-700-046 (50×40×2500), 4-700-047 / 048 (60×40, 5900 / 2500) — où se pose-t-elle et combien : par jonction de toit grand côté, par jonction petit côté, par box, par îlot couvert ? (6059 : 4 VBX en 1 îlot → 4 ; 6060 : 2 îlots de 2 → 2.)',
+  'EPDM 2500 des jonctions de toit petit côté : quelle réf. — 4-700-046 (50×40×2500) ou 4-700-048 (60×40×2500) ?',
+  'Spares des joints 10 mm « rajoutés » : je mets + 20 % sur 4-700-072 (6 → 8, puis + 2 par porte coulissante → 10) et + 50 % sur 4-700-067 / 4-700-074 (4 → 6, 2 → 3), ce qui reproduit 6060. C’est bon ?',
+  'Écarts restants avec les bordereaux réels, avec tes règles : EPDM 6059 = 3 jonctions → 3, livré 4 ; plaques inter-box 6059 = 15 + 20 % → 18, livré 20 ; boulons 6060 = 20 + 20 % → 24, livré 26. Jugement de ces chantiers, ou il manque quelque chose (ex. un spare plus grand) ?',
+  'Portes coulissantes (7-625-020, 7-625-021) : des marches aussi ? Et 7-625-023 « Sliding doors Lavado 85 × 185 », est-ce une porte de box ?',
   'Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?',
-  'Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ?',
+  'Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?',
   'Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?',
-  'Marches de porte : 3 × 7-632-017 par porte simple 7-199-067. Valent-elles aussi pour les portes vitrées simples (7-625-013, -017, -022, -014) et la double porte vitrée (7-625-018 / -019) ?',
-  'Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ?',
+  'Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?',
   'Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?',
 ];
 
@@ -103,8 +105,17 @@ export function reportMarkdown(s: SeedResult, file: string): string {
       `${q++}. **Contradiction ${rules[0].article}** (${rules[0].articleName ?? ''}) — ${rules.map((r) => `\`${r.key}\` ${fmtQty(r)} ${COUNTING_BASE_LABEL[r.per]}${r.trigger.vitrage ? ` (vitrage ${r.trigger.vitrage})` : ''}`).join(' **ou** ')}. Laquelle garder, ou s'additionnent-elles ?`,
     );
   }
+  // une question sur une ligne du classeur dont toutes les règles ont été remplacées par une décision est résolue
+  // (ou dont le spare en texte a été traduit par une décision)
+  const resolved = (i: ImportIssue) => {
+    const m = /^(\S+) ligne (\d+)$/.exec(i.where);
+    if (!m) return false;
+    const rules = s.rules.filter((r) => r.origin?.some((o) => o.sheet === m[1] && o.row === Number(m[2])));
+    const spareDone = (r: LoadingRule) => i.text.startsWith('Spare en texte') && r.spare?.type !== 'texte';
+    return rules.length > 0 && rules.every((r) => !r.active || spareDone(r));
+  };
   const asked = new Map<string, string[]>();
-  for (const i of s.issues.filter((x) => x.question)) asked.set(i.question!, [...(asked.get(i.question!) ?? []), i.where]);
+  for (const i of s.issues.filter((x) => x.question && !resolved(x))) asked.set(i.question!, [...(asked.get(i.question!) ?? []), i.where]);
   for (const [text, places] of asked) L.push(`${q++}. ${text} _(${places.join(', ')})_`);
   const missing = [...new Set([...s.catalogueToAdd, ...s.issues.filter((i) => i.kind === 'catalogue').map((i) => i.article!)])];
   L.push(

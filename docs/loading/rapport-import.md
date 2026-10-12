@@ -6,31 +6,25 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
 - Catalogue : 214 références (48 « gros produits »)
-- Règles : 73 lues, **61 actives** (39 confirmées, 21 à confirmer, 1 hypothèses), 12 remplacées ou doublons gardés pour l'historique
+- Règles : 83 lues, **62 actives** (43 confirmées, 18 à confirmer, 1 hypothèses), 21 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
-- Décisions appliquées : 10 / 10
+- Décisions appliquées : 14 / 14
 
 ## Questions pour Amaury
 
-1. EPDM de toit : tu as répondu « ça dépend quel EPDM ». Pour chaque réf. — 4-700-096 (57×32×5900), 4-700-045 (50×40×5900, substitut), 4-700-046 (50×40×2500), 4-700-047 / 048 (60×40, 5900 / 2500) — où se pose-t-elle et combien : par jonction de toit grand côté, par jonction petit côté, par box, par îlot couvert ? (6059 : 4 VBX en 1 îlot → 4 ; 6060 : 2 îlots de 2 → 2.)
-2. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
-3. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ?
-4. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
-5. Marches de porte : 3 × 7-632-017 par porte simple 7-199-067. Valent-elles aussi pour les portes vitrées simples (7-625-013, -017, -022, -014) et la double porte vitrée (7-625-018 / -019) ?
-6. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ?
-7. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
-8. **Contradiction 4-700-075** (Window/Wall Rubber BIG 5700mm) — `acc:4-700-075@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-700-075@box[standalone]` 4 par box. Laquelle garder, ou s'additionnent-elles ?
-9. **Contradiction 4-157-003** (Silicon AM85-1 RAL7024) — `acc:4-157-003@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-157-003@box` 3 par box. Laquelle garder, ou s'additionnent-elles ?
-10. **Contradiction 4-157-004** (Silicon Crystal) — `acc:4-157-004@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-157-004@box` 2 par box. Laquelle garder, ou s'additionnent-elles ?
-11. **Contradiction 4-700-039** (In-between plate large) — `acc:4-700-039@jonction_box[connecte]` 1 par jonction de box **ou** `acc:4-700-039@box[connecte]` 5 par box. Laquelle garder, ou s'additionnent-elles ?
-12. **Contradiction 4-700-096** (Roof Rubber EPDM 57x32x5900 |VBX|) — `acc:4-700-096@module_toit[connecte,suspendu]` 1 par module de toit **ou** `acc:4-700-096@ilot_couvert[connecte,suspendu]` 1 par îlot couvert. Laquelle garder, ou s'additionnent-elles ?
-13. 4-700-096 : que veut dire « Appui = suspendu » sur cette règle ? _(Regles_accessoires ligne 34, Regles_accessoires ligne 50)_
-14. 4-710-001 Connecting BOLT M16 HEX M16x110 : quelle quantité exacte, et par quoi (jonction ou box) ? _(Regles_accessoires ligne 37)_
-15. 4-700-072 : le spare « +arrondi », c’est combien (+1, +2, +20 %…) ? _(Regles_accessoires ligne 47)_
-16. 4-700-067 : le spare « +spare », c’est combien (+1, +2, +20 %…) ? _(Regles_accessoires ligne 48)_
-17. 4-700-074 : le spare « +spare », c’est combien (+1, +2, +20 %…) ? _(Regles_accessoires ligne 49)_
-18. Que veut dire la base « box_gap » pour 4-157-003 ? _(Regles_accessoires ligne 54)_
-19. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `7-355-014`, `7-355-015`, `7-632-001`, `7-632-002`, `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`.
+1. EPDM 2500 des jonctions de toit petit côté : quelle réf. — 4-700-046 (50×40×2500) ou 4-700-048 (60×40×2500) ?
+2. Spares des joints 10 mm « rajoutés » : je mets + 20 % sur 4-700-072 (6 → 8, puis + 2 par porte coulissante → 10) et + 50 % sur 4-700-067 / 4-700-074 (4 → 6, 2 → 3), ce qui reproduit 6060. C’est bon ?
+3. Écarts restants avec les bordereaux réels, avec tes règles : EPDM 6059 = 3 jonctions → 3, livré 4 ; plaques inter-box 6059 = 15 + 20 % → 18, livré 20 ; boulons 6060 = 20 + 20 % → 24, livré 26. Jugement de ces chantiers, ou il manque quelque chose (ex. un spare plus grand) ?
+4. Portes coulissantes (7-625-020, 7-625-021) : des marches aussi ? Et 7-625-023 « Sliding doors Lavado 85 × 185 », est-ce une porte de box ?
+5. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
+6. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?
+7. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
+8. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
+9. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
+10. **Contradiction 4-700-075** (Window/Wall Rubber BIG 5700mm) — `acc:4-700-075@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-700-075@box[standalone]` 4 par box. Laquelle garder, ou s'additionnent-elles ?
+11. **Contradiction 4-157-003** (Silicon AM85-1 RAL7024) — `acc:4-157-003@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-157-003@box` 3 par box. Laquelle garder, ou s'additionnent-elles ?
+12. **Contradiction 4-157-004** (Silicon Crystal) — `acc:4-157-004@4.4.2/produit` 1 par produit (vitrage 4.4.2) **ou** `acc:4-157-004@box` 2 par box. Laquelle garder, ou s'additionnent-elles ?
+13. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `7-355-014`, `7-355-015`, `7-632-001`, `7-632-002`, `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`.
 
 ## Décisions appliquées par-dessus le classeur
 
@@ -67,6 +61,34 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 - **2026-10-12 — classeur (quantités en mètres)** : Unités : bande poteau 4-720-011 et câble sans prise 4-730-005 au mètre.
   - 4-720-011 : unité m
   - 4-730-005 : unité m
+- **2026-10-12 — Amaury** : EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (réf. à préciser).
+  - ajout acc:4-700-096@jonction_toit_grand_cote
+  - acc:4-700-096@module_toit[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote
+  - acc:4-700-096@ilot_couvert[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote
+- **2026-10-12 — Amaury** : Jonctions entre box : plaque inter-box 4-700-039 = 5 par jonction grand côté, 2 par jonction petit côté ; boulons 4-710-001 = 10 par jonction grand côté (5 en bas + 5 en haut), 4 par jonction petit côté (2 + 2). Boulonnerie, quincaillerie, plaques de jonction : + 20 % de spare.
+  - ajout acc:4-700-039@jonction_grand_cote
+  - ajout acc:4-700-039@jonction_petit_cote
+  - acc:4-700-039@jonction_box[connecte] → remplacée par acc:4-700-039@jonction_grand_cote
+  - acc:4-700-039@box[connecte] → remplacée par acc:4-700-039@jonction_grand_cote
+  - ajout acc:4-710-001@jonction_grand_cote
+  - ajout acc:4-710-001@jonction_petit_cote
+  - acc:4-710-001@box → remplacée par acc:4-710-001@jonction_grand_cote
+  - acc:4-700-040@bord : + 20 % (plaque de jonction)
+- **2026-10-12 — Amaury (« spare rajouté ») — pourcentages déduits du bordereau 6060, à confirmer** : Joints du vitrage 10 mm : on rajoute du spare. Square 10 mm 4-700-072 : + 20 % puis + 2 par porte coulissante (6060 : 6 → 8 → 10) ; joints petits / grands côtés vitrés 4-700-067 / 4-700-074 : + 50 % (6060 : 4 → 6 et 2 → 3).
+  - acc:4-700-072@10mm/terminaison_vitre : spare « texte » → + 20 % (6060 : 6 → 8)
+  - acc:4-700-067@10mm/cote_vitre_court : spare « texte » → + 50 % (6060 : 4 → 6)
+  - acc:4-700-074@10mm/cote_vitre_long : spare « texte » → + 50 % (6060 : 2 → 3)
+  - ajout acc:4-700-072@10mm/porte_coulissante
+- **2026-10-12 — Amaury** : Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017. Le type de porte vient de la désignation du catalogue.
+  - ajout kit:7-632-017@porte_simple
+  - kit:7-632-017@7-199-067/produit → remplacée par kit:7-632-017@porte_simple
+  - ajout kit:7-632-022@porte_double
+  - kit:7-632-022@7-199-066/produit → remplacée par kit:7-632-022@porte_double
+  - ajout kit:7-632-018@porte_double
+  - kit:7-632-018@7-199-066/produit → remplacée par kit:7-632-018@porte_double
+  - ajout kit:7-632-017@porte_double
+  - kit:7-632-017@7-199-066/produit → remplacée par kit:7-632-017@porte_double
+  - portes du catalogue : 7-625-013 simple, 7-625-017 simple, 7-625-018 double, 7-625-019 double, 7-625-020 coulissante, 7-625-022 simple, 7-625-014 simple, 7-625-021 coulissante, 7-625-023 coulissante, 7-199-067 simple, 7-199-066 double
 
 ## Interprétations faites à l’import
 
@@ -112,7 +134,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Ajouts_chantier ligne 9 (4-730-009) : Note d’appréciation « Cable SHUKO Multiprise IP44 » déjà couverte par acc:4-730-009@box : gardée comme information, inactive.
 - Appreciation ligne 3 (4-700-083) : Note d’appréciation « NIDAPLAST WALL + trou airco » déjà couverte par sub:4-700-083@airco[nidaplast] : gardée comme information, inactive.
-- Appreciation ligne 4 (4-700-096+4-700-033) : Note d’appréciation « ROOF RUBBER EPDM / ROOF ROLLER TEC7 » déjà couverte par acc:4-700-096@module_toit[connecte,suspendu], aj:4-700-033@job[couvert] : gardée comme information, inactive.
+- Appreciation ligne 4 (4-700-096+4-700-033) : Note d’appréciation « ROOF RUBBER EPDM / ROOF ROLLER TEC7 » déjà couverte par acc:4-700-096@jonction_toit_grand_cote, aj:4-700-033@job[couvert] : gardée comme information, inactive.
 - Appreciation ligne 5 (4-740-001+4-740-002+4-740-003) : Note d’appréciation « WOOD SUBPLATE (charge lourde) » déjà couverte par acc:4-740-001@sous_bois_etude, acc:4-740-002@sous_bois_etude, acc:4-740-003@sous_bois_etude : gardée comme information, inactive.
 - Appreciation ligne 6 (4-740-001+4-740-002+4-740-003) : Note d’appréciation « WOOD SUBPLATE LEVELING (pile par pied) » déjà couverte par acc:4-740-001@sous_bois_etude, acc:4-740-002@sous_bois_etude, acc:4-740-003@sous_bois_etude : gardée comme information, inactive.
 - Appreciation ligne 7 (4-750-004+4-750-005+4-750-006) : Note d’appréciation « SÉCURITÉ HAUTEUR (harnais, ligne de vie, TUV) » déjà couverte par aj:4-750-004@job[hauteur], aj:4-750-005@job[hauteur], aj:4-750-006@job[hauteur] : gardée comme information, inactive.
@@ -138,19 +160,18 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | Article | Quantité | Base | Conditions | Spare | Confiance | Clé |
 |---|---|---|---|---|---|---|
 | 4-700-003 Viewbox Ceilling Black tensed Fabric 2195mm X 5695mm /VISIX/ | 1 | par box |  | +1 | confirmé | `acc:4-700-003@box` |
-| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 3 | par produit (7-199-067) |  |  | confirmé | `kit:7-632-017@7-199-067/produit` |
-| 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par produit (7-199-066) |  |  | confirmé | `kit:7-632-022@7-199-066/produit` |
-| 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 1 | par produit (7-199-066) |  |  | confirmé | `kit:7-632-018@7-199-066/produit` |
-| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 2 | par produit (7-199-066) |  |  | confirmé | `kit:7-632-017@7-199-066/produit` |
-| 4-700-096 Roof Rubber EPDM 57x32x5900 /VBX/ | 1 | par module de toit | regime = connecte, appui = suspendu |  | confirmé ⚠ | `acc:4-700-096@module_toit[connecte,suspendu]` |
 | 4-720-011 Viewbox Poles Rubber FLAT adhésive 20x4mm /M | 2,53 | par poteau |  |  | confirmé | `acc:4-720-011@poteau` |
-| 4-700-096 Roof Rubber EPDM 5900 /VBX/ (subst. 4-700-045 OK) | 1 | par îlot couvert | regime = connecte, appui = suspendu |  | confirmé ⚠ | `acc:4-700-096@ilot_couvert[connecte,suspendu]` |
 | 4-700-001 PAINT LEVASSEUR 1K RAL7024 2.5L | 2 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-001@job[petit]` |
 | 4-740-010 Laminate LAMETT DOURO HONEY (/m²) | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
 | 4-700-002 PAINT LEVASSEUR 1K RAL7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
 | 4-700-027 AIRCO WALL TROTEC 2,6KW  220V - VBX COOLING AND HEATING SYSTEM | à apprécier | forfait chantier |  |  | hypothèse | `app:4-700-027@job` |
 | 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco | aircoSlot = nidaplast |  | confirmé | `sub:4-700-083@airco[nidaplast]` |
 | 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco | aircoSlot = autre |  | confirmé | `acc:4-700-083@airco[autre]` |
+| 4-700-096 Roof Rubber EPDM 57x32x5900 /VBX/ | 1 | par jonction de toit grand côté |  |  | confirmé | `acc:4-700-096@jonction_toit_grand_cote` |
+| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 3 | par porte simple |  |  | confirmé | `kit:7-632-017@porte_simple` |
+| 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-022@porte_double` |
+| 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-018@porte_double` |
+| 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 2 | par porte double |  |  | confirmé | `kit:7-632-017@porte_double` |
 
 ### Quincaillerie / liaison
 
@@ -158,13 +179,14 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 |---|---|---|---|---|---|---|
 | 4-700-035 WOOD Base Plate Corner M16 / VIEWBOX / 325X325mm | 4 | par box | position = angle |  | confirmé | `acc:4-700-035@box[angle]` |
 | 4-700-036 WOOD Base Plate Middle M16 / VIEWBOX / 320X325mm | 2 | par box | position = milieu |  | confirmé | `acc:4-700-036@box[milieu]` |
-| 4-700-039 In Between Plate Large /120 x 1140 x 18 mm / VIEWBOX | 1 | par jonction de box | regime = connecte |  | à confirmer ⚠ | `acc:4-700-039@jonction_box[connecte]` |
-| 4-700-040 In Between Plate Simple /60 x 1140 x 18 mm / VIEWBOX | 1 | par bord libre |  |  | à confirmer | `acc:4-700-040@bord` |
-| 4-700-039 In Between Plate Large /120 x 1140 x 18 mm / VIEWBOX | 5 | par box | regime = connecte |  | à confirmer ⚠ | `acc:4-700-039@box[connecte]` |
-| 4-710-001 Connecting BOLT M16 HEX BOLT M16x110 /VIEWBOX/ | « ~10/jonction » | par box |  |  | à confirmer | `acc:4-710-001@box` |
+| 4-700-040 In Between Plate Simple /60 x 1140 x 18 mm / VIEWBOX | 1 | par bord libre |  | +20 % | à confirmer | `acc:4-700-040@bord` |
 | 4-740-001 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 400x400mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-001@sous_bois_etude` |
 | 4-740-002 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 700x700mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-002@sous_bois_etude` |
 | 4-740-003 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 1000x1000mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-003@sous_bois_etude` |
+| 4-700-039 In Between Plate Large /120 x 1140 x 18 mm / VIEWBOX | 5 | par jonction grand côté |  | +20 % | confirmé | `acc:4-700-039@jonction_grand_cote` |
+| 4-700-039 In Between Plate Large /120 x 1140 x 18 mm / VIEWBOX | 2 | par jonction petit côté |  | +20 % | confirmé | `acc:4-700-039@jonction_petit_cote` |
+| 4-710-001 Connecting BOLT M16 HEX BOLT M16x110 /VIEWBOX/ | 10 | par jonction grand côté |  | +20 % | confirmé | `acc:4-710-001@jonction_grand_cote` |
+| 4-710-001 Connecting BOLT M16 HEX BOLT M16x110 /VIEWBOX/ | 4 | par jonction petit côté |  | +20 % | confirmé | `acc:4-710-001@jonction_petit_cote` |
 
 ### Joints / étanchéité
 
@@ -185,10 +207,11 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-157-003 Silicon DL CHEMICALS AM85-1 RAL 7024 / VIEWBOX / | 3 | par box |  |  | confirmé ⚠ | `acc:4-157-003@box` |
 | 4-157-004 Silicon DL CHEMICALS Crystal / VIEWBOX / | 2 | par box |  |  | confirmé ⚠ | `acc:4-157-004@box` |
 | 4-700-060 Plexi profil 10mmx2530mm | 1 | par jonction verre-verre (vitrage 10mm) |  |  | confirmé | `acc:4-700-060@10mm/jonction_verre` |
-| 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 1 | par terminaison vitre / poteau (vitrage 10mm) |  | « +arrondi » (non traduit) | confirmé | `acc:4-700-072@10mm/terminaison_vitre` |
-| 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 1 | par petit côté vitré (vitrage 10mm) |  | « +spare » (non traduit) | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
-| 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 1 | par grand côté vitré (vitrage 10mm) |  | « +spare » (non traduit) | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |
+| 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 1 | par terminaison vitre / poteau (vitrage 10mm) |  | +20 % | confirmé | `acc:4-700-072@10mm/terminaison_vitre` |
+| 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 1 | par petit côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
+| 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 1 | par grand côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |
 | 4-700-033 Roof Rubber roller TEC7 /15CMX1000CM /VBX/ | 1 | forfait chantier | couvert |  | confirmé | `aj:4-700-033@job[couvert]` |
+| 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 2 | par porte coulissante (vitrage 10mm) |  |  | confirmé | `acc:4-700-072@10mm/porte_coulissante` |
 
 ### Électrique
 

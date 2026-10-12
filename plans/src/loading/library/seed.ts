@@ -12,8 +12,8 @@ export const SEED_META = {
     "Appreciation",
     "Catalogue_ref"
   ],
-  "rules": 73,
-  "activeRules": 61,
+  "rules": 83,
+  "activeRules": 62,
   "observations": 8,
   "catalogue": 214
 } as const;
@@ -346,8 +346,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "kit:7-632-017@porte_simple"
   },
   {
     "key": "acc:4-700-065@box[standalone]",
@@ -961,9 +962,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
-    "conflict": "acc:4-700-039@jonction_box[connecte]"
+    "supersededBy": "acc:4-700-039@jonction_grand_cote"
   },
   {
     "key": "acc:4-700-040@bord",
@@ -991,7 +992,11 @@ export const SEED_RULES: LoadingRule[] = [
     ],
     "version": 1,
     "active": true,
-    "source": "seed"
+    "source": "seed",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    }
   },
   {
     "key": "kit:7-632-022@7-199-066/produit",
@@ -1022,8 +1027,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "kit:7-632-022@porte_double"
   },
   {
     "key": "kit:7-632-018@7-199-066/produit",
@@ -1054,8 +1060,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "kit:7-632-018@porte_double"
   },
   {
     "key": "kit:7-632-017@7-199-066/produit",
@@ -1086,8 +1093,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "kit:7-632-017@porte_double"
   },
   {
     "key": "acc:4-700-096@module_toit[connecte,suspendu]",
@@ -1118,9 +1126,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
-    "conflict": "acc:4-700-096@module_toit[connecte,suspendu]"
+    "supersededBy": "acc:4-700-096@jonction_toit_grand_cote"
   },
   {
     "key": "acc:4-720-011@poteau",
@@ -1183,9 +1191,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
-    "conflict": "acc:4-700-039@jonction_box[connecte]"
+    "supersededBy": "acc:4-700-039@jonction_grand_cote"
   },
   {
     "key": "acc:4-710-001@box",
@@ -1217,9 +1225,10 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
-    "qtyText": "~10/jonction"
+    "qtyText": "~10/jonction",
+    "supersededBy": "acc:4-710-001@jonction_grand_cote"
   },
   {
     "key": "acc:4-700-060@10mm/jonction_verre",
@@ -1281,9 +1290,10 @@ export const SEED_RULES: LoadingRule[] = [
     "active": true,
     "source": "seed",
     "spare": {
-      "type": "texte",
-      "texte": "+arrondi"
-    }
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "group": "square-10mm"
   },
   {
     "key": "acc:4-700-067@10mm/cote_vitre_court",
@@ -1315,8 +1325,8 @@ export const SEED_RULES: LoadingRule[] = [
     "active": true,
     "source": "seed",
     "spare": {
-      "type": "texte",
-      "texte": "+spare"
+      "type": "pourcent",
+      "valeur": 50
     }
   },
   {
@@ -1349,8 +1359,8 @@ export const SEED_RULES: LoadingRule[] = [
     "active": true,
     "source": "seed",
     "spare": {
-      "type": "texte",
-      "texte": "+spare"
+      "type": "pourcent",
+      "valeur": 50
     }
   },
   {
@@ -1382,9 +1392,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
-    "conflict": "acc:4-700-096@module_toit[connecte,suspendu]"
+    "supersededBy": "acc:4-700-096@jonction_toit_grand_cote"
   },
   {
     "key": "acc:7-636-006@panneau_plein",
@@ -2151,7 +2161,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": false,
     "source": "seed",
-    "supersededBy": "acc:4-700-096@module_toit[connecte,suspendu]"
+    "supersededBy": "acc:4-700-096@jonction_toit_grand_cote"
   },
   {
     "key": "app:4-740-001+4-740-002+4-740-003@job",
@@ -2345,6 +2355,296 @@ export const SEED_RULES: LoadingRule[] = [
     "remark": "Module airco / HVAC dessiné dans la 3D (ou emplacement vide) : 1 mur à trou airco en plus, aucun mur décompté.",
     "source": "decision",
     "key": "acc:4-700-083@airco[autre]",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6060RIAAHVIE",
+        "bordereau": "00058",
+        "base": 2,
+        "predit": 2,
+        "livre": 2,
+        "note": "2 îlots de 2 VBX : 2 jonctions de toit grand côté"
+      },
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "base": 3,
+        "predit": 3,
+        "livre": 4,
+        "note": "4 VBX côte à côte : 3 jonctions → 3 ; livré 4 (écart +1 à expliquer)"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-096",
+    "articleName": "Roof Rubber EPDM 57x32x5900 |VBX|",
+    "qty": 1,
+    "per": "jonction_toit_grand_cote",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Substitut accepté : 4-700-045 (50×40×5900). L’EPDM 2500 des jonctions petit côté : réf. à préciser.",
+    "source": "decision",
+    "key": "acc:4-700-096@jonction_toit_grand_cote",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6060RIAAHVIE",
+        "bordereau": "00058",
+        "base": 2,
+        "predit": 12,
+        "livre": 12,
+        "note": "2 jonctions × 5 = 10, + 20 % → 12"
+      },
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "base": 3,
+        "predit": 18,
+        "livre": 20,
+        "note": "3 jonctions × 5 = 15, + 20 % → 18 ; livré 20"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "unit": "pce",
+    "confidence": "confirme",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "source": "decision",
+    "group": "jonctions-box",
+    "article": "4-700-039",
+    "articleName": "In Between Plate Large |120 x 1140 x 18 mm | VIEWBOX",
+    "qty": 5,
+    "per": "jonction_grand_cote",
+    "key": "acc:4-700-039@jonction_grand_cote",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "accessoire",
+    "trigger": {},
+    "unit": "pce",
+    "confidence": "confirme",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "source": "decision",
+    "group": "jonctions-box",
+    "article": "4-700-039",
+    "articleName": "In Between Plate Large |120 x 1140 x 18 mm | VIEWBOX",
+    "qty": 2,
+    "per": "jonction_petit_cote",
+    "key": "acc:4-700-039@jonction_petit_cote",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "base": 3,
+        "predit": 36,
+        "livre": 36,
+        "note": "3 jonctions × 10 = 30, + 20 % → 36"
+      },
+      {
+        "chantier": "6060RIAAHVIE",
+        "bordereau": "00058",
+        "base": 2,
+        "predit": 24,
+        "livre": 26,
+        "note": "2 jonctions × 10 = 20, + 20 % → 24 ; livré 26"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "unit": "pce",
+    "confidence": "confirme",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "source": "decision",
+    "group": "jonctions-box",
+    "article": "4-710-001",
+    "articleName": "Connecting BOLT M16 HEX BOLT M16x110 |VIEWBOX|",
+    "qty": 10,
+    "per": "jonction_grand_cote",
+    "key": "acc:4-710-001@jonction_grand_cote",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "accessoire",
+    "trigger": {},
+    "unit": "pce",
+    "confidence": "confirme",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "source": "decision",
+    "group": "jonctions-box",
+    "article": "4-710-001",
+    "articleName": "Connecting BOLT M16 HEX BOLT M16x110 |VIEWBOX|",
+    "qty": 4,
+    "per": "jonction_petit_cote",
+    "key": "acc:4-710-001@jonction_petit_cote",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6060RIAAHVIE",
+        "bordereau": "00058",
+        "base": 1,
+        "predit": 2,
+        "livre": 2
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {
+      "vitrage": "10mm"
+    },
+    "article": "4-700-072",
+    "articleName": "Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm |VIEWBOX|",
+    "qty": 2,
+    "per": "porte_coulissante",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Classeur (6060/00058) : « + porte coulissante = +2 → 10 ».",
+    "source": "decision",
+    "group": "square-10mm",
+    "key": "acc:4-700-072@10mm/porte_coulissante",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "Klokgebouw",
+        "bordereau": "00055",
+        "note": "Klok 00055 : 3 steps/porte simple (2 bas +1 haut) × 2 = 6. Ajouté MEME si absent du 3D. Porte double : à préciser"
+      }
+    ],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-017",
+    "articleName": "PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX",
+    "qty": 3,
+    "per": "porte_simple",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Klok 00055 : 3 steps/porte simple (2 bas +1 haut) × 2 = 6. Ajouté MEME si absent du 3D. Porte double : à préciser",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 11
+      }
+    ],
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-017@porte_simple",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "note": "NOUVEAU 6059/00056 : kit escalier DOUBLE porte = 1×2200x1000 + 1×2200x500 + 2×1100x500. Ajouté même si absent du 3D."
+      }
+    ],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-022",
+    "articleName": "PLATFORM STEP 2200x1000x150 |7024| - VIEWBOX",
+    "qty": 1,
+    "per": "porte_double",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "NOUVEAU 6059/00056 : kit escalier DOUBLE porte = 1×2200x1000 + 1×2200x500 + 2×1100x500. Ajouté même si absent du 3D.",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 31
+      }
+    ],
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-022@porte_double",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "note": "NOUVEAU 6059/00056 : voir kit double porte."
+      }
+    ],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-018",
+    "articleName": "PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX",
+    "qty": 1,
+    "per": "porte_double",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "NOUVEAU 6059/00056 : voir kit double porte.",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 32
+      }
+    ],
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-018@porte_double",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "note": "NOUVEAU 6059/00056 : 2 marches basses du kit double porte. (Porte SIMPLE = 3×7-632-017, voir plus haut.)"
+      }
+    ],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-017",
+    "articleName": "PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX",
+    "qty": 2,
+    "per": "porte_double",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "NOUVEAU 6059/00056 : 2 marches basses du kit double porte. (Porte SIMPLE = 3×7-632-017, voir plus haut.)",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 33
+      }
+    ],
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-017@porte_double",
     "version": 1,
     "active": true
   }
@@ -2577,6 +2877,66 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "details": [
       "4-720-011 : unité m",
       "4-730-005 : unité m"
+    ]
+  },
+  {
+    "id": "epdm-jonctions-toit",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (réf. à préciser).",
+    "applied": true,
+    "details": [
+      "ajout acc:4-700-096@jonction_toit_grand_cote",
+      "acc:4-700-096@module_toit[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote",
+      "acc:4-700-096@ilot_couvert[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote"
+    ]
+  },
+  {
+    "id": "plaques-boulons-jonctions",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "Jonctions entre box : plaque inter-box 4-700-039 = 5 par jonction grand côté, 2 par jonction petit côté ; boulons 4-710-001 = 10 par jonction grand côté (5 en bas + 5 en haut), 4 par jonction petit côté (2 + 2). Boulonnerie, quincaillerie, plaques de jonction : + 20 % de spare.",
+    "applied": true,
+    "details": [
+      "ajout acc:4-700-039@jonction_grand_cote",
+      "ajout acc:4-700-039@jonction_petit_cote",
+      "acc:4-700-039@jonction_box[connecte] → remplacée par acc:4-700-039@jonction_grand_cote",
+      "acc:4-700-039@box[connecte] → remplacée par acc:4-700-039@jonction_grand_cote",
+      "ajout acc:4-710-001@jonction_grand_cote",
+      "ajout acc:4-710-001@jonction_petit_cote",
+      "acc:4-710-001@box → remplacée par acc:4-710-001@jonction_grand_cote",
+      "acc:4-700-040@bord : + 20 % (plaque de jonction)"
+    ]
+  },
+  {
+    "id": "spares-joints-10mm",
+    "date": "2026-10-12",
+    "by": "Amaury (« spare rajouté ») — pourcentages déduits du bordereau 6060, à confirmer",
+    "text": "Joints du vitrage 10 mm : on rajoute du spare. Square 10 mm 4-700-072 : + 20 % puis + 2 par porte coulissante (6060 : 6 → 8 → 10) ; joints petits / grands côtés vitrés 4-700-067 / 4-700-074 : + 50 % (6060 : 4 → 6 et 2 → 3).",
+    "applied": true,
+    "details": [
+      "acc:4-700-072@10mm/terminaison_vitre : spare « texte » → + 20 % (6060 : 6 → 8)",
+      "acc:4-700-067@10mm/cote_vitre_court : spare « texte » → + 50 % (6060 : 4 → 6)",
+      "acc:4-700-074@10mm/cote_vitre_long : spare « texte » → + 50 % (6060 : 2 → 3)",
+      "ajout acc:4-700-072@10mm/porte_coulissante"
+    ]
+  },
+  {
+    "id": "marches-toutes-portes",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017. Le type de porte vient de la désignation du catalogue.",
+    "applied": true,
+    "details": [
+      "ajout kit:7-632-017@porte_simple",
+      "kit:7-632-017@7-199-067/produit → remplacée par kit:7-632-017@porte_simple",
+      "ajout kit:7-632-022@porte_double",
+      "kit:7-632-022@7-199-066/produit → remplacée par kit:7-632-022@porte_double",
+      "ajout kit:7-632-018@porte_double",
+      "kit:7-632-018@7-199-066/produit → remplacée par kit:7-632-018@porte_double",
+      "ajout kit:7-632-017@porte_double",
+      "kit:7-632-017@7-199-066/produit → remplacée par kit:7-632-017@porte_double",
+      "portes du catalogue : 7-625-013 simple, 7-625-017 simple, 7-625-018 double, 7-625-019 double, 7-625-020 coulissante, 7-625-022 simple, 7-625-014 simple, 7-625-021 coulissante, 7-625-023 coulissante, 7-199-067 simple, 7-199-066 double"
     ]
   }
 ];

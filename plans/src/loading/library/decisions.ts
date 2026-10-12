@@ -53,6 +53,9 @@ const setUnit = (ctx: Ctx, ref: string, unit: Unit) => {
   ctx.log.details.push(`${ref} : unité ${unit}`);
 };
 
+/** Spare de la boulonnerie, de la quincaillerie et des plaques de jonction (Amaury 12.10.2026 : « genre 20 % »). */
+export const HARDWARE_SPARE = { type: 'pourcent', valeur: 20 } as const;
+
 interface Decision {
   id: string;
   date: string;
@@ -246,6 +249,154 @@ export const DECISIONS: Decision[] = [
     apply: (ctx) => {
       setUnit(ctx, '4-720-011', 'm');
       setUnit(ctx, '4-730-005', 'm');
+    },
+  },
+  {
+    id: 'epdm-jonctions-toit',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text:
+      'EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, ' +
+      'substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (réf. à préciser).',
+    apply: (ctx) => {
+      const by = add(ctx, {
+        kind: 'accessoire',
+        trigger: {},
+        article: '4-700-096',
+        articleName: 'Roof Rubber EPDM 57x32x5900 |VBX|',
+        qty: 1,
+        per: 'jonction_toit_grand_cote',
+        unit: 'pce',
+        confidence: 'confirme',
+        remark: 'Substitut accepté : 4-700-045 (50×40×5900). L’EPDM 2500 des jonctions petit côté : réf. à préciser.',
+        calibration: [
+          { chantier: '6060RIAAHVIE', bordereau: '00058', base: 2, predit: 2, livre: 2, note: '2 îlots de 2 VBX : 2 jonctions de toit grand côté' },
+          { chantier: '6059RFRAMVIE', bordereau: '00056', base: 3, predit: 3, livre: 4, note: '4 VBX côte à côte : 3 jonctions → 3 ; livré 4 (écart +1 à expliquer)' },
+        ],
+        source: 'decision',
+      });
+      retire(ctx, 'acc:4-700-096@module_toit[connecte,suspendu]', by);
+      retire(ctx, 'acc:4-700-096@ilot_couvert[connecte,suspendu]', by);
+    },
+  },
+  {
+    id: 'plaques-boulons-jonctions',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text:
+      'Jonctions entre box : plaque inter-box 4-700-039 = 5 par jonction grand côté, 2 par jonction petit côté ; ' +
+      'boulons 4-710-001 = 10 par jonction grand côté (5 en bas + 5 en haut), 4 par jonction petit côté (2 + 2). ' +
+      'Boulonnerie, quincaillerie, plaques de jonction : + 20 % de spare.',
+    apply: (ctx) => {
+      const spare = { ...HARDWARE_SPARE };
+      const common = { kind: 'accessoire' as const, trigger: {}, unit: 'pce' as const, confidence: 'confirme' as const, spare, source: 'decision' as const, group: 'jonctions-box' };
+      const plate = ctx.catalogue.get('4-700-039')?.designation;
+      const pl = add(ctx, {
+        ...common,
+        article: '4-700-039',
+        articleName: plate,
+        qty: 5,
+        per: 'jonction_grand_cote',
+        calibration: [
+          { chantier: '6060RIAAHVIE', bordereau: '00058', base: 2, predit: 12, livre: 12, note: '2 jonctions × 5 = 10, + 20 % → 12' },
+          { chantier: '6059RFRAMVIE', bordereau: '00056', base: 3, predit: 18, livre: 20, note: '3 jonctions × 5 = 15, + 20 % → 18 ; livré 20' },
+        ],
+      });
+      add(ctx, { ...common, article: '4-700-039', articleName: plate, qty: 2, per: 'jonction_petit_cote' });
+      retire(ctx, 'acc:4-700-039@jonction_box[connecte]', pl);
+      retire(ctx, 'acc:4-700-039@box[connecte]', pl);
+      const bolt = ctx.catalogue.get('4-710-001')?.designation;
+      const bo = add(ctx, {
+        ...common,
+        article: '4-710-001',
+        articleName: bolt,
+        qty: 10,
+        per: 'jonction_grand_cote',
+        calibration: [
+          { chantier: '6059RFRAMVIE', bordereau: '00056', base: 3, predit: 36, livre: 36, note: '3 jonctions × 10 = 30, + 20 % → 36' },
+          { chantier: '6060RIAAHVIE', bordereau: '00058', base: 2, predit: 24, livre: 26, note: '2 jonctions × 10 = 20, + 20 % → 24 ; livré 26' },
+        ],
+      });
+      add(ctx, { ...common, article: '4-710-001', articleName: bolt, qty: 4, per: 'jonction_petit_cote' });
+      retire(ctx, 'acc:4-710-001@box', bo);
+      const simple = find(ctx, 'acc:4-700-040@bord');
+      if (simple && !simple.spare) {
+        simple.spare = { ...HARDWARE_SPARE };
+        ctx.log.details.push('acc:4-700-040@bord : + 20 % (plaque de jonction)');
+      }
+    },
+  },
+  {
+    id: 'spares-joints-10mm',
+    date: '2026-10-12',
+    by: 'Amaury (« spare rajouté ») — pourcentages déduits du bordereau 6060, à confirmer',
+    text:
+      'Joints du vitrage 10 mm : on rajoute du spare. Square 10 mm 4-700-072 : + 20 % puis + 2 par porte coulissante (6060 : 6 → 8 → 10) ; ' +
+      'joints petits / grands côtés vitrés 4-700-067 / 4-700-074 : + 50 % (6060 : 4 → 6 et 2 → 3).',
+    apply: (ctx) => {
+      for (const [key, valeur, livre] of [
+        ['acc:4-700-072@10mm/terminaison_vitre', 20, '6 → 8'],
+        ['acc:4-700-067@10mm/cote_vitre_court', 50, '4 → 6'],
+        ['acc:4-700-074@10mm/cote_vitre_long', 50, '2 → 3'],
+      ] as const) {
+        const r = find(ctx, key);
+        if (!r) continue;
+        r.spare = { type: 'pourcent', valeur };
+        ctx.log.details.push(`${key} : spare « texte » → + ${valeur} % (6060 : ${livre})`);
+      }
+      add(ctx, {
+        kind: 'accessoire',
+        trigger: { vitrage: '10mm' },
+        article: '4-700-072',
+        articleName: ctx.catalogue.get('4-700-072')?.designation,
+        qty: 2,
+        per: 'porte_coulissante',
+        unit: 'pce',
+        confidence: 'confirme',
+        remark: 'Classeur (6060/00058) : « + porte coulissante = +2 → 10 ».',
+        calibration: [{ chantier: '6060RIAAHVIE', bordereau: '00058', base: 1, predit: 2, livre: 2 }],
+        source: 'decision',
+        group: 'square-10mm',
+      });
+      const term = find(ctx, 'acc:4-700-072@10mm/terminaison_vitre');
+      if (term) term.group = 'square-10mm';
+    },
+  },
+  {
+    id: 'marches-toutes-portes',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text:
+      'Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → ' +
+      '7-632-022 + 7-632-018 + 2 × 7-632-017. Le type de porte vient de la désignation du catalogue.',
+    apply: (ctx) => {
+      const kit = (article: string, qty: number, per: 'porte_simple' | 'porte_double', old: string) => {
+        const prev = find(ctx, old);
+        const by = add(ctx, {
+          kind: 'kit',
+          trigger: {},
+          article,
+          articleName: ctx.catalogue.get(article)?.designation,
+          qty,
+          per,
+          unit: 'pce',
+          confidence: 'confirme',
+          remark: prev?.remark,
+          calibration: prev?.calibration ?? [],
+          origin: prev?.origin,
+          source: 'decision',
+          group: 'marches-portes',
+        });
+        if (prev) retire(ctx, old, by);
+      };
+      kit('7-632-017', 3, 'porte_simple', 'kit:7-632-017@7-199-067/produit');
+      kit('7-632-022', 1, 'porte_double', 'kit:7-632-022@7-199-066/produit');
+      kit('7-632-018', 1, 'porte_double', 'kit:7-632-018@7-199-066/produit');
+      kit('7-632-017', 2, 'porte_double', 'kit:7-632-017@7-199-066/produit');
+      const doors = [...ctx.catalogue.values()].filter((c) => c.porte);
+      ctx.log.details.push(
+        `portes du catalogue : ${doors.map((c) => `${c.ref} ${c.porte}`).join(', ')}`,
+      );
     },
   },
 ];

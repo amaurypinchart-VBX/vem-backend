@@ -10,6 +10,10 @@ export type CountingBase =
   | 'pied' // pieds au sol après fusion des pieds communs (≤ 100 mm)
   | 'pied_box' // pieds de chaque box avant fusion (« chaque box garde ses pieds de levage »)
   | 'jonction_box' // jonctions entre deux box du même niveau
+  | 'jonction_grand_cote' // jonctions où deux grands côtés se touchent
+  | 'jonction_petit_cote' // jonctions où deux petits côtés se touchent
+  | 'jonction_toit_grand_cote' // toits jointifs par les grands côtés (rien posé dessus)
+  | 'jonction_toit_petit_cote' // toits jointifs par les petits côtés (rien posé dessus)
   | 'cote_box_jonction' // côtés de box à une jonction (2 par jonction)
   | 'bord' // côtés de box vers une terrasse / le vide
   | 'jonction_panneau' // jonctions panneau-panneau le long d'un côté
@@ -39,6 +43,10 @@ export const COUNTING_BASE_LABEL: Record<CountingBase, string> = {
   pied: 'par pied',
   pied_box: 'par pied de box',
   jonction_box: 'par jonction de box',
+  jonction_grand_cote: 'par jonction grand côté',
+  jonction_petit_cote: 'par jonction petit côté',
+  jonction_toit_grand_cote: 'par jonction de toit grand côté',
+  jonction_toit_petit_cote: 'par jonction de toit petit côté',
   cote_box_jonction: 'par côté de box à une jonction',
   bord: 'par bord libre',
   jonction_panneau: 'par jonction de panneaux',
@@ -161,6 +169,8 @@ export interface LoadingRule {
   confidence: Confidence;
   calibration: CalibrationPoint[];
   remark?: string;
+  /** règles qui vont ensemble et s'additionnent (ex. jonctions grand côté + petit côté) : jamais une contradiction entre elles */
+  group?: string;
   /** les règles d'un même groupe se contredisent (même article, conditions qui se chevauchent) : à trancher */
   conflict?: string;
   /** remplacée par cette règle (gardée pour l'historique, inactive) */
@@ -217,6 +227,8 @@ export interface CatalogueItem {
   plaque?: { l: number; w: number };
   /** pieds d'une Viewbox de cette référence */
   pieds?: FeetLayout;
+  /** porte (d'après la désignation) : base des kits de marches */
+  porte?: 'simple' | 'double' | 'coulissante';
   /** produit airco / chauffage (HVAC) : demande un mur avec trou airco */
   hvac?: boolean;
   /** code à ajouter aux lignes pour l'export vers Odoo (fichier de base à venir) */

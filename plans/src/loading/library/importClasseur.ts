@@ -77,6 +77,15 @@ export function glazingFromDesignation(d: string): GlazingRegime | undefined {
   return undefined;
 }
 
+/** Type de porte d'après la désignation (portes pleines et vitrées). */
+export function doorFromDesignation(d: string): CatalogueItem['porte'] {
+  const s = d.toUpperCase();
+  if (!/\bDOORS?\b/.test(s)) return undefined;
+  if (/SLIDING/.test(s)) return 'coulissante';
+  if (/DOUBLE/.test(s)) return 'double';
+  return 'simple';
+}
+
 function plateFromDesignation(d: string): { l: number; w: number } | undefined {
   if (!/SUBPLATE/i.test(d)) return undefined;
   const m = /(\d{3,4})\s*x\s*(\d{3,4})\s*mm/i.exec(d);
@@ -117,6 +126,8 @@ function readCatalogue(sheet: Sheet | undefined, issues: ImportIssue[]): Catalog
     if (vitrage) item.vitrage = vitrage;
     const plaque = plateFromDesignation(designation);
     if (plaque) item.plaque = plaque;
+    const porte = doorFromDesignation(designation);
+    if (porte) item.porte = porte;
     out.push(item);
   });
   return out;
@@ -325,7 +336,8 @@ function readRules(sheet: Sheet | undefined, catalogue: Map<string, CatalogueIte
         article,
         kind: 'texte',
         text: `Base « ${per} » inconnue (${articleName}, quantité ${qtyRaw}) : ligne non traduite en règle. Remarque : ${remark.slice(0, 200)}`,
-        question: `Que veut dire la base « ${per} » pour ${article} ?`,
+        // une ligne « RESOLU … voir lignes dédiées » est une note, pas une règle à traduire
+        question: /^RESOLU/i.test(remark) ? undefined : `Que veut dire la base « ${per} » pour ${article} ?`,
       });
       return;
     }
@@ -547,6 +559,7 @@ export function findConflicts(rules: LoadingRule[]): LoadingRule[][] {
 
 function overlaps(a: LoadingRule, b: LoadingRule): boolean {
   // deux produits déclencheurs différents comptent des instances différentes (ex. kits porte simple / double)
+  if (a.group && a.group === b.group) return false;
   const ta = a.trigger.articles;
   const tb = b.trigger.articles;
   if (ta?.length && tb?.length && !ta.some((x) => tb.includes(x))) return false;

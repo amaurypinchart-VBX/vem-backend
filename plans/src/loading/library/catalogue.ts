@@ -242,7 +242,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "simple"
   },
   {
     "ref": "7-625-017",
@@ -250,7 +251,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "simple"
   },
   {
     "ref": "7-625-018",
@@ -258,7 +260,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "double"
   },
   {
     "ref": "7-625-019",
@@ -266,7 +269,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "double"
   },
   {
     "ref": "7-625-020",
@@ -274,7 +278,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "coulissante"
   },
   {
     "ref": "7-625-022",
@@ -282,7 +287,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "simple"
   },
   {
     "ref": "7-632-004",
@@ -637,7 +643,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "simple"
   },
   {
     "ref": "7-625-021",
@@ -645,7 +652,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "coulissante"
   },
   {
     "ref": "7-625-023",
@@ -653,7 +661,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "coulissante"
   },
   {
     "ref": "7-632-025",
@@ -1254,7 +1263,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "simple"
   },
   {
     "ref": "4-710-001",
@@ -1526,7 +1536,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "porte": "double"
   },
   {
     "ref": "4-750-004",

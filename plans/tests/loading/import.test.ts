@@ -51,13 +51,12 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
   it('ne tranche rien en silence', () => {
     // quantité en texte, spares en texte, base inconnue, observations : signalés
     expect(rule('acc:4-710-001@box')).toMatchObject({ qty: null, qtyText: '~10/jonction' });
-    expect(rule('acc:4-700-067@10mm/cote_vitre_court')?.spare).toEqual({ type: 'texte', texte: '+spare' });
     expect(seed.issues.some((i) => i.text.includes('box_gap'))).toBe(true);
     expect(seed.observations.map((o) => o.article)).toContain('4-700-065');
     expect(seed.observations.every((o) => o.regime === 'connecte')).toBe(true);
     // contradictions connues remontées
     const conflictArticles = seed.conflicts.map((g) => g[0].split('@')[0].split(':')[1]);
-    expect(conflictArticles).toEqual(expect.arrayContaining(['4-700-039', '4-700-096']));
+    expect(conflictArticles).toEqual(['4-700-075', '4-157-003', '4-157-004']);
   });
 
   it('applique les réponses d’Amaury du 12/10/2026', () => {
@@ -69,6 +68,25 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(rule('acc:4-700-083@airco[autre]')?.active).toBe(true);
     expect(rule('acc:4-730-009@4-700-027/box')?.active).toBe(false);
     expect(rule('aj:4-740-010@box[plancherLamine]')).toMatchObject({ qty: 15, unit: 'm2' });
+    // jonctions (réponses du 12/10 après-midi)
+    expect(rule('acc:4-700-096@jonction_toit_grand_cote')).toMatchObject({ qty: 1, active: true });
+    expect(rule('acc:4-700-096@module_toit[connecte,suspendu]')?.active).toBe(false);
+    expect(rule('acc:4-700-039@jonction_grand_cote')).toMatchObject({ qty: 5, spare: { type: 'pourcent', valeur: 20 } });
+    expect(rule('acc:4-700-039@jonction_petit_cote')?.qty).toBe(2);
+    expect(rule('acc:4-710-001@jonction_grand_cote')?.qty).toBe(10);
+    expect(rule('acc:4-710-001@jonction_petit_cote')?.qty).toBe(4);
+    expect(rule('acc:4-710-001@box')?.active).toBe(false);
+    expect(rule('acc:4-700-067@10mm/cote_vitre_court')?.spare).toEqual({ type: 'pourcent', valeur: 50 });
+    expect(rule('acc:4-700-072@10mm/porte_coulissante')?.qty).toBe(2);
+    // marches : toutes les portes
+    expect(rule('kit:7-632-017@porte_simple')?.qty).toBe(3);
+    expect(rule('kit:7-632-017@porte_double')?.qty).toBe(2);
+    expect(rule('kit:7-632-017@7-199-067/produit')?.active).toBe(false);
+    const door = (ref: string) => seed.catalogue.find((c) => c.ref === ref)?.porte;
+    expect([door('7-199-067'), door('7-625-013'), door('7-625-014'), door('7-199-066'), door('7-625-018'), door('7-625-021')]).toEqual([
+      'simple', 'simple', 'simple', 'double', 'double', 'coulissante',
+    ]);
+    expect(seed.rules.filter((r) => r.active && r.conflict).length).toBe(6);
     // les notes d'appréciation déjà couvertes par une règle ne sortent plus deux fois
     expect(seed.rules.filter((r) => r.active && r.kind === 'appreciation').map((r) => r.article)).toContain('4-700-027');
     expect(seed.rules.find((r) => r.kind === 'appreciation' && r.article.startsWith('4-740-001'))?.active).toBe(false);
