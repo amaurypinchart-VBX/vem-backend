@@ -1,6 +1,8 @@
-// Écriture d'un fichier DXF ASCII (AutoCAD 2007, AC1021 : textes en UTF-8), sans dépendance. Structure minimale
-// reconnue par AutoCAD (tables VPORT … BLOCK_RECORD, blocs *Model_Space / *Paper_Space, dictionnaire racine +
-// ACAD_GROUP), unités mm. Entités utilisées : LWPOLYLINE, CIRCLE, TEXT, HATCH (remplissage plein), avec calque,
+// Écriture d'un fichier DXF ASCII (AutoCAD 2007, AC1021 : textes en UTF-8), sans dépendance. Structure attendue par
+// AutoCAD / DWG TrueView (tables VPORT … BLOCK_RECORD, blocs *Model_Space / *Paper_Space, classes, dictionnaire racine
+// avec ACAD_GROUP, ACAD_LAYOUT (présentations Model / Layout1, reliées aux BLOCK_RECORD par 340) et ACAD_PLOTSTYLENAME
+// (style de tracé « Normal » auquel chaque calque renvoie par 390) — sans ces objets AutoCAD refuse le fichier alors
+// que des lecteurs tolérants (LibreCAD, ezdxf) l'ouvrent), unités mm. Entités utilisées : LWPOLYLINE, CIRCLE, TEXT, HATCH (remplissage plein), avec calque,
 // type de ligne, épaisseur de trait (370), couleur vraie (420) et transparence (440).
 
 export interface DxfStyle {
@@ -246,6 +248,8 @@ export class DxfDocument {
     const ext = this.extents ?? { minX: 0, minY: 0, maxX: 100, maxY: 100 };
     // handles fixes des tables / blocs / objets (les entités commencent à 0x1000)
     const H = { vport: '1', ltype: '2', layer: '3', style: '4', view: '5', ucs: '6', appid: '7', dimstyle: '8', blockRecord: '9' };
+    // objets : dictionnaire racine, groupes, présentations, styles de tracé (« Normal »), présentations Model / Layout1
+    const O = { root: 'A', group: 'B', layouts: 'C', plotStyles: 'D', normal: 'E', layoutModel: 'F', layoutPaper: '10' };
     let fixed = 0x20;
     const h = () => (fixed++).toString(16).toUpperCase();
     const g: string[] = [];
@@ -279,7 +283,14 @@ export class DxfDocument {
     push('9', '$CLAYER', '8', '0');
     push('9', '$HANDSEED', '5', handseed);
     push('0', 'ENDSEC');
-    push('0', 'SECTION', '2', 'CLASSES', '0', 'ENDSEC');
+    push('0', 'SECTION', '2', 'CLASSES');
+    for (const [dxf, cpp] of [
+      ['ACDBDICTIONARYWDFLT', 'AcDbDictionaryWithDefault'],
+      ['ACDBPLACEHOLDER', 'AcDbPlaceHolder'],
+      ['LAYOUT', 'AcDbLayout'],
+    ])
+      push('0', 'CLASS', '1', dxf, '2', cpp, '3', 'ObjectDBX Classes', '90', '0', '91', '0', '280', '0', '281', '0');
+    push('0', 'ENDSEC');
 
     // ─── TABLES ───
     push('0', 'SECTION', '2', 'TABLES');
@@ -313,7 +324,7 @@ export class DxfDocument {
       record('LAYER', H.layer, 'AcDbLayerTableRecord');
       push('2', name, '70', '0', '62', String(aciOf(color)));
       if (color !== 0) push('420', String(color));
-      push('6', 'Continuous', '370', '-3', '390', '0');
+      push('6', 'Continuous', '370', '-3', '390', O.normal);
     };
     layerRec('0', 0);
     for (const l of this.layers.values()) if (l.name !== '0') layerRec(l.name, l.color);
@@ -342,9 +353,9 @@ export class DxfDocument {
     push('0', 'ENDTAB');
     table('BLOCK_RECORD', H.blockRecord, 2);
     record('BLOCK_RECORD', H.blockRecord, 'AcDbBlockTableRecord', DxfDocument.MODEL);
-    push('2', '*Model_Space', '70', '0', '280', '1', '281', '0');
+    push('2', '*Model_Space', '340', O.layoutModel, '70', '0', '280', '1', '281', '0');
     const paper = record('BLOCK_RECORD', H.blockRecord, 'AcDbBlockTableRecord');
-    push('2', '*Paper_Space', '70', '0', '280', '1', '281', '0');
+    push('2', '*Paper_Space', '340', O.layoutPaper, '70', '0', '280', '1', '281', '0');
     push('0', 'ENDTAB');
     push('0', 'ENDSEC');
 
@@ -362,8 +373,26 @@ export class DxfDocument {
 
     // ─── ENTITIES ───
     const head = g.join('\n');
-    const objects = ['0', 'SECTION', '2', 'OBJECTS', '0', 'DICTIONARY', '5', 'A', '330', '0', '100', 'AcDbDictionary', '281', '1', '3', 'ACAD_GROUP', '350', 'B'];
-    objects.push('0', 'DICTIONARY', '5', 'B', '330', 'A', '100', 'AcDbDictionary', '281', '1', '0', 'ENDSEC', '0', 'EOF');
+    const objects = ['0', 'SECTION', '2', 'OBJECTS'];
+    objects.push('0', 'DICTIONARY', '5', O.root, '330', '0', '100', 'AcDbDictionary', '281', '1');
+    objects.push('3', 'ACAD_GROUP', '350', O.group, '3', 'ACAD_LAYOUT', '350', O.layouts, '3', 'ACAD_PLOTSTYLENAME', '350', O.plotStyles);
+    objects.push('0', 'DICTIONARY', '5', O.group, '330', O.root, '100', 'AcDbDictionary', '281', '1');
+    objects.push('0', 'DICTIONARY', '5', O.layouts, '330', O.root, '100', 'AcDbDictionary', '281', '1', '3', 'Model', '350', O.layoutModel, '3', 'Layout1', '350', O.layoutPaper);
+    objects.push('0', 'ACDBDICTIONARYWDFLT', '5', O.plotStyles, '330', O.root, '100', 'AcDbDictionary', '281', '1', '3', 'Normal', '350', O.normal, '100', 'AcDbDictionaryWithDefault', '340', O.normal);
+    objects.push('0', 'ACDBPLACEHOLDER', '5', O.normal, '330', O.plotStyles);
+    // présentations : réglages de tracé par défaut (A3 paysage), comme un dessin neuf d'AutoCAD
+    const layout = (handle: string, name: string, tab: number, owner: string, model: boolean) => {
+      objects.push('0', 'LAYOUT', '5', handle, '330', O.layouts, '100', 'AcDbPlotSettings', '1', '', '4', 'A3', '6', '');
+      objects.push('40', '7.5', '41', '20', '42', '7.5', '43', '20', '44', '420', '45', '297', '46', '0', '47', '0', '48', '0', '49', '0');
+      objects.push('140', '0', '141', '0', '142', '1', '143', '1', '70', model ? '1024' : '0', '72', '1', '73', '0', '74', '5', '7', '', '75', '16', '76', '0', '77', '2', '78', '300');
+      objects.push('147', '1', '148', '0', '149', '0', '100', 'AcDbLayout', '1', name, '70', '1', '71', String(tab));
+      objects.push('10', '0', '20', '0', '11', '420', '21', '297', '12', '0', '22', '0', '32', '0');
+      objects.push('14', '1e+20', '24', '1e+20', '34', '1e+20', '15', '-1e+20', '25', '-1e+20', '35', '-1e+20', '146', '0');
+      objects.push('13', '0', '23', '0', '33', '0', '16', '1', '26', '0', '36', '0', '17', '0', '27', '1', '37', '0', '76', '1', '330', owner);
+    };
+    layout(O.layoutModel, 'Model', 0, DxfDocument.MODEL, true);
+    layout(O.layoutPaper, 'Layout1', 1, paper, false);
+    objects.push('0', 'ENDSEC', '0', 'EOF');
     const parts = [head, '0\nSECTION\n2\nENTITIES'];
     if (this.body.length) parts.push(this.body.join('\n'));
     parts.push('0\nENDSEC', objects.join('\n'));

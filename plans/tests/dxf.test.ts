@@ -152,8 +152,15 @@ describe('DXF : planche', () => {
     expect(f.dxf).toMatch(/\$INSUNITS\n70\n4/);
     expect(f.dxf.trimEnd().endsWith('0\nEOF')).toBe(true);
     // handles uniques
-    const handles = [...f.dxf.matchAll(/\n(?:5|105)\n([0-9A-F]+)\n/g)].map((m) => m[1]);
+    const lines = f.dxf.split('\n');
+    const handles: string[] = [];
+    for (let i = 0; i + 1 < lines.length; i += 2) if ((lines[i] === '5' || lines[i] === '105') && lines[i - 1] !== '$HANDSEED') handles.push(lines[i + 1]);
     expect(new Set(handles).size).toBe(handles.length);
+    // objets exigés par AutoCAD / DWG TrueView : présentations, style de tracé « Normal » des calques, classes
+    for (const s of ['ACAD_LAYOUT', 'ACAD_PLOTSTYLENAME', 'ACDBPLACEHOLDER', '\nLAYOUT\n', '\nCLASS\n']) expect(f.dxf).toContain(s);
+    expect(f.dxf).not.toMatch(/\n390\n0\n/);
+    const seed = parseInt(f.dxf.match(/\$HANDSEED\n5\n([0-9A-F]+)/)![1], 16);
+    expect(Math.max(...handles.map((h) => parseInt(h, 16)))).toBeLessThan(seed);
   });
 
   it('calques par type de trait, épaisseurs et tirets conservés', () => {
