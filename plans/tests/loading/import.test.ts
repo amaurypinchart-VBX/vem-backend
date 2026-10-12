@@ -56,7 +56,7 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(seed.observations.every((o) => o.regime === 'connecte')).toBe(true);
     // contradictions connues remontées
     const conflictArticles = seed.conflicts.map((g) => g[0].split('@')[0].split(':')[1]);
-    expect(conflictArticles).toEqual(['4-700-075', '4-157-003', '4-157-004']);
+    expect(conflictArticles).toEqual([]);
   });
 
   it('applique les réponses d’Amaury du 12/10/2026', () => {
@@ -71,7 +71,12 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     // jonctions (réponses du 12/10 après-midi)
     expect(rule('acc:4-700-096@jonction_toit_grand_cote')).toMatchObject({ qty: 1, active: true });
     expect(rule('acc:4-700-096@module_toit[connecte,suspendu]')?.active).toBe(false);
-    expect(rule('acc:4-700-039@jonction_grand_cote')).toMatchObject({ qty: 5, spare: { type: 'pourcent', valeur: 20 } });
+    expect(rule('acc:4-700-039@jonction_grand_cote')).toMatchObject({ qty: 5, spare: { type: 'pourcent', valeur: 30 } });
+    expect(rule('acc:4-700-097@jonction_toit_petit_cote')).toMatchObject({ qty: 1, spare: { type: 'fixe', valeur: 1 } });
+    expect(rule('kit:7-632-022@porte_coulissante')?.confidence).toBe('a_confirmer');
+    // « toujours un peu plus » : jamais moins que livré sur les points de calage
+    for (const r of seed.rules.filter((x) => x.active))
+      for (const c of r.calibration) if (c.predit !== undefined && c.livre !== undefined) expect(c.predit, `${r.key} ${c.chantier}`).toBeGreaterThanOrEqual(c.livre);
     expect(rule('acc:4-700-039@jonction_petit_cote')?.qty).toBe(2);
     expect(rule('acc:4-710-001@jonction_grand_cote')?.qty).toBe(10);
     expect(rule('acc:4-710-001@jonction_petit_cote')?.qty).toBe(4);
@@ -86,7 +91,7 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect([door('7-199-067'), door('7-625-013'), door('7-625-014'), door('7-199-066'), door('7-625-018'), door('7-625-021')]).toEqual([
       'simple', 'simple', 'simple', 'double', 'double', 'coulissante',
     ]);
-    expect(seed.rules.filter((r) => r.active && r.conflict).length).toBe(6);
+    expect(seed.rules.filter((r) => r.active && r.conflict).length).toBe(0);
     // les notes d'appréciation déjà couvertes par une règle ne sortent plus deux fois
     expect(seed.rules.filter((r) => r.active && r.kind === 'appreciation').map((r) => r.article)).toContain('4-700-027');
     expect(seed.rules.find((r) => r.kind === 'appreciation' && r.article.startsWith('4-740-001'))?.active).toBe(false);

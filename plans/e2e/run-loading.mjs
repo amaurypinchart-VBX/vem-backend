@@ -27,10 +27,9 @@ check(await page.getByText('8 par box · si box seule (standalone) · + 20 % arr
 await page.getByText('4-700-065', { exact: true }).first().click();
 await page.getByText('Points de calage').waitFor();
 check(await page.getByText(/jamais modifiée dans l’app/).isVisible(), 'historique vide (base de départ)');
+check(await page.locator('option', { hasText: 'Contradictions à trancher (0)' }).count() === 1, 'plus aucune contradiction à trancher');
 await page.locator('select').first().selectOption('conflict');
 await page.waitForTimeout(200);
-const conflicts = await page.getByText('contradiction', { exact: true }).count();
-check(conflicts >= 4, `contradictions à trancher affichées (${conflicts})`);
 await page.screenshot({ path: `${shots}loading-contradictions.png` });
 
 await page.getByRole('button', { name: /^Catalogue/ }).click();

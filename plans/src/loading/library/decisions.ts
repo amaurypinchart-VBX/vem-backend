@@ -53,8 +53,9 @@ const setUnit = (ctx: Ctx, ref: string, unit: Unit) => {
   ctx.log.details.push(`${ref} : unité ${unit}`);
 };
 
-/** Spare de la boulonnerie, de la quincaillerie et des plaques de jonction (Amaury 12.10.2026 : « genre 20 % »). */
-export const HARDWARE_SPARE = { type: 'pourcent', valeur: 20 } as const;
+/** Spare de la boulonnerie, de la quincaillerie et des plaques de jonction (Amaury 12.10.2026 : « genre 20 % », puis
+ * « toujours un peu plus que trouvé » → 30 %, le plus petit spare qui couvre les livraisons 6059 / 6060). */
+export const HARDWARE_SPARE = { type: 'pourcent', valeur: 30 } as const;
 
 interface Decision {
   id: string;
@@ -257,7 +258,7 @@ export const DECISIONS: Decision[] = [
     by: 'Amaury',
     text:
       'EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, ' +
-      'substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (réf. à préciser).',
+      'substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (4-700-097).',
     apply: (ctx) => {
       const by = add(ctx, {
         kind: 'accessoire',
@@ -268,13 +269,28 @@ export const DECISIONS: Decision[] = [
         per: 'jonction_toit_grand_cote',
         unit: 'pce',
         confidence: 'confirme',
-        remark: 'Substitut accepté : 4-700-045 (50×40×5900). L’EPDM 2500 des jonctions petit côté : réf. à préciser.',
+        remark: 'Substitut accepté : 4-700-045 (50×40×5900). Jonctions petit côté : EPDM 2500 4-700-097.',
         calibration: [
           { chantier: '6060RIAAHVIE', bordereau: '00058', base: 2, predit: 2, livre: 2, note: '2 îlots de 2 VBX : 2 jonctions de toit grand côté' },
           { chantier: '6059RFRAMVIE', bordereau: '00056', base: 3, predit: 3, livre: 4, note: '4 VBX côte à côte : 3 jonctions → 3 ; livré 4 (écart +1 à expliquer)' },
         ],
         source: 'decision',
       });
+      add(ctx, {
+        kind: 'accessoire',
+        trigger: {},
+        article: '4-700-097',
+        articleName: 'Roof Rubber EPDM 2500 |VBX|',
+        qty: 1,
+        per: 'jonction_toit_petit_cote',
+        unit: 'pce',
+        confidence: 'confirme',
+        remark: 'EPDM 2500 des jonctions de toit petit côté (Amaury 12.10.2026).',
+        source: 'decision',
+        group: 'epdm-toit',
+      });
+      const r = ctx.rules.find((x) => x.key === by);
+      if (r) r.group = 'epdm-toit';
       retire(ctx, 'acc:4-700-096@module_toit[connecte,suspendu]', by);
       retire(ctx, 'acc:4-700-096@ilot_couvert[connecte,suspendu]', by);
     },
@@ -288,7 +304,7 @@ export const DECISIONS: Decision[] = [
       'boulons 4-710-001 = 10 par jonction grand côté (5 en bas + 5 en haut), 4 par jonction petit côté (2 + 2). ' +
       'Boulonnerie, quincaillerie, plaques de jonction : + 20 % de spare.',
     apply: (ctx) => {
-      const spare = { ...HARDWARE_SPARE };
+      const spare = { type: 'pourcent' as const, valeur: 20 };
       const common = { kind: 'accessoire' as const, trigger: {}, unit: 'pce' as const, confidence: 'confirme' as const, spare, source: 'decision' as const, group: 'jonctions-box' };
       const plate = ctx.catalogue.get('4-700-039')?.designation;
       const pl = add(ctx, {
@@ -321,7 +337,7 @@ export const DECISIONS: Decision[] = [
       retire(ctx, 'acc:4-710-001@box', bo);
       const simple = find(ctx, 'acc:4-700-040@bord');
       if (simple && !simple.spare) {
-        simple.spare = { ...HARDWARE_SPARE };
+        simple.spare = { type: 'pourcent', valeur: 20 };
         ctx.log.details.push('acc:4-700-040@bord : + 20 % (plaque de jonction)');
       }
     },
@@ -329,7 +345,7 @@ export const DECISIONS: Decision[] = [
   {
     id: 'spares-joints-10mm',
     date: '2026-10-12',
-    by: 'Amaury (« spare rajouté ») — pourcentages déduits du bordereau 6060, à confirmer',
+    by: 'Amaury (« spare rajouté », + 50 % confirmé)',
     text:
       'Joints du vitrage 10 mm : on rajoute du spare. Square 10 mm 4-700-072 : + 20 % puis + 2 par porte coulissante (6060 : 6 → 8 → 10) ; ' +
       'joints petits / grands côtés vitrés 4-700-067 / 4-700-074 : + 50 % (6060 : 4 → 6 et 2 → 3).',
@@ -368,7 +384,8 @@ export const DECISIONS: Decision[] = [
     by: 'Amaury',
     text:
       'Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → ' +
-      '7-632-022 + 7-632-018 + 2 × 7-632-017. Le type de porte vient de la désignation du catalogue.',
+      '7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → marches aussi (kit de la porte double en attendant, à confirmer). ' +
+      'Le type de porte vient de la désignation du catalogue.',
     apply: (ctx) => {
       const kit = (article: string, qty: number, per: 'porte_simple' | 'porte_double', old: string) => {
         const prev = find(ctx, old);
@@ -393,10 +410,76 @@ export const DECISIONS: Decision[] = [
       kit('7-632-022', 1, 'porte_double', 'kit:7-632-022@7-199-066/produit');
       kit('7-632-018', 1, 'porte_double', 'kit:7-632-018@7-199-066/produit');
       kit('7-632-017', 2, 'porte_double', 'kit:7-632-017@7-199-066/produit');
+      // portes coulissantes : marches aussi (Amaury 12.10.2026) ; kit de la porte double (largeur ≈ 2,3 m), à confirmer
+      for (const [article, qty] of [
+        ['7-632-022', 1],
+        ['7-632-018', 1],
+        ['7-632-017', 2],
+      ] as const)
+        add(ctx, {
+          kind: 'kit',
+          trigger: {},
+          article,
+          articleName: ctx.catalogue.get(article)?.designation,
+          qty,
+          per: 'porte_coulissante',
+          unit: 'pce',
+          confidence: 'a_confirmer',
+          remark: 'Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.',
+          source: 'decision',
+          group: 'marches-portes',
+        });
       const doors = [...ctx.catalogue.values()].filter((c) => c.porte);
       ctx.log.details.push(
         `portes du catalogue : ${doors.map((c) => `${c.ref} ${c.porte}`).join(', ')}`,
       );
+    },
+  },
+  {
+    id: 'toujours-un-peu-plus',
+    date: '2026-10-12',
+    by: 'Amaury (« rajoute toujours un peu plus que trouvé, comme là »)',
+    text:
+      'Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui ' +
+      'couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).',
+    apply: (ctx) => {
+      for (const r of ctx.rules) {
+        if (!r.active || r.spare?.type !== 'pourcent' || r.spare.valeur !== 20) continue;
+        if (!['4-700-039', '4-710-001', '4-700-040'].includes(r.article)) continue;
+        r.spare = { ...HARDWARE_SPARE };
+        ctx.log.details.push(`${r.key} : + ${HARDWARE_SPARE.valeur} %`);
+      }
+      for (const key of ['acc:4-700-096@jonction_toit_grand_cote', 'acc:4-700-097@jonction_toit_petit_cote']) {
+        const r = find(ctx, key);
+        if (!r) continue;
+        r.spare = { type: 'fixe', valeur: 1 };
+        ctx.log.details.push(`${key} : + 1`);
+      }
+      for (const r of ctx.rules)
+        for (const c of r.calibration) {
+          if (c.base === undefined || c.livre === undefined || !r.active || r.qty === null || !r.spare || r.spare.type === 'texte') continue;
+          const base = r.qty * c.base;
+          c.predit = r.spare.type === 'fixe' ? base + r.spare.valeur : Math.ceil(base * (1 + r.spare.valeur / 100) - 1e-9);
+        }
+    },
+  },
+  {
+    id: 'vitrage-442-additionne',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text: 'Vitrage 4.4.2 : le joint 4-700-075 et les silicones 4-157-003 / 4-157-004 « 1 par vitre » s’ajoutent aux règles « par box ».',
+    apply: (ctx) => {
+      for (const [a, b] of [
+        ['acc:4-700-075@4.4.2/produit', 'acc:4-700-075@box[standalone]'],
+        ['acc:4-157-003@4.4.2/produit', 'acc:4-157-003@box'],
+        ['acc:4-157-004@4.4.2/produit', 'acc:4-157-004@box'],
+      ]) {
+        const ra = find(ctx, a);
+        const rb = find(ctx, b);
+        if (!ra || !rb) continue;
+        ra.group = rb.group = `additionne:${ra.article}`;
+        ctx.log.details.push(`${a} + ${b} : s’additionnent`);
+      }
     },
   },
 ];

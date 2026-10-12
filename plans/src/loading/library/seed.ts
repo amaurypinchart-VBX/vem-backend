@@ -12,8 +12,8 @@ export const SEED_META = {
     "Appreciation",
     "Catalogue_ref"
   ],
-  "rules": 83,
-  "activeRules": 62,
+  "rules": 87,
+  "activeRules": 66,
   "observations": 8,
   "catalogue": 214
 } as const;
@@ -45,7 +45,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": true,
     "source": "seed",
-    "conflict": "acc:4-700-075@4.4.2/produit"
+    "group": "additionne:4-700-075"
   },
   {
     "key": "acc:4-157-003@4.4.2/produit",
@@ -73,7 +73,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": true,
     "source": "seed",
-    "conflict": "acc:4-157-003@4.4.2/produit"
+    "group": "additionne:4-157-003"
   },
   {
     "key": "acc:4-157-004@4.4.2/produit",
@@ -107,7 +107,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": true,
     "source": "seed",
-    "conflict": "acc:4-157-004@4.4.2/produit"
+    "group": "additionne:4-157-004"
   },
   {
     "key": "acc:4-700-083@4-700-027/airco",
@@ -419,7 +419,7 @@ export const SEED_RULES: LoadingRule[] = [
       "type": "pourcent",
       "valeur": 20
     },
-    "conflict": "acc:4-700-075@4.4.2/produit"
+    "group": "additionne:4-700-075"
   },
   {
     "key": "acc:4-700-066@box[standalone]",
@@ -681,7 +681,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": true,
     "source": "seed",
-    "conflict": "acc:4-157-003@4.4.2/produit"
+    "group": "additionne:4-157-003"
   },
   {
     "key": "acc:4-157-004@box",
@@ -720,7 +720,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": true,
     "source": "seed",
-    "conflict": "acc:4-157-004@4.4.2/produit"
+    "group": "additionne:4-157-004"
   },
   {
     "key": "acc:4-730-007@ilot",
@@ -995,7 +995,7 @@ export const SEED_RULES: LoadingRule[] = [
     "source": "seed",
     "spare": {
       "type": "pourcent",
-      "valeur": 20
+      "valeur": 30
     }
   },
   {
@@ -2364,7 +2364,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6060RIAAHVIE",
         "bordereau": "00058",
         "base": 2,
-        "predit": 2,
+        "predit": 3,
         "livre": 2,
         "note": "2 îlots de 2 VBX : 2 jonctions de toit grand côté"
       },
@@ -2372,7 +2372,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6059RFRAMVIE",
         "bordereau": "00056",
         "base": 3,
-        "predit": 3,
+        "predit": 4,
         "livre": 4,
         "note": "4 VBX côte à côte : 3 jonctions → 3 ; livré 4 (écart +1 à expliquer)"
       }
@@ -2385,11 +2385,37 @@ export const SEED_RULES: LoadingRule[] = [
     "per": "jonction_toit_grand_cote",
     "unit": "pce",
     "confidence": "confirme",
-    "remark": "Substitut accepté : 4-700-045 (50×40×5900). L’EPDM 2500 des jonctions petit côté : réf. à préciser.",
+    "remark": "Substitut accepté : 4-700-045 (50×40×5900). Jonctions petit côté : EPDM 2500 4-700-097.",
     "source": "decision",
     "key": "acc:4-700-096@jonction_toit_grand_cote",
     "version": 1,
-    "active": true
+    "active": true,
+    "group": "epdm-toit",
+    "spare": {
+      "type": "fixe",
+      "valeur": 1
+    }
+  },
+  {
+    "calibration": [],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-097",
+    "articleName": "Roof Rubber EPDM 2500 |VBX|",
+    "qty": 1,
+    "per": "jonction_toit_petit_cote",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "EPDM 2500 des jonctions de toit petit côté (Amaury 12.10.2026).",
+    "source": "decision",
+    "group": "epdm-toit",
+    "key": "acc:4-700-097@jonction_toit_petit_cote",
+    "version": 1,
+    "active": true,
+    "spare": {
+      "type": "fixe",
+      "valeur": 1
+    }
   },
   {
     "calibration": [
@@ -2397,7 +2423,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6060RIAAHVIE",
         "bordereau": "00058",
         "base": 2,
-        "predit": 12,
+        "predit": 13,
         "livre": 12,
         "note": "2 jonctions × 5 = 10, + 20 % → 12"
       },
@@ -2405,7 +2431,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6059RFRAMVIE",
         "bordereau": "00056",
         "base": 3,
-        "predit": 18,
+        "predit": 20,
         "livre": 20,
         "note": "3 jonctions × 5 = 15, + 20 % → 18 ; livré 20"
       }
@@ -2416,7 +2442,7 @@ export const SEED_RULES: LoadingRule[] = [
     "confidence": "confirme",
     "spare": {
       "type": "pourcent",
-      "valeur": 20
+      "valeur": 30
     },
     "source": "decision",
     "group": "jonctions-box",
@@ -2436,7 +2462,7 @@ export const SEED_RULES: LoadingRule[] = [
     "confidence": "confirme",
     "spare": {
       "type": "pourcent",
-      "valeur": 20
+      "valeur": 30
     },
     "source": "decision",
     "group": "jonctions-box",
@@ -2454,7 +2480,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6059RFRAMVIE",
         "bordereau": "00056",
         "base": 3,
-        "predit": 36,
+        "predit": 39,
         "livre": 36,
         "note": "3 jonctions × 10 = 30, + 20 % → 36"
       },
@@ -2462,7 +2488,7 @@ export const SEED_RULES: LoadingRule[] = [
         "chantier": "6060RIAAHVIE",
         "bordereau": "00058",
         "base": 2,
-        "predit": 24,
+        "predit": 26,
         "livre": 26,
         "note": "2 jonctions × 10 = 20, + 20 % → 24 ; livré 26"
       }
@@ -2473,7 +2499,7 @@ export const SEED_RULES: LoadingRule[] = [
     "confidence": "confirme",
     "spare": {
       "type": "pourcent",
-      "valeur": 20
+      "valeur": 30
     },
     "source": "decision",
     "group": "jonctions-box",
@@ -2493,7 +2519,7 @@ export const SEED_RULES: LoadingRule[] = [
     "confidence": "confirme",
     "spare": {
       "type": "pourcent",
-      "valeur": 20
+      "valeur": 30
     },
     "source": "decision",
     "group": "jonctions-box",
@@ -2645,6 +2671,57 @@ export const SEED_RULES: LoadingRule[] = [
     "source": "decision",
     "group": "marches-portes",
     "key": "kit:7-632-017@porte_double",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-022",
+    "articleName": "PLATFORM STEP 2200x1000x150 |7024| - VIEWBOX",
+    "qty": 1,
+    "per": "porte_coulissante",
+    "unit": "pce",
+    "confidence": "a_confirmer",
+    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-022@porte_coulissante",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-018",
+    "articleName": "PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX",
+    "qty": 1,
+    "per": "porte_coulissante",
+    "unit": "pce",
+    "confidence": "a_confirmer",
+    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-018@porte_coulissante",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "kit",
+    "trigger": {},
+    "article": "7-632-017",
+    "articleName": "PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX",
+    "qty": 2,
+    "per": "porte_coulissante",
+    "unit": "pce",
+    "confidence": "a_confirmer",
+    "remark": "Porte coulissante : marches aussi (Amaury 12.10.2026). Kit de la porte double repris en attendant le kit exact.",
+    "source": "decision",
+    "group": "marches-portes",
+    "key": "kit:7-632-017@porte_coulissante",
     "version": 1,
     "active": true
   }
@@ -2883,10 +2960,11 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "id": "epdm-jonctions-toit",
     "date": "2026-10-12",
     "by": "Amaury",
-    "text": "EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (réf. à préciser).",
+    "text": "EPDM de toit : 1 par jonction de toit. Deux toits qui se touchent par les grands côtés → l’EPDM 5900 (4-700-096, substitut 4-700-045) ; par les petits côtés → l’EPDM 2500 (4-700-097).",
     "applied": true,
     "details": [
       "ajout acc:4-700-096@jonction_toit_grand_cote",
+      "ajout acc:4-700-097@jonction_toit_petit_cote",
       "acc:4-700-096@module_toit[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote",
       "acc:4-700-096@ilot_couvert[connecte,suspendu] → remplacée par acc:4-700-096@jonction_toit_grand_cote"
     ]
@@ -2911,7 +2989,7 @@ export const SEED_DECISIONS: DecisionLog[] = [
   {
     "id": "spares-joints-10mm",
     "date": "2026-10-12",
-    "by": "Amaury (« spare rajouté ») — pourcentages déduits du bordereau 6060, à confirmer",
+    "by": "Amaury (« spare rajouté », + 50 % confirmé)",
     "text": "Joints du vitrage 10 mm : on rajoute du spare. Square 10 mm 4-700-072 : + 20 % puis + 2 par porte coulissante (6060 : 6 → 8 → 10) ; joints petits / grands côtés vitrés 4-700-067 / 4-700-074 : + 50 % (6060 : 4 → 6 et 2 → 3).",
     "applied": true,
     "details": [
@@ -2925,7 +3003,7 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "id": "marches-toutes-portes",
     "date": "2026-10-12",
     "by": "Amaury",
-    "text": "Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017. Le type de porte vient de la désignation du catalogue.",
+    "text": "Marches : dès que c’est une porte. Toute porte simple (pleine ou vitrée) → 3 marches 7-632-017 ; toute porte double (pleine ou vitrée) → 7-632-022 + 7-632-018 + 2 × 7-632-017 ; porte coulissante → marches aussi (kit de la porte double en attendant, à confirmer). Le type de porte vient de la désignation du catalogue.",
     "applied": true,
     "details": [
       "ajout kit:7-632-017@porte_simple",
@@ -2936,7 +3014,38 @@ export const SEED_DECISIONS: DecisionLog[] = [
       "kit:7-632-018@7-199-066/produit → remplacée par kit:7-632-018@porte_double",
       "ajout kit:7-632-017@porte_double",
       "kit:7-632-017@7-199-066/produit → remplacée par kit:7-632-017@porte_double",
+      "ajout kit:7-632-022@porte_coulissante",
+      "ajout kit:7-632-018@porte_coulissante",
+      "ajout kit:7-632-017@porte_coulissante",
       "portes du catalogue : 7-625-013 simple, 7-625-017 simple, 7-625-018 double, 7-625-019 double, 7-625-020 coulissante, 7-625-022 simple, 7-625-014 simple, 7-625-021 coulissante, 7-625-023 coulissante, 7-199-067 simple, 7-199-066 double"
+    ]
+  },
+  {
+    "id": "toujours-un-peu-plus",
+    "date": "2026-10-12",
+    "by": "Amaury (« rajoute toujours un peu plus que trouvé, comme là »)",
+    "text": "Toujours un peu plus que ce qui est trouvé : la quincaillerie et les plaques de jonction passent à + 30 % (le plus petit spare qui couvre tout ce qui a été livré sur 6059 et 6060 : plaques 15 → 20, boulons 20 → 26), l’EPDM de toit à + 1 (6059 : 3 → 4).",
+    "applied": true,
+    "details": [
+      "acc:4-700-040@bord : + 30 %",
+      "acc:4-700-039@jonction_grand_cote : + 30 %",
+      "acc:4-700-039@jonction_petit_cote : + 30 %",
+      "acc:4-710-001@jonction_grand_cote : + 30 %",
+      "acc:4-710-001@jonction_petit_cote : + 30 %",
+      "acc:4-700-096@jonction_toit_grand_cote : + 1",
+      "acc:4-700-097@jonction_toit_petit_cote : + 1"
+    ]
+  },
+  {
+    "id": "vitrage-442-additionne",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "Vitrage 4.4.2 : le joint 4-700-075 et les silicones 4-157-003 / 4-157-004 « 1 par vitre » s’ajoutent aux règles « par box ».",
+    "applied": true,
+    "details": [
+      "acc:4-700-075@4.4.2/produit + acc:4-700-075@box[standalone] : s’additionnent",
+      "acc:4-157-003@4.4.2/produit + acc:4-157-003@box : s’additionnent",
+      "acc:4-157-004@4.4.2/produit + acc:4-157-004@box : s’additionnent"
     ]
   }
 ];
