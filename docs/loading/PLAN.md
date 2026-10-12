@@ -1,6 +1,6 @@
 # Module « Loading liste » — Plan (phase L0)
 
-> État au 12/10/2026 (soir) : **L1 et L2 faites**. Prochaine phase : L3 (moteur + bancs dorés).
+> État au 12/10/2026 (soir) : **L1, L2 et L3 faites** (Klokgebouw 39/39). Prochaine phase : L4 (questions chantier, liaison avec l'Étude structure, tableau éditable, export Excel).
 
 État au 12/10/2026. Rédigé après lecture de `CLAUDE.md`, de `plans/reference-reports/03_Prompt_module_loading_liste_VEM.md` et du code cité au § 3 du prompt.
 

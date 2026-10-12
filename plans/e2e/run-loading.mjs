@@ -80,6 +80,14 @@ const products = await page.locator('table.list').last().locator('tbody tr').cou
 check(products > 0, `produits comptés (${products} références)`);
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${shots}loading-produits.png` });
+await page.getByRole('button', { name: /4\. Loading liste/ }).click();
+await page.getByTestId('loading-lines').first().waitFor();
+const lines = await page.getByTestId('loading-lines').locator('tbody tr').count();
+check(lines > 10, `loading liste générée (${lines} lignes)`);
+check(await page.getByText('Détail du calcul').first().isVisible(), 'colonne « Détail du calcul »');
+check(await page.getByText(/Faire l’Étude structure/).first().isVisible(), 'sous-bois : question « Faire l’Étude structure »');
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${shots}loading-liste.png`, fullPage: true });
 
 check(errors.length === 0, `aucune erreur console${errors.length ? ' : ' + errors.join(' | ') : ''}`);
 await browser.close();

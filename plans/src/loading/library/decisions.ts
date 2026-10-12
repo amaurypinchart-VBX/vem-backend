@@ -491,6 +491,49 @@ export const DECISIONS: Decision[] = [
       ctx.log.details.push('aucune règle modifiée : le nombre de pieds vient de la topologie');
     },
   },
+  {
+    id: 'joints-10mm-bas-haut',
+    date: '2026-10-12',
+    by: 'remarque du classeur (6060/00058 : « 2 petits côtés vitrés × 2 (bas + haut) = 4 », « 1 grand côté vitré × 2 = 2 »)',
+    text: 'Joints 4-700-067 / 4-700-074 : 2 par côté vitré (un en bas, un en haut), puis + 50 % (6060 : 4 → 6 et 2 → 3).',
+    apply: (ctx) => {
+      for (const key of ['acc:4-700-067@10mm/cote_vitre_court', 'acc:4-700-074@10mm/cote_vitre_long']) {
+        const r = find(ctx, key);
+        if (!r) continue;
+        r.qty = 2;
+        ctx.log.details.push(`${key} : 2 par côté vitré (bas + haut)`);
+      }
+    },
+  },
+  {
+    id: 'plaque-simple-connecte',
+    date: '2026-10-12',
+    by: 'remarque du classeur (« Klok → 0 », plaques de jonction conditionnelles à l’adjacence)',
+    text: 'Plaque simple 4-700-040 (box → terrasse / vide) : seulement pour des box connectées ; Klokgebouw (box seules) = 0.',
+    apply: (ctx) => {
+      const r = find(ctx, 'acc:4-700-040@bord');
+      if (!r) return;
+      r.when = { ...(r.when ?? {}), regime: 'connecte' };
+      ctx.log.details.push('acc:4-700-040@bord : box connectées seulement');
+    },
+  },
+  {
+    id: 'mur-ral-7024',
+    date: '2026-10-12',
+    by: 'remarque du classeur (6060/00058 : « remplace 7-636-008 white/white »)',
+    text: 'Murs RAL 7024 une face demandés : chaque nidaplast 7-636-008 dessiné sort en 7-636-006 (question chantier « RAL des murs »).',
+    apply: (ctx) => {
+      const r = find(ctx, 'acc:7-636-006@panneau_plein');
+      if (!r) return;
+      r.kind = 'substitution';
+      r.trigger = { articles: ['7-636-008'] };
+      r.per = 'produit';
+      r.replaces = { article: '7-636-008', qty: 1 };
+      r.when = { ralMurs: '7024' };
+      r.key = ruleKey(r);
+      ctx.log.details.push(`7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → ${r.key}`);
+    },
+  },
 ];
 
 /** Notes d'appréciation dont tous les articles ont déjà une règle active : informatives seulement. */

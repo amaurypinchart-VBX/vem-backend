@@ -1,0 +1,1605 @@
+{
+ "schema": "vem-loading-topology/1",
+ "modules": [
+  {
+   "id": "VBX-01",
+   "level": 0,
+   "outline": [
+    [
+     -0.00039878000062998353,
+     0.0001277247710049778
+    ],
+    [
+     5901.702085612958,
+     0.0001277247710049778
+    ],
+    [
+     5901.702085612958,
+     -2500.000103368001
+    ],
+    [
+     -0.00039878000062998353,
+     -2500.000103368001
+    ]
+   ],
+   "y": [
+    0.000010402825299848928,
+    3079.9991640074495
+   ],
+   "long": 5902,
+   "short": 2500,
+   "above": [],
+   "below": [],
+   "islandId": "I1",
+   "boxRef": "7-962-016"
+  },
+  {
+   "id": "VBX-02",
+   "level": 0,
+   "outline": [
+    [
+     -0.00039878000062998353,
+     -20000.000512275226
+    ],
+    [
+     5901.702085612958,
+     -20000.000512275226
+    ],
+    [
+     5901.702085612958,
+     -22500.000743367993
+    ],
+    [
+     -0.00039878000062998353,
+     -22500.000743367993
+    ]
+   ],
+   "y": [
+    0.000010402834181633125,
+    3079.999164007458
+   ],
+   "long": 5902,
+   "short": 2500,
+   "above": [],
+   "below": [],
+   "islandId": "I2",
+   "boxRef": "7-962-016"
+  }
+ ],
+ "sides": [
+  {
+   "id": "VBX-01:+x",
+   "moduleId": "VBX-01",
+   "local": "+x",
+   "kind": "short",
+   "label": "avant",
+   "a": [
+    5901.702085612958,
+    0.0001277247710049778
+   ],
+   "b": [
+    5901.702085612958,
+    -2500.000103368001
+   ],
+   "normal": [
+    1,
+    0
+   ],
+   "length": 2500.000231092772,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "kbr9f51wf87yb",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 92,
+     "end": 1222,
+     "panels": 1
+    },
+    {
+     "nodeId": "1nccaehwysc8f",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 1222,
+     "end": 2352,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    }
+   ]
+  },
+  {
+   "id": "VBX-01:-x",
+   "moduleId": "VBX-01",
+   "local": "-x",
+   "kind": "short",
+   "label": "arriere",
+   "a": [
+    -0.00039878000062998353,
+    0.0001277247710049778
+   ],
+   "b": [
+    -0.00039878000062998353,
+    -2500.000103368001
+   ],
+   "normal": [
+    -1,
+    0
+   ],
+   "length": 2500.000231092772,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "1hbl6hyvj9484",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 118,
+     "end": 1248,
+     "panels": 1
+    },
+    {
+     "nodeId": "n9x5uz95buut",
+     "article": "7-199-067",
+     "category": "PORTE-SIMPLE",
+     "kind": "porte",
+     "porte": "simple",
+     "start": 1249,
+     "end": 2379,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    }
+   ]
+  },
+  {
+   "id": "VBX-01:+y",
+   "moduleId": "VBX-01",
+   "local": "+y",
+   "kind": "long",
+   "label": "droite",
+   "a": [
+    -0.00039878000062998353,
+    -2500.000103368001
+   ],
+   "b": [
+    5901.702085612958,
+    -2500.000103368001
+   ],
+   "normal": [
+    0,
+    -1
+   ],
+   "length": 5901.702484392959,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "12xa1dz10rvawt",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 124,
+     "end": 1254,
+     "panels": 1
+    },
+    {
+     "nodeId": "13tb7br1pdgpi9",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 1254,
+     "end": 2384,
+     "panels": 1
+    },
+    {
+     "nodeId": "1t0ptwsk0ccta",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 2384,
+     "end": 3514,
+     "panels": 1
+    },
+    {
+     "nodeId": "3sd7yd1d9vg8f",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 3514,
+     "end": 4644,
+     "panels": 1
+    },
+    {
+     "nodeId": "ssbf6k1ufv06y",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 4644,
+     "end": 5774,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    },
+    {
+     "type": "element",
+     "index": 2
+    },
+    {
+     "type": "element",
+     "index": 3
+    },
+    {
+     "type": "element",
+     "index": 4
+    }
+   ]
+  },
+  {
+   "id": "VBX-01:-y",
+   "moduleId": "VBX-01",
+   "local": "-y",
+   "kind": "long",
+   "label": "gauche",
+   "a": [
+    -0.00039878000062998353,
+    0.0001277247710049778
+   ],
+   "b": [
+    5901.702085612958,
+    0.0001277247710049778
+   ],
+   "normal": [
+    0,
+    1
+   ],
+   "length": 5901.702484392959,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "xmkt8i1buc884",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 132,
+     "end": 1262,
+     "panels": 1
+    },
+    {
+     "nodeId": "endpwu1utjbjs",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 1262,
+     "end": 2392,
+     "panels": 1
+    },
+    {
+     "nodeId": "1chbsg03gybci",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 2392,
+     "end": 3522,
+     "panels": 1
+    },
+    {
+     "nodeId": "9t4buw10bfgta",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 3522,
+     "end": 4652,
+     "panels": 1
+    },
+    {
+     "nodeId": "1ar6h1v6nfrj5",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 4652,
+     "end": 5782,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    },
+    {
+     "type": "element",
+     "index": 2
+    },
+    {
+     "type": "element",
+     "index": 3
+    },
+    {
+     "type": "element",
+     "index": 4
+    }
+   ]
+  },
+  {
+   "id": "VBX-02:+x",
+   "moduleId": "VBX-02",
+   "local": "+x",
+   "kind": "short",
+   "label": "avant",
+   "a": [
+    5901.702085612958,
+    -20000.000512275226
+   ],
+   "b": [
+    5901.702085612958,
+    -22500.000743367993
+   ],
+   "normal": [
+    1,
+    0
+   ],
+   "length": 2500.0002310927666,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "1folj4t1g453yb",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 92,
+     "end": 1222,
+     "panels": 1
+    },
+    {
+     "nodeId": "r8jj9gmg5eo6",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 1222,
+     "end": 2352,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    }
+   ]
+  },
+  {
+   "id": "VBX-02:-x",
+   "moduleId": "VBX-02",
+   "local": "-x",
+   "kind": "short",
+   "label": "arriere",
+   "a": [
+    -0.00039878000062998353,
+    -20000.000512275226
+   ],
+   "b": [
+    -0.00039878000062998353,
+    -22500.000743367993
+   ],
+   "normal": [
+    -1,
+    0
+   ],
+   "length": 2500.0002310927666,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "1obn7x01egqxqa",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 118,
+     "end": 1248,
+     "panels": 1
+    },
+    {
+     "nodeId": "1pkyjxbkmjcg5",
+     "article": "7-199-067",
+     "category": "PORTE-SIMPLE",
+     "kind": "porte",
+     "porte": "simple",
+     "start": 1249,
+     "end": 2379,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    }
+   ]
+  },
+  {
+   "id": "VBX-02:+y",
+   "moduleId": "VBX-02",
+   "local": "+y",
+   "kind": "long",
+   "label": "droite",
+   "a": [
+    -0.00039878000062998353,
+    -22500.000743367993
+   ],
+   "b": [
+    5901.702085612958,
+    -22500.000743367993
+   ],
+   "normal": [
+    0,
+    -1
+   ],
+   "length": 5901.702484392959,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "11xpyjp93ml1b",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 124,
+     "end": 1254,
+     "panels": 1
+    },
+    {
+     "nodeId": "r2pgl81plzdsa",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 1254,
+     "end": 2384,
+     "panels": 1
+    },
+    {
+     "nodeId": "11k1n6v1vmqhot",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 2384,
+     "end": 3514,
+     "panels": 1
+    },
+    {
+     "nodeId": "vwyun67hxoms",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 3514,
+     "end": 4644,
+     "panels": 1
+    },
+    {
+     "nodeId": "9j1l9v115xdwx",
+     "article": "7-636-008",
+     "category": "MUR-LEGER",
+     "kind": "mur",
+     "start": 4644,
+     "end": 5774,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    },
+    {
+     "type": "element",
+     "index": 2
+    },
+    {
+     "type": "element",
+     "index": 3
+    },
+    {
+     "type": "element",
+     "index": 4
+    }
+   ]
+  },
+  {
+   "id": "VBX-02:-y",
+   "moduleId": "VBX-02",
+   "local": "-y",
+   "kind": "long",
+   "label": "gauche",
+   "a": [
+    -0.00039878000062998353,
+    -20000.000512275226
+   ],
+   "b": [
+    5901.702085612958,
+    -20000.000512275226
+   ],
+   "normal": [
+    0,
+    1
+   ],
+   "length": 5901.702484392959,
+   "exposure": "exterieur",
+   "junctionIds": [],
+   "elements": [
+    {
+     "nodeId": "1s6logfs4iy6h",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 132,
+     "end": 1262,
+     "panels": 1
+    },
+    {
+     "nodeId": "1cgcw3yqnagco",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 1262,
+     "end": 2392,
+     "panels": 1
+    },
+    {
+     "nodeId": "17m3i20vhjuem",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 2392,
+     "end": 3522,
+     "panels": 1
+    },
+    {
+     "nodeId": "iyiv811rlcljn",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 3522,
+     "end": 4652,
+     "panels": 1
+    },
+    {
+     "nodeId": "19u2b8a1eig7js",
+     "article": "7-637-020",
+     "category": "VITRE-SEAMLESS",
+     "kind": "vitre",
+     "vitrage": "8.8.2",
+     "start": 4652,
+     "end": 5782,
+     "panels": 1
+    }
+   ],
+   "sequence": [
+    {
+     "type": "element",
+     "index": 0
+    },
+    {
+     "type": "element",
+     "index": 1
+    },
+    {
+     "type": "element",
+     "index": 2
+    },
+    {
+     "type": "element",
+     "index": 3
+    },
+    {
+     "type": "element",
+     "index": 4
+    }
+   ]
+  }
+ ],
+ "junctions": [],
+ "islands": [
+  {
+   "id": "I1",
+   "moduleIds": [
+    "VBX-01"
+   ],
+   "regime": "standalone",
+   "covered": false,
+   "levels": 1
+  },
+  {
+   "id": "I2",
+   "moduleIds": [
+    "VBX-02"
+   ],
+   "regime": "standalone",
+   "covered": false,
+   "levels": 1
+  }
+ ],
+ "feet": [
+  {
+   "id": "F1",
+   "plan": [
+    -0.00039878000062998353,
+    0.0001277247710049778
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F2",
+   "plan": [
+    5901.702085612958,
+    0.0001277247710049778
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F3",
+   "plan": [
+    5901.702085612958,
+    -2500.000103368001
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F4",
+   "plan": [
+    -0.00039878000062998353,
+    -2500.000103368001
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F5",
+   "plan": [
+    2950.850843416479,
+    0.0001277247710049778
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "milieu"
+    }
+   ],
+   "kind": "milieu"
+  },
+  {
+   "id": "F6",
+   "plan": [
+    2950.850843416479,
+    -2500.000103368001
+   ],
+   "y": 0.000010402825299848928,
+   "members": [
+    {
+     "moduleId": "VBX-01",
+     "kind": "milieu"
+    }
+   ],
+   "kind": "milieu"
+  },
+  {
+   "id": "F7",
+   "plan": [
+    -0.00039878000062998353,
+    -20000.000512275226
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F8",
+   "plan": [
+    5901.702085612958,
+    -20000.000512275226
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F9",
+   "plan": [
+    5901.702085612958,
+    -22500.000743367993
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F10",
+   "plan": [
+    -0.00039878000062998353,
+    -22500.000743367993
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "angle"
+    }
+   ],
+   "kind": "angle"
+  },
+  {
+   "id": "F11",
+   "plan": [
+    2950.850843416479,
+    -20000.000512275226
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "milieu"
+    }
+   ],
+   "kind": "milieu"
+  },
+  {
+   "id": "F12",
+   "plan": [
+    2950.850843416479,
+    -22500.000743367993
+   ],
+   "y": 0.000010402834181633125,
+   "members": [
+    {
+     "moduleId": "VBX-02",
+     "kind": "milieu"
+    }
+   ],
+   "kind": "milieu"
+  }
+ ],
+ "feetSources": [
+  {
+   "moduleId": "VBX-01",
+   "total": 6,
+   "from": "catalogue",
+   "ref": "7-962-016"
+  },
+  {
+   "moduleId": "VBX-02",
+   "total": 6,
+   "from": "catalogue",
+   "ref": "7-962-016"
+  }
+ ],
+ "products": [
+  {
+   "article": "7-199-067",
+   "qty": 2,
+   "nodeIds": [
+    "n9x5uz95buut",
+    "1pkyjxbkmjcg5"
+   ],
+   "mirrorIds": [],
+   "source": "modele",
+   "inCatalogue": true
+  },
+  {
+   "article": "7-636-008",
+   "qty": 10,
+   "nodeIds": [
+    "3sd7yd1d9vg8f",
+    "ssbf6k1ufv06y",
+    "12xa1dz10rvawt",
+    "13tb7br1pdgpi9",
+    "1t0ptwsk0ccta",
+    "9j1l9v115xdwx",
+    "vwyun67hxoms",
+    "11xpyjp93ml1b",
+    "r2pgl81plzdsa",
+    "11k1n6v1vmqhot"
+   ],
+   "mirrorIds": [],
+   "source": "modele",
+   "inCatalogue": true
+  },
+  {
+   "article": "7-637-020",
+   "qty": 16,
+   "nodeIds": [
+    "endpwu1utjbjs",
+    "kbr9f51wf87yb",
+    "9t4buw10bfgta",
+    "1ar6h1v6nfrj5",
+    "xmkt8i1buc884",
+    "1nccaehwysc8f",
+    "1hbl6hyvj9484",
+    "1chbsg03gybci",
+    "1folj4t1g453yb",
+    "19u2b8a1eig7js",
+    "1s6logfs4iy6h",
+    "r8jj9gmg5eo6",
+    "1obn7x01egqxqa",
+    "1cgcw3yqnagco",
+    "iyiv811rlcljn",
+    "17m3i20vhjuem"
+   ],
+   "mirrorIds": [],
+   "source": "modele",
+   "inCatalogue": true
+  },
+  {
+   "article": "7-962-016",
+   "qty": 2,
+   "nodeIds": [
+    "1wdo71txt09r7",
+    "1imsdcu522td0"
+   ],
+   "mirrorIds": [],
+   "source": "modele",
+   "inCatalogue": true
+  }
+ ],
+ "unknown": [],
+ "glazing": [
+  "8.8.2"
+ ],
+ "levels": 1,
+ "counts": {
+  "box": {
+   "value": 2,
+   "ids": [
+    "VBX-01",
+    "VBX-02"
+   ],
+   "detail": "2 Viewbox"
+  },
+  "pied": {
+   "value": 12,
+   "ids": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12"
+   ],
+   "detail": "12 pieds au sol (pieds communs fusionnés à 100 mm)"
+  },
+  "pied_box": {
+   "value": 12,
+   "ids": [
+    "VBX-01",
+    "VBX-02"
+   ],
+   "detail": "12 pieds de box (avant fusion)"
+  },
+  "jonction_box": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction entre box"
+  },
+  "jonction_grand_cote": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction grand côté"
+  },
+  "jonction_petit_cote": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction petit côté"
+  },
+  "jonction_toit_grand_cote": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction de toit grand côté"
+  },
+  "jonction_toit_petit_cote": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction de toit petit côté"
+  },
+  "cote_box_jonction": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 jonction(s) × 2 côtés"
+  },
+  "cote": {
+   "value": 8,
+   "ids": [
+    "VBX-01:+x",
+    "VBX-01:-x",
+    "VBX-01:+y",
+    "VBX-01:-y",
+    "VBX-02:+x",
+    "VBX-02:-x",
+    "VBX-02:+y",
+    "VBX-02:-y"
+   ],
+   "detail": "8 côtés de box extérieurs"
+  },
+  "cote_vitre_court": {
+   "value": 4,
+   "ids": [
+    "VBX-01:+x",
+    "VBX-01:-x",
+    "VBX-02:+x",
+    "VBX-02:-x"
+   ],
+   "detail": "4 petits côtés vitrés"
+  },
+  "cote_vitre_long": {
+   "value": 2,
+   "ids": [
+    "VBX-01:-y",
+    "VBX-02:-y"
+   ],
+   "detail": "2 grands côtés vitrés"
+  },
+  "panneau": {
+   "value": 28,
+   "ids": [
+    "kbr9f51wf87yb",
+    "1nccaehwysc8f",
+    "1hbl6hyvj9484",
+    "n9x5uz95buut",
+    "12xa1dz10rvawt",
+    "13tb7br1pdgpi9",
+    "1t0ptwsk0ccta",
+    "3sd7yd1d9vg8f",
+    "ssbf6k1ufv06y",
+    "xmkt8i1buc884",
+    "endpwu1utjbjs",
+    "1chbsg03gybci",
+    "9t4buw10bfgta",
+    "1ar6h1v6nfrj5",
+    "1folj4t1g453yb",
+    "r8jj9gmg5eo6",
+    "1obn7x01egqxqa",
+    "1pkyjxbkmjcg5",
+    "11xpyjp93ml1b",
+    "r2pgl81plzdsa",
+    "11k1n6v1vmqhot",
+    "vwyun67hxoms",
+    "9j1l9v115xdwx",
+    "1s6logfs4iy6h",
+    "1cgcw3yqnagco",
+    "17m3i20vhjuem",
+    "iyiv811rlcljn",
+    "19u2b8a1eig7js"
+   ],
+   "detail": "28 panneaux (murs, vitres, portes ; porte double = 2)"
+  },
+  "panneau_plein": {
+   "value": 10,
+   "ids": [
+    "12xa1dz10rvawt",
+    "13tb7br1pdgpi9",
+    "1t0ptwsk0ccta",
+    "3sd7yd1d9vg8f",
+    "ssbf6k1ufv06y",
+    "11xpyjp93ml1b",
+    "r2pgl81plzdsa",
+    "11k1n6v1vmqhot",
+    "vwyun67hxoms",
+    "9j1l9v115xdwx"
+   ],
+   "detail": "10 murs pleins"
+  },
+  "jonction_panneau": {
+   "value": 8,
+   "ids": [
+    "12xa1dz10rvawt|13tb7br1pdgpi9",
+    "13tb7br1pdgpi9|1t0ptwsk0ccta",
+    "1t0ptwsk0ccta|3sd7yd1d9vg8f",
+    "3sd7yd1d9vg8f|ssbf6k1ufv06y",
+    "11xpyjp93ml1b|r2pgl81plzdsa",
+    "r2pgl81plzdsa|11k1n6v1vmqhot",
+    "11k1n6v1vmqhot|vwyun67hxoms",
+    "vwyun67hxoms|9j1l9v115xdwx"
+   ],
+   "detail": "8 jonctions entre panneaux sans vitre (mur, porte)"
+  },
+  "jonction_verre": {
+   "value": 12,
+   "ids": [
+    "kbr9f51wf87yb|1nccaehwysc8f",
+    "1hbl6hyvj9484|n9x5uz95buut",
+    "xmkt8i1buc884|endpwu1utjbjs",
+    "endpwu1utjbjs|1chbsg03gybci",
+    "1chbsg03gybci|9t4buw10bfgta",
+    "9t4buw10bfgta|1ar6h1v6nfrj5",
+    "1folj4t1g453yb|r8jj9gmg5eo6",
+    "1obn7x01egqxqa|1pkyjxbkmjcg5",
+    "1s6logfs4iy6h|1cgcw3yqnagco",
+    "1cgcw3yqnagco|17m3i20vhjuem",
+    "17m3i20vhjuem|iyiv811rlcljn",
+    "iyiv811rlcljn|19u2b8a1eig7js"
+   ],
+   "detail": "12 jonctions avec une vitre (vitre / vitre ou vitre / porte)"
+  },
+  "terminaison_vitre": {
+   "value": 10,
+   "ids": [
+    "kbr9f51wf87yb:début",
+    "1nccaehwysc8f:fin",
+    "1hbl6hyvj9484:début",
+    "xmkt8i1buc884:début",
+    "1ar6h1v6nfrj5:fin",
+    "1folj4t1g453yb:début",
+    "r8jj9gmg5eo6:fin",
+    "1obn7x01egqxqa:début",
+    "1s6logfs4iy6h:début",
+    "19u2b8a1eig7js:fin"
+   ],
+   "detail": "10 terminaisons de vitre contre un poteau (coin, mur ou vide)"
+  },
+  "porte_simple": {
+   "value": 2,
+   "ids": [
+    "n9x5uz95buut",
+    "1pkyjxbkmjcg5"
+   ],
+   "detail": "2 portes simples"
+  },
+  "porte_double": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 porte double"
+  },
+  "porte_coulissante": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 porte coulissante"
+  },
+  "poteau": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 poteau"
+  },
+  "airco": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 airco dessinée(s) dans la 3D"
+  },
+  "ilot": {
+   "value": 2,
+   "ids": [
+    "I1",
+    "I2"
+   ],
+   "detail": "2 îlots"
+  },
+  "ilot_couvert": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 îlot couvert"
+  },
+  "module_toit": {
+   "value": 2,
+   "ids": [
+    "VBX-01",
+    "VBX-02"
+   ],
+   "detail": "2 toits"
+  },
+  "bord": {
+   "value": null,
+   "ids": [],
+   "detail": "côtés vers une terrasse ou le vide : pas encore détectés (à saisir)"
+  },
+  "job": {
+   "value": 1,
+   "ids": [],
+   "detail": "1 chantier"
+  }
+ },
+ "islandCounts": {
+  "I1": {
+   "box": {
+    "value": 1,
+    "ids": [
+     "VBX-01"
+    ],
+    "detail": "1 Viewbox"
+   },
+   "pied": {
+    "value": 6,
+    "ids": [
+     "F1",
+     "F2",
+     "F3",
+     "F4",
+     "F5",
+     "F6"
+    ],
+    "detail": "6 pieds au sol (pieds communs fusionnés à 100 mm)"
+   },
+   "pied_box": {
+    "value": 6,
+    "ids": [
+     "VBX-01"
+    ],
+    "detail": "6 pieds de box (avant fusion)"
+   },
+   "jonction_box": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction entre box"
+   },
+   "jonction_grand_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction grand côté"
+   },
+   "jonction_petit_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction petit côté"
+   },
+   "jonction_toit_grand_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction de toit grand côté"
+   },
+   "jonction_toit_petit_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction de toit petit côté"
+   },
+   "cote_box_jonction": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction(s) × 2 côtés"
+   },
+   "cote": {
+    "value": 4,
+    "ids": [
+     "VBX-01:+x",
+     "VBX-01:-x",
+     "VBX-01:+y",
+     "VBX-01:-y"
+    ],
+    "detail": "4 côtés de box extérieurs"
+   },
+   "cote_vitre_court": {
+    "value": 2,
+    "ids": [
+     "VBX-01:+x",
+     "VBX-01:-x"
+    ],
+    "detail": "2 petits côtés vitrés"
+   },
+   "cote_vitre_long": {
+    "value": 1,
+    "ids": [
+     "VBX-01:-y"
+    ],
+    "detail": "1 grand côté vitré"
+   },
+   "panneau": {
+    "value": 14,
+    "ids": [
+     "kbr9f51wf87yb",
+     "1nccaehwysc8f",
+     "1hbl6hyvj9484",
+     "n9x5uz95buut",
+     "12xa1dz10rvawt",
+     "13tb7br1pdgpi9",
+     "1t0ptwsk0ccta",
+     "3sd7yd1d9vg8f",
+     "ssbf6k1ufv06y",
+     "xmkt8i1buc884",
+     "endpwu1utjbjs",
+     "1chbsg03gybci",
+     "9t4buw10bfgta",
+     "1ar6h1v6nfrj5"
+    ],
+    "detail": "14 panneaux (murs, vitres, portes ; porte double = 2)"
+   },
+   "panneau_plein": {
+    "value": 5,
+    "ids": [
+     "12xa1dz10rvawt",
+     "13tb7br1pdgpi9",
+     "1t0ptwsk0ccta",
+     "3sd7yd1d9vg8f",
+     "ssbf6k1ufv06y"
+    ],
+    "detail": "5 murs pleins"
+   },
+   "jonction_panneau": {
+    "value": 4,
+    "ids": [
+     "12xa1dz10rvawt|13tb7br1pdgpi9",
+     "13tb7br1pdgpi9|1t0ptwsk0ccta",
+     "1t0ptwsk0ccta|3sd7yd1d9vg8f",
+     "3sd7yd1d9vg8f|ssbf6k1ufv06y"
+    ],
+    "detail": "4 jonctions entre panneaux sans vitre (mur, porte)"
+   },
+   "jonction_verre": {
+    "value": 6,
+    "ids": [
+     "kbr9f51wf87yb|1nccaehwysc8f",
+     "1hbl6hyvj9484|n9x5uz95buut",
+     "xmkt8i1buc884|endpwu1utjbjs",
+     "endpwu1utjbjs|1chbsg03gybci",
+     "1chbsg03gybci|9t4buw10bfgta",
+     "9t4buw10bfgta|1ar6h1v6nfrj5"
+    ],
+    "detail": "6 jonctions avec une vitre (vitre / vitre ou vitre / porte)"
+   },
+   "terminaison_vitre": {
+    "value": 5,
+    "ids": [
+     "kbr9f51wf87yb:début",
+     "1nccaehwysc8f:fin",
+     "1hbl6hyvj9484:début",
+     "xmkt8i1buc884:début",
+     "1ar6h1v6nfrj5:fin"
+    ],
+    "detail": "5 terminaisons de vitre contre un poteau (coin, mur ou vide)"
+   },
+   "porte_simple": {
+    "value": 1,
+    "ids": [
+     "n9x5uz95buut"
+    ],
+    "detail": "1 porte simple"
+   },
+   "porte_double": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 porte double"
+   },
+   "porte_coulissante": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 porte coulissante"
+   },
+   "poteau": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 poteau"
+   },
+   "airco": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 airco dessinée(s) dans la 3D"
+   },
+   "ilot": {
+    "value": 1,
+    "ids": [
+     "I1"
+    ],
+    "detail": "1 îlot"
+   },
+   "ilot_couvert": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 îlot couvert"
+   },
+   "module_toit": {
+    "value": 1,
+    "ids": [
+     "VBX-01"
+    ],
+    "detail": "1 toit"
+   },
+   "bord": {
+    "value": null,
+    "ids": [],
+    "detail": "côtés vers une terrasse ou le vide : pas encore détectés (à saisir)"
+   }
+  },
+  "I2": {
+   "box": {
+    "value": 1,
+    "ids": [
+     "VBX-02"
+    ],
+    "detail": "1 Viewbox"
+   },
+   "pied": {
+    "value": 6,
+    "ids": [
+     "F7",
+     "F8",
+     "F9",
+     "F10",
+     "F11",
+     "F12"
+    ],
+    "detail": "6 pieds au sol (pieds communs fusionnés à 100 mm)"
+   },
+   "pied_box": {
+    "value": 6,
+    "ids": [
+     "VBX-02"
+    ],
+    "detail": "6 pieds de box (avant fusion)"
+   },
+   "jonction_box": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction entre box"
+   },
+   "jonction_grand_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction grand côté"
+   },
+   "jonction_petit_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction petit côté"
+   },
+   "jonction_toit_grand_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction de toit grand côté"
+   },
+   "jonction_toit_petit_cote": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction de toit petit côté"
+   },
+   "cote_box_jonction": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 jonction(s) × 2 côtés"
+   },
+   "cote": {
+    "value": 4,
+    "ids": [
+     "VBX-02:+x",
+     "VBX-02:-x",
+     "VBX-02:+y",
+     "VBX-02:-y"
+    ],
+    "detail": "4 côtés de box extérieurs"
+   },
+   "cote_vitre_court": {
+    "value": 2,
+    "ids": [
+     "VBX-02:+x",
+     "VBX-02:-x"
+    ],
+    "detail": "2 petits côtés vitrés"
+   },
+   "cote_vitre_long": {
+    "value": 1,
+    "ids": [
+     "VBX-02:-y"
+    ],
+    "detail": "1 grand côté vitré"
+   },
+   "panneau": {
+    "value": 14,
+    "ids": [
+     "1folj4t1g453yb",
+     "r8jj9gmg5eo6",
+     "1obn7x01egqxqa",
+     "1pkyjxbkmjcg5",
+     "11xpyjp93ml1b",
+     "r2pgl81plzdsa",
+     "11k1n6v1vmqhot",
+     "vwyun67hxoms",
+     "9j1l9v115xdwx",
+     "1s6logfs4iy6h",
+     "1cgcw3yqnagco",
+     "17m3i20vhjuem",
+     "iyiv811rlcljn",
+     "19u2b8a1eig7js"
+    ],
+    "detail": "14 panneaux (murs, vitres, portes ; porte double = 2)"
+   },
+   "panneau_plein": {
+    "value": 5,
+    "ids": [
+     "11xpyjp93ml1b",
+     "r2pgl81plzdsa",
+     "11k1n6v1vmqhot",
+     "vwyun67hxoms",
+     "9j1l9v115xdwx"
+    ],
+    "detail": "5 murs pleins"
+   },
+   "jonction_panneau": {
+    "value": 4,
+    "ids": [
+     "11xpyjp93ml1b|r2pgl81plzdsa",
+     "r2pgl81plzdsa|11k1n6v1vmqhot",
+     "11k1n6v1vmqhot|vwyun67hxoms",
+     "vwyun67hxoms|9j1l9v115xdwx"
+    ],
+    "detail": "4 jonctions entre panneaux sans vitre (mur, porte)"
+   },
+   "jonction_verre": {
+    "value": 6,
+    "ids": [
+     "1folj4t1g453yb|r8jj9gmg5eo6",
+     "1obn7x01egqxqa|1pkyjxbkmjcg5",
+     "1s6logfs4iy6h|1cgcw3yqnagco",
+     "1cgcw3yqnagco|17m3i20vhjuem",
+     "17m3i20vhjuem|iyiv811rlcljn",
+     "iyiv811rlcljn|19u2b8a1eig7js"
+    ],
+    "detail": "6 jonctions avec une vitre (vitre / vitre ou vitre / porte)"
+   },
+   "terminaison_vitre": {
+    "value": 5,
+    "ids": [
+     "1folj4t1g453yb:début",
+     "r8jj9gmg5eo6:fin",
+     "1obn7x01egqxqa:début",
+     "1s6logfs4iy6h:début",
+     "19u2b8a1eig7js:fin"
+    ],
+    "detail": "5 terminaisons de vitre contre un poteau (coin, mur ou vide)"
+   },
+   "porte_simple": {
+    "value": 1,
+    "ids": [
+     "1pkyjxbkmjcg5"
+    ],
+    "detail": "1 porte simple"
+   },
+   "porte_double": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 porte double"
+   },
+   "porte_coulissante": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 porte coulissante"
+   },
+   "poteau": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 poteau"
+   },
+   "airco": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 airco dessinée(s) dans la 3D"
+   },
+   "ilot": {
+    "value": 1,
+    "ids": [
+     "I2"
+    ],
+    "detail": "1 îlot"
+   },
+   "ilot_couvert": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 îlot couvert"
+   },
+   "module_toit": {
+    "value": 1,
+    "ids": [
+     "VBX-02"
+    ],
+    "detail": "1 toit"
+   },
+   "bord": {
+    "value": null,
+    "ids": [],
+    "detail": "côtés vers une terrasse ou le vide : pas encore détectés (à saisir)"
+   }
+  }
+ },
+ "warnings": []
+}

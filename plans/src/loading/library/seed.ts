@@ -975,6 +975,9 @@ export const SEED_RULES: LoadingRule[] = [
     "qty": 1,
     "per": "bord",
     "unit": "pce",
+    "when": {
+      "regime": "connecte"
+    },
     "confidence": "a_confirmer",
     "calibration": [
       {
@@ -1303,7 +1306,7 @@ export const SEED_RULES: LoadingRule[] = [
     },
     "article": "4-700-067",
     "articleName": "Window/Wall Rubber Little 2300mm",
-    "qty": 1,
+    "qty": 2,
     "per": "cote_vitre_court",
     "unit": "pce",
     "confidence": "confirme",
@@ -1337,7 +1340,7 @@ export const SEED_RULES: LoadingRule[] = [
     },
     "article": "4-700-074",
     "articleName": "Window/Wall Rubber Little 5700mm",
-    "qty": 1,
+    "qty": 2,
     "per": "cote_vitre_long",
     "unit": "pce",
     "confidence": "confirme",
@@ -1397,14 +1400,21 @@ export const SEED_RULES: LoadingRule[] = [
     "supersededBy": "acc:4-700-096@jonction_toit_grand_cote"
   },
   {
-    "key": "acc:7-636-006@panneau_plein",
-    "kind": "accessoire",
-    "trigger": {},
+    "key": "sub:7-636-006@7-636-008/produit[7024]",
+    "kind": "substitution",
+    "trigger": {
+      "articles": [
+        "7-636-008"
+      ]
+    },
     "article": "7-636-006",
     "articleName": "Nidaplast/TUV WALL Vinyle White/7024 1130x2520 COMPLETE",
     "qty": 1,
-    "per": "panneau_plein",
+    "per": "produit",
     "unit": "pce",
+    "when": {
+      "ralMurs": "7024"
+    },
     "confidence": "confirme",
     "calibration": [
       {
@@ -1422,7 +1432,11 @@ export const SEED_RULES: LoadingRule[] = [
     ],
     "version": 1,
     "active": true,
-    "source": "seed"
+    "source": "seed",
+    "replaces": {
+      "article": "7-636-008",
+      "qty": 1
+    }
   },
   {
     "key": "acc:4-730-009@box",
@@ -3056,6 +3070,37 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "applied": true,
     "details": [
       "aucune règle modifiée : le nombre de pieds vient de la topologie"
+    ]
+  },
+  {
+    "id": "joints-10mm-bas-haut",
+    "date": "2026-10-12",
+    "by": "remarque du classeur (6060/00058 : « 2 petits côtés vitrés × 2 (bas + haut) = 4 », « 1 grand côté vitré × 2 = 2 »)",
+    "text": "Joints 4-700-067 / 4-700-074 : 2 par côté vitré (un en bas, un en haut), puis + 50 % (6060 : 4 → 6 et 2 → 3).",
+    "applied": true,
+    "details": [
+      "acc:4-700-067@10mm/cote_vitre_court : 2 par côté vitré (bas + haut)",
+      "acc:4-700-074@10mm/cote_vitre_long : 2 par côté vitré (bas + haut)"
+    ]
+  },
+  {
+    "id": "plaque-simple-connecte",
+    "date": "2026-10-12",
+    "by": "remarque du classeur (« Klok → 0 », plaques de jonction conditionnelles à l’adjacence)",
+    "text": "Plaque simple 4-700-040 (box → terrasse / vide) : seulement pour des box connectées ; Klokgebouw (box seules) = 0.",
+    "applied": true,
+    "details": [
+      "acc:4-700-040@bord : box connectées seulement"
+    ]
+  },
+  {
+    "id": "mur-ral-7024",
+    "date": "2026-10-12",
+    "by": "remarque du classeur (6060/00058 : « remplace 7-636-008 white/white »)",
+    "text": "Murs RAL 7024 une face demandés : chaque nidaplast 7-636-008 dessiné sort en 7-636-006 (question chantier « RAL des murs »).",
+    "applied": true,
+    "details": [
+      "7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → sub:7-636-006@7-636-008/produit[7024]"
     ]
   }
 ];

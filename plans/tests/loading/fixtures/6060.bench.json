@@ -1,0 +1,57 @@
+{
+  "id": "6060",
+  "name": "6060RIAAHVIE (Scania + VW)",
+  "order": "6060RIAAHVIE",
+  "bordereau": "RVIE/OUT/00058",
+  "model": "6060",
+  "partial": true,
+  "source": "Lignes citées dans les remarques du classeur — à compléter avec le bordereau Excel réel. Montage atelier : jugements injectés comme corrections « seulement ce chantier ».",
+  "productAnswers": { "FULL SLIDDING DOOR 5700MM": "7-625-020" },
+  "answers": {
+    "chargeLourde": true,
+    "hauteur": true,
+    "montage": "atelier",
+    "ralMurs": "7024"
+  },
+  "study": { "source": "plaques de l’étude reconstituées (livré ÷ 2 ; 15 × 1000 livrés : impair)", "plates": [{ "l": 1000, "w": 1000, "quantity": 8 }, { "l": 700, "w": 700, "quantity": 6 }, { "l": 400, "w": 400, "quantity": 18 }] },
+  "judgements": {
+    "4-730-008": 2,
+    "4-750-002": 3,
+    "4-750-004": 1,
+    "4-700-068": 0,
+    "4-700-070": 0,
+    "7-632-017": 0,
+    "7-632-018": 0,
+    "7-632-022": 0
+  },
+  "known": {
+    "7-636-006": "21 murs dans la 3D, 25 livrés (à expliquer)",
+    "4-740-003": "charge lourde : 15 livrés (impair, pas × 2)",
+    "4-700-096": "un peu plus que livré (EPDM + 1)",
+    "4-700-039": "un peu plus que livré (+ 30 %)"
+  },
+  "real": [
+    { "article": "7-962-016", "qty": 4 },
+    { "article": "7-637-010", "qty": 7 },
+    { "article": "7-199-066", "qty": 1 },
+    { "article": "7-199-067", "qty": 1 },
+    { "article": "7-625-020", "qty": 1 },
+    { "article": "7-636-006", "qty": 25 },
+    { "article": "4-700-060", "qty": 5 },
+    { "article": "4-700-072", "qty": 10 },
+    { "article": "4-700-067", "qty": 6 },
+    { "article": "4-700-074", "qty": 3 },
+    { "article": "4-730-009", "qty": 4 },
+    { "article": "4-710-001", "qty": 26 },
+    { "article": "4-700-039", "qty": 12 },
+    { "article": "4-700-096", "qty": 2 },
+    { "article": "4-730-001", "qty": 2 },
+    { "article": "4-730-007", "qty": 2 },
+    { "article": "4-740-003", "qty": 15 },
+    { "article": "4-740-002", "qty": 12 },
+    { "article": "4-740-001", "qty": 36 },
+    { "article": "4-730-008", "qty": 2 },
+    { "article": "4-750-002", "qty": 3 },
+    { "article": "4-750-004", "qty": 1 }
+  ]
+}

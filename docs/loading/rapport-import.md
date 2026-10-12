@@ -8,7 +8,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 - Catalogue : 214 références (48 « gros produits »)
 - Règles : 87 lues, **66 actives** (47 confirmées, 18 à confirmer, 1 hypothèses), 21 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
-- Décisions appliquées : 17 / 17
+- Décisions appliquées : 20 / 20
 
 ## Questions pour Amaury
 
@@ -100,6 +100,13 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
   - acc:4-157-004@4.4.2/produit + acc:4-157-004@box : s’additionnent
 - **2026-10-12 — Amaury** : Pieds 6059 : on garde 15 (4 box côte à côte × 6 pieds, pieds communs fusionnés) ; le « 10 » du classeur n’est pas une règle.
   - aucune règle modifiée : le nombre de pieds vient de la topologie
+- **2026-10-12 — remarque du classeur (6060/00058 : « 2 petits côtés vitrés × 2 (bas + haut) = 4 », « 1 grand côté vitré × 2 = 2 »)** : Joints 4-700-067 / 4-700-074 : 2 par côté vitré (un en bas, un en haut), puis + 50 % (6060 : 4 → 6 et 2 → 3).
+  - acc:4-700-067@10mm/cote_vitre_court : 2 par côté vitré (bas + haut)
+  - acc:4-700-074@10mm/cote_vitre_long : 2 par côté vitré (bas + haut)
+- **2026-10-12 — remarque du classeur (« Klok → 0 », plaques de jonction conditionnelles à l’adjacence)** : Plaque simple 4-700-040 (box → terrasse / vide) : seulement pour des box connectées ; Klokgebouw (box seules) = 0.
+  - acc:4-700-040@bord : box connectées seulement
+- **2026-10-12 — remarque du classeur (6060/00058 : « remplace 7-636-008 white/white »)** : Murs RAL 7024 une face demandés : chaque nidaplast 7-636-008 dessiné sort en 7-636-006 (question chantier « RAL des murs »).
+  - 7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → sub:7-636-006@7-636-008/produit[7024]
 
 ## Interprétations faites à l’import
 
@@ -194,7 +201,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 |---|---|---|---|---|---|---|
 | 4-700-035 WOOD Base Plate Corner M16 / VIEWBOX / 325X325mm | 4 | par box | position = angle |  | confirmé | `acc:4-700-035@box[angle]` |
 | 4-700-036 WOOD Base Plate Middle M16 / VIEWBOX / 320X325mm | 2 | par box | position = milieu |  | confirmé | `acc:4-700-036@box[milieu]` |
-| 4-700-040 In Between Plate Simple /60 x 1140 x 18 mm / VIEWBOX | 1 | par bord libre |  | +30 % | à confirmer | `acc:4-700-040@bord` |
+| 4-700-040 In Between Plate Simple /60 x 1140 x 18 mm / VIEWBOX | 1 | par bord libre | regime = connecte | +30 % | à confirmer | `acc:4-700-040@bord` |
 | 4-740-001 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 400x400mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-001@sous_bois_etude` |
 | 4-740-002 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 700x700mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-002@sous_bois_etude` |
 | 4-740-003 WOOD SUBPLATE LEVELING M16 / VIEWBOX / 1000x1000mm | 2 | selon l’étude structure |  |  | confirmé | `acc:4-740-003@sous_bois_etude` |
@@ -223,8 +230,8 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-157-004 Silicon DL CHEMICALS Crystal / VIEWBOX / | 2 | par box |  |  | confirmé | `acc:4-157-004@box` |
 | 4-700-060 Plexi profil 10mmx2530mm | 1 | par jonction avec une vitre (vitrage 10mm) |  |  | confirmé | `acc:4-700-060@10mm/jonction_verre` |
 | 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 1 | par terminaison vitre / poteau (vitrage 10mm) |  | +20 % | confirmé | `acc:4-700-072@10mm/terminaison_vitre` |
-| 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 1 | par petit côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
-| 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 1 | par grand côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |
+| 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 2 | par petit côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
+| 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 2 | par grand côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |
 | 4-700-033 Roof Rubber roller TEC7 /15CMX1000CM /VBX/ | 1 | forfait chantier | couvert |  | confirmé | `aj:4-700-033@job[couvert]` |
 | 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 2 | par porte coulissante (vitrage 10mm) |  |  | confirmé | `acc:4-700-072@10mm/porte_coulissante` |
 
@@ -246,7 +253,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 | Article | Quantité | Base | Conditions | Spare | Confiance | Clé |
 |---|---|---|---|---|---|---|
-| 7-636-006 TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16 | 1 | par mur plein |  |  | confirmé | `acc:7-636-006@panneau_plein` |
+| 7-636-006 TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16 | 1 | par produit (7-636-008) | ralMurs = 7024 |  | confirmé | `sub:7-636-006@7-636-008/produit[7024]` |
 | 4-700-044 PAINT KIT / VIEWBOX / | 1 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-044@job[petit]` |
 | 4-157-005 Gaffa TAPE NISHIBAN BLACK / VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-005@m2_plancher[plancherLamine]` |
 | 4-157-012 Tape TWO SIDE for VYNYL 50mmx50M/ VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-012@m2_plancher[plancherLamine]` |

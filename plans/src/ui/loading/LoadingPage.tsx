@@ -19,6 +19,13 @@ import { buildTopology, topologySummary } from '../../loading/topology/build';
 import type { ProductAnswers } from '../../loading/topology/products';
 import type { Topology, TopologyOverrides } from '../../loading/topology/types';
 import { HIGHLIGHT, ISLAND_COLORS, JUNCTION_COLORS, nodeColors, topologyOverlay } from '../../loading/topology/overlay';
+import type { ServerRuleRow } from '../../loading/library/merge';
+import { mergeRules } from '../../loading/library/merge';
+import { SEED_OBSERVATIONS, SEED_RULES } from '../../loading/library/seed';
+import type { LoadingLine, LoadingList } from '../../loading/engine/generate';
+import { generate } from '../../loading/engine/generate';
+import type { SiteAnswers } from '../../loading/core/answers';
+import { CONFIDENCE_LABEL, LOADING_CATEGORIES } from '../../loading/core/types';
 
 type Step = 'topology' | 'products' | 'questions' | 'list' | 'export';
 type StepState = 'ok' | 'warn' | 'bad' | 'todo';
@@ -91,6 +98,8 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const [step, setStep] = useState<Step>('topology');
   const [me, setMe] = useState<VemUser | null>(null);
   const [catRows, setCatRows] = useState<ServerCatalogueRow[]>([]);
+  const [ruleRows, setRuleRows] = useState<ServerRuleRow[]>([]);
+  const [site, setSite] = useState<SiteAnswers>({});
   const [memory, setMemory] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<TopologyOverrides>({});
   const [answers, setAnswers] = useState<ProductAnswers>({});
@@ -101,6 +110,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const loaded = useRef(false);
   /** valeurs saisies + réponses telles que chargées (évite un enregistrement inutile à l'ouverture) */
   const savedKey = useRef('');
+  const savedInput = useRef<string | null>(null);
 
   const refreshMemory = () =>
     vem
@@ -110,6 +120,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   useEffect(() => {
     vem.me().then(setMe).catch(() => {});
     vem.loadingCatalogue().then(setCatRows).catch(() => {});
+    vem.loadingRules().then(setRuleRows).catch(() => {});
     void refreshMemory();
     if (!PROJECT_ID || !model) {
       setSaveState('local');
@@ -129,9 +140,11 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
         const pr = (l.answers?.products ?? {}) as ProductAnswers;
         // une liste sans topologie enregistrée (nouvelle) est enregistrée une première fois
         savedKey.current = l.topology ? JSON.stringify({ overrides: ov, products: pr }) : '';
+        savedInput.current = l.inputKey;
         setListId(l.id);
         setOverrides(ov);
         setAnswers(pr);
+        setSite((l.answers?.chantier ?? {}) as SiteAnswers);
         setSaveState('saved');
       } catch (e) {
         setError(`Loading liste non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -151,16 +164,19 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     [scene, framesVersion, catMap, answers, memory, overrides],
   );
   const summary = useMemo(() => topologySummary(topology, catMap), [topology, catMap]);
+  const rules = useMemo(() => mergeRules(SEED_RULES, ruleRows), [ruleRows]);
+  // étude structure : reliée en L4 (questions chantier) — en attendant, les sous-bois attendent l'étude
+  const list = useMemo(() => generate({ topology, rules, catalogue: catMap, answers: site, study: null, observations: SEED_OBSERVATIONS }), [topology, rules, catMap, site]);
 
   const lastSaved = useRef('');
   useEffect(() => {
     if (!loaded.current || !listId) return;
-    const body = { overrides, answers: { products: answers }, topology };
+    const body = { overrides, answers: { products: answers, chantier: site as Record<string, unknown> }, topology, lines: list.lines, rulesVersion: list.rulesVersion, inputKey: list.inputKey };
     const key = JSON.stringify(body);
     // première ouverture : rien n'a changé depuis l'enregistrement → pas d'envoi
     if (!lastSaved.current) {
       lastSaved.current = key;
-      if (savedKey.current === JSON.stringify({ overrides, products: answers })) return;
+      if (savedKey.current === JSON.stringify({ overrides, products: answers }) && savedInput.current === list.inputKey) return;
     }
     if (key === lastSaved.current && saveState === 'saved') return;
     lastSaved.current = key;
@@ -175,7 +191,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [overrides, answers, topology, listId]);
+  }, [overrides, answers, topology, listId, list, site]);
 
   // ─── 3D ───
   const holder = useRef<HTMLDivElement>(null);
@@ -256,14 +272,14 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     topology: topology.counts.pied?.value === null || topology.warnings.some((w) => w.code.startsWith('JUNCTION')) ? 'warn' : 'ok',
     products: unknownCount ? 'warn' : 'ok',
     questions: 'todo',
-    list: 'todo',
+    list: list.lines.some((l) => l.status === 'regle_manquante' || l.status === 'a_confirmer') ? 'warn' : 'ok',
     export: 'todo',
   };
   const STEPS: { key: Step; label: string; soon?: string }[] = [
     { key: 'topology', label: '1. Topologie' },
     { key: 'products', label: '2. Produits' },
     { key: 'questions', label: '3. Questions chantier', soon: 'L4' },
-    { key: 'list', label: '4. Loading liste', soon: 'L3–L4' },
+    { key: 'list', label: '4. Loading liste' },
     { key: 'export', label: '5. Export', soon: 'L4' },
   ];
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Enregistrée', error: '✗ Non enregistrée', local: 'Non enregistrée (modèle sans version en ligne)' }[saveState];
@@ -342,6 +358,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
               onSelect={setSelected}
             />
           )}
+          {step === 'list' && <ListStep list={list} selected={selected} onSelect={setSelected} />}
           {step === 'products' && (
             <ProductsStep
               topology={topology}
@@ -804,3 +821,104 @@ function IdentifyCard({
   );
 }
 
+// ─── Étape 4 : la loading liste (aperçu, éditable en L4–L5) ─────────────────────────────────────────────────────
+
+const STATUS_LABEL = { calcule: 'calculé', jugement: 'corrigé ici', appreciation: 'appréciation', a_confirmer: 'à confirmer', regle_manquante: 'règle manquante' } as const;
+const STATUS_BADGE = { calcule: 'ok', jugement: 'orange', appreciation: '', a_confirmer: 'orange', regle_manquante: 'ko' } as const;
+const UNIT_LABEL = { pce: '', m: 'm', m2: 'm²', L: 'L' } as const;
+
+function ListStep({ list, selected, onSelect }: { list: LoadingList; selected: { ids: string[]; label: string } | null; onSelect: (s: { ids: string[]; label: string } | null) => void }) {
+  const main = list.lines.filter((l) => l.status === 'calcule' || l.status === 'jugement');
+  const sections: { title: string; hint: string; lines: LoadingLine[] }[] = [
+    ...LOADING_CATEGORIES.map((c) => ({ title: c.label, hint: '', lines: main.filter((l) => l.categorie === c.key) })),
+    { title: 'À valider — appréciation', hint: 'Jamais calculé seul : quantité à saisir.', lines: list.lines.filter((l) => l.status === 'appreciation') },
+    { title: 'À confirmer', hint: 'Règle pas encore verrouillée, ou question chantier sans réponse.', lines: list.lines.filter((l) => l.status === 'a_confirmer') },
+    { title: 'Règle manquante', hint: 'Rien d’inventé : la règle reste à caler (valeurs observées en repère).', lines: list.lines.filter((l) => l.status === 'regle_manquante') },
+  ].filter((s) => s.lines.length);
+  return (
+    <>
+      <div className="card">
+        <div className="card-head">
+          <h2>Loading liste</h2>
+          <span className="hint">
+            {list.lines.length} lignes · règles version {list.rulesVersion} · aperçu (questions chantier et export à l’étape suivante)
+          </span>
+        </div>
+        {(list.questions.length > 0 || list.notes.length > 0) && (
+          <div className="card-body" style={{ display: 'grid', gap: 6 }}>
+            {list.questions.length > 0 && (
+              <div>
+                <b>Questions ({list.questions.length})</b>
+                <ul style={{ margin: '2px 0 0 18px' }}>
+                  {list.questions.map((q) => (
+                    <li key={q.id}>{q.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {list.notes.length > 0 && (
+              <div className="hint">
+                <ul style={{ margin: '2px 0 0 18px' }}>
+                  {list.notes.map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {sections.map((s) => (
+        <div className="card" key={s.title}>
+          <div className="card-head">
+            <h2>
+              {s.title} ({s.lines.length})
+            </h2>
+            {s.hint && <span className="hint">{s.hint}</span>}
+          </div>
+          <div className="card-body">
+            <table className="list" data-testid="loading-lines">
+              <thead>
+                <tr>
+                  <th>Référence</th>
+                  <th>Désignation</th>
+                  <th style={{ textAlign: 'right' }}>Quantité</th>
+                  <th>Détail du calcul</th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.lines.map((l) => {
+                  const isSel = selected?.label.startsWith(l.article);
+                  return (
+                    <tr
+                      key={l.article}
+                      style={{ cursor: l.sources.length ? 'pointer' : 'default', background: isSel ? 'var(--bg-3)' : undefined, verticalAlign: 'top' }}
+                      onClick={() => l.sources.length && onSelect({ ids: l.sources, label: `${l.article} ${l.designation} : ${l.qty ?? '?'}` })}
+                    >
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <b>{l.article}</b>
+                      </td>
+                      <td>
+                        {l.designation}
+                        <div>
+                          <span className={`badge ${STATUS_BADGE[l.status]}`}>{STATUS_LABEL[l.status]}</span>
+                          {l.status === 'calcule' && l.confidence !== 'confirme' && <span className="hint"> {CONFIDENCE_LABEL[l.confidence]}</span>}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <b>{l.qty ?? '?'}</b> {UNIT_LABEL[l.unit]}
+                      </td>
+                      <td className="hint" style={{ fontSize: 12 }}>
+                        {l.detail}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
