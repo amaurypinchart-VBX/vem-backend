@@ -16,9 +16,9 @@ export type CountingBase =
   | 'jonction_toit_petit_cote' // toits jointifs par les petits côtés (rien posé dessus)
   | 'cote_box_jonction' // côtés de box à une jonction (2 par jonction)
   | 'bord' // côtés de box vers une terrasse / le vide
-  | 'jonction_panneau' // jonctions panneau-panneau le long d'un côté
-  | 'jonction_verre' // jonctions verre-verre
-  | 'terminaison_vitre' // terminaisons vitre / poteau
+  | 'jonction_panneau' // jonctions entre panneaux voisins sans vitre (mur / mur, mur / porte) : joint carrosserie
+  | 'jonction_verre' // jonctions avec une vitre (vitre / vitre, vitre / porte) : profil plexi
+  | 'terminaison_vitre' // bout de vitre contre un poteau (coin, mur, vide), pas contre une porte
   | 'cote' // côtés de box (4 par box)
   | 'cote_vitre_court' // petits côtés vitrés
   | 'cote_vitre_long' // grands côtés vitrés
@@ -49,8 +49,8 @@ export const COUNTING_BASE_LABEL: Record<CountingBase, string> = {
   jonction_toit_petit_cote: 'par jonction de toit petit côté',
   cote_box_jonction: 'par côté de box à une jonction',
   bord: 'par bord libre',
-  jonction_panneau: 'par jonction de panneaux',
-  jonction_verre: 'par jonction verre-verre',
+  jonction_panneau: 'par jonction de panneaux sans vitre',
+  jonction_verre: 'par jonction avec une vitre',
   terminaison_vitre: 'par terminaison vitre / poteau',
   cote: 'par côté de box',
   cote_vitre_court: 'par petit côté vitré',

@@ -14,7 +14,7 @@ describe('règles en français', () => {
   });
   it('kit de porte, vitrage, paliers, substitution, sous-bois', () => {
     expect(text('kit:7-632-017@7-199-067/produit')).toMatch(/^3 par 7-199-067 SINGLE DOOR/);
-    expect(text('acc:4-700-060@10mm/jonction_verre')).toBe('1 par jonction verre-verre · si vitrage 10 mm présent');
+    expect(text('acc:4-700-060@10mm/jonction_verre')).toBe('1 par jonction avec une vitre · si vitrage 10 mm présent');
     expect(text('aj:4-750-001@box')).toBe('1 de 1 à 7, 2 de 8 à 15 (box)');
     expect(text('sub:4-700-083@airco[nidaplast]')).toBe('1 par airco · si emplacement airco dessiné en nidaplast · remplace 1 × 7-636-008');
     expect(text('acc:4-740-001@sous_bois_etude')).toBe('2 selon l’étude structure');

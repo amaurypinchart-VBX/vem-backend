@@ -213,15 +213,15 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-700-065 Window/Wall Rubber black BIG 2550mm /VIEWBOX/ | 8 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-065@box[standalone]` |
 | 4-700-075 Window/Wall Rubber black BIG 5700mm /VIEWBOX/ | 4 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-075@box[standalone]` |
 | 4-700-066 Window/Wall Rubber black BIG 2300mm /VIEWBOX/ | 4 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-066@box[standalone]` |
-| 4-700-071 Window/Wall Rubber black Carrosserie 2530mm /VIEWBOX/ | 1 | par jonction de panneaux | regime = standalone | +20 % | confirmé | `acc:4-700-071@jonction_panneau[standalone]` |
-| 4-700-070 Window/Wall Rubber black Carrosserie 10cm /VIEWBOX/ | 2 | par jonction de panneaux | regime = standalone |  | confirmé | `acc:4-700-070@jonction_panneau[standalone]` |
+| 4-700-071 Window/Wall Rubber black Carrosserie 2530mm /VIEWBOX/ | 1 | par jonction de panneaux sans vitre | regime = standalone | +20 % | confirmé | `acc:4-700-071@jonction_panneau[standalone]` |
+| 4-700-070 Window/Wall Rubber black Carrosserie 10cm /VIEWBOX/ | 2 | par jonction de panneaux sans vitre | regime = standalone |  | confirmé | `acc:4-700-070@jonction_panneau[standalone]` |
 | 4-700-073 Window/Wall Rubber black Square 25x30x2550mm for seamless 8.8.2 /VIEWBOX/ | 2 | par côté de box | regime = standalone |  | confirmé | `acc:4-700-073@cote[standalone]` |
 | 4-700-064 Sub Block for windows and wall 45x100 /VIEWBOX/ | 2 | par panneau | regime = standalone | +25 % | confirmé | `acc:4-700-064@panneau[standalone]` |
 | 4-700-068 Window/Wall Rubber black 10cm /VIEWBOX/ | 20 | par box |  |  | confirmé | `acc:4-700-068@box` |
 | 4-700-061 Plexi profil 18mmx2530mm | 6 | par box (vitrage 8.8.2) | regime = standalone |  | confirmé | `acc:4-700-061@8.8.2/box[standalone]` |
 | 4-157-003 Silicon DL CHEMICALS AM85-1 RAL 7024 / VIEWBOX / | 3 | par box |  |  | confirmé | `acc:4-157-003@box` |
 | 4-157-004 Silicon DL CHEMICALS Crystal / VIEWBOX / | 2 | par box |  |  | confirmé | `acc:4-157-004@box` |
-| 4-700-060 Plexi profil 10mmx2530mm | 1 | par jonction verre-verre (vitrage 10mm) |  |  | confirmé | `acc:4-700-060@10mm/jonction_verre` |
+| 4-700-060 Plexi profil 10mmx2530mm | 1 | par jonction avec une vitre (vitrage 10mm) |  |  | confirmé | `acc:4-700-060@10mm/jonction_verre` |
 | 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 1 | par terminaison vitre / poteau (vitrage 10mm) |  | +20 % | confirmé | `acc:4-700-072@10mm/terminaison_vitre` |
 | 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 1 | par petit côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
 | 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 1 | par grand côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |

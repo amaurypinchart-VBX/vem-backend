@@ -239,6 +239,34 @@ export interface LoadingHistoryRow {
   createdAt: string;
 }
 
+export interface LoadingMatchRow {
+  id: string;
+  signature: string;
+  article: string;
+  keyDefinition: string | null;
+  keyFingerprint: string | null;
+  triangles: number | null;
+}
+
+/** Loading liste d'une version de modèle (table loading_lists). */
+export interface LoadingListRecord {
+  id: string;
+  projectId: string;
+  modelVersionId: string | null;
+  topology: unknown;
+  overrides: Record<string, number> | null;
+  answers: { products?: Record<string, string>; chantier?: Record<string, unknown> } | null;
+  lines: unknown;
+  corrections: unknown;
+  status: 'brouillon' | 'validee';
+  rulesVersion: string | null;
+  inputKey: string | null;
+  orderNo: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
 export const vem = {
@@ -281,6 +309,12 @@ export const vem = {
   loadingRuleHistory: (key: string) => api<LoadingHistoryRow[]>('GET', `/loading/rules/${encodeURIComponent(key)}/history`),
   loadingCatalogue: () => api<ServerCatalogueRow[]>('GET', '/loading/catalogue'),
   saveLoadingCatalogue: (b: { ref: string; designation: string; data: Partial<CatalogueItem> }) => api<ServerCatalogueRow>('POST', '/loading/catalogue', b),
+  loadingMatches: () => api<LoadingMatchRow[]>('GET', '/loading/matches'),
+  saveLoadingMatch: (b: { signature: string; article: string; keyDefinition?: string | null; keyFingerprint?: string | null; triangles?: number }) =>
+    api<LoadingMatchRow>('POST', '/loading/matches', b),
+  loadingLists: (projectId: string) => api<LoadingListRecord[]>('GET', `/loading/project/${projectId}/lists`),
+  createLoadingList: (projectId: string, body: Partial<LoadingListRecord>) => api<LoadingListRecord>('POST', `/loading/project/${projectId}/lists`, body),
+  saveLoadingList: (id: string, body: Partial<LoadingListRecord>) => api<LoadingListRecord>('PUT', `/loading/lists/${id}`, body),
   structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),
   saveLibraryEntry: (p: LibraryPayload) => api<ServerLibraryRow>('POST', '/structure/library', p),
   deleteLibraryEntry: (id: string) => api<null>('DELETE', `/structure/library/${id}`),

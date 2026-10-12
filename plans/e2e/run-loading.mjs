@@ -49,5 +49,37 @@ await page.getByRole('button', { name: 'Décisions et observations' }).click();
 check(await page.getByText(/quantité de l’étude × 2/).isVisible(), 'décision sous-bois = étude structure × 2');
 await page.screenshot({ path: `${shots}loading-decisions.png`, fullPage: true });
 
+// ─── onglet « Loading liste » d'un modèle (L2) ───
+await page.getByRole('button', { name: 'Modèles' }).click();
+await page.getByRole('button', { name: 'Analyser' }).click();
+await page.getByText('paquet 3D enregistrés').waitFor({ timeout: 300000 });
+await page.getByRole('button', { name: 'Loading liste' }).click();
+await page.getByTestId('topology-summary').waitFor({ timeout: 120000 });
+const summary = (await page.getByTestId('topology-summary').innerText()).trim();
+console.log('  topologie :', summary);
+check(/Viewbox/.test(summary) && /pied/.test(summary), 'phrase de topologie');
+check(await page.getByTestId('topology-plan').locator('polygon').count() > 0, 'schéma de dessus avec les box');
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${shots}loading-topologie.png` });
+// correction à la main d'une valeur
+const feetRow = page.locator('tr', { hasText: 'Pieds au sol' });
+await feetRow.locator('b').click();
+await feetRow.locator('input').fill('99');
+await feetRow.locator('input').press('Enter');
+check(await feetRow.getByText('saisi à la main').isVisible(), 'pieds corrigés à la main');
+await page.getByText('✓ Enregistrée').waitFor({ timeout: 10000 });
+await feetRow.getByTitle('Revenir à la valeur détectée').click();
+check(!(await feetRow.getByText('saisi à la main').count()), 'retour à la valeur détectée');
+// clic sur une ligne → surbrillance
+await page.locator('tr', { hasText: 'Côtés de box extérieurs' }).locator('td').first().click();
+check(await page.getByText(/Côtés de box extérieurs : \d+ côté/).isVisible(), 'ligne choisie montrée dans la 3D');
+await page.screenshot({ path: `${shots}loading-topologie-selection.png` });
+await page.getByRole('button', { name: /2\. Produits/ }).click();
+await page.getByText('Produits comptés dans la 3D').waitFor();
+const products = await page.locator('table.list').last().locator('tbody tr').count();
+check(products > 0, `produits comptés (${products} références)`);
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${shots}loading-produits.png` });
+
 check(errors.length === 0, `aucune erreur console${errors.length ? ' : ' + errors.join(' | ') : ''}`);
 await browser.close();

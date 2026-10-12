@@ -1,5 +1,7 @@
 # Module « Loading liste » — Plan (phase L0)
 
+> État au 12/10/2026 (soir) : **L1 et L2 faites**. Prochaine phase : L3 (moteur + bancs dorés).
+
 État au 12/10/2026. Rédigé après lecture de `CLAUDE.md`, de `plans/reference-reports/03_Prompt_module_loading_liste_VEM.md` et du code cité au § 3 du prompt.
 
 > **Bloquant :** les 4 fichiers métier (`VIEWBOX_regles_loading_3.xlsx`, `00_Methode_et_etat.md`, `01_Convention_nommage_SketchUp.md`, `02_Format_sortie_loading_liste.md`) et les bordereaux 00055 / 00056 / 00058 ne sont **pas** dans le repo (ni `docs/loading/`, ni ailleurs sur la machine). Ce plan s'appuie donc sur le résumé du § 6 du prompt. Il sera relu contre le classeur avant L1.

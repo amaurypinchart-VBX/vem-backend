@@ -2,6 +2,7 @@
 // Module Plans Viewbox › Loading liste : base de règles partagée entre projets (la base de départ est générée du
 // classeur dans plans/src/loading/library/seed.ts ; la table ne garde que les règles validées dans l'app, avec un
 // historique append-only), catalogue ajouté par validation, mémoire des produits identifiés (« Qu'est-ce que c'est ? »).
+// Loading listes : une par version de modèle (topologie, valeurs saisies à la main, réponses, lignes).
 // Tous les calculs se font dans le navigateur (public/plans, sources dans plans/src/loading).
 // Écriture des règles, du catalogue et de la mémoire produits : admin et technical_manager (A. Pinchart 12.10.2026).
 import { Router, Response, NextFunction } from 'express';
@@ -201,6 +202,68 @@ router.delete('/matches/:id', async (req: AuthRequest, res: Response, next: Next
   try {
     assertEditor(req);
     await db.loadingProductMatch.delete({ where: { id: req.params.id } });
+    res.json({ success: true, data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── loading listes (une par version de modèle) ───
+
+const LIST_STATUSES = ['brouillon', 'validee'];
+
+/** Champs d'une liste envoyés par le module (JSON calculé et typé côté client ; contrôle de taille seulement). */
+function cleanList(b: any) {
+  const out: Record<string, unknown> = {};
+  for (const k of ['topology', 'overrides', 'answers', 'lines', 'corrections'] as const) {
+    if (b[k] === undefined) continue;
+    if (JSON.stringify(b[k]).length > 3_000_000) throw new AppError(`${k} trop volumineux`, 400);
+    out[k] = b[k] ?? null;
+  }
+  if (b.status !== undefined) {
+    if (!LIST_STATUSES.includes(b.status)) throw new AppError('Statut invalide', 400);
+    out.status = b.status;
+  }
+  for (const k of ['rulesVersion', 'inputKey', 'orderNo'] as const) if (b[k] !== undefined) out[k] = str(b[k], 120);
+  if (b.modelVersionId !== undefined) out.modelVersionId = str(b.modelVersionId, 60);
+  return out;
+}
+
+// GET /loading/project/:projectId/lists — listes du projet (les plus récentes d'abord)
+router.get('/project/:projectId/lists', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const lists = await db.loadingList.findMany({ where: { projectId: req.params.projectId }, orderBy: { updatedAt: 'desc' } });
+    res.json({ success: true, data: lists });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/project/:projectId/lists — nouvelle liste (liée à une version de modèle)
+router.post('/project/:projectId/lists', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const project = await db.project.findUnique({ where: { id: req.params.projectId }, select: { id: true } });
+    if (!project) throw new AppError('Projet introuvable', 404);
+    const list = await db.loadingList.create({ data: { ...cleanList(req.body ?? {}), projectId: req.params.projectId, createdBy: req.user?.id ?? null } });
+    res.status(201).json({ success: true, data: list });
+  } catch (err) { next(err); }
+});
+
+router.get('/lists/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.findUnique({ where: { id: req.params.id } });
+    if (!list) throw new AppError('Loading liste introuvable', 404);
+    res.json({ success: true, data: list });
+  } catch (err) { next(err); }
+});
+
+// PUT /loading/lists/:id — enregistrement automatique (topologie, valeurs saisies, réponses, lignes)
+router.put('/lists/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.update({ where: { id: req.params.id }, data: cleanList(req.body ?? {}) });
+    res.json({ success: true, data: list });
+  } catch (err) { next(err); }
+});
+
+router.delete('/lists/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    await db.loadingList.delete({ where: { id: req.params.id } });
     res.json({ success: true, data: null });
   } catch (err) { next(err); }
 });

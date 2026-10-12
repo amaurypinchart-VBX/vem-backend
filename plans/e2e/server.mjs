@@ -42,6 +42,8 @@ const libraryRow = (b, prev) => ({
 const loadingRules = new Map();
 const loadingHistory = [];
 const loadingCatalogue = new Map();
+const loadingMatches = new Map();
+const loadingLists = new Map();
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
@@ -93,6 +95,28 @@ http.createServer(async (req, res) => {
       const row = { ref: b.ref, designation: b.designation, data: b.data ?? {}, createdBy: 'u1', createdAt: new Date().toISOString() };
       loadingCatalogue.set(b.ref, row);
       return json(res, row, 201);
+    }
+    if (a === '/loading/matches' && req.method === 'GET') return json(res, [...loadingMatches.values()]);
+    if (a === '/loading/matches' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const row = { id: loadingMatches.get(b.signature)?.id ?? `M${loadingMatches.size + 1}`, keyDefinition: null, keyFingerprint: null, triangles: null, ...b };
+      loadingMatches.set(b.signature, row);
+      return json(res, row, 201);
+    }
+    if (a === '/loading/project/p1/lists' && req.method === 'GET') return json(res, [...loadingLists.values()].reverse());
+    if (a === '/loading/project/p1/lists' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const now = new Date().toISOString();
+      const row = { id: `LL${loadingLists.size + 1}`, projectId: 'p1', topology: null, overrides: null, answers: null, lines: null, corrections: null, status: 'brouillon', rulesVersion: null, inputKey: null, orderNo: null, revision: 1, createdAt: now, updatedAt: now, ...b };
+      loadingLists.set(row.id, row);
+      return json(res, row, 201);
+    }
+    const ll = a.match(/^\/loading\/lists\/([^/]+)$/);
+    if (ll && req.method === 'PUT') {
+      const row = loadingLists.get(ll[1]);
+      if (!row) return json(res, 'Loading liste introuvable', 404);
+      Object.assign(row, JSON.parse((await body(req)).toString()), { updatedAt: new Date().toISOString() });
+      return json(res, row);
     }
     if (a === '/structure/library' && req.method === 'GET') return json(res, [...library.values()]);
     if (a === '/structure/library' && req.method === 'POST') {

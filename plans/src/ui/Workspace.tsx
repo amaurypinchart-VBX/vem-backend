@@ -1,5 +1,5 @@
 // Espace de travail d'un modèle analysé : Contrôle (inspecteur) · Vue 3D (isolation, captures) · Vues 2D (plans) ·
-// Planches · Étude structure.
+// Planches · Étude structure · Loading liste.
 // Le modèle 3D (paquet GLB) n'est chargé qu'à l'ouverture de la vue 3D ou des vues 2D.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -21,8 +21,9 @@ import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
 import { SheetsPage } from './sheets/SheetsPage';
 import { StructurePage } from './structure/StructurePage';
+import { LoadingPage } from './loading/LoadingPage';
 
-type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure';
+type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure' | 'loading';
 
 interface Props {
   index: SceneIndex;
@@ -157,6 +158,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           <button className={`tab ${tab === 'structure' ? 'active' : ''}`} onClick={() => open('structure')}>
             Étude structure
           </button>
+          <button className={`tab ${tab === 'loading' ? 'active' : ''}`} onClick={() => open('loading')}>
+            Loading liste
+          </button>
         </nav>
       </div>
       {error && (
@@ -216,6 +220,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       {scene && visited.has('structure') && (
         <div style={{ display: tab === 'structure' ? 'block' : 'none' }}>
           <StructurePage scene={scene} model={model} glassTest={glassTest} rules={rules} framesVersion={framesVersion} active={tab === 'structure'} provider={provider} />
+        </div>
+      )}
+      {scene && visited.has('loading') && (
+        <div style={{ display: tab === 'loading' ? 'block' : 'none' }}>
+          <LoadingPage scene={scene} model={model} glassTest={glassTest} active={tab === 'loading'} framesVersion={framesVersion} />
         </div>
       )}
       {scene && provider && visited.has('2d') && (
