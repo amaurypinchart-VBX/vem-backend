@@ -13,7 +13,7 @@ import type { Linework2D } from '../src/linework/types';
 import type { Vec3 } from '../src/core/views';
 import { clipPolyline, parseColor, parsePath, parseTransform } from '../src/sheets/dxf/svgToDxf';
 import { setDxf, sheetDxf, zipDxf } from '../src/sheets/dxf/export';
-import { aciOf, cleanLoop, lineweightOf } from '../src/sheets/dxf/writer';
+import { aciOf, cleanLoop, hatchRegions, lineweightOf } from '../src/sheets/dxf/writer';
 import { unzipSync, strFromU8 } from 'fflate';
 
 const basis = { right: [1, 0, 0] as Vec3, up: [0, 1, 0] as Vec3, toward: [0, 0, 1] as Vec3 };
@@ -220,11 +220,12 @@ describe('DXF : planche', () => {
   });
 
   it('remplissages : logo et flèches en HATCH plein, fond blanc ignoré, image 3D = cadre seul', () => {
+    // un remplissage par lettre (TrueView plante sur un remplissage qui regroupe plusieurs lettres) ; trous gardés
     const logos = layerOf('VBX-LOGOS');
-    expect(logos.length).toBe(1);
-    expect(logos[0].type).toBe('HATCH');
-    expect(get(logos[0], 2)).toBe('SOLID');
-    expect(Number(get(logos[0], 91))).toBeGreaterThan(1); // contour + trous (V, B)
+    expect(logos.length).toBeGreaterThan(1);
+    expect(logos.every((e) => e.type === 'HATCH' && get(e, 2) === 'SOLID')).toBe(true);
+    expect(logos.some((e) => Number(get(e, 91)) > 1)).toBe(true); // lettre avec trous (B, O)
+    for (const e of logos) expect(all(e, 92).slice(1).every((f) => f === 2)).toBe(true);
     const img = layerOf('VBX-IMAGES-3D');
     expect(img.map((e) => e.type)).toEqual(['LWPOLYLINE']);
     // aucun remplissage blanc (fond de planche, cartouche)
@@ -255,6 +256,18 @@ describe('DXF : contours de remplissage', () => {
   it('point final répété et points confondus retirés', () => {
     expect(cleanLoop([0, 0, 10, 0, 10, 0.004, 10, 10, 0, 10, 0, 0])).toEqual([0, 0, 10, 0, 10, 10, 0, 10]);
     expect(cleanLoop([0, 0, 1, 0, 1, 1])).toEqual([0, 0, 1, 0, 1, 1]);
+  });
+
+  it('régions : deux lettres séparées → deux remplissages, un trou reste avec sa lettre, une île dans un trou repart', () => {
+    const sq = (x: number, y: number, s: number, cw = false) => (cw ? [x, y, x, y + s, x + s, y + s, x + s, y] : [x, y, x + s, y, x + s, y + s, x, y + s]);
+    const r = hatchRegions([sq(0, 0, 100), sq(30, 30, 40, true), sq(200, 0, 100), sq(45, 45, 10)]);
+    expect(r.map((x) => x.length)).toEqual([2, 1, 1]);
+    expect(r[0][1]).toEqual(sq(30, 30, 40, true));
+    // sens : extérieur trigonométrique, trou horaire, quel que soit le sens d'entrée
+    const signed = (l: number[]) => l.reduce((a, _, i) => (i % 2 ? a : a + l[i] * l[(i + 3) % l.length] - l[(i + 2) % l.length] * l[i + 1]), 0);
+    const r2 = hatchRegions([sq(0, 0, 100, true), sq(30, 30, 40)]);
+    expect(signed(r2[0][0])).toBeGreaterThan(0);
+    expect(signed(r2[0][1])).toBeLessThan(0);
   });
 });
 

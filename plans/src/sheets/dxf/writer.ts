@@ -117,6 +117,51 @@ export function cleanLoop(l: ArrayLike<number>, tol = 0.01): number[] {
   return out;
 }
 
+const loopArea = (l: ArrayLike<number>) => {
+  let a = 0;
+  for (let i = 0; i < l.length; i += 2) {
+    const j = (i + 2) % l.length;
+    a += l[i] * l[j + 1] - l[j] * l[i + 1];
+  }
+  return a / 2;
+};
+
+function insideLoop(x: number, y: number, l: ArrayLike<number>): boolean {
+  let c = false;
+  for (let i = 0, j = l.length - 2; i < l.length; j = i, i += 2) {
+    const [xi, yi, xj, yj] = [l[i], l[i + 1], l[j], l[j + 1]];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+const reversed = (l: number[]) => {
+  const r: number[] = [];
+  for (let i = l.length - 2; i >= 0; i -= 2) r.push(l[i], l[i + 1]);
+  return r;
+};
+
+/**
+ * Contours d'un remplissage pair-impair → régions : chaque contour à profondeur paire (0, 2…) est un contour extérieur
+ * (sens trigonométrique), chaque contour à profondeur impaire un trou (sens horaire) rattaché au plus petit contour
+ * extérieur qui le contient. Les contours ne se croisent pas (tracés SVG de logos / flèches).
+ */
+export function hatchRegions(loops: number[][]): number[][][] {
+  const area = loops.map((l) => Math.abs(loopArea(l)));
+  const holders = loops.map((l, i) => loops.map((_, j) => j).filter((j) => j !== i && area[j] > area[i] && insideLoop(l[0], l[1], loops[j])));
+  const depth = holders.map((h) => h.length);
+  const regions = new Map<number, number[][]>();
+  loops.forEach((l, i) => {
+    if (depth[i] % 2 === 0) regions.set(i, [loopArea(l) >= 0 ? l : reversed(l)]);
+  });
+  loops.forEach((l, i) => {
+    if (depth[i] % 2 === 0) return;
+    const parent = holders[i].filter((j) => depth[j] === depth[i] - 1).sort((a, b) => area[a] - area[b])[0];
+    if (parent !== undefined) regions.get(parent)!.push(loopArea(l) <= 0 ? l : reversed(l));
+  });
+  return [...regions.values()];
+}
+
 /** Texte d'une entité TEXT : une ligne, « %% » échappé (codes de contrôle AutoCAD). */
 function textValue(s: string): string {
   return s.replace(/[\r\n]+/g, ' ').replace(/%%/g, '%%%');
@@ -240,6 +285,12 @@ export class DxfDocument {
    */
   hatch(loops: Array<ArrayLike<number>>, st: DxfStyle) {
     const valid = loops.map((l) => cleanLoop(l)).filter((l) => l.length >= 6);
+    // un remplissage par région (contour extérieur + ses trous) : DWG TrueView plante sur un remplissage qui regroupe
+    // plusieurs régions séparées (les lettres d'un logo), il accepte une lettre avec ses trous
+    for (const region of hatchRegions(valid)) this.hatchRegion(region, st);
+  }
+
+  private hatchRegion(valid: number[][], st: DxfStyle) {
     if (!valid.length) return;
     const out = this.common('HATCH', 'AcDbHatch', st, true);
     out.push('10', '0', '20', '0', '30', '0', '210', '0', '220', '0', '230', '1', '2', 'SOLID', '70', '1', '71', '0', '91', String(valid.length));
