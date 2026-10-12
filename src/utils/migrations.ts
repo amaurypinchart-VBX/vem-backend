@@ -1283,4 +1283,142 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] table struct_advisor_threads : ${e.message}`);
   }
+
+  // ─── Loading liste (module Plans Viewbox) : règles validées + historique, catalogue ajouté, mémoire des produits,
+  // listes par version de modèle, observations (prédit vs final), bancs d'étalonnage
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "loading_rules" (
+        "id"         TEXT         NOT NULL,
+        "key"        TEXT         NOT NULL,
+        "kind"       TEXT         NOT NULL,
+        "article"    TEXT         NOT NULL,
+        "data"       JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "confidence" TEXT         NOT NULL,
+        "source"     TEXT         NOT NULL,
+        "active"     BOOLEAN      NOT NULL DEFAULT true,
+        "version"    INTEGER      NOT NULL DEFAULT 1,
+        "updated_by" TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_rules_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "loading_rules_key_key" ON "loading_rules" ("key")`,
+      `CREATE INDEX IF NOT EXISTS "loading_rules_article_idx" ON "loading_rules" ("article")`,
+      `CREATE TABLE IF NOT EXISTS "loading_rule_history" (
+        "id"         TEXT         NOT NULL,
+        "rule_key"   TEXT         NOT NULL,
+        "version"    INTEGER      NOT NULL,
+        "before"     JSONB,
+        "after"      JSONB,
+        "reason"     TEXT,
+        "source"     TEXT         NOT NULL,
+        "project_id" TEXT,
+        "list_id"    TEXT,
+        "user_id"    TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_rule_history_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "loading_rule_history_rule_key_version_idx" ON "loading_rule_history" ("rule_key", "version")`,
+      `CREATE TABLE IF NOT EXISTS "loading_catalogue_items" (
+        "ref"         TEXT         NOT NULL,
+        "designation" TEXT         NOT NULL,
+        "data"        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "created_by"  TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_catalogue_items_pkey" PRIMARY KEY ("ref")
+      )`,
+      `CREATE TABLE IF NOT EXISTS "loading_product_matches" (
+        "id"              TEXT         NOT NULL,
+        "signature"       TEXT         NOT NULL,
+        "key_definition"  TEXT,
+        "key_fingerprint" TEXT,
+        "article"         TEXT         NOT NULL,
+        "triangles"       INTEGER,
+        "user_id"         TEXT,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_product_matches_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "loading_product_matches_signature_key" ON "loading_product_matches" ("signature")`,
+      `CREATE INDEX IF NOT EXISTS "loading_product_matches_key_fingerprint_idx" ON "loading_product_matches" ("key_fingerprint")`,
+      `CREATE TABLE IF NOT EXISTS "loading_lists" (
+        "id"               TEXT         NOT NULL,
+        "project_id"       TEXT         NOT NULL,
+        "model_version_id" TEXT,
+        "topology"         JSONB,
+        "overrides"        JSONB,
+        "answers"          JSONB,
+        "lines"            JSONB,
+        "corrections"      JSONB,
+        "status"           TEXT         NOT NULL DEFAULT 'brouillon',
+        "rules_version"    TEXT,
+        "input_key"        TEXT,
+        "order_no"         TEXT,
+        "revision"         INTEGER      NOT NULL DEFAULT 1,
+        "validated_by"     TEXT,
+        "validated_at"     TIMESTAMP(3),
+        "created_by"       TEXT,
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_lists_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "loading_lists_project_id_idx" ON "loading_lists" ("project_id")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'loading_lists_project_id_fkey') THEN
+          ALTER TABLE "loading_lists"
+            ADD CONSTRAINT "loading_lists_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `CREATE TABLE IF NOT EXISTS "loading_observations" (
+        "id"         TEXT             NOT NULL,
+        "list_id"    TEXT,
+        "bench_id"   TEXT,
+        "article"    TEXT             NOT NULL,
+        "rule_keys"  JSONB,
+        "predicted"  DOUBLE PRECISION,
+        "final"      DOUBLE PRECISION,
+        "kind"       TEXT             NOT NULL,
+        "note"       TEXT,
+        "user_id"    TEXT,
+        "created_at" TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_observations_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "loading_observations_article_idx" ON "loading_observations" ("article")`,
+      `CREATE INDEX IF NOT EXISTS "loading_observations_list_id_idx" ON "loading_observations" ("list_id")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'loading_observations_list_id_fkey') THEN
+          ALTER TABLE "loading_observations"
+            ADD CONSTRAINT "loading_observations_list_id_fkey"
+            FOREIGN KEY ("list_id") REFERENCES "loading_lists"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `CREATE TABLE IF NOT EXISTS "loading_benches" (
+        "id"               TEXT         NOT NULL,
+        "name"             TEXT         NOT NULL,
+        "project_id"       TEXT,
+        "model_version_id" TEXT,
+        "topology"         JSONB        NOT NULL,
+        "answers"          JSONB        NOT NULL,
+        "real_lines"       JSONB        NOT NULL,
+        "judgements"       JSONB,
+        "column_map"       JSONB,
+        "created_by"       TEXT,
+        "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "loading_benches_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "loading_benches_name_key" ON "loading_benches" ("name")`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] tables loading_* créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] tables loading_* : ${e.message}`);
+  }
 }

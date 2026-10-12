@@ -1,5 +1,5 @@
 // Faux backend VEM pour tester public/plans dans un vrai navigateur (outil de développement, hors production).
-// Mêmes routes que src/routes/plans.ts et src/routes/structure.ts (+ projects, auth/me, settings). Données en mémoire.
+// Mêmes routes que src/routes/plans.ts, src/routes/structure.ts et src/routes/loading.ts (+ projects, auth/me, settings). Données en mémoire.
 //   cd plans && npm run build && E2E_FIXTURE_OUT=e2e/fixture.zip npx vitest run tests/e2e-fixture.test.ts
 //   node e2e/server.mjs            (ZIP=/chemin/vers/un/export.zip pour un vrai modèle)
 //   node e2e/run-sheets.mjs        (autre terminal)
@@ -38,6 +38,10 @@ const libraryRow = (b, prev) => ({
   keyFingerprint: b.match?.fingerprint ?? null, keyModuleType: b.match?.moduleType ?? null, disabled: !!b.disabled,
   confirmedBy: 'u1', confirmedAt: new Date().toISOString(),
 });
+// loading liste : règles validées (+ historique), catalogue ajouté
+const loadingRules = new Map();
+const loadingHistory = [];
+const loadingCatalogue = new Map();
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
@@ -71,6 +75,25 @@ http.createServer(async (req, res) => {
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
     if (a.startsWith('/settings/')) return json(res, null);
+    if (a === '/loading/rules' && req.method === 'GET') return json(res, [...loadingRules.values()]);
+    if (a === '/loading/rules' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const prev = loadingRules.get(b.rule.key);
+      const version = (prev?.version ?? 0) + 1;
+      const row = { id: prev?.id ?? `R${loadingRules.size + 1}`, key: b.rule.key, data: { ...b.rule, version }, active: b.rule.active !== false, version, updatedBy: 'u1', updatedAt: new Date().toISOString() };
+      loadingRules.set(row.key, row);
+      loadingHistory.push({ id: `H${loadingHistory.length + 1}`, ruleKey: row.key, version, before: prev?.data ?? null, after: row.data, reason: b.reason ?? null, source: b.rule.source, projectId: b.projectId ?? null, listId: null, userId: 'u1', createdAt: new Date().toISOString() });
+      return json(res, row, 201);
+    }
+    const lrh = a.match(/^\/loading\/rules\/(.+)\/history$/);
+    if (lrh && req.method === 'GET') return json(res, loadingHistory.filter((h) => h.ruleKey === decodeURIComponent(lrh[1])).reverse());
+    if (a === '/loading/catalogue' && req.method === 'GET') return json(res, [...loadingCatalogue.values()]);
+    if (a === '/loading/catalogue' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const row = { ref: b.ref, designation: b.designation, data: b.data ?? {}, createdBy: 'u1', createdAt: new Date().toISOString() };
+      loadingCatalogue.set(b.ref, row);
+      return json(res, row, 201);
+    }
     if (a === '/structure/library' && req.method === 'GET') return json(res, [...library.values()]);
     if (a === '/structure/library' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());

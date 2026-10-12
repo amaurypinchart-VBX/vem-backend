@@ -1,6 +1,8 @@
 // Accès à l'API VEM (même origine). Le jeton vient de l'URL (?token=, ouverture depuis VEM) ou de la
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
 import type { LibraryPayload, ServerLibraryRow } from '../structure/core/libraryStore';
+import type { ServerCatalogueRow, ServerRuleRow } from '../loading/library/merge';
+import type { CatalogueItem } from '../loading/core/types';
 import type { ExtractResult, GroupProposal, IdentifySuggestion } from '../structure/core/ai';
 import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
@@ -222,6 +224,21 @@ export interface AdvisorThread {
 }
 
 /** Stock de matériel de calage de l'entrepôt (étude structure) : plaques, plaques de répartition du commerce. */
+/** Version d'une règle de loading (historique append-only). */
+export interface LoadingHistoryRow {
+  id: string;
+  ruleKey: string;
+  version: number;
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  source: string;
+  projectId: string | null;
+  listId: string | null;
+  userId: string | null;
+  createdAt: string;
+}
+
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
 export const vem = {
@@ -260,6 +277,10 @@ export const vem = {
     fd.append('file', png, name);
     return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
   },
+  loadingRules: () => api<ServerRuleRow[]>('GET', '/loading/rules'),
+  loadingRuleHistory: (key: string) => api<LoadingHistoryRow[]>('GET', `/loading/rules/${encodeURIComponent(key)}/history`),
+  loadingCatalogue: () => api<ServerCatalogueRow[]>('GET', '/loading/catalogue'),
+  saveLoadingCatalogue: (b: { ref: string; designation: string; data: Partial<CatalogueItem> }) => api<ServerCatalogueRow>('POST', '/loading/catalogue', b),
   structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),
   saveLibraryEntry: (p: LibraryPayload) => api<ServerLibraryRow>('POST', '/structure/library', p),
   deleteLibraryEntry: (id: string) => api<null>('DELETE', `/structure/library/${id}`),

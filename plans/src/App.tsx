@@ -6,11 +6,12 @@ import { PROJECT_ID, TOKEN, vem } from './api/vem';
 import { ModelsPage } from './ui/ModelsPage';
 import { SettingsPage } from './ui/SettingsPage';
 import { LibraryPage } from './ui/structure/LibraryPage';
+import { RuleLibrary } from './ui/loading/RuleLibrary';
 import { setDisplayRules } from './ui/common';
 
 export function App() {
   const [tab, setTab] = useState<'models' | 'settings'>('models');
-  const [settingsTab, setSettingsTab] = useState<'rules' | 'library'>('rules');
+  const [settingsTab, setSettingsTab] = useState<'rules' | 'library' | 'loading'>('rules');
   const [project, setProject] = useState<Project | null>(null);
   const [rules, setRules] = useState<ClassificationRules>(DEFAULT_RULES);
   const [rulesKey, setRulesKey] = useState(0);
@@ -88,8 +89,12 @@ export function App() {
                 <button className={`tab ${settingsTab === 'library' ? 'active' : ''}`} onClick={() => setSettingsTab('library')}>
                   Bibliothèque structure
                 </button>
+                <button className={`tab ${settingsTab === 'loading' ? 'active' : ''}`} onClick={() => setSettingsTab('loading')}>
+                  Règles de loading
+                </button>
               </nav>
               {settingsTab === 'library' && <LibraryPage />}
+              {settingsTab === 'loading' && <RuleLibrary />}
               <div style={{ display: settingsTab === 'rules' ? 'block' : 'none' }}>
                 <SettingsPage
                   key={rulesKey}

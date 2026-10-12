@@ -228,6 +228,7 @@ model Project {
   plansModels      PlansModelVersion[]
   drawingSets      PlansDrawingSet[]
   structStudies    StructStudy[]
+  loadingLists     LoadingList[]
   checklists       ProjectChecklist[]
 
   @@map("projects")
@@ -1165,4 +1166,138 @@ model StructAdvisorThread {
   study StructStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
 
   @@map("struct_advisor_threads")
+}
+
+// ─── Plans Viewbox › Loading liste ───
+// Règles validées dans l'app (la base de départ est générée du classeur dans plans/src/loading/library/seed.ts ;
+// une règle de même clé la remplace). data = LoadingRule complète.
+model LoadingRule {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  kind       String
+  article    String
+  data       Json     @default("{}")
+  confidence String
+  source     String
+  active     Boolean  @default(true)
+  version    Int      @default(1)
+  updatedBy  String?  @map("updated_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([article])
+  @@map("loading_rules")
+}
+
+// Historique append-only de chaque règle (jamais modifié ni supprimé). before null = création, after null = retour à la base de départ.
+model LoadingRuleHistory {
+  id        String   @id @default(uuid())
+  ruleKey   String   @map("rule_key")
+  version   Int
+  before    Json?
+  after     Json?
+  reason    String?
+  source    String
+  projectId String?  @map("project_id")
+  listId    String?  @map("list_id")
+  userId    String?  @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ruleKey, version])
+  @@map("loading_rule_history")
+}
+
+// Références ajoutées au catalogue par validation (le catalogue du classeur reste en lecture seule dans le code).
+model LoadingCatalogueItem {
+  ref         String   @id
+  designation String
+  data        Json     @default("{}")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("loading_catalogue_items")
+}
+
+// Mémoire « Qu'est-ce que c'est ? » : signature de pièce (art: / def: / name:|fp / geo:) → réf. catalogue.
+model LoadingProductMatch {
+  id             String   @id @default(uuid())
+  signature      String   @unique
+  keyDefinition  String?  @map("key_definition")
+  keyFingerprint String?  @map("key_fingerprint")
+  article        String
+  triangles      Int?
+  userId         String?  @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([keyFingerprint])
+  @@map("loading_product_matches")
+}
+
+// Loading liste d'une version de modèle (ou d'une topologie saisie à la main).
+model LoadingList {
+  id             String    @id @default(uuid())
+  projectId      String    @map("project_id")
+  modelVersionId String?   @map("model_version_id")
+  topology       Json?
+  overrides      Json?
+  answers        Json?
+  lines          Json?
+  corrections    Json?
+  status         String    @default("brouillon")
+  rulesVersion   String?   @map("rules_version")
+  inputKey       String?   @map("input_key")
+  orderNo        String?   @map("order_no")
+  revision       Int       @default(1)
+  validatedBy    String?   @map("validated_by")
+  validatedAt    DateTime? @map("validated_at")
+  createdBy      String?   @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  observations LoadingObservation[]
+
+  @@index([projectId])
+  @@map("loading_lists")
+}
+
+// Prédit vs final, ligne par ligne (calage, jugement, inconnu, erreur 3D, erreur du bordereau).
+model LoadingObservation {
+  id        String   @id @default(uuid())
+  listId    String?  @map("list_id")
+  benchId   String?  @map("bench_id")
+  article   String
+  ruleKeys  Json?    @map("rule_keys")
+  predicted Float?
+  final     Float?
+  kind      String
+  note      String?
+  userId    String?  @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  list LoadingList? @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([article])
+  @@index([listId])
+  @@map("loading_observations")
+}
+
+// Bancs d'étalonnage : chantiers réels (topologie + réponses + liste réelle + jugements), rejoués à chaque règle.
+model LoadingBench {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  projectId      String?  @map("project_id")
+  modelVersionId String?  @map("model_version_id")
+  topology       Json
+  answers        Json
+  realLines      Json     @map("real_lines")
+  judgements     Json?
+  columnMap      Json?    @map("column_map")
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("loading_benches")
 }
