@@ -85,6 +85,20 @@ module Sketchup
     def name = ''
   end
 
+  # Face « réelle » (S12) : boucles de sommets, solide d'appartenance (all_connected)
+  Vertex = Struct.new(:position)
+  Loop = Struct.new(:vertices)
+  class PolyFace < Face
+    attr_accessor :solid
+    def initialize(loops)
+      @loop_pts = loops
+      pts = loops.flatten(1)
+      @box = Geom::BoundingBox.new.add(pts)
+    end
+    def loops = @loop_pts.map { |l| Loop.new(l.map { |p| Vertex.new(p) }) }
+    def all_connected = solid
+  end
+
   class ComponentDefinition
     include Attr
     attr_accessor :name, :entities, :instances
@@ -310,6 +324,127 @@ class MainSmokeTest < Minitest::Test
       assert_equal ['VITRE-SEAMLESS', 'définition', '7-637-010'], [glass['category'], glass['categorySource'], glass['articleRef']]
       assert_equal '', glass['name'] # nom d'origine conservé (vide ici)
       assert_equal [{ 'name' => 'CTX_sol', 'ignored' => false }, { 'name' => 'dibond noir 17700x780', 'ignored' => true }], manifest['context'].sort_by { |c| c['name'] }
+    end
+  end
+
+  # ─── S12.7 : box d'un autre type (6 058 × 2 438) dont la structure est dessinée en tubes ───
+  # Tube rectangulaire b × h × t le long de l'axe x local (0 → len), coupe centrée sur l'axe.
+  def tube_def(name, len, b, h, t)
+    rect = ->(w, hh, x) { [[x, -w / 2.0, -hh / 2.0], [x, w / 2.0, -hh / 2.0], [x, w / 2.0, hh / 2.0], [x, -w / 2.0, hh / 2.0]].map { |q| P.new(*q.map { |v| v / IN }) } }
+    faces = []
+    [[b, h], [b - 2 * t, h - 2 * t]].each do |w, hh|
+      a0 = rect.(w, hh, 0)
+      a1 = rect.(w, hh, len)
+      4.times { |i| faces << S::PolyFace.new([[a0[i], a0[(i + 1) % 4], a1[(i + 1) % 4], a1[i]]]) }
+    end
+    [0, len].each { |x| faces << S::PolyFace.new([rect.(b, h, x), rect.(b - 2 * t, h - 2 * t, x).reverse]) }
+    faces.each { |f| f.solid = faces }
+    S::ComponentDefinition.new(name, faces)
+  end
+
+  # Placement d'une barre (axe local x) de p vers une direction 'x' | 'y' | 'z' du module.
+  def bar_at(defn, dir, x, y, z)
+    cols = { 'x' => [[1, 0, 0], [0, 1, 0], [0, 0, 1]], 'y' => [[0, 1, 0], [-1, 0, 0], [0, 0, 1]], 'z' => [[0, 0, 1], [0, 1, 0], [-1, 0, 0]] }[dir]
+    S::ComponentInstance.new(defn, Geom::Transformation.new(cols.flat_map { |c| c + [0] } + [x / IN, y / IN, z / IN, 1]))
+  end
+
+  def build_drawn_box
+    l = 6058.0
+    w = 2438.0
+    rim_x = tube_def('Rive RHS 120x60x4', l, 60, 120, 4)
+    rim_y = tube_def('Rive courte RHS 120x60x4', w, 60, 120, 4)
+    col = tube_def('Poteau 100x100x5', 2900, 100, 100, 5)
+    tr = tube_def('Traverse', w, 50, 100, 3)
+    bars = []
+    [80.0, 2800.0].each do |z|
+      bars << bar_at(rim_x, 'x', 0, 30, z) << bar_at(rim_x, 'x', 0, w - 30, z)
+      bars << bar_at(rim_y, 'y', 30, 0, z) << bar_at(rim_y, 'y', l - 30, 0, z)
+    end
+    [[50, 50], [l - 50, 50], [l - 50, w - 50], [50, w - 50]].each { |x, y| bars << bar_at(col, 'z', x, y, 0) }
+    [1500.0, 3000.0, 4500.0].each { |x| bars << bar_at(tr, 'y', x, 0, 80) }
+    box = S::ComponentDefinition.new('Box concurrent 6 m', bars)
+    box.set_attribute('viewbox', 'moduleType', 'Box concurrent 6 m')
+    top = S::ComponentInstance.new(box, t(0, 0, 0))
+    [S::Model.new([top], [box, rim_x, rim_y, col, tr]), box, { rim_x: rim_x, rim_y: rim_y, col: col, tr: tr }]
+  end
+
+  def attrs_of(model) = model.defs.map { |d| [d.name, d.attrs.dup] } + model.all_entities.map { |e| [e.name, e.attrs.dup] }
+
+  def test_drawn_structure_export
+    model, box, d = build_drawn_box
+    Sketchup.active_model = model
+    a = PREP.analyze(model)
+    assert_equal 1, a.candidates.size # type saisi : module candidat quelles que soient ses dimensions
+    before = attrs_of(model)
+    ops = model.ops.size
+
+    members, warnings, bounds = PREP.frame_members(box)
+    assert_equal [], warnings
+    assert_equal ops, model.ops.size # lecture seule : aucune opération
+    roles = members.map { |m| m['role'] }.tally
+    assert_equal({ 'rim-floor' => 4, 'rim-roof' => 4, 'column' => 4, 'transverse-floor' => 3 }, roles)
+    rim = members.find { |m| m['definition'] == 'Rive RHS 120x60x4' && m['a'][1] < 100 && m['a'][2] < 100 }
+    assert_equal [0.0, 30.0, 80.0], rim['a'].map { |v| v.round(1) }
+    assert_equal [6058.0, 30.0, 80.0], rim['b'].map { |v| v.round(1) }
+    assert_equal 'CAT-RHS120x60x4', rim['section']
+    assert_equal [2, 4, 4], [rim['loops'].size, rim['loops'][0].size, rim['loops'][1].size]
+    assert_equal ['tube', 120.0, 60.0], [rim['dims']['shape'], rim['dims']['h'], rim['dims']['b']]
+    assert_in_delta 4.0, rim['dims']['t'], 0.3
+    col = members.find { |m| m['role'] == 'column' }
+    assert_in_delta 2900, col['b'][2] - col['a'][2], 0.1
+    assert_equal [[0.0, 0.0, 0.0], [6088.0, 2438.0, 2860.0]].flatten.size, bounds.flatten.size
+
+    Dir.mktmpdir do |dir|
+      PREP.prepare(model, a)
+      a = PREP.analyze(model)
+      _count, manifest = PREP.export_zip(model, a, File.join(dir, 'box.zip'), 'box')
+      assert_equal 1, manifest['frameSchemaVersion']
+      s = manifest['structures']['Box concurrent 6 m']
+      assert_equal %w[v source axes bounds members warnings].sort, s.keys.sort
+      assert_equal 15, s['members'].size
+      assert_equal 'rim-floor', s['members'][0]['role']
+      refute s['members'].any? { |m| m.key?('_ref') || m.key?('dims') }
+      m = manifest['modules'][0]
+      assert_equal ['Box concurrent 6 m', nil, 'Box concurrent 6 m'], [m['structureRef'], m['structSource'], m['type']]
+      json = JSON.generate(manifest)
+      assert_operator json.bytesize, :<, 60_000
+      # le manifest relu tel quel (les noms techniques n'ont pas fui dans les barres)
+      refute(s['members'].any? { |b| b['name'].start_with?('VBXE-') })
+    end
+    after = attrs_of(model).reject { |n, _| n.to_s.start_with?('VBX-') }
+    assert_equal before.reject { |n, _| n.to_s.start_with?('VBX-') || n.to_s.empty? }.map(&:first).sort, after.reject { |n, _| n.to_s.empty? }.map(&:first).sort
+
+    # ── fenêtre « Structure de la box » : lignes par composant de profil, enregistrement annulable ──
+    rows = PREP.frame_dialog_rows(box)
+    assert_equal 4, rows['rows'].size
+    assert_equal 'RHS 120x60x4', rows['rows'].find { |r| r['definition'] == 'Rive RHS 120x60x4' }['section']
+    tr = rows['rows'].find { |r| r['definition'] == 'Traverse' }
+    assert_equal ['transverse-floor', 'géométrie', ''], [tr['role'], tr['roleSource'], tr['section']]
+    payload = { 'source' => 'drawn', 'rows' => [{ 'key' => tr['key'], 'role' => 'transverse-floor', 'roleChanged' => false, 'section' => 'RHS 100x50x3', 'sectionChanged' => true, 'grade' => 'S355' }] }
+    assert_equal 3, PREP.apply_frame(model, box, payload)
+    assert_equal ['CAT-RHS100x50x3', 'S355', nil], %w[structSection structGrade structRole].map { |k| d[:tr].get_attribute('viewbox', k) }
+    assert_equal 'drawn', box.get_attribute('viewbox', 'structSource')
+    assert_equal [:start, :commit], model.ops.last(2)
+    assert_equal 0, PREP.apply_frame(model, box, payload)
+    assert(PREP.frame_members(box)[0].select { |m| m['definition'] == 'Traverse' }.all? { |m| m['section'] == 'CAT-RHS100x50x3' && m['grade'] == 'S355' })
+    # « gabarit Viewbox standard » : plus de structure exportée
+    box.set_attribute('viewbox', 'structSource', 'template')
+    assert_nil PREP.drawn_structure(box)
+
+    # ── Contrôler le modèle ──
+    box.set_attribute('viewbox', 'structSource', 'drawn')
+    lines = PREP.frame_report_lines(box)
+    assert_match(/Structure dessinée « Box concurrent 6 m » : 15 barres \(4 rive du plancher, 4 rive de toiture, 3 traverse du plancher, 4 poteau\)/, lines[0])
+  end
+
+  def test_viewbox_model_without_drawn_bars
+    model, = build_model
+    Sketchup.active_model = model
+    a = PREP.analyze(model)
+    Dir.mktmpdir do |dir|
+      _c, manifest = PREP.export_zip(model, a, File.join(dir, 'x.zip'), 'x')
+      assert_equal({}, manifest['structures'])
+      assert(manifest['modules'].all? { |m| m['structureRef'].nil? })
     end
   end
 

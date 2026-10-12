@@ -15,7 +15,7 @@ import type { FrameBar, LibraryEntry } from '../../src/structure/core/library';
 import type { Pt, V3 } from '../../src/structure/core/sectionDetect';
 import { parametricFrame } from '../../src/structure/core/templates/frameModule';
 import { SEED, SEED_MODULES } from '../../src/structure/library/seed';
-import { extrude } from './sectionDetect.test';
+import { extrude } from '../../src/structure/core/sectionDetect';
 
 let seq = 0;
 const node = (p: Partial<NodeInfo>): NodeInfo =>

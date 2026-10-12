@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Viewbox — structure de la box</title>
+<style>
+  :root { --b:#d9dde5; --t:#1d2330; --d:#6b7385; --a:#e63946; --o:#c2410c; --ok:#15803d; --bg:#f6f7f9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; color: var(--t); background: var(--bg); }
+  header { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid var(--b); padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  main { padding: 12px 16px 80px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--d); margin: 18px 0 6px; }
+  .hint { color: var(--d); font-size: 12px; line-height: 1.45; }
+  .warn { color: var(--o); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--b); border-radius: 6px; }
+  th { text-align: left; font-size: 11px; color: var(--d); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--b); background: #fafbfc; position: sticky; top: 49px; }
+  td { padding: 5px 8px; border-bottom: 1px solid #eef0f4; vertical-align: middle; }
+  tr.dirty td { background: #fffbea; }
+  tr.off td { color: var(--d); }
+  .name { font-weight: 600; }
+  .sub { color: var(--d); font-size: 11px; }
+  .src { font-size: 11px; color: var(--d); white-space: nowrap; }
+  select, input[type=text] { font: inherit; border: 1px solid var(--b); border-radius: 5px; padding: 4px 6px; background: #fff; }
+  select { max-width: 200px; }
+  input.sec { width: 150px; }
+  button { font: inherit; border: 1px solid var(--b); background: #fff; border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: #f0f2f5; }
+  button.primary { background: var(--a); border-color: var(--a); color: #fff; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .spacer { flex: 1; }
+  #status { font-size: 12px; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--a); }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--b); padding: 10px 16px; display: flex; gap: 10px; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏗 Structure de la box</h1>
+  <span class="name" id="def"></span>
+  <label class="hint">Structure :
+    <select id="source"></select>
+  </label>
+  <span class="spacer"></span>
+  <span class="hint" id="counts"></span>
+</header>
+<main>
+  <p class="hint">
+    Les profils (barres) dessinés dans ce composant de box, relevés automatiquement. Une ligne par <b>composant de profil</b> :
+    ton choix vaut pour toutes les box de ce type. Vérifie le <b>rôle</b> (rive, traverse, poteau…) et la <b>section</b>
+    (ex. <i>UPN 200</i>, <i>RHS 120x60x4</i>) ; laisse la section vide si elle n'est pas dans la liste : VEM la mesure sur la coupe.
+    « Non porteur » retire la pièce du calcul (rail, habillage, cornière de finition…). Rien n'est modifié dans le dessin.
+  </p>
+  <div id="warnings"></div>
+  <table>
+    <thead><tr><th>Profil</th><th>Nb</th><th>Longueur</th><th>Coupe relevée</th><th>Rôle</th><th>Section</th><th>Nuance</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <datalist id="choices"></datalist>
+</main>
+<footer>
+  <button class="primary" id="save" disabled>Enregistrer</button>
+  <span id="status"></span>
+  <span class="spacer"></span>
+  <button id="close">Fermer</button>
+</footer>
+<script>
+const VB = (() => {
+  const $ = (s) => document.querySelector(s);
+  const call = (name, ...args) => { if (window.sketchup && window.sketchup[name]) window.sketchup[name](...args); };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let data = null;
+  let sourceDirty = false;
+
+  function render() {
+    $('#def').textContent = data.definition;
+    $('#source').innerHTML = '<option value="">(automatique)</option>' + data.sources.map(([k, l]) => `<option value="${k}"${data.source === k ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    $('#choices').innerHTML = data.choices.map((c) => `<option value="${esc(c)}">`).join('');
+    $('#warnings').innerHTML = data.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join('');
+    const bearing = data.rows.filter((r) => r.role !== 'none');
+    $('#counts').textContent = `${data.rows.reduce((s, r) => s + r.count, 0)} barres · ${bearing.length} profils porteurs`;
+    $('#rows').innerHTML = data.rows
+      .map((r, i) => {
+        const roles = data.roles.map(([k, l]) => `<option value="${k}"${r.role === k ? ' selected' : ''}>${esc(l)}</option>`).join('');
+        const grades = ['', ...data.grades].map((g) => `<option value="${g}"${r.grade === g ? ' selected' : ''}>${g || '—'}</option>`).join('');
+        return `<tr data-i="${i}" class="${r._dirty ? 'dirty' : ''} ${r.role === 'none' ? 'off' : ''}">
+          <td><div class="name">${esc(r.name || r.definition || 'Profil')}</div><div class="sub">${esc(r.definition && r.definition !== r.name ? r.definition : '')}${r.naked ? 'faces non groupées' : ''}</div></td>
+          <td>${r.count}</td>
+          <td>${r.length} mm</td>
+          <td class="sub">${esc(r.measured)}</td>
+          <td><select data-f="role"${r.naked ? ' disabled' : ''}>${roles}</select><div class="src">${r.roleSource === 'manuel' ? 'choisi' : 'proposé (géométrie)'}</div></td>
+          <td><input class="sec" type="text" list="choices" data-f="section" value="${esc(r.section)}" placeholder="mesurée par VEM"${r.naked ? ' disabled' : ''}>
+              <div class="src">${r.sectionSource === 'manuel' ? 'choisie' : r.sectionSource === 'nom' ? 'lue dans le nom' : ''}</div></td>
+          <td><select data-f="grade"${r.naked ? ' disabled' : ''}>${grades}</select></td>
+          <td>${r.naked ? `<button data-group="${esc(r.key)}">Grouper ce profil</button>` : `<button data-sel="${esc(r.key)}">Sélectionner dans SketchUp</button>`}</td>
+        </tr>`;
+      })
+      .join('');
+  }
+  function dirty(i) {
+    if (i !== null) data.rows[i]._dirty = true;
+    $('#save').disabled = false;
+    $('#status').textContent = 'Modifications non enregistrées';
+    $('#status').className = '';
+  }
+  document.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.id === 'source') { data.source = el.value; sourceDirty = true; dirty(null); return; }
+    const tr = el.closest('tr[data-i]');
+    if (!tr) return;
+    const r = data.rows[Number(tr.dataset.i)];
+    r[el.dataset.f] = el.value;
+    if (el.dataset.f === 'role') r.roleChanged = true;
+    if (el.dataset.f === 'section') r.sectionChanged = true;
+    dirty(Number(tr.dataset.i));
+    tr.classList.add('dirty');
+    tr.classList.toggle('off', r.role === 'none');
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.sel) call('select', b.dataset.sel);
+    if (b.dataset.group) {
+      if (!$('#save').disabled && !window.confirm('Grouper ce profil sans enregistrer les autres modifications ?')) return;
+      $('#status').textContent = 'Groupement…';
+      call('group', b.dataset.group);
+    }
+    if (b.id === 'save') save();
+    if (b.id === 'close') {
+      if (!$('#save').disabled && !window.confirm('Fermer sans enregistrer les modifications ?')) return;
+      call('close');
+    }
+  });
+  function save() {
+    const payload = {
+      source: data.source,
+      rows: data.rows.filter((r) => r._dirty && !r.naked).map((r) => ({ key: r.key, role: r.role, roleChanged: !!r.roleChanged, section: r.section, sectionChanged: !!r.sectionChanged, grade: r.grade })),
+    };
+    $('#save').disabled = true;
+    $('#status').textContent = 'Enregistrement…';
+    call('save', JSON.stringify(payload));
+  }
+  return {
+    load(d) { data = d; sourceDirty = false; render(); },
+    saved(n, d) {
+      this.load(d);
+      $('#status').textContent = `✓ Enregistré (${n} valeur(s) modifiée(s)) — annulable avec Ctrl+Z dans SketchUp`;
+      $('#status').className = 'ok';
+    },
+    failed(msg) { $('#status').textContent = 'Erreur : ' + msg; $('#status').className = 'err'; $('#save').disabled = false; },
+  };
+})();
+document.addEventListener('DOMContentLoaded', () => { if (window.sketchup) window.sketchup.ready(); });
+</script>
+</body>
+</html>

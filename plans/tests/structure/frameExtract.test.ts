@@ -13,7 +13,7 @@ import { sectionMap } from '../../src/structure/core/assemble';
 import { frameSections, parametricFrame, viewboxPresetFrame } from '../../src/structure/core/templates/frameModule';
 import { SEED, SEED_MODULES } from '../../src/structure/library/seed';
 import { upnContour } from '../../src/structure/core/sectionGeometry';
-import { extrude } from './sectionDetect.test';
+import { extrude } from '../../src/structure/core/sectionDetect';
 
 const VBX = SEED_MODULES.find((m) => m.key === 'VIEWBOX-5900-EU')!;
 const P = VBX.params!;

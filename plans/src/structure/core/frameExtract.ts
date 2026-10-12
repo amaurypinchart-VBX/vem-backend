@@ -9,6 +9,7 @@ import type { DeckSpec, FrameBar, FrameFoot, FrameLayout, FrameRole, LibraryEntr
 import type { DetectedSection, MemberSection, SectionCandidate, V3 } from './sectionDetect';
 import { catalogueCandidates, components, detectedName, measuredRoll, measuredSectionEntry, memberSection, sectionHintFromName } from './sectionDetect';
 import type { FrameParams } from './templates/frameModule';
+import { catalogEntry } from './sectionCatalog';
 import { viewboxPresetFrame } from './templates/frameModule';
 
 export interface RawMember {
@@ -18,6 +19,8 @@ export interface RawMember {
   roleHint?: FrameRole;
   sectionHint?: string;
   gradeHint?: string;
+  /** un seul solide (barre relevée par l'extension SketchUp) : pas de découpe en pièces reliées */
+  solid?: boolean;
   /** triangles à plat dans le repère du module (mm) */
   triangles: Float32Array;
 }
@@ -36,7 +39,9 @@ export interface ExtractedBar {
   candidates: SectionCandidate[];
   /** clé retenue : CAT-… (catalogue, à confirmer) ou SEC-SKP-… (relevée) */
   sectionKey: string | null;
-  sectionStatus: 'catalogue' | 'measured';
+  sectionStatus: 'catalogue' | 'measured' | 'user';
+  /** nuance saisie dans SketchUp */
+  grade?: string;
   roll: number;
   eccentricity: number;
   variable: boolean;
@@ -80,6 +85,10 @@ export interface ExtractOptions {
   base: Pick<ViewboxTemplateParams, 'sections' | 'springs' | 'plywood'>;
   file?: string;
   date: string;
+  /** origine du relevé : maillages (défaut) ou barres relevées par l'extension SketchUp ≥ 1.3.0 */
+  origin?: 'mesh' | 'sketchup';
+  /** sections connues en plus du catalogue (bibliothèque) pour les sections saisies dans SketchUp */
+  sections?: ReadonlyMap<string, SectionEntry>;
 }
 
 /** Relevé des barres et recalage. */
@@ -89,7 +98,7 @@ export function extractFrame(raw: readonly RawMember[], o: ExtractOptions): Fram
   type Solid = { raw: RawMember; k: number; m: MemberSection };
   const solids: Solid[] = [];
   for (const r of raw) {
-    const comps = components(r.triangles);
+    const comps = r.solid ? [r.triangles] : components(r.triangles);
     comps.forEach((tri, k) => {
       const m = memberSection(tri);
       const sec = m.section;
@@ -196,7 +205,20 @@ export function extractFrame(raw: readonly RawMember[], o: ExtractOptions): Fram
       roll = measuredRoll(s);
       if (s.shape === 'other') warns.push(`forme de section non reconnue (${detectedName(s)}) : choisir la section`);
     }
-    const hint = sectionHintFromName(p.s.raw.definition ?? p.s.raw.name ?? '');
+    // section saisie dans SketchUp (dialogue « Structure de la box ») : elle l'emporte si VEM la connaît
+    const typed = p.s.raw.sectionHint;
+    if (typed) {
+      const known = catalogEntry(typed) ?? o.sections?.get(typed);
+      if (known) {
+        const c = candidates.find((x) => x.entry.key === typed);
+        if (sectionStatus === 'measured' && sectionKey) newSections.delete(sectionKey);
+        sectionKey = typed;
+        sectionStatus = 'user';
+        roll = c ? c.roll : measuredRoll(s);
+        if (!c?.match) warns.push(`section saisie dans SketchUp « ${known.section.name} », mesurée ${detectedName(s)} : à vérifier`);
+      } else warns.push(`section saisie dans SketchUp « ${typed} » inconnue de VEM : section mesurée gardée`);
+    }
+    const hint = typed ? null : sectionHintFromName(p.s.raw.definition ?? p.s.raw.name ?? '');
     if (hint?.h && Math.abs(hint.h - s.dims.h) > 5 && Math.abs(hint.h - s.dims.b) > 5) warns.push(`nom « ${p.s.raw.definition ?? p.s.raw.name} », mesuré ${detectedName(s)}`);
     if (m.variable) warns.push('section variable le long de la barre (coupes à 25 / 50 / 75 % différentes) : à confirmer');
     if (s.slotted) warns.push(`tube fendu ${detectedName(s)} : calculé comme un profil ouvert en torsion (prudent)`);
@@ -263,6 +285,7 @@ export function extractFrame(raw: readonly RawMember[], o: ExtractOptions): Fram
       candidates,
       sectionKey,
       sectionStatus,
+      ...(p.s.raw.gradeHint ? { grade: p.s.raw.gradeHint } : {}),
       roll,
       eccentricity: ecc,
       variable: m.variable,
@@ -284,7 +307,8 @@ export function extractFrame(raw: readonly RawMember[], o: ExtractOptions): Fram
     ...(b.side ? { side: b.side } : {}),
     ...(b.corner !== undefined ? { corner: b.corner } : {}),
     ...(b.role === 'brace' ? { tensionOnly: false } : {}),
-    source: { node: b.source.node, definition: b.source.definition, name: b.source.name, eccentricity: Math.round(b.eccentricity), sectionStatus: b.sectionStatus === 'catalogue' ? 'catalogue' : 'measured' },
+    ...(b.grade ? { grade: b.grade } : {}),
+    source: { node: b.source.node, definition: b.source.definition, name: b.source.name, eccentricity: Math.round(b.eccentricity), sectionStatus: b.sectionStatus },
   }));
   const corners: Array<[number, number]> = [
     [x0, y0],
@@ -298,7 +322,7 @@ export function extractFrame(raw: readonly RawMember[], o: ExtractOptions): Fram
   const deck: DeckSpec = { material: o.base.plywood.material, thickness: o.base.plywood.thickness, layers: o.base.plywood.floorLayers, span: hasTransverses && !hasStringers ? 'u' : !hasTransverses && hasStringers ? 'v' : 'two-way' };
   const frame: FrameLayout = {
     v: 1,
-    origin: 'mesh',
+    origin: o.origin ?? 'mesh',
     bars: frameBars,
     feet,
     deck: { floor: deck, roof: null },

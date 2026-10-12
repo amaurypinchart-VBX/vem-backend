@@ -7,6 +7,7 @@ import { Vector3 } from 'three';
 import type { BufferGeometry, Mesh } from 'three';
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { RawMember } from '../core/frameExtract';
+import { drawnMembers } from './drawnFrame';
 
 const STRUCT_CATEGORIES = new Set(['STRUCTURE', 'TOIT', 'PLANCHER', 'PIED']);
 
@@ -16,7 +17,7 @@ export interface ModuleStructureMesh {
   dims: { long: number; short: number; height: number };
 }
 
-export function moduleStructureMesh(scene: LoadedScene, moduleId: string): ModuleStructureMesh | null {
+export function moduleStructureMesh(scene: LoadedScene, moduleId: string, opts: { spatialOnly?: boolean } = {}): ModuleStructureMesh | null {
   const f = scene.frames.get(moduleId);
   if (!f) return null;
   const size = [f.max[0] - f.min[0], f.max[1] - f.min[1], f.max[2] - f.min[2]];
@@ -29,7 +30,9 @@ export function moduleStructureMesh(scene: LoadedScene, moduleId: string): Modul
   const up = new Vector3(...f.up);
   const byId = new Map(scene.index.nodes.map((n) => [n.id, n]));
   // pièces de structure du module (hiérarchie ou position), maillages seulement
-  const meshes = scene.index.nodes.filter((n) => n.kind === 'mesh' && n.moduleId === moduleId && n.category && STRUCT_CATEGORIES.has(n.category) && n.triangles > 0);
+  const meshes = scene.index.nodes.filter(
+    (n) => n.kind === 'mesh' && n.moduleId === moduleId && n.category && STRUCT_CATEGORIES.has(n.category) && n.triangles > 0 && (!opts.spatialOnly || n.assignment !== 'hierarchy'),
+  );
   const groups = new Map<string, number[]>();
   const p = new Vector3();
   const d = new Vector3();
@@ -63,4 +66,23 @@ export function moduleStructureMesh(scene: LoadedScene, moduleId: string): Modul
     members.push({ id: owner, name: g?.name || named?.name, definition: g?.definition ?? named?.definition, triangles: Float32Array.from(tri) });
   }
   return { members, dims: { long, short, height: size[2] } };
+}
+
+/**
+ * Structure d'un module pour le relevé : barres relevées par l'extension SketchUp (≥ 1.3.0, coupes exactes, rôles /
+ * sections saisis) quand le manifest en contient pour sa définition — plus les pièces de structure rattachées par leur
+ * position (exportées hors du composant) —, sinon les maillages (`moduleStructureMesh`).
+ */
+export function moduleStructure(scene: LoadedScene, moduleId: string): (ModuleStructureMesh & { origin: 'sketchup' | 'mesh' }) | null {
+  const info = scene.index.modules.find((m) => m.id === moduleId);
+  const s = info?.structureRef ? scene.index.structures?.[info.structureRef] : undefined;
+  const f = scene.frames.get(moduleId);
+  if (s && f && info?.skpTransform) {
+    const extra = moduleStructureMesh(scene, moduleId, { spatialOnly: true });
+    const size = [f.max[0] - f.min[0], f.max[1] - f.min[1], f.max[2] - f.min[2]];
+    const [long, short] = f.longAxis === 'x' ? [size[0], size[1]] : [size[1], size[0]];
+    return { members: [...drawnMembers(s, info.skpTransform, f), ...(extra?.members ?? [])], dims: { long, short, height: size[2] }, origin: 'sketchup' };
+  }
+  const mesh = moduleStructureMesh(scene, moduleId);
+  return mesh ? { ...mesh, origin: 'mesh' } : null;
 }

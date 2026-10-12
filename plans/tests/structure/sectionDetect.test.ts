@@ -2,32 +2,9 @@
 // forme et dimensions, rapprochement du catalogue, axe d'une barre, séparation des solides.
 import { describe, expect, it } from 'vitest';
 import type { Pt, V3 } from '../../src/structure/core/sectionDetect';
-import { barAxis, catalogueCandidates, components, measuredSectionEntry, memberSection, sectionHintFromName } from '../../src/structure/core/sectionDetect';
+import { barAxis, catalogueCandidates, components, extrude, measuredSectionEntry, memberSection, sectionHintFromName } from '../../src/structure/core/sectionDetect';
 import { iContour, upnContour } from '../../src/structure/core/sectionGeometry';
 
-/** Extrusion d'un contour (y, z de la coupe) le long de `dir` depuis `origin`, côtés seulement (+ trous). */
-export function extrude(loops: Pt[][], origin: V3, dir: V3, y: V3, z: V3, L: number): Float32Array {
-  const out: number[] = [];
-  const P = (p: Pt, s: number): number[] => [0, 1, 2].map((k) => origin[k] + y[k] * p[0] + z[k] * p[1] + dir[k] * s);
-  for (const loop of loops)
-    for (let i = 0; i < loop.length; i++) {
-      const [a, b] = [loop[i], loop[(i + 1) % loop.length]];
-      out.push(...P(a, 0), ...P(b, 0), ...P(b, L), ...P(a, 0), ...P(b, L), ...P(a, L));
-    }
-  // bouchons (sans effet sur la coupe à mi-longueur) : éventail, ou anneau entre contour et trou de même nombre de
-  // sommets (tube) pour que le solide reste d'un seul tenant
-  for (const s of [0, L]) {
-    const o = loops[0];
-    const h = loops[1] ? [...loops[1]].reverse() : null;
-    if (h && h.length === o.length)
-      for (let i = 0; i < o.length; i++) {
-        const j = (i + 1) % o.length;
-        out.push(...P(o[i], s), ...P(o[j], s), ...P(h[j], s), ...P(o[i], s), ...P(h[j], s), ...P(h[i], s));
-      }
-    else for (let i = 1; i + 1 < o.length; i++) out.push(...P(o[0], s), ...P(o[i], s), ...P(o[i + 1], s));
-  }
-  return Float32Array.from(out);
-}
 const rect = (w: number, h: number, cy = 0, cz = 0): Pt[] => [
   [cy - w / 2, cz - h / 2],
   [cy + w / 2, cz - h / 2],

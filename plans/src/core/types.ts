@@ -100,6 +100,12 @@ export interface ModuleInfo {
   detectedBy: 'name' | 'dimensions';
   /** Viewbox modifiée dans SketchUp (« Structure… ») : hauteur des poteaux, sections, nuances, contreplaqué */
   structParams?: import('./manifest').StructParams;
+  /** structure dessinée dans le composant (clé de `SceneIndex.structures`, extension ≥ 1.3.0) */
+  structureRef?: string;
+  /** choix « Structure » du type dans SketchUp : gabarit Viewbox standard / dessinée */
+  structSource?: 'template' | 'drawn';
+  /** transformation SketchUp de l'instance (définition → monde, 16 valeurs en colonnes, translation en mm) */
+  skpTransform?: number[];
 }
 
 export interface LevelInfo {
@@ -157,6 +163,8 @@ export interface SceneIndex {
   commonIds: string[];
   contextIds: string[];
   warnings: Warning[];
+  /** structures dessinées relevées par l'extension (≥ 1.3.0), par définition de module ; absent = relevé sur les maillages */
+  structures?: Record<string, import('./manifest').ManifestStructure>;
 }
 
 export interface CategoryRule {

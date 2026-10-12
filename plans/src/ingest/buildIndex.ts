@@ -26,7 +26,7 @@ import {
 } from '../core/classification';
 import { checkPlanDims, groupLevels, levelLabel, nearestSize, suspectScaleFactor } from '../core/units';
 import type { Manifest, ManifestEntry, ManifestModule } from '../core/manifest';
-import { asCategory, BBoxLookup, cleanStructParams, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
+import { asCategory, BBoxLookup, cleanStructParams, cleanStructures, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
 import { stableId } from '../core/hash';
 
 export interface CleanupStats {
@@ -277,6 +277,8 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
   const manifestGlobal = new Map<string, ManifestEntry | null>(); // null = nom ambigu
   const manifestMatched = new Set<ManifestEntry>();
   const allManifestEntries: ManifestEntry[] = [];
+  // structures dessinées (extension ≥ 1.3.0) : barres relevées dans le composant de chaque type de module
+  const structures = cleanStructures(manifest?.structures);
   const manifestModules = new Map<string, ManifestModule>();
   if (manifest) {
     const keyOf = (e: ManifestEntry) => daeNameKey(e.exportName || e.name || '');
@@ -455,6 +457,11 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     if (mm?.type) info.type = mm.type;
     const sp = cleanStructParams(mm?.structParams);
     if (sp) info.structParams = sp;
+    if (mm?.structSource === 'template' || mm?.structSource === 'drawn') info.structSource = mm.structSource;
+    if (mm?.structureRef && structures[mm.structureRef] && Array.isArray(mm.transform) && mm.transform.length === 16 && mm.transform.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      info.structureRef = mm.structureRef;
+      info.skpTransform = [...mm.transform];
+    }
     moduleInfos.push(info);
   }
   const badDims = moduleInfos.filter((m) => !m.dimsOk);
@@ -727,6 +734,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       commonIds,
       contextIds,
       warnings,
+      ...(Object.keys(structures).length ? { structures } : {}),
     },
     objectsById,
   };

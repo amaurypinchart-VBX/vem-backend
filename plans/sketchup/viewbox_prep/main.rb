@@ -5,6 +5,8 @@
 #   - Contrôler le modèle            : rapport seul, ne modifie rien.
 #   - Réviser les catégories…        : fenêtre où l'on corrige à la main la catégorie, la désignation
 #     et la réf. article de chaque type de composant, et le type / les dimensions nominales des Viewbox.
+#   - Structure de la box (profils)… : profils relevés dans le composant de la box sélectionnée (rôle, section,
+#     nuance à confirmer) ; exportés dans le manifest (« structures ») pour l'étude structure de VEM.
 #   - Préparer & exporter pour VEM…  : numérote les Viewbox sans nom (VBX-01…), exporte le .dae aux
 #     bons réglages + textures + manifest.json dans un .zip à déposer dans VEM.
 # Clic droit sur des groupes/composants › Viewbox › Catégorie / désignation… : même correction, sur la sélection.
@@ -25,7 +27,7 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.2.1'.freeze
+    VERSION = '1.3.0'.freeze
     DICT = 'viewbox'.freeze
     C = Core
 
@@ -252,7 +254,8 @@ module Viewbox
       model = Sketchup.active_model
       a = analyze(model)
       n = unclassified_types(model, a)
-      text = report_lines(a).join("\n")
+      frames = (a.named + a.candidates).map { |m| definition_of(m) }.uniq.flat_map { |d| frame_report_lines(d) }
+      text = (report_lines(a) + frames).join("\n")
       text += "\n\nTypes de composants non classés : #{n} (Extensions › Viewbox › Réviser les catégories…)" if n > 0
       puts "[Viewbox] Contrôle du modèle\n#{text}"
       UI.messagebox("Viewbox #{VERSION} — contrôle du modèle\n\n#{text}")
@@ -296,6 +299,12 @@ module Viewbox
         }
       end
       modules = (a.named + a.candidates).select { |m| C.module_id(m.name) }
+      # structure dessinée de chaque définition de module (relevée avant tout renommage technique)
+      structures = {}
+      modules.map { |m| definition_of(m) }.uniq.each do |d|
+        s = drawn_structure(d)
+        structures[d.name.to_s] = s if s
+      end
       {
         'schema' => 'viewbox-manifest/1',
         'source' => {
@@ -307,6 +316,8 @@ module Viewbox
         'units' => 'mm',
         'upAxis' => 'Z',
         'structSchemaVersion' => 1,
+        'frameSchemaVersion' => 1,
+        'structures' => structures,
         'modules' => modules.map do |m|
           defn = definition_of(m)
           tr = m.transformation.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
@@ -317,7 +328,10 @@ module Viewbox
             'type' => module_type(defn), 'nominalPlanMm' => nominal_dims(defn),
             'transform' => tr, 'bboxWorld' => bbox_json(m.bounds), 'accessories' => items,
             # Viewbox modifiée (« Structure… ») : attribut de l'instance, seulement les valeurs hors standard
-            'structParams' => C.parse_struct(m.get_attribute(DICT, 'structParams'))
+            'structParams' => C.parse_struct(m.get_attribute(DICT, 'structParams')),
+            # structure dessinée dans le composant (« structures » ci-dessus) et choix « gabarit / dessinée »
+            'structureRef' => structures.key?(defn.name.to_s) ? defn.name.to_s : nil,
+            'structSource' => struct_source(defn)
           }
         end,
         'common' => (a.common + a.attached + a.orphans + a.others).map do |e|
@@ -444,14 +458,17 @@ module Viewbox
       if selection.all? { |e| C.module_id(e.name) }
         d = definition_of(first)
         nominal = nominal_dims(d) || plan_dims(first).map(&:round)
-        res = UI.inputbox(['Type de Viewbox', 'Dimension nominale longue (mm)', 'Dimension nominale courte (mm)'],
-                          [module_type(d).to_s, nominal[0].to_s, nominal[1].to_s], 'Viewbox — type (tous les objets de ce type)')
+        src_labels = C::STRUCT_SOURCES.map { |k| C::STRUCT_SOURCE_LABELS[k] }
+        res = UI.inputbox(['Type de structure (ex. Viewbox 5900, Box concurrent 6 m)', 'Dimension nominale longue (mm)', 'Dimension nominale courte (mm)', 'Structure'],
+                          [module_type(d).to_s, nominal[0].to_s, nominal[1].to_s, C::STRUCT_SOURCE_LABELS[struct_source(d) || 'template']],
+                          ['', '', '', src_labels.join('|')], 'Viewbox — type de structure (tous les objets de ce type)')
         return unless res
-        model.start_operation('Viewbox : type de Viewbox', true)
+        model.start_operation('Viewbox : type de structure', true)
         selection.map { |e| definition_of(e) }.uniq.each do |defn|
           set_or_clear(defn, 'moduleType', res[0])
           set_or_clear(defn, 'nominalLong', res[1].to_f > 0 ? res[1].to_f.round.to_s : nil)
           set_or_clear(defn, 'nominalShort', res[2].to_f > 0 ? res[2].to_f.round.to_s : nil)
+          set_or_clear(defn, 'structSource', C::STRUCT_SOURCES.find { |k| C::STRUCT_SOURCE_LABELS[k] == res[3] })
         end
         model.commit_operation
         return
@@ -533,6 +550,7 @@ module Viewbox
 end
 
 require File.join(__dir__, 'review')
+require File.join(__dir__, 'frame')
 
 module Viewbox
   module Prep
@@ -542,13 +560,17 @@ module Viewbox
       menu.add_item('Réviser les catégories…') { show_review_dialog }
       menu.add_item('Préparer & exporter pour VEM…') { prepare_and_export }
       menu.add_item('Structure des Viewbox sélectionnées…') { edit_structure(Sketchup.active_model, Sketchup.active_model.selection.select { |e| container?(e) }) }
+      menu.add_item('Structure de la box (profils)…') { show_frame_dialog }
       UI.add_context_menu_handler do |context_menu|
         model = Sketchup.active_model
         sel = model.selection.select { |e| container?(e) }
         next if sel.empty?
         sub = context_menu.add_submenu('Viewbox')
         sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
-        sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) } if sel.all? { |e| C.module_id(e.name) || standard_size?(e) }
+        if sel.all? { |e| C.module_id(e.name) || standard_size?(e) || module_type(definition_of(e)) }
+          sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) }
+          sub.add_item('Structure de la box (profils)…') { show_frame_dialog(model, sel) }
+        end
       end
       file_loaded(__FILE__)
     end

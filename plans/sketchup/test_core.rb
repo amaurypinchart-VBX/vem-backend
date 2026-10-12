@@ -3,6 +3,7 @@
 require 'minitest/autorun'
 require 'tmpdir'
 require 'fileutils'
+require 'json'
 require_relative 'viewbox_prep/core'
 
 class CoreTest < Minitest::Test
@@ -94,5 +95,79 @@ class CoreTest < Minitest::Test
       check = `python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print('|'.join(sorted(z.namelist()))); print(len(z.read('modele/texture é.png')))" #{zip} 2>&1`
       assert_equal "manifest.json|modele.dae|modele/texture é.png\n2560\n", check
     end
+  end
+
+  # ─── S12 : structure dessinée ───
+  def test_struct_roles_and_names
+    assert_equal 11, C::STRUCT_ROLES.size
+    assert_equal 'Traverse du plancher', C::STRUCT_ROLE_LABELS['transverse-floor']
+    assert C.plan_dims_ok?(2438, 6058, long: 6058, short: 2438)
+    refute C.plan_dims_ok?(2438, 6058)
+    bmin = [0, 0, 0]
+    bmax = [5900, 2500, 3080]
+    assert_equal 'rim-floor', C.role_guess([0, 40, 80], [5900, 40, 80], bmin, bmax)
+    assert_equal 'rim-roof', C.role_guess([0, 2460, 3000], [5900, 2460, 3000], bmin, bmax)
+    assert_equal 'transverse-floor', C.role_guess([1000, 0, 80], [1000, 2500, 80], bmin, bmax)
+    assert_equal 'stringer-roof', C.role_guess([0, 1250, 3000], [5900, 1250, 3000], bmin, bmax)
+    assert_equal 'column', C.role_guess([50, 50, 0], [50, 50, 3080], bmin, bmax)
+    assert_equal 'brace', C.role_guess([0, 0, 100], [2000, 0, 2900], bmin, bmax)
+    # module tourné (grand côté selon y) : mêmes rôles
+    assert_equal 'rim-floor', C.role_guess([40, 0, 80], [40, 5900, 80], [0, 0, 0], [2500, 5900, 3080])
+    assert_equal 'transverse-floor', C.role_guess([0, 1000, 80], [2500, 1000, 80], [0, 0, 0], [2500, 5900, 3080])
+
+    {
+      'UPN200' => ['UPN 200', 'CAT-UPN200'], 'Profil UPN 200 rive' => ['UPN 200', 'CAT-UPN200'], 'IPE 200' => ['IPE 200', 'CAT-IPE200'],
+      'HEA160' => ['HEA 160', 'CAT-HEA160'], 'RHS 120x60x4' => ['RHS 120x60x4', 'CAT-RHS120x60x4'],
+      'Tube 100x100x5' => ['SHS 100x100x5', 'CAT-SHS100x100x5'], 'SHS 100x5' => ['SHS 100x100x5', 'CAT-SHS100x100x5'],
+      'Plat 130x15' => ['PLAT 130x15', 'CAT-PLAT130x15'], 'U 200x80x5' => ['U 200x80x5', 'CAT-U200x80x5'],
+      'tube 60,3x2,9' => nil, 'CHS 60.3x2.9' => ['CHS 60.3x2.9', 'CAT-CHS60.3x2.9']
+    }.each do |name, want|
+      got = C.section_from_name(name)
+      want ? assert_equal(want, [got['text'], got['key']], name) : assert_nil(got, name)
+    end
+    assert_nil C.section_from_name('VBX-03 Viewbox 5900')
+    assert_nil C.section_from_name('Kingspan 60')
+  end
+
+  def rect(w, h) = [[-w / 2.0, -h / 2.0], [w / 2.0, -h / 2.0], [w / 2.0, h / 2.0], [-w / 2.0, h / 2.0]]
+
+  def test_section_dims_and_loops
+    tube = C.section_dims(rect(120, 60), [rect(112, 52).reverse])
+    assert_equal ['tube', 60.0, 120.0], [tube['shape'], tube['h'], tube['b']]
+    assert_in_delta 4.0, tube['t'], 0.2
+    plat = C.section_dims(rect(130, 15))
+    assert_equal ['flat', 15.0, 130.0], [plat['shape'], plat['h'], plat['b']]
+    # UPN 200 simplifié (âme 8,5, ailes 11,5)
+    upn = [[0, 0], [75, 0], [75, 11.5], [8.5, 11.5], [8.5, 188.5], [75, 188.5], [75, 200], [0, 200]]
+    u = C.section_dims(upn)
+    assert_equal ['open', 200.0, 75.0], [u['shape'], u['h'], u['b']]
+    assert_in_delta 10, u['t'], 2
+    # segments d'une coupe de tube, dans le désordre et retournés → 2 boucles fermées
+    segs = []
+    [rect(120, 60), rect(112, 52)].each { |l| l.each_with_index { |p, i| segs << [p, l[(i + 1) % 4]] } }
+    segs = segs.each_with_index.map { |sg, i| i.odd? ? sg.reverse : sg }.shuffle(random: Random.new(3))
+    loops = C.slice_segments_to_loops(segs)
+    assert_equal [4, 4], loops.map(&:size)
+    assert_equal [7200.0, 5824.0], loops.map { |l| C.polygon_area(l).abs.round(1) }.sort.reverse
+    # simplification : points alignés retirés
+    dense = (0..10).map { |i| [i * 10.0, 0.0] } + [[100.0, 50.0], [0.0, 50.0]]
+    assert_equal 4, C.simplify_loop(dense, 0.2).size
+  end
+
+  def test_frame_json_and_unconnected
+    m = lambda do |id, role, a, b|
+      { 'id' => id, 'name' => id, 'definition' => 'def', 'a' => a, 'b' => b, 'yRef' => [0, 1, 0], 'loops' => [rect(100, 100)], 'role' => role }
+    end
+    bars = [
+      m.('c', 'column', [0, 0, 0], [0, 0, 3000.04]),
+      m.('r', 'rim-floor', [0, 0, 80], [5900.04, 0, 80]),
+      m.('x', 'other', [3000, 1500, 1500], [3500, 1500, 1500])
+    ]
+    assert_equal ['x'], C.unconnected(bars).map { |b| b['id'] }
+    j = C.frame_json(bars, ['w'], [[0, 0, 0], [5900, 2500, 3080]])
+    assert_equal %w[r c x], j['members'].map { |b| b['id'] }
+    assert_equal [5900.0, 0.0, 80.0], j['members'][0]['b']
+    assert_equal({ 'min' => [0.0, 0.0, 0.0], 'max' => [5900.0, 2500.0, 3080.0] }, j['bounds'])
+    assert_equal JSON.generate(j), JSON.generate(C.frame_json(bars.reverse, ['w'], [[0, 0, 0], [5900, 2500, 3080]]))
   end
 end

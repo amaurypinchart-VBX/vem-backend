@@ -24,7 +24,7 @@ import type { LibraryEntry } from '../../structure/core/library';
 import { estimateTypeFields, isCustomType, moduleTypes } from '../../structure/core/moduleTypes';
 import type { FrameExtraction } from '../../structure/core/frameExtract';
 import { extractFrame, structureCheck } from '../../structure/core/frameExtract';
-import { moduleStructureMesh } from '../../structure/scene/frameFromScene';
+import { moduleStructure } from '../../structure/scene/frameFromScene';
 import { moduleTypeKey } from '../../structure/core/signature';
 import { DEFAULTS } from '../../structure/library/defaults';
 import { connectionSet, jackSpec } from '../../structure/core/checks/joints';
@@ -222,8 +222,10 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     for (const m of scene.index.modules) if (!first.has(moduleTypeKey(m))) first.set(moduleTypeKey(m), m.id);
     for (const [key, id] of first) {
       try {
-        const mesh = moduleStructureMesh(scene, id);
-        if (mesh?.members.length) out.set(key, extractFrame(mesh.members, { ...mesh.dims, base: SEED_VIEWBOX.params!, file: scene.index.source.fileName, date: new Date().toLocaleDateString('fr-BE') }));
+        // barres relevées par l'extension SketchUp (≥ 1.3.0) si le manifest en a, sinon les maillages
+        const mesh = moduleStructure(scene, id);
+        if (mesh?.members.length)
+          out.set(key, extractFrame(mesh.members, { ...mesh.dims, base: SEED_VIEWBOX.params!, file: scene.index.source.fileName, date: new Date().toLocaleDateString('fr-BE'), origin: mesh.origin, sections: sectionMap(SEED) }));
       } catch {
         // relevé impossible : comportement d'avant S12 (taille seule)
       }
