@@ -1629,14 +1629,14 @@
    "detail": "0 porte coulissante"
   },
   "poteau": {
-   "value": null,
+   "value": 16,
    "ids": [
     "VBX-04",
     "VBX-02",
     "VBX-01",
     "VBX-03"
    ],
-   "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+   "detail": "16 poteaus (compris dans les box)"
   },
   "airco": {
    "value": 0,
@@ -1666,6 +1666,31 @@
     "VBX-03"
    ],
    "detail": "4 toits"
+  },
+  "poteau_connecte": {
+   "value": 6,
+   "ids": [
+    "VBX-04",
+    "VBX-02",
+    "VBX-04",
+    "VBX-02",
+    "VBX-02",
+    "VBX-03",
+    "VBX-02",
+    "VBX-03",
+    "VBX-01",
+    "VBX-03",
+    "VBX-01",
+    "VBX-03"
+   ],
+   "detail": "6 bandes de poteaux (6 × 2 poteaux, 0 × 4 poteaux)"
+  },
+  "paire_box": {
+   "value": 2,
+   "ids": [
+    "I1"
+   ],
+   "detail": "2 paires de box (îlots connectés)"
   },
   "bord": {
    "value": null,
@@ -1915,14 +1940,14 @@
     "detail": "0 porte coulissante"
    },
    "poteau": {
-    "value": null,
+    "value": 16,
     "ids": [
      "VBX-04",
      "VBX-02",
      "VBX-01",
      "VBX-03"
     ],
-    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+    "detail": "16 poteaus (compris dans les box)"
    },
    "airco": {
     "value": 0,
@@ -1952,6 +1977,31 @@
      "VBX-03"
     ],
     "detail": "4 toits"
+   },
+   "poteau_connecte": {
+    "value": 6,
+    "ids": [
+     "VBX-04",
+     "VBX-02",
+     "VBX-04",
+     "VBX-02",
+     "VBX-02",
+     "VBX-03",
+     "VBX-02",
+     "VBX-03",
+     "VBX-01",
+     "VBX-03",
+     "VBX-01",
+     "VBX-03"
+    ],
+    "detail": "6 bandes de poteaux (6 × 2 poteaux, 0 × 4 poteaux)"
+   },
+   "paire_box": {
+    "value": 2,
+    "ids": [
+     "I1"
+    ],
+    "detail": "2 paires de box (îlots connectés)"
    },
    "bord": {
     "value": null,

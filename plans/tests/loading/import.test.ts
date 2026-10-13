@@ -69,7 +69,8 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(rule('acc:4-700-083@airco[autre]')?.active).toBe(false);
     expect(rule('acc:4-700-083@airco')).toMatchObject({ qty: 1, active: true });
     expect(rule('sub:4-700-083@airco[nidaplast]')?.active).toBe(false);
-    expect(rule('acc:4-730-013@box[connecte]')).toMatchObject({ qty: null, confidence: 'a_confirmer' });
+    expect(rule('acc:4-730-013@jonction_box[connecte]')).toMatchObject({ qty: 1, confidence: 'confirme' });
+    expect(rule('acc:4-720-011@poteau_connecte')).toMatchObject({ qty: 2.53, unit: 'm' });
     expect(rule('acc:4-730-009@4-700-027/box')?.active).toBe(false);
     expect(rule('aj:4-740-010@box[plancherLamine]')).toMatchObject({ qty: 15, unit: 'm2' });
     // jonctions (réponses du 12/10 après-midi)

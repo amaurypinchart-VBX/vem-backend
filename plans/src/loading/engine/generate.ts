@@ -93,6 +93,8 @@ const ISLAND_BASES = new Set<CountingBase>([
   'ilot',
   'ilot_couvert',
   'module_toit',
+  'poteau_connecte',
+  'paire_box',
 ]);
 
 const SHORT_BASE: Partial<Record<CountingBase, [string, string]>> = {
@@ -120,6 +122,8 @@ const SHORT_BASE: Partial<Record<CountingBase, [string, string]>> = {
   ilot: ['îlot', 'îlots'],
   ilot_couvert: ['îlot couvert', 'îlots couverts'],
   module_toit: ['toit', 'toits'],
+  poteau_connecte: ['bande de poteaux', 'bandes de poteaux'],
+  paire_box: ['paire de box', 'paires de box'],
   airco: ['airco', 'airco'],
   m2_plancher: ['m²', 'm²'],
   job: ['chantier', 'chantiers'],
@@ -376,12 +380,14 @@ export function generate(input: EngineInput): LoadingList {
       detail = `${fmt(total)} ${word}${split} → palier ${p.min}${p.max ? `–${p.max}` : '+'} = ${fmt(p.qty)}`;
     } else {
       const raw = r.qty * total;
-      base = ceil(raw);
+      // pièces : arrondi au-dessus tout de suite ; mètres / m² : arrondi seulement à la fin (après le spare)
+      const withSpare = r.spare?.type === 'fixe' || r.spare?.type === 'pourcent';
+      base = r.unit === 'pce' || !withSpare ? ceil(raw) : Math.round(raw * 100) / 100;
       detail = `${fmt(r.qty)}${UNIT_TXT[r.unit]} / ${baseWord(r.per, 1)} × ${fmt(total)} ${word}${split} = ${fmt(raw)}${base !== raw ? ` → ${fmt(base)}` : ''}`;
     }
     let qty = base;
     if (r.spare?.type === 'fixe') {
-      qty = base + r.spare.valeur;
+      qty = ceil(base + r.spare.valeur);
       detail += ` · + ${r.spare.valeur} spare → ${fmt(qty)}`;
     } else if (r.spare?.type === 'pourcent') {
       qty = ceil(base * (1 + r.spare.valeur / 100));

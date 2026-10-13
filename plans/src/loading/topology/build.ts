@@ -370,6 +370,30 @@ function counting(
   set('ilot_couvert', cov.length, cov.map((i) => i.id), plural(cov.length, 'îlot couvert', 'îlots couverts'));
   const tops = mods.filter((m) => m.above.length === 0);
   set('module_toit', tops.length, tops.map((m) => m.id), plural(tops.length, 'toit'));
+  // poteaux jointifs : coins de box d'un même niveau qui se touchent (≤ 100 mm) — 2 poteaux → 1 bande, 4 poteaux → 4
+  // bandes (Amaury 13.10.2026) ; 3 poteaux : pas encore de règle → à préciser
+  const corners = mods.flatMap((m) => m.outline.map((p, k) => ({ id: `${m.id}#${k}`, p, level: m.level })));
+  const ufc = new UnionFind();
+  for (const c of corners) ufc.find(c.id);
+  for (let i = 0; i < corners.length; i++)
+    for (let j = i + 1; j < corners.length; j++)
+      if (corners[i].level === corners[j].level && len2(sub2(corners[i].p, corners[j].p)) <= TOPOLOGY_DEFAULTS.footMerge) ufc.union(corners[i].id, corners[j].id);
+  const cornerGroups = new Map<string, string[]>();
+  for (const c of corners) cornerGroups.set(ufc.find(c.id), [...(cornerGroups.get(ufc.find(c.id)) ?? []), c.id]);
+  const shared = [...cornerGroups.values()].filter((g) => g.length > 1);
+  const odd = shared.filter((g) => g.length !== 2 && g.length !== 4);
+  const bands = shared.reduce((s, g) => s + (g.length === 2 ? 1 : g.length === 4 ? 4 : 0), 0);
+  set(
+    'poteau_connecte',
+    odd.length ? null : bands,
+    shared.flat().map((id) => id.split('#')[0]),
+    odd.length
+      ? `${odd.length} coin(s) où ${odd.map((g) => g.length).join(' / ')} poteaux se touchent : nombre de bandes à préciser`
+      : `${plural(bands, 'bande')} de poteaux (${shared.filter((g) => g.length === 2).length} × 2 poteaux, ${shared.filter((g) => g.length === 4).length} × 4 poteaux)`,
+  );
+  const connected = isl.filter((i) => i.regime === 'connecte');
+  const pairs = connected.reduce((s, i) => s + Math.floor(i.moduleIds.length / 2), 0);
+  set('paire_box', pairs, connected.map((i) => i.id), plural(pairs, 'paire') + ' de box (îlots connectés)');
   set('bord', null, [], 'côtés vers une terrasse ou le vide : pas encore détectés (à saisir)');
   if (global) set('job', 1, [], '1 chantier');
   return c;

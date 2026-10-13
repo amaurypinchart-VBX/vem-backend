@@ -571,7 +571,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
       "total": 6,
       "angle": 4,
       "milieuParGrandCote": 1
-    }
+    },
+    "poteaux": 4
   },
   {
     "ref": "7-220-005",

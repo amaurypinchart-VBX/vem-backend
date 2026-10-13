@@ -1738,14 +1738,14 @@
    "detail": "1 porte coulissante"
   },
   "poteau": {
-   "value": null,
+   "value": 16,
    "ids": [
     "VBX-02",
     "VBX-01",
     "VBX-03",
     "VBX-04"
    ],
-   "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+   "detail": "16 poteaus (compris dans les box)"
   },
   "airco": {
    "value": 0,
@@ -1777,6 +1777,28 @@
     "VBX-04"
    ],
    "detail": "4 toits"
+  },
+  "poteau_connecte": {
+   "value": 4,
+   "ids": [
+    "VBX-02",
+    "VBX-01",
+    "VBX-02",
+    "VBX-01",
+    "VBX-03",
+    "VBX-04",
+    "VBX-03",
+    "VBX-04"
+   ],
+   "detail": "4 bandes de poteaux (4 × 2 poteaux, 0 × 4 poteaux)"
+  },
+  "paire_box": {
+   "value": 2,
+   "ids": [
+    "I1",
+    "I2"
+   ],
+   "detail": "2 paires de box (îlots connectés)"
   },
   "bord": {
    "value": null,
@@ -1978,12 +2000,12 @@
     "detail": "0 porte coulissante"
    },
    "poteau": {
-    "value": null,
+    "value": 8,
     "ids": [
      "VBX-02",
      "VBX-01"
     ],
-    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+    "detail": "8 poteaus (compris dans les box)"
    },
    "airco": {
     "value": 0,
@@ -2011,6 +2033,23 @@
      "VBX-01"
     ],
     "detail": "2 toits"
+   },
+   "poteau_connecte": {
+    "value": 2,
+    "ids": [
+     "VBX-02",
+     "VBX-01",
+     "VBX-02",
+     "VBX-01"
+    ],
+    "detail": "2 bandes de poteaux (2 × 2 poteaux, 0 × 4 poteaux)"
+   },
+   "paire_box": {
+    "value": 1,
+    "ids": [
+     "I1"
+    ],
+    "detail": "1 paire de box (îlots connectés)"
    },
    "bord": {
     "value": null,
@@ -2192,12 +2231,12 @@
     "detail": "1 porte coulissante"
    },
    "poteau": {
-    "value": null,
+    "value": 8,
     "ids": [
      "VBX-03",
      "VBX-04"
     ],
-    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+    "detail": "8 poteaus (compris dans les box)"
    },
    "airco": {
     "value": 0,
@@ -2225,6 +2264,23 @@
      "VBX-04"
     ],
     "detail": "2 toits"
+   },
+   "poteau_connecte": {
+    "value": 2,
+    "ids": [
+     "VBX-03",
+     "VBX-04",
+     "VBX-03",
+     "VBX-04"
+    ],
+    "detail": "2 bandes de poteaux (2 × 2 poteaux, 0 × 4 poteaux)"
+   },
+   "paire_box": {
+    "value": 1,
+    "ids": [
+     "I2"
+    ],
+    "detail": "1 paire de box (îlots connectés)"
    },
    "bord": {
     "value": null,

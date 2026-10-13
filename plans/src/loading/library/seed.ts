@@ -12,7 +12,7 @@ export const SEED_META = {
     "Appreciation",
     "Catalogue_ref"
   ],
-  "rules": 90,
+  "rules": 91,
   "activeRules": 67,
   "observations": 8,
   "catalogue": 218
@@ -1158,8 +1158,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "acc:4-720-011@poteau_connecte"
   },
   {
     "key": "acc:4-700-039@box[connecte]",
@@ -2747,18 +2748,17 @@ export const SEED_RULES: LoadingRule[] = [
     "trigger": {},
     "article": "4-730-013",
     "articleName": "Câble de liaison électrique (lampes) entre Viewbox",
-    "qty": null,
-    "qtyText": "par Viewbox, à préciser",
-    "per": "box",
+    "qty": 1,
+    "per": "jonction_box",
     "unit": "pce",
     "when": {
       "regime": "connecte"
     },
-    "confidence": "a_confirmer",
-    "remark": "Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.",
+    "confidence": "confirme",
+    "remark": "Amaury 12–13.10.2026 : 4-730-013 = 1 par jonction entre box, 4-730-014 = 1 par paire de box (lampes).",
     "source": "decision",
     "group": "cables-entre-box",
-    "key": "acc:4-730-013@box[connecte]",
+    "key": "acc:4-730-013@jonction_box[connecte]",
     "version": 1,
     "active": true
   },
@@ -2768,18 +2768,17 @@ export const SEED_RULES: LoadingRule[] = [
     "trigger": {},
     "article": "4-730-014",
     "articleName": "Câble de liaison électrique (lampes) pour 2 Viewbox",
-    "qty": null,
-    "qtyText": "pour 2 Viewbox, à préciser",
-    "per": "box",
+    "qty": 1,
+    "per": "paire_box",
     "unit": "pce",
     "when": {
       "regime": "connecte"
     },
-    "confidence": "a_confirmer",
-    "remark": "Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.",
+    "confidence": "confirme",
+    "remark": "Amaury 12–13.10.2026 : 4-730-013 = 1 par jonction entre box, 4-730-014 = 1 par paire de box (lampes).",
     "source": "decision",
     "group": "cables-entre-box",
-    "key": "acc:4-730-014@box[connecte]",
+    "key": "acc:4-730-014@paire_box[connecte]",
     "version": 1,
     "active": true
   },
@@ -2805,6 +2804,35 @@ export const SEED_RULES: LoadingRule[] = [
     "remark": "Un mur à trou par airco ; les murs dessinés restent (spares).",
     "source": "decision",
     "key": "acc:4-700-083@airco",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "base": 6,
+        "predit": 20,
+        "livre": 20,
+        "note": "6 × 2,53 = 15,18 m, + 30 % → 20 m"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-720-011",
+    "articleName": "Viewbox Poles Rubber FLAT adhésive 20x4mm /M",
+    "qty": 2.53,
+    "per": "poteau_connecte",
+    "unit": "m",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 30
+    },
+    "confidence": "confirme",
+    "remark": "Une bande de 2,53 m par paire de poteaux jointifs, 4 bandes là où 4 poteaux se touchent.",
+    "source": "decision",
+    "key": "acc:4-720-011@poteau_connecte",
     "version": 1,
     "active": true
   }
@@ -3189,11 +3217,11 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "id": "cables-entre-box",
     "date": "2026-10-12",
     "by": "Amaury (« par Viewbox on peut rajouter 4-730-013 … et 4-730-014 pour 2 Viewbox »)",
-    "text": "Câbles électriques des lampes entre box : 4-730-013 (relie les Viewbox entre elles) et 4-730-014 (pour 2 Viewbox). Quantités à préciser ; pas en box seules (Klokgebouw n’en a pas).",
+    "text": "Câbles électriques des lampes entre box : 4-730-013 = 1 par jonction entre box, 4-730-014 = 1 par paire de box ; pas en box seules (Klokgebouw n’en a pas).",
     "applied": true,
     "details": [
-      "ajout acc:4-730-013@box[connecte]",
-      "ajout acc:4-730-014@box[connecte]"
+      "ajout acc:4-730-013@jonction_box[connecte]",
+      "ajout acc:4-730-014@paire_box[connecte]"
     ]
   },
   {
@@ -3206,6 +3234,17 @@ export const SEED_DECISIONS: DecisionLog[] = [
       "ajout acc:4-700-083@airco",
       "sub:4-700-083@airco[nidaplast] → remplacée par acc:4-700-083@airco",
       "acc:4-700-083@airco[autre] → remplacée par acc:4-700-083@airco"
+    ]
+  },
+  {
+    "id": "bande-poteaux-jointifs",
+    "date": "2026-10-13",
+    "by": "Amaury (« 2 × 014 et 2 × 015 par Viewbox ; la bande poteau quand les poteaux sont connectés : par deux c’est 1, par 4 c’est 4 »)",
+    "text": "Poteaux : 4 par Viewbox standard (2 × 7-355-014 + 2 × 7-355-015, compris dans la box, jamais dans la liste). Bande poteau 4-720-011 : 2,53 m par bande, 1 bande là où 2 poteaux se touchent, 4 bandes là où 4 se touchent, + 30 % (6059 : 6 × 2,53 = 15,2 → 20 m livrés).",
+    "applied": true,
+    "details": [
+      "ajout acc:4-720-011@poteau_connecte",
+      "acc:4-720-011@poteau → remplacée par acc:4-720-011@poteau_connecte"
     ]
   }
 ];

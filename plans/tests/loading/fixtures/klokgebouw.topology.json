@@ -1162,12 +1162,12 @@
    "detail": "0 porte coulissante"
   },
   "poteau": {
-   "value": null,
+   "value": 8,
    "ids": [
     "VBX-01",
     "VBX-02"
    ],
-   "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+   "detail": "8 poteaus (compris dans les box)"
   },
   "airco": {
    "value": 0,
@@ -1194,6 +1194,16 @@
     "VBX-02"
    ],
    "detail": "2 toits"
+  },
+  "poteau_connecte": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 bande de poteaux (0 × 2 poteaux, 0 × 4 poteaux)"
+  },
+  "paire_box": {
+   "value": 0,
+   "ids": [],
+   "detail": "0 paire de box (îlots connectés)"
   },
   "bord": {
    "value": null,
@@ -1371,11 +1381,11 @@
     "detail": "0 porte coulissante"
    },
    "poteau": {
-    "value": null,
+    "value": 4,
     "ids": [
      "VBX-01"
     ],
-    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+    "detail": "4 poteaus (compris dans les box)"
    },
    "airco": {
     "value": 0,
@@ -1400,6 +1410,16 @@
      "VBX-01"
     ],
     "detail": "1 toit"
+   },
+   "poteau_connecte": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 bande de poteaux (0 × 2 poteaux, 0 × 4 poteaux)"
+   },
+   "paire_box": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 paire de box (îlots connectés)"
    },
    "bord": {
     "value": null,
@@ -1571,11 +1591,11 @@
     "detail": "0 porte coulissante"
    },
    "poteau": {
-    "value": null,
+    "value": 4,
     "ids": [
      "VBX-02"
     ],
-    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
+    "detail": "4 poteaus (compris dans les box)"
    },
    "airco": {
     "value": 0,
@@ -1600,6 +1620,16 @@
      "VBX-02"
     ],
     "detail": "1 toit"
+   },
+   "poteau_connecte": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 bande de poteaux (0 × 2 poteaux, 0 × 4 poteaux)"
+   },
+   "paire_box": {
+    "value": 0,
+    "ids": [],
+    "detail": "0 paire de box (îlots connectés)"
    },
    "bord": {
     "value": null,

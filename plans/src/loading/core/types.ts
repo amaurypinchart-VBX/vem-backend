@@ -31,6 +31,8 @@ export type CountingBase =
   | 'ilot' // ensemble de box jointives (unité séparée, cluster)
   | 'ilot_couvert' // îlot dont les toits sont jointifs
   | 'module_toit'
+  | 'poteau_connecte' // bandes de poteaux : coins de box qui se touchent (2 poteaux → 1, 4 poteaux → 4)
+  | 'paire_box' // paires de box dans les îlots connectés (⌊box / 2⌋ par îlot)
   | 'airco'
   | 'm2_plancher'
   | 'job' // forfait par chantier
@@ -64,6 +66,8 @@ export const COUNTING_BASE_LABEL: Record<CountingBase, string> = {
   ilot: 'par îlot',
   ilot_couvert: 'par îlot couvert',
   module_toit: 'par module de toit',
+  poteau_connecte: 'par bande de poteaux jointifs',
+  paire_box: 'par paire de box',
   airco: 'par airco',
   m2_plancher: 'par m² de plancher',
   job: 'forfait chantier',

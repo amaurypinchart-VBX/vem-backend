@@ -560,25 +560,24 @@ export const DECISIONS: Decision[] = [
     date: '2026-10-12',
     by: 'Amaury (« par Viewbox on peut rajouter 4-730-013 … et 4-730-014 pour 2 Viewbox »)',
     text:
-      'Câbles électriques des lampes entre box : 4-730-013 (relie les Viewbox entre elles) et 4-730-014 (pour 2 Viewbox). ' +
-      'Quantités à préciser ; pas en box seules (Klokgebouw n’en a pas).',
+      'Câbles électriques des lampes entre box : 4-730-013 = 1 par jonction entre box, 4-730-014 = 1 par paire de box ; ' +
+      'pas en box seules (Klokgebouw n’en a pas).',
     apply: (ctx) => {
-      for (const [ref, name] of [
-        ['4-730-013', 'Câble de liaison électrique (lampes) entre Viewbox'],
-        ['4-730-014', 'Câble de liaison électrique (lampes) pour 2 Viewbox'],
+      for (const [ref, name, per] of [
+        ['4-730-013', 'Câble de liaison électrique (lampes) entre Viewbox', 'jonction_box'],
+        ['4-730-014', 'Câble de liaison électrique (lampes) pour 2 Viewbox', 'paire_box'],
       ] as const)
         add(ctx, {
           kind: 'accessoire',
           trigger: {},
           article: ref,
           articleName: name,
-          qty: null,
-          qtyText: ref === '4-730-013' ? 'par Viewbox, à préciser' : 'pour 2 Viewbox, à préciser',
-          per: 'box',
+          qty: 1,
+          per,
           unit: 'pce',
           when: { regime: 'connecte' },
-          confidence: 'a_confirmer',
-          remark: 'Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.',
+          confidence: 'confirme',
+          remark: 'Amaury 12–13.10.2026 : 4-730-013 = 1 par jonction entre box, 4-730-014 = 1 par paire de box (lampes).',
           source: 'decision',
           group: 'cables-entre-box',
         });
@@ -605,6 +604,33 @@ export const DECISIONS: Decision[] = [
       });
       retire(ctx, 'sub:4-700-083@airco[nidaplast]', by);
       retire(ctx, 'acc:4-700-083@airco[autre]', by);
+    },
+  },
+  {
+    id: 'bande-poteaux-jointifs',
+    date: '2026-10-13',
+    by: 'Amaury (« 2 × 014 et 2 × 015 par Viewbox ; la bande poteau quand les poteaux sont connectés : par deux c’est 1, par 4 c’est 4 »)',
+    text:
+      'Poteaux : 4 par Viewbox standard (2 × 7-355-014 + 2 × 7-355-015, compris dans la box, jamais dans la liste). Bande poteau ' +
+      '4-720-011 : 2,53 m par bande, 1 bande là où 2 poteaux se touchent, 4 bandes là où 4 se touchent, + 30 % (6059 : 6 × 2,53 = 15,2 → 20 m livrés).',
+    apply: (ctx) => {
+      const box = ctx.catalogue.get('7-962-016');
+      if (box) box.poteaux = 4;
+      const by = add(ctx, {
+        kind: 'accessoire',
+        trigger: {},
+        article: '4-720-011',
+        articleName: 'Viewbox Poles Rubber FLAT adhésive 20x4mm /M',
+        qty: 2.53,
+        per: 'poteau_connecte',
+        unit: 'm',
+        spare: { ...HARDWARE_SPARE },
+        confidence: 'confirme',
+        remark: 'Une bande de 2,53 m par paire de poteaux jointifs, 4 bandes là où 4 poteaux se touchent.',
+        calibration: [{ chantier: '6059RFRAMVIE', bordereau: '00056', base: 6, predit: 20, livre: 20, note: '6 × 2,53 = 15,18 m, + 30 % → 20 m' }],
+        source: 'decision',
+      });
+      retire(ctx, 'acc:4-720-011@poteau', by);
     },
   },
 ];
