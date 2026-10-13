@@ -8,6 +8,7 @@ import type { CatalogueItem, Confidence, CountingBase, LoadingCategory, LoadingR
 import { COUNTING_BASE_LABEL } from '../core/types';
 import type { SiteAnswers, StudyInput } from '../core/answers';
 import { canonical, rulesVersion } from '../library/merge';
+import { categoryFromDesignation } from '../library/importClasseur';
 import type { Count, Counts, Island, Topology } from '../topology/types';
 
 export type LineStatus = 'calcule' | 'a_confirmer' | 'appreciation' | 'regle_manquante' | 'jugement';
@@ -462,7 +463,7 @@ export function generate(input: EngineInput): LoadingList {
     lines.push({
       article,
       designation: cat?.designation ?? rule?.articleName ?? article,
-      categorie: cat?.categorie ?? 'structure',
+      categorie: cat?.categorie ?? categoryFromDesignation(article, rule?.articleName ?? ''),
       unit: unitOf.get(article) ?? cat?.unit ?? 'pce',
       qty,
       status,

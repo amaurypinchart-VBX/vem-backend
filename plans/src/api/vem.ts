@@ -257,8 +257,9 @@ export interface LoadingListRecord {
   overrides: Record<string, number> | null;
   answers: { products?: Record<string, string>; chantier?: Record<string, unknown> } | null;
   lines: unknown;
-  corrections: unknown;
+  corrections: Record<string, number> | null;
   status: 'brouillon' | 'validee';
+  validatedAt?: string | null;
   rulesVersion: string | null;
   inputKey: string | null;
   orderNo: string | null;
@@ -315,6 +316,14 @@ export const vem = {
   loadingLists: (projectId: string) => api<LoadingListRecord[]>('GET', `/loading/project/${projectId}/lists`),
   createLoadingList: (projectId: string, body: Partial<LoadingListRecord>) => api<LoadingListRecord>('POST', `/loading/project/${projectId}/lists`, body),
   saveLoadingList: (id: string, body: Partial<LoadingListRecord>) => api<LoadingListRecord>('PUT', `/loading/lists/${id}`, body),
+  exportLoadingList: (id: string, xlsx: Uint8Array, fileName: string) => {
+    const fd = new FormData();
+    fd.append('fileName', fileName);
+    fd.append('file', new Blob([xlsx as Uint8Array<ArrayBuffer>], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+    return api<{ file: ProjectFile; list: LoadingListRecord }>('POST', `/loading/lists/${id}/export`, fd);
+  },
+  validateLoadingList: (id: string, body: Partial<LoadingListRecord> & { observations: { article: string; ruleKeys: string[]; predicted: number | null; final: number | null; kind: string; note?: string }[] }) =>
+    api<LoadingListRecord>('POST', `/loading/lists/${id}/validate`, body),
   structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),
   saveLibraryEntry: (p: LibraryPayload) => api<ServerLibraryRow>('POST', '/structure/library', p),
   deleteLibraryEntry: (id: string) => api<null>('DELETE', `/structure/library/${id}`),

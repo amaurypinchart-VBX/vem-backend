@@ -46,3 +46,24 @@ export function platesFromMaterials(materials: readonly { label: string; dims: s
   }
   return out;
 }
+
+/** En-tête du bordereau (repris du projet VEM, modifiable). */
+export interface ListMeta {
+  orderNo?: string;
+  client?: string;
+  /** date d'expédition (AAAA-MM-JJ) */
+  shippingDate?: string;
+}
+
+/** Questions chantier encore sans réponse, dans l'ordre de l'écran. */
+export function unansweredSiteQuestions(a: SiteAnswers): string[] {
+  const out: string[] = [];
+  if (a.aircoCount === undefined) out.push('airco');
+  if (a.chargeLourde === undefined) out.push('charge lourde');
+  if (a.plancherLamine === undefined) out.push('plancher laminé');
+  if (a.hauteur === undefined) out.push('travail en hauteur');
+  if (a.tailleJob === undefined) out.push('taille du job');
+  if (a.montage === undefined) out.push('montage');
+  if (a.ralMurs === undefined) out.push('RAL des murs');
+  return out;
+}

@@ -23,6 +23,7 @@ const project = {
   client: { name: 'Image Construction Messe- und Eventbau GmbH' },
   technicalManager: { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', email: 'amaury.pinchart@span-tech.com' },
   team: [{ role: 'sales_engineer', user: { id: 'u2', firstName: 'Norick', lastName: 'Palm', email: 'norick.palm@span-tech.com' } }],
+  trucks: [{ loadingDate: '2026-10-01T06:00:00Z' }],
 };
 let failUploads = Number(process.env.FAIL_UPLOADS || 0);
 // étude structure : bibliothèque en ligne et études
@@ -112,6 +113,22 @@ http.createServer(async (req, res) => {
       return json(res, row, 201);
     }
     const ll = a.match(/^\/loading\/lists\/([^/]+)$/);
+    const lle = a.match(/^\/loading\/lists\/([^/]+)\/export$/);
+    if (lle && req.method === 'POST') {
+      const row = loadingLists.get(lle[1]);
+      const { fields, file } = multipart(req, await body(req));
+      if (!row || !file) return json(res, 'Loading liste ou fichier introuvable', 400);
+      if (file.slice(0, 2).toString('latin1') !== 'PK') return json(res, 'Pas un fichier .xlsx', 400);
+      row.revision += 1;
+      return json(res, { file: { id: `F${row.revision}`, fileName: fields.fileName, fileUrl: 'mock://xlsx', fileSize: file.length, category: 'loading_liste' }, list: row }, 201);
+    }
+    const llv = a.match(/^\/loading\/lists\/([^/]+)\/validate$/);
+    if (llv && req.method === 'POST') {
+      const row = loadingLists.get(llv[1]);
+      const b = JSON.parse((await body(req)).toString());
+      Object.assign(row, { lines: b.lines, status: 'validee', validatedAt: new Date().toISOString(), observations: b.observations?.length ?? 0 });
+      return json(res, row);
+    }
     if (ll && req.method === 'PUT') {
       const row = loadingLists.get(ll[1]);
       if (!row) return json(res, 'Loading liste introuvable', 404);

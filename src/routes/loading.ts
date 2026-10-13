@@ -9,6 +9,7 @@ import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
+import { upload, uploadToCloudinary } from '../services/cloudinaryService';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -258,6 +259,57 @@ router.put('/lists/:id', async (req: AuthRequest, res: Response, next: NextFunct
   try {
     const list = await db.loadingList.update({ where: { id: req.params.id }, data: cleanList(req.body ?? {}) });
     res.json({ success: true, data: list });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/lists/:id/export — enregistre l'Excel du bordereau dans les Fichiers du projet (Cloudinary raw,
+// catégorie « loading_liste ») et passe la liste à la révision suivante
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+router.post('/lists/:id/export', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.findUnique({ where: { id: req.params.id }, select: { id: true, projectId: true, revision: true } });
+    if (!list) throw new AppError('Loading liste introuvable', 404);
+    if (!req.file) throw new AppError('Fichier Excel manquant', 400);
+    if (![XLSX, 'application/octet-stream'].includes(req.file.mimetype)) throw new AppError('Le bordereau doit être un fichier .xlsx', 400);
+    if (req.file.size > 10 * 1024 * 1024) throw new AppError('Fichier de plus de 10 Mo : refusé par Cloudinary', 413);
+    const fileName = (str(req.body?.fileName, 200) ?? `loading_v${list.revision}.xlsx`).replace(/[\\/:*?"<>|]+/g, '-');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `projects/${list.projectId}/loading`, { resource_type: 'raw', public_id: fileName.replace(/\.xlsx$/i, '') + `-${Date.now()}.xlsx` });
+    const file = await db.projectFile.create({
+      data: { projectId: list.projectId, uploadedBy: req.user?.id ?? null, fileName, fileUrl: url, publicId, fileType: XLSX, fileSize: req.file.size, category: 'loading_liste' },
+    });
+    const updated = await db.loadingList.update({ where: { id: list.id }, data: { revision: list.revision + 1 } });
+    res.status(201).json({ success: true, data: { file, list: updated } });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/lists/:id/validate — « Liste validée / envoyée à l'entrepôt » : fige la liste et garde, ligne par
+// ligne, le prédit et le final (points de calage et jugements pour l'apprentissage)
+router.post('/lists/:id/validate', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.findUnique({ where: { id: req.params.id } });
+    if (!list) throw new AppError('Loading liste introuvable', 404);
+    const obs = Array.isArray(req.body?.observations) ? req.body.observations.slice(0, 2000) : [];
+    const rows = obs
+      .filter((o: any) => o && typeof o.article === 'string' && REF.test(o.article))
+      .map((o: any) => ({
+        listId: list.id,
+        article: o.article,
+        ruleKeys: Array.isArray(o.ruleKeys) ? o.ruleKeys.slice(0, 20) : [],
+        predicted: Number.isFinite(o.predicted) ? o.predicted : null,
+        final: Number.isFinite(o.final) ? o.final : null,
+        kind: ['calage', 'jugement', 'inconnu'].includes(o.kind) ? o.kind : 'calage',
+        note: str(o.note, 500),
+        userId: req.user?.id ?? null,
+      }));
+    const updated = await prisma.$transaction(async (tx: any) => {
+      await tx.loadingObservation.deleteMany({ where: { listId: list.id } });
+      if (rows.length) await tx.loadingObservation.createMany({ data: rows });
+      return tx.loadingList.update({
+        where: { id: list.id },
+        data: { ...cleanList(req.body ?? {}), status: 'validee', validatedBy: req.user?.id ?? null, validatedAt: new Date() },
+      });
+    });
+    res.json({ success: true, data: updated });
   } catch (err) { next(err); }
 });
 

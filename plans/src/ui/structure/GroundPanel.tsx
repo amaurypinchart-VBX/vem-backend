@@ -1,7 +1,7 @@
 // Panneau « Sol & calage » : hypothèses (portance, charges, vent), estimation des réactions par groupe d'appuis,
 // solutions de répartition par type d'appui, variante longrines, liste de matériel, stock de l'entrepôt, fiche PDF.
 // Alimenté par le modèle analysé (onglet Étude structure) ou par une grille de Viewbox (calculateur rapide).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
@@ -403,9 +403,11 @@ export interface GroundPanelProps {
   jackMax?: number;
   /** ouvre l'étape où le plan de calage A3 s'ajoute à un jeu de plans 2D */
   onSendToPlans?: () => void;
+  /** calage calculé (ou null) : son matériel est enregistré avec l'étude (loading liste : sous-bois × 2) */
+  onCalage?: (r: CalageResult | null) => void;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false, jackMax, onSendToPlans }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false, jackMax, onSendToPlans, onCalage }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -426,6 +428,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   // langue des PDF de calage (fiche, plan des appuis)
   const [pdfLang, setPdfLang] = useState<Lang>('fr');
   const [maxPub, setMaxPub] = useState<PublicMax | null>(null);
+  const onCalageRef = useRef(onCalage);
+  onCalageRef.current = onCalage;
+  useEffect(() => onCalageRef.current?.(result), [result]);
 
   useEffect(() => {
     vem

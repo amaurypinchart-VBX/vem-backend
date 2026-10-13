@@ -24,7 +24,13 @@ import { mergeRules } from '../../loading/library/merge';
 import { SEED_OBSERVATIONS, SEED_RULES } from '../../loading/library/seed';
 import type { LoadingLine, LoadingList } from '../../loading/engine/generate';
 import { generate } from '../../loading/engine/generate';
-import type { SiteAnswers } from '../../loading/core/answers';
+import type { ListMeta, SiteAnswers, StudyInput } from '../../loading/core/answers';
+import { platesFromMaterials } from '../../loading/core/answers';
+import type { Project } from '../../api/vem';
+import type { BordereauMeta } from '../../loading/xlsx/bordereau';
+import { bordereauFileName, bordereauXlsx } from '../../loading/xlsx/bordereau';
+import { QuestionsStep } from './QuestionsStep';
+import { ExportStep } from './ExportStep';
 import { CONFIDENCE_LABEL, LOADING_CATEGORIES } from '../../loading/core/types';
 
 type Step = 'topology' | 'products' | 'questions' | 'list' | 'export';
@@ -100,6 +106,14 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const [catRows, setCatRows] = useState<ServerCatalogueRow[]>([]);
   const [ruleRows, setRuleRows] = useState<ServerRuleRow[]>([]);
   const [site, setSite] = useState<SiteAnswers>({});
+  const [meta, setMeta] = useState<ListMeta>({});
+  const [corrections, setCorrections] = useState<Record<string, number>>({});
+  const [status, setStatus] = useState<'brouillon' | 'validee'>('brouillon');
+  const [validatedAt, setValidatedAt] = useState<string | null>(null);
+  const [revision, setRevision] = useState(1);
+  const [project, setProject] = useState<Project | null>(null);
+  const [study, setStudy] = useState<{ input: StudyInput | null; note: string }>({ input: null, note: 'Étude structure pas encore faite pour ce modèle' });
+  const [busy, setBusy] = useState('');
   const [memory, setMemory] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<TopologyOverrides>({});
   const [answers, setAnswers] = useState<ProductAnswers>({});
@@ -121,6 +135,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     vem.me().then(setMe).catch(() => {});
     vem.loadingCatalogue().then(setCatRows).catch(() => {});
     vem.loadingRules().then(setRuleRows).catch(() => {});
+    if (PROJECT_ID) vem.project(PROJECT_ID).then(setProject).catch(() => {});
     void refreshMemory();
     if (!PROJECT_ID || !model) {
       setSaveState('local');
@@ -139,12 +154,18 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
         const ov = (l.overrides ?? {}) as TopologyOverrides;
         const pr = (l.answers?.products ?? {}) as ProductAnswers;
         // une liste sans topologie enregistrée (nouvelle) est enregistrée une première fois
-        savedKey.current = l.topology ? JSON.stringify({ overrides: ov, products: pr }) : '';
+        savedKey.current = l.topology ? JSON.stringify({ overrides: ov, products: pr, chantier: l.answers?.chantier ?? {}, corrections: l.corrections ?? {}, orderNo: l.orderNo ?? null }) : '';
         savedInput.current = l.inputKey;
         setListId(l.id);
         setOverrides(ov);
         setAnswers(pr);
-        setSite((l.answers?.chantier ?? {}) as SiteAnswers);
+        const { meta: m, ...chantier } = (l.answers?.chantier ?? {}) as SiteAnswers & { meta?: ListMeta };
+        setSite(chantier);
+        setMeta({ ...(m ?? {}), ...(l.orderNo ? { orderNo: l.orderNo } : {}) });
+        setCorrections(l.corrections ?? {});
+        setStatus(l.status ?? 'brouillon');
+        setValidatedAt(l.validatedAt ?? null);
+        setRevision(l.revision ?? 1);
         setSaveState('saved');
       } catch (e) {
         setError(`Loading liste non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -165,18 +186,75 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   );
   const summary = useMemo(() => topologySummary(topology, catMap), [topology, catMap]);
   const rules = useMemo(() => mergeRules(SEED_RULES, ruleRows), [ruleRows]);
-  // étude structure : reliée en L4 (questions chantier) — en attendant, les sous-bois attendent l'étude
-  const list = useMemo(() => generate({ topology, rules, catalogue: catMap, answers: site, study: null, observations: SEED_OBSERVATIONS }), [topology, rules, catMap, site]);
+  // sous-bois : calage de l'Étude structure de ce modèle (étape 5, enregistré avec l'étude) × 2
+  const refreshStudy = async () => {
+    if (!PROJECT_ID || !model) return;
+    try {
+      const studies = await vem.listStudies(PROJECT_ID);
+      const st = studies.find((x) => x.modelVersionId === model.id);
+      const cal = (st?.resultsSummary as { calage?: { at: string; fromCalculation: boolean; materials: { label: string; dims: string; quantity: number }[] } } | undefined)?.calage;
+      if (!st) setStudy({ input: null, note: 'Étude structure pas encore faite pour ce modèle (onglet Étude structure)' });
+      else if (!cal) setStudy({ input: null, note: 'Étude structure sans calage : ouvrir son étape 5 « Sol & calage »' });
+      else {
+        const plates = platesFromMaterials(cal.materials);
+        const when = new Date(cal.at).toLocaleString('fr-BE');
+        const source = `Étude structure, calage du ${when}${cal.fromCalculation ? ' (réactions du calcul)' : ' (estimation instantanée)'}`;
+        setStudy({ input: { plates, source }, note: `${source} : ${plates.map((p) => `${p.quantity} × ${p.l / 10} × ${p.w / 10} cm`).join(', ') || 'aucune plaque'}` });
+      }
+    } catch {
+      /* hors ligne : les sous-bois restent une question */
+    }
+  };
+  useEffect(() => {
+    if (active) void refreshStudy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, model?.id]);
+  const engineInput = { topology, rules, catalogue: catMap, answers: site, study: study.input, observations: SEED_OBSERVATIONS };
+  // liste calculée (sans les corrections) : le « prédit » des observations à la validation
+  const predicted = useMemo(() => generate(engineInput), [topology, rules, catMap, site, study.input]); // eslint-disable-line react-hooks/exhaustive-deps
+  const list = useMemo(() => (Object.keys(corrections).length ? generate({ ...engineInput, judgements: corrections }) : predicted), [predicted, corrections]); // eslint-disable-line react-hooks/exhaustive-deps
+  // en-tête du bordereau : valeurs saisies, sinon reprises du projet VEM
+  const firstTruck = (project as (Project & { trucks?: { loadingDate?: string | null; departureDate?: string | null }[] }) | null)?.trucks
+    ?.map((x) => x.loadingDate ?? x.departureDate)
+    .filter((d): d is string => !!d)
+    .sort()[0];
+  const effMeta: ListMeta = {
+    orderNo: meta.orderNo ?? project?.internalNumber ?? '',
+    client: meta.client ?? project?.client?.name ?? '',
+    shippingDate: meta.shippingDate ?? (firstTruck ? firstTruck.slice(0, 10) : undefined),
+  };
+  const fmtDate = (d?: string) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-BE') : '');
+  const bordereauMeta: BordereauMeta = {
+    chantier: project?.name ?? scene.index.source.fileName,
+    orderNo: effMeta.orderNo ?? '',
+    client: effMeta.client ?? '',
+    shippingDate: fmtDate(effMeta.shippingDate),
+    modelFile: scene.index.source.fileName,
+    modelDate: model?.createdAt ? new Date(model.createdAt).toLocaleDateString('fr-BE') : undefined,
+    topology: topologySummary(topology, catMap),
+    revision,
+    state: status === 'validee' ? `Validée le ${validatedAt ? new Date(validatedAt).toLocaleDateString('fr-BE') : ''}` : 'Brouillon',
+  };
+  const fileName = bordereauFileName(effMeta.orderNo || project?.internalNumber || 'chantier', revision);
 
   const lastSaved = useRef('');
   useEffect(() => {
     if (!loaded.current || !listId) return;
-    const body = { overrides, answers: { products: answers, chantier: site as Record<string, unknown> }, topology, lines: list.lines, rulesVersion: list.rulesVersion, inputKey: list.inputKey };
+    const body = {
+      overrides,
+      answers: { products: answers, chantier: { ...site, meta } as Record<string, unknown> },
+      corrections,
+      orderNo: meta.orderNo ?? null,
+      topology,
+      lines: list.lines,
+      rulesVersion: list.rulesVersion,
+      inputKey: list.inputKey,
+    };
     const key = JSON.stringify(body);
     // première ouverture : rien n'a changé depuis l'enregistrement → pas d'envoi
     if (!lastSaved.current) {
       lastSaved.current = key;
-      if (savedKey.current === JSON.stringify({ overrides, products: answers }) && savedInput.current === list.inputKey) return;
+      if (savedKey.current === JSON.stringify({ overrides, products: answers, chantier: { ...site, meta }, corrections, orderNo: meta.orderNo ?? null }) && savedInput.current === list.inputKey) return;
     }
     if (key === lastSaved.current && saveState === 'saved') return;
     lastSaved.current = key;
@@ -191,7 +269,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [overrides, answers, topology, listId, list, site]);
+  }, [overrides, answers, topology, listId, list, site, meta, corrections]);
 
   // ─── 3D ───
   const holder = useRef<HTMLDivElement>(null);
@@ -271,17 +349,18 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const stepState: Record<Step, StepState> = {
     topology: topology.counts.pied?.value === null || topology.warnings.some((w) => w.code.startsWith('JUNCTION')) ? 'warn' : 'ok',
     products: unknownCount ? 'warn' : 'ok',
-    questions: 'todo',
+    questions: list.questions.some((q) => q.id.startsWith('q:') && !q.id.startsWith('q:base') && !q.id.startsWith('q:qty') && !q.id.startsWith('q:spare')) ? 'warn' : 'ok',
     list: list.lines.some((l) => l.status === 'regle_manquante' || l.status === 'a_confirmer') ? 'warn' : 'ok',
-    export: 'todo',
+    export: status === 'validee' ? 'ok' : 'todo',
   };
   const STEPS: { key: Step; label: string; soon?: string }[] = [
     { key: 'topology', label: '1. Topologie' },
     { key: 'products', label: '2. Produits' },
-    { key: 'questions', label: '3. Questions chantier', soon: 'L4' },
+    { key: 'questions', label: '3. Questions chantier' },
     { key: 'list', label: '4. Loading liste' },
-    { key: 'export', label: '5. Export', soon: 'L4' },
+    { key: 'export', label: '5. Export' },
   ];
+  const [saveNote, setSaveNote] = useState('');
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Enregistrée', error: '✗ Non enregistrée', local: 'Non enregistrée (modèle sans version en ligne)' }[saveState];
 
   const answer = (signature: string, value: string | null) =>
@@ -326,6 +405,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
             ))}
           </nav>
           <div className="spacer" style={{ flex: 1 }} />
+          {saveNote && <span className="hint">{saveNote}</span>}
           <span className="hint">{saveLabel}</span>
         </div>
         {error && (
@@ -358,7 +438,95 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
               onSelect={setSelected}
             />
           )}
-          {step === 'list' && <ListStep list={list} selected={selected} onSelect={setSelected} />}
+          {step === 'questions' && (
+            <QuestionsStep answers={site} onChange={setSite} meta={effMeta} onMeta={setMeta} study={study.input} studyNote={study.note} boxes={topology.counts.box?.value ?? 0} />
+          )}
+          {step === 'list' && (
+            <ListStep
+              list={list}
+              catalogue={catalogue}
+              readOnly={status === 'validee'}
+              corrections={corrections}
+              onCorrect={(article, v) =>
+                setCorrections((c) => {
+                  const next = { ...c };
+                  if (v === null) delete next[article];
+                  else next[article] = v;
+                  return next;
+                })
+              }
+              onAppreciation={(article, v) =>
+                setSite((a) => {
+                  const app = { ...(a.appreciation ?? {}) };
+                  if (v === null) delete app[article];
+                  else app[article] = v;
+                  return { ...a, appreciation: app };
+                })
+              }
+              selected={selected}
+              onSelect={setSelected}
+            />
+          )}
+          {step === 'export' && (
+            <ExportStep
+              list={list}
+              meta={bordereauMeta}
+              fileName={fileName}
+              build={() => bordereauXlsx(list, bordereauMeta)}
+              validated={status === 'validee' ? bordereauMeta.state : null}
+              canSave={!!listId}
+              busy={busy}
+              onSave={async () => {
+                if (!listId) return;
+                setBusy('Enregistrement dans les fichiers du projet…');
+                try {
+                  const r = await vem.exportLoadingList(listId, bordereauXlsx(list, bordereauMeta), fileName);
+                  setRevision(r.list.revision);
+                  setBusy('');
+                  setError('');
+                  setSaveNote(`✓ ${fileName} enregistré dans les fichiers du projet`);
+                } catch (e) {
+                  setBusy('');
+                  setError(`Bordereau non enregistré : ${(e as Error).message}`);
+                }
+              }}
+              onValidate={async () => {
+                if (!listId || !window.confirm('Valider la liste et la marquer envoyée à l’entrepôt ? Elle sera figée.')) return;
+                setBusy('Validation…');
+                const before = new Map(predicted.lines.map((l) => [l.article, l]));
+                const observations = list.lines.map((l) => {
+                  const p = before.get(l.article);
+                  const corrected = corrections[l.article] !== undefined;
+                  return {
+                    article: l.article,
+                    ruleKeys: l.contributions.map((c) => c.ruleKey).filter((k): k is string => !!k),
+                    predicted: p?.qty ?? null,
+                    final: l.qty,
+                    kind: corrected ? 'jugement' : l.qty === null ? 'inconnu' : 'calage',
+                  };
+                });
+                try {
+                  const r = await vem.validateLoadingList(listId, { lines: list.lines, rulesVersion: list.rulesVersion, inputKey: list.inputKey, observations });
+                  setStatus('validee');
+                  setValidatedAt(r.validatedAt ?? new Date().toISOString());
+                  setBusy('');
+                } catch (e) {
+                  setBusy('');
+                  setError(`Validation impossible : ${(e as Error).message}`);
+                }
+              }}
+              onReopen={async () => {
+                if (!listId) return;
+                try {
+                  await vem.saveLoadingList(listId, { status: 'brouillon' });
+                  setStatus('brouillon');
+                  setValidatedAt(null);
+                } catch (e) {
+                  setError(`Liste non rouverte : ${(e as Error).message}`);
+                }
+              }}
+            />
+          )}
           {step === 'products' && (
             <ProductsStep
               topology={topology}
@@ -823,27 +991,125 @@ function IdentifyCard({
 
 // ─── Étape 4 : la loading liste (aperçu, éditable en L4–L5) ─────────────────────────────────────────────────────
 
-const STATUS_LABEL = { calcule: 'calculé', jugement: 'corrigé ici', appreciation: 'appréciation', a_confirmer: 'à confirmer', regle_manquante: 'règle manquante' } as const;
+const STATUS_LABEL = { calcule: 'calculé', jugement: 'corrigé pour ce chantier', appreciation: 'appréciation', a_confirmer: 'à confirmer', regle_manquante: 'règle manquante' } as const;
 const STATUS_BADGE = { calcule: 'ok', jugement: 'orange', appreciation: '', a_confirmer: 'orange', regle_manquante: 'ko' } as const;
 const UNIT_LABEL = { pce: '', m: 'm', m2: 'm²', L: 'L' } as const;
 
-function ListStep({ list, selected, onSelect }: { list: LoadingList; selected: { ids: string[]; label: string } | null; onSelect: (s: { ids: string[]; label: string } | null) => void }) {
+function QtyCell({ line: l, readOnly, onSet }: { line: LoadingLine; readOnly: boolean; onSet: (v: number | null) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  if (text !== null)
+    return (
+      <input
+        type="number"
+        min={0}
+        step="any"
+        autoFocus
+        value={text}
+        style={{ width: 72 }}
+        aria-label={`Quantité ${l.article}`}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            const v = Number(text);
+            if (text !== '' && Number.isFinite(v) && v >= 0) onSet(v);
+            setText(null);
+          }
+          if (e.key === 'Escape') setText(null);
+        }}
+        onBlur={() => setText(null)}
+      />
+    );
+  return (
+    <b
+      title={readOnly ? undefined : 'Cliquer pour corriger'}
+      style={{ cursor: readOnly ? 'default' : 'text' }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!readOnly) setText(l.qty === null ? '' : String(l.qty));
+      }}
+    >
+      {l.qty ?? '?'}
+    </b>
+  );
+}
+
+function ListStep({
+  list,
+  catalogue,
+  readOnly,
+  corrections,
+  onCorrect,
+  onAppreciation,
+  selected,
+  onSelect,
+}: {
+  list: LoadingList;
+  catalogue: CatalogueItem[];
+  readOnly: boolean;
+  corrections: Record<string, number>;
+  onCorrect: (article: string, v: number | null) => void;
+  onAppreciation: (article: string, v: number | null) => void;
+  selected: { ids: string[]; label: string } | null;
+  onSelect: (s: { ids: string[]; label: string } | null) => void;
+}) {
+  const [adding, setAdding] = useState<{ q: string; qty: string } | null>(null);
   const main = list.lines.filter((l) => l.status === 'calcule' || l.status === 'jugement');
   const sections: { title: string; hint: string; lines: LoadingLine[] }[] = [
     ...LOADING_CATEGORIES.map((c) => ({ title: c.label, hint: '', lines: main.filter((l) => l.categorie === c.key) })),
-    { title: 'À valider — appréciation', hint: 'Jamais calculé seul : quantité à saisir.', lines: list.lines.filter((l) => l.status === 'appreciation') },
+    { title: 'À valider — appréciation', hint: 'Jamais calculé seul : saisir la quantité.', lines: list.lines.filter((l) => l.status === 'appreciation') },
     { title: 'À confirmer', hint: 'Règle pas encore verrouillée, ou question chantier sans réponse.', lines: list.lines.filter((l) => l.status === 'a_confirmer') },
     { title: 'Règle manquante', hint: 'Rien d’inventé : la règle reste à caler (valeurs observées en repère).', lines: list.lines.filter((l) => l.status === 'regle_manquante') },
   ].filter((s) => s.lines.length);
+  const ref = adding ? (/^\d-\d{3}-\d{3,5}/.exec(adding.q)?.[0] ?? '') : '';
+  const found = ref ? catalogue.find((c) => c.ref === ref) : undefined;
+  const matches = adding && adding.q.length >= 2 && !found ? catalogue.filter((c) => `${c.ref} ${c.designation}`.toLowerCase().includes(adding.q.toLowerCase())).slice(0, 8) : [];
+  const nCorr = Object.keys(corrections).length;
   return (
     <>
       <div className="card">
         <div className="card-head">
           <h2>Loading liste</h2>
           <span className="hint">
-            {list.lines.length} lignes · règles version {list.rulesVersion} · aperçu (questions chantier et export à l’étape suivante)
+            {list.lines.length} lignes · règles version {list.rulesVersion}
+            {nCorr ? ` · ${nCorr} correction(s) pour ce chantier` : ''}
+            {readOnly ? ' · liste validée (figée)' : ' · cliquer une quantité pour la corriger'}
           </span>
         </div>
+        {!readOnly && (
+          <div className="card-body">
+            {adding ? (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <input type="text" autoFocus placeholder="Référence ou nom…" value={adding.q} style={{ flex: 1 }} onChange={(e) => setAdding({ ...adding, q: e.target.value })} />
+                  <input type="number" min={0} placeholder="Qté" value={adding.qty} style={{ width: 70 }} onChange={(e) => setAdding({ ...adding, qty: e.target.value })} />
+                  <button
+                    className="btn small primary"
+                    disabled={!found || !(Number(adding.qty) > 0)}
+                    onClick={() => {
+                      onCorrect(found!.ref, Number(adding.qty));
+                      setAdding(null);
+                    }}
+                  >
+                    Ajouter
+                  </button>
+                  <button className="btn small ghost" onClick={() => setAdding(null)}>
+                    Annuler
+                  </button>
+                </div>
+                {matches.map((c) => (
+                  <button key={c.ref} className="btn small ghost" style={{ textAlign: 'left' }} onClick={() => setAdding({ ...adding, q: `${c.ref} ${c.designation}` })}>
+                    <b>{c.ref}</b> {c.designation}
+                  </button>
+                ))}
+                <span className="hint">Ajout pour ce chantier seulement (apprendre une règle pour tous les projets : prochaine étape).</span>
+              </div>
+            ) : (
+              <button className="btn small" onClick={() => setAdding({ q: '', qty: '1' })}>
+                ＋ Ajouter une ligne
+              </button>
+            )}
+          </div>
+        )}
         {(list.questions.length > 0 || list.notes.length > 0) && (
           <div className="card-body" style={{ display: 'grid', gap: 6 }}>
             {list.questions.length > 0 && (
@@ -884,15 +1150,18 @@ function ListStep({ list, selected, onSelect }: { list: LoadingList; selected: {
                   <th>Désignation</th>
                   <th style={{ textAlign: 'right' }}>Quantité</th>
                   <th>Détail du calcul</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {s.lines.map((l) => {
                   const isSel = selected?.label.startsWith(l.article);
+                  const corrected = corrections[l.article] !== undefined;
+                  const isApp = l.status === 'appreciation';
                   return (
                     <tr
                       key={l.article}
-                      style={{ cursor: l.sources.length ? 'pointer' : 'default', background: isSel ? 'var(--bg-3)' : undefined, verticalAlign: 'top' }}
+                      style={{ cursor: l.sources.length ? 'pointer' : 'default', background: isSel ? 'var(--bg-3)' : undefined, verticalAlign: 'top', opacity: l.qty === 0 ? 0.55 : 1 }}
                       onClick={() => l.sources.length && onSelect({ ids: l.sources, label: `${l.article} ${l.designation} : ${l.qty ?? '?'}` })}
                     >
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -906,10 +1175,36 @@ function ListStep({ list, selected, onSelect }: { list: LoadingList; selected: {
                         </div>
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <b>{l.qty ?? '?'}</b> {UNIT_LABEL[l.unit]}
+                        <QtyCell line={l} readOnly={readOnly} onSet={(v) => (isApp ? onAppreciation(l.article, v) : onCorrect(l.article, v))} /> {UNIT_LABEL[l.unit]}
                       </td>
                       <td className="hint" style={{ fontSize: 12 }}>
                         {l.detail}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {!readOnly && corrected && (
+                          <button
+                            className="btn small ghost"
+                            title="Revenir à la quantité calculée"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCorrect(l.article, null);
+                            }}
+                          >
+                            ↺
+                          </button>
+                        )}
+                        {!readOnly && !isApp && l.qty !== 0 && (
+                          <button
+                            className="btn small ghost"
+                            title="Retirer de la liste (ce chantier)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCorrect(l.article, 0);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

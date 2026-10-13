@@ -89,5 +89,46 @@ check(await page.getByText(/Faire l’Étude structure/).first().isVisible(), 's
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${shots}loading-liste.png`, fullPage: true });
 
+// ─── L4 : questions chantier, correction, Excel, fichiers du projet, validation ───
+await page.getByRole('button', { name: /3\. Questions chantier/ }).click();
+await page.getByTestId('site-questions').waitFor();
+await page.getByLabel('Airco à prévoir').fill('1');
+const answerRow = (label, button) => page.locator('div', { has: page.getByText(label, { exact: true }) }).filter({ has: page.getByRole('button', { name: button }) }).last().getByRole('button', { name: button });
+await answerRow('Charge lourde', 'Non').click();
+await answerRow('Plancher laminé', 'Non').click();
+await answerRow('Travail en hauteur / sur le toit', 'Non').click();
+await answerRow('Taille du job', 'Petit').click();
+await answerRow('Montage', 'Sur chantier').click();
+await answerRow('RAL des murs', 'Blanc / blanc').click();
+check(await page.getByText('Tout est répondu.').isVisible(), 'toutes les questions chantier répondues');
+check((await page.locator('input[type=date]').inputValue()) === '2026-10-01', 'date d’expédition reprise du camion');
+check((await page.locator('input[type=text]').first().inputValue()) === '6066RNVIDVIE', 'n° d’order repris du projet');
+await page.screenshot({ path: `${shots}loading-questions.png`, fullPage: true });
+await page.getByRole('button', { name: /4\. Loading liste/ }).click();
+check(await page.getByText('4-700-083').first().isVisible(), 'airco : mur à trou dans la liste');
+const ceiling = page.locator('tr', { hasText: '4-700-003' }).first();
+await ceiling.locator('b[title="Cliquer pour corriger"]').click();
+await ceiling.locator('input').fill('9');
+await ceiling.locator('input').press('Enter');
+check(await page.locator('tr', { hasText: '4-700-003' }).first().getByText('corrigé pour ce chantier').first().isVisible(), 'quantité corrigée pour ce chantier');
+await page.getByRole('button', { name: '＋ Ajouter une ligne' }).click();
+await page.getByPlaceholder('Référence ou nom…').fill('4-750-007');
+await page.getByRole('button', { name: 'Ajouter', exact: true }).click();
+check(await page.getByText('4-750-007').first().isVisible(), 'ligne ajoutée (perceuse magnétique)');
+await page.getByText('✓ Enregistrée').waitFor({ timeout: 10000 });
+await page.getByRole('button', { name: /5\. Export/ }).click();
+const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '⬇ Télécharger l’Excel' }).click()]);
+check(download.suggestedFilename() === '6066RNVIDVIE_loading_v1.xlsx', `Excel téléchargé (${download.suggestedFilename()})`);
+await download.saveAs(`${shots}${download.suggestedFilename()}`);
+await page.getByRole('button', { name: '💾 Enregistrer dans les fichiers du projet' }).click();
+await page.getByText('enregistré dans les fichiers du projet').waitFor();
+check(await page.getByText('6066RNVIDVIE_loading_v2.xlsx').isVisible(), 'révision suivante après enregistrement (v2)');
+page.once('dialog', (d) => d.accept());
+await page.getByRole('button', { name: '✔ Liste validée / envoyée à l’entrepôt' }).click();
+await page.getByText('✔ Liste validée / envoyée à l’entrepôt').first().waitFor();
+await page.getByRole('button', { name: /4\. Loading liste/ }).click();
+check(await page.getByText('liste validée (figée)').isVisible(), 'liste figée après validation');
+await page.screenshot({ path: `${shots}loading-export.png` });
+
 check(errors.length === 0, `aucune erreur console${errors.length ? ' : ' + errors.join(' | ') : ''}`);
 await browser.close();

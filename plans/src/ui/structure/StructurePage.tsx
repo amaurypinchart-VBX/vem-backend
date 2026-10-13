@@ -486,9 +486,12 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   };
 
   // ─── enregistrement automatique (2 s après la dernière modification) ───
+  // calage de l'étape 5 (matériel par plaque) : lu par la loading liste (sous-bois × 2)
+  const [calageSummary, setCalageSummary] = useState<{ at: string; fromCalculation: boolean; allPlates: boolean; materials: { label: string; dims: string; quantity: number }[] } | null>(null);
   const summary = useMemo(
     () => ({
       recognition: recognition.counts,
+      ...(calageSummary ? { calage: calageSummary } : {}),
       ...(run
         ? {
             calc: {
@@ -507,7 +510,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           }
         : {}),
     }),
-    [recognition.counts, run, stale],
+    [recognition.counts, run, stale, calageSummary],
   );
   useEffect(() => {
     if (!loaded.current || !study) return;
@@ -872,6 +875,18 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           extraSupports={extraSupports}
           jackMax={calcOpts.jackExtension}
           onSendToPlans={() => setStep('report')}
+          onCalage={(r) =>
+            setCalageSummary(
+              r
+                ? {
+                    at: new Date().toISOString(),
+                    fromCalculation: !!(run && !stale),
+                    allPlates: r.allPlates,
+                    materials: r.materials.map((m) => ({ label: m.label, dims: m.dims, quantity: m.quantity })),
+                  }
+                : null,
+            )
+          }
           intro={
             warnings.length ? (
               <div className="warnings">
