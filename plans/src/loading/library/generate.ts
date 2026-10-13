@@ -70,6 +70,8 @@ const where = (i: ImportIssue) => (i.article ? `${i.where} (${i.article})` : i.w
 
 /** Questions qui ne viennent pas d'une ligne précise (à partir des réponses du 12/10/2026). */
 const OPEN_QUESTIONS = [
+  'Poteaux compris dans le standard 7-962-016 : combien de poteaux 7-355-014 / 015 par box ? Et la bande poteau 4-720-011 (2,53 m par poteau) sort-elle seulement en box connectées (Klokgebouw n’en a pas eu) ?',
+  'Câbles 4-730-013 / 4-730-014 : combien exactement — 4-730-013 = 1 par jonction entre box ? 4-730-014 = 1 par paire de box ? Et leurs désignations exactes (absentes du catalogue) ?',
   'Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?',
   'Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?',
   'Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?',

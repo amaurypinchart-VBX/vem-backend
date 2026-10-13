@@ -231,6 +231,10 @@ export interface CatalogueItem {
   porte?: 'simple' | 'double' | 'coulissante';
   /** produit airco / chauffage (HVAC) : demande un mur avec trou airco */
   hvac?: boolean;
+  /** pièce comprise dans un autre produit (ex. poteaux et modules de toit dans le standard 7-962-016) : jamais une ligne à part */
+  inclusDans?: string;
+  /** poteaux (7-355-014 / 015) d'une box de cette référence, quand on le sait */
+  poteaux?: number;
   /** code à ajouter aux lignes pour l'export vers Odoo (fichier de base à venir) */
   odoo?: string;
   source: 'classeur' | 'ajout';

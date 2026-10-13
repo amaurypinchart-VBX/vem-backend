@@ -64,7 +64,8 @@ export function countProducts(
   const ignored: string[] = [];
   const boxParts: string[] = [];
   for (const n of items) {
-    if (isBoxPart(n)) {
+    // pièce de la box (sans réf.) ou comprise dans un autre produit (poteaux, modules de toit du standard)
+    if (isBoxPart(n) || (n.articleRef && catalogue.get(n.articleRef)?.inclusDans)) {
       boxParts.push(n.id);
       continue;
     }

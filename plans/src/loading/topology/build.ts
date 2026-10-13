@@ -30,8 +30,6 @@ import type {
 } from './types';
 import { TOPOLOGY_DEFAULTS } from './types';
 
-/** Poteaux comptés par la règle « par poteau » (bande 4-720-011). */
-export const POTEAU_REFS = ['7-355-014', '7-355-015'];
 /** Largeur d'un panneau de façade Viewbox (mm) : nombre de panneaux équivalents d'une porte coulissante. */
 const PANEL_WIDTH = 1130;
 
@@ -357,8 +355,12 @@ function counting(
     const d = items.filter((n) => !excluded.has(n.id) && inScope(n) && elementKind(n, catalogue.get(articleOf.get(n.id) ?? ''))?.porte === type);
     set(k, d.length, d.map((n) => n.id), plural(d.length, label, many));
   }
-  const poles = counted.filter((n) => POTEAU_REFS.includes(articleOf.get(n.id)!));
-  set('poteau', poles.length, poles.map((n) => n.id), plural(poles.length, 'poteau'));
+  // poteaux : compris dans les standards (7-355-014 / 015 dans 7-962-016) → nombre par box du catalogue, sinon à préciser
+  const poleCounts = mods.map((m) => (m.boxRef ? catalogue.get(m.boxRef)?.poteaux : undefined));
+  if (poleCounts.every((n) => n !== undefined)) {
+    const n = poleCounts.reduce((s, x) => s + (x ?? 0), 0);
+    set('poteau', n, mods.map((m) => m.id), `${plural(n, 'poteau')} (compris dans les box)`);
+  } else set('poteau', null, mods.map((m) => m.id), `poteaux compris dans les standards : nombre de poteaux par box à préciser`);
   const airco = counted.filter((n) => catalogue.get(articleOf.get(n.id)!)?.hvac);
   set('airco', airco.length, airco.map((n) => n.id), `${plural(airco.length, 'airco')} dessinée(s) dans la 3D`);
   // îlots, toits

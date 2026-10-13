@@ -5,19 +5,21 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 ## Résumé
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
-- Catalogue : 214 références (48 « gros produits »)
-- Règles : 87 lues, **66 actives** (47 confirmées, 18 à confirmer, 1 hypothèses), 21 remplacées ou doublons gardés pour l'historique
+- Catalogue : 218 références (48 « gros produits »)
+- Règles : 90 lues, **67 actives** (46 confirmées, 20 à confirmer, 1 hypothèses), 23 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
-- Décisions appliquées : 20 / 20
+- Décisions appliquées : 23 / 23
 
 ## Questions pour Amaury
 
-1. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
-2. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?
-3. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
-4. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
-5. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
-6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `7-355-014`, `7-355-015`, `7-632-001`, `7-632-002`, `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`, `4-700-097`.
+1. Poteaux compris dans le standard 7-962-016 : combien de poteaux 7-355-014 / 015 par box ? Et la bande poteau 4-720-011 (2,53 m par poteau) sort-elle seulement en box connectées (Klokgebouw n’en a pas eu) ?
+2. Câbles 4-730-013 / 4-730-014 : combien exactement — 4-730-013 = 1 par jonction entre box ? 4-730-014 = 1 par paire de box ? Et leurs désignations exactes (absentes du catalogue) ?
+3. Pieds de la 8,4 m (8) et de la M20 (10) : les pieds intermédiaires sont-ils répartis régulièrement sur les grands côtés (2 par grand côté pour la 8,4 m, 3 pour la M20) ?
+4. Plaques de base 4-700-035 (coin) / 4-700-036 (milieu) : sur une 8,4 m ou une M20, 1 par pied (4 coins + 4 ou 6 milieux) ? Et toujours sans spare (Klokgebouw et 6059 livrés sans) ?
+5. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
+6. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
+7. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
+8. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`, `4-700-097`, `4-730-013`, `4-730-014`.
 
 ## Décisions appliquées par-dessus le classeur
 
@@ -107,6 +109,18 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
   - acc:4-700-040@bord : box connectées seulement
 - **2026-10-12 — remarque du classeur (6060/00058 : « remplace 7-636-008 white/white »)** : Murs RAL 7024 une face demandés : chaque nidaplast 7-636-008 dessiné sort en 7-636-006 (question chantier « RAL des murs »).
   - 7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → sub:7-636-006@7-636-008/produit[7024]
+- **2026-10-12 — Amaury** : Les modules de toit 7-632-001 / 7-632-002 et les poteaux 7-355-014 / 7-355-015 sont compris dans le standard 7-962-016 : jamais une ligne à part. La bande poteau 4-720-011 (par poteau) a donc besoin du nombre de poteaux par box (à préciser).
+  - 7-632-001 : compris dans 7-962-016
+  - 7-632-002 : compris dans 7-962-016
+  - 7-355-014 : compris dans 7-962-016
+  - 7-355-015 : compris dans 7-962-016
+- **2026-10-12 — Amaury (« par Viewbox on peut rajouter 4-730-013 … et 4-730-014 pour 2 Viewbox »)** : Câbles électriques des lampes entre box : 4-730-013 (relie les Viewbox entre elles) et 4-730-014 (pour 2 Viewbox). Quantités à préciser ; pas en box seules (Klokgebouw n’en a pas).
+  - ajout acc:4-730-013@box[connecte]
+  - ajout acc:4-730-014@box[connecte]
+- **2026-10-12 — Amaury (« ne retire pas de mur, laisse-les comme ça, ça fait des spares »)** : Airco : 1 mur avec trou airco 4-700-083 par airco (dessinée ou à prévoir), toujours en plus ; aucun mur 7-636-008 n’est retiré.
+  - ajout acc:4-700-083@airco
+  - sub:4-700-083@airco[nidaplast] → remplacée par acc:4-700-083@airco
+  - acc:4-700-083@airco[autre] → remplacée par acc:4-700-083@airco
 
 ## Interprétations faites à l’import
 
@@ -151,7 +165,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 ## Doublons
 
 - Ajouts_chantier ligne 9 (4-730-009) : Note d’appréciation « Cable SHUKO Multiprise IP44 » déjà couverte par acc:4-730-009@box : gardée comme information, inactive.
-- Appreciation ligne 3 (4-700-083) : Note d’appréciation « NIDAPLAST WALL + trou airco » déjà couverte par sub:4-700-083@airco[nidaplast] : gardée comme information, inactive.
+- Appreciation ligne 3 (4-700-083) : Note d’appréciation « NIDAPLAST WALL + trou airco » déjà couverte par acc:4-700-083@airco : gardée comme information, inactive.
 - Appreciation ligne 4 (4-700-096+4-700-033) : Note d’appréciation « ROOF RUBBER EPDM / ROOF ROLLER TEC7 » déjà couverte par acc:4-700-096@jonction_toit_grand_cote, aj:4-700-033@job[couvert] : gardée comme information, inactive.
 - Appreciation ligne 5 (4-740-001+4-740-002+4-740-003) : Note d’appréciation « WOOD SUBPLATE (charge lourde) » déjà couverte par acc:4-740-001@sous_bois_etude, acc:4-740-002@sous_bois_etude, acc:4-740-003@sous_bois_etude : gardée comme information, inactive.
 - Appreciation ligne 6 (4-740-001+4-740-002+4-740-003) : Note d’appréciation « WOOD SUBPLATE LEVELING (pile par pied) » déjà couverte par acc:4-740-001@sous_bois_etude, acc:4-740-002@sous_bois_etude, acc:4-740-003@sous_bois_etude : gardée comme information, inactive.
@@ -183,8 +197,6 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-740-010 Laminate LAMETT DOURO HONEY (/m²) | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
 | 4-700-002 PAINT LEVASSEUR 1K RAL7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
 | 4-700-027 AIRCO WALL TROTEC 2,6KW  220V - VBX COOLING AND HEATING SYSTEM | à apprécier | forfait chantier |  |  | hypothèse | `app:4-700-027@job` |
-| 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco | aircoSlot = nidaplast |  | confirmé | `sub:4-700-083@airco[nidaplast]` |
-| 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco | aircoSlot = autre |  | confirmé | `acc:4-700-083@airco[autre]` |
 | 4-700-096 Roof Rubber EPDM 57x32x5900 /VBX/ | 1 | par jonction de toit grand côté |  | +1 | confirmé | `acc:4-700-096@jonction_toit_grand_cote` |
 | 4-700-097 Roof Rubber EPDM 2500 /VBX/ | 1 | par jonction de toit petit côté |  | +1 | confirmé | `acc:4-700-097@jonction_toit_petit_cote` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 3 | par porte simple |  |  | confirmé | `kit:7-632-017@porte_simple` |
@@ -194,6 +206,9 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-022@porte_coulissante` |
 | 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-018@porte_coulissante` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 4 | par porte coulissante |  |  | confirmé | `kit:7-632-017@porte_coulissante` |
+| 4-730-013 Câble de liaison électrique (lampes) entre Viewbox | « par Viewbox, à préciser » | par box | regime = connecte |  | à confirmer | `acc:4-730-013@box[connecte]` |
+| 4-730-014 Câble de liaison électrique (lampes) pour 2 Viewbox | « pour 2 Viewbox, à préciser » | par box | regime = connecte |  | à confirmer | `acc:4-730-014@box[connecte]` |
+| 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco |  |  | confirmé | `acc:4-700-083@airco` |
 
 ### Quincaillerie / liaison
 

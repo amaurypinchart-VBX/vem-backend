@@ -12,10 +12,10 @@ export const SEED_META = {
     "Appreciation",
     "Catalogue_ref"
   ],
-  "rules": 87,
-  "activeRules": 66,
+  "rules": 90,
+  "activeRules": 67,
   "observations": 8,
-  "catalogue": 214
+  "catalogue": 218
 } as const;
 
 export const SEED_RULES: LoadingRule[] = [
@@ -2146,7 +2146,7 @@ export const SEED_RULES: LoadingRule[] = [
     "version": 1,
     "active": false,
     "source": "seed",
-    "supersededBy": "sub:4-700-083@airco[nidaplast]"
+    "supersededBy": "acc:4-700-083@airco"
   },
   {
     "key": "app:4-700-096+4-700-033@job",
@@ -2339,7 +2339,8 @@ export const SEED_RULES: LoadingRule[] = [
     "source": "seed",
     "key": "sub:4-700-083@airco[nidaplast]",
     "version": 1,
-    "active": true
+    "active": false,
+    "supersededBy": "acc:4-700-083@airco"
   },
   {
     "calibration": [
@@ -2370,7 +2371,8 @@ export const SEED_RULES: LoadingRule[] = [
     "source": "decision",
     "key": "acc:4-700-083@airco[autre]",
     "version": 1,
-    "active": true
+    "active": false,
+    "supersededBy": "acc:4-700-083@airco"
   },
   {
     "calibration": [
@@ -2738,6 +2740,73 @@ export const SEED_RULES: LoadingRule[] = [
     "key": "kit:7-632-017@porte_coulissante",
     "version": 1,
     "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-730-013",
+    "articleName": "Câble de liaison électrique (lampes) entre Viewbox",
+    "qty": null,
+    "qtyText": "par Viewbox, à préciser",
+    "per": "box",
+    "unit": "pce",
+    "when": {
+      "regime": "connecte"
+    },
+    "confidence": "a_confirmer",
+    "remark": "Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.",
+    "source": "decision",
+    "group": "cables-entre-box",
+    "key": "acc:4-730-013@box[connecte]",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-730-014",
+    "articleName": "Câble de liaison électrique (lampes) pour 2 Viewbox",
+    "qty": null,
+    "qtyText": "pour 2 Viewbox, à préciser",
+    "per": "box",
+    "unit": "pce",
+    "when": {
+      "regime": "connecte"
+    },
+    "confidence": "a_confirmer",
+    "remark": "Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.",
+    "source": "decision",
+    "group": "cables-entre-box",
+    "key": "acc:4-730-014@box[connecte]",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "base": 3,
+        "predit": 3,
+        "livre": 3,
+        "note": "11 nidaplast + 3 murs à trou livrés"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-083",
+    "articleName": "NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16",
+    "qty": 1,
+    "per": "airco",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Un mur à trou par airco ; les murs dessinés restent (spares).",
+    "source": "decision",
+    "key": "acc:4-700-083@airco",
+    "version": 1,
+    "active": true
   }
 ];
 
@@ -3102,8 +3171,44 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "details": [
       "7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → sub:7-636-006@7-636-008/produit[7024]"
     ]
+  },
+  {
+    "id": "inclus-dans-standard",
+    "date": "2026-10-12",
+    "by": "Amaury",
+    "text": "Les modules de toit 7-632-001 / 7-632-002 et les poteaux 7-355-014 / 7-355-015 sont compris dans le standard 7-962-016 : jamais une ligne à part. La bande poteau 4-720-011 (par poteau) a donc besoin du nombre de poteaux par box (à préciser).",
+    "applied": true,
+    "details": [
+      "7-632-001 : compris dans 7-962-016",
+      "7-632-002 : compris dans 7-962-016",
+      "7-355-014 : compris dans 7-962-016",
+      "7-355-015 : compris dans 7-962-016"
+    ]
+  },
+  {
+    "id": "cables-entre-box",
+    "date": "2026-10-12",
+    "by": "Amaury (« par Viewbox on peut rajouter 4-730-013 … et 4-730-014 pour 2 Viewbox »)",
+    "text": "Câbles électriques des lampes entre box : 4-730-013 (relie les Viewbox entre elles) et 4-730-014 (pour 2 Viewbox). Quantités à préciser ; pas en box seules (Klokgebouw n’en a pas).",
+    "applied": true,
+    "details": [
+      "ajout acc:4-730-013@box[connecte]",
+      "ajout acc:4-730-014@box[connecte]"
+    ]
+  },
+  {
+    "id": "airco-sans-decompte",
+    "date": "2026-10-12",
+    "by": "Amaury (« ne retire pas de mur, laisse-les comme ça, ça fait des spares »)",
+    "text": "Airco : 1 mur avec trou airco 4-700-083 par airco (dessinée ou à prévoir), toujours en plus ; aucun mur 7-636-008 n’est retiré.",
+    "applied": true,
+    "details": [
+      "ajout acc:4-700-083@airco",
+      "sub:4-700-083@airco[nidaplast] → remplacée par acc:4-700-083@airco",
+      "acc:4-700-083@airco[autre] → remplacée par acc:4-700-083@airco"
+    ]
   }
 ];
 
 /** Réfs que le classeur demande d'ajouter au catalogue (ajout par validation dans l'app, jamais en silence). */
-export const SEED_CATALOGUE_TO_ADD: string[] = ["7-355-014","7-355-015","7-632-001","7-632-002","4-700-096","4-720-011","4-700-002"];
+export const SEED_CATALOGUE_TO_ADD: string[] = ["4-700-096","4-720-011","4-700-002"];

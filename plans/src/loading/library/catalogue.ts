@@ -1758,5 +1758,41 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur"
+  },
+  {
+    "ref": "7-632-001",
+    "designation": "Module Viewbox (compris dans le standard 7-962-016)",
+    "gros": false,
+    "categorie": "structure",
+    "unit": "pce",
+    "source": "classeur",
+    "inclusDans": "7-962-016"
+  },
+  {
+    "ref": "7-632-002",
+    "designation": "Module de toit Viewbox (compris dans le standard 7-962-016)",
+    "gros": false,
+    "categorie": "structure",
+    "unit": "pce",
+    "source": "classeur",
+    "inclusDans": "7-962-016"
+  },
+  {
+    "ref": "7-355-014",
+    "designation": "Poteau Viewbox (compris dans le standard 7-962-016)",
+    "gros": false,
+    "categorie": "structure",
+    "unit": "pce",
+    "source": "classeur",
+    "inclusDans": "7-962-016"
+  },
+  {
+    "ref": "7-355-015",
+    "designation": "Poteau Viewbox (compris dans le standard 7-962-016)",
+    "gros": false,
+    "categorie": "structure",
+    "unit": "pce",
+    "source": "classeur",
+    "inclusDans": "7-962-016"
   }
 ];

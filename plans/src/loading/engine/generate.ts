@@ -136,6 +136,10 @@ const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
 /** arrondi au supérieur sans faux reste flottant (2,53 × 8 = 20,24 → 21 ; 20 × 1,3 = 26,000…04 → 26) */
 const ceil = (x: number) => Math.ceil(x - 1e-9);
 
+/** Les murs, les vitres et les portes simples partagent les mêmes racks de 15 places ; les places libres sont souvent
+ * comblées par des spares (Amaury 12.10.2026) — proposé à l'appréciation, jamais ajouté d'office. */
+export const RACK_PLACES = 15;
+
 const CONF_RANK: Record<Confidence, number> = { confirme: 0, observe: 1, hypothese: 2, a_confirmer: 3 };
 const STATUS_RANK: Record<LineStatus, number> = { calcule: 0, jugement: 1, appreciation: 2, a_confirmer: 3, regle_manquante: 4 };
 
@@ -268,16 +272,13 @@ export function generate(input: EngineInput): LoadingList {
         return { value: members.length, ids: [...new Set(members)] };
       }
       case 'airco': {
-        const slot = r.when?.aircoSlot;
-        if (answeredAirco === undefined) {
-          if (slot === 'nidaplast' || !drawnAirco) return { value: null, ids: [], question: ask('q:aircoCount', 'Combien d’airco à prévoir en plus de celles dessinées dans la 3D ?', r) };
-        }
+        // airco dessinées + airco à prévoir (question chantier) ; aircoSlot ne sert qu'aux anciennes règles de décompte
+        if (answeredAirco === undefined && !drawnAirco) return { value: null, ids: [], question: ask('q:aircoCount', 'Combien d’airco à prévoir en plus de celles dessinées dans la 3D ?', r) };
         const answered = answeredAirco ?? 0;
-        if (answered > 0 && !answers.aircoSlot) return { value: null, ids: [], question: ask('q:aircoSlot', 'Les airco à prévoir : leur emplacement est-il dessiné en nidaplast dans la 3D, ou vide ?', r) };
         const ids = t.counts.airco?.ids ?? [];
-        if (slot === 'nidaplast') return { value: answers.aircoSlot === 'nidaplast' ? answered : 0, ids: [], text: 'airco à prévoir, emplacement en nidaplast' };
-        if (slot === 'autre') return { value: drawnAirco + (answers.aircoSlot === 'vide' ? answered : 0), ids, text: 'airco dessinée(s) ou emplacement vide' };
-        return { value: drawnAirco + answered, ids };
+        if (r.when?.aircoSlot === 'nidaplast') return { value: answers.aircoSlot === 'nidaplast' ? answered : 0, ids: [], text: 'airco à prévoir, emplacement en nidaplast' };
+        if (r.when?.aircoSlot === 'autre') return { value: drawnAirco + (answers.aircoSlot === 'vide' ? answered : 0), ids, text: 'airco dessinée(s) ou emplacement vide' };
+        return { value: drawnAirco + answered, ids, text: drawnAirco && answered ? 'airco (dessinées + à prévoir)' : answered ? 'airco à prévoir' : undefined };
       }
       case 'm2_plancher': {
         const m2 = answers.plancherM2 ?? laminateM2;
@@ -490,6 +491,19 @@ export function generate(input: EngineInput): LoadingList {
     notes.push(`${p.article} ${c.designation} (${p.qty}) : aucune règle d’accessoires connue — règle manquante à compléter si ce produit en demande`);
   }
   for (const u of t.unknown) notes.push(`À identifier : ${u.label} (${u.nodeIds.length} pièce(s)) — étape Produits`);
+  // racks murs / vitres / portes simples : places libres à combler en spares
+  const racked = lines.filter((l) => {
+    const c = catalogue.get(l.article);
+    return l.qty && c && c.gros && !c.inclusDans && (c.vitrage || c.porte === 'simple' || (/\bWALL\b/i.test(c.designation) && !/GLASSWALL/i.test(c.designation)));
+  });
+  const inRacks = racked.reduce((s, l) => s + (l.qty ?? 0), 0);
+  if (inRacks > 0) {
+    const racks = Math.ceil(inRacks / RACK_PLACES);
+    const free = racks * RACK_PLACES - inRacks;
+    notes.push(
+      `Racks murs / vitres / portes simples : ${inRacks} pièces → ${racks} rack(s) de ${RACK_PLACES}${free ? ` → ${free} place(s) libre(s) à combler en spares si tu veux (appréciation)` : ', racks pleins'}`,
+    );
+  }
   if (input.study)
     for (const p of input.study.plates)
       if (![...catalogue.values()].some((c) => c.plaque && ((c.plaque.l === p.l && c.plaque.w === p.w) || (c.plaque.l === p.w && c.plaque.w === p.l))))

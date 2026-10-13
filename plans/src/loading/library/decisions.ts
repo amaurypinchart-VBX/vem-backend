@@ -534,6 +534,79 @@ export const DECISIONS: Decision[] = [
       ctx.log.details.push(`7-636-006 : remplace 7-636-008 quand les murs sont demandés en RAL 7024 → ${r.key}`);
     },
   },
+  {
+    id: 'inclus-dans-standard',
+    date: '2026-10-12',
+    by: 'Amaury',
+    text:
+      'Les modules de toit 7-632-001 / 7-632-002 et les poteaux 7-355-014 / 7-355-015 sont compris dans le standard 7-962-016 : ' +
+      'jamais une ligne à part. La bande poteau 4-720-011 (par poteau) a donc besoin du nombre de poteaux par box (à préciser).',
+    apply: (ctx) => {
+      for (const [ref, designation] of [
+        ['7-632-001', 'Module Viewbox (compris dans le standard 7-962-016)'],
+        ['7-632-002', 'Module de toit Viewbox (compris dans le standard 7-962-016)'],
+        ['7-355-014', 'Poteau Viewbox (compris dans le standard 7-962-016)'],
+        ['7-355-015', 'Poteau Viewbox (compris dans le standard 7-962-016)'],
+      ] as const) {
+        const c = ctx.catalogue.get(ref) ?? { ref, designation, gros: false, categorie: 'structure' as const, unit: 'pce' as const, source: 'classeur' as const };
+        c.inclusDans = '7-962-016';
+        ctx.catalogue.set(ref, c);
+        ctx.log.details.push(`${ref} : compris dans 7-962-016`);
+      }
+    },
+  },
+  {
+    id: 'cables-entre-box',
+    date: '2026-10-12',
+    by: 'Amaury (« par Viewbox on peut rajouter 4-730-013 … et 4-730-014 pour 2 Viewbox »)',
+    text:
+      'Câbles électriques des lampes entre box : 4-730-013 (relie les Viewbox entre elles) et 4-730-014 (pour 2 Viewbox). ' +
+      'Quantités à préciser ; pas en box seules (Klokgebouw n’en a pas).',
+    apply: (ctx) => {
+      for (const [ref, name] of [
+        ['4-730-013', 'Câble de liaison électrique (lampes) entre Viewbox'],
+        ['4-730-014', 'Câble de liaison électrique (lampes) pour 2 Viewbox'],
+      ] as const)
+        add(ctx, {
+          kind: 'accessoire',
+          trigger: {},
+          article: ref,
+          articleName: name,
+          qty: null,
+          qtyText: ref === '4-730-013' ? 'par Viewbox, à préciser' : 'pour 2 Viewbox, à préciser',
+          per: 'box',
+          unit: 'pce',
+          when: { regime: 'connecte' },
+          confidence: 'a_confirmer',
+          remark: 'Amaury 12.10.2026 : câble pour relier les Viewbox entre elles (électricité des lampes). Règle exacte à préciser.',
+          source: 'decision',
+          group: 'cables-entre-box',
+        });
+    },
+  },
+  {
+    id: 'airco-sans-decompte',
+    date: '2026-10-12',
+    by: 'Amaury (« ne retire pas de mur, laisse-les comme ça, ça fait des spares »)',
+    text: 'Airco : 1 mur avec trou airco 4-700-083 par airco (dessinée ou à prévoir), toujours en plus ; aucun mur 7-636-008 n’est retiré.',
+    apply: (ctx) => {
+      const by = add(ctx, {
+        kind: 'accessoire',
+        trigger: {},
+        article: '4-700-083',
+        articleName: ctx.catalogue.get('4-700-083')?.designation,
+        qty: 1,
+        per: 'airco',
+        unit: 'pce',
+        confidence: 'confirme',
+        remark: 'Un mur à trou par airco ; les murs dessinés restent (spares).',
+        calibration: [{ chantier: '6059RFRAMVIE', bordereau: '00056', base: 3, predit: 3, livre: 3, note: '11 nidaplast + 3 murs à trou livrés' }],
+        source: 'decision',
+      });
+      retire(ctx, 'sub:4-700-083@airco[nidaplast]', by);
+      retire(ctx, 'acc:4-700-083@airco[autre]', by);
+    },
+  },
 ];
 
 /** Notes d'appréciation dont tous les articles ont déjà une règle active : informatives seulement. */
@@ -572,11 +645,13 @@ export function applyDecisions(imported: ImportResult, decisions: Decision[] = D
     d.apply({ rules, catalogue, log });
     logs.push(log);
   }
+  for (const c of catalogue.values()) if (!catalogueList.includes(c)) catalogueList.push(c);
   retireCoveredAppreciations(rules, issues);
   const conflicts = findConflicts(rules).map((g) => g.map((r) => r.key));
   for (const g of conflicts) for (const k of g) {
     const r = rules.find((x) => x.key === k)!;
     r.conflict = g[0];
   }
-  return { ...imported, rules, catalogue: catalogueList, issues, decisions: logs, conflicts };
+  const known = new Set(catalogueList.map((c) => c.ref));
+  return { ...imported, rules, catalogue: catalogueList, issues, decisions: logs, conflicts, catalogueToAdd: imported.catalogueToAdd.filter((r) => !known.has(r)) };
 }

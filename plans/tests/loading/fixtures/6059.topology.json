@@ -1629,9 +1629,14 @@
    "detail": "0 porte coulissante"
   },
   "poteau": {
-   "value": 0,
-   "ids": [],
-   "detail": "0 poteau"
+   "value": null,
+   "ids": [
+    "VBX-04",
+    "VBX-02",
+    "VBX-01",
+    "VBX-03"
+   ],
+   "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
   },
   "airco": {
    "value": 0,
@@ -1910,9 +1915,14 @@
     "detail": "0 porte coulissante"
    },
    "poteau": {
-    "value": 0,
-    "ids": [],
-    "detail": "0 poteau"
+    "value": null,
+    "ids": [
+     "VBX-04",
+     "VBX-02",
+     "VBX-01",
+     "VBX-03"
+    ],
+    "detail": "poteaux compris dans les standards : nombre de poteaux par box à préciser"
    },
    "airco": {
     "value": 0,

@@ -37,7 +37,8 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(seed.catalogue.find((c) => c.ref === '7-637-010')?.vitrage).toBe('10mm');
     expect(seed.catalogue.find((c) => c.ref === '7-637-020')?.vitrage).toBe('8.8.2');
     expect(seed.catalogue.find((c) => c.ref === '4-740-002')?.plaque).toEqual({ l: 700, w: 700 });
-    expect(seed.catalogueToAdd).toEqual(['7-355-014', '7-355-015', '7-632-001', '7-632-002', '4-700-096', '4-720-011', '4-700-002']);
+    expect(seed.catalogueToAdd).toEqual(['4-700-096', '4-720-011', '4-700-002']);
+    expect(seed.catalogue.find((c) => c.ref === '7-355-014')?.inclusDans).toBe('7-962-016');
   });
 
   it('traduit les règles Klokgebouw (standalone, +20 %)', () => {
@@ -65,7 +66,10 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(rule('acc:4-740-001@pied')).toMatchObject({ active: false, supersededBy: 'acc:4-740-001@sous_bois_etude' });
     expect(rule('aj:4-750-001@box')?.tranche).toEqual({ mode: 'paliers', paliers: [{ min: 1, max: 7, qty: 1 }, { min: 8, max: 15, qty: 2 }] });
     expect(rule('sub:4-700-083@airco[nidaplast]')).toMatchObject({ kind: 'substitution', replaces: { article: '7-636-008', qty: 1 } });
-    expect(rule('acc:4-700-083@airco[autre]')?.active).toBe(true);
+    expect(rule('acc:4-700-083@airco[autre]')?.active).toBe(false);
+    expect(rule('acc:4-700-083@airco')).toMatchObject({ qty: 1, active: true });
+    expect(rule('sub:4-700-083@airco[nidaplast]')?.active).toBe(false);
+    expect(rule('acc:4-730-013@box[connecte]')).toMatchObject({ qty: null, confidence: 'a_confirmer' });
     expect(rule('acc:4-730-009@4-700-027/box')?.active).toBe(false);
     expect(rule('aj:4-740-010@box[plancherLamine]')).toMatchObject({ qty: 15, unit: 'm2' });
     // jonctions (réponses du 12/10 après-midi)

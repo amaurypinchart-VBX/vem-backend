@@ -99,15 +99,16 @@ describe('vitrages, portes, substitutions', () => {
     expect(q.questions.map((x) => x.id)).toContain('q:ralMurs');
     expect(line(q, '7-636-008')?.qty).toBe(1);
   });
-  it('airco non dessinée, emplacement en nidaplast : le mur à trou remplace un mur', () => {
-    const l = run(topo(1, glass10), { answers: { aircoCount: 1, aircoSlot: 'nidaplast' } });
+  it('airco : un mur à trou en plus par airco, aucun mur retiré', () => {
+    const l = run(topo(1, glass10), { answers: { aircoCount: 1 } });
     expect(line(l, '4-700-027')?.qty).toBe(1);
-    expect(line(l, '4-700-083')?.qty).toBe(1);
-    expect(line(l, '7-636-008')).toBeUndefined();
-    const vide = run(topo(1, glass10), { answers: { aircoCount: 1, aircoSlot: 'vide' } });
-    expect([line(vide, '4-700-083')?.qty, line(vide, '7-636-008')?.qty]).toEqual([1, 1]);
-    const ask = run(topo(1, glass10), { answers: { aircoCount: 1 } });
-    expect(ask.questions.map((x) => x.id)).toContain('q:aircoSlot');
+    expect([line(l, '4-700-083')?.qty, line(l, '7-636-008')?.qty]).toEqual([1, 1]);
+    expect(l.questions.map((x) => x.id)).not.toContain('q:aircoSlot');
+  });
+  it('racks de 15 : places libres proposées en spares, jamais ajoutées d’office', () => {
+    const l = run(topo(1, glass10), { answers: { aircoCount: 0 } });
+    expect(l.notes.join()).toMatch(/4 pièces → 1 rack\(s\) de 15 → 11 place\(s\) libre\(s\)/);
+    expect(line(l, '7-636-008')?.qty).toBe(1);
   });
 });
 
