@@ -127,6 +127,8 @@ export interface ModelSettings {
   cameras?: SavedCamera[];
   /** captures de la vue 3D, la plus récente en premier */
   captures?: SavedCapture[];
+  /** vues spéciales (Vues 2D) : à relire avec cleanCustomViews (lecture tolérante) */
+  customViews?: unknown[];
 }
 
 /** Modification des réglages : clés remplacées, ou fonction des réglages à jour (listes modifiées en parallèle). */

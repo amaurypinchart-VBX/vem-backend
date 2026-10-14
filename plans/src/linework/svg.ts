@@ -2,14 +2,21 @@
 // se mesure en mm réels, et les épaisseurs de trait ne dépendent pas de l'échelle (dessin d'architecte).
 import type { LayerKey, Linework2D } from './types';
 
-export const STROKE_MM: Record<'silhouette' | 'visible' | 'fine' | 'hidden' | 'category' | 'mark', number> = {
+export const STROKE_MM: Record<'silhouette' | 'visible' | 'fine' | 'hidden' | 'category' | 'mark' | 'cut' | 'cut-hatch' | 'ghost', number> = {
   silhouette: 0.35,
   visible: 0.18,
   fine: 0.13,
   hidden: 0.13,
   category: 1.0,
   mark: 0.25,
+  // vues spéciales
+  cut: 0.5,
+  'cut-hatch': 0.09,
+  ghost: 0.13,
 };
+
+/** Gris des éléments fantôme (vues spéciales). */
+export const GHOST_COLOR = '#b4b4b4';
 
 /** Couleur des vitres sans couleur de légende (hachure « // »), comme sur les plans Viewbox. */
 export const GLASS_MARK_COLOR = '#1EAAF1';
@@ -44,6 +51,9 @@ export interface SvgOptions {
   hideLayers?: LayerKey[];
   /** fond blanc (sinon transparent) */
   background?: boolean;
+  /** vues spéciales : épaisseur du trait de coupe (mm papier) et gris des fantômes */
+  cutLineMm?: number;
+  ghostColor?: string;
 }
 
 const num = (v: number) => {
@@ -51,7 +61,10 @@ const num = (v: number) => {
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 };
 
-function styleOf(key: LayerKey, colors: Record<string, string>): string {
+function styleOf(key: LayerKey, colors: Record<string, string>, opts: Pick<SvgOptions, 'cutLineMm' | 'ghostColor'> = {}): string {
+  if (key === 'cut') return `stroke="#000" stroke-width="${opts.cutLineMm ?? STROKE_MM.cut}"`;
+  if (key === 'cut-hatch') return `stroke="#000" stroke-width="${STROKE_MM['cut-hatch']}" stroke-linecap="butt"`;
+  if (key === 'ghost') return `stroke="${opts.ghostColor ?? GHOST_COLOR}" stroke-width="${STROKE_MM.ghost}"`;
   if (key.startsWith('category:')) {
     const c = colors[key.slice(9)] ?? '#888888';
     return `stroke="${c}" stroke-width="${STROKE_MM.category}" stroke-linecap="butt" opacity="0.9"`;
@@ -79,6 +92,19 @@ export function lineworkToSvg(lw: Linework2D, opts: SvgOptions): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${num(width)}mm" height="${num(height)}mm" viewBox="0 0 ${num(width)} ${num(height)}">`,
   );
   if (background) parts.push(`<rect width="100%" height="100%" fill="#fff"/>`);
+  if (lw.fills?.length) {
+    // aplats des pièces coupées, sous les traits (règle pair-impair : les trous restent vides)
+    for (const f of lw.fills) {
+      let d = '';
+      for (const r of f.rings) {
+        if (r.length < 6) continue;
+        d += `M${X(r[0])} ${Y(r[1])}`;
+        for (let i = 2; i < r.length; i += 2) d += `L${X(r[i])} ${Y(r[i + 1])}`;
+        d += 'Z';
+      }
+      if (d) parts.push(`<path data-layer="cut-fill" fill="${f.color}" fill-rule="evenodd" stroke="none" d="${d}"/>`);
+    }
+  }
   parts.push(`<g fill="none" stroke-linecap="round" stroke-linejoin="round">`);
   for (const layer of lw.layers) {
     if (hideLayers.includes(layer.key)) continue;
@@ -89,7 +115,7 @@ export function lineworkToSvg(lw: Linework2D, opts: SvgOptions): string {
       for (let i = 2; i < pl.length; i += 2) s += `L${X(pl[i])} ${Y(pl[i + 1])}`;
       d.push(s);
     }
-    if (d.length) parts.push(`<path data-layer="${layer.key}" ${styleOf(layer.key, categoryColors)} d="${d.join('')}"/>`);
+    if (d.length) parts.push(`<path data-layer="${layer.key}" ${styleOf(layer.key, categoryColors, opts)} d="${d.join('')}"/>`);
   }
   parts.push('</g></svg>');
   return parts.join('');

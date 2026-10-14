@@ -50,11 +50,21 @@ export interface LineworkRequest {
   style: LineStyleSpec;
 }
 
-export type LayerKey = 'silhouette' | 'visible' | 'fine' | 'hidden' | `category:${string}` | `mark:${string}`;
+export type LayerKey =
+  | 'silhouette'
+  | 'visible'
+  | 'fine'
+  | 'hidden'
+  | `category:${string}`
+  | `mark:${string}`
+  // vues spéciales : trait de coupe (épais), hachures des pièces coupées, éléments en fantôme
+  | 'cut'
+  | 'cut-hatch'
+  | 'ghost';
 
 /** Calques ajoutés au dessin (couleurs, repères, lignes cachées) : ni accroche ni mesure des cotes automatiques. */
 export function isDecorationLayer(key: LayerKey): boolean {
-  return key === 'hidden' || key.startsWith('category:') || key.startsWith('mark:');
+  return key === 'hidden' || key === 'cut-hatch' || key === 'ghost' || key.startsWith('category:') || key.startsWith('mark:');
 }
 
 export interface LineworkLayer {
@@ -65,9 +75,20 @@ export interface LineworkLayer {
   sourceNodeIds?: string[];
 }
 
+/** Remplissage d'une pièce coupée (vues spéciales) : contours fermés, règle pair-impair (trous compris). */
+export interface LineworkFill {
+  key: 'cut-fill';
+  color: string;
+  /** contours [x0, y0, x1, y1, …] en mm modèle, repère du dessin */
+  rings: Float64Array[];
+  sourceNodeId?: string;
+}
+
 export interface Linework2D {
   boundsMm: { minX: number; minY: number; maxX: number; maxY: number };
   layers: LineworkLayer[];
+  /** vues spéciales seulement : aplats des pièces coupées (dessinés sous les traits) */
+  fills?: LineworkFill[];
   snapPoints: Float64Array;
   meta: {
     provider: string;
@@ -91,5 +112,5 @@ export interface LineworkProvider {
 }
 
 /** Priorités des calques de traits (en cas de superposition, le plus grand gagne). */
-export const PRIO = { hidden: 0, fine: 1, visible: 2, silhouette: 3 } as const;
-export const PRIO_LAYER: Record<number, LayerKey> = { 0: 'hidden', 1: 'fine', 2: 'visible', 3: 'silhouette' };
+export const PRIO = { hidden: 0, fine: 1, visible: 2, silhouette: 3, cut: 4 } as const;
+export const PRIO_LAYER: Record<number, LayerKey> = { 0: 'hidden', 1: 'fine', 2: 'visible', 3: 'silhouette', 4: 'cut' };

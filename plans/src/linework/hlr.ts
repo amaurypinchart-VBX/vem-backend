@@ -33,6 +33,13 @@ export interface HlrPacket {
   /** identifiant du nœud d'origine de chaque objet (accessoire, sinon l'objet lui-même) */
   sourceIds: string[];
   center: Vec3;
+  /**
+   * vues spéciales : plan de coupe de chaque sommet (numéro + 1, 0 = aucun). Une arête dont les deux sommets sont
+   * sur le même plan de coupe est un trait de coupe (calque `cut`). Absent = vues existantes.
+   */
+  cutVertex?: Uint16Array;
+  /** vues spéciales : 1 = objet qui cache sans être dessiné (passe des fantômes). Absent = tous dessinés. */
+  edgeless?: Uint8Array;
 }
 
 export interface HlrJob {
@@ -44,7 +51,7 @@ export interface HlrJob {
 export type HlrProgress = (fraction: number, message: string) => void;
 
 /** Arête 3D + objet d'origine (la construction du BVH réordonne le tableau des arêtes sur place). */
-type OwnedEdge = Line3 & { owner: number };
+type OwnedEdge = Line3 & { owner: number; cut?: boolean };
 
 /** Décalage des arêtes vers l'observateur : évite qu'une arête soit cachée par sa propre face (mm). */
 const EDGE_LIFT = 0.005;
@@ -303,6 +310,11 @@ function extractEdges(
     if (Math.abs(view[a] - view[b]) + Math.abs(view[a + 2] - view[b + 2]) < 1e-6) continue; // vue en bout
     const e = new Line3(new Vector3(view[a], view[a + 1] + EDGE_LIFT, view[a + 2]), new Vector3(view[b], view[b + 1] + EDGE_LIFT, view[b + 2])) as OwnedEdge;
     e.owner = m;
+    const cv = packet.cutVertex;
+    if (cv) {
+      const ca = cv[a / 3];
+      if (ca && ca === cv[b / 3]) e.cut = true;
+    }
     edges.push(e);
   }
 }
@@ -386,7 +398,7 @@ export function computeView(packet: HlrPacket, job: HlrJob, onProgress: HlrProgr
   // mais ils cachent toujours ce qu'il y a derrière
   const detailModel = style.detailMinPaperMm * style.scaleDenominator;
   for (let m = 0; m < prep.meshCount; m++) {
-    if (prep.extent[m] < detailModel) occluder.fill(1, packet.indexStart[m] / 3, (packet.indexStart[m] + packet.indexCount[m]) / 3);
+    if (prep.extent[m] < detailModel || packet.edgeless?.[m]) occluder.fill(1, packet.indexStart[m] / 3, (packet.indexStart[m] + packet.indexCount[m]) / 3);
     else extractEdges(packet, prep, m, cosThreshold, edges, occluder);
   }
   if (style.intersectionEdges) {
@@ -428,7 +440,7 @@ export function computeView(packet: HlrPacket, job: HlrJob, onProgress: HlrProgr
   const pieces: Float32Array[] = [];
   for (let i = 0; i < edges.length; i++) {
     const owner = edges[i].owner;
-    const prio = prep.extent[owner] < fineModel ? PRIO.fine : PRIO.visible;
+    const prio = edges[i].cut ? PRIO.cut : prep.extent[owner] < fineModel ? PRIO.fine : PRIO.visible;
     pieces.length = 0;
     overlapsToLines(edges[i], hidden[i], false, pieces);
     for (const s of pieces) pushSegment(visible, s[0] + cx, -s[2] + cy, s[3] + cx, -s[5] + cy, prio, owner);
@@ -466,7 +478,7 @@ export function computeView(packet: HlrPacket, job: HlrJob, onProgress: HlrProgr
       const ny = ((x1 - x0) / l) * SILHOUETTE_PROBE;
       const mx = (x0 + x1) / 2;
       const my = (y0 + y1) / 2;
-      if (!hitAt(mx + nx, my + ny) || !hitAt(mx - nx, my - ny)) merged.prio[i] = PRIO.silhouette;
+      if (merged.prio[i] < PRIO.silhouette && (!hitAt(mx + nx, my + ny) || !hitAt(mx - nx, my - ny))) merged.prio[i] = PRIO.silhouette;
     }
   }
   lap('silhouette');

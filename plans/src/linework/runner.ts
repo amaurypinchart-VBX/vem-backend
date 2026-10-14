@@ -1,12 +1,15 @@
 // Exécution des calculs de vues : pool de Web Workers (une vue par Worker, en parallèle) ou directement (tests).
 import type { HlrJob, HlrPacket } from './hlr';
 import { computeView } from './hlr';
+import type { CustomJob } from './customJob';
+import { computeCustomView } from './customJob';
 import type { Linework2D } from './types';
 
 export interface HlrTask {
   packetKey: string;
   packet: HlrPacket;
-  job: HlrJob;
+  /** vue spéciale : `custom` (coupes, fantômes, remplissages) */
+  job: HlrJob & { custom?: CustomJob };
   onProgress?: (fraction: number, message: string) => void;
 }
 
@@ -23,7 +26,8 @@ export function createInlineRunner(): HlrRunner {
     async run(task, signal) {
       await new Promise((r) => setTimeout(r, 0));
       if (signal?.aborted) throw abortError();
-      return computeView(task.packet, task.job, task.onProgress);
+      const { job } = task;
+      return job.custom ? computeCustomView(task.packet, { ...job, custom: job.custom }, task.onProgress) : computeView(task.packet, job, task.onProgress);
     },
     dispose() {},
   };
