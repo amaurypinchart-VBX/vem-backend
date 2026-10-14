@@ -151,7 +151,7 @@ export function cleanViewTags(raw: unknown): ViewTagRule[] {
   for (const r of raw) {
     if (!r || typeof r !== 'object') continue;
     const o = r as Record<string, unknown>;
-    const tag = typeof o.tag === 'string' ? o.tag.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 40) : '';
+    const tag = typeof o.tag === 'string' ? o.tag.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) : '';
     const m = o.match && typeof o.match === 'object' ? (o.match as Record<string, unknown>) : {};
     const match: ViewTagRule['match'] = {};
     for (const k of ['definition', 'articleRef', 'namePattern'] as const) if (typeof m[k] === 'string' && (m[k] as string).trim()) match[k] = (m[k] as string).trim();

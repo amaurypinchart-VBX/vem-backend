@@ -20,9 +20,13 @@ router.get('/:key', async (req: AuthRequest, res: Response, next: NextFunction) 
 // Réglages du module Plans Viewbox (clés « plans.* » : règles de classement…) : aussi modifiables par les
 // profils techniques qui préparent les plans.
 const PLANS_EDITORS = ['admin', 'technical_manager', 'engineer'];
-const canWrite = (role: string | undefined, key: string) => role === 'admin' || (key.startsWith('plans.') && PLANS_EDITORS.includes(role ?? ''));
+// vues spéciales : étiquettes de vue et préréglages partagés entre projets — admin + technical_manager seulement
+const PLANS_VIEW_KEYS = ['plans.viewTags', 'plans.viewPresets'];
+const canWrite = (role: string | undefined, key: string) =>
+  role === 'admin' ||
+  (PLANS_VIEW_KEYS.includes(key) ? role === 'technical_manager' : key.startsWith('plans.') && PLANS_EDITORS.includes(role ?? ''));
 
-// PUT /settings/:key — crée ou met à jour (admin ; clés plans.* : admin + technical_manager + engineer)
+// PUT /settings/:key — crée ou met à jour (admin ; clés plans.* : admin + technical_manager + engineer, sauf plans.viewTags / plans.viewPresets : admin + technical_manager)
 // Body : { value: any }
 router.put('/:key', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

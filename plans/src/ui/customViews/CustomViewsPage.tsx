@@ -6,11 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import type { BrowserHlrProvider } from '../../linework/provider';
-import type { ModelSettings, ModelVersion, SettingsUpdate, VemUser } from '../../api/vem';
-import { vem } from '../../api/vem';
+import type { ModelSettings, ModelVersion, SavedCapture, SettingsUpdate, VemUser } from '../../api/vem';
+import { PROJECT_ID, vem } from '../../api/vem';
+import { fitImageBytes } from '../../viewer/uploadSize';
 import type { CustomViewSpec, SectionBox, ViewTagRule } from '../../core/customViews/types';
 import { cleanCustomViews } from '../../core/customViews/clean';
-import { VIEW_PRESETS, specFromPreset } from '../../core/customViews/presets';
+import { VIEW_PRESETS, cleanSharedPresetRecords, presetFromRecord, presetRecordFromSpec, specFromPreset } from '../../core/customViews/presets';
 import type { ViewPreset } from '../../core/customViews/presets';
 import { makePathIndex } from '../../core/customViews/paths';
 import { cleanViewTags, makeTagResolver } from '../../core/customViews/tags';
@@ -54,20 +55,12 @@ interface Preview {
   error?: string;
 }
 
-/** Préréglages partagés (app_settings › plans.viewPresets) : lecture tolérante. */
+/** Préréglages partagés (app_settings › plans.viewPresets) actifs. */
 export function cleanSharedPresets(raw: unknown): ViewPreset[] {
-  if (!Array.isArray(raw)) return [];
-  const out: ViewPreset[] = [];
-  for (const r of raw) {
-    if (!r || typeof r !== 'object') continue;
-    const o = r as Record<string, unknown>;
-    const spec = cleanCustomViews([{ ...(o.spec as object), id: 'preset' }])[0];
-    if (!spec || typeof o.key !== 'string' || typeof o.name !== 'string') continue;
-    if ((o as { disabled?: boolean }).disabled) continue;
-    const { id: _id, createdAt: _c, updatedAt: _u, source: _s, name: _n, ...rest } = spec;
-    out.push({ key: o.key, name: o.name, description: typeof o.description === 'string' ? o.description : '', spec: rest });
-  }
-  return out;
+  return cleanSharedPresetRecords(raw)
+    .filter((r) => !r.disabled)
+    .map((r) => presetFromRecord(r, (x) => cleanCustomViews([x])[0] ?? null))
+    .filter((p): p is ViewPreset => !!p);
 }
 
 const ISO_OF: Record<string, StandardView> = { fl: 'iso-sw', fr: 'iso-se', bl: 'iso-nw', br: 'iso-ne' };
@@ -87,6 +80,7 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
   const [bubble, setBubble] = useState<{ meshId: string; level: string } | null>(null);
   const [preview, setPreview] = useState<Preview>({ status: 'idle', progress: 0 });
   const [sheetDialog, setSheetDialog] = useState(false);
+  const [notice, setNotice] = useState('');
   const spec = hist?.present ?? null;
 
   useEffect(() => {
@@ -342,6 +336,46 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
     }
   };
 
+  /** « ⭐ Enregistrer comme préréglage » : vue portable dans app_settings › plans.viewPresets (admin / TM). */
+  const saveAsPreset = async () => {
+    if (!spec || !isEditor) return;
+    const name = window.prompt('Nom du préréglage (pour tous les projets) :', spec.name)?.trim();
+    if (!name) return;
+    const description = window.prompt('Une ligne d’explication :', '')?.trim() ?? '';
+    const by = [me?.firstName, me?.lastName].filter(Boolean).join(' ');
+    try {
+      const raw = await vem.getSetting<unknown>('plans.viewPresets');
+      const list = cleanSharedPresetRecords(raw);
+      const existing = list.find((r) => r.name === name);
+      const { record, dropped } = presetRecordFromSpec(spec, name, description, by, now(), existing?.key);
+      if (!existing && list.some((r) => r.key === record.key)) record.key = `${record.key}-${list.length + 1}`;
+      const next = existing ? list.map((r) => (r.key === existing.key ? record : r)) : [...list, record];
+      await vem.saveSetting('plans.viewPresets', next);
+      setShared(cleanSharedPresets(next));
+      setNotice(`Préréglage « ${name} » enregistré pour tous les projets.${dropped.length ? ` Règles « cette pièce seulement » non reprises : ${dropped.join(', ')}.` : ''}`);
+    } catch (e) {
+      setNotice(`Préréglage non enregistré : ${(e as Error).message}`);
+    }
+  };
+
+  /** « 📷 Image 3D coupée » : capture de la 3D telle qu'affichée (coupes, retraits), ajoutée aux captures du modèle. */
+  const capture3d = async () => {
+    const v = viewerRef.current;
+    if (!v || !spec) return;
+    setNotice('Capture en cours…');
+    try {
+      const res = await v.capture({ size: 4000, background: 'white', marginPct: 3 });
+      const fit = await fitImageBytes(res.blob, res.width, res.height);
+      const fileName = `vue-speciale_${spec.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}_${fit.width}x${fit.height}.png`;
+      const { url } = await vem.uploadAsset(PROJECT_ID, fit.blob, fileName);
+      const saved: SavedCapture = { id: newId('cap'), url, name: `${spec.name} · image 3D coupée`, width: fit.width, height: fit.height, createdAt: now() };
+      await onSaveSettings((cur) => ({ captures: [saved, ...(cur.captures ?? [])] }));
+      setNotice('Image 3D coupée ajoutée aux captures du modèle : elle se pose sur une planche avec « 📷 Image 3D ».');
+    } catch (e) {
+      setNotice(`Capture impossible : ${(e as Error).message}`);
+    }
+  };
+
   const boxFor = (m: string): SectionBox | undefined => {
     const f = frames.get(m);
     if (!f) return undefined;
@@ -429,11 +463,28 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
               >
                 📐 Ajouter à une planche
               </button>
+              <button className="btn small ghost" onClick={() => void capture3d()} title="Image ombrée de la 3D telle qu’affichée (coupes, éléments retirés), pour une planche" data-testid="cv-capture">
+                📷 Image 3D coupée
+              </button>
+              {isEditor && (
+                <button className="btn small ghost" onClick={() => void saveAsPreset()} title="Réutiliser cette vue dans tous les projets (Réglages › Vues spéciales)" data-testid="cv-save-preset">
+                  ⭐ Préréglage
+                </button>
+              )}
             </>
           ) : (
             <span className="hint">Choisis une vue, un préréglage ou « ＋ Nouvelle vue ».</span>
           )}
         </div>
+        {notice && (
+          <div className="sync-banner" data-testid="cv-notice">
+            {notice}
+            <div className="spacer" />
+            <button className="btn small ghost" onClick={() => setNotice('')}>
+              OK
+            </button>
+          </div>
+        )}
         <div className="cv-3d">
           <div ref={holder} className="viewer-canvas" />
           {spec && bubble && (

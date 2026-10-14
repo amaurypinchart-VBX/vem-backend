@@ -131,3 +131,63 @@ export function specFromPreset(p: ViewPreset, id: string, now: string, options: 
 export function isPortable(spec: Pick<CustomViewSpec, 'visibility' | 'box'>): boolean {
   return spec.visibility.every((r) => !r.match.nodeIds?.length) && !(spec.box?.moduleId);
 }
+
+/** Préréglage partagé tel qu'il est stocké (app_settings › plans.viewPresets). */
+export interface SharedPresetRecord {
+  key: string;
+  name: string;
+  description: string;
+  /** vue portable (sans identifiant de nœud) */
+  spec: unknown;
+  disabled?: boolean;
+  by?: string;
+  at?: string;
+}
+
+/** Lecture tolérante des préréglages partagés (entrées illisibles écartées, clés en double écartées). */
+export function cleanSharedPresetRecords(raw: unknown): SharedPresetRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: SharedPresetRecord[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue;
+    const o = r as Record<string, unknown>;
+    const key = typeof o.key === 'string' ? o.key.trim().slice(0, 80) : '';
+    const name = typeof o.name === 'string' ? o.name.trim().slice(0, 200) : '';
+    if (!key || !name || seen.has(key) || !o.spec || typeof o.spec !== 'object') continue;
+    seen.add(key);
+    const rec: SharedPresetRecord = { key, name, description: typeof o.description === 'string' ? o.description.slice(0, 400) : '', spec: o.spec };
+    if (o.disabled === true) rec.disabled = true;
+    if (typeof o.by === 'string') rec.by = o.by;
+    if (typeof o.at === 'string') rec.at = o.at;
+    out.push(rec);
+  }
+  return out;
+}
+
+/** Préréglage utilisable (null si sa vue est illisible). */
+export function presetFromRecord(r: SharedPresetRecord, clean: (raw: unknown) => CustomViewSpec | null): ViewPreset | null {
+  const spec = clean({ ...(r.spec as object), id: 'preset' });
+  if (!spec) return null;
+  const { id: _i, createdAt: _c, updatedAt: _u, source: _s, name: _n, presetKey: _p, updatedBy: _b, ...rest } = spec;
+  return { key: r.key, name: r.name, description: r.description, spec: rest };
+}
+
+/**
+ * Enregistre une vue comme préréglage partagé : seules les clés portables sont gardées (règles « cette pièce
+ * seulement » et boîte « Entrer dans VBX-xx » retirées) ; `dropped` = règles retirées.
+ */
+export function presetRecordFromSpec(spec: CustomViewSpec, name: string, description: string, by: string, at: string, key?: string): { record: SharedPresetRecord; dropped: string[] } {
+  const dropped = spec.visibility.filter((r) => r.match.nodeIds?.length).map((r) => r.label);
+  const visibility = spec.visibility.filter((r) => !r.match.nodeIds?.length).map((r) => ({ ...r, source: 'preset' as const }));
+  const { id: _i, createdAt: _c, updatedAt: _u, source: _s, name: _n, presetKey: _p, updatedBy: _b, box, ...rest } = spec;
+  const portable = { ...rest, visibility, ...(box && !box.moduleId ? { box } : {}) };
+  const slug = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+  return { record: { key: key ?? `shared-${slug || 'vue'}`, name, description, spec: portable, by, at }, dropped };
+}

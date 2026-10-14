@@ -7,11 +7,12 @@ import { ModelsPage } from './ui/ModelsPage';
 import { SettingsPage } from './ui/SettingsPage';
 import { LibraryPage } from './ui/structure/LibraryPage';
 import { RuleLibrary } from './ui/loading/RuleLibrary';
+import { ViewSettings } from './ui/customViews/ViewSettings';
 import { setDisplayRules } from './ui/common';
 
 export function App() {
   const [tab, setTab] = useState<'models' | 'settings'>('models');
-  const [settingsTab, setSettingsTab] = useState<'rules' | 'library' | 'loading'>('rules');
+  const [settingsTab, setSettingsTab] = useState<'rules' | 'library' | 'loading' | 'views'>('rules');
   const [project, setProject] = useState<Project | null>(null);
   const [rules, setRules] = useState<ClassificationRules>(DEFAULT_RULES);
   const [rulesKey, setRulesKey] = useState(0);
@@ -92,7 +93,11 @@ export function App() {
                 <button className={`tab ${settingsTab === 'loading' ? 'active' : ''}`} onClick={() => setSettingsTab('loading')}>
                   Règles de loading
                 </button>
+                <button className={`tab ${settingsTab === 'views' ? 'active' : ''}`} onClick={() => setSettingsTab('views')} data-testid="settings-views">
+                  Vues spéciales
+                </button>
               </nav>
+              {settingsTab === 'views' && tab === 'settings' && <ViewSettings />}
               {settingsTab === 'library' && <LibraryPage />}
               {/* rechargée à chaque ouverture : une règle validée depuis une loading liste doit y apparaître */}
               {settingsTab === 'loading' && tab === 'settings' && <RuleLibrary />}

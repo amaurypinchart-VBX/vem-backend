@@ -16,7 +16,7 @@ import { apply2D, cameraView } from '../../src/core/customViews/camera';
 import { arrangeBlocks, clusterRanks } from '../../src/core/customViews/layout';
 import type { LayoutBlock } from '../../src/core/customViews/layout';
 import { groupIdentical, moduleSignature } from '../../src/core/customViews/identical';
-import { VIEW_PRESETS, isPortable, specFromPreset } from '../../src/core/customViews/presets';
+import { VIEW_PRESETS, cleanSharedPresetRecords, isPortable, presetFromRecord, presetRecordFromSpec, specFromPreset } from '../../src/core/customViews/presets';
 import { cleanCustomView, cleanCustomViews } from '../../src/core/customViews/clean';
 import type { CustomViewSpec, VisibilityRule } from '../../src/core/customViews/types';
 import { DEFAULT_CAMERA, DEFAULT_LAYOUT, DEFAULT_STYLE } from '../../src/core/customViews/types';
@@ -349,5 +349,35 @@ describe('préréglages et lecture tolérante', () => {
     expect(a.style.cutLine).toBe(2);
     expect(out[1]).toMatchObject({ name: 'Vue spéciale', scope: { modules: 'all', common: true }, layout: DEFAULT_LAYOUT, style: DEFAULT_STYLE, output: 'vector' });
     expect(cleanCustomViews('rien')).toEqual([]);
+  });
+});
+
+describe('mémoire entre projets (VS7)', () => {
+  it('préréglage partagé : clés portables seulement, relu tel quel', () => {
+    const s = fakeScene(grid2x3());
+    const ctx = ctxOf(s);
+    const one = s.index.nodes.find((n) => n.definition === 'LIght_Rail_3P')!.id;
+    const base = specFromPreset(VIEW_PRESETS[0], 'v', 'n');
+    const sp = { ...base, visibility: [...base.visibility, rule('one', 'hide', { nodeIds: [one] })], box: { frame: 'module' as const, moduleId: 'VBX-01', min: [0, 0, 0] as Vec3, max: [1, 1, 1] as Vec3 } };
+    const { record, dropped } = presetRecordFromSpec(sp, 'Mon dessous', 'sans plafond', 'Amaury', '2026-10-14');
+    expect(dropped).toEqual(['one']);
+    expect(record.key).toBe('shared-mon-dessous');
+    expect(JSON.stringify(record.spec)).not.toContain(one);
+    expect(JSON.stringify(record.spec)).not.toContain('VBX-01');
+    const back = cleanSharedPresetRecords([record, { key: 'x' }, record, null]);
+    expect(back).toHaveLength(1);
+    const p = presetFromRecord(back[0], (x) => cleanCustomView(x))!;
+    const again = specFromPreset(p, 'w', 'n');
+    expect(again.visibility.map((r) => r.match.viewTags?.[0])).toEqual(['plafond-tendu']);
+    expect(resolveVisibility(ctx, again).counts.get(again.visibility[0].id)).toBe(6);
+  });
+
+  it('étiquette mémorisée par définition : reconnue dans un autre projet ; motif accentué normalisé', () => {
+    const other = fakeScene([{ id: 'VBX-01', x: 0, z: 0 }]);
+    const mem = cleanViewTags([{ tag: 'Écran LED', label: 'Écran LED', match: { definition: 'LIght_Rail_3P' } }]);
+    expect(mem[0].tag).toBe('ecran-led');
+    const ctx = ctxOf(other, mem);
+    const rail = other.index.nodes.find((n) => n.definition === 'LIght_Rail_3P')!.id;
+    expect(ctx.tags.ownTag(rail)).toMatchObject({ tag: 'ecran-led', source: 'memorised' });
   });
 });

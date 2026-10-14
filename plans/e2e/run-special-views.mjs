@@ -21,7 +21,7 @@ page.on('console', (m) => {
   if (m.text().startsWith('[vues spéciales]')) console.log('   ', m.text());
 });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-page.on('dialog', (d) => d.accept());
+page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? d.defaultValue() || 'Vue e2e' : undefined));
 let failed = 0;
 const check = (label, ok) => {
   if (!ok) failed++;
@@ -203,6 +203,26 @@ if (process.env.SKIP_SHEETS !== '1') {
   const pdfText = readFileSync(shots + 'special-sheet.pdf', 'latin1');
   check('PDF : une page, vectoriel (aucune image)', (pdfText.match(/\/Type \/Page\b/g) || []).length === 1 && !/\/Subtype \/Image/.test(pdfText));
 }
+// 9. mémoire (VS7) : préréglage partagé, image 3D coupée, Réglages › Vues spéciales
+await page.getByRole('button', { name: 'Vues 2D' }).click();
+await page.locator('[data-testid="cv-save-preset"]').click();
+await page.locator('[data-testid="cv-notice"]').waitFor();
+const n1 = await page.locator('[data-testid="cv-notice"]').innerText();
+console.log('   ', n1.replace(/\s+/g, ' '));
+check('préréglage partagé enregistré', /Préréglage « .+ » enregistré/.test(n1));
+check('préréglage partagé proposé dans la liste', (await page.locator('.cv-preset').count()) >= 9);
+await page.locator('[data-testid="cv-capture"]').click();
+await page.waitForFunction(() => /ajoutée aux captures|impossible/.test(document.querySelector('[data-testid="cv-notice"]')?.textContent ?? ''), null, { timeout: 300000 });
+const n2 = await page.locator('[data-testid="cv-notice"]').innerText();
+console.log('   ', n2.replace(/\s+/g, ' '));
+check('image 3D coupée ajoutée aux captures', n2.includes('ajoutée aux captures'));
+await page.getByRole('button', { name: 'Réglages' }).click();
+await page.locator('[data-testid="settings-views"]').click();
+await page.locator('[data-testid="vs-presets"]').waitFor({ timeout: 30000 });
+check('Réglages › Vues spéciales : préréglage partagé listé', (await page.locator('[data-testid="vs-presets"] tbody tr').count()) >= 1);
+await page.locator('[data-testid="view-settings"]').screenshot({ path: shots + 'special-settings.png' });
+await page.getByRole('button', { name: 'Modèles' }).first().click().catch(() => {});
+
 await page.reload();
 await page.getByRole('button', { name: 'Ouvrir' }).first().click();
 await page.getByRole('button', { name: 'Vues 2D' }).click({ timeout: 600000 });
