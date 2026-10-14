@@ -44,6 +44,7 @@ import { moduleEtaColors } from './CalcResults';
 import type { Hypotheses, StructureStock } from './GroundPanel';
 import { calageInput } from './GroundPanel';
 import { groundExtras } from './studyInputs';
+import { freshImport } from '../newVersion';
 
 /** Version affichée dans les rapports. */
 export const STRUCTURE_VERSION = 'v1.0';
@@ -81,7 +82,7 @@ async function captureViews(scene: LoadedScene, glassTest: GlassTest, colors: Ma
   const viewer = new SceneViewer(host, scene, glassTest);
   viewer.setFrontMarkers(false);
   const toImage = async (blob: Blob, width: number, height: number): Promise<ReportImage> => {
-    const { pdfImageDataUrl } = await import('../../sheets/pdf/assets');
+    const { pdfImageDataUrl } = await freshImport(() => import('../../sheets/pdf/assets'));
     const url = URL.createObjectURL(blob);
     try {
       return { href: await pdfImageDataUrl(url, 0.85), width, height };
@@ -359,7 +360,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   };
 
   const toPdf = async (pages: ReportOutput['pages'], title: string): Promise<Blob> => {
-    const [{ buildPdf, fontsUsed }, { loadFonts }] = await Promise.all([import('../../sheets/pdf/pdf'), import('../../sheets/pdf/assets')]);
+    const [{ buildPdf, fontsUsed }, { loadFonts }] = await Promise.all([freshImport(() => import('../../sheets/pdf/pdf')), freshImport(() => import('../../sheets/pdf/assets'))]);
     setBusy('PDF : polices…');
     const fonts = await loadFonts(fontsUsed(pages.map((p) => p.svg)));
     const pdf = await buildPdf(

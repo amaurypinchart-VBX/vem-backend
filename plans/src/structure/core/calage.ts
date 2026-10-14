@@ -21,6 +21,7 @@ import { TUV, tuvConformity, tuvPlate } from './tuv';
 import type { GroundLevel, LevelSurvey } from './groundLevels';
 import { JACK_MAX_EXTENSION, levelSurvey } from './groundLevels';
 import { verdictOf } from './records';
+import { fmtNumber } from './units';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -137,6 +138,8 @@ export interface CalageResult {
     result: LongrineResult;
     solution: Solution;
   };
+  /** longrines retenues à la place des plaques (choix `CalageChoices.longrine`) ; sinon elles restent une variante */
+  longrineChosen: boolean;
   /** matériel de la solution retenue pour chaque type */
   materials: MaterialLine[];
   /** tout est calé par des plaques faisables */
@@ -550,8 +553,10 @@ export function computeCalage(inp: CalageInput): CalageResult {
   }
 
   const allPlates = types.every((t) => t.standard);
-  const anyChoice = roadwayOn || !!Object.keys(choices.byType ?? {}).length || !!Object.keys(choices.bySupport ?? {}).length;
-  const materials = mergeMaterials(allPlates || !longrine || anyChoice ? types.flatMap((t) => t.chosen?.materials ?? []) : longrine.solution.materials);
+  // les plaques restent la solution retenue (plan de calage par type d'appui, Prüfbuch) ; les longrines seulement sur choix
+  const longrineChosen = !!choices.longrine && !!longrine && !roadwayOn;
+  if (choices.longrine && !longrine) warnings.push('Longrines choisies mais impossibles à calculer : les plaques sont gardées.');
+  const materials = mergeMaterials(longrineChosen ? longrine!.solution.materials : types.flatMap((t) => t.chosen?.materials ?? []));
   if (roadwayOn)
     materials.push({
       label: 'Plaques de roulage jointives',
@@ -559,8 +564,10 @@ export function computeCalage(inp: CalageInput): CalageResult {
       quantity: 1,
       massKg: (roadway.plates * roadway.area) / 9.81,
     });
-  if (!allPlates && !longrine)
+  if (!allPlates && !longrineChosen) {
     warnings.push('Aucune solution standard pour tous les appuis : la moins mauvaise est chiffrée, une étude de répartition spécifique est nécessaire.');
+    if (longrine && longrine.result.eta <= 1) warnings.push(`La variante longrines passe (η = ${fmtNumber(longrine.result.eta, 2)}) : elle peut être retenue à l’étape Sol & calage.`);
+  }
   // Prüfbuch TÜV : portance minimale (Auflage 4.9) et plaques minimales du plan 18-0573-03
   const bearingOk = inp.bearing >= TUV.minBearing - 1e-9;
   const tuvList = types.map((t) => t.tuv).filter((x): x is TuvCheck => !!x);
@@ -573,6 +580,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     estimate: est,
     types,
     longrine,
+    longrineChosen,
     materials,
     allPlates,
     warnings,

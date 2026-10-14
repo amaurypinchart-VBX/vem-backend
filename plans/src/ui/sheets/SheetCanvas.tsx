@@ -15,7 +15,7 @@ import { FRAME, PAPER_MM, scaleRect, templateScale } from '../../sheets/template
 import type { DrawingSet } from '../../sheets/types';
 import { actions, useEditor } from '../../sheets/store';
 
-export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain';
+export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol';
 
 /** Point accroché dans une vue : position dans le dessin, sur la planche, type d'accroche. */
 export interface SnapResult {
@@ -312,6 +312,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
       d.moved = true;
       const g: { x?: number; y?: number } = {};
       const moving = sheet.items.filter((i) => d.ids.includes(i.id));
+      const onlySymbols = moving.every((i) => i.type === 'symbol');
       if (!d.noSnap && !e.shiftKey && moving.length) {
         const bs = moving.map((i) => itemBox(i, sheet, viewData, k));
         const x0 = Math.min(...bs.map((b) => b.x)) + dx;
@@ -324,11 +325,11 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
         if (sx !== null) {
           dx += sx;
           g.x = [x0, (x0 + x1) / 2, x1].map((v) => v + sx).find((v) => t.xs.some((q) => Math.abs(q - v) < 1e-6));
-        } else dx += Math.round(x0 / GRID) * GRID - x0; // grille 5 mm (bord gauche)
+        } else if (!onlySymbols) dx += Math.round(x0 / GRID) * GRID - x0; // grille 5 mm (bord gauche)
         if (sy !== null) {
           dy += sy;
           g.y = [y0, (y0 + y1) / 2, y1].map((v) => v + sy).find((v) => t.ys.some((q) => Math.abs(q - v) < 1e-6));
-        } else dy += Math.round(y0 / GRID) * GRID - y0; // grille 5 mm (bord haut)
+        } else if (!onlySymbols) dy += Math.round(y0 / GRID) * GRID - y0; // grille 5 mm (bord haut) ; pas pour les symboles (posés au plus près)
       }
       setGuides(g);
       setPreview(new Map(d.ids.map((id) => [id, { dx, dy }])));

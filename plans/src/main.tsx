@@ -6,6 +6,9 @@ import '@fontsource/gelasio/700.css';
 import '@fontsource/arimo/400.css';
 import '@fontsource/arimo/700.css';
 import './styles.css';
+import { watchNewVersion } from './ui/newVersion';
+
+watchNewVersion();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

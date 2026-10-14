@@ -193,8 +193,48 @@ export interface DetailItem extends ItemBase {
   labelSize?: number;
 }
 
-export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem | DetailItem;
-export type BoxItem = Exclude<SheetItem, LabelItem | DimensionItem>;
+/**
+ * Symbole d'équipement (prise, éclairage, tableau… : `sheets/symbols.ts`) : taille constante sur le papier. Posé sur
+ * une vue, il est attaché à un point du dessin de cette vue (mm modèle, repère 2D de la vue) et la suit (échelle,
+ * cadrage, déplacement du cadre) ; sinon il est fixe sur la planche.
+ */
+export interface SymbolItem extends ItemBase {
+  type: 'symbol';
+  /** clé dans SYMBOLS */
+  symbol: string;
+  viewportId?: string;
+  /** point du dessin de la vue (mm modèle) */
+  model?: [number, number];
+  /** position sur la planche (mm papier) : utilisée sans vue, et dernière position connue sinon */
+  at: PointMm;
+  /** rotation (°, sens horaire sur le papier) */
+  rotation?: number;
+  /** taille (mm papier) ; défaut SYMBOL_SIZE × échelle du gabarit */
+  size?: number;
+  /** texte à côté (« 32 A », « C3 », « IP44 ») */
+  note?: string;
+  /** hauteur de pose au-dessus du sol fini (mm) : « h 1,10 m » */
+  heightMm?: number;
+  /** symboles linéaires : longueur réelle (mm modèle) */
+  length?: number;
+  /** couleur imposée (sinon celle du corps d'état) */
+  color?: string;
+  /** aperçu de déplacement (éditeur, jamais enregistré) */
+  nudge?: PointMm;
+}
+
+/** Légende des symboles posés sur la planche (comptés automatiquement). */
+export interface SymbolLegendItem extends ItemBase {
+  type: 'symbolLegend';
+  rect: RectMm;
+  lang: 'fr' | 'en' | 'de';
+  title?: string;
+  /** nombre de symboles posés à côté de chaque ligne */
+  counts: boolean;
+}
+
+export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem | DetailItem | SymbolItem | SymbolLegendItem;
+export type BoxItem = Exclude<SheetItem, LabelItem | DimensionItem | SymbolItem>;
 
 export interface Sheet {
   id: string;
@@ -263,5 +303,5 @@ export function emptyTitleBlock(): TitleBlockData {
 }
 
 export function hasRect(i: SheetItem): i is BoxItem {
-  return i.type !== 'label' && i.type !== 'dimension';
+  return i.type !== 'label' && i.type !== 'dimension' && i.type !== 'symbol';
 }

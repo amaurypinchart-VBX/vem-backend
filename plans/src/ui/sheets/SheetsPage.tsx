@@ -120,7 +120,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
               const fresh = await vem.project(PROJECT_ID).catch(() => project);
               const who = me ?? (await vem.me().catch(() => null));
               const { set, captures, dimensioned } = generateDrawingSet(
-                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks } },
+                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(fresh, who) },
               );
               if (fresh) set.projectSync = { at: new Date().toISOString(), values: projectValues(fresh) };
@@ -225,7 +225,7 @@ function Wizard({
   scene: LoadedScene;
   defaultTitle: string;
   onCancel: () => void;
-  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean }) => void;
+  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean; opaqueGlass: boolean; topColors: boolean }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
   const detected = useMemo(() => detectUnits(scene.index, scene.frames), [scene]);
@@ -236,6 +236,8 @@ function Wizard({
   const [paper, setPaper] = useState<Paper>('A1');
   const [title, setTitle] = useState(defaultTitle);
   const [facadeMarks, setFacadeMarks] = useState(true);
+  const [opaqueGlass, setOpaqueGlass] = useState(true);
+  const [topColors, setTopColors] = useState(true);
   const toggle = <T,>(set: Set<T>, v: T) => {
     const n = new Set(set);
     if (n.has(v)) n.delete(v);
@@ -282,6 +284,14 @@ function Wizard({
           <label className="check" title="Hachure « // » sur les vitres visibles, croix sur les murs visibles, portes dans leur couleur de légende (modifiable ensuite vue par vue)">
             <input type="checkbox" checked={facadeMarks} onChange={(e) => setFacadeMarks(e.target.checked)} /> Repères façade : vitres //, murs en croix, portes en couleur
           </label>
+          <label>Vitres</label>
+          <label className="check" title="Coché : une vitre cache ce qu’il y a derrière, comme un mur (modifiable ensuite vue par vue : « Vitres transparentes »)">
+            <input type="checkbox" checked={opaqueGlass} onChange={(e) => setOpaqueGlass(e.target.checked)} data-testid="wizard-opaque-glass" /> Vitres opaques : on ne voit pas à travers
+          </label>
+          <label>Vues du dessus</label>
+          <label className="check" title="Trait épais de la couleur de la légende le long de la face qui porte l’accessoire (modifiable ensuite vue par vue)">
+            <input type="checkbox" checked={topColors} onChange={(e) => setTopColors(e.target.checked)} data-testid="wizard-top-colors" /> Colorer par catégorie
+          </label>
           <label>Unités</label>
           {detected.length > 1 ? (
             <div className="wizard-units">
@@ -324,7 +334,7 @@ function Wizard({
           stand (les vues déjà calculées sont réutilisées).
         </div>
         <div className="row">
-          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks })}>
+          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors })}>
             Générer
           </button>
           <button className="btn" onClick={onCancel}>

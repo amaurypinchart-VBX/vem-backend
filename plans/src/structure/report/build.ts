@@ -83,7 +83,7 @@ export interface ReportOutput {
 
 const GRAVITY = 9.81;
 
-/** Verdict du calage : plaques standard partout (ou longrines), sinon « ne passe pas » sans étude spécifique. */
+/** Verdict du calage : plaques standard partout (ou longrines quand elles sont retenues), sinon « ne passe pas » sans étude spécifique. */
 export function calageVerdict(c: CalageResult | null): { verdict: Verdict; eta: number; worst?: CalageType } {
   if (!c || !c.types.length) return { verdict: 'incomplete', eta: NaN };
   const worst = c.types.reduce((a, t) => ((t.chosen?.eta ?? Infinity) > (a.chosen?.eta ?? Infinity) ? t : a));
@@ -91,7 +91,7 @@ export function calageVerdict(c: CalageResult | null): { verdict: Verdict; eta: 
     const eta = Math.max(...c.types.map((t) => t.chosen!.eta));
     return { verdict: verdictOf(eta), eta, worst };
   }
-  if (c.longrine) return { verdict: verdictOf(c.longrine.result.eta), eta: c.longrine.result.eta, worst };
+  if (c.longrineChosen && c.longrine) return { verdict: verdictOf(c.longrine.result.eta), eta: c.longrine.result.eta, worst };
   return { verdict: 'fail', eta: worst.chosen?.eta ?? Infinity, worst };
 }
 

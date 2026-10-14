@@ -120,6 +120,14 @@ export const actions = {
           }
         } else if (it.type === 'dimension') {
           it.offsetMm = dimOffsetAfterDrag(it as DimensionItem, dx, dy);
+        } else if (it.type === 'symbol') {
+          // symbole posé sur une vue : son point du dessin bouge (mm modèle) ; sa position papier aussi
+          const vp = it.viewportId ? findSheet(d, sheetId)?.items.find((i) => i.id === it.viewportId && i.type === 'viewport') : undefined;
+          if (vp && it.model && (vp as { scale: number }).scale) {
+            const sc = (vp as { scale: number }).scale;
+            it.model = [it.model[0] + dx * sc, it.model[1] - dy * sc];
+          }
+          it.at = { x: it.at.x + dx, y: it.at.y + dy };
         } else if (it.type === 'label') {
           it.textPos.x += dx;
           it.textPos.y += dy;
@@ -140,7 +148,7 @@ export const actions = {
       const s = findSheet(d, sheetId);
       if (!s) return;
       // repères et cotes attachés à une vue supprimée disparaissent avec elle
-      s.items = s.items.filter((i) => !ids.includes(i.id) && !((i.type === 'label' || i.type === 'dimension') && i.viewportId && ids.includes(i.viewportId)));
+      s.items = s.items.filter((i) => !ids.includes(i.id) && !((i.type === 'label' || i.type === 'dimension' || i.type === 'symbol') && i.viewportId && ids.includes(i.viewportId)));
     });
     useEditor.getState().select([]);
   },
@@ -173,6 +181,20 @@ export const actions = {
         const vid = map.get(it.viewportId) ?? (sheet?.items.some((i) => i.id === it.viewportId) ? it.viewportId : undefined);
         if (vid) it.viewportId = vid;
         else it.viewportId = '';
+      } else if (it.type === 'symbol') {
+        // collé avec sa vue, ou sur la même planche : reste sur la vue ; sinon fixe sur la planche
+        const vid = it.viewportId ? (map.get(it.viewportId) ?? (sheet?.items.some((i) => i.id === it.viewportId) ? it.viewportId : undefined)) : undefined;
+        const sc = (sheet?.items.find((i) => i.id === vid) as { scale?: number } | undefined)?.scale ?? 0;
+        if (vid && it.model) {
+          it.viewportId = vid;
+          if (off && sc) it.model = [it.model[0] + off * sc, it.model[1] - off * sc];
+          else if (off && map.has(it.viewportId) === false) it.model = undefined;
+        } else {
+          delete it.viewportId;
+          delete it.model;
+        }
+        if (it.viewportId && !it.model) delete it.viewportId;
+        it.at = { x: it.at.x + off, y: it.at.y + off };
       } else {
         it.textPos = { x: it.textPos.x + off, y: it.textPos.y + off };
         if (it.viewportId) it.viewportId = map.get(it.viewportId) ?? (sheet?.items.some((i) => i.id === it.viewportId) ? it.viewportId : undefined);
@@ -275,7 +297,7 @@ export const actions = {
       map.set(it.id, nid);
       it.id = nid;
     }
-    for (const it of copy.items) if ((it.type === 'label' || it.type === 'dimension') && it.viewportId) it.viewportId = map.get(it.viewportId) ?? it.viewportId;
+    for (const it of copy.items) if ((it.type === 'label' || it.type === 'dimension' || it.type === 'symbol') && it.viewportId) it.viewportId = map.get(it.viewportId) ?? it.viewportId;
     useEditor.getState().apply('Dupliquer la planche', (d) => {
       const at = d.sheets.findIndex((s) => s.id === id);
       d.sheets.splice(at + 1, 0, copy as Draft<Sheet>);

@@ -34,6 +34,8 @@ export interface GenerateOptions {
   kinds: SheetKind[];
   paper: Paper;
   style: LineStyleSpec;
+  /** « Colorer par catégorie » sur toutes les vues du dessus (les autres vues gardent `style`) */
+  topColors?: boolean;
   title: string;
 }
 
@@ -103,7 +105,7 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     modelId: ctx.modelKey,
     subset: { include, ...sub },
     view: { kind, frame },
-    style: opts.style,
+    style: opts.topColors && kind === 'top' ? { ...opts.style, colorByCategory: true } : opts.style,
   });
   const viewport = (rect: RectMm, req: LineworkRequest, label: string, labelPos?: { x: number; y: number }, extra: Partial<ViewportItem> = {}): ViewportItem => ({
     id: newId('v'),

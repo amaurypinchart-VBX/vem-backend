@@ -10,7 +10,10 @@ import type { SavedCapture } from '../../api/vem';
 import type { PickableImage } from '../../sheets/images';
 import { CaptureGrid } from './CapturePicker';
 import { DETAILS, DETAIL_SCALES, detailRect, detailScale } from '../../sheets/details';
-import type { DetailItem, DimensionItem, DrawingSet, DrawingSetUnit, Image3dItem, LabelItem, Person, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import type { DetailItem, DimensionItem, DrawingSet, DrawingSetUnit, Image3dItem, LabelItem, Person, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
+import { SYMBOLS, SYMBOL_BY_KEY, SYMBOL_FAMILIES, SYMBOL_LEGEND_TITLE, SYMBOL_SIZE, symbolColor } from '../../sheets/symbols';
+import { SymbolIcon } from '../../sheets/SheetSvg';
+import { templateScale } from '../../sheets/template';
 import { dimGeometry, formatDim } from '../../sheets/dimensions';
 import { dimensionInput } from '../../sheets/SheetSvg';
 import { STANDARD_SCALES, fitScale } from '../../sheets/scales';
@@ -357,6 +360,112 @@ function LabelProps({ label, suggestions }: { label: LabelItem; suggestions: str
   );
 }
 
+function SymbolProps({ it, sheet }: { it: SymbolItem; sheet: Sheet }) {
+  const def = SYMBOL_BY_KEY.get(it.symbol);
+  const k = templateScale(sheet.paper);
+  const up = (patch: Partial<SymbolItem>, label: string) => actions.updateItem(it.id, patch as Partial<SheetItem>, label);
+  const rot = it.rotation ?? 0;
+  const turn = (d: number) => up({ rotation: (((rot + d) % 360) + 360) % 360 }, 'Tourner le symbole');
+  const vp = it.viewportId ? (sheet.items.find((i) => i.id === it.viewportId) as ViewportItem | undefined) : undefined;
+  return (
+    <>
+      <div className="row" style={{ gap: 8, alignItems: 'center', marginBottom: 6 }}>
+        <SymbolIcon symbol={it.symbol} px={34} />
+        <b>{def?.label.fr ?? it.symbol}</b>
+      </div>
+      <Field label="Symbole">
+        <select value={it.symbol} onChange={(e) => up({ symbol: e.target.value }, 'Changer de symbole')}>
+          {SYMBOL_FAMILIES.map((f) => (
+            <optgroup key={f.key} label={f.label.fr}>
+              {SYMBOLS.filter((x) => x.family === f.key).map((x) => (
+                <option key={x.key} value={x.key}>
+                  {x.label.fr}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </Field>
+      <Field label="Repère / circuit (texte à côté)">
+        <input type="text" value={it.note ?? ''} placeholder="ex. C3, 32 A, IP44" onChange={(e) => up({ note: e.target.value || undefined }, 'Texte du symbole')} />
+      </Field>
+      {!def?.linear && (
+        <Field label="Hauteur de pose (cm au-dessus du sol fini)">
+          <input
+            type="number"
+            min={0}
+            max={1000}
+            step={5}
+            value={it.heightMm ? it.heightMm / 10 : ''}
+            placeholder="ex. 110 → « h 1,10 m »"
+            onChange={(e) => up({ heightMm: Number(e.target.value) > 0 ? Number(e.target.value) * 10 : undefined }, 'Hauteur de pose')}
+          />
+        </Field>
+      )}
+      {def?.linear && (
+        <Field label="Longueur réelle (mm)">
+          <input type="number" min={100} max={50000} step={100} value={it.length ?? def.length ?? 1000} onChange={(e) => up({ length: Math.max(100, Number(e.target.value) || 1000) }, 'Longueur du symbole')} />
+        </Field>
+      )}
+      <div className="prop-field">
+        <span>Orientation ({Math.round(rot)}°)</span>
+        <div className="row" style={{ gap: 4 }}>
+          <button className="btn small" onClick={() => turn(-90)} title="Tourner de 90° vers la gauche">
+            ⟲ 90°
+          </button>
+          <button className="btn small" onClick={() => turn(90)} title="Tourner de 90° vers la droite">
+            ⟳ 90°
+          </button>
+          <button className="btn small" onClick={() => turn(180)} title="Retourner (autre côté du mur)">
+            ⇅ 180°
+          </button>
+          <input type="number" step={5} value={Math.round(rot * 10) / 10} style={{ width: 70 }} onChange={(e) => up({ rotation: (((Number(e.target.value) || 0) % 360) + 360) % 360 }, 'Tourner le symbole')} />
+        </div>
+      </div>
+      <Field label="Taille sur le papier (mm)">
+        <input type="number" min={2} max={20} step={0.5} value={Math.round((it.size ?? SYMBOL_SIZE * k) * 10) / 10} onChange={(e) => up({ size: Math.max(2, Number(e.target.value) || SYMBOL_SIZE * k) }, 'Taille du symbole')} />
+      </Field>
+      <Field label="Couleur">
+        <div className="row" style={{ gap: 6 }}>
+          <input type="color" value={it.color ?? (def ? symbolColor(def) : '#000000')} onChange={(e) => up({ color: e.target.value }, 'Couleur du symbole')} />
+          <button className="btn small ghost" disabled={!it.color} onClick={() => up({ color: undefined }, 'Couleur du symbole')}>
+            Couleur du corps d’état
+          </button>
+          <button className="btn small ghost" onClick={() => up({ color: '#000000' }, 'Couleur du symbole')}>
+            Noir
+          </button>
+        </div>
+      </Field>
+      <div className="hint">
+        {vp ? `Attaché à la vue « ${vp.label ?? 'sans titre'} » : il suit son échelle et son cadrage.` : 'Fixe sur la planche (posé hors d’une vue).'} Glisser pour le déplacer ; Ctrl+C / Ctrl+V pour le
+        répéter.
+      </div>
+    </>
+  );
+}
+
+function SymbolLegendProps({ it }: { it: SymbolLegendItem }) {
+  const up = (patch: Partial<SymbolLegendItem>, label: string) => actions.updateItem(it.id, patch as Partial<SheetItem>, label);
+  return (
+    <>
+      <Field label="Titre">
+        <input type="text" value={it.title ?? ''} placeholder={SYMBOL_LEGEND_TITLE[it.lang]} onChange={(e) => up({ title: e.target.value || undefined }, 'Titre de la légende')} />
+      </Field>
+      <Field label="Langue">
+        <select value={it.lang} onChange={(e) => up({ lang: e.target.value as SymbolLegendItem['lang'] }, 'Langue de la légende')}>
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+        </select>
+      </Field>
+      <label className="check">
+        <input type="checkbox" checked={it.counts} onChange={(e) => up({ counts: e.target.checked }, 'Quantités de la légende')} /> Nombre posé à côté de chaque symbole
+      </label>
+      <div className="hint">La légende liste automatiquement les symboles posés sur cette planche. Poignées : agrandir le cadre.</div>
+    </>
+  );
+}
+
 function TextProps({ t }: { t: TextItem }) {
   return (
     <>
@@ -591,6 +700,10 @@ export function PropertiesPanel({
                         ? 'Texte'
                         : one.type === 'detail'
                           ? 'Détail'
+                          : one.type === 'symbol'
+                          ? 'Symbole'
+                          : one.type === 'symbolLegend'
+                          ? 'Légende des symboles'
                           : one.type === 'logo'
                           ? 'Logo'
                           : 'Forme'}
@@ -610,6 +723,8 @@ export function PropertiesPanel({
             {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}
             {one.type === 'label' && <LabelProps label={one} suggestions={suggestionsFor(one)} />}
             {one.type === 'text' && <TextProps t={one} />}
+            {one.type === 'symbol' && <SymbolProps it={one} sheet={sheet} />}
+            {one.type === 'symbolLegend' && <SymbolLegendProps it={one} />}
             {one.type === 'detail' && <DetailProps it={one} />}
             {one.type === 'image3d' && (
               <ImageProps

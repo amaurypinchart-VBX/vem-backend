@@ -8,7 +8,9 @@ import type { Linework2D } from '../linework/types';
 import { STROKE_MM, inkOf, markColor } from '../linework/svg';
 import type { LogoShape } from './logos';
 import { LOGO_COLOR, VB_LOGO, VIEWBOX_WORDMARK } from './logos';
-import type { DetailItem, DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import type { DetailItem, DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, TitleBlockData, ViewportItem } from './types';
+import { SYMBOL_BY_KEY, SYMBOL_LEGEND_TITLE, SYMBOL_SIZE, SYMBOL_STROKE, familyOf, heightText, linearShape, symbolColor, symbolCounts } from './symbols';
+import type { SymbolDef } from './symbols';
 import { DETAILS, detailFit, detailScale } from './details';
 import type { DimInput } from './dimensions';
 import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
@@ -524,13 +526,196 @@ const ITEM_DXF_LAYER: Record<SheetItem['type'], string> = {
   shape: 'VBX-FORMES',
   detail: 'VBX-DETAILS',
   logo: 'VBX-LOGOS',
+  symbol: 'VBX-SYMBOLES',
+  symbolLegend: 'VBX-SYMB-LEGENDE',
 };
 
 function itemViewport(item: SheetItem): string | undefined {
   if (item.type === 'viewport') return item.id;
   if (item.type === 'dimension') return item.viewportId;
   if (item.type === 'label' && item.viewportId && item.anchor3d) return item.viewportId;
+  if (item.type === 'symbol' && item.viewportId && item.model) return item.viewportId;
   return undefined;
+}
+
+// ─── symboles d'équipement ───
+/** Vue qui porte un symbole (si elle est sur la planche). */
+function symbolViewport(it: SymbolItem, sheet: Sheet): ViewportItem | undefined {
+  return it.viewportId ? (sheet.items.find((i) => i.id === it.viewportId && i.type === 'viewport') as ViewportItem | undefined) : undefined;
+}
+
+/** Position papier d'un symbole : suit le point du dessin de sa vue, sinon sa position sur la planche. */
+export function symbolAnchor(it: SymbolItem, sheet: Sheet, viewData: (vp: ViewportItem) => ViewportData | undefined): PointMm {
+  let p = it.at;
+  const vp = symbolViewport(it, sheet);
+  if (vp && it.model && vp.scale) {
+    const data = viewData(vp);
+    if (vp.center || data?.lw) p = viewportTransform(vp.rect, vp.scale, viewportCenter(vp, data?.lw)).toPaper(it.model[0], it.model[1]);
+  }
+  return it.nudge ? { x: p.x + it.nudge.x, y: p.y + it.nudge.y } : p;
+}
+
+/** Échelle qui donne la longueur papier d'un symbole linéaire (celle de sa vue, sinon 1:50). */
+export function symbolScale(it: SymbolItem, sheet: Sheet): number {
+  return symbolViewport(it, sheet)?.scale || 50;
+}
+
+const symbolSize = (it: SymbolItem, k: number) => it.size ?? SYMBOL_SIZE * k;
+const noteSize = (k: number) => 2.2 * k;
+const noteLines = (it: SymbolItem, lang: 'fr' | 'en' | 'de' = 'fr') => [it.note, it.heightMm ? heightText(it.heightMm, lang) : ''].filter((x): x is string => !!x);
+
+/** Demi-longueur papier d'un symbole linéaire (0 sinon). */
+function linearHalf(it: SymbolItem, def: SymbolDef | undefined, scale: number): number {
+  return def?.linear ? (it.length ?? def.length ?? 1000) / scale / 2 : 0;
+}
+
+/** Rectangle englobant (mm papier) d'un symbole posé en `pos`, texte compris. */
+export function symbolBounds(it: SymbolItem, pos: PointMm, k: number, scale: number): RectMm {
+  const def = SYMBOL_BY_KEY.get(it.symbol);
+  const size = symbolSize(it, k);
+  const half = linearHalf(it, def, scale);
+  let r: RectMm;
+  if (half) {
+    const a = ((it.rotation ?? 0) * Math.PI) / 180;
+    const ex = Math.abs(Math.cos(a)) * half + size * 0.25;
+    const ey = Math.abs(Math.sin(a)) * half + size * 0.25;
+    r = { x: pos.x - ex, y: pos.y - ey, w: 2 * ex, h: 2 * ey };
+  } else r = { x: pos.x - size / 2, y: pos.y - size / 2, w: size, h: size };
+  const lines = noteLines(it);
+  if (lines.length) {
+    const ns = noteSize(k);
+    const w = Math.max(...lines.map((l) => l.length)) * ns * 0.56;
+    const tx = half ? pos.x - w / 2 : pos.x + size * 0.6;
+    const ty = half ? r.y - lines.length * ns * 1.15 : pos.y - ns * 0.5;
+    const x0 = Math.min(r.x, tx);
+    const y0 = Math.min(r.y, ty);
+    r = { x: x0, y: y0, w: Math.max(r.x + r.w, tx + w) - x0, h: Math.max(r.y + r.h, ty + lines.length * ns * 1.15) - y0 };
+  }
+  return r;
+}
+
+/** Dessin d'un symbole (taille `size` mm papier, centré sur 0, avant rotation) ; `half` = demi-longueur des linéaires. */
+function SymbolGlyph({ def, size, color, k, half, rotation }: { def: SymbolDef; size: number; color: string; k: number; half: number; rotation: number }) {
+  const sw = SYMBOL_STROKE * k;
+  if (def.linear) {
+    const sh = linearShape(def.key, 2 * half, size);
+    return (
+      <g transform={rotation ? `rotate(${num(rotation)})` : undefined} fill="none" stroke={color} strokeWidth={num(def.key === 'reglette' ? sw * 1.4 : sw)} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={sh.dash}>
+        {sh.strokes.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
+      </g>
+    );
+  }
+  const u = size / 10;
+  return (
+    <g transform={`${rotation ? `rotate(${num(rotation)}) ` : ''}scale(${num(u)})`}>
+      <g fill="none" stroke={color} strokeWidth={num(sw / u)} strokeLinecap="round" strokeLinejoin="round">
+        {def.strokes.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
+      </g>
+      {def.fills?.map((d, i) => <path key={`f${i}`} d={d} fill={color} stroke="none" />)}
+      {def.texts?.map((t, i) => (
+        <text key={`t${i}`} x={t.x} y={t.y} fontSize={t.size} fontFamily={FONT_SANS} fontWeight={t.bold ? 700 : 400} textAnchor="middle" fill={color}>
+          {t.t}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function SymbolView({ it, pos, k, scale }: { it: SymbolItem; pos: PointMm; k: number; scale: number }) {
+  const def = SYMBOL_BY_KEY.get(it.symbol);
+  const size = symbolSize(it, k);
+  if (!def) return <rect x={num(pos.x - size / 2)} y={num(pos.y - size / 2)} width={num(size)} height={num(size)} fill="none" stroke="#c2410c" strokeWidth={0.3} />;
+  const color = it.color ?? symbolColor(def);
+  const half = linearHalf(it, def, scale);
+  const lines = noteLines(it);
+  const ns = noteSize(k);
+  const b = half ? symbolBounds({ ...it, note: undefined, heightMm: undefined }, pos, k, scale) : null;
+  return (
+    <g>
+      <g transform={`translate(${num(pos.x)} ${num(pos.y)})`}>
+        <SymbolGlyph def={def} size={size} color={color} k={k} half={half} rotation={it.rotation ?? 0} />
+      </g>
+      {lines.map((l, i) => (
+        <text
+          key={i}
+          x={num(half ? pos.x : pos.x + size * 0.6)}
+          y={num(half ? b!.y - (lines.length - 1 - i) * ns * 1.15 - ns * 0.3 : pos.y + ns * 0.35 + i * ns * 1.15)}
+          fontSize={num(ns)}
+          fontFamily={FONT_SANS}
+          textAnchor={half ? 'middle' : 'start'}
+          fill={color}
+        >
+          {l}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+/** Icône d'un symbole (palette, propriétés) : SVG autonome de `px` pixels. */
+export function SymbolIcon({ symbol, px = 28 }: { symbol: string; px?: number }) {
+  const def = SYMBOL_BY_KEY.get(symbol);
+  if (!def) return null;
+  return (
+    <svg width={px} height={px} viewBox="-6 -6 12 12" aria-hidden>
+      <SymbolGlyph def={def} size={10} color={symbolColor(def)} k={2} half={def.linear ? 5 : 0} rotation={0} />
+    </svg>
+  );
+}
+
+/** Légende des symboles de la planche : symbole, désignation, nombre posé. */
+function SymbolLegendView({ it, sheet, k }: { it: SymbolLegendItem; sheet: Sheet; k: number }) {
+  const rows = symbolCounts(sheet.items.filter((i): i is SymbolItem => i.type === 'symbol').map((i) => i.symbol));
+  const r = it.rect;
+  const pad = 2 * k;
+  const titleSize = 3 * k;
+  const head = titleSize * 1.9;
+  const rowH = rows.length ? Math.min(7 * k, (r.h - head - pad) / rows.length) : 7 * k;
+  const text = Math.min(2.6 * k, rowH * 0.42);
+  const glyph = Math.min(5 * k, rowH * 0.8);
+  return (
+    <g>
+      <rect {...rectAttrs(r)} fill="#fff" stroke="#000" strokeWidth={num(0.18 * k)} />
+      <text x={num(r.x + pad)} y={num(r.y + pad + titleSize * 0.8)} fontSize={num(titleSize)} fontFamily={FONT_SANS} fontWeight={700}>
+        {it.title || SYMBOL_LEGEND_TITLE[it.lang]}
+      </text>
+      {!rows.length && (
+        <text x={num(r.x + pad)} y={num(r.y + head + text * 1.4)} fontSize={num(text)} fontFamily={FONT_SANS} fill="#6b7280">
+          {it.lang === 'fr' ? 'Aucun symbole sur la planche' : it.lang === 'de' ? 'Keine Symbole auf dem Blatt' : 'No symbol on this sheet'}
+        </text>
+      )}
+      {rows.map(({ def, count }, i) => {
+        const cy = r.y + head + (i + 0.5) * rowH;
+        const cx = r.x + pad + 4 * k;
+        const color = symbolColor(def);
+        return (
+          <g key={def.key}>
+            <g transform={`translate(${num(cx)} ${num(cy)})`}>
+              <SymbolGlyph def={def} size={glyph} color={color} k={k} half={def.linear ? 3.5 * k : 0} rotation={0} />
+            </g>
+            <text x={num(r.x + pad + 10 * k)} y={num(cy + text * 0.35)} fontSize={num(text)} fontFamily={FONT_SANS}>
+              {def.label[it.lang]}
+            </text>
+            {it.counts && (
+              <text x={num(r.x + r.w - pad)} y={num(cy + text * 0.35)} fontSize={num(text)} fontFamily={FONT_SANS} textAnchor="end">
+                {`× ${count}`}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Calque DXF d'un symbole : un par corps d'état (VBX-SYMB-PRISES…). */
+function symbolDxfLayer(it: SymbolItem): string {
+  const def = SYMBOL_BY_KEY.get(it.symbol);
+  return def ? familyOf(def.family).dxf : 'VBX-SYMBOLES';
 }
 
 /** Position papier de l'ancre d'un repère (suit la vue si le repère est ancré sur un point 3D). */
@@ -620,7 +805,7 @@ function LabelView({ label, anchor, k }: { label: LabelItem; anchor: PointMm | n
 
 /** Rectangle englobant (mm papier) d'un élément, pour la sélection et l'accroche. */
 export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1, dimBox?: RectMm | null): RectMm {
-  if (item.type === 'dimension') return dimBox ?? { x: 0, y: 0, w: 0, h: 0 };
+  if (item.type === 'dimension' || item.type === 'symbol') return dimBox ?? { x: 0, y: 0, w: 0, h: 0 };
   if (item.type !== 'label') return item.rect;
   const size = (item.style === 'bold' ? 4.2 : 3.6) * k;
   const w = Math.max(4, item.text.length * size * 0.52);
@@ -636,6 +821,7 @@ export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1, dimB
 function applyPreview(item: SheetItem, p?: RectMm | { dx: number; dy: number }): SheetItem {
   if (!p) return item;
   if (item.type === 'dimension') return 'dx' in p ? { ...item, offsetMm: dimOffsetAfterDrag(item, p.dx, p.dy) } : item;
+  if (item.type === 'symbol') return 'dx' in p ? { ...item, nudge: { x: p.dx, y: p.dy } } : item;
   if ('dx' in p) {
     if (item.type === 'label')
       return { ...item, textPos: { x: item.textPos.x + p.dx, y: item.textPos.y + p.dy }, anchorPaper: item.anchorPaper && { x: item.anchorPaper.x + p.dx, y: item.anchorPaper.y + p.dy } };
@@ -648,6 +834,7 @@ function applyPreview(item: SheetItem, p?: RectMm | { dx: number; dy: number }):
 
 /** Rectangle englobant (mm papier) de n'importe quel élément de la planche (repères et cotes suivent leur vue). */
 export function itemBox(item: SheetItem, sheet: Sheet, viewData: (vp: ViewportItem) => ViewportData | undefined, k = 1): RectMm {
+  if (item.type === 'symbol') return symbolBounds(item, symbolAnchor(item, sheet, viewData), k, symbolScale(item, sheet));
   if (item.type === 'label') return itemBounds(item, labelAnchor(item, sheet, viewData), k);
   if (item.type === 'dimension') {
     const input = dimensionInput(item, sheet, viewData);
@@ -671,7 +858,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
   const selected = new Set(editing?.selection ?? []);
 
   const renderItem = (item: SheetItem) => {
-    const isAnnotation = item.type === 'label' || item.type === 'text';
+    const isAnnotation = item.type === 'label' || item.type === 'text' || item.type === 'symbol' || item.type === 'symbolLegend';
     const isDim = item.type === 'dimension';
     if ((isAnnotation && hidden.annotations) || (isDim && hidden.dims) || (!isAnnotation && !isDim && hidden.drawing)) return null;
     const down = editing?.onItemDown ? (e: ReactPointerEvent) => editing.onItemDown!(e, item) : undefined;
@@ -786,17 +973,23 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
       case 'logo':
         body = <Logo shape={item.logo === 'vb' ? VB_LOGO : VIEWBOX_WORDMARK} rect={item.rect} />;
         break;
+      case 'symbol':
+        body = <SymbolView it={item} pos={symbolAnchor(item, previewSheet, viewData)} k={k} scale={symbolScale(item, previewSheet)} />;
+        break;
+      case 'symbolLegend':
+        body = <SymbolLegendView it={item} sheet={previewSheet} k={k} />;
+        break;
     }
     if (!editing)
       return (
-        <g key={item.id} data-dxf={ITEM_DXF_LAYER[item.type]} data-vp={itemViewport(item)}>
+        <g key={item.id} data-dxf={item.type === 'symbol' ? symbolDxfLayer(item) : ITEM_DXF_LAYER[item.type]} data-vp={itemViewport(item)}>
           {body}
         </g>
       );
     const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
-    const b = itemBounds(item, anchor, k, dimBoxOf(item));
+    const b = item.type === 'symbol' ? itemBox(item, previewSheet, viewData, k) : itemBounds(item, anchor, k, dimBoxOf(item));
     return (
-      <g key={item.id} onPointerDown={down} onDoubleClick={editing.onItemDoubleClick && (() => editing.onItemDoubleClick!(item))} style={{ cursor: item.locked ? 'default' : 'move' }}>
+      <g key={item.id} data-item-type={item.type} onPointerDown={down} onDoubleClick={editing.onItemDoubleClick && (() => editing.onItemDoubleClick!(item))} style={{ cursor: item.locked ? 'default' : 'move' }}>
         {body}
         {/* zone de clic : tout le cadre de l'élément */}
         <rect {...rectAttrs(b)} fill="transparent" stroke="none" />
@@ -816,12 +1009,12 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     const sel = items.filter((i) => selected.has(i.id));
     for (const item of sel) {
       const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
-      const b = itemBounds(item, anchor, k, dimBoxOf(item));
+      const b = item.type === 'symbol' ? itemBox(item, previewSheet, viewData, k) : itemBounds(item, anchor, k, dimBoxOf(item));
       out.push(
         <rect key={`sel-${item.id}`} {...rectAttrs({ x: b.x - 0.8, y: b.y - 0.8, w: b.w + 1.6, h: b.h + 1.6 })} fill="none" stroke={item.locked ? '#9aa3b5' : '#2563eb'} strokeWidth={0.4} strokeDasharray="1.5 1" pointerEvents="none" />,
       );
     }
-    if (sel.length === 1 && sel[0].type !== 'label' && sel[0].type !== 'dimension' && !sel[0].locked && editing.onHandleDown) {
+    if (sel.length === 1 && sel[0].type !== 'label' && sel[0].type !== 'dimension' && sel[0].type !== 'symbol' && !sel[0].locked && editing.onHandleDown) {
       const item = sel[0];
       const r = item.rect;
       const hs = 2.2;

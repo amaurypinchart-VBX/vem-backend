@@ -24,6 +24,8 @@ export interface CalageChoices {
   bySupport?: Record<string, LayerRef[]>;
   /** plaques de roulage jointives sur toute la surface couverte, sous tous les appuis */
   roadway?: boolean;
+  /** longrines bois sous les grands côtés retenues à la place des plaques (sinon : variante proposée seulement) */
+  longrine?: boolean;
 }
 
 const f = (v: number, d = 1) => fmtNumber(v, d);

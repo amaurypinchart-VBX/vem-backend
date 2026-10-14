@@ -216,7 +216,7 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .level-editor input.invalid { border-color: #dc2626; }
 .levels-table input { padding: 2px 4px; }
 .sheet-canvas { position: relative; overflow: hidden; background: #5b6170; cursor: default; touch-action: none; user-select: none; }
-.sheet-canvas.tool-label, .sheet-canvas.tool-text, .sheet-canvas.tool-dim { cursor: crosshair; }
+.sheet-canvas.tool-label, .sheet-canvas.tool-text, .sheet-canvas.tool-dim, .sheet-canvas.tool-symbol { cursor: crosshair; }
 .sheet-paper { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 4px 24px rgba(0, 0, 0, .35); background: #fff; }
 .sheet-guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .sheet-zoom { position: absolute; right: 8px; bottom: 6px; color: #e6e9ef; }
@@ -238,3 +238,14 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .wizard-unit .unit-n { min-width: 60px; font-weight: 600; }
 .wizard-unit input[type='text'] { width: 180px; }
 .unit-choice .unit-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text); font-size: 12px; }
+
+/* palette des symboles d'équipement (éditeur de planches) */
+.symbol-palette .symbol-family { margin-bottom: 10px; }
+.symbol-palette .symbol-family-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; margin: 4px 0; }
+.symbol-palette .symbol-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.symbol-palette .symbol-btn { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: rgba(255, 255, 255, .92); color: #111827; font-size: 11.5px; line-height: 1.2; text-align: left; cursor: pointer; min-width: 0; }
+.symbol-palette .symbol-btn span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.symbol-palette .symbol-btn svg { flex: none; }
+.symbol-palette .symbol-btn:hover { border-color: #93c5fd; }
+.symbol-palette .symbol-btn.on { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, .35); }
+.symbol-palette .symbol-totals td { padding: 2px 4px; font-size: 12px; }

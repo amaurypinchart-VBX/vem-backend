@@ -13,7 +13,9 @@ import { meshesOfNode, nodeIdOf } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { SavedCapture } from '../../api/vem';
-import type { Image3dItem, LabelItem, PointMm, Sheet, SheetItem, TextItem, ViewportItem } from '../../sheets/types';
+import type { Image3dItem, LabelItem, PointMm, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, ViewportItem } from '../../sheets/types';
+import { SYMBOL_BY_KEY, SYMBOL_SIZE, alongWall, orientToWall } from '../../sheets/symbols';
+import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import { SheetSvg } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
@@ -22,7 +24,7 @@ import type { LineworkBank } from '../../sheets/bank';
 import { actions, useEditor } from '../../sheets/store';
 import { fitScale, viewportTransform } from '../../sheets/scales';
 import { newId } from '../../sheets/generate';
-import { templateScale } from '../../sheets/template';
+import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import type { IsoKind, Projection } from '../../viewer/SceneViewer';
 import { SheetCanvas } from './SheetCanvas';
@@ -43,6 +45,7 @@ import { DETAILS, detailRect } from '../../sheets/details';
 import type { ProjectField, ProjectValues } from '../../sheets/titleBlock';
 import { PROJECT_FIELDS, PROJECT_FIELD_LABELS, projectChanges, projectValues } from '../../sheets/titleBlock';
 import type { Person, TitleBlockData } from '../../sheets/types';
+import { freshImport, NewVersionError } from '../newVersion';
 
 interface Props {
   scene: LoadedScene;
@@ -63,6 +66,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
   const [tool, setTool] = useState<Tool>('select');
+  const [symbolKey, setSymbolKey] = useState('prise-2pt');
   const [hidden, setHidden] = useState<{ drawing?: boolean; annotations?: boolean; dims?: boolean }>({});
   const [fitSignal, setFitSignal] = useState(0);
   const [zoomSignal, setZoomSignal] = useState({ n: 0, factor: 1 });
@@ -322,8 +326,78 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
   const labelSuggestions = useRef(new Map<string, string[]>());
 
+  /** Traits visibles d'une vue près d'un point de la planche (mm papier) : murs pour orienter les symboles. */
+  const paperSegments = (vp: ViewportItem, p: PointMm, tol: number): Array<[number, number, number, number]> => {
+    const data = bank.data(vp);
+    const lw = data.lw;
+    if (!lw || !vp.scale) return [];
+    const b = lw.boundsMm;
+    const tr = viewportTransform(vp.rect, vp.scale, vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]);
+    const [mx, my] = tr.toModel(p.x, p.y);
+    const r = tol * vp.scale;
+    const out: Array<[number, number, number, number]> = [];
+    for (const layer of lw.layers) {
+      if (layer.key !== 'visible' && layer.key !== 'silhouette' && layer.key !== 'cut') continue;
+      for (const pl of layer.polylines)
+        for (let i = 0; i + 3 < pl.length; i += 2) {
+          const [x0, y0, x1, y1] = [pl[i], pl[i + 1], pl[i + 2], pl[i + 3]];
+          if (Math.max(x0, x1) < mx - r || Math.min(x0, x1) > mx + r || Math.max(y0, y1) < my - r || Math.min(y0, y1) > my + r) continue;
+          const a = tr.toPaper(x0, y0);
+          const c = tr.toPaper(x1, y1);
+          out.push([a.x, a.y, c.x, c.y]);
+        }
+    }
+    return out;
+  };
+
+  /** Légende des symboles, en bas à droite de la zone de dessin (déplaçable). */
+  const symbolLegend = (): SymbolLegendItem => {
+    const k = templateScale(sheet.paper);
+    const w = 78;
+    const h = 64;
+    return { id: newId('g'), type: 'symbolLegend', rect: scaleRect({ x: DRAW_AREA.x + DRAW_AREA.w - w - 4, y: DRAW_AREA.y + DRAW_AREA.h - h - 4, w, h }, k), lang: 'en', counts: true };
+  };
+
+  const placeSymbol = (p: PointMm, vp: ViewportItem | null) => {
+    const def = SYMBOL_BY_KEY.get(symbolKey);
+    if (!def) return;
+    const k = templateScale(sheet.paper);
+    const size = SYMBOL_SIZE * k;
+    let at = p;
+    let rotation = 0;
+    const data = vp ? bank.data(vp) : null;
+    if (vp && data?.lw && vp.scale) {
+      const tol = 6 * k;
+      const segs = paperSegments(vp, p, tol);
+      const o = def.linear ? alongWall(p, segs, tol, size * 0.35) : def.wall ? orientToWall(p, segs, tol, size) : null;
+      if (o) [at, rotation] = [o.at, o.rotation];
+    }
+    let model: [number, number] | undefined;
+    if (vp && vp.scale && data?.lw) {
+      const b = data.lw.boundsMm;
+      model = viewportTransform(vp.rect, vp.scale, vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]).toModel(at.x, at.y);
+    }
+    const item: SymbolItem = {
+      id: newId('y'),
+      type: 'symbol',
+      symbol: def.key,
+      at,
+      ...(rotation ? { rotation } : {}),
+      ...(vp && model ? { viewportId: vp.id, model } : {}),
+      ...(def.note ? { note: def.note } : {}),
+      ...(def.linear ? { length: def.length } : {}),
+    };
+    const items: SheetItem[] = [item];
+    if (!sheet.items.some((i) => i.type === 'symbolLegend')) items.push(symbolLegend());
+    actions.addItems(items, 'Poser un symbole');
+  };
+
   const onPlace = (t: Tool, p: PointMm, vp: ViewportItem | null) => {
     const k = templateScale(sheet.paper);
+    if (t === 'symbol') {
+      placeSymbol(p, vp);
+      return;
+    }
     if (t === 'text') {
       const item: TextItem = { id: newId('t'), type: 'text', rect: { x: p.x, y: p.y, w: 80 * k, h: 10 * k }, text: 'Texte', size: 4 * k, font: 'serif' };
       actions.addItems([item], 'Ajouter un texte');
@@ -407,8 +481,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       await Promise.all(vps.map((vp) => bank.load(vp)));
       const missing = vps.filter((vp) => !bank.data(vp).lw).length;
       if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
-      const { buildPdf, fontsUsed } = await import('../../sheets/pdf/pdf');
-      const { loadFonts, pdfImageDataUrl } = await import('../../sheets/pdf/assets');
+      const { buildPdf, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
+      const { loadFonts, pdfImageDataUrl } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
       const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
       const images = new Map<string, string>();
@@ -442,7 +516,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       downloadBlob(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`, pdf.output('blob'));
       if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
     } catch (e) {
-      window.alert(`Export PDF impossible : ${(e as Error).message}`);
+      if (!(e instanceof NewVersionError)) window.alert(`Export PDF impossible : ${(e as Error).message}`);
     } finally {
       setBusy('');
     }
@@ -458,7 +532,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       await Promise.all(vps.map((vp) => bank.load(vp)));
       const missing = vps.filter((vp) => !bank.data(vp).lw).length;
       if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (absentes du DXF). Exporter quand même ?`)) return;
-      const { sheetDxf, setDxf, zipDxf, safeFileName } = await import('../../sheets/dxf/export');
+      const { sheetDxf, setDxf, zipDxf, safeFileName } = await freshImport(() => import('../../sheets/dxf/export'));
       const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}`;
       const computed = (vp: ViewportItem) => !!bank.data(vp).lw;
       const rendered = [];
@@ -491,7 +565,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       if (files.length === 1) downloadBlob(files[0].name, new Blob([files[0].dxf], { type: 'application/dxf' }));
       else downloadBlob(safeFileName(`${base}_DXF${mode === 'real' ? '_grandeur-reelle' : ''}.zip`), new Blob([zipDxf(files) as BlobPart], { type: 'application/zip' }));
     } catch (e) {
-      window.alert(`Export DXF impossible : ${(e as Error).message}`);
+      if (!(e instanceof NewVersionError)) window.alert(`Export DXF impossible : ${(e as Error).message}`);
     } finally {
       setBusy('');
     }
@@ -560,6 +634,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </button>
         <button className={`btn small${tool === 'text' ? ' primary' : ''}`} onClick={() => setTool('text')}>
           T Texte
+        </button>
+        <button
+          className={`btn small${tool === 'symbol' ? ' primary' : ''}`}
+          data-testid="tool-symbol"
+          onClick={() => setTool(tool === 'symbol' ? 'select' : 'symbol')}
+          title="Prises, interrupteurs, éclairage, tableau, réseau, sécurité, clim… : symboles d’architecte à poser sur les vues, légende comptée"
+        >
+          ⚡ Symboles
         </button>
         <button className={`btn small${tool === 'dim' ? ' primary' : ''}`} onClick={() => setTool('dim')} title="Cote : 2 clics sur la vue (accroche ■ extrémité ▲ milieu ● centre), 3e clic pour placer la ligne de cote (Maj = alignée)">
           ↔ Cote
@@ -771,6 +853,16 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           zoomSignal={zoomSignal}
           onOpenItem={(it) => it.type === 'image3d' && setPicker({ itemId: it.id })}
         />
+        {tool === 'symbol' ? (
+          <SymbolPalette
+            doc={doc}
+            sheet={sheet}
+            current={symbolKey}
+            onPick={setSymbolKey}
+            onAddLegend={() => actions.addItems([symbolLegend()], 'Ajouter la légende des symboles')}
+            onClose={() => setTool('select')}
+          />
+        ) : (
         <PropertiesPanel
           doc={doc}
           sheet={sheet}
@@ -787,6 +879,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onSyncProject={() => void syncProject(true)}
           syncMessage={syncMessage}
         />
+        )}
       </div>
       {dxfOpen && <DxfDialog sheetLabel={`${sheet.number} ${sheet.title}`.trim()} sheetCount={doc.sheets.length} onExport={(c) => void exportDxf(c)} onClose={() => setDxfOpen(false)} />}
       {picker && (

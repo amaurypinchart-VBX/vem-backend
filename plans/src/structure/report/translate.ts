@@ -9,6 +9,7 @@ type Rule = readonly [string | RegExp, string, string];
 
 /** Motifs (appliqués dans l'ordre). */
 const PATTERNS: Rule[] = [
+  [/La variante longrines passe \(η = ([\d,]+)\) : elle peut être retenue à l’étape Sol & calage\./g, 'Die Variante mit Kanthölzern ist ausreichend (η = $1): sie kann im Schritt Boden & Unterpallung gewählt werden.', 'The sleeper variant passes (η = $1): it can be selected in the Ground & packing step.'],
   [/grand côté (\d)/g, 'Längsseite $1', 'long side $1'],
   [/petit côté (\d)/g, 'Stirnseite $1', 'short side $1'],
   [/, tronçon (\d+)/g, ', Abschnitt $1', ', span $1'],

@@ -32,6 +32,7 @@ import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
 import type { GroundLevel } from '../../structure/core/groundLevels';
 import { GroundLevelsCard, LEVEL_COLORS, levelPointStyle } from './GroundLevels';
+import { freshImport } from '../newVersion';
 
 export interface Hypotheses {
   bearingPreset: string;
@@ -537,10 +538,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPdfBusy(true);
     try {
       const [{ renderToStaticMarkup }, { buildPdf, fontsUsed }, { loadFonts }, { GroundSheetSvg }] = await Promise.all([
-        import('react-dom/server'),
-        import('../../sheets/pdf/pdf'),
-        import('../../sheets/pdf/assets'),
-        import('../../structure/report/groundSheet'),
+        freshImport(() => import('react-dom/server')),
+        freshImport(() => import('../../sheets/pdf/pdf')),
+        freshImport(() => import('../../sheets/pdf/assets')),
+        freshImport(() => import('../../structure/report/groundSheet')),
       ]);
       const name = project ? `${project.internalNumber ? project.internalNumber + ' · ' : ''}${project.name}` : 'Projet';
       const svg = renderToStaticMarkup(
@@ -584,10 +585,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPointsBusy(true);
     try {
       const [{ renderToStaticMarkup }, { buildPdf, fontsUsed }, { loadFonts }, { groundPointsPages }] = await Promise.all([
-        import('react-dom/server'),
-        import('../../sheets/pdf/pdf'),
-        import('../../sheets/pdf/assets'),
-        import('../../structure/report/groundPoints'),
+        freshImport(() => import('react-dom/server')),
+        freshImport(() => import('../../sheets/pdf/pdf')),
+        freshImport(() => import('../../sheets/pdf/assets')),
+        freshImport(() => import('../../structure/report/groundPoints')),
       ]);
       const name = project ? `${project.internalNumber ? project.internalNumber + ' · ' : ''}${project.name}` : 'Projet';
       const svgs = groundPointsPages({
@@ -1040,9 +1041,19 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             <div className="card">
               <div className="card-head">
                 <h2>Variante : longrines sous les grands côtés</h2>
+                <div className="spacer" style={{ flex: 1 }} />
+                <button
+                  className={`btn small ${result.longrineChosen ? '' : 'ghost'}`}
+                  data-testid="longrine-toggle"
+                  onClick={() => setChoices((c) => ({ ...c, longrine: !result.longrineChosen }))}
+                  title="Par défaut le plan de calage dessine les plaques de chaque type d’appui (Prüfbuch). Les longrines ne remplacent les plaques que si tu les choisis."
+                >
+                  {result.longrineChosen ? '↩ Revenir aux plaques' : 'Retenir les longrines'}
+                </button>
               </div>
               <div className="card-body">
-                <SolutionRow s={result.longrine.solution} chosen={!result.allPlates} />
+                <SolutionRow s={result.longrine.solution} chosen={result.longrineChosen} />
+                {!result.longrineChosen && <div className="hint">Variante seulement : le plan de calage, la fiche et le matériel gardent les plaques par type d’appui.</div>}
               </div>
             </div>
           )}

@@ -2,6 +2,7 @@
 // allemand et anglais, et références réglementaires du Prüfbuch TÜV 190060 B / calcul statico 18-0573 (§ 3.9
 // Bodenpressung & Unterpallung), reprises mot pour mot du Prüfbuch et des notes statico. Fonctions pures.
 import { TUV, TUV_PLATES } from '../core/tuv';
+import type { TuvPlate } from '../core/tuv';
 import type { Lang } from './i18n';
 import { num } from './i18n';
 
@@ -56,6 +57,11 @@ export interface CalageDocLabels {
   stateNone: string;
   none: string;
   longrineVariant: (s: string, eta: string) => string;
+  /** type d'appui sans solution standard (la moins mauvaise est dessinée) */
+  notStandard: string;
+  /** plaque minimale du Prüfbuch pour ce type */
+  tuvMinType: (plate: string) => string;
+  tuvBelow: string;
   femNote: string;
   estimateNote: string;
   platesNote: string;
@@ -69,6 +75,10 @@ export interface CalageDocLabels {
   tuvRow: string;
   tuvNone: string;
 }
+
+/** « 70 × 70 cm, 1 × 5,3 / 2 × 3,8 / 3 × 3,1 cm » dans la langue du document */
+export const tuvPlateShort = (lang: Lang, p: TuvPlate) =>
+  `${num(lang, p.side / 10, 0)} × ${num(lang, p.side / 10, 0)} cm, ${p.t.map((t, k) => `${k + 1} × ${num(lang, t / 10, 1)}`).join(' / ')} cm`;
 
 const tuvTable = (lang: Lang, sep: string) =>
   TUV_PLATES.map(
@@ -145,6 +155,9 @@ const FR: CalageDocLabels = {
   stateNone: 'aucune',
   none: 'aucune solution standard',
   longrineVariant: (s, eta) => `Variante longrines : ${s} (η = ${eta}).`,
+  notStandard: '⚠ hors standard, étude spécifique',
+  tuvMinType: (p) => `Prüfbuch min. ${p}`,
+  tuvBelow: 'calage inférieur',
   femNote: 'Réactions du calcul complet (modèle 3D, 2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.',
   estimateNote: 'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
   platesNote:
@@ -229,6 +242,9 @@ const DE: CalageDocLabels = {
   stateNone: 'keine',
   none: 'keine Standardlösung',
   longrineVariant: (s, eta) => `Variante Kanthölzer: ${s} (η = ${eta}).`,
+  notStandard: '⚠ keine Standardlösung, gesonderter Nachweis',
+  tuvMinType: (p) => `Prüfbuch min. ${p}`,
+  tuvBelow: 'Unterpallung kleiner',
   femNote: 'Auflagerkräfte der Gesamtberechnung (3D-Modell, Theorie II. Ordnung, Kombinationen wie statico): maximales Rz,k je Auflager aus den GZG-Kombinationen.',
   estimateNote: 'Werte aus einer Schätzung (Einzugsflächen, Kippen als starrer Block), durch die Gesamtberechnung der Tragwerksstudie zu bestätigen.',
   platesNote:
@@ -313,6 +329,9 @@ const EN: CalageDocLabels = {
   stateNone: 'none',
   none: 'no standard solution',
   longrineVariant: (s, eta) => `Sleeper variant: ${s} (η = ${eta}).`,
+  notStandard: '⚠ no standard solution, specific design',
+  tuvMinType: (p) => `Prüfbuch min. ${p}`,
+  tuvBelow: 'packing smaller',
   femNote: 'Reactions of the full calculation (3D model, 2nd order, statico combinations): max. Rz,k of each support over the SLS combinations.',
   estimateNote: 'Values from an estimate (tributary areas, overturning as a rigid block), to be confirmed by the full calculation of the structural study.',
   platesNote:

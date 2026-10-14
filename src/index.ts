@@ -142,6 +142,10 @@ app.post(`${API}/imap-poll`, authMiddleware, async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Fichier de Plans Viewbox introuvable (page ouverte avant une mise en ligne : les noms changent à chaque build) :
+// 404, jamais la page d'accueil de VEM (le navigateur la refuserait comme script, sans message clair).
+app.use('/plans/assets', (_req, res) => res.status(404).type('text/plain').send('Fichier introuvable : nouvelle version en ligne, recharger la page.'));
+
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
 app.use(errorHandler);

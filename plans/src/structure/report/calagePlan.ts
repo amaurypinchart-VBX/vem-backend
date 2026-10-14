@@ -18,7 +18,7 @@ import type { CalagePlateSpec, LevelMarkSpec, RectMm, Sheet, SheetItem, TitleBlo
 import { formatLevel } from '../core/groundLevels';
 import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { TYPE_HEX } from './figures';
-import { CALAGE_LABELS, LEVEL_LABELS } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS, tuvPlateShort } from './calageI18n';
 import type { SpreadLayer } from '../core/ground';
 import { TUV } from '../core/tuv';
 import type { Lang } from './i18n';
@@ -40,8 +40,8 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
   const N = (v: number, d = 0) => num(lang, v, d);
   const C = CALAGE_LABELS[lang];
   const y = s.baseY;
-  if (!calage.allPlates && calage.longrine) {
-    // longrines sous les grands côtés des Viewbox du niveau 0
+  if (calage.longrineChosen && calage.longrine) {
+    // longrines retenues (choix de l'étape Sol & calage) sous les grands côtés des Viewbox du niveau 0
     const lg = calage.longrine;
     const width = lg.beam.b * lg.count;
     let k = 0;
@@ -194,11 +194,14 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   blocks.push({
     title: C.typesTitle,
     lines: c.types.map((t) => ({
-      text: `${E(t.label)} (${t.reactions.length}) — ${C.pointsOf(t.reactions.map((r) => r.group.id).join(', '))} : ${t.chosen ? E(t.chosen.summary) : L.noStandardSolution} ; Rz,k ≤ ${N(t.Rzk / 1e3)} kN${t.tuv?.ok === false ? ' (< Prüfbuch)' : ''}`,
+      text: `${E(t.label)} (${t.reactions.length}) — ${C.pointsOf(t.reactions.map((r) => r.group.id).join(', '))} : ${t.chosen ? E(t.chosen.summary) : L.noStandardSolution} ; Rz,k ≤ ${N(t.Rzk / 1e3)} kN${
+        t.chosen && !t.standard && t.chosen.kind !== 'custom' && t.chosen.kind !== 'roadway' ? ` — ${C.notStandard}` : ''
+      }${!c.tuv.notApplicable && c.tuv.tuvMinimum && t.tuv ? ` — ${C.tuvMinType(tuvPlateShort(inp.lang, t.tuv.plate))}${t.tuv.ok === false ? ` (${C.tuvBelow})` : ''}` : ''}`,
       color: typeColor(t.typeKey),
     })),
   });
-  if (!c.allPlates && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}` });
+  if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
+  else if (c.longrine && !c.allPlates) blocks[0].lines.push({ text: C.longrineVariant(E(c.longrine.solution.summary), N(c.longrine.result.eta, 2)) });
   blocks.push({ title: C.materialsTitle, lines: c.materials.map((m) => ({ text: `${m.quantity} × ${E(m.label)} ${E(m.dims)}` })) });
   const centered = c.checks.filter((x) => x.plan?.placement === 'centered');
   const lay: Block['lines'] = [];
