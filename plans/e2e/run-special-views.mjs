@@ -203,6 +203,41 @@ if (process.env.SKIP_SHEETS !== '1') {
   const pdfText = readFileSync(shots + 'special-sheet.pdf', 'latin1');
   check('PDF : une page, vectoriel (aucune image)', (pdfText.match(/\/Type \/Page\b/g) || []).length === 1 && !/\/Subtype \/Image/.test(pdfText));
 }
+// 8 bis. assistant IA (VS8, réponses scriptées par le faux serveur)
+await page.getByRole('button', { name: 'Vues 2D' }).click();
+if (await page.locator('[data-testid="cv-ai"]').count()) {
+  const chipsBefore = await chipCount();
+  const nameBefore = await page.locator('[data-testid="cv-name"]').inputValue();
+  await page.locator('[data-testid="cv-ai-text"]').fill('Montre-moi le dessous de la toiture sans le plafond tendu, toutes les box ensemble puis séparées.');
+  await page.locator('[data-testid="cv-ai-send"]').click();
+  await page.locator('[data-testid="cv-ai-banner"]').waitFor({ timeout: 60000 });
+  check('IA : proposition affichée (bandeau orange)', true);
+  check('IA : pastilles orange « proposé par l’IA »', (await page.locator('.cv-chip.ai').count()) >= 1);
+  await previewDone();
+  const lay = await page.locator('.cv-preview-head').innerText();
+  check('IA : aperçu ensemble + séparées', /blocs/.test(lay));
+  await page.locator('.cv-main').screenshot({ path: shots + 'special-ai.png' });
+  await page.locator('[data-testid="cv-ai-cancel"]').click();
+  await page.waitForTimeout(300);
+  check('IA : Annuler rend la vue d’avant', (await page.locator('[data-testid="cv-name"]').inputValue()) === nameBefore && (await chipCount()) === chipsBefore);
+  // demande ambiguë : question, réponse, une relance
+  const cutsBefore = await page.locator('[data-testid="cv-cut"]').count();
+  await page.locator('[data-testid="cv-ai-text"]').fill('Coupe longitudinale au milieu de la box, sans les vitrages.');
+  await page.locator('[data-testid="cv-ai-send"]').click();
+  await page.locator('[data-testid="cv-ai-questions"]').waitFor({ timeout: 60000 });
+  await page.locator('[data-testid="cv-ai-questions"] input').first().fill('VBX-02');
+  await page.locator('[data-testid="cv-ai-questions"]').getByRole('button', { name: /Relancer/ }).click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="cv-ai-questions"]'), null, { timeout: 60000 });
+  check('IA : relance avec la réponse → plus de question', true);
+  await page.locator('[data-testid="cv-ai-accept"]').click();
+  await page.waitForTimeout(300);
+  check('IA : Accepter garde la proposition (coupe A ajoutée)', (await page.locator('[data-testid="cv-cut"]').count()) === cutsBefore + 1 && (await page.locator('[data-testid="cv-cut"] input[placeholder="A"]').last().inputValue()) === 'A');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  check('IA : la proposition acceptée s’annule avec Ctrl+Z', (await page.locator('[data-testid="cv-cut"]').count()) === cutsBefore);
+  await page.keyboard.press('Control+y');
+}
+
 // 9. mémoire (VS7) : préréglage partagé, image 3D coupée, Réglages › Vues spéciales
 await page.getByRole('button', { name: 'Vues 2D' }).click();
 await page.locator('[data-testid="cv-save-preset"]').click();

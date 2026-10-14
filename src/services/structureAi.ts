@@ -57,6 +57,9 @@ async function logCall(kind: string, ctx: CallContext, u: Partial<Usage>, ok: bo
   }
 }
 
+/** Journal d'un appel IA d'un autre module (Plans › vues spéciales…), même table struct_ai_calls. */
+export const logAiCall = (kind: string, ctx: CallContext, u: Partial<Usage>, ok: boolean, error?: string) => logCall(kind, ctx, u, ok, error);
+
 /** Journal d'un tour du conseil ingénieur (structureAdvisor.ts). */
 export const logAdvisorCall = (ctx: CallContext, u: Partial<Usage>, ok: boolean, error?: string) => logCall('advisor', ctx, u, ok, error);
 

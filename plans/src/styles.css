@@ -289,3 +289,7 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .cv-crumbs .crumb.on { background: rgba(230, 57, 70, .18); border-color: var(--accent); }
 .cv-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 @media (max-width: 1300px) { .cv-page { grid-template-columns: 220px minmax(0, 1fr); height: auto; } .cv-page > .cv-side:last-child { grid-column: 1 / -1; } .cv-main { height: 80vh; } }
+.cv-ai { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+.cv-ai input[type='text'] { flex: 1; }
+.cv-ai-banner { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--orange); background: rgba(251, 146, 60, .12); }
+.cv-ai-questions { display: flex; flex-direction: column; gap: 6px; max-width: 640px; }

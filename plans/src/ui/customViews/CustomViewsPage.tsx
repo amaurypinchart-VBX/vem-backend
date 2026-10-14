@@ -32,6 +32,11 @@ import { newId } from '../../sheets/generate';
 import { CutsPanel, DirectionPanel, LayoutPanel, RulesPanel, StylePanel } from './Panels';
 import { ClickBubble } from './ClickBubble';
 import { AddToSheetDialog } from './AddToSheetDialog';
+import { AiBanner, AiField } from './AiDescribe';
+import type { AiProposalInfo } from './AiDescribe';
+import { viewAiPayload } from '../../core/customViews/aiPayload';
+import type { ViewAiPayload } from '../../core/customViews/aiPayload';
+import { applyViewOps, cleanViewOps } from '../../core/customViews/cleanViewOps';
 import { downloadText } from '../common';
 import { ghostColorOf } from '../../sheets/bank';
 
@@ -81,10 +86,18 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
   const [preview, setPreview] = useState<Preview>({ status: 'idle', progress: 0 });
   const [sheetDialog, setSheetDialog] = useState(false);
   const [notice, setNotice] = useState('');
+  // assistant IA : proposition en cours (brouillon affiché ; `original` = état exact d'avant, rendu par « Annuler »)
+  const [aiOn, setAiOn] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiDraft, setAiDraft] = useState<{ original: History<CustomViewSpec> | null; info: AiProposalInfo; base: CustomViewSpec; text: string; payload: ViewAiPayload } | null>(null);
   const spec = hist?.present ?? null;
 
   useEffect(() => {
     vem.me().then(setMe).catch(() => {});
+    vem
+      .plansViewAiStatus()
+      .then((s) => setAiOn(!!s?.enabled))
+      .catch(() => setAiOn(false));
     vem
       .getSetting<unknown>('plans.viewTags')
       .then((v) => setMemTags(cleanViewTags(v)))
@@ -248,7 +261,7 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
   // enregistrement automatique (vue déjà enregistrée) 2 s après le dernier changement
   const isSaved = !!spec && (savedIds.has(spec.id) || views.some((v) => v.id === spec.id));
   useEffect(() => {
-    if (!spec || !isSaved) return;
+    if (!spec || !isSaved || aiDraft) return;
     const stored = views.find((v) => v.id === spec.id);
     if (stored && JSON.stringify(stored) === JSON.stringify(spec)) return;
     setSaveState('pending');
@@ -376,6 +389,45 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
     }
   };
 
+  /** Demande à l'IA : inventaire → opérations → nettoyées → appliquées sur une copie brouillon (rien n'est enregistré). */
+  const askAi = async (text: string, fromCurrent: boolean, answers?: Array<{ question: string; answer: string }>) => {
+    const keepOriginal = aiDraft ? aiDraft.original : hist;
+    const base = answers && aiDraft ? aiDraft.base : fromCurrent && spec ? spec : blankSpec(newId('cv'), now());
+    const presets = [...VIEW_PRESETS, ...shared];
+    const payload = answers && aiDraft ? aiDraft.payload : viewAiPayload({ index, look, tags, frames, refs, spec: base, presets });
+    setAiBusy(true);
+    setNotice('');
+    try {
+      const res = await vem.plansViewAi({ text, payload, answers });
+      const cleaned = cleanViewOps(res, payload);
+      const draft = applyViewOps(base, cleaned.ops, { presets, boxFor, now: now() });
+      const named = cleaned.name ? { ...draft, name: cleaned.name } : { ...draft, name: draft.name === 'Nouvelle vue' ? proposeName(draft, tags.labelOf) : draft.name };
+      setAiDraft({
+        original: keepOriginal,
+        base,
+        text,
+        payload,
+        info: { rationale: cleaned.rationale, confidence: cleaned.confidence, removed: [...(res.removed ?? []), ...cleaned.removed], questions: cleaned.questions, costUsd: res.usage?.costUsd ?? null, model: res.usage?.model ?? '', relaunched: !!answers },
+      });
+      setHist(historyStart(named));
+      setBubble(null);
+    } catch (e) {
+      setNotice(`IA : ${(e as Error).message}`);
+    }
+    setAiBusy(false);
+  };
+  const aiAccept = () => {
+    if (!aiDraft || !spec) return;
+    setAiDraft(null);
+    // la proposition devient une modification annulable de la vue d'origine
+    setHist(aiDraft.original && aiDraft.original.present.id === spec.id ? historyPush(aiDraft.original, spec) : historyStart(spec));
+  };
+  const aiCancel = () => {
+    if (!aiDraft) return;
+    setHist(aiDraft.original);
+    setAiDraft(null);
+  };
+
   const boxFor = (m: string): SectionBox | undefined => {
     const f = frames.get(m);
     if (!f) return undefined;
@@ -430,6 +482,8 @@ export function CustomViewsPage({ scene, provider, glassTest, active, settings, 
       </aside>
 
       <section className="cv-main">
+        {aiOn && <AiField busy={aiBusy} hasView={!!spec && !aiDraft} onSend={(t, fc) => void askAi(t, fc)} />}
+        {aiDraft && <AiBanner key={aiDraft.info.relaunched ? 'r' : 'p'} info={aiDraft.info} busy={aiBusy} onAccept={aiAccept} onEdit={aiAccept} onCancel={aiCancel} onAnswer={(a) => void askAi(aiDraft.text, true, a)} />}
         <div className="viewer-toolbar">
           {spec ? (
             <>

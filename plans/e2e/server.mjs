@@ -80,6 +80,24 @@ http.createServer(async (req, res) => {
     if (a === '/projects/p1') return json(res, project);
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
+    // vues spéciales : assistant « Décris la vue » scripté (mêmes réponses types que tests/customViews/aiFixture.ts)
+    if (a === '/plans/ai/status') return json(res, { enabled: true, model: 'mock-haiku' });
+    if (a === '/plans/ai/view' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const t = String(b.text || '').toLowerCase();
+      const usage = { model: 'mock-haiku', inputTokens: 1200, outputTokens: 150, costUsd: 0.0002, durationMs: 40 };
+      let out = { ops: [], questions: ['Je n’ai pas compris : quelle vue voulez-vous ?'], confidence: 0.2, rationale: '', removed: [] };
+      if (t.includes('spanndecke') || (t.includes('toiture') && t.includes('plafond'))) {
+        const mode = t.includes('ensemble puis') ? 'assembled+exploded' : t.includes('getrennt') || t.includes('séparées') ? 'exploded' : 'assembled';
+        out = { ops: [{ op: 'usePreset', key: 'roof-under-no-ceiling' }, { op: 'setLayout', mode }], questions: [], confidence: 0.9, rationale: 'Préréglage « Dessous de toiture — sans plafond », disposition demandée.', name: 'Dessous de toiture — sans plafond tendu', removed: [] };
+      } else if (t.includes('coupe longitudinale')) {
+        const m = /vbx-\d+/i.exec(t) ?? /vbx-\d+/i.exec((b.answers || []).map((x) => x.answer).join(' '));
+        out = m
+          ? { ops: [{ op: 'setBox', moduleId: m[0].toUpperCase() }, { op: 'addCut', axis: 'long', ref: 'mid', offset: 0, label: 'A' }], questions: [], confidence: 0.8, rationale: `Coupe A-A au milieu de ${m[0].toUpperCase()}.`, removed: [] }
+          : { ops: [{ op: 'addCut', axis: 'long', ref: 'mid', offset: 0, label: 'A' }], questions: ['Dans quelle Viewbox (VBX-xx) ?'], confidence: 0.4, rationale: 'Coupe longitudinale ; la Viewbox n’est pas précisée.', removed: [] };
+      }
+      return json(res, { ...out, usage });
+    }
     if (a.startsWith('/settings/')) {
       // réglages partagés (app_settings) gardés en mémoire : étiquettes de vue, préréglages…
       const key = decodeURIComponent(a.slice('/settings/'.length));

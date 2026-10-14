@@ -24,7 +24,7 @@ const L = 5900;
 const W = 2500;
 const H = 3080;
 
-export function fakeScene(mods: FakeModule[], opts: { wallOn?: string[]; common?: boolean } = {}): { index: SceneIndex; frames: Map<string, ModuleFrame> } {
+export function fakeScene(mods: FakeModule[], opts: { wallOn?: string[]; glassOn?: string[]; common?: boolean } = {}): { index: SceneIndex; frames: Map<string, ModuleFrame> } {
   const nodes: NodeInfo[] = [];
   const modules: ModuleInfo[] = [];
   const frames = new Map<string, ModuleFrame>();
@@ -86,6 +86,11 @@ export function fakeScene(mods: FakeModule[], opts: { wallOn?: string[]; common?
       const wall = add({ name: `VBXE-W${m.id}`, definition: '7-636-008 NIDAPLAST WALL', parentId: root.id, role: 'item', category: 'MUR-LEGER', categorySource: 'manifest', moduleId: m.id, level, assignment: 'spatial', bboxMm: box(0, 1130, -30, 0, 238, 2750) });
       add({ name: '', parentId: wall.id, kind: 'mesh', triangles: 12, bboxMm: wall.bboxMm, category: 'MUR-LEGER', categorySource: 'inherited', moduleId: m.id, level, assignment: 'spatial' });
       itemIds.push(wall.id);
+    }
+    if (opts.glassOn?.includes(m.id)) {
+      const glass = add({ name: `VBXE-G${m.id}`, definition: '7-637-010 Glasswall Seamless', parentId: root.id, role: 'item', category: 'VITRE-SEAMLESS', categorySource: 'manifest', moduleId: m.id, level, assignment: 'spatial', bboxMm: box(0, 1130, W, W + 20, 238, 2750), glass: true });
+      add({ name: '', parentId: glass.id, kind: 'mesh', triangles: 12, bboxMm: glass.bboxMm, category: 'VITRE-SEAMLESS', categorySource: 'inherited', moduleId: m.id, level, assignment: 'spatial' });
+      itemIds.push(glass.id);
     }
     modules.push({
       id: m.id,

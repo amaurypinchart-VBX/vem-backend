@@ -149,6 +149,7 @@ const PRICES: Array<[RegExp, number, number]> = [
   [/opus-(5|4)/, 5, 25],
   [/sonnet-5/, 2, 10],
   [/sonnet-4/, 3, 15],
+  [/haiku-5/, 0.1, 0.5],
   [/haiku-4/, 1, 5],
 ];
 
@@ -347,4 +348,110 @@ export function normalizeModelAnalysis<T extends ModelAnalysisLike>(out: T, opt:
     questions: (out.questions ?? []).map((q, k) => clean(q, `questions[${k}]`)),
   };
   return { analysis, removed };
+}
+
+// ─── Plans › vues spéciales : assistant « Décris la vue » ───
+
+/** Inventaire envoyé à l'IA (sous-ensemble de `ViewAiPayload` côté module, lu sans dépendance). */
+export interface ViewAiInventory {
+  modules: Array<{ id: string; level?: number }>;
+  partTypes: Array<{ definition: string }>;
+  tags: Array<{ tag: string }>;
+  categories: string[];
+  presets: Array<{ key: string }>;
+  current?: { rules?: Array<{ id: string }>; cuts?: unknown[] };
+  maxHeight?: number;
+}
+
+export interface ViewAiNormalized {
+  ops: Array<Record<string, unknown>>;
+  questions: string[];
+  confidence: number;
+  rationale: string;
+  name?: string;
+  removed: string[];
+}
+
+const VIEW_AI_OP_NAMES = ['setCamera', 'addCut', 'removeCut', 'setBox', 'addRule', 'removeRule', 'setLayout', 'setStyle', 'setScope', 'usePreset'];
+
+/**
+ * Normalisation serveur des opérations proposées : opération inconnue retirée, clés (types, étiquettes, catégories,
+ * Viewbox, préréglages, règles) absentes de l'inventaire retirées, décalage de coupe borné à ± la hauteur des
+ * Viewbox, règles par identifiant de pièce refusées ; confiance plafonnée à 0,4 dès qu'on a retiré quelque chose.
+ * Le module refait un nettoyage complet (`cleanViewOps`) avant d'appliquer quoi que ce soit.
+ */
+export function normalizeViewAi(raw: any, inv: ViewAiInventory): ViewAiNormalized {
+  const removed: string[] = [];
+  const sets = {
+    modules: new Set((inv.modules ?? []).map((m) => m.id)),
+    definitions: new Set((inv.partTypes ?? []).map((p) => p.definition)),
+    viewTags: new Set((inv.tags ?? []).map((t) => t.tag)),
+    categories: new Set(inv.categories ?? []),
+    presets: new Set((inv.presets ?? []).map((p) => p.key)),
+    rules: new Set((inv.current?.rules ?? []).map((r) => r.id)),
+  };
+  const maxH = Number(inv.maxHeight) > 0 ? Number(inv.maxHeight) : 3500;
+  const ops: Array<Record<string, unknown>> = [];
+  for (const o of Array.isArray(raw?.ops) ? raw.ops.slice(0, 30) : []) {
+    if (!o || typeof o !== 'object' || !VIEW_AI_OP_NAMES.includes(o.op)) {
+      removed.push(`opération inconnue : ${String(o?.op)}`);
+      continue;
+    }
+    const op: Record<string, unknown> = { ...o };
+    if (op.op === 'addRule') {
+      const m = op.match && typeof op.match === 'object' ? { ...(op.match as Record<string, unknown>) } : {};
+      if ('nodeIds' in m || 'modulePaths' in m) removed.push('règle par identifiant de pièce refusée');
+      delete m.nodeIds;
+      delete m.modulePaths;
+      for (const k of ['definitions', 'viewTags', 'categories', 'moduleIds'] as const) {
+        if (!Array.isArray(m[k])) {
+          delete m[k];
+          continue;
+        }
+        const set = k === 'moduleIds' ? sets.modules : sets[k];
+        const kept = (m[k] as unknown[]).filter((v) => typeof v === 'string' && set.has(v));
+        if (kept.length < (m[k] as unknown[]).length) removed.push(`${k} inconnu(s) retiré(s)`);
+        if (kept.length) m[k] = kept;
+        else delete m[k];
+      }
+      if (!Object.keys(m).filter((k) => k !== 'common').length && typeof m.common !== 'boolean') {
+        removed.push('règle sans critère connu retirée');
+        continue;
+      }
+      op.match = m;
+    }
+    if (op.op === 'setBox' && op.moduleId !== null && !sets.modules.has(op.moduleId as string)) {
+      removed.push(`Viewbox inconnue : ${String(op.moduleId)}`);
+      continue;
+    }
+    if (op.op === 'usePreset' && !sets.presets.has(op.key as string)) {
+      removed.push(`préréglage inconnu : ${String(op.key)}`);
+      continue;
+    }
+    if (op.op === 'removeRule' && !sets.rules.has(op.id as string)) {
+      removed.push(`règle inconnue : ${String(op.id)}`);
+      continue;
+    }
+    if (op.op === 'addCut') {
+      const off = Number(op.offset);
+      if (!Number.isFinite(off)) op.offset = 0;
+      else if (Math.abs(off) > maxH) {
+        removed.push(`décalage ${off} mm ramené à ±${maxH} mm`);
+        op.offset = Math.sign(off) * maxH;
+      }
+    }
+    if (op.op === 'setScope' && Array.isArray(op.modules)) {
+      const kept = (op.modules as unknown[]).filter((v) => typeof v === 'string' && sets.modules.has(v));
+      if (kept.length < (op.modules as unknown[]).length) removed.push('Viewbox inconnue(s) retirée(s) du périmètre');
+      op.modules = kept.length ? kept : 'all';
+    }
+    ops.push(op);
+  }
+  let confidence = Number(raw?.confidence);
+  confidence = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5;
+  if (removed.length) confidence = Math.min(confidence, 0.4);
+  const questions = (Array.isArray(raw?.questions) ? raw.questions : []).filter((q: unknown) => typeof q === 'string' && q.trim()).map((q: string) => q.trim().slice(0, 300)).slice(0, 3);
+  const out: ViewAiNormalized = { ops, questions, confidence, rationale: typeof raw?.rationale === 'string' ? raw.rationale.slice(0, 600) : '', removed };
+  if (typeof raw?.name === 'string' && raw.name.trim()) out.name = raw.name.trim().slice(0, 200);
+  return out;
 }

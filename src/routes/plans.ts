@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
+import { PLANS_VIEW_MODEL, ViewAiInput, describeView, viewAiEnabled } from '../services/plansViewAi';
 
 const router = Router();
 const db = prisma as any; // modèle ajouté au schéma ; client typé régénéré au build Docker
@@ -273,6 +274,22 @@ router.delete('/models/:id', async (req: AuthRequest, res: Response, next: NextF
     await deletePackageAssets(model);
     await db.plansModelVersion.delete({ where: { id: model.id } });
     res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// GET /plans/ai/status — assistant « Décris la vue » disponible (clé configurée) et modèle utilisé
+router.get('/ai/status', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: { enabled: viewAiEnabled(), model: PLANS_VIEW_MODEL } });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/ai/view — { text, payload, answers? } → opérations proposées (rien n'est appliqué côté serveur)
+router.post('/ai/view', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const parsed = ViewAiInput.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Demande invalide : texte ou inventaire manquant', 400);
+    res.json({ success: true, data: await describeView(parsed.data, { userId: req.user?.id }) });
   } catch (err) { next(err); }
 });
 
