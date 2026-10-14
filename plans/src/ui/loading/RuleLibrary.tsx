@@ -13,7 +13,14 @@ import { SEED_CATALOGUE_TO_ADD, SEED_DECISIONS, SEED_META, SEED_OBSERVATIONS, SE
 import { SEED_CATALOGUE } from '../../loading/library/catalogue';
 import type { LoadingHistoryRow, VemUser } from '../../api/vem';
 import { vem } from '../../api/vem';
-import { downloadText } from '../common';
+import { downloadBlob, downloadText } from '../common';
+import type { LoadingRule } from '../../loading/core/types';
+import { classeurXlsx } from '../../loading/library/exportClasseur';
+import type { ObservationRow } from '../../loading/learning/calibration';
+import { pendingQuestions, promotionProposals } from '../../loading/learning/calibration';
+import type { ImpactCase } from '../../loading/learning/impact';
+import { RuleValidation } from './RuleValidation';
+import { impactCases } from './impactCases';
 
 const EDITORS = ['admin', 'technical_manager'];
 const CONF_BADGE: Record<Confidence, string> = { confirme: 'ok', a_confirmer: 'orange', hypothese: 'orange', observe: '' };
@@ -45,6 +52,36 @@ export function RuleLibrary() {
   const catalogue = useMemo(() => mergeCatalogue(SEED_CATALOGUE, catRows), [catRows]);
   const catMap = useMemo(() => new Map(catalogue.map((c) => [c.ref, c])), [catalogue]);
   const version = useMemo(() => rulesVersion(rules), [rules]);
+  const [obs, setObs] = useState<ObservationRow[]>([]);
+  useEffect(() => {
+    vem.loadingObservations().then(setObs).catch(() => {});
+  }, []);
+  const [editing, setEditing] = useState<LoadingRule | null>(null);
+  const [cases, setCases] = useState<ImpactCase[] | null>(null);
+  const edit = (r: LoadingRule) => {
+    setEditing(r);
+    if (!cases) impactCases().then(setCases).catch(() => setCases([]));
+  };
+  const saveRules = async (list: LoadingRule[], reason: string) => {
+    for (const r of list) await vem.saveLoadingRule(r, reason);
+    await refresh();
+    setMsg(`✓ ${list.length > 1 ? `${list.length} règles enregistrées` : 'Règle enregistrée'}`);
+  };
+  const promotions = useMemo(() => promotionProposals(rules, obs), [rules, obs]);
+  const pending = useMemo(() => {
+    const updated = new Map<string, string>();
+    for (const r of rows) if (!updated.has(r.data.article) || updated.get(r.data.article)! < r.updatedAt) updated.set(r.data.article, r.updatedAt);
+    return pendingQuestions(obs, updated);
+  }, [obs, rows]);
+  const importFile = async (file: File) => {
+    const parsed = JSON.parse(await file.text()) as { rules?: LoadingRule[] };
+    const list = (parsed.rules ?? []).filter((r) => r && typeof r.key === 'string' && typeof r.article === 'string');
+    if (!list.length) throw new Error('Aucune règle dans ce fichier');
+    if (!window.confirm(`Importer ${list.length} règle(s) ? Chacune remplace la règle de même clé (historique gardé).`)) return;
+    for (const r of list) await vem.saveLoadingRule({ ...r, version: r.version ?? 1 }, `import JSON ${file.name}`);
+    await refresh();
+    setMsg(`✓ ${list.length} règle(s) importée(s)`);
+  };
   const active = rules.filter((r) => r.active);
 
   return (
@@ -77,9 +114,87 @@ export function RuleLibrary() {
           >
             ⬇ Exporter (JSON)
           </button>
+          <button
+            className="btn small"
+            onClick={() =>
+              downloadBlob(
+                `VIEWBOX_regles_loading_${version}.xlsx`,
+                new Blob([classeurXlsx(rules, catalogue, { version, date: new Date().toLocaleDateString('fr-BE'), decisions: SEED_DECISIONS }) as Uint8Array<ArrayBuffer>], {
+                  type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                }),
+              )
+            }
+          >
+            ⬇ Classeur Excel
+          </button>
+          {canEdit && (
+            <label className="btn small">
+              ⬆ Importer (JSON)
+              <input
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) importFile(f).catch((err: Error) => setMsg(`✗ ${err.message}`));
+                }}
+              />
+            </label>
+          )}
         </div>
       </div>
-      {tab === 'rules' && <RulesTable rules={rules} catMap={catMap} />}
+      {tab === 'rules' && (promotions.length > 0 || pending.size > 0) && (
+        <div className="card">
+          <div className="card-head">
+            <h2>À regarder</h2>
+            <span className="hint">Calage automatique et questions laissées en attente sur les chantiers.</span>
+          </div>
+          <div className="card-body" style={{ display: 'grid', gap: 6 }}>
+            {promotions.map((p) => (
+              <div key={p.rule.key} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="badge ok">juste 2 fois de suite</span>
+                <b>{p.rule.article}</b> {describeRule(p.rule, catMap)}
+                <span className="hint">({p.hits.map((h) => `${h.predicted}`).join(', ')})</span>
+                <button
+                  className="btn small primary"
+                  disabled={!canEdit}
+                  onClick={() => void saveRules([{ ...p.rule, confidence: 'confirme' }], `juste sur ${p.hits.length} chantiers de suite : passée confirmée`).catch((e: Error) => setMsg(`✗ ${e.message}`))}
+                >
+                  Passer « confirmée »
+                </button>
+              </div>
+            ))}
+            {[...pending].map(([article, os]) => (
+              <div key={article} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="badge orange">❓ question en attente</span>
+                <b>{article}</b> {catMap.get(article)?.designation ?? ''} <span className="hint">— {os.map((o) => o.note).join(' ; ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {tab === 'rules' && <RulesTable rules={rules} catMap={catMap} canEdit={canEdit} onEdit={edit} onSave={saveRules} />}
+      {editing && (
+        <RuleValidation
+          title="Modifier la règle"
+          draft={editing}
+          rules={rules}
+          catalogue={catMap}
+          observations={SEED_OBSERVATIONS}
+          cases={cases}
+          canEdit={canEdit}
+          onSave={async (list, reason) => {
+            try {
+              await saveRules(list, reason);
+              setEditing(null);
+            } catch (e) {
+              setMsg(`✗ ${(e as Error).message}`);
+            }
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       {tab === 'catalogue' && (
         <CatalogueTable
           catalogue={catalogue}
@@ -102,7 +217,19 @@ export function RuleLibrary() {
   );
 }
 
-function RulesTable({ rules, catMap }: { rules: EffectiveRule[]; catMap: Map<string, CatalogueItem> }) {
+function RulesTable({
+  rules,
+  catMap,
+  canEdit,
+  onEdit,
+  onSave,
+}: {
+  rules: EffectiveRule[];
+  catMap: Map<string, CatalogueItem>;
+  canEdit: boolean;
+  onEdit: (r: LoadingRule) => void;
+  onSave: (rules: LoadingRule[], reason: string) => Promise<void>;
+}) {
   const [q, setQ] = useState('');
   const [conf, setConf] = useState<Confidence | ''>('');
   const [cat, setCat] = useState<LoadingCategory | ''>('');
@@ -188,7 +315,21 @@ function RulesTable({ rules, catMap }: { rules: EffectiveRule[]; catMap: Map<str
                 {open === r.key && (
                   <tr>
                     <td colSpan={4}>
-                      <RuleDetail rule={r} history={history[r.key]} />
+                      <RuleDetail
+                        rule={r}
+                        history={history[r.key]}
+                        canEdit={canEdit}
+                        onEdit={() => onEdit(r)}
+                        onRevert={async (data, reason) => {
+                          await (data ? onSave([data], reason) : vem.resetLoadingRule(r.key, reason).then(() => onSave([], reason)));
+                          setHistory((x) => {
+                            const n = { ...x };
+                            delete n[r.key];
+                            return n;
+                          });
+                          setOpen(null);
+                        }}
+                      />
                     </td>
                   </tr>
                 )}
@@ -201,9 +342,39 @@ function RulesTable({ rules, catMap }: { rules: EffectiveRule[]; catMap: Map<str
   );
 }
 
-function RuleDetail({ rule: r, history }: { rule: EffectiveRule; history?: LoadingHistoryRow[] | 'erreur' }) {
+function RuleDetail({
+  rule: r,
+  history,
+  canEdit,
+  onEdit,
+  onRevert,
+}: {
+  rule: EffectiveRule;
+  history?: LoadingHistoryRow[] | 'erreur';
+  canEdit: boolean;
+  onEdit: () => void;
+  onRevert: (data: LoadingRule | null, reason: string) => Promise<void>;
+}) {
+  const [err, setErr] = useState('');
+  const revert = (data: LoadingRule | null, label: string) => {
+    if (!window.confirm(`${label} ?`)) return;
+    onRevert(data, label).catch((e: Error) => setErr(e.message));
+  };
   return (
     <div style={{ padding: '6px 12px', display: 'grid', gap: 6 }}>
+      {canEdit && (
+        <div className="row" style={{ gap: 6 }}>
+          <button className="btn small" onClick={onEdit}>
+            ✎ Modifier la règle
+          </button>
+          {r.origin2 === 'override' && (
+            <button className="btn small ghost" onClick={() => revert(null, 'Revenir à la règle du classeur')}>
+              ↺ Revenir au classeur
+            </button>
+          )}
+          {err && <span className="hint">✗ {err}</span>}
+        </div>
+      )}
       <div className="hint">
         Clé <code>{r.key}</code> · {COUNTING_BASE_LABEL[r.per]} · genre {r.kind} · version {r.version}
         {r.origin?.length ? ` · classeur : ${r.origin.map((o) => `${o.sheet} ligne ${o.row}`).join(', ')}` : ''}
@@ -238,6 +409,11 @@ function RuleDetail({ rule: r, history }: { rule: EffectiveRule; history?: Loadi
               <li key={h.id}>
                 v{h.version} — {new Date(h.createdAt).toLocaleString('fr-BE')} — {h.source}
                 {h.reason ? ` : ${h.reason}` : ''}
+                {canEdit && h.after && h.version !== r.version ? (
+                  <button className="btn small ghost" onClick={() => revert({ ...(h.after as LoadingRule) }, `Revenir à la version ${h.version}`)}>
+                    ↺ revenir à cette version
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>

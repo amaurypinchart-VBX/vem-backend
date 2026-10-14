@@ -30,6 +30,14 @@ import type { Project } from '../../api/vem';
 import type { BordereauMeta } from '../../loading/xlsx/bordereau';
 import { bordereauFileName, bordereauXlsx } from '../../loading/xlsx/bordereau';
 import { QuestionsStep } from './QuestionsStep';
+import { RuleValidation, WhyDialog } from './RuleValidation';
+import type { ValidationProps } from './RuleValidation';
+import { impactCases } from './impactCases';
+import { inferBase } from '../../loading/learning/inferBase';
+import { proposeRule } from '../../loading/learning/proposal';
+import type { ObservationRow } from '../../loading/learning/calibration';
+import { pendingQuestions } from '../../loading/learning/calibration';
+import type { ImpactCase } from '../../loading/learning/impact';
 import { ExportStep } from './ExportStep';
 import { CONFIDENCE_LABEL, LOADING_CATEGORIES } from '../../loading/core/types';
 
@@ -114,6 +122,10 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const [project, setProject] = useState<Project | null>(null);
   const [study, setStudy] = useState<{ input: StudyInput | null; note: string }>({ input: null, note: 'Étude structure pas encore faite pour ce modèle' });
   const [busy, setBusy] = useState('');
+  const [why, setWhy] = useState<{ article: string; before: number | null; after: number } | null>(null);
+  const [validation, setValidation] = useState<Omit<ValidationProps, 'cases' | 'rules' | 'catalogue' | 'canEdit' | 'onCancel'> | null>(null);
+  const [cases, setCases] = useState<ImpactCase[] | null>(null);
+  const [unknownObs, setUnknownObs] = useState<ObservationRow[]>([]);
   const [memory, setMemory] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<TopologyOverrides>({});
   const [answers, setAnswers] = useState<ProductAnswers>({});
@@ -136,6 +148,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     vem.loadingCatalogue().then(setCatRows).catch(() => {});
     vem.loadingRules().then(setRuleRows).catch(() => {});
     if (PROJECT_ID) vem.project(PROJECT_ID).then(setProject).catch(() => {});
+    vem.loadingObservations('inconnu').then(setUnknownObs).catch(() => {});
     void refreshMemory();
     if (!PROJECT_ID || !model) {
       setSaveState('local');
@@ -235,6 +248,80 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     revision,
     state: status === 'validee' ? `Validée le ${validatedAt ? new Date(validatedAt).toLocaleDateString('fr-BE') : ''}` : 'Brouillon',
   };
+  // « je ne sais pas encore » : questions en attente depuis d'autres chantiers, tant que la règle n'a pas bougé
+  const pending = useMemo(() => {
+    const updated = new Map<string, string>();
+    for (const r of ruleRows) if (!updated.has(r.data.article) || updated.get(r.data.article)! < r.updatedAt) updated.set(r.data.article, r.updatedAt);
+    return pendingQuestions(unknownObs, updated);
+  }, [unknownObs, ruleRows]);
+  // correction d'une quantité → « Pourquoi ? »
+  const correct = (article: string, v: number | null) => {
+    setCorrections((c) => {
+      const next = { ...c };
+      if (v === null) delete next[article];
+      else next[article] = v;
+      return next;
+    });
+    if (v !== null) setWhy({ article, before: predicted.lines.find((l) => l.article === article)?.qty ?? null, after: v });
+  };
+  const chooseWhy = async (choice: 'chantier' | 'regle' | 'inconnu') => {
+    const w = why!;
+    setWhy(null);
+    const line = list.lines.find((l) => l.article === w.article);
+    const ruleKeys = line?.contributions.map((c) => c.ruleKey).filter((k): k is string => !!k) ?? [];
+    if (choice === 'chantier') return;
+    const chantier = project?.internalNumber ?? scene.index.source.fileName;
+    if (choice === 'inconnu') {
+      // la règle d'abord (la question doit rester plus récente que la modification) :
+      // elle repasse « à confirmer » (si on a le droit de la modifier)
+      if (canEdit)
+        for (const r of rules.filter((x) => x.active && x.article === w.article && x.confidence === 'confirme' && ruleKeys.includes(x.key)))
+          await vem.saveLoadingRule({ ...r, confidence: 'a_confirmer', source: 'correction' }, `Je ne sais pas encore : ${chantier} ${w.before ?? '—'} → ${w.after}`, PROJECT_ID, listId).catch(() => {});
+      if (listId)
+        await vem
+          .addLoadingObservation(listId, { article: w.article, ruleKeys, predicted: w.before, final: w.after, kind: 'inconnu', note: `${chantier} : ${w.before ?? '—'} → ${w.after}` })
+          .then((o) => setUnknownObs((x) => [o, ...x]))
+          .catch((e) => setError(`Observation non enregistrée : ${(e as Error).message}`));
+      if (canEdit) vem.loadingRules().then(setRuleRows).catch(() => {});
+      return;
+    }
+    // « c'est la règle » : bases qui expliquent le chiffre, règle proposée, écran de validation
+    const unit = line?.unit ?? catMap.get(w.article)?.unit ?? 'pce';
+    const candidates = w.after > 0 ? inferBase(w.article, w.after, topology, { rules, metres: unit !== 'pce' }) : [];
+    const existing = rules.find((r) => r.active && r.article === w.article && ruleKeys.includes(r.key));
+    if (!candidates.length && !existing) {
+      setError(`Aucune base ne donne ${w.after} pour ${w.article} sur ce chantier : saisis la règle à la main dans Réglages › Règles de loading.`);
+      return;
+    }
+    const scope = topology.islands.every((i) => i.regime === 'standalone') ? 'standalone' : topology.islands.every((i) => i.regime === 'connecte') ? 'connecte' : 'toujours';
+    const draft = candidates.length
+      ? proposeRule({ article: w.article, articleName: catMap.get(w.article)?.designation, candidate: candidates[0], scope, confidence: 'confirme', unit, chantier }, rules)
+      : existing!;
+    setValidation({
+      title: candidates.length ? 'Nouvelle règle, pour tous les projets' : 'Modifier la règle',
+      draft,
+      candidates,
+      target: w.after,
+      observations: SEED_OBSERVATIONS,
+      reason: `${chantier} : ${w.before ?? '—'} → ${w.after}`,
+      onSave: async (toSave, reason) => {
+        try {
+          for (const r of toSave) await vem.saveLoadingRule(r, reason, PROJECT_ID, listId);
+          setRuleRows(await vem.loadingRules());
+          setCorrections((c) => {
+            const next = { ...c };
+            delete next[w.article];
+            return next;
+          });
+          setValidation(null);
+          setSaveNote(`✓ Règle validée : elle vaut maintenant pour tous les projets`);
+        } catch (e) {
+          setError(`Règle non enregistrée : ${(e as Error).message}`);
+        }
+      },
+    });
+    if (!cases) impactCases().then(setCases).catch(() => setCases([]));
+  };
   const fileName = bordereauFileName(effMeta.orderNo || project?.internalNumber || 'chantier', revision);
 
   const lastSaved = useRef('');
@@ -242,7 +329,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     if (!loaded.current || !listId) return;
     const body = {
       overrides,
-      answers: { products: answers, chantier: { ...site, meta } as Record<string, unknown> },
+      answers: { products: answers, chantier: { ...site, meta } as Record<string, unknown>, study: study.input },
       corrections,
       orderNo: meta.orderNo ?? null,
       topology,
@@ -419,6 +506,8 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
           </div>
         )}
       </div>
+      {why && <WhyDialog article={why.article} before={why.before} after={why.after} canEdit={canEdit} onChoose={(c) => void chooseWhy(c)} onCancel={() => setWhy(null)} />}
+      {validation && <RuleValidation {...validation} rules={rules} catalogue={catMap} cases={cases} canEdit={canEdit} onCancel={() => setValidation(null)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(520px, 46%) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
           {step === 'topology' && (
@@ -447,14 +536,8 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
               catalogue={catalogue}
               readOnly={status === 'validee'}
               corrections={corrections}
-              onCorrect={(article, v) =>
-                setCorrections((c) => {
-                  const next = { ...c };
-                  if (v === null) delete next[article];
-                  else next[article] = v;
-                  return next;
-                })
-              }
+              onCorrect={correct}
+              pending={pending}
               onAppreciation={(article, v) =>
                 setSite((a) => {
                   const app = { ...(a.appreciation ?? {}) };
@@ -1040,11 +1123,13 @@ function ListStep({
   corrections,
   onCorrect,
   onAppreciation,
+  pending,
   selected,
   onSelect,
 }: {
   list: LoadingList;
   catalogue: CatalogueItem[];
+  pending: Map<string, ObservationRow[]>;
   readOnly: boolean;
   corrections: Record<string, number>;
   onCorrect: (article: string, v: number | null) => void;
@@ -1172,6 +1257,11 @@ function ListStep({
                         <div>
                           <span className={`badge ${STATUS_BADGE[l.status]}`}>{STATUS_LABEL[l.status]}</span>
                           {l.status === 'calcule' && l.confidence !== 'confirme' && <span className="hint"> {CONFIDENCE_LABEL[l.confidence]}</span>}
+                          {pending.has(l.article) && (
+                            <span className="badge orange" title={pending.get(l.article)!.map((o) => o.note ?? '').join(' ; ')} style={{ marginLeft: 4 }}>
+                              ❓ question en attente : {pending.get(l.article)![0].note}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>

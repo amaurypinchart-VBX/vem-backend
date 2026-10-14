@@ -94,7 +94,8 @@ export function App() {
                 </button>
               </nav>
               {settingsTab === 'library' && <LibraryPage />}
-              {settingsTab === 'loading' && <RuleLibrary />}
+              {/* rechargée à chaque ouverture : une règle validée depuis une loading liste doit y apparaître */}
+              {settingsTab === 'loading' && tab === 'settings' && <RuleLibrary />}
               <div style={{ display: settingsTab === 'rules' ? 'block' : 'none' }}>
                 <SettingsPage
                   key={rulesKey}

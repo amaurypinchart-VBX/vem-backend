@@ -302,7 +302,7 @@ router.post('/lists/:id/validate', async (req: AuthRequest, res: Response, next:
         userId: req.user?.id ?? null,
       }));
     const updated = await prisma.$transaction(async (tx: any) => {
-      await tx.loadingObservation.deleteMany({ where: { listId: list.id } });
+      await tx.loadingObservation.deleteMany({ where: { listId: list.id, kind: { in: ['calage', 'jugement'] } } });
       if (rows.length) await tx.loadingObservation.createMany({ data: rows });
       return tx.loadingList.update({
         where: { id: list.id },
@@ -310,6 +310,59 @@ router.post('/lists/:id/validate', async (req: AuthRequest, res: Response, next:
       });
     });
     res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+// GET /loading/validated-lists — listes validées (tous projets, les plus récentes d'abord) : rejouées pour l'impact
+// d'une nouvelle règle (leur topologie, réponses et lignes finales sont gardées)
+router.get('/validated-lists', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const take = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
+    const lists = await db.loadingList.findMany({
+      where: { status: 'validee' },
+      orderBy: { validatedAt: 'desc' },
+      take,
+      select: { id: true, projectId: true, topology: true, answers: true, corrections: true, lines: true, validatedAt: true, orderNo: true, project: { select: { name: true, internalNumber: true } } },
+    });
+    res.json({ success: true, data: lists });
+  } catch (err) { next(err); }
+});
+
+// GET /loading/observations — prédit / final des listes (calage automatique, questions en attente)
+router.get('/observations', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const where: Record<string, unknown> = {};
+    const kind = str(req.query.kind as string, 20);
+    const article = str(req.query.article as string, 20);
+    if (kind) where.kind = kind;
+    if (article) where.article = article;
+    const take = Math.min(2000, Math.max(1, Number(req.query.limit) || 500));
+    const rows = await db.loadingObservation.findMany({ where, orderBy: { createdAt: 'desc' }, take });
+    res.json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/lists/:id/observations — « Je ne sais pas encore » (ou « seulement ce chantier ») sur une correction :
+// gardé tout de suite, la question revient au prochain projet — tout utilisateur ayant l'accès Plans
+router.post('/lists/:id/observations', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!list) throw new AppError('Loading liste introuvable', 404);
+    const o = req.body ?? {};
+    if (typeof o.article !== 'string' || !REF.test(o.article)) throw new AppError('Référence invalide', 400);
+    const row = await db.loadingObservation.create({
+      data: {
+        listId: list.id,
+        article: o.article,
+        ruleKeys: Array.isArray(o.ruleKeys) ? o.ruleKeys.slice(0, 20) : [],
+        predicted: Number.isFinite(o.predicted) ? o.predicted : null,
+        final: Number.isFinite(o.final) ? o.final : null,
+        kind: ['jugement', 'inconnu'].includes(o.kind) ? o.kind : 'inconnu',
+        note: str(o.note, 500),
+        userId: req.user?.id ?? null,
+      },
+    });
+    res.status(201).json({ success: true, data: row });
   } catch (err) { next(err); }
 });
 

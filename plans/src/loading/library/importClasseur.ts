@@ -557,7 +557,7 @@ export function findConflicts(rules: LoadingRule[]): LoadingRule[][] {
   return groups;
 }
 
-function overlaps(a: LoadingRule, b: LoadingRule): boolean {
+export function overlaps(a: LoadingRule, b: LoadingRule): boolean {
   // deux produits déclencheurs différents comptent des instances différentes (ex. kits porte simple / double)
   if (a.group && a.group === b.group) return false;
   const ta = a.trigger.articles;

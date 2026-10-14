@@ -1,5 +1,5 @@
 // Bancs dorés de la loading liste : les 3 chantiers de référence (Klokgebouw, 6059, 6060). La topologie de chaque
-// modèle est figée dans fixtures/<id>.topology.json (recalculée et comparée quand le .zip est dans
+// modèle est figée dans src/loading/benches/<id>.topology.json (recalculée et comparée quand le .zip est dans
 // reference-reports/loading ; LOADING_BENCH_WRITE=1 la réécrit), puis le moteur tourne avec la base de départ et les
 // réponses du chantier, et la liste est comparée au bordereau. Les écarts connus sont listés, jamais forcés.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -28,7 +28,7 @@ interface Bench {
   real: RealLine[];
 }
 
-const FIX = join(__dirname, 'fixtures');
+const FIX = join(__dirname, '..', '..', 'src', 'loading', 'benches');
 const MODELS = join(__dirname, '..', '..', 'reference-reports', 'loading');
 const cat = new Map(SEED_CATALOGUE.map((c) => [c.ref, c]));
 const bench = (id: string) => JSON.parse(readFileSync(join(FIX, `${id}.bench.json`), 'utf8')) as Bench;

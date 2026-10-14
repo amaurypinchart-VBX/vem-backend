@@ -45,6 +45,7 @@ const loadingHistory = [];
 const loadingCatalogue = new Map();
 const loadingMatches = new Map();
 const loadingLists = new Map();
+const loadingObs = [];
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
@@ -88,6 +89,17 @@ http.createServer(async (req, res) => {
       loadingHistory.push({ id: `H${loadingHistory.length + 1}`, ruleKey: row.key, version, before: prev?.data ?? null, after: row.data, reason: b.reason ?? null, source: b.rule.source, projectId: b.projectId ?? null, listId: null, userId: 'u1', createdAt: new Date().toISOString() });
       return json(res, row, 201);
     }
+    const lrd = a.match(/^\/loading\/rules\/([^/]+)$/);
+    if (lrd && req.method === 'DELETE') { loadingRules.delete(decodeURIComponent(lrd[1])); return json(res, null); }
+    if (a === '/loading/validated-lists' && req.method === 'GET') return json(res, [...loadingLists.values()].filter((l) => l.status === 'validee').map((l) => ({ ...l, project: { name: project.name, internalNumber: project.internalNumber } })));
+    if (a === '/loading/observations' && req.method === 'GET') { const k = url.searchParams.get('kind'); return json(res, loadingObs.filter((o) => !k || o.kind === k)); }
+    const llo = a.match(/^\/loading\/lists\/([^/]+)\/observations$/);
+    if (llo && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const row = { id: `O${loadingObs.length + 1}`, listId: llo[1], createdAt: new Date().toISOString(), ...b };
+      loadingObs.unshift(row);
+      return json(res, row, 201);
+    }
     const lrh = a.match(/^\/loading\/rules\/(.+)\/history$/);
     if (lrh && req.method === 'GET') return json(res, loadingHistory.filter((h) => h.ruleKey === decodeURIComponent(lrh[1])).reverse());
     if (a === '/loading/catalogue' && req.method === 'GET') return json(res, [...loadingCatalogue.values()]);
@@ -126,7 +138,8 @@ http.createServer(async (req, res) => {
     if (llv && req.method === 'POST') {
       const row = loadingLists.get(llv[1]);
       const b = JSON.parse((await body(req)).toString());
-      Object.assign(row, { lines: b.lines, status: 'validee', validatedAt: new Date().toISOString(), observations: b.observations?.length ?? 0 });
+      Object.assign(row, { lines: b.lines, status: 'validee', validatedAt: new Date().toISOString() });
+      for (const o of b.observations ?? []) loadingObs.unshift({ id: `O${loadingObs.length + 1}`, listId: row.id, createdAt: new Date().toISOString(), ...o });
       return json(res, row);
     }
     if (ll && req.method === 'PUT') {

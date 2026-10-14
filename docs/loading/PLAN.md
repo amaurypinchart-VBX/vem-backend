@@ -1,6 +1,6 @@
 # Module « Loading liste » — Plan (phase L0)
 
-> État au 13/10/2026 : **L1, L2, L3 et L4 faites** (Klokgebouw 39/39, bordereau Excel, validation). Prochaine phase : L5 (« Pourquoi ? », apprentissage des règles, contradictions, impact, historique, bibliothèque).
+> État au 14/10/2026 : **L1 à L5 faites** (Klokgebouw 39/39, bordereau Excel, validation, « Pourquoi ? » + règles apprises, impact, historique, classeur Excel exporté). Prochaine phase : L6 (import d’une liste réelle, réconciliation, bancs). `docs/loading/RVIE_OUT_00067.xlsx` = en-tête de picking Odoo sans lignes produit : il faut l’export avec les lignes (mouvements de stock).
 
 État au 12/10/2026. Rédigé après lecture de `CLAUDE.md`, de `plans/reference-reports/03_Prompt_module_loading_liste_VEM.md` et du code cité au § 3 du prompt.
 

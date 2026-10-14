@@ -2,7 +2,8 @@
 // session VEM déjà ouverte dans le navigateur ; il est retiré de la barre d'adresse après lecture.
 import type { LibraryPayload, ServerLibraryRow } from '../structure/core/libraryStore';
 import type { ServerCatalogueRow, ServerRuleRow } from '../loading/library/merge';
-import type { CatalogueItem } from '../loading/core/types';
+import type { CatalogueItem, LoadingRule } from '../loading/core/types';
+import type { ObservationRow } from '../loading/learning/calibration';
 import type { ExtractResult, GroupProposal, IdentifySuggestion } from '../structure/core/ai';
 import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
@@ -248,6 +249,19 @@ export interface LoadingMatchRow {
   triangles: number | null;
 }
 
+/** Liste validée (impact d'une règle : rejouée avec sa topologie et ses réponses). */
+export interface ValidatedListRecord {
+  id: string;
+  projectId: string;
+  topology: unknown;
+  answers: { products?: Record<string, string>; chantier?: Record<string, unknown>; study?: unknown } | null;
+  corrections: Record<string, number> | null;
+  lines: { article: string; qty: number | null }[] | null;
+  validatedAt: string | null;
+  orderNo: string | null;
+  project?: { name?: string; internalNumber?: string } | null;
+}
+
 /** Loading liste d'une version de modèle (table loading_lists). */
 export interface LoadingListRecord {
   id: string;
@@ -255,7 +269,7 @@ export interface LoadingListRecord {
   modelVersionId: string | null;
   topology: unknown;
   overrides: Record<string, number> | null;
-  answers: { products?: Record<string, string>; chantier?: Record<string, unknown> } | null;
+  answers: { products?: Record<string, string>; chantier?: Record<string, unknown>; study?: unknown } | null;
   lines: unknown;
   corrections: Record<string, number> | null;
   status: 'brouillon' | 'validee';
@@ -307,6 +321,13 @@ export const vem = {
     return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
   },
   loadingRules: () => api<ServerRuleRow[]>('GET', '/loading/rules'),
+  saveLoadingRule: (rule: LoadingRule, reason: string, projectId?: string, listId?: string | null) =>
+    api<ServerRuleRow>('POST', '/loading/rules', { rule, reason, projectId: projectId || undefined, listId: listId || undefined }),
+  resetLoadingRule: (key: string, reason: string) => api<null>('DELETE', `/loading/rules/${encodeURIComponent(key)}`, { reason }),
+  validatedLoadingLists: () => api<ValidatedListRecord[]>('GET', '/loading/validated-lists'),
+  loadingObservations: (kind?: string) => api<ObservationRow[]>('GET', `/loading/observations${kind ? `?kind=${kind}` : ''}`),
+  addLoadingObservation: (listId: string, o: { article: string; ruleKeys: string[]; predicted: number | null; final: number | null; kind: 'jugement' | 'inconnu'; note?: string }) =>
+    api<ObservationRow>('POST', `/loading/lists/${listId}/observations`, o),
   loadingRuleHistory: (key: string) => api<LoadingHistoryRow[]>('GET', `/loading/rules/${encodeURIComponent(key)}/history`),
   loadingCatalogue: () => api<ServerCatalogueRow[]>('GET', '/loading/catalogue'),
   saveLoadingCatalogue: (b: { ref: string; designation: string; data: Partial<CatalogueItem> }) => api<ServerCatalogueRow>('POST', '/loading/catalogue', b),

@@ -12,7 +12,7 @@ import { writeXlsx } from '../../src/loading/xlsx/write';
 import { topologySummary } from '../../src/loading/topology/build';
 
 const cat = new Map(SEED_CATALOGUE.map((c) => [c.ref, c]));
-const fix = (n: string) => JSON.parse(readFileSync(join(__dirname, 'fixtures', n), 'utf8'));
+const fix = (n: string) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'src', 'loading', 'benches', n), 'utf8'));
 
 describe('écrivain xlsx', () => {
   it('relu à l’identique (texte, nombres, styles, caractères spéciaux)', () => {
