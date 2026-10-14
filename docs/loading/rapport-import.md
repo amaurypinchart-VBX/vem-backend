@@ -5,7 +5,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 ## Résumé
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
-- Catalogue : 225 références (48 « gros produits »)
+- Catalogue : 227 références (48 « gros produits »)
 - Règles : 91 lues, **67 actives** (48 confirmées, 18 à confirmer, 1 hypothèses), 24 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
 - Décisions appliquées : 24 / 24
@@ -17,7 +17,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 3. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
 4. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
 5. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
-6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `4-700-002`, `4-700-001`.
+6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `4-700-001`.
 
 ## Décisions appliquées par-dessus le classeur
 
@@ -186,11 +186,11 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Catalogue_ref ligne 142 : « testplate » n’est pas une référence N-NNN-NNN : ignorée.
 
-## Odoo (Quants (stock.quant) (2).xlsx, 221 produits)
+## Odoo (Quants (stock.quant) (2).xlsx, 221 produits + 2 vus sur des pickings)
 
 La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le code des lignes exportées vers Odoo.
 
-- **Utilisées par des règles mais inconnues d’Odoo** (créer le produit dans Odoo ou corriger la règle) : `4-700-001`, `4-700-002`
+- **Utilisées par des règles mais inconnues d’Odoo** (créer le produit dans Odoo ou corriger la règle) : `4-700-001`
 - Au catalogue mais pas dans Odoo : `7-632-001` (compris dans 7-962-016), `7-632-002` (compris dans 7-962-016), `7-355-014` (compris dans 7-962-016), `7-355-015` (compris dans 7-962-016)
 - 7-636-006 : désignation d’Odoo reprise : « TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16 » → « Nidaplast / TUV WALL Vinyle White/7024 | 1130x2520 COMPLETE - VIEWBOX M16 ».
 - 4-157-013 : ajoutée au catalogue depuis Odoo (« Ruban d'étanchéité VKP® BASIC 15mm 4-8mm 8M| VIEWBOX | », catégorie consommables).
@@ -200,6 +200,8 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 - 4-730-013 : ajoutée au catalogue depuis Odoo (« Electrical cable Interconnection Light | Wieland female-Wieland - Male | 3G1.5 /5M | VIEWBOX », catégorie electrique).
 - 4-730-014 : ajoutée au catalogue depuis Odoo (« Electrical cable Connection Light | Wieland female - Pluge Male | 3G1.5 /5M | VIEWBOX », catégorie electrique).
 - 4-740-010 : ajoutée au catalogue depuis Odoo (« Laminate vinyle click parquet LAMETT DOURO HONEY| VIEWBOX | /m² », catégorie consommables, unité m2).
+- 4-700-002 : ajoutée au catalogue depuis Odoo (« PAINT LEVASSEUR 1K RAL 7024 20L », catégorie consommables).
+- 4-740-011 : ajoutée au catalogue depuis Odoo (« Laminate vinyle color choice by client | VIEWBOX | /m² », catégorie consommables, unité m2).
 
 ## Règles actives
 
@@ -209,7 +211,6 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 |---|---|---|---|---|---|---|
 | 4-700-003 Viewbox Ceilling Black tensed Fabric 2195mm X 5695mm /VISIX/ | 1 | par box |  | +1 | confirmé | `acc:4-700-003@box` |
 | 4-700-001 PAINT LEVASSEUR 1K RAL7024 2.5L | 2 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-001@job[petit]` |
-| 4-700-002 PAINT LEVASSEUR 1K RAL7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
 | 4-700-027 AIRCO WALL TROTEC 2,6KW  220V - VBX COOLING AND HEATING SYSTEM | à apprécier | forfait chantier |  |  | hypothèse | `app:4-700-027@job` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 3 | par porte simple |  |  | confirmé | `kit:7-632-017@porte_simple` |
 | 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-022@porte_double` |
@@ -288,6 +289,7 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 | 4-740-010 Laminate vinyle click parquet LAMETT DOURO HONEY/ VIEWBOX / /m² | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
 | 4-157-005 Gaffa TAPE NISHIBAN BLACK / VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-005@m2_plancher[plancherLamine]` |
 | 4-157-012 Tape TWO SIDE for VYNYL 50mmx50M/ VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-012@m2_plancher[plancherLamine]` |
+| 4-700-002 PAINT LEVASSEUR 1K RAL 7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
 
 ### Ajouts chantier
 

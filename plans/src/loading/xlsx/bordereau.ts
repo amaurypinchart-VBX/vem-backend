@@ -9,6 +9,7 @@ import type { LoadingLine, LoadingList } from '../engine/generate';
 import type { XCell, XSheet, XStyle } from './write';
 import { writeXlsx } from './write';
 import type { OdooProduct } from '../library/odoo';
+import { odooKnown } from '../library/odoo';
 import { ODOO_PRODUCTS } from '../library/odoo.data';
 
 export interface BordereauMeta {
@@ -161,7 +162,7 @@ export function bordereauSheet(list: LoadingList, meta: BordereauMeta): XSheet {
 /** Onglet « Odoo » : les lignes à quantité connue, au format des produits Odoo (Product Reference Code = référence
  *  Viewbox, Product = « [réf] nom Odoo »), prêtes à importer ; en dessous, les lignes dont la référence est inconnue
  *  d'Odoo (à créer dans Odoo ou à corriger), jamais mêlées aux autres. */
-export function odooSheet(list: LoadingList, products: readonly OdooProduct[] = ODOO_PRODUCTS): XSheet {
+export function odooSheet(list: LoadingList, products: readonly OdooProduct[] = odooKnown(ODOO_PRODUCTS)): XSheet {
   const odoo = new Map(products.map((p) => [p.ref, p]));
   const lines = list.lines.filter((l) => l.qty !== null && l.qty > 0);
   const known = lines.filter((l) => odoo.has(l.article));

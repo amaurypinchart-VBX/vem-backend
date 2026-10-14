@@ -1,4 +1,4 @@
-// Bancs dorés de la loading liste : les 3 chantiers de référence (Klokgebouw, 6059, 6060). La topologie de chaque
+// Bancs dorés de la loading liste : les 4 chantiers de référence (Klokgebouw, 6059, 6060, OACE). La topologie de chaque
 // modèle est figée dans src/loading/benches/<id>.topology.json (recalculée et comparée quand le .zip est dans
 // reference-reports/loading ; LOADING_BENCH_WRITE=1 la réécrit), puis le moteur tourne avec la base de départ et les
 // réponses du chantier, et la liste est comparée au bordereau. Les écarts connus sont listés, jamais forcés.
@@ -103,5 +103,12 @@ describe.skipIf(!existsSync(join(FIX, 'klokgebouw.bench.json')))('bancs dorés',
     // régime 10 mm seul : rien du régime 8.8.2
     expect(list.lines.some((l) => ['4-700-061', '4-700-073'].includes(l.article) && l.qty)).toBe(false);
     expect(list.lines.find((l) => l.article === '7-632-017')).toMatchObject({ qty: 0, status: 'jugement' });
+  }, 180000);
+
+  it('6072ROACEVIE / 00066 (picking Odoo réel) : 4 box connectées couvertes, vitrage 10 mm, 3 airco', async () => {
+    const { cmp } = await run('oace');
+    const bad = cmp.gaps.filter((g) => g.kind !== 'identique' && !g.known);
+    expect(bad, JSON.stringify(bad)).toEqual([]);
+    expect(cmp.identical).toBeGreaterThanOrEqual(19);
   }, 180000);
 });

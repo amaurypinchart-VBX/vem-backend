@@ -7,11 +7,11 @@ import type { Workbook } from '../xlsx/read';
 import { importClasseur } from './importClasseur';
 import type { SeedResult } from './decisions';
 import { applyDecisions } from './decisions';
-import { mergeOdoo } from './odoo';
+import { mergeOdoo, odooKnown } from './odoo';
 import { ODOO_META, ODOO_PRODUCTS } from './odoo.data';
 
 export function buildSeed(wb: Workbook): SeedResult {
-  return applyDecisions(mergeOdoo(importClasseur(wb), ODOO_PRODUCTS));
+  return applyDecisions(mergeOdoo(importClasseur(wb), odooKnown(ODOO_PRODUCTS)));
 }
 
 const HEADER = (what: string, file: string) =>
@@ -145,8 +145,8 @@ export function reportMarkdown(s: SeedResult, file: string): string {
   section('Ignoré', ['ignore', 'decision', 'contradiction']);
 
   if (ODOO_PRODUCTS.length) {
-    const inOdoo = new Set(ODOO_PRODUCTS.map((p) => p.ref));
-    L.push(`## Odoo (${ODOO_META.file}, ${ODOO_PRODUCTS.length} produits)`, '');
+    const inOdoo = new Set(odooKnown(ODOO_PRODUCTS).map((p) => p.ref));
+    L.push(`## Odoo (${ODOO_META.file}, ${ODOO_PRODUCTS.length} produits + ${odooKnown(ODOO_PRODUCTS).length - ODOO_PRODUCTS.length} vus sur des pickings)`, '');
     L.push('La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le code des lignes exportées vers Odoo.', '');
     const ruleRefs = [...new Set(active.map((r) => r.article).filter((a) => /^\d-\d{3}-\d{3,5}$/.test(a) && !inOdoo.has(a)))].sort();
     if (ruleRefs.length) L.push(`- **Utilisées par des règles mais inconnues d’Odoo** (créer le produit dans Odoo ou corriger la règle) : ${ruleRefs.map((r) => `\`${r}\``).join(', ')}`);

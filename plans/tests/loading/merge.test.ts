@@ -60,10 +60,10 @@ describe('version de la base', () => {
 describe('catalogue', () => {
   it('un ajout validé complète le catalogue sans toucher aux réfs du classeur', () => {
     const merged = mergeCatalogue(SEED_CATALOGUE, [
-      { ref: '4-700-002', designation: 'PAINT LEVASSEUR 1K RAL7024 20L', data: { categorie: 'consommables', unit: 'pce', gros: false }, createdBy: 'u', createdAt: '' },
+      { ref: '4-700-001', designation: 'PAINT LEVASSEUR 1K RAL7024 2.5L', data: { categorie: 'consommables', unit: 'pce', gros: false }, createdBy: 'u', createdAt: '' },
     ]);
     expect(merged.length).toBe(SEED_CATALOGUE.length + 1);
-    expect(merged.find((c) => c.ref === '4-700-002')).toMatchObject({ source: 'ajout', categorie: 'consommables' });
+    expect(merged.find((c) => c.ref === '4-700-001')).toMatchObject({ source: 'ajout', categorie: 'consommables' });
     expect(merged.find((c) => c.ref === '7-962-016')?.source).toBe('classeur');
   });
 });

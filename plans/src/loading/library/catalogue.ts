@@ -2038,6 +2038,24 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "source": "odoo"
   },
   {
+    "ref": "4-700-002",
+    "designation": "PAINT LEVASSEUR 1K RAL 7024 20L",
+    "gros": false,
+    "categorie": "consommables",
+    "unit": "pce",
+    "odoo": "4-700-002",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-740-011",
+    "designation": "Laminate vinyle color choice by client | VIEWBOX | /m²",
+    "gros": false,
+    "categorie": "consommables",
+    "unit": "m2",
+    "odoo": "4-740-011",
+    "source": "odoo"
+  },
+  {
     "ref": "7-632-001",
     "designation": "Module Viewbox (compris dans le standard 7-962-016)",
     "gros": false,

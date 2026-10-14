@@ -10,6 +10,8 @@ import b6059 from './6059.bench.json';
 import t6059 from './6059.topology.json';
 import b6060 from './6060.bench.json';
 import t6060 from './6060.topology.json';
+import bOace from './oace.bench.json';
+import tOace from './oace.topology.json';
 
 export interface BenchData {
   id: string;
@@ -35,4 +37,5 @@ export const SEED_BENCHES: Bench[] = [
   { ...(klokBench as unknown as BenchData), topology: klokTopo as unknown as Topology },
   { ...(b6059 as unknown as BenchData), topology: t6059 as unknown as Topology },
   { ...(b6060 as unknown as BenchData), topology: t6060 as unknown as Topology },
+  { ...(bOace as unknown as BenchData), topology: tOace as unknown as Topology },
 ];

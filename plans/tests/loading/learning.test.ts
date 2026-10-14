@@ -59,7 +59,7 @@ describe('règle proposée, contradictions, impact', () => {
     const klok = res.find((x) => x.case.id === 'klokgebouw')!;
     expect(klok.changes).toEqual([{ article: '4-700-003', before: 3, after: 4 }]);
     expect([klok.scoreBefore, klok.scoreAfter, klok.worse]).toEqual(['39 / 39', '38 / 39', true]);
-    expect(impactSentence(res, '4-700-003')).toMatch(/^Aurait changé 3 chantiers : Klokgebouw Eindhoven 3 → 4/);
+    expect(impactSentence(res, '4-700-003')).toMatch(/^Aurait changé 4 chantiers : Klokgebouw Eindhoven 3 → 4/);
   });
 });
 

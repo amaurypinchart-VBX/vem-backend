@@ -1,5 +1,5 @@
 // Test navigateur de la loading liste (L1 : Réglages › Règles de loading) : règles de la base de départ en français,
-// contradictions à trancher, ajout d'une référence manquante au catalogue (4-700-002, absente d'Odoo). Captures dans e2e/shots/loading-*.png.
+// contradictions à trancher, ajout d'une référence manquante au catalogue (4-700-001, absente d'Odoo). Captures dans e2e/shots/loading-*.png.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -34,15 +34,15 @@ await page.screenshot({ path: `${shots}loading-contradictions.png` });
 
 await page.getByRole('button', { name: /^Catalogue/ }).click();
 await page.getByText(/Références à ajouter au catalogue/).waitFor();
-await page.getByRole('button', { name: '＋ 4-700-002' }).click();
+await page.getByRole('button', { name: '＋ 4-700-001' }).click();
 const designation = await page.locator('label', { hasText: 'Désignation' }).locator('input').inputValue();
 check(/PAINT/i.test(designation), `désignation pré-remplie depuis la règle (« ${designation} »)`);
 await page.locator('label', { hasText: 'Catégorie' }).locator('select').selectOption('consommables');
 await page.getByRole('button', { name: 'Ajouter au catalogue' }).click();
-await page.getByText('✓ 4-700-002 ajoutée au catalogue').waitFor();
-check(!(await page.getByRole('button', { name: '＋ 4-700-002' }).count()), '4-700-002 n’est plus à ajouter');
-await page.getByPlaceholder('Rechercher une référence…').fill('4-700-002');
-check(await page.getByText('ajoutée dans l’app').isVisible(), '4-700-002 dans le catalogue, « ajoutée dans l’app »');
+await page.getByText('✓ 4-700-001 ajoutée au catalogue').waitFor();
+check(!(await page.getByRole('button', { name: '＋ 4-700-001' }).count()), '4-700-001 n’est plus à ajouter');
+await page.getByPlaceholder('Rechercher une référence…').fill('4-700-001');
+check(await page.getByText('ajoutée dans l’app').isVisible(), '4-700-001 dans le catalogue, « ajoutée dans l’app »');
 await page.screenshot({ path: `${shots}loading-catalogue.png` });
 
 await page.getByRole('button', { name: 'Décisions et observations' }).click();

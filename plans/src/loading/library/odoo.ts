@@ -14,6 +14,20 @@ export interface OdooProduct {
   name: string;
 }
 
+/** Produits vus sur des pickings Odoo réels mais absents de l'export « Quants » (qui ne liste que les produits avec
+ *  un stock enregistré) : ils existent dans Odoo. */
+export const ODOO_FROM_PICKINGS: OdooProduct[] = [
+  // RVIE/OUT/00066 (6072ROACEVIE, 19/10/2026)
+  { ref: '4-700-002', name: 'PAINT LEVASSEUR 1K RAL 7024 20L' },
+  { ref: '4-740-011', name: 'Laminate vinyle color choice by client | VIEWBOX | /m²' },
+];
+
+/** Export Odoo + produits vus sur les pickings (l'export gagne s'il connaît la référence). */
+export function odooKnown(products: readonly OdooProduct[]): OdooProduct[] {
+  const refs = new Set(products.map((p) => p.ref));
+  return [...products, ...ODOO_FROM_PICKINGS.filter((p) => !refs.has(p.ref))];
+}
+
 const REF = /^\d-\d{3}-\d{3,5}$/;
 const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
 const norm = (s: string) => clean(s).toLowerCase();

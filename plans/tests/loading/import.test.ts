@@ -37,8 +37,9 @@ describe.skipIf(!existsSync(FILE))('classeur VIEWBOX_regles_loading', () => {
     expect(seed.catalogue.find((c) => c.ref === '7-637-010')?.vitrage).toBe('10mm');
     expect(seed.catalogue.find((c) => c.ref === '7-637-020')?.vitrage).toBe('8.8.2');
     expect(seed.catalogue.find((c) => c.ref === '4-740-002')?.plaque).toEqual({ l: 700, w: 700 });
-    // 4-700-096 et 4-720-011 viennent maintenant d'Odoo ; la peinture 4-700-002 n'y est pas
-    expect(seed.catalogueToAdd).toEqual(['4-700-002']);
+    // 4-700-096 et 4-720-011 viennent d'Odoo, la peinture 20 L 4-700-002 du picking RVIE/OUT/00066
+    expect(seed.catalogueToAdd).toEqual([]);
+    expect(seed.catalogue.find((c) => c.ref === '4-700-002')).toMatchObject({ source: 'odoo', designation: 'PAINT LEVASSEUR 1K RAL 7024 20L' });
     expect(seed.catalogue.find((c) => c.ref === '4-700-096')).toMatchObject({ source: 'odoo', odoo: '4-700-096' });
     expect(seed.catalogue.find((c) => c.ref === '4-720-011')?.unit).toBe('m');
     expect(seed.catalogue.find((c) => c.ref === '7-962-016')?.odoo).toBe('7-962-016');
