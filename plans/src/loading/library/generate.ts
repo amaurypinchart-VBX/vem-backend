@@ -7,9 +7,11 @@ import type { Workbook } from '../xlsx/read';
 import { importClasseur } from './importClasseur';
 import type { SeedResult } from './decisions';
 import { applyDecisions } from './decisions';
+import { mergeOdoo } from './odoo';
+import { ODOO_META, ODOO_PRODUCTS } from './odoo.data';
 
 export function buildSeed(wb: Workbook): SeedResult {
-  return applyDecisions(importClasseur(wb));
+  return applyDecisions(mergeOdoo(importClasseur(wb), ODOO_PRODUCTS));
 }
 
 const HEADER = (what: string, file: string) =>
@@ -141,6 +143,19 @@ export function reportMarkdown(s: SeedResult, file: string): string {
   section('Doublons', ['doublon']);
   section('Catalogue', ['catalogue']);
   section('Ignoré', ['ignore', 'decision', 'contradiction']);
+
+  if (ODOO_PRODUCTS.length) {
+    const inOdoo = new Set(ODOO_PRODUCTS.map((p) => p.ref));
+    L.push(`## Odoo (${ODOO_META.file}, ${ODOO_PRODUCTS.length} produits)`, '');
+    L.push('La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le code des lignes exportées vers Odoo.', '');
+    const ruleRefs = [...new Set(active.map((r) => r.article).filter((a) => /^\d-\d{3}-\d{3,5}$/.test(a) && !inOdoo.has(a)))].sort();
+    if (ruleRefs.length) L.push(`- **Utilisées par des règles mais inconnues d’Odoo** (créer le produit dans Odoo ou corriger la règle) : ${ruleRefs.map((r) => `\`${r}\``).join(', ')}`);
+    const catRefs = s.catalogue.filter((c) => !inOdoo.has(c.ref));
+    if (catRefs.length)
+      L.push(`- Au catalogue mais pas dans Odoo : ${catRefs.map((c) => `\`${c.ref}\`${c.inclusDans ? ` (compris dans ${c.inclusDans})` : ''}`).join(', ')}`);
+    for (const i of s.issues.filter((x) => x.kind === 'odoo')) L.push(`- ${i.article} : ${i.text}`);
+    L.push('');
+  }
 
   L.push('## Règles actives', '');
   for (const cat of LOADING_CATEGORIES) {

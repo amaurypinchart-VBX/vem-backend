@@ -545,6 +545,8 @@ function CatalogueTable({
                       c.hvac ? 'airco / HVAC' : '',
                       c.unit !== 'pce' ? `unité ${c.unit}` : '',
                       c.source === 'ajout' ? 'ajoutée dans l’app' : '',
+                      c.source === 'odoo' ? 'ajoutée depuis Odoo' : '',
+                      !c.odoo && !c.inclusDans ? 'pas dans Odoo' : '',
                     ]
                       .filter(Boolean)
                       .join(' · ')}

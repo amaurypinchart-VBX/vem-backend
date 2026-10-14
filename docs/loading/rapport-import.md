@@ -5,7 +5,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 ## Résumé
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
-- Catalogue : 218 références (48 « gros produits »)
+- Catalogue : 225 références (48 « gros produits »)
 - Règles : 91 lues, **67 actives** (48 confirmées, 18 à confirmer, 1 hypothèses), 24 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
 - Décisions appliquées : 24 / 24
@@ -17,7 +17,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 3. Airco / HVAC : seul 4-700-027 (AIRCO WALL) est marqué comme demandant un mur à trou. Et 4-700-026 (airco mobile), 4-700-028 / 4-700-030 (chauffage), 4-700-029 (convertisseur) ?
 4. Plaque simple 4-700-040 « box → terrasse / vide » : Klokgebouw (standalone) = 0. Elle sort seulement pour une box connectée dont un côté donne sur une terrasse ou le vide ? Par côté ou par mètre ?
 5. Ajouts chantier sans couleur ou en vert (échelles, câbles, peinture, laminé, gaffa) : importés « à confirmer ». Lesquels sont confirmés ?
-6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `4-700-096`, `4-720-011`, `4-700-002`, `4-700-001`, `4-740-010`, `4-700-097`, `4-730-013`, `4-730-014`.
+6. Références absentes du catalogue, à ajouter (dans l'app : Réglages › Règles de loading › Catalogue, « Ajouter ») : `4-700-002`, `4-700-001`.
 
 ## Décisions appliquées par-dessus le classeur
 
@@ -186,6 +186,21 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Catalogue_ref ligne 142 : « testplate » n’est pas une référence N-NNN-NNN : ignorée.
 
+## Odoo (Quants (stock.quant) (2).xlsx, 221 produits)
+
+La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le code des lignes exportées vers Odoo.
+
+- **Utilisées par des règles mais inconnues d’Odoo** (créer le produit dans Odoo ou corriger la règle) : `4-700-001`, `4-700-002`
+- Au catalogue mais pas dans Odoo : `7-632-001` (compris dans 7-962-016), `7-632-002` (compris dans 7-962-016), `7-355-014` (compris dans 7-962-016), `7-355-015` (compris dans 7-962-016)
+- 7-636-006 : désignation d’Odoo reprise : « TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16 » → « Nidaplast / TUV WALL Vinyle White/7024 | 1130x2520 COMPLETE - VIEWBOX M16 ».
+- 4-157-013 : ajoutée au catalogue depuis Odoo (« Ruban d'étanchéité VKP® BASIC 15mm 4-8mm 8M| VIEWBOX | », catégorie consommables).
+- 4-700-096 : ajoutée au catalogue depuis Odoo (« Roof Rubber EPDM | 57X32 x 5900 |VBX| », catégorie joints).
+- 4-700-097 : ajoutée au catalogue depuis Odoo (« Roof Rubber EPDM | 57X32 x 2500 |VBX| », catégorie joints).
+- 4-720-011 : ajoutée au catalogue depuis Odoo (« Viewbox Poles Rubber black FLAT adhésive 20X4mm /M |VIEWBOX| », catégorie joints, unité m).
+- 4-730-013 : ajoutée au catalogue depuis Odoo (« Electrical cable Interconnection Light | Wieland female-Wieland - Male | 3G1.5 /5M | VIEWBOX », catégorie electrique).
+- 4-730-014 : ajoutée au catalogue depuis Odoo (« Electrical cable Connection Light | Wieland female - Pluge Male | 3G1.5 /5M | VIEWBOX », catégorie electrique).
+- 4-740-010 : ajoutée au catalogue depuis Odoo (« Laminate vinyle click parquet LAMETT DOURO HONEY| VIEWBOX | /m² », catégorie consommables, unité m2).
+
 ## Règles actives
 
 ### Structure / façade
@@ -194,11 +209,8 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 |---|---|---|---|---|---|---|
 | 4-700-003 Viewbox Ceilling Black tensed Fabric 2195mm X 5695mm /VISIX/ | 1 | par box |  | +1 | confirmé | `acc:4-700-003@box` |
 | 4-700-001 PAINT LEVASSEUR 1K RAL7024 2.5L | 2 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-001@job[petit]` |
-| 4-740-010 Laminate LAMETT DOURO HONEY (/m²) | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
 | 4-700-002 PAINT LEVASSEUR 1K RAL7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
 | 4-700-027 AIRCO WALL TROTEC 2,6KW  220V - VBX COOLING AND HEATING SYSTEM | à apprécier | forfait chantier |  |  | hypothèse | `app:4-700-027@job` |
-| 4-700-096 Roof Rubber EPDM 57x32x5900 /VBX/ | 1 | par jonction de toit grand côté |  | +1 | confirmé | `acc:4-700-096@jonction_toit_grand_cote` |
-| 4-700-097 Roof Rubber EPDM 2500 /VBX/ | 1 | par jonction de toit petit côté |  | +1 | confirmé | `acc:4-700-097@jonction_toit_petit_cote` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 3 | par porte simple |  |  | confirmé | `kit:7-632-017@porte_simple` |
 | 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-022@porte_double` |
 | 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 1 | par porte double |  |  | confirmé | `kit:7-632-018@porte_double` |
@@ -206,10 +218,7 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 7-632-022 PLATFORM STEP 2200x1000x150 /7024/ - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-022@porte_coulissante` |
 | 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-018@porte_coulissante` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 4 | par porte coulissante |  |  | confirmé | `kit:7-632-017@porte_coulissante` |
-| 4-730-013 Câble de liaison électrique (lampes) entre Viewbox | 1 | par jonction de box | regime = connecte |  | confirmé | `acc:4-730-013@jonction_box[connecte]` |
-| 4-730-014 Câble de liaison électrique (lampes) pour 2 Viewbox | 1 | par paire de box | regime = connecte |  | confirmé | `acc:4-730-014@paire_box[connecte]` |
 | 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco |  |  | confirmé | `acc:4-700-083@airco` |
-| 4-720-011 Viewbox Poles Rubber FLAT adhésive 20x4mm /M | 2,53 | par bande de poteaux jointifs |  | +30 % | confirmé | `acc:4-720-011@poteau_connecte` |
 
 ### Quincaillerie / liaison
 
@@ -249,7 +258,10 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-700-067 Window/Wall Rubber black Little 2300mm /VIEWBOX/ | 2 | par petit côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-067@10mm/cote_vitre_court` |
 | 4-700-074 Window/Wall Rubber black Little 5700mm /VIEWBOX/ | 2 | par grand côté vitré (vitrage 10mm) |  | +50 % | confirmé | `acc:4-700-074@10mm/cote_vitre_long` |
 | 4-700-033 Roof Rubber roller TEC7 /15CMX1000CM /VBX/ | 1 | forfait chantier | couvert |  | confirmé | `aj:4-700-033@job[couvert]` |
+| 4-700-096 Roof Rubber EPDM / 57X32 x 5900 /VBX/ | 1 | par jonction de toit grand côté |  | +1 | confirmé | `acc:4-700-096@jonction_toit_grand_cote` |
+| 4-700-097 Roof Rubber EPDM / 57X32 x 2500 /VBX/ | 1 | par jonction de toit petit côté |  | +1 | confirmé | `acc:4-700-097@jonction_toit_petit_cote` |
 | 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 2 | par porte coulissante (vitrage 10mm) |  |  | confirmé | `acc:4-700-072@10mm/porte_coulissante` |
+| 4-720-011 Viewbox Poles Rubber black FLAT adhésive 20X4mm /M /VIEWBOX/ | 2,53 | par bande de poteaux jointifs |  | +30 % | confirmé | `acc:4-720-011@poteau_connecte` |
 
 ### Électrique
 
@@ -264,13 +276,16 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 | 4-730-003 Electrical cable  Shuko  / 3G2.5 / 20M / VIEWBOX | à apprécier | forfait chantier |  |  | à confirmer | `app:4-730-003@job` |
 | 4-730-002 Electrical cable  Shuko  / 3G2.5 / 10M / VIEWBOX | à apprécier | forfait chantier |  |  | à confirmer | `app:4-730-002@job` |
 | 4-730-004 Electrical cable  Shuko  / 3G2.5 / 5M / VIEWBOX | à apprécier | forfait chantier |  |  | à confirmer | `app:4-730-004@job` |
+| 4-730-013 Electrical cable Interconnection Light / Wieland female-Wieland - Male / 3G1.5 /5M / VIEWBOX | 1 | par jonction de box | regime = connecte |  | confirmé | `acc:4-730-013@jonction_box[connecte]` |
+| 4-730-014 Electrical cable Connection Light / Wieland female - Pluge Male / 3G1.5 /5M / VIEWBOX | 1 | par paire de box | regime = connecte |  | confirmé | `acc:4-730-014@paire_box[connecte]` |
 
 ### Consommables / finition
 
 | Article | Quantité | Base | Conditions | Spare | Confiance | Clé |
 |---|---|---|---|---|---|---|
-| 7-636-006 TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16 | 1 | par produit (7-636-008) | ralMurs = 7024 |  | confirmé | `sub:7-636-006@7-636-008/produit[7024]` |
+| 7-636-006 Nidaplast / TUV WALL Vinyle White/7024 / 1130x2520 COMPLETE - VIEWBOX M16 | 1 | par produit (7-636-008) | ralMurs = 7024 |  | confirmé | `sub:7-636-006@7-636-008/produit[7024]` |
 | 4-700-044 PAINT KIT / VIEWBOX / | 1 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-044@job[petit]` |
+| 4-740-010 Laminate vinyle click parquet LAMETT DOURO HONEY/ VIEWBOX / /m² | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
 | 4-157-005 Gaffa TAPE NISHIBAN BLACK / VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-005@m2_plancher[plancherLamine]` |
 | 4-157-012 Tape TWO SIDE for VYNYL 50mmx50M/ VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-012@m2_plancher[plancherLamine]` |
 

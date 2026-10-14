@@ -9,7 +9,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-014"
   },
   {
     "ref": "4-700-015",
@@ -17,7 +18,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-015"
   },
   {
     "ref": "4-700-018",
@@ -25,7 +27,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-018"
   },
   {
     "ref": "4-700-020",
@@ -33,7 +36,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-020"
   },
   {
     "ref": "4-700-021",
@@ -41,7 +45,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-021"
   },
   {
     "ref": "4-700-024",
@@ -49,7 +54,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-024"
   },
   {
     "ref": "4-700-016",
@@ -57,7 +63,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-016"
   },
   {
     "ref": "4-700-017",
@@ -65,7 +72,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-017"
   },
   {
     "ref": "4-700-026",
@@ -73,7 +81,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-026"
   },
   {
     "ref": "4-700-027",
@@ -82,6 +91,7 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
+    "odoo": "4-700-027",
     "hvac": true
   },
   {
@@ -90,7 +100,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-028"
   },
   {
     "ref": "4-700-030",
@@ -98,7 +109,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-030"
   },
   {
     "ref": "4-700-031",
@@ -106,7 +118,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-031"
   },
   {
     "ref": "4-700-032",
@@ -114,7 +127,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-032"
   },
   {
     "ref": "4-700-033",
@@ -122,7 +136,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-033"
   },
   {
     "ref": "7-354-006",
@@ -130,7 +145,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-006"
   },
   {
     "ref": "7-354-007",
@@ -138,7 +154,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-007"
   },
   {
     "ref": "7-354-015",
@@ -146,7 +163,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-015"
   },
   {
     "ref": "7-354-016",
@@ -154,7 +172,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-016"
   },
   {
     "ref": "7-354-017",
@@ -162,7 +181,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-017"
   },
   {
     "ref": "7-354-018",
@@ -170,7 +190,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-018"
   },
   {
     "ref": "7-354-019",
@@ -178,7 +199,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-019"
   },
   {
     "ref": "7-354-020",
@@ -186,7 +208,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-020"
   },
   {
     "ref": "7-354-021",
@@ -194,7 +217,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-021"
   },
   {
     "ref": "7-354-022",
@@ -202,7 +226,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-022"
   },
   {
     "ref": "7-354-023",
@@ -210,7 +235,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-023"
   },
   {
     "ref": "7-354-024",
@@ -218,7 +244,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-024"
   },
   {
     "ref": "7-438-051",
@@ -226,7 +253,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-438-051"
   },
   {
     "ref": "7-438-052",
@@ -234,7 +262,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-438-052"
   },
   {
     "ref": "7-625-013",
@@ -243,7 +272,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "simple"
+    "porte": "simple",
+    "odoo": "7-625-013"
   },
   {
     "ref": "7-625-017",
@@ -252,7 +282,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "simple"
+    "porte": "simple",
+    "odoo": "7-625-017"
   },
   {
     "ref": "7-625-018",
@@ -261,7 +292,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "double"
+    "porte": "double",
+    "odoo": "7-625-018"
   },
   {
     "ref": "7-625-019",
@@ -270,7 +302,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "double"
+    "porte": "double",
+    "odoo": "7-625-019"
   },
   {
     "ref": "7-625-020",
@@ -279,7 +312,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "coulissante"
+    "porte": "coulissante",
+    "odoo": "7-625-020"
   },
   {
     "ref": "7-625-022",
@@ -288,7 +322,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "simple"
+    "porte": "simple",
+    "odoo": "7-625-022"
   },
   {
     "ref": "7-632-004",
@@ -296,7 +331,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-004"
   },
   {
     "ref": "7-632-009",
@@ -304,7 +340,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-009"
   },
   {
     "ref": "7-632-010",
@@ -312,7 +349,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-010"
   },
   {
     "ref": "7-632-014",
@@ -320,7 +358,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-014"
   },
   {
     "ref": "7-632-017",
@@ -328,7 +367,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-017"
   },
   {
     "ref": "7-632-018",
@@ -336,7 +376,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-018"
   },
   {
     "ref": "7-632-022",
@@ -344,7 +385,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-022"
   },
   {
     "ref": "7-632-023",
@@ -352,7 +394,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-023"
   },
   {
     "ref": "7-632-024",
@@ -360,7 +403,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-024"
   },
   {
     "ref": "7-632-027",
@@ -368,7 +412,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-027"
   },
   {
     "ref": "7-632-029",
@@ -376,7 +421,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-029"
   },
   {
     "ref": "7-632-031",
@@ -384,7 +430,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-031"
   },
   {
     "ref": "7-632-032",
@@ -392,7 +439,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-032"
   },
   {
     "ref": "7-632-037",
@@ -400,7 +448,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-037"
   },
   {
     "ref": "7-632-038",
@@ -408,7 +457,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-038"
   },
   {
     "ref": "7-632-039",
@@ -416,7 +466,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-039"
   },
   {
     "ref": "7-632-040",
@@ -424,7 +475,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-040"
   },
   {
     "ref": "7-636-001",
@@ -432,15 +484,17 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-636-001"
   },
   {
     "ref": "7-636-006",
-    "designation": "TUV WALL Painted 1130x2520 COMPLETE - VIEWBOX M16",
+    "designation": "Nidaplast / TUV WALL Vinyle White/7024 | 1130x2520 COMPLETE - VIEWBOX M16",
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-636-006"
   },
   {
     "ref": "7-637-005",
@@ -448,7 +502,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-637-005"
   },
   {
     "ref": "7-637-006",
@@ -456,7 +511,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-637-006"
   },
   {
     "ref": "7-637-008",
@@ -465,7 +521,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "vitrage": "4.4.2"
+    "vitrage": "4.4.2",
+    "odoo": "7-637-008"
   },
   {
     "ref": "7-637-009",
@@ -474,7 +531,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "vitrage": "10mm"
+    "vitrage": "10mm",
+    "odoo": "7-637-009"
   },
   {
     "ref": "7-637-010",
@@ -483,7 +541,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "vitrage": "10mm"
+    "vitrage": "10mm",
+    "odoo": "7-637-010"
   },
   {
     "ref": "7-637-017",
@@ -491,7 +550,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-637-017"
   },
   {
     "ref": "7-637-020",
@@ -500,7 +560,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "vitrage": "8.8.2"
+    "vitrage": "8.8.2",
+    "odoo": "7-637-020"
   },
   {
     "ref": "7-637-021",
@@ -508,7 +569,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-637-021"
   },
   {
     "ref": "7-962-001",
@@ -516,7 +578,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-962-001"
   },
   {
     "ref": "7-962-006",
@@ -524,7 +587,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-962-006"
   },
   {
     "ref": "7-962-008",
@@ -533,6 +597,7 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "electrique",
     "unit": "pce",
     "source": "classeur",
+    "odoo": "7-962-008",
     "pieds": {
       "total": 10,
       "angle": 4,
@@ -546,6 +611,7 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
+    "odoo": "7-962-012",
     "pieds": {
       "total": 8,
       "angle": 4,
@@ -558,7 +624,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-962-013"
   },
   {
     "ref": "7-962-016",
@@ -567,6 +634,7 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
+    "odoo": "7-962-016",
     "pieds": {
       "total": 6,
       "angle": 4,
@@ -580,7 +648,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-220-005"
   },
   {
     "ref": "7-636-008",
@@ -588,7 +657,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-636-008"
   },
   {
     "ref": "4-199-001",
@@ -596,7 +666,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-199-001"
   },
   {
     "ref": "4-700-011",
@@ -604,7 +675,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-011"
   },
   {
     "ref": "4-700-013",
@@ -612,7 +684,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-013"
   },
   {
     "ref": "4-700-019",
@@ -620,7 +693,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-019"
   },
   {
     "ref": "4-720-005",
@@ -628,7 +702,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-005"
   },
   {
     "ref": "7-354-027",
@@ -636,7 +711,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-027"
   },
   {
     "ref": "7-625-014",
@@ -645,7 +721,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "simple"
+    "porte": "simple",
+    "odoo": "7-625-014"
   },
   {
     "ref": "7-625-021",
@@ -654,7 +731,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "coulissante"
+    "porte": "coulissante",
+    "odoo": "7-625-021"
   },
   {
     "ref": "7-625-023",
@@ -663,7 +741,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "coulissante"
+    "porte": "coulissante",
+    "odoo": "7-625-023"
   },
   {
     "ref": "7-632-025",
@@ -671,7 +750,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-025"
   },
   {
     "ref": "7-632-026",
@@ -679,7 +759,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-026"
   },
   {
     "ref": "7-632-035",
@@ -687,7 +768,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-035"
   },
   {
     "ref": "7-636-003",
@@ -696,7 +778,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "vitrage": "8.8.2"
+    "vitrage": "8.8.2",
+    "odoo": "7-636-003"
   },
   {
     "ref": "4-700-003",
@@ -704,7 +787,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-003"
   },
   {
     "ref": "7-309-002",
@@ -712,7 +796,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-309-002"
   },
   {
     "ref": "7-366-001",
@@ -720,7 +805,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-366-001"
   },
   {
     "ref": "4-700-029",
@@ -728,7 +814,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-029"
   },
   {
     "ref": "7-962-005",
@@ -736,7 +823,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-962-005"
   },
   {
     "ref": "4-700-023",
@@ -744,7 +832,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-023"
   },
   {
     "ref": "4-700-052",
@@ -752,7 +841,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-052"
   },
   {
     "ref": "4-700-053",
@@ -760,7 +850,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-053"
   },
   {
     "ref": "4-700-054",
@@ -768,7 +859,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-054"
   },
   {
     "ref": "4-700-046",
@@ -776,7 +868,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-046"
   },
   {
     "ref": "4-700-035",
@@ -784,7 +877,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-035"
   },
   {
     "ref": "4-700-036",
@@ -792,7 +886,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-036"
   },
   {
     "ref": "4-700-037",
@@ -800,7 +895,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-037"
   },
   {
     "ref": "4-700-039",
@@ -808,7 +904,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-039"
   },
   {
     "ref": "4-700-040",
@@ -816,7 +913,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-040"
   },
   {
     "ref": "4-730-006",
@@ -824,7 +922,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-006"
   },
   {
     "ref": "4-730-007",
@@ -832,7 +931,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-007"
   },
   {
     "ref": "4-750-003",
@@ -840,7 +940,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-003"
   },
   {
     "ref": "4-750-002",
@@ -848,7 +949,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-002"
   },
   {
     "ref": "4-700-048",
@@ -856,7 +958,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-048"
   },
   {
     "ref": "4-700-047",
@@ -864,7 +967,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-047"
   },
   {
     "ref": "4-750-001",
@@ -872,7 +976,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-001"
   },
   {
     "ref": "4-157-007",
@@ -880,7 +985,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-007"
   },
   {
     "ref": "4-157-008",
@@ -888,7 +994,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-008"
   },
   {
     "ref": "4-157-009",
@@ -896,7 +1003,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-009"
   },
   {
     "ref": "2-201-050",
@@ -904,7 +1012,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "2-201-050"
   },
   {
     "ref": "1-102-031",
@@ -912,7 +1021,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-102-031"
   },
   {
     "ref": "4-700-038",
@@ -920,7 +1030,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-038"
   },
   {
     "ref": "1-105-021",
@@ -928,7 +1039,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-105-021"
   },
   {
     "ref": "1-104-00662",
@@ -936,7 +1048,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-104-00662"
   },
   {
     "ref": "2-103-001",
@@ -944,7 +1057,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "2-103-001"
   },
   {
     "ref": "1-105-030",
@@ -952,7 +1066,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-105-030"
   },
   {
     "ref": "4-157-001",
@@ -960,7 +1075,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-001"
   },
   {
     "ref": "4-157-002",
@@ -968,7 +1084,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-002"
   },
   {
     "ref": "4-157-011",
@@ -976,7 +1093,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-011"
   },
   {
     "ref": "4-157-004",
@@ -984,7 +1102,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-004"
   },
   {
     "ref": "1-799-007",
@@ -992,7 +1111,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-799-007"
   },
   {
     "ref": "7-230-036",
@@ -1000,7 +1120,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-036"
   },
   {
     "ref": "7-230-037",
@@ -1008,7 +1129,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-037"
   },
   {
     "ref": "7-230-040",
@@ -1016,7 +1138,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-040"
   },
   {
     "ref": "7-230-041",
@@ -1024,7 +1147,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-041"
   },
   {
     "ref": "7-230-042",
@@ -1032,7 +1156,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-042"
   },
   {
     "ref": "7-230-043",
@@ -1040,7 +1165,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-043"
   },
   {
     "ref": "7-230-044",
@@ -1048,7 +1174,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-044"
   },
   {
     "ref": "7-230-045",
@@ -1056,7 +1183,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-045"
   },
   {
     "ref": "7-230-038",
@@ -1064,7 +1192,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-038"
   },
   {
     "ref": "7-230-039",
@@ -1072,7 +1201,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-230-039"
   },
   {
     "ref": "7-355-019",
@@ -1080,7 +1210,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-355-019"
   },
   {
     "ref": "4-720-001",
@@ -1088,7 +1219,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-001"
   },
   {
     "ref": "4-720-003",
@@ -1096,7 +1228,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-003"
   },
   {
     "ref": "7-362-006",
@@ -1104,7 +1237,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-362-006"
   },
   {
     "ref": "4-720-006",
@@ -1112,7 +1246,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-006"
   },
   {
     "ref": "7-220-010",
@@ -1120,7 +1255,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-220-010"
   },
   {
     "ref": "4-157-005",
@@ -1128,7 +1264,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-005"
   },
   {
     "ref": "4-157-006",
@@ -1136,7 +1273,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-006"
   },
   {
     "ref": "4-700-044",
@@ -1144,7 +1282,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-044"
   },
   {
     "ref": "4-157-010",
@@ -1152,7 +1291,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-010"
   },
   {
     "ref": "4-700-060",
@@ -1160,7 +1300,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-060"
   },
   {
     "ref": "4-700-061",
@@ -1168,7 +1309,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-061"
   },
   {
     "ref": "4-700-063",
@@ -1176,7 +1318,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-063"
   },
   {
     "ref": "4-700-062",
@@ -1184,7 +1327,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-062"
   },
   {
     "ref": "4-700-064",
@@ -1192,7 +1336,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-064"
   },
   {
     "ref": "4-700-065",
@@ -1200,7 +1345,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-065"
   },
   {
     "ref": "4-700-067",
@@ -1208,7 +1354,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-067"
   },
   {
     "ref": "4-700-069",
@@ -1216,7 +1363,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-069"
   },
   {
     "ref": "4-700-073",
@@ -1224,7 +1372,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-073"
   },
   {
     "ref": "4-700-074",
@@ -1232,7 +1381,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-074"
   },
   {
     "ref": "4-700-075",
@@ -1240,7 +1390,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-075"
   },
   {
     "ref": "4-720-008",
@@ -1248,7 +1399,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-008"
   },
   {
     "ref": "4-720-002",
@@ -1256,7 +1408,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-002"
   },
   {
     "ref": "7-199-067",
@@ -1265,7 +1418,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "simple"
+    "porte": "simple",
+    "odoo": "7-199-067"
   },
   {
     "ref": "4-710-001",
@@ -1273,7 +1427,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-710-001"
   },
   {
     "ref": "4-700-066",
@@ -1281,7 +1436,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-066"
   },
   {
     "ref": "4-720-004",
@@ -1289,7 +1445,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-004"
   },
   {
     "ref": "4-720-007",
@@ -1297,7 +1454,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-007"
   },
   {
     "ref": "4-720-009",
@@ -1305,7 +1463,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-009"
   },
   {
     "ref": "7-207-027",
@@ -1313,7 +1472,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-207-027"
   },
   {
     "ref": "7-207-032",
@@ -1321,7 +1481,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-207-032"
   },
   {
     "ref": "7-207-025",
@@ -1329,7 +1490,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-207-025"
   },
   {
     "ref": "7-207-024",
@@ -1337,7 +1499,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-207-024"
   },
   {
     "ref": "4-700-006",
@@ -1345,7 +1508,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-006"
   },
   {
     "ref": "4-700-077",
@@ -1353,7 +1517,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-077"
   },
   {
     "ref": "4-700-076",
@@ -1361,7 +1526,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-076"
   },
   {
     "ref": "4-730-002",
@@ -1369,7 +1535,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-002"
   },
   {
     "ref": "4-730-008",
@@ -1377,7 +1544,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-008"
   },
   {
     "ref": "4-730-009",
@@ -1385,7 +1553,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-009"
   },
   {
     "ref": "4-730-001",
@@ -1393,7 +1562,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-001"
   },
   {
     "ref": "4-740-003",
@@ -1405,7 +1575,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "plaque": {
       "l": 1000,
       "w": 1000
-    }
+    },
+    "odoo": "4-740-003"
   },
   {
     "ref": "4-740-002",
@@ -1417,7 +1588,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "plaque": {
       "l": 700,
       "w": 700
-    }
+    },
+    "odoo": "4-740-002"
   },
   {
     "ref": "4-730-010",
@@ -1425,7 +1597,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-010"
   },
   {
     "ref": "1-104-00093",
@@ -1433,7 +1606,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "1-104-00093"
   },
   {
     "ref": "4-157-003",
@@ -1441,7 +1615,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-003"
   },
   {
     "ref": "4-700-081",
@@ -1449,7 +1624,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-081"
   },
   {
     "ref": "4-700-071",
@@ -1457,7 +1633,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-071"
   },
   {
     "ref": "4-750-005",
@@ -1465,7 +1642,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-005"
   },
   {
     "ref": "4-157-012",
@@ -1473,7 +1651,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-157-012"
   },
   {
     "ref": "4-700-083",
@@ -1481,7 +1660,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-083"
   },
   {
     "ref": "4-730-005",
@@ -1489,7 +1669,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "m",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-005"
   },
   {
     "ref": "4-710-003",
@@ -1497,7 +1678,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-710-003"
   },
   {
     "ref": "4-710-004",
@@ -1505,7 +1687,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-710-004"
   },
   {
     "ref": "4-720-010",
@@ -1513,7 +1696,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "consommables",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-720-010"
   },
   {
     "ref": "7-632-055",
@@ -1521,7 +1705,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-055"
   },
   {
     "ref": "7-354-008",
@@ -1529,7 +1714,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-008"
   },
   {
     "ref": "7-199-066",
@@ -1538,7 +1724,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "categorie": "structure",
     "unit": "pce",
     "source": "classeur",
-    "porte": "double"
+    "porte": "double",
+    "odoo": "7-199-066"
   },
   {
     "ref": "4-750-004",
@@ -1546,7 +1733,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-004"
   },
   {
     "ref": "4-750-006",
@@ -1554,7 +1742,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-006"
   },
   {
     "ref": "4-730-004",
@@ -1562,7 +1751,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-004"
   },
   {
     "ref": "4-700-068",
@@ -1570,7 +1760,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-068"
   },
   {
     "ref": "4-700-070",
@@ -1578,7 +1769,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-070"
   },
   {
     "ref": "4-700-088",
@@ -1586,7 +1778,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-088"
   },
   {
     "ref": "4-700-089",
@@ -1594,7 +1787,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-089"
   },
   {
     "ref": "4-700-090",
@@ -1602,7 +1796,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-090"
   },
   {
     "ref": "4-710-005",
@@ -1610,7 +1805,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "quincaillerie",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-710-005"
   },
   {
     "ref": "4-740-005",
@@ -1618,7 +1814,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-740-005"
   },
   {
     "ref": "4-700-094",
@@ -1626,7 +1823,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-094"
   },
   {
     "ref": "7-636-007",
@@ -1634,7 +1832,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-636-007"
   },
   {
     "ref": "2-777-200",
@@ -1642,7 +1841,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "2-777-200"
   },
   {
     "ref": "7-354-005",
@@ -1650,7 +1850,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-354-005"
   },
   {
     "ref": "4-740-001",
@@ -1662,7 +1863,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "plaque": {
       "l": 400,
       "w": 400
-    }
+    },
+    "odoo": "4-740-001"
   },
   {
     "ref": "4-730-003",
@@ -1670,7 +1872,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-003"
   },
   {
     "ref": "4-700-072",
@@ -1678,7 +1881,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-072"
   },
   {
     "ref": "4-730-011",
@@ -1686,7 +1890,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-011"
   },
   {
     "ref": "4-700-045",
@@ -1694,7 +1899,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "joints",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-045"
   },
   {
     "ref": "4-730-012",
@@ -1702,7 +1908,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "electrique",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-730-012"
   },
   {
     "ref": "4-700-087",
@@ -1710,7 +1917,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-700-087"
   },
   {
     "ref": "4-750-007",
@@ -1718,7 +1926,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "ajouts",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-750-007"
   },
   {
     "ref": "4-740-008",
@@ -1726,7 +1935,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-740-008"
   },
   {
     "ref": "4-740-009",
@@ -1734,7 +1944,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": false,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "4-740-009"
   },
   {
     "ref": "7-632-045",
@@ -1742,7 +1953,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-045"
   },
   {
     "ref": "7-632-034",
@@ -1750,7 +1962,8 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-034"
   },
   {
     "ref": "7-632-021",
@@ -1758,7 +1971,71 @@ export const SEED_CATALOGUE: CatalogueItem[] = [
     "gros": true,
     "categorie": "structure",
     "unit": "pce",
-    "source": "classeur"
+    "source": "classeur",
+    "odoo": "7-632-021"
+  },
+  {
+    "ref": "4-157-013",
+    "designation": "Ruban d'étanchéité VKP® BASIC 15mm 4-8mm 8M| VIEWBOX |",
+    "gros": false,
+    "categorie": "consommables",
+    "unit": "pce",
+    "odoo": "4-157-013",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-700-096",
+    "designation": "Roof Rubber EPDM | 57X32 x 5900 |VBX|",
+    "gros": false,
+    "categorie": "joints",
+    "unit": "pce",
+    "odoo": "4-700-096",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-700-097",
+    "designation": "Roof Rubber EPDM | 57X32 x 2500 |VBX|",
+    "gros": false,
+    "categorie": "joints",
+    "unit": "pce",
+    "odoo": "4-700-097",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-720-011",
+    "designation": "Viewbox Poles Rubber black FLAT adhésive 20X4mm /M |VIEWBOX|",
+    "gros": false,
+    "categorie": "joints",
+    "unit": "m",
+    "odoo": "4-720-011",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-730-013",
+    "designation": "Electrical cable Interconnection Light | Wieland female-Wieland - Male | 3G1.5 /5M | VIEWBOX",
+    "gros": false,
+    "categorie": "electrique",
+    "unit": "pce",
+    "odoo": "4-730-013",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-730-014",
+    "designation": "Electrical cable Connection Light | Wieland female - Pluge Male | 3G1.5 /5M | VIEWBOX",
+    "gros": false,
+    "categorie": "electrique",
+    "unit": "pce",
+    "odoo": "4-730-014",
+    "source": "odoo"
+  },
+  {
+    "ref": "4-740-010",
+    "designation": "Laminate vinyle click parquet LAMETT DOURO HONEY| VIEWBOX | /m²",
+    "gros": false,
+    "categorie": "consommables",
+    "unit": "m2",
+    "odoo": "4-740-010",
+    "source": "odoo"
   },
   {
     "ref": "7-632-001",

@@ -15,7 +15,7 @@ export const SEED_META = {
   "rules": 91,
   "activeRules": 67,
   "observations": 8,
-  "catalogue": 218
+  "catalogue": 225
 } as const;
 
 export const SEED_RULES: LoadingRule[] = [
@@ -3250,4 +3250,4 @@ export const SEED_DECISIONS: DecisionLog[] = [
 ];
 
 /** Réfs que le classeur demande d'ajouter au catalogue (ajout par validation dans l'app, jamais en silence). */
-export const SEED_CATALOGUE_TO_ADD: string[] = ["4-700-096","4-720-011","4-700-002"];
+export const SEED_CATALOGUE_TO_ADD: string[] = ["4-700-002"];

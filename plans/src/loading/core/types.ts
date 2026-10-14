@@ -239,16 +239,16 @@ export interface CatalogueItem {
   inclusDans?: string;
   /** poteaux (7-355-014 / 015) d'une box de cette référence, quand on le sait */
   poteaux?: number;
-  /** code à ajouter aux lignes pour l'export vers Odoo (fichier de base à venir) */
+  /** référence du produit dans Odoo (Product Reference Code = la référence Viewbox) ; absent = inconnu d'Odoo */
   odoo?: string;
-  source: 'classeur' | 'ajout';
+  source: 'classeur' | 'ajout' | 'odoo';
 }
 
 export interface ImportIssue {
   /** onglet + ligne du classeur */
   where: string;
   article?: string;
-  kind: 'texte' | 'doublon' | 'contradiction' | 'catalogue' | 'condition' | 'interpretation' | 'decision' | 'ignore';
+  kind: 'texte' | 'doublon' | 'contradiction' | 'catalogue' | 'condition' | 'interpretation' | 'decision' | 'ignore' | 'odoo';
   text: string;
   /** question posée à Amaury (vide = information) */
   question?: string;

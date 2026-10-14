@@ -8,6 +8,8 @@ import { LOADING_CATEGORIES } from '../core/types';
 import type { LoadingLine, LoadingList } from '../engine/generate';
 import type { XCell, XSheet, XStyle } from './write';
 import { writeXlsx } from './write';
+import type { OdooProduct } from '../library/odoo';
+import { ODOO_PRODUCTS } from '../library/odoo.data';
 
 export interface BordereauMeta {
   chantier: string;
@@ -156,8 +158,43 @@ export function bordereauSheet(list: LoadingList, meta: BordereauMeta): XSheet {
   };
 }
 
+/** Onglet « Odoo » : les lignes à quantité connue, au format des produits Odoo (Product Reference Code = référence
+ *  Viewbox, Product = « [réf] nom Odoo »), prêtes à importer ; en dessous, les lignes dont la référence est inconnue
+ *  d'Odoo (à créer dans Odoo ou à corriger), jamais mêlées aux autres. */
+export function odooSheet(list: LoadingList, products: readonly OdooProduct[] = ODOO_PRODUCTS): XSheet {
+  const odoo = new Map(products.map((p) => [p.ref, p]));
+  const lines = list.lines.filter((l) => l.qty !== null && l.qty > 0);
+  const known = lines.filter((l) => odoo.has(l.article));
+  const unknown = lines.filter((l) => !odoo.has(l.article));
+  const rows: XCell[][] = [
+    [
+      { v: 'Product Reference Code', s: 'th' },
+      { v: 'Product', s: 'th' },
+      { v: 'Quantity', s: 'th' },
+      { v: 'Unité', s: 'th' },
+    ],
+    ...known.map((l) => [
+      { v: l.article, s: 'txt-blanc' },
+      { v: `[${l.article}] ${odoo.get(l.article)!.name}`, s: 'txt-blanc' },
+      { v: l.qty, s: 'qty-blanc' },
+      { v: UNIT_TEXT[l.unit], s: 'txt-blanc' },
+    ]),
+  ];
+  if (unknown.length) {
+    rows.push([], [{ v: `Pas dans Odoo (${unknown.length}) — à créer dans Odoo ou à corriger avant l’import`, s: 'section' }]);
+    for (const l of unknown)
+      rows.push([
+        { v: l.article, s: 'txt-blanc' },
+        { v: l.designation, s: 'txt-blanc' },
+        { v: l.qty, s: 'qty-blanc' },
+        { v: UNIT_TEXT[l.unit], s: 'txt-blanc' },
+      ]);
+  }
+  return { name: 'Odoo', columns: [22, 80, 10, 8], rows, freezeRows: 1 };
+}
+
 export function bordereauXlsx(list: LoadingList, meta: BordereauMeta): Uint8Array {
-  return writeXlsx([bordereauSheet(list, meta)], STYLES);
+  return writeXlsx([bordereauSheet(list, meta), odooSheet(list)], STYLES);
 }
 
 /** « 6055RKLOKVIE_loading_v2.xlsx » (caractères sûrs pour un nom de fichier). */

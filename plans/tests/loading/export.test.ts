@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { generate } from '../../src/loading/engine/generate';
 import { SEED_CATALOGUE } from '../../src/loading/library/catalogue';
 import { SEED_OBSERVATIONS, SEED_RULES } from '../../src/loading/library/seed';
-import { bordereauFileName, bordereauXlsx, COLUMNS, LEGEND_COLORS } from '../../src/loading/xlsx/bordereau';
+import { bordereauFileName, bordereauXlsx, odooSheet, COLUMNS, LEGEND_COLORS } from '../../src/loading/xlsx/bordereau';
 import { cellText, readXlsx } from '../../src/loading/xlsx/read';
 import { writeXlsx } from '../../src/loading/xlsx/write';
 import { topologySummary } from '../../src/loading/topology/build';
@@ -65,6 +65,25 @@ describe('bordereau', () => {
     // couleur de confiance + statut écrit
     const line = rows.find((r) => cellText(r[0]) === '4-700-065')!;
     expect(line[0]?.fill).toBe(`FF${LEGEND_COLORS.confirme}`);
+  });
+  it('onglet Odoo : référence Odoo + quantité, références inconnues d’Odoo à part', () => {
+    const sheet = readXlsx(bytes).sheets[1];
+    expect(sheet.name).toBe('Odoo');
+    const o = sheet.rows.map((r) => r.map(cellText));
+    expect(o[0]).toEqual(['Product Reference Code', 'Product', 'Quantity', 'Unité']);
+    const split = o.findIndex((r) => (r[0] ?? '').startsWith('Pas dans Odoo'));
+    const ready = o.slice(1, split < 0 ? undefined : split - 1);
+    expect(ready.find((r) => r[0] === '4-700-065')).toEqual(['4-700-065', '[4-700-065] Window/Wall Rubber black BIG 2550mm |VIEWBOX|', '20', 'pce']);
+    expect(ready.find((r) => r[0] === '7-962-016')?.[2]).toBe(String(list.lines.find((l) => l.article === '7-962-016')!.qty));
+    const withQty = list.lines.filter((l) => l.qty !== null && l.qty > 0);
+    const unknown = split < 0 ? [] : o.slice(split + 1).filter((r) => r[0]);
+    expect(ready.length + unknown.length).toBe(withQty.length);
+    // une ligne inconnue d'Odoo n'est jamais dans la partie importable
+    const odoo = odooSheet(list, [{ ref: '7-962-016', name: 'VIEWBOX STANDARD M16 60 MM 5900x2500 H3' }]);
+    const t = odoo.rows.map((r) => r.map((c) => (c && typeof c === 'object' && 'v' in c ? String(c.v ?? '') : String(c ?? ''))));
+    expect(t[1][0]).toBe('7-962-016');
+    expect(t[2]).toEqual([]);
+    expect(t[3][0]).toMatch(/^Pas dans Odoo/);
   });
   it('nom de fichier', () => {
     expect(bordereauFileName('6055RKLOKVIE', 2)).toBe('6055RKLOKVIE_loading_v2.xlsx');

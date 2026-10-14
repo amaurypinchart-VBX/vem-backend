@@ -61,7 +61,7 @@ export function categoryFromDesignation(ref: string, d: string): LoadingCategory
   if (/TOOL KIT|LADDER|HARNESS|SAFETY LINE|TUV BOOK|DRILL/.test(s)) return 'ajouts';
   if (/CABLE|SPOT|ELECTRIC|LIGHT|GROUPE|POWER|E-BOX|MUSHROOM/.test(s)) return 'electrique';
   if (/RUBBER|EPDM|PLEXI|SILICON|SUB BLOCK|MASTIC|PARASILICO/.test(s)) return 'joints';
-  if (/PAINT|TAPE|GAFFA|LAMINATE|TRIFLEX|MOUSSE|WAGGO|CARPET/.test(s)) return 'consommables';
+  if (/PAINT|TAPE|RUBAN|GAFFA|LAMINATE|TRIFLEX|MOUSSE|WAGGO|CARPET/.test(s)) return 'consommables';
   if (/BOLT|SCREW|WASHER|\bNUT\b|BASE PLATE|BASEPLATE|SUBPLATE|IN BETWEEN PLATE|CONNECTOR PLATE|FIXATION PLATE|THROADED ROD|BRACING/.test(s))
     return 'quincaillerie';
   if (ref.startsWith('7-') || ref.startsWith('4-700-0') || ref.startsWith('1-799')) return 'structure';
@@ -86,7 +86,7 @@ export function doorFromDesignation(d: string): CatalogueItem['porte'] {
   return 'simple';
 }
 
-function plateFromDesignation(d: string): { l: number; w: number } | undefined {
+export function plateFromDesignation(d: string): { l: number; w: number } | undefined {
   if (!/SUBPLATE/i.test(d)) return undefined;
   const m = /(\d{3,4})\s*x\s*(\d{3,4})\s*mm/i.exec(d);
   return m ? { l: Number(m[1]), w: Number(m[2]) } : undefined;
