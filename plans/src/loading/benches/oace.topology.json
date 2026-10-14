@@ -1544,6 +1544,27 @@
    ],
    "detail": "1 grand côté vitré"
   },
+  "cote_facade_court": {
+   "value": 8,
+   "ids": [
+    "VBX-01:+x",
+    "VBX-01:-x",
+    "VBX-03:+x",
+    "VBX-03:-x",
+    "VBX-04:+x",
+    "VBX-04:-x",
+    "VBX-02:+x",
+    "VBX-02:-x"
+   ],
+   "detail": "8 petits côtés avec façade"
+  },
+  "cote_facade_long": {
+   "value": 1,
+   "ids": [
+    "VBX-01:-y"
+   ],
+   "detail": "1 grand côté avec façade"
+  },
   "panneau": {
    "value": 29,
    "ids": [
@@ -1850,6 +1871,27 @@
      "VBX-02:+y"
     ],
     "detail": "1 grand côté vitré"
+   },
+   "cote_facade_court": {
+    "value": 8,
+    "ids": [
+     "VBX-01:+x",
+     "VBX-01:-x",
+     "VBX-03:+x",
+     "VBX-03:-x",
+     "VBX-04:+x",
+     "VBX-04:-x",
+     "VBX-02:+x",
+     "VBX-02:-x"
+    ],
+    "detail": "8 petits côtés avec façade"
+   },
+   "cote_facade_long": {
+    "value": 1,
+    "ids": [
+     "VBX-01:-y"
+    ],
+    "detail": "1 grand côté avec façade"
    },
    "panneau": {
     "value": 29,

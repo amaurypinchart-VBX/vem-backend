@@ -12,8 +12,8 @@ export const SEED_META = {
     "Appreciation",
     "Catalogue_ref"
   ],
-  "rules": 91,
-  "activeRules": 67,
+  "rules": 97,
+  "activeRules": 69,
   "observations": 8,
   "catalogue": 227
 } as const;
@@ -413,13 +413,14 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
     "spare": {
       "type": "pourcent",
       "valeur": 20
     },
-    "group": "additionne:4-700-075"
+    "group": "additionne:4-700-075",
+    "supersededBy": "acc:4-700-075@cote_facade_long"
   },
   {
     "key": "acc:4-700-066@box[standalone]",
@@ -449,12 +450,13 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
     "spare": {
       "type": "pourcent",
       "valeur": 20
-    }
+    },
+    "supersededBy": "acc:4-700-066@cote_facade_court"
   },
   {
     "key": "acc:4-700-071@jonction_panneau[standalone]",
@@ -484,12 +486,13 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
+    "active": false,
     "source": "seed",
     "spare": {
       "type": "pourcent",
       "valeur": 20
-    }
+    },
+    "supersededBy": "acc:4-700-071@jonction_panneau"
   },
   {
     "key": "acc:4-700-070@jonction_panneau[standalone]",
@@ -519,8 +522,9 @@ export const SEED_RULES: LoadingRule[] = [
       }
     ],
     "version": 1,
-    "active": true,
-    "source": "seed"
+    "active": false,
+    "source": "seed",
+    "supersededBy": "acc:4-700-070@jonction_panneau"
   },
   {
     "key": "acc:4-700-073@cote[standalone]",
@@ -1816,7 +1820,8 @@ export const SEED_RULES: LoadingRule[] = [
     "per": "box",
     "unit": "m2",
     "when": {
-      "plancherLamine": true
+      "plancherLamine": true,
+      "revetementSol": "laminate"
     },
     "confidence": "a_confirmer",
     "calibration": [
@@ -1855,7 +1860,7 @@ export const SEED_RULES: LoadingRule[] = [
     "when": {
       "plancherLamine": true
     },
-    "confidence": "a_confirmer",
+    "confidence": "confirme",
     "calibration": [
       {
         "chantier": "Klokgebouw",
@@ -1868,7 +1873,7 @@ export const SEED_RULES: LoadingRule[] = [
         "note": "6059/00056 : 4."
       }
     ],
-    "remark": "SI plancher : 1 par 15 m². Klok 00055 : 2 | 6059/00056 : 4.",
+    "remark": "SI plancher : 1 par 15 m². Klok 00055 : 2 | 6059/00056 : 4. || 1 rouleau par 15 m² de revêtement de sol, laminate ou vinyle (Amaury 14.10.2026). En plus selon le nombre de box : à préciser.",
     "origin": [
       {
         "sheet": "Ajouts_chantier",
@@ -1897,7 +1902,7 @@ export const SEED_RULES: LoadingRule[] = [
     "when": {
       "plancherLamine": true
     },
-    "confidence": "a_confirmer",
+    "confidence": "confirme",
     "calibration": [
       {
         "chantier": "Klokgebouw",
@@ -1910,7 +1915,7 @@ export const SEED_RULES: LoadingRule[] = [
         "note": "6059/00056 : 2."
       }
     ],
-    "remark": "SI plancher : 1 par 15 m². Klok 00055 : 2 | 6059/00056 : 2.",
+    "remark": "SI plancher : 1 par 15 m². Klok 00055 : 2 | 6059/00056 : 2. || 1 rouleau par 15 m² de revêtement de sol, laminate ou vinyle (Amaury 14.10.2026). En plus selon le nombre de box : à préciser.",
     "origin": [
       {
         "sheet": "Ajouts_chantier",
@@ -2835,6 +2840,183 @@ export const SEED_RULES: LoadingRule[] = [
     "key": "acc:4-720-011@poteau_connecte",
     "version": 1,
     "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6072ROACEVIE",
+        "bordereau": "RVIE/OUT/00066",
+        "livre": 20
+      },
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "livre": 20
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-066",
+    "articleName": "Window/Wall Rubber BIG 2300mm",
+    "qty": 2,
+    "per": "cote_facade_court",
+    "unit": "pce",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "confidence": "confirme",
+    "remark": "Joints des panneaux et vitres 8.8.2 / cadre 7024 : 2 par petit côté où il y a une façade (box seules ou connectées).",
+    "source": "decision",
+    "key": "acc:4-700-066@cote_facade_court",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6072ROACEVIE",
+        "bordereau": "RVIE/OUT/00066",
+        "livre": 6
+      },
+      {
+        "chantier": "6059RFRAMVIE",
+        "bordereau": "00056",
+        "livre": 6
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-075",
+    "articleName": "Window/Wall Rubber BIG 5700mm",
+    "qty": 2,
+    "per": "cote_facade_long",
+    "unit": "pce",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "confidence": "confirme",
+    "remark": "Joints des panneaux et vitres 8.8.2 / cadre 7024 : 2 par grand côté où il y a une façade (box seules ou connectées).",
+    "group": "additionne:4-700-075",
+    "source": "decision",
+    "key": "acc:4-700-075@cote_facade_long",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "Klokgebouw",
+        "bordereau": "00055",
+        "note": "Klok 00055 : 2/jonction × 4 × 2 box = 16 (pas de +20%)"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-070",
+    "articleName": "Window/Wall Rubber Carrosserie 10cm",
+    "qty": 2,
+    "per": "jonction_panneau",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Klok 00055 : 2/jonction × 4 × 2 box = 16 (pas de +20%) || Joints qui relient les murs entre eux : box seules ou connectées (Amaury 14.10.2026). Quantité calée sur Klokgebouw et l’OACE (070 : 2 par jonction de murs).",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 16
+      }
+    ],
+    "source": "decision",
+    "key": "acc:4-700-070@jonction_panneau",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "Klokgebouw",
+        "bordereau": "00055",
+        "note": "Klok 00055 : 4 jonctions/grand côté → 8, +20% = 10"
+      }
+    ],
+    "kind": "accessoire",
+    "trigger": {},
+    "article": "4-700-071",
+    "articleName": "Window/Wall Rubber Carrosserie 2530mm",
+    "qty": 1,
+    "per": "jonction_panneau",
+    "unit": "pce",
+    "confidence": "confirme",
+    "remark": "Klok 00055 : 4 jonctions/grand côté → 8, +20% = 10 || Joints qui relient les murs entre eux : box seules ou connectées (Amaury 14.10.2026). Quantité calée sur Klokgebouw et l’OACE (070 : 2 par jonction de murs).",
+    "origin": [
+      {
+        "sheet": "Regles_accessoires",
+        "row": 15
+      }
+    ],
+    "source": "decision",
+    "spare": {
+      "type": "pourcent",
+      "valeur": 20
+    },
+    "key": "acc:4-700-071@jonction_panneau",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6072ROACEVIE",
+        "bordereau": "RVIE/OUT/00066",
+        "base": 4,
+        "predit": 60,
+        "livre": 60
+      }
+    ],
+    "kind": "ajout_chantier",
+    "trigger": {},
+    "article": "4-740-011",
+    "articleName": "Laminate vinyle color choice by client | VIEWBOX | /m²",
+    "qty": 15,
+    "per": "box",
+    "unit": "m2",
+    "when": {
+      "plancherLamine": true,
+      "revetementSol": "vinyle"
+    },
+    "confidence": "confirme",
+    "remark": "Vinyle floor (couleur au choix du client) : 15 m² par box, ou les m² saisis.",
+    "source": "decision",
+    "key": "aj:4-740-011@box[plancherLamine,vinyle]",
+    "version": 1,
+    "active": true
+  },
+  {
+    "calibration": [
+      {
+        "chantier": "6072ROACEVIE",
+        "bordereau": "RVIE/OUT/00066",
+        "livre": 8,
+        "note": "6072ROACEVIE (4 box) : 8"
+      }
+    ],
+    "kind": "appreciation",
+    "trigger": {},
+    "article": "4-740-009",
+    "articleName": "Plywood BackeliteBlack/Black | 2500X1250x18 | VIEWBOX |",
+    "qty": null,
+    "per": "job",
+    "unit": "pce",
+    "when": {
+      "boarding": true
+    },
+    "confidence": "confirme",
+    "remark": "Boarding sous les box : quantité à l’appréciation.",
+    "source": "decision",
+    "key": "app:4-740-009@job[boarding]",
+    "version": 1,
+    "active": true
   }
 ];
 
@@ -3245,6 +3427,37 @@ export const SEED_DECISIONS: DecisionLog[] = [
     "details": [
       "ajout acc:4-720-011@poteau_connecte",
       "acc:4-720-011@poteau → remplacée par acc:4-720-011@poteau_connecte"
+    ]
+  },
+  {
+    "id": "joints-facade-oace",
+    "date": "2026-10-14",
+    "by": "Amaury (réponses sur l’OACE, RVIE/OUT/00066)",
+    "text": "Les joints ne servent pas qu’aux box seules : 4-700-066 (BIG 2300) = 2 par petit côté avec façade, 4-700-075 (BIG 5700) = 2 par grand côté avec façade (murs, portes, vitres 8.8.2 ou cadre 7024 ; la vitre 10 mm a ses joints 4-700-074) ; 4-700-070 / 071 (carrosserie 10 cm / 2530) relient les murs entre eux, box seules ou connectées. Spare + 20 % gardé.",
+    "applied": true,
+    "details": [
+      "ajout acc:4-700-066@cote_facade_court",
+      "acc:4-700-066@box[standalone] → remplacée par acc:4-700-066@cote_facade_court",
+      "ajout acc:4-700-075@cote_facade_long",
+      "acc:4-700-075@box[standalone] → remplacée par acc:4-700-075@cote_facade_long",
+      "ajout acc:4-700-070@jonction_panneau",
+      "acc:4-700-070@jonction_panneau[standalone] → remplacée par acc:4-700-070@jonction_panneau",
+      "ajout acc:4-700-071@jonction_panneau",
+      "acc:4-700-071@jonction_panneau[standalone] → remplacée par acc:4-700-071@jonction_panneau"
+    ]
+  },
+  {
+    "id": "revetement-sol-oace",
+    "date": "2026-10-14",
+    "by": "Amaury (réponses sur l’OACE)",
+    "text": "Revêtement de sol : question chantier « vinyle clic laminate (parquet) 4-740-010 ou vinyle floor 4-740-011 », 15 m² par box dans les deux cas. Gaffa 4-157-005 et adhésif double face 4-157-012 : 1 rouleau par 15 m² de revêtement (laminate ou vinyle). Boarding sous les box (bakélite noire 4-740-009) : question chantier, quantité à l’appréciation.",
+    "applied": true,
+    "details": [
+      "aj:4-740-010@box[plancherLamine] : seulement si vinyle clic laminate (clé gardée)",
+      "ajout aj:4-740-011@box[plancherLamine,vinyle]",
+      "aj:4-157-005@m2_plancher[plancherLamine] : confirmée, laminate ou vinyle",
+      "aj:4-157-012@m2_plancher[plancherLamine] : confirmée, laminate ou vinyle",
+      "ajout app:4-740-009@job[boarding]"
     ]
   }
 ];

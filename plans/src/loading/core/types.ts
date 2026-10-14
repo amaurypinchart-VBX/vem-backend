@@ -22,6 +22,8 @@ export type CountingBase =
   | 'cote' // côtés de box (4 par box)
   | 'cote_vitre_court' // petits côtés vitrés
   | 'cote_vitre_long' // grands côtés vitrés
+  | 'cote_facade_court' // petits côtés extérieurs avec façade (mur, porte, vitre 8.8.2 / 4.4.2 / cadre 7024 ; pas la vitre 10 mm)
+  | 'cote_facade_long' // grands côtés extérieurs avec façade (idem)
   | 'panneau' // panneaux de façade (mur, vitre, porte)
   | 'panneau_plein' // murs pleins
   | 'porte_simple'
@@ -57,6 +59,8 @@ export const COUNTING_BASE_LABEL: Record<CountingBase, string> = {
   cote: 'par côté de box',
   cote_vitre_court: 'par petit côté vitré',
   cote_vitre_long: 'par grand côté vitré',
+  cote_facade_court: 'par petit côté avec façade',
+  cote_facade_long: 'par grand côté avec façade',
   panneau: 'par panneau',
   panneau_plein: 'par mur plein',
   porte_simple: 'par porte simple',
@@ -120,6 +124,10 @@ export interface RuleConditions {
   /** RAL des murs demandé (variante de mur) */
   ralMurs?: string;
   plancherLamine?: boolean;
+  /** revêtement de sol : vinyle clic « laminate » style parquet (4-740-010) ou vinyle floor (4-740-011) */
+  revetementSol?: 'laminate' | 'vinyle';
+  /** boarding sous les box (bakélite noire 4-740-009) */
+  boarding?: boolean;
   hauteur?: boolean;
   tailleJob?: 'petit' | 'gros';
   montage?: 'atelier' | 'chantier';

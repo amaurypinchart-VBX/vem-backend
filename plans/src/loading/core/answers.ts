@@ -7,9 +7,14 @@ export interface SiteAnswers {
   /** emplacement de ces airco dans la 3D : dessiné en nidaplast (le mur à trou remplace un mur) ou vide (ajout) */
   aircoSlot?: 'nidaplast' | 'vide';
   chargeLourde?: boolean;
+  /** revêtement de sol à poser (laminate ou vinyle) */
   plancherLamine?: boolean;
-  /** m² de plancher laminé (sinon 15 m² par box, règle du laminé) */
+  /** vinyle clic « laminate » style parquet (4-740-010) ou vinyle floor (4-740-011) */
+  revetementSol?: 'laminate' | 'vinyle';
+  /** m² de revêtement de sol (sinon 15 m² par box) */
   plancherM2?: number;
+  /** boarding sous les box (bakélite noire 4-740-009, quantité à l'appréciation) */
+  boarding?: boolean;
   /** travail en hauteur / sur le toit */
   hauteur?: boolean;
   tailleJob?: 'petit' | 'gros';
@@ -60,7 +65,9 @@ export function unansweredSiteQuestions(a: SiteAnswers): string[] {
   const out: string[] = [];
   if (a.aircoCount === undefined) out.push('airco');
   if (a.chargeLourde === undefined) out.push('charge lourde');
-  if (a.plancherLamine === undefined) out.push('plancher laminé');
+  if (a.plancherLamine === undefined) out.push('revêtement de sol');
+  else if (a.plancherLamine && a.revetementSol === undefined) out.push('laminate ou vinyle');
+  if (a.boarding === undefined) out.push('boarding');
   if (a.hauteur === undefined) out.push('travail en hauteur');
   if (a.tailleJob === undefined) out.push('taille du job');
   if (a.montage === undefined) out.push('montage');

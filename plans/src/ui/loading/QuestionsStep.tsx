@@ -85,24 +85,37 @@ export function QuestionsStep({
           <Row label="Charge lourde" hint="Véhicule ou charge sur les box : sous-bois renforcés (à saisir dans l’Étude structure).">
             <Choice<boolean> value={a.chargeLourde as YesNo} options={yes} onChange={(v) => set('chargeLourde', v)} />
           </Row>
-          <Row label="Plancher laminé" hint="Laminé, gaffa et adhésif double face.">
+          <Row label="Revêtement de sol" hint="Vinyle clic « laminate » style parquet (4-740-010) ou vinyle floor (4-740-011) ; gaffa et adhésif double face : 1 rouleau par 15 m².">
             <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <Choice<boolean> value={a.plancherLamine as YesNo} options={yes} onChange={(v) => set('plancherLamine', v)} />
               {a.plancherLamine && (
-                <label className="row" style={{ gap: 4 }}>
-                  m²
-                  <input
-                    type="number"
-                    min={0}
-                    style={{ width: 70 }}
-                    value={a.plancherM2 ?? ''}
-                    placeholder={String(15 * boxes)}
-                    onChange={(e) => set('plancherM2', e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+                <>
+                  <Choice<'laminate' | 'vinyle'>
+                    value={a.revetementSol}
+                    options={[
+                      ['laminate', 'Vinyle clic laminate (parquet)'],
+                      ['vinyle', 'Vinyle floor'],
+                    ]}
+                    onChange={(v) => set('revetementSol', v)}
                   />
-                  <span className="hint">vide = 15 m² par box</span>
-                </label>
+                  <label className="row" style={{ gap: 4 }}>
+                    m²
+                    <input
+                      type="number"
+                      min={0}
+                      style={{ width: 70 }}
+                      value={a.plancherM2 ?? ''}
+                      placeholder={String(15 * boxes)}
+                      onChange={(e) => set('plancherM2', e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+                    />
+                    <span className="hint">vide = 15 m² par box</span>
+                  </label>
+                </>
               )}
             </span>
+          </Row>
+          <Row label="Boarding sous les box" hint="Bakélite noire 4-740-009 : la quantité se saisit à l’étape 4 (à l’appréciation).">
+            <Choice<boolean> value={a.boarding as YesNo} options={yes} onChange={(v) => set('boarding', v)} />
           </Row>
           <Row label="Travail en hauteur / sur le toit" hint="Livre TÜV, ligne de vie, harnais.">
             <Choice<boolean> value={a.hauteur as YesNo} options={yes} onChange={(v) => set('hauteur', v)} />

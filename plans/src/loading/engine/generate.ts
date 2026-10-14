@@ -86,6 +86,8 @@ const ISLAND_BASES = new Set<CountingBase>([
   'cote',
   'cote_vitre_court',
   'cote_vitre_long',
+  'cote_facade_court',
+  'cote_facade_long',
   'panneau',
   'panneau_plein',
   'porte_simple',
@@ -114,6 +116,8 @@ const SHORT_BASE: Partial<Record<CountingBase, [string, string]>> = {
   cote: ['côté', 'côtés'],
   cote_vitre_court: ['petit côté vitré', 'petits côtés vitrés'],
   cote_vitre_long: ['grand côté vitré', 'grands côtés vitrés'],
+  cote_facade_court: ['petit côté avec façade', 'petits côtés avec façade'],
+  cote_facade_long: ['grand côté avec façade', 'grands côtés avec façade'],
   panneau: ['panneau', 'panneaux'],
   panneau_plein: ['mur', 'murs'],
   porte_simple: ['porte simple', 'portes simples'],
@@ -227,7 +231,13 @@ export function generate(input: EngineInput): LoadingList {
           c = answerCheck(rule, 'chargeLourde', v, 'Charge lourde (véhicule…) sur les box ?');
           break;
         case 'plancherLamine':
-          c = answerCheck(rule, 'plancherLamine', v, 'Plancher laminé à poser ?');
+          c = answerCheck(rule, 'plancherLamine', v, 'Revêtement de sol à poser (laminate / vinyle) ?');
+          break;
+        case 'revetementSol':
+          c = answerCheck(rule, 'revetementSol', v, 'Revêtement de sol : vinyle clic « laminate » style parquet (4-740-010) ou vinyle floor (4-740-011) ?');
+          break;
+        case 'boarding':
+          c = answerCheck(rule, 'boarding', v, 'Boarding sous les box (bakélite noire 4-740-009) ?');
           break;
         case 'hauteur':
           c = answerCheck(rule, 'hauteur', v, 'Travail en hauteur ou sur le toit ?');
@@ -287,8 +297,8 @@ export function generate(input: EngineInput): LoadingList {
       }
       case 'm2_plancher': {
         const m2 = answers.plancherM2 ?? laminateM2;
-        if (m2 === null || m2 === undefined) return { value: null, ids: [], question: ask('q:plancherM2', 'Combien de m² de plancher laminé ?', r) };
-        return { value: m2, ids: [], text: answers.plancherM2 !== undefined ? 'm² de laminé saisis' : 'm² de laminé (15 m² / box)' };
+        if (m2 === null || m2 === undefined) return { value: null, ids: [], question: ask('q:plancherM2', 'Combien de m² de revêtement de sol (laminate / vinyle) ?', r) };
+        return { value: m2, ids: [], text: answers.plancherM2 !== undefined ? 'm² de revêtement de sol saisis' : 'm² de revêtement de sol (15 m² / box)' };
       }
       case 'sous_bois_etude': {
         const plate = catalogue.get(r.article)?.plaque;
@@ -397,7 +407,7 @@ export function generate(input: EngineInput): LoadingList {
       detail += ` · spare « ${r.spare.texte} » à préciser`;
       block(r.article, ask(`q:spare:${r.key}`, `${r.article} : spare « ${r.spare.texte} » à préciser`, r));
     }
-    if (r.article === '4-740-010') laminateM2 = (laminateM2 ?? 0) + qty;
+    if (r.article === '4-740-010' || r.article === '4-740-011') laminateM2 = (laminateM2 ?? 0) + qty;
     push(r.article, { kind: r.kind === 'substitution' ? 'substitution' : 'regle', ruleKey: r.key, ruleVersion: r.version, base, qty, detail, confidence: r.confidence, ids }, r.unit);
     if (r.replaces) substitutions.push({ replaced: r.replaces.article, qty: qty * r.replaces.qty, by: r.article, rule: r });
   }
@@ -428,6 +438,8 @@ export function generate(input: EngineInput): LoadingList {
   for (const r of rules) {
     if (r.kind !== 'appreciation' || !/^\d-\d{3}-\d{3,5}$/.test(r.article)) continue;
     if (contributions.has(r.article)) continue;
+    // à l'appréciation seulement si la question chantier le demande (boarding : « oui »)
+    if (r.when?.boarding !== undefined && !check(r, { boarding: r.when.boarding }, globalScope).ok) continue;
     // airco : la question chantier « combien d'airco » remplace l'appréciation
     if (catalogue.get(r.article)?.hvac && (answeredAirco !== undefined || drawnAirco > 0)) continue;
     const v = answers.appreciation?.[r.article];

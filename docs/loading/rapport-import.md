@@ -6,9 +6,9 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 
 - Onglets lus : LisezMoi, Regles_accessoires, Ajouts_chantier, Appreciation, Catalogue_ref
 - Catalogue : 227 références (48 « gros produits »)
-- Règles : 91 lues, **67 actives** (48 confirmées, 18 à confirmer, 1 hypothèses), 24 remplacées ou doublons gardés pour l'historique
+- Règles : 97 lues, **69 actives** (52 confirmées, 16 à confirmer, 1 hypothèses), 28 remplacées ou doublons gardés pour l'historique
 - Valeurs observées en régime connecté (mauve, pas des règles) : 8
-- Décisions appliquées : 24 / 24
+- Décisions appliquées : 26 / 26
 
 ## Questions pour Amaury
 
@@ -122,6 +122,21 @@ Généré par `plans/scripts/import-loading-rules.mjs`. À relire par Amaury : r
 - **2026-10-13 — Amaury (« 2 × 014 et 2 × 015 par Viewbox ; la bande poteau quand les poteaux sont connectés : par deux c’est 1, par 4 c’est 4 »)** : Poteaux : 4 par Viewbox standard (2 × 7-355-014 + 2 × 7-355-015, compris dans la box, jamais dans la liste). Bande poteau 4-720-011 : 2,53 m par bande, 1 bande là où 2 poteaux se touchent, 4 bandes là où 4 se touchent, + 30 % (6059 : 6 × 2,53 = 15,2 → 20 m livrés).
   - ajout acc:4-720-011@poteau_connecte
   - acc:4-720-011@poteau → remplacée par acc:4-720-011@poteau_connecte
+- **2026-10-14 — Amaury (réponses sur l’OACE, RVIE/OUT/00066)** : Les joints ne servent pas qu’aux box seules : 4-700-066 (BIG 2300) = 2 par petit côté avec façade, 4-700-075 (BIG 5700) = 2 par grand côté avec façade (murs, portes, vitres 8.8.2 ou cadre 7024 ; la vitre 10 mm a ses joints 4-700-074) ; 4-700-070 / 071 (carrosserie 10 cm / 2530) relient les murs entre eux, box seules ou connectées. Spare + 20 % gardé.
+  - ajout acc:4-700-066@cote_facade_court
+  - acc:4-700-066@box[standalone] → remplacée par acc:4-700-066@cote_facade_court
+  - ajout acc:4-700-075@cote_facade_long
+  - acc:4-700-075@box[standalone] → remplacée par acc:4-700-075@cote_facade_long
+  - ajout acc:4-700-070@jonction_panneau
+  - acc:4-700-070@jonction_panneau[standalone] → remplacée par acc:4-700-070@jonction_panneau
+  - ajout acc:4-700-071@jonction_panneau
+  - acc:4-700-071@jonction_panneau[standalone] → remplacée par acc:4-700-071@jonction_panneau
+- **2026-10-14 — Amaury (réponses sur l’OACE)** : Revêtement de sol : question chantier « vinyle clic laminate (parquet) 4-740-010 ou vinyle floor 4-740-011 », 15 m² par box dans les deux cas. Gaffa 4-157-005 et adhésif double face 4-157-012 : 1 rouleau par 15 m² de revêtement (laminate ou vinyle). Boarding sous les box (bakélite noire 4-740-009) : question chantier, quantité à l’appréciation.
+  - aj:4-740-010@box[plancherLamine] : seulement si vinyle clic laminate (clé gardée)
+  - ajout aj:4-740-011@box[plancherLamine,vinyle]
+  - aj:4-157-005@m2_plancher[plancherLamine] : confirmée, laminate ou vinyle
+  - aj:4-157-012@m2_plancher[plancherLamine] : confirmée, laminate ou vinyle
+  - ajout app:4-740-009@job[boarding]
 
 ## Interprétations faites à l’import
 
@@ -220,6 +235,7 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 | 7-632-018 PLATFORM STEP 2200x500x150 DARK GREY - VIEWBOX | 2 | par porte coulissante |  |  | confirmé | `kit:7-632-018@porte_coulissante` |
 | 7-632-017 PLATFORM STEP 1100x500x150 DARK GREY - VIEWBOX | 4 | par porte coulissante |  |  | confirmé | `kit:7-632-017@porte_coulissante` |
 | 4-700-083 NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16 | 1 | par airco |  |  | confirmé | `acc:4-700-083@airco` |
+| 4-740-009 Plywood BackeliteBlack/Black / 2500X1250x18 / VIEWBOX / | à apprécier | forfait chantier | boarding |  | confirmé | `app:4-740-009@job[boarding]` |
 
 ### Quincaillerie / liaison
 
@@ -244,10 +260,6 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 | 4-157-003 Silicon DL CHEMICALS AM85-1 RAL 7024 / VIEWBOX / | 1 | par produit (vitrage 4.4.2) |  |  | à confirmer | `acc:4-157-003@4.4.2/produit` |
 | 4-157-004 Silicon DL CHEMICALS Crystal / VIEWBOX / | 1 | par produit (vitrage 4.4.2) |  |  | à confirmer | `acc:4-157-004@4.4.2/produit` |
 | 4-700-065 Window/Wall Rubber black BIG 2550mm /VIEWBOX/ | 8 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-065@box[standalone]` |
-| 4-700-075 Window/Wall Rubber black BIG 5700mm /VIEWBOX/ | 4 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-075@box[standalone]` |
-| 4-700-066 Window/Wall Rubber black BIG 2300mm /VIEWBOX/ | 4 | par box | regime = standalone | +20 % | confirmé | `acc:4-700-066@box[standalone]` |
-| 4-700-071 Window/Wall Rubber black Carrosserie 2530mm /VIEWBOX/ | 1 | par jonction de panneaux sans vitre | regime = standalone | +20 % | confirmé | `acc:4-700-071@jonction_panneau[standalone]` |
-| 4-700-070 Window/Wall Rubber black Carrosserie 10cm /VIEWBOX/ | 2 | par jonction de panneaux sans vitre | regime = standalone |  | confirmé | `acc:4-700-070@jonction_panneau[standalone]` |
 | 4-700-073 Window/Wall Rubber black Square 25x30x2550mm for seamless 8.8.2 /VIEWBOX/ | 2 | par côté de box | regime = standalone |  | confirmé | `acc:4-700-073@cote[standalone]` |
 | 4-700-064 Sub Block for windows and wall 45x100 /VIEWBOX/ | 2 | par panneau | regime = standalone | +25 % | confirmé | `acc:4-700-064@panneau[standalone]` |
 | 4-700-068 Window/Wall Rubber black 10cm /VIEWBOX/ | 20 | par box |  |  | confirmé | `acc:4-700-068@box` |
@@ -263,6 +275,10 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 | 4-700-097 Roof Rubber EPDM / 57X32 x 2500 /VBX/ | 1 | par jonction de toit petit côté |  | +1 | confirmé | `acc:4-700-097@jonction_toit_petit_cote` |
 | 4-700-072 Window/Wall Rubber black Square 25x40x2550mm for seamless 10mm /VIEWBOX/ | 2 | par porte coulissante (vitrage 10mm) |  |  | confirmé | `acc:4-700-072@10mm/porte_coulissante` |
 | 4-720-011 Viewbox Poles Rubber black FLAT adhésive 20X4mm /M /VIEWBOX/ | 2,53 | par bande de poteaux jointifs |  | +30 % | confirmé | `acc:4-720-011@poteau_connecte` |
+| 4-700-066 Window/Wall Rubber black BIG 2300mm /VIEWBOX/ | 2 | par petit côté avec façade |  | +20 % | confirmé | `acc:4-700-066@cote_facade_court` |
+| 4-700-075 Window/Wall Rubber black BIG 5700mm /VIEWBOX/ | 2 | par grand côté avec façade |  | +20 % | confirmé | `acc:4-700-075@cote_facade_long` |
+| 4-700-070 Window/Wall Rubber black Carrosserie 10cm /VIEWBOX/ | 2 | par jonction de panneaux sans vitre |  |  | confirmé | `acc:4-700-070@jonction_panneau` |
+| 4-700-071 Window/Wall Rubber black Carrosserie 2530mm /VIEWBOX/ | 1 | par jonction de panneaux sans vitre |  | +20 % | confirmé | `acc:4-700-071@jonction_panneau` |
 
 ### Électrique
 
@@ -286,10 +302,11 @@ La « Product Reference Code » d’Odoo est la référence Viewbox : c’est le
 |---|---|---|---|---|---|---|
 | 7-636-006 Nidaplast / TUV WALL Vinyle White/7024 / 1130x2520 COMPLETE - VIEWBOX M16 | 1 | par produit (7-636-008) | ralMurs = 7024 |  | confirmé | `sub:7-636-006@7-636-008/produit[7024]` |
 | 4-700-044 PAINT KIT / VIEWBOX / | 1 | forfait chantier | tailleJob = petit |  | à confirmer | `aj:4-700-044@job[petit]` |
-| 4-740-010 Laminate vinyle click parquet LAMETT DOURO HONEY/ VIEWBOX / /m² | 15 | par box | plancherLamine |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
-| 4-157-005 Gaffa TAPE NISHIBAN BLACK / VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-005@m2_plancher[plancherLamine]` |
-| 4-157-012 Tape TWO SIDE for VYNYL 50mmx50M/ VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | à confirmer | `aj:4-157-012@m2_plancher[plancherLamine]` |
+| 4-740-010 Laminate vinyle click parquet LAMETT DOURO HONEY/ VIEWBOX / /m² | 15 | par box | plancherLamine, revetementSol = laminate |  | à confirmer | `aj:4-740-010@box[plancherLamine]` |
+| 4-157-005 Gaffa TAPE NISHIBAN BLACK / VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | confirmé | `aj:4-157-005@m2_plancher[plancherLamine]` |
+| 4-157-012 Tape TWO SIDE for VYNYL 50mmx50M/ VIEWBOX / | 1 par tranche de 15 (arrondi sup.) | par m² de plancher | plancherLamine |  | confirmé | `aj:4-157-012@m2_plancher[plancherLamine]` |
 | 4-700-002 PAINT LEVASSEUR 1K RAL 7024 20L | 1 | forfait chantier | tailleJob = gros |  | confirmé | `aj:4-700-002@job[gros]` |
+| 4-740-011 Laminate vinyle color choice by client / VIEWBOX / /m² | 15 | par box | plancherLamine, revetementSol = vinyle |  | confirmé | `aj:4-740-011@box[plancherLamine,vinyle]` |
 
 ### Ajouts chantier
 

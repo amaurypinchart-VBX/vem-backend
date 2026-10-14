@@ -42,6 +42,8 @@ const BASE_WORD: Partial<Record<CountingBase, string>> = {
   cote: 'côté extérieur',
   cote_vitre_court: 'petit côté vitré',
   cote_vitre_long: 'grand côté vitré',
+  cote_facade_court: 'petit côté avec façade',
+  cote_facade_long: 'grand côté avec façade',
   panneau: 'panneau',
   panneau_plein: 'mur',
   porte_simple: 'porte simple',

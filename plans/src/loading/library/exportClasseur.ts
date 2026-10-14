@@ -22,6 +22,8 @@ const KEYWORD: Partial<Record<CountingBase, string>> = {
   cote: 'BOX',
   cote_vitre_court: 'VITRE',
   cote_vitre_long: 'VITRE',
+  cote_facade_court: 'FACADE',
+  cote_facade_long: 'FACADE',
   panneau: 'PANNEAU',
   panneau_plein: 'MUR',
   porte_simple: 'PORTE',

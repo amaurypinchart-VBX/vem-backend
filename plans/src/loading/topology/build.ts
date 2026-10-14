@@ -311,6 +311,10 @@ function counting(
   const glazed = (k: 'long' | 'short') => outside.filter((s) => s.kind === k && s.elements.some((e) => e.kind === 'vitre'));
   set('cote_vitre_court', glazed('short').length, glazed('short').map((s) => s.id), `${plural(glazed('short').length, 'petit côté vitré', 'petits côtés vitrés')}`);
   set('cote_vitre_long', glazed('long').length, glazed('long').map((s) => s.id), `${plural(glazed('long').length, 'grand côté vitré', 'grands côtés vitrés')}`);
+  // joints BIG 2300 / 5700 (Amaury 14.10.2026) : côtés avec murs, portes ou vitres 8.8.2 / cadre 7024 — la vitre 10 mm a ses joints à elle
+  const faced = (k: 'long' | 'short') => outside.filter((s) => s.kind === k && s.elements.some((e) => e.kind !== 'vitre' || e.vitrage !== '10mm'));
+  set('cote_facade_court', faced('short').length, faced('short').map((s) => s.id), `${plural(faced('short').length, 'petit côté avec façade', 'petits côtés avec façade')}`);
+  set('cote_facade_long', faced('long').length, faced('long').map((s) => s.id), `${plural(faced('long').length, 'grand côté avec façade', 'grands côtés avec façade')}`);
   const els = sides.flatMap((s) => s.elements);
   const panels = els.reduce((sum, e) => sum + e.panels, 0);
   set('panneau', panels, els.map((e) => e.nodeId), `${panels} panneaux (murs, vitres, portes ; porte double = 2)`);

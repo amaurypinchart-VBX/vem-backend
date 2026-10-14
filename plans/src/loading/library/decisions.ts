@@ -633,6 +633,101 @@ export const DECISIONS: Decision[] = [
       retire(ctx, 'acc:4-720-011@poteau', by);
     },
   },
+  {
+    id: 'joints-facade-oace',
+    date: '2026-10-14',
+    by: 'Amaury (réponses sur l’OACE, RVIE/OUT/00066)',
+    text:
+      'Les joints ne servent pas qu’aux box seules : 4-700-066 (BIG 2300) = 2 par petit côté avec façade, 4-700-075 (BIG 5700) = 2 par grand côté avec façade (murs, portes, vitres 8.8.2 ou cadre 7024 ; la vitre 10 mm a ses joints 4-700-074) ; 4-700-070 / 071 (carrosserie 10 cm / 2530) relient les murs entre eux, box seules ou connectées. Spare + 20 % gardé.',
+    apply: (ctx) => {
+      for (const [old, per, side] of [
+        ['acc:4-700-066@box[standalone]', 'cote_facade_court', 'petit'],
+        ['acc:4-700-075@box[standalone]', 'cote_facade_long', 'grand'],
+      ] as const) {
+        const r = find(ctx, old);
+        if (!r) continue;
+        const key = add(ctx, {
+          kind: 'accessoire',
+          trigger: {},
+          article: r.article,
+          articleName: r.articleName,
+          qty: 2,
+          per,
+          unit: 'pce',
+          spare: { type: 'pourcent', valeur: 20 },
+          confidence: 'confirme',
+          remark: `Joints des panneaux et vitres 8.8.2 / cadre 7024 : 2 par ${side} côté où il y a une façade (box seules ou connectées).`,
+          group: r.group,
+          calibration: [
+            { chantier: '6072ROACEVIE', bordereau: 'RVIE/OUT/00066', livre: r.article === '4-700-066' ? 20 : 6 },
+            { chantier: '6059RFRAMVIE', bordereau: '00056', livre: r.article === '4-700-066' ? 20 : 6 },
+          ],
+          source: 'decision',
+        });
+        retire(ctx, old, key);
+      }
+      for (const old of ['acc:4-700-070@jonction_panneau[standalone]', 'acc:4-700-071@jonction_panneau[standalone]']) {
+        const r = find(ctx, old);
+        if (!r) continue;
+        const { key: _k, version: _v, active: _a, when: _w, conflict: _c, supersededBy: _s, ...rest } = r;
+        const key = add(ctx, {
+          ...rest,
+          remark: `${r.remark ? `${r.remark} || ` : ''}Joints qui relient les murs entre eux : box seules ou connectées (Amaury 14.10.2026). Quantité calée sur Klokgebouw et l’OACE (070 : 2 par jonction de murs).`,
+          source: 'decision',
+        });
+        retire(ctx, old, key);
+      }
+    },
+  },
+  {
+    id: 'revetement-sol-oace',
+    date: '2026-10-14',
+    by: 'Amaury (réponses sur l’OACE)',
+    text:
+      'Revêtement de sol : question chantier « vinyle clic laminate (parquet) 4-740-010 ou vinyle floor 4-740-011 », 15 m² par box dans les deux cas. Gaffa 4-157-005 et adhésif double face 4-157-012 : 1 rouleau par 15 m² de revêtement (laminate ou vinyle). Boarding sous les box (bakélite noire 4-740-009) : question chantier, quantité à l’appréciation.',
+    apply: (ctx) => {
+      const lam = find(ctx, 'aj:4-740-010@box[plancherLamine]');
+      if (lam) {
+        lam.when = { ...lam.when, revetementSol: 'laminate' };
+        ctx.log.details.push('aj:4-740-010@box[plancherLamine] : seulement si vinyle clic laminate (clé gardée)');
+        add(ctx, {
+          kind: 'ajout_chantier',
+          trigger: {},
+          article: '4-740-011',
+          articleName: ctx.catalogue.get('4-740-011')?.designation,
+          qty: 15,
+          per: 'box',
+          unit: 'm2',
+          when: { plancherLamine: true, revetementSol: 'vinyle' },
+          confidence: 'confirme',
+          remark: 'Vinyle floor (couleur au choix du client) : 15 m² par box, ou les m² saisis.',
+          calibration: [{ chantier: '6072ROACEVIE', bordereau: 'RVIE/OUT/00066', base: 4, predit: 60, livre: 60 }],
+          source: 'decision',
+        });
+      }
+      for (const key of ['aj:4-157-005@m2_plancher[plancherLamine]', 'aj:4-157-012@m2_plancher[plancherLamine]']) {
+        const r = find(ctx, key);
+        if (!r) continue;
+        r.confidence = 'confirme';
+        r.remark = `${r.remark ? `${r.remark} || ` : ''}1 rouleau par 15 m² de revêtement de sol, laminate ou vinyle (Amaury 14.10.2026). En plus selon le nombre de box : à préciser.`;
+        ctx.log.details.push(`${key} : confirmée, laminate ou vinyle`);
+      }
+      add(ctx, {
+        kind: 'appreciation',
+        trigger: {},
+        article: '4-740-009',
+        articleName: ctx.catalogue.get('4-740-009')?.designation,
+        qty: null,
+        per: 'job',
+        unit: 'pce',
+        when: { boarding: true },
+        confidence: 'confirme',
+        remark: 'Boarding sous les box : quantité à l’appréciation.',
+        calibration: [{ chantier: '6072ROACEVIE', bordereau: 'RVIE/OUT/00066', livre: 8, note: '6072ROACEVIE (4 box) : 8' }],
+        source: 'decision',
+      });
+    },
+  },
 ];
 
 /** Notes d'appréciation dont tous les articles ont déjà une règle active : informatives seulement. */

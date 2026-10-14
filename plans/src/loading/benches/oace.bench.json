@@ -5,7 +5,7 @@
  "bordereau": "RVIE/OUT/00066",
  "model": "OACE_Ice_cube_Dusseldorf_VEM",
  "partial": false,
- "source": "Picking Odoo RVIE/OUT/00066 (SO9118, 19/10/2026), PDF transmis par Amaury le 14/10/2026 : ce qui est réellement parti. 4-157-012 = 5 + 3 (deux emplacements).",
+ "source": "Bon de livraison Odoo RVIE/OUT/00066 (« Rental Delivery Slip », colonne Demand ; SO9118, expédition 19/10/2026), transmis par Amaury le 14/10/2026.",
  "productAnswers": {},
  "answers": {
   "aircoCount": 3,
@@ -19,10 +19,13 @@
   "ralMurs": "blanc",
   "appreciation": {
    "4-730-002": 6,
-   "4-730-003": 0,
-   "4-730-004": 0,
-   "4-730-005": 0
-  }
+   "4-730-003": 4,
+   "4-730-004": 8,
+   "4-730-005": 0,
+   "4-740-009": 8
+  },
+  "revetementSol": "vinyle",
+  "boarding": true
  },
  "study": {
   "source": "plaques de l’étude reconstituées (livré ÷ 2)",
@@ -33,6 +36,11 @@
     "quantity": 15
    },
    {
+    "l": 700,
+    "w": 700,
+    "quantity": 8
+   },
+   {
     "l": 400,
     "w": 400,
     "quantity": 30
@@ -41,39 +49,32 @@
  },
  "judgements": {},
  "known": {
-  "7-637-010": "question du 14/10/2026 : 7 vitres livrées, 5 dans la 3D (2 de réserve ?)",
-  "4-730-012": "question du 14/10/2026 : 19 spots livrés, règle 6 / box = 24",
-  "4-730-009": "question du 14/10/2026 : 2 multiprises IP44 livrées, règle 1 / box = 4",
-  "4-730-013": "question du 14/10/2026 : 4 câbles de liaison lampes livrés pour 3 jonctions",
-  "4-710-001": "36 boulons livrés, 39 prédits (10 / jonction grand côté + 30 %) : « un peu plus » calé sur 6059 / 6060",
-  "4-700-083": "question du 14/10/2026 : 3 airco livrés mais 2 murs à trou airco",
-  "4-700-075": "régime connecté : règle à caler (6059 : 6, OACE : 6)",
-  "4-700-074": "question du 14/10/2026 : 6 livrés, règle 2 / grand côté vitré + 50 % = 3",
-  "4-700-071": "régime connecté : règle à caler (6059 : 8, OACE : 40)",
-  "4-700-070": "régime connecté : règle à caler (6059 : 22, OACE : 24)",
-  "4-700-068": "question du 14/10/2026 : 24 livrés, règle 20 / box = 80",
-  "4-700-066": "régime connecté : règle à caler (6059 : 20, OACE : 20)",
-  "4-700-060": "question du 14/10/2026 : 5 plexi 10 mm livrés pour 4 jonctions avec vitre",
-  "4-700-044": "question du 14/10/2026 : kit peinture livré, pas de règle",
-  "4-700-036": "question du 14/10/2026 : 10 plaques de base milieu livrées, règle 2 / box = 8",
-  "4-700-035": "question du 14/10/2026 : 20 plaques de base coin livrées, règle 4 / box = 16",
-  "4-700-033": "question du 14/10/2026 : 2 rouleaux livrés, règle 1 / chantier",
-  "4-740-011": "question du 14/10/2026 : laminé « couleur au choix du client » au lieu de 4-740-010",
-  "4-700-002": "question du 14/10/2026 : 2 pots de peinture 20 L livrés, règle 1 / chantier",
-  "4-740-009": "question du 14/10/2026 : 8 panneaux bakélite noirs 2500 × 1250 × 18 livrés, pas de règle",
-  "4-157-012": "question du 14/10/2026 : 8 adhésifs double face livrés, règle 1 / 15 m² de laminé = 4",
-  "4-157-005": "question du 14/10/2026 : 10 gaffas noirs livrés, règle 1 / 15 m² = 4",
-  "4-157-006": "question du 14/10/2026 : 12 gaffas blancs livrés, pas de règle",
-  "7-632-017": "question du 14/10/2026 : marches de la porte double : 1 × 7-632-018 livrée au lieu de 2 × 7-632-017 + 7-632-022",
-  "7-632-022": "question du 14/10/2026 : marches de la porte double (voir 7-632-017)",
-  "7-632-018": "question du 14/10/2026 : marche 2200 × 500 livrée pour la porte double",
-  "4-700-072": "question du 14/10/2026 : joints carrés 10 mm non livrés",
-  "4-730-007": "question du 14/10/2026 : câble une prise mâle non livré",
-  "4-750-001": "question du 14/10/2026 : caisse à outils non livrée",
-  "4-740-010": "laminé livré en 4-740-011 (voir cette ligne)",
-  "4-750-002": "question du 14/10/2026 : échelles non livrées",
-  "4-750-003": "question du 14/10/2026 : échelles non livrées",
-  "4-750-004": "question du 14/10/2026 : harnais non livrés (ligne de vie livrée)"
+  "7-637-010": "2 vitres de réserve (réponse du 14/10/2026)",
+  "7-632-017": "marches de la porte double : règle gardée (réponse du 14/10/2026) ; livré 017 + 018 + 022",
+  "7-632-018": "marches de la porte double : règle gardée (réponse du 14/10/2026)",
+  "4-740-002": "plaques de l’étude reconstituées (15 livrés, 7,5 × 2)",
+  "4-730-013": "spare (réponse du 14/10/2026)",
+  "4-730-012": "règle 6 / box gardée, le reste en spare (réponse du 14/10/2026)",
+  "4-730-009": "règle 1 / box gardée (réponse du 14/10/2026)",
+  "4-710-001": "36 livrés, 39 prédits (10 / jonction grand côté + 30 %) : « un peu plus » calé sur 6059 / 6060",
+  "4-700-083": "il fallait 3 murs à trou airco (réponse du 14/10/2026) : la règle est juste",
+  "4-700-075": "2 par grand côté avec façade (réponse du 14/10/2026) ; le grand côté en vitre 10 mm n’en compte pas, 6 livrés",
+  "4-700-074": "règle 2 / grand côté vitré + 50 % gardée, plus livré pour des panneaux spéciaux (réponse du 14/10/2026)",
+  "4-700-072": "règle gardée (réponse du 14/10/2026), 8 livrés",
+  "4-700-071": "Amaury : 2 par jonction de murs ; la règle (1 + 20 %) est calée sur Klokgebouw ; quantité décidée sur place (40 livrés)",
+  "4-700-068": "règle 20 / box gardée ; remplacé sur ce chantier par des joints longs (réponse du 14/10/2026)",
+  "4-700-065": "box connectées : règle à caler (OACE 27, 6059 25)",
+  "4-700-064": "box connectées : règle à caler (OACE 80, 6059 50)",
+  "4-700-060": "1 de réserve",
+  "4-700-044": "kit peinture livré avec le bidon 20 L : règle à préciser",
+  "4-700-036": "spare (réponse du 14/10/2026)",
+  "4-700-035": "spare (réponse du 14/10/2026)",
+  "4-700-033": "consommables : plus selon le nombre de box (réponse du 14/10/2026), à chiffrer",
+  "4-700-002": "consommables : plus selon le nombre de box (réponse du 14/10/2026), à chiffrer",
+  "4-157-012": "1 / 15 m² + plus selon le nombre de box (réponse du 14/10/2026), à chiffrer",
+  "4-157-005": "1 / 15 m² + plus selon le nombre de box (réponse du 14/10/2026), à chiffrer",
+  "4-157-006": "gaffa blanc : plus selon le nombre de box (réponse du 14/10/2026), à chiffrer",
+  "4-730-007": "règle gardée (réponse du 14/10/2026)"
  },
  "real": [
   {
@@ -89,7 +90,19 @@
    "qty": 22
   },
   {
+   "article": "7-632-022",
+   "qty": 1
+  },
+  {
    "article": "7-632-018",
+   "qty": 1
+  },
+  {
+   "article": "7-632-017",
+   "qty": 1
+  },
+  {
+   "article": "7-199-066",
    "qty": 1
   },
   {
@@ -97,32 +110,80 @@
    "qty": 1
   },
   {
+   "article": "4-750-005",
+   "qty": 1
+  },
+  {
+   "article": "4-750-004",
+   "qty": 2
+  },
+  {
+   "article": "4-750-003",
+   "qty": 1
+  },
+  {
+   "article": "4-750-002",
+   "qty": 4
+  },
+  {
+   "article": "4-750-001",
+   "qty": 1
+  },
+  {
+   "article": "4-740-011",
+   "qty": 60
+  },
+  {
+   "article": "4-740-009",
+   "qty": 8
+  },
+  {
+   "article": "4-740-003",
+   "qty": 30
+  },
+  {
+   "article": "4-740-002",
+   "qty": 15
+  },
+  {
+   "article": "4-740-001",
+   "qty": 60
+  },
+  {
+   "article": "4-730-014",
+   "qty": 2
+  },
+  {
+   "article": "4-730-013",
+   "qty": 8
+  },
+  {
    "article": "4-730-012",
-   "qty": 19
+   "qty": 30
   },
   {
    "article": "4-730-009",
-   "qty": 2
+   "qty": 6
   },
   {
    "article": "4-730-008",
    "qty": 8
   },
   {
-   "article": "4-730-001",
-   "qty": 1
+   "article": "4-730-004",
+   "qty": 8
+  },
+  {
+   "article": "4-730-003",
+   "qty": 4
   },
   {
    "article": "4-730-002",
    "qty": 6
   },
   {
-   "article": "4-730-013",
-   "qty": 4
-  },
-  {
-   "article": "4-730-014",
-   "qty": 2
+   "article": "4-730-001",
+   "qty": 1
   },
   {
    "article": "4-720-011",
@@ -131,6 +192,10 @@
   {
    "article": "4-710-001",
    "qty": 36
+  },
+  {
+   "article": "4-700-096",
+   "qty": 4
   },
   {
    "article": "4-700-083",
@@ -143,6 +208,10 @@
   {
    "article": "4-700-074",
    "qty": 6
+  },
+  {
+   "article": "4-700-072",
+   "qty": 8
   },
   {
    "article": "4-700-071",
@@ -159,6 +228,14 @@
   {
    "article": "4-700-066",
    "qty": 20
+  },
+  {
+   "article": "4-700-065",
+   "qty": 27
+  },
+  {
+   "article": "4-700-064",
+   "qty": 80
   },
   {
    "article": "4-700-060",
@@ -193,56 +270,28 @@
    "qty": 5
   },
   {
-   "article": "4-740-011",
-   "qty": 60
-  },
-  {
    "article": "4-700-002",
    "qty": 2
   },
   {
-   "article": "7-199-066",
-   "qty": 1
-  },
-  {
-   "article": "4-700-096",
-   "qty": 4
-  },
-  {
-   "article": "4-740-001",
-   "qty": 60
-  },
-  {
-   "article": "4-740-003",
-   "qty": 30
-  },
-  {
-   "article": "4-740-009",
-   "qty": 8
-  },
-  {
    "article": "4-157-012",
-   "qty": 8
-  },
-  {
-   "article": "4-157-005",
-   "qty": 10
+   "qty": 12
   },
   {
    "article": "4-157-006",
    "qty": 12
   },
   {
-   "article": "4-750-005",
-   "qty": 1
-  },
-  {
-   "article": "4-157-003",
-   "qty": 12
+   "article": "4-157-005",
+   "qty": 10
   },
   {
    "article": "4-157-004",
    "qty": 8
+  },
+  {
+   "article": "4-157-003",
+   "qty": 12
   }
  ]
 }

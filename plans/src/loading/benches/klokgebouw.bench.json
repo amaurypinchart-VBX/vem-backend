@@ -10,7 +10,7 @@
   "answers": {
     "aircoCount": 0,
     "chargeLourde": false,
-    "plancherLamine": true,
+    "plancherLamine": true, "revetementSol": "laminate",
     "hauteur": false,
     "tailleJob": "petit",
     "montage": "chantier",
