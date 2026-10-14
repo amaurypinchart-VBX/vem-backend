@@ -5,7 +5,7 @@ import { memo } from 'react';
 import type { ViewBasis } from '../core/views';
 import { projectPoint } from '../core/views';
 import type { Linework2D } from '../linework/types';
-import { STROKE_MM, inkOf, markColor } from '../linework/svg';
+import { GHOST_COLOR, STROKE_MM, inkOf, markColor } from '../linework/svg';
 import type { LogoShape } from './logos';
 import { LOGO_COLOR, VB_LOGO, VIEWBOX_WORDMARK } from './logos';
 import type { DetailItem, DimensionItem, Image3dItem, LabelItem, PointMm, RectMm, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, TitleBlockData, ViewportItem } from './types';
@@ -33,6 +33,9 @@ export interface ViewportData {
   busy?: boolean;
   error?: string;
   overlays?: ModuleOverlay[];
+  /** vues spéciales : épaisseur du trait de coupe (mm papier), gris des fantômes */
+  cutLineMm?: number;
+  ghostColor?: string;
 }
 
 export interface SheetSvgProps {
@@ -344,8 +347,16 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
                 <path key={`f${o.moduleId}`} d={polyD(o.outline)} fill={vp.overlays.statusColors[o.moduleId]} fillOpacity={0.35} stroke="none" data-dxf="VBX-STATUTS" />
               ) : null,
             )}
+          {lw.fills?.map((f, i) => {
+            let d = '';
+            for (const r of f.rings) if (r.length >= 6) d += polyD(r);
+            return d ? <path key={`cf${i}`} d={d} fill={f.color} fillRule="evenodd" stroke="none" data-dxf="VS-HACHURE" /> : null;
+          })}
           {paths.map(({ key, d }) => {
             if (!d) return null;
+            if (key === 'cut') return <path key={key} d={d} stroke="#000" strokeWidth={num((data?.cutLineMm ?? STROKE_MM.cut) * s)} data-dxf={dxfLayer(key)} />;
+            if (key === 'ghost') return <path key={key} d={d} stroke={data?.ghostColor ?? GHOST_COLOR} strokeWidth={num(STROKE_MM.ghost * s)} data-dxf={dxfLayer(key)} />;
+            if (key === 'cut-hatch') return <path key={key} d={d} stroke="#000" strokeWidth={num(STROKE_MM['cut-hatch'] * s)} strokeLinecap="butt" data-dxf={dxfLayer(key)} />;
             if (key.startsWith('category:')) {
               const color = categoryColors.get(key.slice(9)) ?? '#888';
               return <path key={key} d={d} stroke={color} strokeWidth={num(STROKE_MM.category * s)} strokeLinecap="butt" opacity={0.9} data-dxf={dxfLayer(key)} />;
@@ -365,6 +376,8 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
         </g>
         {vp.overlays?.calage && data?.basis && <CalageLabels plates={vp.overlays.calage} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.levels && data?.basis && <LevelMarks marks={vp.overlays.levels} basis={data.basis} toPaper={toPaper} />}
+        {vp.overlays?.sectionMarks && data?.basis && <SectionMarks marks={vp.overlays.sectionMarks} basis={data.basis} toPaper={toPaper} />}
+        {vp.overlays?.cutLevels && data?.basis && Math.abs(data.basis.up[1]) > 0.9 && <CutLevels levels={vp.overlays.cutLevels} basis={data.basis} toPaper={toPaper} rect={rect} />}
         {vp.overlays?.moduleNumbers &&
           numberLabels(overlays).map((o) => {
             // plan de calage : centre du quart haut gauche de la Viewbox (les étiquettes des plaques sont au-dessus des
@@ -493,10 +506,105 @@ function LevelMarks({ marks, basis, toPaper }: { marks: NonNullable<NonNullable<
   );
 }
 
+/**
+ * Repères de coupe (A–A) sur une vue en plan : trait mixte fin, extrémités épaisses, flèches dans le sens du regard,
+ * lettres. Calque de décoration (les traits de la vue ne changent pas).
+ */
+function SectionMarks({ marks, basis, toPaper }: { marks: NonNullable<NonNullable<ViewportItem['overlays']>['sectionMarks']>; basis: ViewBasis; toPaper: (x: number, y: number) => PointMm }) {
+  return (
+    <g data-dxf="VS-REPERES" fontFamily={FONT_SERIF}>
+      {marks.map((m, i) => {
+        const pa = projectPoint(basis, m.a);
+        const pb = projectPoint(basis, m.b);
+        const a = toPaper(pa.x, pa.y);
+        const b = toPaper(pb.x, pb.y);
+        const L = Math.hypot(b.x - a.x, b.y - a.y);
+        if (L < 1) return null;
+        const ux = (b.x - a.x) / L;
+        const uy = (b.y - a.y) / L;
+        // sens du regard sur le papier (y du dessin vers le haut, y papier vers le bas)
+        let lx = projectPoint(basis, m.look).x;
+        let ly = -projectPoint(basis, m.look).y;
+        const ll = Math.hypot(lx, ly) || 1;
+        lx /= ll;
+        ly /= ll;
+        const ends = [
+          { p: a, d: -1 },
+          { p: b, d: 1 },
+        ];
+        const tick = 6;
+        const arrow = 5;
+        return (
+          <g key={`sm${i}`}>
+            <path d={`M${num(a.x)} ${num(a.y)}L${num(b.x)} ${num(b.y)}`} stroke="#000" strokeWidth={0.25} strokeDasharray="6 1.2 1.2 1.2" fill="none" />
+            {ends.map(({ p, d }, k) => {
+              const q = { x: p.x + d * ux * tick, y: p.y + d * uy * tick };
+              const tip = { x: q.x + lx * arrow, y: q.y + ly * arrow };
+              const left = { x: tip.x - lx * 2.2 - ux * 1.1, y: tip.y - ly * 2.2 - uy * 1.1 };
+              const right = { x: tip.x - lx * 2.2 + ux * 1.1, y: tip.y - ly * 2.2 + uy * 1.1 };
+              return (
+                <g key={k}>
+                  <path d={`M${num(p.x)} ${num(p.y)}L${num(q.x)} ${num(q.y)}`} stroke="#000" strokeWidth={0.7} fill="none" />
+                  <path d={`M${num(q.x)} ${num(q.y)}L${num(tip.x)} ${num(tip.y)}`} stroke="#000" strokeWidth={0.35} fill="none" />
+                  <path d={`M${num(tip.x)} ${num(tip.y)}L${num(left.x)} ${num(left.y)}L${num(right.x)} ${num(right.y)}Z`} fill="#000" stroke="none" />
+                  <text x={num(q.x + d * ux * 2.5 - lx * 1.5)} y={num(q.y + d * uy * 2.5 - ly * 1.5 + 2)} fontSize={6} fontWeight={700} textAnchor="middle" fill="#000">
+                    {m.label}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Niveau des coupes horizontales sur une élévation : trait mixte sur la largeur de la vue, triangle et cote « +2 550 ». */
+function CutLevels({ levels, basis, toPaper, rect }: { levels: NonNullable<NonNullable<ViewportItem['overlays']>['cutLevels']>; basis: ViewBasis; toPaper: (x: number, y: number) => PointMm; rect: RectMm }) {
+  return (
+    <g data-dxf="VS-REPERES" fontFamily={FONT_SANS}>
+      {levels.map((l, i) => {
+        const p = toPaper(0, basis.up[1] * l.y);
+        if (p.y < rect.y || p.y > rect.y + rect.h) return null;
+        const x = rect.x + rect.w - 18;
+        return (
+          <g key={`cl${i}`}>
+            <path d={`M${num(rect.x)} ${num(p.y)}L${num(rect.x + rect.w)} ${num(p.y)}`} stroke="#000" strokeWidth={0.18} strokeDasharray="5 1 1 1" fill="none" />
+            <path d={`M${num(x)} ${num(p.y)}L${num(x - 1.4)} ${num(p.y - 2.2)}L${num(x + 1.4)} ${num(p.y - 2.2)}Z`} fill="#fff" stroke="#000" strokeWidth={0.25} />
+            <text x={num(x + 2.2)} y={num(p.y - 0.8)} fontSize={2.5} fill="#000">
+              {l.text}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function polyD(pl: Float64Array): string {
   let d = `M${num(pl[0])} ${num(pl[1])}`;
   for (let i = 2; i < pl.length; i += 2) d += `L${num(pl[i])} ${num(pl[i + 1])}`;
   return d + 'Z';
+}
+
+/** Titre d'une vue spéciale : « Vue de dessous — toiture, sans plafond tendu — 1:50 » + orientation dite en dessous. */
+function CustomTitle({ item, size }: { item: ViewportItem; size: number }) {
+  const sub = item.custom?.subtitle;
+  const text = item.custom?.scaleInTitle && item.scale > 0 ? `${item.label} — ${scaleLabel(item.scale)}` : item.label!;
+  const pos = item.labelPos ?? { x: item.rect.x, y: item.rect.y - size * (sub ? 1.75 : 1.3) };
+  return (
+    <>
+      <ViewTitle text={text} pos={pos} size={size} />
+      {sub && (
+        <g data-dxf="VS-TEXTE">
+          <T x={pos.x} top={pos.y + size * 1.02} size={size * 0.42} sans>
+            {sub}
+          </T>
+        </g>
+      )}
+    </>
+  );
 }
 
 function ViewTitle({ text, pos, size }: { text: string; pos: PointMm; size: number }) {
@@ -513,6 +621,9 @@ function ViewTitle({ text, pos, size }: { text: string; pos: PointMm; size: numb
 function dxfLayer(key: string): string {
   if (key.startsWith('category:')) return `VBX-CATEGORIE-${key.slice(9)}`;
   if (key.startsWith('mark:')) return key === 'mark:CROSS' ? 'VBX-REPERE-MURS' : `VBX-REPERE-${key.slice(5)}`;
+  if (key === 'cut') return 'VS-COUPE';
+  if (key === 'cut-hatch') return 'VS-HACHURE';
+  if (key === 'ghost') return 'VS-FANTOME';
   return { silhouette: 'VBX-VUE-SILHOUETTE', visible: 'VBX-VUE-VISIBLE', fine: 'VBX-VUE-FIN', hidden: 'VBX-VUE-CACHE' }[key] ?? `VBX-VUE-${key}`;
 }
 
@@ -869,9 +980,10 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         body = (
           <>
             <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} />
-            {item.showLabel && item.label && (
+            {item.showLabel && item.label && !item.custom && (
               <ViewTitle text={item.label} pos={item.labelPos ?? { x: item.rect.x, y: item.rect.y - titleSize * 1.3 }} size={item.labelSize ?? titleSize} />
             )}
+            {item.showLabel && item.label && item.custom && <CustomTitle item={item} size={item.labelSize ?? titleSize} />}
             {editing && data?.stale && (
               <text x={num(item.rect.x + item.rect.w - 1)} y={num(item.rect.y + 4)} fontSize={3} textAnchor="end" fill="#c2410c" fontFamily={FONT_SANS}>
                 ⚠ vue obsolète : Recalculer

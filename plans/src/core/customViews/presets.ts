@@ -78,7 +78,8 @@ export const VIEW_PRESETS: ViewPreset[] = [
     spec: {
       ...base(),
       camera: { ...DEFAULT_CAMERA, frame: 'module', dir: 'left' },
-      cuts: [{ id: 'c-a', label: 'A', frame: 'module', axis: 'long', ref: { kind: 'module', ref: 'mid' }, offset: 0, keep: 'negative' }],
+      // vue gauche = observateur côté −y local ⇒ on garde le côté +y (au-delà du plan)
+      cuts: [{ id: 'c-a', label: 'A', frame: 'module', axis: 'long', ref: { kind: 'module', ref: 'mid' }, offset: 0, keep: 'positive' }],
     },
   },
   {

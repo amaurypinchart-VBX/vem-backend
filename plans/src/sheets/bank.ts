@@ -3,7 +3,13 @@
 // modèle (modèle réanalysé, face avant changée…) est signalée « obsolète ».
 import { useEffect, useReducer } from 'react';
 import type { ViewportItem, DrawingSet } from './types';
+import type { ViewBasis } from '../core/views';
 import { viewBasis } from '../core/views';
+import type { CustomViewSpec, ViewTagRule } from '../core/customViews/types';
+import type { GlassTest } from '../linework/packets';
+import type { CustomViewResult } from '../linework/customView';
+import { computeSpecialView } from '../linework/customView';
+import { hashKey } from '../linework/cache';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { BrowserHlrProvider } from '../linework/provider';
 import type { Linework2D } from '../linework/types';
@@ -16,7 +22,27 @@ interface Entry {
   lw?: Linework2D;
   busy?: boolean;
   error?: string;
+  /** vue spéciale : base du bloc (rotation / miroir / plafond réfléchi compris) */
+  basis?: ViewBasis;
 }
+
+/** Vues spéciales d'un modèle, pour les fenêtres de vue `custom`. */
+export interface CustomSource {
+  spec: (viewId: string) => CustomViewSpec | undefined;
+  glassTest: GlassTest;
+  viewTags?: ViewTagRule[];
+  categoryColors?: Record<string, string>;
+}
+
+/** Gris des fantômes (0 noir → 1 blanc). */
+export function ghostColorOf(tone: number): string {
+  const v = Math.min(255, Math.round(255 * Math.max(0, Math.min(1, tone)) * 0.85 + 20));
+  const h = v.toString(16).padStart(2, '0');
+  return `#${h}${h}${h}`;
+}
+
+/** Vue spéciale sans ce qui ne change pas le dessin (nom, dates). */
+export const specForKey = (s: CustomViewSpec) => JSON.stringify({ ...s, name: '', createdAt: '', updatedAt: '', updatedBy: '', source: '', presetKey: '' });
 
 export class LineworkBank {
   private readonly entries = new Map<string, Entry>();
@@ -24,6 +50,9 @@ export class LineworkBank {
   private readonly keys = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private readonly pendingKeys = new Set<string>();
+  /** vues spéciales : calcul complet (tous les blocs) par vue, partagé par ses fenêtres */
+  private readonly customRuns = new Map<string, Promise<CustomViewResult>>();
+  custom: CustomSource | null = null;
 
   constructor(
     readonly scene: LoadedScene,
@@ -45,8 +74,15 @@ export class LineworkBank {
     this.emit();
   }
 
+  /** Clé de la demande : la requête (vue standard) ou la vue spéciale + son bloc. */
+  private reqKey(vp: ViewportItem): string {
+    if (!vp.custom) return JSON.stringify(vp.request);
+    const spec = this.custom?.spec(vp.custom.viewId);
+    return `custom|${vp.custom.viewId}|${vp.custom.block}|${spec ? specForKey(spec) : 'absente'}`;
+  }
+
   keyOf(vp: ViewportItem): string | undefined {
-    return this.keys.get(JSON.stringify(vp.request));
+    return this.keys.get(this.reqKey(vp));
   }
 
   /** Traits gardés en mémoire : clé du calcul + ce qui est ajouté après (couleurs, repères façade). */
@@ -59,7 +95,7 @@ export class LineworkBank {
     const e = key ? this.entries.get(this.entryKey(key, vp)) : undefined;
     let basis;
     try {
-      basis = viewBasis(vp.request.view, this.scene.frames);
+      basis = e?.basis ?? viewBasis(vp.request.view, this.scene.frames);
     } catch {
       basis = undefined;
     }
@@ -68,13 +104,16 @@ export class LineworkBank {
       basis && (vp.overlays?.moduleOutlines || vp.overlays?.moduleNumbers || vp.overlays?.statusColors || vp.overlays?.units?.length)
         ? moduleOverlays(this.scene.frames.values(), new Set(this.scene.index.modules.filter((m) => include.has(m.nodeId)).map((m) => m.id)), basis)
         : undefined;
+    const spec = vp.custom ? this.custom?.spec(vp.custom.viewId) : undefined;
     return {
       lw: e?.lw,
       busy: !key || e?.busy,
-      error: e?.error,
+      error: e?.error ?? (vp.custom && this.custom && !spec ? DELETED_VIEW : undefined),
       basis,
       overlays,
       stale: !!(key && vp.lineworkKey && vp.lineworkKey !== key),
+      cutLineMm: spec?.style.cutLine,
+      ghostColor: spec ? ghostColorOf(spec.style.ghostTone) : undefined,
     };
   }
 
@@ -85,10 +124,10 @@ export class LineworkBank {
 
   /** Traits d'une fenêtre de vue (calcul si besoin). */
   async load(vp: ViewportItem, signal?: AbortSignal): Promise<{ key: string; lw: Linework2D } | null> {
-    const reqKey = JSON.stringify(vp.request);
+    const reqKey = this.reqKey(vp);
     let key = this.keys.get(reqKey);
     if (!key) {
-      key = await this.provider.cacheKey(vp.request);
+      key = vp.custom ? `custom-${await hashKey(reqKey)}` : await this.provider.cacheKey(vp.request);
       this.keys.set(reqKey, key);
     }
     const ek = this.entryKey(key, vp);
@@ -111,6 +150,11 @@ export class LineworkBank {
     this.entries.set(ek, { busy: true });
     this.emit();
     try {
+      if (vp.custom) {
+        const block = await this.customBlock(vp, signal);
+        this.entries.set(ek, { lw: block.lw, basis: block.basis });
+        return { key, lw: block.lw };
+      }
       const lw = await this.provider.getLinework(vp.request, undefined, signal);
       this.entries.set(ek, { lw });
       return { key, lw };
@@ -122,7 +166,29 @@ export class LineworkBank {
       this.emit();
     }
   }
+  /** Bloc d'une vue spéciale (la vue entière est calculée une fois pour toutes ses fenêtres). */
+  private async customBlock(vp: ViewportItem, signal?: AbortSignal): Promise<{ lw: Linework2D; basis: ViewBasis }> {
+    const ref = vp.custom!;
+    const src = this.custom;
+    const spec = src?.spec(ref.viewId);
+    if (!src || !spec) throw new Error(DELETED_VIEW);
+    const runKey = `${ref.viewId}|${specForKey(spec)}|${JSON.stringify(vp.request.style)}`;
+    let run = this.customRuns.get(runKey);
+    if (!run) {
+      run = computeSpecialView(spec, { scene: this.scene, runner: this.provider.runner, glassTest: src.glassTest, viewTags: src.viewTags, categoryColors: src.categoryColors }, vp.request.style, undefined, signal);
+      this.customRuns.set(runKey, run);
+      run.catch(() => this.customRuns.delete(runKey));
+      while (this.customRuns.size > 12) this.customRuns.delete(this.customRuns.keys().next().value!);
+    }
+    const res = await run;
+    const block = res.blocks.find((b) => b.key === ref.block) ?? (ref.block === 'all' ? { lw: res.lw, basis: res.blocks[0]?.basis } : undefined);
+    if (!block?.basis) throw new Error(`Bloc « ${ref.block} » absent de la vue (disposition changée ?)`);
+    return { lw: block.lw, basis: block.basis };
+  }
 }
+
+/** Message d'une fenêtre dont la vue spéciale a été supprimée. */
+export const DELETED_VIEW = 'Vue supprimée';
 
 /** Re-rendu React quand des traits arrivent. */
 export function useBank(bank: LineworkBank | null): number {

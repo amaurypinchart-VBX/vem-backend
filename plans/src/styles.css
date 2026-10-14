@@ -249,3 +249,43 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .symbol-palette .symbol-btn:hover { border-color: #93c5fd; }
 .symbol-palette .symbol-btn.on { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, .35); }
 .symbol-palette .symbol-totals td { padding: 2px 4px; font-size: 12px; }
+
+/* ─── Vues 2D › Vues spéciales ─── */
+.subtabs { margin: 0 0 10px; }
+.cv-page { display: grid; grid-template-columns: 250px minmax(0, 1fr) 330px; gap: 12px; height: calc(100vh - 190px); min-height: 620px; }
+.cv-side { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
+.cv-main { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg-2); }
+.cv-3d { flex: 3; min-height: 0; position: relative; background: #fff; }
+.cv-3d .viewer-canvas { position: absolute; inset: 0; }
+.cv-empty { position: absolute; left: 12px; bottom: 10px; color: #6b7280; font-size: 12px; pointer-events: none; }
+.cv-preview { flex: 2; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.cv-preview-head { display: flex; gap: 10px; align-items: center; padding: 6px 10px; flex-wrap: wrap; }
+.cv-preview-body { flex: 1; min-height: 0; background: #fff; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 6px; }
+.cv-preview-body img { max-width: 100%; max-height: 100%; }
+.cv-preview-body .hint { color: #6b7280; }
+.cv-warnings { padding: 0 10px 6px; display: flex; flex-direction: column; gap: 2px; }
+.cv-preset { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.cv-preset:hover { border-color: var(--text-dim); }
+.cv-preset .hint { font-size: 11px; }
+.cv-panel-head { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--border); cursor: pointer; text-align: left; }
+.cv-panel-body { display: flex; flex-direction: column; gap: 8px; }
+.cv-cube { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.cv-cube .btn { justify-content: center; }
+.cv-cut { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-3); }
+.cv-cut .row { flex-wrap: nowrap; }
+.cv-chips { display: flex; flex-direction: column; gap: 4px; }
+.cv-chip { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border-radius: 6px; background: var(--bg-3); border: 1px solid var(--border); font-size: 12px; cursor: grab; }
+.cv-chip .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-chip .meta { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cv-chip.empty { border-color: var(--warn); }
+.cv-chip.empty .meta { color: var(--warn); }
+.cv-chip.ai { border-color: var(--orange); background: rgba(251, 146, 60, .12); }
+.cv-bubble { position: absolute; left: 10px; top: 10px; max-width: min(560px, calc(100% - 20px)); background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .35); z-index: 5; }
+.cv-bubble-head { display: flex; gap: 8px; align-items: flex-start; }
+.cv-crumbs { flex: 1; font-size: 12px; line-height: 1.8; }
+.cv-crumbs .sep { color: var(--text-dim); }
+.cv-crumbs .crumb { background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 5px; cursor: pointer; color: var(--text); }
+.cv-crumbs .crumb:hover { border-color: var(--border); }
+.cv-crumbs .crumb.on { background: rgba(230, 57, 70, .18); border-color: var(--accent); }
+.cv-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+@media (max-width: 1300px) { .cv-page { grid-template-columns: 220px minmax(0, 1fr); height: auto; } .cv-page > .cv-side:last-child { grid-column: 1 / -1; } .cv-main { height: 80vh; } }

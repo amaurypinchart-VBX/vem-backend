@@ -5,7 +5,7 @@
 // Les vues existantes ne passent jamais par ici : leurs clés de cache et leurs traits sont inchangés.
 import type { LoadedScene } from '../scene/loadedScene';
 import { meshesOfNode } from '../scene/loadedScene';
-import type { ModuleFrame, Vec3, ViewBasis } from '../core/views';
+import type { ModuleFrame, Vec3, ViewBasis, ViewSpec } from '../core/views';
 import { dot, projectPoint, viewBasis, viewKey } from '../core/views';
 import type { CustomViewSpec, CustomViewWarning, ViewTagRule } from '../core/customViews/types';
 import { makePathIndex } from '../core/customViews/paths';
@@ -55,6 +55,8 @@ export interface CustomBlock {
   lw: Linework2D;
   /** base du bloc (point 3D → dessin du bloc) */
   basis: ViewBasis;
+  /** vue du moteur (avant rotation / miroir / plafond réfléchi) */
+  view: ViewSpec;
   /** translation du bloc dans le dessin assemblé */
   offset: [number, number];
   /** clé de calcul (cache) ; un bloc identique à un autre partage la sienne */
@@ -295,6 +297,8 @@ export async function computeSpecialView(
     }
   }
 
+  // pièces non fermées coupées (un avertissement par désignation, avec le nombre)
+  const openIds: string[] = [];
   // calcul des blocs (les identiques reprennent le calcul de leur modèle)
   const total = plans.filter((p) => !p.sameAs).length || 1;
   let done = 0;
@@ -349,6 +353,9 @@ export async function computeSpecialView(
     let lw = deps.noCache ? null : await cacheGet(cacheKey);
     if (lw) cached++;
     else {
+      // laisse l'interface se redessiner avant la préparation du paquet (fil principal)
+      await new Promise((r) => setTimeout(r, 0));
+      if (signal?.aborted) throw new DOMException('Annulé', 'AbortError');
       const packet = buildPacket(scene, meshes, deps.glassTest);
       const from = done / total;
       lw = await deps.runner.run(
@@ -360,12 +367,20 @@ export async function computeSpecialView(
     }
     if (spec.style.categoryColors && deps.categoryColors && isTopView(baseBasis))
       lw = { ...lw, layers: [...lw.layers, ...categoryStrokeLayers(scene, visibleMeshes, baseBasis, deps.categoryColors)] };
-    for (const id of (lw.meta as { openSections?: string[] }).openSections ?? [])
-      warnings.push({ code: 'SECTION_OPEN', message: `Coupe ouverte (pièce non fermée dans SketchUp) : ${look.byId.get(id)?.label ?? look.byId.get(id)?.definition ?? look.byId.get(id)?.name ?? id} — trait de coupe sans remplissage`, nodeIds: [id] });
+    for (const id of (lw.meta as { openSections?: string[] }).openSections ?? []) openIds.push(id);
     results.set(p.key, { lw: transformLinework(lw, p.camera.transform, p.camera.basis), cacheKey });
     done++;
     onProgress?.(done / total);
   }
+
+  const openByName = new Map<string, string[]>();
+  for (const id of new Set(openIds)) {
+    const n = look.byId.get(id);
+    const name = n?.label ?? n?.definition ?? n?.name ?? 'pièce';
+    openByName.set(name, [...(openByName.get(name) ?? []), id]);
+  }
+  for (const [name, ids] of openByName)
+    warnings.push({ code: 'SECTION_OPEN', message: `Coupe ouverte (pièce non fermée dans SketchUp) : ${name}${ids.length > 1 ? ` (×${ids.length})` : ''} — trait de coupe sans remplissage`, nodeIds: ids });
 
   // blocs : identiques = traits du modèle translatés de l'écart des origines projetées
   const blocks: CustomBlock[] = plans.map((p) => {
@@ -374,10 +389,10 @@ export async function computeSpecialView(
       const r = results.get(lead.key)!;
       const a = projectPoint(lead.camera.basis, origin(frames.get(lead.modules[0])));
       const b = projectPoint(p.camera.basis, origin(frames.get(p.modules[0])));
-      return { key: p.key, title: p.title, modules: p.modules, lw: translateLinework(r.lw, [b.x - a.x, b.y - a.y]), basis: p.camera.basis, offset: [0, 0], cacheKey: r.cacheKey, sharedFrom: lead.key };
+      return { key: p.key, title: p.title, modules: p.modules, lw: translateLinework(r.lw, [b.x - a.x, b.y - a.y]), basis: p.camera.basis, view: p.camera.view, offset: [0, 0], cacheKey: r.cacheKey, sharedFrom: lead.key };
     }
     const r = results.get(p.key)!;
-    return { key: p.key, title: p.title, modules: p.modules, lw: r.lw, basis: p.camera.basis, offset: [0, 0], cacheKey: r.cacheKey };
+    return { key: p.key, title: p.title, modules: p.modules, lw: r.lw, basis: p.camera.basis, view: p.camera.view, offset: [0, 0], cacheKey: r.cacheKey };
   });
   const reused = blocks.filter((b) => b.sharedFrom).length;
   if (reused) deps.log?.(`[vues spéciales] ${reused} calcul(s) évité(s) (Viewbox identiques)`);

@@ -68,6 +68,8 @@ function multipart(req, raw) {
   return { fields, file };
 }
 
+const appSettings = new Map();
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
@@ -78,7 +80,12 @@ http.createServer(async (req, res) => {
     if (a === '/projects/p1') return json(res, project);
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
-    if (a.startsWith('/settings/')) return json(res, null);
+    if (a.startsWith('/settings/')) {
+      // réglages partagés (app_settings) gardés en mémoire : étiquettes de vue, préréglages…
+      const key = decodeURIComponent(a.slice('/settings/'.length));
+      if (req.method === 'PUT') { appSettings.set(key, JSON.parse((await body(req)).toString()).value); return json(res, appSettings.get(key)); }
+      return json(res, appSettings.has(key) ? appSettings.get(key) : null);
+    }
     if (a === '/loading/rules' && req.method === 'GET') return json(res, [...loadingRules.values()]);
     if (a === '/loading/rules' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());

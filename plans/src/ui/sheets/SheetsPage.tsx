@@ -15,6 +15,9 @@ import { UNIT_GAP_MM, detectUnits } from '../../core/installUnits';
 import type { SheetKind } from '../../sheets/generate';
 import { DEFAULT_SHEET_KINDS, SHEET_KIND_LABELS, generateDrawingSet } from '../../sheets/generate';
 import { projectValues, titleBlockFromProject } from '../../sheets/titleBlock';
+import { cleanCustomViews } from '../../core/customViews/clean';
+import { cleanViewTags } from '../../core/customViews/tags';
+import type { ViewTagRule } from '../../core/customViews/types';
 import { LineworkBank, dimensionDrawingSet, fitDrawingSet } from '../../sheets/bank';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
@@ -31,11 +34,27 @@ interface Props {
   framesVersion: number;
   /** captures enregistrées dans la vue 3D */
   captures: SavedCapture[];
+  /** vues spéciales du modèle (réglages) : fenêtres de vue `custom` */
+  customViews?: unknown[];
+  categoryColors?: Record<string, string>;
 }
 
-export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures }: Props) {
+export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors }: Props) {
   const bank = useMemo(() => new LineworkBank(scene, provider), [scene, provider]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
+  // vues spéciales : la banque relit les vues du modèle (une vue modifiée rend ses fenêtres « obsolètes »)
+  const [viewTags, setViewTags] = useState<ViewTagRule[]>([]);
+  useEffect(() => {
+    vem
+      .getSetting<unknown>('plans.viewTags')
+      .then((v) => setViewTags(cleanViewTags(v)))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const list = cleanCustomViews(customViews);
+    bank.custom = { spec: (id) => list.find((v) => v.id === id), glassTest, viewTags, categoryColors };
+    bank.invalidateKeys();
+  }, [bank, customViews, glassTest, viewTags, categoryColors]);
   const legendColors = useMemo(() => {
     const m = new Map<string, LegendEntry>();
     for (const [key, v] of Object.entries(LEGEND)) m.set(key, { key, label: v.label, color: v.color });

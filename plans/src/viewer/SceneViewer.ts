@@ -19,6 +19,7 @@ import {
   MeshLambertMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  Plane,
   Raycaster,
   Scene,
   SRGBColorSpace,
@@ -38,6 +39,7 @@ import { frontVector, viewBasis } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import { nodeIdOf } from '../scene/loadedScene';
 import type { GlassTest } from '../linework/packets';
+import type { ClipPlane } from '../core/customViews/cuts';
 import { finishCapture } from './captureImage';
 
 // raycast accéléré (BVH) : survol fluide même avec des dizaines de milliers d'objets
@@ -60,7 +62,30 @@ export interface PickInfo {
   itemId: string;
   point: Vec3;
   normal: Vec3 | null;
+  /** vues spéciales : pièce retirée (montrée en rouge transparent) */
+  removed?: boolean;
 }
+
+/** Vues spéciales : état de chaque nœud maillé, plans de coupe par nœud, éléments retirés montrés ou non. */
+export interface CustomDisplay {
+  states: ReadonlyMap<string, 'visible' | 'hidden' | 'ghost'>;
+  /** plans gardés (n·p ≥ d) de chaque nœud maillé */
+  planesOf?: (nodeId: string) => ClipPlane[] | undefined;
+  /** éléments retirés en rouge transparent (cliquables) */
+  showRemoved?: boolean;
+  /** survol : nœud à mettre en surbrillance pour un maillage (ex. le groupe nommé qui le contient) */
+  hoverTarget?: (meshNodeId: string) => string;
+}
+
+/** Plan dessiné dans la 3D (coupes d'une vue spéciale) : carré translucide centré sur `point`. */
+export interface PlaneGizmo {
+  point: Vec3;
+  normal: Vec3;
+  size: number;
+  color?: number;
+}
+
+type ShowState = 'shown' | 'ghost' | 'hidden' | 'removed';
 
 export interface CameraPose {
   projection: Projection;
@@ -121,9 +146,17 @@ export class SceneViewer {
   private readonly byItem = new Map<string, Entry[]>();
   private readonly edgeCache = new Map<string, Float32Array>();
   private readonly overlay = new Group();
-  private edges: LineSegments | null = null;
+  private edges: Group | null = null;
   private readonly markers = new Group();
   private readonly ghostMaterial = new MeshBasicMaterial({ color: 0xb0b6c0, transparent: true, opacity: 0.1, depthWrite: false });
+  private readonly removedMaterial = new MeshBasicMaterial({ color: 0xe63946, transparent: true, opacity: 0.22, depthWrite: false, side: DoubleSide });
+  private custom: CustomDisplay | null = null;
+  private readonly clipCache = new Map<string, Material>();
+  private readonly planeSets = new Map<string, Plane[]>();
+  private readonly gizmos = new Group();
+  /** surbrillance d'un nœud (fil d'Ariane, survol en vue spéciale) : maillages concernés */
+  private nodeHighlight = new Set<Entry>();
+  private hoveredNode: string | null = null;
   private readonly highlightCache = new Map<Material, Material>();
   private readonly materialCache = new Map<Material, Material>();
   private include: Set<string> | null = null;
@@ -168,6 +201,7 @@ export class SceneViewer {
     this.scene3.add(model.root);
     this.scene3.add(this.overlay);
     this.overlay.add(this.markers);
+    this.overlay.add(this.gizmos);
 
     this.raycaster.firstHitOnly = true;
     this.raycaster.params.Line = { threshold: 0 };
@@ -283,8 +317,14 @@ export class SceneViewer {
     this.applyVisibility();
   }
 
-  private isShown(e: Entry): 'shown' | 'ghost' | 'hidden' {
+  private isShown(e: Entry): ShowState {
     if (e.context) return 'hidden';
+    if (this.custom) {
+      const s = this.custom.states.get(e.nodeId) ?? 'hidden';
+      if (s === 'visible') return 'shown';
+      if (s === 'ghost') return 'ghost';
+      return this.custom.showRemoved ? 'removed' : 'hidden';
+    }
     if (e.category && this.hiddenCategories.has(e.category)) return 'hidden';
     if (this.include && !this.model.look.inSet(e.nodeId, this.include)) return this.ghosts ? 'ghost' : 'hidden';
     return 'shown';
@@ -300,8 +340,8 @@ export class SceneViewer {
     for (const e of this.entries) {
       const s = this.isShown(e);
       e.mesh.visible = s !== 'hidden';
-      e.mesh.material = s === 'ghost' ? this.ghostMaterial : this.currentMaterial(e);
-      e.mesh.renderOrder = s === 'ghost' ? 1 : 0;
+      e.mesh.material = s === 'ghost' ? this.clipped(this.ghostMaterial, e) : s === 'removed' ? this.clipped(this.removedMaterial, e) : this.currentMaterial(e);
+      e.mesh.renderOrder = s === 'ghost' || s === 'removed' ? 1 : 0;
     }
     this.rebuildEdges();
     this.rebuildMarkers();
@@ -309,14 +349,97 @@ export class SceneViewer {
   }
 
   private currentMaterial(e: Entry): Material | Material[] {
-    const hl = this.hovered === e.itemId || this.selected === e.itemId;
+    const hl = this.custom ? this.nodeHighlight.has(e) || this.selected === e.nodeId : this.hovered === e.itemId || this.selected === e.itemId || this.nodeHighlight.has(e);
     let base = e.display;
     if (this.colorOverlay) {
       const m = this.overlayMaterial(this.overlayColor(e));
       base = Array.isArray(e.display) ? e.display.map(() => m) : m;
     }
+    if (this.custom?.planesOf) base = Array.isArray(base) ? base.map((m) => this.clipped(m, e)) : this.clipped(base, e);
     if (!hl) return base;
     return Array.isArray(base) ? base.map((m) => this.highlightMaterial(m)) : this.highlightMaterial(base);
+  }
+
+  // ─── vues spéciales : états, coupes, éléments retirés, surbrillance d'un nœud, plans ───
+  /**
+   * Affichage d'une vue spéciale (null = retour à l'isolation classique). Les coupes passent par les plans de
+   * découpe des matériaux (un clone par matériau et par jeu de plans) : le modèle n'est jamais modifié.
+   */
+  setCustomDisplay(custom: CustomDisplay | null): void {
+    this.custom = custom;
+    this.renderer.localClippingEnabled = !!custom?.planesOf;
+    this.nodeHighlight.clear();
+    this.hoveredNode = null;
+    this.applyVisibility();
+  }
+
+  /** Met en surbrillance tous les maillages d'un nœud (null = aucun). */
+  setHighlightNode(nodeId: string | null): void {
+    const before = [...this.nodeHighlight];
+    this.nodeHighlight = new Set(nodeId ? this.entries.filter((e) => this.model.look.inSet(e.nodeId, new Set([nodeId]))) : []);
+    for (const e of [...before, ...this.nodeHighlight]) if (this.isShown(e) === 'shown') e.mesh.material = this.currentMaterial(e);
+    this.requestRender();
+  }
+
+  /** Plans de coupe dessinés dans la 3D. */
+  setPlaneGizmos(planes: PlaneGizmo[]): void {
+    for (const c of [...this.gizmos.children]) {
+      this.gizmos.remove(c);
+      (c as Mesh).geometry?.dispose();
+    }
+    for (const p of planes) {
+      const n = new Vector3(...p.normal).normalize();
+      const a = Math.abs(n.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
+      const u = new Vector3().crossVectors(n, a).normalize().multiplyScalar(p.size / 2);
+      const v = new Vector3().crossVectors(n, u).normalize().multiplyScalar(p.size / 2);
+      const c = new Vector3(...p.point);
+      const pts = [c.clone().add(u).add(v), c.clone().sub(u).add(v), c.clone().sub(u).sub(v), c.clone().add(u).sub(v)];
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute([...pts[0].toArray(), ...pts[1].toArray(), ...pts[2].toArray(), ...pts[0].toArray(), ...pts[2].toArray(), ...pts[3].toArray()], 3));
+      const quad = new Mesh(g, new MeshBasicMaterial({ color: p.color ?? 0x3b82f6, transparent: true, opacity: 0.12, side: DoubleSide, depthWrite: false }));
+      quad.raycast = () => {};
+      quad.renderOrder = 5;
+      this.gizmos.add(quad);
+      const lg = new BufferGeometry();
+      lg.setAttribute('position', new Float32BufferAttribute([...pts[0].toArray(), ...pts[1].toArray(), ...pts[1].toArray(), ...pts[2].toArray(), ...pts[2].toArray(), ...pts[3].toArray(), ...pts[3].toArray(), ...pts[0].toArray()], 3));
+      const outline = new LineSegments(lg, new LineBasicMaterial({ color: p.color ?? 0x3b82f6 }));
+      outline.raycast = () => {};
+      this.gizmos.add(outline);
+    }
+    this.requestRender();
+  }
+
+  /** Plans three.js d'un nœud (gardés : n·p ≥ d ⇔ n·p − d ≥ 0) + clé du jeu. */
+  private planesFor(e: Entry): { key: string; planes: Plane[] } | null {
+    const list = this.custom?.planesOf?.(e.nodeId);
+    if (!list?.length) return null;
+    const key = list.map((p) => `${p.n.map((v) => v.toFixed(6)).join(',')},${p.d.toFixed(2)}`).join(';');
+    let planes = this.planeSets.get(key);
+    if (!planes) {
+      planes = list.map((p) => new Plane(new Vector3(...p.n), -p.d));
+      this.planeSets.set(key, planes);
+    }
+    return { key, planes };
+  }
+
+  private clipped(m: Material, e: Entry): Material {
+    const ps = this.planesFor(e);
+    if (!ps) return m;
+    const k = `${m.uuid}|${ps.key}`;
+    let c = this.clipCache.get(k);
+    if (!c) {
+      c = m.clone();
+      c.clippingPlanes = ps.planes;
+      this.clipCache.set(k, c);
+    }
+    return c;
+  }
+
+  /** Un point est-il gardé par les coupes de ce nœud ? */
+  private keptByCuts(nodeId: string, p: Vector3): boolean {
+    const list = this.custom?.planesOf?.(nodeId);
+    if (!list) return true;
+    return list.every((q) => q.n[0] * p.x + q.n[1] * p.y + q.n[2] * p.z >= q.d - 0.5);
   }
 
   // ─── surcouche de couleurs (étude structure : statut de reconnaissance, taux de travail) ───
@@ -358,11 +481,24 @@ export class SceneViewer {
     return this.entries.filter((e) => this.isShown(e) === 'shown');
   }
 
+  /** Arêtes des objets affichés, groupées par jeu de plans de coupe (vues spéciales) ; un seul groupe sinon. */
+  private edgeGroups(): Array<{ planes: Plane[] | null; positions: Float32Array }> {
+    const groups = new Map<string, { planes: Plane[] | null; entries: Entry[] }>();
+    for (const e of this.shownEntries()) {
+      const ps = this.planesFor(e);
+      const k = ps?.key ?? '';
+      const g = groups.get(k) ?? { planes: ps?.planes ?? null, entries: [] };
+      g.entries.push(e);
+      groups.set(k, g);
+    }
+    return [...groups.values()].map((g) => ({ planes: g.planes, positions: this.worldEdges(g.entries) }));
+  }
+
   /** Arêtes (vives à 30°) des objets affichés, en coordonnées monde, 6 nombres par segment. */
-  private worldEdges(): Float32Array {
+  private worldEdges(list: Entry[] = this.shownEntries()): Float32Array {
     const parts: Array<{ local: Float32Array; e: Entry }> = [];
     let total = 0;
-    for (const e of this.shownEntries()) {
+    for (const e of list) {
       const g = e.mesh.geometry as BufferGeometry;
       let local = this.edgeCache.get(g.uuid);
       if (!local) {
@@ -392,12 +528,16 @@ export class SceneViewer {
   private rebuildEdges(): void {
     if (this.edges) {
       this.overlay.remove(this.edges);
-      this.edges.geometry.dispose();
+      for (const c of this.edges.children) (c as LineSegments).geometry.dispose();
     }
-    const g = new BufferGeometry();
-    g.setAttribute('position', new Float32BufferAttribute(this.worldEdges(), 3));
-    this.edges = new LineSegments(g, new LineBasicMaterial({ color: 0x1a1a1a }));
-    this.edges.raycast = () => {};
+    this.edges = new Group();
+    for (const grp of this.edgeGroups()) {
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(grp.positions, 3));
+      const ls = new LineSegments(g, new LineBasicMaterial({ color: 0x1a1a1a, clippingPlanes: grp.planes ?? null }));
+      ls.raycast = () => {};
+      this.edges.add(ls);
+    }
     this.overlay.add(this.edges);
   }
 
@@ -691,6 +831,7 @@ export class SceneViewer {
     this.pointer.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     this.ensureBvh();
     this.raycaster.setFromCamera(this.pointer, this.camera);
+    if (this.custom) return this.pickCustom();
     const targets = this.entries.filter((e) => this.isShown(e) === 'shown').map((e) => e.mesh as Object3D);
     const hit = this.raycaster.intersectObjects(targets, false)[0];
     if (!hit) return null;
@@ -701,6 +842,38 @@ export class SceneViewer {
       normal = n.toArray() as Vec3;
     }
     return { nodeId, itemId: this.model.look.itemOf(nodeId), point: hit.point.toArray() as Vec3, normal };
+  }
+
+  /**
+   * Vue spéciale : le raycaster de three ignore les plans de coupe ⇒ on prend le premier point gardé par les coupes
+   * de son nœud ; une pièce retirée (rouge) ne passe qu'après les pièces affichées.
+   */
+  private pickCustom(): PickInfo | null {
+    const byMesh = new Map<Object3D, Entry>();
+    for (const e of this.entries) {
+      const s = this.isShown(e);
+      if (s === 'shown' || s === 'removed') byMesh.set(e.mesh, e);
+    }
+    this.raycaster.firstHitOnly = false;
+    const hits = this.raycaster.intersectObjects([...byMesh.keys()], false);
+    this.raycaster.firstHitOnly = true;
+    let removedHit: (typeof hits)[number] | null = null;
+    for (const h of hits) {
+      const e = byMesh.get(h.object);
+      if (!e || !this.keptByCuts(e.nodeId, h.point)) continue;
+      if (this.isShown(e) === 'removed') {
+        removedHit ??= h;
+        continue;
+      }
+      return this.hitInfo(h, e, false);
+    }
+    return removedHit ? this.hitInfo(removedHit, byMesh.get(removedHit.object)!, true) : null;
+  }
+
+  private hitInfo(hit: { object: Object3D; point: Vector3; face?: { normal: Vector3 } | null }, e: Entry, removed: boolean): PickInfo {
+    let normal: Vec3 | null = null;
+    if (hit.face) normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
+    return { nodeId: e.nodeId, itemId: e.itemId, point: hit.point.toArray() as Vec3, normal, removed };
   }
 
   private hoverRaf = 0;
@@ -715,6 +888,15 @@ export class SceneViewer {
       this.hoverRaf = 0;
       if (!this.lastMove || this.disposed) return;
       const p = this.pick(this.lastMove);
+      if (this.custom) {
+        const target = p && !p.removed ? (this.custom.hoverTarget?.(p.nodeId) ?? p.nodeId) : null;
+        if (target !== this.hoveredNode) {
+          this.hoveredNode = target;
+          this.setHighlightNode(target);
+          this.renderer.domElement.style.cursor = p ? 'pointer' : 'default';
+        }
+        return;
+      }
       const id = p?.itemId ?? null;
       if (id !== this.hovered) {
         const prev = this.hovered;
@@ -820,11 +1002,18 @@ export class SceneViewer {
     cam.updateProjectionMatrix();
 
     // arêtes épaisses pour la capture, fantômes et marqueurs retirés
-    const fatGeom = new LineSegmentsGeometry();
-    fatGeom.setPositions(this.worldEdges());
-    const fatMat = new LineMaterial({ color: 0x111111, linewidth: Math.max(1, size / 1400), worldUnits: false });
-    fatMat.resolution.set(w, h);
-    const fat = new LineSegments2(fatGeom, fatMat);
+    const fat = new Group();
+    for (const grp of this.edgeGroups()) {
+      const fatGeom = new LineSegmentsGeometry();
+      fatGeom.setPositions(grp.positions);
+      const fatMat = new LineMaterial({ color: 0x111111, linewidth: Math.max(1, size / 1400), worldUnits: false });
+      if (grp.planes) {
+        fatMat.clippingPlanes = grp.planes;
+        fatMat.clipping = true;
+      }
+      fatMat.resolution.set(w, h);
+      fat.add(new LineSegments2(fatGeom, fatMat));
+    }
     const hiddenGhosts: Mesh[] = [];
     for (const e of this.entries)
       if (e.mesh.visible && this.isShown(e) !== 'shown') {
@@ -837,6 +1026,7 @@ export class SceneViewer {
     this.refreshItems(hl);
     this.edges!.visible = false;
     this.markers.visible = false;
+    this.gizmos.visible = false;
     this.overlay.add(fat);
 
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
@@ -855,8 +1045,11 @@ export class SceneViewer {
       this.renderer.setClearColor(0xffffff, prevClear);
       rt.dispose();
       this.overlay.remove(fat);
-      fatGeom.dispose();
-      fatMat.dispose();
+      for (const c of fat.children) {
+        (c as LineSegments2).geometry.dispose();
+        ((c as LineSegments2).material as LineMaterial).dispose();
+      }
+      this.gizmos.visible = true;
       for (const m of hiddenGhosts) m.visible = true;
       this.edges!.visible = true;
       this.markers.visible = true;
@@ -889,7 +1082,9 @@ export class SceneViewer {
     this.controls.dispose();
     this.scene3.remove(this.model.root);
     if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);
-    this.edges?.geometry.dispose();
+    for (const c of this.edges?.children ?? []) (c as LineSegments).geometry.dispose();
+    for (const m of this.clipCache.values()) m.dispose();
+    this.setPlaneGizmos([]);
     this.bars?.geometry.dispose();
     (this.bars?.material as LineMaterial | undefined)?.dispose();
     for (const m of this.overlayMaterials.values()) m.dispose();

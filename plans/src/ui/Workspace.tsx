@@ -19,6 +19,7 @@ import { createInlineRunner, createWorkerPool } from '../linework/runner';
 import { ProgressBar } from './common';
 import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
+import { CustomViewsPage } from './customViews/CustomViewsPage';
 import { SheetsPage } from './sheets/SheetsPage';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
@@ -41,6 +42,8 @@ interface Props {
 
 export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, inspector }: Props) {
   const [tab, setTab] = useState<Tab>('control');
+  const [sub2d, setSub2d] = useState<'standard' | 'special'>('standard');
+  const [special2dSeen, setSpecial2dSeen] = useState(false);
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set(['control']));
   const [scene, setScene] = useState<LoadedScene | null>(null);
   const [framesVersion, setFramesVersion] = useState(0);
@@ -214,6 +217,8 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             rules={rules}
             framesVersion={framesVersion}
             captures={settings.captures ?? []}
+            customViews={settings.customViews}
+            categoryColors={categoryColors}
           />
         </div>
       )}
@@ -229,7 +234,38 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       )}
       {scene && provider && visited.has('2d') && (
         <div style={{ display: tab === '2d' ? 'block' : 'none' }}>
-          <Views2DPage scene={scene} provider={provider} framesVersion={framesVersion} categoryColors={categoryColors} />
+          <nav className="tabs subtabs">
+            <button className={`tab ${sub2d === 'standard' ? 'active' : ''}`} onClick={() => setSub2d('standard')}>
+              Vues standard
+            </button>
+            <button
+              className={`tab ${sub2d === 'special' ? 'active' : ''}`}
+              onClick={() => {
+                setSub2d('special');
+                setSpecial2dSeen(true);
+              }}
+              data-testid="tab-special-views"
+            >
+              ✂️ Vues spéciales
+            </button>
+          </nav>
+          <div style={{ display: sub2d === 'standard' ? 'block' : 'none' }}>
+            <Views2DPage scene={scene} provider={provider} framesVersion={framesVersion} categoryColors={categoryColors} />
+          </div>
+          {special2dSeen && (
+            <div style={{ display: sub2d === 'special' ? 'block' : 'none' }}>
+              <CustomViewsPage
+                scene={scene}
+                provider={provider}
+                glassTest={glassTest}
+                active={tab === '2d' && sub2d === 'special'}
+                settings={settings}
+                onSaveSettings={saveSettings}
+                categoryColors={categoryColors}
+                model={model}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

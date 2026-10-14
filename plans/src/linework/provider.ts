@@ -90,6 +90,11 @@ export class BrowserHlrProvider implements LineworkProvider {
     return lw;
   }
 
+  /** Pool de calcul (vues spéciales : même pool de Workers que les vues existantes). */
+  get runner(): HlrRunner {
+    return this.opts.runner;
+  }
+
   dispose(): void {
     this.packets.clear();
     this.opts.runner.dispose();

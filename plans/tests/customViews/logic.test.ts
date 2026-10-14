@@ -315,6 +315,21 @@ describe('préréglages et lecture tolérante', () => {
     expect(specFromPreset(roof, 'x', 'n', ['lights']).visibility.map((r) => r.match.viewTags![0])).toEqual(['plafond-tendu', 'eclairage']);
   });
 
+  it('coupes A-A / B-B : l’observateur est du côté retiré (la partie gardée est derrière le plan)', () => {
+    const s = fakeScene([{ id: 'VBX-01', x: 0, z: 0, rot: 30 }]);
+    const ctx = ctxOf(s);
+    const refs = new Map([['VBX-01', moduleRefs(s.index, ctx.look, ctx.tags, s.frames.get('VBX-01')!)]]);
+    for (const key of ['section-long', 'section-short']) {
+      const sp = specFromPreset(VIEW_PRESETS.find((p) => p.key === key)!, 'x', 'n');
+      const cam = cameraView(sp.camera, s.frames, 'VBX-01');
+      const pl = resolveCuts({ index: s.index, look: ctx.look, frames: s.frames, refs, modules: ['VBX-01'] }, sp, s.index.nodes.filter((n) => n.kind === 'mesh').map((n) => n.id));
+      const n = [...pl.byNode.values()][0][0].n;
+      const t = cam.basis.toward;
+      // normale gardée opposée à « vers l'observateur », et plan vu de face
+      expect(n[0] * t[0] + n[1] * t[1] + n[2] * t[2]).toBeCloseTo(-1, 6);
+    }
+  });
+
   it('champ inconnu ignoré, valeurs hors bornes ramenées, entrées illisibles écartées, doublons écartés', () => {
     const out = cleanCustomViews([
       null,

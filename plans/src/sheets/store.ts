@@ -88,6 +88,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 const findSheet = (d: Draft<DrawingSet>, id: string | null) => d.sheets.find((s) => s.id === id);
 
 export const actions = {
+  /** modification libre du document en une entrée d'historique (vues spéciales : planches + repères de coupe) */
+  editDoc(label: string, recipe: (d: Draft<DrawingSet>) => void) {
+    useEditor.getState().apply(label, recipe);
+  },
   addItems(items: SheetItem[], label = 'Ajouter') {
     const { sheetId } = useEditor.getState();
     useEditor.getState().apply(label, (d) => {

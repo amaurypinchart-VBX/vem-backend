@@ -82,6 +82,34 @@ export interface UnitOverlaySpec {
   moduleIds: string[];
 }
 
+/** Repère de coupe verticale (A–A) sur une vue en plan : trait mixte, flèches dans le sens du regard, lettres. */
+export interface SectionMarkSpec {
+  label: string;
+  /** extrémités du trait de coupe (monde, mm) */
+  a: Vec3;
+  b: Vec3;
+  /** sens du regard (monde, unitaire) */
+  look: Vec3;
+}
+
+/** Niveau d'une coupe horizontale sur une élévation : « ▽ +2 550 ». */
+export interface CutLevelSpec {
+  /** hauteur (monde, mm, Y) */
+  y: number;
+  text: string;
+}
+
+/** Vue spéciale posée sur une planche : la vue (réglages du modèle) et le bloc dessiné. */
+export interface CustomViewportRef {
+  viewId: string;
+  /** bloc de la vue : 'assembled', 'm:VBX-01'… */
+  block: string;
+  /** orientation dite sous le titre (« Vue de dessous (miroir du plan) ») */
+  subtitle?: string;
+  /** l'échelle est écrite dans le titre (« … — 1:50 ») */
+  scaleInTitle?: boolean;
+}
+
 export interface ViewportItem extends ItemBase {
   type: 'viewport';
   rect: RectMm;
@@ -101,7 +129,21 @@ export interface ViewportItem extends ItemBase {
    * contour de chaque Viewbox (plan d'implantation), numéros de Viewbox (plan d'assemblage), cadre + nom de chaque
    * unité (vue aérienne de l'ensemble)
    */
-  overlays?: { moduleOutlines?: boolean; moduleNumbers?: boolean; statusColors?: Record<string, string>; units?: UnitOverlaySpec[]; hideUnits?: boolean; calage?: CalagePlateSpec[]; levels?: LevelMarkSpec[] };
+  overlays?: {
+    moduleOutlines?: boolean;
+    moduleNumbers?: boolean;
+    statusColors?: Record<string, string>;
+    units?: UnitOverlaySpec[];
+    hideUnits?: boolean;
+    calage?: CalagePlateSpec[];
+    levels?: LevelMarkSpec[];
+    /** repères des coupes verticales des vues spéciales du jeu (vues en plan) */
+    sectionMarks?: SectionMarkSpec[];
+    /** niveaux des coupes horizontales des vues spéciales du jeu (élévations) */
+    cutLevels?: CutLevelSpec[];
+  };
+  /** vue spéciale (absent = vue standard) */
+  custom?: CustomViewportRef;
   /** clé du calcul utilisé pour le rendu : si elle ne correspond plus, la vue est obsolète */
   lineworkKey?: string;
 }
