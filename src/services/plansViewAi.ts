@@ -11,8 +11,18 @@ import { logAiCall } from './structureAi';
 import { costOf, normalizeViewAi } from './structureAiGuard';
 import type { ViewAiInventory, ViewAiNormalized } from './structureAiGuard';
 
-/** Modèle rapide et économique par défaut ; variable dédiée pour le changer. */
-export const PLANS_VIEW_MODEL = process.env.ANTHROPIC_MODEL_PLANS_VIEW || 'claude-haiku-5-5';
+/** Sonnet par défaut (choix d'A. Pinchart 15.10.2026, ≈ 2–3 centimes par demande) ; variable dédiée pour le changer. */
+export const PLANS_VIEW_MODEL = process.env.ANTHROPIC_MODEL_PLANS_VIEW || 'claude-sonnet-5-5';
+
+/** Coût maximal d'une demande (USD) : estimé avant l'envoi, la demande est refusée au-delà. */
+export const PLANS_VIEW_MAX_COST = 0.1;
+/** Réponse plafonnée : une proposition tient en quelques centaines de jetons. */
+const MAX_OUTPUT_TOKENS = 4000;
+
+/** Coût maximal estimé d'une demande : texte envoyé ≈ 1 jeton pour 3 caractères (prudent), réponse au plafond. */
+export function worstCaseCost(model: string, chars: number): number | null {
+  return costOf(model, { input_tokens: Math.ceil(chars / 3), output_tokens: MAX_OUTPUT_TOKENS });
+}
 
 export const viewAiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
 
@@ -84,13 +94,16 @@ export async function describeView(input: ViewAiInputT, ctx: { userId?: string }
   const payloadText = JSON.stringify(input.payload);
   if (payloadText.length > 200_000) throw new AppError('Inventaire trop volumineux pour l’IA', 413);
   const answers = input.answers?.length ? `\n\nRéponses à tes questions :\n${input.answers.map((a) => `- ${a.question} → ${a.answer}`).join('\n')}` : '';
+  const worst = worstCaseCost(PLANS_VIEW_MODEL, SYSTEM.length + payloadText.length + input.text.length + answers.length);
+  if (worst != null && worst > PLANS_VIEW_MAX_COST)
+    throw new AppError(`Modèle trop gros pour l’IA (jusqu’à ${worst.toFixed(2)} $ la demande, maximum ${PLANS_VIEW_MAX_COST.toFixed(2)} $) : réduire la portée de la vue ou faire la vue à la main.`, 413);
   const t0 = Date.now();
   let data: any;
   try {
     data = await anthropicRequest(
       {
         model: PLANS_VIEW_MODEL,
-        max_tokens: 8000,
+        max_tokens: MAX_OUTPUT_TOKENS,
         system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
         messages: [
           {
