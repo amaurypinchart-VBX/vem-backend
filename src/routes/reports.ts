@@ -3,7 +3,8 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
-import { generateDailyReportPdf, generateHandoverPdf } from '../services/pdfService';
+import { generateHandoverPdf } from '../services/pdfService';
+import { buildDailyReportPdf } from '../services/dailyAttachments';
 import { logger } from '../utils/logger';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 
@@ -12,42 +13,13 @@ const router = Router();
 // GET /reports/daily/:id — download daily report PDF
 router.get('/daily/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const r = await prisma.dailyReport.findUnique({
-      where: { id: req.params.id },
-      include: {
-        entries: true,
-        checklist: true,
-        photos: true,
-        createdBy: { select: { firstName:true, lastName:true } },
-        project: {
-          select: {
-            name: true,
-            internalNumber: true,
-            address: true,
-            client: {
-              select: { name: true, contactName: true, email: true, phone: true, address: true },
-            },
-          },
-        },
-      },
-    });
-    if (!r) throw new AppError('Rapport introuvable', 404);
-
+    const lang: 'fr' | 'en' = (req.query.lang === 'en') ? 'en' : 'fr';
+    // PDF complet : rapport + check-lists jointes + pages des fichiers joints
+    const built = await buildDailyReportPdf(req.params.id, lang);
+    if (!built) throw new AppError('Rapport introuvable', 404);
+    const r = built.report;
+    const pdf = built.buffer;
     logger.info(`[pdf-daily] Génération pour ${r.id} — ${r.entries.length} entrées, ${r.photos.length} photos`);
-
-    const pdf = await generateDailyReportPdf({
-      project: r.project,
-      client: r.project.client || null,        // ← coordonnées du contact client transmises au PDF
-      reportDate: r.reportDate,
-      reportId: r.id,
-      createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : undefined,
-      weather: r.weather,
-      workersPresent: r.workersPresent,
-      generalNotes: r.generalNotes,
-      entries: r.entries,
-      checklist: r.checklist,
-      photos: r.photos,
-    });
 
     // Archivage best-effort dans les fichiers du projet — ne bloque pas le téléchargement.
     saveProjectFilePdf(r.projectId, pdf, `DailyReport_${r.project.internalNumber}_${new Date(r.reportDate).toISOString().slice(0,10)}.pdf`, 'daily_report', req.user?.id);

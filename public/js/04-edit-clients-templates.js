@@ -651,6 +651,9 @@ async function editDailyReport(id) {
         </label>
       </div>
 
+      <!-- Pièces jointes : fichiers + check-lists (js/16-daily-attachments.js) -->
+      <div id="er-attachments" style="margin-top:14px;"></div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button type="button" class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <button type="button" class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
@@ -661,6 +664,7 @@ async function editDailyReport(id) {
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
   renderEditEntries();
   renderEditTaskHoursGrid();
+  if (typeof loadDailyAttachmentsBox === 'function') loadDailyAttachmentsBox('er-attachments', id, r.projectId, true);
 }
 
 // ── Heures par tâche (modal d'édition) ────────────────────────

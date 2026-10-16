@@ -535,12 +535,14 @@ async function loadDailyReports() {
           <div style="display:flex;gap:10px;margin-top:6px;font-size:12px;flex-wrap:wrap;align-items:center;">
             <span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">⏱️ ${nbEntries} entrée${nbEntries>1?'s':''}</span>
             ${nbPhotos>0?`<span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">📸 ${nbPhotos} photo${nbPhotos>1?'s':''}</span>`:''}
+            ${r._count?.attachments>0?`<span style="background:var(--bg3);padding:2px 8px;border-radius:10px;">📎 ${r._count.attachments} pièce${r._count.attachments>1?'s':''} jointe${r._count.attachments>1?'s':''}</span>`:''}
             ${updatedAgo?`<span style="color:var(--text3);font-size:11px;">· ${updatedAgo}</span>`:''}
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-start;flex-shrink:0;" onclick="event.stopPropagation();">
           ${r.sentAt?'<span class="badge badge-green">✉️ Envoyé</span>':''}
           <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
+          <button class="btn btn-ghost btn-sm" title="Ouvrir le PDF pour l’imprimer" onclick="printDailyPDF('${r.id}')">🖨️</button>
           ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
         </div>
       </div>

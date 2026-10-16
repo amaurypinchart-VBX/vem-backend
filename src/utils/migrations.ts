@@ -1421,4 +1421,44 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] tables loading_* : ${e.message}`);
   }
+
+  // ─── Pièces jointes des daily reports (fichiers + état des check-lists, intégrés dans le PDF) ───
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "daily_report_attachments" (
+        "id"              TEXT         NOT NULL,
+        "report_id"       TEXT         NOT NULL,
+        "kind"            TEXT         NOT NULL DEFAULT 'file',
+        "file_url"        TEXT,
+        "public_id"       TEXT,
+        "resource_type"   TEXT,
+        "file_name"       TEXT         NOT NULL,
+        "mime_type"       TEXT,
+        "size_bytes"      INTEGER,
+        "page_count"      INTEGER,
+        "embeddable"      BOOLEAN      NOT NULL DEFAULT true,
+        "checklist_phase" TEXT,
+        "snapshot"        JSONB,
+        "snapshot_at"     TIMESTAMP(3),
+        "sort_order"      INTEGER      NOT NULL DEFAULT 0,
+        "created_by"      TEXT,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "daily_report_attachments_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "daily_report_attachments_report_id_idx" ON "daily_report_attachments" ("report_id")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'daily_report_attachments_report_id_fkey') THEN
+          ALTER TABLE "daily_report_attachments"
+            ADD CONSTRAINT "daily_report_attachments_report_id_fkey"
+            FOREIGN KEY ("report_id") REFERENCES "daily_reports"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] table daily_report_attachments créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] daily_report_attachments : ${e.message}`);
+  }
 }

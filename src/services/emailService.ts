@@ -279,9 +279,16 @@ export async function sendDailyReport(opts: {
   notes?: string;
   entries: any[];
   pdfBuffer?: Buffer;
+  /** pièces jointes du rapport qui n'ont pas pu être intégrées au PDF (Word, Excel…) : envoyées en lien */
+  links?: Array<{ name: string; url: string }>;
   lang?: 'fr' | 'en';
 }) {
   const lang = opts.lang === 'en' ? 'en' : 'fr';
+  const linksTitle = lang === 'en' ? 'Other attachments (links)' : 'Autres pièces jointes (liens)';
+  const htmlEsc = (v: string) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const linksHtml = (opts.links || []).length
+    ? `<p><strong>${linksTitle} :</strong></p><ul>${(opts.links || []).map(l => `<li><a href="${htmlEsc(l.url)}">${htmlEsc(l.name)}</a></li>`).join('')}</ul>`
+    : '';
 
   // Traductions inline (le dico complet est dans pdfService.ts mais ici on garde simple)
   const T = {
@@ -311,7 +318,8 @@ export async function sendDailyReport(opts: {
     <p>${T.intro}</p>
     <div class="info">${entriesHtml || `<p style="color:#999;font-size:13px;">${T.noEntries}</p>`}</div>
     ${opts.notes ? `<p><strong>${T.notesLabel} :</strong> ${opts.notes}</p>` : ''}
-    ${opts.pdfBuffer ? `<p>${T.attached}</p>` : ''}`;
+    ${opts.pdfBuffer ? `<p>${T.attached}</p>` : ''}
+    ${linksHtml}`;
 
   await sendMail({
     to: opts.to,
@@ -320,6 +328,30 @@ export async function sendDailyReport(opts: {
     attachments: opts.pdfBuffer
       ? [{ filename: `Daily_${opts.projectName}_${opts.date}.pdf`, content: opts.pdfBuffer }]
       : undefined,
+  });
+}
+
+export async function sendChecklistPdf(opts: {
+  to: string | string[];
+  projectName: string;
+  title: string;
+  fileName: string;
+  pdfBuffer: Buffer;
+  message?: string;
+  lang?: 'fr' | 'en';
+}) {
+  const en = opts.lang === 'en';
+  const htmlEsc = (v: string) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const content = `
+    <p>${en ? 'Hello,' : 'Bonjour,'}</p>
+    <p>${en ? 'Please find attached the' : 'Veuillez trouver ci-joint la'} <strong>${htmlEsc(opts.title.toLowerCase())}</strong> ${en ? 'of the project' : 'du projet'} <strong>${htmlEsc(opts.projectName)}</strong> ${en ? '(current status).' : '(état actuel).'}</p>
+    ${opts.message ? `<p style="white-space:pre-wrap;">${htmlEsc(opts.message)}</p>` : ''}
+    <p>${en ? 'Best regards,<br>The VIEWBOX team' : 'Cordialement,<br>L\'équipe VIEWBOX'}</p>`;
+  await sendMail({
+    to: opts.to,
+    subject: `[VEM] ${opts.title} — ${opts.projectName}`,
+    html: base(`☑️ ${opts.title}`, content),
+    attachments: [{ filename: opts.fileName, content: opts.pdfBuffer, contentType: 'application/pdf' }],
   });
 }
 

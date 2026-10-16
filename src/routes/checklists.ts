@@ -15,6 +15,9 @@ import {
   loadProjectChecklist, loadChecklistItem, userRefs, PHOTO_ONLY, isPhoto,
 } from '../services/checklistService';
 import { io } from '../index';
+import { checklistSnapshot } from '../services/dailyAttachments';
+import { generateChecklistPdf } from '../services/pdfService';
+import { sendChecklistPdf } from '../services/emailService';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -268,6 +271,64 @@ router.get('/project/:projectId', async (req: AuthRequest, res: Response, next: 
     const phase = parsePhase(req.query.phase);
     await assertProjectAccess(req.user, req.params.projectId);
     res.json({ success: true, data: await loadProjectChecklist(req.params.projectId, phase) });
+  } catch (err) { next(err); }
+});
+
+const PHASE_TITLES: Record<string, { fr: string; en: string; file: string }> = {
+  preparation: { fr: 'Check-list de préparation', en: 'Preparation checklist', file: 'Checklist_Preparation' },
+  installation: { fr: 'Check-list de montage', en: 'Installation checklist', file: 'Checklist_Montage' },
+  dismantling: { fr: 'Check-list de démontage', en: 'Dismantling checklist', file: 'Checklist_Demontage' },
+};
+
+/** PDF de la check-list d'une phase, état actuel (en cours ou validée). */
+async function checklistPdf(req: AuthRequest, projectId: string, phase: string, lang: 'fr' | 'en') {
+  await assertProjectAccess(req.user, projectId);
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true, internalNumber: true, address: true, client: { select: { name: true } } },
+  });
+  if (!project) throw new AppError('Projet introuvable', 404);
+  const snap = await checklistSnapshot(projectId, phase);
+  if (!snap) throw new AppError('Cette check-list n’est pas encore configurée pour ce projet.', 404);
+  const buffer = await generateChecklistPdf({
+    project: { name: project.name, internalNumber: project.internalNumber, address: project.address },
+    clientName: project.client?.name || null,
+    phase, checklist: snap.checklist, siteManagerName: snap.siteManagerName, lang,
+  });
+  const day = new Date().toISOString().slice(0, 10);
+  const fileName = `${PHASE_TITLES[phase].file}_${String(project.internalNumber || '').replace(/[^A-Za-z0-9_-]+/g, '_')}_${day}_${lang}.pdf`;
+  return { buffer, fileName, project, title: PHASE_TITLES[phase][lang] };
+}
+
+// GET /checklists/project/:projectId/pdf?phase=…&lang=fr|en[&inline=1] — PDF de la check-list à tout moment
+// (avant ou pendant l'installation) ; inline=1 = ouvert dans le navigateur pour l'imprimer.
+router.get('/project/:projectId/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const phase = parsePhase(req.query.phase);
+    const lang: 'fr' | 'en' = req.query.lang === 'en' ? 'en' : 'fr';
+    const { buffer, fileName } = await checklistPdf(req, req.params.projectId, phase, lang);
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `${req.query.inline ? 'inline' : 'attachment'}; filename="${fileName}"`);
+    res.send(buffer);
+  } catch (err) { next(err); }
+});
+
+// POST /checklists/project/:projectId/send — { phase, lang, recipients: string[], message? } : envoie le PDF par e-mail
+router.post('/project/:projectId/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const phase = parsePhase(req.body?.phase);
+    const lang: 'fr' | 'en' = req.body?.lang === 'en' ? 'en' : 'fr';
+    const recipients = [...new Set((Array.isArray(req.body?.recipients) ? req.body.recipients : [])
+      .map((e: unknown) => String(e).trim().toLowerCase())
+      .filter((e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))] as string[];
+    if (!recipients.length) throw new AppError('Aucun destinataire valide', 400);
+    if (recipients.length > 30) throw new AppError('30 destinataires maximum', 400);
+    const { buffer, fileName, project, title } = await checklistPdf(req, req.params.projectId, phase, lang);
+    await sendChecklistPdf({
+      to: recipients, projectName: project.name, title, fileName, pdfBuffer: buffer,
+      message: text(req.body?.message, 2000) || undefined, lang,
+    });
+    res.json({ success: true, data: { sentTo: recipients.length, recipients } });
   } catch (err) { next(err); }
 });
 

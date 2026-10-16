@@ -85,6 +85,15 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.noOpenItems':           'Aucun point ouvert.',
     'checklist.na':                    'Non applicables ({n})',
     'checklist.continued':             '(suite)',
+    'checklist.section.preparation':   'Check-list de préparation',
+    'checklist.section.installation':  'Check-list de montage',
+    'checklist.section.dismantling':   'Check-list de démontage',
+    'checklist.title.preparation':     'CHECK-LIST PRÉPARATION',
+    'checklist.title.installation':    'CHECK-LIST DE MONTAGE',
+    'checklist.title.dismantling':     'CHECK-LIST DÉMONTAGE',
+    'checklist.stateAt':               'État au {date}',
+    'checklist.email.subject':         'Check-list',
+    'checklist.email.bodyLine':        'Veuillez trouver ci-joint la check-list du projet',
 
     // ─── Daily Report ───
     'daily.title':                'DAILY REPORT',
@@ -104,6 +113,19 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'daily.label.contact':        'Contact',
     'daily.label.email':          'Email',
     'daily.label.phone':          'Tél.',
+    'daily.section.attachments':  'Pièces jointes',
+    'daily.att.checklist':        '{title} - état au {date} : reprise ci-dessous dans ce rapport',
+    'daily.att.annex':            'Annexe {n}',
+    'daily.att.pdf':              '{n} page(s) ajoutée(s) à la fin de ce rapport',
+    'daily.att.image':            'image ajoutée à la fin de ce rapport',
+    'daily.att.link':             'non intégrable dans le PDF ({why}) - ouvrir le lien :',
+    'daily.att.why.office':       'document Word / Excel / PowerPoint',
+    'daily.att.why.protected':    'PDF protégé par mot de passe',
+    'daily.att.why.unreadable':   'fichier illisible',
+    'daily.att.why.other':        'type de fichier non affichable',
+    'daily.att.why.tooBig':       'trop volumineux pour l\'email',
+    'daily.att.stamp':            'Daily report du {date} - Annexe {n} : {name} - page {p}/{pp}',
+    'daily.att.truncated':        '(seules les {n} premières pages sont reprises)',
 
     // ─── Visit Report ───
     'visit.title':                'VISITE CLIENT',
@@ -195,6 +217,15 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.noOpenItems':           'No open item.',
     'checklist.na':                    'Not applicable ({n})',
     'checklist.continued':             '(continued)',
+    'checklist.section.preparation':   'Preparation checklist',
+    'checklist.section.installation':  'Installation checklist',
+    'checklist.section.dismantling':   'Dismantling checklist',
+    'checklist.title.preparation':     'PREPARATION CHECKLIST',
+    'checklist.title.installation':    'INSTALLATION CHECKLIST',
+    'checklist.title.dismantling':     'DISMANTLING CHECKLIST',
+    'checklist.stateAt':               'Status as of {date}',
+    'checklist.email.subject':         'Checklist',
+    'checklist.email.bodyLine':        'Please find attached the checklist of the project',
 
     // ─── Daily Report ───
     'daily.title':                'DAILY REPORT',
@@ -214,6 +245,19 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'daily.label.contact':        'Contact',
     'daily.label.email':          'Email',
     'daily.label.phone':          'Phone',
+    'daily.section.attachments':  'Attachments',
+    'daily.att.checklist':        '{title} - status as of {date}: included below in this report',
+    'daily.att.annex':            'Appendix {n}',
+    'daily.att.pdf':              '{n} page(s) added at the end of this report',
+    'daily.att.image':            'image added at the end of this report',
+    'daily.att.link':             'cannot be embedded in the PDF ({why}) - open the link:',
+    'daily.att.why.office':       'Word / Excel / PowerPoint document',
+    'daily.att.why.protected':    'password-protected PDF',
+    'daily.att.why.unreadable':   'unreadable file',
+    'daily.att.why.other':        'file type cannot be displayed',
+    'daily.att.why.tooBig':       'too large for the email',
+    'daily.att.stamp':            'Daily report of {date} - Appendix {n}: {name} - page {p}/{pp}',
+    'daily.att.truncated':        '(only the first {n} pages are included)',
 
     // ─── Visit Report ───
     'visit.title':                'CLIENT VISIT',
@@ -272,6 +316,7 @@ function s(text: any): string {
     .replace(/\u00A0/g, ' ')                         // nbsp     → espace
     .replace(/[\u200B-\u200D\uFEFF]/g, '')           // zero-width spaces → rien
     .replace(/[\u2022\u2023\u25E6\u2043]/g, '-')    // • ‣ ◦ ⁃   → -
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\uFE0F\u200D]\s?/gu, '') // emojis (☀️ Ensoleillé) → rien
     .replace(/[^\x00-\xFF]/g, '?');                  // tout caractère non Latin-1 → ?
 }
 
@@ -319,8 +364,12 @@ function header(doc: any, subtitle: string, info?: { projectName?: string; proje
 function footer(doc: any, lang: Lang = 'fr') {
   doc.rect(0, 810, 595, 30).fill('#f8f8f8');
   const locale = lang === 'en' ? 'en-US' : 'fr-FR';
+  // texte sous la marge du bas : sans marge nulle, pdfkit ajouterait une page presque vide pour lui
+  const bottom = doc.page.margins.bottom;
+  doc.page.margins.bottom = 0;
   doc.fillColor(MUTED).fontSize(8).font('Helvetica')
-    .text(`${t('common.generatedBy', lang)} · ${new Date().toLocaleString(locale)}`, 40, 817, { align: 'center', width: 515 });
+    .text(`${t('common.generatedBy', lang)} · ${new Date().toLocaleString(locale)}`, 40, 817, { align: 'center', width: 515, lineBreak: false });
+  doc.page.margins.bottom = bottom;
 }
 
 function sectionTitle(doc: any, title: string) {
@@ -435,18 +484,37 @@ async function translateChecklist(cl: HandoverChecklistPdf, lang: Lang): Promise
  * Section « Check-list de montage » : en-tête, tableau par catégorie (sans les N.A.), photos (2 par point),
  * récapitulatif (totaux, points ouverts) puis les N.A. regroupés sur une ligne.
  */
-function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<number, Buffer[]>, siteManagerName: string, lang: Lang) {
+export interface ChecklistSectionOptions {
+  /** preparation | installation | dismantling (titre de la section ; pas de type de Viewbox en préparation) */
+  phase?: string;
+  siteManagerName?: string | null;
+  /** date de l'état montré (PDF autonome, daily report) */
+  stateAt?: Date | string | null;
+  /** commence la section sur une nouvelle page */
+  newPage?: boolean;
+}
+
+function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<number, Buffer[]>, opts: ChecklistSectionOptions, lang: Lang) {
   const BOTTOM = 790;
   const X = 40;
   const W = 515;
   const statusLabel = (st: string) => t(`checklist.status.${st}`, lang);
+  const phase = opts.phase || 'installation';
 
-  doc.moveDown(0.8);
-  if (doc.y > 640) doc.addPage();
-  sectionTitle(doc, t('checklist.section', lang));
-  infoRow(doc, t('checklist.viewboxType', lang), t(`checklist.type.${cl.viewboxType}`, lang));
+  if (opts.newPage) doc.addPage();
+  else {
+    doc.moveDown(0.8);
+    if (doc.y > 640) doc.addPage();
+  }
+  sectionTitle(doc, t(`checklist.section.${phase}`, lang));
+  if (opts.stateAt) {
+    doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9)
+      .text(t('checklist.stateAt', lang).replace('{date}', fmtChecklistDate(opts.stateAt, lang, true)), X, doc.y, { width: W });
+    doc.moveDown(0.4);
+  }
+  if (phase !== 'preparation') infoRow(doc, t('checklist.viewboxType', lang), t(`checklist.type.${cl.viewboxType}`, lang));
   if (cl.boxesChecked) infoRow(doc, t('checklist.boxes', lang), s(cl.boxesChecked));
-  infoRow(doc, t('handover.field.siteManager', lang), s(siteManagerName));
+  if (opts.siteManagerName) infoRow(doc, t('handover.field.siteManager', lang), s(opts.siteManagerName));
   infoRow(doc, t('checklist.validation', lang), cl.validatedAt
     ? t('checklist.validatedOn', lang).replace('{date}', fmtChecklistDate(cl.validatedAt, lang, false)).replace('{name}', s(cl.validatedByName || '-'))
     : t('checklist.notValidated', lang));
@@ -581,6 +649,83 @@ function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<
   }
 }
 
+/** Traduit la check-list (hors français) et télécharge ses vignettes (2 par point, hors N.A.), par index de point. */
+async function prepareChecklistForPdf(cl: HandoverChecklistPdf, lang: Lang): Promise<Map<number, Buffer[]>> {
+  await translateChecklist(cl, lang);
+  const thumbs = new Map<number, Buffer[]>();
+  const wanted: Array<{ idx: number; url: string }> = [];
+  cl.items.forEach((it, idx) => {
+    if (it.status === 'na') return;
+    (it.photos || []).slice(0, CHECKLIST_PDF_PHOTOS_PER_ITEM).forEach(p => wanted.push({ idx, url: p.photoUrl }));
+  });
+  const bufs = await fetchPdfThumbs(wanted.map(w => w.url), 'f_jpg,c_fill,w_480,h_360,q_auto:good');
+  wanted.forEach((w, i) => {
+    const buf = bufs[i];
+    if (!buf) return;
+    if (!thumbs.has(w.idx)) thumbs.set(w.idx, []);
+    thumbs.get(w.idx)!.push(buf);
+  });
+  return thumbs;
+}
+
+/**
+ * PDF autonome d'une check-list (préparation, montage ou démontage), à n'importe quel moment :
+ * en cours (« État au … », non validée) ou validée. Imprimable / envoyable par e-mail.
+ */
+export async function generateChecklistPdf(data: {
+  project: { name: string; internalNumber: string; address?: string | null };
+  clientName?: string | null;
+  phase: string;
+  checklist: HandoverChecklistPdf;
+  siteManagerName?: string | null;
+  lang?: Lang;
+}): Promise<Buffer> {
+  const lang: Lang = data.lang || 'fr';
+  const cl = data.checklist;
+  const thumbs = await prepareChecklistForPdf(cl, lang);
+  const now = new Date();
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, t(`checklist.title.${data.phase}`, lang), {
+      projectName: s(data.project.name),
+      projectRef: `N° ${s(data.project.internalNumber)}`,
+      reportDate: fmtChecklistDate(now, lang, false),
+    }, lang);
+    sectionTitle(doc, t('handover.section.projectInfo', lang));
+    infoRow(doc, t('handover.field.project', lang), s(data.project.name));
+    infoRow(doc, t('handover.field.internalRef', lang), s(data.project.internalNumber));
+    if (data.clientName) infoRow(doc, t('handover.field.client', lang), s(data.clientName));
+    if (data.project.address) infoRow(doc, t('handover.field.address', lang), s(data.project.address));
+    renderChecklistSection(doc, cl, thumbs, { phase: data.phase, siteManagerName: data.siteManagerName, stateAt: now }, lang);
+    footer(doc, lang);
+    doc.end();
+  });
+}
+
+/** Pièce jointe d'un daily report telle que listée / dessinée dans son PDF (voir dailyAttachments.ts). */
+export interface DailyAttachmentPdf {
+  kind: 'checklist' | 'file';
+  fileName: string;
+  url?: string | null;
+  /** fichier : numéro d'annexe (pages ajoutées à la fin) ; absent = non intégré (lien) */
+  annex?: number | null;
+  annexKind?: 'pdf' | 'image' | null;
+  pages?: number | null;
+  truncatedTo?: number | null;
+  /** fichier non intégré : raison (clé daily.att.why.*) */
+  why?: string | null;
+  /** check-list : état figé au moment où elle a été jointe */
+  phase?: string | null;
+  checklist?: HandoverChecklistPdf | null;
+  siteManagerName?: string | null;
+  snapshotAt?: Date | string | null;
+}
+
 export async function generateHandoverPdf(data: {
   project: { name: string; internalNumber: string; address: string };
   clientName: string;
@@ -659,22 +804,7 @@ export async function generateHandoverPdf(data: {
 
   // ─── Check-list de montage : traduction + vignettes (2 par point, hors N.A.) ───
   const checklist = data.checklist && data.checklist.items.length ? data.checklist : null;
-  const checklistThumbs = new Map<number, Buffer[]>();
-  if (checklist) {
-    await translateChecklist(checklist, lang);
-    const wanted: Array<{ idx: number; url: string }> = [];
-    checklist.items.forEach((it, idx) => {
-      if (it.status === 'na') return;
-      it.photos.slice(0, CHECKLIST_PDF_PHOTOS_PER_ITEM).forEach(p => wanted.push({ idx, url: p.photoUrl }));
-    });
-    const bufs = await fetchPdfThumbs(wanted.map(w => w.url), 'f_jpg,c_fill,w_480,h_360,q_auto:good');
-    wanted.forEach((w, i) => {
-      const buf = bufs[i];
-      if (!buf) return;
-      if (!checklistThumbs.has(w.idx)) checklistThumbs.set(w.idx, []);
-      checklistThumbs.get(w.idx)!.push(buf);
-    });
-  }
+  const checklistThumbs = checklist ? await prepareChecklistForPdf(checklist, lang) : new Map<number, Buffer[]>();
 
   // ─── Pré-charge les signatures ───
   const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
@@ -815,7 +945,7 @@ export async function generateHandoverPdf(data: {
     }
 
     // ─── Section Check-list de montage (après les zones) ───
-    if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, displaySiteManager, lang);
+    if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager }, lang);
 
     // ─── Section Comments / Reservations ───
     if (data.generalNotes && data.generalNotes.trim()) {
@@ -922,13 +1052,20 @@ export async function generateDailyReportPdf(data: {
   photos?: Array<{ photoUrl: string; caption?: string | null }>;
   reportId?: string;
   lang?: Lang;
+  /** pièces jointes : listées dans le rapport ; les check-lists y sont dessinées (les annexes sont ajoutées après, dailyAttachments.ts) */
+  attachments?: DailyAttachmentPdf[];
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
-  console.log('[DEBUG daily pdf] lang reçu:', lang, 'data.lang:', data.lang);
+  const attachments = data.attachments || [];
+  // check-lists jointes : traduction + vignettes avant le dessin
+  const checklistParts: Array<{ att: DailyAttachmentPdf; thumbs: Map<number, Buffer[]> }> = [];
+  for (const att of attachments) {
+    if (att.kind === 'checklist' && att.checklist && att.checklist.items.length)
+      checklistParts.push({ att, thumbs: await prepareChecklistForPdf(att.checklist, lang) });
+  }
 
   // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
   if (lang !== 'fr') {
-    console.log('[DEBUG] entrée dans bloc traduction');
     const fields: { kind: string; idx: number; text: string }[] = [];
     (data.entries || []).forEach((e, i) => {
       if (e.description) fields.push({ kind: 'entry', idx: i, text: e.description });
@@ -943,11 +1080,8 @@ export async function generateDailyReportPdf(data: {
     });
     if (data.weather) fields.push({ kind: 'weather', idx: 0, text: data.weather });
 
-    console.log('[DEBUG] nombre de textes à traduire:', fields.length);
-
     if (fields.length > 0) {
       const translated = await translateTexts(fields.map(f => f.text), lang);
-      console.log('[DEBUG] traductions reçues:', translated);
       fields.forEach((f, i) => {
         const t = translated[i];
         if (!t) return;
@@ -1102,6 +1236,45 @@ export async function generateDailyReportPdf(data: {
       doc.rect(40, noteY, 515, 4).fill(AMBER);
       doc.fillColor(DARK).font('Helvetica').fontSize(11).text(s(data.generalNotes), 40, noteY + 12, { width: 515, lineGap: 2 });
       doc.moveDown(0.8);
+    }
+
+    // Pièces jointes : liste (check-lists reprises ci-dessous, fichiers en annexe ou en lien)
+    if (attachments.length > 0) {
+      if (doc.y > 700) doc.addPage();
+      sectionTitle(doc, `${t('daily.section.attachments', lang)} (${attachments.length})`);
+      for (const att of attachments) {
+        if (doc.y > 760) doc.addPage();
+        const y0 = doc.y;
+        doc.roundedRect(40, y0 + 1, 4, 11, 1).fill(att.kind === 'checklist' ? GREEN : (att.annex ? DARK : AMBER));
+        if (att.kind === 'checklist') {
+          const title = t(`checklist.section.${att.phase || 'installation'}`, lang);
+          doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10.5)
+            .text(t('daily.att.checklist', lang).replace('{title}', title).replace('{date}', att.snapshotAt ? fmtChecklistDate(att.snapshotAt, lang, true) : '-'), 52, y0, { width: 503 });
+        } else {
+          const head = att.annex ? `${t('daily.att.annex', lang).replace('{n}', String(att.annex))} - ` : '';
+          doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10.5).text(`${head}${s(att.fileName)}`, 52, y0, { width: 503 });
+          let detail: string;
+          if (att.annex && att.annexKind === 'pdf') {
+            detail = t('daily.att.pdf', lang).replace('{n}', String(att.pages || 1));
+            if (att.truncatedTo) detail += ' ' + t('daily.att.truncated', lang).replace('{n}', String(att.truncatedTo));
+          } else if (att.annex) detail = t('daily.att.image', lang);
+          else detail = t('daily.att.link', lang).replace('{why}', t(`daily.att.why.${att.why || 'other'}`, lang));
+          doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(detail, 52, doc.y, { width: 503 });
+          if (!att.annex && att.url) {
+            doc.fillColor('#1d4ed8').font('Helvetica').fontSize(8.5)
+              .text(att.url, 52, doc.y, { width: 503, link: att.url, underline: true });
+          }
+        }
+        doc.moveDown(0.5);
+      }
+      doc.moveDown(0.3);
+    }
+
+    // Check-lists jointes : dessinées comme dans le handover (état figé au moment où elles ont été jointes)
+    for (const { att, thumbs } of checklistParts) {
+      renderChecklistSection(doc, att.checklist!, thumbs, {
+        phase: att.phase || 'installation', siteManagerName: att.siteManagerName, stateAt: att.snapshotAt, newPage: true,
+      }, lang);
     }
 
     // Photos

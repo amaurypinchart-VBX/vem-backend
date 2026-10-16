@@ -1045,7 +1045,7 @@ async function loadDetailDailyReports(projectId) {
       <div class="card-header">
         <div>
           <div class="card-title">📓 ${fmtDate(r.reportDate)}</div>
-          <div style="font-size:12px;color:var(--text3);">${r.workersPresent} ouvriers · ${r.weather||''} · ${r._count?.entries||0} entrée(s)</div>
+          <div style="font-size:12px;color:var(--text3);">${r.workersPresent} ouvriers · ${r.weather||''} · ${r._count?.entries||0} entrée(s)${r._count?.attachments?` · 📎 ${r._count.attachments}`:''}</div>
           ${r.generalNotes?`<div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px;">${r.generalNotes}</div>`:''}
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;" onclick="event.stopPropagation()">
@@ -1108,16 +1108,20 @@ async function openDailyDetail(id, projectId) {
           </div>
         </div>` : ''}
 
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <div id="dv-attachments-${r.id}" style="margin-bottom:14px;"></div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${r.id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editDailyReport('${r.id}')">✏️ Modifier</button>
         <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="printDailyPDF('${r.id}')">🖨️ Imprimer</button>
         ${!r.sentAt?`<button class="btn btn-primary btn-sm" onclick="sendDailyReport('${r.id}')">📤 Envoyer</button>`:''}
       </div>
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  if (typeof loadDailyAttachmentsBox === 'function') loadDailyAttachmentsBox(`dv-attachments-${r.id}`, r.id, r.projectId, false);
 }
 
 async function loadDetailHandovers(projectId) {

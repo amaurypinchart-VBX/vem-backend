@@ -515,6 +515,7 @@ model DailyReport {
   checklist DailyReportChecklistItem[]
   photos    DailyReportPhoto[]
   taskHours DailyReportTaskHours[]
+  attachments DailyReportAttachment[]
 
   @@map("daily_reports")
 }
@@ -552,6 +553,34 @@ model DailyReportPhoto {
   report    DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@map("daily_report_photos")
+}
+
+// Pièce jointe d'un daily report, intégrée lisible dans le PDF du rapport :
+//   kind 'file'      : fichier envoyé (PDF → pages ajoutées en annexe, image → une page, Office → lien) ;
+//   kind 'checklist' : état d'une check-list du projet (phase) figé au moment où il est joint (snapshot),
+//                      dessiné dans le PDF comme dans le handover. « Actualiser » reprend l'état du moment.
+model DailyReportAttachment {
+  id             String      @id @default(uuid())
+  reportId       String      @map("report_id")
+  kind           String      @default("file") // file | checklist
+  fileUrl        String?     @map("file_url")
+  publicId       String?     @map("public_id")
+  resourceType   String?     @map("resource_type") // image | raw (Cloudinary)
+  fileName       String      @map("file_name")
+  mimeType       String?     @map("mime_type")
+  sizeBytes      Int?        @map("size_bytes")
+  pageCount      Int?        @map("page_count")
+  embeddable     Boolean     @default(true)
+  checklistPhase String?     @map("checklist_phase")
+  snapshot       Json?
+  snapshotAt     DateTime?   @map("snapshot_at")
+  sortOrder      Int         @default(0) @map("sort_order")
+  createdById    String?     @map("created_by")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  report         DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("daily_report_attachments")
 }
 
 // Heures + nombre d'hommes saisis directement par tâche sur un rapport journalier.

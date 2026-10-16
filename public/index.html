@@ -1011,6 +1011,18 @@
       </div>
     </div>
 
+    <!-- PIÈCES JOINTES (js/16-daily-attachments.js) : intégrées lisibles dans le PDF du rapport -->
+    <div class="form-group2" style="margin:14px 0 0;">
+      <label class="form-label2">📎 Pièces jointes</label>
+      <div id="daily-att-checklists"></div>
+      <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;color:var(--text3);margin-top:4px;">
+        📎 Ajouter un fichier (PDF, photo, Word, Excel)
+        <input type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple style="display:none;" id="daily-att-input" onchange="previewDailyAttachments(this)">
+      </label>
+      <div id="daily-att-list" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">PDF et photos : ajoutés lisibles à la fin du PDF du rapport. Check-list : reprise dans le rapport telle qu’elle est maintenant.</div>
+    </div>
+
     <div style="display:flex;gap:10px;justify-content:space-between;margin-top:12px;align-items:center;">
       <div style="font-size:12px;color:var(--text3);" id="daily-summary-count"></div>
       <div style="display:flex;gap:8px;">
@@ -1370,5 +1382,6 @@
 <script src="js/13-briefing-studio-slides.js"></script>
 <script src="js/14-briefing-autogen.js"></script>
 <script src="js/15-checklists.js"></script>
+<script src="js/16-daily-attachments.js"></script>
 </body>
 </html>

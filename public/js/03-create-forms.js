@@ -60,6 +60,7 @@ function resetDailyReport() {
   if (preview) preview.innerHTML = '';
   const input = document.getElementById('daily-photos-input');
   if (input) input.value = '';
+  if (typeof resetDailyAttachmentsForm === 'function') resetDailyAttachmentsForm();
   // Set current time
   const now = new Date();
   document.getElementById('new-entry-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -285,6 +286,7 @@ function stopVoiceRecording() {
 async function loadDailyTasks(projectId) {
   const el = document.getElementById('daily-tasks-list');
   if (!el || !projectId) return;
+  if (typeof loadDailyChecklistOptions === 'function') loadDailyChecklistOptions(projectId); // check-lists à joindre (js/16-daily-attachments.js)
   el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>';
   const res = await api('GET', `/tasks?projectId=${projectId}`);
   if (!res?.success || !res.data.length) {
@@ -522,6 +524,8 @@ async function createDailyReport(send=false) {
       }
       PENDING_DAILY_PHOTOS = [];
     }
+    // Pièces jointes (check-lists cochées + fichiers), avant un éventuel envoi
+    if (typeof uploadPendingDailyAttachments === 'function') await uploadPendingDailyAttachments(res.data.id);
     // Update task statuses
     const taskUpdates = Object.entries(DAILY_TASK_UPDATES);
     if (taskUpdates.length) {

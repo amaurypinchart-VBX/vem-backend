@@ -501,6 +501,7 @@ async function loadChecklistCard(projectId, which = 'handover') {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${cl ? `<button class="btn btn-primary btn-sm" onclick="openChecklistFull('${projectId}','${phase}')">${canFill ? '✍️ Remplir' : '👁️ Voir'}</button>` : ''}
+          ${cl ? `<button class="btn btn-ghost btn-sm" title="PDF (FR / EN), imprimer, envoyer par e-mail, joindre à un daily report" onclick="openChecklistExport('${projectId}','${phase}')">📄 PDF / Envoyer</button>` : ''}
           ${canConfigure ? `<button class="btn btn-ghost btn-sm" onclick="openChecklistConfig('${projectId}','${phase}')">${cl ? '⚙️ Modifier la sélection' : '⚙️ Configurer la check-list'}</button>` : ''}
         </div>
       </div>`;
@@ -828,6 +829,7 @@ function renderChecklistFull() {
             <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:15px;overflow-wrap:anywhere;">${{ preparation: '📋 Check-list de préparation', installation: '☑️ Check-list de montage', dismantling: '☑️ Check-list de démontage' }[CLF.phase] || '☑️ Check-list'}</div>
             <div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${esc(p ? `${p.name} · ${p.internalNumber}` : '')}</div>
           </div>
+          <button class="btn btn-ghost btn-sm" style="min-height:44px;flex-shrink:0;" title="PDF (FR / EN), imprimer, envoyer, joindre au daily report" onclick="openChecklistExport(CLF.projectId, CLF.phase)">📄 PDF</button>
         </div>
         <div id="clf-progress"></div>
       </div>
@@ -1408,4 +1410,140 @@ function showChecklistSignatureWarning(handoverId, info) {
       </div>
     </div>`;
   document.body.appendChild(el);
+}
+
+// ─── PDF de la check-list : télécharger, imprimer, envoyer, joindre à un daily report ───
+// À tout moment (avant ou pendant l'installation) : le PDF montre l'état actuel (« État au … »), en français ou en anglais
+// (textes saisis traduits). Backend : GET /checklists/project/:id/pdf, POST /checklists/project/:id/send,
+// POST /daily-reports/:id/attachments/checklist.
+
+const CHECKLIST_EXPORT_TITLES = { preparation: 'Check-list de préparation', installation: 'Check-list de montage', dismantling: 'Check-list de démontage' };
+
+/** Avant un PDF / un envoi : les points modifiés de la vue de remplissage pas encore enregistrés n'y seront pas. */
+function checklistExportUnsavedWarning() {
+  if (!CLF) return '';
+  const n = [...CLF.items.values()].filter(it => it._status !== it.status || it._error).length;
+  return n ? `<div style="font-size:12px;color:var(--amber);margin-bottom:10px;">⚠️ ${n} point(s) pas encore enregistré(s) : ils ne seront pas dans le PDF.</div>` : '';
+}
+
+async function openChecklistExport(projectId, phase) {
+  const [proj, reports] = await Promise.all([
+    api('GET', `/projects/${projectId}`),
+    api('GET', `/daily-reports?projectId=${projectId}`),
+  ]);
+  const p = proj?.success ? proj.data : null;
+  const teamIds = new Set((p?.team || []).map(t => t.userId || t.user?.id));
+  const users = (USERS || []).filter(u => u.email && u.isActive !== false)
+    .sort((a, b) => (teamIds.has(b.id) - teamIds.has(a.id)) || `${a.firstName}`.localeCompare(`${b.firstName}`));
+  const clientEmail = p?.client?.email || null;
+  const dailies = (reports?.success ? reports.data : []).slice(0, 8);
+  const title = CHECKLIST_EXPORT_TITLES[phase] || 'Check-list';
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.id = 'checklist-export';
+  el.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-head">
+        <div><div class="modal-title">📄 ${title}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${esc(p ? `${p.name} · ${p.internalNumber}` : '')} — état actuel</div></div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      ${checklistExportUnsavedWarning()}
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">🌐 Langue du PDF</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;" id="cle-lang">
+        <button type="button" class="btn btn-primary" data-lang="fr" onclick="checklistExportLang(this)">🇫🇷 Français</button>
+        <button type="button" class="btn btn-ghost" data-lang="en" onclick="checklistExportLang(this)">🇬🇧 English</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+        <button type="button" class="btn btn-outline" style="justify-content:center;min-height:46px;" onclick="checklistExportDownload('${projectId}','${phase}')">⬇️ Télécharger le PDF</button>
+        <button type="button" class="btn btn-outline" style="justify-content:center;min-height:46px;" onclick="checklistExportPrint('${projectId}','${phase}')">🖨️ Ouvrir pour imprimer</button>
+      </div>
+
+      <details style="background:var(--bg3);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;">✉️ Envoyer par e-mail</summary>
+        <div style="max-height:180px;overflow-y:auto;margin-top:10px;">
+          ${clientEmail ? `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;"><input type="checkbox" class="cle-to" value="${esc(clientEmail)}" style="accent-color:var(--accent);"><span style="font-size:13px;flex:1;">🤝 ${esc(p.client.name || 'Client')}</span><span style="font-size:11px;color:var(--text3);">${esc(clientEmail)}</span></label>` : ''}
+          ${users.map(u => `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;"><input type="checkbox" class="cle-to" value="${esc(u.email)}" style="accent-color:var(--accent);"><span style="font-size:13px;flex:1;">${teamIds.has(u.id) ? '👷 ' : ''}${esc(`${u.firstName} ${u.lastName}`)}</span><span style="font-size:11px;color:var(--text3);">${esc(u.email)}</span></label>`).join('')}
+        </div>
+        <textarea class="input" id="cle-manual" rows="2" placeholder="Autres adresses (séparées par des virgules)" style="font-size:13px;margin-top:8px;"></textarea>
+        <textarea class="input" id="cle-message" rows="2" placeholder="Message (facultatif)" style="font-size:13px;margin-top:6px;"></textarea>
+        <button type="button" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;" onclick="checklistExportSend('${projectId}','${phase}',this)">✉️ Envoyer le PDF</button>
+      </details>
+
+      <details style="background:var(--bg3);border-radius:var(--radius);padding:10px 12px;" ${phase !== 'preparation' ? 'open' : ''}>
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;">📓 Joindre à un daily report</summary>
+        <div style="font-size:12px;color:var(--text3);margin:8px 0;">La check-list est reprise dans le PDF du daily report telle qu’elle est maintenant (tu pourras l’actualiser depuis le rapport).</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <button type="button" class="btn btn-primary btn-sm" style="justify-content:center;" onclick="checklistExportToNewDaily('${projectId}','${phase}',this)">➕ Nouveau daily report d’aujourd’hui avec la check-list</button>
+          ${dailies.map(r => `<button type="button" class="btn btn-ghost btn-sm" style="justify-content:space-between;" onclick="checklistExportToDaily('${r.id}','${phase}',this)">
+            <span>📓 Daily report du ${fmtDate(r.reportDate)}${r.createdBy ? ` · ${esc(r.createdBy.firstName)}` : ''}</span><span>${r.sentAt ? '✉️ envoyé' : 'Joindre'}</span></button>`).join('')}
+        </div>
+      </details>
+    </div>`;
+  document.getElementById('checklist-export')?.remove();
+  document.body.appendChild(el);
+}
+
+function checklistExportLang(btn) {
+  btn.parentElement.querySelectorAll('button').forEach(b => { b.className = `btn ${b === btn ? 'btn-primary' : 'btn-ghost'}`; });
+}
+
+function checklistExportCurrentLang() {
+  return document.querySelector('#cle-lang .btn-primary')?.dataset.lang || 'fr';
+}
+
+async function checklistExportDownload(projectId, phase) {
+  const lang = checklistExportCurrentLang();
+  toast('Génération du PDF…', 'info');
+  try {
+    const r = await fetch(`${API}/checklists/project/${projectId}/pdf?phase=${phase}&lang=${lang}`, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!r.ok) { const d = await r.json().catch(() => null); throw new Error(d?.error || 'HTTP ' + r.status); }
+    const name = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || `Checklist_${lang}.pdf`;
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('PDF téléchargé ✅', 'success');
+  } catch (e) { toast(`PDF impossible : ${e.message}`, 'error'); }
+}
+
+function checklistExportPrint(projectId, phase) {
+  openApiPdf(`/checklists/project/${projectId}/pdf?phase=${phase}&lang=${checklistExportCurrentLang()}&inline=1`);
+}
+
+async function checklistExportSend(projectId, phase, btn) {
+  const to = new Set([...document.querySelectorAll('.cle-to:checked')].map(cb => cb.value.toLowerCase()));
+  (document.getElementById('cle-manual')?.value || '').split(/[\s,;]+/).forEach(e => {
+    const v = e.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) to.add(v);
+  });
+  if (!to.size) { toast('Choisis au moins un destinataire', 'error'); return; }
+  btn.disabled = true; btn.textContent = 'Envoi…';
+  const res = await api('POST', `/checklists/project/${projectId}/send`, {
+    phase, lang: checklistExportCurrentLang(), recipients: [...to], message: document.getElementById('cle-message')?.value || '',
+  });
+  btn.disabled = false; btn.textContent = '✉️ Envoyer le PDF';
+  if (res?.success) { toast(`Check-list envoyée à ${res.data.sentTo} destinataire(s) ✉️`, 'success'); document.getElementById('checklist-export')?.remove(); }
+  else toast(res?.error || 'Erreur envoi', 'error');
+}
+
+async function checklistExportToDaily(reportId, phase, btn) {
+  if (await attachChecklistToDaily(reportId, phase, btn)) {
+    document.getElementById('checklist-export')?.remove();
+    if (CURRENT_PROJECT_ID && typeof loadDetailDailyReports === 'function') loadDetailDailyReports(CURRENT_PROJECT_ID);
+  }
+}
+
+async function checklistExportToNewDaily(projectId, phase, btn) {
+  btn.disabled = true;
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const res = await api('POST', '/daily-reports', { projectId, reportDate: ymd, workersPresent: 0, phase: phase === 'dismantling' ? 'dismantling' : 'installation' });
+  if (!res?.success) { btn.disabled = false; toast(res?.error || 'Erreur création du rapport', 'error'); return; }
+  await attachChecklistToDaily(res.data.id, phase);
+  document.getElementById('checklist-export')?.remove();
+  if (CLF) closeChecklistFull();
+  if (CURRENT_PROJECT_ID && typeof loadDetailDailyReports === 'function') loadDetailDailyReports(CURRENT_PROJECT_ID);
+  editDailyReport(res.data.id); // compléter le rapport (journal, photos…)
 }
