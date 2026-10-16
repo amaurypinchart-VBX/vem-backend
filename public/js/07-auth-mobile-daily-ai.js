@@ -1035,6 +1035,8 @@ function updateDailySummary() {
 // ═══ LOAD DETAIL TAB CONTENT ═══
 
 async function loadDetailDailyReports(projectId) {
+  // check-list de montage / démontage : remplie au jour le jour, reprise dans le handover (js/15-checklists.js)
+  if (typeof loadChecklistCard === 'function') loadChecklistCard(projectId);
   const res = await api('GET', `/daily-reports?projectId=${projectId}`);
   const el = document.getElementById('detail-daily-content');
   if (!res?.success) return;
@@ -1125,7 +1127,7 @@ async function openDailyDetail(id, projectId) {
 }
 
 async function loadDetailHandovers(projectId) {
-  loadChecklistCard(projectId); // carte « Check-list de montage » au-dessus des handovers (js/15-checklists.js)
+  loadChecklistHandoverNote(projectId); // rappel : la check-list (onglet Daily Reports) est reprise dans le handover (js/15-checklists.js)
   const res = await api('GET', `/handover?projectId=${projectId}`);
   const el = document.getElementById('detail-handover-content');
   if (!res?.success) return;

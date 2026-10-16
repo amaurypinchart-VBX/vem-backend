@@ -464,9 +464,10 @@ function checklistStatsHtml(s, withBar = true) {
 }
 
 // ─── Cartes de check-list du projet ───
-// handover : installation + démontage, au-dessus des handovers ; prep : préparation, en haut de l'onglet Infos.
+// handover : installation + démontage, en haut de l'onglet Daily Reports (remplie au jour le jour, reprise dans le handover) ;
+// prep : préparation, en haut de l'onglet Infos.
 const CHECKLIST_CARDS = {
-  handover: { el: 'detail-checklist-card', title: '☑️ Check-list de montage', phases: ['installation', 'dismantling'] },
+  handover: { el: 'detail-checklist-card', title: '☑️ Check-list de montage', phases: ['installation', 'dismantling'], hint: 'À remplir au jour le jour pendant le montage. Elle est reprise automatiquement dans le handover (fiche, PDF, page de signature du client).' },
   prep: { el: 'detail-prep-checklist-card', title: '📋 Préparation de l’installation', phases: ['preparation'], hint: 'Points à vérifier avant le début du montage (commentaires, photos, documents).' },
 };
 
@@ -475,6 +476,42 @@ function reloadChecklistCards(projectId) {
   if (CURRENT_PROJECT_ID !== projectId) return;
   loadChecklistCard(projectId, 'handover');
   loadChecklistCard(projectId, 'prep');
+  loadChecklistHandoverNote(projectId);
+}
+
+/** Va à l'onglet Daily Reports du projet affiché (où se trouve la check-list de montage). */
+function gotoChecklistDailyTab() {
+  const tab = document.querySelector(`.tab[onclick*="'dtab-daily'"]`);
+  if (tab) switchTab(tab, 'dtab-daily');
+}
+
+/**
+ * Onglet Handover : rappel de l'état de la check-list de montage (remplie dans l'onglet Daily Reports),
+ * reprise dans chaque handover (fiche, PDF, signature).
+ */
+async function loadChecklistHandoverNote(projectId) {
+  const el = document.getElementById('detail-checklist-handover-note');
+  if (!el) return;
+  if (el.dataset.projectId !== projectId) el.innerHTML = '';
+  const res = await api('GET', `/checklists/project/${projectId}?phase=installation`);
+  if (CURRENT_PROJECT_ID !== projectId) return;
+  el.dataset.projectId = projectId;
+  if (!res?.success) { el.innerHTML = ''; return; }
+  const cl = res.data;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-body" style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:13px;">☑️ Check-list de montage</div>
+          ${cl ? checklistHandoverLine({ ...cl.stats, validatedAt: cl.validatedAt }) : '<div style="font-size:11px;color:var(--text3);margin-top:4px;">Pas encore configurée.</div>'}
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Remplie dans l’onglet Daily Reports, reprise dans le handover (fiche, PDF, signature).</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${cl ? `<button class="btn btn-primary btn-sm" onclick="openChecklistFull('${projectId}','installation')">${checklistCanFill() ? '✍️ Remplir' : '👁️ Voir'}</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="gotoChecklistDailyTab()">📓 Onglet Daily Reports</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 async function loadChecklistCard(projectId, which = 'handover') {
