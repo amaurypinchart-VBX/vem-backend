@@ -215,3 +215,46 @@ export function publicChecklist(cl: FullChecklist | null) {
     })),
   };
 }
+
+// ─── Progression du projet (encadré « Progression », cartes projets) ───
+// Basée sur les check-lists du projet (toutes phases configurées), plus sur les tâches :
+// un point est fait quand il est OK ou N.A.
+
+export interface ChecklistProgress {
+  /** % de points clos sur toutes les phases configurées */
+  percent: number;
+  total: number;
+  closed: number;
+  /** détail par phase configurée (preparation / installation / dismantling) */
+  phases: Array<{ phase: string; total: number; closed: number; percent: number }>;
+}
+
+/** Progression par projet. Projet sans check-list → absent de la Map. Ne fait jamais échouer l'appelant. */
+export async function checklistProgress(projectIds: string[]): Promise<Map<string, ChecklistProgress>> {
+  const out = new Map<string, ChecklistProgress>();
+  const ids = [...new Set(projectIds.filter(Boolean))];
+  if (!ids.length) return out;
+  try {
+    const lists = await db.projectChecklist.findMany({
+      where: { projectId: { in: ids } },
+      select: { projectId: true, phase: true, items: { select: { status: true } } },
+    });
+    for (const cl of lists) {
+      const total = cl.items.length;
+      if (!total) continue;
+      const closed = cl.items.filter((it: any) => it.status === 'ok' || it.status === 'na').length;
+      const p = out.get(cl.projectId) || { percent: 0, total: 0, closed: 0, phases: [] };
+      p.total += total;
+      p.closed += closed;
+      p.phases.push({ phase: cl.phase, total, closed, percent: Math.round((closed / total) * 100) });
+      out.set(cl.projectId, p);
+    }
+    for (const p of out.values()) {
+      p.percent = Math.round((p.closed / p.total) * 100);
+      p.phases.sort((a, b) => CHECKLIST_PHASES.indexOf(a.phase as any) - CHECKLIST_PHASES.indexOf(b.phase as any));
+    }
+  } catch (e: any) {
+    logger.warn(`[checklist] progression indisponible : ${e.message}`);
+  }
+  return out;
+}

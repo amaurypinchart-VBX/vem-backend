@@ -427,7 +427,7 @@ async function generateReport(mode) {
 PROJET : ${project.name} (${project.internalNumber})
 CLIENT : ${project.client?.name||'N/A'}
 STATUT : ${project.status}
-AVANCEMENT : ${project.progress||0}% (${taskDone}/${taskTotal} tâches)
+AVANCEMENT : ${project.progress||0}% (check-list : ${project.checklistProgress?.closed||0}/${project.checklistProgress?.total||0} points)
 DATES : ${project.installationStart?.split('T')[0]||'N/A'} → ${project.installationEnd?.split('T')[0]||'N/A'}
 ${project.dismantlingStart?`DÉMONTAGE : ${project.dismantlingStart?.split('T')[0]} → ${project.dismantlingEnd?.split('T')[0]}`:''}
 ÉQUIPE : ${(project.team||[]).map(m=>m.user?.firstName+' '+m.user?.lastName).join(', ')||'N/A'}

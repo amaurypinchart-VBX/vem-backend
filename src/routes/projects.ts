@@ -9,6 +9,7 @@ import { createWarehouseTask, updateWarehouseTask } from '../services/warehouseA
 import { sendMail } from '../services/emailService';
 import { generateProjectReport } from '../services/projectReportService';
 import { generateProjectReportPdf } from '../services/pdfService';
+import { checklistProgress } from '../services/checklistService';
 import { deleteFromCloudinary } from '../services/cloudinaryService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { getProjectTaskHours } from '../services/taskHours';
@@ -57,7 +58,8 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       teamByProject.get(t.projectId)!.push({ ...t, user });
     }
 
-    // Attach progress
+    // Attach progress : progression = check-lists du projet (plus les tâches)
+    const progressMap = await checklistProgress(projects.map(p => p.id));
     const enriched = await Promise.all(projects.map(async p => {
       const [total, done] = await Promise.all([
         prisma.task.count({ where: { projectId: p.id } }),
@@ -67,7 +69,9 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
         ...p,
         client: clientMap.get(p.clientId) || null,
         team: teamByProject.get(p.id) || [],
-        tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0,
+        tasksTotal: total, tasksDone: done,
+        progress: progressMap.get(p.id)?.percent ?? 0,
+        checklistProgress: progressMap.get(p.id) || null,
       };
     }));
 
@@ -126,17 +130,22 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       .map(t => ({ ...t, user: teamUserMap.get(t.userId) }))
       .filter(t => t.user);
 
-    const [total, done] = await Promise.all([
+    const [total, done, progressMap] = await Promise.all([
       prisma.task.count({ where: { projectId: p.id } }),
       prisma.task.count({ where: { projectId: p.id, status: 'done' } }),
+      checklistProgress([p.id]),
     ]);
+    const cp = progressMap.get(p.id) || null;
     res.json({
       success: true,
       data: {
         ...p,
         client: client || null,
         team,
-        tasksTotal: total, tasksDone: done, progress: total > 0 ? Math.round(done/total*100) : 0,
+        tasksTotal: total, tasksDone: done,
+        // Progression = check-lists du projet (points OK ou N.A.), plus les tâches
+        progress: cp?.percent ?? 0,
+        checklistProgress: cp,
       },
     });
   } catch (err) { next(err); }

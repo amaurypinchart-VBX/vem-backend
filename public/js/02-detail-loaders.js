@@ -22,6 +22,9 @@ async function loadProjectDetail(id) {
   const res = await api('GET', `/projects/${id}`);
   if (!res?.success) return;
   const p = res.data;
+  // Progression = check-lists du projet (calculée par le serveur, null si aucune check-list)
+  const cp = p.checklistProgress || null;
+  const progressPhaseLabels = { preparation: '📋 Préparation', installation: '🏗️ Montage', dismantling: '🔨 Démontage' };
   // Check-list « Préparation de l'installation » en haut de l'onglet Infos (js/15-checklists.js) :
   // lancée tout de suite, pour ne pas dépendre du rendu du reste de la fiche
   if (typeof loadChecklistCard === 'function') loadChecklistCard(id, 'prep');
@@ -108,23 +111,39 @@ async function loadProjectDetail(id) {
         </div>
       </div>
 
-      <!-- PROGRESSION -->
+      <!-- PROGRESSION (check-lists du projet : points OK ou N.A.) -->
       <div class="card">
         <div class="card-header"><span class="card-title">📊 Progression</span></div>
         <div class="card-body" style="text-align:center;padding:24px 20px;">
-          <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--accent);">${p.progress||0}%</div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Tâches complétées</div>
-          <div class="prog" style="height:10px;margin-bottom:14px;"><div class="prog-bar" style="width:${p.progress||0}%;background:var(--accent);"></div></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          ${cp ? `
+          <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--accent);">${cp.percent}%</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Points de check-list validés (OK ou N.A.)</div>
+          <div class="prog" style="height:10px;margin-bottom:14px;"><div class="prog-bar" style="width:${cp.percent}%;background:var(--accent);"></div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
             <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;">
-              <div style="font-weight:700;font-size:18px;">${p.tasksTotal||0}</div>
-              <div style="font-size:11px;color:var(--text3);">Tâches totales</div>
+              <div style="font-weight:700;font-size:18px;">${cp.total}</div>
+              <div style="font-size:11px;color:var(--text3);">Points au total</div>
             </div>
             <div style="background:rgba(45,198,83,.1);border-radius:var(--radius);padding:10px;">
-              <div style="font-weight:700;font-size:18px;color:var(--green);">${p.tasksDone||0}</div>
-              <div style="font-size:11px;color:var(--text3);">Terminées</div>
+              <div style="font-weight:700;font-size:18px;color:var(--green);">${cp.closed}</div>
+              <div style="font-size:11px;color:var(--text3);">Validés</div>
             </div>
           </div>
+          <div style="display:flex;flex-direction:column;gap:8px;text-align:left;">
+            ${cp.phases.map(ph => `
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:3px;">
+                <span>${progressPhaseLabels[ph.phase] || ph.phase}</span>
+                <span style="font-weight:600;">${ph.closed}/${ph.total} · ${ph.percent}%</span>
+              </div>
+              <div class="prog" style="height:5px;"><div class="prog-bar" style="width:${ph.percent}%;background:var(--accent);"></div></div>
+            </div>`).join('')}
+          </div>
+          ` : `
+          <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--text3);">—</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Aucune check-list configurée pour ce projet</div>
+          <div style="font-size:12px;color:var(--text3);">La progression suit la check-list de préparation (onglet Infos) et de montage / démontage (onglet Daily Reports).</div>
+          `}
         </div>
       </div>
 
