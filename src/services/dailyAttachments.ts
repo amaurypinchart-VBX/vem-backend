@@ -63,11 +63,15 @@ export async function storeAttachmentFile(buffer: Buffer, fileName: string, cls:
 export async function checklistSnapshot(projectId: string, phase: string) {
   const cl = await loadProjectChecklist(projectId, phase);
   if (!cl || !cl.items.length) return null;
+  // filtre sur le rôle fait ici : en production users.role / project_team.role n'ont pas le type du schéma
+  // (comparer dans la requête plante : « operator does not exist: text = "UserRole" »)
   const team = await prisma.projectTeam.findMany({
-    where: { projectId, OR: [{ role: 'site_manager' }, { user: { role: 'site_manager' } }] },
-    include: { user: { select: { firstName: true, lastName: true } } },
+    where: { projectId },
+    include: { user: { select: { firstName: true, lastName: true, role: true } } },
   });
-  const siteManagerName = team.map((m) => `${m.user.firstName} ${m.user.lastName}`.trim()).join(', ') || null;
+  const siteManagerName = team
+    .filter((m: any) => String(m.role) === 'site_manager' || String(m.user?.role) === 'site_manager')
+    .map((m: any) => `${m.user.firstName} ${m.user.lastName}`.trim()).join(', ') || null;
   return { checklist: checklistPdfData(cl)!, siteManagerName, stats: cl.stats };
 }
 
