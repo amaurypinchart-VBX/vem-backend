@@ -805,7 +805,7 @@ async function openChecklistFull(projectId, phase = 'installation') {
   if (!cl.data) { toast('Check-list pas encore configurée', 'error'); return; }
   CLF = { projectId, phase, checklist: cl.data, project: proj?.success ? proj.data : null, items: new Map(), order: [], filter: 'todo', closed: new Set(), timers: {} };
   for (const it of cl.data.items) {
-    CLF.items.set(it.id, { ...it, _status: it.status, _comment: it.comment || '', _showComment: !!it.comment });
+    CLF.items.set(it.id, { ...it, _status: it.status, _comment: it.comment || '', _showComment: false });
     CLF.order.push(it.id);
   }
   document.getElementById('checklist-full')?.remove();
@@ -944,7 +944,9 @@ function renderChecklistFullList() {
         ${open ? visible.map(id => checklistFullItemHtml(CLF.items.get(id))).join('') : ''}
       </div>`;
   }).join('');
-  el.innerHTML = html || `
+  const legend = checklistCanFill() && html ? `<div style="font-size:11px;color:var(--text3);margin:-4px 0 8px;text-align:right;">
+    <b style="color:var(--green);">✓</b> OK · <b style="color:var(--amber);">½</b> Partiel · <b style="color:var(--accent);">✕</b> Non fait · <b>N/A</b> Non applicable · <b>＋</b> photo / document / commentaire</div>` : '';
+  el.innerHTML = legend + html || `
     <div class="empty">
       <div class="empty-icon">${CLF.filter === 'all' ? '☑️' : '🎉'}</div>
       <div class="empty-title">${CLF.filter === 'todo' ? 'Plus rien à traiter' : CLF.filter === 'problems' ? 'Aucun problème ouvert' : 'Aucun point'}</div>
@@ -953,36 +955,87 @@ function renderChecklistFullList() {
   for (const id of CLF.order) if (document.getElementById(`clf-item-${id}`)) updateChecklistItemView(id);
 }
 
+// Vue de remplissage en liste rapide : une ligne par point (libellé à gauche, 4 boutons de statut à droite) ;
+// photos, documents, commentaire et historique dans un volet ouvert au besoin (statut qui exige un commentaire,
+// photo obligatoire, clic sur le libellé ou sur le bouton du volet).
+const CHECKLIST_ROW_BTN = { ok: '✓', partial: '½', nok: '✕', na: 'N/A' };
+
+function checklistRowStyles() {
+  if (document.getElementById('clf-row-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'clf-row-styles';
+  st.textContent = `
+    .clf-row{background:var(--bg2);border:1px solid var(--border);border-left:4px solid var(--border);border-radius:10px;padding:8px 8px 8px 10px;margin-bottom:6px;}
+    .clf-line{display:flex;align-items:center;gap:8px;}
+    .clf-label{flex:1;min-width:0;cursor:pointer;}
+    .clf-label-text{font-size:14px;font-weight:600;line-height:1.3;overflow-wrap:anywhere;}
+    .clf-sub{font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4;overflow-wrap:anywhere;}
+    .clf-btns{display:flex;gap:4px;flex-shrink:0;}
+    .clf-btn{width:42px;height:42px;border-radius:10px;border:2px solid transparent;background:var(--bg3);font-weight:800;font-size:16px;font-family:'Inter',sans-serif;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;}
+    .clf-btn[data-status="na"]{font-size:11px;}
+    .clf-more{min-width:34px;height:42px;border-radius:10px;border:1px dashed var(--border);background:transparent;color:var(--text3);font-size:12px;cursor:pointer;padding:0 6px;flex-shrink:0;white-space:nowrap;}
+    .clf-details{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);}
+    .clf-tile{width:52px;height:52px;border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--text3);}
+    .clf-tile span{font-size:9px;}
+    @media (max-width:520px){
+      .clf-row{padding:7px 6px 7px 8px;}
+      .clf-label-text{font-size:13px;}
+      .clf-btn{width:38px;height:40px;font-size:15px;}
+      .clf-btns{gap:3px;}
+      .clf-more{min-width:30px;height:40px;padding:0 4px;}
+    }`;
+  document.head.appendChild(st);
+}
+
 function checklistFullItemHtml(it) {
+  checklistRowStyles();
   const canFill = checklistCanFill();
   const id = it.id;
+  const flags = `${it.critical ? '<span title="Point critique" style="color:var(--accent);"> ⚠️</span>' : ''}${it.photoRequired ? '<span title="Photo obligatoire"> 📷</span>' : ''}`;
   return `
-    <div id="clf-item-${id}" style="background:var(--bg2);border:1px solid var(--border);border-left:4px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;">
-      <div style="font-size:14px;font-weight:600;line-height:1.4;overflow-wrap:anywhere;">${esc(it.label)}</div>
-      ${it.hint ? `<div style="font-size:12px;color:var(--text3);margin-top:3px;overflow-wrap:anywhere;">${esc(it.hint)}</div>` : ''}
-      ${it.photoRequired || it.critical ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
-        ${it.photoRequired ? '<span class="badge badge-blue">📷 photo obligatoire</span>' : ''}
-        ${it.critical ? '<span class="badge badge-red">⚠️ critique</span>' : ''}
-      </div>` : ''}
-      ${canFill ? `<div data-role="buttons" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;">
-        ${['ok', 'partial', 'nok', 'na'].map(s => `
-          <button data-status="${s}" onclick="checklistSetStatus('${id}','${s}')" style="min-height:48px;border-radius:10px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);font-weight:700;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;padding:4px 2px;">
-            ${CHECKLIST_STATUS[s].icon}<br>${CHECKLIST_STATUS[s].short}
-          </button>`).join('')}
-      </div>` : `<div data-role="badge" style="margin-top:8px;"></div>`}
-      <div data-role="comment" style="display:none;margin-top:8px;">
-        ${canFill ? `<div style="display:flex;gap:6px;align-items:flex-start;">
-          <textarea class="input" rows="2" placeholder="Commentaire" oninput="checklistCommentInput('${id}', this.value)" onblur="checklistCommentBlur('${id}')" style="flex:1;min-height:48px;resize:vertical;"></textarea>
-          <button class="btn btn-ghost" style="min-width:48px;min-height:48px;justify-content:center;padding:0;" title="Dicter le commentaire" onclick="checklistDictate('${id}')">🎙️</button>
+    <div id="clf-item-${id}" class="clf-row">
+      <div class="clf-line">
+        <div class="clf-label" onclick="checklistToggleDetails('${id}')">
+          <div class="clf-label-text">${esc(it.label)}${flags}</div>
+          ${it.hint ? `<div class="clf-sub">${esc(it.hint)}</div>` : ''}
+          <div data-role="sub" class="clf-sub"></div>
         </div>
-        <div data-role="comment-hint" style="font-size:12px;color:var(--accent);margin-top:4px;"></div>`
-        : `<div data-role="comment-text" style="font-size:13px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;"></div>`}
+        ${canFill ? `<div class="clf-btns" data-role="buttons">
+          ${['ok', 'partial', 'nok', 'na'].map(s => `<button class="clf-btn" data-status="${s}" title="${CHECKLIST_STATUS[s].label}" onclick="checklistSetStatus('${id}','${s}')">${CHECKLIST_ROW_BTN[s]}</button>`).join('')}
+        </div>` : `<div data-role="badge" style="flex-shrink:0;"></div>`}
+        <button class="clf-more" data-role="more" title="Photos, documents, commentaire" onclick="checklistToggleDetails('${id}')"></button>
       </div>
-      <div data-role="photos" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center;"></div>
-      <div data-role="docs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
-      <div data-role="meta" style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.8;"></div>
+      <div data-role="details" class="clf-details" style="display:none;">
+        <div data-role="comment" style="margin-bottom:8px;">
+          ${canFill ? `<div style="display:flex;gap:6px;align-items:flex-start;">
+            <textarea class="input" rows="2" placeholder="Commentaire" oninput="checklistCommentInput('${id}', this.value)" onblur="checklistCommentBlur('${id}')" style="flex:1;min-height:44px;resize:vertical;"></textarea>
+            <button class="btn btn-ghost" style="min-width:44px;min-height:44px;justify-content:center;padding:0;" title="Dicter le commentaire" onclick="checklistDictate('${id}')">🎙️</button>
+          </div>
+          <div data-role="comment-hint" style="font-size:12px;color:var(--accent);margin-top:4px;"></div>`
+          : `<div data-role="comment-text" style="font-size:13px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;"></div>`}
+        </div>
+        <div data-role="photos" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+        <div data-role="docs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+        <div data-role="meta" style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8;"></div>
+      </div>
       <div data-role="error" style="display:none;margin-top:8px;"></div>
     </div>`;
+}
+
+/** Ouvre / ferme le volet photos, documents, commentaire d'un point. */
+function checklistToggleDetails(id) {
+  const it = CLF?.items.get(id);
+  if (!it) return;
+  it._open = !checklistDetailsOpen(it);
+  if (!it._open) it._showComment = false;
+  updateChecklistItemView(id);
+}
+
+/** Le volet est ouvert si on l'a demandé, ou si le point attend un commentaire / une photo, ou en cas d'erreur. */
+function checklistDetailsOpen(it) {
+  if (it._open === false && !CHECKLIST_COMMENT_REQUIRED.includes(it._status)) return false;
+  const needsComment = CHECKLIST_COMMENT_REQUIRED.includes(it._status) && !it._comment.trim();
+  return !!(it._open || it._showComment || needsComment || it._uploading || (it._status !== it.status && needsComment));
 }
 
 /** Met à jour un point affiché sans le recréer (le champ commentaire garde le focus pendant la saisie). */
@@ -995,24 +1048,48 @@ function updateChecklistItemView(id) {
   const needsComment = CHECKLIST_COMMENT_REQUIRED.includes(it._status) && !it._comment.trim();
   el.style.borderLeftColor = st.color === 'var(--text3)' ? 'var(--border)' : st.color;
   el.style.boxShadow = it._error ? '0 0 0 2px var(--accent)' : 'none';
+  el.style.opacity = it._status === 'na' ? '0.75' : '1';
 
   el.querySelectorAll('[data-status]').forEach(b => {
     const s = CHECKLIST_STATUS[b.dataset.status];
     const on = b.dataset.status === it._status;
-    b.style.borderColor = on ? s.color : 'var(--border)';
-    b.style.background = on ? s.bg : 'var(--bg3)';
-    b.style.color = on ? s.color : 'var(--text2)';
+    b.style.background = on ? s.color : 'var(--bg3)';
+    b.style.color = on ? '#fff' : s.color;
+    b.style.borderColor = on ? s.color : 'transparent';
   });
   const badge = el.querySelector('[data-role="badge"]');
   if (badge) badge.innerHTML = `<span class="badge" style="background:${st.bg};color:${st.color};">${st.icon} ${st.label}</span>`;
 
+  const photos = (it.photos || []).filter(checklistIsPhoto);
+  const docs = (it.photos || []).filter(p => !checklistIsPhoto(p));
+  const missingPhoto = it.photoRequired && !photos.length && it._status !== 'na';
+  const open = checklistDetailsOpen(it) && (canFill || it._comment || photos.length || docs.length);
+
+  // ligne sous le libellé : qui a vérifié, commentaire (volet fermé), enregistrement
+  const sub = [];
+  if (it._saving) sub.push('⏳ Enregistrement…');
+  else if (it._status !== it.status && needsComment) sub.push('<span style="color:var(--amber);">Commentaire obligatoire pour enregistrer</span>');
+  else if (it.checkedBy && it.status !== 'pending') sub.push(`${esc(checklistShortName(it.checkedBy))} · ${fmtDateTime(it.checkedAt)}`);
+  if (!open && it._comment) sub.push(`💬 ${esc(it._comment.length > 80 ? it._comment.slice(0, 80) + '…' : it._comment)}`);
+  el.querySelector('[data-role="sub"]').innerHTML = sub.join(' · ');
+
+  // bouton du volet : ce qu'il contient
+  const more = el.querySelector('[data-role="more"]');
+  const counts = [photos.length ? `📷${photos.length}` : '', docs.length ? `📎${docs.length}` : '', it._comment ? '💬' : ''].filter(Boolean).join(' ');
+  more.innerHTML = open ? '▴' : (counts || (canFill ? '＋' : '·'));
+  more.style.borderColor = missingPhoto ? 'var(--accent)' : 'var(--border)';
+  more.style.color = missingPhoto ? 'var(--accent)' : 'var(--text3)';
+  more.style.display = canFill || counts ? '' : 'none';
+
+  const details = el.querySelector('[data-role="details"]');
+  details.style.display = open ? 'block' : 'none';
+
   const box = el.querySelector('[data-role="comment"]');
-  const showComment = it._showComment || CHECKLIST_COMMENT_REQUIRED.includes(it._status) || !!it._comment;
-  box.style.display = showComment && (canFill || it._comment) ? 'block' : 'none';
+  box.style.display = canFill || it._comment ? 'block' : 'none';
   const ta = box.querySelector('textarea');
   if (ta) {
     if (document.activeElement !== ta && ta.value !== it._comment) ta.value = it._comment;
-    ta.placeholder = CHECKLIST_COMMENT_REQUIRED.includes(it._status) ? `Pourquoi « ${st.label} » ? (obligatoire)` : 'Commentaire';
+    ta.placeholder = CHECKLIST_COMMENT_REQUIRED.includes(it._status) ? `Pourquoi « ${st.label} » ? (obligatoire)` : 'Commentaire (facultatif)';
     ta.style.borderColor = needsComment ? 'var(--accent)' : '';
   }
   const hint = box.querySelector('[data-role="comment-hint"]');
@@ -1020,38 +1097,28 @@ function updateChecklistItemView(id) {
   const txt = box.querySelector('[data-role="comment-text"]');
   if (txt) txt.textContent = it._comment;
 
-  const photos = (it.photos || []).filter(checklistIsPhoto);
-  const docs = (it.photos || []).filter(p => !checklistIsPhoto(p));
-  const missingPhoto = it.photoRequired && !photos.length && it._status !== 'na';
   el.querySelector('[data-role="photos"]').innerHTML = `
     ${photos.map(ph => `
-      <div style="position:relative;width:64px;height:64px;">
-        <img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;">
-        ${canFill ? `<button onclick="checklistDeletePhoto('${id}','${ph.id}')" title="Supprimer la photo" style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.75);color:#fff;font-size:13px;cursor:pointer;line-height:24px;padding:0;">×</button>` : ''}
+      <div style="position:relative;width:52px;height:52px;">
+        <img src="${esc(ph.photoUrl)}" loading="lazy" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;">
+        ${canFill ? `<button onclick="checklistDeletePhoto('${id}','${ph.id}')" title="Supprimer la photo" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.75);color:#fff;font-size:12px;cursor:pointer;line-height:22px;padding:0;">×</button>` : ''}
       </div>`).join('')}
-    ${it._uploading ? `<div style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);text-align:center;">⏳ envoi ${it._uploading}</div>` : ''}
+    ${it._uploading ? `<div class="clf-tile" style="cursor:default;font-size:11px;">⏳<span>envoi ${it._uploading}</span></div>` : ''}
     ${canFill ? `
-      <label title="Prendre une photo" style="width:64px;height:64px;border-radius:8px;border:2px dashed ${missingPhoto ? 'var(--accent)' : 'var(--border)'};display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:22px;color:var(--text3);">
-        📸<span style="font-size:9px;">Photo</span>
+      <label class="clf-tile" title="Prendre une photo" style="${missingPhoto ? 'border-color:var(--accent);' : ''}">📸<span>Photo</span>
         <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="checklistUploadPhotos('${id}', this)">
       </label>
-      <label title="Choisir dans la galerie" style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:22px;color:var(--text3);">
-        🖼️<span style="font-size:9px;">Galerie</span>
+      <label class="clf-tile" title="Choisir dans la galerie">🖼️<span>Galerie</span>
         <input type="file" accept="image/*" multiple style="display:none;" onchange="checklistUploadPhotos('${id}', this)">
       </label>
-      <label title="Joindre un document (PDF, Word, Excel…)" style="width:64px;height:64px;border-radius:8px;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:22px;color:var(--text3);">
-        📎<span style="font-size:9px;">Document</span>
+      <label class="clf-tile" title="Joindre un document (PDF, Word, Excel…)">📎<span>Document</span>
         <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*" multiple style="display:none;" onchange="checklistUploadDocuments('${id}', this)">
       </label>` : ''}
     ${missingPhoto ? '<span style="font-size:12px;color:var(--accent);">📷 Photo obligatoire avant de mettre OK</span>' : ''}`;
   el.querySelector('[data-role="docs"]').innerHTML = docs.map(d => checklistDocChip(d, canFill ? id : null)).join('');
 
   const meta = [];
-  if (it._saving) meta.push('⏳ Enregistrement…');
-  else if (it._status !== it.status && needsComment) meta.push('<span style="color:var(--amber);">Pas encore enregistré : ajoute le commentaire</span>');
-  if (it.checkedBy && it.status !== 'pending') meta.push(`Vérifié par ${esc(checklistShortName(it.checkedBy))} — ${fmtDateTime(it.checkedAt)}`);
   if (it.logsCount) meta.push(`<a href="#" onclick="event.preventDefault();showChecklistItemHistory('${id}')" style="color:var(--blue);">Historique (${it.logsCount})</a>`);
-  if (canFill && !showComment) meta.push(`<a href="#" onclick="event.preventDefault();checklistShowComment('${id}')" style="color:var(--blue);">💬 Commentaire</a>`);
   if (canFill && it.status !== 'pending' && !it._saving) meta.push(`<a href="#" onclick="event.preventDefault();checklistSetStatus('${id}','pending')" style="color:var(--text3);">↺ Remettre à vérifier</a>`);
   el.querySelector('[data-role="meta"]').innerHTML = meta.join(' · ');
 
@@ -1112,6 +1179,7 @@ function renderChecklistFullFooter(s) {
 function checklistShowComment(id) {
   const it = CLF.items.get(id);
   it._showComment = true;
+  it._open = true;
   updateChecklistItemView(id);
   document.querySelector(`#clf-item-${id} textarea`)?.focus();
 }
@@ -1121,10 +1189,13 @@ function checklistSetStatus(id, status) {
   if (!it || !checklistCanFill()) return;
   if (status === 'ok' && it.photoRequired && !(it.photos || []).filter(checklistIsPhoto).length) {
     toast('📷 Photo obligatoire : prends d’abord une photo de ce point.', 'error');
+    it._open = true; // le volet montre le bouton Photo
+    updateChecklistItemView(id);
     return;
   }
   it._status = status;
   if (CHECKLIST_COMMENT_REQUIRED.includes(status)) it._showComment = true;
+  else if (status === 'ok') { it._showComment = false; it._open = false; } // liste rapide : OK referme le volet
   updateChecklistItemView(id);
   if (CHECKLIST_COMMENT_REQUIRED.includes(status) && !it._comment.trim()) {
     document.querySelector(`#clf-item-${id} textarea`)?.focus();
