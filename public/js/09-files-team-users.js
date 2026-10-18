@@ -622,12 +622,12 @@ function toggleUserEdit(editing) {
 async function sendUserInvite(userId, btn) {
   const u = USERS.find(x => x.id === userId);
   if (u && !u.email) { toast('Ce membre n\'a pas d\'email', 'error'); return; }
-  if (!confirm(`Envoyer un mot de passe temporaire (valable 5 min) à ${u ? u.email : 'ce membre'} ?`)) return;
+  if (!confirm(`Envoyer un mot de passe temporaire (valable 15 min) à ${u ? u.email : 'ce membre'} ?`)) return;
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loader"></span> Envoi...'; }
   const res = await api('POST', `/users/${userId}/send-invite`);
   if (btn) { btn.disabled = false; btn.innerHTML = '📧 Envoyer invitation'; }
   if (res?.success) {
-    toast(`Invitation envoyée à ${res.data.sentTo} ✅ (valable 5 min)`, 'success');
+    toast(`Invitation envoyée à ${res.data.sentTo} ✅ (valable 15 min)`, 'success');
   } else {
     toast(res?.error || 'Erreur d\'envoi', 'error');
   }

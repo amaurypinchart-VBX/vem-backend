@@ -136,7 +136,7 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
       // Generate secure token
       const crypto = require('crypto');
       const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
       // Store token (using raw query since no Prisma model yet)
       await (prisma as any).$executeRaw`
@@ -176,7 +176,7 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
                 🔑 Réinitialiser mon mot de passe
               </a>
             </div>
-            <p style="color:#5a6275;font-size:12px;line-height:1.6;">Ce lien est valable <strong style="color:#9ba3b2;">2 heures</strong>. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+            <p style="color:#5a6275;font-size:12px;line-height:1.6;">Ce lien est valable <strong style="color:#9ba3b2;">15 minutes</strong>. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
             <hr style="border:none;border-top:1px solid #2a2f3a;margin:20px 0;">
             <p style="color:#5a6275;font-size:11px;text-align:center;">VEM — ViewBox Event Manager</p>
           </div>`,
@@ -257,7 +257,7 @@ router.post('/invite', authMiddleware, async (req: AuthRequest, res: Response, n
     if (!['admin','project_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
     const { role, email, note } = req.body;
     const token = crypto.randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 jours
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await prisma.invitationToken.create({
       data: {

@@ -122,7 +122,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
 });
 
 // POST /api/v1/users/:id/send-invite
-// Génère un mot de passe temporaire (5 min), l'applique au compte, l'envoie par email.
+// Génère un mot de passe temporaire (15 min), l'applique au compte, l'envoie par email.
 router.post('/:id/send-invite', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!['admin','project_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
@@ -135,7 +135,7 @@ router.post('/:id/send-invite', async (req: AuthRequest, res: Response, next: Ne
     const tempPassword = Array.from(crypto.randomBytes(8))
       .map(b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
     const passwordHash = await bcrypt.hash(tempPassword, 12);
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
@@ -163,7 +163,7 @@ router.post('/:id/send-invite', async (req: AuthRequest, res: Response, next: Ne
           <div style="font-size:22px;font-weight:800;letter-spacing:3px;color:#e63946;font-family:monospace;">${tempPassword}</div>
         </div>
         <div style="background:#3a1a1a;border-radius:8px;padding:10px 14px;margin:16px 0;font-size:13px;color:#ffb4b4;">
-          Ce mot de passe expire dans <strong>5 minutes</strong>. Connectez-vous tout de suite.
+          Ce mot de passe expire dans <strong>15 minutes</strong>. Connectez-vous tout de suite.
         </div>
         <div style="text-align:center;margin:24px 0;">
           <a href="${appUrl}" style="background:#e63946;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;">Se connecter</a>
