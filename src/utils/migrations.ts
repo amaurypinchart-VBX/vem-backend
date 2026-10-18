@@ -1461,4 +1461,120 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] daily_report_attachments : ${e.message}`);
   }
+
+  // ─── Contrôle des jonctions de toiture : tables roof_check* + type de point de check-list (standard | roofmap) ───
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "project_checklist_items" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'standard'`);
+  } catch (e: any) {
+    logger.warn(`[migration] project_checklist_items.kind : ${e.message}`);
+  }
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "roof_checks" (
+        "id"                TEXT         NOT NULL,
+        "project_id"        TEXT         NOT NULL,
+        "phase"             TEXT         NOT NULL DEFAULT 'installation',
+        "checklist_item_id" TEXT,
+        "enabled"           BOOLEAN      NOT NULL DEFAULT true,
+        "model_version_id"  TEXT,
+        "model_sha256"      TEXT,
+        "config"            JSONB        NOT NULL DEFAULT '{}',
+        "levels"            JSONB        NOT NULL DEFAULT '[]',
+        "engine_version"    TEXT,
+        "revision"          INTEGER      NOT NULL DEFAULT 0,
+        "published_by"      TEXT,
+        "published_at"      TIMESTAMP(3),
+        "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "roof_checks_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "roof_checks_project_id_phase_key" ON "roof_checks" ("project_id", "phase")`,
+      `CREATE TABLE IF NOT EXISTS "roof_check_points" (
+        "id"            TEXT         NOT NULL,
+        "roof_check_id" TEXT         NOT NULL,
+        "key"           TEXT         NOT NULL,
+        "code"          TEXT         NOT NULL,
+        "type"          TEXT         NOT NULL,
+        "level"         INTEGER      NOT NULL,
+        "modules"       JSONB        NOT NULL DEFAULT '[]',
+        "geom"          JSONB        NOT NULL DEFAULT '{}',
+        "label"         TEXT,
+        "hint"          TEXT,
+        "tasks"         JSONB        NOT NULL DEFAULT '[]',
+        "tasks_done"    JSONB        NOT NULL DEFAULT '{}',
+        "min_photos"    INTEGER      NOT NULL DEFAULT 1,
+        "status"        TEXT         NOT NULL DEFAULT 'pending',
+        "comment"       TEXT,
+        "covered"       BOOLEAN      NOT NULL DEFAULT false,
+        "excluded"      BOOLEAN      NOT NULL DEFAULT false,
+        "archived"      BOOLEAN      NOT NULL DEFAULT false,
+        "source"        TEXT         NOT NULL DEFAULT 'model',
+        "sort_order"    INTEGER      NOT NULL DEFAULT 0,
+        "version"       INTEGER      NOT NULL DEFAULT 0,
+        "checked_by"    TEXT,
+        "checked_at"    TIMESTAMP(3),
+        "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "roof_check_points_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "roof_check_points_roof_check_id_key_key" ON "roof_check_points" ("roof_check_id", "key")`,
+      `CREATE INDEX IF NOT EXISTS "roof_check_points_roof_check_id_idx" ON "roof_check_points" ("roof_check_id")`,
+      `CREATE TABLE IF NOT EXISTS "roof_check_photos" (
+        "id"          TEXT         NOT NULL,
+        "point_id"    TEXT         NOT NULL,
+        "task_key"    TEXT,
+        "photo_url"   TEXT         NOT NULL,
+        "public_id"   TEXT,
+        "width"       INTEGER,
+        "height"      INTEGER,
+        "taken_at"    TIMESTAMP(3),
+        "uploaded_by" TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "roof_check_photos_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "roof_check_photos_point_id_idx" ON "roof_check_photos" ("point_id")`,
+      `CREATE TABLE IF NOT EXISTS "roof_check_logs" (
+        "id"          TEXT         NOT NULL,
+        "point_id"    TEXT         NOT NULL,
+        "from_status" TEXT,
+        "to_status"   TEXT,
+        "comment"     TEXT,
+        "user_id"     TEXT,
+        "created_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "roof_check_logs_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "roof_check_logs_point_id_idx" ON "roof_check_logs" ("point_id")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roof_checks_project_id_fkey') THEN
+          ALTER TABLE "roof_checks"
+            ADD CONSTRAINT "roof_checks_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roof_check_points_roof_check_id_fkey') THEN
+          ALTER TABLE "roof_check_points"
+            ADD CONSTRAINT "roof_check_points_roof_check_id_fkey"
+            FOREIGN KEY ("roof_check_id") REFERENCES "roof_checks"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roof_check_photos_point_id_fkey') THEN
+          ALTER TABLE "roof_check_photos"
+            ADD CONSTRAINT "roof_check_photos_point_id_fkey"
+            FOREIGN KEY ("point_id") REFERENCES "roof_check_points"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roof_check_logs_point_id_fkey') THEN
+          ALTER TABLE "roof_check_logs"
+            ADD CONSTRAINT "roof_check_logs_point_id_fkey"
+            FOREIGN KEY ("point_id") REFERENCES "roof_check_points"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] tables roof_check* créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] tables roof_check* : ${e.message}`);
+  }
 }

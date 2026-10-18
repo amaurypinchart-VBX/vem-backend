@@ -33,6 +33,8 @@ export interface ChecklistStats {
   photoMissing: number;
   /** % de points clos (OK + N.A.) */
   percent: number;
+  /** points « À vérifier » qui bloquent le lien de signature : tous, sauf le plan de toiture quand il n'est pas critique */
+  pendingBlocking: number;
 }
 
 interface StatsInput {
@@ -40,12 +42,15 @@ interface StatsInput {
   critical: boolean;
   photoRequired: boolean;
   photoCount: number;
+  /** false = « À vérifier » ne bloque pas la signature (plan de toiture non critique) */
+  blocking?: boolean;
 }
 
 export function checklistStats(items: StatsInput[]): ChecklistStats {
-  const s: ChecklistStats = { total: items.length, pending: 0, ok: 0, partial: 0, nok: 0, na: 0, criticalOpen: 0, photoMissing: 0, percent: 0 };
+  const s: ChecklistStats = { total: items.length, pending: 0, ok: 0, partial: 0, nok: 0, na: 0, criticalOpen: 0, photoMissing: 0, percent: 0, pendingBlocking: 0 };
   for (const it of items) {
     if ((CHECKLIST_STATUSES as readonly string[]).includes(it.status)) s[it.status as ChecklistStatus]++;
+    if (it.status === 'pending' && it.blocking !== false) s.pendingBlocking++;
     const closed = it.status === 'ok' || it.status === 'na';
     if (it.critical && !closed) s.criticalOpen++;
     if (it.photoRequired && it.photoCount === 0 && it.status !== 'na') s.photoMissing++;
@@ -82,6 +87,7 @@ function shapeItem(it: any, users: Map<string, UserRef>) {
   const { _count, ...rest } = it;
   return {
     ...rest,
+    kind: it.kind === 'roofmap' ? 'roofmap' : 'standard', // lecture tolérante (colonne absente = standard)
     checkedBy: it.checkedById ? users.get(it.checkedById) || null : null,
     logsCount: _count?.logs ?? 0,
   };
@@ -93,6 +99,8 @@ function statsOf(items: any[]): ChecklistStats {
     critical: it.critical,
     photoRequired: it.photoRequired,
     photoCount: Array.isArray(it.photos) ? it.photos.filter(isPhoto).length : it._count?.photos ?? 0,
+    // plan de contrôle des jonctions de toiture : ne bloque la signature que s'il est critique (choix du projet)
+    blocking: !(it.kind === 'roofmap' && !it.critical),
   })));
 }
 
@@ -120,7 +128,7 @@ export async function loadChecklistItem(itemId: string) {
   const users = await userRefs([it.checkedById]);
   const siblings = await db.projectChecklistItem.findMany({
     where: { checklistId: it.checklistId },
-    select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: { where: PHOTO_ONLY } } } },
+    select: { status: true, critical: true, photoRequired: true, kind: true, _count: { select: { photos: { where: PHOTO_ONLY } } } },
   });
   return { item: shapeItem(it, users), stats: statsOf(siblings) };
 }
@@ -139,7 +147,7 @@ export async function checklistSummaries(projectIds: string[], phase = 'installa
       select: {
         projectId: true,
         validatedAt: true,
-        items: { select: { status: true, critical: true, photoRequired: true, _count: { select: { photos: { where: PHOTO_ONLY } } } } },
+        items: { select: { status: true, critical: true, photoRequired: true, kind: true, _count: { select: { photos: { where: PHOTO_ONLY } } } } },
       },
     });
     for (const cl of lists) out.set(cl.projectId, { ...statsOf(cl.items), validatedAt: cl.validatedAt });

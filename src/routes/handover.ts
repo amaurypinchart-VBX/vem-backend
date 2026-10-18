@@ -374,12 +374,14 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
     if (!h) throw new AppError('Handover introuvable', 404);
 
     const summary = (await checklistSummaries([h.projectId])).get(h.projectId);
-    if (summary && (summary.criticalOpen > 0 || summary.pending > 0)) {
+    // pendingBlocking : un plan de contrôle toiture non critique ne bloque pas (choix fait dans chaque projet)
+    const pendingBlocking = summary ? summary.pendingBlocking ?? summary.pending : 0;
+    if (summary && (summary.criticalOpen > 0 || pendingBlocking > 0)) {
       const canForce = SIGNATURE_FORCE_ROLES.includes(req.user!.role);
       if (req.body?.force !== true || !canForce) {
         const parts = [
           summary.criticalOpen ? `${summary.criticalOpen} point(s) critique(s) non validé(s)` : '',
-          summary.pending ? `${summary.pending} point(s) « À vérifier »` : '',
+          pendingBlocking ? `${pendingBlocking} point(s) « À vérifier »` : '',
         ].filter(Boolean).join(' et ');
         return res.status(409).json({
           success: false,
