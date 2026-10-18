@@ -507,7 +507,7 @@ async function loadChecklistHandoverNote(projectId) {
           <div style="font-size:11px;color:var(--text3);margin-top:4px;">Remplie dans l’onglet Daily Reports, reprise dans le handover (fiche, PDF, signature).</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${cl ? `<button class="btn btn-primary btn-sm" onclick="openChecklistFull('${projectId}','installation')">${checklistCanFill() ? '✍️ Remplir' : '👁️ Voir'}</button>` : ''}
+          ${cl ? checklistOpenButtons(projectId, 'installation') : ''}
           <button class="btn btn-ghost btn-sm" onclick="gotoChecklistDailyTab()">📓 Onglet Daily Reports</button>
         </div>
       </div>
@@ -525,7 +525,6 @@ async function loadChecklistCard(projectId, which = 'handover') {
   // projet non accessible (installer / site manager non affecté) : pas de carte
   if (!results.some(r => r?.success)) { el.innerHTML = ''; return; }
   const canConfigure = checklistCanEdit();
-  const canFill = checklistCanFill();
   const single = conf.phases.length === 1;
   const block = (phase, cl) => {
     if (!cl && phase === 'dismantling' && !canConfigure) return '';
@@ -537,7 +536,7 @@ async function loadChecklistCard(projectId, which = 'handover') {
           ${cl?.validatedAt ? `<span class="badge badge-green" title="Validée par ${esc(checklistShortName(cl.validatedBy))}">✅ Validée le ${fmtDate(cl.validatedAt)}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${cl ? `<button class="btn btn-primary btn-sm" onclick="openChecklistFull('${projectId}','${phase}')">${canFill ? '✍️ Remplir' : '👁️ Voir'}</button>` : ''}
+          ${cl ? checklistOpenButtons(projectId, phase) : ''}
           ${cl ? `<button class="btn btn-ghost btn-sm" title="PDF (FR / EN), imprimer, envoyer par e-mail, joindre à un daily report" onclick="openChecklistExport('${projectId}','${phase}')">📄 PDF / Envoyer</button>` : ''}
           ${canConfigure ? `<button class="btn btn-ghost btn-sm" onclick="openChecklistConfig('${projectId}','${phase}')">${cl ? '⚙️ Modifier la sélection' : '⚙️ Configurer la check-list'}</button>` : ''}
         </div>
@@ -796,14 +795,27 @@ async function saveChecklistConfig(force) {
 // ─── Remplissage sur site (plein écran, pensé pour le téléphone) ───
 let CLF = null; // état de la vue de remplissage
 
-async function openChecklistFull(projectId, phase = 'installation') {
+/** Vue choisie la dernière fois (liste ou diaporama), gardée sur cet appareil. */
+function checklistPreferredMode() {
+  try { return localStorage.getItem('vem_checklist_mode') === 'slides' ? 'slides' : 'list'; } catch (e) { return 'list'; }
+}
+
+/** Boutons d'ouverture d'une check-list : diaporama (carte par carte) ou liste. */
+function checklistOpenButtons(projectId, phase) {
+  const verb = checklistCanFill() ? 'Remplir' : 'Voir';
+  return `
+    <button class="btn btn-primary btn-sm" title="${verb} point par point, en glissant les cartes" onclick="openChecklistFull('${projectId}','${phase}','slides')">🃏 ${verb} en diaporama</button>
+    <button class="btn btn-ghost btn-sm" title="${verb} en liste" onclick="openChecklistFull('${projectId}','${phase}','list')">☰ Liste</button>`;
+}
+
+async function openChecklistFull(projectId, phase = 'installation', mode) {
   const [cl, proj] = await Promise.all([
     api('GET', `/checklists/project/${projectId}?phase=${phase}`),
     api('GET', `/projects/${projectId}`),
   ]);
   if (!cl?.success) { toast(cl?.error || 'Check-list introuvable', 'error'); return; }
   if (!cl.data) { toast('Check-list pas encore configurée', 'error'); return; }
-  CLF = { projectId, phase, checklist: cl.data, project: proj?.success ? proj.data : null, items: new Map(), order: [], filter: 'todo', closed: new Set(), timers: {} };
+  CLF = { projectId, phase, checklist: cl.data, project: proj?.success ? proj.data : null, items: new Map(), order: [], filter: 'todo', closed: new Set(), timers: {}, mode: mode || checklistPreferredMode(), slide: null };
   for (const it of cl.data.items) {
     CLF.items.set(it.id, { ...it, _status: it.status, _comment: it.comment || '', _showComment: false });
     CLF.order.push(it.id);
@@ -811,12 +823,23 @@ async function openChecklistFull(projectId, phase = 'installation') {
   document.getElementById('checklist-full')?.remove();
   const view = document.createElement('div');
   view.id = 'checklist-full';
-  view.style.cssText = 'position:fixed;inset:0;z-index:450;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
+  view.style.cssText = 'position:fixed;inset:0;z-index:450;background:var(--bg);overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
   document.body.appendChild(view);
   // la barre du bas (mobile) et l'assistant passeraient par-dessus la vue
   document.querySelector('.bottom-nav')?.style.setProperty('display', 'none', 'important');
   document.getElementById('assistant-widget')?.style.setProperty('display', 'none');
+  if (CLF.mode === 'slides') checklistSlideBuildDeck();
   renderChecklistFull();
+}
+
+/** Bascule liste ↔ diaporama (mémorisé sur l'appareil). */
+function setChecklistFullMode(mode) {
+  if (!CLF || CLF.mode === mode) return;
+  CLF.mode = mode;
+  try { localStorage.setItem('vem_checklist_mode', mode); } catch (e) { /* stockage indisponible */ }
+  if (mode === 'slides') checklistSlideBuildDeck();
+  renderChecklistFull();
+  document.getElementById('checklist-full')?.scrollTo({ top: 0 });
 }
 
 function closeChecklistFull() {
@@ -857,8 +880,9 @@ function renderChecklistFull() {
   const view = document.getElementById('checklist-full');
   if (!CLF || !view) return;
   const p = CLF.project;
+  checklistSlideStyles();
   view.innerHTML = `
-    <div style="position:sticky;top:0;z-index:2;background:var(--bg2);border-bottom:1px solid var(--border);box-shadow:0 4px 14px rgba(0,0,0,.25);">
+    <div style="position:sticky;top:0;z-index:5;background:var(--bg2);border-bottom:1px solid var(--border);box-shadow:0 4px 14px rgba(0,0,0,.25);">
       <div style="max-width:900px;margin:0 auto;padding:10px 14px 12px;">
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="btn btn-ghost btn-sm" style="min-height:44px;flex-shrink:0;" onclick="closeChecklistFull()">← Fermer</button>
@@ -868,16 +892,24 @@ function renderChecklistFull() {
           </div>
           <button class="btn btn-ghost btn-sm" style="min-height:44px;flex-shrink:0;" title="PDF (FR / EN), imprimer, envoyer, joindre au daily report" onclick="openChecklistExport(CLF.projectId, CLF.phase)">📄 PDF</button>
         </div>
-        <div id="clf-progress"></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="cl-mode" role="tablist" aria-label="Affichage">
+            <button class="${CLF.mode === 'list' ? 'on' : ''}" role="tab" aria-selected="${CLF.mode === 'list'}" onclick="setChecklistFullMode('list')">☰ Liste</button>
+            <button class="${CLF.mode === 'slides' ? 'on' : ''}" role="tab" aria-selected="${CLF.mode === 'slides'}" onclick="setChecklistFullMode('slides')">🃏 Diaporama</button>
+          </div>
+          <div id="clf-progress" style="flex:1;min-width:0;"></div>
+        </div>
       </div>
     </div>
+    ${CLF.mode === 'slides' ? '<div id="cls-root"></div>' : `
     <div style="max-width:900px;margin:0 auto;padding:14px 14px calc(40px + env(safe-area-inset-bottom));">
       <div id="clf-info"></div>
       <div id="clf-counters" style="margin:-4px 0 12px;"></div>
       <div id="clf-filters" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;"></div>
       <div id="clf-list"></div>
       <div id="clf-footer"></div>
-    </div>`;
+    </div>`}`;
+  if (CLF.mode === 'slides') { renderChecklistSlides(); return; }
   renderChecklistFullInfo();
   renderChecklistFullList();
   updateChecklistFullSummary();
@@ -914,6 +946,7 @@ function checklistFullFilterCount(key) {
 
 function setChecklistFullFilter(key) {
   CLF.filter = key;
+  if (CLF.mode === 'slides') { checklistSlideBuildDeck(); renderChecklistSlides(); return; }
   renderChecklistFullList();
   updateChecklistFullSummary();
   document.getElementById('checklist-full')?.scrollTo({ top: 0 });
@@ -1040,6 +1073,7 @@ function checklistDetailsOpen(it) {
 
 /** Met à jour un point affiché sans le recréer (le champ commentaire garde le focus pendant la saisie). */
 function updateChecklistItemView(id) {
+  if (CLF?.mode === 'slides') { updateChecklistSlideView(id); return; }
   const el = document.getElementById(`clf-item-${id}`);
   const it = CLF?.items.get(id);
   if (!el || !it) return;
@@ -1140,7 +1174,7 @@ function updateChecklistFullSummary() {
   if (counters) counters.innerHTML = checklistStatsHtml(s, false);
   const filters = document.getElementById('clf-filters');
   if (filters) filters.innerHTML = Object.entries(CHECKLIST_FILTERS).map(([k, f]) => `
-    <button class="btn ${CLF.filter === k ? 'btn-primary' : 'btn-ghost'} btn-sm" style="justify-content:center;min-height:44px;" onclick="setChecklistFullFilter('${k}')">
+    <button class="btn ${CLF.filter === k ? 'btn-primary' : 'btn-ghost'} btn-sm" style="justify-content:center;min-height:${CLF.mode === 'slides' ? 36 : 44}px;" onclick="setChecklistFullFilter('${k}')">
       ${f.label} (${checklistFullFilterCount(k)})
     </button>`).join('');
   checklistFullGroups().forEach((g, gi) => {
@@ -1152,6 +1186,7 @@ function updateChecklistFullSummary() {
     c.innerHTML = `${closed}/${items.length}${problems ? ` · <span style="color:var(--amber);">⚠️ ${problems}</span>` : ''}`;
   });
   renderChecklistFullFooter(s);
+  if (CLF.mode === 'slides') checklistSlideStory();
 }
 
 function renderChecklistFullFooter(s) {
@@ -1418,6 +1453,495 @@ async function validateChecklistFull() {
     toast('Check-list validée ✅', 'success');
   } else toast(r.data?.error || 'Validation non enregistrée — réessaie', 'error');
 }
+
+// ─── Diaporama : un point à la fois, en cartes à glisser ───
+// Glisser à droite = OK, à gauche = Non fait ; boutons ✕ ½ N/A ✓ en bas, ↶ revenir, ⏭ passer.
+// La série (CLF.slide.ids) est figée à l'entrée : un point mis OK ne disparaît pas sous le doigt.
+// La carte active porte l'id clf-item-<id> : enregistrement, photos, dictée et commentaire passent par les mêmes fonctions que la liste.
+const CHECKLIST_SLIDE_FLY = {
+  ok: 'translate(150%, 40px) rotate(24deg)',
+  nok: 'translate(-150%, 40px) rotate(-24deg)',
+  na: 'translate(0, -120%) rotate(-3deg)',
+  partial: 'translate(0, 70%) scale(.8)',
+  skip: 'translate(-30%, -20px) scale(.9)',
+};
+const CHECKLIST_SWIPE = 110; // px pour valider un glissement
+
+function checklistSlideStyles() {
+  if (document.getElementById('cls-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'cls-styles';
+  st.textContent = `
+    .cl-mode{display:inline-flex;background:var(--bg3);border:1px solid var(--border);border-radius:11px;padding:3px;gap:2px;flex-shrink:0;margin-top:8px;}
+    .cl-mode button{border:none;background:transparent;color:var(--text2);font:700 12px 'Inter',sans-serif;padding:0 11px;border-radius:8px;cursor:pointer;min-height:32px;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+    .cl-mode button.on{background:var(--bg4);color:var(--text);box-shadow:0 1px 6px rgba(0,0,0,.35);}
+    .cls-wrap{max-width:560px;margin:0 auto;padding:12px 16px calc(150px + env(safe-area-inset-bottom));}
+    .cls-filters{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;}
+    .cls-story{display:flex;gap:2px;margin-bottom:6px;}
+    .cls-seg{flex:1;min-width:2px;height:5px;border-radius:3px;background:var(--bg4);cursor:pointer;transition:background .25s,transform .25s;}
+    .cls-seg.cur{background:var(--text);transform:scaleY(1.6);}
+    .cls-where{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--text3);margin-bottom:14px;}
+    .cls-deck{position:relative;margin-bottom:30px;}
+    .cls-ghost{position:absolute;inset:0;border-radius:24px;background:var(--bg2);border:1px solid var(--border);transform-origin:50% 100%;transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .3s;}
+    .cls-ghost.g1{transform:translateY(12px) scale(.95);opacity:.75;z-index:2;}
+    .cls-ghost.g2{transform:translateY(24px) scale(.9);opacity:.4;z-index:1;}
+    .cls-deck.cls-advance .g1{transform:none;opacity:1;}
+    .cls-deck.cls-advance .g2{transform:translateY(12px) scale(.95);opacity:.75;}
+    .cls-card{position:relative;z-index:3;background:linear-gradient(165deg,var(--bg3) 0%,var(--bg2) 55%);border:1px solid var(--border2);border-radius:24px;box-shadow:0 22px 50px rgba(0,0,0,.45);overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:grab;will-change:transform;}
+    .cls-card:active{cursor:grabbing;}
+    .cls-card textarea{user-select:text;-webkit-user-select:text;cursor:text;}
+    .cls-band{height:6px;background:var(--border);transition:background .25s;}
+    .cls-body{padding:18px 20px 20px;}
+    .cls-rise{animation:clsRise .22s ease-out;}
+    @keyframes clsRise{from{opacity:.25;}to{opacity:1;}}
+    .cls-back{animation:clsBack .42s cubic-bezier(.2,.8,.2,1);}
+    @keyframes clsBack{from{transform:translateX(-115%) rotate(-16deg);opacity:0;}to{transform:none;opacity:1;}}
+    .cls-in{animation:clsIn .4s cubic-bezier(.2,.8,.2,1);}
+    @keyframes clsIn{from{transform:translateY(26px) scale(.92);opacity:0;}to{transform:none;opacity:1;}}
+    .cls-shake{animation:clsShake .45s;}
+    @keyframes clsShake{15%,85%{transform:translateX(-3px);}30%,70%{transform:translateX(7px);}45%,55%{transform:translateX(-9px);}}
+    .cls-stamp{position:absolute;top:30px;z-index:6;padding:2px 12px;border:4px solid;border-radius:10px;font:800 30px 'Syne',sans-serif;letter-spacing:2px;opacity:0;pointer-events:none;background:rgba(10,12,16,.55);}
+    .cls-stamp.ok{left:18px;color:var(--green);border-color:var(--green);transform:rotate(-14deg);}
+    .cls-stamp.nok{right:18px;color:var(--accent);border-color:var(--accent);transform:rotate(14deg);}
+    .cls-cat{display:flex;align-items:center;gap:8px;margin-bottom:16px;}
+    .cls-chip{display:inline-block;max-width:100%;padding:5px 11px;border-radius:999px;background:rgba(72,149,239,.14);color:var(--blue);font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;overflow-wrap:anywhere;}
+    .cls-chip.new{animation:clsChip .8s ease-out;}
+    @keyframes clsChip{0%{box-shadow:0 0 0 0 rgba(72,149,239,.55);}100%{box-shadow:0 0 0 10px rgba(72,149,239,0);}}
+    .cls-catpos{font-size:11px;color:var(--text3);white-space:nowrap;margin-left:auto;}
+    .cls-num{font:800 13px 'Syne',sans-serif;color:var(--text3);letter-spacing:1px;margin-bottom:6px;}
+    .cls-num b{color:var(--text2);font-size:15px;}
+    .cls-label{font:800 23px/1.22 'Syne',sans-serif;color:var(--text);overflow-wrap:anywhere;}
+    .cls-hint{font-size:14px;line-height:1.5;color:var(--text2);margin-top:10px;overflow-wrap:anywhere;}
+    .cls-flags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+    .cls-flag{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;}
+    .cls-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;min-height:0;}
+    .cls-state:empty{display:none;}
+    .cls-pill{font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;}
+    .cls-note{font-size:12px;color:var(--text3);}
+    .cls-photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
+    .cls-photos:empty{display:none;}
+    .cls-thumb{position:relative;width:72px;height:72px;}
+    .cls-thumb img{width:72px;height:72px;object-fit:cover;border-radius:12px;border:1px solid var(--border);cursor:pointer;}
+    .cls-thumb button{position:absolute;top:-7px;right:-7px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.8);color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:24px;}
+    .cls-docs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+    .cls-docs:empty{display:none;}
+    .cls-comment{margin-top:16px;}
+    .cls-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;}
+    .cls-tool{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 13px;border-radius:999px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font:600 13px 'Inter',sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+    .cls-tool.need{border-color:var(--accent);color:var(--accent2);background:rgba(230,57,70,.1);}
+    .cls-commit{margin-top:16px;}
+    .cls-meta{font-size:11px;color:var(--text3);margin-top:14px;line-height:1.8;}
+    .cls-meta:empty{display:none;}
+    .cls-swipe{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:-14px 6px 0;}
+    .cls-keys{display:none;}
+    @media (hover:hover) and (pointer:fine){.cls-keys{display:inline;}}
+    .cls-actions{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;justify-content:center;align-items:flex-end;gap:8px;padding:22px 10px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 62%,rgba(10,12,16,0));}
+    .cls-act{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.3px;}
+    .cls-btn{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--border2);background:var(--bg2);color:var(--text2);font:800 16px 'Inter',sans-serif;cursor:pointer;padding:0;box-shadow:0 8px 20px rgba(0,0,0,.4);transition:transform .12s,background .15s,color .15s;-webkit-tap-highlight-color:transparent;}
+    .cls-btn:active{transform:scale(.88);}
+    .cls-btn:disabled{opacity:.3;cursor:default;}
+    .cls-btn.s{width:44px;height:44px;font-size:17px;}
+    .cls-btn.m{width:52px;height:52px;}
+    .cls-btn.l{width:64px;height:64px;font-size:28px;}
+    .cls-btn[data-status="ok"]{color:var(--green);border-color:var(--green);}
+    .cls-btn[data-status="nok"]{color:var(--accent);border-color:var(--accent);}
+    .cls-btn[data-status="partial"]{color:var(--amber);border-color:var(--amber);font-size:19px;}
+    .cls-btn[data-status="na"]{color:var(--text2);border-color:var(--text3);font-size:13px;}
+    .cls-btn[data-status].on{color:#fff;}
+    .cls-btn[data-status="ok"].on{background:var(--green);}
+    .cls-btn[data-status="nok"].on{background:var(--accent);}
+    .cls-btn[data-status="partial"].on{background:var(--amber);}
+    .cls-btn[data-status="na"].on{background:var(--text3);}
+    .cls-end{text-align:center;padding-top:10px;}
+    .cls-ring{width:150px;height:150px;border-radius:50%;margin:8px auto 18px;display:grid;place-items:center;background:conic-gradient(var(--green) calc(var(--p) * 1%),var(--bg4) 0);animation:clsIn .5s cubic-bezier(.2,.8,.2,1);}
+    .cls-ring>div{width:122px;height:122px;border-radius:50%;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+    .cls-ring b{font:800 34px 'Syne',sans-serif;}
+    .cls-ring span{font-size:12px;color:var(--text3);}
+    .cls-end-title{font:800 22px 'Syne',sans-serif;}
+    .cls-end-sub{font-size:13px;color:var(--text2);margin-top:6px;line-height:1.5;}
+    .cls-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:18px 0;}
+    .cls-tiles div{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 4px;}
+    .cls-tiles b{display:block;font:800 20px 'Syne',sans-serif;}
+    .cls-tiles span{font-size:10px;color:var(--text3);}
+    .cls-end-btns{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+    .cls-end-btns .btn{justify-content:center;min-height:48px;}
+    .cls-pop{display:inline-block;font-size:44px;animation:clsPop .7s cubic-bezier(.2,1.6,.4,1);}
+    @keyframes clsPop{from{transform:scale(0) rotate(-30deg);}to{transform:none;}}
+    @media (max-width:380px){
+      .cls-wrap{padding-left:12px;padding-right:12px;}
+      .cls-body{padding:16px 16px 18px;}
+      .cls-label{font-size:20px;}
+      .cls-actions{gap:5px;}
+      .cls-btn.s{width:40px;height:40px;}
+      .cls-btn.m{width:46px;height:46px;}
+      .cls-btn.l{width:56px;height:56px;font-size:24px;}
+      .cl-mode button{padding:0 8px;}
+      .cls-tiles b{font-size:17px;}
+    }
+    @media (prefers-reduced-motion:reduce){
+      .cls-card,.cls-ghost,.cls-ring,.cls-pop,.cls-chip.new{animation:none !important;transition:none !important;}
+    }`;
+  document.head.appendChild(st);
+}
+
+/** Construit la série de cartes selon le filtre (À traiter / Problèmes / Tout), à partir du premier point « À vérifier ». */
+function checklistSlideBuildDeck(startId) {
+  const match = CHECKLIST_FILTERS[CLF.filter].match;
+  const ids = CLF.order.filter(id => match(CLF.items.get(id)));
+  let index = startId ? ids.indexOf(startId) : ids.findIndex(id => CLF.items.get(id).status === 'pending');
+  if (index < 0) index = 0;
+  CLF.slide = { ids, index, busy: false };
+}
+
+function checklistSlideCurrent() {
+  const sl = CLF?.slide;
+  return sl && sl.index < sl.ids.length ? sl.ids[sl.index] : null;
+}
+
+function renderChecklistSlides(anim) {
+  const root = document.getElementById('cls-root');
+  if (!CLF || !root) return;
+  if (!CLF.slide) checklistSlideBuildDeck();
+  const sl = CLF.slide;
+  const id = checklistSlideCurrent();
+  if (!id) { renderChecklistSlideEnd(root); return; }
+  const it = CLF.items.get(id);
+  const canFill = checklistCanFill();
+  const catIds = sl.ids.filter(x => CLF.items.get(x).categoryName === it.categoryName);
+  const prev = sl.index > 0 ? CLF.items.get(sl.ids[sl.index - 1]) : null;
+  const newCat = !prev || prev.categoryName !== it.categoryName;
+  const ghosts = Math.min(2, sl.ids.length - sl.index - 1);
+  const act = (status, size, label, icon) => `
+    <div class="cls-act"><button class="cls-btn ${size}" data-status="${status}" aria-label="${CHECKLIST_STATUS[status].label}" title="${CHECKLIST_STATUS[status].label}" onclick="checklistSlideChoose('${status}')">${icon}</button>${label}</div>`;
+  root.innerHTML = `
+    <div class="cls-wrap">
+      <div id="clf-filters" class="cls-filters"></div>
+      <div id="cls-story" class="cls-story"></div>
+      <div class="cls-where">
+        <span>${CLF.filter === 'all' ? 'Tous les points' : CLF.filter === 'problems' ? 'Problèmes à reprendre' : 'Points à traiter'}</span>
+        <span id="cls-saving"></span>
+      </div>
+      <div class="cls-deck" id="cls-deck">
+        ${ghosts >= 2 ? '<div class="cls-ghost g2"></div>' : ''}${ghosts >= 1 ? '<div class="cls-ghost g1"></div>' : ''}
+        <div id="clf-item-${id}" class="cls-card ${anim ? `cls-${anim}` : ''}">
+          <div class="cls-band" data-role="band"></div>
+          ${canFill ? '<div class="cls-stamp ok">OK</div><div class="cls-stamp nok">NON</div>' : ''}
+          <div class="cls-body">
+            <div class="cls-cat"><span class="cls-chip ${newCat ? 'new' : ''}">${esc(it.categoryName || 'Check-list')}</span><span class="cls-catpos">${catIds.indexOf(id) + 1} / ${catIds.length}</span></div>
+            <div class="cls-num">POINT <b>${sl.index + 1}</b> / ${sl.ids.length}</div>
+            <div class="cls-label">${esc(it.label)}</div>
+            ${it.hint ? `<div class="cls-hint">${esc(it.hint)}</div>` : ''}
+            ${it.critical || it.photoRequired ? `<div class="cls-flags">
+              ${it.critical ? '<span class="cls-flag" style="background:rgba(230,57,70,.15);color:var(--accent2);">⚠️ Point critique</span>' : ''}
+              ${it.photoRequired ? '<span class="cls-flag" style="background:rgba(244,162,97,.15);color:var(--amber);">📷 Photo obligatoire</span>' : ''}
+            </div>` : ''}
+            <div data-role="state" class="cls-state"></div>
+            <div data-role="photos" class="cls-photos"></div>
+            <div data-role="docs" class="cls-docs"></div>
+            <div data-role="comment" class="cls-comment" style="display:none;">
+              ${canFill ? `<div style="display:flex;gap:6px;align-items:flex-start;">
+                <textarea class="input" rows="3" oninput="checklistCommentInput('${id}', this.value)" onblur="checklistCommentBlur('${id}')" style="flex:1;min-height:52px;resize:vertical;"></textarea>
+                <button class="btn btn-ghost" style="min-width:48px;min-height:48px;justify-content:center;padding:0;" title="Dicter le commentaire" onclick="checklistDictate('${id}')">🎙️</button>
+              </div>
+              <div data-role="comment-hint" style="font-size:12px;color:var(--accent2);margin-top:5px;"></div>`
+              : '<div data-role="comment-text" style="font-size:14px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg3);border-radius:12px;padding:10px 12px;"></div>'}
+            </div>
+            ${canFill ? '<div data-role="tools" class="cls-tools"></div><div data-role="commit" class="cls-commit"></div>' : ''}
+            <div data-role="meta" class="cls-meta"></div>
+          </div>
+        </div>
+      </div>
+      ${canFill ? '<div class="cls-swipe"><span>⇠ glisser : Non fait<span class="cls-keys"> (touche ←)</span></span><span><span class="cls-keys">P partiel · A N/A · </span>glisser : OK ⇢<span class="cls-keys"> (touche →)</span></span></div>' : '<div class="cls-swipe"><span>⇠ précédent</span><span>suivant ⇢</span></div>'}
+    </div>
+    <div class="cls-actions">
+      ${canFill ? `
+        <div class="cls-act"><button class="cls-btn s" aria-label="Point précédent" title="Point précédent" ${sl.index ? '' : 'disabled'} onclick="checklistSlideBack()">↶</button>Retour</div>
+        ${act('nok', 'l', 'NON', '✕')}
+        ${act('partial', 'm', 'PARTIEL', '½')}
+        ${act('na', 'm', 'N/A', 'N/A')}
+        ${act('ok', 'l', 'OK', '✓')}
+        <div class="cls-act"><button class="cls-btn s" aria-label="Passer ce point" title="Passer (sans rien changer)" onclick="checklistSlideFly('skip')">⏭</button>Passer</div>`
+      : `
+        <div class="cls-act"><button class="cls-btn l" aria-label="Point précédent" ${sl.index ? '' : 'disabled'} onclick="checklistSlideBack()">‹</button>Précédent</div>
+        <div class="cls-act"><button class="cls-btn l" aria-label="Point suivant" onclick="checklistSlideFly('skip')">›</button>Suivant</div>`}
+    </div>`;
+  checklistSlideBindDrag(document.getElementById(`clf-item-${id}`));
+  updateChecklistSlideView(id);
+  updateChecklistFullSummary();
+}
+
+/** Barre « stories » : un segment par point de la série, couleur du statut, clic = aller au point. */
+function checklistSlideStory() {
+  const el = document.getElementById('cls-story');
+  const sl = CLF?.slide;
+  if (!el || !sl) return;
+  const color = s => s === 'pending' ? '' : CHECKLIST_STATUS[s]?.color || '';
+  if (el.childElementCount !== sl.ids.length) {
+    el.innerHTML = sl.ids.map((id, i) => `<div class="cls-seg" title="${esc(CLF.items.get(id).label)}" onclick="checklistSlideGo(${i}, 'in')"></div>`).join('');
+  }
+  [...el.children].forEach((seg, i) => {
+    const it = CLF.items.get(sl.ids[i]);
+    seg.classList.toggle('cur', i === sl.index);
+    seg.style.background = i === sl.index ? '' : color(it._status);
+  });
+  const saving = document.getElementById('cls-saving');
+  if (saving) {
+    const errors = sl.ids.filter(id => CLF.items.get(id)._error);
+    const busy = [...CLF.items.values()].some(it => it._saving || it._uploading);
+    saving.innerHTML = errors.length
+      ? `<a href="#" style="color:var(--accent2);font-weight:700;" onclick="event.preventDefault();checklistSlideGo(${sl.ids.indexOf(errors[0])}, 'in')">⚠️ ${errors.length} non enregistré(s) — voir</a>`
+      : busy ? '⏳ Enregistrement…' : '';
+  }
+}
+
+/** Remplace le contenu seulement s'il change : un bouton redessiné entre « appui » et « clic » perdrait le clic. */
+function checklistSetHtml(el, html) {
+  if (el && el._html !== html) { el.innerHTML = html; el._html = html; }
+}
+
+/** Met à jour la carte affichée sans la recréer (le commentaire garde le focus). */
+function updateChecklistSlideView(id) {
+  checklistSlideStory();
+  const el = document.getElementById(`clf-item-${id}`);
+  const it = CLF?.items.get(id);
+  if (!el || !it || !el.classList.contains('cls-card')) return;
+  const canFill = checklistCanFill();
+  const st = CHECKLIST_STATUS[it._status] || CHECKLIST_STATUS.pending;
+  const required = CHECKLIST_COMMENT_REQUIRED.includes(it._status);
+  const needsComment = required && !it._comment.trim();
+  const photos = (it.photos || []).filter(checklistIsPhoto);
+  const docs = (it.photos || []).filter(p => !checklistIsPhoto(p));
+  const missingPhoto = it.photoRequired && !photos.length && it._status !== 'na';
+
+  el.querySelector('[data-role="band"]').style.background = it._status === 'pending' ? 'var(--border)' : st.color;
+  el.style.boxShadow = it._error ? '0 0 0 3px var(--accent), 0 22px 50px rgba(0,0,0,.45)' : '';
+
+  const state = [];
+  if (it._status !== 'pending') state.push(`<span class="cls-pill" style="background:${st.bg};color:${st.color};">${st.icon} ${st.label}</span>`);
+  if (it._saving) state.push('<span class="cls-note">⏳ Enregistrement…</span>');
+  else if (it._status !== it.status && needsComment) state.push(`<span class="cls-note" style="color:var(--amber);">Dis pourquoi « ${st.label} » pour enregistrer</span>`);
+  else if (it.checkedBy && it.status !== 'pending') state.push(`<span class="cls-note">${esc(checklistShortName(it.checkedBy))} · ${fmtDateTime(it.checkedAt)}</span>`);
+  if (it._error) state.push(`<button class="btn btn-primary btn-sm" onclick="checklistSaveItem('${id}')">↻ Réessayer (non enregistré)</button>`);
+  checklistSetHtml(el.querySelector('[data-role="state"]'), state.join(''));
+
+  checklistSetHtml(el.querySelector('[data-role="photos"]'), photos.map(ph => `
+    <div class="cls-thumb">
+      <img src="${esc(ph.photoUrl)}" loading="lazy" alt="" onclick="openPhotoViewer('${esc(ph.photoUrl)}', 'photo.jpg')">
+      ${canFill ? `<button onclick="checklistDeletePhoto('${id}','${ph.id}')" title="Supprimer la photo">×</button>` : ''}
+    </div>`).join('') + (it._uploading ? `<div class="cls-thumb" style="display:grid;place-items:center;border:2px dashed var(--border2);border-radius:12px;font-size:11px;color:var(--text3);">⏳ ${it._uploading}</div>` : ''));
+  checklistSetHtml(el.querySelector('[data-role="docs"]'), docs.map(d => checklistDocChip(d, canFill ? id : null)).join(''));
+
+  const box = el.querySelector('[data-role="comment"]');
+  const showComment = canFill ? !!(it._showComment || it._comment || required) : !!it._comment;
+  box.style.display = showComment ? 'block' : 'none';
+  const ta = box.querySelector('textarea');
+  if (ta) {
+    if (document.activeElement !== ta && ta.value !== it._comment) ta.value = it._comment;
+    ta.placeholder = required ? `Pourquoi « ${st.label} » ? (obligatoire)` : 'Commentaire (facultatif)';
+    ta.style.borderColor = needsComment ? 'var(--accent)' : '';
+  }
+  const hint = box.querySelector('[data-role="comment-hint"]');
+  if (hint) hint.textContent = needsComment ? '⚠️ Commentaire obligatoire : le statut sera enregistré avec le commentaire.' : '';
+  const txt = box.querySelector('[data-role="comment-text"]');
+  if (txt) txt.textContent = it._comment;
+
+  checklistSetHtml(el.querySelector('[data-role="tools"]'), !canFill ? '' : `
+    <label class="cls-tool ${missingPhoto ? 'need' : ''}">📸 ${missingPhoto ? 'Prendre la photo' : 'Photo'}
+      <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="checklistUploadPhotos('${id}', this)">
+    </label>
+    <label class="cls-tool">🖼️ Galerie
+      <input type="file" accept="image/*" multiple style="display:none;" onchange="checklistUploadPhotos('${id}', this)">
+    </label>
+    <label class="cls-tool">📎 Document
+      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*" multiple style="display:none;" onchange="checklistUploadDocuments('${id}', this)">
+    </label>
+    ${showComment ? '' : `<button class="cls-tool" onclick="checklistShowComment('${id}')">💬 Commentaire</button>`}`);
+  checklistSetHtml(el.querySelector('[data-role="commit"]'), canFill && required
+    ? `<button class="btn btn-primary" style="width:100%;justify-content:center;min-height:50px;font-size:15px;" onclick="checklistSlideCommit()">Enregistrer et suivant →</button>`
+    : '');
+
+  const meta = [];
+  if (it.logsCount) meta.push(`<a href="#" onclick="event.preventDefault();showChecklistItemHistory('${id}')" style="color:var(--blue);">🕘 Historique (${it.logsCount})</a>`);
+  if (canFill && it.status !== 'pending' && !it._saving) meta.push(`<a href="#" onclick="event.preventDefault();checklistSetStatus('${id}','pending')" style="color:var(--text3);">↺ Remettre à vérifier</a>`);
+  checklistSetHtml(el.querySelector('[data-role="meta"]'), meta.join(' · '));
+
+  if (id === checklistSlideCurrent()) {
+    document.querySelectorAll('.cls-actions [data-status]').forEach(b => b.classList.toggle('on', b.dataset.status === it._status));
+  }
+}
+
+function checklistSlideShake() {
+  const card = document.querySelector('.cls-card');
+  if (!card) return;
+  card.classList.remove('cls-shake', 'cls-in', 'cls-rise', 'cls-back');
+  void card.offsetWidth; // relance l'animation
+  card.classList.add('cls-shake');
+  navigator.vibrate?.(60);
+}
+
+/** Bouton ✕ ½ N/A ✓ ou glissement : statut, puis la carte s'envole si rien ne manque (photo, commentaire). */
+function checklistSlideChoose(status) {
+  const id = checklistSlideCurrent();
+  if (!id || CLF.slide.busy || !checklistCanFill()) return;
+  const it = CLF.items.get(id);
+  checklistSetStatus(id, status);
+  if (it._status !== status) { checklistSlideShake(); return; } // photo obligatoire manquante
+  if (CHECKLIST_COMMENT_REQUIRED.includes(status) && !it._comment.trim()) {
+    checklistSlideShake();
+    document.querySelector(`#clf-item-${id} [data-role="comment"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return; // la carte attend le commentaire, puis « Enregistrer et suivant »
+  }
+  navigator.vibrate?.(15);
+  checklistSlideFly(status);
+}
+
+function checklistSlideCommit() {
+  const id = checklistSlideCurrent();
+  if (!id || CLF.slide.busy) return;
+  const it = CLF.items.get(id);
+  if (CHECKLIST_COMMENT_REQUIRED.includes(it._status) && !it._comment.trim()) {
+    checklistSlideShake();
+    document.querySelector(`#clf-item-${id} textarea`)?.focus();
+    return;
+  }
+  checklistSlideFly(it._status);
+}
+
+/** La carte part (droite OK, gauche Non, haut N/A, bas Partiel), la suivante de la pile avance. */
+function checklistSlideFly(kind) {
+  const id = checklistSlideCurrent();
+  if (!id || CLF.slide.busy) return;
+  const ta = document.querySelector(`#clf-item-${id} textarea`);
+  if (ta && document.activeElement === ta) ta.blur(); // ferme le clavier, enregistre le commentaire
+  if (CLF.timers[id]) checklistSaveItem(id);
+  const card = document.getElementById(`clf-item-${id}`);
+  CLF.slide.busy = true;
+  if (card) {
+    card.style.transition = 'transform .3s cubic-bezier(.4,.1,.7,1), opacity .3s';
+    card.style.transform = CHECKLIST_SLIDE_FLY[kind] || CHECKLIST_SLIDE_FLY.skip;
+    card.style.opacity = '0';
+  }
+  document.getElementById('cls-deck')?.classList.add('cls-advance');
+  setTimeout(() => {
+    if (!CLF?.slide) return;
+    CLF.slide.busy = false;
+    checklistSlideGo(CLF.slide.index + 1, 'rise');
+  }, 290);
+}
+
+function checklistSlideBack() {
+  if (!CLF?.slide || CLF.slide.busy || CLF.slide.index <= 0) return;
+  checklistSlideGo(CLF.slide.index - 1, 'back');
+}
+
+function checklistSlideGo(index, anim) {
+  if (!CLF?.slide) return;
+  const cur = checklistSlideCurrent();
+  if (cur && CLF.timers[cur]) checklistSaveItem(cur); // commentaire en cours de frappe
+  CLF.slide.index = Math.max(0, Math.min(index, CLF.slide.ids.length));
+  renderChecklistSlides(anim);
+  document.getElementById('checklist-full')?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/** Glisser la carte au doigt / à la souris (horizontal seulement : le défilement vertical reste natif). */
+function checklistSlideBindDrag(card) {
+  if (!card) return;
+  const canFill = checklistCanFill();
+  const okStamp = card.querySelector('.cls-stamp.ok');
+  const nokStamp = card.querySelector('.cls-stamp.nok');
+  let sx = 0, sy = 0, dx = 0, pid = null, dragging = false;
+  const reset = () => {
+    card.style.transition = 'transform .35s cubic-bezier(.2,1.4,.4,1)';
+    card.style.transform = '';
+    if (okStamp) okStamp.style.opacity = 0;
+    if (nokStamp) nokStamp.style.opacity = 0;
+  };
+  card.addEventListener('pointerdown', e => {
+    if (CLF?.slide?.busy || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.target.closest('button, a, input, textarea, label, img, select, [contenteditable]')) return;
+    sx = e.clientX; sy = e.clientY; dx = 0; pid = e.pointerId; dragging = false;
+  });
+  card.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid) return;
+    dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    if (!dragging) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        dragging = true;
+        card.setPointerCapture?.(pid);
+        card.classList.remove('cls-in', 'cls-rise', 'cls-back', 'cls-shake');
+        card.style.transition = 'none';
+      } else if (Math.abs(dy) > 12) { pid = null; return; }
+      else return;
+    }
+    card.style.transform = `translate(${dx}px, ${Math.abs(dx) * 0.06}px) rotate(${dx / 16}deg)`;
+    const k = Math.min(1, Math.abs(dx) / CHECKLIST_SWIPE);
+    if (okStamp) okStamp.style.opacity = dx > 0 ? k : 0;
+    if (nokStamp) nokStamp.style.opacity = dx < 0 ? k : 0;
+  });
+  const end = e => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    if (!dragging) return;
+    dragging = false;
+    if (Math.abs(dx) < CHECKLIST_SWIPE) { reset(); return; }
+    if (!canFill) { reset(); if (dx < 0) checklistSlideFly('skip'); else checklistSlideBack(); return; }
+    const status = dx > 0 ? 'ok' : 'nok';
+    const it = CLF.items.get(checklistSlideCurrent());
+    const blocked = (status === 'ok' && it.photoRequired && !(it.photos || []).filter(checklistIsPhoto).length)
+      || (status === 'nok' && !it._comment.trim());
+    if (blocked) reset();
+    checklistSlideChoose(status);
+  };
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', e => { if (e.pointerId === pid) { pid = null; if (dragging) { dragging = false; reset(); } } });
+}
+
+function renderChecklistSlideEnd(root) {
+  const s = checklistFullStats();
+  const problems = s.partial + s.nok;
+  const done = !s.pending;
+  const tile = (k, n) => `<div><b style="color:${CHECKLIST_STATUS[k].color};">${n}</b><span>${CHECKLIST_STATUS[k].short}</span></div>`;
+  const deckEmpty = !CLF.slide.ids.length;
+  root.innerHTML = `
+    <div class="cls-wrap" style="padding-bottom:calc(40px + env(safe-area-inset-bottom));">
+      <div class="cls-end">
+        ${done && !problems ? '<span class="cls-pop">🎉</span>' : ''}
+        <div class="cls-ring" style="--p:${s.percent};"><div><b>${s.percent}%</b><span>${s.ok + s.na} / ${s.total} fermés</span></div></div>
+        <div class="cls-end-title">${done ? (problems ? 'Tout est vérifié' : 'Tout est OK, bravo !') : deckEmpty ? 'Rien dans cette série' : 'Fin de la série'}</div>
+        <div class="cls-end-sub">
+          ${done ? (problems ? `${problems} point(s) partiel(s) ou non fait(s) à reprendre.` : 'Tu peux valider la check-list ci-dessous.') : `Il reste ${s.pending} point(s) « À vérifier ».`}
+          ${s.criticalOpen ? `<br><span style="color:var(--accent2);">⚠️ ${s.criticalOpen} point(s) critique(s) pas OK : ils bloqueront la signature du handover.</span>` : ''}
+        </div>
+        <div class="cls-tiles">${tile('ok', s.ok)}${tile('partial', s.partial)}${tile('nok', s.nok)}${tile('na', s.na)}${tile('pending', s.pending)}</div>
+        <div class="cls-end-btns">
+          ${s.pending ? `<button class="btn btn-primary" onclick="setChecklistFullFilter('todo')">▶ Continuer : ${s.pending} point(s) à vérifier</button>` : ''}
+          ${problems ? `<button class="btn ${s.pending ? 'btn-ghost' : 'btn-primary'}" onclick="setChecklistFullFilter('problems')">⚠️ Revoir les problèmes (${problems})</button>` : ''}
+          <button class="btn btn-ghost" onclick="CLF.filter='all';checklistSlideBuildDeck(CLF.order[0]);renderChecklistSlides('in')">↺ Revoir tous les points</button>
+          <button class="btn btn-ghost" onclick="setChecklistFullMode('list')">☰ Voir en liste</button>
+        </div>
+      </div>
+      <div id="clf-info"></div>
+      <div id="clf-footer"></div>
+    </div>`;
+  renderChecklistFullInfo();
+  updateChecklistFullSummary();
+}
+
+// Clavier (ordinateur) : → OK, ← Non fait, P partiel, A N/A, Retour arrière = point précédent, Espace = passer.
+document.addEventListener('keydown', e => {
+  if (!CLF || CLF.mode !== 'slides' || !checklistSlideCurrent()) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (document.querySelector('.overlay.open')) return; // visionneuse photo, historique…
+  const canFill = checklistCanFill();
+  const keys = canFill
+    ? { ArrowRight: () => checklistSlideChoose('ok'), ArrowLeft: () => checklistSlideChoose('nok'), p: () => checklistSlideChoose('partial'), a: () => checklistSlideChoose('na'), Backspace: checklistSlideBack, ' ': () => checklistSlideFly('skip') }
+    : { ArrowRight: () => checklistSlideFly('skip'), ArrowLeft: checklistSlideBack, ' ': () => checklistSlideFly('skip') };
+  const fn = keys[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!fn) return;
+  e.preventDefault();
+  fn();
+});
 
 // ═══════════════════════════════════════════════════════════
 // ☑️ CHECK-LIST DANS LE HANDOVER — carte, fiche, lien de signature
