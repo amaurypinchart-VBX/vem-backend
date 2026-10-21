@@ -159,6 +159,8 @@ export interface Image3dItem extends ItemBase {
   showLabel?: boolean;
   labelPos?: PointMm;
   labelSize?: number;
+  /** planche copiée pour une autre Viewbox : image à refaire avec ce sous-ensemble (« Recapturer ») */
+  retake?: { include: string[] };
 }
 
 export interface LabelItem extends ItemBase {

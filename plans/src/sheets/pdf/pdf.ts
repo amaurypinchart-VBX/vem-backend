@@ -17,8 +17,11 @@ export type FontFiles = Partial<Record<FontKey, ArrayBuffer>>;
 export const FONT_FILE: Record<FontVariant, string> = { normal: 'Regular', bold: 'Bold', italic: 'Italic', bolditalic: 'BoldItalic' };
 
 export interface PdfPage {
-  /** SVG de la planche (renderToStaticMarkup de SheetSvg, sans édition) */
-  svg: string;
+  /**
+   * SVG de la planche (renderToStaticMarkup de SheetSvg, sans édition) ; ou une fonction qui le produit au moment de
+   * convertir la page (téléphone : une seule planche en mémoire à la fois)
+   */
+  svg: string | (() => string);
   paper: Paper;
   /** format explicite en mm (ex. A4 portrait 210 × 297 des fiches de l'étude structure) ; sinon celui de `paper` */
   size?: { w: number; h: number };
@@ -71,7 +74,8 @@ export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta
     for (let i = 0; i < pages.length; i++) {
       const [w, h] = size(pages[i]);
       if (i > 0) pdf.addPage([w, h], orientation(pages[i]));
-      host.innerHTML = pages[i].svg;
+      const src = pages[i].svg;
+      host.innerHTML = typeof src === 'function' ? src() : src;
       const svg = host.querySelector('svg');
       if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);
       await svg2pdf(svg, pdf, { x: 0, y: 0, width: w, height: h });

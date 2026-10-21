@@ -37,12 +37,15 @@ export async function loadFonts(keys: FontKey[]): Promise<FontFiles> {
 /** Plus grand côté des images 3D dans le PDF (px) : ≈ 180 dpi sur une image de 335 mm (planche A1). */
 const MAX_IMAGE_PX = 3000;
 
-/** Image 3D (URL Cloudinary ou blob:) → data URL pour le PDF, au plus MAX_IMAGE_PX de côté. */
-export async function pdfImageDataUrl(url: string, jpegQuality = 0.92): Promise<string> {
+/** Téléphone : images plus légères (mémoire de l'onglet). */
+export const MAX_IMAGE_PX_MOBILE = 2000;
+
+/** Image 3D (URL Cloudinary ou blob:) → data URL pour le PDF, au plus `maxPx` (MAX_IMAGE_PX) de côté. */
+export async function pdfImageDataUrl(url: string, jpegQuality = 0.92, maxPx = MAX_IMAGE_PX): Promise<string> {
   const res = await fetch(url, { mode: 'cors' });
   if (!res.ok) throw new Error(`Image 3D inaccessible (${res.status})`);
   const bmp = await createImageBitmap(await res.blob());
-  const k = Math.min(1, MAX_IMAGE_PX / Math.max(bmp.width, bmp.height));
+  const k = Math.min(1, maxPx / Math.max(bmp.width, bmp.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bmp.width * k);
   canvas.height = Math.round(bmp.height * k);

@@ -167,6 +167,11 @@ async function openFileViewer(url, filename) {
   }
 
   // ─── PDF ───
+  // téléphone / tablette : un PDF dans une iframe n'affiche souvent que la 1re page (iOS) → visionneuse du téléphone
+  if (isPDF && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    window.open(url, '_blank');
+    return;
+  }
   if (isPDF) {
     overlay.innerHTML = `
       <div class="modal" style="max-width:1100px;width:96vw;height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">

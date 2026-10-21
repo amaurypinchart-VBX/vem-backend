@@ -46,6 +46,13 @@ import type { ProjectField, ProjectValues } from '../../sheets/titleBlock';
 import { PROJECT_FIELDS, PROJECT_FIELD_LABELS, projectChanges, projectValues } from '../../sheets/titleBlock';
 import type { Person, TitleBlockData } from '../../sheets/types';
 import { freshImport, NewVersionError } from '../newVersion';
+import { retargetSheet, sheetModule } from '../../sheets/duplicate';
+import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
+import { useDevice } from '../useDevice';
+import { ItemMenu } from './ItemMenu';
+import { FileReadyDialog } from '../FileReady';
+import type { ReadyFile } from '../FileReady';
+import { deliveryPlan, estimatePdfMb, tooHeavyForPhone } from '../deliver';
 
 interface Props {
   scene: LoadedScene;
@@ -62,6 +69,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const doc = useEditor((s) => s.doc)!;
   const sheetId = useEditor((s) => s.sheetId);
   const selection = useEditor((s) => s.selection);
+  const sheetSelection = useEditor((s) => s.sheetSelection);
   const version = useEditor((s) => s.version);
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
@@ -81,6 +89,28 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   // glisser-déposer des planches dans la colonne des vignettes
   const [dragId, setDragId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
+  // sélection de planches : Ctrl / Cmd + clic, Maj + clic (plage), mode « ☑ Sélectionner » (doigt : appui long)
+  const [selectMode, setSelectMode] = useState(false);
+  const lastThumb = useRef<string | null>(null);
+  const longPress = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+  /** « Dupliquer pour d'autres Viewbox » : planche source */
+  const [retarget, setRetarget] = useState<Sheet | null>(null);
+  // téléphone / tablette : consultation par défaut (« ✏️ Édition » pour déplacer), menus en tiroirs
+  const device = useDevice();
+  const touchLayout = device.isTouch && device.isNarrow;
+  const [editMode, setEditMode] = useState(false);
+  const readOnly = touchLayout && !editMode;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [propsOpen, setPropsOpen] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(true);
+  const [itemMenu, setItemMenu] = useState<{ item: SheetItem; x: number; y: number } | null>(null);
+  /** fichier calculé, à remettre (téléphone : écran « PDF prêt ») */
+  const [ready, setReady] = useState<ReadyFile | null>(null);
+  const cancelExport = useRef(false);
+  const deliver = (name: string, blob: Blob) => {
+    if (deliveryPlan(device) === 'download') downloadBlob(name, blob);
+    else setReady({ name, blob });
+  };
   const bankTick = useBank(bank);
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
@@ -436,7 +466,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       } catch {
         /* garde l'image locale : elle ne sera pas conservée à la réouverture */
       }
-      if (target) actions.updateItem(target.id, { url, width: r.width, height: r.height } as Partial<SheetItem>, 'Nouvelle capture');
+      if (target) actions.updateItem(target.id, { url, width: r.width, height: r.height, retake: undefined } as Partial<SheetItem>, 'Nouvelle capture');
       else actions.addItems([{ id: newId('c'), type: 'image3d', rect, url, width: r.width, height: r.height, label: '3D', showLabel: false }], 'Ajouter une image 3D');
     } catch (e) {
       window.alert(`Capture impossible : ${(e as Error).message}`);
@@ -473,8 +503,25 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   /** PDF vectoriel du jeu entier ou de la planche affichée (une page par planche, format exact). */
-  const exportPdf = async (all: boolean) => {
-    const sheets = all ? doc.sheets : [sheet];
+  const exportPdf = async (scope: 'all' | 'sheet' | 'selection') => {
+    const all = scope === 'all';
+    const sheets = all ? doc.sheets : scope === 'sheet' ? [sheet] : doc.sheets.filter((s) => sheetSelection.includes(s.id));
+    if (!sheets.length) return;
+    // téléphone / tablette : images plus légères, une planche en mémoire à la fois, jeu lourd signalé avant de lancer
+    const light = device.isTouch;
+    if (light) {
+      const nImages = new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : []))).size;
+      const mb = estimatePdfMb(sheets.length, nImages, true);
+      if (
+        sheets.length > 1 &&
+        tooHeavyForPhone(sheets.length, mb) &&
+        !window.confirm(
+          `Jeu lourd pour un téléphone : ${sheets.length} planches, ≈ ${Math.round(mb)} Mo.\n\nMieux : « PDF planche » ou « ☑ Sélectionner » quelques planches puis « PDF de la sélection ».\n\nLancer quand même ?`,
+        )
+      )
+        return;
+    }
+    cancelExport.current = false;
     try {
       setBusy('PDF : calcul des vues…');
       const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
@@ -482,7 +529,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       const missing = vps.filter((vp) => !bank.data(vp).lw).length;
       if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
       const { buildPdf, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
-      const { loadFonts, pdfImageDataUrl } = await freshImport(() => import('../../sheets/pdf/assets'));
+      const { loadFonts, pdfImageDataUrl, MAX_IMAGE_PX_MOBILE } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
       const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
       const images = new Map<string, string>();
@@ -490,14 +537,13 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       for (const [n, url] of urls.entries()) {
         setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
         try {
-          images.set(url, await pdfImageDataUrl(url));
+          images.set(url, light ? await pdfImageDataUrl(url, 0.88, MAX_IMAGE_PX_MOBILE) : await pdfImageDataUrl(url));
         } catch {
           failed++;
         }
       }
-      const pages = sheets.map((s) => ({
-        paper: s.paper,
-        svg: renderToStaticMarkup(
+      const markup = (s: Sheet) =>
+        renderToStaticMarkup(
           <SheetSvg
             sheet={{ ...s, items: s.items.map((i) => (i.type === 'image3d' && i.url ? { ...i, url: images.get(i.url) ?? '' } : i)) }}
             titleBlock={doc.titleBlock}
@@ -505,18 +551,23 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             legend={legend}
             viewData={(vp) => bank.data(vp)}
           />,
-        ),
-      }));
+        );
+      // téléphone : le SVG de chaque planche est refait au moment de sa page (polices relevées sans garder les textes)
+      const fontKeys = light ? fontsUsed(sheets.map((s) => markup(s).replace(/<image[^>]*>/g, ''))) : null;
+      const pages = sheets.map((s) => ({ paper: s.paper, svg: light ? () => markup(s) : markup(s) }));
       setBusy('PDF : polices…');
-      const fonts = await loadFonts(fontsUsed(pages.map((p) => p.svg)));
-      const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: all ? `${sheets.length} planche(s)` : `${sheet.number} ${sheet.title}` }, (d, n) =>
-        setBusy(`PDF : planche ${d}/${n}…`),
-      );
-      const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${all ? '' : `_${sheet.number}`}`;
-      downloadBlob(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`, pdf.output('blob'));
+      const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
+      const one = sheets.length === 1 && !all;
+      const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` }, (d, n) => {
+        if (cancelExport.current) throw new Error('annulé');
+        setBusy(`PDF : planche ${d}/${n}…`);
+      });
+      const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;
+      const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${suffix}`;
+      deliver(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`, pdf.output('blob'));
       if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
     } catch (e) {
-      if (!(e instanceof NewVersionError)) window.alert(`Export PDF impossible : ${(e as Error).message}`);
+      if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`Export PDF impossible : ${(e as Error).message}`);
     } finally {
       setBusy('');
     }
@@ -557,19 +608,119 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         await new Promise((r) => setTimeout(r, 0));
         const f = setDxf(rendered, mode, computed, base);
         if (!f) return empty();
-        downloadBlob(f.name, new Blob([f.dxf], { type: 'application/dxf' }));
+        deliver(f.name, new Blob([f.dxf], { type: 'application/dxf' }));
         return;
       }
       const files = rendered.map((r) => sheetDxf(r.sheet, r.markup, mode, computed, base)).filter((f) => f !== null);
       if (!files.length) return empty();
-      if (files.length === 1) downloadBlob(files[0].name, new Blob([files[0].dxf], { type: 'application/dxf' }));
-      else downloadBlob(safeFileName(`${base}_DXF${mode === 'real' ? '_grandeur-reelle' : ''}.zip`), new Blob([zipDxf(files) as BlobPart], { type: 'application/zip' }));
+      if (files.length === 1) deliver(files[0].name, new Blob([files[0].dxf], { type: 'application/dxf' }));
+      else deliver(safeFileName(`${base}_DXF${mode === 'real' ? '_grandeur-reelle' : ''}.zip`), new Blob([zipDxf(files) as BlobPart], { type: 'application/zip' }));
     } catch (e) {
       if (!(e instanceof NewVersionError)) window.alert(`Export DXF impossible : ${(e as Error).message}`);
     } finally {
       setBusy('');
     }
   };
+
+  /**
+   * « Dupliquer pour d'autres Viewbox » : une copie par box choisie, vues repointées, calculées avant la pose (centrage,
+   * clé, cotes automatiques refaites), posées après la planche source en une seule entrée d'historique.
+   */
+  const duplicateForModules = async (src: Sheet, targets: string[]) => {
+    const from = sheetModule(src);
+    if (!from || !targets.length) return;
+    const warnings: string[] = [];
+    const built: Sheet[] = [];
+    try {
+      for (const [n, to] of targets.entries()) {
+        setBusy(`Copie pour ${to} (${n + 1}/${targets.length})…`);
+        const r = retargetSheet(src, from, to, { index: scene.index, frames: scene.frames }, newId);
+        for (const w of r.warnings) warnings.push(`${to} : ${w}`);
+        const vps = r.sheet.items.filter((i): i is ViewportItem => i.type === 'viewport' && r.viewportIds.includes(i.id));
+        await Promise.all(vps.map((vp) => bank.load(vp)));
+        for (const vp of vps) {
+          const data = bank.data(vp);
+          const key = bank.keyOf(vp);
+          if (!data.lw || !key) continue;
+          const b = data.lw.boundsMm;
+          vp.lineworkKey = key;
+          vp.center = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+          if (r.autoDimViewportIds.includes(vp.id) && data.basis) {
+            const res = autoDimensionViewport(vp, data.lw, data.basis, scene, vp.scale || undefined);
+            vp.scale = res.scale;
+            vp.center = res.center;
+            r.sheet.items.push(...res.dims);
+          }
+        }
+        built.push(r.sheet);
+      }
+      actions.insertSheets(built, src.id, built.length === 1 ? `Dupliquer pour ${targets[0]}` : `Dupliquer pour ${built.length} Viewbox`);
+      if (warnings.length) window.alert(warnings.join('\n'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  /** Clic sur une vignette : afficher, ou ajouter / retirer de la sélection (Ctrl / Cmd, mode sélection), plage (Maj). */
+  const onThumbClick = (e: React.MouseEvent, s: Sheet) => {
+    const st = useEditor.getState();
+    if (longPress.current?.fired) {
+      longPress.current = null;
+      return;
+    }
+    if (e.shiftKey) {
+      const ids = doc.sheets.map((x) => x.id);
+      const a = ids.indexOf(lastThumb.current ?? sheet.id);
+      const b = ids.indexOf(s.id);
+      st.selectSheets(ids.slice(Math.min(a, b), Math.max(a, b) + 1));
+      st.setSheet(s.id);
+      return;
+    }
+    lastThumb.current = s.id;
+    if (e.ctrlKey || e.metaKey || selectMode) {
+      const base = st.sheetSelection.length || selectMode ? st.sheetSelection : [sheet.id];
+      const has = base.includes(s.id);
+      st.selectSheets(has ? base.filter((id) => id !== s.id) : [...base, s.id]);
+      if (!has) st.setSheet(s.id);
+      return;
+    }
+    st.selectSheets([]);
+    st.setSheet(s.id);
+  };
+  /** appui long (doigt) sur une vignette : mode sélection avec cette planche */
+  const onThumbPointerDown = (e: React.PointerEvent, s: Sheet) => {
+    if (e.pointerType === 'mouse') return;
+    const timer = window.setTimeout(() => {
+      if (!longPress.current) return;
+      longPress.current.fired = true;
+      setSelectMode(true);
+      const st = useEditor.getState();
+      if (!st.sheetSelection.includes(s.id)) st.selectSheets([...st.sheetSelection, s.id]);
+      lastThumb.current = s.id;
+      navigator.vibrate?.(15);
+    }, 450);
+    longPress.current = { timer, x: e.clientX, y: e.clientY, fired: false };
+  };
+  const onThumbPointerMove = (e: React.PointerEvent) => {
+    const lp = longPress.current;
+    if (lp && !lp.fired && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8) {
+      clearTimeout(lp.timer);
+      longPress.current = null;
+    }
+  };
+  const onThumbPointerUp = () => {
+    const lp = longPress.current;
+    if (lp && !lp.fired) {
+      clearTimeout(lp.timer);
+      longPress.current = null;
+    }
+  };
+  // en consultation, un outil de pose passe en édition
+  useEffect(() => {
+    if (readOnly && tool !== 'select') setEditMode(true);
+  }, [readOnly, tool]);
+  const selectedSheets = doc.sheets.filter((s) => sheetSelection.includes(s.id));
+  const groupIds = selectedSheets.length > 1 ? selectedSheets.map((s) => s.id) : null;
 
   const newSheet = () => {
     const s: Sheet = {
@@ -607,10 +758,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 
   return (
     <div className="sheet-editor">
-      <div className="sheet-toolbar">
+      <div className={`sheet-toolbar${moreOpen ? ' more-open' : ''}`}>
         <button className="btn small" onClick={onClose}>
           ← Jeux de plans
         </button>
+        <div className="toolbar-more">
         <input
           className="set-title"
           type="text"
@@ -619,12 +771,29 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           title="Nom du jeu de plans"
         />
         <span className="sep" />
+        </div>
         <button className="btn small" disabled={!canUndo} onClick={() => useEditor.getState().undo()} title="Annuler (Ctrl+Z)">
           ↶
         </button>
         <button className="btn small" disabled={!canRedo} onClick={() => useEditor.getState().redo()} title="Rétablir (Ctrl+Y)">
           ↷
         </button>
+        <button className={`btn small mobile-only${editMode ? ' primary' : ''}`} data-testid="edit-mode" onClick={() => setEditMode(!editMode)}>
+          ✏️ {editMode ? 'Édition' : 'Consultation'}
+        </button>
+        <button className="btn small mobile-only" onClick={() => setFitSignal((n) => n + 1)} aria-label="Toute la planche">
+          ⤢
+        </button>
+        <button className={`btn small mobile-only${propsOpen ? ' primary' : ''}`} data-testid="props-toggle" onClick={() => setPropsOpen(!propsOpen)} aria-label="Propriétés">
+          ☰
+        </button>
+        <button className={`btn small mobile-only${pagesOpen ? ' primary' : ''}`} onClick={() => setPagesOpen(!pagesOpen)} aria-label="Planches">
+          ▤
+        </button>
+        <button className={`btn small mobile-only${moreOpen ? ' primary' : ''}`} data-testid="toolbar-more" onClick={() => setMoreOpen(!moreOpen)} aria-label="Plus d’actions">
+          ⋯
+        </button>
+        <div className="toolbar-more">
         <span className="sep" />
         <button className={`btn small${tool === 'select' ? ' primary' : ''}`} onClick={() => setTool('select')} title="Sélectionner / déplacer">
           ⬚ Sélection
@@ -728,10 +897,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small ghost" onClick={() => setZoomSignal((z) => ({ n: z.n + 1, factor: 1.25 }))}>
           +
         </button>
-        <button className="btn small" disabled={!!busy} onClick={() => void exportPdf(true)} title="Tout le jeu de plans en un PDF vectoriel (une page par planche, format exact, polices intégrées)">
+        <button className="btn small" disabled={!!busy} onClick={() => void exportPdf('all')} title="Tout le jeu de plans en un PDF vectoriel (une page par planche, format exact, polices intégrées)">
           ⬇ PDF du jeu
         </button>
-        <button className="btn small ghost" disabled={!!busy} onClick={() => void exportPdf(false)} title="La planche affichée en PDF vectoriel">
+        <button className="btn small ghost" disabled={!!busy} onClick={() => void exportPdf('sheet')} title="La planche affichée en PDF vectoriel">
           ⬇ PDF planche
         </button>
         <button className="btn small ghost" disabled={!!busy} onClick={() => setDxfOpen(true)} title="Plans en DXF pour AutoCAD / architectes : planche complète ou vues en grandeur réelle (1 unité = 1 mm)">
@@ -740,6 +909,12 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small ghost" onClick={exportSvg} title="La planche affichée au format SVG (format exact, vectoriel)">
           ⬇ SVG
         </button>
+        </div>
+        {busy.startsWith('PDF') && (
+          <button className="btn small ghost" onClick={() => (cancelExport.current = true)} title="Arrêter l’export">
+            Annuler
+          </button>
+        )}
         <span className={`save-status ${save.status}`} title={save.error}>
           {busy || (save.status === 'saved' ? '✓ Enregistré' : save.status === 'saving' ? 'Enregistrement…' : save.status === 'pending' ? 'Modifié' : '⚠ Non enregistré')}
         </span>
@@ -773,18 +948,73 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           </button>
         </div>
       )}
+      {(selectMode || sheetSelection.length > 0) && (
+        <SheetSelectionBar
+          doc={doc}
+          ids={sheetSelection}
+          busy={!!busy}
+          onPdf={() => void exportPdf('selection')}
+          onClose={() => {
+            useEditor.getState().selectSheets([]);
+            setSelectMode(false);
+          }}
+        />
+      )}
       <div className="sheet-body">
-        <aside className="sheet-pages">
+        <aside
+          className={`sheet-pages${selectMode ? ' select-mode' : ''}${pagesOpen ? '' : ' collapsed'}`}
+          tabIndex={0}
+          data-testid="sheet-pages"
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+              e.preventDefault();
+              e.stopPropagation();
+              actions.duplicateSheets(sheetSelection.length ? sheetSelection : [sheet.id]);
+            }
+          }}
+        >
+          <div className="sheet-pages-head">
+            <button
+              className={`btn small${selectMode ? ' primary' : ' ghost'}`}
+              data-testid="sheet-select-mode"
+              onClick={() => {
+                if (selectMode) useEditor.getState().selectSheets([]);
+                setSelectMode(!selectMode);
+              }}
+              title="Choisir plusieurs planches (aussi : Ctrl + clic, Maj + clic, appui long au doigt)"
+            >
+              {selectMode ? '✓ Terminer' : '☑ Sélectionner'}
+            </button>
+          </div>
           {doc.sheets.map((s, i) => (
             <Fragment key={s.id}>
             {!!doc.units?.length && (i === 0 || doc.sheets[i - 1].unit !== s.unit) && (
-              <div className="sheet-group">{s.unit ? unitTitle(s.unit, doc.units.find((u) => u.n === s.unit)?.name) : 'Vue d’ensemble'}</div>
+              <div className="sheet-group">
+                <span>{s.unit ? unitTitle(s.unit, doc.units.find((u) => u.n === s.unit)?.name) : 'Vue d’ensemble'}</span>
+                {selectMode && (
+                  <button
+                    className="btn small ghost"
+                    onClick={() => {
+                      const ids = doc.sheets.filter((x) => (x.unit ?? 0) === (s.unit ?? 0)).map((x) => x.id);
+                      useEditor.getState().selectSheets([...new Set([...sheetSelection, ...ids])]);
+                    }}
+                  >
+                    Tout
+                  </button>
+                )}
+              </div>
             )}
             <div
-              className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}${drop?.id === s.id ? (drop.after ? ' drop-after' : ' drop-before') : ''}${dragId === s.id ? ' dragging' : ''}`}
-              onClick={() => useEditor.getState().setSheet(s.id)}
-              draggable
-              title="Glisser pour déplacer la planche dans le jeu"
+              className={`sheet-thumb${s.id === sheet.id ? ' on' : ''}${sheetSelection.includes(s.id) ? ' picked' : ''}${drop?.id === s.id ? (drop.after ? ' drop-after' : ' drop-before') : ''}${dragId === s.id || (dragId && groupIds?.includes(dragId) && groupIds.includes(s.id)) ? ' dragging' : ''}`}
+              data-sheet-id={s.id}
+              onClick={(e) => onThumbClick(e, s)}
+              onPointerDown={(e) => onThumbPointerDown(e, s)}
+              onPointerMove={onThumbPointerMove}
+              onPointerUp={onThumbPointerUp}
+              onPointerCancel={onThumbPointerUp}
+              onContextMenu={(e) => longPress.current?.fired && e.preventDefault()}
+              draggable={!selectMode}
+              title="Glisser pour déplacer la planche dans le jeu · Ctrl + clic : choisir plusieurs planches"
               onDragStart={(e) => {
                 setDragId(s.id);
                 e.dataTransfer.effectAllowed = 'move';
@@ -803,11 +1033,20 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                if (dragId && drop) actions.moveSheetTo(dragId, drop.id, drop.after);
+                if (dragId && drop && groupIds?.includes(dragId)) {
+                  // groupe : posé après la cible (ou après la planche qui la précède hors du groupe)
+                  if (drop.after) actions.moveSheetsAfter(groupIds, drop.id);
+                  else {
+                    const rest = doc.sheets.filter((x) => !groupIds.includes(x.id));
+                    const t = rest.findIndex((x) => x.id === drop.id);
+                    actions.moveSheetsAfter(groupIds, t > 0 ? rest[t - 1].id : null);
+                  }
+                } else if (dragId && drop) actions.moveSheetTo(dragId, drop.id, drop.after);
                 setDragId(null);
                 setDrop(null);
               }}
             >
+              {selectMode && <input className="thumb-check" type="checkbox" readOnly checked={sheetSelection.includes(s.id)} aria-label={`Choisir la planche ${s.number}`} />}
               <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
@@ -852,7 +1091,13 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           fitSignal={fitSignal}
           zoomSignal={zoomSignal}
           onOpenItem={(it) => it.type === 'image3d' && setPicker({ itemId: it.id })}
+          readOnly={readOnly}
+          onItemMenu={(item, at) => setItemMenu({ item, ...at })}
         />
+        <div className={`sheet-side${propsOpen || tool === 'symbol' ? ' open' : ''}`}>
+        <button className="btn small mobile-only sheet-side-close" onClick={() => (setPropsOpen(false), tool === 'symbol' && setTool('select'))} aria-label="Fermer">
+          ✕
+        </button>
         {tool === 'symbol' ? (
           <SymbolPalette
             doc={doc}
@@ -869,7 +1114,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           scene={scene}
           viewData={viewData}
           suggestionsFor={(l) => labelSuggestions.current.get(l.id) ?? []}
-          onRecapture={(item, v) => void capture(item, v)}
+          onRecapture={(item, v) => void capture(item, v, item.retake?.include)}
           captures={captures}
           otherImages={otherImages}
           onPickImage={(item, img) => pickImage(item.id, img)}
@@ -878,9 +1123,43 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onSetInclude={(vp, include, label) => setViewportInclude(vp, include, label)}
           onSyncProject={() => void syncProject(true)}
           syncMessage={syncMessage}
+          onDuplicateForModules={sheetModule(sheet) ? () => setRetarget(sheet) : undefined}
         />
         )}
+        </div>
       </div>
+      {itemMenu && (
+        <ItemMenu
+          item={itemMenu.item}
+          at={itemMenu}
+          editMode={!readOnly}
+          onClose={() => setItemMenu(null)}
+          onProps={() => setPropsOpen(true)}
+          onOpenImage={() => setPicker({ itemId: itemMenu.item.id })}
+          onEdit={() => setEditMode(true)}
+        />
+      )}
+      {retarget && (
+        <ModulePickDialog
+          scene={scene}
+          from={sheetModule(retarget)!}
+          onCancel={() => setRetarget(null)}
+          onConfirm={(targets) => {
+            const src = retarget;
+            setRetarget(null);
+            void duplicateForModules(src, targets);
+          }}
+        />
+      )}
+      {ready && (
+        <FileReadyDialog
+          file={ready}
+          onClose={() => setReady(null)}
+          onSaveToProject={async (f) => {
+            await vem.saveProjectFile(PROJECT_ID, f.blob, f.name);
+          }}
+        />
+      )}
       {dxfOpen && <DxfDialog sheetLabel={`${sheet.number} ${sheet.title}`.trim()} sheetCount={doc.sheets.length} onExport={(c) => void exportDxf(c)} onClose={() => setDxfOpen(false)} />}
       {picker && (
         <CapturePicker

@@ -7,6 +7,7 @@ import type { DimensionItem, DrawingSet, PointMm, RectMm, Sheet, SheetItem } fro
 import { hasRect } from './types';
 import { newId, renumber } from './generate';
 import { dimOffsetAfterDrag } from './dimensions';
+import { insertCopies, moveGroupAfter, planDuplicates } from './duplicate';
 
 enablePatches();
 
@@ -25,6 +26,8 @@ export interface EditorState {
   /** incrémenté à chaque modification du document (enregistrement automatique) */
   version: number;
   clipboard: SheetItem[];
+  /** planches sélectionnées dans la colonne des vignettes (actions groupées ; non enregistré) */
+  sheetSelection: string[];
   load: (doc: DrawingSet) => void;
   close: () => void;
   apply: (label: string, recipe: (d: Draft<DrawingSet>) => void) => void;
@@ -34,6 +37,7 @@ export interface EditorState {
   redo: () => void;
   setSheet: (id: string) => void;
   select: (ids: string[]) => void;
+  selectSheets: (ids: string[]) => void;
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -44,8 +48,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   future: [],
   version: 0,
   clipboard: [],
-  load: (doc) => set({ doc, sheetId: doc.sheets[0]?.id ?? null, selection: [], past: [], future: [], version: 0 }),
-  close: () => set({ doc: null, sheetId: null, selection: [], past: [], future: [] }),
+  sheetSelection: [],
+  load: (doc) => set({ doc, sheetId: doc.sheets[0]?.id ?? null, selection: [], sheetSelection: [], past: [], future: [], version: 0 }),
+  close: () => set({ doc: null, sheetId: null, selection: [], sheetSelection: [], past: [], future: [] }),
   apply: (label, recipe) => {
     const { doc, past } = get();
     if (!doc) return;
@@ -55,7 +60,8 @@ export const useEditor = create<EditorState>((set, get) => ({
     // la sélection ne garde que des éléments qui existent encore
     const sheet = next.sheets.find((s) => s.id === get().sheetId) ?? next.sheets[0];
     const ids = new Set(sheet?.items.map((i) => i.id));
-    set({ sheetId: sheet?.id ?? null, selection: get().selection.filter((id) => ids.has(id)) });
+    const sheetIds = new Set(next.sheets.map((s) => s.id));
+    set({ sheetId: sheet?.id ?? null, selection: get().selection.filter((id) => ids.has(id)), sheetSelection: get().sheetSelection.filter((id) => sheetIds.has(id)) });
   },
   patchSilently: (recipe) => {
     const { doc } = get();
@@ -71,6 +77,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const next = applyPatches(doc, e.inverse);
     set({ doc: next, past: past.slice(0, -1), future: [...future, e], version: get().version + 1 });
     if (!next.sheets.some((s) => s.id === get().sheetId)) set({ sheetId: next.sheets[0]?.id ?? null, selection: [] });
+    set({ sheetSelection: get().sheetSelection.filter((id) => next.sheets.some((s) => s.id === id)) });
   },
   redo: () => {
     const { doc, past, future } = get();
@@ -79,9 +86,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     const next = applyPatches(doc, e.patches);
     set({ doc: next, past: [...past, e], future: future.slice(0, -1), version: get().version + 1 });
     if (!next.sheets.some((s) => s.id === get().sheetId)) set({ sheetId: next.sheets[0]?.id ?? null, selection: [] });
+    set({ sheetSelection: get().sheetSelection.filter((id) => next.sheets.some((s) => s.id === id)) });
   },
   setSheet: (id) => set({ sheetId: id, selection: [] }),
   select: (ids) => set({ selection: ids }),
+  selectSheets: (ids) => set({ sheetSelection: ids }),
 }));
 
 // ─── actions sur le document (chacune = une entrée d'historique) ───
@@ -290,24 +299,60 @@ export const actions = {
     useEditor.getState().setSheet(sheet.id);
   },
   duplicateSheet(id: string) {
+    actions.duplicateSheets([id]);
+  },
+  /**
+   * Duplique les planches (une seule entrée d'historique) : copies à la suite de la dernière planche choisie (même
+   * série) ou chacune après son original (plusieurs unités) ; les copies deviennent la sélection, la première est
+   * affichée. Les vues gardent leur clé de calcul : rien n'est recalculé.
+   */
+  duplicateSheets(ids: string[]): string[] {
     const { doc } = useEditor.getState();
-    const src = doc?.sheets.find((s) => s.id === id);
-    if (!src) return;
-    const copy = structuredClone(src);
-    copy.id = newId('s');
-    const map = new Map<string, string>();
-    for (const it of copy.items) {
-      const nid = newId(it.type[0]);
-      map.set(it.id, nid);
-      it.id = nid;
-    }
-    for (const it of copy.items) if ((it.type === 'label' || it.type === 'dimension' || it.type === 'symbol') && it.viewportId) it.viewportId = map.get(it.viewportId) ?? it.viewportId;
-    useEditor.getState().apply('Dupliquer la planche', (d) => {
-      const at = d.sheets.findIndex((s) => s.id === id);
-      d.sheets.splice(at + 1, 0, copy as Draft<Sheet>);
+    if (!doc) return [];
+    const copies = planDuplicates(doc.sheets, ids, newId);
+    if (!copies.length) return [];
+    useEditor.getState().apply(copies.length === 1 ? 'Dupliquer la planche' : `Dupliquer ${copies.length} planches`, (d) => {
+      insertCopies(d.sheets as Sheet[], copies);
       renumber(d.sheets as Sheet[]);
     });
-    useEditor.getState().setSheet(copy.id);
+    const newIds = copies.map((c) => c.copy.id);
+    useEditor.getState().setSheet(newIds[0]);
+    if (copies.length > 1) useEditor.getState().selectSheets(newIds);
+    return newIds;
+  },
+  /** Ajoute des planches déjà construites après `afterId` (« Dupliquer pour d'autres Viewbox »), une entrée d'historique. */
+  insertSheets(sheets: Sheet[], afterId: string, label: string) {
+    if (!sheets.length) return;
+    useEditor.getState().apply(label, (d) => {
+      let after = afterId;
+      for (const s of sheets) {
+        const at = d.sheets.findIndex((x) => x.id === after);
+        d.sheets.splice(at < 0 ? d.sheets.length : at + 1, 0, s as Draft<Sheet>);
+        after = s.id;
+      }
+      renumber(d.sheets as Sheet[]);
+    });
+    useEditor.getState().setSheet(sheets[0].id);
+    useEditor.getState().selectSheets(sheets.length > 1 ? sheets.map((s) => s.id) : []);
+  },
+  /** Supprime plusieurs planches (il en reste toujours une). */
+  deleteSheets(ids: string[]) {
+    const { doc } = useEditor.getState();
+    if (!doc) return;
+    const keep = doc.sheets.filter((s) => !ids.includes(s.id));
+    if (!keep.length) return;
+    useEditor.getState().apply(ids.length === 1 ? 'Supprimer la planche' : `Supprimer ${ids.length} planches`, (d) => {
+      d.sheets = d.sheets.filter((s) => !ids.includes(s.id));
+      renumber(d.sheets as Sheet[]);
+    });
+    useEditor.getState().selectSheets([]);
+  },
+  /** Déplace un groupe de planches après une autre (null = en tête), dans l'ordre du jeu ; prend l'unité de la cible. */
+  moveSheetsAfter(ids: string[], targetId: string | null) {
+    useEditor.getState().apply(ids.length === 1 ? 'Déplacer la planche' : `Déplacer ${ids.length} planches`, (d) => {
+      moveGroupAfter(d.sheets as Sheet[], ids, targetId, !!d.units?.length);
+      renumber(d.sheets as Sheet[]);
+    });
   },
   deleteSheet(id: string) {
     useEditor.getState().apply('Supprimer la planche', (d) => {

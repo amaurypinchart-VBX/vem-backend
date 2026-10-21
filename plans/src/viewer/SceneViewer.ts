@@ -258,6 +258,8 @@ export class SceneViewer {
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointerup', this.onPointerUp);
     el.addEventListener('dblclick', this.onDoubleClick);
+    // iOS en arrière-plan : contexte WebGL perdu puis rendu ; three recharge ses ressources, il faut redessiner
+    el.addEventListener('webglcontextrestored', this.onContextRestored);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -932,13 +934,19 @@ export class SceneViewer {
   private readonly onPointerUp = (ev: PointerEvent) => {
     const d = this.downAt;
     this.downAt = null;
-    if (!d || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 4 || ev.button !== 0) return; // glisser = orbite
+    // glisser = orbite (doigt : 8 px de tolérance pour un « tape »)
+    if (!d || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > (ev.pointerType === 'mouse' ? 4 : 8) || ev.button !== 0) return;
     if (this.barPickHandler && this.barSegments) {
       const k = this.pickBar(ev);
       this.barPickHandler(k);
       if (k !== null) return;
     }
     this.pickHandler?.(this.pick(ev));
+  };
+
+  private readonly onContextRestored = () => {
+    this.resize();
+    this.requestRender();
   };
 
   // ─── rendu ───
@@ -1079,6 +1087,7 @@ export class SceneViewer {
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointerup', this.onPointerUp);
     el.removeEventListener('dblclick', this.onDoubleClick);
+    el.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.controls.dispose();
     this.scene3.remove(this.model.root);
     if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);

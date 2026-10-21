@@ -266,6 +266,31 @@ router.post('/project/:projectId/assets', upload.single('file'), async (req: Aut
   } catch (err) { next(err); }
 });
 
+// POST /plans/project/:projectId/files — PDF / DXF / .zip d'un jeu de plans (fait dans le navigateur) enregistré dans
+// les Fichiers du projet VEM (Cloudinary raw, 10 Mo maximum ; catégorie « plans »)
+const PLANS_FILE_TYPES: Record<string, string> = { pdf: 'application/pdf', dxf: 'application/dxf', zip: 'application/zip' };
+router.post('/project/:projectId/files', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) throw new AppError('Fichier manquant', 400);
+    if (req.file.size > 10 * 1024 * 1024) throw new AppError('Fichier de plus de 10 Mo : refusé par Cloudinary', 413);
+    const raw = typeof req.body?.fileName === 'string' ? req.body.fileName : req.file.originalname;
+    const fileName = String(raw || 'plans.pdf').slice(0, 200).replace(/[\\/:*?"<>|]+/g, '-');
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const fileType = PLANS_FILE_TYPES[ext];
+    if (!fileType) throw new AppError('Seuls les PDF, DXF et .zip de plans sont acceptés', 400);
+    const project = await prisma.project.findUnique({ where: { id: req.params.projectId }, select: { id: true } });
+    if (!project) throw new AppError('Projet introuvable', 404);
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `projects/${project.id}/plans`, {
+      resource_type: 'raw',
+      public_id: `${fileName.replace(/\.[^.]+$/, '')}-${Date.now()}.${ext}`,
+    });
+    const file = await prisma.projectFile.create({
+      data: { projectId: project.id, uploadedBy: req.user?.id ?? null, fileName, fileUrl: url, publicId, fileType, fileSize: req.file.size, category: 'plans' },
+    });
+    res.status(201).json({ success: true, data: file });
+  } catch (err) { next(err); }
+});
+
 // DELETE /plans/models/:id
 router.delete('/models/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

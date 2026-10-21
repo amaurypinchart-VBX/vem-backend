@@ -69,10 +69,13 @@ function multipart(req, raw) {
 }
 
 const appSettings = new Map();
+// fichiers enregistrés dans les Fichiers du projet (PDF / DXF des planches) ; GET /__test/project-files pour les tests
+const projectFiles = [];
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
+  if (p === '/__test/project-files') return json(res, projectFiles);
   if (p.startsWith('/api/v1/')) {
     if (req.headers.authorization !== 'Bearer tok') return json(res, 'Non autorisé', 401);
     const a = p.slice(7);
@@ -379,6 +382,16 @@ http.createServer(async (req, res) => {
       return json(res, r);
     }
     if (ds && req.method === 'DELETE') { sets.delete(ds[1]); return json(res, null); }
+    if (a === '/plans/project/p1/files' && req.method === 'POST') {
+      const { file, fields } = multipart(req, await body(req));
+      const name = fields?.fileName || 'plans.pdf';
+      const key = 'file-' + blobs.size;
+      blobs.set(key, { buf: file, type: /\.pdf$/i.test(name) ? 'application/pdf' : 'application/octet-stream' });
+      const row = { id: key, projectId: 'p1', fileName: name, fileUrl: '/blob/' + key, fileSize: file.length, category: 'plans', createdAt: new Date().toISOString() };
+      projectFiles.push(row);
+      console.log(`[server] fichier projet : ${name} (${file.length} o)`);
+      return json(res, row, 201);
+    }
     if (a === '/plans/project/p1/assets') {
       const { file } = multipart(req, await body(req));
       const key = 'img-' + blobs.size;

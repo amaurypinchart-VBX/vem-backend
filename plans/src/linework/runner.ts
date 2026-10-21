@@ -48,8 +48,19 @@ interface Pending {
   onAbort?: () => void;
 }
 
+/**
+ * Taille du pool : jusqu'à 4 Workers (cœurs − 1) ; 2 au plus sur téléphone / tablette ou appareil ≤ 4 Go (un onglet
+ * iOS trop gourmand est fermé). Le résultat du calcul ne dépend pas de la taille du pool.
+ */
+export function defaultPoolSize(): number {
+  const cores = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+  return coarse || mem <= 4 ? Math.min(2, cores) : cores;
+}
+
 /** Pool de Workers : jusqu'à `size` vues calculées en même temps. */
-export function createWorkerPool(size = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1))): HlrRunner {
+export function createWorkerPool(size = defaultPoolSize()): HlrRunner {
   const slots: Slot[] = [];
   const queue: Pending[] = [];
   let nextId = 1;

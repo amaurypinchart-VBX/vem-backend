@@ -41,7 +41,15 @@ interface Props {
   zoomSignal: { n: number; factor: number };
   /** double-clic sur un élément (image 3D : choisir une autre image) */
   onOpenItem?: (item: SheetItem) => void;
+  /** consultation (téléphone) : un doigt déplace la planche, un tape sélectionne, rien ne bouge sur la planche */
+  readOnly?: boolean;
+  /** appui long sur un élément (doigt) : menu de l'élément (point écran) */
+  onItemMenu?: (item: SheetItem, at: { x: number; y: number }) => void;
 }
+
+/** Appui long (ms) et seuil tape / glisser (px) au doigt. */
+const LONG_PRESS_MS = 450;
+const TAP_PX = 8;
 
 const GRID = 5;
 
@@ -69,7 +77,7 @@ function SnapMarker({ p, kind }: { p: PointMm; kind: SnapKind | null }) {
   return <path d={`M${p.x - r} ${p.y}L${p.x + r} ${p.y}M${p.x} ${p.y - r}L${p.x} ${p.y + r}`} {...common} />;
 }
 
-export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem }: Props) {
+export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const selection = useEditor((s) => s.selection);
@@ -79,6 +87,11 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const drag = useRef<Drag | null>(null);
   const space = useRef(false);
+  // doigts posés sur la planche : 2 = pincer (zoom) + déplacer ; tape, double tape et appui long
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; mid: { x: number; y: number }; view: { zoom: number; panX: number; panY: number } } | null>(null);
+  const touchTap = useRef<{ id: number; x: number; y: number; item: SheetItem | null; moved: boolean; timer: number; long: boolean } | null>(null);
+  const lastTap = useRef<{ t: number; id: string } | null>(null);
   const [dimDraft, setDimDraft] = useState<DimDraft | null>(null);
   const [hover, setHover] = useState<SnapResult | null>(null);
   useEffect(() => {
@@ -118,6 +131,10 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
       zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
+    // Safari : le pincer natif zoomerait toute la page
+    const noGesture = (e: Event) => e.preventDefault();
+    el.addEventListener('gesturestart', noGesture);
+    el.addEventListener('gesturechange', noGesture);
     const kd = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) space.current = true;
     };
@@ -128,6 +145,8 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
     window.addEventListener('keyup', ku);
     return () => {
       el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', noGesture);
+      el.removeEventListener('gesturechange', noGesture);
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
     };
@@ -241,6 +260,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   }, [tool, dimDraft]);
 
   const onItemDown = (e: ReactPointerEvent, item: SheetItem) => {
+    if (e.pointerType !== 'mouse' && consumed.current.has(e.pointerId)) return; // doigt : géré par la planche (consultation, pincer)
     if (e.button !== 0 || space.current || tool !== 'select') return;
     e.stopPropagation();
     const sel = useEditor.getState().selection;
@@ -259,13 +279,74 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   };
 
   const onHandleDown = (e: ReactPointerEvent, item: SheetItem, handle: string) => {
+    if (e.pointerType !== 'mouse' && consumed.current.has(e.pointerId)) return;
     if (e.button !== 0 || !hasRect(item)) return;
     e.stopPropagation();
     drag.current = { kind: 'resize', id: item.id, handle: handle as Handle, start: toPaper(e), rect: item.rect };
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
 
+  /** élément sous un point écran (le plus haut) */
+  const itemAtScreen = (x: number, y: number): SheetItem | null => {
+    const g = document.elementFromPoint(x, y)?.closest('[data-item-id]');
+    if (!g || !host.current?.contains(g)) return null;
+    const id = g.getAttribute('data-item-id');
+    return sheet.items.find((i) => i.id === id) ?? null;
+  };
+  /** doigt posé : pincer, déplacer la planche, tape / appui long ; true = geste pris en charge ici */
+  const consumed = useRef(new Set<number>());
+  const onTouchCapture = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'mouse') return;
+    if (touchDown(e)) consumed.current.add(e.pointerId);
+    else consumed.current.delete(e.pointerId);
+  };
+  const touchDown = (e: ReactPointerEvent): boolean => {
+    const t = touches.current;
+    t.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    host.current?.setPointerCapture?.(e.pointerId);
+    if (t.size === 2) {
+      // 2e doigt : on abandonne tout geste en cours, pincer + déplacer
+      if (touchTap.current) clearTimeout(touchTap.current.timer);
+      touchTap.current = null;
+      drag.current = null;
+      setPreview(undefined);
+      const [a, b] = [...t.values()];
+      pinch.current = { dist: Math.hypot(b.x - a.x, b.y - a.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view };
+      return true;
+    }
+    if (t.size > 2) return true;
+    const item = itemAtScreen(e.clientX, e.clientY);
+    // un doigt : outils de pose → clic normal ; sélection sur un élément en édition → déplacer l'élément ; sinon déplacer la planche
+    if (tool !== 'select') return false;
+    if (item && !readOnly) {
+      const timer = window.setTimeout(() => {
+        if (touchTap.current && !touchTap.current.moved) {
+          touchTap.current.long = true;
+          drag.current = null;
+          setPreview(undefined);
+          useEditor.getState().select([item.id]);
+          onItemMenu?.(item, { x: e.clientX, y: e.clientY });
+          navigator.vibrate?.(15);
+        }
+      }, LONG_PRESS_MS);
+      touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item, moved: false, timer, long: false };
+      return false; // l'élément démarre son déplacement (onItemDown)
+    }
+    const timer = window.setTimeout(() => {
+      if (touchTap.current && !touchTap.current.moved && touchTap.current.item) {
+        touchTap.current.long = true;
+        useEditor.getState().select([touchTap.current.item.id]);
+        onItemMenu?.(touchTap.current.item, { x: e.clientX, y: e.clientY });
+        navigator.vibrate?.(15);
+      }
+    }, LONG_PRESS_MS);
+    touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item, moved: false, timer, long: false };
+    drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
+    return true;
+  };
+
   const onBackgroundDown = (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'mouse' && consumed.current.has(e.pointerId)) return;
     if (e.button === 1 || (e.button === 0 && space.current)) {
       e.preventDefault();
       drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
@@ -286,6 +367,27 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   };
 
   const onMove = (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'mouse' && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const tt = touchTap.current;
+      if (tt && tt.id === e.pointerId && Math.hypot(e.clientX - tt.x, e.clientY - tt.y) > TAP_PX) {
+        tt.moved = true;
+        clearTimeout(tt.timer);
+      }
+      const pc = pinch.current;
+      if (pc && touches.current.size >= 2) {
+        const [a, b] = [...touches.current.values()];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const r = host.current!.getBoundingClientRect();
+        const zoom = Math.min(40, Math.max(0.15, pc.view.zoom * (Math.hypot(b.x - a.x, b.y - a.y) / pc.dist)));
+        // le point de la planche sous le milieu des doigts y reste, et suit leur déplacement
+        const px = (pc.mid.x - r.left - pc.view.panX) / pc.view.zoom;
+        const py = (pc.mid.y - r.top - pc.view.panY) / pc.view.zoom;
+        setView({ zoom, panX: mid.x - r.left - px * zoom, panY: mid.y - r.top - py * zoom });
+        return;
+      }
+      if (tt?.long) return;
+    }
     const d = drag.current;
     if (!d && (tool === 'dim' || tool === 'chain')) {
       const p = toPaper(e);
@@ -375,7 +477,36 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
 
   const viewportPreview = useRef<{ id: string; center: [number, number] } | null>(null);
 
-  const onUp = () => {
+  const onUp = (e?: ReactPointerEvent) => {
+    if (e && e.pointerType !== 'mouse' && touches.current.has(e.pointerId)) {
+      touches.current.delete(e.pointerId);
+      consumed.current.delete(e.pointerId);
+      if (pinch.current) {
+        if (touches.current.size < 2) pinch.current = null;
+        drag.current = null;
+        setPreview(undefined);
+        return;
+      }
+      const tt = touchTap.current;
+      touchTap.current = null;
+      if (tt) clearTimeout(tt.timer);
+      if (tt && !tt.moved && !tt.long) {
+        // tape : sélectionner l'élément (ou rien) ; double tape = double-clic
+        const now = Date.now();
+        if (tt.item) {
+          if (lastTap.current && lastTap.current.id === tt.item.id && now - lastTap.current.t < 320) {
+            lastTap.current = null;
+            onOpenItem?.(tt.item);
+          } else lastTap.current = { t: now, id: tt.item.id };
+          if (readOnly || drag.current?.kind === 'pan') useEditor.getState().select([tt.item.id]);
+        } else useEditor.getState().select([]);
+      }
+      if (tt?.long) {
+        drag.current = null;
+        setPreview(undefined);
+        return;
+      }
+    }
     const d = drag.current;
     drag.current = null;
     setGuides({});
@@ -404,10 +535,12 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
     <div
       ref={host}
       className={`sheet-canvas tool-${tool === 'chain' ? 'dim' : tool}`}
+      onPointerDownCapture={onTouchCapture}
       onPointerDown={onBackgroundDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={onUp}
+      data-readonly={readOnly ? '1' : undefined}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="sheet-paper" style={{ transform: `translate(${view.panX}px, ${view.panY}px)`, width: paper.w * view.zoom, height: paper.h * view.zoom }}>

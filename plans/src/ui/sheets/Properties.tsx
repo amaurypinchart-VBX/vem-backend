@@ -512,6 +512,14 @@ function ImageProps({
   const [view, setView] = useState('iso-sw|perspective');
   return (
     <>
+      {it.retake && (
+        <div className="stale-box">
+          Image de la planche d’origine (autre Viewbox).{' '}
+          <button className="btn small" onClick={() => onRecapture(view)}>
+            📷 Recapturer
+          </button>
+        </div>
+      )}
       <div className="prop-field">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <span>Choisir parmi les captures ({captures.length})</span>
@@ -652,6 +660,7 @@ export function PropertiesPanel({
   onSetInclude,
   onSyncProject,
   syncMessage,
+  onDuplicateForModules,
 }: {
   doc: DrawingSet;
   sheet: Sheet;
@@ -667,6 +676,8 @@ export function PropertiesPanel({
   onSetInclude: (vp: ViewportItem, include: string[], label: string) => Promise<void>;
   onSyncProject: () => void;
   syncMessage: string;
+  /** planche « une par Viewbox » : « Dupliquer pour d'autres Viewbox » */
+  onDuplicateForModules?: () => void;
 }) {
   const selection = useEditor((s) => s.selection);
   const [tab, setTab] = useState<'item' | 'titleblock'>('item');
@@ -793,6 +804,11 @@ export function PropertiesPanel({
                     <button className="btn small" onClick={() => actions.duplicateSheet(sheet.id)}>
                       ⧉ Dupliquer
                     </button>
+                    {onDuplicateForModules && (
+                      <button className="btn small" data-testid="duplicate-for-modules" onClick={onDuplicateForModules} title="Une copie de cette planche pour chaque Viewbox choisie">
+                        ⧉ Pour d’autres Viewbox…
+                      </button>
+                    )}
                     <button
                       className="btn small danger"
                       disabled={doc.sheets.length === 1}

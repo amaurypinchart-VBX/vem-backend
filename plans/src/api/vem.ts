@@ -322,6 +322,13 @@ export const vem = {
     fd.append('file', png, name);
     return api<{ url: string; publicId: string }>('POST', `/plans/project/${projectId}/assets`, fd);
   },
+  /** PDF / DXF / .zip de plans → Fichiers du projet VEM (≤ 10 Mo) */
+  saveProjectFile: (projectId: string, blob: Blob, fileName: string) => {
+    const fd = new FormData();
+    fd.append('fileName', fileName);
+    fd.append('file', blob, fileName);
+    return api<{ id: string; fileUrl: string }>('POST', `/plans/project/${projectId}/files`, fd);
+  },
   loadingRules: () => api<ServerRuleRow[]>('GET', '/loading/rules'),
   saveLoadingRule: (rule: LoadingRule, reason: string, projectId?: string, listId?: string | null) =>
     api<ServerRuleRow>('POST', '/loading/rules', { rule, reason, projectId: projectId || undefined, listId: listId || undefined }),

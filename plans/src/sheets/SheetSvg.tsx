@@ -1101,7 +1101,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
     const anchor = item.type === 'label' ? labelAnchor(item, previewSheet, viewData) : null;
     const b = item.type === 'symbol' ? itemBox(item, previewSheet, viewData, k) : itemBounds(item, anchor, k, dimBoxOf(item));
     return (
-      <g key={item.id} data-item-type={item.type} onPointerDown={down} onDoubleClick={editing.onItemDoubleClick && (() => editing.onItemDoubleClick!(item))} style={{ cursor: item.locked ? 'default' : 'move' }}>
+      <g key={item.id} data-item-type={item.type} data-item-id={item.id} onPointerDown={down} onDoubleClick={editing.onItemDoubleClick && (() => editing.onItemDoubleClick!(item))} style={{ cursor: item.locked ? 'default' : 'move' }}>
         {body}
         {/* zone de clic : tout le cadre de l'élément */}
         <rect {...rectAttrs(b)} fill="transparent" stroke="none" />
