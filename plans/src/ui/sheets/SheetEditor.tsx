@@ -17,7 +17,7 @@ import type { Image3dItem, LabelItem, PointMm, Sheet, SheetItem, SymbolItem, Sym
 import { SYMBOL_BY_KEY, SYMBOL_SIZE, alongWall, orientToWall } from '../../sheets/symbols';
 import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
-import { SheetSvg } from '../../sheets/SheetSvg';
+import { SheetSvg, itemBox } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useBank } from '../../sheets/bank';
 import type { LineworkBank } from '../../sheets/bank';
@@ -53,8 +53,42 @@ import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
 import type { ReadyFile } from '../FileReady';
 import { deliveryPlan, estimatePdfMb, tooHeavyForPhone } from '../deliver';
+import type { PaintState } from './usePaint';
+import type { PaintedScene } from '../../linework/paintScene';
+import { paintScene } from '../../linework/paintScene';
+import type { PaintRegion } from '../../linework/paintOverlay';
+import { computePaintOverlay } from '../../linework/paintOverlay';
+import type { PaintContext } from '../../core/paint/resolve';
+import type { PaintColor, PaintOp, PaintSettings, PaintZone } from '../../core/paint/types';
+import { colorCode, nextTag, reassignOps } from '../../core/paint/ops';
+import type { TargetKey, TargetOption } from '../../core/paint/targets';
+import { paintBreadcrumb, targetOptions, zoneLabel } from '../../core/paint/targets';
+import type { PaintFinish } from '../../core/paint/types';
+import type { PaintSheetInfo } from '../../sheets/paintSheet';
+import type { PaintLegendItem } from '../../sheets/types';
+import type { FacePick } from './paintPick';
+import { pickFace } from './paintPick';
+import { PaintPanel } from './PaintPanel';
+import type { PaintMode } from './PaintPanel';
+import { PaintBubble } from './PaintBubble';
+import { ColorDialog } from './ColorDialog';
+import type { ColorDraft } from './ColorDialog';
+
+/** Peinture du projet (SheetsPage) : état, résolution sur la scène, favoris partagés. */
+export interface PaintBundle {
+  state: PaintState;
+  painted: PaintedScene | null;
+  ctx: PaintContext;
+  favorites: ColorDraft[];
+  canEditFavorites: boolean;
+  userName?: string;
+  onFavorites: (list: ColorDraft[]) => void;
+}
+
+const uid = (p: string) => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : newId(p));
 
 interface Props {
+  paint?: PaintBundle;
   scene: LoadedScene;
   bank: LineworkBank;
   glassTest: GlassTest;
@@ -65,7 +99,7 @@ interface Props {
 
 type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 
-export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose }: Props) {
+export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
   const doc = useEditor((s) => s.doc)!;
   const sheetId = useEditor((s) => s.sheetId);
   const selection = useEditor((s) => s.selection);
@@ -104,6 +138,29 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [propsOpen, setPropsOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(true);
   const [itemMenu, setItemMenu] = useState<{ item: SheetItem; x: number; y: number } | null>(null);
+  // ─── peinture ───
+  const [paintMode, setPaintMode] = useState<PaintMode>('brush');
+  const [activeColor, setActiveColor] = useState<string | null>(null);
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [colorDialog, setColorDialog] = useState<{ edit?: PaintColor } | null>(null);
+  const [bubble, setBubble] = useState<{ vp: ViewportItem; pick: FacePick; options: TargetOption[]; choice: TargetKey; at: { x: number; y: number } } | null>(null);
+  const [quick, setQuick] = useState<{ on: boolean; key: TargetKey }>({ on: false, key: 'face-box' });
+  const [toast, setToast] = useState('');
+  const lastPointer = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    const rec = (e: PointerEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY });
+    window.addEventListener('pointerdown', rec, true);
+    return () => window.removeEventListener('pointerdown', rec, true);
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
   /** fichier calculé, à remettre (téléphone : écran « PDF prêt ») */
   const [ready, setReady] = useState<ReadyFile | null>(null);
   const cancelExport = useRef(false);
@@ -114,7 +171,16 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const bankTick = useBank(bank);
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
-  const viewData = useCallback((vp: ViewportItem) => bank.data(vp), [bank, bankTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // aperçu (face sous le doigt) et zone choisie dans le panneau : contour orange par-dessus la vue
+  const [paintPreview, setPaintPreview] = useState<Map<string, PaintRegion[]> | null>(null);
+  const viewData = useCallback(
+    (vp: ViewportItem) => {
+      const d = bank.data(vp);
+      const pv = paintPreview?.get(vp.id);
+      return pv?.length ? { ...d, paintPreview: pv } : d;
+    },
+    [bank, bankTick, paintPreview], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   // DRAWING LEGEND : toutes les couleurs de catégorie (Viewbox + catégories personnalisées), sur chaque planche
   const legend = useMemo(() => [...legendColors.values()], [legendColors]);
 
@@ -123,9 +189,13 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     if (!sheet) return;
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
     bank.ensure(own);
+    bank.ensurePaint(own);
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);
+  useEffect(() => {
+    if (sheet) bank.ensurePaint(sheet.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+  }, [bankTick, sheet, bank]);
 
   // vues sans calcul de référence (nouvelles, « Recalculer ») : échelle, centrage et clé fixés dès que les traits arrivent
   useEffect(() => {
@@ -221,13 +291,22 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable) return;
       const st = useEditor.getState();
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) (e.preventDefault(), st.undo());
-      else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) (e.preventDefault(), st.redo());
+      const pt = toolRef.current === 'paint' ? paintRef.current?.state : undefined;
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) (e.preventDefault(), pt ? pt.undo() : st.undo());
+      else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) (e.preventDefault(), pt ? pt.redo() : st.redo());
       else if (mod && e.key.toLowerCase() === 'c') actions.copy(st.selection);
       else if (mod && e.key.toLowerCase() === 'v') (e.preventDefault(), actions.paste());
       else if (mod && e.key.toLowerCase() === 'd') (e.preventDefault(), actions.copy(st.selection), actions.paste());
       else if (e.key === 'Delete' || e.key === 'Backspace') st.selection.length && (e.preventDefault(), actions.deleteItems(st.selection));
-      else if (e.key === 'Escape') (setTool('select'), st.select([]));
+      else if (e.key === 'Escape') {
+        if (toolRef.current === 'paint') {
+          setBubble(null);
+          setPaintPreview(null);
+          return;
+        }
+        setTool('select');
+        st.select([]);
+      }
       else if (e.key.startsWith('Arrow') && st.selection.length) {
         e.preventDefault();
         const step = e.shiftKey ? 5 : 1;
@@ -422,8 +501,130 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     actions.addItems(items, 'Poser un symbole');
   };
 
+  // ─── peinture : clic sur une face ───
+  const paintLegend = (): PaintLegendItem => {
+    const k = templateScale(sheet.paper);
+    const w = 90 * k;
+    const h = 40 * k;
+    // premier emplacement libre de la zone de dessin (de bas en haut, de droite à gauche), sinon en bas à gauche
+    const area = scaleRect(DRAW_AREA, k);
+    const boxes = sheet.items.map((i) => itemBox(i, sheet, viewData, k));
+    const free = (x: number, y: number) => !boxes.some((b) => x < b.x + b.w + 2 * k && x + w + 2 * k > b.x && y < b.y + b.h + 2 * k && y + h + 2 * k > b.y);
+    let rect = { x: area.x + 4 * k, y: area.y + area.h - h - 4 * k, w, h };
+    search: for (let y = area.y + area.h - h - 4 * k; y >= area.y + 4 * k; y -= 5 * k)
+      for (let x = area.x + area.w - w - 4 * k; x >= area.x + 4 * k; x -= 5 * k)
+        if (free(x, y)) {
+          rect = { x, y, w, h };
+          break search;
+        }
+    return { id: newId('g'), type: 'paintLegend', rect, lang: 'en', scope: 'sheet', areas: true };
+  };
+  /** Aperçu d'une peinture provisoire (une zone) sur les vues de la planche. */
+  const previewOf = (temp: PaintSettings, only?: string[]): Map<string, PaintRegion[]> | null => {
+    if (!paint) return null;
+    const painted = paintScene(scene, temp, paint.ctx);
+    const out = new Map<string, PaintRegion[]>();
+    for (const vp of sheet.items) {
+      if (vp.type !== 'viewport' || vp.custom || (only && !only.includes(vp.id))) continue;
+      const data = bank.data(vp);
+      if (!data.basis || !data.lw) continue;
+      const meshIds = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+      out.set(vp.id, computePaintOverlay({ scene, painted, meshIds, basis: data.basis, isGlass: glassTest, glassTransparent: vp.request.style.glassTransparent !== false }));
+    }
+    return out;
+  };
+  const tempPaint = (target: PaintZone['target']): PaintSettings => ({
+    v: 1,
+    colors: [{ id: '__preview', tag: '', name: '', system: 'autre', hex: '#F97316', createdAt: '' }],
+    zones: [{ id: '__preview', colorId: '__preview', target, label: '', source: 'click', createdAt: '' }],
+    updatedAt: '',
+  });
+  const applyPaint = (ops: PaintOp[], label: string) => {
+    if (!paint || paint.state.disabled) return;
+    paint.state.apply(ops, label);
+  };
+  const addZone = (vp: ViewportItem, pick: FacePick, opt: TargetOption, colorId: string) => {
+    if (!paint) return;
+    const color = paint.state.paint.colors.find((c) => c.id === colorId);
+    const zone: PaintZone = {
+      id: uid('z'),
+      colorId,
+      target: opt.target,
+      label: zoneLabel(paint.ctx, pick.nodeId, opt, vp.label),
+      source: 'click',
+      createdAt: new Date().toISOString(),
+      ...(paint.userName ? { by: paint.userName } : {}),
+    };
+    applyPaint([{ op: 'zone.put', zone }], `peinture ${color?.tag ?? ''}`);
+    setToast(`${color?.tag ?? ''} · ${color ? colorCode(color) || color.name : ''} · ${opt.label.replace(/ \(\d+\)$/, '')}${opt.count > 1 ? ` (${opt.count})` : ''}`);
+    if (!sheet.items.some((i) => i.type === 'paintLegend')) actions.addItems([paintLegend()], 'Ajouter la légende de la peinture');
+    setBubble(null);
+    setPaintPreview(null);
+  };
+  const paintAt = (p: PointMm, vp: ViewportItem | null) => {
+    if (!paint) return;
+    if (vp?.custom) {
+      setToast('Peinture sur les vues spéciales : pas encore — peins sur une vue standard, elle apparaîtra partout où la face se voit.');
+      return;
+    }
+    const k = templateScale(sheet.paper);
+    const pick = vp ? pickFace(scene, vp, bank.data(vp), p, (device.isTouch ? 6 : 4) * k) : null;
+    if (!vp || !pick) {
+      setBubble(null);
+      setPaintPreview(null);
+      setToast('Aucune face sous le point : tape sur une pièce d’une vue.');
+      return;
+    }
+    const hit = paint.painted?.nodes.get(pick.nodeId)?.get(pick.triangle);
+    if (paintMode === 'pipette') {
+      if (hit) {
+        setActiveColor(hit.colorId);
+        setSelectedZone(hit.zoneId);
+        setPaintMode('brush');
+      } else setToast('Cette face n’est pas peinte.');
+      return;
+    }
+    if (paintMode === 'eraser') {
+      if (hit) applyPaint([{ op: 'zone.del', id: hit.zoneId }], 'gomme');
+      else setToast('Cette face n’est pas peinte.');
+      return;
+    }
+    const options = targetOptions(paint.ctx, pick.nodeId, pick.face);
+    const color = activeColor && paint.state.paint.colors.some((c) => c.id === activeColor) ? activeColor : null;
+    if (quick.on && color) {
+      const opt = options.find((o) => o.key === quick.key) ?? options[0];
+      addZone(vp, pick, opt, color);
+      return;
+    }
+    const choice: TargetKey = options.some((o) => o.key === quick.key) ? quick.key : 'face-box';
+    const at = { x: Math.min(lastPointer.current.x + 12, window.innerWidth - 380), y: Math.min(lastPointer.current.y + 12, window.innerHeight - 320) };
+    setBubble({ vp, pick, options, choice, at });
+    setPaintPreview(previewOf(tempPaint(options.find((o) => o.key === choice)!.target)));
+  };
+  // zone choisie dans le panneau : montrée en orange sur les vues de la planche
+  useEffect(() => {
+    if (!paint || bubble) return;
+    const z = selectedZone ? paint.state.paint.zones.find((x) => x.id === selectedZone) : undefined;
+    setPaintPreview(z ? previewOf(tempPaint(z.target)) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedZone, sheet.id, bankTick]);
+  useEffect(() => {
+    if (tool !== 'paint') {
+      setBubble(null);
+      setPaintPreview(null);
+      setSelectedZone(null);
+    }
+  }, [tool]);
+  const paintInfo: PaintSheetInfo | undefined = paint?.painted
+    ? { colors: paint.state.paint.colors, areas: paint.painted.areaByColor, usedInSet: new Set([...paint.painted.areaByColor].filter(([, a]) => a > 0).map(([id]) => id)) }
+    : undefined;
+
   const onPlace = (t: Tool, p: PointMm, vp: ViewportItem | null) => {
     const k = templateScale(sheet.paper);
+    if (t === 'paint') {
+      paintAt(p, vp);
+      return;
+    }
     if (t === 'symbol') {
       placeSymbol(p, vp);
       return;
@@ -498,7 +699,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const pickerItem = picker?.itemId ? (sheet?.items.find((i) => i.id === picker.itemId) as Image3dItem | undefined) : undefined;
 
   const exportSvg = () => {
-    const markup = renderToStaticMarkup(<SheetSvg sheet={sheet} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} />);
+    const markup = renderToStaticMarkup(<SheetSvg sheet={sheet} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={(vp) => (bank.paintOf(vp), bank.data(vp))} paint={paintInfo} />);
     downloadText(`${doc.titleBlock.projectNumber || doc.title}_${sheet.number}.svg`.replace(/\s+/g, '_'), markup, 'image/svg+xml');
   };
 
@@ -549,7 +750,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             titleBlock={doc.titleBlock}
             notes={doc.notes}
             legend={legend}
-            viewData={(vp) => bank.data(vp)}
+            viewData={(vp) => (bank.paintOf(vp), bank.data(vp))}
+            paint={paintInfo}
           />,
         );
       // téléphone : le SVG de chaque planche est refait au moment de sa page (polices relevées sans garder les textes)
@@ -597,7 +799,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             titleBlock={doc.titleBlock}
             notes={doc.notes}
             legend={legend}
-            viewData={(vp) => bank.data(vp)}
+            viewData={(vp) => (bank.paintOf(vp), bank.data(vp))}
+            paint={paintInfo}
           />,
         );
         rendered.push({ sheet: s, markup });
@@ -717,7 +920,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
   // en consultation, un outil de pose passe en édition
   useEffect(() => {
-    if (readOnly && tool !== 'select') setEditMode(true);
+    if (readOnly && tool !== 'select' && tool !== 'paint') setEditMode(true);
   }, [readOnly, tool]);
   const selectedSheets = doc.sheets.filter((s) => sheetSelection.includes(s.id));
   const groupIds = selectedSheets.length > 1 ? selectedSheets.map((s) => s.id) : null;
@@ -772,12 +975,25 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         />
         <span className="sep" />
         </div>
-        <button className="btn small" disabled={!canUndo} onClick={() => useEditor.getState().undo()} title="Annuler (Ctrl+Z)">
-          ↶
-        </button>
-        <button className="btn small" disabled={!canRedo} onClick={() => useEditor.getState().redo()} title="Rétablir (Ctrl+Y)">
-          ↷
-        </button>
+        {tool === 'paint' && paint ? (
+          <>
+            <button className="btn small" disabled={!paint.state.undoLabel} onClick={paint.state.undo} title={paint.state.undoLabel ? `Annuler : ${paint.state.undoLabel} (Ctrl+Z)` : 'Annuler (Ctrl+Z)'} data-testid="paint-undo">
+              ↶
+            </button>
+            <button className="btn small" disabled={!paint.state.redoLabel} onClick={paint.state.redo} title={paint.state.redoLabel ? `Rétablir : ${paint.state.redoLabel} (Ctrl+Y)` : 'Rétablir (Ctrl+Y)'} data-testid="paint-redo">
+              ↷
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn small" disabled={!canUndo} onClick={() => useEditor.getState().undo()} title="Annuler (Ctrl+Z)">
+              ↶
+            </button>
+            <button className="btn small" disabled={!canRedo} onClick={() => useEditor.getState().redo()} title="Rétablir (Ctrl+Y)">
+              ↷
+            </button>
+          </>
+        )}
         <button className={`btn small mobile-only${editMode ? ' primary' : ''}`} data-testid="edit-mode" onClick={() => setEditMode(!editMode)}>
           ✏️ {editMode ? 'Édition' : 'Consultation'}
         </button>
@@ -812,6 +1028,19 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         >
           ⚡ Symboles
         </button>
+        {paint && (
+          <button
+            className={`btn small${tool === 'paint' ? ' primary' : ''}`}
+            data-testid="tool-paint"
+            onClick={() => {
+              setTool(tool === 'paint' ? 'select' : 'paint');
+              setMoreOpen(false);
+            }}
+            title="Peindre une face d’une vue (poteau, mur…) : couleur RAL, repère P1 sur toutes les vues où elle se voit, légende"
+          >
+            🎨 Peinture
+          </button>
+        )}
         <button className={`btn small${tool === 'dim' ? ' primary' : ''}`} onClick={() => setTool('dim')} title="Cote : 2 clics sur la vue (accroche ■ extrémité ▲ milieu ● centre), 3e clic pour placer la ligne de cote (Maj = alignée)">
           ↔ Cote
         </button>
@@ -1047,7 +1276,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               }}
             >
               {selectMode && <input className="thumb-check" type="checkbox" readOnly checked={sheetSelection.includes(s.id)} aria-label={`Choisir la planche ${s.number}`} />}
-              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail style={{ width: '100%', height: 'auto', display: 'block' }} />
+              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail paint={paintInfo} style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
                 <span className="thumb-title">{s.kind === 'cover' ? 'Couverture' : (s.items.find((x) => x.type === 'viewport' && (x as ViewportItem).label) as ViewportItem | undefined)?.label ?? s.title}</span>
@@ -1093,12 +1322,56 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onOpenItem={(it) => it.type === 'image3d' && setPicker({ itemId: it.id })}
           readOnly={readOnly}
           onItemMenu={(item, at) => setItemMenu({ item, ...at })}
+          paint={paintInfo}
         />
-        <div className={`sheet-side${propsOpen || tool === 'symbol' ? ' open' : ''}`}>
+        <div className={`sheet-side${propsOpen || tool === 'symbol' || tool === 'paint' ? ' open' : ''}${tool === 'paint' ? ' paint' : ''}`}>
         <button className="btn small mobile-only sheet-side-close" onClick={() => (setPropsOpen(false), tool === 'symbol' && setTool('select'))} aria-label="Fermer">
           ✕
         </button>
-        {tool === 'symbol' ? (
+        {tool === 'paint' && paint ? (
+          <PaintPanel
+            paint={paint.state.paint}
+            painted={paint.painted}
+            active={activeColor}
+            mode={paintMode}
+            saving={paint.state.saving}
+            error={paint.state.error}
+            disabled={paint.state.disabled}
+            selectedZone={selectedZone}
+            onActive={(id) => {
+              setActiveColor(id);
+              setPaintMode('brush');
+            }}
+            onMode={setPaintMode}
+            onNewColor={() => setColorDialog({})}
+            onEditColor={(c) => setColorDialog({ edit: c })}
+            onReplace={(from, to) => {
+              const a = paint.state.paint.colors.find((c) => c.id === from);
+              const b = paint.state.paint.colors.find((c) => c.id === to);
+              applyPaint(reassignOps(paint.state.paint, from, to), `${a?.tag} → ${b?.tag} partout`);
+            }}
+            onDeleteColor={(c) => {
+              const n = paint.state.paint.zones.filter((z) => z.colorId === c.id).length;
+              if (n && !window.confirm(`Supprimer ${c.tag} et ses ${n} zone(s) peinte(s) ?\n\n(« Remplacer partout par… » garde les zones avec une autre couleur.)`)) return;
+              applyPaint([{ op: 'color.del', id: c.id }], `suppression ${c.tag}`);
+              if (activeColor === c.id) setActiveColor(null);
+            }}
+            onDeleteZone={(id) => applyPaint([{ op: 'zone.del', id }], 'retirer une zone')}
+            onSelectZone={setSelectedZone}
+            onDisplayAll={(mode) =>
+              actions.editDoc(mode === 'off' ? 'Peinture masquée sur toutes les vues' : 'Repères de peinture sur toutes les vues', (d) => {
+                for (const sh of d.sheets)
+                  for (const it of sh.items)
+                    if (it.type === 'viewport') {
+                      if (mode === 'off') it.paint = 'off';
+                      else delete it.paint;
+                    }
+              })
+            }
+            onAddLegend={() => actions.addItems([paintLegend()], 'Ajouter la légende de la peinture')}
+            onClose={() => setTool('select')}
+          />
+        ) : tool === 'symbol' ? (
           <SymbolPalette
             doc={doc}
             sheet={sheet}
@@ -1150,6 +1423,71 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             void duplicateForModules(src, targets);
           }}
         />
+      )}
+      {bubble && paint && (
+        <PaintBubble
+          crumbs={paintBreadcrumb(paint.ctx, bubble.pick.nodeId)}
+          options={bubble.options}
+          choice={bubble.choice}
+          colors={paint.state.paint.colors}
+          colorId={activeColor && paint.state.paint.colors.some((c) => c.id === activeColor) ? activeColor : null}
+          quick={quick.on}
+          at={bubble.at}
+          onChoice={(choice) => {
+            setBubble({ ...bubble, choice });
+            setPaintPreview(previewOf(tempPaint(bubble.options.find((o) => o.key === choice)!.target)));
+          }}
+          onColor={setActiveColor}
+          onNewColor={() => setColorDialog({})}
+          onQuick={(on) => setQuick({ on, key: bubble.choice })}
+          onApply={() => {
+            const opt = bubble.options.find((o) => o.key === bubble.choice)!;
+            if (quick.on) setQuick({ on: true, key: bubble.choice });
+            if (activeColor) addZone(bubble.vp, bubble.pick, opt, activeColor);
+          }}
+          onClose={() => {
+            setBubble(null);
+            setPaintPreview(null);
+          }}
+        />
+      )}
+      {colorDialog && paint && (
+        <ColorDialog
+          initial={colorDialog.edit}
+          favorites={paint.favorites}
+          canEditFavorites={paint.canEditFavorites}
+          onClose={() => setColorDialog(null)}
+          onToggleFavorite={(c, add) => {
+            const same = (f: ColorDraft) => f.system === c.system && f.code === c.code && f.hex === c.hex;
+            paint.onFavorites(add ? [...paint.favorites.filter((f) => !same(f)), { name: c.name, system: c.system, code: c.code, hex: c.hex, ...(c.finish ? { finish: c.finish as PaintFinish } : {}) }] : paint.favorites.filter((f) => !same(f)));
+          }}
+          onSave={(draft) => {
+            const edit = colorDialog.edit;
+            const color: PaintColor = edit
+              ? { ...edit, ...draft }
+              : { ...draft, id: uid('c'), tag: nextTag(paint.state.paint.colors), createdAt: new Date().toISOString(), ...(paint.userName ? { by: paint.userName } : {}) };
+            for (const k of Object.keys(color) as Array<keyof PaintColor>) if (color[k] === undefined) delete color[k];
+            applyPaint([{ op: 'color.put', color }], edit ? `couleur ${color.tag}` : `nouvelle couleur ${color.tag}`);
+            setActiveColor(color.id);
+            setColorDialog(null);
+          }}
+        />
+      )}
+      {toast && (
+        <div className="paint-toast" role="status" data-testid="paint-toast">
+          <span>{toast}</span>
+          {paint?.state.undoLabel && (
+            <button
+              className="btn small"
+              onClick={() => {
+                paint.state.undo();
+                setToast('');
+              }}
+            >
+              Annuler
+            </button>
+          )}
+        </div>
       )}
       {ready && (
         <FileReadyDialog

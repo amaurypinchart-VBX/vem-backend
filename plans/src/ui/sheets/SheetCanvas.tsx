@@ -14,8 +14,9 @@ import { SheetSvg, itemBox } from '../../sheets/SheetSvg';
 import { FRAME, PAPER_MM, scaleRect, templateScale } from '../../sheets/template';
 import type { DrawingSet } from '../../sheets/types';
 import { actions, useEditor } from '../../sheets/store';
+import type { PaintSheetInfo } from '../../sheets/paintSheet';
 
-export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol';
+export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol' | 'paint';
 
 /** Point accroché dans une vue : position dans le dessin, sur la planche, type d'accroche. */
 export interface SnapResult {
@@ -45,6 +46,8 @@ interface Props {
   readOnly?: boolean;
   /** appui long sur un élément (doigt) : menu de l'élément (point écran) */
   onItemMenu?: (item: SheetItem, at: { x: number; y: number }) => void;
+  /** couleurs de la peinture (légende) */
+  paint?: PaintSheetInfo;
 }
 
 /** Appui long (ms) et seuil tape / glisser (px) au doigt. */
@@ -77,7 +80,7 @@ function SnapMarker({ p, kind }: { p: PointMm; kind: SnapKind | null }) {
   return <path d={`M${p.x - r} ${p.y}L${p.x + r} ${p.y}M${p.x} ${p.y - r}L${p.x} ${p.y + r}`} {...common} />;
 }
 
-export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu }: Props) {
+export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu, paint }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const selection = useEditor((s) => s.selection);
@@ -316,9 +319,10 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
     }
     if (t.size > 2) return true;
     const item = itemAtScreen(e.clientX, e.clientY);
-    // un doigt : outils de pose → clic normal ; sélection sur un élément en édition → déplacer l'élément ; sinon déplacer la planche
-    if (tool !== 'select') return false;
-    if (item && !readOnly) {
+    // un doigt : outils de pose → clic normal ; peinture → déplacer la planche, un tape peint ; sélection sur un élément
+    // en édition → déplacer l'élément ; sinon déplacer la planche
+    if (tool !== 'select' && tool !== 'paint') return false;
+    if (item && !readOnly && tool === 'select') {
       const timer = window.setTimeout(() => {
         if (touchTap.current && !touchTap.current.moved) {
           touchTap.current.long = true;
@@ -340,7 +344,8 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
         navigator.vibrate?.(15);
       }
     }, LONG_PRESS_MS);
-    touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item, moved: false, timer, long: false };
+    touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item: tool === 'paint' ? null : item, moved: false, timer, long: false };
+    if (tool === 'paint') clearTimeout(timer);
     drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
     return true;
   };
@@ -490,7 +495,10 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
       const tt = touchTap.current;
       touchTap.current = null;
       if (tt) clearTimeout(tt.timer);
-      if (tt && !tt.moved && !tt.long) {
+      if (tt && !tt.moved && !tt.long && tool === 'paint') {
+        const p = toPaper({ clientX: tt.x, clientY: tt.y });
+        onPlace('paint', p, viewportAt(p));
+      } else if (tt && !tt.moved && !tt.long) {
         // tape : sélectionner l'élément (ou rien) ; double tape = double-clic
         const now = Date.now();
         if (tt.item) {
@@ -534,7 +542,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   return (
     <div
       ref={host}
-      className={`sheet-canvas tool-${tool === 'chain' ? 'dim' : tool}`}
+      className={`sheet-canvas tool-${tool === 'chain' ? 'dim' : tool === 'paint' ? 'symbol' : tool}`}
       onPointerDownCapture={onTouchCapture}
       onPointerDown={onBackgroundDown}
       onPointerMove={onMove}
@@ -551,6 +559,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
           notes={doc.notes}
           legend={legend}
           viewData={liveViewData}
+          paint={paint}
           style={{ width: '100%', height: '100%', display: 'block' }}
           editing={{
             selection,

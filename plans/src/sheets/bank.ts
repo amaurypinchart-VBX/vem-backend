@@ -17,6 +17,20 @@ import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
 import { fitScale } from './scales';
 import { autoDimensionViewport } from './autoDim';
+import { resolveMeshes } from '../core/subset';
+import type { PaintColor } from '../core/paint/types';
+import type { PaintedScene } from '../linework/paintScene';
+import type { PaintRegion } from '../linework/paintOverlay';
+import { computePaintOverlay } from '../linework/paintOverlay';
+
+/** Peinture du projet résolue sur la scène (SheetsPage) : les vues dessinent la partie visible des faces peintes. */
+export interface PaintSource {
+  painted: PaintedScene;
+  colors: Map<string, PaintColor>;
+  /** change à chaque modification de la peinture */
+  version: string;
+  isGlass: GlassTest;
+}
 
 interface Entry {
   lw?: Linework2D;
@@ -53,6 +67,11 @@ export class LineworkBank {
   /** vues spéciales : calcul complet (tous les blocs) par vue, partagé par ses fenêtres */
   private readonly customRuns = new Map<string, Promise<CustomViewResult>>();
   custom: CustomSource | null = null;
+  private paintSrc: PaintSource | null = null;
+  /** peinture visible par vue : clé = vue + calcul + version de la peinture */
+  private readonly paintRegions = new Map<string, PaintRegion[]>();
+  private paintQueue: ViewportItem[] = [];
+  private paintTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     readonly scene: LoadedScene,
@@ -90,6 +109,62 @@ export class LineworkBank {
     return `${key}|${vp.request.style.colorByCategory ? 'c' : ''}${vp.request.style.facadeMarks ? 'f' : ''}`;
   }
 
+  /** Nouvelle peinture : les vues la recalculent (seulement la peinture, jamais les traits). */
+  setPaint(src: PaintSource | null): void {
+    this.paintSrc = src;
+    this.paintRegions.clear();
+    this.emit();
+  }
+
+  private paintKey(vp: ViewportItem): string | null {
+    const key = this.keyOf(vp);
+    if (!this.paintSrc || !key || vp.custom || vp.paint === 'off') return null;
+    return `${vp.id}|${key}|${this.paintSrc.version}|${JSON.stringify(vp.request.subset)}|${vp.request.style.glassTransparent ?? ''}`;
+  }
+
+  /** Peinture visible d'une vue (calcul immédiat ; null = rien à peindre / vue pas calculée). */
+  paintOf(vp: ViewportItem): PaintRegion[] | null {
+    const pk = this.paintKey(vp);
+    if (!pk) return null;
+    const hit = this.paintRegions.get(pk);
+    if (hit) return hit;
+    const basis = this.data(vp).basis;
+    if (!basis || !this.paintSrc || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) return null;
+    const meshIds = resolveMeshes(this.scene.index, this.scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+    const regions = computePaintOverlay({
+      scene: this.scene,
+      painted: this.paintSrc.painted,
+      meshIds,
+      basis,
+      isGlass: this.paintSrc.isGlass,
+      glassTransparent: vp.request.style.glassTransparent !== false,
+    });
+    this.paintRegions.set(pk, regions);
+    while (this.paintRegions.size > 400) this.paintRegions.delete(this.paintRegions.keys().next().value!);
+    return regions;
+  }
+
+  /** Calcule la peinture des vues une par une, sans figer l'interface (une vue par tâche). */
+  ensurePaint(vps: ViewportItem[]): void {
+    if (!this.paintSrc) return;
+    const missing = vps.filter((vp) => {
+      const pk = this.paintKey(vp);
+      return pk && !this.paintRegions.has(pk) && this.keyOf(vp) && this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw;
+    });
+    if (!missing.length) return;
+    this.paintQueue = [...missing, ...this.paintQueue.filter((v) => !missing.some((m) => m.id === v.id))];
+    if (this.paintTimer) return;
+    const step = () => {
+      this.paintTimer = null;
+      const vp = this.paintQueue.shift();
+      if (!vp) return;
+      this.paintOf(vp);
+      this.emit();
+      if (this.paintQueue.length) this.paintTimer = setTimeout(step, 0);
+    };
+    this.paintTimer = setTimeout(step, 0);
+  }
+
   data(vp: ViewportItem): ViewportData {
     const key = this.keyOf(vp);
     const e = key ? this.entries.get(this.entryKey(key, vp)) : undefined;
@@ -105,7 +180,10 @@ export class LineworkBank {
         ? moduleOverlays(this.scene.frames.values(), new Set(this.scene.index.modules.filter((m) => include.has(m.nodeId)).map((m) => m.id)), basis)
         : undefined;
     const spec = vp.custom ? this.custom?.spec(vp.custom.viewId) : undefined;
+    const pk = this.paintSrc ? this.paintKey(vp) : null;
+    const regions = pk ? this.paintRegions.get(pk) : undefined;
     return {
+      ...(regions?.length && this.paintSrc ? { paint: { regions, colors: this.paintSrc.colors } } : {}),
       lw: e?.lw,
       busy: !key || e?.busy,
       error: e?.error ?? (vp.custom && this.custom && !spec ? DELETED_VIEW : undefined),

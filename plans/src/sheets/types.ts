@@ -146,6 +146,8 @@ export interface ViewportItem extends ItemBase {
   custom?: CustomViewportRef;
   /** clé du calcul utilisé pour le rendu : si elle ne correspond plus, la vue est obsolète */
   lineworkKey?: string;
+  /** peinture sur cette vue : repères (défaut dès qu'une face peinte est visible), couleurs (P3), rien */
+  paint?: 'marks' | 'fill' | 'off';
 }
 
 export interface Image3dItem extends ItemBase {
@@ -277,7 +279,19 @@ export interface SymbolLegendItem extends ItemBase {
   counts: boolean;
 }
 
-export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem | DetailItem | SymbolItem | SymbolLegendItem;
+/** Légende de la peinture (« PAINTING ») : repère, code, nom, finition, surface de chaque couleur visible. */
+export interface PaintLegendItem extends ItemBase {
+  type: 'paintLegend';
+  rect: RectMm;
+  lang: 'fr' | 'en' | 'de';
+  /** couleurs visibles sur cette planche, ou toutes celles du jeu */
+  scope: 'sheet' | 'set';
+  /** surface peinte (m²) à côté de chaque couleur */
+  areas: boolean;
+  title?: string;
+}
+
+export type SheetItem = ViewportItem | Image3dItem | LabelItem | DimensionItem | TextItem | ShapeItem | LogoItem | DetailItem | SymbolItem | SymbolLegendItem | PaintLegendItem;
 export type BoxItem = Exclude<SheetItem, LabelItem | DimensionItem | SymbolItem>;
 
 export interface Sheet {

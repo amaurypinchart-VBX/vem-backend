@@ -9,6 +9,7 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
 import { PLANS_VIEW_MODEL, ViewAiInput, describeView, viewAiEnabled } from '../services/plansViewAi';
+import { applyPaintOps, cleanOps, currentPaint } from '../services/plansPaint';
 
 const router = Router();
 const db = prisma as any; // modèle ajouté au schéma ; client typé régénéré au build Docker
@@ -185,6 +186,35 @@ router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, nex
       select: { id: true, settings: true },
     });
     res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+// PATCH /plans/models/:id/paint — { ops: [{ op: 'color.put' | 'color.del' | 'zone.put' | 'zone.del', … }] } :
+// peinture du modèle (settings.paint) modifiée par id dans une transaction (ligne verrouillée), jamais réécrite en
+// entier par le navigateur → deux personnes qui peignent en même temps ne perdent rien. Réponse : la peinture à jour.
+router.patch('/models/:id/paint', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    let ops;
+    try {
+      ops = cleanOps(req.body?.ops);
+    } catch (e) {
+      throw new AppError((e as Error).message, 400);
+    }
+    const by = req.user ? [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || req.user.email : undefined;
+    const paint = await prisma.$transaction(async (tx: any) => {
+      const rows: Array<{ settings: unknown }> = await tx.$queryRaw`SELECT settings FROM plans_model_versions WHERE id = ${req.params.id} FOR UPDATE`;
+      if (!rows.length) throw new AppError('Modèle introuvable', 404);
+      const settings = rows[0].settings && typeof rows[0].settings === 'object' && !Array.isArray(rows[0].settings) ? (rows[0].settings as Record<string, unknown>) : {};
+      let next;
+      try {
+        next = applyPaintOps(currentPaint(settings.paint), ops, by);
+      } catch (e) {
+        throw new AppError((e as Error).message, 400);
+      }
+      await tx.plansModelVersion.update({ where: { id: req.params.id }, data: { settings: { ...settings, paint: next } } });
+      return next;
+    });
+    res.json({ success: true, data: paint });
   } catch (err) { next(err); }
 });
 

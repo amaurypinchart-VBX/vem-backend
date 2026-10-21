@@ -24,6 +24,12 @@ import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import { ProgressBar } from '../common';
 import { SheetEditor } from './SheetEditor';
+import type { PaintBundle } from './SheetEditor';
+import { usePaint } from './usePaint';
+import { paintContext } from '../../core/paint/resolve';
+import { paintScene } from '../../linework/paintScene';
+import type { PaintSettings } from '../../core/paint/types';
+import type { ColorDraft } from './ColorDialog';
 
 interface Props {
   scene: LoadedScene;
@@ -37,9 +43,12 @@ interface Props {
   /** vues spéciales du modèle (réglages) : fenêtres de vue `custom` */
   customViews?: unknown[];
   categoryColors?: Record<string, string>;
+  /** peinture du modèle (réglages) */
+  paint?: unknown;
+  onPaintSaved?: (p: PaintSettings) => void;
 }
 
-export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors }: Props) {
+export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
   const bank = useMemo(() => new LineworkBank(scene, provider), [scene, provider]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
   // vues spéciales : la banque relit les vues du modèle (une vue modifiée rend ses fenêtres « obsolètes »)
@@ -61,6 +70,25 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     for (const c of rules.categories) if (c.color) m.set(c.key, { key: c.key, label: c.label || m.get(c.key)?.label || c.key, color: c.color });
     return m;
   }, [rules]);
+  // ─── peinture du projet : résolue sur la scène, dessinée par la banque des vues ───
+  const paintState = usePaint(model?.id, paint, onPaintSaved);
+  const paintCtx = useMemo(() => paintContext(scene.index), [scene]);
+  const painted = useMemo(
+    () => (paintState.paint.zones.length ? paintScene(scene, paintState.paint, paintCtx) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scene, paintCtx, paintState.version],
+  );
+  useEffect(() => {
+    bank.setPaint(painted ? { painted, colors: new Map(paintState.paint.colors.map((c) => [c.id, c])), version: String(paintState.version), isGlass: glassTest } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bank, painted, glassTest]);
+  const [favorites, setFavorites] = useState<ColorDraft[]>([]);
+  useEffect(() => {
+    vem
+      .getSetting<unknown>('plans.paintFavorites')
+      .then((v) => setFavorites(Array.isArray(v) ? (v.filter((x) => x && typeof x === 'object' && typeof (x as ColorDraft).hex === 'string') as ColorDraft[]) : []))
+      .catch(() => {});
+  }, []);
   const doc = useEditor((s) => s.doc);
   const [sets, setSets] = useState<DrawingSetRecord[]>([]);
   const [error, setError] = useState('');
@@ -106,9 +134,27 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     await refresh();
   };
 
+  const paintBundle: PaintBundle = {
+    state: paintState,
+    painted,
+    ctx: paintCtx,
+    favorites,
+    canEditFavorites: me?.role === 'admin' || me?.role === 'technical_manager',
+    userName: me ? [me.firstName, me.lastName].filter(Boolean).join(' ') : undefined,
+    onFavorites: async (list) => {
+      setFavorites(list);
+      try {
+        await vem.saveSetting('plans.paintFavorites', list);
+      } catch (e) {
+        window.alert(`Favoris non enregistrés : ${(e as Error).message}`);
+      }
+    },
+  };
+
   if (doc) {
     return (
       <SheetEditor
+        paint={paintBundle}
         scene={scene}
         bank={bank}
         glassTest={glassTest}

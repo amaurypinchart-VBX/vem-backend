@@ -338,7 +338,9 @@ http.createServer(async (req, res) => {
       const same = [...models.values()].find((x) => x.sha256 === b.sha256);
       if (same) { Object.assign(same, b, { glbUrl: null, glbParts: null, glbSize: null, glbEncoding: null, status: 'indexed', updatedAt: new Date().toISOString() }); return json(res, list(same)); }
       const id = 'm' + (models.size + 1);
-      const m = { id, projectId: 'p1', ...b, settings: {}, status: 'indexed', glbUrl: null, glbSize: null, glbParts: null, glbEncoding: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      // comme le serveur : les réglages (faces avant, captures, vues spéciales, peinture) passent à la nouvelle version
+      const prev = [...models.values()].at(-1);
+      const m = { id, projectId: 'p1', ...b, settings: structuredClone(prev?.settings ?? {}), status: 'indexed', glbUrl: null, glbSize: null, glbParts: null, glbEncoding: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       models.set(id, m);
       return json(res, list(m), 201);
     }
@@ -354,6 +356,24 @@ http.createServer(async (req, res) => {
       m.glbParts[index] = { url: '/blob/' + key, size: file.length };
       if (index === Number(fields.count) - 1) Object.assign(m, { glbUrl: m.glbParts[0].url, glbSize: Number(fields.totalSize), glbEncoding: fields.encoding, status: 'packaged' });
       return json(res, list(m));
+    }
+    const pt = a.match(/^\/plans\/models\/(\w+)\/paint$/);
+    if (pt && req.method === 'PATCH') {
+      // peinture : opérations fusionnées par id (comme src/services/plansPaint.ts)
+      const { ops } = JSON.parse((await body(req)).toString());
+      const m = models.get(pt[1]);
+      const p = m.settings.paint ?? { v: 1, colors: [], zones: [] };
+      let colors = [...p.colors];
+      let zones = [...p.zones];
+      for (const o of ops) {
+        if (o.op === 'color.put') { const i = colors.findIndex((c) => c.id === o.color.id); if (i >= 0) colors[i] = o.color; else colors.push(o.color); }
+        else if (o.op === 'color.del') colors = colors.filter((c) => c.id !== o.id);
+        else if (o.op === 'zone.put') { const i = zones.findIndex((z) => z.id === o.zone.id); if (i >= 0) zones[i] = o.zone; else zones.push(o.zone); }
+        else if (o.op === 'zone.del') zones = zones.filter((z) => z.id !== o.id);
+      }
+      zones = zones.filter((z) => colors.some((c) => c.id === z.colorId));
+      m.settings = { ...m.settings, paint: { v: 1, colors, zones, updatedAt: new Date().toISOString(), updatedBy: 'Amaury Pinchart' } };
+      return json(res, m.settings.paint);
     }
     const st = a.match(/^\/plans\/models\/(\w+)\/settings$/);
     if (st && req.method === 'PATCH') { const b = JSON.parse((await body(req)).toString()); const m = models.get(st[1]); m.settings = { ...m.settings, ...b.settings }; return json(res, { id: m.id, settings: m.settings }); }

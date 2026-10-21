@@ -10,6 +10,8 @@ import type { SavedCapture } from '../../api/vem';
 import type { PickableImage } from '../../sheets/images';
 import { CaptureGrid } from './CapturePicker';
 import { DETAILS, DETAIL_SCALES, detailRect, detailScale } from '../../sheets/details';
+import type { PaintLegendItem } from '../../sheets/types';
+import { PAINT_LEGEND_TITLE } from '../../sheets/paintSheet';
 import type { DetailItem, DimensionItem, DrawingSet, DrawingSetUnit, Image3dItem, LabelItem, Person, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, TitleBlockData, ViewportItem } from '../../sheets/types';
 import { SYMBOLS, SYMBOL_BY_KEY, SYMBOL_FAMILIES, SYMBOL_LEGEND_TITLE, SYMBOL_SIZE, symbolColor } from '../../sheets/symbols';
 import { SymbolIcon } from '../../sheets/SheetSvg';
@@ -231,6 +233,16 @@ function ViewportProps({
             </label>
           ))}
         </div>
+      </Field>
+      <Field label="Peinture">
+        <select
+          value={vp.paint === 'off' ? 'off' : 'marks'}
+          data-testid="vp-paint"
+          onChange={(e) => actions.updateItem(vp.id, { paint: e.target.value === 'off' ? 'off' : undefined } as Partial<SheetItem>, 'Peinture sur la vue')}
+        >
+          <option value="marks">Repères (faces peintes visibles)</option>
+          <option value="off">Rien</option>
+        </select>
       </Field>
       <div className="prop-checks">
         <label className="check">
@@ -462,6 +474,34 @@ function SymbolLegendProps({ it }: { it: SymbolLegendItem }) {
         <input type="checkbox" checked={it.counts} onChange={(e) => up({ counts: e.target.checked }, 'Quantités de la légende')} /> Nombre posé à côté de chaque symbole
       </label>
       <div className="hint">La légende liste automatiquement les symboles posés sur cette planche. Poignées : agrandir le cadre.</div>
+    </>
+  );
+}
+
+function PaintLegendProps({ it }: { it: PaintLegendItem }) {
+  const up = (patch: Partial<PaintLegendItem>, label: string) => actions.updateItem(it.id, patch as Partial<SheetItem>, label);
+  return (
+    <>
+      <Field label="Titre">
+        <input type="text" value={it.title ?? ''} placeholder={PAINT_LEGEND_TITLE[it.lang]} onChange={(e) => up({ title: e.target.value || undefined }, 'Titre de la légende')} />
+      </Field>
+      <Field label="Langue">
+        <select value={it.lang} onChange={(e) => up({ lang: e.target.value as PaintLegendItem['lang'] }, 'Langue de la légende')}>
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+        </select>
+      </Field>
+      <Field label="Couleurs listées">
+        <select value={it.scope} onChange={(e) => up({ scope: e.target.value as PaintLegendItem['scope'] }, 'Couleurs de la légende')}>
+          <option value="sheet">Visibles sur cette planche</option>
+          <option value="set">Tout le jeu</option>
+        </select>
+      </Field>
+      <label className="check">
+        <input type="checkbox" checked={it.areas} onChange={(e) => up({ areas: e.target.checked }, 'Surfaces de la légende')} /> Surface peinte (m²) à côté de chaque couleur
+      </label>
+      <div className="hint">Repère, code RAL, nom et finition de chaque couleur ; surfaces de tout le modèle.</div>
     </>
   );
 }
@@ -715,6 +755,8 @@ export function PropertiesPanel({
                           ? 'Symbole'
                           : one.type === 'symbolLegend'
                           ? 'Légende des symboles'
+                          : one.type === 'paintLegend'
+                          ? 'Légende de la peinture'
                           : one.type === 'logo'
                           ? 'Logo'
                           : 'Forme'}
@@ -736,6 +778,7 @@ export function PropertiesPanel({
             {one.type === 'text' && <TextProps t={one} />}
             {one.type === 'symbol' && <SymbolProps it={one} sheet={sheet} />}
             {one.type === 'symbolLegend' && <SymbolLegendProps it={one} />}
+            {one.type === 'paintLegend' && <PaintLegendProps it={one} />}
             {one.type === 'detail' && <DetailProps it={one} />}
             {one.type === 'image3d' && (
               <ImageProps

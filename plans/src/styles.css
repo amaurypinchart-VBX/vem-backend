@@ -364,3 +364,44 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .file-ready-body .btn { justify-content: center; min-height: 48px; font-size: 14px; }
 .file-ready-body .file-name { word-break: break-all; }
 .sheet-selbar select { width: auto; max-width: 260px; }
+
+/* ─── Peinture (outil 🎨 de l'éditeur de planches) ─── */
+.paint-modes { display: flex; gap: 4px; flex-wrap: wrap; }
+.paint-colors, .paint-zones { display: flex; flex-direction: column; gap: 4px; }
+.paint-color { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: var(--bg-3); }
+.paint-color.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.paint-color-main, .paint-zone-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: transparent; border: none; cursor: pointer; text-align: left; padding: 4px; font-size: 12px; color: var(--text); }
+.paint-color-main i, .paint-zone-main i, .paint-dot i, .color-dialog-chosen i { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, .35); flex: none; display: inline-block; }
+.paint-color-main .nm, .paint-zone-main .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paint-color-main .meta, .paint-zone-main .meta { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.paint-color-menu { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; }
+.paint-color-menu select { width: auto; flex: 1; }
+.paint-zone { display: flex; align-items: center; gap: 2px; border-radius: 6px; }
+.paint-zone.on { background: rgba(249, 115, 22, .18); }
+.paint-zone.dead .nm, .paint-zone.dead .meta { color: var(--warn); }
+.paint-bubble { position: fixed; z-index: 55; width: min(370px, calc(100vw - 16px)); background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .45); }
+.paint-targets { display: flex; flex-direction: column; gap: 4px; }
+.paint-targets .check { color: var(--text); }
+.paint-bubble-colors { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.paint-dot { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-3); cursor: pointer; font-size: 11px; font-weight: 700; color: var(--text); }
+.paint-dot.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.paint-toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; gap: 10px; align-items: center; background: var(--bg-4); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); max-width: calc(100vw - 24px); }
+.color-dialog { width: min(640px, 100%); }
+.color-dialog-body { display: flex; flex-direction: column; gap: 8px; }
+.paint-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 260px; overflow: auto; }
+.paint-swatch { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-3); cursor: pointer; text-align: left; font-size: 11.5px; color: var(--text); min-height: 36px; }
+.paint-swatch i { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, .35); flex: none; }
+.paint-swatch span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.paint-swatch.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.color-dialog-chosen { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.color-dialog-chosen i { width: 26px; height: 26px; }
+@media (max-width: 900px) {
+  .sheet-side.open.paint { max-height: 42dvh; }
+  .paint-bubble { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: auto; max-height: 60dvh; overflow: auto; border-radius: 12px 12px 0 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .paint-swatches { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); max-height: 40dvh; }
+  .paint-dot { min-height: 44px; min-width: 44px; }
+}
+.sheet-side.paint > .sheet-side-close { display: none; }
+@media (max-width: 900px) {
+  .paint-toast { bottom: auto; top: max(8px, env(safe-area-inset-top)); }
+}

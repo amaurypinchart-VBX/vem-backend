@@ -129,6 +129,8 @@ export interface ModelSettings {
   captures?: SavedCapture[];
   /** vues spéciales (Vues 2D) : à relire avec cleanCustomViews (lecture tolérante) */
   customViews?: unknown[];
+  /** peinture (couleurs + zones) : à relire avec cleanPaint ; écrite seulement par patchPaint (opérations) */
+  paint?: unknown;
 }
 
 /** Modification des réglages : clés remplacées, ou fonction des réglages à jour (listes modifiées en parallèle). */
@@ -309,6 +311,8 @@ export const vem = {
   deleteModel: (id: string) => api<void>('DELETE', `/plans/models/${id}`),
   saveSettings: (id: string, settings: ModelSettings) =>
     api<{ id: string; settings: ModelSettings }>('PATCH', `/plans/models/${id}/settings`, { settings }),
+  /** peinture : opérations fusionnées par id côté serveur ; renvoie la peinture à jour */
+  patchPaint: (id: string, ops: unknown[]) => api<unknown>('PATCH', `/plans/models/${id}/paint`, { ops }),
   me: () => api<VemUser>('GET', '/auth/me'),
   listDrawingSets: (projectId: string) => api<DrawingSetRecord[]>('GET', `/plans/project/${projectId}/drawing-sets`),
   getDrawingSet: (id: string) => api<DrawingSetRecord>('GET', `/plans/drawing-sets/${id}`),

@@ -219,6 +219,12 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             captures={settings.captures ?? []}
             customViews={settings.customViews}
             categoryColors={categoryColors}
+            paint={settings.paint}
+            onPaintSaved={(paint) => {
+              // la peinture est enregistrée par ses propres opérations : on garde seulement la copie locale à jour
+              settingsRef.current = { ...settingsRef.current, paint };
+              setSettings(settingsRef.current);
+            }}
           />
         </div>
       )}

@@ -18,6 +18,9 @@ import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITL
 import type { ModuleOverlay } from './overlays';
 import { UNIT_FRAME, numberLabels, unitFrames } from './overlays';
 import { scaleLabel, viewportTransform } from './scales';
+import type { PaintSheetInfo, ViewportPaint } from './paintSheet';
+import { PaintLegendView, PaintOutlines, PaintTags } from './paintSheet';
+import type { PaintRegion } from '../linework/paintOverlay';
 
 export interface LegendEntry {
   key: string;
@@ -36,6 +39,10 @@ export interface ViewportData {
   /** vues spéciales : épaisseur du trait de coupe (mm papier), gris des fantômes */
   cutLineMm?: number;
   ghostColor?: string;
+  /** peinture visible sur la vue (absente = vue dessinée comme avant) */
+  paint?: ViewportPaint;
+  /** éditeur : face sous le doigt avant de la peindre (contour orange) */
+  paintPreview?: PaintRegion[];
 }
 
 export interface SheetSvgProps {
@@ -60,6 +67,8 @@ export interface SheetSvgProps {
   className?: string;
   style?: React.CSSProperties;
   svgRef?: React.Ref<SVGSVGElement>;
+  /** couleurs et surfaces de la peinture du projet (légende « PAINTING ») */
+  paint?: PaintSheetInfo;
 }
 
 const num = (v: number) => Math.round(v * 1000) / 1000;
@@ -309,7 +318,7 @@ function viewportCenter(vp: ViewportItem, lw?: Linework2D): [number, number] {
   return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
 }
 
-function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: ViewportItem; data?: ViewportData; rect: RectMm; thumbnail?: boolean; categoryColors: Map<string, string> }) {
+function ViewportContent({ vp, data, rect, thumbnail, categoryColors, k = 1 }: { vp: ViewportItem; data?: ViewportData; rect: RectMm; thumbnail?: boolean; categoryColors: Map<string, string>; k?: number }) {
   const lw = data?.lw;
   const clipId = `clip-${vp.id}`;
   if (!lw || !vp.scale || thumbnail) {
@@ -341,6 +350,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
       </defs>
       <g clipPath={`url(#${clipId})`}>
         <g transform={tr} fill="none" strokeLinecap="round" strokeLinejoin="round">
+          {(data?.paint || data?.paintPreview) && <PaintOutlines paint={data.paint} s={s} preview={data.paintPreview} />}
           {vp.overlays?.statusColors &&
             overlays.map((o) =>
               vp.overlays?.statusColors?.[o.moduleId] ? (
@@ -374,6 +384,7 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors }: { vp: Vi
               return <path key={`p${p.id}`} d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))} fill={p.color} fillOpacity={0.28} stroke={p.color} strokeWidth={num(0.3 * s)} data-dxf="VBX-CALAGE" />;
             })}
         </g>
+        {data?.paint && <PaintTags paint={data.paint} s={s} k={k} toPaper={toPaper} rect={rect} />}
         {vp.overlays?.calage && data?.basis && <CalageLabels plates={vp.overlays.calage} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.levels && data?.basis && <LevelMarks marks={vp.overlays.levels} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.sectionMarks && data?.basis && <SectionMarks marks={vp.overlays.sectionMarks} basis={data.basis} toPaper={toPaper} />}
@@ -639,6 +650,7 @@ const ITEM_DXF_LAYER: Record<SheetItem['type'], string> = {
   logo: 'VBX-LOGOS',
   symbol: 'VBX-SYMBOLES',
   symbolLegend: 'VBX-SYMB-LEGENDE',
+  paintLegend: 'VBX-PEINTURE-LEGENDE',
 };
 
 function itemViewport(item: SheetItem): string | undefined {
@@ -962,6 +974,8 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
   const paper = PAPER_MM[sheet.paper];
   const k = templateScale(sheet.paper);
   const categoryColors = new Map(legend.map((e) => [e.key, e.color]));
+  /** couleurs visibles sur les vues de la planche (légende de la peinture) */
+  const paintUsed = () => new Set(sheet.items.flatMap((i) => (i.type === 'viewport' ? (viewData(i)?.paint?.regions ?? []).map((r) => r.colorId) : [])));
   const titleSize = VIEW_TITLE_SIZE * k;
   const hidden = editing?.hidden ?? {};
   const items = [...sheet.items, ...(editing?.draft ?? [])].map((i) => applyPreview(i, editing?.preview?.get(i.id)));
@@ -979,7 +993,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         const data = viewData(item);
         body = (
           <>
-            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} />
+            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} k={k} />
             {item.showLabel && item.label && !item.custom && (
               <ViewTitle text={item.label} pos={item.labelPos ?? { x: item.rect.x, y: item.rect.y - titleSize * 1.3 }} size={item.labelSize ?? titleSize} />
             )}
@@ -1090,6 +1104,9 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         break;
       case 'symbolLegend':
         body = <SymbolLegendView it={item} sheet={previewSheet} k={k} />;
+        break;
+      case 'paintLegend':
+        body = <PaintLegendView it={item} k={k} info={props.paint} usedOnSheet={paintUsed()} />;
         break;
     }
     if (!editing)
