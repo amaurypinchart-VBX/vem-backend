@@ -974,6 +974,19 @@ model PlansDrawingSet {
   @@map("plans_drawing_sets")
 }
 
+// Vues 2D calculées (traits HLR), partagées entre appareils : clé = celle du cache IndexedDB du navigateur
+model PlansLineworkCache {
+  key       String   @id
+  modelKey  String   @map("model_key")
+  data      Bytes
+  size      Int
+  createdAt DateTime @default(now()) @map("created_at")
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  @@index([modelKey])
+  @@map("plans_linework_cache")
+}
+
 // ─────────────────────────────────────────────
 // Check-list de montage (handover)
 // Tables créées par src/utils/migrations.ts (pas de db push au démarrage sur Railway).

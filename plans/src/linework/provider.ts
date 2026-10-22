@@ -9,6 +9,7 @@ import { facadeMarkLayers } from './facadeMarks';
 import type { HlrPacket } from './hlr';
 import type { GlassTest } from './packets';
 import { buildPacket } from './packets';
+import type { RemoteLineworkCache } from './remoteCache';
 import type { HlrRunner } from './runner';
 import type { Linework2D, LineworkProvider, LineworkRequest } from './types';
 
@@ -29,13 +30,25 @@ export interface ProviderOptions {
   maxConcurrent?: number;
   /** sous-ensembles gardés en mémoire (défaut 3) */
   maxPackets?: number;
+  /** vues partagées par le serveur : lues avant de calculer, envoyées après un calcul */
+  remote?: RemoteLineworkCache;
+  /**
+   * téléphone : au-delà de ce nombre de triangles, une vue absente des caches n'est pas calculée ici (la page
+   * serait fermée par iOS) — erreur `HEAVY_VIEW` ; `allowHeavy` lève la limite
+   */
+  heavyTriangles?: number;
 }
+
+/** Message d'une vue trop lourde pour être calculée sur ce téléphone. */
+export const HEAVY_VIEW = 'Vue trop lourde pour le téléphone : ouvre ce jeu une fois sur ordinateur (les vues y sont calculées puis partagées) ou « ⋯ › Calculer les vues lourdes ici »';
 
 export class BrowserHlrProvider implements LineworkProvider {
   readonly id = 'browser-hlr' as const;
   private readonly packets = new Map<string, HlrPacket>();
   private active = 0;
   private readonly waiting: Array<() => void> = [];
+  /** « calculer quand même » les vues lourdes sur ce téléphone */
+  allowHeavy = false;
 
   constructor(
     private readonly scene: LoadedScene,
@@ -78,18 +91,30 @@ export class BrowserHlrProvider implements LineworkProvider {
     const basis = viewBasis(req.view, this.scene.frames);
     const cacheKey = await this.cacheKey(req);
     let lw = this.opts.noCache ? null : await cacheGet(cacheKey);
+    if (lw) this.opts.remote?.share(cacheKey, lw);
     let meshIds: string[] | null = null;
+    if (!lw && this.opts.remote && !this.opts.noCache) {
+      lw = await this.opts.remote.get(cacheKey, signal).catch(() => null);
+      if (lw) void cachePut(cacheKey, lw);
+    }
     if (!lw) {
       await this.acquire(signal);
       try {
         // une autre fenêtre a pu calculer la même vue pendant l'attente
         lw = this.opts.maxConcurrent && !this.opts.noCache ? await cacheGet(cacheKey) : null;
         if (!lw) {
+          if (this.opts.heavyTriangles && !this.allowHeavy) {
+            const ids = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+            if (this.triangles(ids) > this.opts.heavyTriangles) throw new Error(HEAVY_VIEW);
+          }
           const p = this.packetFor(req);
           meshIds = p.meshIds;
           if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
           lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
-          if (!this.opts.noCache) void cachePut(cacheKey, lw);
+          if (!this.opts.noCache) {
+            void cachePut(cacheKey, lw);
+            this.opts.remote?.put(cacheKey, lw);
+          }
         }
       } finally {
         this.release();
@@ -106,6 +131,14 @@ export class BrowserHlrProvider implements LineworkProvider {
       lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('mark:')), ...marks] };
     }
     return lw;
+  }
+
+  /** Nombre de triangles des maillages (index de scène, sans construire le paquet). */
+  private triangles(meshIds: string[]): number {
+    const ids = new Set(meshIds);
+    let n = 0;
+    for (const node of this.scene.index.nodes) if (ids.has(node.id)) n += node.triangles ?? 0;
+    return n;
   }
 
   /** Attend une place de calcul (sans limite : immédiat). */

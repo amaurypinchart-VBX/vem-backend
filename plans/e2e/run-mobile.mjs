@@ -149,14 +149,21 @@ async function run(deviceName, generate) {
     localStorage.setItem('vem_plans_step', JSON.stringify({ label: 'Calcul des vues de la planche A1.2', at: Date.now() }));
   });
   await page.reload();
-  await page.getByRole('button', { name: 'Analyser' }).click();
-  await page.getByTestId('crash-banner').waitFor({ timeout: 300000 });
+  // iOS recharge sur la page Modèles : le bandeau doit y être, sans ouvrir de modèle
+  await page.getByTestId('crash-banner').waitFor({ timeout: 30000 });
+  await page.setViewportSize(devices[deviceName].viewport);
+  await page.getByText('Analyses enregistrées').waitFor();
+  await page.waitForTimeout(800);
+  await noHScroll('page Modèles (analyses enregistrées)');
+  await page.screenshot({ path: `${shots}mobile-${tag}-models.png`, fullPage: true });
   check(/Calcul des vues de la planche A1\.2/.test(await page.getByTestId('crash-banner').innerText()), 'fermeture inattendue signalée au rechargement (étape en cours)');
   check(!errors.length, `aucune erreur console${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   await ctx.close();
 }
 
 await run('Pixel 7', true);
+const shared = await (await fetch(`http://localhost:${PORT}/__test/linework`)).json();
+check(shared.data.count > 0, `vues calculées envoyées au serveur (${shared.data.count})`);
 await run('iPhone 14', false);
 await browser.close();
 console.log('OK');

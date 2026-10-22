@@ -2,7 +2,7 @@
 // Module Plans Viewbox — modèles SketchUp analysés (index de scène + paquet GLB normalisé).
 // L'analyse elle-même (lecture du .dae, nettoyage, classification) tourne dans le navigateur
 // (public/plans, sources dans plans/) ; le serveur ne fait que stocker le résultat.
-import { Router, Response, NextFunction } from 'express';
+import express, { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database';
@@ -44,6 +44,59 @@ function cleanSettings(v: unknown): Record<string, unknown> {
   if (JSON.stringify(out).length > 200_000) throw new AppError('Réglages trop volumineux', 400);
   return out;
 }
+
+// Vues 2D partagées entre appareils (traits calculés dans le navigateur, gzip) : clé = empreinte SHA-256 du cache
+// IndexedDB (modèle, sous-ensemble, vue, style, version du moteur). Un téléphone lit la vue au lieu de la calculer.
+const LINEWORK_KEY = /^[0-9a-f]{64}$/;
+const LINEWORK_MAX = 8 * 1024 * 1024;
+/** au-delà, les vues les moins utilisées sont effacées (place en base) */
+const LINEWORK_TOTAL_MAX = 1500 * 1024 * 1024;
+
+// GET /plans/linework/:key — vue partagée (binaire), 204 vide si personne ne l'a encore calculée (pas de 404 :
+// une vue absente est le cas normal, le navigateur noterait chaque 404 comme une erreur)
+router.get('/linework/:key', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const key = String(req.params.key);
+    if (!LINEWORK_KEY.test(key)) throw new AppError('Clé invalide', 400);
+    if (req.method === 'HEAD') {
+      const hit = await prisma.$queryRaw<Array<{ k: string }>>`SELECT "key" AS k FROM "plans_linework_cache" WHERE "key" = ${key}`;
+      return res.status(hit.length ? 200 : 204).end();
+    }
+    const rows = await prisma.$queryRaw<Array<{ data: Buffer }>>`SELECT "data" FROM "plans_linework_cache" WHERE "key" = ${key}`;
+    if (!rows.length) return res.status(204).end();
+    void prisma.$executeRaw`UPDATE "plans_linework_cache" SET "used_at" = CURRENT_TIMESTAMP WHERE "key" = ${key}`.catch(() => undefined);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.from(rows[0].data));
+  } catch (err) { next(err); }
+});
+
+// PUT /plans/linework/:key?model=<empreinte du modèle> — enregistre une vue calculée (corps binaire gzip)
+router.put('/linework/:key', express.raw({ type: 'application/octet-stream', limit: LINEWORK_MAX }), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const key = String(req.params.key);
+    const modelKey = String(req.query.model ?? '').slice(0, 128);
+    if (!LINEWORK_KEY.test(key)) throw new AppError('Clé invalide', 400);
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || body.length < 10) throw new AppError('Vue vide', 400);
+    // gzip (1f 8b) uniquement
+    if (body[0] !== 0x1f || body[1] !== 0x8b) throw new AppError('Format de vue inconnu', 400);
+    await prisma.$executeRaw`
+      INSERT INTO "plans_linework_cache" ("key", "model_key", "data", "size")
+      VALUES (${key}, ${modelKey}, ${body}, ${body.length})
+      ON CONFLICT ("key") DO UPDATE SET "used_at" = CURRENT_TIMESTAMP`;
+    // de temps en temps : garde la place en base sous la limite (les vues les moins utilisées partent)
+    if (Math.random() < 0.05) {
+      void prisma.$executeRaw`
+        DELETE FROM "plans_linework_cache" WHERE "key" IN (
+          SELECT "key" FROM (
+            SELECT "key", SUM("size") OVER (ORDER BY "used_at" DESC) AS total FROM "plans_linework_cache"
+          ) t WHERE t.total > ${LINEWORK_TOTAL_MAX}
+        )`.catch(() => undefined);
+    }
+    res.json({ success: true, data: { key, size: body.length } });
+  } catch (err) { next(err); }
+});
 
 // GET /plans/project/:projectId/models — versions analysées du projet (sans l'index, trop lourd)
 router.get('/project/:projectId/models', async (req: AuthRequest, res: Response, next: NextFunction) => {

@@ -319,6 +319,17 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .views-grid { grid-template-columns: minmax(0, 1fr); }
   .views2d-controls .field { grid-template-columns: minmax(0, 1fr); }
   table.list { display: block; overflow-x: auto; }
+  /* listes de la page Modèles : une carte par ligne, intitulé de colonne devant chaque valeur */
+  table.list.stack { display: block; overflow: visible; }
+  table.list.stack thead { display: none; }
+  table.list.stack tbody, table.list.stack tr { display: block; }
+  table.list.stack tr { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  table.list.stack tr:last-child { border-bottom: none; }
+  table.list.stack td { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 2px 0; border: none; text-align: left; overflow-wrap: anywhere; }
+  table.list.stack td[data-label]::before { content: attr(data-label); flex: 0 0 110px; font-size: 11px; color: var(--text-dim); }
+  table.list.stack td.stack-title { font-weight: 600; padding-bottom: 4px; }
+  table.list.stack td.actions { padding-top: 6px; justify-content: flex-start; }
+  .card-head { flex-wrap: wrap; }
   .modal-backdrop { padding: 6px; }
   .detail dl { grid-template-columns: 90px minmax(0, 1fr); }
   .rule-row { grid-template-columns: minmax(0, 1fr); }

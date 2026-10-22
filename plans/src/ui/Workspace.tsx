@@ -9,7 +9,8 @@ import { compileRules } from '../core/classification';
 import type { FrontSide } from '../core/views';
 import { defaultFront } from '../core/views';
 import type { ModelSettings, ModelVersion, SettingsUpdate } from '../api/vem';
-import { downloadPackage, vem } from '../api/vem';
+import { downloadPackage, getSharedLinework, hasSharedLinework, putSharedLinework, vem } from '../api/vem';
+import { serverLineworkCache } from '../linework/remoteCache';
 import { loadPackage } from '../ingest/package';
 import type { LoadedScene } from '../scene/loadedScene';
 import { computeFrames, makeLoadedScene } from '../scene/loadedScene';
@@ -21,10 +22,13 @@ import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
 import { CustomViewsPage } from './customViews/CustomViewsPage';
 import { SheetsPage } from './sheets/SheetsPage';
-import { clearStep, installCrashLog, markStep, takeLastCrash } from './crashLog';
+import { clearStep, markStep } from './crashLog';
 import { lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
+
+/** téléphone : une vue de plus de triangles n'est pas calculée ici sans le demander (iOS fermerait la page) */
+const HEAVY_TRIANGLES_PHONE = 250_000;
 
 type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure' | 'loading';
 
@@ -55,7 +59,6 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   const [settings, setSettings] = useState<ModelSettings>(() => model?.settings ?? {});
   // téléphone / tablette : la 3D d'un onglet caché est libérée (chaque vue 3D garde un contexte WebGL et sa mémoire)
   const lightDevice = useMemo(() => lowPowerDevice(), []);
-  const [crashed, setCrashed] = useState(() => (installCrashLog(), takeLastCrash()));
   const settingsRef = useRef(settings);
   const loadStarted = useRef(false);
   // analyse fraîche : la version enregistrée arrive après coup, avec les réglages repris de la précédente
@@ -77,7 +80,15 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
     const runner = typeof Worker !== 'undefined' ? createWorkerPool() : createInlineRunner();
     // téléphone / tablette : peu de vues préparées à la fois (chaque calcul en attente garde une copie du modèle)
     const light = lowPowerDevice();
-    return new BrowserHlrProvider(scene, { runner, glassTest, categoryColors: () => categoryColors, ...(light ? { maxConcurrent: 1, maxPackets: 1 } : {}) });
+    // vues partagées par le serveur : un téléphone lit celles déjà calculées sur un ordinateur
+    const remote = serverLineworkCache(scene.modelKey, { get: getSharedLinework, has: hasSharedLinework, put: putSharedLinework });
+    return new BrowserHlrProvider(scene, {
+      runner,
+      glassTest,
+      categoryColors: () => categoryColors,
+      remote,
+      ...(light ? { maxConcurrent: 1, maxPackets: 1, heavyTriangles: HEAVY_TRIANGLES_PHONE } : {}),
+    });
   }, [scene, glassTest, categoryColors]);
   useEffect(() => () => provider?.dispose(), [provider]);
 
@@ -179,14 +190,6 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           </button>
         </nav>
       </div>
-      {crashed && (
-        <div className="error-box" style={{ margin: '0 0 12px' }} data-testid="crash-banner">
-          ⚠ La page s’est fermée toute seule la dernière fois, pendant : « {crashed.label} » (mémoire du téléphone saturée, le plus souvent).{' '}
-          <button className="btn small" onClick={() => setCrashed(null)}>
-            OK
-          </button>
-        </div>
-      )}
       {error && (
         <div className="error-box" style={{ margin: '0 0 12px' }}>
           {error}{' '}

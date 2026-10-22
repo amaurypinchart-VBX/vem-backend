@@ -1,6 +1,7 @@
 // Éditeur de planches : barre d'outils, planches (vignettes), zone de dessin, propriétés, cartouche.
 // Enregistrement automatique 2 s après la dernière modification ; annuler / rétablir illimités.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { HEAVY_VIEW } from '../../linework/provider';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
@@ -196,6 +197,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);
+  const heavyViews = useMemo(
+    () => (sheet ? sheet.items.filter((i): i is ViewportItem => i.type === 'viewport' && bank.data(i).error === HEAVY_VIEW) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bankTick, sheet, bank],
+  );
   useEffect(() => {
     if (!sheet) return;
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
@@ -1136,6 +1142,17 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small ghost" onClick={() => setZoomSignal((z) => ({ n: z.n + 1, factor: 1.25 }))}>
           +
         </button>
+        {heavyViews.length > 0 && (
+          <button
+            className="btn small"
+            data-testid="retry-heavy"
+            onClick={() => {
+              if (window.confirm('Ces vues sont lourdes : le téléphone peut fermer la page pendant le calcul. Le plus sûr : ouvrir ce jeu une fois sur un ordinateur, les vues y sont calculées puis partagées.\n\nCalculer ici quand même ?')) bank.retryHeavy(heavyViews);
+            }}
+          >
+            Calculer les vues lourdes ici
+          </button>
+        )}
         <button className="btn small" disabled={!!busy} onClick={() => void exportPdf('all')} title="Tout le jeu de plans en un PDF vectoriel (une page par planche, format exact, polices intégrées)">
           ⬇ PDF du jeu
         </button>

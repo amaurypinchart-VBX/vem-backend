@@ -446,3 +446,25 @@ export async function downloadWithProgress(url: string, onProgress?: (fraction: 
   }
   return out.buffer;
 }
+
+/** Vue 2D partagée par le serveur (gzip), null si personne ne l'a encore calculée. */
+export async function getSharedLinework(key: string, signal?: AbortSignal): Promise<Uint8Array | null> {
+  const r = await fetch(`/api/v1/plans/linework/${key}`, { headers: { Authorization: 'Bearer ' + TOKEN }, signal });
+  if (r.status !== 200) return null;
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+/** Le serveur a-t-il déjà cette vue ? */
+export async function hasSharedLinework(key: string): Promise<boolean> {
+  const r = await fetch(`/api/v1/plans/linework/${key}`, { method: 'HEAD', headers: { Authorization: 'Bearer ' + TOKEN } });
+  return r.status === 200;
+}
+
+/** Envoie une vue calculée ici au serveur (les autres appareils la liront au lieu de la calculer). */
+export async function putSharedLinework(key: string, modelKey: string, bytes: Uint8Array): Promise<void> {
+  await fetch(`/api/v1/plans/linework/${key}?model=${encodeURIComponent(modelKey)}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' },
+    body: new Blob([bytes as BlobPart]),
+  });
+}

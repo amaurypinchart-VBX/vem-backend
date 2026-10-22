@@ -12,6 +12,7 @@ import { computeSpecialView } from '../linework/customView';
 import { hashKey } from '../linework/cache';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { BrowserHlrProvider } from '../linework/provider';
+import { HEAVY_VIEW } from '../linework/provider';
 import type { Linework2D } from '../linework/types';
 import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
@@ -195,6 +196,14 @@ export class LineworkBank {
       cutLineMm: spec?.style.cutLine,
       ghostColor: spec ? ghostColorOf(spec.style.ghostTone) : undefined,
     };
+  }
+
+  /** Téléphone : calcule quand même les vues refusées comme trop lourdes (risque de fermeture par iOS). */
+  retryHeavy(viewports: ViewportItem[]): void {
+    this.provider.allowHeavy = true;
+    for (const [k, e] of this.entries) if (e.error === HEAVY_VIEW) this.entries.delete(k);
+    this.emit();
+    this.ensure(viewports);
   }
 
   /** Lance le calcul des vues qui manquent (sans attendre). */

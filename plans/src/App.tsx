@@ -9,6 +9,7 @@ import { LibraryPage } from './ui/structure/LibraryPage';
 import { RuleLibrary } from './ui/loading/RuleLibrary';
 import { ViewSettings } from './ui/customViews/ViewSettings';
 import { setDisplayRules } from './ui/common';
+import { installCrashLog, takeLastCrash } from './ui/crashLog';
 
 export function App() {
   const [tab, setTab] = useState<'models' | 'settings'>('models');
@@ -18,6 +19,8 @@ export function App() {
   const [rulesKey, setRulesKey] = useState(0);
   const [fatal, setFatal] = useState('');
   const [allowed, setAllowed] = useState(false);
+  // iOS recharge la page sur « Modèles » après l'avoir fermée (mémoire) : le bandeau doit s'afficher ici
+  const [crashed, setCrashed] = useState(() => (installCrashLog(), takeLastCrash()));
 
   useEffect(() => {
     if (!PROJECT_ID) {
@@ -73,6 +76,14 @@ export function App() {
         </a>
       </header>
       <main className="main">
+        {crashed && (
+          <div className="error-box" style={{ margin: '0 0 12px' }} data-testid="crash-banner">
+            ⚠ La page s’est fermée toute seule la dernière fois, pendant : « {crashed.label} » (mémoire du téléphone saturée, le plus souvent).{' '}
+            <button className="btn small" onClick={() => setCrashed(null)}>
+              OK
+            </button>
+          </div>
+        )}
         {fatal ? (
           <div className="center-msg">{fatal}</div>
         ) : !allowed ? (

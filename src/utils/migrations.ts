@@ -1461,4 +1461,24 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] daily_report_attachments : ${e.message}`);
   }
+
+  // Vues 2D partagées entre appareils (Plans Viewbox) : un téléphone télécharge une vue calculée sur un ordinateur
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "plans_linework_cache" (
+        "key"        TEXT         NOT NULL,
+        "model_key"  TEXT         NOT NULL,
+        "data"       BYTEA        NOT NULL,
+        "size"       INTEGER      NOT NULL,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "used_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "plans_linework_cache_pkey" PRIMARY KEY ("key")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "plans_linework_cache_model_key_idx" ON "plans_linework_cache" ("model_key")`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] table plans_linework_cache créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] plans_linework_cache : ${e.message}`);
+  }
 }

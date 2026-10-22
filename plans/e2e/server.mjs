@@ -71,11 +71,14 @@ function multipart(req, raw) {
 const appSettings = new Map();
 // fichiers enregistrés dans les Fichiers du projet (PDF / DXF des planches) ; GET /__test/project-files pour les tests
 const projectFiles = [];
+// vues 2D partagées (PUT / GET / HEAD /plans/linework/:key) ; GET /__test/linework = nombre de vues reçues
+const sharedLinework = new Map();
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   if (p === '/__test/project-files') return json(res, projectFiles);
+  if (p === '/__test/linework') return json(res, { count: sharedLinework.size });
   if (p.startsWith('/api/v1/')) {
     if (req.headers.authorization !== 'Bearer tok') return json(res, 'Non autorisé', 401);
     const a = p.slice(7);
@@ -84,6 +87,14 @@ http.createServer(async (req, res) => {
     if (a === '/auth/me') return json(res, { id: 'u1', firstName: 'Amaury', lastName: 'Pinchart', role: 'technical_manager', plansAccess: true });
     if (a === '/projects/p1/files') return json(res, [{ id: 'f1', fileName: ZIP_NAME, fileUrl: '/files/model.zip', fileSize: statSync(ZIP).size, createdAt: new Date().toISOString() }]);
     // vues spéciales : assistant « Décris la vue » scripté (mêmes réponses types que tests/customViews/aiFixture.ts)
+    const lwk = a.match(/^\/plans\/linework\/([0-9a-f]{64})$/);
+    if (lwk && req.method === 'PUT') { sharedLinework.set(lwk[1], await body(req)); return json(res, { key: lwk[1] }); }
+    if (lwk) {
+      const b = sharedLinework.get(lwk[1]);
+      if (!b) { res.writeHead(204); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+      return res.end(req.method === 'HEAD' ? undefined : b);
+    }
     if (a === '/plans/ai/status') return json(res, { enabled: true, model: 'mock-haiku' });
     if (a === '/plans/ai/view' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());

@@ -284,7 +284,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
               les fichiers du projet VEM, ou analyse un fichier de ton ordinateur ci-dessous.
             </div>
           ) : (
-            <table className="list">
+            <table className="list stack">
               <thead>
                 <tr>
                   <th>Fichier</th>
@@ -296,9 +296,9 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
               <tbody>
                 {files.map((f) => (
                   <tr key={f.id}>
-                    <td>{f.fileName}</td>
-                    <td className="num">{fmtBytes(f.fileSize)}</td>
-                    <td>{f.createdAt ? new Date(f.createdAt).toLocaleDateString('fr-FR') : ''}</td>
+                    <td className="stack-title">{f.fileName}</td>
+                    <td className="num" data-label="Taille">{fmtBytes(f.fileSize)}</td>
+                    <td data-label="Ajouté le">{f.createdAt ? new Date(f.createdAt).toLocaleDateString('fr-FR') : ''}</td>
                     <td className="actions">
                       <button className="btn primary small" disabled={busy} onClick={() => void analyzeProjectFile(f)}>
                         Analyser
@@ -349,7 +349,7 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
           {!models.length ? (
             <div className="hint">Aucune analyse pour l’instant.</div>
           ) : (
-            <table className="list">
+            <table className="list stack">
               <thead>
                 <tr>
                   <th>Fichier</th>
@@ -368,18 +368,18 @@ export function ModelsPage({ rules }: { rules: ClassificationRules }) {
                   const nw = w.filter((x) => x.severity === 'warning').length;
                   return (
                     <tr key={m.id}>
-                      <td>
+                      <td className="stack-title">
                         {m.fileName}
                         {m.engineVersion !== ENGINE_VERSION && <span className="badge orange" style={{ marginLeft: 6 }}>moteur ancien : réanalyser</span>}
                       </td>
-                      <td className="num">{m.stats?.modules ?? '—'}</td>
-                      <td className="num">{m.stats?.unclassified ?? '—'}</td>
-                      <td>
+                      <td className="num" data-label="Viewbox">{m.stats?.modules ?? '—'}</td>
+                      <td className="num" data-label="Non classés">{m.stats?.unclassified ?? '—'}</td>
+                      <td data-label="Avertissements">
                         {nb > 0 && <span className="badge ko">{nb} bloquant(s)</span>} {nw > 0 && <span className="badge orange">{nw} avertissement(s)</span>}
                         {nb + nw === 0 && <span className="badge ok">conforme</span>}
                       </td>
-                      <td>{m.glbUrl ? <span className="badge ok">{fmtBytes(m.glbSize)}</span> : <span className="badge">—</span>}</td>
-                      <td>{new Date(m.updatedAt).toLocaleString('fr-FR')}</td>
+                      <td data-label="Paquet 3D">{m.glbUrl ? <span className="badge ok">{fmtBytes(m.glbSize)}</span> : <span className="badge">—</span>}</td>
+                      <td data-label="Analysé le">{new Date(m.updatedAt).toLocaleString('fr-FR')}</td>
                       <td className="actions">
                         {!m.glbUrl && sourceOf(m) && (
                           <button
