@@ -5,11 +5,26 @@ import { colorCode, luminance } from '../core/paint/ops';
 import type { PaintRegion } from '../linework/paintOverlay';
 import type { PaintLegendItem, PointMm, RectMm } from './types';
 import { FONT_SANS } from './template';
+import { hatchSegments } from '../core/paint/hatch';
 
 /** Peinture d'une fenêtre de vue (calculée par la banque des vues). */
 export interface ViewportPaint {
   regions: PaintRegion[];
   colors: Map<string, PaintColor>;
+  /** repères seuls, ou couleurs = hachures fines dans la couleur sous le dessin */
+  mode?: 'marks' | 'fill';
+}
+
+/** Hachures : un trait tous les 1,2 mm papier, 0,13 mm d'épaisseur, à 45°. */
+export const PAINT_HATCH = { spacingMm: 1.2, strokeMm: 0.13, angleDeg: 45 };
+const hatchCache = new WeakMap<PaintRegion, { spacing: number; d: string }>();
+function hatchD(r: PaintRegion, spacing: number): string {
+  const hit = hatchCache.get(r);
+  if (hit && hit.spacing === spacing) return hit.d;
+  let d = '';
+  for (const seg of hatchSegments(r.loops, spacing, PAINT_HATCH.angleDeg)) d += `M${num(seg[0])} ${num(seg[1])}L${num(seg[2])} ${num(seg[3])}`;
+  hatchCache.set(r, { spacing, d });
+  return d;
 }
 
 /** Couleurs et surfaces du projet, pour la légende. */
@@ -67,8 +82,19 @@ export function PaintOutlines({ paint, s, preview }: { paint?: ViewportPaint; s:
         const c = paint!.colors.get(colorId);
         if (!c) return null;
         return (
+          <g key={`paint-${colorId}`}>
+          {paint!.mode === 'fill' && (
+            <path
+              d={regions.map((r) => hatchD(r, PAINT_HATCH.spacingMm * s)).join('')}
+              fill="none"
+              stroke={strokeOf(c.hex)}
+              strokeWidth={num(PAINT_HATCH.strokeMm * s)}
+              strokeLinecap="butt"
+              data-dxf={paintLayer(c)}
+              data-paint-hatch="1"
+            />
+          )}
           <path
-            key={`paint-${colorId}`}
             d={loopsD(regions.flatMap((r) => r.loops))}
             fill="none"
             stroke={strokeOf(c.hex)}
@@ -77,6 +103,7 @@ export function PaintOutlines({ paint, s, preview }: { paint?: ViewportPaint; s:
             fillRule="evenodd"
             data-dxf={paintLayer(c)}
           />
+          </g>
         );
       })}
       {!!preview?.length && <path d={loopsD(preview.flatMap((r) => r.loops))} fill="#fb923c" fillOpacity={0.25} stroke="#f97316" strokeWidth={num(0.6 * s)} data-paint-preview="1" />}

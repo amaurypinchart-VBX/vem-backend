@@ -1359,16 +1359,27 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             onDeleteZone={(id) => applyPaint([{ op: 'zone.del', id }], 'retirer une zone')}
             onSelectZone={setSelectedZone}
             onDisplayAll={(mode) =>
-              actions.editDoc(mode === 'off' ? 'Peinture masquée sur toutes les vues' : 'Repères de peinture sur toutes les vues', (d) => {
+              actions.editDoc(mode === 'off' ? 'Peinture masquée sur toutes les vues' : mode === 'fill' ? 'Couleurs de peinture sur toutes les vues' : 'Repères de peinture sur toutes les vues', (d) => {
                 for (const sh of d.sheets)
                   for (const it of sh.items)
                     if (it.type === 'viewport') {
-                      if (mode === 'off') it.paint = 'off';
-                      else delete it.paint;
+                      if (mode === 'marks') delete it.paint;
+                      else it.paint = mode;
                     }
               })
             }
             onAddLegend={() => actions.addItems([paintLegend()], 'Ajouter la légende de la peinture')}
+            onExcel={async () => {
+              const { paintListXlsx } = await freshImport(() => import('../../core/paint/excel'));
+              const pd = paint.painted;
+              const bytes = paintListXlsx(
+                paint.state.paint,
+                { byColor: pd?.areaByColor ?? new Map(), byZone: pd?.areaByZone ?? new Map(), byColorModule: pd?.areaByColorModule ?? new Map(), noEffect: pd?.noEffect ?? new Set() },
+                doc.title,
+              );
+              const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}_peinture`;
+              deliver(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.xlsx`, new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+            }}
             onClose={() => setTool('select')}
           />
         ) : tool === 'symbol' ? (

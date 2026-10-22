@@ -236,11 +236,12 @@ function ViewportProps({
       </Field>
       <Field label="Peinture">
         <select
-          value={vp.paint === 'off' ? 'off' : 'marks'}
+          value={vp.paint ?? 'marks'}
           data-testid="vp-paint"
-          onChange={(e) => actions.updateItem(vp.id, { paint: e.target.value === 'off' ? 'off' : undefined } as Partial<SheetItem>, 'Peinture sur la vue')}
+          onChange={(e) => actions.updateItem(vp.id, { paint: e.target.value === 'marks' ? undefined : e.target.value } as Partial<SheetItem>, 'Peinture sur la vue')}
         >
           <option value="marks">Repères (faces peintes visibles)</option>
+          <option value="fill">Couleurs (hachures) + repères</option>
           <option value="off">Rien</option>
         </select>
       </Field>

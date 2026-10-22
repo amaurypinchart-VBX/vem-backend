@@ -28,6 +28,7 @@ export function PaintPanel({
   onSelectZone,
   onDisplayAll,
   onAddLegend,
+  onExcel,
   onClose,
 }: {
   paint: PaintSettings;
@@ -46,7 +47,8 @@ export function PaintPanel({
   onDeleteColor: (c: PaintColor) => void;
   onDeleteZone: (id: string) => void;
   onSelectZone: (id: string | null) => void;
-  onDisplayAll: (mode: 'marks' | 'off') => void;
+  onDisplayAll: (mode: 'marks' | 'fill' | 'off') => void;
+  onExcel: () => void;
   onAddLegend: () => void;
   onClose: () => void;
 }) {
@@ -170,7 +172,7 @@ export function PaintPanel({
             <button className="btn small" onClick={() => onDisplayAll('marks')}>
               Repères
             </button>
-            <button className="btn small" disabled title="Couleurs (hachures) : prochaine étape">
+            <button className="btn small" data-testid="paint-display-fill" onClick={() => onDisplayAll('fill')} title="Hachures fines dans la couleur, sous les traits, en plus des repères">
               Couleurs
             </button>
             <button className="btn small" onClick={() => onDisplayAll('off')}>
@@ -180,6 +182,9 @@ export function PaintPanel({
         </div>
         <button className="btn small" onClick={onAddLegend}>
           ＋ Légende « PAINTING » sur la planche
+        </button>
+        <button className="btn small" disabled={!paint.colors.length} onClick={onExcel} data-testid="paint-excel">
+          ⬇ Liste peinture (Excel)
         </button>
         <div className="hint">
           {saving ? 'Enregistrement…' : 'Enregistré avec le modèle, repris à la version suivante.'} Ctrl+Z / ↶ annule la dernière action de peinture tant que l’outil est ouvert.

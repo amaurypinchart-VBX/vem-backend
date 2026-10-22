@@ -2,6 +2,8 @@
 // voisins en fantôme, face avant des Viewbox, infos au clic, captures haute définition, caméras enregistrées.
 // Les captures sont enregistrées avec le modèle (images Cloudinary) : les planches les proposent pour leurs images 3D.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { cleanPaint } from '../core/paint/ops';
+import { paintLayers3D, paintScene } from '../linework/paintScene';
 import type { FrontSide } from '../core/views';
 import { VIEW_LABELS, frontFromNormal } from '../core/views';
 import type { ViewKind } from '../core/views';
@@ -66,6 +68,15 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
   const [local, setLocal] = useState<LocalCapture[]>([]);
   const [busy, setBusy] = useState('');
   const [camName, setCamName] = useState('');
+  // peinture du projet (réglages du modèle) : calque de couleur sur les faces peintes
+  const paintSettings = useMemo(() => cleanPaint(settings.paint), [settings.paint]);
+  const [showPaint, setShowPaint] = useState(() => {
+    try {
+      return localStorage.getItem('vem_paint_3d') !== '0';
+    } catch {
+      return true;
+    }
+  });
   const frontPickRef = useRef<string | null>(null);
   frontPickRef.current = frontPick;
 
@@ -109,6 +120,17 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    if (!showPaint || !paintSettings.zones.length) {
+      v.setPaintDisplay(null);
+      return;
+    }
+    const painted = paintScene(scene, paintSettings);
+    const hex = new Map(paintSettings.colors.map((c) => [c.id, parseInt(c.hex.slice(1), 16)]));
+    v.setPaintDisplay(paintLayers3D(scene, painted).map((l) => ({ nodeId: l.nodeId, color: hex.get(l.colorId) ?? 0x888888, positions: l.positions })));
+  }, [scene, paintSettings, showPaint, framesVersion]);
 
   useEffect(() => {
     viewerRef.current?.setVisibility(includeIds, hiddenCats, ghosts);
@@ -408,6 +430,23 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
           >
             {projection === 'perspective' ? 'Perspective' : 'Orthographique'}
           </button>
+          {!!paintSettings.zones.length && (
+            <button
+              className={`btn small${showPaint ? ' primary' : ''}`}
+              data-testid="toggle-paint-3d"
+              title="Faces peintes du projet en couleur (les captures prises ici les gardent)"
+              onClick={() => {
+                setShowPaint(!showPaint);
+                try {
+                  localStorage.setItem('vem_paint_3d', showPaint ? '0' : '1');
+                } catch {
+                  /* stockage indisponible */
+                }
+              }}
+            >
+              🎨 Peinture
+            </button>
+          )}
           {soloModule && <span className="badge">vues relatives à {soloModule}</span>}
           <span className="spacer" />
           <span className="hint nav-hint" title="Molette enfoncée = tourner, Maj + molette enfoncée = déplacer (comme SketchUp)">

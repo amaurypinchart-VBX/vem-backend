@@ -183,7 +183,7 @@ export class LineworkBank {
     const pk = this.paintSrc ? this.paintKey(vp) : null;
     const regions = pk ? this.paintRegions.get(pk) : undefined;
     return {
-      ...(regions?.length && this.paintSrc ? { paint: { regions, colors: this.paintSrc.colors } } : {}),
+      ...(regions?.length && this.paintSrc ? { paint: { regions, colors: this.paintSrc.colors, mode: vp.paint === 'fill' ? ('fill' as const) : ('marks' as const) } } : {}),
       lw: e?.lw,
       busy: !key || e?.busy,
       error: e?.error ?? (vp.custom && this.custom && !spec ? DELETED_VIEW : undefined),

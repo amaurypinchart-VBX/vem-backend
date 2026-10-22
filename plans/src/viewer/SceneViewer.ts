@@ -338,6 +338,41 @@ export class SceneViewer {
     this.applyVisibility();
   }
 
+  // ─── peinture (calque ajouté sur les faces peintes ; le modèle et ses matériaux ne changent pas) ───
+  private readonly paintGroup = new Group();
+  private paintMeshes: Array<{ mesh: Mesh; nodeId: string }> = [];
+
+  /** Faces peintes en couleur (triangles monde par pièce, couleur 0xRRGGBB) ; null = retirer. */
+  setPaintDisplay(layers: Array<{ nodeId: string; color: number; positions: Float32Array }> | null): void {
+    for (const { mesh } of this.paintMeshes) {
+      this.paintGroup.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as Material).dispose();
+    }
+    this.paintMeshes = [];
+    if (!this.paintGroup.parent) this.scene3.add(this.paintGroup);
+    for (const l of layers ?? []) {
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(l.positions, 3));
+      g.computeVertexNormals();
+      const m = new MeshLambertMaterial({ color: l.color, side: DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      const mesh = new Mesh(g, m);
+      mesh.renderOrder = 2;
+      mesh.raycast = () => {};
+      this.paintGroup.add(mesh);
+      this.paintMeshes.push({ mesh, nodeId: l.nodeId });
+    }
+    this.syncPaintVisibility();
+    this.requestRender();
+  }
+
+  /** Le calque de peinture d'une pièce suit sa visibilité (isolation, catégories masquées). */
+  private syncPaintVisibility(): void {
+    if (!this.paintMeshes.length) return;
+    const shown = new Set(this.entries.filter((e) => this.isShown(e) === 'shown').map((e) => e.nodeId));
+    for (const p of this.paintMeshes) p.mesh.visible = shown.has(p.nodeId);
+  }
+
   private applyVisibility(): void {
     for (const e of this.entries) {
       const s = this.isShown(e);
@@ -347,6 +382,7 @@ export class SceneViewer {
     }
     this.rebuildEdges();
     this.rebuildMarkers();
+    this.syncPaintVisibility();
     this.requestRender();
   }
 
@@ -1093,6 +1129,8 @@ export class SceneViewer {
     if (this.previousParent && this.previousParent !== this.scene3) this.previousParent.add(this.model.root);
     for (const c of this.edges?.children ?? []) (c as LineSegments).geometry.dispose();
     for (const m of this.clipCache.values()) m.dispose();
+    this.setPaintDisplay(null);
+    this.scene3.remove(this.paintGroup);
     this.setPlaneGizmos([]);
     this.bars?.geometry.dispose();
     (this.bars?.material as LineMaterial | undefined)?.dispose();

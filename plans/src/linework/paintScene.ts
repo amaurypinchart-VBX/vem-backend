@@ -122,3 +122,29 @@ export function worldTriangle(ns: NodeSoup, t: number, out: Vector3[]): void {
     out[k].set(ns.soup.pos[i * 3], ns.soup.pos[i * 3 + 1], ns.soup.pos[i * 3 + 2]).applyMatrix4(ns.toWorld);
   }
 }
+
+/** Triangles peints en coordonnées monde, par pièce et par couleur (calque de la Vue 3D). */
+export interface PaintLayer3D {
+  nodeId: string;
+  colorId: string;
+  /** 9 nombres par triangle */
+  positions: Float32Array;
+}
+
+export function paintLayers3D(scene: LoadedScene, painted: PaintedScene): PaintLayer3D[] {
+  const out: PaintLayer3D[] = [];
+  const w = [new Vector3(), new Vector3(), new Vector3()];
+  for (const [nodeId, tris] of painted.nodes) {
+    const ns = nodeSoup(scene, nodeId);
+    if (!ns) continue;
+    const byColor = new Map<string, number[]>();
+    for (const [t, { colorId }] of tris) {
+      worldTriangle(ns, t, w);
+      const l = byColor.get(colorId) ?? [];
+      for (const v of w) l.push(v.x, v.y, v.z);
+      byColor.set(colorId, l);
+    }
+    for (const [colorId, l] of byColor) out.push({ nodeId, colorId, positions: Float32Array.from(l) });
+  }
+  return out;
+}

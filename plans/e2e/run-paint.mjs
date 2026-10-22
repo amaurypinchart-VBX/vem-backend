@@ -127,6 +127,19 @@ await page.locator('.sheet-thumb', { has: page.locator('.thumb-title', { hasText
 await page.waitForFunction(() => document.querySelectorAll('.sheet-canvas svg [data-dxf="VBX-PEINTURE-REPERES"] text').length > 0, null, { timeout: 120000 });
 check(true, 'rechargement : repère P1 toujours là');
 
+// P3 : couleurs (hachures) sur toutes les vues, liste Excel
+await page.getByTestId('tool-paint').click();
+await page.getByTestId('paint-display-fill').click();
+await page.waitForFunction(() => document.querySelectorAll('.sheet-canvas svg [data-paint-hatch]').length > 0, null, { timeout: 60000 });
+check(true, '« Couleurs » : hachures dans la couleur sous le dessin');
+await page.screenshot({ path: shots + 'paint-hatch.png' });
+const dlx = page.waitForEvent('download', { timeout: 60000 });
+await page.getByTestId('paint-excel').click();
+const xlsxPath = shots + 'paint-list.xlsx';
+await (await dlx).saveAs(xlsxPath);
+check(readFileSync(xlsxPath).subarray(0, 2).toString() === 'PK', 'liste peinture Excel téléchargée');
+await page.getByTestId('tool-paint').click();
+
 // PDF planche : légende et repère dans le PDF
 const dl = page.waitForEvent('download', { timeout: 300000 });
 await page.getByRole('button', { name: '⬇ PDF planche' }).click();
@@ -142,6 +155,12 @@ const dxfPath = shots + 'paint-sheet.dxf';
 await (await dl2).saveAs(dxfPath);
 const dxf = readFileSync(dxfPath, 'latin1');
 check(/VBX-PEINTURE-RAL9005/.test(dxf) && /VBX-PEINTURE-REPERES/.test(dxf) && /VBX-PEINTURE-LEGENDE/.test(dxf), 'DXF : calques VBX-PEINTURE-RAL9005 / -REPERES / -LEGENDE');
+// Vue 3D : faces peintes en couleur
+await page.getByRole('button', { name: 'Vue 3D' }).click();
+await page.getByTestId('toggle-paint-3d').waitFor({ timeout: 30000 });
+check(await page.getByTestId('toggle-paint-3d').evaluate((b) => b.classList.contains('primary')), 'Vue 3D : bouton 🎨 Peinture actif');
+await page.waitForTimeout(1500);
+await page.screenshot({ path: shots + 'paint-3d.png' });
 await page.close();
 
 // ─── téléphone ───
@@ -161,7 +180,6 @@ await ph.getByTestId('tool-paint').tap();
 await ph.getByTestId('paint-panel').waitFor();
 check(/P1/.test(await ph.getByTestId('paint-panel').innerText()), 'téléphone : palette du projet retrouvée (P1)');
 await ph.getByTestId('paint-color-P1').tap();
-await ph.locator('.sheet-side-close').tap();
 const cdp = await ctx.newCDPSession(ph);
 const rects = await ph.evaluate(() =>
   [...document.querySelectorAll('.sheet-canvas svg [data-item-type="viewport"]')].map((g) => {

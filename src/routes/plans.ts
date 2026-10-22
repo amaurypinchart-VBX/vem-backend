@@ -298,7 +298,7 @@ router.post('/project/:projectId/assets', upload.single('file'), async (req: Aut
 
 // POST /plans/project/:projectId/files — PDF / DXF / .zip d'un jeu de plans (fait dans le navigateur) enregistré dans
 // les Fichiers du projet VEM (Cloudinary raw, 10 Mo maximum ; catégorie « plans »)
-const PLANS_FILE_TYPES: Record<string, string> = { pdf: 'application/pdf', dxf: 'application/dxf', zip: 'application/zip' };
+const PLANS_FILE_TYPES: Record<string, string> = { pdf: 'application/pdf', dxf: 'application/dxf', zip: 'application/zip', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 router.post('/project/:projectId/files', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) throw new AppError('Fichier manquant', 400);
@@ -307,7 +307,7 @@ router.post('/project/:projectId/files', upload.single('file'), async (req: Auth
     const fileName = String(raw || 'plans.pdf').slice(0, 200).replace(/[\\/:*?"<>|]+/g, '-');
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     const fileType = PLANS_FILE_TYPES[ext];
-    if (!fileType) throw new AppError('Seuls les PDF, DXF et .zip de plans sont acceptés', 400);
+    if (!fileType) throw new AppError('Seuls les PDF, DXF, .zip et .xlsx de plans sont acceptés', 400);
     const project = await prisma.project.findUnique({ where: { id: req.params.projectId }, select: { id: true } });
     if (!project) throw new AppError('Projet introuvable', 404);
     const { url, publicId } = await uploadToCloudinary(req.file.buffer, `projects/${project.id}/plans`, {
