@@ -42,6 +42,14 @@ export interface ProviderOptions {
   note?: (detail: string | null) => void;
 }
 
+/** Vue absente des caches alors qu'on ne voulait pas la calculer (génération sur téléphone). */
+export class NotCachedError extends Error {
+  constructor() {
+    super('Vue pas encore calculée');
+    this.name = 'NotCachedError';
+  }
+}
+
 /** Message d'une vue trop lourde pour être calculée sur ce téléphone. */
 export const HEAVY_VIEW = 'Vue trop lourde pour le téléphone : ouvre ce jeu une fois sur ordinateur (les vues y sont calculées puis partagées) ou « ⋯ › Calculer les vues lourdes ici »';
 
@@ -90,12 +98,12 @@ export class BrowserHlrProvider implements LineworkProvider {
     return { key, packet, meshIds };
   }
 
-  async getLinework(req: LineworkRequest, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<Linework2D> {
+  async getLinework(req: LineworkRequest, onProgress?: (p: number) => void, signal?: AbortSignal, opts: { cacheOnly?: boolean } = {}): Promise<Linework2D> {
     const basis = viewBasis(req.view, this.scene.frames);
     const cacheKey = await this.cacheKey(req);
     const cat = !!req.style.colorByCategory && isTopView(basis);
     const marks = !!req.style.facadeMarks && isElevation(basis);
-    if (!cat && !marks) return this.baseLinework(req, basis, cacheKey, onProgress, signal);
+    if (!cat && !marks) return this.baseLinework(req, basis, cacheKey, onProgress, signal, opts.cacheOnly);
     // vue décorée (couleurs, repères façade) gardée elle aussi : les repères demandent un index 3D de tout ce qui est
     // dessiné, trop lourd pour un téléphone — il lit la vue décorée par l'ordinateur au lieu de la refaire
     const colors = this.opts.categoryColors();
@@ -110,7 +118,9 @@ export class BrowserHlrProvider implements LineworkProvider {
       onProgress?.(1);
       return done;
     }
-    let lw = await this.baseLinework(req, basis, cacheKey, onProgress, signal);
+    let lw = await this.baseLinework(req, basis, cacheKey, onProgress, signal, opts.cacheOnly);
+    // seulement les caches : les repères attendent l'affichage de la planche
+    if (opts.cacheOnly) return lw;
     const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
     // téléphone : repères d'une vue lourde pas encore calculés ailleurs = sans repères (sinon la page est fermée)
     if (marks && this.opts.heavyTriangles && !this.allowHeavy && this.triangles(meshIds) > this.opts.heavyTriangles) return lw;
@@ -132,7 +142,7 @@ export class BrowserHlrProvider implements LineworkProvider {
   }
 
   /** Traits de la vue sans décoration : cache local → serveur → calcul. */
-  private async baseLinework(req: LineworkRequest, basis: ViewBasis, cacheKey: string, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<Linework2D> {
+  private async baseLinework(req: LineworkRequest, basis: ViewBasis, cacheKey: string, onProgress?: (p: number) => void, signal?: AbortSignal, cacheOnly = false): Promise<Linework2D> {
     let lw = this.opts.noCache ? null : await cacheGet(cacheKey);
     if (lw) this.opts.remote?.share(cacheKey, lw);
     if (!lw && this.opts.remote && !this.opts.noCache) {
@@ -143,6 +153,7 @@ export class BrowserHlrProvider implements LineworkProvider {
       onProgress?.(1);
       return lw;
     }
+    if (cacheOnly) throw new NotCachedError();
     await this.acquire(signal);
     try {
       // une autre fenêtre a pu calculer la même vue pendant l'attente

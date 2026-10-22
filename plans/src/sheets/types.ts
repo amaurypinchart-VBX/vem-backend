@@ -148,6 +148,8 @@ export interface ViewportItem extends ItemBase {
   lineworkKey?: string;
   /** peinture sur cette vue : repères (défaut dès qu'une face peinte est visible), couleurs (P3), rien */
   paint?: 'marks' | 'fill' | 'off';
+  /** jeu généré sur téléphone : cotes automatiques à poser dès que la vue est calculée */
+  pendingAutoDims?: boolean;
 }
 
 export interface Image3dItem extends ItemBase {
@@ -163,6 +165,8 @@ export interface Image3dItem extends ItemBase {
   labelSize?: number;
   /** planche copiée pour une autre Viewbox : image à refaire avec ce sous-ensemble (« Recapturer ») */
   retake?: { include: string[] };
+  /** jeu généré sur téléphone : image à rendre à la prochaine ouverture sur ordinateur (rendu 3D trop lourd) */
+  pendingCapture?: { include: string[]; hideCategories: string[]; view: 'iso-ne' | 'iso-nw' | 'iso-se' | 'iso-sw'; projection: 'perspective' | 'orthographic' };
 }
 
 export interface LabelItem extends ItemBase {

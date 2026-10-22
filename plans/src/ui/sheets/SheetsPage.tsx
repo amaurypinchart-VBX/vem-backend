@@ -197,10 +197,27 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(fresh, who) },
               );
               if (fresh) set.projectSync = { at: new Date().toISOString(), values: projectValues(fresh) };
-              await fitDrawingSet(set, bank, (done, total) => setProgress({ label: `Calcul des vues 2D (${done}/${total})`, fraction: 0.05 + 0.65 * (done / Math.max(total, 1)) }));
+              // téléphone : rien n'est calculé ici (tout le jeu d'un coup ferme la page sur iPhone) — échelles des vues déjà
+              // calculées ailleurs, cotes posées planche par planche à l'affichage, images 3D rendues à l'ouverture sur ordinateur
+              const light = lowPowerDevice();
+              await fitDrawingSet(
+                set,
+                bank,
+                (done, total) => setProgress({ label: light ? `Mise en page des vues (${done}/${total})` : `Calcul des vues 2D (${done}/${total})`, fraction: 0.05 + 0.65 * (done / Math.max(total, 1)) }),
+                undefined,
+                light ? { cacheOnly: true, sequential: true } : {},
+              );
               setProgress({ label: 'Cotes automatiques', fraction: 0.7 });
-              dimensionDrawingSet(set, bank, dimensioned);
-              if (captures.length) {
+              if (light) {
+                const wanted = new Set(dimensioned);
+                for (const s of set.sheets) for (const it of s.items) if (it.type === 'viewport' && wanted.has(it.id)) it.pendingAutoDims = true;
+                for (const s of set.sheets)
+                  for (const it of s.items) {
+                    const c = it.type === 'image3d' ? captures.find((x) => x.itemId === it.id) : undefined;
+                    if (c) (it as Image3dItem).pendingCapture = { include: c.include, hideCategories: c.hideCategories, view: c.view, projection: c.projection };
+                  }
+              } else dimensionDrawingSet(set, bank, dimensioned);
+              if (captures.length && !light) {
                 const items = new Map(set.sheets.flatMap((s) => s.items).filter((i): i is Image3dItem => i.type === 'image3d').map((i) => [i.id, i]));
                 await captureOffscreen(
                   scene,
@@ -408,6 +425,12 @@ function Wizard({
           le cartouche est rempli avec les données du projet VEM. Compte de quelques secondes à quelques minutes selon la taille du
           stand (les vues déjà calculées sont réutilisées).
         </div>
+        {lowPowerDevice() && (
+          <div className="hint" style={{ margin: '0 0 12px' }} data-testid="wizard-phone-note">
+            📱 Sur téléphone, le jeu est créé tout de suite sans calcul : chaque vue est calculée quand tu ouvres sa planche (les vues
+            très lourdes, et les images 3D, le sont à la prochaine ouverture du jeu sur ordinateur).
+          </div>
+        )}
         <div className="row">
           <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors })}>
             Générer

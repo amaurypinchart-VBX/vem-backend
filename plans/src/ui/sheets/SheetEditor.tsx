@@ -14,13 +14,13 @@ import { meshesOfNode, nodeIdOf } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { SavedCapture } from '../../api/vem';
-import type { Image3dItem, LabelItem, PointMm, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, ViewportItem } from '../../sheets/types';
+import type { DrawingSet, Image3dItem, LabelItem, PointMm, Sheet, SheetItem, SymbolItem, SymbolLegendItem, TextItem, ViewportItem } from '../../sheets/types';
 import { SYMBOL_BY_KEY, SYMBOL_SIZE, alongWall, orientToWall } from '../../sheets/symbols';
 import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import { SheetSvg, itemBox } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
-import { useBank } from '../../sheets/bank';
+import { dimensionDrawingSet, useBank } from '../../sheets/bank';
 import type { LineworkBank } from '../../sheets/bank';
 import { actions, useEditor } from '../../sheets/store';
 import { fitScale, viewportTransform } from '../../sheets/scales';
@@ -226,7 +226,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const fixes: Array<{ sheetId: string; id: string; key: string; scale?: number; center?: [number, number] }> = [];
     for (const s of doc.sheets)
       for (const it of s.items) {
-        if (it.type !== 'viewport' || (it.lineworkKey && it.scale && it.center)) continue;
+        if (it.type !== 'viewport' || it.pendingAutoDims || (it.lineworkKey && it.scale && it.center)) continue;
         const key = bank.keyOf(it);
         const lw = bank.data(it).lw;
         if (!key || !lw) continue;
@@ -244,6 +244,71 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       }
     });
   }, [bankTick, doc.sheets, bank]);
+
+  // jeu généré sur téléphone : cotes automatiques posées dès que les vues d'une planche sont là (échelle commune
+  // sur une planche par Viewbox, comme à la génération) — sans entrée d'historique
+  useEffect(() => {
+    const ready = (vp: ViewportItem) => {
+      const x = bank.data(vp);
+      return !!x.lw && !!x.basis;
+    };
+    const todo: string[] = [];
+    for (const s of doc.sheets) {
+      const pend = s.items.filter((i): i is ViewportItem => i.type === 'viewport' && !!i.pendingAutoDims);
+      if (pend.length && !pend.some((vp) => bank.data(vp).busy) && pend.some(ready)) todo.push(s.id);
+    }
+    if (!todo.length) return;
+    useEditor.getState().patchSilently((d) => {
+      for (const id of todo) {
+        const sh = d.sheets.find((x) => x.id === id);
+        if (!sh) continue;
+        const vps = (sh.items as SheetItem[]).filter((i): i is ViewportItem => i.type === 'viewport' && !!i.pendingAutoDims && ready(i));
+        dimensionDrawingSet({ sheets: [sh] } as unknown as DrawingSet, bank, vps.map((v) => v.id));
+        for (const vp of vps) {
+          vp.lineworkKey = bank.keyOf(vp) ?? vp.lineworkKey;
+          delete vp.pendingAutoDims;
+        }
+      }
+    });
+  }, [bankTick, doc.sheets, bank]);
+
+  // jeu généré sur téléphone : images 3D rendues ici (ordinateur), envoyées puis posées sans entrée d'historique
+  const capturing = useRef(false);
+  useEffect(() => {
+    if (lightDevice || capturing.current) return;
+    const jobs = doc.sheets.flatMap((s) => s.items.filter((i): i is Image3dItem => i.type === 'image3d' && !!i.pendingCapture).map((item) => ({ sheetId: s.id, item })));
+    if (!jobs.length) return;
+    capturing.current = true;
+    void (async () => {
+      try {
+        await captureOffscreen(
+          scene,
+          glassTest,
+          jobs.map(({ item }) => ({ ...item.pendingCapture!, aspect: item.rect.w / item.rect.h })),
+          2400,
+          async (i, r) => {
+            let url: string;
+            try {
+              url = (await vem.uploadAsset(PROJECT_ID, r.blob, `vue3d-${i + 1}.png`)).url;
+            } catch {
+              return;
+            }
+            const { sheetId, item } = jobs[i];
+            useEditor.getState().patchSilently((d) => {
+              const it = d.sheets.find((x) => x.id === sheetId)?.items.find((x) => x.id === item.id) as Image3dItem | undefined;
+              if (!it) return;
+              Object.assign(it, { url, width: r.width, height: r.height });
+              delete it.pendingCapture;
+            });
+          },
+        );
+      } catch {
+        /* rendu impossible : réessayé à la prochaine ouverture */
+      } finally {
+        capturing.current = false;
+      }
+    })();
+  }, [doc.sheets, scene, glassTest]);
 
   // ─── cartouche ← projet VEM ───
   const applyProject = useCallback((fresh: ProjectValues, fields: ProjectField[]) => {

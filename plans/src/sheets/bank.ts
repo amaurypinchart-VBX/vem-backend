@@ -12,7 +12,7 @@ import { computeSpecialView } from '../linework/customView';
 import { hashKey } from '../linework/cache';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { BrowserHlrProvider } from '../linework/provider';
-import { HEAVY_VIEW } from '../linework/provider';
+import { HEAVY_VIEW, NotCachedError } from '../linework/provider';
 import type { Linework2D } from '../linework/types';
 import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
@@ -212,7 +212,9 @@ export class LineworkBank {
   }
 
   /** Traits d'une fenêtre de vue (calcul si besoin). */
-  async load(vp: ViewportItem, signal?: AbortSignal): Promise<{ key: string; lw: Linework2D } | null> {
+  async load(vp: ViewportItem, signal?: AbortSignal, opts: { cacheOnly?: boolean } = {}): Promise<{ key: string; lw: Linework2D } | null> {
+    // seulement les caches (génération sur téléphone) : les vues spéciales attendent l'affichage
+    if (opts.cacheOnly && vp.custom) return null;
     const reqKey = this.reqKey(vp);
     let key = this.keys.get(reqKey);
     if (!key) {
@@ -244,12 +246,19 @@ export class LineworkBank {
         this.entries.set(ek, { lw: block.lw, basis: block.basis });
         return { key, lw: block.lw };
       }
-      const lw = await this.provider.getLinework(vp.request, undefined, signal);
+      const lw = await this.provider.getLinework(vp.request, undefined, signal, opts);
+      // seulement les caches : traits peut-être sans leurs repères, pas gardés (refaits à l'affichage)
+      if (opts.cacheOnly) {
+        this.entries.delete(ek);
+        return { key, lw };
+      }
       this.entries.set(ek, { lw });
       this.trim();
       return { key, lw };
     } catch (err) {
-      this.entries.set(ek, { error: (err as Error).name === 'AbortError' ? 'annulé' : (err as Error).message });
+      // absente des caches : rien n'est retenu, la vue sera calculée à l'affichage
+      if (err instanceof NotCachedError) this.entries.delete(ek);
+      else this.entries.set(ek, { error: (err as Error).name === 'AbortError' ? 'annulé' : (err as Error).message });
       return null;
     } finally {
       this.pendingKeys.delete(ek);
@@ -305,17 +314,20 @@ export async function fitDrawingSet(
   bank: LineworkBank,
   onProgress: (done: number, total: number) => void,
   signal?: AbortSignal,
+  opts: { cacheOnly?: boolean; sequential?: boolean } = {},
 ): Promise<void> {
   const vps = set.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
   let done = 0;
   onProgress(0, vps.length);
-  const results = new Map<string, { key: string; lw: Linework2D } | null>();
-  await Promise.all(
-    vps.map(async (vp) => {
-      results.set(vp.id, await bank.load(vp, signal));
-      onProgress(++done, vps.length);
-    }),
-  );
+  // seulement l'étendue de chaque vue (pas ses traits : un téléphone n'a pas la place de garder tout le jeu)
+  const results = new Map<string, { key: string; lw: { boundsMm: Linework2D['boundsMm'] } } | null>();
+  const one = async (vp: ViewportItem) => {
+    const r = await bank.load(vp, signal, { cacheOnly: opts.cacheOnly });
+    results.set(vp.id, r && { key: r.key, lw: { boundsMm: r.lw.boundsMm } });
+    onProgress(++done, vps.length);
+  };
+  if (opts.sequential) for (const vp of vps) await one(vp);
+  else await Promise.all(vps.map(one));
   for (const sheet of set.sheets) {
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
     const moduleSheet = own.length > 1 && own.every((v) => v.request.view.kind !== 'custom' && typeof v.request.view.frame === 'object');

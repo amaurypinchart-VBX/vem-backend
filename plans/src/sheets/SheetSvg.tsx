@@ -1025,7 +1025,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
                 <rect {...rectAttrs(it.rect)} fill="#f1f3f6" stroke="#c9ced8" strokeWidth={0.3} />
                 {!thumbnail && (
                   <text x={num(it.rect.x + it.rect.w / 2)} y={num(it.rect.y + it.rect.h / 2)} fontSize={4} textAnchor="middle" fill="#8b94a7" fontFamily={FONT_SANS}>
-                    Image 3D en préparation…
+                    {it.pendingCapture ? 'Image 3D : rendue à la prochaine ouverture du jeu sur ordinateur' : 'Image 3D en préparation…'}
                   </text>
                 )}
               </g>
