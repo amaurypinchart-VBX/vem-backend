@@ -49,6 +49,7 @@ import { freshImport, NewVersionError } from '../newVersion';
 import { retargetSheet, sheetModule } from '../../sheets/duplicate';
 import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
 import { useDevice } from '../useDevice';
+import { clearStep, markStep } from '../crashLog';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
 import type { ReadyFile } from '../FileReady';
@@ -190,11 +191,18 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
     bank.ensure(own);
     bank.ensurePaint(own);
+    // téléphone : seulement la planche affichée (calculer tout le jeu d'avance remplit la mémoire et iOS ferme la page)
+    if (device.isTouch) return;
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);
   useEffect(() => {
-    if (sheet) bank.ensurePaint(sheet.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+    if (!sheet) return;
+    const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
+    bank.ensurePaint(own);
+    // journal des fermetures (téléphone) : calcul des vues de la planche en cours
+    if (own.some((vp) => bank.data(vp).busy && !bank.data(vp).error)) markStep(`Calcul des vues de la planche ${sheet.number}`);
+    else clearStep();
   }, [bankTick, sheet, bank]);
 
   // vues sans calcul de référence (nouvelles, « Recalculer ») : échelle, centrage et clé fixés dès que les traits arrivent
@@ -723,6 +731,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         return;
     }
     cancelExport.current = false;
+    markStep(`Export PDF (${sheets.length} planche${sheets.length > 1 ? 's' : ''})`);
     try {
       setBusy('PDF : calcul des vues…');
       const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
@@ -771,6 +780,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     } catch (e) {
       if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`Export PDF impossible : ${(e as Error).message}`);
     } finally {
+      clearStep();
       setBusy('');
     }
   };

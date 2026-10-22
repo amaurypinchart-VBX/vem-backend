@@ -67,6 +67,8 @@ export class LineworkBank {
   /** vues spéciales : calcul complet (tous les blocs) par vue, partagé par ses fenêtres */
   private readonly customRuns = new Map<string, Promise<CustomViewResult>>();
   custom: CustomSource | null = null;
+  /** téléphone : traits gardés en mémoire au plus pour N vues (les plus anciennes sont relues du cache au besoin) */
+  maxEntries = 0;
   private paintSrc: PaintSource | null = null;
   /** peinture visible par vue : clé = vue + calcul + version de la peinture */
   private readonly paintRegions = new Map<string, PaintRegion[]>();
@@ -235,6 +237,7 @@ export class LineworkBank {
       }
       const lw = await this.provider.getLinework(vp.request, undefined, signal);
       this.entries.set(ek, { lw });
+      this.trim();
       return { key, lw };
     } catch (err) {
       this.entries.set(ek, { error: (err as Error).name === 'AbortError' ? 'annulé' : (err as Error).message });
@@ -244,6 +247,15 @@ export class LineworkBank {
       this.emit();
     }
   }
+  /** Garde au plus `maxEntries` vues calculées (les plus anciennes d'abord), jamais celles en cours. */
+  private trim(): void {
+    if (!this.maxEntries || this.entries.size <= this.maxEntries) return;
+    for (const [k, e] of this.entries) {
+      if (this.entries.size <= this.maxEntries) break;
+      if (e.lw && !this.pendingKeys.has(k)) this.entries.delete(k);
+    }
+  }
+
   /** Bloc d'une vue spéciale (la vue entière est calculée une fois pour toutes ses fenêtres). */
   private async customBlock(vp: ViewportItem, signal?: AbortSignal): Promise<{ lw: Linework2D; basis: ViewBasis }> {
     const ref = vp.custom!;

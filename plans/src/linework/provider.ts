@@ -22,11 +22,20 @@ export interface ProviderOptions {
   categoryColors: () => Record<string, string>;
   /** désactive le cache IndexedDB (tests) */
   noCache?: boolean;
+  /**
+   * téléphone : vues calculées (paquet construit + calcul) au plus N à la fois — les autres attendent avant de
+   * construire leur paquet ; sans limite = comme avant
+   */
+  maxConcurrent?: number;
+  /** sous-ensembles gardés en mémoire (défaut 3) */
+  maxPackets?: number;
 }
 
 export class BrowserHlrProvider implements LineworkProvider {
   readonly id = 'browser-hlr' as const;
   private readonly packets = new Map<string, HlrPacket>();
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
 
   constructor(
     private readonly scene: LoadedScene,
@@ -59,8 +68,8 @@ export class BrowserHlrProvider implements LineworkProvider {
     if (!packet) {
       packet = buildPacket(this.scene, meshIds, this.opts.glassTest);
       this.packets.set(key, packet);
-      // garde les 3 derniers sous-ensembles
-      while (this.packets.size > 3) this.packets.delete(this.packets.keys().next().value!);
+      // garde les 3 derniers sous-ensembles (téléphone : moins)
+      while (this.packets.size > (this.opts.maxPackets ?? 3)) this.packets.delete(this.packets.keys().next().value!);
     }
     return { key, packet, meshIds };
   }
@@ -71,11 +80,20 @@ export class BrowserHlrProvider implements LineworkProvider {
     let lw = this.opts.noCache ? null : await cacheGet(cacheKey);
     let meshIds: string[] | null = null;
     if (!lw) {
-      const p = this.packetFor(req);
-      meshIds = p.meshIds;
-      if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
-      lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
-      if (!this.opts.noCache) void cachePut(cacheKey, lw);
+      await this.acquire(signal);
+      try {
+        // une autre fenêtre a pu calculer la même vue pendant l'attente
+        lw = this.opts.maxConcurrent && !this.opts.noCache ? await cacheGet(cacheKey) : null;
+        if (!lw) {
+          const p = this.packetFor(req);
+          meshIds = p.meshIds;
+          if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
+          lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
+          if (!this.opts.noCache) void cachePut(cacheKey, lw);
+        }
+      } finally {
+        this.release();
+      }
     } else onProgress?.(1);
     if (req.style.colorByCategory && isTopView(basis)) {
       meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
@@ -88,6 +106,34 @@ export class BrowserHlrProvider implements LineworkProvider {
       lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('mark:')), ...marks] };
     }
     return lw;
+  }
+
+  /** Attend une place de calcul (sans limite : immédiat). */
+  private acquire(signal?: AbortSignal): Promise<void> {
+    const max = this.opts.maxConcurrent;
+    if (!max || this.active < max) {
+      this.active++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      const go = () => {
+        signal?.removeEventListener('abort', onAbort);
+        this.active++;
+        resolve();
+      };
+      const onAbort = () => {
+        const i = this.waiting.indexOf(go);
+        if (i >= 0) this.waiting.splice(i, 1);
+        reject(new DOMException('Annulé', 'AbortError'));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      this.waiting.push(go);
+    });
+  }
+
+  private release(): void {
+    this.active--;
+    this.waiting.shift()?.();
   }
 
   /** Pool de calcul (vues spéciales : même pool de Workers que les vues existantes). */

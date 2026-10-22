@@ -141,6 +141,17 @@ async function run(deviceName, generate) {
   await page.waitForTimeout(500);
   await noHScroll('paysage');
   await page.screenshot({ path: `${shots}mobile-${tag}-landscape.png` });
+  // fermeture par iOS (mémoire) simulée : étape restée notée → bandeau au rechargement
+  // (un vrai plantage ne déclenche pas « pagehide » : l'étape est remise au début du nouveau chargement)
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('crash-sim')) return;
+    sessionStorage.setItem('crash-sim', '1');
+    localStorage.setItem('vem_plans_step', JSON.stringify({ label: 'Calcul des vues de la planche A1.2', at: Date.now() }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Analyser' }).click();
+  await page.getByTestId('crash-banner').waitFor({ timeout: 300000 });
+  check(/Calcul des vues de la planche A1\.2/.test(await page.getByTestId('crash-banner').innerText()), 'fermeture inattendue signalée au rechargement (étape en cours)');
   check(!errors.length, `aucune erreur console${errors.length ? ' : ' + errors.join(' | ') : ''}`);
   await ctx.close();
 }

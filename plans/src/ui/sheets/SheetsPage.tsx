@@ -24,6 +24,8 @@ import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import { ProgressBar } from '../common';
 import { SheetEditor } from './SheetEditor';
+import { lowPowerDevice } from '../useDevice';
+import { clearStep, markStep } from '../crashLog';
 import type { PaintBundle } from './SheetEditor';
 import { usePaint } from './usePaint';
 import { paintContext } from '../../core/paint/resolve';
@@ -49,7 +51,12 @@ interface Props {
 }
 
 export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
-  const bank = useMemo(() => new LineworkBank(scene, provider), [scene, provider]);
+  const bank = useMemo(() => {
+    const b = new LineworkBank(scene, provider);
+    // téléphone : mémoire limitée (les vues relues du cache IndexedDB en un instant)
+    if (lowPowerDevice()) b.maxEntries = 24;
+    return b;
+  }, [scene, provider]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
   // vues spéciales : la banque relit les vues du modèle (une vue modifiée rend ses fenêtres « obsolètes »)
   const [viewTags, setViewTags] = useState<ViewTagRule[]>([]);
@@ -181,6 +188,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
             setError('');
             try {
               setProgress({ label: 'Mise en page des planches', fraction: 0.02 });
+              markStep('Génération du jeu de plans');
               // données du projet à jour (modifiées dans VEM depuis l'ouverture ?) pour le cartouche
               const fresh = await vem.project(PROJECT_ID).catch(() => project);
               const who = me ?? (await vem.me().catch(() => null));
@@ -201,7 +209,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
                     const it = items.get(c.itemId)!;
                     return { include: c.include, hideCategories: c.hideCategories, view: c.view, projection: c.projection, aspect: it.rect.w / it.rect.h };
                   }),
-                  2400,
+                  lowPowerDevice() ? 1400 : 2400,
                   async (i, r) => {
                     setProgress({ label: `Images 3D (${i + 1}/${captures.length})`, fraction: 0.7 + 0.25 * ((i + 1) / captures.length) });
                     const it = items.get(captures[i].itemId)!;
@@ -220,8 +228,10 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
               set.id = rec.id;
               setWizard(false);
               setProgress(null);
+              clearStep();
               useEditor.getState().load(set);
             } catch (e) {
+              clearStep();
               setProgress(null);
               setError(`Génération impossible : ${(e as Error).message}`);
             }
