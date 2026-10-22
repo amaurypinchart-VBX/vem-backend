@@ -2,10 +2,11 @@
 // avec cache IndexedDB. L'éditeur de planches n'utilisera que l'interface LineworkProvider.
 import { resolveMeshes } from '../core/subset';
 import { viewBasis, viewKey } from '../core/views';
+import type { ViewBasis } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import { cacheGet, cachePut, hashKey } from './cache';
 import { categoryStrokeLayers, isTopView } from './categoryStrokes';
-import { facadeMarkLayers } from './facadeMarks';
+import { facadeMarkLayers, isElevation } from './facadeMarks';
 import type { HlrPacket } from './hlr';
 import type { GlassTest } from './packets';
 import { buildPacket } from './packets';
@@ -37,6 +38,8 @@ export interface ProviderOptions {
    * serait fermée par iOS) — erreur `HEAVY_VIEW` ; `allowHeavy` lève la limite
    */
   heavyTriangles?: number;
+  /** journal des fermetures (téléphone) : étape lourde en cours, null = finie */
+  note?: (detail: string | null) => void;
 }
 
 /** Message d'une vue trop lourde pour être calculée sur ce téléphone. */
@@ -90,47 +93,78 @@ export class BrowserHlrProvider implements LineworkProvider {
   async getLinework(req: LineworkRequest, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<Linework2D> {
     const basis = viewBasis(req.view, this.scene.frames);
     const cacheKey = await this.cacheKey(req);
+    const cat = !!req.style.colorByCategory && isTopView(basis);
+    const marks = !!req.style.facadeMarks && isElevation(basis);
+    if (!cat && !marks) return this.baseLinework(req, basis, cacheKey, onProgress, signal);
+    // vue décorée (couleurs, repères façade) gardée elle aussi : les repères demandent un index 3D de tout ce qui est
+    // dessiné, trop lourd pour un téléphone — il lit la vue décorée par l'ordinateur au lieu de la refaire
+    const colors = this.opts.categoryColors();
+    const decoKey = this.opts.noCache ? '' : await hashKey({ base: cacheKey, cat, marks, colors });
+    let done = decoKey ? await cacheGet(decoKey) : null;
+    if (done) this.opts.remote?.share(decoKey, done);
+    else if (decoKey && this.opts.remote) {
+      done = await this.opts.remote.get(decoKey, signal).catch(() => null);
+      if (done) void cachePut(decoKey, done);
+    }
+    if (done) {
+      onProgress?.(1);
+      return done;
+    }
+    let lw = await this.baseLinework(req, basis, cacheKey, onProgress, signal);
+    const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+    // téléphone : repères d'une vue lourde pas encore calculés ailleurs = sans repères (sinon la page est fermée)
+    if (marks && this.opts.heavyTriangles && !this.allowHeavy && this.triangles(meshIds) > this.opts.heavyTriangles) return lw;
+    this.opts.note?.(`repères de la vue (${Math.round(this.triangles(meshIds) / 1000)} k triangles)`);
+    if (cat) {
+      const extra = categoryStrokeLayers(this.scene, meshIds, basis, colors);
+      lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('category:')), ...extra] };
+    }
+    if (marks) {
+      const m = facadeMarkLayers(this.scene, meshIds, basis, lw, this.opts.glassTest, colors);
+      lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('mark:')), ...m] };
+    }
+    this.opts.note?.(null);
+    if (decoKey) {
+      void cachePut(decoKey, lw);
+      this.opts.remote?.put(decoKey, lw);
+    }
+    return lw;
+  }
+
+  /** Traits de la vue sans décoration : cache local → serveur → calcul. */
+  private async baseLinework(req: LineworkRequest, basis: ViewBasis, cacheKey: string, onProgress?: (p: number) => void, signal?: AbortSignal): Promise<Linework2D> {
     let lw = this.opts.noCache ? null : await cacheGet(cacheKey);
     if (lw) this.opts.remote?.share(cacheKey, lw);
-    let meshIds: string[] | null = null;
     if (!lw && this.opts.remote && !this.opts.noCache) {
       lw = await this.opts.remote.get(cacheKey, signal).catch(() => null);
       if (lw) void cachePut(cacheKey, lw);
     }
-    if (!lw) {
-      await this.acquire(signal);
-      try {
-        // une autre fenêtre a pu calculer la même vue pendant l'attente
-        lw = this.opts.maxConcurrent && !this.opts.noCache ? await cacheGet(cacheKey) : null;
-        if (!lw) {
-          if (this.opts.heavyTriangles && !this.allowHeavy) {
-            const ids = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
-            if (this.triangles(ids) > this.opts.heavyTriangles) throw new Error(HEAVY_VIEW);
-          }
-          const p = this.packetFor(req);
-          meshIds = p.meshIds;
-          if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
-          lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
-          if (!this.opts.noCache) {
-            void cachePut(cacheKey, lw);
-            this.opts.remote?.put(cacheKey, lw);
-          }
-        }
-      } finally {
-        this.release();
+    if (lw) {
+      onProgress?.(1);
+      return lw;
+    }
+    await this.acquire(signal);
+    try {
+      // une autre fenêtre a pu calculer la même vue pendant l'attente
+      lw = this.opts.maxConcurrent && !this.opts.noCache ? await cacheGet(cacheKey) : null;
+      if (lw) return lw;
+      if (this.opts.heavyTriangles && !this.allowHeavy) {
+        const ids = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+        if (this.triangles(ids) > this.opts.heavyTriangles) throw new Error(HEAVY_VIEW);
       }
-    } else onProgress?.(1);
-    if (req.style.colorByCategory && isTopView(basis)) {
-      meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
-      const extra = categoryStrokeLayers(this.scene, meshIds, basis, this.opts.categoryColors());
-      lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('category:')), ...extra] };
+      const p = this.packetFor(req);
+      if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
+      this.opts.note?.(`calcul d’une vue (${Math.round(p.packet.indices.length / 3000)} k triangles)`);
+      lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
+      this.opts.note?.(null);
+      if (!this.opts.noCache) {
+        void cachePut(cacheKey, lw);
+        this.opts.remote?.put(cacheKey, lw);
+      }
+      return lw;
+    } finally {
+      this.release();
     }
-    if (req.style.facadeMarks) {
-      meshIds ??= resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
-      const marks = facadeMarkLayers(this.scene, meshIds, basis, lw, this.opts.glassTest, this.opts.categoryColors());
-      lw = { ...lw, layers: [...lw.layers.filter((l) => !l.key.startsWith('mark:')), ...marks] };
-    }
-    return lw;
   }
 
   /** Nombre de triangles des maillages (index de scène, sans construire le paquet). */

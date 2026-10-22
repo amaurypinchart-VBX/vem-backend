@@ -70,4 +70,34 @@ describe('vues partagées', () => {
     await phone.getLinework({ ...req, view: { kind: 'left', frame: 'world' } } as LineworkRequest);
     expect(ran).toBe(1);
   }, 120_000);
+
+  it('vue décorée (repères façade) gardée à part : le téléphone la lit telle quelle, sans repères au-delà de sa limite', async () => {
+    const s = await scene();
+    const store = new Map<string, Uint8Array>();
+    const io = { get: async (k: string) => store.get(k) ?? null, has: async (k: string) => store.has(k), put: async (k: string, _m: string, b: Uint8Array) => void store.set(k, b) };
+    const req = { modelId: 'r', subset: { include: subsetAll(s.index) }, view: { kind: 'front', frame: 'world' }, style: { ...DEFAULT_LINE_STYLE, facadeMarks: true } } as LineworkRequest;
+    const desk = await provider(s, { remote: serverLineworkCache('r', io) }).getLinework(req);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(store.size).toBe(2);
+    expect(desk.layers.some((l) => l.key.startsWith('mark:'))).toBe(true);
+    const phone = await provider(s, { remote: serverLineworkCache('r', io), heavyTriangles: 1 }).getLinework(req);
+    expect(flat(phone)).toBe(flat(desk));
+    // pas de vue décorée partagée : sur téléphone, la vue arrive sans repères plutôt que de fermer la page
+    store.clear();
+    const base = await provider(s, { remote: serverLineworkCache('r', io) }).getLinework({ ...req, style: DEFAULT_LINE_STYLE } as LineworkRequest);
+    await new Promise((r) => setTimeout(r, 100));
+    const bare = await provider(s, { remote: serverLineworkCache('r', io), heavyTriangles: 1 }).getLinework(req);
+    expect(bare.layers.some((l) => l.key.startsWith('mark:'))).toBe(false);
+    expect(flat(bare)).toBe(flat(base));
+  }, 120_000);
+});
+
+describe('images 3D sur téléphone', () => {
+  it('Cloudinary : version réduite demandée ; autres adresses et adresses déjà transformées inchangées', async () => {
+    const { screenImageUrl } = await import('../src/sheets/images');
+    expect(screenImageUrl('https://res.cloudinary.com/demo/image/upload/v17/plans/p1/a.png', 1400)).toBe('https://res.cloudinary.com/demo/image/upload/w_1400,c_limit/v17/plans/p1/a.png');
+    expect(screenImageUrl('https://res.cloudinary.com/demo/image/upload/w_300,c_limit/v17/a.png', 1400)).toBe('https://res.cloudinary.com/demo/image/upload/w_300,c_limit/v17/a.png');
+    expect(screenImageUrl('/assets/a.png', 1400)).toBe('/assets/a.png');
+    expect(screenImageUrl('data:image/png;base64,xx', 1400)).toBe('data:image/png;base64,xx');
+  });
 });

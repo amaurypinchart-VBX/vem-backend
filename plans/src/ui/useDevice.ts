@@ -27,6 +27,12 @@ export function deviceInfo(): DeviceInfo {
 
 /** Appareil peu puissant (doigt ou ≤ 4 Go) : moins de calculs en parallèle, images plus légères. */
 export function lowPowerDevice(): boolean {
+  // essais (navigateur d'ordinateur en mode téléphone) : localStorage vem_plans_lowpower = 1
+  try {
+    if (localStorage.getItem('vem_plans_lowpower') === '1') return true;
+  } catch {
+    /* stockage indisponible */
+  }
   const mem = (typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined) ?? 8;
   return mq('(pointer: coarse)') || mem <= 4;
 }

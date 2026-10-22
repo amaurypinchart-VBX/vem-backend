@@ -81,6 +81,25 @@ export interface FixtureOptions {
   edges?: boolean;
   /** position de VBX-04 (défaut : sur VBX-01) — empilement décalé pour l'essai des appuis manquants */
   vbx4At?: [number, number, number];
+  /** modèle lourd (essais mémoire téléphone) : n Viewbox côte à côte en grille de 4 par rangée au lieu des 4 habituelles */
+  modules?: number;
+  /** petites pièces (boulonnerie, profils) ajoutées dans chaque Viewbox : nombre de boîtes */
+  detail?: number;
+}
+
+/** Boîtes de 20 à 80 mm réparties sur le plancher, les montants et la toiture (déterministe). */
+function detailBoxes(n: number): Array<[V3, V3]> {
+  const out: Array<[V3, V3]> = [];
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < n; i++) {
+    const x = 50 + rnd() * 5800;
+    const y = 50 + rnd() * 2400;
+    const z = [150, 1400, 2700][i % 3] + rnd() * 80;
+    const w = 20 + rnd() * 60;
+    out.push([[x, y, z], [x + w, y + w * 0.6, z + w]]);
+  }
+  return out;
 }
 
 export function makeSketchupDae(opts: FixtureOptions = {}): string {
@@ -102,6 +121,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
     orphan: G('GEO_orphan', [[[30000, 0, 0], [31800, 100, 2300]]], 'MAT_door'),
     spatial: G('GEO_spatial', [[[8000, 1000, 500], [8100, 1500, 2000]]]),
     ground: G('GEO_ground', [[[-10000, -10000, -10], [40000, 20000, 0]]]),
+    detail: G('GEO_detail', detailBoxes(opts.detail ?? 0)),
   };
   const feet = [
     [0, 0], [5900 - 100, 0], [0, 2500 - 100], [5900 - 100, 2500 - 100],
@@ -131,10 +151,14 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
   <library_visual_scenes>
     <visual_scene id="ID1">
       <node name="SketchUp">
-        <node id="N_vbx1" name="VBX-01">${translate(0, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
+        ${
+          opts.modules
+            ? Array.from({ length: opts.modules }, (_, i) => `<node id="N_vbx${i + 1}" name="VBX-${String(i + 1).padStart(2, '0')}">${translate((i % 4) * 5900, Math.floor(i / 4) * 2500, 0)}<instance_node url="#DEF_viewbox"/></node>`).join('')
+            : `<node id="N_vbx1" name="VBX-01">${translate(0, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
         <node id="N_vbx2" name="VBX-2">${translate(5900, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
         <node id="N_vbx3" name="VBX-03">${rotZ90(17500, 0, 0)}<instance_node url="#DEF_viewbox"/></node>
-        <node id="N_vbx4" name="VBX-04">${translate(...(opts.vbx4At ?? [0, 0, 2800]))}<instance_node url="#DEF_viewbox"/></node>
+        <node id="N_vbx4" name="VBX-04">${translate(...(opts.vbx4At ?? [0, 0, 2800]))}<instance_node url="#DEF_viewbox"/></node>`
+        }
         <node id="N_stair" name="COMMUN_ESCALIER-01">${instGeom(geoms.stair)}</node>
         <node id="N_orphan" name="PORTE-DOUBLE orpheline">${instGeom(geoms.orphan)}</node>
         <node id="N_spatial" name="MUR-LEGER_spatial">${instGeom(geoms.spatial)}</node>
@@ -150,6 +174,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
       <node id="N_doorInst" name="instance_3">${translate(0, 0, 0)}<instance_node url="#DEF_door"/></node>
       ${feet}
       <node id="N_misc" name="Group 12">${instGeom(geoms.misc)}</node>
+      ${opts.detail ? `<node id="N_detail" name="STRUCTURE_boulonnerie">${instGeom(geoms.detail)}</node>` : ''}
     </node>
     <node id="DEF_door" name="Porte simple 900">${instGeom(geoms.door)}</node>
   </library_nodes>

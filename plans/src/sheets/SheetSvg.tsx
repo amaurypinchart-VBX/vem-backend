@@ -69,6 +69,8 @@ export interface SheetSvgProps {
   svgRef?: React.Ref<SVGSVGElement>;
   /** couleurs et surfaces de la peinture du projet (légende « PAINTING ») */
   paint?: PaintSheetInfo;
+  /** adresse affichée d'une image 3D (téléphone : version réduite) ; absente = l'image d'origine */
+  imageSrc?: (url: string) => string;
 }
 
 const num = (v: number) => Math.round(v * 1000) / 1000;
@@ -1017,7 +1019,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         body = (
           <>
             {it.url ? (
-              <image href={it.url} {...rectAttrs(it.rect)} preserveAspectRatio="xMidYMid meet" />
+              <image href={props.imageSrc ? props.imageSrc(it.url) : it.url} {...rectAttrs(it.rect)} preserveAspectRatio="xMidYMid meet" />
             ) : (
               <g>
                 <rect {...rectAttrs(it.rect)} fill="#f1f3f6" stroke="#c9ced8" strokeWidth={0.3} />

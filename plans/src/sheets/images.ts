@@ -34,3 +34,13 @@ export function insertRect(img: { width: number; height: number }, k = 1, at = {
   }
   return { x: at.x * k, y: at.y * k, w, h };
 }
+
+/**
+ * Image Cloudinary à l'écran (téléphone) : version réduite à `px` de large au plus, calculée par Cloudinary — l'image
+ * d'origine (jusqu'à 3 000 px) occupe des dizaines de Mo une fois décodée. Autres adresses : inchangées.
+ */
+export function screenImageUrl(url: string, px: number): string {
+  const m = url.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.*)$/);
+  if (!m || /^(?:[a-z]_[^/,]+,?)+\//.test(m[2])) return url;
+  return `${m[1]}w_${Math.round(px)},c_limit/${m[2]}`;
+}

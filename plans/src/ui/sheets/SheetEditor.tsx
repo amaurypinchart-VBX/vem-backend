@@ -41,7 +41,7 @@ import { CapturePicker } from './CapturePicker';
 import { DxfDialog } from './DxfDialog';
 import type { DxfChoice } from './DxfDialog';
 import type { PickableImage } from '../../sheets/images';
-import { insertRect, otherImagesOfSet } from '../../sheets/images';
+import { insertRect, otherImagesOfSet, screenImageUrl } from '../../sheets/images';
 import { DETAILS, detailRect } from '../../sheets/details';
 import type { ProjectField, ProjectValues } from '../../sheets/titleBlock';
 import { PROJECT_FIELDS, PROJECT_FIELD_LABELS, projectChanges, projectValues } from '../../sheets/titleBlock';
@@ -49,7 +49,7 @@ import type { Person, TitleBlockData } from '../../sheets/types';
 import { freshImport, NewVersionError } from '../newVersion';
 import { retargetSheet, sheetModule } from '../../sheets/duplicate';
 import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
-import { useDevice } from '../useDevice';
+import { lowPowerDevice, useDevice } from '../useDevice';
 import { clearStep, markStep } from '../crashLog';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
@@ -100,6 +100,11 @@ interface Props {
 }
 
 type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
+
+/** téléphone : images 3D réduites par Cloudinary (planche affichée / vignettes) */
+const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
+const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
+const lightDevice = lowPowerDevice();
 
 export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
   const doc = useEditor((s) => s.doc)!;
@@ -193,7 +198,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     bank.ensure(own);
     bank.ensurePaint(own);
     // téléphone : seulement la planche affichée (calculer tout le jeu d'avance remplit la mémoire et iOS ferme la page)
-    if (device.isTouch) return;
+    if (device.isTouch || lowPowerDevice()) return;
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);
@@ -206,9 +211,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     if (!sheet) return;
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
     bank.ensurePaint(own);
-    // journal des fermetures (téléphone) : calcul des vues de la planche en cours
-    if (own.some((vp) => bank.data(vp).busy && !bank.data(vp).error)) markStep(`Calcul des vues de la planche ${sheet.number}`);
-    else clearStep();
+    // journal des fermetures (téléphone) : calcul puis affichage de la planche en cours (effacé 3 s après l'affichage)
+    if (own.some((vp) => bank.data(vp).busy && !bank.data(vp).error)) {
+      markStep(`Calcul des vues de la planche ${sheet.number}`);
+      return;
+    }
+    markStep(`Affichage de la planche ${sheet.number}`);
+    const t = setTimeout(clearStep, 3000);
+    return () => clearTimeout(t);
   }, [bankTick, sheet, bank]);
 
   // vues sans calcul de référence (nouvelles, « Recalculer ») : échelle, centrage et clé fixés dès que les traits arrivent
@@ -1303,7 +1313,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               }}
             >
               {selectMode && <input className="thumb-check" type="checkbox" readOnly checked={sheetSelection.includes(s.id)} aria-label={`Choisir la planche ${s.number}`} />}
-              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail paint={paintInfo} style={{ width: '100%', height: 'auto', display: 'block' }} />
+              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail paint={paintInfo} imageSrc={lightDevice ? THUMB_IMAGE : undefined} style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
                 <span className="thumb-title">{s.kind === 'cover' ? 'Couverture' : (s.items.find((x) => x.type === 'viewport' && (x as ViewportItem).label) as ViewportItem | undefined)?.label ?? s.title}</span>
@@ -1335,6 +1345,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           </button>
         </aside>
         <SheetCanvas
+          imageSrc={lightDevice ? PHONE_IMAGE : undefined}
           doc={doc}
           sheet={sheet}
           legend={legend}

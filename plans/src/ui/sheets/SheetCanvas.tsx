@@ -48,6 +48,8 @@ interface Props {
   onItemMenu?: (item: SheetItem, at: { x: number; y: number }) => void;
   /** couleurs de la peinture (légende) */
   paint?: PaintSheetInfo;
+  /** adresse affichée des images 3D (téléphone : version réduite) */
+  imageSrc?: (url: string) => string;
 }
 
 /** Appui long (ms) et seuil tape / glisser (px) au doigt. */
@@ -80,7 +82,7 @@ function SnapMarker({ p, kind }: { p: PointMm; kind: SnapKind | null }) {
   return <path d={`M${p.x - r} ${p.y}L${p.x + r} ${p.y}M${p.x} ${p.y - r}L${p.x} ${p.y + r}`} {...common} />;
 }
 
-export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu, paint }: Props) {
+export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu, paint, imageSrc }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const selection = useEditor((s) => s.selection);
@@ -560,6 +562,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
           legend={legend}
           viewData={liveViewData}
           paint={paint}
+          imageSrc={imageSrc}
           style={{ width: '100%', height: '100%', display: 'block' }}
           editing={{
             selection,

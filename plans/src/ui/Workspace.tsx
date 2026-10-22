@@ -22,13 +22,13 @@ import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
 import { CustomViewsPage } from './customViews/CustomViewsPage';
 import { SheetsPage } from './sheets/SheetsPage';
-import { clearStep, markStep } from './crashLog';
+import { clearStep, markDetail, markStep } from './crashLog';
 import { lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
 
 /** téléphone : une vue de plus de triangles n'est pas calculée ici sans le demander (iOS fermerait la page) */
-const HEAVY_TRIANGLES_PHONE = 250_000;
+const HEAVY_TRIANGLES_PHONE = 80_000;
 
 type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure' | 'loading';
 
@@ -87,6 +87,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       glassTest,
       categoryColors: () => categoryColors,
       remote,
+      note: markDetail,
       ...(light ? { maxConcurrent: 1, maxPackets: 1, heavyTriangles: HEAVY_TRIANGLES_PHONE } : {}),
     });
   }, [scene, glassTest, categoryColors]);

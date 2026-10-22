@@ -7,9 +7,31 @@ const RECENT_MS = 30 * 60 * 1000;
 
 export function markStep(label: string): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ label, at: Date.now() }));
+    // même étape : garde sa précision en cours
+    const raw = localStorage.getItem(KEY);
+    const cur = raw ? (JSON.parse(raw) as { label?: string; detail?: string }) : null;
+    localStorage.setItem(KEY, JSON.stringify({ label, at: Date.now(), ...(cur?.label === label && cur.detail ? { detail: cur.detail } : {}) }));
   } catch {
     /* stockage indisponible (navigation privée) */
+  }
+}
+
+/**
+ * Précision sur l'étape en cours (calcul d'une vue, repères…) ; null = finie. Sans étape notée, la précision devient
+ * l'étape elle-même.
+ */
+export function markDetail(detail: string | null): void {
+  try {
+    const raw = localStorage.getItem(KEY);
+    const cur = raw ? (JSON.parse(raw) as { label?: string; detail?: string }) : null;
+    if (!cur?.label) {
+      if (detail) localStorage.setItem(KEY, JSON.stringify({ label: detail, at: Date.now(), auto: true }));
+      return;
+    }
+    if ((cur as { auto?: boolean }).auto && !detail) return localStorage.removeItem(KEY);
+    localStorage.setItem(KEY, JSON.stringify({ ...cur, detail: detail ?? undefined, at: Date.now() }));
+  } catch {
+    /* idem */
   }
 }
 
@@ -27,9 +49,9 @@ export function takeLastCrash(now = Date.now()): { label: string; at: number } |
     const raw = localStorage.getItem(KEY);
     localStorage.removeItem(KEY);
     if (!raw) return null;
-    const v = JSON.parse(raw) as { label?: unknown; at?: unknown };
+    const v = JSON.parse(raw) as { label?: unknown; at?: unknown; detail?: unknown };
     if (typeof v.label !== 'string' || typeof v.at !== 'number' || now - v.at > RECENT_MS) return null;
-    return { label: v.label, at: v.at };
+    return { label: typeof v.detail === 'string' && v.detail ? `${v.label} — ${v.detail}` : v.label, at: v.at };
   } catch {
     return null;
   }
