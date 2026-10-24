@@ -6,7 +6,7 @@
 
 | Contrôle | Résultat |
 |---|---|
-| Chaque libellé d'interface cité existe tel quel dans l'app | ✅ 315 / 315 libellés retrouvés (157 dans `public/index.html`, 151 dans les écrans générés par `public/js/*.js` ou les pages publiques, 7 libellés composés vérifiés à la main) — 0 écart |
+| Chaque libellé d'interface cité existe tel quel dans l'app | ✅ 317 / 317 libellés retrouvés (dans `public/index.html`, dans les écrans générés par `public/js/*.js` ou les pages publiques, et 7 libellés composés vérifiés à la main) — 0 écart |
 | Aucune mention de Plans 2D / Plans Viewbox / Étude structure / Loading liste / module masqué | ✅ 0 occurrence dans le deck, le script, la fiche mémo, la checklist, le plan et les captures |
 | Aucune donnée sensible ni détail technique interne | ✅ 0 occurrence (hébergeur, base de données, stockage, IA, relève, route de debug, console, messagerie interne) — voir § 3 |
 | Projet fil rouge cohérent | ✅ une seule source (`_source/fil.mjs`) ; `9999DEMOVIE` partout ; `9999DEMOVI` volontaire (exemple de N° mal tapé) |
@@ -102,8 +102,8 @@ Le tableau complet (libellé → slides → fichier) est à la fin de ce rapport
 ## 6. Tests du HTML (Chromium via Playwright 1.56)
 
 - **Ordinateur, 1600 × 900** :
-  - 146 slides, **0 erreur ni avertissement console**, 0 erreur JavaScript ;
-  - **0 débordement** : aucun élément ne dépasse le pied de slide ni le bord droit, sur les 146 slides.
+  - 147 slides, **0 erreur ni avertissement console**, 0 erreur JavaScript ;
+  - **0 débordement** : aucun élément ne dépasse le pied de slide ni le bord droit, sur les 147 slides.
 - **Navigation** :
   - l'ancre `#projet-mail` ouvre le chapitre 3 ;
   - → passe à la slide suivante ;
@@ -113,10 +113,22 @@ Le tableau complet (libellé → slides → fichier) est à la fin de ce rapport
   - un tap à droite fait avancer d'une slide ;
   - en portrait, un bandeau invite à tourner le téléphone ;
   - en paysage, le texte est lisible.
-- **Impression** : export PDF de 146 pages, une slide par page, sans les boutons de navigation.
+- **Impression** : export PDF de 147 pages, une slide par page, sans les boutons de navigation.
 - **Police** : Inter, chargée depuis Google Fonts ; sans connexion, le support passe sur la police système.
 
-## 7. Points ouverts
+## 7. Mise à jour du 24.10.2026 (modèle d'accès)
+
+Après le commit de sécurité `362a29e`, le support a été mis à jour :
+- slide « Qui peut faire quoi ? » réécrite (accès par rôle et par équipe du projet) ;
+- nouvelle slide « Droits d'un installateur ou d'un ouvrier » (ch. 6) ;
+- mot de passe généré à la création au lieu du mot de passe commun ;
+- invitations sans le rôle Technical Manager ;
+- clé d'accès du planning public ;
+- FAQ « je ne vois pas un projet ».
+
+Les contrôles automatiques ont été relancés : 0 libellé introuvable, 0 débordement, 0 erreur console.
+
+## 8. Points ouverts
 
 - **Captures** : 9 encadrés « [CAPTURE À FAIRE] » restent dans le deck (`05_CAPTURES_A_FAIRE.md`).
 - **À confirmer en test réel** (signalés dans l'inventaire, non enseignés comme certains) : refus du `.ifc` à l'envoi, double rendu de l'onglet Logistique, comportement exact du lien « Point visite ».

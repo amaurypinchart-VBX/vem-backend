@@ -19,7 +19,7 @@ export default {
           ['Installateur', 'Consulte (sur ses projets)'],
         ], { small: true })),
       visual: 'Objectif + tableau des rôles.',
-      notes: 'Un Site Manager ou un installateur doit être dans l\'onglet 👥 Équipe du projet pour voir sa check-list.',
+      notes: 'Un Site Manager ou un installateur doit être dans l\'onglet 👥 Équipe du projet pour voir le projet et sa check-list.',
     },
     {
       title: 'Où la trouver : 3 phases',

@@ -10,7 +10,7 @@ export default {
       body: () => cols(
         ul([
           '<b>Objectif</b> : un rapport par jour de chantier : ce qui a été fait, par combien de personnes, avec photos.',
-          '<b>Pour qui</b> : Site Managers (et toute personne qui tient le journal).',
+          '<b>Pour qui</b> : Site Managers (et un installateur à qui on a donné le droit 📓 Daily reports, chapitre 6).',
         ]) + path(['🏗️ Projets', '~projet', '📓 Daily Reports', '+ Nouveau Rapport'])
         + path(['~Téléphone : bouton ＋', '📓 Daily Report']),
         callout('tip', 'Ouvrez d\'abord le projet : il sera présélectionné dans le rapport.')),

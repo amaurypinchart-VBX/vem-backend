@@ -16,6 +16,7 @@
 | Briefing | Studio + 🪄 Auto-générer | Le mode classique et « ✨ Générer avec l'IA » ne sont pas enseignés. |
 | Check-list | Module à part entière | Chapitre 10. |
 | Statut du projet | Toute personne qui a accès le change | Slide « cycle de vie » + statut dans la fiche projet. |
+| Droits par rôle (commit sécurité du 24.10) | Admin / TM : tout ; PM, Engineer, Sales, Entrepôt : tous les projets ; Site Manager : ses projets ; installateur / ouvrier : ses projets en lecture (+ droits donnés) ; client : handover de son projet | Slide « Qui peut faire quoi ? » réécrite, slide « Droits d'un installateur » (ch. 6), FAQ « je ne vois pas un projet ». |
 | Suppressions | Consigne ajoutée | « Ne jamais supprimer un projet, un client, un rapport ou un handover » (règle d'or n° 6). |
 | Ton | Vouvoiement | Vérifié automatiquement (`06_RAPPORT_QA.md`). |
 | Visites client | Module abandonné | Exclu ; consigne « ne plus utiliser ». |
@@ -44,7 +45,7 @@
 | 3 | 🆕 Créer un projet par mail (NEW) | `#projet-mail` | Tout le monde | 25 min | 9 |
 | 4 | 📧 Compléter un projet par mail | `#mail-projet` | Tout le monde | 25 min | 9 |
 | 5 | 📋 La fiche projet (onglets, statuts, ✏️ Modifier, archivage, projet complet) | `#fiche-projet` | Tout le monde | 30 min | 10 |
-| 6 | 👥 L'équipe | `#equipe` | PM / TM | 25 min | 9 |
+| 6 | 👥 L'équipe (dont droits des installateurs) | `#equipe` | PM / TM | 25 min | 10 |
 | 7 | 🚛 Logistique | `#logistique` | PM / TM / CS | 20 min | 7 |
 | 8 | ✈️ Bookings | `#bookings` | PM / CS | 20 min | 7 |
 | 9 | 📁 Fichiers & visionneuse 3D | `#fichiers` | Tout le monde | 20 min | 7 |
@@ -55,7 +56,7 @@
 | 14 | 📊 Le Rapport IA | `#rapport` | PM / TM | 20 min | 6 |
 | 15 | 📊 Dashboard, calendrier, notifications, planning public | `#dashboard` | Tout le monde | 20 min | 6 |
 | 16 | 🏁 Mise en pratique, FAQ, fiche mémo mail | `#pratique` (mémo : `#memo-mail`) | Tout le monde | 30 min | 7 |
-| | **Total** | | | **≈ 7 h 50** | **146** |
+| | **Total** | | | **≈ 7 h 50** | **147** |
 
 \* Le nombre de slides inclut la slide de séparation de chaque chapitre.
 

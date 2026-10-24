@@ -14,7 +14,7 @@ export default {
           `${q('🏗️ Projets en cours')} : 3 projets au plus, avec leur progression.`,
           `${q('⚡ Actions rapides')} : Daily report, Handover.`,
         ]),
-        callout('info', `« Tâches terminées » affiche toujours « — » : ignorez-le. « Membres équipe » = tous les comptes VEM.`)
+        callout('info', `« Tâches terminées » affiche toujours « — » : ignorez-le. Les chiffres portent sur les projets que vous voyez.`)
         + `<div class="m-row">${btn('+ Nouveau Projet', 'primary')}</div>`),
       visual: 'Tuiles de statistiques recréées + liste.',
       notes: 'Page d\'arrivée après la connexion.',
@@ -55,11 +55,11 @@ export default {
       body: () => cols(
         ul([
           'Page en lecture seule « Planning Projets — 2 mois », affichée sur les écrans de l\'entrepôt.',
-          'Adresse : celle de VEM suivie de <code>/planning-public.html</code> (pas de lien dans le menu).',
+          'Adresse : celle de VEM suivie de <code>/planning-public.html</code>, avec la clé d\'accès éventuelle fournie par l\'admin (pas de lien dans le menu).',
           'Montre les 60 prochains jours : installation (couleur du statut), démontage (hachures), 🚛 au jour de chargement.',
           'Actualisation automatique.',
         ]),
-        callout('warn', 'Elle s\'ouvre <b>sans mot de passe</b> et affiche les noms des projets et des clients : ne la partagez pas hors de Viewbox.')
+        callout('warn', 'Elle s\'ouvre sans compte VEM et affiche les noms des projets et des clients : ne partagez pas son adresse hors de Viewbox.')
         + callout('tip', 'Dates et camions justes dans VEM = planning de l\'entrepôt juste.')),
       visual: 'Liste + encadrés.',
       notes: 'Demandez l\'adresse exacte de VEM à votre admin si besoin.',

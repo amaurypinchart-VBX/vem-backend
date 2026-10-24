@@ -57,8 +57,9 @@ export default {
       title: 'FAQ — dépannage (2/2)',
       body: () => table(['Problème', 'Que faire'], [
         ['Je suis renvoyé à l\'écran de connexion', 'La session dure 8 h : reconnectez-vous. Rechargez la page en cas d\'affichage bizarre.'],
-        ['J\'ai oublié mon mot de passe', 'Demandez à un admin ou un Project Manager « 📧 Envoyer invitation » (valable 15 min).'],
-        ['« Permission insuffisante »', 'Action réservée à certains rôles : demandez à un admin.'],
+        ['J\'ai oublié mon mot de passe', 'Demandez à un admin, un Project ou Technical Manager « 📧 Envoyer invitation » (valable 15 min).'],
+        ['« Permission insuffisante »', 'Action réservée à certains rôles : demandez à un admin ou à votre responsable.'],
+        ['Je ne vois pas un projet', 'Site Manager, installateur, ouvrier : vous devez être dans l\'onglet 👥 Équipe du projet.'],
         ['Je ne vois pas la check-list (Site Manager / installateur)', 'Vous devez être dans l\'onglet 👥 Équipe du projet.'],
         ['Le lien de signature est bloqué', 'Terminez la check-list de montage (points critiques, points « À vérifier »).'],
         ['Mes 3 photos sont devenues 1 (téléphone)', 'Sélectionnez toutes les photos en une fois, ou ajoutez-les en modification.'],

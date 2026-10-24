@@ -105,6 +105,15 @@ Adresse affichée dans l'app : **warehouseviewbox@gmail.com**. Elle figure dans 
 
 ## I.4 Qui voit quoi (vérifié dans le code)
 
+> ⚠️ **Dépassé depuis le commit `362a29e` du 24.10.2026** (droits par rôle et cloisonnement par projet). Le modèle actuel est décrit dans `CLAUDE.md` (« Access model ») et `src/middleware/access.ts` :
+> - admin / technical manager : tout ;
+> - project manager, engineer, sales, entrepôt : tous les projets ;
+> - site manager : ses projets ;
+> - installateur / ouvrier : ses projets en lecture, plus les droits donnés ;
+> - client : le handover de son projet.
+>
+> Le tableau ci-dessous décrit l'état **avant** ce commit.
+
 Il n'y a **aucun masquage de menu par rôle** : tous les comptes voient la même navigation, section « Admin » comprise. Seul le bouton rond « 🤖 Assistant VEM » n'apparaît que pour admin, project manager, technical manager et site manager (`01-core.js:394-420`).
 
 | Action | Qui peut réellement le faire | Preuve |

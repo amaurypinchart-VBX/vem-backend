@@ -106,7 +106,7 @@ export default {
           'Supprimer efface tout : daily reports, handovers, fichiers, équipe, camions.',
         ]) + callout('no', '<b>Ne supprimez jamais un projet.</b> Pour un projet fini : statut 🎉 Terminé. Pour un projet abandonné : 📦 Archiver.')),
       visual: 'Fenêtre Archiver recréée (option Supprimer en rouge) + règles.',
-      notes: 'La suppression est techniquement ouverte à tous : c\'est une règle de conduite, pas une protection.',
+      notes: 'Seuls les rôles qui voient tous les projets peuvent supprimer un projet ; c\'est aussi une règle de conduite pour eux.',
     },
     {
       title: 'Un projet est « complet » quand…',

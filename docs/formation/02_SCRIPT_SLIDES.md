@@ -1,7 +1,7 @@
 # 02 — Script des slides (formation VEM)
 
 > Généré par `_source/build.mjs` à partir de la même source que `formation-vem.html` : ne pas modifier ce fichier à la main.
-> 146 slides · 17 chapitres · vouvoiement · projet fil rouge fictif.
+> 147 slides · 17 chapitres · vouvoiement · projet fil rouge fictif.
 
 
 ## 0. 🚀 Bienvenue dans VEM
@@ -97,7 +97,7 @@ Se connecter
 - La session dure 8 heures. Ensuite, VEM vous renvoie à l'écran de connexion : enregistrez votre travail avant une longue pause.
 - Premier accès avec un mot de passe temporaire : VEM ouvre « 🔐 Choisissez votre mot de passe » (8 caractères min.).
 ⚠️ Attention
-Mot de passe oublié : le lien « 🔑 Mot de passe oublié ? » ne fonctionne pas pour l'instant. Demandez à un admin ou un Project Manager de vous renvoyer un accès (« 📧 Envoyer invitation », valable 15 min).
+Mot de passe oublié : le lien « 🔑 Mot de passe oublié ? » ne fonctionne pas pour l'instant. Demandez à un admin, un Project ou Technical Manager de vous renvoyer un accès (« 📧 Envoyer invitation », valable 15 min).
 
 **Notes orateur** : La case « Rester connecté » n'a pas d'effet aujourd'hui : ne la présentez pas comme une option. Le mail de mot de passe temporaire s'appelle « Votre acces VEM - mot de passe temporaire ».
 
@@ -112,7 +112,7 @@ Mot de passe oublié : le lien « 🔑 Mot de passe oublié ? » ne fonctionne p
 - « 🔑 Changer mon mot de passe » : ancien, nouveau (8 caractères min.), confirmation.
 - « 💾 Valider » → message « Mot de passe modifié ✅ ».
 ✅ Bonne pratique
-Compte créé avec le mot de passe par défaut annoncé dans la fiche membre ? Changez-le dès la première connexion : VEM ne l'impose pas.
+Vous avez reçu votre mot de passe lors de la création de votre compte ? Changez-le dès la première connexion.
 ℹ️ Bon à savoir
 Le profil ne permet de changer que le mot de passe. Nom, e-mail, téléphone : demandez à un admin ou un Project Manager.
 
@@ -143,7 +143,7 @@ Admin
 ⚠️ Attention
 Vous verrez aussi « ✅ Tâches », « 📸 Visites Client » et « 📋 Templates tâches » : ne les utilisez plus. Le suivi se fait désormais par la check-list (chapitre 10).
 
-**Notes orateur** : Tout le monde voit la même navigation, y compris la section Admin. Certaines actions restent réservées (slide suivante).
+**Notes orateur** : Le menu dépend du rôle : un Site Manager, un installateur ou un ouvrier ne voit pas Clients ni Templates check-list ; un compte Client ne voit que Handover et Notifications. Une section « Aide » contient « 🎓 Formation VEM ».
 
 ### S8 — Sur téléphone
 
@@ -197,23 +197,24 @@ Un projet neuf est en « 📄 Brouillon » : la liste de statut paraît vide. Ch
 ### S10 — Qui peut faire quoi ?
 
 - **Id** : `s10` · **Type** : contenu
-- **Visuel prévu** : Règle de discipline à gauche, tableau des actions réservées à droite.
+- **Visuel prévu** : Tableau des rôles à gauche, encadrés à droite.
 
 **Contenu**
 
-- Tout le monde voit tous les menus et tous les projets.
-- Presque tout est modifiable par tous : c'est pratique, mais cela demande de la discipline.
+| Rôle | Projets visibles | Peut modifier |
+| Admin, Technical Manager | Tous | Tout |
+| Project Manager, Engineer, Sales Engineer, Entrepôt | Tous | Tout (sauf réglages réservés) |
+| Site Manager | Ses projets (équipe du projet) | Tout sur ses projets |
+| Installateur, Ouvrier | Ses projets | Rien par défaut ; daily reports / handover si un responsable lui en donne le droit |
+| Client | Son projet | Rien : il consulte seulement le handover |
+ℹ️ Bon à savoir
+« Ses projets » = les projets où la personne est dans l'onglet 👥 Équipe. Pas dans l'équipe = projet invisible.
 ⛔ Interdit
-Ne supprimez jamais un projet, un client, un rapport ou un handover. Une suppression est définitive (pas de corbeille). En cas de doute : demandez à un admin.
-| Action réservée | Qui |
-| Créer un membre | Admin, Project Manager, Technical Manager |
-| Modifier un autre membre, inviter, renvoyer un accès | Admin, Project Manager |
-| Configurer une check-list | Admin, Technical Manager, Project Manager |
-| Remplir une check-list | + Site Manager (sur ses projets) |
-| Installateur | Voit la check-list de ses projets, sans la remplir |
-| Générer le lien de signature malgré une check-list incomplète | Admin, Technical Manager |
+Ne supprimez jamais un projet, un client, un rapport ou un handover : une suppression est définitive (pas de corbeille).
+ℹ️ Bon à savoir
+Message « Permission insuffisante » : l'action est réservée à un autre rôle.
 
-**Notes orateur** : Si un bouton affiche « Permission insuffisante », c'est normal : l'action est réservée.
+**Notes orateur** : Créer des membres : admin, Technical Manager, Project Manager (comptes admin et Technical Manager : admin seulement). Configurer une check-list : admin, TM, PM ; la remplir : + Site Manager. Lien de signature malgré une check-list incomplète : admin et TM.
 
 ### S11 — Les 6 règles d'or
 
@@ -1087,7 +1088,7 @@ Vider une date de démontage ou la description ne l'efface pas. Les 3 notes, ell
 ⛔ Interdit
 Ne supprimez jamais un projet. Pour un projet fini : statut 🎉 Terminé. Pour un projet abandonné : 📦 Archiver.
 
-**Notes orateur** : La suppression est techniquement ouverte à tous : c'est une règle de conduite, pas une protection.
+**Notes orateur** : Seuls les rôles qui voient tous les projets peuvent supprimer un projet ; c'est aussi une règle de conduite pour eux.
 
 ### S56 — Un projet est « complet » quand…
 
@@ -1125,7 +1126,7 @@ Ne supprimez jamais un projet. Pour un projet fini : statut 🎉 Terminé. Pour 
 
 ## 6. 👥 L'équipe
 
-- Ancre : `#equipe` · Public : Project & Technical Managers · Durée : 25 min · Parcours : Bureau · 9 slides
+- Ancre : `#equipe` · Public : Project & Technical Managers · Durée : 25 min · Parcours : Bureau · 10 slides
 
 ### S58 — L'équipe
 
@@ -1149,7 +1150,7 @@ L'équipe
 **Contenu**
 
 - Objectif : chaque personne a son compte, et chaque projet a son équipe (avec la phase).
-- Pour qui : Project et Technical Managers (création des comptes : admin, Project Manager, Technical Manager).
+- Pour qui : Project et Technical Managers (création des comptes : admin, Project Manager, Technical Manager ; un compte admin ou Technical Manager : admin seulement).
 👥 Équipe›+ Nouveau membre
 🏗️ Projets›projet›👥 Équipe›+ Ajouter à l'équipe
 ℹ️ Bon à savoir
@@ -1178,8 +1179,8 @@ Sous-équipe— Aucune —
 - « 👥 Équipe » › « + Nouveau membre ».
 - Option : « 📷 Scanner la carte » — l'IA remplit l'identité (la photo de la carte n'est pas conservée).
 - « Prénom * », « Nom * », « Email * », téléphone, « Rôle ».
-- « ✅ Créer le compte » : le mot de passe par défaut est affiché dans la fenêtre.
-- Communiquez-le à la personne et demandez-lui de le changer (Mon profil).
+- « ✅ Créer le compte » : VEM affiche une seule fois le mot de passe généré.
+- Transmettez-le à la personne (ou utilisez 📧 Envoyer invitation) et demandez-lui de le changer (Mon profil).
 ⚠️ Attention
 Le téléphone est très utile : il apparaît dans le briefing (slide Équipe).
 
@@ -1197,7 +1198,7 @@ Le téléphone est très utile : il apparaît dans le briefing (slide Équipe).
 - « 🔗 Générer le lien » : le lien est copié.
 - La personne crée son compte elle-même.
 ⚠️ Attention
-Lien valable 15 minutes, une seule fois. Réservé aux admins et Project Managers.
+Lien valable 15 minutes, une seule fois. Réservé aux admins, Project et Technical Managers. Une invitation ne peut pas donner le rôle Admin ni Technical Manager.
 📧 Envoyer invitation (compte existant)
 - Ouvrez la fiche du membre (clic sur sa carte).
 - « 📧 Envoyer invitation » : il reçoit un mot de passe temporaire valable 15 min.
@@ -1221,7 +1222,7 @@ Rôle sur ce projet🏗️ Site Manager
 Phase d'intervention🔄 Les deux phases (installation + démontage)
 ✅ Ajouter
 - Fiche projet › onglet « 👥 Équipe » › « + Ajouter à l'équipe ».
-- « Membre », « Rôle sur ce projet » (Installateur, Site Manager, Technical Manager, Ouvrier, Engineer).
+- « Membre », « Rôle sur ce projet » (Installateur, Site Manager, Technical Manager, Ouvrier, Engineer, ou Client : il ne verra que le handover).
 - « Phase d'intervention » : les deux, installation seule ou démontage seul.
 - « ✅ Ajouter ». Répétez pour chaque personne.
 ℹ️ Bon à savoir
@@ -1253,9 +1254,28 @@ Idéal juste avant le départ : chacun reçoit ses horaires de train et son hôt
 
 **Notes orateur** : L'option « 📊 Briefings » envoie seulement un lien vers VEM, pas le PDF : envoyez plutôt le PDF du briefing.
 
-### S64 — À quoi sert l'équipe du projet
+### S64 — Droits d'un installateur ou d'un ouvrier
 
 - **Id** : `s64` · **Type** : contenu
+- **Visuel prévu** : Explication + étapes + encadrés.
+
+**Contenu**
+
+- Par défaut, un installateur ou un ouvrier consulte ses projets (ceux où il est dans l'équipe) sans rien modifier.
+- Un admin, un Project ou Technical Manager peut lui permettre de remplir certains modules sur ses projets.
+- « 👥 Équipe » › clic sur la carte du membre.
+- Bloc « 🔒 Consulte seulement ses projets. Peut aussi remplir : » : cochez « 📓 Daily reports » et / ou « 🧾 Handover ».
+- Message « Droits enregistrés ✅ » : effet immédiat.
+💡 Astuce
+Un chef d'équipe installateur qui tient le daily report ? Donnez-lui le droit 📓 Daily reports et ajoutez-le à l'équipe du projet.
+ℹ️ Bon à savoir
+Un Site Manager a déjà ces droits sur ses projets : rien à cocher.
+
+**Notes orateur** : Le droit « Check-lists de montage » existe aussi dans la fiche, mais l'écran de la check-list ne le prend pas encore en compte : à présenter après correction.
+
+### S65 — À quoi sert l'équipe du projet
+
+- **Id** : `s65` · **Type** : contenu
 - **Visuel prévu** : Carte « Équipe du projet » et flèches.
 
 **Contenu**
@@ -1264,18 +1284,18 @@ Idéal juste avant le départ : chacun reçoit ses horaires de train et son hôt
 Slide « Équipe » : nom, rôle, phase, téléphone
 📧 Mails de voyage
 Un trajet n'est créé par mail que si la personne est dans l'équipe
-☑️ Check-list
-Installateurs et Site Managers ne voient la check-list que des projets où ils sont dans l'équipe
+🔒 Accès
+Site Managers, installateurs et ouvriers ne voient que les projets où ils sont dans l'équipe
 ✈️ Bookings
 Transports et hôtels par membre et par phase
 📊 Rapport IA
 Section Vue d'ensemble : équipe
 
-**Notes orateur** : Un Site Manager absent de l'équipe ne pourra pas remplir la check-list du projet.
+**Notes orateur** : Un Site Manager absent de l'équipe ne voit pas le projet du tout.
 
-### S65 — Erreurs fréquentes
+### S66 — Erreurs fréquentes
 
-- **Id** : `s65` · **Type** : contenu
+- **Id** : `s66` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -1285,13 +1305,14 @@ Section Vue d'ensemble : équipe
 - Lien d'invitation envoyé trop tard → expiré après 15 minutes.
 - Garder le mot de passe par défaut → à changer immédiatement.
 - Sous-équipes : elles ne sont visibles que sur l'ordinateur de la personne qui les a créées.
+- Oublier d'ajouter un Site Manager ou un installateur à l'équipe → le projet est invisible pour lui.
 - Personne qui quitte l'entreprise : demandez à un admin (pas de bouton de désactivation).
 
-**Notes orateur** : Les données d'identité (registre national…) sont visibles par tous les comptes : n'en saisissez que si nécessaire.
+**Notes orateur** : Les données d'identité (registre national, n° de carte) ne sont visibles que par les admins, Project et Technical Managers.
 
-### S66 — Exercice — l'équipe du projet démo
+### S67 — Exercice — l'équipe du projet démo
 
-- **Id** : `s66` · **Type** : exercise
+- **Id** : `s67` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -1311,7 +1332,7 @@ Section Vue d'ensemble : équipe
 
 - Ancre : `#logistique` · Public : Project & Technical Managers, Customer Service · Durée : 20 min · Parcours : Bureau · 7 slides
 
-### S67 — Logistique : camions & engins
+### S68 — Logistique : camions & engins
 
 - **Id** : `logistique` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -1325,9 +1346,9 @@ Logistique : camions & engins
 
 **Notes orateur** : Chapitre 7 — public : Project & Technical Managers, Customer Service. Durée : 20 min.
 
-### S68 — Objectif & où la trouver
+### S69 — Objectif & où la trouver
 
-- **Id** : `s68` · **Type** : contenu
+- **Id** : `s69` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin.
 
 **Contenu**
@@ -1340,9 +1361,9 @@ Une confirmation de transport reçue par mail ? Transférez-la avec le N° inter
 
 **Notes orateur** : Préférez cet onglet au bloc Logistique du formulaire projet : il a les lieux et le statut.
 
-### S69 — Ajouter un véhicule
+### S70 — Ajouter un véhicule
 
-- **Id** : `s69` · **Type** : contenu
+- **Id** : `s70` · **Type** : contenu
 - **Visuel prévu** : Maquette de la fenêtre véhicule remplie + liste des types.
 
 **Contenu**
@@ -1371,9 +1392,9 @@ Lieux : « 🏭 Entrepôt Tubize », site événement, ou « 📦 Autre lieu (ad
 
 **Notes orateur** : Seul le type est marqué obligatoire, mais remplissez dates, lieux et chauffeur : ce sont eux qui apparaissent partout.
 
-### S70 — Statuts et archivage automatique
+### S71 — Statuts et archivage automatique
 
-- **Id** : `s70` · **Type** : contenu
+- **Id** : `s71` · **Type** : contenu
 - **Visuel prévu** : Liste des 5 statuts + étapes.
 
 **Contenu**
@@ -1391,9 +1412,9 @@ Chargement ou déchargement à Tubize : le groupe de l'entrepôt est prévenu au
 
 **Notes orateur** : Un véhicule archivé reste visible sur le calendrier du Dashboard et le planning public.
 
-### S71 — À quoi ça sert après
+### S72 — À quoi ça sert après
 
-- **Id** : `s71` · **Type** : contenu
+- **Id** : `s72` · **Type** : contenu
 - **Visuel prévu** : Flèches vers les 5 usages.
 
 **Contenu**
@@ -1411,9 +1432,9 @@ Section Logistique (véhicules non livrés)
 
 **Notes orateur** : Le planning public est présenté au chapitre 15.
 
-### S72 — Erreurs fréquentes
+### S73 — Erreurs fréquentes
 
-- **Id** : `s72` · **Type** : contenu
+- **Id** : `s73` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -1426,9 +1447,9 @@ Section Logistique (véhicules non livrés)
 
 **Notes orateur** : —
 
-### S73 — Exercice — la logistique du projet démo
+### S74 — Exercice — la logistique du projet démo
 
-- **Id** : `s73` · **Type** : exercise
+- **Id** : `s74` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -1448,7 +1469,7 @@ Section Logistique (véhicules non livrés)
 
 - Ancre : `#bookings` · Public : Project Managers, Customer Service · Durée : 20 min · Parcours : Bureau · 7 slides
 
-### S74 — Bookings : transports & hôtels
+### S75 — Bookings : transports & hôtels
 
 - **Id** : `bookings` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -1462,9 +1483,9 @@ Bookings : transports & hôtels
 
 **Notes orateur** : Chapitre 8 — public : Project Managers, Customer Service. Durée : 20 min.
 
-### S75 — Objectif & où les trouver
+### S76 — Objectif & où les trouver
 
-- **Id** : `s75` · **Type** : contenu
+- **Id** : `s76` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin + tableau des deux sections.
 
 **Contenu**
@@ -1478,9 +1499,9 @@ Bookings : transports & hôtels
 
 **Notes orateur** : Un booking transport = une personne pour une phase.
 
-### S76 — Un transport par membre et par phase
+### S77 — Un transport par membre et par phase
 
-- **Id** : `s76` · **Type** : contenu
+- **Id** : `s77` · **Type** : contenu
 - **Visuel prévu** : Maquette de la fenêtre transport + étapes.
 
 **Contenu**
@@ -1503,9 +1524,9 @@ Détails (n° de vol, etc.)Bruxelles-Midi 06:12
 
 **Notes orateur** : La liste des membres contient tous les comptes VEM, pas seulement l'équipe : vérifiez que la personne est aussi dans l'onglet Équipe.
 
-### S77 — Un hôtel pour plusieurs occupants
+### S78 — Un hôtel pour plusieurs occupants
 
-- **Id** : `s77` · **Type** : contenu
+- **Id** : `s78` · **Type** : contenu
 - **Visuel prévu** : Maquette de la fenêtre hôtel + étapes.
 
 **Contenu**
@@ -1526,9 +1547,9 @@ Check-out *18/03/2027
 
 **Notes orateur** : Un hôtel créé par mail arrive sans occupant : cochez-les avant d'enregistrer.
 
-### S78 — À quoi ça sert après
+### S79 — À quoi ça sert après
 
-- **Id** : `s78` · **Type** : contenu
+- **Id** : `s79` · **Type** : contenu
 - **Visuel prévu** : Flèches vers les usages.
 
 **Contenu**
@@ -1544,9 +1565,9 @@ Section Bookings
 
 **Notes orateur** : Les hôtels n'apparaissent pas dans le calendrier, seulement les transports.
 
-### S79 — Erreurs fréquentes
+### S80 — Erreurs fréquentes
 
-- **Id** : `s79` · **Type** : contenu
+- **Id** : `s80` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -1559,9 +1580,9 @@ Section Bookings
 
 **Notes orateur** : Il n'y a pas d'export des bookings : utilisez 📤 par membre ou le Rapport IA (section Bookings).
 
-### S80 — Exercice — voyages du projet démo
+### S81 — Exercice — voyages du projet démo
 
-- **Id** : `s80` · **Type** : exercise
+- **Id** : `s81` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -1581,7 +1602,7 @@ Section Bookings
 
 - Ancre : `#fichiers` · Public : Tout le monde · Durée : 20 min · Parcours : Bureau + Terrain · 7 slides
 
-### S81 — Fichiers & visionneuse 3D
+### S82 — Fichiers & visionneuse 3D
 
 - **Id** : `fichiers` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -1595,9 +1616,9 @@ Fichiers & visionneuse 3D
 
 **Notes orateur** : Chapitre 9 — public : Tout le monde. Durée : 20 min.
 
-### S82 — Objectif & où les trouver
+### S83 — Objectif & où les trouver
 
-- **Id** : `s82` · **Type** : contenu
+- **Id** : `s83` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin + boutons.
 
 **Contenu**
@@ -1611,9 +1632,9 @@ Trois façons d'ajouter : « ⬆️ Ajouter » (depuis l'ordinateur ou le télé
 
 **Notes orateur** : Les mêmes boutons existent dans le bloc 📁 Fichiers de l'onglet Infos.
 
-### S83 — Ajouter des fichiers
+### S84 — Ajouter des fichiers
 
-- **Id** : `s83` · **Type** : contenu
+- **Id** : `s84` · **Type** : contenu
 - **Visuel prévu** : Étapes + maquette « Ajouter un fichier via URL ».
 
 **Contenu**
@@ -1634,9 +1655,9 @@ Pour un fichier de plus de 10 Mo déjà en ligne : le lien doit pointer directem
 
 **Notes orateur** : Le format .ifc est probablement refusé à l'envoi : à confirmer avant de le promettre.
 
-### S84 — Ranger et consulter
+### S85 — Ranger et consulter
 
-- **Id** : `s84` · **Type** : contenu
+- **Id** : `s85` · **Type** : contenu
 - **Visuel prévu** : Liste + encadrés.
 
 **Contenu**
@@ -1652,9 +1673,9 @@ Sur téléphone, un PDF s'ouvre dans un nouvel onglet.
 
 **Notes orateur** : La suppression d'un fichier est définitive : ne supprimez que les doublons évidents.
 
-### S85 — La visionneuse 3D
+### S86 — La visionneuse 3D
 
-- **Id** : `s85` · **Type** : contenu
+- **Id** : `s86` · **Type** : contenu
 - **Visuel prévu** : Capture du lecteur + étapes.
 
 **Contenu**
@@ -1672,9 +1693,9 @@ Le lecteur est fait pour l'ordinateur (pas de gestes au doigt).
 
 **Notes orateur** : Ne présentez que les fonctions ci-dessus ; les autres boutons du lecteur ne font pas partie de cette formation.
 
-### S86 — À quoi ça sert après
+### S87 — À quoi ça sert après
 
-- **Id** : `s86` · **Type** : contenu
+- **Id** : `s87` · **Type** : contenu
 - **Visuel prévu** : Flèches.
 
 **Contenu**
@@ -1690,9 +1711,9 @@ Plans et photos consultables sur chantier
 
 **Notes orateur** : Des captures 3D sauvegardées sur VEM peuvent ensuite être mises dans le briefing.
 
-### S87 — Exercice — fichiers du projet démo
+### S88 — Exercice — fichiers du projet démo
 
-- **Id** : `s87` · **Type** : exercise
+- **Id** : `s88` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -1713,7 +1734,7 @@ Plans et photos consultables sur chantier
 
 - Ancre : `#checklist` · Public : Technical & Project Managers (configurer), Site Managers (remplir), installateurs (consulter) · Durée : 40 min · Parcours : Terrain · 12 slides
 
-### S88 — La check-list de montage (todolist)
+### S89 — La check-list de montage (todolist)
 
 - **Id** : `checklist` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -1727,9 +1748,9 @@ La check-list de montage (todolist)
 
 **Notes orateur** : Chapitre 10 — public : Technical & Project Managers (configurer), Site Managers (remplir), installateurs (consulter). Durée : 40 min.
 
-### S89 — Objectif : la todolist du chantier
+### S90 — Objectif : la todolist du chantier
 
-- **Id** : `s89` · **Type** : contenu
+- **Id** : `s90` · **Type** : contenu
 - **Visuel prévu** : Objectif + tableau des rôles.
 
 **Contenu**
@@ -1742,11 +1763,11 @@ La check-list de montage (todolist)
 | Site Manager | Remplit (sur ses projets) |
 | Installateur | Consulte (sur ses projets) |
 
-**Notes orateur** : Un Site Manager ou un installateur doit être dans l'onglet 👥 Équipe du projet pour voir sa check-list.
+**Notes orateur** : Un Site Manager ou un installateur doit être dans l'onglet 👥 Équipe du projet pour voir le projet et sa check-list.
 
-### S90 — Où la trouver : 3 phases
+### S91 — Où la trouver : 3 phases
 
-- **Id** : `s90` · **Type** : contenu
+- **Id** : `s91` · **Type** : contenu
 - **Visuel prévu** : Tableau des 3 phases + capture de la carte check-list.
 
 **Contenu**
@@ -1761,9 +1782,9 @@ C-04
 
 **Notes orateur** : Sur la carte : barre de progression, compteurs ✅ 🟠 ❌ ➖ ⏳, alertes critiques et photos manquantes.
 
-### S91 — Configurer la check-list d'un projet
+### S92 — Configurer la check-list d'un projet
 
-- **Id** : `s91` · **Type** : contenu
+- **Id** : `s92` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -1780,9 +1801,9 @@ Retirer un point déjà rempli efface aussi ses photos et son historique : VEM d
 
 **Notes orateur** : Rôles : admin, Technical Manager, Project Manager. Sans configuration, la carte affiche « Pas encore configurée — le Technical Manager la prépare. »
 
-### S92 — Les 5 statuts d'un point
+### S93 — Les 5 statuts d'un point
 
-- **Id** : `s92` · **Type** : contenu
+- **Id** : `s93` · **Type** : contenu
 - **Visuel prévu** : 5 cartes de statut colorées + règles.
 
 **Contenu**
@@ -1804,9 +1825,9 @@ Non applicable — commentaire obligatoire
 
 **Notes orateur** : Chaque changement de statut est historisé (qui, quand, commentaire).
 
-### S93 — Remplir en mode ☰ Liste
+### S94 — Remplir en mode ☰ Liste
 
-- **Id** : `s93` · **Type** : contenu
+- **Id** : `s94` · **Type** : contenu
 - **Visuel prévu** : Étapes + capture mobile.
 
 **Contenu**
@@ -1821,9 +1842,9 @@ C-05
 
 **Notes orateur** : En cas de réseau faible : « Non enregistré (réseau) » + « ↻ Réessayer ».
 
-### S94 — Remplir en mode 🃏 Diaporama
+### S95 — Remplir en mode 🃏 Diaporama
 
-- **Id** : `s94` · **Type** : contenu
+- **Id** : `s95` · **Type** : contenu
 - **Visuel prévu** : Liste + capture.
 
 **Contenu**
@@ -1840,9 +1861,9 @@ C-06
 
 **Notes orateur** : Écran de fin : anneau de progression, compteurs, « ▶ Continuer », validation.
 
-### S95 — Valider, exporter, joindre au daily
+### S96 — Valider, exporter, joindre au daily
 
-- **Id** : `s95` · **Type** : contenu
+- **Id** : `s96` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -1858,9 +1879,9 @@ Remettre un point « À vérifier » ou ajouter des points annule la validation.
 
 **Notes orateur** : Aucun destinataire n'est coché par défaut dans l'envoi de la check-list.
 
-### S96 — Lien avec la signature du handover
+### S97 — Lien avec la signature du handover
 
-- **Id** : `s96` · **Type** : contenu
+- **Id** : `s97` · **Type** : contenu
 - **Visuel prévu** : Fenêtre de blocage recréée + règles.
 
 **Contenu**
@@ -1877,9 +1898,9 @@ Annuler☑️ Ouvrir la check-list
 
 **Notes orateur** : Les points non critiques Partiel ou Non fait ne bloquent pas.
 
-### S97 — La bibliothèque (Templates check-list)
+### S98 — La bibliothèque (Templates check-list)
 
-- **Id** : `s97` · **Type** : contenu
+- **Id** : `s98` · **Type** : contenu
 - **Visuel prévu** : Liste + encadré.
 
 **Contenu**
@@ -1893,9 +1914,9 @@ Modifier la bibliothèque n'affecte que les prochaines configurations, jamais un
 
 **Notes orateur** : Réservé aux personnes qui préparent les chantiers.
 
-### S98 — Erreurs fréquentes
+### S99 — Erreurs fréquentes
 
-- **Id** : `s98` · **Type** : contenu
+- **Id** : `s99` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -1909,9 +1930,9 @@ Modifier la bibliothèque n'affecte que les prochaines configurations, jamais un
 
 **Notes orateur** : —
 
-### S99 — Exercice — la check-list du projet démo
+### S100 — Exercice — la check-list du projet démo
 
-- **Id** : `s99` · **Type** : exercise
+- **Id** : `s100` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -1932,7 +1953,7 @@ Modifier la bibliothèque n'affecte que les prochaines configurations, jamais un
 
 - Ancre : `#daily` · Public : Site Managers (sur téléphone) · Durée : 35 min · Parcours : Terrain · 9 slides
 
-### S100 — Daily Reports
+### S101 — Daily Reports
 
 - **Id** : `daily` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -1946,15 +1967,15 @@ Daily Reports
 
 **Notes orateur** : Chapitre 11 — public : Site Managers (sur téléphone). Durée : 35 min.
 
-### S101 — Objectif & où le trouver
+### S102 — Objectif & où le trouver
 
-- **Id** : `s101` · **Type** : contenu
+- **Id** : `s102` · **Type** : contenu
 - **Visuel prévu** : Objectif + 2 chemins.
 
 **Contenu**
 
 - Objectif : un rapport par jour de chantier : ce qui a été fait, par combien de personnes, avec photos.
-- Pour qui : Site Managers (et toute personne qui tient le journal).
+- Pour qui : Site Managers (et un installateur à qui on a donné le droit 📓 Daily reports, chapitre 6).
 🏗️ Projets›projet›📓 Daily Reports›+ Nouveau Rapport
 Téléphone : bouton ＋›📓 Daily Report
 💡 Astuce
@@ -1962,9 +1983,9 @@ Ouvrez d'abord le projet : il sera présélectionné dans le rapport.
 
 **Notes orateur** : La page Menu › 📓 Daily Reports montre les rapports de tous les projets.
 
-### S102 — Les infos générales
+### S103 — Les infos générales
 
-- **Id** : `s102` · **Type** : contenu
+- **Id** : `s103` · **Type** : contenu
 - **Visuel prévu** : Maquette du haut de la fenêtre + étapes.
 
 **Contenu**
@@ -1987,9 +2008,9 @@ Les heures par tâche servent à l'analyse « Temps par tâche » du Rapport IA.
 
 **Notes orateur** : Les heures par tâche n'apparaissent pas dans le PDF du daily.
 
-### S103 — Le journal : 3 façons de l'écrire
+### S104 — Le journal : 3 façons de l'écrire
 
-- **Id** : `s103` · **Type** : contenu
+- **Id** : `s104` · **Type** : contenu
 - **Visuel prévu** : Onglets recréés + tableau des 3 modes.
 
 **Contenu**
@@ -2003,9 +2024,9 @@ L'IA découpe le texte en entrées horodatées (sans inventer d'heure) et rend l
 
 **Notes orateur** : La dictée vocale fonctionne en français, de préférence avec Chrome.
 
-### S104 — Notes, photos et pièces jointes
+### S105 — Notes, photos et pièces jointes
 
-- **Id** : `s104` · **Type** : contenu
+- **Id** : `s105` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2020,9 +2041,9 @@ PDF et photos joints sont ajoutés lisibles à la fin du PDF du rapport. Word / 
 
 **Notes orateur** : Ne remplissez pas « ✅ Avancement tâches » : les tâches ne sont plus utilisées.
 
-### S105 — Sauvegarder ou envoyer
+### S106 — Sauvegarder ou envoyer
 
-- **Id** : `s105` · **Type** : contenu
+- **Id** : `s106` · **Type** : contenu
 - **Visuel prévu** : Boutons + fenêtre d'envoi recréée.
 
 **Contenu**
@@ -2043,9 +2064,9 @@ Le client est coché par défaut. Décochez-le si le rapport est interne. Après
 
 **Notes orateur** : La liste Équipe contient tous les utilisateurs de VEM, pas seulement l'équipe du projet.
 
-### S106 — Relire, modifier, PDF
+### S107 — Relire, modifier, PDF
 
-- **Id** : `s106` · **Type** : contenu
+- **Id** : `s107` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2061,9 +2082,9 @@ Ne supprimez pas un rapport : corrigez-le.
 
 **Notes orateur** : Le PDF contient le bloc contact du client : pensez-y avant d'envoyer à un tiers.
 
-### S107 — À quoi ça sert après
+### S108 — À quoi ça sert après
 
-- **Id** : `s107` · **Type** : contenu
+- **Id** : `s108` · **Type** : contenu
 - **Visuel prévu** : Flèches.
 
 **Contenu**
@@ -2079,9 +2100,9 @@ Les PDF générés y sont rangés
 
 **Notes orateur** : —
 
-### S108 — Exercice — le daily du 15/03
+### S109 — Exercice — le daily du 15/03
 
-- **Id** : `s108` · **Type** : exercise
+- **Id** : `s109` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -2102,7 +2123,7 @@ Les PDF générés y sont rangés
 
 - Ancre : `#handover` · Public : Site Managers, Technical Managers · Durée : 35 min · Parcours : Terrain · 10 slides
 
-### S109 — Handover & signature client
+### S110 — Handover & signature client
 
 - **Id** : `handover` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -2116,15 +2137,15 @@ Handover & signature client
 
 **Notes orateur** : Chapitre 12 — public : Site Managers, Technical Managers. Durée : 35 min.
 
-### S110 — Objectif & où le trouver
+### S111 — Objectif & où le trouver
 
-- **Id** : `s110` · **Type** : contenu
+- **Id** : `s111` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin + encadrés.
 
 **Contenu**
 
 - Objectif : faire réceptionner l'installation par le client, avec les points inspectés et sa signature.
-- Pour qui : Site Managers, Technical Managers.
+- Pour qui : Site Managers, Technical Managers (et un installateur avec le droit 🧾 Handover). Un compte Client du projet peut consulter son handover et le PDF.
 🏗️ Projets›projet›🧾 Handover›+ Nouveau Handover
 ⚠️ Attention
 Passez toujours par l'onglet 🧾 Handover du projet. Le menu « 🧾 Handover » et le bouton du même nom dans l'en-tête ouvrent la liste de tous les projets, avec moins de fonctions.
@@ -2133,9 +2154,9 @@ Avant : la check-list de montage doit être remplie (chapitre 10).
 
 **Notes orateur** : On peut créer plusieurs handovers par projet (ex. par zone ou par phase).
 
-### S111 — Créer le handover
+### S112 — Créer le handover
 
-- **Id** : `s111` · **Type** : contenu
+- **Id** : `s112` · **Type** : contenu
 - **Visuel prévu** : Maquette de la fenêtre + étapes.
 
 **Contenu**
@@ -2159,9 +2180,9 @@ La date de réception et l'e-mail saisis ici ne sont pas enregistrés : le PDF p
 
 **Notes orateur** : La personne qui crée le handover en devient le Site Manager : c'est elle qui recevra le PDF signé.
 
-### S112 — La fiche du handover
+### S113 — La fiche du handover
 
-- **Id** : `s112` · **Type** : contenu
+- **Id** : `s113` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2177,9 +2198,9 @@ Un point d'inspection ne peut plus être supprimé ni renommé une fois créé :
 
 **Notes orateur** : Le champ « Comments / Reservations » ne fonctionne pas : utilisez les Notes générales à la création.
 
-### S113 — Faire signer sur place
+### S114 — Faire signer sur place
 
-- **Id** : `s113` · **Type** : contenu
+- **Id** : `s114` · **Type** : contenu
 - **Visuel prévu** : Capture + étapes.
 
 **Contenu**
@@ -2194,9 +2215,9 @@ La signature sur place n'est pas bloquée par la check-list : vérifiez-la avant
 
 **Notes orateur** : —
 
-### S114 — Faire signer à distance : 🔗 le lien client
+### S115 — Faire signer à distance : 🔗 le lien client
 
-- **Id** : `s114` · **Type** : contenu
+- **Id** : `s115` · **Type** : contenu
 - **Visuel prévu** : Fenêtre du lien recréée + étapes.
 
 **Contenu**
@@ -2216,9 +2237,9 @@ Générer un nouveau lien désactive l'ancien.
 
 **Notes orateur** : Le lien n'expire pas dans le temps : il ne sert qu'une fois.
 
-### S115 — Ce que voit le client, ce qui se passe ensuite
+### S116 — Ce que voit le client, ce qui se passe ensuite
 
-- **Id** : `s115` · **Type** : contenu
+- **Id** : `s116` · **Type** : contenu
 - **Visuel prévu** : Deux colonnes : côté client / côté VEM.
 
 **Contenu**
@@ -2233,9 +2254,9 @@ Le statut du projet ne change pas : passez-le vous-même en « 🧾 Handover OK 
 
 **Notes orateur** : Sans e-mail sur la fiche client, le client ne reçoit pas le PDF : envoyez-le avec 📤.
 
-### S116 — PDF et envoi
+### S117 — PDF et envoi
 
-- **Id** : `s116` · **Type** : contenu
+- **Id** : `s117` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2249,9 +2270,9 @@ Chaque PDF téléchargé est aussi rangé dans 📁 Fichiers.
 
 **Notes orateur** : —
 
-### S117 — Erreurs fréquentes
+### S118 — Erreurs fréquentes
 
-- **Id** : `s117` · **Type** : contenu
+- **Id** : `s118` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -2265,9 +2286,9 @@ Chaque PDF téléchargé est aussi rangé dans 📁 Fichiers.
 
 **Notes orateur** : —
 
-### S118 — Exercice — réceptionner le projet démo
+### S119 — Exercice — réceptionner le projet démo
 
-- **Id** : `s118` · **Type** : exercise
+- **Id** : `s119` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -2288,7 +2309,7 @@ Chaque PDF téléchargé est aussi rangé dans 📁 Fichiers.
 
 - Ancre : `#briefing` · Public : Project & Technical Managers · Durée : 40 min · Parcours : Bureau · 9 slides
 
-### S119 — Briefing Studio & 🪄 Auto-générer
+### S120 — Briefing Studio & 🪄 Auto-générer
 
 - **Id** : `briefing` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -2302,9 +2323,9 @@ Briefing Studio & 🪄 Auto-générer
 
 **Notes orateur** : Chapitre 13 — public : Project & Technical Managers. Durée : 40 min.
 
-### S120 — Objectif & où le trouver
+### S121 — Objectif & où le trouver
 
-- **Id** : `s120` · **Type** : contenu
+- **Id** : `s121` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin.
 
 **Contenu**
@@ -2317,9 +2338,9 @@ Après « ➕ Nouveau briefing », VEM ouvre d'abord un éditeur simple : clique
 
 **Notes orateur** : On peut créer plusieurs briefings par projet : nommez-les « Briefing installation », « Briefing démontage ».
 
-### S121 — Plus le projet est rempli, meilleur est le briefing
+### S122 — Plus le projet est rempli, meilleur est le briefing
 
-- **Id** : `s121` · **Type** : contenu
+- **Id** : `s122` · **Type** : contenu
 - **Visuel prévu** : Grand tableau « slide → données → où les saisir ». C'est la slide clé du chapitre.
 
 **Contenu**
@@ -2338,9 +2359,9 @@ Donnée vide = slide absente. Remplissez le projet avant de générer.
 
 **Notes orateur** : Ordre réel : Couverture, Planning, Localisation, Équipe, Contacts, Logistique, Transport équipe, Hôtels, Notes, fichiers, Merci.
 
-### S122 — 🪄 Auto-générer en 4 clics
+### S123 — 🪄 Auto-générer en 4 clics
 
-- **Id** : `s122` · **Type** : contenu
+- **Id** : `s123` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2356,9 +2377,9 @@ L'auto-génération n'utilise pas l'IA : elle met en page vos données telles qu
 
 **Notes orateur** : Un PDF coché donne une slide par page (30 pages max).
 
-### S123 — La barre d'outils du Studio
+### S124 — La barre d'outils du Studio
 
-- **Id** : `s123` · **Type** : contenu
+- **Id** : `s124` · **Type** : contenu
 - **Visuel prévu** : Barre d'outils recréée + capture + tableau.
 
 **Contenu**
@@ -2376,9 +2397,9 @@ C-08
 
 **Notes orateur** : Copier / coller : Ctrl+C / Ctrl+V ; Suppr pour effacer l'élément sélectionné.
 
-### S124 — Gérer les slides
+### S125 — Gérer les slides
 
-- **Id** : `s124` · **Type** : contenu
+- **Id** : `s125` · **Type** : contenu
 - **Visuel prévu** : Liste + astuce.
 
 **Contenu**
@@ -2391,9 +2412,9 @@ Pour le démontage : créez un second briefing, relancez 🪄 Auto-générer, pu
 
 **Notes orateur** : L'historique d'annulation est propre à chaque slide.
 
-### S125 — Exporter le PDF (FR ou EN)
+### S126 — Exporter le PDF (FR ou EN)
 
-- **Id** : `s125` · **Type** : contenu
+- **Id** : `s126` · **Type** : contenu
 - **Visuel prévu** : Fenêtre de langue recréée + étapes.
 
 **Contenu**
@@ -2410,9 +2431,9 @@ Relisez le PDF anglais : noms propres et adresses peuvent être traduits.
 
 **Notes orateur** : Chaque export ajoute un nouveau PDF dans Fichiers : supprimez les anciennes versions.
 
-### S126 — Erreurs fréquentes
+### S127 — Erreurs fréquentes
 
-- **Id** : `s126` · **Type** : contenu
+- **Id** : `s127` · **Type** : contenu
 - **Visuel prévu** : Liste.
 
 **Contenu**
@@ -2425,9 +2446,9 @@ Relisez le PDF anglais : noms propres et adresses peuvent être traduits.
 
 **Notes orateur** : —
 
-### S127 — Exercice — le briefing du projet démo
+### S128 — Exercice — le briefing du projet démo
 
-- **Id** : `s127` · **Type** : exercise
+- **Id** : `s128` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -2448,7 +2469,7 @@ Relisez le PDF anglais : noms propres et adresses peuvent être traduits.
 
 - Ancre : `#rapport` · Public : Project & Technical Managers · Durée : 20 min · Parcours : Bureau · 6 slides
 
-### S128 — Le Rapport IA
+### S129 — Le Rapport IA
 
 - **Id** : `rapport` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -2462,9 +2483,9 @@ Le Rapport IA
 
 **Notes orateur** : Chapitre 14 — public : Project & Technical Managers. Durée : 20 min.
 
-### S129 — Objectif & où le trouver
+### S130 — Objectif & où le trouver
 
-- **Id** : `s129` · **Type** : contenu
+- **Id** : `s130` · **Type** : contenu
 - **Visuel prévu** : Objectif + chemin + tableau des 2 types.
 
 **Contenu**
@@ -2478,9 +2499,9 @@ Le Rapport IA
 
 **Notes orateur** : En Présentation client, les e-mails et téléphones de l'équipe et du chauffeur restent visibles si leur section est cochée.
 
-### S130 — Choisir les sections
+### S131 — Choisir les sections
 
-- **Id** : `s130` · **Type** : contenu
+- **Id** : `s131` · **Type** : contenu
 - **Visuel prévu** : Grille de sections recréée sous forme de tableau.
 
 **Contenu**
@@ -2499,9 +2520,9 @@ Ne cochez pas « Tickets SAV » ni « Visites client » : ces modules ne sont pl
 
 **Notes orateur** : Langues : Français, English, Nederlands (traduction partielle en EN / NL).
 
-### S131 — Prévisualiser, générer le PDF
+### S132 — Prévisualiser, générer le PDF
 
-- **Id** : `s131` · **Type** : contenu
+- **Id** : `s132` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2516,9 +2537,9 @@ Le navigateur bloque l'onglet ? Autorisez les fenêtres pop-up pour VEM.
 
 **Notes orateur** : Comptez jusqu'à une minute avec le résumé IA.
 
-### S132 — Temps par tâche
+### S133 — Temps par tâche
 
-- **Id** : `s132` · **Type** : contenu
+- **Id** : `s133` · **Type** : contenu
 - **Visuel prévu** : Étapes + encadrés.
 
 **Contenu**
@@ -2533,9 +2554,9 @@ Rien de saisi dans les daily reports → « Aucune heure saisie ».
 
 **Notes orateur** : —
 
-### S133 — Exercice — rapport du projet démo
+### S134 — Exercice — rapport du projet démo
 
-- **Id** : `s133` · **Type** : exercise
+- **Id** : `s134` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -2556,7 +2577,7 @@ Rien de saisi dans les daily reports → « Aucune heure saisie ».
 
 - Ancre : `#dashboard` · Public : Tout le monde · Durée : 20 min · Parcours : Tronc commun · 6 slides
 
-### S134 — Dashboard, calendrier & notifications
+### S135 — Dashboard, calendrier & notifications
 
 - **Id** : `dashboard` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -2570,9 +2591,9 @@ Dashboard, calendrier & notifications
 
 **Notes orateur** : Chapitre 15 — public : Tout le monde. Durée : 20 min.
 
-### S135 — Le Dashboard en un coup d'œil
+### S136 — Le Dashboard en un coup d'œil
 
-- **Id** : `s135` · **Type** : contenu
+- **Id** : `s136` · **Type** : contenu
 - **Visuel prévu** : Tuiles de statistiques recréées + liste.
 
 **Contenu**
@@ -2584,14 +2605,14 @@ Dashboard, calendrier & notifications
 - « 🏗️ Projets en cours » : 3 projets au plus, avec leur progression.
 - « ⚡ Actions rapides » : Daily report, Handover.
 ℹ️ Bon à savoir
-« Tâches terminées » affiche toujours « — » : ignorez-le. « Membres équipe » = tous les comptes VEM.
+« Tâches terminées » affiche toujours « — » : ignorez-le. Les chiffres portent sur les projets que vous voyez.
 + Nouveau Projet
 
 **Notes orateur** : Page d'arrivée après la connexion.
 
-### S136 — Le calendrier projets
+### S137 — Le calendrier projets
 
-- **Id** : `s136` · **Type** : contenu
+- **Id** : `s137` · **Type** : contenu
 - **Visuel prévu** : Capture du calendrier + légende.
 
 **Contenu**
@@ -2607,9 +2628,9 @@ C-09
 
 **Notes orateur** : Les projets terminés ou annulés peuvent encore apparaître : utilisez le filtre.
 
-### S137 — Les notifications
+### S138 — Les notifications
 
-- **Id** : `s137` · **Type** : contenu
+- **Id** : `s138` · **Type** : contenu
 - **Visuel prévu** : Tableau des types + étapes.
 
 **Contenu**
@@ -2626,27 +2647,27 @@ Les notifications ne s'ouvrent pas sur le projet : recherchez le N° interne dan
 
 **Notes orateur** : Il n'y a pas de notification sur le téléphone (push) : consultez VEM.
 
-### S138 — Le planning public (écran de l'entrepôt)
+### S139 — Le planning public (écran de l'entrepôt)
 
-- **Id** : `s138` · **Type** : contenu
+- **Id** : `s139` · **Type** : contenu
 - **Visuel prévu** : Liste + encadrés.
 
 **Contenu**
 
 - Page en lecture seule « Planning Projets — 2 mois », affichée sur les écrans de l'entrepôt.
-- Adresse : celle de VEM suivie de /planning-public.html (pas de lien dans le menu).
+- Adresse : celle de VEM suivie de /planning-public.html, avec la clé d'accès éventuelle fournie par l'admin (pas de lien dans le menu).
 - Montre les 60 prochains jours : installation (couleur du statut), démontage (hachures), 🚛 au jour de chargement.
 - Actualisation automatique.
 ⚠️ Attention
-Elle s'ouvre sans mot de passe et affiche les noms des projets et des clients : ne la partagez pas hors de Viewbox.
+Elle s'ouvre sans compte VEM et affiche les noms des projets et des clients : ne partagez pas son adresse hors de Viewbox.
 💡 Astuce
 Dates et camions justes dans VEM = planning de l'entrepôt juste.
 
 **Notes orateur** : Demandez l'adresse exacte de VEM à votre admin si besoin.
 
-### S139 — Exercice — piloter sa semaine
+### S140 — Exercice — piloter sa semaine
 
-- **Id** : `s139` · **Type** : exercise
+- **Id** : `s140` · **Type** : exercise
 - **Visuel prévu** : Exercice + récap.
 
 **Contenu**
@@ -2667,7 +2688,7 @@ Dates et camions justes dans VEM = planning de l'entrepôt juste.
 
 - Ancre : `#pratique` · Public : Tout le monde · Durée : 30 min · Parcours : Tronc commun · 7 slides
 
-### S140 — Mise en pratique & dépannage
+### S141 — Mise en pratique & dépannage
 
 - **Id** : `pratique` · **Type** : section
 - **Visuel prévu** : Slide de séparation du chapitre.
@@ -2681,9 +2702,9 @@ Mise en pratique & dépannage
 
 **Notes orateur** : Chapitre 16 — public : Tout le monde. Durée : 30 min.
 
-### S141 — Qui remplit quoi, quand
+### S142 — Qui remplit quoi, quand
 
-- **Id** : `s141` · **Type** : contenu
+- **Id** : `s142` · **Type** : contenu
 - **Visuel prévu** : Matrice phase × qui × quoi × canal × utilisateurs.
 
 **Contenu**
@@ -2700,9 +2721,9 @@ Mise en pratique & dépannage
 
 **Notes orateur** : La même matrice est détaillée dans 01_PLAN_PEDAGOGIQUE.md.
 
-### S142 — Le projet démo de A à Z
+### S143 — Le projet démo de A à Z
 
-- **Id** : `s142` · **Type** : contenu
+- **Id** : `s143` · **Type** : contenu
 - **Visuel prévu** : Frise en 10 étapes.
 
 **Contenu**
@@ -2732,9 +2753,9 @@ Exercice final (45 min, en binôme) : déroulez ces 10 étapes sur un projet de 
 
 **Notes orateur** : Pour l'exercice final, faites créer un projet de test par binôme avec un N° interne fictif différent.
 
-### S143 — FAQ — dépannage (1/2)
+### S144 — FAQ — dépannage (1/2)
 
-- **Id** : `s143` · **Type** : contenu
+- **Id** : `s144` · **Type** : contenu
 - **Visuel prévu** : Tableau problème / solution.
 
 **Contenu**
@@ -2748,17 +2769,18 @@ Exercice final (45 min, en binôme) : déroulez ces 10 étapes sur un projet de 
 
 **Notes orateur** : —
 
-### S144 — FAQ — dépannage (2/2)
+### S145 — FAQ — dépannage (2/2)
 
-- **Id** : `s144` · **Type** : contenu
+- **Id** : `s145` · **Type** : contenu
 - **Visuel prévu** : Tableau problème / solution.
 
 **Contenu**
 
 | Problème | Que faire |
 | Je suis renvoyé à l'écran de connexion | La session dure 8 h : reconnectez-vous. Rechargez la page en cas d'affichage bizarre. |
-| J'ai oublié mon mot de passe | Demandez à un admin ou un Project Manager « 📧 Envoyer invitation » (valable 15 min). |
-| « Permission insuffisante » | Action réservée à certains rôles : demandez à un admin. |
+| J'ai oublié mon mot de passe | Demandez à un admin, un Project ou Technical Manager « 📧 Envoyer invitation » (valable 15 min). |
+| « Permission insuffisante » | Action réservée à certains rôles : demandez à un admin ou à votre responsable. |
+| Je ne vois pas un projet | Site Manager, installateur, ouvrier : vous devez être dans l'onglet 👥 Équipe du projet. |
 | Je ne vois pas la check-list (Site Manager / installateur) | Vous devez être dans l'onglet 👥 Équipe du projet. |
 | Le lien de signature est bloqué | Terminez la check-list de montage (points critiques, points « À vérifier »). |
 | Mes 3 photos sont devenues 1 (téléphone) | Sélectionnez toutes les photos en une fois, ou ajoutez-les en modification. |
@@ -2766,7 +2788,7 @@ Exercice final (45 min, en binôme) : déroulez ces 10 étapes sur un projet de 
 
 **Notes orateur** : —
 
-### S145 — Fiche mémo — la règle du mail
+### S146 — Fiche mémo — la règle du mail
 
 - **Id** : `memo-mail` · **Type** : memo
 - **Visuel prévu** : Fiche mémo imprimable sur une page (A4 paysage).
@@ -2791,9 +2813,9 @@ Résultat : pièces jointes → 📁 Fichiers ; camions, hôtels, trajets → br
 
 **Notes orateur** : Imprimez cette slide seule (Ctrl+P, page courante) ou utilisez 03_FICHE_MEMO_MAIL.md.
 
-### S146 — Merci !
+### S147 — Merci !
 
-- **Id** : `s146` · **Type** : cover
+- **Id** : `s147` · **Type** : cover
 - **Visuel prévu** : Slide de fin.
 
 **Contenu**

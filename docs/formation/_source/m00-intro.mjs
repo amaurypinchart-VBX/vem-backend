@@ -66,7 +66,7 @@ export default {
           'La session dure <b>8 heures</b>. Ensuite, VEM vous renvoie à l\'écran de connexion : enregistrez votre travail avant une longue pause.',
           `Premier accès avec un mot de passe temporaire : VEM ouvre ${q('🔐 Choisissez votre mot de passe')} (8 caractères min.).`,
         ])
-        + callout('warn', `Mot de passe oublié : le lien ${q('🔑 Mot de passe oublié ?')} ne fonctionne pas pour l\'instant. <b>Demandez à un admin ou un Project Manager</b> de vous renvoyer un accès (${q('📧 Envoyer invitation')}, valable 15 min).`)),
+        + callout('warn', `Mot de passe oublié : le lien ${q('🔑 Mot de passe oublié ?')} ne fonctionne pas pour l\'instant. <b>Demandez à un admin, un Project ou Technical Manager</b> de vous renvoyer un accès (${q('📧 Envoyer invitation')}, valable 15 min).`)),
       visual: 'Maquette de l\'écran Connexion à gauche, étapes à droite.',
       notes: 'La case « Rester connecté » n\'a pas d\'effet aujourd\'hui : ne la présentez pas comme une option. Le mail de mot de passe temporaire s\'appelle « Votre acces VEM - mot de passe temporaire ».',
     },
@@ -78,7 +78,7 @@ export default {
           `${q('🔑 Changer mon mot de passe')} : ancien, nouveau (8 caractères min.), confirmation.`,
           `${q('💾 Valider')} → message « Mot de passe modifié ✅ ».`,
         ]),
-        callout('ok', 'Compte créé avec le mot de passe par défaut annoncé dans la fiche membre ? <b>Changez-le dès la première connexion</b> : VEM ne l\'impose pas.')
+        callout('ok', 'Vous avez reçu votre mot de passe lors de la création de votre compte ? <b>Changez-le dès la première connexion</b>.')
         + callout('info', 'Le profil ne permet de changer que le mot de passe. Nom, e-mail, téléphone : demandez à un admin ou un Project Manager.')),
       visual: 'Étapes numérotées + deux encadrés.',
       notes: 'Ne jamais partager un compte : la personne connectée est enregistrée comme auteur des rapports.',
@@ -98,7 +98,7 @@ export default {
           `Le bouton ${q('‹')} replie le menu (choix mémorisé).`,
         ]) + callout('warn', `Vous verrez aussi ${q('✅ Tâches')}, ${q('📸 Visites Client')} et ${q('📋 Templates tâches')} : <b>ne les utilisez plus</b>. Le suivi se fait désormais par la <b>check-list</b> (chapitre 10).`)),
       visual: 'Maquette du menu latéral (sections Principal / Terrain / Admin) à gauche.',
-      notes: 'Tout le monde voit la même navigation, y compris la section Admin. Certaines actions restent réservées (slide suivante).',
+      notes: 'Le menu dépend du rôle : un Site Manager, un installateur ou un ouvrier ne voit pas Clients ni Templates check-list ; un compte Client ne voit que Handover et Notifications. Une section « Aide » contient « 🎓 Formation VEM ».',
     },
     {
       title: 'Sur téléphone',
@@ -132,20 +132,18 @@ export default {
     {
       title: 'Qui peut faire quoi ?',
       body: () => cols(
-        ul([
-          'Tout le monde voit <b>tous les menus et tous les projets</b>.',
-          'Presque tout est modifiable par tous : c\'est pratique, mais cela demande de la discipline.',
-        ]) + callout('no', '<b>Ne supprimez jamais</b> un projet, un client, un rapport ou un handover. Une suppression est définitive (pas de corbeille). En cas de doute : demandez à un admin.'),
-        table(['Action réservée', 'Qui'], [
-          ['Créer un membre', 'Admin, Project Manager, Technical Manager'],
-          ['Modifier un autre membre, inviter, renvoyer un accès', 'Admin, Project Manager'],
-          ['Configurer une check-list', 'Admin, Technical Manager, Project Manager'],
-          ['Remplir une check-list', '+ Site Manager (sur ses projets)'],
-          ['Installateur', 'Voit la check-list de ses projets, sans la remplir'],
-          ['Générer le lien de signature malgré une check-list incomplète', 'Admin, Technical Manager'],
-        ], { small: true })),
-      visual: 'Règle de discipline à gauche, tableau des actions réservées à droite.',
-      notes: 'Si un bouton affiche « Permission insuffisante », c\'est normal : l\'action est réservée.',
+        table(['Rôle', 'Projets visibles', 'Peut modifier'], [
+          ['Admin, Technical Manager', 'Tous', 'Tout'],
+          ['Project Manager, Engineer, Sales Engineer, Entrepôt', 'Tous', 'Tout (sauf réglages réservés)'],
+          ['Site Manager', '<b>Ses</b> projets (équipe du projet)', 'Tout sur ses projets'],
+          ['Installateur, Ouvrier', '<b>Ses</b> projets', 'Rien par défaut ; daily reports / handover si un responsable lui en donne le droit'],
+          ['Client', 'Son projet', 'Rien : il consulte seulement le handover'],
+        ], { small: true }),
+        callout('info', '« Ses projets » = les projets où la personne est dans l\'onglet 👥 Équipe. <b>Pas dans l\'équipe = projet invisible.</b>')
+        + callout('no', '<b>Ne supprimez jamais</b> un projet, un client, un rapport ou un handover : une suppression est définitive (pas de corbeille).')
+        + callout('info', `Message ${q('Permission insuffisante')} : l\'action est réservée à un autre rôle.`)),
+      visual: 'Tableau des rôles à gauche, encadrés à droite.',
+      notes: 'Créer des membres : admin, Technical Manager, Project Manager (comptes admin et Technical Manager : admin seulement). Configurer une check-list : admin, TM, PM ; la remplir : + Site Manager. Lien de signature malgré une check-list incomplète : admin et TM.',
     },
     {
       title: 'Les 6 règles d\'or',

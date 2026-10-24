@@ -1,5 +1,5 @@
 {
-  "slides": 146,
+  "slides": 147,
   "perModule": [
     {
       "num": 0,
@@ -59,7 +59,7 @@
       "num": 6,
       "title": "L'équipe",
       "key": "equipe",
-      "n": 9,
+      "n": 10,
       "duree": "25 min",
       "parcours": "Bureau",
       "public": "Project & Technical Managers"
@@ -180,7 +180,7 @@
     },
     {
       "label": "↶",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -191,7 +191,7 @@
     },
     {
       "label": "↷",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -201,7 +201,7 @@
     },
     {
       "label": "+ Ajouter",
-      "slides": "S68, S111",
+      "slides": "S69, S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -244,7 +244,7 @@
     },
     {
       "label": "+ Hôtel démontage",
-      "slides": "S75",
+      "slides": "S76",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -254,7 +254,7 @@
     },
     {
       "label": "+ Hôtel installation",
-      "slides": "S75, S77",
+      "slides": "S76, S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -274,7 +274,7 @@
     },
     {
       "label": "+ Nouveau Handover",
-      "slides": "S110, S111",
+      "slides": "S111, S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -295,7 +295,7 @@
     },
     {
       "label": "+ Nouveau Projet",
-      "slides": "S21, S22, S135",
+      "slides": "S21, S22, S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -306,7 +306,7 @@
     },
     {
       "label": "+ Nouveau Rapport",
-      "slides": "S101",
+      "slides": "S102",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -317,7 +317,7 @@
     },
     {
       "label": "+ Nouvelle slide",
-      "slides": "S124",
+      "slides": "S125",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -328,7 +328,7 @@
     },
     {
       "label": "+ Point",
-      "slides": "S112",
+      "slides": "S113",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -339,7 +339,7 @@
     },
     {
       "label": "+ Point spécifique au projet",
-      "slides": "S91",
+      "slides": "S92",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -349,7 +349,7 @@
     },
     {
       "label": "+ Transport démontage",
-      "slides": "S75",
+      "slides": "S76",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -359,7 +359,7 @@
     },
     {
       "label": "+ Transport installation",
-      "slides": "S75, S76",
+      "slides": "S76, S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -369,7 +369,7 @@
     },
     {
       "label": "⏭ Passer",
-      "slides": "S94",
+      "slides": "S95",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -379,7 +379,7 @@
     },
     {
       "label": "⏭️ Sans fichiers",
-      "slides": "S122",
+      "slides": "S123",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -389,7 +389,7 @@
     },
     {
       "label": "⏱️ Heures par tâche",
-      "slides": "S102",
+      "slides": "S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -410,7 +410,7 @@
     },
     {
       "label": "⏳ À vérifier",
-      "slides": "S92",
+      "slides": "S93",
       "found": true,
       "how": "composé : public/js/15-checklists.js:387 (icône ⏳ + label « À vérifier »)",
       "inIndex": false,
@@ -418,7 +418,7 @@
     },
     {
       "label": "⏳ En attente",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -430,7 +430,7 @@
     },
     {
       "label": "▭",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -462,7 +462,7 @@
     },
     {
       "label": "☑️ Ouvrir la check-list",
-      "slides": "S96",
+      "slides": "S97",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -472,7 +472,7 @@
     },
     {
       "label": "☑️ Templates check-list",
-      "slides": "S7, S97",
+      "slides": "S7, S98",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -492,7 +492,7 @@
     },
     {
       "label": "⚙️ Configurer la check-list",
-      "slides": "S91",
+      "slides": "S92",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -502,7 +502,7 @@
     },
     {
       "label": "⚠️ Check-list de montage incomplète",
-      "slides": "S96",
+      "slides": "S97",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -522,7 +522,7 @@
     },
     {
       "label": "⚠️ Remarque",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -534,7 +534,7 @@
     },
     {
       "label": "⚡ Actions rapides",
-      "slides": "S135",
+      "slides": "S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -544,16 +544,6 @@
     },
     {
       "label": "⚡ Groupe électrogène",
-      "slides": "S69",
-      "found": true,
-      "how": "texte exact",
-      "inIndex": false,
-      "files": [
-        "public/js/10-logistics-bookings.js"
-      ]
-    },
-    {
-      "label": "⚫ Retour entrepôt",
       "slides": "S70",
       "found": true,
       "how": "texte exact",
@@ -563,8 +553,18 @@
       ]
     },
     {
+      "label": "⚫ Retour entrepôt",
+      "slides": "S71",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/10-logistics-bookings.js"
+      ]
+    },
+    {
       "label": "🇫🇷 Français",
-      "slides": "S106, S116, S125",
+      "slides": "S107, S117, S126",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -576,7 +576,7 @@
     },
     {
       "label": "🇬🇧 English",
-      "slides": "S106, S116, S125",
+      "slides": "S107, S117, S126",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -588,7 +588,7 @@
     },
     {
       "label": "✂️ Nacelle ciseaux",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -610,7 +610,7 @@
     },
     {
       "label": "✅ Ajouter le véhicule",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -640,7 +640,7 @@
     },
     {
       "label": "✅ Créer le Handover",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -673,7 +673,7 @@
     },
     {
       "label": "✅ Générer",
-      "slides": "S122",
+      "slides": "S123",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -683,7 +683,7 @@
     },
     {
       "label": "✅ OK",
-      "slides": "S92, S111",
+      "slides": "S93, S112",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -705,7 +705,7 @@
     },
     {
       "label": "✅ Valider et ajouter au journal",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -715,7 +715,7 @@
     },
     {
       "label": "✅ Valider la check-list",
-      "slides": "S95",
+      "slides": "S96",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -725,7 +725,7 @@
     },
     {
       "label": "✅ Valider la signature",
-      "slides": "S115",
+      "slides": "S116",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -735,7 +735,7 @@
     },
     {
       "label": "✈️ Bookings",
-      "slides": "S27, S41, S44, S51, S75, S121",
+      "slides": "S27, S41, S44, S51, S76, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -746,7 +746,7 @@
     },
     {
       "label": "✈️ Transport par membre",
-      "slides": "S75",
+      "slides": "S76",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -756,7 +756,7 @@
     },
     {
       "label": "✉️ Adresses manuelles",
-      "slides": "S105",
+      "slides": "S106",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -777,7 +777,7 @@
     },
     {
       "label": "✉️ Envoyer le PDF",
-      "slides": "S95",
+      "slides": "S96",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -787,7 +787,7 @@
     },
     {
       "label": "✏️ Modifier",
-      "slides": "S15, S19, S27, S28, S36, S50, S54, S57, S72, S112, S121, S143",
+      "slides": "S15, S19, S27, S28, S36, S50, S54, S57, S73, S113, S122, S144",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -809,7 +809,7 @@
     },
     {
       "label": "✏️ Saisie entrée par entrée",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -841,7 +841,7 @@
     },
     {
       "label": "❌ Défaut",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -853,7 +853,7 @@
     },
     {
       "label": "❌ Non fait",
-      "slides": "S92",
+      "slides": "S93",
       "found": true,
       "how": "composé : public/js/15-checklists.js:390",
       "inIndex": false,
@@ -872,7 +872,7 @@
     },
     {
       "label": "➕ Nouveau briefing",
-      "slides": "S120",
+      "slides": "S121",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -882,7 +882,7 @@
     },
     {
       "label": "➖ N.A.",
-      "slides": "S92",
+      "slides": "S93",
       "found": true,
       "how": "composé : public/js/15-checklists.js:391",
       "inIndex": false,
@@ -890,7 +890,7 @@
     },
     {
       "label": "⬆️ Ajouter",
-      "slides": "S82, S83",
+      "slides": "S83, S84",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -901,7 +901,7 @@
     },
     {
       "label": "⬇️ Télécharger le PDF",
-      "slides": "S95",
+      "slides": "S96",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -911,7 +911,7 @@
     },
     {
       "label": "⭕",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -921,7 +921,7 @@
     },
     {
       "label": "☰ Liste",
-      "slides": "S93",
+      "slides": "S94",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -931,7 +931,7 @@
     },
     {
       "label": "🃏 Remplir en diaporama",
-      "slides": "S94",
+      "slides": "S95",
       "found": true,
       "how": "composé : public/js/15-checklists.js:807 (« 🃏 ${verb} en diaporama », verb = Remplir)",
       "inIndex": false,
@@ -939,7 +939,7 @@
     },
     {
       "label": "🌐 Langue du PDF",
-      "slides": "S105",
+      "slides": "S106",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -961,7 +961,7 @@
     },
     {
       "label": "🌩️ Orage",
-      "slides": "S106",
+      "slides": "S107",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -982,7 +982,7 @@
     },
     {
       "label": "🎙️ Démarrer la dictée",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -992,7 +992,7 @@
     },
     {
       "label": "🎙️ Dictée vocale",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1002,7 +1002,7 @@
     },
     {
       "label": "🎙️ Voix",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1012,7 +1012,7 @@
     },
     {
       "label": "🎨 Studio",
-      "slides": "S120",
+      "slides": "S121",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1022,7 +1022,7 @@
     },
     {
       "label": "🎨 Templates ▾",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1032,7 +1032,7 @@
     },
     {
       "label": "🎮 Voir en 3D",
-      "slides": "S84, S85",
+      "slides": "S85, S86",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1042,7 +1042,7 @@
     },
     {
       "label": "🎯 Filtrer projets",
-      "slides": "S136",
+      "slides": "S137",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1053,7 +1053,7 @@
     },
     {
       "label": "🎵 Choisir un fichier audio",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1074,7 +1074,7 @@
     },
     {
       "label": "🏗️ Grue",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1084,7 +1084,7 @@
     },
     {
       "label": "🏗️ Installation",
-      "slides": "S90, S102",
+      "slides": "S91, S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1107,7 +1107,7 @@
     },
     {
       "label": "🏗️ Projets",
-      "slides": "S7, S22, S36, S49, S59, S68, S75, S82, S101, S110, S120, S129",
+      "slides": "S7, S22, S36, S49, S59, S69, S76, S83, S102, S111, S121, S130",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1117,7 +1117,7 @@
     },
     {
       "label": "🏗️ Projets en cours",
-      "slides": "S135",
+      "slides": "S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1127,7 +1127,7 @@
     },
     {
       "label": "🏢 Clients",
-      "slides": "S7, S13, S14, S121",
+      "slides": "S7, S13, S14, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1147,7 +1147,7 @@
     },
     {
       "label": "🏨 Hôtels (multi-occupants)",
-      "slides": "S75",
+      "slides": "S76",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1157,7 +1157,7 @@
     },
     {
       "label": "🏭 Entrepôt Tubize",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1167,7 +1167,7 @@
     },
     {
       "label": "👁️ Ouvrir",
-      "slides": "S112, S116",
+      "slides": "S113, S117",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1177,7 +1177,7 @@
     },
     {
       "label": "👁️ Prévisualiser",
-      "slides": "S131",
+      "slides": "S132",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1188,7 +1188,7 @@
     },
     {
       "label": "👁️ Voir",
-      "slides": "S84",
+      "slides": "S85",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1204,7 +1204,8 @@
       "how": "texte exact",
       "inIndex": true,
       "files": [
-        "public/index.html"
+        "public/index.html",
+        "public/js/03-create-forms.js"
       ]
     },
     {
@@ -1219,7 +1220,7 @@
     },
     {
       "label": "👥 Équipe",
-      "slides": "S7, S25, S27, S28, S51, S59, S60, S61, S62, S65, S105, S121",
+      "slides": "S7, S25, S27, S28, S51, S59, S60, S61, S62, S64, S66, S106, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1231,7 +1232,7 @@
     },
     {
       "label": "👥 Équipes",
-      "slides": "S78, S136",
+      "slides": "S79, S137",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1252,7 +1253,7 @@
     },
     {
       "label": "👥 Occupants (sélectionne tous les membres logés)",
-      "slides": "S77",
+      "slides": "S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1282,7 +1283,7 @@
     },
     {
       "label": "💾 Ajouter au projet",
-      "slides": "S83",
+      "slides": "S84",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1292,7 +1293,7 @@
     },
     {
       "label": "💾 Créer",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "composé : public/js/10-logistics-bookings.js:920, 1103 (« 💾 ${isEdit?'Enregistrer':'Créer'} »)",
       "inIndex": false,
@@ -1300,7 +1301,7 @@
     },
     {
       "label": "💾 Enregistrer",
-      "slides": "S43, S44, S70, S91",
+      "slides": "S43, S44, S71, S92",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1323,7 +1324,7 @@
     },
     {
       "label": "💾 Sauvegarder",
-      "slides": "S15, S105, S122",
+      "slides": "S15, S106, S123",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1335,7 +1336,7 @@
     },
     {
       "label": "💾 Sauver sur VEM",
-      "slides": "S85",
+      "slides": "S86",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1357,7 +1358,7 @@
     },
     {
       "label": "📁 Fichiers",
-      "slides": "S27, S33, S40, S41, S51, S82, S121",
+      "slides": "S27, S33, S40, S41, S51, S83, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1369,7 +1370,7 @@
     },
     {
       "label": "📁 Fichiers à inclure dans le briefing",
-      "slides": "S122",
+      "slides": "S123",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1379,7 +1380,7 @@
     },
     {
       "label": "📂 Depuis projet ▾",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1410,7 +1411,7 @@
     },
     {
       "label": "📄 Générer PDF",
-      "slides": "S131",
+      "slides": "S132",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1420,7 +1421,7 @@
     },
     {
       "label": "📄 Langue du PDF",
-      "slides": "S125",
+      "slides": "S126",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1430,7 +1431,7 @@
     },
     {
       "label": "📄 PDF",
-      "slides": "S116, S125",
+      "slides": "S117, S126",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1442,7 +1443,7 @@
     },
     {
       "label": "📄 PDF / Envoyer",
-      "slides": "S95",
+      "slides": "S96",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1452,7 +1453,7 @@
     },
     {
       "label": "📅 Arrivée estimée",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1462,7 +1463,7 @@
     },
     {
       "label": "📅 Date & heure de chargement",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1492,7 +1493,7 @@
     },
     {
       "label": "📊 Rapport IA",
-      "slides": "S50, S129",
+      "slides": "S50, S130",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1502,7 +1503,7 @@
     },
     {
       "label": "📋 Briefing",
-      "slides": "S51, S120",
+      "slides": "S51, S121",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1512,7 +1513,7 @@
     },
     {
       "label": "📋 Copier",
-      "slides": "S40, S47, S114",
+      "slides": "S40, S47, S115",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1524,7 +1525,7 @@
     },
     {
       "label": "📋 Étendue des travaux (Scope of work)",
-      "slides": "S112",
+      "slides": "S113",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1534,7 +1535,7 @@
     },
     {
       "label": "📋 Import texte libre (IA)",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1555,7 +1556,7 @@
     },
     {
       "label": "📋 Infos",
-      "slides": "S40, S51, S90",
+      "slides": "S40, S51, S91",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1589,7 +1590,7 @@
     },
     {
       "label": "📋 Préparation",
-      "slides": "S90",
+      "slides": "S91",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1620,7 +1621,7 @@
     },
     {
       "label": "📌 Logo ▾",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1640,7 +1641,7 @@
     },
     {
       "label": "📍 Présence effective sur site",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1662,7 +1663,7 @@
     },
     {
       "label": "📍 Zone de déchargement",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1672,7 +1673,7 @@
     },
     {
       "label": "📎 Pièce jointe (billet, voucher...)",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1682,7 +1683,7 @@
     },
     {
       "label": "📎 Pièces jointes",
-      "slides": "S104",
+      "slides": "S105",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1693,7 +1694,7 @@
     },
     {
       "label": "📓 Daily Report",
-      "slides": "S8, S101",
+      "slides": "S8, S102",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1704,8 +1705,18 @@
       ]
     },
     {
+      "label": "📓 Daily reports",
+      "slides": "S64",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/09-files-team-users.js"
+      ]
+    },
+    {
       "label": "📓 Daily Reports",
-      "slides": "S7, S51, S90, S101",
+      "slides": "S7, S51, S91, S102",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1715,7 +1726,7 @@
     },
     {
       "label": "📓 Joindre à un daily report",
-      "slides": "S95",
+      "slides": "S96",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1725,7 +1736,7 @@
     },
     {
       "label": "📓 Rapport Journalier",
-      "slides": "S102",
+      "slides": "S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1747,7 +1758,7 @@
     },
     {
       "label": "📝 Handover Certificate — Champs",
-      "slides": "S112",
+      "slides": "S113",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1768,7 +1779,7 @@
     },
     {
       "label": "📝 Texte",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1788,7 +1799,7 @@
     },
     {
       "label": "📞 Téléphone",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1799,7 +1810,7 @@
     },
     {
       "label": "📤 Envoyer",
-      "slides": "S63, S105, S116",
+      "slides": "S63, S106, S117",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1811,7 +1822,7 @@
     },
     {
       "label": "📤 Envoyer le rapport",
-      "slides": "S105",
+      "slides": "S106",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1822,7 +1833,7 @@
     },
     {
       "label": "📤 Sauv. & Envoyer",
-      "slides": "S105",
+      "slides": "S106",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1832,7 +1843,7 @@
     },
     {
       "label": "📥 Charger la bibliothèque Viewbox",
-      "slides": "S97",
+      "slides": "S98",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1864,7 +1875,7 @@
     },
     {
       "label": "📦 Autre",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1874,7 +1885,7 @@
     },
     {
       "label": "📦 Autre lieu (adresse spéciale)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1897,14 +1908,15 @@
       "slides": "S5, S61",
       "found": true,
       "how": "texte exact",
-      "inIndex": false,
+      "inIndex": true,
       "files": [
+        "public/index.html",
         "public/js/09-files-team-users.js"
       ]
     },
     {
       "label": "📧 Envoyer par email",
-      "slides": "S114",
+      "slides": "S115",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1934,7 +1946,7 @@
     },
     {
       "label": "📷 Galerie",
-      "slides": "S85",
+      "slides": "S86",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -1954,7 +1966,7 @@
     },
     {
       "label": "📸 Prendre / Ajouter photos",
-      "slides": "S104",
+      "slides": "S105",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -1974,7 +1986,7 @@
     },
     {
       "label": "🔍 Points d'inspection",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2015,7 +2027,7 @@
     },
     {
       "label": "🔔 Notifications",
-      "slides": "S7, S137",
+      "slides": "S7, S138",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2025,7 +2037,7 @@
     },
     {
       "label": "🔗 Ajouter un fichier via URL",
-      "slides": "S83",
+      "slides": "S84",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2056,7 +2068,7 @@
     },
     {
       "label": "🔗 Lien de Signature Client",
-      "slides": "S114",
+      "slides": "S115",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2066,7 +2078,7 @@
     },
     {
       "label": "🔗 Signer",
-      "slides": "S114",
+      "slides": "S115",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2077,7 +2089,7 @@
     },
     {
       "label": "🔗 URL",
-      "slides": "S82",
+      "slides": "S83",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2088,7 +2100,7 @@
     },
     {
       "label": "🔤 Titre",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2109,7 +2121,7 @@
     },
     {
       "label": "🔧 Manitou / Roto",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2129,7 +2141,7 @@
     },
     {
       "label": "🔨 Démontage",
-      "slides": "S53, S90, S102",
+      "slides": "S53, S91, S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2151,7 +2163,7 @@
     },
     {
       "label": "🔵 En route",
-      "slides": "S70",
+      "slides": "S71",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2171,7 +2183,7 @@
     },
     {
       "label": "🖼️ Image/PDF",
-      "slides": "S123",
+      "slides": "S124",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2201,7 +2213,7 @@
     },
     {
       "label": "🗑️ Supprimer la sélection",
-      "slides": "S84",
+      "slides": "S85",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2211,7 +2223,7 @@
     },
     {
       "label": "🤖 Analyser avec l'IA",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2221,7 +2233,7 @@
     },
     {
       "label": "🤖 Analyser avec l'IA → Extraire les entrées",
-      "slides": "S103",
+      "slides": "S104",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2231,7 +2243,7 @@
     },
     {
       "label": "🤖 Assistant IA",
-      "slides": "S106",
+      "slides": "S107",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2241,7 +2253,7 @@
     },
     {
       "label": "🤖 Lancer / relancer l'analyse",
-      "slides": "S132",
+      "slides": "S133",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2251,7 +2263,7 @@
     },
     {
       "label": "🤝 Client",
-      "slides": "S105",
+      "slides": "S106",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2263,18 +2275,19 @@
     },
     {
       "label": "🧾 Handover",
-      "slides": "S7, S8, S50, S51, S90, S110, S111",
+      "slides": "S7, S8, S50, S51, S64, S91, S111, S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
       "files": [
         "public/index.html",
-        "public/js/02-detail-loaders.js"
+        "public/js/02-detail-loaders.js",
+        "public/js/09-files-team-users.js"
       ]
     },
     {
       "label": "🧾 Handover OK",
-      "slides": "S53, S115",
+      "slides": "S53, S116",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2285,7 +2298,7 @@
     },
     {
       "label": "🧾 Nouveau Handover",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2295,7 +2308,7 @@
     },
     {
       "label": "🪄 Auto-générer",
-      "slides": "S122",
+      "slides": "S123",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2306,7 +2319,7 @@
     },
     {
       "label": "🚐 Camionnette",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2326,7 +2339,7 @@
     },
     {
       "label": "🚛 Ajouter un véhicule",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "composé : public/js/10-logistics-bookings.js:9 (« 🚛 ${isEdit ? 'Modifier' : 'Ajouter'} un véhicule »)",
       "inIndex": false,
@@ -2334,7 +2347,7 @@
     },
     {
       "label": "🚛 Camion (Flatbed)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2344,7 +2357,7 @@
     },
     {
       "label": "🚛 Camion (Tautliner)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2354,7 +2367,7 @@
     },
     {
       "label": "🚛 Camions",
-      "slides": "S71, S136",
+      "slides": "S72, S137",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2365,7 +2378,7 @@
     },
     {
       "label": "🚛 Logistique",
-      "slides": "S25, S27, S41, S43, S51, S54, S68, S121",
+      "slides": "S25, S27, S41, S43, S51, S54, S69, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2376,7 +2389,7 @@
     },
     {
       "label": "🚛 Réservations créées depuis un email",
-      "slides": "S41, S137",
+      "slides": "S41, S138",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2386,7 +2399,7 @@
     },
     {
       "label": "🚜 Chariot élévateur",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2407,7 +2420,7 @@
     },
     {
       "label": "🟠 En chargement",
-      "slides": "S70",
+      "slides": "S71",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2417,7 +2430,7 @@
     },
     {
       "label": "🟠 Partiel",
-      "slides": "S92",
+      "slides": "S93",
       "found": true,
       "how": "composé : public/js/15-checklists.js:389",
       "inIndex": false,
@@ -2425,7 +2438,7 @@
     },
     {
       "label": "🟢 Livré",
-      "slides": "S70",
+      "slides": "S71",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2435,7 +2448,7 @@
     },
     {
       "label": "🟣 Planifié",
-      "slides": "S43, S70",
+      "slides": "S43, S71",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2445,7 +2458,7 @@
     },
     {
       "label": "À traiter",
-      "slides": "S93",
+      "slides": "S94",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2479,7 +2492,7 @@
     },
     {
       "label": "Adresse *",
-      "slides": "S23, S26, S33, S121",
+      "slides": "S23, S26, S33, S122",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2489,7 +2502,7 @@
     },
     {
       "label": "Annuler",
-      "slides": "S14, S25, S96, S105",
+      "slides": "S14, S25, S97, S106",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2501,7 +2514,7 @@
     },
     {
       "label": "Bookings",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2524,7 +2537,7 @@
     },
     {
       "label": "Check-in *",
-      "slides": "S77",
+      "slides": "S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2534,7 +2547,7 @@
     },
     {
       "label": "Check-out *",
-      "slides": "S77",
+      "slides": "S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2544,7 +2557,7 @@
     },
     {
       "label": "Client *",
-      "slides": "S13, S17, S23, S26, S143",
+      "slides": "S13, S17, S23, S26, S144",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2554,7 +2567,7 @@
     },
     {
       "label": "Client / Société",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2564,7 +2577,7 @@
     },
     {
       "label": "Commentaire",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2588,7 +2601,7 @@
     },
     {
       "label": "Daily Reports",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2612,7 +2625,7 @@
     },
     {
       "label": "Date *",
-      "slides": "S102",
+      "slides": "S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2653,7 +2666,7 @@
     },
     {
       "label": "Détails (n° de vol, etc.)",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2696,7 +2709,7 @@
     },
     {
       "label": "Enregistrer et suivant →",
-      "slides": "S94",
+      "slides": "S95",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2716,7 +2729,7 @@
     },
     {
       "label": "État du véhicule",
-      "slides": "S43, S70",
+      "slides": "S43, S71",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2726,7 +2739,7 @@
     },
     {
       "label": "Fermer",
-      "slides": "S114",
+      "slides": "S115",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2738,7 +2751,7 @@
     },
     {
       "label": "Fichiers projet",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2780,7 +2793,7 @@
     },
     {
       "label": "Handover",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2792,7 +2805,7 @@
     },
     {
       "label": "Lieu de chargement",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2802,7 +2815,7 @@
     },
     {
       "label": "Lieu de déchargement",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2812,7 +2825,7 @@
     },
     {
       "label": "Logistique",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2836,7 +2849,7 @@
     },
     {
       "label": "Membre *",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2846,7 +2859,7 @@
     },
     {
       "label": "Membres équipe",
-      "slides": "S135",
+      "slides": "S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2868,7 +2881,7 @@
     },
     {
       "label": "Météo",
-      "slides": "S102",
+      "slides": "S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2892,7 +2905,7 @@
     },
     {
       "label": "Moyen de transport",
-      "slides": "S76",
+      "slides": "S77",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2925,7 +2938,7 @@
     },
     {
       "label": "🆕 Projet créé depuis un email",
-      "slides": "S35, S137",
+      "slides": "S35, S138",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2947,7 +2960,7 @@
     },
     {
       "label": "Nom / référence supplémentaire (optionnel)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2967,7 +2980,7 @@
     },
     {
       "label": "Nom du chauffeur",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2977,7 +2990,7 @@
     },
     {
       "label": "Nom du fichier *",
-      "slides": "S83",
+      "slides": "S84",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -2987,7 +3000,7 @@
     },
     {
       "label": "Notes générales",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -2999,7 +3012,7 @@
     },
     {
       "label": "Notes générales / Résumé",
-      "slides": "S104",
+      "slides": "S105",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3021,7 +3034,7 @@
     },
     {
       "label": "Ouvriers présents",
-      "slides": "S102",
+      "slides": "S103",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3032,13 +3045,25 @@
     },
     {
       "label": "Période :",
-      "slides": "S136",
+      "slides": "S137",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
       "files": [
         "public/index.html",
         "public/js/07-auth-mobile-daily-ai.js"
+      ]
+    },
+    {
+      "label": "Permission insuffisante",
+      "slides": "S10",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "src/routes/ai.ts",
+        "src/routes/auth.ts",
+        "src/routes/checklists.ts"
       ]
     },
     {
@@ -3055,7 +3080,7 @@
     },
     {
       "label": "Phase *",
-      "slides": "S76, S77",
+      "slides": "S77, S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3075,7 +3100,7 @@
     },
     {
       "label": "Plaque 1 (Tracteur)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3085,7 +3110,7 @@
     },
     {
       "label": "Plaque 2 (Remorque)",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3105,7 +3130,7 @@
     },
     {
       "label": "Présentation client",
-      "slides": "S129",
+      "slides": "S130",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3125,7 +3150,7 @@
     },
     {
       "label": "Problèmes",
-      "slides": "S93",
+      "slides": "S94",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3135,7 +3160,7 @@
     },
     {
       "label": "Projet *",
-      "slides": "S102, S111",
+      "slides": "S103, S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3157,7 +3182,7 @@
     },
     {
       "label": "Projets actifs",
-      "slides": "S135",
+      "slides": "S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3177,7 +3202,7 @@
     },
     {
       "label": "Rapport complet",
-      "slides": "S129",
+      "slides": "S130",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3198,7 +3223,7 @@
     },
     {
       "label": "Référence (optionnel)",
-      "slides": "S77",
+      "slides": "S78",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3208,7 +3233,7 @@
     },
     {
       "label": "Représentant présent",
-      "slides": "S111",
+      "slides": "S112",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3218,7 +3243,7 @@
     },
     {
       "label": "Résumé IA",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3283,7 +3308,7 @@
     },
     {
       "label": "Tâches",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3295,7 +3320,7 @@
     },
     {
       "label": "Tâches terminées",
-      "slides": "S135",
+      "slides": "S136",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3328,7 +3353,7 @@
     },
     {
       "label": "Temps par tâche",
-      "slides": "S130, S132",
+      "slides": "S131, S133",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3350,7 +3375,7 @@
     },
     {
       "label": "Tickets SAV",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3372,7 +3397,7 @@
     },
     {
       "label": "Tout",
-      "slides": "S93",
+      "slides": "S94",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3384,7 +3409,7 @@
     },
     {
       "label": "Tout lire",
-      "slides": "S137",
+      "slides": "S138",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3394,7 +3419,7 @@
     },
     {
       "label": "Tout sélectionner",
-      "slides": "S84",
+      "slides": "S85",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3414,7 +3439,7 @@
     },
     {
       "label": "Type *",
-      "slides": "S69",
+      "slides": "S70",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3424,7 +3449,7 @@
     },
     {
       "label": "URL du fichier *",
-      "slides": "S83",
+      "slides": "S84",
       "found": true,
       "how": "texte exact",
       "inIndex": false,
@@ -3434,7 +3459,7 @@
     },
     {
       "label": "Visites client",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3444,7 +3469,7 @@
     },
     {
       "label": "Voir archivés",
-      "slides": "S70",
+      "slides": "S71",
       "found": true,
       "how": "texte exact",
       "inIndex": true,
@@ -3455,7 +3480,7 @@
     },
     {
       "label": "Vue d'ensemble",
-      "slides": "S130",
+      "slides": "S131",
       "found": true,
       "how": "texte exact",
       "inIndex": true,

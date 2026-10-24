@@ -35,6 +35,12 @@ L'audit fonctionnel du 23.10.2026 (`docs/formation/00_INVENTAIRE_FONCTIONNEL.md`
 
 ## 3. Lot P0 — Sécurité (à faire en premier)
 
+> **Mise à jour du 24.10.2026** : le commit `362a29e` (« sécurité : droits par rôle et cloisonnement par projet ») a déjà traité une grande partie de ce lot. Le modèle d'accès est dans `src/middleware/access.ts` et `src/middleware/scopeGuard.ts` (voir `CLAUDE.md`).
+> - **Faits** : S1, S2 (côté serveur), S3, S5, S10, la limitation des essais de mot de passe et le masquage des erreurs SQL.
+> - **Partiel** : S4 (les rôles limités ne peuvent plus supprimer ; les rôles qui voient tout le peuvent encore).
+> - **Restent à vérifier** : S6, S7, S8, S9, S11.
+> - **Corrigé ensuite** (commit de mise à jour de la formation) : la fenêtre « Nouveau membre » annonçait encore l'ancien mot de passe commun. Elle affiche maintenant le mot de passe généré, une seule fois. Le rôle Technical Manager est retiré de la liste des invitations (refusé par le serveur).
+
 | # | Problème | Preuve | Correction attendue |
 |---|---|---|---|
 | S1 | Tout compte peut se donner le rôle admin en modifiant sa propre fiche (`role` et `isActive` sont dans la liste blanche, et l'utilisateur peut modifier sa fiche). | `src/routes/users.ts:15-19`, `:102-120` | Pour soi-même : seulement nom, prénom, téléphone. `role`, `isActive`, `email` uniquement pour admin / project_manager. |
@@ -80,6 +86,8 @@ L'audit fonctionnel du 23.10.2026 (`docs/formation/00_INVENTAIRE_FONCTIONNEL.md`
 | F25 | Ville du projet = texte après la dernière virgule de l'adresse, donc risque de « Bruxelles, Bruxelles » dans le briefing. | `02-detail-loaders.js` (createProject), `14-briefing-autogen.js:396, 421` | Champ « Ville » explicite (prérempli) ou dédoublonnage à l'affichage. |
 | F26 | Projet par mail `NEW` : sans date, installation = date du jour ; N° interne déjà existant = abandon sans prévenir ; client inconnu = nouveau client créé (doublons). | `src/services/projectFromEmail.ts:121-191` | Dates vides si absentes du mail, et le projet reste en Brouillon avec une alerte « ⚠️ Dates à compléter ». Notifier admins et PM si le N° existe déjà. Rapprocher le client par nom approchant (sans « SA / SPRL / BV… ») avant d'en créer un. |
 | F27 | Mails : aucun retour à l'expéditeur ; logos et signatures inline enregistrés comme fichiers ; un mail ouvert dans Gmail avant la relève n'est jamais traité. | `src/services/imapPoller.ts:66, 125-183` | Ignorer les pièces jointes `inline` / `cid` de moins de 50 Ko (images). Notification in-app « 📧 Mail non rattaché » avec sujet et expéditeur quand aucun projet n'est trouvé. Option : traiter aussi les mails lus sans le libellé Gmail « VEM-traité ». |
+| F29 | Droits donnés à un installateur / ouvrier (`users.access_grants`) : l'écran de la check-list ne les connaît pas (`checklistCanFill()` ne regarde que le rôle) ; la connexion ne renvoie pas les droits de la personne. | `public/js/15-checklists.js:384-397`, `src/routes/auth.ts:74` | Renvoyer `accessGrants` au login / dans une route `/auth/me`. `checklistCanFill()` = rôle autorisé OU (installer / worker avec `checklists`). Même logique pour masquer « + Nouveau Rapport » et « + Nouveau Handover » sans droit. Puis présenter le droit « ☑️ Check-lists de montage » dans la formation (chapitre 6). |
+| F30 | Page d'inscription : la liste « Rôle » est modifiable alors que le serveur ne prend plus que le rôle de l'invitation. | `public/index.html:77-85`, `src/routes/auth.ts` (register) | Afficher le rôle de l'invitation en lecture seule. |
 | F28 | Validation du format du N° interne absente (projet manuel : `VEM-année-xxxx` inventé si vide). | `src/routes/projects.ts:160`, `index.html:622` | Champ obligatoire, contrôle du format `^\d{4}[A-Z]{4,6}VIE$` (insensible à la casse) avec message clair. À confirmer : exceptions pour les anciens projets. |
 
 ## 5. Lot P2 — Cohérence et confort (les contournements de la formation disparaissent)

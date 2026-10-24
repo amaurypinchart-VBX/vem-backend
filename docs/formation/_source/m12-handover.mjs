@@ -10,7 +10,7 @@ export default {
       body: () => cols(
         ul([
           '<b>Objectif</b> : faire réceptionner l\'installation par le client, avec les points inspectés et sa signature.',
-          '<b>Pour qui</b> : Site Managers, Technical Managers.',
+          '<b>Pour qui</b> : Site Managers, Technical Managers (et un installateur avec le droit 🧾 Handover). Un compte Client du projet peut consulter son handover et le PDF.',
         ]) + path(['🏗️ Projets', '~projet', '🧾 Handover', '+ Nouveau Handover']),
         callout('warn', `Passez toujours par l\'<b>onglet</b> 🧾 Handover du projet. Le menu ${q('🧾 Handover')} et le bouton du même nom dans l\'en-tête ouvrent la liste de tous les projets, avec moins de fonctions.`)
         + callout('info', 'Avant : la check-list de montage doit être remplie (chapitre 10).')),

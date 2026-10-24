@@ -658,8 +658,14 @@ async function createUser() {
   };
 
   const res = await api('POST', '/users', payload);
-  if (res?.success) { toast('Compte créé · Mot de passe : VEM2025! ✅', 'success'); closeModal('modal-user'); loadTeam(); loadAll(); }
-  else toast('Erreur création compte', 'error');
+  if (res?.success) {
+    closeModal('modal-user'); loadTeam(); loadAll();
+    // Plus de mot de passe commun : le serveur en génère un, renvoyé une seule fois (src/routes/users.ts).
+    const pwd = res.data?.tempPassword;
+    toast('Compte créé ✅', 'success');
+    if (pwd) prompt(`Compte créé pour ${firstName} ${lastName}.\nMot de passe à lui transmettre (affiché une seule fois — il pourra le changer dans « 👤 Mon profil ») :`, pwd);
+  }
+  else toast(res?.error || 'Erreur création compte', 'error');
 }
 
 // ═══ POPULATE SELECTS ═══

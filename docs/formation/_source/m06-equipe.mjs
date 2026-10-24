@@ -10,7 +10,7 @@ export default {
       body: () => cols(
         ul([
           '<b>Objectif</b> : chaque personne a son compte, et chaque projet a son équipe (avec la phase).',
-          '<b>Pour qui</b> : Project et Technical Managers (création des comptes : admin, Project Manager, Technical Manager).',
+          '<b>Pour qui</b> : Project et Technical Managers (création des comptes : admin, Project Manager, Technical Manager ; un compte admin ou Technical Manager : admin seulement).',
         ]) + path(['👥 Équipe', '+ Nouveau membre']) + path(['🏗️ Projets', '~projet', '👥 Équipe', '+ Ajouter à l\'équipe']),
         callout('info', 'Deux niveaux : la <b>page Équipe</b> (tous les comptes VEM) et l\'<b>onglet Équipe d\'un projet</b> (qui travaille sur ce chantier).')),
       visual: 'Objectif + deux chemins.',
@@ -29,8 +29,8 @@ export default {
           `${q('👥 Équipe')} › ${q('+ Nouveau membre')}.`,
           `Option : ${q('📷 Scanner la carte')} — l\'IA remplit l\'identité (la photo de la carte n\'est pas conservée).`,
           `${q('Prénom *')}, ${q('Nom *')}, ${q('Email *')}, téléphone, ${q('Rôle')}.`,
-          `${q('✅ Créer le compte')} : le mot de passe par défaut est affiché dans la fenêtre.`,
-          'Communiquez-le à la personne et demandez-lui de le changer (Mon profil).',
+          `${q('✅ Créer le compte')} : VEM affiche <b>une seule fois</b> le mot de passe généré.`,
+          'Transmettez-le à la personne (ou utilisez 📧 Envoyer invitation) et demandez-lui de le changer (Mon profil).',
         ]) + callout('warn', 'Le téléphone est très utile : il apparaît dans le briefing (slide Équipe).')),
       visual: 'Maquette de la fenêtre + étapes.',
       notes: 'La photo de profil et les sous-équipes ne sont pas fiables aujourd\'hui : ne comptez pas dessus.',
@@ -42,7 +42,7 @@ export default {
           `${q('👥 Équipe')} › ${q('🔗 Inviter')} : choisissez ${q('Rôle attribué')}, éventuellement l\'e-mail.`,
           `${q('🔗 Générer le lien')} : le lien est copié.`,
           'La personne crée son compte elle-même.',
-        ]) + callout('warn', 'Lien valable <b>15 minutes</b>, une seule fois. Réservé aux admins et Project Managers.'),
+        ]) + callout('warn', 'Lien valable <b>15 minutes</b>, une seule fois. Réservé aux admins, Project et Technical Managers. Une invitation ne peut pas donner le rôle Admin ni Technical Manager.'),
         `<div class="sub-t">${L('📧 Envoyer invitation')} (compte existant)</div>` + steps([
           'Ouvrez la fiche du membre (clic sur sa carte).',
           `${q('📧 Envoyer invitation')} : il reçoit un mot de passe temporaire valable 15 min.`,
@@ -57,7 +57,7 @@ export default {
         win('👷 Ajouter à l\'équipe', field('Membre', `${FIL.siteManager} (site_manager)`) + field('Rôle sur ce projet', '🏗️ Site Manager') + field('Phase d\'intervention', '🔄 Les deux phases (installation + démontage)') + `<div class="m-row right">${btn('✅ Ajouter', 'primary')}</div>`),
         steps([
           `Fiche projet › onglet ${q('👥 Équipe')} › ${q('+ Ajouter à l\'équipe')}.`,
-          `${q('Membre')}, ${q('Rôle sur ce projet')} (Installateur, Site Manager, Technical Manager, Ouvrier, Engineer).`,
+          `${q('Membre')}, ${q('Rôle sur ce projet')} (Installateur, Site Manager, Technical Manager, Ouvrier, Engineer, ou Client : il ne verra que le handover).`,
           `${q('Phase d\'intervention')} : les deux, installation seule ou démontage seul.`,
           `${q('✅ Ajouter')}. Répétez pour chaque personne.`,
         ]) + callout('info', 'La phase se change ensuite directement dans le tableau. Pour changer le rôle : retirez (✕) puis rajoutez la personne.')),
@@ -79,16 +79,32 @@ export default {
       notes: 'L\'option « 📊 Briefings » envoie seulement un lien vers VEM, pas le PDF : envoyez plutôt le PDF du briefing.',
     },
     {
+      title: 'Droits d\'un installateur ou d\'un ouvrier',
+      body: () => cols(
+        ul([
+          'Par défaut, un installateur ou un ouvrier <b>consulte</b> ses projets (ceux où il est dans l\'équipe) sans rien modifier.',
+          'Un admin, un Project ou Technical Manager peut lui permettre de <b>remplir</b> certains modules sur ses projets.',
+        ]) + steps([
+          `${q('👥 Équipe')} › clic sur la carte du membre.`,
+          `Bloc « 🔒 Consulte seulement ses projets. Peut aussi remplir : » : cochez ${q('📓 Daily reports')} et / ou ${q('🧾 Handover')}.`,
+          'Message « Droits enregistrés ✅ » : effet immédiat.',
+        ]),
+        callout('tip', 'Un chef d\'équipe installateur qui tient le daily report ? Donnez-lui le droit 📓 Daily reports et ajoutez-le à l\'équipe du projet.')
+        + callout('info', 'Un Site Manager a déjà ces droits sur ses projets : rien à cocher.')),
+      visual: 'Explication + étapes + encadrés.',
+      notes: 'Le droit « Check-lists de montage » existe aussi dans la fiche, mais l\'écran de la check-list ne le prend pas encore en compte : à présenter après correction.',
+    },
+    {
       title: 'À quoi sert l\'équipe du projet',
       body: () => `<div class="feeds">${[
         ['📋 Briefing', 'Slide « Équipe » : nom, rôle, phase, téléphone'],
         ['📧 Mails de voyage', 'Un trajet n\'est créé par mail que si la personne est dans l\'équipe'],
-        ['☑️ Check-list', 'Installateurs et Site Managers ne voient la check-list que des projets où ils sont dans l\'équipe'],
+        ['🔒 Accès', 'Site Managers, installateurs et ouvriers ne voient <b>que</b> les projets où ils sont dans l\'équipe'],
         ['✈️ Bookings', 'Transports et hôtels par membre et par phase'],
         ['📊 Rapport IA', 'Section Vue d\'ensemble : équipe'],
       ].map(([a, b]) => `<div class="feed"><div class="fa">${a}</div><div class="fb">${b}</div></div>`).join('')}</div>`,
       visual: 'Carte « Équipe du projet » et flèches.',
-      notes: 'Un Site Manager absent de l\'équipe ne pourra pas remplir la check-list du projet.',
+      notes: 'Un Site Manager absent de l\'équipe ne voit pas le projet du tout.',
     },
     {
       title: 'Erreurs fréquentes',
@@ -98,10 +114,11 @@ export default {
         'Lien d\'invitation envoyé trop tard → expiré après 15 minutes.',
         'Garder le mot de passe par défaut → à changer immédiatement.',
         'Sous-équipes : elles ne sont visibles que sur l\'ordinateur de la personne qui les a créées.',
+        'Oublier d\'ajouter un Site Manager ou un installateur à l\'équipe → le projet est invisible pour lui.',
         'Personne qui quitte l\'entreprise : demandez à un admin (pas de bouton de désactivation).',
       ]),
       visual: 'Liste.',
-      notes: 'Les données d\'identité (registre national…) sont visibles par tous les comptes : n\'en saisissez que si nécessaire.',
+      notes: 'Les données d\'identité (registre national, n° de carte) ne sont visibles que par les admins, Project et Technical Managers.',
     },
     {
       kind: 'exercise', title: 'Exercice — l\'équipe du projet démo',
