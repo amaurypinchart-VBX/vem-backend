@@ -31,7 +31,7 @@ export default {
         ul([
           '<b>← →</b> ou espace : slide suivante / précédente. Sur téléphone : glissez.',
           '<b>☰ Sommaire</b> en haut : accès direct à chaque chapitre.',
-          'Chaque chapitre a son lien direct (ex. <code>#clients</code>, <code>#projet-mail</code>) : envoyez-le à un collègue.',
+          'Dans VEM : menu <b>🎓 Formation VEM</b> (section Aide), réservé aux personnes connectées.',
           '<b>N</b> : afficher les notes de l\'animateur. <b>Ctrl + P</b> : imprimer (une slide par page).',
         ]),
         table(['Parcours', 'Pour qui', 'Chapitres'], [

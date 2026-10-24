@@ -13,6 +13,8 @@
 | `07_PROMPT_REPARATIONS.md` | Prompt Claude Code : tout ce qu'il faut réparer dans VEM |
 | `_source/` | Source unique du support (modules `m00…m16.mjs`, styles, script) |
 
+**Dans VEM** : menu latéral › Aide › « 🎓 Formation VEM » (nouvel onglet). Réservé aux personnes connectées : le build copie le deck dans `src/assets/formation.html`, servi par `GET /api/v1/formation` (derrière `authMiddleware`) — jamais dans `public/`, qui est accessible sans mot de passe.
+
 **Utiliser le support** :
 - naviguer : ← → ou espace (glisser sur téléphone) ;
 - **S** : sommaire ;

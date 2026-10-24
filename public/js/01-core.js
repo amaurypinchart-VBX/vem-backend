@@ -1193,3 +1193,23 @@ async function updateProjectStatus(projectId, status) {
   }
 }
 
+
+// ═══ FORMATION VEM ═══
+// Le support (deck HTML) est servi par GET /api/v1/formation, réservé aux personnes connectées :
+// on le récupère avec le jeton, puis on l'ouvre dans un nouvel onglet (URL blob).
+// L'onglet est ouvert tout de suite (au clic) pour ne pas être bloqué comme pop-up.
+async function openFormation(anchor) {
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font-family:sans-serif;padding:24px;color:#0a2540;">Chargement de la formation…</p>');
+  try {
+    const r = await fetch(API + '/formation', { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (r.status === 401) { if (w) w.close(); doLogout(); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const html = await r.text();
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' })) + (anchor ? '#' + anchor : '');
+    if (w) w.location.href = url; else window.location.href = url;
+  } catch (e) {
+    if (w) w.close();
+    toast('Formation indisponible — réessayez plus tard', 'error');
+  }
+}

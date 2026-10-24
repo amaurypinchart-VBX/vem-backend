@@ -73,8 +73,10 @@ ${slideHtml}
 <script>${js}</script>
 </body></html>`;
 fs.writeFileSync(path.join(OUT, 'formation-vem.html'), html);
-// Copie servie par l'app : https://<adresse VEM>/formation.html (menu « 🎓 Formation »)
-fs.writeFileSync(path.join(REPO, 'public', 'formation.html'), html);
+// Copie servie par l'app aux personnes connectées (GET /api/v1/formation, menu « 🎓 Formation VEM »).
+// Surtout pas dans public/ : express.static la rendrait accessible sans mot de passe.
+fs.mkdirSync(path.join(REPO, 'src', 'assets'), { recursive: true });
+fs.writeFileSync(path.join(REPO, 'src', 'assets', 'formation.html'), html);
 
 // ── Script des slides (Markdown) ─────────────────────────────────────────────
 function toText(h) {

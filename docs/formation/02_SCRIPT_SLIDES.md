@@ -46,7 +46,7 @@ Objectif : qu'à la fin, chacun sache quoi remplir, quand, et par quel canal (fo
 
 - ← → ou espace : slide suivante / précédente. Sur téléphone : glissez.
 - ☰ Sommaire en haut : accès direct à chaque chapitre.
-- Chaque chapitre a son lien direct (ex. #clients, #projet-mail) : envoyez-le à un collègue.
+- Dans VEM : menu 🎓 Formation VEM (section Aide), réservé aux personnes connectées.
 - N : afficher les notes de l'animateur. Ctrl + P : imprimer (une slide par page).
 | Parcours | Pour qui | Chapitres |
 | 🟦 Tronc commun | Tout le monde | Bienvenue · Règle du mail · Dashboard · Mise en pratique |

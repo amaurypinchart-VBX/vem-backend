@@ -45,6 +45,7 @@ import publicHandoverSignRoutes from './routes/publicHandoverSign';
 import publicCalendarRoutes from './routes/publicCalendar';
 import assistantRoutes from './routes/assistant';
 import checklistRoutes from './routes/checklists';
+import formationRoutes from './routes/formation';
 
 const app  = express();
 const http = createServer(app);
@@ -123,6 +124,8 @@ app.use(`${API}/loading`,        authMiddleware, requirePlansAccess, loadingRout
 app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager'), assistantRoutes);
 app.use('/api/v1/translate', translateRoutes);
 app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
+// Support de formation (deck HTML) — réservé aux personnes connectées
+app.use(`${API}/formation`,      authMiddleware, formationRoutes);
 
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
