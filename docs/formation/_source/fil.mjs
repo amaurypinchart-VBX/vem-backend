@@ -1,0 +1,25 @@
+// Projet « fil rouge » fictif, utilisé dans toute la formation (aucun vrai client, aucune vraie personne).
+export const FIL = {
+  projet: 'Hospitality Paddock — Démo',
+  ref: '9999DEMOVIE',            // format Viewbox : 4 chiffres + 4 à 6 lettres + VIE
+  client: 'Demo Events SA',
+  tva: 'BE0000000000',
+  contact: 'Jean Exemple',
+  contactFonction: 'Event Manager',
+  contactMail: 'jean.exemple@demo-events.example',
+  contactTel: '+32 470 00 00 00',
+  adresse: 'Rue de l\'Exemple 1, 1000 Bruxelles',
+  ville: 'Bruxelles',
+  instStart: '15/03/2027 07:00',
+  instEnd: '18/03/2027 18:00',
+  disStart: '22/03/2027 07:00',
+  disEnd: '23/03/2027 17:00',
+  ouvriers: '6',
+  siteManager: 'Paul Démo',
+  techManager: 'Marie Test',
+  installateur: 'Luc Essai',
+  camion: '1-ABC-123',
+  chauffeur: 'Tom Route',
+  hotel: 'Hôtel Démo Centre',
+  hotelRef: 'DEMO-4242',
+};

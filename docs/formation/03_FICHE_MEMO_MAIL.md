@@ -1,0 +1,72 @@
+# 📧 Fiche mémo — Envoyer un mail à VEM
+
+**Adresse : warehouseviewbox@gmail.com**
+
+VEM relève cette boîte **toutes les 5 minutes**. Il ne traite que les mails **non lus** et ne répond **jamais** à l'expéditeur (ni accusé de réception, ni message d'erreur).
+
+---
+
+## 🆕 CRÉER un nouveau projet
+
+**Le sujet COMMENCE par `NEW`**, suivi du N° interne. Majuscules ou minuscules : peu importe.
+
+| Sujet | Résultat |
+|---|---|
+| ✅ `NEW 9999DEMOVIE` | Projet créé, N° interne 9999DEMOVIE |
+| ✅ `new: 9999DEMOVIE` · `NEW - 9999DEMOVIE` | Idem |
+| ❌ `TR: NEW 9999DEMOVIE` · `Fwd: NEW …` | Ne commence pas par NEW → mail ignoré. **Effacez « TR: » / « Fwd: »** |
+| ❌ `NEW 9999DEMOVIE` quand le projet existe déjà | Rien n'est créé |
+
+**Ce qui se passe**
+- L'IA lit le mail et remplit : nom, client, contact, adresse, dates, nombre d'ouvriers, description.
+- Le projet est créé en **📄 Brouillon**. Si le client n'est pas reconnu, il est rattaché à **« ⚠️ Client à confirmer »** (ou un nouveau client est créé).
+- Toutes les pièces jointes vont dans **📁 Fichiers**.
+- Les admins et Project Managers reçoivent la notification **« 🆕 Projet créé depuis un email »**.
+
+**Ensuite, vérifiez obligatoirement** (✏️ Modifier) :
+1. Les **dates** : sans date dans le mail, l'installation est mise à la date du jour.
+2. Le client, le N° interne et l'adresse.
+3. Les 3 notes (globales, installation, démontage) : elles ne sont jamais remplies par le mail.
+4. Le statut, puis l'équipe, la logistique et les bookings.
+
+---
+
+## 📧 COMPLÉTER un projet existant
+
+**Le N° interne du projet figure N'IMPORTE OÙ dans le sujet** (et le sujet ne commence pas par NEW).
+
+| Sujet | Résultat |
+|---|---|
+| ✅ `9999DEMOVIE` | Pièces jointes → Fichiers |
+| ✅ `Plans façade 9999DEMOVIE v2` | Idem |
+| ✅ `TR: Confirmation camion 9999DEMOVIE` | Camion lu dans le texte → brouillon |
+| ❌ `Photos chantier Paddock` | Pas de N° interne → mail ignoré |
+| ❌ `Photos 9999DEMOVI` | N° incomplet → ignoré |
+
+**Ce qui se passe**
+- **Pièces jointes** → 📁 Fichiers, **toutes**, y compris les logos et signatures du mail : faites le ménage.
+- **Texte du mail** → l'IA crée en **brouillon**, avec la note « 📧 Créé auto depuis mail — à valider » :
+  - les camions et engins dans 🚛 Logistique ;
+  - les hôtels dans ✈️ Bookings (sans occupant) ;
+  - les trajets dans ✈️ Bookings, **seulement si la personne est déjà dans l'onglet 👥 Équipe** du projet.
+- Le texte du mail **n'est pas ajouté aux notes** du projet.
+- Notification **« 🚛 Réservations créées depuis un email »** aux admins et Project Managers.
+
+**Valider les brouillons** : ✏️ sur la carte → compléter → 💾 Enregistrer.
+- Camion : le statut passe à 🟣 Planifié.
+- Hôtel : cochez les occupants.
+- Trajet : re-choisissez le moyen de transport.
+
+---
+
+## ❓ Rien n'est apparu ?
+
+1. Attendez 5 à 10 minutes et **rechargez** la page.
+2. Vérifiez le sujet : NEW au tout début (création) ou N° interne exact (projet existant).
+3. Le mail a-t-il été **ouvert dans la boîte Gmail** avant la relève ? S'il n'est plus « non lu », il n'est jamais traité.
+4. Fichier trop lourd (au-delà de 10 Mo environ) ? Utilisez 🔗 URL dans 📁 Fichiers.
+5. Toujours rien : renvoyez le mail avec le bon sujet, ou ajoutez à la main (⬆️ Ajouter).
+
+**Format du N° interne Viewbox** : 4 chiffres + 4 à 6 lettres + VIE (ex. `6055RKLOKVIE`).
+
+**Où trouver l'adresse dans VEM** : onglet 📋 Infos du projet › encadré « Envoyer des fichiers par email » › 📋 Copier.
