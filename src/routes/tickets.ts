@@ -1,7 +1,7 @@
 // src/routes/tickets.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { sendTicketAssigned } from '../services/emailService';
 
@@ -16,7 +16,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     if (status)       where.status = { in: Array.isArray(status) ? status : [status] };
     if (urgency)      where.urgency      = String(urgency);
     if (assignedToId) where.assignedToId = String(assignedToId);
-    if (req.user!.role === 'worker') where.assignedToId = req.user!.id;
+    if (!where.projectId) Object.assign(where, await projectWhere(req));
 
     const tickets = await prisma.ticket.findMany({
       where, orderBy: [{ urgency: 'desc' }, { createdAt: 'desc' }],
@@ -33,7 +33,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
 router.get('/stats', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const pid = req.query.projectId ? { projectId: String(req.query.projectId) } : {};
+    const pid = req.query.projectId ? { projectId: String(req.query.projectId) } : await projectWhere(req);
     const [open, inProg, resolved, critical] = await Promise.all([
       prisma.ticket.count({ where: { ...pid, status: 'open' } }),
       prisma.ticket.count({ where: { ...pid, status: 'in_progress' } }),

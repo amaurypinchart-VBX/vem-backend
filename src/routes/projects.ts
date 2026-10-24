@@ -1,7 +1,7 @@
 // src/routes/projects.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { io } from '../index';
 import { notifyTubizeTruckMovement } from '../services/telegramService';
@@ -16,6 +16,18 @@ import { getProjectTaskHours } from '../services/taskHours';
 
 const router = Router();
 
+/** Ce qu'un compte client voit de son projet : l'identification, rien d'interne (équipe, notes, camions, fichiers…). */
+function clientProjectView(p: any) {
+  return {
+    id: p.id, internalNumber: p.internalNumber, name: p.name, status: p.status,
+    address: p.address, city: p.city,
+    installationStart: p.installationStart, installationEnd: p.installationEnd,
+    dismantlingStart: p.dismantlingStart, dismantlingEnd: p.dismantlingEnd,
+    client: p.client ? { id: p.client.id, name: p.client.name } : null,
+    team: [], trucks: [], files: [],
+  };
+}
+
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { status, search } = req.query;
@@ -25,6 +37,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       { name: { contains: String(search), mode: 'insensitive' } },
       { internalNumber: { contains: String(search), mode: 'insensitive' } },
     ];
+    Object.assign(where, await projectWhere(req, 'id')); // accès limité : seulement ses projets
 
     const projects = await prisma.project.findMany({
       where,
@@ -75,7 +88,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       };
     }));
 
-    res.json({ success: true, data: enriched });
+    res.json({ success: true, data: req.access?.scope === 'client' ? enriched.map(clientProjectView) : enriched });
   } catch (err) { next(err); }
 });
 
@@ -136,6 +149,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       checklistProgress([p.id]),
     ]);
     const cp = progressMap.get(p.id) || null;
+    if (req.access?.scope === 'client') return res.json({ success: true, data: clientProjectView({ ...p, client }) });
     res.json({
       success: true,
       data: {

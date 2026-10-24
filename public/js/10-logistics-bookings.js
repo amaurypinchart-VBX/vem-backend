@@ -249,6 +249,7 @@ function showAddToTeamModal(projectId) {
           <option value="technical_manager">⚙️ Technical Manager</option>
           <option value="worker">👷 Ouvrier</option>
           <option value="engineer">🛠️ Engineer</option>
+          <option value="client">🤝 Client (voit seulement le handover de ce projet)</option>
         </select>
       </div>
       <div class="form-group2">

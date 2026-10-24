@@ -1,7 +1,7 @@
 // src/routes/handover.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
@@ -15,7 +15,7 @@ const router = Router();
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const handovers = await prisma.handover.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: req.query.projectId ? { projectId: String(req.query.projectId) } : await projectWhere(req),
       include: {
         project: { select: { name: true, internalNumber: true } },
         siteManager: { select: { firstName: true, lastName: true } },
@@ -55,6 +55,19 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
     });
     if (!h) throw new AppError('Handover introuvable', 404);
     const summaries = await checklistSummaries([h.projectId]);
+    if (req.access?.scope === 'client') {
+      // compte client : le handover et les contacts du chantier, pas les données internes du projet / de la fiche client
+      const { project, ...rest } = h as any;
+      return res.json({ success: true, data: {
+        ...rest, signatureToken: undefined,
+        project: {
+          id: project.id, name: project.name, internalNumber: project.internalNumber, address: project.address, city: project.city,
+          client: project.client ? { id: project.client.id, name: project.client.name } : null,
+          technicalManager: project.technicalManager, team: [],
+        },
+        checklistSummary: summaries.get(h.projectId) || null,
+      } });
+    }
     res.json({ success: true, data: { ...h, checklistSummary: summaries.get(h.projectId) || null } });
   } catch (err) { next(err); }
 });
@@ -125,8 +138,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
           if (item.zoneName !== undefined) itemData.zoneName = item.zoneName;
           if (item.status   !== undefined) itemData.status   = item.status;
           if (item.comment  !== undefined) itemData.comment  = item.comment;
-          await prisma.handoverItem.update({
-            where: { id: item.id },
+          await prisma.handoverItem.updateMany({
+            where: { id: item.id, handoverId: req.params.id },
             data: itemData,
           });
         }

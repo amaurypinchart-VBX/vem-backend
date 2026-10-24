@@ -4,7 +4,7 @@
 
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateVisitReportPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
@@ -23,6 +23,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const where: any = {};
     if (req.query.projectId) where.projectId = String(req.query.projectId);
+    else Object.assign(where, await projectWhere(req));
 
     const visits = await prisma.clientVisit.findMany({
       where,

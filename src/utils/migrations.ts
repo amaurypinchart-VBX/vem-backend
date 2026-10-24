@@ -1481,4 +1481,13 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] plans_linework_cache : ${e.message}`);
   }
+  // ─── Droits donnés personne par personne (users.access_grants) ───
+  // Un installateur / ouvrier ne fait que consulter ses projets ; un responsable peut lui donner le droit de remplir
+  // les daily reports, le handover ou les check-lists (Équipe › fiche du membre). Voir src/middleware/access.ts.
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "access_grants" TEXT[] NOT NULL DEFAULT '{}'`);
+    logger.info('[migration] colonne users.access_grants créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] users.access_grants : ${e.message}`);
+  }
 }

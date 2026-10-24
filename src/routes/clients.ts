@@ -1,7 +1,7 @@
 // src/routes/clients.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectIds } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 
 const router = Router();
@@ -57,6 +57,8 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       },
     });
     if (!client) throw new AppError('Client introuvable', 404);
+    const mine = await projectIds(req); // accès limité : seulement ses projets de ce client
+    if (mine) client.projects = client.projects.filter((p) => mine.includes(p.id));
     res.json({ success: true, data: client });
   } catch (err) { next(err); }
 });

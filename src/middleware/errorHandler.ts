@@ -19,6 +19,9 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
   // l'utilisateur à voir si c'est par ex. un SMTP non configuré, une clé API
   // manquante, etc.). En prod hardcore on cacherait — mais ici l'opérateur
   // est l'utilisateur final.
-  const msg = err.message || (err instanceof AppError ? err.message : 'Erreur interne serveur');
+  // Erreurs de base de données : le détail (requête, tables, valeurs) reste dans les logs, pas dans la réponse
+  const isDb = typeof err?.name === 'string' && err.name.startsWith('PrismaClient');
+  const msg = isDb ? 'Erreur de base de données (détail dans les logs du serveur)'
+    : err.message || (err instanceof AppError ? err.message : 'Erreur interne serveur');
   res.status(status).json({ success: false, error: msg });
 };

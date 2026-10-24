@@ -6,8 +6,12 @@ const router = Router();
 // GET /api/v1/public/calendar
 // Route PUBLIQUE (pas d'authMiddleware) — destinée à un écran d'entrepôt.
 // Renvoie les projets actifs qui chevauchent la fenêtre [aujourd'hui, +2 mois].
-router.get('/calendar', async (_req, res, next) => {
+router.get('/calendar', async (req, res, next) => {
   try {
+    // Clé facultative : si PUBLIC_CALENDAR_KEY est définie dans Railway, l'écran doit être ouvert avec
+    // /planning-public.html?key=… (sinon n'importe qui sur internet voit les chantiers et les clients).
+    const key = process.env.PUBLIC_CALENDAR_KEY;
+    if (key && req.query.key !== key) return res.status(401).json({ success: false, error: 'Clé manquante ou invalide' });
     const now = new Date();
     const windowStart = new Date(now); windowStart.setHours(0, 0, 0, 0);
     const windowEnd = new Date(windowStart);

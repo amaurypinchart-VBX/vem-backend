@@ -2,6 +2,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth';
+import { PEOPLE_MANAGER_ROLES } from '../middleware/access';
 import { logger } from '../utils/logger';
 import { callClaude, callClaudeJSON } from '../services/aiService';
 
@@ -110,6 +111,8 @@ const ID_CARD_SCHEMA = z.object({
 // OCR d'une carte d'identité : reçoit l'image en base64, renvoie les champs extraits.
 router.post('/scan-id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    // cartes d'identité : seulement ceux qui gèrent les fiches du personnel
+    if (!PEOPLE_MANAGER_ROLES.includes(req.user!.role)) return res.status(403).json({ success: false, error: 'Permission insuffisante' });
     const { imageBase64, mediaType } = req.body;
     if (!imageBase64) return res.status(400).json({ success: false, error: 'Image manquante' });
 

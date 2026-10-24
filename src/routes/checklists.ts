@@ -30,8 +30,11 @@ const VIEWBOX_TYPES = ['ephemere', 'permanente'];
 const DEFAULT_CUSTOM_CATEGORY = 'Points spécifiques au projet';
 
 function requireRoles(req: AuthRequest, roles: string[], action: string): void {
-  if (!req.user || !roles.includes(req.user.role))
-    throw new AppError(`Permission insuffisante pour ${action}.`, 403);
+  if (!req.user) throw new AppError('Non autorisé', 401);
+  if (roles.includes(req.user.role)) return;
+  // remplir : aussi un installateur / ouvrier à qui on a donné le droit « check-lists » (sur ses projets)
+  if (roles === FILL_ROLES && req.access?.scope === 'team' && req.access.grants.includes('checklists')) return;
+  throw new AppError(`Permission insuffisante pour ${action}.`, 403);
 }
 
 function parsePhase(v: unknown): string {
@@ -68,7 +71,7 @@ async function itemWithAccess(req: AuthRequest, itemId: string) {
     },
   });
   if (!item) throw new AppError('Point de check-list introuvable', 404);
-  await assertProjectAccess(req.user, item.checklist.projectId);
+  await assertProjectAccess(req, item.checklist.projectId);
   return item;
 }
 
@@ -269,7 +272,7 @@ router.delete('/templates/items/:id', async (req: AuthRequest, res: Response, ne
 router.get('/project/:projectId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const phase = parsePhase(req.query.phase);
-    await assertProjectAccess(req.user, req.params.projectId);
+    await assertProjectAccess(req, req.params.projectId);
     res.json({ success: true, data: await loadProjectChecklist(req.params.projectId, phase) });
   } catch (err) { next(err); }
 });
@@ -282,7 +285,7 @@ const PHASE_TITLES: Record<string, { fr: string; en: string; file: string }> = {
 
 /** PDF de la check-list d'une phase, état actuel (en cours ou validée). */
 async function checklistPdf(req: AuthRequest, projectId: string, phase: string, lang: 'fr' | 'en') {
-  await assertProjectAccess(req.user, projectId);
+  await assertProjectAccess(req, projectId);
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { name: true, internalNumber: true, address: true, client: { select: { name: true } } },
@@ -352,7 +355,7 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
   try {
     requireRoles(req, CONFIGURE_ROLES, 'configurer la check-list');
     const { projectId } = req.params;
-    await assertProjectAccess(req.user, projectId);
+    await assertProjectAccess(req, projectId);
     const b = req.body || {};
     const phase = parsePhase(b.phase);
     const viewboxType = b.viewboxType === undefined ? 'ephemere' : String(b.viewboxType);
@@ -629,7 +632,7 @@ router.patch('/:checklistId', async (req: AuthRequest, res: Response, next: Next
     requireRoles(req, FILL_ROLES, 'modifier la check-list');
     const cl = await db.projectChecklist.findUnique({ where: { id: req.params.checklistId }, select: { id: true, projectId: true, phase: true } });
     if (!cl) throw new AppError('Check-list introuvable', 404);
-    await assertProjectAccess(req.user, cl.projectId);
+    await assertProjectAccess(req, cl.projectId);
     const b = req.body || {};
     const data: Record<string, unknown> = {};
     if (b.boxesChecked !== undefined) data.boxesChecked = text(b.boxesChecked, 1000);
@@ -646,7 +649,7 @@ router.post('/:checklistId/validate', async (req: AuthRequest, res: Response, ne
     requireRoles(req, FILL_ROLES, 'valider la check-list');
     const cl = await db.projectChecklist.findUnique({ where: { id: req.params.checklistId }, select: { id: true, projectId: true, phase: true } });
     if (!cl) throw new AppError('Check-list introuvable', 404);
-    await assertProjectAccess(req.user, cl.projectId);
+    await assertProjectAccess(req, cl.projectId);
     const pending = await db.projectChecklistItem.count({ where: { checklistId: cl.id, status: 'pending' } });
     if (pending > 0) throw new AppError(`Il reste ${pending} point(s) « À vérifier » : impossible de valider la check-list.`, 400);
     const total = await db.projectChecklistItem.count({ where: { checklistId: cl.id } });

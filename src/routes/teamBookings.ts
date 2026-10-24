@@ -3,7 +3,7 @@
 // POINT 2 — Pièces jointes (billet, justificatif…) ajoutées sur les 2 modèles.
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 
 const router = Router();
@@ -194,6 +194,7 @@ router.get('/bookings/calendar', async (req: AuthRequest, res: Response, next: N
 
     const raw = await (prisma as any).teamBooking.findMany({
       where: {
+        ...(await projectWhere(req)),
         OR: [
           { onSiteStart:  { lte: to }, onSiteEnd:    { gte: from } },
           { outboundDate: { lte: to,  gte: from } },

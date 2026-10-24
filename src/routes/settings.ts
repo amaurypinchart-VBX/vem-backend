@@ -12,6 +12,8 @@ const router = Router();
 // GET /settings/:key — retourne la valeur du setting (ou null si absent)
 router.get('/:key', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    // réglages des outils Plans 2D (règles, stock, préréglages…) : seulement pour ceux qui ont les Plans 2D
+    if (req.params.key.startsWith('plans.') && !req.access?.plans) throw new AppError('Permission insuffisante', 403);
     const s = await (prisma as any).appSetting.findUnique({ where: { key: req.params.key } });
     res.json({ success: true, data: s?.value ?? null });
   } catch (err) { next(err); }

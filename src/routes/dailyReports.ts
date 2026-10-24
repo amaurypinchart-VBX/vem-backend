@@ -1,7 +1,7 @@
 // src/routes/dailyReports.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { sendDailyReport } from '../services/emailService';
 import { upload, deleteFromCloudinary } from '../services/cloudinaryService';
@@ -54,7 +54,7 @@ router.use((_req, res, next) => {
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const reports = await prisma.dailyReport.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: req.query.projectId ? { projectId: String(req.query.projectId) } : await projectWhere(req),
       orderBy: { reportDate: 'desc' },
       include: {
         createdBy: { select: { firstName:true, lastName:true } },
@@ -308,7 +308,7 @@ router.post('/:id/attachments/checklist', async (req: AuthRequest, res: Response
     const r = await reportOr404(req.params.id);
     const phase = String(req.body?.phase || 'installation');
     if (!(CHECKLIST_PHASES as readonly string[]).includes(phase)) throw new AppError(`Phase invalide : ${phase}`, 400);
-    await assertProjectAccess(req.user, r.projectId);
+    await assertProjectAccess(req, r.projectId);
     const snap = await checklistSnapshot(r.projectId, phase);
     if (!snap) throw new AppError('Cette check-list n’est pas encore configurée pour ce projet.', 404);
     const now = new Date();

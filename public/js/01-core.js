@@ -378,9 +378,24 @@ function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-screen').style.display = 'block';
   updateNavUser();
+  applyRoleNav();
   ensureAssistantWidget();
   loadAll();
-  goto('dashboard');
+  goto(CURRENT_USER?.role === 'client' ? 'handover' : 'dashboard');
+}
+
+// Menus visibles selon le rôle (les vrais droits sont vérifiés par le serveur, src/middleware/access.ts) :
+// client = handover seulement ; site manager / installateur / ouvrier = leurs projets, sans les pages de réglages.
+const CLIENT_PAGES = ['handover', 'notifs'];
+const TEAM_HIDDEN_PAGES = ['templates', 'checklist-templates', 'clients'];
+function applyRoleNav() {
+  const role = CURRENT_USER?.role;
+  const scoped = ['site_manager', 'installer', 'worker'].includes(role);
+  const hidden = page => role === 'client' ? !CLIENT_PAGES.includes(page) : scoped && TEAM_HIDDEN_PAGES.includes(page);
+  document.querySelectorAll('.nav-item, .bn-item').forEach(item => {
+    const m = /goto\('([^']+)'\)/.exec(item.getAttribute('onclick') || '');
+    if (m && hidden(m[1])) item.style.display = 'none';
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -391,7 +406,7 @@ function showApp() {
 // ASSISTANT_HISTORY garde les derniers échanges pour que l'assistant se
 // souvienne d'un récapitulatif proposé au tour précédent avant de confirmer.
 // ═══════════════════════════════════════════════════════════
-const ASSISTANT_ROLES = ['admin', 'project_manager', 'technical_manager', 'site_manager'];
+const ASSISTANT_ROLES = ['admin', 'project_manager', 'technical_manager'];
 let ASSISTANT_HISTORY = [];
 
 function ensureAssistantWidget() {

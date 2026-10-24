@@ -535,11 +535,22 @@ async function openUserDetail(userId) {
         ${(!u.email && !u.phone && !u.nationality && !u.idNumber && !u.birthDate)
           ? '<div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Aucune information renseignée — clique sur Modifier pour compléter la fiche.</div>'
           : ''}
-        ${canGrantPlansAccess() ? `
+        ${canGrantPlansAccess() && PLANS_OPTIONAL_ROLES.includes(u.role) ? `
         <label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;cursor:pointer;" title="Plans Viewbox et Plan 2D Studio">
           <span>📐</span><span style="font-size:13px;flex:1;">Accès Plans 2D</span>
           <input type="checkbox" ${u.plansAccess ? 'checked' : ''} onchange="setUserPlansAccess('${u.id}', this)" style="width:18px;height:18px;cursor:pointer;">
         </label>` : ''}
+        ${canGrantPlansAccess() && ['admin','technical_manager'].includes(u.role) ? `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text3);"><span>📐</span>Accès Plans 2D : toujours (rôle ${cat.label})</div>` : ''}
+        ${canGrantWriteAccess() && ['installer','worker'].includes(u.role) ? `
+        <div style="padding:10px;background:var(--bg3);border-radius:8px;display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:12px;color:var(--text3);">🔒 Consulte seulement ses projets. Peut aussi remplir :</div>
+          ${ACCESS_GRANT_LABELS.map(g => `
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
+            <span style="flex:1;">${g.label}</span>
+            <input type="checkbox" data-grant="${g.key}" ${(u.accessGrants || []).includes(g.key) ? 'checked' : ''} onchange="setUserAccessGrants('${u.id}', this)" style="width:18px;height:18px;cursor:pointer;">
+          </label>`).join('')}
+        </div>` : ''}
       </div>
 
       <!-- MODE ÉDITION -->
@@ -584,9 +595,38 @@ async function openUserDetail(userId) {
   // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
 }
 
-// Accès aux outils Plans 2D : se donne depuis la fiche du membre, par un admin ou par quelqu'un qui l'a déjà.
+// Accès aux outils Plans 2D : toujours pour admin et technical manager ; pour un project manager ou un engineer,
+// activé depuis la fiche du membre par un admin ou un technical manager ; jamais pour les autres rôles
+// (même règle côté serveur : src/middleware/access.ts).
+const PLANS_OPTIONAL_ROLES = ['project_manager', 'engineer'];
 function canGrantPlansAccess() {
-  return !!CURRENT_USER && (CURRENT_USER.role === 'admin' || hasPlansAccess());
+  return !!CURRENT_USER && ['admin', 'technical_manager'].includes(CURRENT_USER.role);
+}
+
+// Droits d'écriture d'un installateur / ouvrier sur ses projets (par défaut : consultation seulement).
+const ACCESS_GRANT_LABELS = [
+  { key: 'daily_reports', label: '📓 Daily reports' },
+  { key: 'handover',      label: '🧾 Handover' },
+  { key: 'checklists',    label: '☑️ Check-lists de montage' },
+];
+function canGrantWriteAccess() {
+  return !!CURRENT_USER && ['admin', 'technical_manager', 'project_manager'].includes(CURRENT_USER.role);
+}
+
+async function setUserAccessGrants(userId, cb) {
+  const box = cb.closest('div');
+  const grants = [...box.querySelectorAll('input[data-grant]')].filter(i => i.checked).map(i => i.dataset.grant);
+  cb.disabled = true;
+  const res = await api('PUT', `/users/${userId}/access-grants`, { grants });
+  cb.disabled = false;
+  if (res?.success) {
+    const u = USERS.find(x => x.id === userId);
+    if (u) u.accessGrants = res.data.accessGrants;
+    toast('Droits enregistrés ✅', 'success');
+  } else {
+    cb.checked = !cb.checked;
+    toast(res?.error || 'Erreur', 'error');
+  }
 }
 
 async function setUserPlansAccess(userId, cb) {

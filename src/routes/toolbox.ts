@@ -1,7 +1,7 @@
 // src/routes/toolbox.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 
 const router = Router();
@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const boxes = await prisma.toolbox.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: req.query.projectId ? { projectId: String(req.query.projectId) } : await projectWhere(req),
       include: { drawers: { include: { tools: true } } },
       orderBy: { createdAt: 'desc' },
     });

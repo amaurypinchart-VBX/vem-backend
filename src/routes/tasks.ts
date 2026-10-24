@@ -1,7 +1,7 @@
 // src/routes/tasks.ts
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -13,7 +13,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     if (projectId)    where.projectId    = String(projectId);
     if (status)       where.status       = String(status);
     if (assignedToId) where.assignedToId = String(assignedToId);
-    if (req.user!.role === 'worker') where.assignedToId = req.user!.id;
+    if (!where.projectId) Object.assign(where, await projectWhere(req));
     if (date) {
       const d = new Date(String(date)); const n = new Date(d); n.setDate(d.getDate()+1);
       where.taskDate = { gte: d, lt: n };

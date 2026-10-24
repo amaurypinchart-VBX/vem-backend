@@ -1,7 +1,7 @@
 
 import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, projectWhere } from '../middleware/auth';
 import { upload, uploadToCloudinary } from '../services/cloudinaryService';
 
 const router = Router();
@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const remarks = await (prisma as any).clientRemark.findMany({
-      where: req.query.projectId ? { projectId: String(req.query.projectId) } : {},
+      where: req.query.projectId ? { projectId: String(req.query.projectId) } : await projectWhere(req),
       orderBy: [{ status:'asc' }, { priority:'desc' }, { createdAt:'desc' }],
       include: {
         assignedToUser: { select: { firstName:true, lastName:true } },

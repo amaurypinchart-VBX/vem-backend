@@ -6,11 +6,18 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { hasPlansAccess } from '../middleware/plansAccess';
+import { rateLimit } from '../middleware/rateLimit';
+import { JWT_SECRET as SECRET, JWT_REFRESH_SECRET as RSECRET } from '../utils/secrets';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 const router = Router();
-const SECRET  = process.env.JWT_SECRET  || 'vem-secret-change-me';
-const RSECRET = process.env.JWT_REFRESH_SECRET || 'vem-refresh-change-me';
+
+// Essais de mot de passe : 10 par quart d'heure par adresse e-mail et par IP ; liens envoyés par e-mail : 5 par heure
+const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: (req) => 'login:' + String(req.body?.email || '').toLowerCase() });
+const mailLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, key: () => 'mail' });
+const tokenLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, key: () => 'token' });
+
+/** Rôles qu'une invitation peut donner (admin / technical manager : seulement créés par un admin, dans Équipe). */
+const INVITABLE_ROLES = ['project_manager', 'site_manager', 'engineer', 'worker', 'client', 'warehouse', 'sales_engineer', 'installer'];
 
 function signAccess(user: any) {
   return jwt.sign(
@@ -20,7 +27,7 @@ function signAccess(user: any) {
 }
 
 // POST /api/v1/auth/login
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', loginLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) throw new AppError('Email et mot de passe requis', 400);
@@ -71,15 +78,15 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 });
 
 // POST /api/v1/auth/refresh
-router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/refresh', tokenLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { refreshToken } = req.body;
-    if (!refreshToken) throw new AppError('Refresh token manquant', 400);
+    if (!refreshToken || typeof refreshToken !== 'string') throw new AppError('Refresh token manquant', 400);
 
     const stored = await prisma.refreshToken.findUnique({
       where: { token: refreshToken }, include: { user: true },
     });
-    if (!stored || stored.expiresAt < new Date()) throw new AppError('Token expiré', 401);
+    if (!stored || stored.expiresAt < new Date() || !stored.user.isActive) throw new AppError('Token expiré', 401);
 
     const token = signAccess(stored.user);
     res.json({ success: true, data: { token } });
@@ -124,7 +131,7 @@ router.post('/logout', async (req: Request, res: Response, next: NextFunction) =
 // ── Coller ce code dans src/routes/auth.ts avant export default router ──
 
 // POST /api/v1/auth/forgot-password
-router.post('/forgot-password', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/forgot-password', mailLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email } = req.body;
     if (!email) throw new AppError('Email requis', 400);
@@ -189,10 +196,10 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
 });
 
 // POST /api/v1/auth/reset-password
-router.post('/reset-password', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/reset-password', tokenLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { token, password } = req.body;
-    if (!token || !password) throw new AppError('Token et mot de passe requis', 400);
+    if (!token || !password || typeof token !== 'string' || typeof password !== 'string') throw new AppError('Token et mot de passe requis', 400);
     if (password.length < 8) throw new AppError('Mot de passe trop court (min 8 caractères)', 400);
 
     // Find token
@@ -225,7 +232,7 @@ router.post('/reset-password', async (req: Request, res: Response, next: NextFun
 
 // POST /api/v1/auth/change-password — changement depuis le compte connecté
 // Requiert l'ancien mot de passe pour vérifier l'identité.
-router.post('/change-password', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/change-password', authMiddleware, loginLimit, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) throw new AppError('Ancien et nouveau mot de passe requis', 400);
@@ -254,8 +261,10 @@ router.post('/change-password', authMiddleware, async (req: AuthRequest, res: Re
 // POST /api/v1/auth/invite — génère un lien d'inscription (admin / project_manager)
 router.post('/invite', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!['admin','project_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
+    if (!['admin','project_manager','technical_manager'].includes(req.user!.role)) throw new AppError('Permission insuffisante', 403);
     const { role, email, note } = req.body;
+    if (role && !INVITABLE_ROLES.includes(role))
+      throw new AppError('Ce rôle ne peut pas être donné par une invitation : crée le compte dans Équipe (admin).', 400);
     const token = crypto.randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
@@ -277,7 +286,7 @@ router.post('/invite', authMiddleware, async (req: AuthRequest, res: Response, n
 });
 
 // POST /api/v1/auth/register — création de compte via lien d'invitation
-router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', tokenLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { firstName, lastName, email, password, role, inviteToken } = req.body;
     if (!firstName || !lastName || !email || !password) throw new AppError('Champs obligatoires manquants', 400);
@@ -296,7 +305,9 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     if (existing) throw new AppError('Un compte existe déjà avec cet email', 400);
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const finalRole = (role || invite.role || 'worker');
+    // le rôle vient UNIQUEMENT de l'invitation (avant : le formulaire pouvait demander « admin »)
+    const finalRole = INVITABLE_ROLES.includes(invite.role) ? invite.role : 'worker';
+    void role;
 
     const user = await prisma.user.create({
       data: {

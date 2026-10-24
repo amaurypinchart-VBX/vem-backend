@@ -9,8 +9,12 @@ import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 
 import { errorHandler } from './middleware/errorHandler';
+import jwt from 'jsonwebtoken';
 import { authMiddleware, requireRole } from './middleware/auth';
 import { requirePlansAccess } from './middleware/plansAccess';
+import { scopeGuard } from './middleware/scopeGuard';
+import { accessFor, loadUserRow, projectIdsOf } from './middleware/access';
+import { JWT_SECRET } from './utils/secrets';
 import { logger } from './utils/logger';
 
 import authRoutes          from './routes/auth';
@@ -53,12 +57,35 @@ export const io = new SocketServer(http, {
   cors: { origin: '*', credentials: true },
 } as any);
 
+// Temps réel : connexion seulement avec un jeton valide ; on ne rejoint que sa propre salle et les salles des
+// projets auxquels on a accès (avant : n'importe qui pouvait écouter n'importe quel projet).
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    const decoded: any = jwt.verify(String(token || ''), JWT_SECRET, { algorithms: ['HS256'] });
+    const row = await loadUserRow(String(decoded.id));
+    if (!row || !row.isActive) return next(new Error('unauthorized'));
+    (socket.data as any).userId = String(decoded.id);
+    (socket.data as any).access = accessFor(row.role, row.plansAccess, row.grants);
+    next();
+  } catch { next(new Error('unauthorized')); }
+});
 io.on('connection', (socket) => {
-  const userId = socket.handshake.auth.userId;
-  if (userId) socket.join(`user:${userId}`);
-  socket.on('project:join', (pid: string) => socket.join(`project:${pid}`));
+  const userId = (socket.data as any).userId as string;
+  const access = (socket.data as any).access;
+  socket.join(`user:${userId}`);
+  socket.on('project:join', async (pid: string) => {
+    try {
+      if (typeof pid !== 'string') return;
+      if (access.scope !== 'all' && !(await projectIdsOf(userId, access.scope)).includes(pid)) return;
+      socket.join(`project:${pid}`);
+    } catch { /* ignoré */ }
+  });
   socket.on('disconnect', () => {});
 });
+
+// Railway passe par un proxy : l'IP réelle du visiteur (limiteur de tentatives de connexion) est dans X-Forwarded-For.
+app.set('trust proxy', 1);
 
 app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
 app.use(cors({ origin: '*', credentials: true }));
@@ -95,38 +122,44 @@ app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
 app.use('/api/v1/public', publicCalendarRoutes);
 
 app.use(`${API}/users`,          authMiddleware, userRoutes);
-app.use(`${API}/clients`,        authMiddleware, clientRoutes);
-app.use(`${API}/projects`,       authMiddleware, projectRoutes);
-app.use(`${API}/tasks`,          authMiddleware, taskRoutes);
-app.use(`${API}/tickets`,        authMiddleware, ticketRoutes);
-app.use(`${API}/handover`,       authMiddleware, handoverRoutes);
+// scopeGuard : site manager / installateur / ouvrier / client ne passent que sur leurs projets et seulement
+// pour les actions listées dans src/middleware/scopeGuard.ts (tout le reste est refusé).
+app.use(`${API}/users`,          authMiddleware, scopeGuard('users'), userRoutes);
+app.use(`${API}/clients`,        authMiddleware, scopeGuard('clients'), clientRoutes);
+app.use(`${API}/projects`,       authMiddleware, scopeGuard('projects'), projectRoutes);
+app.use(`${API}/tasks`,          authMiddleware, scopeGuard('tasks'), taskRoutes);
+app.use(`${API}/tickets`,        authMiddleware, scopeGuard('tickets'), ticketRoutes);
+app.use(`${API}/handover`,       authMiddleware, scopeGuard('handover'), handoverRoutes);
 // Check-list de montage (bibliothèque + check-list de chaque projet, affichée dans le handover)
-app.use(`${API}/checklists`,     authMiddleware, checklistRoutes);
+app.use(`${API}/checklists`,     authMiddleware, scopeGuard('checklists'), checklistRoutes);
 
-app.use(`${API}/daily-reports`,  authMiddleware, dailyRoutes);
-app.use(`${API}/warehouse`,      authMiddleware, warehouseRoutes);
-app.use(`${API}/toolbox`,        authMiddleware, toolboxRoutes);
-app.use(`${API}/upload`,         authMiddleware, uploadRoutes);
+app.use(`${API}/daily-reports`,  authMiddleware, scopeGuard('daily'), dailyRoutes);
+app.use(`${API}/warehouse`,      authMiddleware, scopeGuard('warehouse'), warehouseRoutes);
+app.use(`${API}/toolbox`,        authMiddleware, scopeGuard('toolbox'), toolboxRoutes);
+app.use(`${API}/upload`,         authMiddleware, scopeGuard('upload'), uploadRoutes);
 app.use(`${API}/notifications`,  authMiddleware, notifRoutes);
-app.use(`${API}/reports`,        authMiddleware, reportRoutes);
-app.use(`${API}/task-templates`, authMiddleware, taskTemplatesRoutes);
-app.use(`${API}/ai`, authMiddleware, aiRoutes);
-app.use(`${API}/client-remarks`, authMiddleware, clientRemarksRoutes);
-app.use(`${API}/client-visits`,  authMiddleware, clientVisitsRoutes);
-app.use(`${API}/briefings`,      authMiddleware, briefingRoutes);
-// Outils Plans 2D : réservés aux comptes dont l'accès a été activé (Équipe › fiche du membre).
+app.use(`${API}/reports`,        authMiddleware, scopeGuard('reports'), reportRoutes);
+app.use(`${API}/task-templates`, authMiddleware, scopeGuard('taskTemplates'), taskTemplatesRoutes);
+app.use(`${API}/ai`,             authMiddleware, scopeGuard('ai'), aiRoutes);
+app.use(`${API}/client-remarks`, authMiddleware, scopeGuard('remarks'), clientRemarksRoutes);
+app.use(`${API}/client-visits`,  authMiddleware, scopeGuard('visits'), clientVisitsRoutes);
+app.use(`${API}/briefings`,      authMiddleware, scopeGuard('briefings'), briefingRoutes);
+// Outils Plans 2D : admin + technical manager, et project manager / engineer si activé sur leur fiche
+// (jamais sales, site manager, installateur, client — voir src/middleware/access.ts).
 app.use(`${API}/plan2d`,         authMiddleware, requirePlansAccess, plan2dRoutes);
 app.use(`${API}/plans`,          authMiddleware, requirePlansAccess, plansRoutes);
 app.use(`${API}/structure`,      authMiddleware, requirePlansAccess, structureRoutes);
 app.use(`${API}/loading`,        authMiddleware, requirePlansAccess, loadingRoutes);
-// Assistant lecture seule — réservé aux rôles qui pilotent les projets.
-app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager'), assistantRoutes);
-app.use('/api/v1/translate', translateRoutes);
-app.use(`${API}/settings`,       authMiddleware, settingsRoutes);
+// Assistant — lit les données de TOUS les projets : réservé aux rôles qui voient tous les projets et les pilotent
+// (plus le site manager, limité à ses projets).
+app.use(`${API}/assistant`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager'), assistantRoutes);
+// Traduction (appel payant à l'IA) : connecté seulement.
+app.use(`${API}/translate`,      authMiddleware, scopeGuard('translate'), translateRoutes);
+app.use(`${API}/settings`,       authMiddleware, scopeGuard('settings'), settingsRoutes);
 
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
-app.use(API,                     authMiddleware, teamBookingsRoutes);
+app.use(API,                     authMiddleware, scopeGuard('bookings'), teamBookingsRoutes);
 // Webhook public Brevo Inbound (PAS de authMiddleware — Brevo ne peut pas s'authentifier).
 // La sécurité passe par le token partagé BREVO_WEBHOOK_SECRET vérifié dans la route.
 app.use('/webhooks',             emailWebhookRoutes);
@@ -134,7 +167,7 @@ app.use('/webhooks',             emailWebhookRoutes);
 // Route admin pour déclencher manuellement le polling IMAP (pratique pour tester
 // sans attendre l'intervalle de 5 minutes). À appeler depuis la console F12 :
 //   await fetch(`${API}/imap-poll`, { method:'POST', headers:{Authorization:`Bearer ${TOKEN}`} }).then(r=>r.json())
-app.post(`${API}/imap-poll`, authMiddleware, async (_req, res, next) => {
+app.post(`${API}/imap-poll`, authMiddleware, requireRole('admin', 'project_manager', 'technical_manager'), async (_req, res, next) => {
   try {
     const { pollImapOnce } = await import('./services/imapPoller');
     const result = await pollImapOnce();
