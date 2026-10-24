@@ -149,9 +149,11 @@ async function sendForgotPassword() {
         msg.textContent='✅ Si cet email existe, vous recevrez un lien de réinitialisation dans quelques minutes.';
         if(btn){ btn.disabled=true; btn.innerHTML='✅ Email envoyé'; }
       } else {
+        const j = await res.json().catch(() => null);
         msg.style.background='rgba(230,57,70,.1)'; 
         msg.style.color='var(--accent)'; 
-        msg.textContent='Erreur — vérifiez votre email ou contactez un administrateur.';
+        msg.textContent = res.status === 429 ? 'Trop de demandes pour cette adresse — réessayez dans une heure.'
+          : (j?.error || 'Erreur — vérifiez votre email ou contactez un administrateur.');
         if(btn){ btn.disabled=false; btn.innerHTML='📤 Renvoyer'; }
       }
     }
@@ -298,8 +300,76 @@ function showLoginFromRegister() {
   window.history.replaceState({}, '', window.location.pathname);
 }
 
+// ═══ NOUVEAU MOT DE PASSE — lien reçu par e-mail (?reset=TOKEN, ancien format /reset-password?token=TOKEN) ═══
+function checkResetParam() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('reset') || (window.location.pathname.startsWith('/reset-password') ? params.get('token') : null);
+  if (!token) return false;
+  window.history.replaceState({}, '', '/');
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:32px;width:90%;max-width:400px;box-shadow:0 32px 80px rgba(0,0,0,.6);">
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px;">🔑 Nouveau mot de passe</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:24px;">Choisissez votre nouveau mot de passe (8 caractères minimum).</div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <input class="form-input" type="password" id="reset-pw1" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer</label>
+        <input class="form-input" type="password" id="reset-pw2" autocomplete="new-password">
+      </div>
+      <div id="reset-msg" style="display:none;margin-top:12px;padding:10px 14px;border-radius:var(--radius);font-size:13px;"></div>
+      <button class="login-btn" id="reset-btn" style="margin-top:16px;">✅ Enregistrer</button>
+      <div style="text-align:center;margin-top:14px;">
+        <span style="font-size:13px;color:var(--text3);cursor:pointer;" onclick="this.closest('.overlay').remove()">← Retour à la connexion</span>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  const msg = el.querySelector('#reset-msg');
+  const btn = el.querySelector('#reset-btn');
+  const show = (text, ok) => {
+    msg.style.display = 'block';
+    msg.style.background = ok ? 'rgba(45,198,83,.1)' : 'rgba(230,57,70,.1)';
+    msg.style.color = ok ? 'var(--green)' : 'var(--accent)';
+    msg.textContent = text;
+  };
+  btn.onclick = async () => {
+    const p1 = el.querySelector('#reset-pw1').value, p2 = el.querySelector('#reset-pw2').value;
+    if (p1.length < 8) return show('Le mot de passe doit contenir au moins 8 caractères.');
+    if (p1 !== p2) return show('Les mots de passe ne correspondent pas.');
+    btn.disabled = true; btn.innerHTML = '<span class="loader"></span>';
+    try {
+      const res = await fetch(`${window.location.origin}/api/v1/auth/reset-password`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password: p1 }),
+      });
+      const j = await res.json().catch(() => null);
+      if (res.ok && j?.success) {
+        show('✅ Mot de passe changé. Connectez-vous avec le nouveau mot de passe.', true);
+        btn.innerHTML = '✅ Fait';
+        setTimeout(() => el.remove(), 2500);
+      } else {
+        show(j?.error || 'Lien invalide ou expiré — redemandez un lien.');
+        btn.disabled = false; btn.innerHTML = '✅ Enregistrer';
+      }
+    } catch {
+      show('Erreur réseau — réessayez.');
+      btn.disabled = false; btn.innerHTML = '✅ Enregistrer';
+    }
+  };
+  setTimeout(() => el.querySelector('#reset-pw1')?.focus(), 100);
+  return true;
+}
+
 // ═══ INIT ═══
-if (checkInviteParam()) {
+if (checkResetParam()) {
+  // Écran « nouveau mot de passe » — géré dans checkResetParam
+} else if (checkInviteParam()) {
   // Show register page — handled in checkInviteParam
 } else if (TOKEN && CURRENT_USER) {
   showApp();

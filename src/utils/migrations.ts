@@ -1490,4 +1490,19 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] users.access_grants : ${e.message}`);
   }
+
+  // ─── Liens « mot de passe oublié » (src/routes/auth.ts) ───
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
+      "id"         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      "user_id"    TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+      "token"      TEXT NOT NULL UNIQUE,
+      "expires_at" TIMESTAMP NOT NULL,
+      "used"       BOOLEAN DEFAULT FALSE,
+      "created_at" TIMESTAMP DEFAULT NOW()
+    )`);
+    logger.info('[migration] table password_reset_tokens créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] password_reset_tokens : ${e.message}`);
+  }
 }

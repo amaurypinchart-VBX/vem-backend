@@ -9,11 +9,12 @@ import { hasPlansAccess } from '../middleware/plansAccess';
 import { rateLimit } from '../middleware/rateLimit';
 import { JWT_SECRET as SECRET, JWT_REFRESH_SECRET as RSECRET } from '../utils/secrets';
 import crypto from 'crypto';
+import { sendMail } from '../services/emailService';
 const router = Router();
 
 // Essais de mot de passe : 10 par quart d'heure par adresse e-mail et par IP ; liens envoyés par e-mail : 5 par heure
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: (req) => 'login:' + String(req.body?.email || '').toLowerCase() });
-const mailLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, key: () => 'mail' });
+const forgotLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, key: (req) => 'forgot:' + String(req.body?.email || '').trim().toLowerCase() });
 const tokenLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, key: () => 'token' });
 
 /** Rôles qu'une invitation peut donner (admin / technical manager : seulement créés par un admin, dans Équipe). */
@@ -114,83 +115,53 @@ router.post('/logout', async (req: Request, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
-// ── Ajouter ces imports en haut de auth.ts si pas déjà présents ──
-// import crypto from 'crypto';
-// import nodemailer from 'nodemailer';
-
-// ── Ajouter cette table dans Railway Postgres ──
-// CREATE TABLE IF NOT EXISTS password_reset_tokens (
-//   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-//   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-//   token TEXT NOT NULL UNIQUE,
-//   expires_at TIMESTAMP NOT NULL,
-//   used BOOLEAN DEFAULT FALSE,
-//   created_at TIMESTAMP DEFAULT NOW()
-// );
-
-// ── Coller ce code dans src/routes/auth.ts avant export default router ──
-
-// POST /api/v1/auth/forgot-password
-router.post('/forgot-password', mailLimit, async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/v1/auth/forgot-password — envoie un lien (valable 1 h) par le même canal que les autres e-mails de VEM
+// (relais Google Apps Script, sinon Brevo / SMTP : voir emailService.sendMail). Table créée dans migrations.ts.
+router.post('/forgot-password', forgotLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { email } = req.body;
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     if (!email) throw new AppError('Email requis', 400);
 
-    // Always return success (don't reveal if email exists)
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    // Toujours la même réponse, que l'adresse existe ou non
+    const user = await prisma.user.findUnique({ where: { email } });
 
     if (user && user.isActive) {
-      // Generate secure token
-      const crypto = require('crypto');
       const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-      // Store token (using raw query since no Prisma model yet)
       await (prisma as any).$executeRaw`
         INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
-        VALUES (gen_random_uuid()::text, ${user.id}, ${token}, ${expiresAt})
-        ON CONFLICT DO NOTHING
+        VALUES (gen_random_uuid()::text, ${user.id}, ${token}, NOW() + INTERVAL '1 hour')
       `;
 
-      // Send email
-      const appUrl = process.env.APP_URL || 'https://viewboxsitemanagement.up.railway.app';
-      const resetUrl = `${appUrl}/reset-password?token=${token}`;
+      const appUrl = (process.env.APP_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'https://viewboxsitemanagement.up.railway.app')).replace(/\/+$/, '');
+      const resetUrl = `${appUrl}/?reset=${token}`;
+      const name = String(user.firstName || '').replace(/[<>&"]/g, '');
 
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransporter({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      await transporter.sendMail({
-        from: `"VEM — ViewBox Event Manager" <${process.env.SMTP_USER}>`,
-        to: user.email,
-        subject: '🔑 Réinitialisation de votre mot de passe VEM',
-        html: `
+      try {
+        await sendMail({
+          to: user.email,
+          subject: 'Réinitialisation de votre mot de passe VEM',
+          html: `
           <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#1a1a2e;color:#f0f2f5;padding:32px;border-radius:12px;">
             <div style="font-size:24px;font-weight:800;color:#e63946;margin-bottom:6px;">VEM</div>
             <div style="font-size:11px;color:#8892a4;margin-bottom:24px;text-transform:uppercase;letter-spacing:1px;">ViewBox Event Manager</div>
             <h2 style="font-size:20px;margin-bottom:12px;">Réinitialisation du mot de passe</h2>
-            <p style="color:#9ba3b2;line-height:1.6;">Bonjour ${user.firstName},</p>
+            <p style="color:#9ba3b2;line-height:1.6;">Bonjour ${name},</p>
             <p style="color:#9ba3b2;line-height:1.6;">Vous avez demandé une réinitialisation de votre mot de passe. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.</p>
             <div style="text-align:center;margin:28px 0;">
               <a href="${resetUrl}" style="background:#e63946;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;display:inline-block;">
-                🔑 Réinitialiser mon mot de passe
+                Réinitialiser mon mot de passe
               </a>
             </div>
-            <p style="color:#5a6275;font-size:12px;line-height:1.6;">Ce lien est valable <strong style="color:#9ba3b2;">15 minutes</strong>. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-            <hr style="border:none;border-top:1px solid #2a2f3a;margin:20px 0;">
-            <p style="color:#5a6275;font-size:11px;text-align:center;">VEM — ViewBox Event Manager</p>
+            <p style="color:#5a6275;font-size:12px;line-height:1.6;">Ce lien est valable <strong style="color:#9ba3b2;">1 heure</strong>. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+            <p style="color:#5a6275;font-size:11px;line-height:1.6;word-break:break-all;">Si le bouton ne marche pas : ${resetUrl}</p>
           </div>`,
-      });
+        });
+      } catch (e: any) {
+        console.error('[auth/forgot-password] envoi impossible :', e?.message || e);
+        throw new AppError("L'e-mail n'a pas pu être envoyé. Contactez un administrateur.", 502);
+      }
     }
 
-    // Always return success
     res.json({ success: true, message: 'Si cet email existe, un lien a été envoyé.' });
   } catch (err) { next(err); }
 });
