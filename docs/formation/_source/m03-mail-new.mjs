@@ -1,7 +1,31 @@
-import { q, L, btn, field, win, steps, callout, cols, table, ul, path, chip } from './ui.mjs';
+import { q, L, btn, field, win, steps, callout, cols, table, ul, path, chip, esc } from './ui.mjs';
 import { FIL } from './fil.mjs';
 
 export const MAIL = 'warehouseviewbox@gmail.com';
+
+// Modèle de mail « NEW » : une ligne par champ que l'IA sait lire (src/services/projectFromEmail.ts).
+// Les dates sans heure : VEM ne garde que le jour.
+export const MAIL_TEMPLATE_LINES = [
+  ['NOM DU PROJET', '[nom court et lisible, ex. « Viewbox Klokgebouw Eindhoven »]', FIL.projet],
+  ['N° INTERNE', '[4 chiffres + 4 à 6 lettres + VIE]', FIL.ref],
+  ['CLIENT (société finale)', '[nom exact du client, comme dans VEM]', FIL.client],
+  ['CONTACT CLIENT', '[prénom nom]', FIL.contact],
+  ['E-MAIL DU CONTACT', '[adresse e-mail]', FIL.contactMail],
+  ['TÉLÉPHONE DU CONTACT', '[numéro]', FIL.contactTel],
+  ['ADRESSE DU SITE', '[rue, numéro, code postal, ville]', FIL.adresse],
+  ['VILLE', '[ville du site]', FIL.ville],
+  ['INSTALLATION', 'du [JJ/MM/AAAA] au [JJ/MM/AAAA]', 'du 15/03/2027 au 18/03/2027'],
+  ['DÉMONTAGE', 'du [JJ/MM/AAAA] au [JJ/MM/AAAA]', 'du 22/03/2027 au 23/03/2027'],
+  ['NOMBRE D\'OUVRIERS', '[nombre]', FIL.ouvriers],
+  ['DESCRIPTION DU MONTAGE', '[nombre de Viewbox, modules (HVAC…), équipement fourni]', '4 Viewbox 5900 en ligne, 1 module HVAC, mobilier fourni par le client'],
+  ['INSTRUCTIONS / LOGISTIQUE', '[transport, accès au site, horaires, disponibilité du client…]', 'Accès camion par la rue arrière, déchargement avant 9 h, client sur place dès le 15/03'],
+];
+export function mailTemplate(filled) {
+  const subject = filled ? `NEW ${FIL.ref}` : 'NEW [N° interne]';
+  const lines = MAIL_TEMPLATE_LINES.map(([k, blank, ex]) => `${k} : ${filled ? ex : blank}`);
+  return `Objet : ${subject}\n\nBonjour,\n\nMerci de créer le projet suivant dans VEM.\n\n${lines.join('\n')}\n\nPièces jointes : plans, devis, bon de commande…\n\nMerci !`;
+}
+const tplBox = (filled) => `<div class="mailtpl"><button class="mailtpl-copy" data-copy>📋 Copier</button><pre>${esc(mailTemplate(filled))}</pre></div>`;
 
 export default {
   key: 'projet-mail', num: 3, icon: '🆕', title: 'Créer un projet par mail (NEW)',
@@ -45,6 +69,27 @@ export default {
         + callout('warn', 'Elle ne crée <b>ni camions, ni hôtels, ni trajets</b>, et ne remplit <b>pas les notes</b> (globales, installation, démontage).')),
       visual: 'Tableau information → champ + deux encadrés.',
       notes: 'Le N° interne : si l\'IA n\'en trouve pas dans le mail, VEM prend le texte qui suit NEW s\'il fait au plus 24 caractères sans espace. D\'où l\'intérêt de NEW + référence seule.',
+    },
+    {
+      key: 'modele-mail', title: 'Modèle de mail à copier',
+      body: () => cols(tplBox(false),
+        callout('ok', 'Copiez ce modèle, remplacez chaque <b>[…]</b>, effacez les lignes que vous ne connaissez pas. Une information par ligne : l\'IA la retrouve à coup sûr.')
+        + callout('warn', '<b>Dates avec l\'année</b> (JJ/MM/AAAA). Sans date, l\'installation est mise à la date du jour. Les heures ne sont pas reprises.')
+        + callout('tip', '<b>Client</b> : écrivez son nom exactement comme dans VEM, sinon un nouveau client est créé (doublon).'), '1.35fr 1fr'),
+      visual: 'Modèle de mail vierge avec bouton Copier, trois encadrés de conseils.',
+      notes: 'Le modèle peut aussi être collé en tête d\'un mail de commande transféré : l\'IA lit le texte complet (environ 8 000 caractères). Les lignes vides ou absentes sont simplement ignorées.',
+    },
+    {
+      key: 'modele-mail-exemple', title: 'Le même modèle, rempli',
+      body: () => cols(tplBox(true),
+        table(['Ligne du mail', 'Dans VEM'], [
+          ['NOM DU PROJET', L('Nom *')], ['N° INTERNE', L('N° Interne')],
+          ['CLIENT, CONTACT, E-MAIL, TÉLÉPHONE', 'Fiche client'], ['ADRESSE, VILLE', L('Adresse *')],
+          ['INSTALLATION, DÉMONTAGE', 'Dates du projet'], ['NOMBRE D\'OUVRIERS', L('Ouvriers')],
+          ['DESCRIPTION, INSTRUCTIONS', L('Description / Instructions spéciales')], ['Pièces jointes', L('📁 Fichiers')],
+        ], { small: true }), '1.35fr 1fr'),
+      visual: 'Modèle rempli avec le projet fil rouge + tableau ligne → champ.',
+      notes: 'Exemple fictif (projet fil rouge). Ne l\'envoyez pas : chaque mail NEW crée un vrai projet.',
     },
     {
       title: 'Exemples de sujets',

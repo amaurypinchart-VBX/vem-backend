@@ -33,6 +33,10 @@
     var m = /^s(\d+)$/.exec(h);
     return m ? +m[1] - 1 : 0;
   }
+  function selectText(el) {
+    var r = document.createRange(); r.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  }
   function toggleToc(open) { document.getElementById('toc').classList.toggle('open', open); }
   function toggleNotes() {
     notesOpen = !notesOpen;
@@ -51,7 +55,15 @@
     else if (e.target.id === 'toc') toggleToc(false);
   });
   document.getElementById('stage').addEventListener('click', function (e) {
-    if (e.target.closest('a,button')) return;
+    var cp = e.target.closest('[data-copy]');
+    if (cp) {
+      var pre = cp.parentNode.querySelector('pre');
+      var done = function () { cp.textContent = '✅ Copié'; setTimeout(function () { cp.textContent = '📋 Copier'; }, 2000); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.textContent).then(done, function () { selectText(pre); });
+      else selectText(pre);
+      return;
+    }
+    if (e.target.closest('a,button,pre')) return;
     if (e.clientX < window.innerWidth * 0.25) show(cur - 1); else show(cur + 1);
   });
   document.addEventListener('keydown', function (e) {

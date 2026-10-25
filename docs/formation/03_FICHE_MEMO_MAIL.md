@@ -23,6 +23,37 @@ VEM relève cette boîte **toutes les 5 minutes**. Il ne traite que les mails **
 - Toutes les pièces jointes vont dans **📁 Fichiers**.
 - Les admins et Project Managers reçoivent la notification **« 🆕 Projet créé depuis un email »**.
 
+**Modèle de mail à copier** (remplacez chaque `[…]`, effacez les lignes inconnues) :
+
+```
+Objet : NEW [N° interne]
+
+Bonjour,
+
+Merci de créer le projet suivant dans VEM.
+
+NOM DU PROJET : [nom court et lisible, ex. « Viewbox Klokgebouw Eindhoven »]
+N° INTERNE : [4 chiffres + 4 à 6 lettres + VIE]
+CLIENT (société finale) : [nom exact du client, comme dans VEM]
+CONTACT CLIENT : [prénom nom]
+E-MAIL DU CONTACT : [adresse e-mail]
+TÉLÉPHONE DU CONTACT : [numéro]
+ADRESSE DU SITE : [rue, numéro, code postal, ville]
+VILLE : [ville du site]
+INSTALLATION : du [JJ/MM/AAAA] au [JJ/MM/AAAA]
+DÉMONTAGE : du [JJ/MM/AAAA] au [JJ/MM/AAAA]
+NOMBRE D'OUVRIERS : [nombre]
+DESCRIPTION DU MONTAGE : [nombre de Viewbox, modules (HVAC…), équipement fourni]
+INSTRUCTIONS / LOGISTIQUE : [transport, accès au site, horaires, disponibilité du client…]
+
+Pièces jointes : plans, devis, bon de commande…
+
+Merci !
+```
+
+- Dates avec l'année ; les heures ne sont pas reprises.
+- Client écrit exactement comme dans VEM, sinon un nouveau client est créé (doublon).
+
 **Ensuite, vérifiez obligatoirement** (✏️ Modifier) :
 1. Les **dates** : sans date dans le mail, l'installation est mise à la date du jour.
 2. Le client, le N° interne et l'adresse.
