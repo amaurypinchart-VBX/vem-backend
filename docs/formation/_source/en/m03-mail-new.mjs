@@ -48,7 +48,6 @@ export function mailTemplateEn(filled) {
   return `Subject: ${subject}\n\nHello,\n\nPlease create the following project in VEM.\n\n${lines.join('\n')}\n\nAttachments: drawings, quote, purchase order…\n\nThank you!`;
 }
 const tplBox = (filled, en) => `<div class="mailtpl"><button class="mailtpl-copy" data-copy data-label="${en ? '📋 Copy' : '📋 Copier'}" data-done="${en ? '✅ Copied' : '✅ Copié'}">${en ? '📋 Copy' : '📋 Copier'}</button><pre>${esc(en ? mailTemplateEn(filled) : mailTemplate(filled))}</pre></div>`;
-const tipEn = (kind, head, html) => `<div class="callout ${kind}"><div class="ct">${head}</div><div>${html}</div></div>`;
 
 
 export default {
