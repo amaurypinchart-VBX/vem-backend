@@ -91,7 +91,7 @@ export default {
     },
     {
       kind: 'cover', title: 'Thank you!',
-      body: () => `<div class="cover-sub">Questions?</div><div class="cover-line">The deck stays available: ☰ Sommaire (contents) to find a chapter, direct link per chapter to share.</div>`,
+      body: () => `<div class="cover-sub">Questions?</div><div class="cover-line">The deck stays available: ☰ Contents to find a chapter, direct link per chapter to share.</div>`,
       visual: 'End slide.',
       notes: 'Remind everyone of the 6 golden rules and where to find the memo sheet.',
     },

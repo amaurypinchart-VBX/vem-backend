@@ -30,7 +30,7 @@ export default {
       body: () => cols(
         ul([
           '<b>← →</b> or space: next / previous slide. On a phone: swipe.',
-          '<b>☰ Sommaire</b> (contents) at the top: direct access to each chapter.',
+          '<b>☰ Contents</b> at the top: direct access to each chapter.',
           'In VEM: menu <b>🎓 Formation VEM</b> (Help section), for signed-in users only.',
           '<b>N</b>: show the trainer\'s notes. <b>Ctrl + P</b>: print (one slide per page).',
         ]),

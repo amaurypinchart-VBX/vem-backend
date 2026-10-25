@@ -25,7 +25,7 @@ export default {
           + `<div class="m-grid2">${field('Nom du chauffeur', FIL.chauffeur)}${field('📞 Téléphone', '+32 470 …')}</div>`
           + `<div class="m-grid2">${field('Lieu de chargement', '🏭 Entrepôt Tubize')}${field('📅 Date & heure de chargement', '14/03/2027 14:00')}</div>`
           + `<div class="m-grid2">${field('Lieu de déchargement', '📍 Site événement')}${field('📅 Arrivée estimée', '15/03/2027 07:00')}</div>`
-          + field('📍 Zone de déchargement', 'Entrée Est', { wide: true })
+          + field('📍 Zone de déchargement', 'East entrance', { wide: true })
           + `<div class="m-row right">${btn('✅ Ajouter le véhicule', 'primary')}</div>`),
         table(['Types', ''], [
           [L('🚛 Camion (Tautliner)'), L('🚛 Camion (Flatbed)')], [L('🚐 Camionnette'), L('🏗️ Grue')],
@@ -73,7 +73,7 @@ export default {
     {
       kind: 'exercise', title: 'Exercise — the demo project logistics',
       body: () => cols(steps([
-        `Add the truck ${FIL.camion} (Tautliner), driver ${FIL.chauffeur}, loading at Entrepôt Tubize on 14/03/2027 at 2 pm, arrival on site on 15/03 at 7 am, zone « Entrée Est ».`,
+        `Add the truck ${FIL.camion} (Tautliner), driver ${FIL.chauffeur}, loading at Entrepôt Tubize on 14/03/2027 at 2 pm, arrival on site on 15/03 at 7 am, zone « East entrance ».`,
         'Add a crane (loading place: directly on site).',
         'Switch the truck to 🔵 En route, then 🟢 Livré: where did it go?',
       ]), `<div class="recap"><div class="rt">Key points</div>${ul([
