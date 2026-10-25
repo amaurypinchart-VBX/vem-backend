@@ -58,7 +58,7 @@
     var cp = e.target.closest('[data-copy]');
     if (cp) {
       var pre = cp.parentNode.querySelector('pre');
-      var done = function () { cp.textContent = '✅ Copié'; setTimeout(function () { cp.textContent = '📋 Copier'; }, 2000); };
+      var done = function () { cp.textContent = cp.getAttribute('data-done'); setTimeout(function () { cp.textContent = cp.getAttribute('data-label'); }, 2000); };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.textContent).then(done, function () { selectText(pre); });
       else selectText(pre);
       return;

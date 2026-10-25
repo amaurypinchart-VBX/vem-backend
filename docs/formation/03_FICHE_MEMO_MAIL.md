@@ -54,6 +54,34 @@ Merci !
 - Dates avec l'année ; les heures ne sont pas reprises.
 - Client écrit exactement comme dans VEM, sinon un nouveau client est créé (doublon).
 
+**Version anglaise** (pour les collègues et partenaires qui écrivent en anglais) :
+
+```
+Subject: NEW [internal number]
+
+Hello,
+
+Please create the following project in VEM.
+
+PROJECT NAME: [short, readable name, e.g. "Viewbox Klokgebouw Eindhoven"]
+INTERNAL NUMBER: [4 digits + 4 to 6 letters + VIE]
+CLIENT (end customer): [exact client name, as in VEM]
+CLIENT CONTACT: [first name last name]
+CONTACT E-MAIL: [e-mail address]
+CONTACT PHONE: [number]
+SITE ADDRESS: [street, number, postcode, city]
+CITY: [site city]
+INSTALLATION: from [DD/MM/YYYY] to [DD/MM/YYYY]
+DISMANTLING: from [DD/MM/YYYY] to [DD/MM/YYYY]
+NUMBER OF WORKERS: [number]
+SCOPE OF WORK: [number of Viewbox, modules (HVAC…), equipment supplied]
+INSTRUCTIONS / LOGISTICS: [transport, site access, working hours, client availability…]
+
+Attachments: drawings, quote, purchase order…
+
+Thank you!
+```
+
 **Ensuite, vérifiez obligatoirement** (✏️ Modifier) :
 1. Les **dates** : sans date dans le mail, l'installation est mise à la date du jour.
 2. Le client, le N° interne et l'adresse.

@@ -25,7 +25,29 @@ export function mailTemplate(filled) {
   const lines = MAIL_TEMPLATE_LINES.map(([k, blank, ex]) => `${k} : ${filled ? ex : blank}`);
   return `Objet : ${subject}\n\nBonjour,\n\nMerci de créer le projet suivant dans VEM.\n\n${lines.join('\n')}\n\nPièces jointes : plans, devis, bon de commande…\n\nMerci !`;
 }
-const tplBox = (filled) => `<div class="mailtpl"><button class="mailtpl-copy" data-copy>📋 Copier</button><pre>${esc(mailTemplate(filled))}</pre></div>`;
+// Même modèle en anglais (l'IA lit aussi les mails en anglais).
+export const MAIL_TEMPLATE_LINES_EN = [
+  ['PROJECT NAME', '[short, readable name, e.g. "Viewbox Klokgebouw Eindhoven"]', 'Hospitality Paddock — Demo'],
+  ['INTERNAL NUMBER', '[4 digits + 4 to 6 letters + VIE]', FIL.ref],
+  ['CLIENT (end customer)', '[exact client name, as in VEM]', FIL.client],
+  ['CLIENT CONTACT', '[first name last name]', FIL.contact],
+  ['CONTACT E-MAIL', '[e-mail address]', FIL.contactMail],
+  ['CONTACT PHONE', '[number]', FIL.contactTel],
+  ['SITE ADDRESS', '[street, number, postcode, city]', 'Rue de l\'Exemple 1, 1000 Brussels'],
+  ['CITY', '[site city]', 'Brussels'],
+  ['INSTALLATION', 'from [DD/MM/YYYY] to [DD/MM/YYYY]', 'from 15/03/2027 to 18/03/2027'],
+  ['DISMANTLING', 'from [DD/MM/YYYY] to [DD/MM/YYYY]', 'from 22/03/2027 to 23/03/2027'],
+  ['NUMBER OF WORKERS', '[number]', FIL.ouvriers],
+  ['SCOPE OF WORK', '[number of Viewbox, modules (HVAC…), equipment supplied]', '4 Viewbox 5900 in a row, 1 HVAC module, furniture supplied by the client'],
+  ['INSTRUCTIONS / LOGISTICS', '[transport, site access, working hours, client availability…]', 'Truck access via the back street, unloading before 9 am, client on site from 15/03'],
+];
+export function mailTemplateEn(filled) {
+  const subject = filled ? `NEW ${FIL.ref}` : 'NEW [internal number]';
+  const lines = MAIL_TEMPLATE_LINES_EN.map(([k, blank, ex]) => `${k}: ${filled ? ex : blank}`);
+  return `Subject: ${subject}\n\nHello,\n\nPlease create the following project in VEM.\n\n${lines.join('\n')}\n\nAttachments: drawings, quote, purchase order…\n\nThank you!`;
+}
+const tplBox = (filled, en) => `<div class="mailtpl"><button class="mailtpl-copy" data-copy data-label="${en ? '📋 Copy' : '📋 Copier'}" data-done="${en ? '✅ Copied' : '✅ Copié'}">${en ? '📋 Copy' : '📋 Copier'}</button><pre>${esc(en ? mailTemplateEn(filled) : mailTemplate(filled))}</pre></div>`;
+const tipEn = (kind, head, html) => `<div class="callout ${kind}"><div class="ct">${head}</div><div>${html}</div></div>`;
 
 export default {
   key: 'projet-mail', num: 3, icon: '🆕', title: 'Créer un projet par mail (NEW)',
@@ -72,7 +94,7 @@ export default {
     },
     {
       key: 'modele-mail', title: 'Modèle de mail à copier',
-      body: () => cols(tplBox(false),
+      body: () => cols(tplBox(false, false),
         callout('ok', 'Copiez ce modèle, remplacez chaque <b>[…]</b>, effacez les lignes que vous ne connaissez pas. Une information par ligne : l\'IA la retrouve à coup sûr.')
         + callout('warn', '<b>Dates avec l\'année</b> (JJ/MM/AAAA). Sans date, l\'installation est mise à la date du jour. Les heures ne sont pas reprises.')
         + callout('tip', '<b>Client</b> : écrivez son nom exactement comme dans VEM, sinon un nouveau client est créé (doublon).'), '1.35fr 1fr'),
@@ -81,7 +103,7 @@ export default {
     },
     {
       key: 'modele-mail-exemple', title: 'Le même modèle, rempli',
-      body: () => cols(tplBox(true),
+      body: () => cols(tplBox(true, false),
         table(['Ligne du mail', 'Dans VEM'], [
           ['NOM DU PROJET', L('Nom *')], ['N° INTERNE', L('N° Interne')],
           ['CLIENT, CONTACT, E-MAIL, TÉLÉPHONE', 'Fiche client'], ['ADRESSE, VILLE', L('Adresse *')],
@@ -90,6 +112,27 @@ export default {
         ], { small: true }), '1.35fr 1fr'),
       visual: 'Modèle rempli avec le projet fil rouge + tableau ligne → champ.',
       notes: 'Exemple fictif (projet fil rouge). Ne l\'envoyez pas : chaque mail NEW crée un vrai projet.',
+    },
+    {
+      key: 'mail-template-en', title: 'Email template (English)',
+      body: () => cols(tplBox(false, true),
+        tipEn('ok', '✅ Good practice', 'Copy this template, replace every <b>[…]</b> and delete the lines you don\'t know. One piece of information per line: VEM always finds it.')
+        + tipEn('warn', '⚠️ Watch out', '<b>Dates with the year</b> (DD/MM/YYYY). Without a date, installation is set to today. Times are not kept.')
+        + tipEn('tip', '💡 Tip', '<b>Client</b>: write the name exactly as in VEM, otherwise a new (duplicate) client is created.'), '1.35fr 1fr'),
+      visual: 'Version anglaise du modèle vierge, bouton Copy, trois encadrés en anglais.',
+      notes: 'Pour les collègues ou partenaires qui écrivent en anglais : l\'IA lit les mails en français, anglais ou néerlandais. Le sujet commence toujours par NEW.',
+    },
+    {
+      key: 'mail-template-en-example', title: 'Same template, filled in (English)',
+      body: () => cols(tplBox(true, true),
+        table(['Email line', 'In VEM'], [
+          ['PROJECT NAME', L('Nom *')], ['INTERNAL NUMBER', L('N° Interne')],
+          ['CLIENT, CONTACT, E-MAIL, PHONE', 'Client record'], ['SITE ADDRESS, CITY', L('Adresse *')],
+          ['INSTALLATION, DISMANTLING', 'Project dates'], ['NUMBER OF WORKERS', L('Ouvriers')],
+          ['SCOPE, INSTRUCTIONS', L('Description / Instructions spéciales')], ['Attachments', L('📁 Fichiers')],
+        ], { small: true }), '1.35fr 1fr'),
+      visual: 'Modèle anglais rempli avec le projet fil rouge + tableau ligne → champ (libellés VEM en français).',
+      notes: 'Exemple fictif. Ne l\'envoyez pas : chaque mail NEW crée un vrai projet.',
     },
     {
       title: 'Exemples de sujets',
