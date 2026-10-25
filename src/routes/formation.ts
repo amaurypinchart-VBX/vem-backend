@@ -12,14 +12,16 @@ import { AppError } from '../utils/AppError';
 const router = Router();
 
 // ts-node-dev : __dirname = src/routes ; production : __dirname = dist/routes (src/ est copié dans l'image Docker)
-const CANDIDATES = [
-  path.join(__dirname, '..', 'assets', 'formation.html'),
-  path.join(__dirname, '..', '..', 'src', 'assets', 'formation.html'),
+// ?lang=en → version anglaise (formation-en.html), sinon le français.
+const candidates = (name: string) => [
+  path.join(__dirname, '..', 'assets', name),
+  path.join(__dirname, '..', '..', 'src', 'assets', name),
 ];
 
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const file = CANDIDATES.find((f) => fs.existsSync(f));
+    const name = req.query.lang === 'en' ? 'formation-en.html' : 'formation.html';
+    const file = candidates(name).find((f) => fs.existsSync(f));
     if (!file) throw new AppError('Support de formation introuvable', 404);
     res.setHeader('Cache-Control', 'private, no-cache');
     res.type('html').send(fs.readFileSync(file, 'utf8'));

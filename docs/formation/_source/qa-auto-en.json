@@ -1,0 +1,410 @@
+{
+  "slides": 9,
+  "perModule": [
+    {
+      "num": 11,
+      "title": "Daily Reports",
+      "key": "daily",
+      "n": 9,
+      "duree": "35 min",
+      "parcours": "Field",
+      "public": "Site Managers (on a phone)"
+    }
+  ],
+  "labels": [
+    {
+      "label": "+ Nouveau Rapport",
+      "slides": "S2",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/07-auth-mobile-daily-ai.js"
+      ]
+    },
+    {
+      "label": "⏱️ Heures par tâche",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/04-edit-clients-templates.js"
+      ]
+    },
+    {
+      "label": "🇫🇷 Français",
+      "slides": "S7",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/01-core.js",
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "🇬🇧 English",
+      "slides": "S7",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/01-core.js",
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "✅ Valider et ajouter au journal",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "✉️ Adresses manuelles",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "✏️ Saisie entrée par entrée",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🌐 Langue du PDF",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js",
+        "public/js/15-checklists.js"
+      ]
+    },
+    {
+      "label": "🌩️ Orage",
+      "slides": "S7",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🎙️ Démarrer la dictée",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🎙️ Dictée vocale",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🎵 Choisir un fichier audio",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🏗️ Installation",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/04-edit-clients-templates.js",
+        "public/js/05-templates-trucks-reports.js"
+      ]
+    },
+    {
+      "label": "🏗️ Projets",
+      "slides": "S2",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "👥 Équipe",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "💾 Sauvegarder",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/viewer3d.html",
+        "public/js/04-edit-clients-templates.js"
+      ]
+    },
+    {
+      "label": "📋 Import texte libre (IA)",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "📎 Pièces jointes",
+      "slides": "S5",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/16-daily-attachments.js"
+      ]
+    },
+    {
+      "label": "📓 Daily Report",
+      "slides": "S2",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/07-auth-mobile-daily-ai.js",
+        "src/services/emailService.ts"
+      ]
+    },
+    {
+      "label": "📓 Daily Reports",
+      "slides": "S2",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "📓 Rapport Journalier",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "src/services/emailService.ts"
+      ]
+    },
+    {
+      "label": "📤 Envoyer",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/02-detail-loaders.js",
+        "public/js/05-templates-trucks-reports.js",
+        "public/js/07-auth-mobile-daily-ai.js"
+      ]
+    },
+    {
+      "label": "📤 Envoyer le rapport",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "📤 Sauv. & Envoyer",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "📸 Prendre / Ajouter photos",
+      "slides": "S5",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🔨 Démontage",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/02-detail-loaders.js",
+        "public/js/04-edit-clients-templates.js"
+      ]
+    },
+    {
+      "label": "🤖 Analyser avec l'IA",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🤖 Analyser avec l'IA → Extraire les entrées",
+      "slides": "S4",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "🤖 Assistant IA",
+      "slides": "S7",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": false,
+      "files": [
+        "public/js/04-edit-clients-templates.js"
+      ]
+    },
+    {
+      "label": "🤝 Client",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/02-detail-loaders.js",
+        "public/js/08-visits-remarks.js"
+      ]
+    },
+    {
+      "label": "Annuler",
+      "slides": "S6",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/01-core.js",
+        "public/js/02-detail-loaders.js"
+      ]
+    },
+    {
+      "label": "Date *",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "Météo",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/04-edit-clients-templates.js",
+        "src/services/pdfService.ts"
+      ]
+    },
+    {
+      "label": "Notes générales / Résumé",
+      "slides": "S5",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    },
+    {
+      "label": "Ouvriers présents",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html",
+        "public/js/04-edit-clients-templates.js"
+      ]
+    },
+    {
+      "label": "Projet *",
+      "slides": "S3",
+      "found": true,
+      "how": "texte exact",
+      "inIndex": true,
+      "files": [
+        "public/index.html"
+      ]
+    }
+  ],
+  "forbiddenHits": [],
+  "tuHits": [],
+  "captures": 0
+}

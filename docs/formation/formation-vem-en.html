@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VEM Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>:root{--navy:#0a2540;--navy2:#13365c;--red:#e63946;--bg:#f6f4ef;--card:#ffffff;--ink:#14213d;--ink2:#46536b;--line:#dcd8cf;--green:#2a9d8f;--amber:#e9a23b;--blue:#2f6db5;--grey:#8a93a3}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#1b2433;font-family:Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:var(--ink);overflow:hidden}
+.stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+.deck{width:1920px;height:1080px;position:relative;transform-origin:center center;flex:none}
+.slide{position:absolute;inset:0;background:var(--bg);padding:70px 110px 90px;display:none;flex-direction:column;font-size:30px;line-height:1.35;overflow:hidden}
+.slide.on{display:flex}
+.s-head{margin-bottom:34px;border-left:10px solid var(--red);padding-left:28px}
+.s-kicker{font-size:24px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.06em}
+h2{margin:6px 0 0;font-size:58px;line-height:1.1;color:var(--navy);font-weight:800}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:22px}
+.s-foot{position:absolute;left:110px;right:110px;bottom:28px;display:flex;justify-content:space-between;font-size:20px;color:var(--grey);border-top:1px solid var(--line);padding-top:10px}
+.notes{display:none}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#e9e4d8;border-radius:6px;padding:1px 10px;font-size:.92em;color:var(--navy)}
+b{color:var(--navy)}
+/* couverture / sections */
+.k-cover,.k-section{background:var(--navy);color:#fff;justify-content:center}
+.k-cover h1{font-size:120px;margin:0;font-weight:800;letter-spacing:-.02em}
+.k-cover h1::after{content:"";display:block;width:220px;height:12px;background:var(--red);margin-top:30px}
+.cover-sub{font-size:56px;font-weight:600;margin-top:40px}
+.cover-line{font-size:36px;opacity:.85;margin-top:18px;max-width:1400px}
+.cover-meta{font-size:28px;opacity:.6;margin-top:80px}
+.k-cover .s-foot,.k-section .s-foot{border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.5)}
+.k-section .s-body{justify-content:center}
+.sec-num{font-size:200px;font-weight:800;color:var(--red);line-height:1}
+.sec-icon{font-size:90px;margin-top:10px}
+.k-section h1{font-size:96px;margin:10px 0 30px;font-weight:800}
+.sec-meta{display:flex;gap:28px;flex-wrap:wrap;font-size:30px}
+.sec-meta span{background:rgba(255,255,255,.1);border-radius:40px;padding:10px 26px}
+/* blocs génériques */
+.cols{display:grid;gap:50px;align-items:start;flex:1;min-height:0}
+.bul{margin:0;padding-left:34px}.bul li{margin:0 0 14px}.bul li::marker{color:var(--red)}
+.steps{list-style:none;margin:0;padding:0;counter-reset:st}
+.steps li{display:flex;gap:20px;align-items:flex-start;margin-bottom:16px;counter-increment:st}
+.steps .n::before{content:counter(st)}
+.steps .n{flex:none;width:52px;height:52px;border-radius:50%;background:var(--navy);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:26px}
+.callout{display:flex;gap:18px;border-radius:14px;padding:18px 24px;font-size:26px;margin-bottom:16px;border:2px solid}
+.callout .ct{font-weight:700;white-space:nowrap}
+.callout.warn{background:#fff5e6;border-color:#f3c47a}.callout.tip{background:#eef6ff;border-color:#9cc3ef}
+.callout.info{background:#f1f3f7;border-color:#c9cfdb}.callout.ok{background:#ecf8f4;border-color:#90d2c2}
+.callout.no{background:#fdeced;border-color:#f19aa1}.callout.no .ct{color:var(--red)}
+.tbl{width:100%;border-collapse:collapse;background:var(--card);border-radius:14px;overflow:hidden;font-size:26px}
+.tbl.small{font-size:24px}
+.tbl th{background:var(--navy);color:#fff;text-align:left;padding:12px 18px;font-weight:600}
+.tbl td{padding:11px 18px;border-top:1px solid var(--line);vertical-align:top}
+.tbl tr:nth-child(even) td{background:#faf8f3}
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:20px 0;font-size:26px}
+.path span{background:var(--navy);color:#fff;border-radius:10px;padding:8px 18px;font-weight:600}
+.path b{color:var(--red);font-size:34px}
+.sub-t{font-size:30px;font-weight:700;color:var(--navy);margin-bottom:14px}
+.cap-note{font-size:24px;color:var(--ink2);margin-top:12px}
+.recap{background:var(--navy);color:#fff;border-radius:18px;padding:28px 34px}
+.recap .rt{font-size:28px;font-weight:800;color:#ffb3b8;text-transform:uppercase;margin-bottom:12px}
+.recap b{color:#fff}.recap .bul li::marker{color:#ffb3b8}
+.k-exercise .s-head{border-left-color:var(--green)}.k-exercise .s-kicker{color:var(--green)}
+.capture{border:3px dashed #a5acb8;background:#e8e9ec;border-radius:16px;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:30px;font-size:24px;color:#4d5666}
+.capture .cap-id{font-weight:800;font-size:30px;color:var(--navy)}
+/* cartes */
+.feeds{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.feed{background:var(--card);border-radius:16px;padding:22px 26px;border-left:8px solid var(--red);box-shadow:0 2px 0 var(--line)}
+.feed .fa{font-weight:800;color:var(--navy);font-size:30px;margin-bottom:6px}.feed .fb{font-size:26px;color:var(--ink2)}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;flex:1}
+.three-card{background:var(--card);border-radius:20px;padding:36px;border-top:12px solid var(--navy);display:flex;flex-direction:column;gap:14px}
+.three-card:nth-child(2){border-top-color:var(--red)}.three-card:nth-child(3){border-top-color:var(--green)}
+.three-card .ti{font-size:70px}.three-card .tt{font-size:40px;font-weight:800;color:var(--navy)}.three-card .td{flex:1}.three-card .tc{font-weight:700;color:var(--red)}
+.golden{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.gold{display:flex;gap:22px;background:var(--card);border-radius:16px;padding:22px 26px}
+.gn{flex:none;width:64px;height:64px;border-radius:14px;background:var(--red);color:#fff;font-size:36px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.gt{font-weight:800;color:var(--navy);font-size:30px}.gd{font-size:25px;color:var(--ink2)}
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.flow-step{background:var(--card);border-radius:14px;padding:18px;border-top:8px solid var(--navy);font-size:24px}
+.flow-step:nth-child(odd){border-top-color:var(--red)}
+.flow-step .ft{font-weight:800;color:var(--navy);font-size:26px;margin-bottom:6px}.flow-step .fs{color:var(--ink2)}
+.statuses{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.st{border-radius:16px;padding:22px;background:var(--card);border-top:10px solid}
+.st .sn{font-weight:800;font-size:28px}.st .sd{font-size:24px;color:var(--ink2);margin-top:6px}
+.c-grey{border-color:var(--grey)}.c-green{border-color:var(--green)}.c-amber{border-color:var(--amber)}.c-red{border-color:var(--red)}.c-blue{border-color:var(--blue)}
+/* règle du mail */
+.rule{display:flex;flex-direction:column;gap:30px;flex:1;justify-content:center}
+.rule-addr,.memo-addr{font-size:64px;font-weight:800;color:var(--navy);text-align:center;background:var(--card);border-radius:20px;padding:24px;border:4px solid var(--navy)}
+.rule-grid,.memo-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+.rule-card,.memo-col{border-radius:20px;padding:30px 36px;color:#fff}
+.rule-card.new,.memo-col.new{background:var(--red)}.rule-card.add,.memo-col.add{background:var(--navy2)}
+.rule-card .rk{font-size:30px;font-weight:800;letter-spacing:.05em;opacity:.9}
+.rule-card .rs{font-size:40px;margin:14px 0}.rule-card code,.memo-col code{background:rgba(255,255,255,.18);color:#fff}
+.rule-card .rd{font-size:28px;opacity:.95}.rule-card b,.memo-col b{color:#fff}
+.rule-foot,.memo-foot{text-align:center;font-size:28px;color:var(--ink2)}
+.memo{display:flex;flex-direction:column;gap:22px}.memo-addr{font-size:52px;padding:16px}
+.memo-col h3{margin:0 0 10px;font-size:34px}.memo-col p{margin:8px 0;font-size:25px}
+.memo-col .ex{font-family:ui-monospace,Menlo,Consolas,monospace;background:rgba(255,255,255,.14);border-radius:8px;padding:4px 12px}
+.memo-col small{opacity:.8;font-family:Inter,sans-serif}
+/* maquettes d'interface */
+.m-win{background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(10,37,64,.18);font-size:24px;overflow:hidden;border:1px solid var(--line)}
+.m-head{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 24px;border-bottom:1px solid var(--line)}
+.m-title{font-weight:800;font-size:28px;color:var(--navy)}.m-sub{font-size:20px;color:var(--grey)}.m-x{font-size:30px;color:var(--grey)}
+.m-body{padding:18px 24px;display:flex;flex-direction:column;gap:12px}
+.m-field{display:flex;flex-direction:column;gap:4px}.m-lbl{font-size:20px;font-weight:600;color:var(--ink2)}
+.m-val{display:block;border:1px solid #cfd5df;border-radius:8px;padding:8px 12px;background:#fbfbfd;font-size:22px;min-height:42px}
+.m-val.ph{color:#9aa3b2}
+.m-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.m-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.m-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.m-row.right{justify-content:flex-end}
+.m-btn{display:inline-block;border-radius:9px;padding:8px 16px;font-size:22px;font-weight:600;border:1px solid #cfd5df;background:#fff;color:var(--navy);white-space:nowrap}
+.m-primary{background:var(--red);border-color:var(--red);color:#fff}.m-green{background:var(--green);border-color:var(--green);color:#fff}
+.m-blue{background:var(--blue);border-color:var(--blue);color:#fff}.m-outline{background:transparent}
+.m-btn.dim,.m-ghost.dim{opacity:.35;text-decoration:line-through}
+.m-sep{display:flex;justify-content:space-between;align-items:center;font-weight:700;border-top:1px solid var(--line);padding-top:10px}
+.m-txt{font-size:22px}.m-link{font-size:22px;color:var(--grey);text-align:center}
+.m-tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:2px solid var(--line)}
+.m-tab{padding:10px 16px;font-size:22px;color:var(--ink2);border-bottom:4px solid transparent;margin-bottom:-2px}.m-tab.on{color:var(--red);border-color:var(--red);font-weight:700}
+.m-nav{background:var(--navy);color:#fff;border-radius:16px;padding:20px;font-size:24px;width:420px}
+.m-navlbl{font-size:18px;text-transform:uppercase;opacity:.55;margin:14px 0 6px;letter-spacing:.08em}
+.m-navit{padding:8px 14px;border-radius:8px}.m-navit.on{background:rgba(230,57,70,.85)}
+.m-phone{width:400px;border:12px solid #111;border-radius:44px;overflow:hidden;background:#fff;margin:0 auto}
+.m-phone-screen .capture{border-radius:0;min-height:420px;border:none}
+.m-bottom{display:flex;justify-content:space-around;align-items:center;padding:12px;font-size:18px;text-align:center;border-top:1px solid var(--line)}
+.m-bottom .fab{width:60px;height:60px;border-radius:50%;background:var(--red);color:#fff;font-size:34px;display:flex;align-items:center;justify-content:center}
+.m-check{display:inline-flex;gap:8px;align-items:center}.m-box{width:24px;height:24px;border:2px solid #9aa3b2;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:16px}.m-box.on{background:var(--red);border-color:var(--red);color:#fff}
+.m-chip{display:inline-block;border-radius:20px;padding:4px 16px;font-size:22px;font-weight:700;border:2px solid;background:#fff}
+.m-chip.c-red{color:var(--red)}.m-chip.c-amber{color:#b97510}.m-chip.c-grey{color:var(--ink2)}
+.m-header{display:flex;justify-content:space-between;gap:20px;align-items:center;background:#fff;border-radius:16px;padding:18px 24px;border:1px solid var(--line);flex-wrap:wrap}
+.mh-l{display:flex;gap:16px;align-items:center}.mh-t{font-weight:800;font-size:30px;color:var(--navy)}.mh-s{font-size:22px;color:var(--ink2)}.mh-r{display:flex;gap:8px;flex-wrap:wrap}
+.m-select{border:1px solid #cfd5df;border-radius:6px;padding:2px 10px;margin-left:10px;color:var(--ink)}
+.m-dropdown{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(10,37,64,.15);font-size:26px;overflow:hidden}
+.m-dropdown div{padding:10px 22px;border-bottom:1px solid #eee}
+.m-search{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 20px;font-size:22px;color:var(--ink2)}
+.m-mailbox{background:#fff7ed;border:2px solid #fed7aa;border-radius:14px;padding:20px 24px;font-size:24px;color:#9a3412;display:flex;flex-direction:column;gap:8px}
+.m-mailbox .mb-t{font-weight:800;color:#92400e;font-size:28px}.m-mailbox .mb-s{font-size:20px;opacity:.85}
+.m-opt{border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-weight:700}.m-opt small{display:block;font-weight:400;color:var(--ink2);font-size:20px}.m-opt.danger{color:var(--red);border-color:#f19aa1}
+.m-toolbar{display:flex;flex-wrap:wrap;gap:8px;background:var(--navy);padding:14px;border-radius:14px;margin-bottom:18px}
+.m-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
+.m-stats div{background:#fff;border-radius:14px;padding:18px;border-top:8px solid var(--red);font-size:22px;color:var(--ink2)}.m-stats b{display:block;font-size:52px;color:var(--navy)}
+/* contrôles */
+.progress{position:fixed;top:0;left:0;right:0;height:6px;background:rgba(255,255,255,.12);z-index:20}#prog{height:100%;background:var(--red);width:0;transition:width .2s}
+.ctl{position:fixed;z-index:20;font-family:inherit}
+.toc-btn{top:14px;left:14px;background:rgba(10,37,64,.85);color:#fff;border:0;border-radius:10px;padding:8px 14px;font-size:15px;cursor:pointer}
+.nav-ctl{bottom:12px;right:14px;display:flex;align-items:center;gap:8px;background:rgba(10,37,64,.85);color:#fff;border-radius:10px;padding:4px 8px;font-size:15px}
+.nav-ctl button{background:transparent;border:0;color:#fff;font-size:22px;cursor:pointer;padding:2px 10px;font-family:inherit}
+#notesBtn{font-size:14px;font-weight:700;border-left:1px solid rgba(255,255,255,.3)}
+.toc{position:fixed;inset:0;background:rgba(10,20,35,.7);z-index:30;display:none}.toc.open{display:block}
+.toc-in{position:absolute;left:0;top:0;bottom:0;width:min(520px,100%);background:#fff;overflow:auto;padding:18px}
+.toc-h{display:flex;justify-content:space-between;align-items:center;font-size:22px;font-weight:800;color:var(--navy);margin-bottom:10px}.toc-h button{border:0;background:none;font-size:28px;cursor:pointer}
+.toc a{display:grid;grid-template-columns:34px 30px 1fr;gap:6px;align-items:center;padding:10px 8px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:16px}
+.toc a:hover,.toc a.cur{background:#f3efe6}.toc .tn{font-weight:800;color:var(--red)}.toc .tp{grid-column:3;font-size:12px;color:var(--grey)}
+.toc-help{font-size:13px;color:var(--grey);margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.notes-panel{position:fixed;left:0;right:0;bottom:0;max-height:35vh;overflow:auto;background:#fffbe8;border-top:3px solid var(--amber);padding:14px 20px;font-size:17px;z-index:25;display:none}.notes-panel.open{display:block}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,body{background:#fff;overflow:visible;height:auto}
+  .progress,.ctl,.toc,.notes-panel{display:none!important}
+  .stage{position:static;display:block}.deck{transform:none!important;width:1920px;height:auto}
+  .slide{position:relative;display:flex!important;width:1920px;height:1080px;page-break-after:always;break-after:page}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+.rotate-hint{display:none}
+@media (orientation:portrait) and (max-width:700px){
+  .rotate-hint{display:block;position:fixed;left:10px;right:10px;bottom:56px;z-index:21;background:rgba(10,37,64,.92);color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;text-align:center}
+}
+/* modèle de mail à copier */
+.mailtpl{position:relative;background:#fff;border:2px solid var(--line);border-radius:14px;padding:22px 26px;height:100%}
+.mailtpl pre{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:19px;line-height:1.42;white-space:pre-wrap;color:var(--navy);user-select:text}
+.mailtpl-copy{position:absolute;top:14px;right:14px;border:0;background:var(--navy);color:#fff;font:600 20px Inter,system-ui,sans-serif;border-radius:10px;padding:10px 18px;cursor:pointer}
+@media print{.mailtpl-copy{display:none}}
+</style></head>
+<body>
+<div class="progress"><div id="prog"></div></div>
+<button class="ctl toc-btn" id="tocBtn" title="Contents (S)">☰ Contents</button>
+<div class="ctl nav-ctl"><button id="prev" title="Previous (←)">‹</button><span id="count">1 / 9</span><button id="next" title="Next (→)">›</button><button id="notesBtn" title="Presenter's notes (N)">N</button></div>
+<nav class="toc" id="toc"><div class="toc-in"><div class="toc-h">Contents<button id="tocClose">×</button></div><a href="#daily" data-go="1"><span class="tn">11</span><span class="ti">📓</span><span class="tt">Daily Reports</span><span class="tp">Field</span></a><div class="toc-help">← → space: navigate · S: contents · N: notes · Ctrl+P: print (one slide per page)</div></div></nav>
+<div class="notes-panel" id="notesPanel"></div>
+<div class="rotate-hint">📱 Turn your phone sideways to read the slides · swipe to move on</div>
+<main class="stage" id="stage"><div class="deck" id="deck">
+<section class="slide k-section" id="daily" data-n="1" data-module="Daily Reports"><div class="s-body"><div class="sec-num">11</div><div class="sec-icon">📓</div><h1>Daily Reports</h1>
+    <div class="sec-meta"><span>👥 Site Managers (on a phone)</span><span>⏱ 35 min</span><span>🧭 Field</span></div></div><div class="s-foot"><span>VEM · Training</span><span>1</span></div><aside class="notes">Chapter 11 — audience: Site Managers (on a phone). Duration: 35 min.</aside></section>
+<section class="slide k-std" id="s2" data-n="2" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>Goal &amp; where to find it</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><ul class="bul"><li><b>Goal</b>: one report per site day: what was done, by how many people, with photos.</li><li><b>For whom</b>: Site Managers (and an installer who was given the 📓 Daily reports right, chapter 6).</li></ul><div class="path"><span>🏗️ Projets</span><b>›</b><span>project</span><b>›</b><span>📓 Daily Reports</span><b>›</b><span>+ Nouveau Rapport</span></div><div class="path"><span>Phone: ＋ button</span><b>›</b><span>📓 Daily Report</span></div></div><div><div class="callout tip"><div class="ct">💡 Tip</div><div>Open the project first: it will be preselected in the report.</div></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>2</span></div><aside class="notes">The Menu › 📓 Daily Reports page shows the reports of all projects.</aside></section>
+<section class="slide k-std" id="s3" data-n="3" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>General information</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><div class="m-win"><div class="m-head"><div><div class="m-title">📓 Rapport Journalier</div><div class="m-sub">Journal de chantier complet</div></div><span class="m-x">×</span></div><div class="m-body"><div class="m-grid2"><div class="m-field"><span class="m-lbl">Projet *</span><span class="m-val">Hospitality Paddock — Démo (9999DEMOVIE)</span></div><div class="m-field"><span class="m-lbl">Date *</span><span class="m-val">15/03/2027</span></div></div><div class="m-grid2"><div class="m-field"><span class="m-lbl">Météo</span><span class="m-val">☀️ Ensoleillé</span></div><div class="m-field"><span class="m-lbl">Ouvriers présents</span><span class="m-val">6</span></div></div><div class="m-txt"><b>⏱️ Heures par tâche</b> : ◉ 🏗️ Installation ○ 🔨 Démontage</div><div class="m-grid3"><span class="m-val">Placing Facade elements</span><span class="m-val">6 h</span><span class="m-val">4 hommes</span></div></div></div></div><div><ol class="steps"><li><span class="n"></span><div>« Projet * » (Project) and « Date * » (today by default).</div></li><li><span class="n"></span><div>« Météo » (Weather) and « Ouvriers présents » (Workers present).</div></li><li><span class="n"></span><div>« ⏱️ Heures par tâche » (Hours per task): choose Installation or Dismantling, then hours and number of people per task.</div></li><li><span class="n"></span><div>A task is missing? « Ajouter une autre tâche... » (Add another task) + « + Ajouter ».</div></li></ol><div class="callout info"><div class="ct">ℹ️ Good to know</div><div>Hours per task feed the « Time per task » analysis of the AI Report.</div></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>3</span></div><aside class="notes">Hours per task do not appear in the daily PDF.</aside></section>
+<section class="slide k-std" id="s4" data-n="4" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>The log: 3 ways to write it</h2></div><div class="s-body"><div class="m-tabs"><span class="m-tab on">✏️ Saisie entrée par entrée</span><span class="m-tab">📋 Import texte libre (IA)</span><span class="m-tab">🎙️ Dictée vocale</span></div><table class="tbl small"><thead><tr><th>Mode</th><th>How</th><th>Best for</th></tr></thead><tbody><tr><td>✏️ Saisie entrée par entrée (entry by entry)</td><td>Time + « Décrivez ce qui a été fait... » (describe what was done) + « + Ajouter ». The time moves on by 30 min.</td><td>Writing as the day goes</td></tr><tr><td>📋 Import texte libre (IA) (free text)</td><td>Paste your notes, 🤖 Analyser avec l'IA → Extraire les entrées, check, ✅ Valider et ajouter au journal.</td><td>Notes taken on the phone or on WhatsApp</td></tr><tr><td>🎙️ Dictée vocale (voice)</td><td>🎙️ Démarrer la dictée, speak, then 🤖 Analyser avec l'IA; or 🎵 Choisir un fichier audio (50 MB max).</td><td>End of day, hands busy</td></tr></tbody></table><div class="callout info"><div class="ct">ℹ️ Good to know</div><div>The AI splits the text into time-stamped entries (without inventing times) and returns the text in French. Always read it again before validating.</div></div></div><div class="s-foot"><span>VEM · Training</span><span>4</span></div><aside class="notes">Voice dictation works in French, preferably with Chrome.</aside></section>
+<section class="slide k-std" id="s5" data-n="5" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>Notes, photos and attachments</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><ol class="steps"><li><span class="n"></span><div>« Notes générales / Résumé » (general notes): incidents, important points.</div></li><li><span class="n"></span><div>« 📸 Prendre / Ajouter photos »: select <b>all photos at once</b>.</div></li><li><span class="n"></span><div>« 📎 Pièces jointes » (attachments): tick the checklist to attach (current state), add PDF / photos / Word / Excel (10 MB max per file).</div></li></ol></div><div><div class="callout warn"><div class="ct">⚠️ Watch out</div><div>On a phone, a new photo selection <b>replaces</b> the previous one. Pick them all together, or add more later when editing.</div></div><div class="callout info"><div class="ct">ℹ️ Good to know</div><div>Attached PDFs and photos are added, readable, at the end of the report PDF. Word / Excel stay as links.</div></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>5</span></div><aside class="notes">Do not fill in « ✅ Avancement tâches »: tasks are no longer used.</aside></section>
+<section class="slide k-std" id="s6" data-n="6" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>Save or send</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><div class="m-row"><span class="m-btn m-outline">Annuler</span><span class="m-btn m-primary">💾 Sauvegarder</span><span class="m-btn m-green">📤 Sauv. &amp; Envoyer</span></div><div class="m-win"><div class="m-head"><div><div class="m-title">📤 Envoyer le rapport</div></div><span class="m-x">×</span></div><div class="m-body"><div class="m-txt">🌐 Langue du PDF : 🇫🇷 Français · 🇬🇧 English</div><div class="m-txt">👥 Équipe : ☐ ☐ ☐</div><div class="m-txt">🤝 Client : ☑ <b>ticked by default</b></div><div class="m-txt">✉️ Adresses manuelles</div><div class="m-row right"><span class="m-btn m-primary">📤 Envoyer</span></div></div></div></div><div><ul class="bul"><li>« 💾 Sauvegarder » (Save): the report is saved, nothing is sent.</li><li>« 📤 Sauv. &amp; Envoyer » (Save & Send): saves, then opens the sending window.</li><li>The PDF is sent as an attachment, in the chosen language.</li></ul><div class="callout warn"><div class="ct">⚠️ Watch out</div><div>The <b>client is ticked by default</b>. Untick it if the report is internal. After sending, the « 📤 Envoyer » button disappears: it cannot be sent again.</div></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>6</span></div><aside class="notes">The Team list contains every VEM user, not only the project team.</aside></section>
+<section class="slide k-std" id="s7" data-n="7" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>Review, edit, PDF</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><ol class="steps"><li><span class="n"></span><div>Project tab 📓 Daily Reports: 👁️ read, ✏️ edit, 📄 PDF.</div></li><li><span class="n"></span><div>When editing: « 🤖 Assistant IA » adds entries from a new text or audio (nothing is replaced).</div></li><li><span class="n"></span><div>Photo caption: ✏️ on the photo.</div></li><li><span class="n"></span><div>📄 PDF: choose « 🇫🇷 Français » or « 🇬🇧 English » (texts translated automatically).</div></li></ol></div><div><div class="callout warn"><div class="ct">⚠️ Watch out</div><div>When editing, the weather « 🌩️ Orage » (Storm) is not offered: an edited « Orage » report goes back to Sunny. Deleting <b>all</b> entries is not saved.</div></div><div class="callout no"><div class="ct">⛔ Not allowed</div><div>Do not delete a report: correct it.</div></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>7</span></div><aside class="notes">The PDF contains the client contact block: keep it in mind before sending it to a third party.</aside></section>
+<section class="slide k-std" id="s8" data-n="8" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>What it is used for afterwards</h2></div><div class="s-body"><div class="feeds"><div class="feed"><div class="fa">📊 AI Report</div><div class="fb">Daily Reports section (last 7) + « Time per task »</div></div><div class="feed"><div class="fa">🧾 Handover</div><div class="fb">The site history in case of a discussion with the client</div></div><div class="feed"><div class="fa">📧 Client</div><div class="fb">The PDF sent every day</div></div><div class="feed"><div class="fa">📁 Files</div><div class="fb">Generated PDFs are stored there</div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>8</span></div></section>
+<section class="slide k-exercise" id="s9" data-n="9" data-module="Daily Reports"><div class="s-head"><div class="s-kicker">Chapter 11 · Daily Reports</div><h2>Exercise — the daily of 15/03</h2></div><div class="s-body"><div class="cols" style="grid-template-columns:1fr 1fr"><div><ol class="steps"><li><span class="n"></span><div>Create the daily of the demo project for 15/03/2027: sunny, 6 workers.</div></li><li><span class="n"></span><div>Dictate or paste: « 7:45 arrival, 9:15 crane, assembly of the first 3 boxes, 12:00 break ».</div></li><li><span class="n"></span><div>Add 2 photos (in a single selection) and attach the assembly checklist.</div></li><li><span class="n"></span><div>Save without sending, then download the PDF in English.</div></li></ol></div><div><div class="recap"><div class="rt">Key points</div><ul class="bul"><li>One daily per day, with photos.</li><li>The AI structures, you review.</li><li>Client ticked by default when sending.</li><li>No resending after sending.</li></ul></div></div></div></div><div class="s-foot"><span>VEM · Training</span><span>9</span></div><aside class="notes">Duration: 10 minutes.</aside></section>
+</div></main>
+<script>(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var deck = document.getElementById('deck');
+  var cur = 0;
+  var notesOpen = false;
+  try { notesOpen = localStorage.getItem('vemFormationNotes') === '1'; } catch (e) {}
+
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    deck.style.transform = 'scale(' + s + ')';
+  }
+  function show(i, fromHash) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    slides[cur].classList.remove('on');
+    cur = i;
+    var el = slides[cur];
+    el.classList.add('on');
+    document.getElementById('count').textContent = (cur + 1) + ' / ' + slides.length;
+    document.getElementById('prog').style.width = ((cur + 1) / slides.length * 100) + '%';
+    var n = el.querySelector('.notes');
+    document.getElementById('notesPanel').textContent = n ? n.textContent : '';
+    var mod = el.getAttribute('data-module');
+    document.querySelectorAll('.toc a').forEach(function (a) {
+      a.classList.toggle('cur', a.querySelector('.tt').textContent === mod);
+    });
+    if (!fromHash && history.replaceState) history.replaceState(null, '', '#' + el.id);
+  }
+  function fromHash() {
+    var h = decodeURIComponent((location.hash || '').slice(1));
+    if (!h) return 0;
+    var el = document.getElementById(h);
+    if (el && el.classList.contains('slide')) return slides.indexOf(el);
+    var m = /^s(\d+)$/.exec(h);
+    return m ? +m[1] - 1 : 0;
+  }
+  function selectText(el) {
+    var r = document.createRange(); r.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  }
+  function toggleToc(open) { document.getElementById('toc').classList.toggle('open', open); }
+  function toggleNotes() {
+    notesOpen = !notesOpen;
+    document.getElementById('notesPanel').classList.toggle('open', notesOpen);
+    try { localStorage.setItem('vemFormationNotes', notesOpen ? '1' : '0'); } catch (e) {}
+  }
+
+  document.getElementById('prev').onclick = function () { show(cur - 1); };
+  document.getElementById('next').onclick = function () { show(cur + 1); };
+  document.getElementById('notesBtn').onclick = toggleNotes;
+  document.getElementById('tocBtn').onclick = function () { toggleToc(true); };
+  document.getElementById('tocClose').onclick = function () { toggleToc(false); };
+  document.getElementById('toc').addEventListener('click', function (e) {
+    var a = e.target.closest('a');
+    if (a) { e.preventDefault(); show(+a.getAttribute('data-go') - 1); toggleToc(false); }
+    else if (e.target.id === 'toc') toggleToc(false);
+  });
+  document.getElementById('stage').addEventListener('click', function (e) {
+    var cp = e.target.closest('[data-copy]');
+    if (cp) {
+      var pre = cp.parentNode.querySelector('pre');
+      var done = function () { cp.textContent = cp.getAttribute('data-done'); setTimeout(function () { cp.textContent = cp.getAttribute('data-label'); }, 2000); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(pre.textContent).then(done, function () { selectText(pre); });
+      else selectText(pre);
+      return;
+    }
+    if (e.target.closest('a,button,pre')) return;
+    if (e.clientX < window.innerWidth * 0.25) show(cur - 1); else show(cur + 1);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); show(cur + 1); }
+    else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); show(cur - 1); }
+    else if (k === 'Home') show(0);
+    else if (k === 'End') show(slides.length - 1);
+    else if (k === 'n' || k === 'N') toggleNotes();
+    else if (k === 's' || k === 'S') toggleToc(!document.getElementById('toc').classList.contains('open'));
+    else if (k === 'Escape') toggleToc(false);
+  });
+  var tx = null, ty = null;
+  document.addEventListener('touchstart', function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (tx === null) return;
+    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) show(dx < 0 ? cur + 1 : cur - 1);
+    tx = ty = null;
+  });
+  window.addEventListener('hashchange', function () { show(fromHash(), true); });
+  window.addEventListener('resize', fit);
+  document.getElementById('notesPanel').classList.toggle('open', notesOpen);
+  fit();
+  slides[0].classList.add('on');
+  show(fromHash(), true);
+})();
+</script>
+</body></html>

@@ -8,6 +8,9 @@ export const LABELS = new Map();   // libellé -> Set(slide ids)
 export const CAPTURES = [];        // captures d'écran à réaliser
 let currentSlide = '?';
 export function setSlide(id) { currentSlide = id; }
+// Langue du deck en cours de génération (build.mjs) : 'fr' (défaut) ou 'en'.
+let LANG = 'fr';
+export function setLang(l) { LANG = l; LABELS.clear(); CAPTURES.length = 0; }
 
 function reg(label) {
   if (!LABELS.has(label)) LABELS.set(label, new Set());
@@ -61,12 +64,14 @@ export function steps(list) {
   return `<ol class="steps">${list.map((s) => `<li><span class="n"></span><div>${s}</div></li>`).join('')}</ol>`;
 }
 export function callout(kind, html) {
-  const icon = { warn: '⚠️ Attention', tip: '💡 Astuce', info: 'ℹ️ Bon à savoir', ok: '✅ Bonne pratique', no: '⛔ Interdit' }[kind];
+  const icon = (LANG === 'en'
+    ? { warn: '⚠️ Watch out', tip: '💡 Tip', info: 'ℹ️ Good to know', ok: '✅ Good practice', no: '⛔ Not allowed' }
+    : { warn: '⚠️ Attention', tip: '💡 Astuce', info: 'ℹ️ Bon à savoir', ok: '✅ Bonne pratique', no: '⛔ Interdit' })[kind];
   return `<div class="callout ${kind}"><div class="ct">${icon}</div><div>${html}</div></div>`;
 }
 export function capture(id, screen, state, data) {
   CAPTURES.push({ id, slide: currentSlide, screen, state, data });
-  return `<div class="capture"><div class="cap-id">${esc(id)}</div><div>[CAPTURE À FAIRE : ${esc(screen)} — ${esc(state)}]</div></div>`;
+  return `<div class="capture"><div class="cap-id">${esc(id)}</div><div>[${LANG === 'en' ? 'SCREENSHOT TO TAKE' : 'CAPTURE À FAIRE'} : ${esc(screen)} — ${esc(state)}]</div></div>`;
 }
 export function cols(a, b, ratio = '1fr 1fr') {
   return `<div class="cols" style="grid-template-columns:${ratio}">${`<div>${a}</div><div>${b}</div>`}</div>`;
