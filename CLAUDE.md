@@ -8,6 +8,11 @@ VEM (ViewBox Event Manager) — internal project management platform for Viewbox
 
 The user (Amaury Pinchart) applies changes manually via copy-paste in github.dev and deploys through Railway's auto-rebuild on push. He is non-technical: prefer full drop-in code blocks over diffs/patches when asked to change something, and keep explanations short — see his instructions at the top of the conversation.
 
+## Claude Code setup (`.claude/`)
+
+- `.claude/hooks/session-start.sh` (registered in `.claude/settings.json`, cloud sessions only): `npm install` at the root (+ `prisma generate`) and in `plans/`, `LANG=C.UTF-8` (Ruby tests), `CHROMIUM` = the preinstalled headless shell for `plans/e2e`.
+- Project skills in `.claude/skills/`: `vem-verify` (checks before a push), `vem-schema-change` (Prisma + idempotent SQL), `vem-new-route` (route / access / scopeGuard conventions), `vem-e2e` (mock server + Playwright scripts), `vem-safety-nets` (baselines, cache versions, generated files), `vem-delivery` (commit / push / CLAUDE.md / final message to Amaury). Keep them in sync with this file when a convention changes.
+
 ## Commands
 
 ```bash
