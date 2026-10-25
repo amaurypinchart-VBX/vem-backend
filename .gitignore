@@ -7,3 +7,7 @@ test-models/
 plans/reference-reports/
 plans/e2e/shots/
 plans/e2e/*.zip
+
+# Dépendances et build du backend (réinstallés / recompilés par le Dockerfile)
+node_modules/
+dist/
