@@ -28,6 +28,8 @@ async function loadProjectDetail(id) {
   // Check-list « Préparation de l'installation » en haut de l'onglet Infos (js/15-checklists.js) :
   // lancée tout de suite, pour ne pas dépendre du rendu du reste de la fiche
   if (typeof loadChecklistCard === 'function') loadChecklistCard(id, 'prep');
+  // Demandes d'infos par mail (js/18-info-requests.js), même logique : chargée à part
+  if (typeof loadInfoRequestsCard === 'function') loadInfoRequestsCard(id);
 
   document.getElementById('detail-name').textContent = p.name;
   document.getElementById('detail-sub').textContent = `${p.internalNumber} · ${p.client?.name||''}`;

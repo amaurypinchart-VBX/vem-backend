@@ -1505,4 +1505,79 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] password_reset_tokens : ${e.message}`);
   }
+
+  // ─── Demandes d'infos par mail (src/services/infoRequestService.ts) ───
+  // Une demande par destinataire et par envoi (réf. INFO-XXXXXX dans le sujet), ses questions dans info_request_items.
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "info_requests" (
+        "id"                TEXT         NOT NULL,
+        "project_id"        TEXT         NOT NULL,
+        "ref"               TEXT         NOT NULL,
+        "web_token"         TEXT         NOT NULL,
+        "recipient_user_id" TEXT,
+        "recipient_email"   TEXT         NOT NULL,
+        "recipient_name"    TEXT,
+        "lang"              TEXT         NOT NULL DEFAULT 'fr',
+        "message"           TEXT,
+        "status"            TEXT         NOT NULL DEFAULT 'open',
+        "plan"              JSONB        NOT NULL DEFAULT '{}'::jsonb,
+        "next_reminder_at"  TIMESTAMP(3),
+        "reminders_sent"    INTEGER      NOT NULL DEFAULT 0,
+        "last_sent_at"      TIMESTAMP(3),
+        "last_reply_at"     TIMESTAMP(3),
+        "history"           JSONB        NOT NULL DEFAULT '[]'::jsonb,
+        "created_by"        TEXT,
+        "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "info_requests_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "info_requests_ref_key" ON "info_requests" ("ref")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "info_requests_web_token_key" ON "info_requests" ("web_token")`,
+      `CREATE INDEX IF NOT EXISTS "info_requests_project_id_idx" ON "info_requests" ("project_id")`,
+      `CREATE INDEX IF NOT EXISTS "info_requests_status_next_reminder_at_idx" ON "info_requests" ("status", "next_reminder_at")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'info_requests_project_id_fkey') THEN
+          ALTER TABLE "info_requests"
+            ADD CONSTRAINT "info_requests_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `CREATE TABLE IF NOT EXISTS "info_request_items" (
+        "id"           TEXT         NOT NULL,
+        "request_id"   TEXT         NOT NULL,
+        "number"       INTEGER      NOT NULL,
+        "field"        TEXT         NOT NULL,
+        "label"        TEXT         NOT NULL,
+        "question"     TEXT,
+        "kind"         TEXT         NOT NULL,
+        "needed_by"    TIMESTAMP(3),
+        "status"       TEXT         NOT NULL DEFAULT 'pending',
+        "before"       TEXT,
+        "answer_raw"   TEXT,
+        "answer_value" TEXT,
+        "answered_at"  TIMESTAMP(3),
+        "source"       TEXT,
+        "note"         TEXT,
+        "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "info_request_items_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "info_request_items_request_id_idx" ON "info_request_items" ("request_id")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'info_request_items_request_id_fkey') THEN
+          ALTER TABLE "info_request_items"
+            ADD CONSTRAINT "info_request_items_request_id_fkey"
+            FOREIGN KEY ("request_id") REFERENCES "info_requests"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] tables info_requests / info_request_items créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] info_requests : ${e.message}`);
+  }
 }

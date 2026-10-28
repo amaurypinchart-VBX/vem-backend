@@ -20,6 +20,7 @@ import { uploadToCloudinary } from './cloudinaryService';
 import { logger } from '../utils/logger';
 import { createProjectFromEmail } from './projectFromEmail';
 import { createBookingsFromEmail } from './bookingFromEmail';
+import { handleInboundEmail } from './infoRequestService';
 
 let isRunning = false;
 let pollTimer: NodeJS.Timeout | null = null;
@@ -85,6 +86,37 @@ export async function pollImapOnce(): Promise<{ processed: number; skipped: numb
             logger.info(`[imap] Mail UID ${uid} sans sujet — ignoré`);
             await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             skipped++;
+            continue;
+          }
+
+          // ─── Réponse à une demande d'infos (réf. INFO-XXXXXX, src/services/infoRequestService.ts) ───
+          // Traitée AVANT le reste : le sujet contient aussi le n° interne du projet, ce qui lancerait sinon
+          // l'extraction de réservations plus bas. Marquée lue même en cas d'erreur (pas de double application).
+          try {
+            const headers: Record<string, string> = {};
+            for (const [k, v] of (parsed.headers || new Map()) as Map<string, any>) {
+              headers[String(k).toLowerCase()] = typeof v === 'string' ? v
+                : Array.isArray(v) ? v.join(', ')
+                : String(v?.value ?? v?.text ?? '');
+            }
+            const handled = await handleInboundEmail({
+              subject,
+              text:        parsed.text || '',
+              html:        typeof parsed.html === 'string' ? parsed.html : '',
+              from,
+              fromAddress: parsed.from?.value?.[0]?.address || '',
+              headers,
+              attachments: parsed.attachments || [],
+            });
+            if (handled) {
+              processed++;
+              await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
+              continue;
+            }
+          } catch (e: any) {
+            errors++;
+            logger.error(`[imap] Erreur réponse demande d'infos : ${e.message || e}`);
+            await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true });
             continue;
           }
 

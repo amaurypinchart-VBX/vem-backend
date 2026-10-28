@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>VEM — Infos à compléter</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,Helvetica,sans-serif;background:#f5f5f5;color:#1a1a2e;padding:16px;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.06);}
+  .hdr{background:#1a1a2e;padding:20px;text-align:center;}
+  .logo{color:#e63946;font-size:26px;font-weight:900;letter-spacing:2px;}
+  .sub{color:rgba(255,255,255,.55);font-size:11px;margin-top:4px;}
+  .body{padding:22px 20px;}
+  h1{font-size:20px;margin-bottom:8px;}
+  p{color:#555;line-height:1.55;margin-bottom:12px;font-size:14px;}
+  .info{background:#f8f8f8;border-radius:8px;padding:12px 14px;margin:12px 0 18px;font-size:13px;}
+  .info div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;}
+  .info span:first-child{color:#999;}
+  .info span:last-child{font-weight:700;text-align:right;}
+  .msg{white-space:pre-wrap;background:#fff7ed;border-left:4px solid #f4a261;padding:10px 12px;border-radius:6px;font-size:14px;color:#555;margin-bottom:14px;}
+  .q{border:1px solid #eee;border-radius:10px;padding:14px;margin-bottom:12px;}
+  .q.done{background:#f3fbf5;border-color:#cdeed6;}
+  .q-head{display:flex;gap:8px;align-items:baseline;margin-bottom:4px;}
+  .q-num{color:#e63946;font-weight:700;}
+  .q-label{font-weight:700;font-size:15px;}
+  .q-hint{font-size:12px;color:#777;margin-bottom:6px;}
+  .q-meta{font-size:12px;color:#999;margin-bottom:8px;}
+  .q-note{font-size:12px;color:#b45309;background:#fff7ed;border-radius:6px;padding:6px 8px;margin-bottom:8px;}
+  .q-answer{font-size:14px;color:#166534;white-space:pre-wrap;}
+  input,textarea{width:100%;font:inherit;font-size:15px;padding:10px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a2e;}
+  input:focus,textarea:focus{outline:none;border-color:#e63946;}
+  textarea{min-height:84px;resize:vertical;}
+  .row{display:flex;gap:8px;}
+  .row input[type=time]{max-width:140px;}
+  .btn{display:block;width:100%;background:#e63946;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;margin-top:6px;}
+  .btn:disabled{opacity:.6;cursor:default;}
+  .hint{font-size:12px;color:#999;text-align:center;margin-top:10px;}
+  .ok{background:#ecfdf3;border:1px solid #abefc6;color:#067647;border-radius:8px;padding:12px;margin-bottom:14px;font-size:14px;}
+  .err{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:8px;padding:12px;margin-bottom:14px;font-size:14px;}
+  .ftr{background:#f8f8f8;padding:12px;text-align:center;color:#999;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr"><div class="logo">VEM</div><div class="sub">ViewBox Event Manager</div></div>
+  <div class="body" id="root"><p>Chargement…</p></div>
+  <div class="ftr" id="ftr"></div>
+</div>
+<script>
+(function () {
+  var token = (location.pathname.match(/\/info\/([A-Za-z0-9_-]{20,64})/) || [])[1]
+    || new URLSearchParams(location.search).get('t') || '';
+  var API = '/api/v1/public/info-request/' + encodeURIComponent(token);
+  var root = document.getElementById('root');
+  var VIEW = null, MSG = '';
+
+  var T = {
+    fr: {
+      title: 'Infos à compléter', hello: 'Bonjour', intro: 'Merci de compléter ce que tu sais. Ce que tu ne sais pas encore : laisse vide, on te le redemandera.',
+      project: 'Projet', client: 'Client', install: 'Montage', current: 'Actuellement dans VEM', needed: 'Nécessaire pour le',
+      send: 'Envoyer mes réponses', sending: 'Envoi…', received: 'Déjà reçu', time: 'heure (facultatif)',
+      thanks: 'Merci ! Tes réponses sont enregistrées dans VEM.', nothing: 'Rien à envoyer : remplis au moins une réponse.',
+      notUnderstood: 'Pas compris', allDone: 'Tout est complet, merci beaucoup ! Tu peux fermer cette page.',
+      stopped: 'Cette demande a été arrêtée : plus besoin de répondre. Merci !', invalid: 'Lien invalide ou expiré.',
+      network: 'Erreur réseau, réessaie.', ref: 'Réf.', placeholder: 'Ta réponse…'
+    },
+    en: {
+      title: 'Information needed', hello: 'Hello', intro: 'Please fill in what you know. Not known yet? Leave it empty: we will ask again later.',
+      project: 'Project', client: 'Client', install: 'Installation', current: 'Currently in VEM', needed: 'Needed by',
+      send: 'Send my answers', sending: 'Sending…', received: 'Already received', time: 'time (optional)',
+      thanks: 'Thank you! Your answers are saved in VEM.', nothing: 'Nothing to send: fill in at least one answer.',
+      notUnderstood: 'Not understood', allDone: 'Everything is complete, thank you very much! You can close this page.',
+      stopped: 'This request was closed: no need to answer anymore. Thank you!', invalid: 'Invalid or expired link.',
+      network: 'Network error, please try again.', ref: 'Ref.', placeholder: 'Your answer…'
+    }
+  };
+  function t(k) { return (T[(VIEW && VIEW.lang) || 'fr'] || T.fr)[k]; }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  function inputFor(it) {
+    var id = 'a' + it.number;
+    if (it.kind === 'date') {
+      return '<div class="row"><input type="date" id="' + id + '"><input type="time" id="' + id + 't" title="' + esc(t('time')) + '"></div>';
+    }
+    if (it.kind === 'number') return '<input type="number" min="0" inputmode="numeric" id="' + id + '">';
+    if (it.kind === 'text') return '<input type="text" id="' + id + '" placeholder="' + esc(t('placeholder')) + '">';
+    return '<textarea id="' + id + '" placeholder="' + esc(t('placeholder')) + '"></textarea>';
+  }
+
+  function render() {
+    var v = VIEW;
+    document.documentElement.lang = v.lang;
+    document.title = 'VEM — ' + t('title');
+    document.getElementById('ftr').textContent = t('ref') + ' ' + v.ref + ' · © VEM';
+    var pending = v.items.filter(function (i) { return i.status === 'pending'; });
+    var html = '<h1>' + esc(t('title')) + '</h1>';
+    html += MSG;
+    if (v.recipientName) html += '<p>' + esc(t('hello')) + ' <strong>' + esc(v.recipientName.split(' ')[0]) + '</strong>,</p>';
+    html += '<div class="info">'
+      + '<div><span>' + esc(t('project')) + '</span><span>' + esc(v.project.name) + (v.project.internalNumber ? ' (' + esc(v.project.internalNumber) + ')' : '') + '</span></div>'
+      + (v.project.client ? '<div><span>' + esc(t('client')) + '</span><span>' + esc(v.project.client) + '</span></div>' : '')
+      + (v.project.install ? '<div><span>' + esc(t('install')) + '</span><span>' + esc(v.project.install) + '</span></div>' : '')
+      + '</div>';
+    if (v.message) html += '<div class="msg">' + esc(v.message) + '</div>';
+    if (v.status === 'stopped' && !pending.length) {
+      html += '<div class="ok">' + esc(t('stopped')) + '</div>';
+    } else if (!pending.length) {
+      html += '<div class="ok">' + esc(t('allDone')) + '</div>';
+    } else {
+      html += '<p>' + esc(t('intro')) + '</p>';
+    }
+    v.items.forEach(function (it) {
+      var done = it.status !== 'pending';
+      html += '<div class="q' + (done ? ' done' : '') + '">'
+        + '<div class="q-head"><span class="q-num">Q' + it.number + '</span><span class="q-label">' + esc(it.label) + '</span></div>';
+      if (done) {
+        html += '<div class="q-answer">✅ ' + esc(t('received')) + (it.answer ? ' : ' + esc(it.answer) : '') + '</div>';
+      } else {
+        if (it.hint) html += '<div class="q-hint">' + esc(it.hint) + '</div>';
+        var meta = [];
+        if (it.current) meta.push(esc(t('current')) + ' : <em>' + esc(it.current) + '</em>');
+        if (it.neededBy) meta.push(esc(t('needed')) + ' <strong>' + esc(it.neededBy) + '</strong>');
+        if (meta.length) html += '<div class="q-meta">' + meta.join(' · ') + '</div>';
+        if (it.note) html += '<div class="q-note">' + esc(it.note) + '</div>';
+        html += inputFor(it);
+      }
+      html += '</div>';
+    });
+    if (pending.length) html += '<button class="btn" id="send">' + esc(t('send')) + '</button>';
+    root.innerHTML = html;
+    var btn = document.getElementById('send');
+    if (btn) btn.onclick = send;
+  }
+
+  function collect() {
+    var answers = [];
+    VIEW.items.forEach(function (it) {
+      if (it.status !== 'pending') return;
+      var el = document.getElementById('a' + it.number);
+      if (!el) return;
+      var val = (el.value || '').trim();
+      if (it.kind === 'date' && val) {
+        var tm = document.getElementById('a' + it.number + 't');
+        if (tm && tm.value) val += 'T' + tm.value;
+      }
+      if (val) answers.push({ number: it.number, value: val });
+    });
+    return answers;
+  }
+
+  function send() {
+    var answers = collect();
+    if (!answers.length) { MSG = '<div class="err">' + esc(t('nothing')) + '</div>'; render(); return; }
+    var btn = document.getElementById('send');
+    btn.disabled = true; btn.textContent = t('sending');
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers: answers }) })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success) throw new Error((res && res.error) || 'error');
+        var d = res.data;
+        VIEW = d.view || VIEW;
+        var bad = (d.invalid || []).map(function (i) { return 'Q' + i.number + ' (' + esc(i.reason) + ')'; });
+        MSG = '<div class="ok">' + esc(t('thanks')) + '</div>'
+          + (bad.length ? '<div class="err">' + esc(t('notUnderstood')) + ' : ' + bad.join(', ') + '</div>' : '');
+        render();
+        window.scrollTo(0, 0);
+      })
+      .catch(function (e) {
+        MSG = '<div class="err">' + esc(e && e.message && e.message !== 'error' ? e.message : t('network')) + '</div>';
+        render();
+      });
+  }
+
+  if (!token) { root.innerHTML = '<div class="err">' + T.fr.invalid + ' / ' + T.en.invalid + '</div>'; return; }
+  fetch(API).then(function (r) { return r.json(); }).then(function (res) {
+    if (!res || !res.success) { root.innerHTML = '<div class="err">' + T.fr.invalid + ' / ' + T.en.invalid + '</div>'; return; }
+    VIEW = res.data;
+    render();
+  }).catch(function () { root.innerHTML = '<div class="err">' + T.fr.network + '</div>'; });
+})();
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
 import { uploadToCloudinary } from '../services/cloudinaryService';
 import { logger } from '../utils/logger';
+import { handleInboundEmail } from '../services/infoRequestService';
 
 const router = Router();
 
@@ -55,6 +56,24 @@ router.post('/brevo-inbound', async (req: Request, res: Response) => {
       const subject  = String(item.Subject || item.subject || '').trim();
       const fromAddr = item.From?.Address || item.from?.address || item.From?.email || 'inconnu';
       if (!subject) { totalSkipped++; continue; }
+
+      // ─── Réponse à une demande d'infos (réf. INFO-XXXXXX) : lue et appliquée au projet ───
+      try {
+        const headers: Record<string, string> = {};
+        for (const [k, v] of Object.entries(item.Headers || item.headers || {})) headers[k.toLowerCase()] = String(v ?? '');
+        const handled = await handleInboundEmail({
+          subject,
+          text:        item.RawTextBody || item.ExtractedMarkdownMessage || item.TextBody || '',
+          html:        item.RawHtmlBody || item.HtmlBody || '',
+          from:        item.From?.Name ? `${item.From.Name} <${fromAddr}>` : String(fromAddr),
+          fromAddress: String(fromAddr),
+          headers,
+        });
+        if (handled) { totalProcessed++; continue; }
+      } catch (e: any) {
+        logger.error(`[email-webhook] Erreur réponse demande d'infos : ${e.message || e}`);
+        continue;
+      }
 
       // ─── 3) Recherche du projet par N° interne dans le sujet ───
       // On itère sur tous les projets et on prend celui dont le N° interne apparaît dans le sujet.

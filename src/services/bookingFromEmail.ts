@@ -25,6 +25,12 @@ interface EmailInput {
   subject: string;
   text: string;
   from: string;
+  /** limiter à certains types (demandes d'infos : la question « camions » ne crée que des camions) */
+  only?: Array<'trucks' | 'hotels' | 'teamTravel'>;
+  /** texte d'origine mis dans les notes (défaut : « créé auto depuis mail ») */
+  origin?: string;
+  /** false = pas de notification générique (l'appelant prévient lui-même) */
+  notify?: boolean;
 }
 interface CreateResult {
   created: number;      // total d'enregistrements créés
@@ -193,8 +199,13 @@ export async function createBookingsFromEmail(input: EmailInput): Promise<Create
   const roster = teamRows.map(t => `${t.user.firstName} ${t.user.lastName}`);
 
   const f = await extract(input.subject, body, roster);
+  if (input.only) {
+    if (!input.only.includes('trucks')) f.trucks = [];
+    if (!input.only.includes('hotels')) f.hotels = [];
+    if (!input.only.includes('teamTravel')) f.teamTravel = [];
+  }
 
-  const origin = `${AUTO_TAG} (mail de ${input.from}).`;
+  const origin = input.origin || `${AUTO_TAG} (mail de ${input.from}).`;
 
   // ─── Camions ───
   for (const t of (Array.isArray(f.trucks) ? f.trucks : [])) {
@@ -305,7 +316,7 @@ export async function createBookingsFromEmail(input: EmailInput): Promise<Create
   }
 
   // ─── Notification ───
-  if (result.created > 0) {
+  if (result.created > 0 && input.notify !== false) {
     try {
       const recipients = await prisma.user.findMany({
         where: { role: { in: ['admin', 'project_manager'] as any }, isActive: true },

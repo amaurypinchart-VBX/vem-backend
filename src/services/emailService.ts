@@ -59,9 +59,16 @@ function base(title: string, content: string): string {
   </div></body></html>`;
 }
 
+/** Même habillage que les autres mails VEM (en-tête, pied), pour les services qui composent leur propre contenu. */
+export function emailShell(title: string, content: string): string {
+  return base(title, content);
+}
+
+type MailOpts = { to: string|string[]; subject: string; html: string; attachments?: any[]; replyTo?: string };
+
 // ─── Envoi via API Brevo (préféré sur Railway) ───
 // Doc : https://developers.brevo.com/reference/sendtransacemail
-async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+async function sendViaBrevo(opts: MailOpts) {
   const toList = (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: e }));
   const body: any = {
     sender:      { name: FROM_NAME, email: FROM_ADDR },
@@ -69,6 +76,7 @@ async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: 
     subject:     opts.subject,
     htmlContent: opts.html,
   };
+  if (opts.replyTo) body.replyTo = { email: opts.replyTo };
   // Convertir les attachments nodemailer-like vers le format Brevo (name + base64 content)
   if (opts.attachments && opts.attachments.length > 0) {
     body.attachment = opts.attachments.map((a: any) => {
@@ -106,7 +114,7 @@ async function sendViaBrevo(opts: { to: string|string[]; subject: string; html: 
 // Node fetch convertirait automatiquement POST → GET en suivant ce redirect
 // (ce qui causerait un 405 Method Not Allowed). On gère donc le redirect
 // manuellement en re-postant le body sur la nouvelle URL.
-async function sendViaAppsScript(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+async function sendViaAppsScript(opts: MailOpts) {
   const url   = process.env.GMAIL_APPS_SCRIPT_URL;
   const token = process.env.GMAIL_APPS_SCRIPT_TOKEN;
   if (!url || !token) throw new Error('GMAIL_APPS_SCRIPT_URL ou GMAIL_APPS_SCRIPT_TOKEN manquant');
@@ -118,6 +126,9 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
     html:     opts.html,
     fromName: FROM_NAME,
   };
+  // Adresse de réponse (demandes d'infos : les réponses doivent arriver dans la boîte relevée par IMAP).
+  // Le script doit la passer à GmailApp.sendEmail({ replyTo }) ; s'il l'ignore, la réponse va à l'expéditeur.
+  if (opts.replyTo) body.replyTo = opts.replyTo;
   if (opts.attachments && opts.attachments.length > 0) {
     body.attachments = opts.attachments.map((a: any) => {
       let content: string;
@@ -177,7 +188,7 @@ async function sendViaAppsScript(opts: { to: string|string[]; subject: string; h
   return { messageId: `apps-script-${Date.now()}` };
 }
 
-export async function sendMail(opts: { to: string|string[]; subject: string; html: string; attachments?: any[] }) {
+export async function sendMail(opts: MailOpts) {
   // Priorité 1 : Google Apps Script si configuré (la solution Gmail-only via HTTPS)
   if (process.env.GMAIL_APPS_SCRIPT_URL && process.env.GMAIL_APPS_SCRIPT_TOKEN) {
     try {
@@ -224,6 +235,7 @@ export async function sendMail(opts: { to: string|string[]; subject: string; htm
       subject: opts.subject,
       html: opts.html,
       attachments: opts.attachments,
+      replyTo: opts.replyTo,
     });
     const toStr = Array.isArray(opts.to) ? opts.to.join(', ') : opts.to;
     logger.info(`[email/smtp] ✅ envoyé à ${toStr} (messageId=${result.messageId})`);

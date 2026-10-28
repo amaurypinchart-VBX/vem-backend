@@ -50,6 +50,9 @@ import publicCalendarRoutes from './routes/publicCalendar';
 import assistantRoutes from './routes/assistant';
 import checklistRoutes from './routes/checklists';
 import formationRoutes from './routes/formation';
+import infoRequestRoutes from './routes/infoRequests';
+import publicInfoRequestRoutes from './routes/publicInfoRequest';
+import { startInfoRequestScheduler } from './services/infoRequestService';
 
 const app  = express();
 const http = createServer(app);
@@ -119,6 +122,8 @@ const API = '/api/v1';
 app.use(`${API}/auth`,           authRoutes);
 // Route PUBLIQUE — pas de middleware auth, accessible par lien
 app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
+// Route PUBLIQUE — page « Répondre en ligne » d'une demande d'infos (accès par le jeton du lien envoyé par mail)
+app.use('/api/v1/public/info-request', publicInfoRequestRoutes);
 // Route PUBLIQUE — calendrier projets 2 mois pour écran entrepôt
 app.use('/api/v1/public', publicCalendarRoutes);
 
@@ -159,6 +164,8 @@ app.use(`${API}/translate`,      authMiddleware, scopeGuard('translate'), transl
 app.use(`${API}/settings`,       authMiddleware, scopeGuard('settings'), settingsRoutes);
 // Support de formation (deck HTML) — personnes connectées, sauf les comptes Client (interne Viewbox)
 app.use(`${API}/formation`,      authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'site_manager', 'engineer', 'sales_engineer', 'warehouse', 'installer', 'worker'), formationRoutes);
+// Demandes d'infos par mail : rôles qui voient tous les projets + site manager (ses projets : contrôlé dans chaque route)
+app.use(`${API}/info-requests`,  authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'engineer', 'sales_engineer', 'warehouse', 'site_manager'), infoRequestRoutes);
 
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
@@ -182,6 +189,9 @@ app.post(`${API}/imap-poll`, authMiddleware, requireRole('admin', 'project_manag
 // 404, jamais la page d'accueil de VEM (le navigateur la refuserait comme script, sans message clair).
 app.use('/plans/assets', (_req, res) => res.status(404).type('text/plain').send('Fichier introuvable : nouvelle version en ligne, recharger la page.'));
 
+// Lien « Répondre en ligne » des mails de demande d'infos (page publique, sans connexion)
+app.get('/info/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'info-request.html')));
+
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
 app.use(errorHandler);
@@ -193,6 +203,8 @@ http.listen(PORT, '0.0.0.0', async () => {
   // Démarre le polling IMAP pour récupérer les emails entrants → projets.
   // Ne fait rien si IMAP_USER/IMAP_PASS ne sont pas configurés.
   startImapPoller();
+  // Rappels des demandes d'infos par mail (toutes les 5 min, INFO_REQUESTS_TICK_MIN)
+  startInfoRequestScheduler();
 });
 
 export default app;

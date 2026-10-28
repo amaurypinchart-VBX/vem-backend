@@ -232,6 +232,7 @@ model Project {
   structStudies    StructStudy[]
   loadingLists     LoadingList[]
   checklists       ProjectChecklist[]
+  infoRequests     InfoRequest[]
 
   @@map("projects")
 }
@@ -1344,4 +1345,62 @@ model LoadingBench {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("loading_benches")
+}
+
+// ─── Demandes d'infos par mail (docs/info-requests/PROMPT_Demandes_Infos_Mail.md) ───
+// Une demande = un destinataire + ses questions sur un projet ; la réponse au mail (réf. INFO-XXXXXX) remplit le projet.
+// Tables créées par du SQL idempotent dans src/utils/migrations.ts ; lues via (prisma as any).infoRequest.
+model InfoRequest {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  ref             String    @unique
+  webToken        String    @unique @map("web_token")
+  recipientUserId String?   @map("recipient_user_id")
+  recipientEmail  String    @map("recipient_email")
+  recipientName   String?   @map("recipient_name")
+  lang            String    @default("fr")
+  message         String?
+  // open (rappels actifs) | done (plus rien en attente) | stopped (arrêtée à la main)
+  status          String    @default("open")
+  plan            Json      @default("{}")
+  nextReminderAt  DateTime? @map("next_reminder_at")
+  remindersSent   Int       @default(0) @map("reminders_sent")
+  lastSentAt      DateTime? @map("last_sent_at")
+  lastReplyAt     DateTime? @map("last_reply_at")
+  history         Json      @default("[]")
+  createdById     String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  project Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items   InfoRequestItem[]
+
+  @@index([projectId])
+  @@index([status, nextReminderAt])
+  @@map("info_requests")
+}
+
+model InfoRequestItem {
+  id          String    @id @default(uuid())
+  requestId   String    @map("request_id")
+  number      Int
+  field       String
+  label       String
+  question    String?
+  kind        String
+  neededBy    DateTime? @map("needed_by")
+  // pending | answered (rempli par la réponse) | received (reçu, à reprendre à la main) | filled (rempli dans VEM) | stopped
+  status      String    @default("pending")
+  before      String?
+  answerRaw   String?   @map("answer_raw")
+  answerValue String?   @map("answer_value")
+  answeredAt  DateTime? @map("answered_at")
+  source      String?
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  request InfoRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("info_request_items")
 }

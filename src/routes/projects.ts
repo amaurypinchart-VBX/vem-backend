@@ -13,6 +13,7 @@ import { checklistProgress } from '../services/checklistService';
 import { deleteFromCloudinary } from '../services/cloudinaryService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { getProjectTaskHours } from '../services/taskHours';
+import { syncProject as syncInfoRequests } from '../services/infoRequestService';
 
 const router = Router();
 
@@ -219,6 +220,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       include: { client: true, technicalManager: { select: { id:true, firstName:true, lastName:true } } },
     });
     io.to(`project:${req.params.id}`).emit('project:updated', project);
+    // Demandes d'infos : une info remplie ici arrête ses rappels par mail
+    syncInfoRequests(req.params.id).catch(() => {});
     res.json({ success: true, data: project });
   } catch (err: any) {
     // On expose le vrai message au front pour debugger plus vite (ex: clientId invalide, date pourrie)
@@ -246,6 +249,7 @@ router.post('/:id/team', async (req: AuthRequest, res: Response, next: NextFunct
       },
       include: { user: { select: { firstName:true, lastName:true, email:true } } },
     });
+    syncInfoRequests(req.params.id).catch(() => {});
     res.status(201).json({ success: true, data: member });
   } catch (err: any) {
     if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Déjà dans l\'équipe' });
@@ -535,6 +539,7 @@ router.post('/:id/trucks', async (req: AuthRequest, res: Response, next: NextFun
         if (taskId) return prisma.truck.update({ where: { id: truck.id }, data: { warehouseTaskId: taskId } });
       }).catch(() => {});
     }).catch(() => {});
+    syncInfoRequests(req.params.id).catch(() => {});
 
     res.status(201).json({ success: true, data: truck });
   } catch (err) { next(err); }
