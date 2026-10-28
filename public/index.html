@@ -417,7 +417,10 @@
 <div class="pg" id="pg-daily">
   <div class="pg-head">
     <div><div class="pg-title">Daily Reports</div><div class="pg-sub">Rapports journaliers</div></div>
-    <button class="btn btn-primary" onclick="showModal('modal-daily')">+ Nouveau Rapport</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="openWhatsAppImport()" title="Créer les rapports à partir d’une conversation WhatsApp exportée">💬 Importer WhatsApp</button>
+      <button class="btn btn-primary" onclick="showModal('modal-daily')">+ Nouveau Rapport</button>
+    </div>
   </div>
   <div id="daily-list"><div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Chargement...</div></div></div>
 </div>
@@ -856,7 +859,7 @@
 <div class="overlay" id="modal-daily">
   <div class="modal" style="max-width:920px;">
     <div class="modal-head">
-      <div><div class="modal-title">📓 Rapport Journalier</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Journal de chantier complet</div></div>
+      <div><div class="modal-title">📓 Rapport Journalier</div><div style="font-size:12px;color:var(--text2);margin-top:3px;">Journal de chantier complet · <a href="#" onclick="event.preventDefault();const p=document.getElementById('daily-project').value;closeModal('modal-daily');openWhatsAppImport(p)" style="color:var(--accent);">💬 ou depuis une conversation WhatsApp</a></div></div>
       <button class="modal-close" onclick="closeModal('modal-daily')">×</button>
     </div>
 
@@ -1388,5 +1391,6 @@
 <script src="js/14-briefing-autogen.js"></script>
 <script src="js/15-checklists.js"></script>
 <script src="js/16-daily-attachments.js"></script>
+<script src="js/17-whatsapp-import.js"></script>
 </body>
 </html>

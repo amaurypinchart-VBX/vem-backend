@@ -1110,7 +1110,7 @@ async function loadDetailDailyReports(projectId) {
   const res = await api('GET', `/daily-reports?projectId=${projectId}`);
   const el = document.getElementById('detail-daily-content');
   if (!res?.success) return;
-  const btn = `<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn btn-primary btn-sm" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>`;
+  const btn = `<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px;"><button class="btn btn-ghost btn-sm" onclick="openWhatsAppImport('${projectId}')" title="Créer les rapports à partir d’une conversation WhatsApp exportée">💬 Importer WhatsApp</button><button class="btn btn-primary btn-sm" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>`;
   if (!res.data.length) { el.innerHTML = btn + '<div class="empty"><div class="empty-icon">📓</div><div class="empty-title">Aucun rapport journalier</div></div>'; return; }
   el.innerHTML = btn + res.data.map(r => `
     <div class="card" style="margin-bottom:10px;cursor:pointer;" onclick="openDailyDetail('${r.id}','${projectId}')">
