@@ -175,6 +175,8 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'GET', p: '/', need: 'read', list: true },
     { m: 'GET', p: '/:id', need: 'read', proj: async (p) => [await look.daily(p.id)] },
     { m: 'POST', p: '/', need: 'daily_reports', proj: (_p, req) => body(req) },
+    { m: 'POST', p: '/whatsapp/parse', need: 'daily_reports', proj: (_p, req) => body(req) },
+    { m: 'POST', p: '/whatsapp/analyze-day', need: 'daily_reports', proj: (_p, req) => body(req) },
     { m: 'PATCH', p: '/:id', need: 'daily_reports', proj: async (p) => [await look.daily(p.id)] },
     { m: 'POST', p: '/:id/photos', need: 'daily_reports', proj: async (p) => [await look.daily(p.id)] },
     { m: 'DELETE', p: '/:id/photos/:photoId', need: 'daily_reports', proj: async (p) => [await look.daily(p.id), await look.dailyPhoto(p.photoId)] },

@@ -10,6 +10,7 @@ import { CHECKLIST_PHASES } from '../services/checklistService';
 import {
   ATTACHMENT_MAX_BYTES, classifyFile, inspectPdf, storeAttachmentFile, checklistSnapshot, buildDailyReportPdf,
 } from '../services/dailyAttachments';
+import { prepareWhatsAppImport, draftDailyFromChat } from '../services/whatsappDaily';
 
 const router = Router();
 const db = prisma as any; // DailyReportAttachment : client typé régénéré au build Docker
@@ -49,6 +50,34 @@ router.use((_req, res, next) => {
   res.set('Expires', '0');
   res.set('Surrogate-Control', 'no-store');
   next();
+});
+
+// ─── Import d'une conversation WhatsApp (js/17-whatsapp-import.js) ───
+// Rien n'est créé par ces deux routes : elles rendent des brouillons ; le front les montre, l'utilisateur les corrige
+// et les valide, puis crée chaque rapport avec POST /daily-reports (+ photos, + statut des tâches).
+
+// POST /daily-reports/whatsapp/parse — { projectId, text, dayStartHour?, dateOrder? } : messages regroupés par journée
+router.post('/whatsapp/parse', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const projectId = String(req.body?.projectId || '');
+    await assertProjectAccess(req, projectId);
+    const text = String(req.body?.text || '');
+    if (!text.trim()) throw new AppError('Conversation vide', 400);
+    const order = ['dmy', 'mdy', 'ymd'].includes(req.body?.dateOrder) ? req.body.dateOrder : undefined;
+    const data = await prepareWhatsAppImport(projectId, text, { dayStartHour: Number(req.body?.dayStartHour) || 0, dateOrder: order });
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
+// POST /daily-reports/whatsapp/analyze-day — { projectId, date, phase, messages } : brouillon du rapport de ce jour (IA)
+router.post('/whatsapp/analyze-day', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const projectId = String(req.body?.projectId || '');
+    await assertProjectAccess(req, projectId);
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const draft = await draftDailyFromChat(projectId, { date: String(req.body?.date || ''), phase: req.body?.phase, messages }, { userId: req.user?.id });
+    res.json({ success: true, data: draft });
+  } catch (err) { next(err); }
 });
 
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
