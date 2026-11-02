@@ -83,7 +83,8 @@ for (const fy of [0.5, 0.4, 0.6, 0.3, 0.7]) {
 check(ok, 'tape sur une face : bulle de peinture');
 console.log('Bulle :', (await page.getByTestId('paint-bubble').innerText()).replace(/\n+/g, ' | '));
 check(await page.getByTestId('paint-target-face-box').isChecked(), 'cible par défaut : « Cette face » (cette Viewbox)');
-check((await page.locator('[data-paint-preview]').count()) > 0, 'aperçu orange de la face avant de peindre');
+// l'aperçu est calculé en arrière-plan (la bulle s'ouvre tout de suite)
+check(await page.locator('[data-paint-preview]').first().waitFor({ timeout: 30000 }).then(() => true, () => false), 'aperçu orange de la face avant de peindre');
 await page.screenshot({ path: shots + 'paint-bubble.png' });
 await page.getByTestId('paint-apply').click();
 await page.waitForTimeout(1500);

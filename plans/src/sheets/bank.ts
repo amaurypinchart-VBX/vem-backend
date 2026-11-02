@@ -22,7 +22,8 @@ import { resolveMeshes } from '../core/subset';
 import type { PaintColor } from '../core/paint/types';
 import type { PaintedScene } from '../linework/paintScene';
 import type { PaintRegion } from '../linework/paintOverlay';
-import { computePaintOverlay } from '../linework/paintOverlay';
+import { computePaintOverlay, paintOverlaySteps } from '../linework/paintOverlay';
+import { runSliced, SlicedCancelled } from '../linework/sliced';
 
 /** Peinture du projet résolue sur la scène (SheetsPage) : les vues dessinent la partie visible des faces peintes. */
 export interface PaintSource {
@@ -74,7 +75,7 @@ export class LineworkBank {
   /** peinture visible par vue : clé = vue + calcul + version de la peinture */
   private readonly paintRegions = new Map<string, PaintRegion[]>();
   private paintQueue: ViewportItem[] = [];
-  private paintTimer: ReturnType<typeof setTimeout> | null = null;
+  private paintRunning = false;
 
   constructor(
     readonly scene: LoadedScene,
@@ -125,7 +126,7 @@ export class LineworkBank {
     return `${vp.id}|${key}|${this.paintSrc.version}|${JSON.stringify(vp.request.subset)}|${vp.request.style.glassTransparent ?? ''}`;
   }
 
-  /** Peinture visible d'une vue (calcul immédiat ; null = rien à peindre / vue pas calculée). */
+  /** Peinture visible d'une vue (calcul immédiat, d'un seul tenant — exports ; null = rien à peindre / vue pas calculée). */
   paintOf(vp: ViewportItem): PaintRegion[] | null {
     const pk = this.paintKey(vp);
     if (!pk) return null;
@@ -142,12 +143,14 @@ export class LineworkBank {
       isGlass: this.paintSrc.isGlass,
       glassTransparent: vp.request.style.glassTransparent !== false,
     });
-    this.paintRegions.set(pk, regions);
-    while (this.paintRegions.size > 400) this.paintRegions.delete(this.paintRegions.keys().next().value!);
+    this.storePaint(pk, regions);
     return regions;
   }
 
-  /** Calcule la peinture des vues une par une, sans figer l'interface (une vue par tâche). */
+  /**
+   * Calcule la peinture des vues une par une, en arrière-plan par tranches de quelques ms (une grande façade peinte
+   * peut demander plusieurs secondes : la page reste utilisable). Une nouvelle peinture abandonne le calcul en cours.
+   */
   ensurePaint(vps: ViewportItem[]): void {
     if (!this.paintSrc) return;
     const missing = vps.filter((vp) => {
@@ -156,16 +159,40 @@ export class LineworkBank {
     });
     if (!missing.length) return;
     this.paintQueue = [...missing, ...this.paintQueue.filter((v) => !missing.some((m) => m.id === v.id))];
-    if (this.paintTimer) return;
-    const step = () => {
-      this.paintTimer = null;
-      const vp = this.paintQueue.shift();
-      if (!vp) return;
-      this.paintOf(vp);
-      this.emit();
-      if (this.paintQueue.length) this.paintTimer = setTimeout(step, 0);
-    };
-    this.paintTimer = setTimeout(step, 0);
+    if (this.paintRunning) return;
+    this.paintRunning = true;
+    void (async () => {
+      try {
+        for (let vp = this.paintQueue.shift(); vp; vp = this.paintQueue.shift()) {
+          const src = this.paintSrc;
+          const pk = this.paintKey(vp);
+          if (!src || !pk || this.paintRegions.has(pk)) continue;
+          const basis = this.data(vp).basis;
+          if (!basis || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) continue;
+          const meshIds = resolveMeshes(this.scene.index, this.scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+          const job = paintOverlaySteps({ scene: this.scene, painted: src.painted, meshIds, basis, isGlass: src.isGlass, glassTransparent: vp.request.style.glassTransparent !== false });
+          try {
+            const regions = await runSliced(job, () => this.paintSrc !== src);
+            this.storePaint(pk, regions);
+            this.emit();
+          } catch (e) {
+            if (!(e instanceof SlicedCancelled)) throw e;
+          }
+        }
+      } finally {
+        this.paintRunning = false;
+      }
+    })();
+  }
+
+  /** Vues dont la peinture est encore en calcul (en arrière-plan). */
+  paintPending(): number {
+    return this.paintQueue.length + (this.paintRunning ? 1 : 0);
+  }
+
+  private storePaint(pk: string, regions: PaintRegion[]): void {
+    this.paintRegions.set(pk, regions);
+    while (this.paintRegions.size > 400) this.paintRegions.delete(this.paintRegions.keys().next().value!);
   }
 
   data(vp: ViewportItem): ViewportData {
