@@ -135,6 +135,7 @@ module Sketchup
     def initialize = (@items = [])
     def clear = @items.clear
     def add(list) = @items.concat(Array(list))
+    def to_a = @items.dup
   end
 
   class Model
@@ -446,6 +447,64 @@ class MainSmokeTest < Minitest::Test
       assert_equal({}, manifest['structures'])
       assert(manifest['modules'].all? { |m| m['structureRef'].nil? })
     end
+  end
+
+  # ─── 1.4.0 : cadres textile, un repère F1, F2… par cadre (un cadre du composant de la box : un repère par box) ───
+  def test_textile_frames
+    model, d = build_model
+    seg_def = S::ComponentDefinition.new('SEG frame 2000', [box(0, 0, 0, 2000, 40, 2000)])
+    seg = S::ComponentInstance.new(seg_def, t(500, -45, 400))
+    d[:viewbox].entities << seg
+    band_def = S::ComponentDefinition.new('Bandeau', [box(0, 0, 0, 40, 2300, 350)])
+    band = S::ComponentInstance.new(band_def, t(-40, 100, 2350))
+    model.entities << band
+    model.defs.push(seg_def, band_def)
+    Sketchup.active_model = model
+    PREP.prepare(model, PREP.analyze(model)) # VBX-02 nommée
+
+    assert_equal 0, PREP.textile_rows(model)['rows'].size
+    assert_equal 2, PREP.mark_textile(model, [seg, band], true)
+    rows = PREP.textile_rows(model)['rows']
+    # le cadre du composant compte une fois par box ; numérotation : VBX-01 (face -Y puis -X), puis VBX-02
+    assert_equal [%w[F1 VBX-01 -y], %w[F2 VBX-01 -x], %w[F3 VBX-02 -y]], rows.map { |r| [r['ref'], r['module'], r['side']] }
+    assert_equal [2000, 2000, 40], rows[0]['dims']
+    assert_equal [2300, 350, 40], rows[1]['dims']
+    assert_equal [true, false, true], rows.map { |r| r['inBox'] }
+    # repères du cadre du composant : sur chaque instance de box, pas sur le cadre
+    vbx1, vbx2 = model.entities.to_a[0], model.entities.to_a[1]
+    assert_equal 'F1', JSON.parse(vbx1.get_attribute('viewbox', 'textileFrames')).values.first['ref']
+    assert_equal 'F3', JSON.parse(vbx2.get_attribute('viewbox', 'textileFrames')).values.first['ref']
+    assert_equal 'F2', band.get_attribute('viewbox', 'frameRef')
+
+    # saisie : visuel, repère changé à la main (« f7 » → F7), doublon signalé
+    payload = { 'rows' => [{ 'key' => rows[0]['key'], 'ref' => 'f7', 'visual' => 'Logo IKEA bleu' }, { 'key' => rows[2]['key'], 'ref' => 'F2', 'visual' => '' }] }
+    assert_equal 3, PREP.apply_textile(model, payload)
+    r2 = PREP.textile_rows(model)
+    assert_equal %w[F7 F2 F2], r2['rows'].map { |r| r['ref'] }
+    assert_equal 'Logo IKEA bleu', r2['rows'][0]['visual']
+    assert_match(/F2 est donné à 2 cadres/, r2['warnings'].join)
+    # « Tout renuméroter » : F1, F2, F3 dans l'ordre ; les visuels restent
+    PREP.number_textile(model, renumber: true)
+    r3 = PREP.textile_rows(model)['rows']
+    assert_equal %w[F1 F2 F3], r3.map { |r| r['ref'] }
+    assert_equal 'Logo IKEA bleu', r3[0]['visual']
+
+    # export : chaque box porte le repère de son cadre ; le bandeau (posé à côté) est un élément libre
+    Dir.mktmpdir do |dir|
+      _c, manifest = PREP.export_zip(model, PREP.analyze(model), File.join(dir, 'tx.zip'), 'tx')
+      assert_equal 1, manifest['textileSchemaVersion']
+      seg_of = ->(m) { m['accessories'].find { |x| x['definition'] == 'SEG frame 2000' } }
+      assert_equal({ 'ref' => 'F1', 'visual' => 'Logo IKEA bleu' }, seg_of.(manifest['modules'][0])['textileFrame'])
+      assert_equal({ 'ref' => 'F3' }, seg_of.(manifest['modules'][1])['textileFrame'])
+      assert_equal seg_of.(manifest['modules'][0])['exportName'], seg_of.(manifest['modules'][1])['exportName']
+      assert_equal({ 'ref' => 'F2' }, manifest['common'].find { |x| x['definition'] == 'Bandeau' }['textileFrame'])
+      refute(manifest['modules'][0]['accessories'].any? { |x| x['definition'] == 'VBXM16FULL' && x.key?('textileFrame') })
+    end
+    assert_match(/Cadres textile : 3/, PREP.textile_report_lines(model, PREP.analyze(model)).join)
+
+    # retirer la marque
+    assert_equal 1, PREP.mark_textile(model, [band], false)
+    assert_equal 2, PREP.textile_rows(model)['rows'].size
   end
 
   def test_full_menu_flow

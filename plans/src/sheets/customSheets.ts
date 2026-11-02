@@ -5,7 +5,7 @@
 import type { Linework2D, LineStyleSpec } from '../linework/types';
 import type { ViewBasis, ViewSpec } from '../core/views';
 import type { CustomViewSpec } from '../core/customViews/types';
-import type { CutLevelSpec, DimensionItem, DrawingSet, Paper, RectMm, SectionMarkSpec, Sheet, ViewportItem } from './types';
+import type { CutLevelSpec, DimensionItem, DrawingSet, LabelItem, Paper, RectMm, SectionMarkSpec, Sheet, ViewportItem } from './types';
 import { DRAW_AREA, scaleRect, templateScale } from './template';
 import { fitScale } from './scales';
 import { newId, renumber, viewTitleSize } from './generate';
@@ -43,7 +43,7 @@ export interface CustomSheetDeps {
   /** nœuds du sous-ensemble d'un bloc (Viewbox + accessoires) : cotes automatiques */
   include: (block: CustomBlockInfo) => string[];
   /** cotes automatiques d'une fenêtre (échelle minimale) ; null = pas de cotes (vues iso…) */
-  autoDim?: (vp: ViewportItem, block: CustomBlockInfo, minScale: number) => { dims: DimensionItem[]; scale: number; center: [number, number] } | null;
+  autoDim?: (vp: ViewportItem, block: CustomBlockInfo, minScale: number) => { dims: DimensionItem[]; scale: number; center: [number, number]; labels?: LabelItem[] } | null;
 }
 
 /** Rectangles d'une grille de n vues dans la zone de dessin (place pour les titres au-dessus). */
@@ -96,6 +96,7 @@ export function customViewSheets(spec: CustomViewSpec, all: CustomBlockInfo[], o
         labelSize: titleSize,
         renderStyle: 'trait',
         custom: { viewId: spec.id, block: block.key, subtitle: opts.subtitle || undefined, scaleInTitle: true },
+        ...(spec.style.layerDims ? { layerDims: spec.style.layerDims } : {}),
       };
       return { vp, block };
     });
@@ -109,6 +110,7 @@ export function customViewSheets(spec: CustomViewSpec, all: CustomBlockInfo[], o
         vp.scale = opts.scale || res.scale;
         vp.center = res.center;
         items.push(...res.dims.map((d) => ({ ...d, viewportId: vp.id })));
+        if (res.labels) items.push(...res.labels.map((l) => ({ ...l, viewportId: vp.id })));
       }
     } else if (g.length > 1 && !opts.scale) {
       const common = Math.max(...vps.map((x) => x.vp.scale));

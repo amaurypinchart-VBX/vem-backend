@@ -168,7 +168,7 @@ export function boxesOverlap(a: RectMm, b: RectMm, margin = 0): boolean {
 // ─── cotation automatique ───
 
 /** élévation, plan, implantation des pieds, objet seul (cadre textile : largeur × hauteur hors tout) */
-export type DimPurpose = 'elevation' | 'plan' | 'implantation' | 'object';
+export type DimPurpose = 'elevation' | 'plan' | 'implantation' | 'object' | 'layers';
 
 /** Un cadre textile n'est coté dans une direction que s'il y mesure plus que ça (vu de face, pas sur la tranche). */
 export const FRAME_DIM_MIN = 150;
@@ -194,6 +194,8 @@ export interface AutoDimInput {
   roofBand?: { y0: number; y1: number };
   /** cadres textile visibles (option « Coter les cadres textile ») */
   frames?: Extent[];
+  /** détail toiture / plancher : bords des couches (mm modèle, de bas en haut) */
+  layers?: number[];
 }
 
 export interface AutoDim {
@@ -240,6 +242,15 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
       chainAndTotal('v', 'left', inp.feet.map((f) => f.y));
     }
     return out.filter((d) => d.points.length >= 2 && Math.abs(d.orient === 'h' ? d.points[d.points.length - 1][0] - d.points[0][0] : d.points[d.points.length - 1][1] - d.points[0][1]) > tol);
+  }
+
+  if (inp.purpose === 'layers') {
+    // détail : couches en chaîne à droite + épaisseur totale, largeur hors tout en bas
+    const e = inp.layers ?? [];
+    if (e.length > 2) add('v', 'right', e);
+    if (e.length >= 2) add('v', 'right', [e[0], e[e.length - 1]]);
+    add('h', 'bottom', [minX, maxX]);
+    return out;
   }
 
   if (inp.purpose === 'object') {

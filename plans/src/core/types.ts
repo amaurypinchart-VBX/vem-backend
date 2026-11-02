@@ -80,6 +80,8 @@ export interface NodeInfo {
   materialNames?: string[];
   articleRef?: string;
   glass?: boolean;
+  /** cadre textile marqué dans SketchUp (extension ≥ 1.4.0) : repère F1… et visuel de ce cadre */
+  textileFrame?: { ref?: string; visual?: string };
 }
 
 export interface ModuleInfo {

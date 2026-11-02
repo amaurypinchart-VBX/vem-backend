@@ -38,7 +38,8 @@ export function AddToSheetDialog({ spec, result, scene, model, refs, modules, on
   const [paper, setPaper] = useState<Paper>('A1');
   const [mode, setMode] = useState<CustomSheetMode>(result.blocks.length > 1 ? 'per-block' : 'one');
   const [perSheet, setPerSheet] = useState(4);
-  const [scale, setScale] = useState(50);
+  // détail toiture / plancher : 1:10 (les couches de quelques centimètres restent lisibles)
+  const [scale, setScale] = useState(spec.style.layerDims ? 10 : 50);
   const [dims, setDims] = useState(spec.camera.dir !== 'iso' && spec.camera.dir !== 'iso-below' && spec.camera.dir !== 'custom');
   const [chosen, setChosen] = useState<string[]>(result.blocks.map((b) => b.key));
   const marks = useMemo(() => sectionMarks(spec, scene.frames, refs, modules), [spec, scene, refs, modules]);

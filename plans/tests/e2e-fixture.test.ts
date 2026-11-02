@@ -12,6 +12,9 @@ import { makeSketchupDae } from './fixtures/sketchupDae';
 const out = process.env.E2E_FIXTURE_OUT;
 
 it.skipIf(!out)('modèle d’essai pour les tests navigateur', () => {
-  const manifest = { schema: 'viewbox-manifest/1', units: 'mm', upAxis: 'Z', modules: [], common: [] };
+  const textile = process.env.E2E_FIXTURE_TEXTILE === '1';
+  // cadres textile : le grand cadre de VBX-01 a son repère et son visuel saisis dans SketchUp (extension 1.4)
+  const modules = textile ? [{ id: 'VBX-01', accessories: [{ name: 'SEG frame 2000', textileFrame: { ref: 'F12', visual: 'Logo IKEA bleu' } }] }] : [];
+  const manifest = { schema: 'viewbox-manifest/1', units: 'mm', upAxis: 'Z', modules, common: [] };
   writeFileSync(out!, zipSync({ 'export/test.dae': strToU8(makeSketchupDae({ twoSided: process.env.E2E_FIXTURE_TWOSIDED === '1', ...(process.env.E2E_FIXTURE_VBX4 ? { vbx4At: JSON.parse(process.env.E2E_FIXTURE_VBX4) } : {}), ...(process.env.E2E_FIXTURE_HEAVY ? { modules: 16, detail: Number(process.env.E2E_FIXTURE_HEAVY) } : {}), ...(process.env.E2E_FIXTURE_TEXTILE === '1' ? { textile: true } : {}) })), 'export/manifest.json': strToU8(JSON.stringify(manifest)) }));
 });

@@ -6,7 +6,8 @@ import { dot, unprojectPoint } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { Linework2D } from '../linework/types';
 import { isDecorationLayer } from '../linework/types';
-import type { DimensionItem, RectMm, ViewportItem } from './types';
+import type { DimensionItem, LabelItem, RectMm, ViewportItem } from './types';
+import { layerLabelsWidth, layerStack, layerText, spreadLabels } from './layers';
 import type { AutoDim, AutoDimInput, DimPurpose, Extent } from './dimensions';
 import { DIM, dimGeometry, dimMargins, fitWithDims, planDimensions, rowOffset } from './dimensions';
 import { viewportTransform } from './scales';
@@ -16,6 +17,7 @@ import { textileFrameOf } from '../linework/subset';
 
 export function dimPurpose(vp: ViewportItem): DimPurpose {
   if (vp.frameView) return 'object';
+  if (vp.layerDims) return 'layers';
   if (vp.request.subset.onlyCategories?.includes('PIED')) return 'implantation';
   const k = vp.request.view.kind;
   return k === 'top' || k === 'bottom' ? 'plan' : 'elevation';
@@ -43,6 +45,11 @@ function extentsBy(lw: Linework2D, scene: LoadedScene, pick: (category: string |
 }
 
 export function autoDimInput(vp: ViewportItem, lw: Linework2D, basis: ViewBasis, scene: LoadedScene): AutoDimInput {
+  if (vp.layerDims) {
+    // détail toiture / plancher (vue spéciale) : couches coupées, pas de Viewbox à mesurer
+    const stack = layerStack(lw, scene, vp.layerDims);
+    return { purpose: 'layers', bounds: lw.boundsMm, modules: [], doors: [], feet: [], ...(stack ? { layers: stack.edges } : {}) };
+  }
   const include = new Set(vp.request.subset.include);
   const moduleIds = new Set(scene.index.modules.filter((m) => include.has(m.nodeId)).map((m) => m.id));
   // emprise de chaque Viewbox dans le dessin : les 8 coins de sa boîte (pieds exclus) projetés dans la vue
@@ -122,6 +129,8 @@ export interface AutoDimResult {
   dims: DimensionItem[];
   scale: number;
   center: [number, number];
+  /** détail toiture / plancher : un repère par couche (« Plafond tendu — 10 mm »), à gauche du dessin */
+  labels?: LabelItem[];
 }
 
 /** Cotes automatiques d'une fenêtre de vue, avec l'échelle et le centrage qui les font tenir dans son cadre. */
@@ -133,6 +142,10 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
   const offsets = new Map<AutoDim, number>();
   for (const d of plan) offsets.set(d, rowOffset(d.side, d.row));
   let margins = dimMargins(plan);
+  // repères des couches : à gauche du dessin
+  const k = 1; // repères au format A1 (en A3 ils sont plus petits : la place réservée suffit)
+  const stack = vp.layerDims ? layerStack(lw, scene, vp.layerDims) : null;
+  if (stack) margins = { ...margins, left: Math.max(margins.left, layerLabelsWidth(stack, k) + 14) };
   // cadres et noms des unités (vue aérienne de l'ensemble) : de la place autour du dessin
   if (vp.overlays?.units?.length && !vp.overlays.hideUnits)
     margins = {
@@ -180,7 +193,25 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
     offsetMm: offsets.get(d) ?? rowOffset(d.side, d.row),
     auto: true,
   }));
-  return { dims, scale: fit.scale, center: fit.center };
+  let labels: LabelItem[] | undefined;
+  if (stack) {
+    const tr = viewportTransform(vp.rect, fit.scale, fit.center);
+    const left = tr.toPaper(input.bounds.minX, 0).x;
+    const width = layerLabelsWidth(stack, k);
+    const wanted = stack.layers.map((l) => tr.toPaper(0, (l.y0 + l.y1) / 2).y);
+    const ys = spreadLabels(wanted, 6);
+    labels = stack.layers.map((l, i) => ({
+      id: newId('l'),
+      type: 'label' as const,
+      viewportId: vp.id,
+      anchor3d: unprojectPoint(basis, l.x, (l.y0 + l.y1) / 2, depth) as Vec3,
+      textPos: { x: left - 10 - width, y: ys[i] + 1.2 },
+      text: layerText(l),
+      style: 'normal' as const,
+      auto: 'layer' as const,
+    }));
+  }
+  return { dims, scale: fit.scale, center: fit.center, ...(labels ? { labels } : {}) };
 }
 
 /** Boîtes (mm papier) des textes de cotes et du dessin : sert aux contrôles de chevauchement. */

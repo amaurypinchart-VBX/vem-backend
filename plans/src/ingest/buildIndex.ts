@@ -26,7 +26,7 @@ import {
 } from '../core/classification';
 import { checkPlanDims, groupLevels, levelLabel, nearestSize, suspectScaleFactor } from '../core/units';
 import type { Manifest, ManifestEntry, ManifestModule } from '../core/manifest';
-import { asCategory, BBoxLookup, cleanStructParams, cleanStructures, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
+import { asCategory, BBoxLookup, cleanStructParams, cleanStructures, cleanTextileFrame, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
 import { stableId } from '../core/hash';
 
 export interface CleanupStats {
@@ -55,6 +55,7 @@ interface Rec {
   glass: boolean;
   label: string | null; // désignation (manifest)
   sourceName: string | null; // nom d'origine SketchUp (manifest)
+  textileFrame?: { ref?: string; visual?: string }; // cadre textile marqué dans SketchUp (manifest)
 }
 
 const EXCESSIVE_ITEM_TRIANGLES = 150_000;
@@ -298,14 +299,19 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     }
     for (const e of manifest.common ?? []) addGlobal(e);
   }
+  // entrées des listes « accessoires » d'une box : leur cadre textile (repère F1…) ne vaut que pour cette box
+  const moduleEntries = new Set(manifest ? manifest.modules.flatMap((m) => m.accessories ?? []) : []);
+  const scopedHit = new Set<Rec>();
   const fromManifest = (r: Rec): ManifestEntry | null => {
     if (!manifest || !r.name) return null;
     const k = daeNameKey(r.name);
     const mid = r.inModule?.moduleId;
-    return (mid ? manifestByKey.get(mid + '::' + k) : undefined) ?? manifestGlobal.get(k) ?? null;
+    const own = mid ? manifestByKey.get(mid + '::' + k) : undefined;
+    if (own) scopedHit.add(r);
+    return own ?? manifestGlobal.get(k) ?? null;
   };
 
-  const applyEntry = (r: Rec, e: ManifestEntry) => {
+  const applyEntry = (r: Rec, e: ManifestEntry, scoped = true) => {
     manifestMatched.add(e);
     const cat = asCategory(e.category ?? null);
     if (cat) {
@@ -316,12 +322,15 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     if (e.label) r.label = e.label;
     if (e.name) r.sourceName = e.name;
     if (e.definition) r.defName = e.definition; // nom exact (le .dae le déforme)
+    // repère / visuel d'un cadre : propres à une box — jamais repris d'une autre box par le nom seul
+    const tf = scoped || !moduleEntries.has(e) ? cleanTextileFrame(e.textileFrame) : null;
+    if (tf) r.textileFrame = tf;
   };
 
   for (const r of recs) {
     if (r.context || r.moduleId) continue;
     const e = fromManifest(r);
-    if (e) applyEntry(r, e);
+    if (e) applyEntry(r, e, scopedHit.has(r));
     const names = candidates(r);
     if (!r.articleRef) r.articleRef = names.map((n) => articleRefFromName(n, rules)).find(Boolean) ?? null;
     if (r.category) continue;
@@ -701,6 +710,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     if (r.materials.length) info.materialNames = r.materials;
     if (r.articleRef) info.articleRef = r.articleRef;
     if (r.glass) info.glass = true;
+    if (r.textileFrame && !r.context) info.textileFrame = r.textileFrame;
     return info;
   });
   const contextIds = recs.filter((r) => r.context && !r.parent?.context).map((r) => r.id);

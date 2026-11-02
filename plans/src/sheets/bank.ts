@@ -428,6 +428,10 @@ export function dimensionDrawingSet(set: DrawingSet, bank: LineworkBank, ids: st
       vp.scale = res.scale;
       vp.center = res.center;
       sheet.items.push(...res.dims);
+      if (res.labels) {
+        sheet.items = sheet.items.filter((i) => !(i.type === 'label' && i.auto === 'layer' && i.viewportId === vp.id));
+        sheet.items.push(...res.labels);
+      }
       count += res.dims.length;
     }
   }

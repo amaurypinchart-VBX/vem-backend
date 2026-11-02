@@ -444,6 +444,74 @@ module Viewbox
         h
       end
 
+      # ─── Cadres textile (tissu tendu) : repère F1, F2… par cadre, propre à chaque cadre (impression différente) ───
+
+      FRAME_REF_RE = /\A\s*F?\s*0*(\d{1,4})\s*\z/i
+
+      # « f3 », « F 03 », « 3 » → « F3 » ; autre chose → nil.
+      def self.frame_ref(value)
+        m = FRAME_REF_RE.match(value.to_s)
+        m && m[1].to_i > 0 ? "F#{m[1].to_i}" : nil
+      end
+
+      # Côté d'un cadre dans le repère de sa box (x, y en plan, z vertical), d'après son centre et la boîte de la box :
+      # +x / -x / +y / -y, « top » pour un cadre posé à plat au-dessus du toit.
+      def self.frame_side(center, bmin, bmax, dims = nil)
+        if dims && dims[2] < [dims[0], dims[1]].min && center[2] > bmax[2] - 50
+          return 'top'
+        end
+        cx = (bmin[0] + bmax[0]) / 2.0
+        cy = (bmin[1] + bmax[1]) / 2.0
+        hx = [(bmax[0] - bmin[0]) / 2.0, 1.0].max
+        hy = [(bmax[1] - bmin[1]) / 2.0, 1.0].max
+        dx = (center[0] - cx) / hx
+        dy = (center[1] - cy) / hy
+        dx.abs >= dy.abs ? (dx >= 0 ? '+x' : '-x') : (dy >= 0 ? '+y' : '-y')
+      end
+
+      FRAME_SIDE_ORDER = ['-y', '+x', '+y', '-x', 'top'].freeze
+      FRAME_SIDE_LABELS = { '-y' => 'face -Y', '+x' => 'face +X', '+y' => 'face +Y', '-x' => 'face -X', 'top' => 'dessus' }.freeze
+
+      # Ordre de numérotation : Viewbox (VBX-01, VBX-02…, sans Viewbox à la fin), puis le tour de la box (-Y, +X, +Y,
+      # -X, dessus), puis de gauche à droite le long du côté, puis de bas en haut.
+      # rows : { 'module' => 'VBX-01' | nil, 'side' => '+x'…, 'along' => mm, 'z' => mm }
+      def self.frame_order(rows)
+        rows.each_with_index.sort_by do |r, i|
+          num = r['module'] ? r['module'][/\d+/].to_i : 9999
+          [num, FRAME_SIDE_ORDER.index(r['side']) || 9, (r['along'] || 0).round, (r['z'] || 0).round, i]
+        end.map(&:first)
+      end
+
+      # Repères : on garde ceux déjà saisis (valides et uniques), les autres reçoivent les plus petits numéros libres
+      # dans l'ordre de frame_order ; renumber = tout renuméroter. Renvoie { clé => repère }.
+      def self.assign_frame_refs(rows, renumber: false)
+        ordered = frame_order(rows)
+        out = {}
+        taken = {}
+        unless renumber
+          ordered.each do |r|
+            ref = frame_ref(r['ref'])
+            next if ref.nil? || taken[ref]
+            taken[ref] = true
+            out[r['key']] = ref
+          end
+        end
+        n = 0
+        ordered.each do |r|
+          next if out.key?(r['key'])
+          n += 1
+          n += 1 while taken["F#{n}"]
+          out[r['key']] = "F#{n}"
+          taken["F#{n}"] = true
+        end
+        out
+      end
+
+      # Repères en double (saisis à la main) : { « F3 » => [clé, clé] }.
+      def self.frame_duplicates(rows)
+        rows.group_by { |r| frame_ref(r['ref']) }.reject { |ref, list| ref.nil? || list.size < 2 }.transform_values { |l| l.map { |r| r['key'] } }
+      end
+
       # Zippe tout le contenu d'un dossier (chemins relatifs, avec sous-dossiers de textures).
       # (chemins relatifs obtenus par glob "base:" : sous Windows, le dossier temporaire peut s'écrire
       # de deux façons, C:/Users/NOM~1/… et C:/Users/Nom/…, ce qui cassait un simple retrait de préfixe)

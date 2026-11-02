@@ -63,6 +63,7 @@ function ViewportProps({
   onHideTool,
   onSetWide,
   onDimFrames,
+  onLayerDims,
 }: {
   vp: ViewportItem;
   data?: ViewportData;
@@ -74,6 +75,7 @@ function ViewportProps({
   onHideTool?: () => void;
   onSetWide?: () => void;
   onDimFrames?: (on: boolean) => void;
+  onLayerDims?: (mode: 'roof' | 'floor' | null) => void;
 }) {
   const { index } = scene;
   const scope = scopeOf(vp, index, units);
@@ -223,6 +225,15 @@ function ViewportProps({
         </div>
       </Field>
       {vp.frameView && <div className="hint">Vue de détail du cadre textile {vp.frameView.ref} (cadre seul, vu de face) : « Coter automatiquement » pose sa largeur et sa hauteur hors tout.</div>}
+      {vp.custom && onLayerDims && (
+        <Field label="Coter les couches (détail coupé)">
+          <select value={vp.layerDims ?? ''} data-testid="vp-layer-dims" onChange={(e) => onLayerDims((e.target.value || null) as 'roof' | 'floor' | null)}>
+            <option value="">non</option>
+            <option value="roof">toiture : panneau, acier, vide technique, plafond…</option>
+            <option value="floor">plancher : revêtement, contreplaqué, structure…</option>
+          </select>
+        </Field>
+      )}
       {!vp.custom && (
         <ViewportHide
           key={vp.id}
@@ -715,6 +726,7 @@ export function PropertiesPanel({
   onHideTool,
   onSetWide,
   onDimFrames,
+  onLayerDims,
 }: {
   doc: DrawingSet;
   sheet: Sheet;
@@ -738,6 +750,8 @@ export function PropertiesPanel({
   onSetWide?: () => void;
   /** « Coter les cadres textile » d'une vue (option + cotes automatiques refaites) */
   onDimFrames?: (vp: ViewportItem, on: boolean) => void;
+  /** vue spéciale : « Coter les couches » (détail toiture / plancher), cotes automatiques refaites */
+  onLayerDims?: (vp: ViewportItem, mode: 'roof' | 'floor' | null) => void;
 }) {
   const selection = useEditor((s) => s.selection);
   const [tab, setTab] = useState<'item' | 'titleblock'>('item');
@@ -794,6 +808,7 @@ export function PropertiesPanel({
                 onHideTool={onHideTool}
                 onSetWide={onSetWide}
                 onDimFrames={onDimFrames ? (on) => onDimFrames(one, on) : undefined}
+                onLayerDims={onLayerDims ? (mode) => onLayerDims(one, mode) : undefined}
               />
             )}
             {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}

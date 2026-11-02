@@ -180,6 +180,7 @@ export function cleanStyle(raw: unknown): ViewStyle {
     hidden: r.hidden === true,
     ghostTone: clamp(num(r.ghostTone) ?? DEFAULT_STYLE.ghostTone, 0, 1),
     categoryColors: r.categoryColors === true,
+    ...(r.layerDims === 'roof' || r.layerDims === 'floor' ? { layerDims: r.layerDims } : {}),
   };
 }
 

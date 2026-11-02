@@ -157,6 +157,8 @@ export interface ViewportItem extends ItemBase {
   frameView?: { nodeId: string; ref: string };
   /** « Coter automatiquement » ajoute les cotes des cadres textile visibles dans la vue (position + dimensions) */
   dimFrames?: boolean;
+  /** détail toiture / plancher (vue spéciale) : cotes et repères des couches coupées */
+  layerDims?: 'roof' | 'floor';
 }
 
 export interface Image3dItem extends ItemBase {
@@ -186,8 +188,8 @@ export interface LabelItem extends ItemBase {
   textPos: PointMm;
   text: string;
   style: 'bold' | 'normal';
-  /** repère posé automatiquement (cadres textile « F1 ») : remplacé quand on le repose */
-  auto?: 'frame';
+  /** repère posé automatiquement (cadres textile « F1 », couches d'un détail) : remplacé quand on le repose */
+  auto?: 'frame' | 'layer';
 }
 
 /**
