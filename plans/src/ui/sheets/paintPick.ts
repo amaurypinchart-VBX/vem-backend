@@ -1,11 +1,10 @@
 // Clic sur une vue 2D → face 3D sous le point : rayon dans la direction de la vue sur les pièces dessinées ; au doigt,
 // 8 rayons de plus sur un cercle si le premier ne touche rien. Repère propre de la pièce → sélecteur de face.
-import { Raycaster, Vector3 } from 'three';
+import { Raycaster } from 'three';
 import type { Object3D } from 'three';
-import { unprojectPoint } from '../../core/views';
-import { resolveMeshes } from '../../core/subset';
+import { castInView, viewportObjects } from '../../sheets/viewRay';
 import type { LoadedScene } from '../../scene/loadedScene';
-import { meshesOfNode, nodeIdOf } from '../../scene/loadedScene';
+import { nodeIdOf } from '../../scene/loadedScene';
 import type { PointMm, ViewportItem } from '../../sheets/types';
 import type { ViewportData } from '../../sheets/SheetSvg';
 import { viewportTransform } from '../../sheets/scales';
@@ -30,15 +29,12 @@ export function pickFace(scene: LoadedScene, vp: ViewportItem, data: ViewportDat
   const b = data.lw.boundsMm;
   const center = (vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]) as [number, number];
   const tr = viewportTransform(vp.rect, vp.scale, center);
-  const meshes: Object3D[] = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories).flatMap((id) =>
-    meshesOfNode(scene.objectsById.get(id)),
-  );
-  const toward = new Vector3(...data.basis.toward);
+  // « Vue du sol » : pas de peinture (la coupe montre l'intérieur, la peinture est celle des faces extérieures)
+  if (vp.request.floorCut != null) return null;
+  const meshes: Object3D[] = viewportObjects(scene, vp);
   const cast = (q: PointMm) => {
     const [x, y] = tr.toModel(q.x, q.y);
-    raycaster.set(new Vector3(...unprojectPoint(data.basis!, x, y, 1e7)), toward.clone().negate());
-    (raycaster as Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true;
-    return raycaster.intersectObjects(meshes, false)[0];
+    return castInView(scene, vp, data.basis!, x, y, meshes, raycaster);
   };
   let hit = cast(p);
   for (let i = 0; !hit && i < 8; i++) {

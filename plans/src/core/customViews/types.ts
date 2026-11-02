@@ -194,6 +194,8 @@ export interface BaseViewTag {
   /** catégories propres du nœud (pas héritées d'un parent) */
   categories?: string[];
   categoryPrefixes?: string[];
+  /** motifs cherchés dans la catégorie propre (« FRAME-FOR-TEXTILE » → cadre textile) */
+  categoryPatterns?: string[];
 }
 
 export interface CustomViewWarning {

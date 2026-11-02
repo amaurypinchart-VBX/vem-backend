@@ -202,7 +202,7 @@ export function ViewSettings() {
                   <tr key={t.tag}>
                     <td>{t.label}</td>
                     <td className="hint">
-                      {[...(t.patterns ?? []), ...(t.categories ?? []).map((c) => `catégorie ${c}`), ...(t.categoryPrefixes ?? []).map((c) => `catégorie ${c}*`)].join(' · ')}
+                      {[...(t.patterns ?? []), ...(t.categories ?? []).map((c) => `catégorie ${c}`), ...(t.categoryPrefixes ?? []).map((c) => `catégorie ${c}*`), ...(t.categoryPatterns ?? []).map((c) => `catégorie ~${c}`)].join(' · ')}
                     </td>
                   </tr>
                 ))}

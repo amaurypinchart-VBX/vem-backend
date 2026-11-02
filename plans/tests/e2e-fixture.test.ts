@@ -3,6 +3,7 @@
 // (E2E_FIXTURE_HEAVY=3000 : 16 Viewbox de 3 000 petites pièces chacune, essais mémoire téléphone — e2e/run-memory.mjs)
 // (E2E_FIXTURE_TWOSIDED=1 : faces recto + verso comme un vrai export SketchUp — e2e/run-paint.mjs)
 // (E2E_FIXTURE_VBX4='[8000,0,2800]' : VBX-04 décalée, en porte-à-faux au-delà de VBX-2 — e2e/run-supports.mjs)
+// (E2E_FIXTURE_TEXTILE=1 : plafond tendu + cadres textile dans chaque Viewbox — e2e/run-hide-frames.mjs)
 import { it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { strToU8, zipSync } from 'fflate';
@@ -12,5 +13,5 @@ const out = process.env.E2E_FIXTURE_OUT;
 
 it.skipIf(!out)('modèle d’essai pour les tests navigateur', () => {
   const manifest = { schema: 'viewbox-manifest/1', units: 'mm', upAxis: 'Z', modules: [], common: [] };
-  writeFileSync(out!, zipSync({ 'export/test.dae': strToU8(makeSketchupDae({ twoSided: process.env.E2E_FIXTURE_TWOSIDED === '1', ...(process.env.E2E_FIXTURE_VBX4 ? { vbx4At: JSON.parse(process.env.E2E_FIXTURE_VBX4) } : {}), ...(process.env.E2E_FIXTURE_HEAVY ? { modules: 16, detail: Number(process.env.E2E_FIXTURE_HEAVY) } : {}) })), 'export/manifest.json': strToU8(JSON.stringify(manifest)) }));
+  writeFileSync(out!, zipSync({ 'export/test.dae': strToU8(makeSketchupDae({ twoSided: process.env.E2E_FIXTURE_TWOSIDED === '1', ...(process.env.E2E_FIXTURE_VBX4 ? { vbx4At: JSON.parse(process.env.E2E_FIXTURE_VBX4) } : {}), ...(process.env.E2E_FIXTURE_HEAVY ? { modules: 16, detail: Number(process.env.E2E_FIXTURE_HEAVY) } : {}), ...(process.env.E2E_FIXTURE_TEXTILE === '1' ? { textile: true } : {}) })), 'export/manifest.json': strToU8(JSON.stringify(manifest)) }));
 });

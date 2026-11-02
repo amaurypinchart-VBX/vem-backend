@@ -12,8 +12,10 @@ import { DIM, dimGeometry, dimMargins, fitWithDims, planDimensions, rowOffset } 
 import { viewportTransform } from './scales';
 import { newId } from './generate';
 import { UNIT_FRAME_MARGINS } from './overlays';
+import { textileFrameOf } from '../linework/subset';
 
 export function dimPurpose(vp: ViewportItem): DimPurpose {
+  if (vp.frameView) return 'object';
   if (vp.request.subset.onlyCategories?.includes('PIED')) return 'implantation';
   const k = vp.request.view.kind;
   return k === 'top' || k === 'bottom' ? 'plan' : 'elevation';
@@ -74,13 +76,35 @@ export function autoDimInput(vp: ViewportItem, lw: Linework2D, basis: ViewBasis,
     const roof = extentsBy(lw, scene, (c) => c === 'TOIT');
     if (roof.length) roofBand = { y0: Math.min(...roof.map((r) => r.y0)), y1: Math.max(...roof.map((r) => r.y1)) };
   }
+  // cadres textile visibles dans la vue (option de la fenêtre) : emprise de chaque cadre (toutes ses pièces)
+  let frames: Extent[] | undefined;
+  if (vp.dimFrames && (purpose === 'plan' || purpose === 'elevation')) {
+    const byFrame = new Map<string, Extent>();
+    for (const layer of lw.layers) {
+      if (isDecorationLayer(layer.key)) continue;
+      layer.polylines.forEach((pl, i) => {
+        const src = layer.sourceNodeIds?.[i];
+        const id = src ? textileFrameOf(scene, src) : null;
+        if (!id) return;
+        let e = byFrame.get(id);
+        if (!e) byFrame.set(id, (e = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity }));
+        for (let k = 0; k < pl.length; k += 2) {
+          e.x0 = Math.min(e.x0, pl[k]);
+          e.x1 = Math.max(e.x1, pl[k]);
+          e.y0 = Math.min(e.y0, pl[k + 1]);
+          e.y1 = Math.max(e.y1, pl[k + 1]);
+        }
+      });
+    }
+    frames = [...byFrame.values()];
+  }
   // la vue d'implantation n'a que les pieds : les Viewbox donnent le contour à coter
   const b = lw.boundsMm;
   const bounds =
     purpose === 'implantation' && modules.length
       ? { minX: Math.min(b.minX, ...modules.map((m) => m.x0)), minY: Math.min(b.minY, ...modules.map((m) => m.y0)), maxX: Math.max(b.maxX, ...modules.map((m) => m.x1)), maxY: Math.max(b.maxY, ...modules.map((m) => m.y1)) }
       : b;
-  return { purpose, bounds, modules, doors, feet, roofBand };
+  return { purpose, bounds, modules: purpose === 'object' ? [] : modules, doors, feet, roofBand, ...(frames?.length ? { frames } : {}) };
 }
 
 /** Profondeur de référence des ancrages : celle des Viewbox de la vue (sans effet sur le dessin, utile en 3D). */

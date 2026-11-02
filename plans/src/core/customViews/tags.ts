@@ -12,6 +12,13 @@ export const BASE_VIEW_TAGS: BaseViewTag[] = [
     label: 'Fixations du plafond tendu',
     patterns: ['TENSION.?CEILING', 'TENSION.?RAIL', 'SPANNPROFIL', 'PROFIL.{0,12}PLAFOND', 'FIXATION.{0,12}PLAFOND', 'CEILING.?(CLIP|PROFILE|FIX)'],
   },
+  // cadres de tissu tendu (SEG, « frame for textile ») : avant le plafond tendu (« tissu tendu » contient TENDU)
+  {
+    tag: 'cadre-textile',
+    label: 'Cadres textile (tissu tendu)',
+    categoryPatterns: ['TEXTILE', 'TISSU', 'FABRIC([^A-Z]|$)', '(^|[^A-Z])TOILES?([^A-Z]|$)'],
+    patterns: ['TEXTILE', 'TISSU', 'FABRIC([^A-Z]|$)', '(^|[^A-Z])TOILES?([^A-Z]|$)', 'FRAME.?FOR.?TEXT', 'SEG.?FRAME', 'CADRE.?SEG', 'SPANNRAHMEN', 'STOFFRAHMEN', '(^|[^A-Z])SEG([^A-Z]|$)'],
+  },
   { tag: 'plafond-tendu', label: 'Plafond tendu', patterns: ['PLAFOND', 'CEILING', 'CIELING', 'TENDU', 'BARRISOL', 'STRETCH', 'SPANNDECKE'] },
   { tag: 'eclairage', label: 'Éclairage', patterns: ['SPOT', 'LIGHT', 'LUMINAIRE', 'LAMP', 'ECLAIRAGE', 'PENDEL', '(^|[^A-Z])LED([^A-Z]|$)'] },
   {
@@ -27,6 +34,9 @@ export const BASE_VIEW_TAGS: BaseViewTag[] = [
   { tag: 'logo', label: 'Logos, enseignes', patterns: ['LOGO', 'ENSEIGNE', 'SIGNAGE'] },
   { tag: 'structure-acier', label: 'Structure acier', patterns: ['VERTICAL.?POLE', 'POTEAU', 'COLUMN'] },
 ];
+
+/** Étiquette des cadres de tissu tendu : planches « Cadres textile », cotes des cadres. */
+export const TEXTILE_TAG = 'cadre-textile';
 
 export function normText(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
@@ -79,7 +89,7 @@ export function makeTagResolver(index: SceneIndex, memorised: ViewTagRule[] = []
       if (re) byPattern.push({ re, rule: r });
     }
   }
-  const compiled = base.map((t) => ({ t, res: (t.patterns ?? []).map((p) => new RegExp(p)) }));
+  const compiled = base.map((t) => ({ t, res: (t.patterns ?? []).map((p) => new RegExp(p)), cats: (t.categoryPatterns ?? []).map((p) => new RegExp(p)) }));
   const cache = new Map<string, TagHit | null>();
 
   const ownTag = (id: string): TagHit | null => {
@@ -95,8 +105,8 @@ export function makeTagResolver(index: SceneIndex, memorised: ViewTagRule[] = []
       else {
         // catégorie propre du nœud seulement (héritée = elle vient de la Viewbox entière)
         const cat = n.categorySource && n.categorySource !== 'inherited' ? n.category : null;
-        for (const { t, res } of compiled) {
-          if (cat && (t.categories?.includes(cat) || t.categoryPrefixes?.some((p) => cat.startsWith(p)))) {
+        for (const { t, res, cats } of compiled) {
+          if (cat && (t.categories?.includes(cat) || t.categoryPrefixes?.some((p) => cat.startsWith(p)) || cats.some((re) => re.test(cat)))) {
             hit = { tag: t.tag, label: t.label, source: 'category' };
             break;
           }

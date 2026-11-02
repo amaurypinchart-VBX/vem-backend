@@ -3,14 +3,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEAVY_VIEW } from '../../linework/provider';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Raycaster, Vector3 } from 'three';
+import { Raycaster } from 'three';
 import type { Object3D } from 'three';
 import type { Vec3 } from '../../core/views';
 import { unprojectPoint } from '../../core/views';
-import { resolveMeshes } from '../../core/subset';
+import { subsetMeshes } from '../../linework/subset';
+import { castInView, viewportObjects } from '../../sheets/viewRay';
 import { displayName } from '../../core/report';
 import type { LoadedScene } from '../../scene/loadedScene';
-import { meshesOfNode, nodeIdOf } from '../../scene/loadedScene';
+import { nodeIdOf } from '../../scene/loadedScene';
 import type { GlassTest } from '../../linework/packets';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { SavedCapture } from '../../api/vem';
@@ -76,6 +77,20 @@ import type { PaintMode } from './PaintPanel';
 import { PaintBubble } from './PaintBubble';
 import { ColorDialog } from './ColorDialog';
 import type { ColorDraft } from './ColorDialog';
+import { ClickBubble } from '../customViews/ClickBubble';
+import type { ActionProposal, ClickAction, Crumb } from '../../core/customViews/editor';
+import { breadcrumb, defaultTarget } from '../../core/customViews/editor';
+import { subsetEnv, subsetScope } from '../../linework/subset';
+import { tagHideRule } from '../../core/subsetHide';
+import type { HideTarget } from '../../sheets/hideSet';
+import { setHidden as hideInSet } from '../../sheets/hideSet';
+import { SetHideDialog } from './HideControls';
+import { FramesDialog } from './FramesDialog';
+import type { FramesChoice } from './FramesDialog';
+import type { FrameLang, FrameType } from '../../sheets/frames';
+import { frameLabels, frameRefs, frameSheets, groupFrames, measureFrames } from '../../sheets/frames';
+import { TEXTILE_TAG } from '../../core/customViews/tags';
+import { renumber } from '../../sheets/generate';
 
 /** Peinture du projet (SheetsPage) : état, résolution sur la scène, favoris partagés. */
 export interface PaintBundle {
@@ -156,6 +171,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [bubble, setBubble] = useState<{ vp: ViewportItem; pick: FacePick; options: TargetOption[]; choice: TargetKey; at: { x: number; y: number } } | null>(null);
   const [quick, setQuick] = useState<{ on: boolean; key: TargetKey }>({ on: false, key: 'face-box' });
   const [toast, setToast] = useState('');
+  // ─── masquer en cliquant / sur tout le jeu, cadres textile ───
+  const [hideBubble, setHideBubble] = useState<{ vp: ViewportItem; crumbs: Crumb[]; level: string; scope: Set<string>; at: { x: number; y: number } } | null>(null);
+  const [hideAll, setHideAll] = useState(false);
+  const [setHideOpen, setSetHideOpen] = useState(false);
+  const [frames, setFrames] = useState<{ types: FrameType[]; lang: FrameLang } | null>(null);
   const lastPointer = useRef({ x: 0, y: 0 });
   useEffect(() => {
     const rec = (e: PointerEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY });
@@ -427,6 +447,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       else if (mod && e.key.toLowerCase() === 'd') (e.preventDefault(), actions.copy(st.selection), actions.paste());
       else if (e.key === 'Delete' || e.key === 'Backspace') st.selection.length && (e.preventDefault(), actions.deleteItems(st.selection));
       else if (e.key === 'Escape') {
+        if (toolRef.current === 'hide') setHideBubble(null);
         if (toolRef.current === 'paint') {
           setBubble(null);
           previewGen.current++;
@@ -477,15 +498,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const b = data.lw!.boundsMm;
     const center = (vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]) as [number, number];
     const [clickX, clickY] = viewportTransform(vp.rect, vp.scale, center).toModel(p.x, p.y);
-    const meshes: Object3D[] = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories).flatMap((id) =>
-      meshesOfNode(scene.objectsById.get(id)),
-    );
-    const cast = (x: number, y: number) => {
-      const origin = new Vector3(...unprojectPoint(data.basis!, x, y, 1e7));
-      raycaster.set(origin, new Vector3(...data.basis!.toward).negate());
-      raycaster.firstHitOnly = true;
-      return raycaster.intersectObjects(meshes, false)[0];
-    };
+    const meshes: Object3D[] = viewportObjects(scene, vp);
+    const cast = (x: number, y: number) => castInView(scene, vp, data.basis!, x, y, meshes, raycaster);
     const hit = cast(s.model[0], s.model[1]) ?? cast(clickX, clickY);
     const depth = hit ? hit.point.x * data.basis.toward[0] + hit.point.y * data.basis.toward[1] + hit.point.z * data.basis.toward[2] : 0;
     return { model: s.model, anchor3d: unprojectPoint(data.basis, s.model[0], s.model[1], depth), nodeId: hit ? nodeIdOf(hit.object) : undefined };
@@ -518,6 +532,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         if (it) {
           it.scale = r.scale;
           it.center = r.center;
+          if (r.vp.dimFrames) it.dimFrames = true;
+          else delete it.dimFrames;
         }
         s.items.push(...(r.dims as typeof s.items));
       }
@@ -664,7 +680,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       for (const vp of vps) {
         const data = bank.data(vp);
         if (!data.basis || !data.lw) continue;
-        const meshIds = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+        const meshIds = subsetMeshes(scene, vp.request.subset);
         const job = paintOverlaySteps({ scene, painted, meshIds, basis: data.basis, isGlass: glassTest, glassTransparent: vp.request.style.glassTransparent !== false });
         try {
           out.set(vp.id, await runSliced(job, () => previewGen.current !== gen));
@@ -772,6 +788,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 
   const onPlace = (t: Tool, p: PointMm, vp: ViewportItem | null) => {
     const k = templateScale(sheet.paper);
+    if (t === 'hide') {
+      hideAt(p, vp);
+      return;
+    }
     if (t === 'paint') {
       paintAt(p, vp);
       return;
@@ -800,6 +820,112 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       actions.addItems([item], 'Ajouter un repère');
     }
     setTool('select');
+  };
+
+  // ─── masquer en cliquant : pièce sous le clic → bulle (cette pièce, toutes les Viewbox, ce type, l'étiquette) ───
+  const hideAt = (p: PointMm, vp: ViewportItem | null) => {
+    if (!vp || vp.custom) {
+      setHideBubble(null);
+      setToast(vp?.custom ? 'Vue spéciale : retire les pièces dans Vues 2D › Vues spéciales.' : 'Clique une pièce dans une vue.');
+      return;
+    }
+    const data = bank.data(vp);
+    if (!data.lw || !data.basis || !vp.scale) return;
+    const b = data.lw.boundsMm;
+    const [x, y] = viewportTransform(vp.rect, vp.scale, vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]).toModel(p.x, p.y);
+    const objs = viewportObjects(scene, vp);
+    let hit = castInView(scene, vp, data.basis, x, y, objs, raycaster);
+    const tol = (device.isTouch ? 6 : 3) * templateScale(sheet.paper) * vp.scale;
+    for (let i = 0; !hit && i < 8; i++) hit = castInView(scene, vp, data.basis, x + Math.cos((i * Math.PI) / 4) * tol, y + Math.sin((i * Math.PI) / 4) * tol, objs, raycaster);
+    const meshId = hit ? nodeIdOf(hit.object) : undefined;
+    if (!meshId) {
+      setHideBubble(null);
+      setToast('Aucune pièce sous le point.');
+      return;
+    }
+    const env = subsetEnv(scene);
+    const at = { x: Math.min(lastPointer.current.x + 12, window.innerWidth - 580), y: Math.min(lastPointer.current.y + 12, window.innerHeight - 260) };
+    setHideBubble({ vp, crumbs: breadcrumb(env.ctx, meshId), level: defaultTarget(env.ctx, meshId), scope: subsetScope(scene, vp.request.subset.include), at });
+  };
+  const HIDE_ACTIONS: ClickAction[] = ['hide-one', 'hide-all-boxes', 'hide-tag', 'hide-type', 'hide-category'];
+  const applyHide = (a: ActionProposal) => {
+    if (!hideBubble) return;
+    const t: HideTarget =
+      a.action === 'hide-category' && a.rule.match.categories?.[0]
+        ? { kind: 'category', key: a.rule.match.categories[0] }
+        : a.action === 'hide-tag' && a.rule.match.viewTags?.[0]
+          ? { kind: 'rule', rule: tagHideRule(a.rule.match.viewTags[0], subsetEnv(scene).tags.labelOf(a.rule.match.viewTags[0])) }
+          : { kind: 'rule', rule: { id: a.rule.id, match: a.rule.match, label: a.rule.label } };
+    const vpId = hideBubble.vp.id;
+    let n = 0;
+    actions.editDoc(`Masquer : ${a.rule.label}${hideAll ? ' (tout le jeu)' : ''}`, (d) => void (n = hideInSet(d as DrawingSet, t, true, hideAll ? undefined : new Set([vpId]))));
+    setHideBubble(null);
+    setToast(`Masqué : ${a.rule.label}${hideAll ? ` — ${n} vue(s)` : ''} · Ctrl+Z pour annuler`);
+  };
+
+  // ─── cadres textile : planches de détail, repères F1…, cotes, masquage ───
+  const openFrames = (lang: FrameLang = frames?.lang ?? 'en') => setFrames({ types: groupFrames(measureFrames(scene), lang), lang });
+  const applyFrames = (types: FrameType[], c: FramesChoice) => {
+    const k = templateScale(sheet.paper);
+    const refs = frameRefs(types);
+    const vps = doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport' && !i.custom && !i.frameView));
+    const ready = vps.filter((vp) => bank.data(vp).lw && bank.data(vp).basis && vp.scale);
+    // cotes des cadres : vues où un cadre se voit, cotes automatiques refaites avec les cadres
+    const dimmed = new Map<string, ReturnType<typeof autoDimensionViewport>>();
+    const labels = new Map<string, LabelItem[]>();
+    if (!c.hide)
+      for (const vp of ready) {
+        const data = bank.data(vp);
+        const ls = frameLabels(scene, vp, data.lw!, data.basis!, refs, k);
+        if (!ls.length) continue;
+        if (c.dims) dimmed.set(vp.id, autoDimensionViewport({ ...vp, dimFrames: true }, data.lw!, data.basis!, scene));
+        if (c.labels) labels.set(vp.id, ls);
+      }
+    const fresh = c.sheets ? frameSheets(types, { paper: sheet.paper, modelKey: scene.modelKey, style: vps[0]?.request.style ?? { ...DEFAULT_LINE_STYLE }, lang: c.lang, title: doc.title }) : [];
+    actions.editDoc('Cadres textile', (d) => {
+      if (c.sheets) {
+        const old = d.sheets.findIndex((s) => s.role === 'frames');
+        d.sheets = d.sheets.filter((s) => s.role !== 'frames');
+        const firstUnit = d.sheets.findIndex((s) => s.unit);
+        const at = old >= 0 ? Math.min(old, d.sheets.length) : firstUnit < 0 ? d.sheets.length : firstUnit;
+        d.sheets.splice(at, 0, ...(fresh as typeof d.sheets));
+        renumber(d.sheets as Sheet[]);
+      }
+      if (c.hide) hideInSet(d as DrawingSet, { kind: 'rule', rule: tagHideRule(TEXTILE_TAG, 'Cadres textile (tissu tendu)') }, true);
+      for (const sh of d.sheets) {
+        if (c.labels || c.hide) sh.items = sh.items.filter((i) => !(i.type === 'label' && i.auto === 'frame' && (c.hide || labels.has(i.viewportId ?? ''))));
+        for (const it of [...sh.items]) {
+          if (it.type !== 'viewport') continue;
+          const r = dimmed.get(it.id);
+          if (r) {
+            it.scale = r.scale;
+            it.center = r.center;
+            it.dimFrames = true;
+            sh.items = sh.items.filter((i) => !(i.type === 'dimension' && i.auto && i.viewportId === it.id));
+            sh.items.push(...(r.dims as typeof sh.items));
+          }
+          const ls = labels.get(it.id);
+          if (ls) {
+            // repères recalculés après le nouveau cadrage (cotes des cadres)
+            const data = bank.data(it as ViewportItem);
+            const again = r ? frameLabels(scene, { ...(it as ViewportItem), scale: r.scale, center: r.center }, data.lw!, data.basis!, refs, k) : ls;
+            sh.items.push(...(again as typeof sh.items));
+          }
+        }
+      }
+    });
+    if (fresh.length) useEditor.getState().setSheet(fresh[0].id);
+    setFrames(null);
+    setToast(
+      [
+        fresh.length ? `${fresh.length} planche(s) « Cadres textile »` : '',
+        labels.size ? `repères sur ${labels.size} vue(s)` : '',
+        dimmed.size ? `cotes sur ${dimmed.size} vue(s)` : '',
+        c.hide ? 'cadres masqués sur les autres vues' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') + ' — Ctrl+Z pour annuler',
+    );
   };
 
   // ─── captures 3D ───
@@ -1223,6 +1349,21 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             🎨 Peinture
           </button>
         )}
+        <button
+          className={`btn small${tool === 'hide' ? ' primary' : ''}`}
+          data-testid="tool-hide"
+          onClick={() => {
+            setTool(tool === 'hide' ? 'select' : 'hide');
+            setHideBubble(null);
+            setMoreOpen(false);
+          }}
+          title="Masquer en cliquant : plafond tendu, éclairage, cadre… dans cette vue ou sur tout le jeu"
+        >
+          🙈 Masquer
+        </button>
+        <button className="btn small" data-testid="open-frames" onClick={() => (openFrames(), setMoreOpen(false))} title="Cadres textile : planches cotées + nomenclature, repères F1… et cotes sur les vues, ou les masquer">
+          ▦ Cadres textile
+        </button>
         <button className={`btn small${tool === 'dim' ? ' primary' : ''}`} onClick={() => setTool('dim')} title="Cote : 2 clics sur la vue (accroche ■ extrémité ▲ milieu ● centre), 3e clic pour placer la ligne de cote (Maj = alignée)">
           ↔ Cote
         </button>
@@ -1624,10 +1765,55 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onSyncProject={() => void syncProject(true)}
           syncMessage={syncMessage}
           onDuplicateForModules={sheetModule(sheet) ? () => setRetarget(sheet) : undefined}
+          onHideTool={() => setTool('hide')}
+          onSetWide={() => setSetHideOpen(true)}
+          onDimFrames={(vp, on) => {
+            if (!on) {
+              actions.updateItem(vp.id, { dimFrames: undefined } as Partial<SheetItem>, 'Cadres non cotés');
+              autoDimension([{ ...vp, dimFrames: false }]);
+            } else autoDimension([{ ...vp, dimFrames: true }]);
+          }}
         />
         )}
         </div>
       </div>
+      {hideBubble && tool === 'hide' && (
+        <ClickBubble
+          ctx={subsetEnv(scene).ctx}
+          crumbs={hideBubble.crumbs}
+          level={hideBubble.level}
+          scopeNodes={hideBubble.scope}
+          only={HIDE_ACTIONS}
+          style={touchLayout ? undefined : { position: 'fixed', left: Math.max(8, hideBubble.at.x), top: Math.max(8, hideBubble.at.y), zIndex: 45 }}
+          onLevel={(id) => setHideBubble({ ...hideBubble, level: id })}
+          onHover={() => {}}
+          onAction={applyHide}
+          onClose={() => setHideBubble(null)}
+        >
+          <div className="row wrap">
+            <label className="check">
+              <input type="radio" checked={!hideAll} onChange={() => setHideAll(false)} /> dans cette vue
+            </label>
+            <label className="check">
+              <input type="radio" data-testid="hide-all-views" checked={hideAll} onChange={() => setHideAll(true)} /> sur toutes les vues du jeu
+            </label>
+            <button className="btn small ghost" onClick={() => (setHideBubble(null), setSetHideOpen(true))}>
+              Liste…
+            </button>
+          </div>
+        </ClickBubble>
+      )}
+      {setHideOpen && <SetHideDialog doc={doc} scene={scene} onClose={() => setSetHideOpen(false)} />}
+      {frames && (
+        <FramesDialog
+          types={frames.types}
+          existing={doc.sheets.filter((s) => s.role === 'frames').length}
+          pendingViews={doc.sheets.reduce((n, s) => n + s.items.filter((i) => i.type === 'viewport' && !i.custom && !i.frameView && !bank.data(i).lw).length, 0)}
+          onLang={(lang) => openFrames(lang)}
+          onClose={() => setFrames(null)}
+          onApply={(c) => applyFrames(frames.types, c)}
+        />
+      )}
       {itemMenu && (
         <ItemMenu
           item={itemMenu.item}

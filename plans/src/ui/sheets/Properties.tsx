@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import type { SceneIndex } from '../../core/types';
 import type { ViewKind } from '../../core/views';
 import { VIEW_LABELS } from '../../core/views';
-import { categoriesIn, subsetAll, subsetForLevel, subsetForModule, subsetForModules } from '../../core/subset';
+import { subsetAll, subsetForLevel, subsetForModule, subsetForModules } from '../../core/subset';
 import type { LoadedScene } from '../../scene/loadedScene';
 import type { SavedCapture } from '../../api/vem';
 import type { PickableImage } from '../../sheets/images';
@@ -21,7 +21,7 @@ import { dimensionInput } from '../../sheets/SheetSvg';
 import { STANDARD_SCALES, fitScale } from '../../sheets/scales';
 import type { ViewportData } from '../../sheets/SheetSvg';
 import { actions, useEditor } from '../../sheets/store';
-import { CategoryChip } from '../common';
+import { ViewportHide } from './HideControls';
 
 /** Libellés fréquents des planches Viewbox (repères). */
 export const FREQUENT_LABELS = ['Bleu extérieur', 'Blanc intérieur', 'Pas peindre', 'Pas peinture', 'Vitre', 'Blanc/Blanc', 'Bleu', 'Blanc'];
@@ -60,6 +60,9 @@ function ViewportProps({
   onAutoDimension,
   onSetInclude,
   dimCount,
+  onHideTool,
+  onSetWide,
+  onDimFrames,
 }: {
   vp: ViewportItem;
   data?: ViewportData;
@@ -68,12 +71,13 @@ function ViewportProps({
   onAutoDimension: () => void;
   onSetInclude: (include: string[], label: string) => Promise<void>;
   dimCount: number;
+  onHideTool?: () => void;
+  onSetWide?: () => void;
+  onDimFrames?: (on: boolean) => void;
 }) {
   const { index } = scene;
   const scope = scopeOf(vp, index, units);
   const kind = vp.request.view.kind === 'custom' ? 'top' : vp.request.view.kind;
-  const categories = useMemo(() => categoriesIn(index, scene.look, vp.request.subset.include), [index, scene, vp.request.subset.include]);
-  const hide = vp.request.subset.hideCategories ?? [];
   const setReq = (patch: Partial<ViewportItem['request']>, label: string, extra: Partial<ViewportItem> = {}) => {
     // autre direction de vue ou autre sous-ensemble : les cotes de cette vue ne correspondent plus au dessin
     const viewChanged = !!patch.view && JSON.stringify(patch.view) !== JSON.stringify(vp.request.view);
@@ -218,22 +222,28 @@ function ViewportProps({
           </button>
         </div>
       </Field>
-      <Field label="Masquer">
-        <div className="chips-select">
-          {categories.map((c) => (
-            <label key={c} className={`chip-toggle${hide.includes(c) ? ' off' : ''}`}>
-              <input
-                type="checkbox"
-                checked={hide.includes(c)}
-                onChange={(e) =>
-                  setReq({ subset: { ...vp.request.subset, hideCategories: e.target.checked ? [...hide, c] : hide.filter((x) => x !== c) } }, 'Masquer une catégorie')
-                }
-              />
-              <CategoryChip category={c} />
-            </label>
-          ))}
-        </div>
-      </Field>
+      {vp.frameView && <div className="hint">Vue de détail du cadre textile {vp.frameView.ref} (cadre seul, vu de face) : « Coter automatiquement » pose sa largeur et sa hauteur hors tout.</div>}
+      {!vp.custom && (
+        <ViewportHide
+          key={vp.id}
+          vp={vp}
+          scene={scene}
+          onRequest={(req, label) =>
+            useEditor.getState().apply(label, (d) => {
+              for (const s of d.sheets) {
+                const it = s.items.find((i) => i.id === vp.id) as ViewportItem | undefined;
+                if (!it) continue;
+                // même échelle, même cadrage : seul le calcul de la vue est refait (les cotes restent ancrées en 3D)
+                it.request = req;
+                delete it.lineworkKey;
+              }
+            })
+          }
+          onHideTool={onHideTool}
+          onSetWide={onSetWide}
+          onDimFrames={onDimFrames}
+        />
+      )}
       <Field label="Peinture">
         <select
           value={vp.paint ?? 'marks'}
@@ -702,6 +712,9 @@ export function PropertiesPanel({
   onSyncProject,
   syncMessage,
   onDuplicateForModules,
+  onHideTool,
+  onSetWide,
+  onDimFrames,
 }: {
   doc: DrawingSet;
   sheet: Sheet;
@@ -719,6 +732,12 @@ export function PropertiesPanel({
   syncMessage: string;
   /** planche « une par Viewbox » : « Dupliquer pour d'autres Viewbox » */
   onDuplicateForModules?: () => void;
+  /** outil « Masquer en cliquant » */
+  onHideTool?: () => void;
+  /** dialogue « Masquer sur tout le jeu » */
+  onSetWide?: () => void;
+  /** « Coter les cadres textile » d'une vue (option + cotes automatiques refaites) */
+  onDimFrames?: (vp: ViewportItem, on: boolean) => void;
 }) {
   const selection = useEditor((s) => s.selection);
   const [tab, setTab] = useState<'item' | 'titleblock'>('item');
@@ -772,6 +791,9 @@ export function PropertiesPanel({
                 onAutoDimension={() => onAutoDimension(one)}
                 onSetInclude={(include, label) => onSetInclude(one, include, label)}
                 dimCount={sheet.items.filter((i) => i.type === 'dimension' && i.viewportId === one.id).length}
+                onHideTool={onHideTool}
+                onSetWide={onSetWide}
+                onDimFrames={onDimFrames ? (on) => onDimFrames(one, on) : undefined}
               />
             )}
             {one.type === 'dimension' && <DimensionProps dim={one} sheet={sheet} viewData={viewData} />}

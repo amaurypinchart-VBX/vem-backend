@@ -302,6 +302,20 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sheet-selbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: rgba(245, 158, 11, .12); font-size: 12px; }
 .module-pick { width: min(520px, 100%); }
 .module-pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; }
+.vp-hide { gap: 6px; }
+.vp-hide > .hint { margin-top: 2px; }
+.vp-hide .floor-cut { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-3); }
+.vp-hide .row.wrap { flex-wrap: wrap; gap: 6px; }
+.chip.tag-chip { background: rgba(96, 165, 250, .14); color: var(--text); }
+.chip.tag-chip .muted { opacity: .6; font-weight: 400; }
+.chip.rule-chip { background: rgba(248, 113, 113, .14); color: var(--text); white-space: normal; }
+.chip.rule-chip.warn { background: rgba(251, 146, 60, .18); }
+.chip .chip-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 0 0 4px; font-size: 11px; opacity: .7; }
+.chip .chip-x:hover { opacity: 1; }
+.set-hide { width: min(720px, 100%); }
+.set-hide-table td.actions { white-space: nowrap; text-align: right; }
+.frames-dialog { width: min(900px, 100%); }
+.frames-options { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 
 /* ─── Téléphone / tablette : tout ce qui suit ne change rien sur ordinateur (≥ 901 px, souris) ─── */
 .mobile-only { display: none; }

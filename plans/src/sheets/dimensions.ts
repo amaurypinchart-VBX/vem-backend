@@ -167,7 +167,11 @@ export function boxesOverlap(a: RectMm, b: RectMm, margin = 0): boolean {
 
 // ─── cotation automatique ───
 
-export type DimPurpose = 'elevation' | 'plan' | 'implantation';
+/** élévation, plan, implantation des pieds, objet seul (cadre textile : largeur × hauteur hors tout) */
+export type DimPurpose = 'elevation' | 'plan' | 'implantation' | 'object';
+
+/** Un cadre textile n'est coté dans une direction que s'il y mesure plus que ça (vu de face, pas sur la tranche). */
+export const FRAME_DIM_MIN = 150;
 
 export interface Extent {
   x0: number;
@@ -188,6 +192,8 @@ export interface AutoDimInput {
   feet: Array<{ x: number; y: number }>;
   /** bandeau de toit (élévations) */
   roofBand?: { y0: number; y1: number };
+  /** cadres textile visibles (option « Coter les cadres textile ») */
+  frames?: Extent[];
 }
 
 export interface AutoDim {
@@ -236,6 +242,12 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
     return out.filter((d) => d.points.length >= 2 && Math.abs(d.orient === 'h' ? d.points[d.points.length - 1][0] - d.points[0][0] : d.points[d.points.length - 1][1] - d.points[0][1]) > tol);
   }
 
+  if (inp.purpose === 'object') {
+    add('h', 'bottom', [minX, maxX]);
+    add('v', 'left', [minY, maxY]);
+    return out;
+  }
+
   // les cotes globales mesurent les Viewbox (pieds, poignées… qui dépassent n'entrent pas dans les totaux)
   const mods = inp.modules;
   const mX0 = mods.length ? Math.min(...mods.map((m) => m.x0)) : minX;
@@ -243,13 +255,26 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
   const mY0 = mods.length ? Math.min(...mods.map((m) => m.y0)) : minY;
   const mY1 = mods.length ? Math.max(...mods.map((m) => m.y1)) : maxY;
 
+  // cadres textile : chaîne des bords des cadres vus de face, depuis les bords des Viewbox (position + dimensions)
+  const frames = inp.frames ?? [];
+  const frameXs = frames.filter((f) => f.x1 - f.x0 > FRAME_DIM_MIN).flatMap((f) => [f.x0, f.x1]);
+  const frameYs = frames.filter((f) => f.y1 - f.y0 > FRAME_DIM_MIN).flatMap((f) => [f.y0, f.y1]);
+  const frameChain = (orient: 'h' | 'v', side: AutoDim['side'], edges: number[], lo: number, hi: number) => {
+    if (!edges.length) return;
+    const u = uniqueSorted([lo, hi, ...edges], tol);
+    if (u.length > 2) add(orient, side, u);
+  };
+
   if (inp.purpose === 'plan') {
     chainAndTotal('h', 'top', mods.length ? mods.flatMap((m) => [m.x0, m.x1]) : [minX, maxX]);
     chainAndTotal('v', 'left', mods.length ? mods.flatMap((m) => [m.y0, m.y1]) : [minY, maxY]);
+    frameChain('h', 'bottom', frameXs, mX0, mX1);
+    frameChain('v', 'right', frameYs, mY0, mY1);
     return out;
   }
 
-  // élévation
+  // élévation (cadres : au plus près du dessin en haut, avant la longueur totale ; hauteurs à droite)
+  frameChain('h', 'top', frameXs, mX0, mX1);
   const moduleXs = mods.length ? uniqueSorted(mods.flatMap((m) => [m.x0, m.x1]), tol) : [minX, maxX];
   if (inp.doors.length) {
     const withDoors = uniqueSorted([...moduleXs, ...inp.doors.flatMap((d) => [d.x0, d.x1])], tol).filter((x) => x >= mX0 - tol && x <= mX1 + tol);
@@ -262,6 +287,7 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
     add('v', 'left', uniqueSorted([mY0, inp.roofBand.y0, top], tol));
     add('v', 'left', [mY0, top]);
   } else add('v', 'left', [mY0, top]);
+  frameChain('v', 'right', frameYs, mY0, top);
   return out;
 }
 

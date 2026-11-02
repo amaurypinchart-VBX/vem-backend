@@ -1,6 +1,7 @@
 // BrowserHlrProvider : implémentation « navigateur » du LineworkProvider (three-edge-projection dans des Workers),
 // avec cache IndexedDB. L'éditeur de planches n'utilisera que l'interface LineworkProvider.
-import { resolveMeshes } from '../core/subset';
+import { floorCutPlanes } from '../core/subsetHide';
+import { meshesOfNode } from '../scene/loadedScene';
 import { viewBasis, viewKey } from '../core/views';
 import type { ViewBasis } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
@@ -13,6 +14,9 @@ import { buildPacket } from './packets';
 import type { RemoteLineworkCache } from './remoteCache';
 import type { HlrRunner } from './runner';
 import type { Linework2D, LineworkProvider, LineworkRequest } from './types';
+import { subsetEnv, subsetMeshes } from './subset';
+import type { CustomJob } from './customJob';
+import { CUSTOM_ENGINE, materialOf } from './cutMaterial';
 
 /** Version du moteur 2D : la changer invalide le cache des vues. */
 export const LINEWORK_ENGINE = 'p2-hlr-1';
@@ -71,7 +75,14 @@ export class BrowserHlrProvider implements LineworkProvider {
       [...req.subset.include].sort(),
       [...(req.subset.hideCategories ?? [])].sort(),
       ...(req.subset.onlyCategories?.length ? [[...req.subset.onlyCategories].sort()] : []),
+      // éléments masqués en plus : les maillages restants (les étiquettes mémorisées peuvent changer ce qu'ils touchent)
+      ...(req.subset.hide?.length ? [{ meshes: this.meshes(req).sort() }] : []),
     ]);
+  }
+
+  /** Maillages dessinés pour une demande (catégories, éléments masqués). */
+  private meshes(req: LineworkRequest): string[] {
+    return subsetMeshes(this.scene, req.subset);
   }
 
   async cacheKey(req: LineworkRequest): Promise<string> {
@@ -82,12 +93,14 @@ export class BrowserHlrProvider implements LineworkProvider {
       view: viewKey(req.view, this.scene.frames),
       // couleurs et repères sont ajoutés après le calcul : ils ne changent pas la clé des traits
       style: { ...req.style, colorByCategory: undefined, facadeMarks: undefined },
+      // « Vue du sol » : coupe horizontale (absente = clé inchangée pour toutes les vues existantes)
+      ...(req.floorCut != null ? { floorCut: { h: req.floorCut, engine: CUSTOM_ENGINE } } : {}),
     });
   }
 
   private packetFor(req: LineworkRequest): { key: string; packet: HlrPacket; meshIds: string[] } {
     const key = this.subsetKey(req);
-    const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+    const meshIds = this.meshes(req);
     let packet = this.packets.get(key);
     if (!packet) {
       packet = buildPacket(this.scene, meshIds, this.opts.glassTest);
@@ -121,7 +134,7 @@ export class BrowserHlrProvider implements LineworkProvider {
     let lw = await this.baseLinework(req, basis, cacheKey, onProgress, signal, opts.cacheOnly);
     // seulement les caches : les repères attendent l'affichage de la planche
     if (opts.cacheOnly) return lw;
-    const meshIds = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+    const meshIds = this.meshes(req);
     // téléphone : repères d'une vue lourde pas encore calculés ailleurs = sans repères (sinon la page est fermée)
     if (marks && this.opts.heavyTriangles && !this.allowHeavy && this.triangles(meshIds) > this.opts.heavyTriangles) return lw;
     this.opts.note?.(`repères de la vue (${Math.round(this.triangles(meshIds) / 1000)} k triangles)`);
@@ -160,13 +173,14 @@ export class BrowserHlrProvider implements LineworkProvider {
       lw = this.opts.maxConcurrent && !this.opts.noCache ? await cacheGet(cacheKey) : null;
       if (lw) return lw;
       if (this.opts.heavyTriangles && !this.allowHeavy) {
-        const ids = resolveMeshes(this.scene.index, this.scene.look, req.subset.include, req.subset.hideCategories, req.subset.onlyCategories);
+        const ids = this.meshes(req);
         if (this.triangles(ids) > this.opts.heavyTriangles) throw new Error(HEAVY_VIEW);
       }
       const p = this.packetFor(req);
       if (!p.packet.sourceIds.length) throw new Error('Rien à dessiner : le sous-ensemble est vide (tout est masqué ?)');
       this.opts.note?.(`calcul d’une vue (${Math.round(p.packet.indices.length / 3000)} k triangles)`);
-      lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey }, onProgress: (f) => onProgress?.(f) }, signal);
+      const custom = req.floorCut != null ? this.floorJob(req, p.meshIds) : undefined;
+      lw = await this.opts.runner.run({ packetKey: p.key, packet: p.packet, job: { basis, style: req.style, cacheKey, ...(custom ? { custom } : {}) }, onProgress: (f) => onProgress?.(f) }, signal);
       this.opts.note?.(null);
       if (!this.opts.noCache) {
         void cachePut(cacheKey, lw);
@@ -176,6 +190,31 @@ export class BrowserHlrProvider implements LineworkProvider {
     } finally {
       this.release();
     }
+  }
+
+  /**
+   * « Vue du sol » : calcul de coupe (même moteur que les vues spéciales) — plan horizontal dans chaque Viewbox à
+   * `floorCut` au-dessus de son plancher, dessous gardé, pièces coupées remplies par matériau. Tableaux dans l'ordre
+   * des objets du paquet (les maillages sans géométrie n'y sont pas).
+   */
+  private floorJob(req: LineworkRequest, meshIds: string[]): CustomJob {
+    const drawn = meshIds.filter((id) => meshesOfNode(this.scene.objectsById.get(id)).length > 0);
+    const { byNode } = floorCutPlanes({ ...this.scene, tags: subsetEnv(this.scene).tags }, drawn, req.floorCut ?? 0);
+    const sets: CustomJob['planeSets'] = [];
+    const setOf = new Map<string, number>();
+    const objectSet = drawn.map((id) => {
+      const pl = byNode.get(id);
+      if (!pl?.length) return -1;
+      const k = pl.map((q) => `${q.n.join(',')},${q.d.toFixed(2)}`).join(';');
+      let i = setOf.get(k);
+      if (i === undefined) {
+        i = sets.length;
+        setOf.set(k, i);
+        sets.push(pl.map((q) => ({ n: q.n, d: q.d, section: !!q.cutId })));
+      }
+      return i;
+    });
+    return { planeSets: sets, objectSet, ghost: drawn.map(() => 0), material: drawn.map((id) => materialOf(this.scene, id)), fill: 'by-material', beyondThin: false };
   }
 
   /** Nombre de triangles des maillages (index de scène, sans construire le paquet). */

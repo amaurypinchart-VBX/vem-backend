@@ -16,7 +16,10 @@ import type { DrawingSet } from '../../sheets/types';
 import { actions, useEditor } from '../../sheets/store';
 import type { PaintSheetInfo } from '../../sheets/paintSheet';
 
-export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol' | 'paint';
+export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol' | 'paint' | 'hide';
+
+/** Outils « tape sur une pièce » (peinture, masquer) : au doigt, un glissement déplace la planche, un tape agit. */
+const tapTool = (t: Tool) => t === 'paint' || t === 'hide';
 
 /** Point accroché dans une vue : position dans le dessin, sur la planche, type d'accroche. */
 export interface SnapResult {
@@ -323,7 +326,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
     const item = itemAtScreen(e.clientX, e.clientY);
     // un doigt : outils de pose → clic normal ; peinture → déplacer la planche, un tape peint ; sélection sur un élément
     // en édition → déplacer l'élément ; sinon déplacer la planche
-    if (tool !== 'select' && tool !== 'paint') return false;
+    if (tool !== 'select' && !tapTool(tool)) return false;
     if (item && !readOnly && tool === 'select') {
       const timer = window.setTimeout(() => {
         if (touchTap.current && !touchTap.current.moved) {
@@ -346,8 +349,8 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
         navigator.vibrate?.(15);
       }
     }, LONG_PRESS_MS);
-    touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item: tool === 'paint' ? null : item, moved: false, timer, long: false };
-    if (tool === 'paint') clearTimeout(timer);
+    touchTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, item: tapTool(tool) ? null : item, moved: false, timer, long: false };
+    if (tapTool(tool)) clearTimeout(timer);
     drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
     return true;
   };
@@ -497,9 +500,9 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
       const tt = touchTap.current;
       touchTap.current = null;
       if (tt) clearTimeout(tt.timer);
-      if (tt && !tt.moved && !tt.long && tool === 'paint') {
+      if (tt && !tt.moved && !tt.long && tapTool(tool)) {
         const p = toPaper({ clientX: tt.x, clientY: tt.y });
-        onPlace('paint', p, viewportAt(p));
+        onPlace(tool, p, viewportAt(p));
       } else if (tt && !tt.moved && !tt.long) {
         // tape : sélectionner l'élément (ou rien) ; double tape = double-clic
         const now = Date.now();
@@ -544,7 +547,7 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
   return (
     <div
       ref={host}
-      className={`sheet-canvas tool-${tool === 'chain' ? 'dim' : tool === 'paint' ? 'symbol' : tool}`}
+      className={`sheet-canvas tool-${tool === 'chain' ? 'dim' : tapTool(tool) ? 'symbol' : tool}`}
       onPointerDownCapture={onTouchCapture}
       onPointerDown={onBackgroundDown}
       onPointerMove={onMove}
