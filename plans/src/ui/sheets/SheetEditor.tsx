@@ -54,7 +54,7 @@ import { clearStep, markStep } from '../crashLog';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
 import type { ReadyFile } from '../FileReady';
-import { deliveryPlan, estimatePdfMb, tooHeavyForPhone } from '../deliver';
+import { PROJECT_FILE_MAX, deliveryPlan, estimatePdfMb, formatSize, tooHeavyForPhone } from '../deliver';
 import type { PaintState } from './usePaint';
 import type { PaintedScene } from '../../linework/paintScene';
 import { paintScene } from '../../linework/paintScene';
@@ -173,6 +173,13 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   paintRef.current = paint;
   /** fichier calculé, à remettre (téléphone : écran « PDF prêt ») */
   const [ready, setReady] = useState<ReadyFile | null>(null);
+  /** « Enregistré dans les Fichiers du projet » (disparaît après 6 s) */
+  const [savedNote, setSavedNote] = useState('');
+  useEffect(() => {
+    if (!savedNote) return;
+    const t = setTimeout(() => setSavedNote(''), 6000);
+    return () => clearTimeout(t);
+  }, [savedNote]);
   const cancelExport = useRef(false);
   const deliver = (name: string, blob: Blob) => {
     if (deliveryPlan(device) === 'download') downloadBlob(name, blob);
@@ -848,7 +855,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   /** PDF vectoriel du jeu entier ou de la planche affichée (une page par planche, format exact). */
-  const exportPdf = async (scope: 'all' | 'sheet' | 'selection') => {
+  const exportPdf = async (scope: 'all' | 'sheet' | 'selection', target: 'deliver' | 'project' = 'deliver') => {
+    const toProject = target === 'project';
     const all = scope === 'all';
     const sheets = all ? doc.sheets : scope === 'sheet' ? [sheet] : doc.sheets.filter((s) => sheetSelection.includes(s.id));
     if (!sheets.length) return;
@@ -880,14 +888,20 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
       const images = new Map<string, string>();
       let failed = 0;
-      for (const [n, url] of urls.entries()) {
-        setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
-        try {
-          images.set(url, light ? await pdfImageDataUrl(url, 0.88, MAX_IMAGE_PX_MOBILE) : await pdfImageDataUrl(url));
-        } catch {
-          failed++;
+      // Fichiers du projet : 10 Mo au plus (Cloudinary) ⇒ images allégées d'emblée, puis encore plus si le PDF dépasse
+      const loadImages = async (quality: number, maxPx: number | undefined) => {
+        images.clear();
+        failed = 0;
+        for (const [n, url] of urls.entries()) {
+          setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
+          try {
+            images.set(url, maxPx ? await pdfImageDataUrl(url, quality, maxPx) : await pdfImageDataUrl(url));
+          } catch {
+            failed++;
+          }
         }
-      }
+      };
+      await loadImages(0.88, light || toProject ? MAX_IMAGE_PX_MOBILE : undefined);
       const markup = (s: Sheet) =>
         renderToStaticMarkup(
           <SheetSvg
@@ -905,16 +919,38 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       setBusy('PDF : polices…');
       const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
       const one = sheets.length === 1 && !all;
-      const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` }, (d, n) => {
-        if (cancelExport.current) throw new Error('annulé');
-        setBusy(`PDF : planche ${d}/${n}…`);
-      });
+      const build = async () => {
+        const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` }, (d, n) => {
+          if (cancelExport.current) throw new Error('annulé');
+          setBusy(`PDF : planche ${d}/${n}…`);
+        });
+        return pdf.output('blob');
+      };
+      let blob = await build();
       const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;
       const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${suffix}`;
-      deliver(`${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`, pdf.output('blob'));
+      const fileName = `${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`;
+      if (toProject) {
+        // trop lourd : images 3D plus petites (1 200 px, JPEG 0,75), puis 800 px
+        for (const [q, px] of [
+          [0.75, 1200],
+          [0.6, 800],
+        ] as const) {
+          if (blob.size <= PROJECT_FILE_MAX || !urls.length) break;
+          await loadImages(q, px);
+          blob = await build();
+        }
+        if (blob.size > PROJECT_FILE_MAX) {
+          if (window.confirm(`Le PDF fait ${formatSize(blob.size)} : les Fichiers du projet acceptent 10 Mo au plus.\n\nLe télécharger à la place ?`)) deliver(fileName, blob);
+          return;
+        }
+        setBusy('PDF : enregistrement dans les Fichiers du projet…');
+        await vem.saveProjectFile(PROJECT_ID, blob, fileName);
+        setSavedNote(`✓ « ${fileName} » enregistré dans les Fichiers du projet VEM`);
+      } else deliver(fileName, blob);
       if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
     } catch (e) {
-      if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`Export PDF impossible : ${(e as Error).message}`);
+      if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`${toProject ? 'Enregistrement dans le projet' : 'Export PDF'} impossible : ${(e as Error).message}`);
     } finally {
       clearStep();
       setBusy('');
@@ -1288,6 +1324,15 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </button>
         <button className="btn small ghost" disabled={!!busy} onClick={() => void exportPdf('sheet')} title="La planche affichée en PDF vectoriel">
           ⬇ PDF planche
+        </button>
+        <button
+          className="btn small"
+          data-testid="save-set-project"
+          disabled={!!busy}
+          onClick={() => void exportPdf('all', 'project')}
+          title="Tout le jeu de plans en PDF, enregistré dans les Fichiers du projet VEM (onglet Fichiers du projet)"
+        >
+          💾 Enregistrer dans le projet
         </button>
         <button className="btn small ghost" disabled={!!busy} onClick={() => setDxfOpen(true)} title="Plans en DXF pour AutoCAD / architectes : planche complète ou vues en grandeur réelle (1 unité = 1 mm)">
           ⬇ DXF
@@ -1669,6 +1714,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               Annuler
             </button>
           )}
+        </div>
+      )}
+      {savedNote && (
+        <div className="paint-toast" role="status" data-testid="saved-project-toast">
+          <span>{savedNote}</span>
         </div>
       )}
       {ready && (
