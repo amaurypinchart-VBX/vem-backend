@@ -15,6 +15,7 @@ export function PaintPanel({
   active,
   mode,
   saving,
+  computing,
   error,
   disabled,
   selectedZone,
@@ -36,6 +37,8 @@ export function PaintPanel({
   active: string | null;
   mode: PaintMode;
   saving: boolean;
+  /** repères encore en calcul sur des vues (en arrière-plan) */
+  computing?: boolean;
   error: string;
   disabled: boolean;
   selectedZone: string | null;
@@ -187,7 +190,7 @@ export function PaintPanel({
           ⬇ Liste peinture (Excel)
         </button>
         <div className="hint">
-          {saving ? 'Enregistrement…' : 'Enregistré avec le modèle, repris à la version suivante.'} Ctrl+Z / ↶ annule la dernière action de peinture tant que l’outil est ouvert.
+          {saving ? 'Enregistrement…' : computing ? 'Calcul des repères sur les vues…' : 'Enregistré avec le modèle, repris à la version suivante.'} Ctrl+Z / ↶ annule la dernière action de peinture tant que l’outil est ouvert.
         </div>
       </div>
     </aside>

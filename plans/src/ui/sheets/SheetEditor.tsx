@@ -59,7 +59,8 @@ import type { PaintState } from './usePaint';
 import type { PaintedScene } from '../../linework/paintScene';
 import { paintScene } from '../../linework/paintScene';
 import type { PaintRegion } from '../../linework/paintOverlay';
-import { computePaintOverlay } from '../../linework/paintOverlay';
+import { paintOverlaySteps } from '../../linework/paintOverlay';
+import { runSliced, SlicedCancelled } from '../../linework/sliced';
 import type { PaintContext } from '../../core/paint/resolve';
 import type { PaintColor, PaintOp, PaintSettings, PaintZone } from '../../core/paint/types';
 import { colorCode, nextTag, reassignOps } from '../../core/paint/ops';
@@ -180,6 +181,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 
   // aperçu (face sous le doigt) et zone choisie dans le panneau : contour orange par-dessus la vue
   const [paintPreview, setPaintPreview] = useState<Map<string, PaintRegion[]> | null>(null);
+  /** aperçu en cours de calcul : un nouvel aperçu (ou sa fermeture) abandonne le précédent */
+  const previewGen = useRef(0);
   const viewData = useCallback(
     (vp: ViewportItem) => {
       const d = bank.data(vp);
@@ -390,6 +393,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       else if (e.key === 'Escape') {
         if (toolRef.current === 'paint') {
           setBubble(null);
+          previewGen.current++;
           setPaintPreview(null);
           return;
         }
@@ -608,19 +612,34 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         }
     return { id: newId('g'), type: 'paintLegend', rect, lang: 'en', scope: 'sheet', areas: true };
   };
-  /** Aperçu d'une peinture provisoire (une zone) sur les vues de la planche. */
-  const previewOf = (temp: PaintSettings, only?: string[]): Map<string, PaintRegion[]> | null => {
-    if (!paint) return null;
+  /**
+   * Aperçu (contour orange) d'une peinture provisoire (une zone) sur les vues de la planche, calculé en arrière-plan
+   * vue par vue (la vue cliquée d'abord) : la bulle s'ouvre tout de suite, l'aperçu suit. `null` = plus d'aperçu.
+   */
+  const showPreview = (temp: PaintSettings | null, first?: string) => {
+    const gen = ++previewGen.current;
+    setPaintPreview(null);
+    if (!temp || !paint) return;
     const painted = paintScene(scene, temp, paint.ctx);
-    const out = new Map<string, PaintRegion[]>();
-    for (const vp of sheet.items) {
-      if (vp.type !== 'viewport' || vp.custom || (only && !only.includes(vp.id))) continue;
-      const data = bank.data(vp);
-      if (!data.basis || !data.lw) continue;
-      const meshIds = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
-      out.set(vp.id, computePaintOverlay({ scene, painted, meshIds, basis: data.basis, isGlass: glassTest, glassTransparent: vp.request.style.glassTransparent !== false }));
-    }
-    return out;
+    const vps = sheet.items.filter((vp): vp is ViewportItem => vp.type === 'viewport' && !vp.custom);
+    vps.sort((a, b) => (b.id === first ? 1 : 0) - (a.id === first ? 1 : 0));
+    void (async () => {
+      const out = new Map<string, PaintRegion[]>();
+      for (const vp of vps) {
+        const data = bank.data(vp);
+        if (!data.basis || !data.lw) continue;
+        const meshIds = resolveMeshes(scene.index, scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+        const job = paintOverlaySteps({ scene, painted, meshIds, basis: data.basis, isGlass: glassTest, glassTransparent: vp.request.style.glassTransparent !== false });
+        try {
+          out.set(vp.id, await runSliced(job, () => previewGen.current !== gen));
+        } catch (e) {
+          if (e instanceof SlicedCancelled) return;
+          throw e;
+        }
+        if (previewGen.current !== gen) return;
+        setPaintPreview(new Map(out));
+      }
+    })();
   };
   const tempPaint = (target: PaintZone['target']): PaintSettings => ({
     v: 1,
@@ -648,7 +667,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     setToast(`${color?.tag ?? ''} · ${color ? colorCode(color) || color.name : ''} · ${opt.label.replace(/ \(\d+\)$/, '')}${opt.count > 1 ? ` (${opt.count})` : ''}`);
     if (!sheet.items.some((i) => i.type === 'paintLegend')) actions.addItems([paintLegend()], 'Ajouter la légende de la peinture');
     setBubble(null);
-    setPaintPreview(null);
+    showPreview(null);
   };
   const paintAt = (p: PointMm, vp: ViewportItem | null) => {
     if (!paint) return;
@@ -660,7 +679,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const pick = vp ? pickFace(scene, vp, bank.data(vp), p, (device.isTouch ? 6 : 4) * k) : null;
     if (!vp || !pick) {
       setBubble(null);
-      setPaintPreview(null);
+      showPreview(null);
       setToast('Aucune face sous le point : tape sur une pièce d’une vue.');
       return;
     }
@@ -688,19 +707,24 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const choice: TargetKey = options.some((o) => o.key === quick.key) ? quick.key : 'face-box';
     const at = { x: Math.min(lastPointer.current.x + 12, window.innerWidth - 380), y: Math.min(lastPointer.current.y + 12, window.innerHeight - 320) };
     setBubble({ vp, pick, options, choice, at });
-    setPaintPreview(previewOf(tempPaint(options.find((o) => o.key === choice)!.target)));
+    showPreview(tempPaint(options.find((o) => o.key === choice)!.target), vp.id);
   };
-  // zone choisie dans le panneau : montrée en orange sur les vues de la planche
+  // zone choisie dans le panneau : montrée en orange sur les vues de la planche (recalculée quand une vue de la planche
+  // arrive, pas à chaque nouvelle de la banque : chaque vue peinte en arrière-plan en donne une)
+  const viewsReady = sheet.items
+    .filter((i): i is ViewportItem => i.type === 'viewport' && !i.custom)
+    .map((vp) => (bank.data(vp).lw ? vp.id : ''))
+    .join('|');
   useEffect(() => {
     if (!paint || bubble) return;
     const z = selectedZone ? paint.state.paint.zones.find((x) => x.id === selectedZone) : undefined;
-    setPaintPreview(z ? previewOf(tempPaint(z.target)) : null);
+    showPreview(z ? tempPaint(z.target) : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedZone, sheet.id, bankTick]);
+  }, [selectedZone, sheet.id, viewsReady]);
   useEffect(() => {
     if (tool !== 'paint') {
       setBubble(null);
-      setPaintPreview(null);
+      showPreview(null);
       setSelectedZone(null);
     }
   }, [tool]);
@@ -1438,6 +1462,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             active={activeColor}
             mode={paintMode}
             saving={paint.state.saving}
+            computing={bank.paintPending() > 0}
             error={paint.state.error}
             disabled={paint.state.disabled}
             selectedZone={selectedZone}
@@ -1549,7 +1574,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           at={bubble.at}
           onChoice={(choice) => {
             setBubble({ ...bubble, choice });
-            setPaintPreview(previewOf(tempPaint(bubble.options.find((o) => o.key === choice)!.target)));
+            showPreview(tempPaint(bubble.options.find((o) => o.key === choice)!.target), bubble.vp.id);
           }}
           onColor={setActiveColor}
           onNewColor={() => setColorDialog({})}
@@ -1561,7 +1586,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           }}
           onClose={() => {
             setBubble(null);
-            setPaintPreview(null);
+            showPreview(null);
           }}
         />
       )}

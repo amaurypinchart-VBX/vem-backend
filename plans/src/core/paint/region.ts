@@ -265,26 +265,61 @@ export function poleOfInaccessibility(loops: Float64Array[], precision = 1): { x
     }
   if (!Number.isFinite(minX)) return { x: 0, y: 0, d: 0 };
   const sd = (x: number, y: number) => (pointInLoops(x, y, loops) ? 1 : -1) * distToLoops(x, y, loops);
-  type Cell = { x: number; y: number; h: number; d: number; max: number };
+  type Cell = { x: number; y: number; h: number; d: number; max: number; seq: number };
+  let seq = 0;
   const cell = (x: number, y: number, h: number): Cell => {
     const d = sd(x, y);
-    return { x, y, h, d, max: d + h * Math.SQRT2 };
+    return { x, y, h, d, max: d + h * Math.SQRT2, seq: seq++ };
   };
   const size = Math.max(maxX - minX, maxY - minY);
   if (!size) return { x: minX, y: minY, d: 0 };
   let h = Math.min(maxX - minX, maxY - minY) / 2 || size / 2;
+  // file de priorité (tas) : la cellule au plus grand `max` d'abord, à égalité la plus ancienne — même ordre qu'un tri
+  // stable de toute la file à chaque tour (l'ancienne version, quadratique : plusieurs secondes sur une grande façade)
   const queue: Cell[] = [];
-  for (let x = minX; x < maxX; x += h * 2) for (let y = minY; y < maxY; y += h * 2) queue.push(cell(x + h, y + h, h));
+  const before = (a: Cell, b: Cell) => a.max > b.max || (a.max === b.max && a.seq < b.seq);
+  const push = (c: Cell) => {
+    queue.push(c);
+    for (let i = queue.length - 1; i > 0; ) {
+      const p = (i - 1) >> 1;
+      if (!before(queue[i], queue[p])) break;
+      [queue[i], queue[p]] = [queue[p], queue[i]];
+      i = p;
+    }
+  };
+  const pop = (): Cell => {
+    const top = queue[0];
+    const last = queue.pop()!;
+    if (queue.length) {
+      queue[0] = last;
+      for (let i = 0; ; ) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < queue.length && before(queue[l], queue[m])) m = l;
+        if (r < queue.length && before(queue[r], queue[m])) m = r;
+        if (m === i) break;
+        [queue[i], queue[m]] = [queue[m], queue[i]];
+        i = m;
+      }
+    }
+    return top;
+  };
+  const first: Cell[] = [];
+  for (let x = minX; x < maxX; x += h * 2) for (let y = minY; y < maxY; y += h * 2) first.push(cell(x + h, y + h, h));
   let best = cell((minX + maxX) / 2, (minY + maxY) / 2, 0);
-  for (const c of queue) if (c.d > best.d) best = c;
+  for (const c of first) if (c.d > best.d) best = c;
+  for (const c of first) push(c);
   let guard = 0;
   while (queue.length && guard++ < 20000) {
-    queue.sort((a, b) => b.max - a.max);
-    const c = queue.shift()!;
+    const c = pop();
     if (c.d > best.d) best = c;
     if (c.max - best.d <= precision) continue;
     h = c.h / 2;
-    queue.push(cell(c.x - h, c.y - h, h), cell(c.x + h, c.y - h, h), cell(c.x - h, c.y + h, h), cell(c.x + h, c.y + h, h));
+    push(cell(c.x - h, c.y - h, h));
+    push(cell(c.x + h, c.y - h, h));
+    push(cell(c.x - h, c.y + h, h));
+    push(cell(c.x + h, c.y + h, h));
   }
   return { x: best.x, y: best.y, d: Math.max(0, best.d) };
 }
