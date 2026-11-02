@@ -19,6 +19,9 @@ import { cleanCustomViews } from '../../core/customViews/clean';
 import { cleanViewTags } from '../../core/customViews/tags';
 import type { ViewTagRule } from '../../core/customViews/types';
 import { LineworkBank, dimensionDrawingSet, fitDrawingSet } from '../../sheets/bank';
+import { setSubsetViewTags } from '../../linework/subset';
+import type { FrameType } from '../../sheets/frames';
+import { groupFrames, measureFrames } from '../../sheets/frames';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
@@ -68,9 +71,11 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   }, []);
   useEffect(() => {
     const list = cleanCustomViews(customViews);
+    // éléments masqués des vues standard (« Plafond tendu », « Cadres textile »…) : mêmes étiquettes mémorisées
+    setSubsetViewTags(scene.index, viewTags);
     bank.custom = { spec: (id) => list.find((v) => v.id === id), glassTest, viewTags, categoryColors };
     bank.invalidateKeys();
-  }, [bank, customViews, glassTest, viewTags, categoryColors]);
+  }, [bank, scene, customViews, glassTest, viewTags, categoryColors]);
   const legendColors = useMemo(() => {
     const m = new Map<string, LegendEntry>();
     for (const [key, v] of Object.entries(LEGEND)) m.set(key, { key, label: v.label, color: v.color });
@@ -193,7 +198,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
               const fresh = await vem.project(PROJECT_ID).catch(() => project);
               const who = me ?? (await vem.me().catch(() => null));
               const { set, captures, dimensioned } = generateDrawingSet(
-                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors },
+                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors, frames: opts.frames, hideFrames: opts.hideFrames },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(fresh, who) },
               );
               if (fresh) set.projectSync = { at: new Date().toISOString(), values: projectValues(fresh) };
@@ -317,7 +322,7 @@ function Wizard({
   scene: LoadedScene;
   defaultTitle: string;
   onCancel: () => void;
-  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean; opaqueGlass: boolean; topColors: boolean }) => void;
+  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean; opaqueGlass: boolean; topColors: boolean; frames: FrameType[]; hideFrames: boolean }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
   const detected = useMemo(() => detectUnits(scene.index, scene.frames), [scene]);
@@ -330,6 +335,16 @@ function Wizard({
   const [facadeMarks, setFacadeMarks] = useState(true);
   const [opaqueGlass, setOpaqueGlass] = useState(true);
   const [topColors, setTopColors] = useState(true);
+  const [hideFrames, setHideFrames] = useState(false);
+  // cadres textile du modèle (mesurés une fois) : planches « Cadres textile » si on en a
+  const allFrames = useMemo(() => {
+    try {
+      return measureFrames(scene);
+    } catch {
+      return [];
+    }
+  }, [scene]);
+  const frames = useMemo(() => groupFrames(allFrames.filter((f) => !f.moduleId || modules.has(f.moduleId))), [allFrames, modules]);
   const toggle = <T,>(set: Set<T>, v: T) => {
     const n = new Set(set);
     if (n.has(v)) n.delete(v);
@@ -341,11 +356,11 @@ function Wizard({
   const nSheets = useMemo(
     () =>
       generateDrawingSet(
-        { modules: [...modules], units, kinds: [...kinds], paper, style: DEFAULT_LINE_STYLE, title: '' },
+        { modules: [...modules], units, kinds: [...kinds], paper, style: DEFAULT_LINE_STYLE, title: '', frames },
         { index: scene.index, projectId: '', modelVersionId: null, modelKey: '', titleBlock: emptyTitleBlock() },
       ).set.sheets.length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modules, kinds, paper, split, unitNames, scene],
+    [modules, kinds, paper, split, unitNames, scene, frames],
   );
   return (
     <div className="card">
@@ -367,8 +382,14 @@ function Wizard({
           <label>Planches</label>
           <div className="wizard-list">
             {(Object.keys(SHEET_KIND_LABELS) as SheetKind[]).map((k) => (
-              <label key={k} className="check">
-                <input type="checkbox" checked={kinds.has(k)} onChange={() => setKinds((s) => toggle(s, k))} /> {SHEET_KIND_LABELS[k]}
+              <label key={k} className="check" data-kind={k}>
+                <input type="checkbox" checked={kinds.has(k)} disabled={k === 'frames' && !frames.length} onChange={() => setKinds((s) => toggle(s, k))} /> {SHEET_KIND_LABELS[k]}
+                {k === 'frames' && (
+                  <span className="hint">
+                    {' '}
+                    — {frames.length ? `${frames.reduce((a, t) => a + t.nodeIds.length, 0)} cadre(s), ${frames.length} type(s)` : 'aucun cadre textile dans le modèle'}
+                  </span>
+                )}
               </label>
             ))}
           </div>
@@ -384,6 +405,14 @@ function Wizard({
           <label className="check" title="Trait épais de la couleur de la légende le long de la face qui porte l’accessoire (modifiable ensuite vue par vue)">
             <input type="checkbox" checked={topColors} onChange={(e) => setTopColors(e.target.checked)} data-testid="wizard-top-colors" /> Colorer par catégorie
           </label>
+          {frames.length > 0 && (
+            <>
+              <label>Cadres textile</label>
+              <label className="check" title="Les cadres restent sur leurs planches de détail ; décoché, ils sont dessinés sur toutes les vues (modifiable ensuite : « 🙈 Masquer » ou « ▦ Cadres textile »)">
+                <input type="checkbox" checked={hideFrames} onChange={(e) => setHideFrames(e.target.checked)} data-testid="wizard-hide-frames" /> Masquer les cadres sur les vues d’ensemble (seulement sur leurs planches)
+              </label>
+            </>
+          )}
           <label>Unités</label>
           {detected.length > 1 ? (
             <div className="wizard-units">
@@ -432,7 +461,7 @@ function Wizard({
           </div>
         )}
         <div className="row">
-          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors })}>
+          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames })}>
             Générer
           </button>
           <button className="btn" onClick={onCancel}>

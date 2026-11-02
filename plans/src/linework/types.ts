@@ -1,6 +1,7 @@
 // Couture d'architecture « LineworkProvider » : l'éditeur de planches ne dépend jamais directement de
 // three-edge-projection. Il demande des traits 2D (en mm modèle) pour un sous-ensemble du modèle et une vue.
 import type { ViewBasis, ViewSpec } from '../core/views';
+import type { ViewMatch } from '../core/customViews/types';
 
 export interface LineStyleSpec {
   /** angle (°) entre deux faces au-delà duquel leur arête commune est dessinée */
@@ -41,6 +42,18 @@ export interface LineworkSubset {
   hideCategories?: string[];
   /** ne garder que ces catégories (ex. PIED pour le plan d'implantation) */
   onlyCategories?: string[];
+  /**
+   * éléments masqués en plus (planches) : étiquette de vue (« plafond-tendu », « cadre-textile »…), même pièce dans
+   * toutes les Viewbox, type (définition), pièce — critères des vues spéciales (`ViewMatch`), sous-arbre masqué
+   */
+  hide?: SubsetHideRule[];
+}
+
+/** Élément masqué d'une vue de planche (pastille « Plafond tendu », « Barre LED — toutes les Viewbox »…). */
+export interface SubsetHideRule {
+  id: string;
+  match: ViewMatch;
+  label: string;
 }
 
 export interface LineworkRequest {
@@ -48,6 +61,11 @@ export interface LineworkRequest {
   subset: LineworkSubset;
   view: ViewSpec;
   style: LineStyleSpec;
+  /**
+   * « Vue du sol » : coupe horizontale à cette hauteur (mm) au-dessus du dessus du plancher de chaque Viewbox, on garde
+   * ce qui est en dessous (toiture, plafond, éclairage, haut des cadres retirés ; murs, vitres, poteaux coupés)
+   */
+  floorCut?: number;
 }
 
 export type LayerKey =

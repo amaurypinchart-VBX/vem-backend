@@ -1,9 +1,10 @@
 // Bulle de clic sur une pièce (vues spéciales) : fil d'Ariane (survol = surbrillance de ce niveau dans la 3D),
 // actions avec le nombre de pièces touchées, « Mémoriser comme » (étiquette de vue, admin / TM).
 import { useMemo } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { Crumb } from '../../core/customViews/editor';
 import { clickActions } from '../../core/customViews/editor';
-import type { ActionProposal } from '../../core/customViews/editor';
+import type { ActionProposal, ClickAction } from '../../core/customViews/editor';
 import type { VisibilityContext } from '../../core/customViews/visibility';
 
 interface Props {
@@ -17,13 +18,19 @@ interface Props {
   onClose: () => void;
   /** étiquettes proposées pour « Mémoriser comme » ; absent = pas de droit */
   memorise?: { tags: Array<{ tag: string; label: string }>; current: string | null; reason?: string; onChange: (tag: string | null) => void };
+  /** actions proposées (planches : masquer seulement) ; absent = toutes */
+  only?: ClickAction[];
+  /** placement de la bulle (planches : près du clic) */
+  style?: CSSProperties;
+  /** contenu en plus sous les actions (planches : « dans cette vue / tout le jeu ») */
+  children?: ReactNode;
 }
 
-export function ClickBubble({ ctx, crumbs, level, scopeNodes, onLevel, onHover, onAction, onClose, memorise }: Props) {
-  const actions = useMemo(() => clickActions(ctx, level, scopeNodes), [ctx, level, scopeNodes]);
+export function ClickBubble({ ctx, crumbs, level, scopeNodes, onLevel, onHover, onAction, onClose, memorise, only, style, children }: Props) {
+  const actions = useMemo(() => clickActions(ctx, level, scopeNodes).filter((a) => !only || only.includes(a.action)), [ctx, level, scopeNodes, only]);
   const tag = ctx.tags.ownTag(level);
   return (
-    <div className="cv-bubble" data-testid="cv-bubble" onMouseLeave={() => onHover(null)}>
+    <div className="cv-bubble" data-testid="cv-bubble" onMouseLeave={() => onHover(null)} style={style}>
       <div className="cv-bubble-head">
         <div className="cv-crumbs">
           {crumbs.map((c, i) => (
@@ -64,6 +71,7 @@ export function ClickBubble({ ctx, crumbs, level, scopeNodes, onLevel, onHover, 
           </select>
         </label>
       )}
+      {children}
     </div>
   );
 }

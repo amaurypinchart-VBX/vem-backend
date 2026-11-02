@@ -150,6 +150,13 @@ export interface ViewportItem extends ItemBase {
   paint?: 'marks' | 'fill' | 'off';
   /** jeu généré sur téléphone : cotes automatiques à poser dès que la vue est calculée */
   pendingAutoDims?: boolean;
+  /**
+   * vue de détail d'un cadre textile (planches « Cadres textile ») : le cadre seul, de face ; cotes automatiques =
+   * largeur et hauteur hors tout
+   */
+  frameView?: { nodeId: string; ref: string };
+  /** « Coter automatiquement » ajoute les cotes des cadres textile visibles dans la vue (position + dimensions) */
+  dimFrames?: boolean;
 }
 
 export interface Image3dItem extends ItemBase {
@@ -179,6 +186,8 @@ export interface LabelItem extends ItemBase {
   textPos: PointMm;
   text: string;
   style: 'bold' | 'normal';
+  /** repère posé automatiquement (cadres textile « F1 ») : remplacé quand on le repose */
+  auto?: 'frame';
 }
 
 /**
@@ -310,6 +319,8 @@ export interface Sheet {
   kind: 'standard' | 'cover';
   /** unité de l'installation (série A1.x, A2.x…) ; absent = vue d'ensemble (série A0.x) */
   unit?: number;
+  /** planche générée : « frames » = détail des cadres textile (remplacée quand on les régénère) */
+  role?: 'frames';
   items: SheetItem[];
 }
 

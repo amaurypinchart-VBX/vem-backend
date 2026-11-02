@@ -18,7 +18,7 @@ import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
 import { fitScale } from './scales';
 import { autoDimensionViewport } from './autoDim';
-import { resolveMeshes } from '../core/subset';
+import { subsetMeshes } from '../linework/subset';
 import type { PaintColor } from '../core/paint/types';
 import type { PaintedScene } from '../linework/paintScene';
 import type { PaintRegion } from '../linework/paintOverlay';
@@ -149,7 +149,7 @@ export class LineworkBank {
 
   private paintKey(vp: ViewportItem): string | null {
     const key = this.keyOf(vp);
-    if (!this.paintSrc || !key || vp.custom || vp.paint === 'off') return null;
+    if (!this.paintSrc || !key || vp.custom || vp.paint === 'off' || vp.request.floorCut != null) return null;
     return `${vp.id}|${key}|${this.paintSrc.version}|${JSON.stringify(vp.request.subset)}|${vp.request.style.glassTransparent ?? ''}`;
   }
 
@@ -161,7 +161,7 @@ export class LineworkBank {
     if (hit) return hit;
     const basis = this.data(vp).basis;
     if (!basis || !this.paintSrc || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) return null;
-    const meshIds = resolveMeshes(this.scene.index, this.scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+    const meshIds = subsetMeshes(this.scene, vp.request.subset);
     const regions = computePaintOverlay({
       scene: this.scene,
       painted: this.paintSrc.painted,
@@ -196,7 +196,7 @@ export class LineworkBank {
           if (!src || !pk || this.paintRegions.has(pk)) continue;
           const basis = this.data(vp).basis;
           if (!basis || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) continue;
-          const meshIds = resolveMeshes(this.scene.index, this.scene.look, vp.request.subset.include, vp.request.subset.hideCategories, vp.request.subset.onlyCategories);
+          const meshIds = subsetMeshes(this.scene, vp.request.subset);
           const job = paintOverlaySteps({ scene: this.scene, painted: src.painted, meshIds, basis, isGlass: src.isGlass, glassTransparent: vp.request.style.glassTransparent !== false });
           try {
             const regions = await runSliced(job, () => this.paintSrc !== src);
@@ -390,7 +390,7 @@ export async function fitDrawingSet(
   else await Promise.all(vps.map(one));
   for (const sheet of set.sheets) {
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
-    const moduleSheet = own.length > 1 && own.every((v) => v.request.view.kind !== 'custom' && typeof v.request.view.frame === 'object');
+    const moduleSheet = own.length > 1 && own.every((v) => !v.frameView && v.request.view.kind !== 'custom' && typeof v.request.view.frame === 'object');
     for (const vp of own) {
       const r = results.get(vp.id);
       if (!r) continue;
@@ -421,7 +421,7 @@ export function dimensionDrawingSet(set: DrawingSet, bank: LineworkBank, ids: st
       .filter((x): x is { vp: ViewportItem; data: ViewportData & { lw: Linework2D; basis: NonNullable<ViewportData['basis']> } } => !!x.data.lw && !!x.data.basis);
     if (!ready.length) continue;
     const first = ready.map(({ vp, data }) => ({ vp, data, r: autoDimensionViewport(vp, data.lw, data.basis, bank.scene) }));
-    const moduleSheet = ready.length > 1 && ready.every(({ vp }) => vp.request.view.kind !== 'custom' && typeof vp.request.view.frame === 'object');
+    const moduleSheet = ready.length > 1 && ready.every(({ vp }) => !vp.frameView && vp.request.view.kind !== 'custom' && typeof vp.request.view.frame === 'object');
     const common = moduleSheet ? Math.max(...first.map((x) => x.r.scale)) : 0;
     for (const { vp, data, r } of first) {
       const res = moduleSheet && r.scale !== common ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, common) : r;

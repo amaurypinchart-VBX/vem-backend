@@ -85,6 +85,11 @@ export interface FixtureOptions {
   modules?: number;
   /** petites pièces (boulonnerie, profils) ajoutées dans chaque Viewbox : nombre de boîtes */
   detail?: number;
+  /**
+   * plafond tendu + cadres textile dans chaque Viewbox (planches : masquer le plafond, vue du sol, cadres) : plafond
+   * sous la toiture, bandeau textile au-dessus de la porte (petit côté +X), grand cadre sur le grand côté −Y
+   */
+  textile?: boolean;
 }
 
 /** Boîtes de 20 à 80 mm réparties sur le plancher, les montants et la toiture (déterministe). */
@@ -122,6 +127,13 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
     spatial: G('GEO_spatial', [[[8000, 1000, 500], [8100, 1500, 2000]]]),
     ground: G('GEO_ground', [[[-10000, -10000, -10], [40000, 20000, 0]]]),
     detail: G('GEO_detail', detailBoxes(opts.detail ?? 0)),
+    ...(opts.textile
+      ? {
+          ceiling: G('GEO_ceiling', [[[100, 100, 2600], [5800, 2400, 2610]]], 'MAT_door'),
+          band: G('GEO_band', [[[5900, 100, 2350], [5940, 2400, 2700]]], 'MAT_door'),
+          seg: G('GEO_seg', [[[500, -45, 400], [2500, -5, 2400]]], 'MAT_door'),
+        }
+      : {}),
   };
   const feet = [
     [0, 0], [5900 - 100, 0], [0, 2500 - 100], [5900 - 100, 2500 - 100],
@@ -175,6 +187,13 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
       ${feet}
       <node id="N_misc" name="Group 12">${instGeom(geoms.misc)}</node>
       ${opts.detail ? `<node id="N_detail" name="STRUCTURE_boulonnerie">${instGeom(geoms.detail)}</node>` : ''}
+      ${
+        opts.textile
+          ? `<node id="N_ceiling" name="black_cieling">${instGeom((geoms as Record<string, GeomSpec>).ceiling)}</node>
+      <node id="N_band" name="Cadre textile bandeau">${instGeom((geoms as Record<string, GeomSpec>).band)}</node>
+      <node id="N_seg" name="SEG frame 2000">${instGeom((geoms as Record<string, GeomSpec>).seg)}</node>`
+          : ''
+      }
     </node>
     <node id="DEF_door" name="Porte simple 900">${instGeom(geoms.door)}</node>
   </library_nodes>

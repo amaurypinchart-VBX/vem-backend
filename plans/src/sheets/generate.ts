@@ -11,8 +11,12 @@ import type { InstallUnit } from '../core/installUnits';
 import type { LineStyleSpec, LineworkRequest } from '../linework/types';
 import type { DrawingSet, Image3dItem, Paper, RectMm, Sheet, SheetItem, TitleBlockData, ViewportItem } from './types';
 import { COVER, DEFAULT_GENERAL_NOTES, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
+import type { FrameLang, FrameType } from './frames';
+import { frameSheets } from './frames';
+import { FLOOR_CUT_DEFAULT, tagHideRule } from '../core/subsetHide';
+import { TEXTILE_TAG } from '../core/customViews/tags';
 
-export type SheetKind = 'cover' | 'fourViews' | 'longSides' | 'shortSides' | 'implantation' | 'assembly' | 'levels' | 'perModule';
+export type SheetKind = 'cover' | 'fourViews' | 'longSides' | 'shortSides' | 'implantation' | 'assembly' | 'levels' | 'floorPlan' | 'perModule' | 'frames';
 
 export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   cover: 'Couverture (vues 3D, bandeau)',
@@ -22,10 +26,12 @@ export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   implantation: 'Plan d’implantation (pieds)',
   assembly: 'Plan d’assemblage (numéros des Viewbox)',
   levels: 'Plan de chaque niveau (sans toit)',
+  floorPlan: 'Vue du sol de chaque niveau (coupe à 1,20 m : plancher, murs, vitres, poteaux — passage des câbles)',
   perModule: 'Une planche par Viewbox (3D, dessus, avant, arrière, gauche, droite)',
+  frames: 'Cadres textile : nomenclature + chaque type de cadre coté (F1, F2…)',
 };
 
-export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'perModule'];
+export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'floorPlan', 'perModule', 'frames'];
 
 export interface GenerateOptions {
   modules: string[];
@@ -37,6 +43,11 @@ export interface GenerateOptions {
   /** « Colorer par catégorie » sur toutes les vues du dessus (les autres vues gardent `style`) */
   topColors?: boolean;
   title: string;
+  /** cadres textile mesurés (measureFrames + groupFrames) : planches « Cadres textile » */
+  frames?: FrameType[];
+  frameLang?: FrameLang;
+  /** cadres textile masqués sur toutes les vues (sauf leurs planches de détail) */
+  hideFrames?: boolean;
 }
 
 export interface GenerateContext {
@@ -101,11 +112,13 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     return vp;
   };
 
-  const request = (include: string[], kind: ViewKind, frame: 'world' | { moduleId: string }, sub: Partial<LineworkRequest['subset']> = {}): LineworkRequest => ({
+  const hideFrames = opts.hideFrames ? { hide: [tagHideRule(TEXTILE_TAG, 'Cadres textile (tissu tendu)')] } : {};
+  const request = (include: string[], kind: ViewKind, frame: 'world' | { moduleId: string }, sub: Partial<LineworkRequest['subset']> = {}, extra: Partial<LineworkRequest> = {}): LineworkRequest => ({
     modelId: ctx.modelKey,
-    subset: { include, ...sub },
+    subset: { include, ...hideFrames, ...sub },
     view: { kind, frame },
     style: opts.topColors && kind === 'top' ? { ...opts.style, colorByCategory: true } : opts.style,
+    ...extra,
   });
   const viewport = (rect: RectMm, req: LineworkRequest, label: string, labelPos?: { x: number; y: number }, extra: Partial<ViewportItem> = {}): ViewportItem => ({
     id: newId('v'),
@@ -218,6 +231,21 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
       }
     }
 
+    if (opts.kinds.includes('floorPlan')) {
+      for (const lv of index.levels) {
+        const mods = lv.moduleIds.filter((id) => ids.includes(id));
+        if (!mods.length) continue;
+        const include = subsetForLevel(index, lv.level).filter((id) => allSet.has(id));
+        addSheet(unit ? `${title} - ${lv.label}` : `Extract - Plan View - ${lv.label}`, () => [
+          dimmed(
+            viewport(R(20, 62, 685, 513), request(include, 'top', 'world', {}, { floorCut: FLOOR_CUT_DEFAULT }), `${lv.label} - Floor plan`, P(25, 40), {
+              overlays: { moduleNumbers: true },
+            }),
+          ),
+        ]);
+      }
+    }
+
     if (opts.kinds.includes('perModule')) {
       for (const m of mods) {
         const include = subsetForModules(index, [m.id]);
@@ -267,6 +295,19 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
       );
     }
     unit = undefined;
+  }
+
+  // cadres textile : nomenclature + un dessin coté par type, à la fin de la vue d'ensemble
+  if (opts.kinds.includes('frames') && opts.frames?.length) {
+    const fs = frameSheets(opts.frames, { paper: opts.paper, modelKey: ctx.modelKey, style: { ...opts.style, colorByCategory: false }, lang: opts.frameLang, title: opts.title });
+    for (const s of fs)
+      for (const it of s.items)
+        if (it.type === 'viewport') {
+          delete it.pendingAutoDims;
+          dimensioned.push(it.id);
+        }
+    const firstUnit = sheets.findIndex((s) => s.unit);
+    sheets.splice(firstUnit < 0 ? sheets.length : firstUnit, 0, ...fs);
   }
 
   renumber(sheets);

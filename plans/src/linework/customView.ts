@@ -27,12 +27,11 @@ import { buildPacket } from './packets';
 import type { HlrRunner } from './runner';
 import { LINEWORK_ENGINE } from './provider';
 import type { CustomJob } from './customJob';
-import { MATERIAL } from './customJob';
+import { CUSTOM_ENGINE, materialOf } from './cutMaterial';
 import { categoryStrokeLayers, isTopView } from './categoryStrokes';
 import type { LineStyleSpec, Linework2D, LineworkFill, LineworkLayer } from './types';
 
-/** Version du calcul des vues spéciales (découpe, bouchons, remplissages) : la changer invalide leur cache seulement. */
-export const CUSTOM_ENGINE = 'vs3-cut-1';
+export { CUSTOM_ENGINE } from './cutMaterial';
 
 export interface CustomViewDeps {
   scene: LoadedScene;
@@ -80,22 +79,7 @@ export interface CustomViewResult {
   refs: Map<string, ModuleRefs>;
 }
 
-const GLASS_RE = /VITRE|GLASS|VERRE|GLAS\b/;
-const WOOD_RE = /BOIS|WOOD|PLY|CONTREPLAQUE|MULTIPLEX|MDF|OSB|TIMBER|HOLZ|BIRCH|BOULEAU/;
-const STEEL_RE = /ACIER|STEEL|METAL|INOX|GALVA|ALU|STAHL/;
-
-/** Matériau d'une pièce pour le remplissage des coupes. */
-export function materialOf(scene: LoadedScene, id: string): number {
-  const n = scene.look.byId.get(id);
-  const cat = scene.look.categoryOf(id) ?? '';
-  const mats = (n?.materialNames ?? []).join(' ').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  if (n?.glass || cat.startsWith('VITRE') || (mats && GLASS_RE.test(mats) && !WOOD_RE.test(mats) && !STEEL_RE.test(mats))) return MATERIAL.glass;
-  if (WOOD_RE.test(mats)) return MATERIAL.wood;
-  if (STEEL_RE.test(mats)) return MATERIAL.steel;
-  if (cat === 'PLANCHER') return MATERIAL.wood;
-  if (cat === 'STRUCTURE' || cat === 'PIED' || cat === 'TOIT') return MATERIAL.steel;
-  return MATERIAL.other;
-}
+export { materialOf } from './cutMaterial';
 
 const planeStr = (p: ClipPlane) => `${p.n.map((v) => v.toFixed(6)).join(',')},${p.d.toFixed(2)},${p.cutId ? 1 : 0}`;
 
