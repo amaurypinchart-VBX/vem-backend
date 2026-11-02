@@ -556,10 +556,11 @@ const NOTE_COLUMN: Record<string, 'installNotes' | 'dismantleNotes' | 'scope'> =
 };
 
 async function addTeamByNames(projectId: string, value: string, who: string): Promise<{ added: string[]; unknown: string[] }> {
-  const users = await prisma.user.findMany({
-    where: { isActive: true, role: { not: 'client' as any } },
+  // users.role est un TEXT en base (pas l'enum Prisma) : filtre « client » fait ici, pas en SQL
+  const users = (await prisma.user.findMany({
+    where: { isActive: true },
     select: { id: true, firstName: true, lastName: true, role: true },
-  });
+  })).filter(u => String(u.role) !== 'client');
   const existing = new Set((await prisma.projectTeam.findMany({ where: { projectId }, select: { userId: true } })).map(t => t.userId));
   const added: string[] = [], unknown: string[] = [];
   for (const name of L.splitNames(value)) {
@@ -1092,11 +1093,12 @@ export async function projectOverview(projectId: string) {
       pendingBy.get(i.field)!.push(r.recipientName || r.recipientEmail);
     }
   }
-  const people = await prisma.user.findMany({
-    where: { isActive: true, role: { not: 'client' as any } },
+  // users.role est un TEXT en base (pas l'enum Prisma) : filtre « client » fait ici, pas en SQL
+  const people = (await prisma.user.findMany({
+    where: { isActive: true },
     select: { id: true, firstName: true, lastName: true, email: true, role: true },
     orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-  });
+  })).filter(u => String(u.role) !== 'client');
   const contacts: Array<{ name: string; email: string; role: string }> = [];
   const c = snap.client;
   if (c?.email) contacts.push({ name: c.contactName || c.name, email: c.email, role: c.name });
