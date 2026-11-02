@@ -10,6 +10,8 @@ export interface BaseCandidate {
   per: CountingBase;
   /** produit déclencheur quand la base est « par produit » */
   trigger?: string;
+  /** motif montré en 3D quand la base est « par motif » (mode 🎓) */
+  motif?: import('../core/types').MotifSpec;
   qty: number;
   spare?: Spare;
   /** valeur de la base sur ce chantier */

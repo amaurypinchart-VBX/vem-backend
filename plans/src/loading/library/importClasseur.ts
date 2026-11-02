@@ -21,6 +21,8 @@ import type {
 } from '../core/types';
 import type { Cell, Sheet, Workbook } from '../xlsx/read';
 import { cellText } from '../xlsx/read';
+import { motifKey } from '../teach/motif';
+import { stableId } from '../../core/hash';
 
 export const REF_PATTERN = /\b\d-\d{3}-\d{3,5}\b/g;
 /** Réfs citées dans un texte, abréviations comprises : « 4-750-004/005/006 », « 4-740-00x » (= 001…003). */
@@ -269,7 +271,7 @@ const KEY_PREFIX: Record<RuleKind, string> = {
 
 /** Clé stable et lisible d'une règle. */
 export function ruleKey(r: Pick<LoadingRule, 'kind' | 'article' | 'trigger' | 'per' | 'when'>): string {
-  const trig = r.trigger.vitrage ? r.trigger.vitrage : (r.trigger.articles ?? []).join('+');
+  const trig = r.trigger.vitrage ? r.trigger.vitrage : r.trigger.motif ? `motif.${r.trigger.motif.kind}.${stableId(motifKey(r.trigger.motif)).slice(0, 8)}` : (r.trigger.articles ?? []).join('+');
   const cond = Object.entries(r.when ?? {})
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => (typeof v === 'boolean' ? (v ? k : `!${k}`) : `${v}`))

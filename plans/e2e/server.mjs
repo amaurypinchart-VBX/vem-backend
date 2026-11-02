@@ -184,6 +184,21 @@ http.createServer(async (req, res) => {
       row.reconciliation = { ...b.reconciliation, by: 'u1', at: new Date().toISOString() };
       return json(res, row);
     }
+    // atelier texte (L7) : IA simulée — référence, premier chiffre du texte, « par box / pied », « + n % »
+    if (a === '/loading/ai/status' && req.method === 'GET') return json(res, { enabled: true, model: 'mock-loading' });
+    if (a === '/loading/ai/rule' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const text = String(b.text ?? '');
+      const ref = /\d-\d{3}-\d{3,5}/.exec(text)?.[0] ?? null;
+      const rest = text.replace(/\d-\d{3}-\d{3,5}/g, ' ');
+      const qty = Number(/\d+/.exec(rest)?.[0] ?? NaN);
+      const pct = /\+\s*(\d+)\s*%/.exec(rest);
+      const per = /par box/.test(text) ? 'box' : /pied/.test(text) ? 'pied' : 'job';
+      return json(res, {
+        draft: { kind: 'accessoire', article: ref, qty: Number.isFinite(qty) ? qty : null, per, trigger: null, motif: null, when: {}, spare: pct ? { type: 'pourcent', valeur: Number(pct[1]) } : null, tranche: null, unit: 'pce' },
+        removed: [], questions: [], confidence: 0.8, rationale: 'Traduction simulée.', usage: { model: 'mock-loading', costUsd: 0.002 },
+      });
+    }
     if (a === '/loading/benches' && req.method === 'GET') return json(res, [...loadingBenches.values()]);
     if (a === '/loading/benches' && req.method === 'POST') {
       const b = JSON.parse((await body(req)).toString());

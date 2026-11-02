@@ -1,6 +1,7 @@
 // Une règle en français clair (bibliothèque, écran de validation, détail du calcul). Fonctions pures.
 import type { CatalogueItem, LoadingRule, RuleConditions, Spare } from './types';
 import { COUNTING_BASE_LABEL } from './types';
+import { describeMotif } from '../teach/motif';
 
 const num = (n: number) => String(Math.round(n * 1000) / 1000).replace('.', ',');
 
@@ -53,7 +54,12 @@ export function describeTrigger(r: LoadingRule, catalogue?: ReadonlyMap<string, 
 export function describeRule(r: LoadingRule, catalogue?: ReadonlyMap<string, CatalogueItem>): string {
   const parts: string[] = [];
   const unit = UNIT_SHORT[r.unit];
-  const base = r.per === 'produit' && r.trigger.articles?.length ? `par ${describeTrigger(r, catalogue)}` : COUNTING_BASE_LABEL[r.per];
+  const base =
+    r.per === 'produit' && r.trigger.articles?.length
+      ? `par ${describeTrigger(r, catalogue)}`
+      : r.per === 'motif' && r.trigger.motif
+        ? `par ${describeMotif(r.trigger.motif)} (motif montré en 3D)`
+        : COUNTING_BASE_LABEL[r.per];
   if (r.kind === 'appreciation' || (r.qty === null && !r.qtyText)) parts.push('à apprécier (jamais calculé seul)');
   else if (r.qty === null) parts.push(`« ${r.qtyText} » — quantité à préciser`);
   else if (r.tranche?.mode === 'tranche') parts.push(`${num(r.qty)}${unit} par tranche de ${num(r.tranche.parTranche)} (${base.replace(/^par /, '')}), tranche entamée comptée`);

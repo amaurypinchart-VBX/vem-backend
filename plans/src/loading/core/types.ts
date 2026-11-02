@@ -92,6 +92,16 @@ export const CONFIDENCE_LABEL: Record<Confidence, string> = {
   observe: 'observé',
 };
 
+/** Genre d'élément d'un motif appris en 3D (mode 🎓, L7). */
+export type MotifKind = 'box' | 'jonction' | 'cote' | 'pied' | 'panneau' | 'voisins' | 'produit';
+export type AttrValue = string | boolean;
+
+/** Motif appris en 3D : un genre d'élément + les traits retenus (tous doivent être vrais). Base « motif ». */
+export interface MotifSpec {
+  kind: MotifKind;
+  attrs: Record<string, AttrValue>;
+}
+
 /** « Ce produit + ce produit, dans telle relation » (appris en 3D, § 7.2). */
 export interface Pattern {
   elements: { articleRef?: string; category?: string }[];
@@ -105,6 +115,8 @@ export interface RuleTrigger {
   /** régime de vitrage déclencheur (seul le régime présent sort) */
   vitrage?: GlazingRegime;
   pattern?: Pattern;
+  /** motif appris en 3D : base « motif » = ses occurrences */
+  motif?: MotifSpec;
 }
 
 /** Conditions : la règle ne sort que si toutes sont vraies. Absente = toujours. */

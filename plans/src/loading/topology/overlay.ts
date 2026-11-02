@@ -7,6 +7,7 @@ export const ISLAND_COLORS = [0x93c5fd, 0x86efac, 0xfde68a, 0xc4b5fd, 0xfda4af, 
 export const JUNCTION_COLORS = { grand_cote: 0x1d4ed8, petit_cote: 0x15803d, mixte: 0xea580c } as const;
 const FOOT_COLOR = 0x92400e;
 const OFFSET_COLOR = 0xea580c;
+const SIDE_COLOR = 0x64748b;
 
 const rgb = (c: number) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
 
@@ -15,7 +16,7 @@ export interface OverlayItem {
   id: string;
 }
 
-export function topologyOverlay(t: Topology, highlight: ReadonlySet<string>, show: { junctions?: boolean; feet?: boolean } = { junctions: true, feet: true }) {
+export function topologyOverlay(t: Topology, highlight: ReadonlySet<string>, show: { junctions?: boolean; feet?: boolean; sides?: boolean } = { junctions: true, feet: true }) {
   const pos: number[] = [];
   const col: number[] = [];
   const ids: string[] = [];
@@ -38,11 +39,20 @@ export function topologyOverlay(t: Topology, highlight: ReadonlySet<string>, sho
       seg([f.plan[0], f.plan[1] - r], [f.plan[0], f.plan[1] + r], f.y + 10, FOOT_COLOR, f.id);
     }
   for (const s of t.sides) {
-    if (!highlight.has(s.id)) continue;
     const m = t.modules.find((x) => x.id === s.moduleId)!;
     const inset: P2 = [-s.normal[0] * 60, -s.normal[1] * 60];
     const a: P2 = [s.a[0] + inset[0], s.a[1] + inset[1]];
     const b: P2 = [s.b[0] + inset[0], s.b[1] + inset[1]];
+    if (!highlight.has(s.id)) {
+      // mode 🎓 : chaque côté est un trait gris au sol, cliquable
+      if (show.sides) {
+        const k = 0.12;
+        const a2: P2 = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+        const b2: P2 = [b[0] - (b[0] - a[0]) * k, b[1] - (b[1] - a[1]) * k];
+        seg(a2, b2, m.y[0] + 40, SIDE_COLOR, s.id);
+      }
+      continue;
+    }
     seg(a, b, (m.y[0] + m.y[1]) / 2, HIGHLIGHT, s.id);
     seg(a, b, m.y[0] + 40, HIGHLIGHT, s.id);
   }

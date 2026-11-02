@@ -1,4 +1,4 @@
-// Test navigateur de la loading liste (L1 : Réglages › Règles de loading ; … ; L6 : chantier réel, rapprochement, banc) : règles de la base de départ en français,
+// Test navigateur de la loading liste (L1 : Réglages › Règles de loading ; … ; L6 : chantier réel, rapprochement, banc ; L7 : mode 🎓 Apprendre, règle écrite) : règles de la base de départ en français,
 // contradictions à trancher, ajout d'une référence manquante au catalogue (4-700-001, absente d'Odoo). Captures dans e2e/shots/loading-*.png.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -194,6 +194,31 @@ page.once('dialog', (d) => d.accept());
 await page.getByRole('button', { name: 'Ajouter le banc' }).click();
 await page.getByText('Banc « Banc e2e NVIDIA » ajouté').waitFor();
 check(true, 'banc d’étalonnage ajouté depuis le rapprochement');
+// ─── L7 : mode 🎓 Apprendre — deux pieds montrés sur le plan → motif → règle validée ───
+await page.getByRole('button', { name: /1\. Topologie/ }).click();
+await page.getByTestId('teach-toggle').click();
+await page.getByTestId('teach-panel').waitFor();
+await page.locator('[data-testid="topology-plan"] [data-id="F1"]').click();
+await page.locator('[data-testid="topology-plan"] [data-id="F2"]').click();
+check((await page.getByTestId('teach-selection').locator('li').count()) === 2, 'deux pieds montrés, décrits en français');
+const motif = (await page.getByTestId('teach-motif').innerText()).trim();
+console.log('  motif :', motif.split('\n')[0]);
+check(/^Motif : pied/.test(motif) && /\d+ sur ce chantier/.test(motif), 'motif commun compté sur ce chantier');
+await page.getByTestId('teach-show').click();
+check(await page.getByText(/occurrence\(s\)/).first().isVisible(), 'occurrences du motif montrées en 3D');
+await page.getByTestId('teach-qty').fill('2');
+await page.getByTestId('teach-article').fill('4-700-016');
+await page.screenshot({ path: `${shots}loading-apprendre.png` });
+await page.getByTestId('teach-propose').click();
+await page.getByTestId('rule-validation').waitFor();
+const taught = (await page.getByTestId('rule-sentence').innerText()).trim();
+check(/^2 par (pied|.*motif montré en 3D)/.test(taught), `règle montrée en 3D en français (« ${taught} »)`);
+await page.getByTestId('rule-impact').getByText(/Aurait changé|Ne change/).waitFor({ timeout: 30000 });
+await page.getByRole('button', { name: '✔ Valider la règle' }).click();
+await page.getByText('Règle validée').first().waitFor();
+await page.getByTestId('teach-toggle').click();
+await page.getByRole('button', { name: /4\. Loading liste/ }).click();
+check(await page.locator('tr', { hasText: '4-700-016' }).first().isVisible(), 'la règle apprise fait sortir 4-700-016 dans la liste');
 // Réglages : la règle apprise, l'ancienne remplacée, la question en attente
 await page.getByRole('button', { name: 'Réglages' }).click();
 await page.getByRole('button', { name: 'Règles de loading' }).click();
@@ -203,6 +228,20 @@ await page.locator('td:visible', { hasText: '3 par box' }).first().waitFor({ tim
 await page.locator('.badge:visible', { hasText: 'question en attente' }).first().waitFor({ timeout: 5000 }).catch(() => {});
 await page.screenshot({ path: `${shots}loading-reglages-l5-liste.png`, fullPage: true });
 check(await page.locator('td:visible', { hasText: '3 par box' }).first().isVisible(), 'Réglages : nouvelle règle « 3 par box » active');
+// ─── L7 : « ✍️ Écrire une règle » (IA simulée par le faux serveur) → écran de validation ───
+await page.getByTestId('write-rule').click();
+await page.getByTestId('rule-writer-text').fill('1 spot 4-700-017 par box + 10 %');
+await page.getByTestId('rule-writer-ai').click();
+await page.getByTestId('rule-writer-sentence').waitFor();
+const written = (await page.getByTestId('rule-writer-sentence').innerText()).trim();
+check(written === '1 par box · + 10 % arrondi au-dessus', `règle écrite traduite (« ${written} »)`);
+await page.getByTestId('rule-writer-open').click();
+await page.getByTestId('rule-validation').waitFor();
+await page.getByRole('button', { name: '✔ Valider la règle' }).click();
+await page.getByText('Règle enregistrée').waitFor();
+await page.getByPlaceholder('Réf., désignation, chantier…').fill('4-700-017');
+check(await page.locator('td:visible', { hasText: '1 par box' }).first().isVisible(), 'Réglages : règle écrite enregistrée');
+await page.getByPlaceholder('Réf., désignation, chantier…').fill('4-730-008');
 check(await page.locator('.badge:visible', { hasText: 'question en attente' }).first().isVisible(), 'Réglages : question en attente listée');
 await page.locator('b:visible', { hasText: /^4-730-008$/ }).first().click();
 await page.getByText('✎ Modifier la règle').waitFor();

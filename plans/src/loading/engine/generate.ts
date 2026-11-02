@@ -10,6 +10,7 @@ import type { SiteAnswers, StudyInput } from '../core/answers';
 import { canonical, rulesVersion } from '../library/merge';
 import { categoryFromDesignation } from '../library/importClasseur';
 import type { Count, Counts, Island, Topology } from '../topology/types';
+import { countMotif, describeMotif, topologyElements } from '../teach/motif';
 
 export type LineStatus = 'calcule' | 'a_confirmer' | 'appreciation' | 'regle_manquante' | 'jugement';
 
@@ -98,6 +99,7 @@ const ISLAND_BASES = new Set<CountingBase>([
   'module_toit',
   'poteau_connecte',
   'paire_box',
+  'motif',
 ]);
 
 const SHORT_BASE: Partial<Record<CountingBase, [string, string]>> = {
@@ -267,6 +269,8 @@ export function generate(input: EngineInput): LoadingList {
   // ─── base de comptage ───
   const triggerProducts = (r: LoadingRule) =>
     t.products.filter((l) => (r.trigger.vitrage ? catalogue.get(l.article)?.vitrage === r.trigger.vitrage : false) || (r.trigger.articles ?? []).includes(l.article));
+  let elements: ReturnType<typeof topologyElements> | null = null;
+  const elementsOf = () => (elements ??= topologyElements(t, catalogue));
   const baseOf = (r: LoadingRule, scope: Scope, laminateM2: number | null): { value: number | null; ids: string[]; question?: LoadingQuestion; text?: string } => {
     const c: Count | undefined = scope.counts[r.per];
     switch (r.per) {
@@ -309,6 +313,13 @@ export function generate(input: EngineInput): LoadingList {
       }
       case 'job':
         return { value: 1, ids: [] };
+      case 'motif': {
+        // motif appris en 3D (mode 🎓) : ses occurrences dans l'îlot (ou partout pour un produit)
+        const m = r.trigger.motif;
+        if (!m) return { value: null, ids: [], question: ask(`q:motif:${r.key}`, `${r.article} : règle « par motif » sans motif — à refaire dans le mode 🎓 Apprendre`, r) };
+        const c = countMotif(t, m, m.kind === 'produit' ? null : scope.island?.id, catalogue, elementsOf());
+        return { value: c.value, ids: c.ids, text: describeMotif(m, c.value > 1) };
+      }
       default:
         if (!c) return { value: null, ids: [], question: ask(`q:base:${r.per}`, `${COUNTING_BASE_LABEL[r.per]} : pas encore compté par l’app — à préciser`, r) };
         if (c.value === null) return { value: null, ids: c.ids, question: ask(`q:base:${r.per}`, `${c.detail} — à préciser`, r) };
@@ -327,7 +338,7 @@ export function generate(input: EngineInput): LoadingList {
     if (r.kind === 'appreciation') continue;
     const triggered = r.trigger.vitrage ? t.glazing.includes(r.trigger.vitrage) : r.trigger.articles?.length ? r.trigger.articles.some((a) => productQty.has(a)) : true;
     if (!triggered) continue;
-    const scopes = ISLAND_BASES.has(r.per) ? islandScopes : [globalScope];
+    const scopes = ISLAND_BASES.has(r.per) && !(r.per === 'motif' && r.trigger.motif?.kind === 'produit') ? islandScopes : [globalScope];
     let total = 0;
     let known = true;
     const ids: string[] = [];
@@ -367,7 +378,7 @@ export function generate(input: EngineInput): LoadingList {
       continue;
     }
     if (total === 0) continue;
-    const word = text ?? baseWord(r.per, total);
+    const word = r.per === 'motif' && r.trigger.motif ? describeMotif(r.trigger.motif, total > 1) : (text ?? baseWord(r.per, total));
     const split = parts.length > 1 ? ` (${parts.join(' + ')})` : '';
     let base: number | null;
     let detail: string;

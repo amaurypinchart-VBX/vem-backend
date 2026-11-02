@@ -48,7 +48,7 @@ export function RuleValidation(p: ValidationProps) {
     const c = p.candidates![i];
     setCand(i);
     setManual(false);
-    setRule((r) => withKey({ ...r, per: c.per, qty: c.qty, spare: c.spare, trigger: c.trigger ? { articles: [c.trigger] } : {} }));
+    setRule((r) => withKey({ ...r, per: c.per, qty: c.qty, spare: c.spare, trigger: c.motif ? { motif: c.motif } : c.trigger ? { articles: [c.trigger] } : {} }));
   };
   const withKey = (r: LoadingRule) => (isNew ? { ...r, key: uniqueKey(ruleKey(r), p.rules) } : r);
   useEffect(() => {

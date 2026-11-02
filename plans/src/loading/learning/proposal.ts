@@ -26,7 +26,7 @@ export function proposeRule(p: ProposalInput, existing: readonly LoadingRule[]):
   const r: LoadingRule = {
     key: '',
     kind: p.kind ?? 'accessoire',
-    trigger: p.candidate.trigger ? { articles: [p.candidate.trigger] } : {},
+    trigger: p.candidate.motif ? { motif: p.candidate.motif } : p.candidate.trigger ? { articles: [p.candidate.trigger] } : {},
     article: p.article,
     articleName: p.articleName,
     qty: p.candidate.qty,

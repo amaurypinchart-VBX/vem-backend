@@ -6,6 +6,7 @@ import type { CatalogueItem, LoadingRule } from '../loading/core/types';
 import type { ObservationRow } from '../loading/learning/calibration';
 import type { StoredReconciliation } from '../loading/reconcile/reconcile';
 import type { BenchRow } from '../loading/reconcile/benches';
+import type { AiAllowed, AiRuleAnswer } from '../loading/teach/aiRule';
 import type { ExtractResult, GroupProposal, IdentifySuggestion } from '../structure/core/ai';
 import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
@@ -367,6 +368,8 @@ export const vem = {
     body: { reconciliation: StoredReconciliation; observations: { article: string; ruleKeys: string[]; predicted: number | null; final: number | null; kind: string; note?: string }[] },
   ) => api<LoadingListRecord>('POST', `/loading/lists/${id}/reconcile`, body),
   loadingBenches: () => api<BenchRow[]>('GET', '/loading/benches'),
+  loadingAiStatus: () => api<{ enabled: boolean; model: string }>('GET', '/loading/ai/status'),
+  loadingAiRule: (body: { text: string; allowed: AiAllowed; context?: string; answers?: { question: string; answer: string }[] }) => api<AiRuleAnswer>('POST', '/loading/ai/rule', body),
   saveLoadingBench: (b: Omit<BenchRow, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> & { listId?: string | null }) => api<BenchRow>('POST', '/loading/benches', b),
   deleteLoadingBench: (id: string) => api<null>('DELETE', `/loading/benches/${id}`),
   structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),

@@ -1,7 +1,8 @@
 // Réglages › Règles de loading : ce que le module sait pour sortir une loading liste, partagé entre tous les projets
 // (base de départ générée du classeur VIEWBOX_regles_loading + règles validées dans l'app). Lecture : règles en
 // français, conditions, spares, confiance, points de calage, historique ; décisions d'Amaury ; valeurs observées ;
-// bancs d'étalonnage rejoués avec les règles du moment (L6).
+// bancs d'étalonnage rejoués avec les règles du moment (L6) ; « ✍️ Écrire une règle » en français (L7, IA avec garde,
+// ou à la main sans clé) → écran de validation.
 // Catalogue : références du classeur (lecture seule) + ajout des références manquantes (admin, responsable technique).
 // La modification des règles passe par l'écran de validation (phase L5), jamais en direct ici.
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -23,6 +24,7 @@ import type { ImpactCase } from '../../loading/learning/impact';
 import { RuleValidation } from './RuleValidation';
 import { impactCases } from './impactCases';
 import { BenchesPanel } from './BenchesPanel';
+import { RuleWriter } from './RuleWriter';
 
 const EDITORS = ['admin', 'technical_manager'];
 const CONF_BADGE: Record<Confidence, string> = { confirme: 'ok', a_confirmer: 'orange', hypothese: 'orange', observe: '' };
@@ -59,8 +61,13 @@ export function RuleLibrary() {
     vem.loadingObservations().then(setObs).catch(() => {});
   }, []);
   const [editing, setEditing] = useState<LoadingRule | null>(null);
+  const [editTitle, setEditTitle] = useState('Modifier la règle');
+  const [editReason, setEditReason] = useState<string | undefined>(undefined);
+  const [writing, setWriting] = useState(false);
   const [cases, setCases] = useState<ImpactCase[] | null>(null);
-  const edit = (r: LoadingRule) => {
+  const edit = (r: LoadingRule, title = 'Modifier la règle', reason?: string) => {
+    setEditTitle(title);
+    setEditReason(reason);
     setEditing(r);
     if (!cases) impactCases().then(setCases).catch(() => setCases([]));
   };
@@ -133,6 +140,11 @@ export function RuleLibrary() {
             ⬇ Classeur Excel
           </button>
           {canEdit && (
+            <button className="btn small primary" onClick={() => setWriting((v) => !v)} data-testid="write-rule">
+              ✍️ Écrire une règle
+            </button>
+          )}
+          {canEdit && (
             <label className="btn small">
               ⬆ Importer (JSON)
               <input
@@ -179,10 +191,23 @@ export function RuleLibrary() {
           </div>
         </div>
       )}
+      {writing && (
+        <RuleWriter
+          catalogue={catalogue}
+          catMap={catMap}
+          rules={rules}
+          onClose={() => setWriting(false)}
+          onDraft={(r, text) => {
+            setWriting(false);
+            edit(r, 'Nouvelle règle écrite', text ? `Règle écrite : « ${text.slice(0, 200)} »` : undefined);
+          }}
+        />
+      )}
       {tab === 'rules' && <RulesTable rules={rules} catMap={catMap} canEdit={canEdit} onEdit={edit} onSave={saveRules} />}
       {editing && (
         <RuleValidation
-          title="Modifier la règle"
+          title={editTitle}
+          reason={editReason}
           draft={editing}
           rules={rules}
           catalogue={catMap}

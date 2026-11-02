@@ -11,6 +11,7 @@ import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary } from '../services/cloudinaryService';
+import { LOADING_AI_MODEL, LoadingAiInput, loadingAiEnabled, ruleFromText } from '../services/loadingAi';
 
 const router = Router();
 const db = prisma as any; // modèles ajoutés au schéma ; client typé régénéré au build Docker
@@ -455,6 +456,26 @@ router.delete('/benches/:id', async (req: AuthRequest, res: Response, next: Next
     assertEditor(req);
     await db.loadingBench.delete({ where: { id: req.params.id } });
     res.json({ success: true, data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── atelier texte (L7) : une règle écrite en français → règle proposée (rien n'est enregistré ici) ───
+
+// GET /loading/ai/status — IA disponible (clé configurée) et modèle utilisé
+router.get('/ai/status', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: { enabled: loadingAiEnabled(), model: LOADING_AI_MODEL } });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/ai/rule — { text, allowed, context?, answers? } → règle proposée (chiffres de l'utilisateur seulement),
+// à valider ensuite dans l'écran de validation des règles — admin et responsable technique
+router.post('/ai/rule', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    assertEditor(req);
+    const parsed = LoadingAiInput.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Demande invalide : texte ou listes manquants', 400);
+    res.json({ success: true, data: await ruleFromText(parsed.data, { userId: req.user?.id }) });
   } catch (err) { next(err); }
 });
 

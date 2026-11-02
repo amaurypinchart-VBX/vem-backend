@@ -1,6 +1,7 @@
 // Onglet « Loading liste » d'un modèle analysé : étapes 1 Topologie (ce que l'app a compris : box, îlots, jonctions,
 // pieds, façades — chaque valeur corrigeable à la main) · 2 Produits (comptage par pose, miroirs écartés, pièces
 // « À identifier » → « Qu'est-ce que c'est ? » → mémoriser) · 3 Questions chantier · 4 Loading liste · 5 Export
+// · 6 Chantier réel ; « 🎓 Apprendre » = montrer dans la 3D ce qui demande un accessoire (motif → règle)
 // · 6 Chantier réel (liste de ce qui est vraiment parti → rapprochement ligne à ligne, écarts classés, banc
 // d'étalonnage). Liste à gauche, 3D à droite : un clic sur une ligne surligne d'où elle vient.
 // Enregistrement automatique 2 s après la dernière modification (table loading_lists, une liste par version de modèle).
@@ -41,6 +42,10 @@ import { pendingQuestions } from '../../loading/learning/calibration';
 import type { ImpactCase } from '../../loading/learning/impact';
 import { ExportStep } from './ExportStep';
 import { ReconcileStep } from './ReconcileStep';
+import { TeachPanel } from './TeachPanel';
+import { topologyElements } from '../../loading/teach/motif';
+import type { BaseCandidate } from '../../loading/learning/inferBase';
+import type { LoadingRule } from '../../loading/core/types';
 import type { StoredReconciliation } from '../../loading/reconcile/reconcile';
 import { benchFromReconciliation, reconcile, reconObservations } from '../../loading/reconcile/reconcile';
 import type { BenchAnswers } from '../../loading/reconcile/benches';
@@ -125,6 +130,8 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const [validatedAt, setValidatedAt] = useState<string | null>(null);
   const [revision, setRevision] = useState(1);
   const [reconciliation, setReconciliation] = useState<StoredReconciliation | null>(null);
+  const [teach, setTeach] = useState(false);
+  const [teachSel, setTeachSel] = useState<string[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [study, setStudy] = useState<{ input: StudyInput | null; note: string }>({ input: null, note: 'Étude structure pas encore faite pour ce modèle' });
   const [busy, setBusy] = useState('');
@@ -337,6 +344,29 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     });
     if (!cases) impactCases().then(setCases).catch(() => setCases([]));
   };
+  // règle montrée en 3D (mode 🎓) ou écrite en texte : même écran de validation (contradictions, impact, raison)
+  const proposeTaught = (rule: LoadingRule, candidates: BaseCandidate[], title: string) => {
+    const chantier = project?.internalNumber ?? scene.index.source.fileName;
+    setValidation({
+      title,
+      draft: rule,
+      candidates,
+      observations: SEED_OBSERVATIONS,
+      reason: rule.source === 'montre_3d' ? `${chantier} : montré en 3D` : `${chantier} : règle écrite`,
+      onSave: async (toSave, reason) => {
+        try {
+          for (const r of toSave) await vem.saveLoadingRule(r, reason, PROJECT_ID, listId);
+          setRuleRows(await vem.loadingRules());
+          setValidation(null);
+          setTeachSel([]);
+          setSaveNote('✓ Règle validée : elle vaut maintenant pour tous les projets');
+        } catch (e) {
+          setError(`Règle non enregistrée : ${(e as Error).message}`);
+        }
+      },
+    });
+    if (!cases) impactCases().then(setCases).catch(() => setCases([]));
+  };
   const fileName = bordereauFileName(effMeta.orderNo || project?.internalNumber || 'chantier', revision);
 
   const lastSaved = useRef('');
@@ -391,8 +421,28 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
-  const highlight = useMemo(() => new Set(selected?.ids ?? []), [selected]);
-  const overlay = useMemo(() => topologyOverlay(topology, highlight, { junctions: step === 'topology', feet: step === 'topology' }), [topology, highlight, step]);
+  const elements = useMemo(() => topologyElements(topology, catMap), [topology, catMap]);
+  const elementById = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
+  const highlight = useMemo(
+    () => new Set([...(selected?.ids ?? []), ...(teach ? teachSel.flatMap((id) => elementById.get(id)?.ids ?? []) : [])]),
+    [selected, teach, teachSel, elementById],
+  );
+  const overlay = useMemo(
+    () => topologyOverlay(topology, highlight, { junctions: step === 'topology' || teach, feet: step === 'topology' || teach, sides: teach }),
+    [topology, highlight, step, teach],
+  );
+  const toggleTeach = (id: string) => setTeachSel((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
+  /** mode 🎓 : clic sur le plan ou une ligne du tableau de l'étape Topologie. Un élément (jonction, pied, box) est
+   *  ajouté / retiré ; une ligne du tableau (plusieurs éléments du même genre) les montre tous. */
+  const teachSelect = (sel: { ids: string[]; label: string } | null) => {
+    if (!sel) return;
+    const els = sel.ids.filter((id) => elementById.has(id));
+    if (!els.length) return;
+    const kind = elementById.get(els[0])!.kind;
+    const same = els.filter((id) => elementById.get(id)!.kind === kind);
+    if (same.length > 1 && els[0] === sel.ids[0] && same.length === els.length) setTeachSel(same);
+    else toggleTeach(els[0]);
+  };
   const highlightNodes = useMemo(() => {
     const out: string[] = [];
     for (const id of highlight) {
@@ -420,6 +470,10 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   barPickRef.current = (i) => {
     if (i === null) return;
     const id = overlay.ids[i];
+    if (teach) {
+      if (elementById.has(id)) toggleTeach(id);
+      return;
+    }
     const j = topology.junctions.find((x) => x.id === id);
     const f = topology.feet.find((x) => x.id === id);
     if (j) setSelected({ ids: [j.id, ...j.modules], label: `${j.id} : jonction ${j.kind === 'grand_cote' ? 'grand côté' : j.kind === 'petit_cote' ? 'petit côté' : 'grand / petit côté'} entre ${j.modules.join(' et ')}${j.offset ? ' (décalée)' : ''}${j.roof ? ', toits jointifs' : ''}` });
@@ -427,6 +481,21 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   };
   const [focusUnknown, setFocusUnknown] = useState<string | null>(null);
   pickRef.current = (nodeId) => {
+    if (teach) {
+      // mode 🎓 : la pièce cliquée (panneau de façade, produit) ou sa box
+      if (!nodeId) return;
+      let pickedId: string | undefined;
+      let boxId: string | undefined;
+      for (let n = scene.look.byId.get(nodeId); n; n = n.parentId ? scene.look.byId.get(n.parentId) : undefined) {
+        const e = elementById.get(n.id);
+        if (e && (e.kind === 'panneau' || (e.kind === 'produit' && !pickedId))) pickedId = e.id;
+        const m = scene.index.modules.find((x) => x.nodeId === n!.id);
+        if (m && !boxId) boxId = m.id;
+      }
+      const id = pickedId ?? boxId;
+      if (id && elementById.has(id)) toggleTeach(id);
+      return;
+    }
     if (!nodeId) {
       setSelected(null);
       return;
@@ -514,6 +583,17 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
             ))}
           </nav>
           <div className="spacer" style={{ flex: 1 }} />
+          <button
+            className={`btn small ${teach ? 'primary' : ''}`}
+            data-testid="teach-toggle"
+            title="Montrer dans la 3D ce qui demande un accessoire : l’app en tire un motif et propose la règle"
+            onClick={() => {
+              setTeach((v) => !v);
+              setSelected(null);
+            }}
+          >
+            🎓 Apprendre
+          </button>
           {saveNote && <span className="hint">{saveNote}</span>}
           <span className="hint">{saveLabel}</span>
         </div>
@@ -532,6 +612,22 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
       {validation && <RuleValidation {...validation} rules={rules} catalogue={catMap} cases={cases} canEdit={canEdit} onCancel={() => setValidation(null)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(520px, 46%) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
+          {teach && (
+            <TeachPanel
+              topology={topology}
+              elements={elements}
+              selection={teachSel}
+              catalogue={catalogue}
+              catMap={catMap}
+              rules={rules}
+              canEdit={canEdit}
+              chantier={project?.internalNumber ?? scene.index.source.fileName}
+              onSelection={setTeachSel}
+              onShow={setSelected}
+              onPropose={proposeTaught}
+              onClose={() => setTeach(false)}
+            />
+          )}
           {step === 'topology' && (
             <TopologyStep
               topology={topology}
@@ -546,7 +642,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
                 })
               }
               selected={selected}
-              onSelect={setSelected}
+              onSelect={teach ? teachSelect : setSelected}
             />
           )}
           {step === 'questions' && (
@@ -733,6 +829,8 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
                     ✕
                   </button>
                 </>
+              ) : teach ? (
+                '🎓 Clique ce qui demande l’accessoire : jonctions (bandes), pieds (croix), côtés (traits gris au sol), box, panneaux, produits.'
               ) : step === 'topology' ? (
                 'Clic sur une ligne, une jonction ou un pied : la 3D montre d’où vient le nombre.'
               ) : (
@@ -907,7 +1005,7 @@ function TopologyPlan({ topology: t, selected, onSelect }: { topology: Topology;
           const k = islandIndex.get(m.islandId) ?? 0;
           const c = m.outline.reduce((s, p) => [s[0] + p[0] / 4, s[1] + p[1] / 4], [0, 0]) as [number, number];
           return (
-            <g key={m.id} style={{ cursor: 'pointer' }} onClick={() => onSelect({ ids: [m.id], label: `${m.id} — ${m.long} × ${m.short} mm, niveau ${m.level}` })}>
+            <g key={m.id} data-id={m.id} style={{ cursor: 'pointer' }} onClick={() => onSelect({ ids: [m.id], label: `${m.id} — ${m.long} × ${m.short} mm, niveau ${m.level}` })}>
               <polygon
                 points={m.outline.map(tx).join(' ')}
                 fill={hex(ISLAND_COLORS[k % ISLAND_COLORS.length])}
@@ -926,6 +1024,7 @@ function TopologyPlan({ topology: t, selected, onSelect }: { topology: Topology;
       {t.junctions.map((j) => (
         <line
           key={j.id}
+          data-id={j.id}
           x1={j.segment[0][0] - minX + pad}
           y1={j.segment[0][1] - minZ + pad}
           x2={j.segment[1][0] - minX + pad}
@@ -939,6 +1038,7 @@ function TopologyPlan({ topology: t, selected, onSelect }: { topology: Topology;
       {t.feet.map((f) => (
         <circle
           key={f.id}
+          data-id={f.id}
           cx={f.plan[0] - minX + pad}
           cy={f.plan[1] - minZ + pad}
           r={sel.has(f.id) ? 170 : 110}
