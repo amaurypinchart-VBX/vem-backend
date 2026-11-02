@@ -24,6 +24,23 @@ describe('escalier le long d’une rangée de Viewbox', () => {
     expect(links.map((n) => Math.round(n.z)).sort((a, b) => a - b)).toEqual([-9790, -7710]);
   });
 
+  it('palier de 2 plateformes (« STAIRWAYKIT WITH PLATEFORM », Xiaomi 02.11.2026) : volée mesurée sur les limons, une paire d’attaches par Viewbox longée', () => {
+    // même escalier, palier allongé d'une plateforme de 2,5 m : la boîte de l'objet va jusqu'à z = −0,81 m
+    const long = [box[0], box[1], box[2], box[3], box[4], -812.6];
+    // sans mesure des limons : la boîte seule fait croire à une volée de 6,41 m (pente < 25°)
+    expect(placeStair(long, 'ESC-1', 'Escalier', modules, STAIR_KITS[0], () => ({ low: 2800, high: 600 })).reason).toMatch(/pente hors de 25° à 45°/);
+    const r = placeStair(long, 'ESC-1', 'Escalier', modules, STAIR_KITS[0], () => ({ low: 2800, high: 600 }), () => [-5086, -911]);
+    expect(r.reason).toBeUndefined();
+    expect(r.stair).toMatchObject({ module: 'VBX-14', side: 'u1', level: 'floor', platforms: 2, flight: 3910 });
+    const s = assembleStructure(modules, { sections: sectionMap(SEED), jacks: false, middleFeet: false, upliftReleases: 'all', calibration: false, stairs: [r.stair!] });
+    expect(s.errors).toEqual([]);
+    expect(s.stairs[0].links).toHaveLength(4);
+    const owners = s.stairs[0].links.map((k) => s.meta[k].label.split(' / ')[1].split(' · ')[0]);
+    expect(owners).toEqual(['VBX-14', 'VBX-14', 'VBX-13', 'VBX-13']);
+    // 8 montants de palier + 2 intermédiaires + 2 pieds de limon
+    expect(s.stairs[0].supports).toHaveLength(12);
+  });
+
   it('glissement d’une Viewbox empilée au milieu de la rangée : la direction sans plat est reprise par le frottement', () => {
     const c = connectionSet(SEED);
     const middle = { u0: true, u1: true, v0: false, v1: false };

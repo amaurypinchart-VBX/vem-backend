@@ -18,7 +18,7 @@ import type { StairKitParams } from '../core/templates/stair';
 import { STAIR_KITS } from '../library/seed';
 import type { PlacedTerrace } from '../core/terrace';
 import { placeTerrace } from '../core/terrace';
-import { endHeights, itemBar } from './geometry';
+import { endHeights, flightSpan, itemBar } from './geometry';
 import type { StudyMods } from '../core/mods';
 import { modsCount, modsFromStructParams } from '../core/mods';
 
@@ -67,6 +67,7 @@ export function placeStair(
   modules: PlacedModule[],
   kit: StairKitParams,
   heights?: (axis: 0 | 2) => { low: number; high: number } | null,
+  span?: (axis: 0 | 2) => [number, number] | null,
 ): { stair: PlacedStair | null; reason?: string; warning?: string } {
   const ext: [number, number] = [b[3] - b[0], b[5] - b[2]];
   const axis: 0 | 2 = ext[0] >= ext[1] ? 0 : 2;
@@ -140,7 +141,19 @@ export function placeStair(
     k = { ...kit, width: Math.round(W / 10) * 10 };
     notes.push(`${label} : largeur entre limons mesurée ${fmt(k.width)} m (kit ${fmt(kit.width)} m), mêmes profilés.`);
   }
-  const L = hi - lo - (kit.landingEndOffset + kit.landingMargin + kit.boltSpacing + kit.landingMargin + kit.hookExtension + kit.footOverhang);
+  const Lbox = hi - lo - (kit.landingEndOffset + kit.landingMargin + kit.boltSpacing + kit.landingMargin + kit.hookExtension + kit.footOverhang);
+  // palier allongé (« STAIRWAYKIT WITH PLATEFORM » : plateformes ajoutées au kit) : la boîte de l'objet est plus longue
+  // que kit + volée d'un multiple de la plateforme ; la volée est mesurée sur les limons
+  const P = kit.platformPitch ?? 2500;
+  const fs = span?.(axis);
+  let platforms = 1;
+  if (fs) {
+    const extra = Lbox - (fs[1] - fs[0]);
+    const n = Math.round(extra / P);
+    if (n >= 1 && extra > 0.6 * P) platforms = 1 + n;
+  }
+  const L = Lbox - (platforms - 1) * P;
+  if (platforms > 1) notes.push(`${label} : palier de ${platforms} plateformes (${fmt(kit.boltSpacing + 2 * kit.landingMargin + (platforms - 1) * P)} m), chacune attachée au côté de Viewbox qu’elle longe.`);
   const rise = best.H - Math.min(...modules.filter((m) => m.level === 0).map((m) => m.origin[1]));
   const kitL = (rise - kit.footHeight) * kit.runPerRise;
   let flight: number | undefined;
@@ -150,7 +163,7 @@ export function placeStair(
     flight = Math.round(L / 10) * 10;
     notes.push(`${label} : volée mesurée ${fmt(flight)} m en plan (pente ${Math.round(slope)}°), mêmes profilés que le kit.`);
   }
-  return { stair: { id, label, kit: k, module: best.pm.id, side: best.side, level: best.level, run, landingEnd, ...(flight !== undefined ? { flight } : {}) }, warning: notes.join(' ') || undefined };
+  return { stair: { id, label, kit: k, module: best.pm.id, side: best.side, level: best.level, run, landingEnd, ...(flight !== undefined ? { flight } : {}), ...(platforms > 1 ? { platforms } : {}) }, warning: notes.join(' ') || undefined };
 }
 
 const G = 9.81;
@@ -209,7 +222,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     if (a.role === 'structural' && (a.nature === 'stair' || a.nature === 'landing')) {
       for (const nodeId of t.nodeIds) {
         const n = scene.look.byId.get(nodeId);
-        const r = n?.bboxMm ? placeStair(n.bboxMm, `ESC-${stairs.length + 1}`, t.label, modules, STAIR_KITS[0], (axis) => endHeights(scene, nodeId, axis)) : { stair: null, reason: `${t.label} : géométrie introuvable` };
+        const r = n?.bboxMm ? placeStair(n.bboxMm, `ESC-${stairs.length + 1}`, t.label, modules, STAIR_KITS[0], (axis) => endHeights(scene, nodeId, axis), (axis) => flightSpan(scene, nodeId, axis)) : { stair: null, reason: `${t.label} : géométrie introuvable` };
         if (r.stair) stairs.push(r.stair);
         else errors.push(r.reason!);
         if (r.warning) warnings.push(r.warning);

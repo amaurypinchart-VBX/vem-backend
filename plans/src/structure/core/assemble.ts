@@ -202,6 +202,9 @@ export interface PlacedStair {
   landingEnd: number;
   /** longueur de la volée en plan mesurée sur le modèle (mm) ; absente = pente du kit */
   flight?: number;
+  /** nombre de plateformes du palier (kit = 1 ; « STAIRWAYKIT WITH PLATEFORM » = plateformes ajoutées, chacune
+   * attachée au côté de Viewbox qu'elle longe) ; absent = 1 */
+  platforms?: number;
 }
 
 /** Escalier assemblé : barres et appuis dans le modèle, pour les charges et les vérifications. */
@@ -290,6 +293,7 @@ export function placeFromFrame(f: ModuleFrame, level: number, entry: ModuleTypeE
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const planDist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 const SIDES: Side[] = ['u0', 'u1', 'v0', 'v1'];
@@ -805,34 +809,67 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   );
 
   // ─── escaliers : perçages d'attache du palier sur le côté de la Viewbox (nœuds de rive ajoutés si besoin) ───
-  const stairAttach = new Map<PlacedStair, { f: FaceGeo; s: [number, number] }>();
+  const stairAttach = new Map<PlacedStair, Array<{ f: FaceGeo; s: number } | null>>();
   for (const st of opt.stairs ?? []) {
     const f = faceGeo.find((x) => x.pm.id === st.module && x.side === st.side);
     if (!f) {
       errors.push(`${st.label} : Viewbox ${st.module} absente du modèle — escalier non calculé.`);
       continue;
     }
-    const p = f.pm.params;
-    const long = f.side === 'v0' || f.side === 'v1';
-    const drill = (long ? p.boltLongX : p.boltShortY).map((x) => x - f.offset);
-    const sign = Math.sign(dot(f.dir, st.run)) || 1;
-    // abscisses le long du côté : premier perçage à ≈ 300 mm du bout du palier, second à l'écart du kit
-    const s1Target = (st.landingEnd + 303 - dot(f.a, st.run)) * sign;
     const D = st.kit.boltSpacing;
-    let pair: [number, number] | null = null;
-    for (const a of drill)
-      for (const b of drill)
-        if (Math.abs((b - a) * sign - D) <= 50 && Math.abs(a - s1Target) <= 600 && (!pair || Math.abs(a - s1Target) < Math.abs(pair[0] - s1Target))) pair = [a, b];
-    if (!pair) {
-      pair = [s1Target, s1Target + sign * D];
-      if (pair.some((s) => s < 0 || s > f.length)) {
-        errors.push(`${st.label} : palier hors du côté de ${st.module} — escalier non calculé.`);
-        continue;
+    const P = st.kit.platformPitch ?? 2500;
+    const nP = Math.max(1, Math.round(st.platforms ?? 1));
+    const levelY = f.pm.origin[1] + (st.level === 'floor' ? f.pm.params.floorZ : f.pm.params.topZ);
+    // une paire de perçages par plateforme : premier à ≈ 300 mm du bout du palier (+ p × P), second à l'écart du kit,
+    // sur le côté de Viewbox (même plan, même niveau) qui longe la plateforme
+    const attach: Array<{ f: FaceGeo; s: number } | null> = [];
+    let failed = false;
+    for (let p = 0; p < nP && !failed; p++) {
+      const target = st.landingEnd + 303 + p * P;
+      let face: FaceGeo | undefined = f;
+      if (p > 0) {
+        const mid = target + D / 2;
+        face = faceGeo.find((x) => {
+          if (dot(x.normal, f.normal) < 0.99 || Math.abs(dot(sub(x.a, f.a), f.normal)) > 30) return false;
+          const y = x.pm.origin[1] + (st.level === 'floor' ? x.pm.params.floorZ : x.pm.params.topZ);
+          if (Math.abs(y - levelY) > 50) return false;
+          const s = (mid - dot(x.a, st.run)) * (Math.sign(dot(x.dir, st.run)) || 1);
+          return s > 0 && s < x.length;
+        });
+        if (!face) {
+          warnings.push(`${st.label} : plateforme ${p + 1} du palier sans côté de Viewbox en face — non attachée (portée par ses montants et la plateforme voisine).`);
+          attach.push(null, null);
+          continue;
+        }
       }
-      warnings.push(`${st.label} : aucun perçage de ${st.module} en face du palier — attaches placées à ${fmtNumber(pair[0] / 1e3, 2)} et ${fmtNumber(pair[1] / 1e3, 2)} m du coin (perçages à faire sur site).`);
-      for (const s of pair) addExtra(f, s);
+      const fc = face;
+      const p0 = fc.pm.params;
+      const long = fc.side === 'v0' || fc.side === 'v1';
+      const drill = (long ? p0.boltLongX : p0.boltShortY).map((x) => x - fc.offset);
+      const sign = Math.sign(dot(fc.dir, st.run)) || 1;
+      const s1Target = (target - dot(fc.a, st.run)) * sign;
+      let pair: [number, number] | null = null;
+      for (const a of drill)
+        for (const b of drill)
+          if (Math.abs((b - a) * sign - D) <= 50 && Math.abs(a - s1Target) <= 600 && (!pair || Math.abs(a - s1Target) < Math.abs(pair[0] - s1Target))) pair = [a, b];
+      if (!pair) {
+        pair = [s1Target, s1Target + sign * D];
+        if (pair.some((s) => s < 0 || s > fc.length)) {
+          if (p === 0) {
+            errors.push(`${st.label} : palier hors du côté de ${st.module} — escalier non calculé.`);
+            failed = true;
+            break;
+          }
+          warnings.push(`${st.label} : plateforme ${p + 1} du palier hors du côté de ${fc.pm.id} — non attachée (portée par ses montants et la plateforme voisine).`);
+          attach.push(null, null);
+          continue;
+        }
+        warnings.push(`${st.label} : aucun perçage de ${fc.pm.id} en face du palier — attaches placées à ${fmtNumber(pair[0] / 1e3, 2)} et ${fmtNumber(pair[1] / 1e3, 2)} m du coin (perçages à faire sur site).`);
+        for (const s of pair) addExtra(fc, s);
+      }
+      attach.push({ f: fc, s: pair[0] }, { f: fc, s: pair[1] });
     }
-    stairAttach.set(st, { f, s: pair });
+    if (!failed) stairAttach.set(st, attach);
   }
 
   // ─── gabarit posé sur chaque Viewbox ───
@@ -1184,15 +1221,16 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   for (const st of opt.stairs ?? []) {
     const att = stairAttach.get(st);
     if (!att || !Number.isFinite(ground)) continue;
-    const { f, s: pair } = att;
+    const first = att[0]!;
+    const f = first.f;
     const pm = f.pm;
-    const rimKeys = st.level === 'floor' ? f.face!.rimFloor : f.face!.rimRoof;
-    const rimNode = (s: number) => {
-      const target = at(f, s);
+    const rimNode = (fc: FaceGeo, s: number) => {
+      const rimKeys = st.level === 'floor' ? fc.face!.rimFloor : fc.face!.rimRoof;
+      const target = at(fc, s);
       let best = -1;
       let bd = Infinity;
       for (const k of rimKeys) {
-        const n = P(pm, k);
+        const n = P(fc.pm, k);
         const d = planDist(pos(n), target);
         if (d < bd) [best, bd] = [n, d];
       }
@@ -1200,9 +1238,9 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     };
     const H = pm.origin[1] + (st.level === 'floor' ? pm.params.floorZ : pm.params.topZ);
     const rise = H - ground;
-    const o = at(f, pair[0]);
+    const o = at(f, first.s);
     const out = f.normal;
-    const geo = stairGeometry(st.kit, st.id, [o[0], H, o[2]], st.run, out, rise, st.flight);
+    const geo = stairGeometry(st.kit, st.id, [o[0], H, o[2]], st.run, out, rise, st.flight, st.platforms);
     const local = new Map<string, number>();
     for (const n of geo.nodes) {
       nodes.push({ id: n.key, x: n.p[0], y: n.p[1], z: n.p[2] });
@@ -1214,12 +1252,14 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     // attaches du palier : effort normal et effort tranchant horizontal, vertical et rotations libres (SCIA Ersatz_Anbindung)
     const links: number[] = [];
     geo.links.forEach((l, k) => {
-      const rn = rimNode(pair[k]);
+      const a = att[k];
+      if (!a) return;
+      const rn = rimNode(a.f, a.s);
       if (rn < 0) {
-        errors.push(`${st.label} : nœud d'attache introuvable sur la rive de ${pm.id}.`);
+        errors.push(`${st.label} : nœud d'attache introuvable sur la rive de ${a.f.pm.id}.`);
         return;
       }
-      links.push(addMember(local.get(l.node)!, rn, st.kit.sections.link, { family: 'stair-link', module: st.id, line: `${st.id}/link:${k + 1}`, label: `${st.id} / ${pm.id} · attache du palier ${k + 1}` }, { endJ: ['rigid', 'rigid', 'free', 'free', 'free', 'free'], geometric: false }));
+      links.push(addMember(local.get(l.node)!, rn, st.kit.sections.link, { family: 'stair-link', module: st.id, line: `${st.id}/link:${k + 1}`, label: `${st.id} / ${a.f.pm.id} · attache du palier ${k + 1}` }, { endJ: ['rigid', 'rigid', 'free', 'free', 'free', 'free'], geometric: false }));
     });
     const across = Math.abs(out[0]) > 0.99 ? 0 : Math.abs(out[2]) > 0.99 ? 2 : -1;
     if (across < 0) {

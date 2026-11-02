@@ -65,6 +65,33 @@ export function endHeights(scene: LoadedScene, id: string, axis: 0 | 2): { low: 
 }
 
 /**
+ * Étendue en plan (le long d'un axe du monde, 0 = X, 2 = Z) de la volée d'un escalier : le plus long maillage incliné
+ * de l'objet — haut d'au moins 1,5 m, long d'au moins 1,5 m le long de l'axe, mince en travers (≤ 400 mm) : un limon.
+ * Les poteaux (courts le long de l'axe), le platelage (plat) et le garde-corps de la volée (large) n'en sont pas.
+ * Sert à reconnaître un palier allongé (plateformes ajoutées au kit). null sans limon.
+ */
+export function flightSpan(scene: LoadedScene, id: string, axis: 0 | 2): [number, number] | null {
+  const obj = scene.objectsById.get(id);
+  if (!obj) return null;
+  obj.updateWorldMatrix(true, true);
+  const v = new Vector3();
+  let best: [number, number] | null = null;
+  obj.traverse((o) => {
+    const pos = ((o as Mesh).geometry as BufferGeometry | undefined)?.attributes?.position;
+    if (!(o as Mesh).isMesh || !pos) return;
+    const box = new Box3();
+    for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+    if (box.isEmpty()) return;
+    const along: [number, number] = axis === 0 ? [box.min.x, box.max.x] : [box.min.z, box.max.z];
+    const across = axis === 0 ? box.max.z - box.min.z : box.max.x - box.min.x;
+    const height = box.max.y - box.min.y;
+    if (height < 1500 || along[1] - along[0] < 1500 || across > 400) return;
+    if (!best || along[1] - along[0] > best[1] - best[0]) best = along;
+  });
+  return best;
+}
+
+/**
  * Axe d'une pièce allongée (poutre, poteau) : centre de sa boîte orientée dans ses propres axes, prolongé de part et
  * d'autre sur sa plus grande dimension (monde, mm). `depth` = dimension de la section la plus proche de la verticale.
  * null si la pièce n'est pas une barre (plus grande dimension < 2 × la suivante) ou sans maillage.

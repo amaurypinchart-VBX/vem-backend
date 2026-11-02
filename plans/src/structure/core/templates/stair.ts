@@ -40,6 +40,9 @@ export interface StairKitParams {
   landingEndOffset: number;
   footOverhang: number;
   outerRail: number;
+  /** plateforme de palier ajoutée au kit (« STAIRWAYKIT WITH PLATEFORM ») : longueur de chaque plateforme en plus,
+   * attachée elle aussi au côté de la Viewbox qu'elle longe (2 perçages) et portée par 4 montants */
+  platformPitch?: number;
   sections: { stringer: string; post: string; head: string; step: string; link: string };
   /** marches et platelage (N/mm²), garde-corps (N/mm) */
   treads: number;
@@ -99,7 +102,7 @@ const PINNED: EndSpec = ['rigid', 'rigid', 'rigid', 'rigid', 'free', 'free'];
  * Escalier dans son repère local, converti en monde : `origin` (perçage extérieur, ligne de système, niveau du palier),
  * `run` et `out` unitaires horizontaux, `rise` = hauteur du palier au-dessus du sol (mm).
  */
-export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run: Vec3, out: Vec3, rise: number, flight?: number): StairGeometry {
+export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run: Vec3, out: Vec3, rise: number, flight?: number, platforms = 1): StairGeometry {
   const nodes = new Map<string, StairNode>();
   const at = (r: number, w: number, z: number): Vec3 => [origin[0] + run[0] * r + out[0] * w, origin[1] + z - rise, origin[2] + run[2] * r + out[2] * w];
   const node = (r: number, w: number, z: number) => {
@@ -118,8 +121,10 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
   const { width: W, gap: g, boltSpacing: D, landingMargin: m0 } = kit;
   const wA = g;
   const wB = g + W;
+  const nP = Math.max(1, Math.round(platforms));
+  const P = kit.platformPitch ?? 2500;
   const r0 = -m0;
-  const r1 = D + m0;
+  const r1 = D + m0 + (nP - 1) * P;
   const rHook = r1 + kit.hookExtension;
   // volée : mesurée sur le modèle si elle est donnée, sinon à la pente du kit
   const L = Math.max(0, flight ?? (H - kit.footHeight) * kit.runPerRise);
@@ -128,7 +133,9 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
   const nSteps = Math.max(1, Math.round(L / kit.stepGoing));
   const going = L / nSteps;
   const stepR = Array.from({ length: nSteps }, (_, k) => rHook + going * (k + 0.5));
-  const barR = Array.from({ length: kit.landingBars }, (_, k) => (kit.landingBars === 1 ? D / 2 : (D * k) / (kit.landingBars - 1)));
+  // lattes : celles du kit sur chaque plateforme (plateforme p décalée de p × P)
+  const kitBarR = Array.from({ length: kit.landingBars }, (_, k) => (kit.landingBars === 1 ? D / 2 : (D * k) / (kit.landingBars - 1)));
+  const barR = Array.from({ length: nP }, (_, p) => kitBarR.map((r) => r + p * P)).flat();
   // montants intermédiaires : à la même proportion de la volée que dans le kit (aucun si la volée est courte)
   const kitL = (3080 - kit.footHeight) * kit.runPerRise;
   const rMid = L >= 2500 ? rHook + (kit.middlePost * L) / kitL : Infinity;
@@ -142,7 +149,8 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
   add({ family: 'stair-landing', section: S.stringer, i: node(r1, wA, H), j: node(r1, wB, H), line: `${id}/landing:near`, label: `${id} · cadre de palier, côté volée` });
   const bars: StairGeometry['bars'] = [];
   barR.forEach((r, k) => {
-    const width = kit.landingBars === 1 ? r1 - r0 : (r1 - r0) / kit.landingBars;
+    // largeurs d'influence : P par plateforme ajoutée, le cadre du kit pour la dernière (somme = longueur du palier)
+    const width = (Math.floor(k / kit.landingBars) < nP - 1 ? P : D + 2 * m0) / kit.landingBars;
     bars.push({ index: add({ family: 'stair-step', section: S.step, i: node(r, wA, H), j: node(r, wB, H), endI: PIN_Y, endJ: PIN_Y, line: `${id}/lbar:${k}`, label: `${id} · latte de palier ${k + 1}` }), width, region: 'landing' });
   });
 
@@ -162,12 +170,8 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
   // ─── montants pendulaires (rotule en tête, pied sur vérin Layher) ───
   const supports: StairSupport[] = [];
   let post = 0;
-  for (const [r, w, wFrame] of [
-    [0, wA + kit.postInset, wA],
-    [D, wA + kit.postInset, wA],
-    [0, wB - kit.postInset, wB],
-    [D, wB - kit.postInset, wB],
-  ] as const) {
+  const postsAt = Array.from({ length: nP }, (_, p) => [p * P, p * P + D]).flat();
+  for (const [r, w, wFrame] of [...postsAt.map((r) => [r, wA + kit.postInset, wA] as const), ...postsAt.map((r) => [r, wB - kit.postInset, wB] as const)]) {
     post++;
     const foot = node(r, w, 0);
     const head = node(r, w, H);
@@ -197,10 +201,7 @@ export function stairGeometry(kit: StairKitParams, id: string, origin: Vec3, run
     nodes: [...nodes.values()],
     members,
     supports,
-    links: [
-      { node: node(0, wA, H), r: 0 },
-      { node: node(D, wA, H), r: D },
-    ],
+    links: postsAt.map((r) => ({ node: node(r, wA, H), r })),
     bars,
     railingMembers,
     windMembers,

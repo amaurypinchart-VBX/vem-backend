@@ -527,6 +527,7 @@ export const STAIR_KITS: StairKitParams[] = [
     landingEndOffset: 173,
     footOverhang: 107,
     outerRail: 167,
+    platformPitch: 2500,
     sections: { stringer: 'U200x80x5-CF', post: 'QHP80x3-CF', head: 'U125x92x5-CF', step: 'AQ-STEP-EQ', link: 'QRO100x4-EQ' },
     treads: 0.42e-3,
     railing: 0.1,

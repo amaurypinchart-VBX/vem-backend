@@ -52,3 +52,31 @@ describe.skipIf(!existsSync(file))('modèle Xiaomi Paris 2026 (escalier contre u
     expect(run.plywood.records[0].title).toMatch(/2 couches croisées/);
   }, 600_000);
 });
+
+// Version du 02.11.2026 : « STAIRWAYKIT WITH PLATEFORM » = kit + une plateforme de palier de 2,5 m le long de VBX-15
+// (la boîte de l'objet faisait croire à une volée de 6,41 m, pente < 25° → « escalier non calculé », verdict incomplet).
+const file2 = join(__dirname, '..', '..', 'reference-reports', 'Xiaomi_Paris_2026_VEM_20261102-1355.zip');
+
+describe.skipIf(!existsSync(file2))('modèle Xiaomi Paris 2026 du 02.11 (palier de 2 plateformes)', () => {
+  it('escalier calculé : 2 plateformes attachées à VBX-16 et VBX-15, volée 3,91 m, verdict complet', async () => {
+    const buf = readFileSync(file2);
+    const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+    const res = await ingest({ fileName: 'xiaomi.zip', data, sha256: 'local', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
+    const pkg = await loadPackage(await exportPackage(res.root));
+    const scene = makeLoadedScene(pkg.root, pkg.objectsById, res.index, 'local');
+    const library = mergeLibrary(SEED, []);
+    const dims = itemBoxDims(scene, scene.index.nodes.filter((n) => n.role === 'item').map((n) => n.id));
+    const recognition = recognize({ index: scene.index, look: scene.look, geometry: dims, library, assignments: {}, accessoryCategories: compileRules(DEFAULT_RULES).accessoryKeys });
+    const sceneModel = studyModelFromScene(scene, recognition, library);
+    expect(sceneModel.errors).toEqual([]);
+    expect(sceneModel.stairs).toHaveLength(1);
+    expect(sceneModel.stairs[0]).toMatchObject({ module: 'VBX-16', side: 'u1', level: 'floor', platforms: 2, flight: 3910 });
+    const { inputs } = buildStudyInputs({ sceneModel, library, hyp: DEFAULT_HYP, roof: false, calc: CALC_DEFAULTS });
+    const run = await runStudy(inputs, createInlineStudyRunner());
+    expect(run.structure.errors).toEqual([]);
+    expect(run.summary.errors).toEqual([]);
+    expect(run.verdict.families.filter((f) => f.verdict === 'incomplete')).toEqual([]);
+    const owners = run.structure.stairs[0].links.map((k) => run.structure.meta[k].label.split(' / ')[1].split(' · ')[0]);
+    expect(owners).toEqual(['VBX-16', 'VBX-16', 'VBX-15', 'VBX-15']);
+  }, 600_000);
+});
