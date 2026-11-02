@@ -75,7 +75,11 @@ export function moduleStructureMesh(scene: LoadedScene, moduleId: string, opts: 
  */
 export function moduleStructure(scene: LoadedScene, moduleId: string): (ModuleStructureMesh & { origin: 'sketchup' | 'mesh' }) | null {
   const info = scene.index.modules.find((m) => m.id === moduleId);
-  const s = info?.structureRef ? scene.index.structures?.[info.structureRef] : undefined;
+  // box qui contient le composant Viewbox standard (« 7-962-016 VIEWBOX STANDARD… ») : son ossature est rangée trop
+  // profond pour l'extension, qui relève alors les rails de vitrage, la toile du plafond, le bitume… (Xiaomi
+  // 02.11.2026 : « n'est pas une Viewbox »). Ses barres ne sont gardées que si la box est marquée « dessinée ».
+  const standardBody = info?.structSource !== 'drawn' && !!info && hasViewboxBody(scene, info);
+  const s = info?.structureRef && !standardBody ? scene.index.structures?.[info.structureRef] : undefined;
   const f = scene.frames.get(moduleId);
   if (s && f && info?.skpTransform) {
     const extra = moduleStructureMesh(scene, moduleId, { spatialOnly: true });
@@ -85,4 +89,14 @@ export function moduleStructure(scene: LoadedScene, moduleId: string): (ModuleSt
   }
   const mesh = moduleStructureMesh(scene, moduleId);
   return mesh ? { ...mesh, origin: 'mesh' } : null;
+}
+
+/** La box contient le composant Viewbox standard : article 7-962-0xx, nom « VIEWBOX STANDARD » ou catégorie VIEWBOX. */
+export function hasViewboxBody(scene: LoadedScene, info: LoadedScene['index']['modules'][number]): boolean {
+  return scene.index.nodes.some(
+    (n) =>
+      n.moduleId === info.id &&
+      n.role === 'item' &&
+      (/^7-962-0\d\d\b/.test(n.articleRef ?? '') || /VIEWBOX STANDARD/i.test(`${n.definition ?? ''} ${n.name ?? ''}`) || n.category === 'VIEWBOX'),
+  );
 }

@@ -151,6 +151,8 @@ describe.skipIf(!existsSync(PERMABOX))('modèle Permabox « Viewbox Light V4 »'
 for (const f of [
   join(process.env.VEM_MODELS_DIR ?? join(__dirname, '..', '..', '..', 'test-models'), 'Qatar_Airways_2024_VEM_20261001-1529.zip'),
   join(__dirname, '..', '..', 'reference-reports', 'Xiaomi_Paris_2026_VEM_20260929-0951.zip'),
+  // export extension 1.3.0 : barres relevées dans le composant = rails de vitrage, plafond, bitume (pas l'ossature)
+  join(__dirname, '..', '..', 'reference-reports', 'Xiaomi_Paris_2026_VEM_20261102-1343.zip'),
   join(__dirname, '..', '..', 'reference-reports', 'test_structurelle_VEM_20261001-1554.zip'),
 ])
   describe.skipIf(!existsSync(f))(`aucun faux positif — ${f.split('/').pop()}`, () => {
@@ -160,14 +162,15 @@ for (const f of [
       const { exportPackage, loadPackage } = await import('../../src/ingest/package');
       const { DEFAULT_RULES } = await import('../../src/core/classification');
       const { makeLoadedScene } = await import('../../src/scene/loadedScene');
-      const { moduleStructureMesh } = await import('../../src/structure/scene/frameFromScene');
+      const { moduleStructure } = await import('../../src/structure/scene/frameFromScene');
       const buf = readFileSync(f);
       const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
       const res = await ingest({ fileName: 'm.zip', data, sha256: 'x', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
       const pkg = await loadPackage(await exportPackage(res.root));
       const scene = makeLoadedScene(pkg.root, pkg.objectsById, res.index, 'x');
-      const mesh = moduleStructureMesh(scene, scene.index.modules[0].id)!;
-      const ex = extractFrame(mesh.members, { ...mesh.dims, base, date: '07.10.2026' });
+      // même chemin que l'appli (barres de l'extension si le manifest en a, sinon maillages)
+      const mesh = moduleStructure(scene, scene.index.modules[0].id)!;
+      const ex = extractFrame(mesh.members, { ...mesh.dims, base, date: '07.10.2026', origin: mesh.origin, sections: sectionMap(SEED) });
       const conf = ex.params ? frameConformity(ex, { name: 'Viewbox 5900', frame: viewboxPresetFrame(P), sectionDims: (k) => dimsOf(sectionMap(SEED), k) }) : null;
       console.log(`${f.split('/').pop()} : ${ex.bars.length} barres (${[...new Set(ex.bars.map((b) => b.role))].join(', ')}), params ${!!ex.params}, ${conf ? conf.differences.join(' | ') || 'conforme' : 'pas de structure relevée'}`);
       expect(conf === null || conf.ok).toBe(true);
