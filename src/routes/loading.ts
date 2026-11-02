@@ -2,7 +2,8 @@
 // Module Plans Viewbox › Loading liste : base de règles partagée entre projets (la base de départ est générée du
 // classeur dans plans/src/loading/library/seed.ts ; la table ne garde que les règles validées dans l'app, avec un
 // historique append-only), catalogue ajouté par validation, mémoire des produits identifiés (« Qu'est-ce que c'est ? »).
-// Loading listes : une par version de modèle (topologie, valeurs saisies à la main, réponses, lignes).
+// Loading listes : une par version de modèle (topologie, valeurs saisies à la main, réponses, lignes), rapprochement
+// avec la liste réelle (L6) et bancs d'étalonnage ajoutés dans l'app.
 // Tous les calculs se font dans le navigateur (public/plans, sources dans plans/src/loading).
 // Écriture des règles, du catalogue et de la mémoire produits : admin et technical_manager (A. Pinchart 12.10.2026).
 import { Router, Response, NextFunction } from 'express';
@@ -214,7 +215,7 @@ const LIST_STATUSES = ['brouillon', 'validee'];
 /** Champs d'une liste envoyés par le module (JSON calculé et typé côté client ; contrôle de taille seulement). */
 function cleanList(b: any) {
   const out: Record<string, unknown> = {};
-  for (const k of ['topology', 'overrides', 'answers', 'lines', 'corrections'] as const) {
+  for (const k of ['topology', 'overrides', 'answers', 'lines', 'corrections', 'reconciliation'] as const) {
     if (b[k] === undefined) continue;
     if (JSON.stringify(b[k]).length > 3_000_000) throw new AppError(`${k} trop volumineux`, 400);
     out[k] = b[k] ?? null;
@@ -302,7 +303,8 @@ router.post('/lists/:id/validate', async (req: AuthRequest, res: Response, next:
         userId: req.user?.id ?? null,
       }));
     const updated = await prisma.$transaction(async (tx: any) => {
-      await tx.loadingObservation.deleteMany({ where: { listId: list.id, kind: { in: ['calage', 'jugement'] } } });
+      // seulement les observations de la validation (celles du rapprochement avec la liste réelle restent)
+      await tx.loadingObservation.deleteMany({ where: { listId: list.id, kind: { in: ['calage', 'jugement'] }, origin: null } });
       if (rows.length) await tx.loadingObservation.createMany({ data: rows });
       return tx.loadingList.update({
         where: { id: list.id },
@@ -363,6 +365,96 @@ router.post('/lists/:id/observations', async (req: AuthRequest, res: Response, n
       },
     });
     res.status(201).json({ success: true, data: row });
+  } catch (err) { next(err); }
+});
+
+// ─── chantier réel (L6) : rapprochement d'une liste avec ce qui est vraiment parti, bancs d'étalonnage ───
+
+const OBS_KINDS = ['calage', 'jugement', 'inconnu', 'erreur_3d', 'erreur_bordereau'];
+
+// POST /loading/lists/:id/reconcile — garde le rapprochement sur la liste (fichier, colonnes, lignes réelles,
+// classements, score) et remplace les observations du rapprochement précédent de cette liste (origine « reel ») :
+// lignes identiques = points de calage, écarts classés = règle à revoir / seulement ce chantier / erreur du 3D /
+// erreur du bordereau / je ne sais pas encore. Tout utilisateur ayant l'accès Plans.
+router.post('/lists/:id/reconcile', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const list = await db.loadingList.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!list) throw new AppError('Loading liste introuvable', 404);
+    const rec = req.body?.reconciliation;
+    if (!rec || typeof rec !== 'object' || !Array.isArray(rec.real)) throw new AppError('Rapprochement invalide', 400);
+    if (JSON.stringify(rec).length > 3_000_000) throw new AppError('Rapprochement trop volumineux', 400);
+    const obs = Array.isArray(req.body?.observations) ? req.body.observations.slice(0, 2000) : [];
+    const rows = obs
+      .filter((o: any) => o && typeof o.article === 'string' && REF.test(o.article))
+      .map((o: any) => ({
+        listId: list.id,
+        article: o.article,
+        ruleKeys: Array.isArray(o.ruleKeys) ? o.ruleKeys.slice(0, 20) : [],
+        predicted: Number.isFinite(o.predicted) ? o.predicted : null,
+        final: Number.isFinite(o.final) ? o.final : null,
+        kind: OBS_KINDS.includes(o.kind) ? o.kind : 'inconnu',
+        note: str(o.note, 500),
+        origin: 'reel',
+        userId: req.user?.id ?? null,
+      }));
+    const updated = await prisma.$transaction(async (tx: any) => {
+      await tx.loadingObservation.deleteMany({ where: { listId: list.id, origin: 'reel' } });
+      if (rows.length) await tx.loadingObservation.createMany({ data: rows });
+      return tx.loadingList.update({ where: { id: list.id }, data: { reconciliation: { ...rec, by: req.user?.id ?? null, at: new Date().toISOString() } } });
+    });
+    res.json({ success: true, data: updated });
+  } catch (err) { next(err); }
+});
+
+// GET /loading/benches — bancs d'étalonnage ajoutés dans l'app (les bancs de base sont dans le module)
+router.get('/benches', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const rows = await db.loadingBench.findMany({ orderBy: { createdAt: 'asc' } });
+    res.json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
+// POST /loading/benches — ajoute (ou remplace, même nom) un banc : topologie figée, réponses chantier, plaques de
+// l'étude, liste réelle, jugements et écarts connus — admin et responsable technique
+router.post('/benches', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    assertEditor(req);
+    const b = req.body ?? {};
+    const name = str(b.name, 160);
+    if (!name) throw new AppError('Nom du banc manquant', 400);
+    if (!b.topology || typeof b.topology !== 'object' || !b.topology.counts) throw new AppError('Topologie manquante', 400);
+    if (!Array.isArray(b.realLines) || !b.realLines.length) throw new AppError('Liste réelle vide', 400);
+    const realLines = b.realLines
+      .filter((r: any) => r && typeof r.article === 'string' && REF.test(r.article) && Number.isFinite(r.qty))
+      .slice(0, 2000)
+      .map((r: any) => ({ article: r.article, qty: r.qty }));
+    if (!realLines.length) throw new AppError('Liste réelle sans référence valable', 400);
+    for (const k of ['topology', 'answers', 'judgements', 'columnMap'] as const)
+      if (b[k] !== undefined && JSON.stringify(b[k]).length > 3_000_000) throw new AppError(`${k} trop volumineux`, 400);
+    const data = {
+      name,
+      projectId: str(b.projectId, 60),
+      modelVersionId: str(b.modelVersionId, 60),
+      listId: str(b.listId, 60),
+      topology: b.topology,
+      answers: b.answers && typeof b.answers === 'object' ? b.answers : {},
+      realLines,
+      judgements: b.judgements && typeof b.judgements === 'object' ? b.judgements : {},
+      columnMap: b.columnMap && typeof b.columnMap === 'object' ? b.columnMap : null,
+    };
+    const prev = await db.loadingBench.findUnique({ where: { name } });
+    const row = prev
+      ? await db.loadingBench.update({ where: { id: prev.id }, data })
+      : await db.loadingBench.create({ data: { ...data, createdBy: req.user?.id ?? null } });
+    res.status(prev ? 200 : 201).json({ success: true, data: row });
+  } catch (err) { next(err); }
+});
+
+router.delete('/benches/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    assertEditor(req);
+    await db.loadingBench.delete({ where: { id: req.params.id } });
+    res.json({ success: true, data: null });
   } catch (err) { next(err); }
 });
 

@@ -46,6 +46,7 @@ const loadingCatalogue = new Map();
 const loadingMatches = new Map();
 const loadingLists = new Map();
 const loadingObs = [];
+const loadingBenches = new Map();
 let saves = 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.rbz': 'application/zip', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 
@@ -173,6 +174,27 @@ http.createServer(async (req, res) => {
       row.revision += 1;
       return json(res, { file: { id: `F${row.revision}`, fileName: fields.fileName, fileUrl: 'mock://xlsx', fileSize: file.length, category: 'loading_liste' }, list: row }, 201);
     }
+    const llr = a.match(/^\/loading\/lists\/([^/]+)\/reconcile$/);
+    if (llr && req.method === 'POST') {
+      const row = loadingLists.get(llr[1]);
+      if (!row) return json(res, 'Loading liste introuvable', 404);
+      const b = JSON.parse((await body(req)).toString());
+      for (let i = loadingObs.length - 1; i >= 0; i--) if (loadingObs[i].listId === row.id && loadingObs[i].origin === 'reel') loadingObs.splice(i, 1);
+      for (const o of b.observations ?? []) loadingObs.unshift({ id: `O${loadingObs.length + 1}`, listId: row.id, origin: 'reel', createdAt: new Date().toISOString(), ...o });
+      row.reconciliation = { ...b.reconciliation, by: 'u1', at: new Date().toISOString() };
+      return json(res, row);
+    }
+    if (a === '/loading/benches' && req.method === 'GET') return json(res, [...loadingBenches.values()]);
+    if (a === '/loading/benches' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      const prev = loadingBenches.get(b.name);
+      const now = new Date().toISOString();
+      const row = { id: prev?.id ?? `B${loadingBenches.size + 1}`, createdAt: prev?.createdAt ?? now, updatedAt: now, createdBy: 'u1', ...b };
+      loadingBenches.set(b.name, row);
+      return json(res, row, prev ? 200 : 201);
+    }
+    const lbd = a.match(/^\/loading\/benches\/([^/]+)$/);
+    if (lbd && req.method === 'DELETE') { for (const [k, v] of loadingBenches) if (v.id === lbd[1]) loadingBenches.delete(k); return json(res, null); }
     const llv = a.match(/^\/loading\/lists\/([^/]+)\/validate$/);
     if (llv && req.method === 'POST') {
       const row = loadingLists.get(llv[1]);

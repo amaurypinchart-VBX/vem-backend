@@ -1,17 +1,40 @@
-// Chantiers rejoués pour l'impact d'une règle : bancs d'étalonnage de base + listes validées (leur topologie, leurs
+// Chantiers rejoués pour l'impact d'une règle : bancs d'étalonnage de base + bancs ajoutés dans l'app (rapprochement
+// d'une liste avec sa liste réelle, L6) + listes validées (leur topologie, leurs
 // réponses, leurs plaques d'étude, leurs corrections « seulement ce chantier » et leurs quantités finales).
 import { vem } from '../../api/vem';
 import { SEED_BENCHES } from '../../loading/benches';
 import type { SiteAnswers, StudyInput } from '../../loading/core/answers';
 import type { ImpactCase } from '../../loading/learning/impact';
 import type { Topology } from '../../loading/topology/types';
+import type { Bench } from '../../loading/benches';
+import { benchFromRow } from '../../loading/reconcile/benches';
+
+const benchCase = (b: Bench): ImpactCase => ({
+  id: `banc:${b.id}`,
+  name: b.name,
+  kind: 'banc',
+  topology: b.topology,
+  answers: b.answers,
+  study: b.study?.plates?.length || b.study?.source ? b.study : null,
+  judgements: b.judgements,
+  real: b.real,
+  partial: b.partial,
+});
 
 export function benchCases(): ImpactCase[] {
-  return SEED_BENCHES.map((b) => ({ id: `banc:${b.id}`, name: b.name, kind: 'banc', topology: b.topology, answers: b.answers, study: b.study, judgements: b.judgements, real: b.real, partial: b.partial }));
+  return SEED_BENCHES.map(benchCase);
 }
 
 export async function impactCases(): Promise<ImpactCase[]> {
   const out = benchCases();
+  try {
+    for (const row of await vem.loadingBenches()) {
+      const b = benchFromRow(row);
+      if (b) out.push(benchCase(b));
+    }
+  } catch {
+    /* hors ligne : les bancs de base */
+  }
   try {
     const lists = await vem.validatedLoadingLists();
     for (const l of lists) {

@@ -1,7 +1,8 @@
 // Onglet « Loading liste » d'un modèle analysé : étapes 1 Topologie (ce que l'app a compris : box, îlots, jonctions,
 // pieds, façades — chaque valeur corrigeable à la main) · 2 Produits (comptage par pose, miroirs écartés, pièces
 // « À identifier » → « Qu'est-ce que c'est ? » → mémoriser) · 3 Questions chantier · 4 Loading liste · 5 Export
-// (phases suivantes). Liste à gauche, 3D à droite : un clic sur une ligne surligne d'où elle vient.
+// · 6 Chantier réel (liste de ce qui est vraiment parti → rapprochement ligne à ligne, écarts classés, banc
+// d'étalonnage). Liste à gauche, 3D à droite : un clic sur une ligne surligne d'où elle vient.
 // Enregistrement automatique 2 s après la dernière modification (table loading_lists, une liste par version de modèle).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LoadedScene } from '../../scene/loadedScene';
@@ -39,9 +40,13 @@ import type { ObservationRow } from '../../loading/learning/calibration';
 import { pendingQuestions } from '../../loading/learning/calibration';
 import type { ImpactCase } from '../../loading/learning/impact';
 import { ExportStep } from './ExportStep';
+import { ReconcileStep } from './ReconcileStep';
+import type { StoredReconciliation } from '../../loading/reconcile/reconcile';
+import { benchFromReconciliation, reconcile, reconObservations } from '../../loading/reconcile/reconcile';
+import type { BenchAnswers } from '../../loading/reconcile/benches';
 import { CONFIDENCE_LABEL, LOADING_CATEGORIES } from '../../loading/core/types';
 
-type Step = 'topology' | 'products' | 'questions' | 'list' | 'export';
+type Step = 'topology' | 'products' | 'questions' | 'list' | 'export' | 'real';
 type StepState = 'ok' | 'warn' | 'bad' | 'todo';
 const STEP_ICON: Record<StepState, string> = { ok: '✔', warn: '⚠', bad: '✖', todo: '·' };
 const STEP_COLOR: Record<StepState, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--danger)', todo: 'var(--text-dim)' };
@@ -119,6 +124,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
   const [status, setStatus] = useState<'brouillon' | 'validee'>('brouillon');
   const [validatedAt, setValidatedAt] = useState<string | null>(null);
   const [revision, setRevision] = useState(1);
+  const [reconciliation, setReconciliation] = useState<StoredReconciliation | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [study, setStudy] = useState<{ input: StudyInput | null; note: string }>({ input: null, note: 'Étude structure pas encore faite pour ce modèle' });
   const [busy, setBusy] = useState('');
@@ -179,6 +185,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
         setStatus(l.status ?? 'brouillon');
         setValidatedAt(l.validatedAt ?? null);
         setRevision(l.revision ?? 1);
+        setReconciliation(l.reconciliation ?? null);
         setSaveState('saved');
       } catch (e) {
         setError(`Loading liste non chargée (${(e as Error).message}) : les réponses ne seront pas enregistrées.`);
@@ -285,7 +292,15 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
       if (canEdit) vem.loadingRules().then(setRuleRows).catch(() => {});
       return;
     }
-    // « c'est la règle » : bases qui expliquent le chiffre, règle proposée, écran de validation
+    openRule(w.article, w.before, w.after, ruleKeys);
+  };
+  // « c'est la règle » (quantité corrigée) ou « règle à revoir » (rapprochement avec la liste réelle) : bases qui
+  // expliquent le chiffre, règle proposée, écran de validation
+  const openRule = (article: string, before: number | null, after: number, keys?: string[], fromReal = false) => {
+    const w = { article, before, after };
+    const line = list.lines.find((l) => l.article === w.article) ?? predicted.lines.find((l) => l.article === w.article);
+    const ruleKeys = keys ?? line?.contributions.map((c) => c.ruleKey).filter((k): k is string => !!k) ?? [];
+    const chantier = project?.internalNumber ?? scene.index.source.fileName;
     const unit = line?.unit ?? catMap.get(w.article)?.unit ?? 'pce';
     const candidates = w.after > 0 ? inferBase(w.article, w.after, topology, { rules, metres: unit !== 'pce' }) : [];
     const existing = rules.find((r) => r.active && r.article === w.article && ruleKeys.includes(r.key));
@@ -295,7 +310,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     }
     const scope = topology.islands.every((i) => i.regime === 'standalone') ? 'standalone' : topology.islands.every((i) => i.regime === 'connecte') ? 'connecte' : 'toujours';
     const draft = candidates.length
-      ? proposeRule({ article: w.article, articleName: catMap.get(w.article)?.designation, candidate: candidates[0], scope, confidence: 'confirme', unit, chantier }, rules)
+      ? { ...proposeRule({ article: w.article, articleName: catMap.get(w.article)?.designation, candidate: candidates[0], scope, confidence: 'confirme', unit, chantier }, rules), ...(fromReal ? { source: 'chantier_reel' as const } : {}) }
       : existing!;
     setValidation({
       title: candidates.length ? 'Nouvelle règle, pour tous les projets' : 'Modifier la règle',
@@ -303,7 +318,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
       candidates,
       target: w.after,
       observations: SEED_OBSERVATIONS,
-      reason: `${chantier} : ${w.before ?? '—'} → ${w.after}`,
+      reason: `${chantier}${fromReal ? ' (liste réelle)' : ''} : ${w.before ?? '—'} → ${w.after}`,
       onSave: async (toSave, reason) => {
         try {
           for (const r of toSave) await vem.saveLoadingRule(r, reason, PROJECT_ID, listId);
@@ -432,6 +447,11 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     }
   };
 
+  // rapprochement enregistré, recalculé avec la liste du moment (les règles peuvent avoir changé depuis)
+  const reconRec = useMemo(
+    () => (reconciliation ? reconcile(list, reconciliation.real, { computed: predicted, catalogue: catMap, rules }) : null),
+    [reconciliation, list, predicted, catMap, rules],
+  );
   const unknownCount = topology.unknown.reduce((s, u) => s + u.nodeIds.length, 0);
   const stepState: Record<Step, StepState> = {
     topology: topology.counts.pied?.value === null || topology.warnings.some((w) => w.code.startsWith('JUNCTION')) ? 'warn' : 'ok',
@@ -439,6 +459,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     questions: list.questions.some((q) => q.id.startsWith('q:') && !q.id.startsWith('q:base') && !q.id.startsWith('q:qty') && !q.id.startsWith('q:spare')) ? 'warn' : 'ok',
     list: list.lines.some((l) => l.status === 'regle_manquante' || l.status === 'a_confirmer') ? 'warn' : 'ok',
     export: status === 'validee' ? 'ok' : 'todo',
+    real: !reconciliation ? 'todo' : reconRec && reconRec.rows.some((r) => r.kind !== 'identique' && !reconciliation.decisions[r.article]) ? 'warn' : 'ok',
   };
   const STEPS: { key: Step; label: string; soon?: string }[] = [
     { key: 'topology', label: '1. Topologie' },
@@ -446,6 +467,7 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
     { key: 'questions', label: '3. Questions chantier' },
     { key: 'list', label: '4. Loading liste' },
     { key: 'export', label: '5. Export' },
+    { key: 'real', label: '6. Chantier réel' },
   ];
   const [saveNote, setSaveNote] = useState('');
   const saveLabel = { idle: '', saving: 'Enregistrement…', saved: '✓ Enregistrée', error: '✗ Non enregistrée', local: 'Non enregistrée (modèle sans version en ligne)' }[saveState];
@@ -607,6 +629,81 @@ export function LoadingPage({ scene, model, glassTest, active, framesVersion }: 
                 } catch (e) {
                   setError(`Liste non rouverte : ${(e as Error).message}`);
                 }
+              }}
+            />
+          )}
+          {step === 'real' && (
+            <ReconcileStep
+              list={list}
+              computed={predicted}
+              catalogue={catMap}
+              rules={rules}
+              stored={reconciliation}
+              canEdit={canEdit}
+              canSave={!!listId}
+              busy={busy}
+              benchName={[effMeta.orderNo, project?.name].filter(Boolean).join(' ') || scene.index.source.fileName}
+              selected={selected}
+              onSelect={setSelected}
+              onRule={(article, computed, real) => openRule(article, computed, real, undefined, true)}
+              onSave={async (rec) => {
+                if (!listId) return;
+                setBusy('Enregistrement du rapprochement…');
+                try {
+                  const r = reconcile(list, rec.real, { computed: predicted, catalogue: catMap, rules });
+                  const label = `${project?.internalNumber ?? scene.index.source.fileName} liste réelle${rec.picking ? ` ${rec.picking}` : ''}`;
+                  const saved = await vem.reconcileLoadingList(listId, { reconciliation: rec, observations: reconObservations(r, rec.decisions, label) });
+                  setReconciliation(saved.reconciliation ?? rec);
+                  vem.loadingObservations('inconnu').then(setUnknownObs).catch(() => {});
+                  setSaveNote(`✓ Rapprochement enregistré (${rec.score})`);
+                  setError('');
+                } catch (e) {
+                  setError(`Rapprochement non enregistré : ${(e as Error).message}`);
+                }
+                setBusy('');
+              }}
+              onBench={async (rec, name) => {
+                setBusy('Ajout du banc…');
+                try {
+                  const r = reconcile(list, rec.real, { computed: predicted, catalogue: catMap, rules });
+                  const kept = benchFromReconciliation(r, rec.decisions, new Date().toLocaleDateString('fr-BE'));
+                  // corrections « seulement ce chantier » de la liste : gardées sauf si l'écart a été classé autrement
+                  const judgements: Record<string, number> = {};
+                  for (const [a, v] of Object.entries(corrections)) if (!rec.decisions[a] || rec.decisions[a] === 'chantier') judgements[a] = v;
+                  Object.assign(judgements, kept.judgements);
+                  const answersJson: BenchAnswers = {
+                    site,
+                    study: study.input,
+                    known: kept.known,
+                    order: effMeta.orderNo ?? '',
+                    bordereau: rec.picking ?? '',
+                    source: `Liste réelle « ${rec.fileName} » rapprochée le ${new Date().toLocaleDateString('fr-BE')}`,
+                    partial: false,
+                    model: scene.index.source.fileName,
+                    ...(listId ? { listId } : {}),
+                  };
+                  if (!window.confirm(`Ajouter « ${name} » aux bancs d’étalonnage ? Il sera rejoué à chaque nouvelle règle (${rec.score}).`)) {
+                    setBusy('');
+                    return;
+                  }
+                  await vem.saveLoadingBench({
+                    name,
+                    projectId: PROJECT_ID || null,
+                    modelVersionId: model?.id ?? null,
+                    listId,
+                    topology,
+                    answers: answersJson,
+                    realLines: rec.real.map((x) => ({ article: x.article, qty: x.qty })),
+                    judgements,
+                    columnMap: rec.columnMap,
+                  });
+                  setCases(null);
+                  setSaveNote(`✓ Banc « ${name} » ajouté`);
+                  setError('');
+                } catch (e) {
+                  setError(`Banc non ajouté : ${(e as Error).message}`);
+                }
+                setBusy('');
               }}
             />
           )}

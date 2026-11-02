@@ -1290,6 +1290,8 @@ model LoadingList {
   answers        Json?
   lines          Json?
   corrections    Json?
+  /// rapprochement avec la liste réelle (L6) : fichier, colonnes, lignes réelles, classements, score
+  reconciliation Json?
   status         String    @default("brouillon")
   rulesVersion   String?   @map("rules_version")
   inputKey       String?   @map("input_key")
@@ -1319,6 +1321,8 @@ model LoadingObservation {
   final     Float?
   kind      String
   note      String?
+  /// null = validation de la liste ; « reel » = rapprochement avec la liste réelle
+  origin    String?
   userId    String?  @map("user_id")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1335,6 +1339,7 @@ model LoadingBench {
   name           String   @unique
   projectId      String?  @map("project_id")
   modelVersionId String?  @map("model_version_id")
+  listId         String?  @map("list_id")
   topology       Json
   answers        Json
   realLines      Json     @map("real_lines")

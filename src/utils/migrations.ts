@@ -1580,4 +1580,17 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] info_requests : ${e.message}`);
   }
+  // ─── Loading liste L6 (chantier réel) : rapprochement gardé sur la liste, origine des observations (« reel » =
+  // rapprochement avec la liste réelle, remplacées au rapprochement suivant ; null = validation de la liste)
+  try {
+    for (const sql of [
+      `ALTER TABLE "loading_lists" ADD COLUMN IF NOT EXISTS "reconciliation" JSONB`,
+      `ALTER TABLE "loading_observations" ADD COLUMN IF NOT EXISTS "origin" TEXT`,
+      `ALTER TABLE "loading_benches" ADD COLUMN IF NOT EXISTS "list_id" TEXT`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] loading liste L6 : colonnes reconciliation / origin / list_id');
+  } catch (e: any) {
+    logger.warn(`[migration] loading liste L6 : ${e.message}`);
+  }
 }

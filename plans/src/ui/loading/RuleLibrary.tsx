@@ -1,6 +1,7 @@
 // Réglages › Règles de loading : ce que le module sait pour sortir une loading liste, partagé entre tous les projets
 // (base de départ générée du classeur VIEWBOX_regles_loading + règles validées dans l'app). Lecture : règles en
-// français, conditions, spares, confiance, points de calage, historique ; décisions d'Amaury ; valeurs observées.
+// français, conditions, spares, confiance, points de calage, historique ; décisions d'Amaury ; valeurs observées ;
+// bancs d'étalonnage rejoués avec les règles du moment (L6).
 // Catalogue : références du classeur (lecture seule) + ajout des références manquantes (admin, responsable technique).
 // La modification des règles passe par l'écran de validation (phase L5), jamais en direct ici.
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -21,11 +22,12 @@ import { pendingQuestions, promotionProposals } from '../../loading/learning/cal
 import type { ImpactCase } from '../../loading/learning/impact';
 import { RuleValidation } from './RuleValidation';
 import { impactCases } from './impactCases';
+import { BenchesPanel } from './BenchesPanel';
 
 const EDITORS = ['admin', 'technical_manager'];
 const CONF_BADGE: Record<Confidence, string> = { confirme: 'ok', a_confirmer: 'orange', hypothese: 'orange', observe: '' };
 const ORIGIN_LABEL = { seed: 'classeur', override: 'classeur modifié', user: 'ajoutée' } as const;
-type Tab = 'rules' | 'catalogue' | 'decisions';
+type Tab = 'rules' | 'catalogue' | 'decisions' | 'benches';
 type Status = '' | 'active' | 'conflict' | 'inactive';
 
 export function RuleLibrary() {
@@ -104,6 +106,9 @@ export function RuleLibrary() {
             </button>
             <button className={`tab ${tab === 'decisions' ? 'active' : ''}`} onClick={() => setTab('decisions')}>
               Décisions et observations
+            </button>
+            <button className={`tab ${tab === 'benches' ? 'active' : ''}`} onClick={() => setTab('benches')}>
+              Bancs d’étalonnage
             </button>
           </nav>
           <div className="spacer" style={{ flex: 1 }} />
@@ -213,6 +218,7 @@ export function RuleLibrary() {
         />
       )}
       {tab === 'decisions' && <Decisions />}
+      {tab === 'benches' && <BenchesPanel rules={rules} catalogue={catMap} canEdit={canEdit} />}
     </div>
   );
 }

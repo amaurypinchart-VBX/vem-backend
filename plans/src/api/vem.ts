@@ -4,6 +4,8 @@ import type { LibraryPayload, ServerLibraryRow } from '../structure/core/library
 import type { ServerCatalogueRow, ServerRuleRow } from '../loading/library/merge';
 import type { CatalogueItem, LoadingRule } from '../loading/core/types';
 import type { ObservationRow } from '../loading/learning/calibration';
+import type { StoredReconciliation } from '../loading/reconcile/reconcile';
+import type { BenchRow } from '../loading/reconcile/benches';
 import type { ExtractResult, GroupProposal, IdentifySuggestion } from '../structure/core/ai';
 import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
@@ -276,6 +278,8 @@ export interface LoadingListRecord {
   answers: { products?: Record<string, string>; chantier?: Record<string, unknown>; study?: unknown } | null;
   lines: unknown;
   corrections: Record<string, number> | null;
+  /** rapprochement avec la liste réelle (L6) */
+  reconciliation?: StoredReconciliation | null;
   status: 'brouillon' | 'validee';
   validatedAt?: string | null;
   rulesVersion: string | null;
@@ -358,6 +362,13 @@ export const vem = {
   },
   validateLoadingList: (id: string, body: Partial<LoadingListRecord> & { observations: { article: string; ruleKeys: string[]; predicted: number | null; final: number | null; kind: string; note?: string }[] }) =>
     api<LoadingListRecord>('POST', `/loading/lists/${id}/validate`, body),
+  reconcileLoadingList: (
+    id: string,
+    body: { reconciliation: StoredReconciliation; observations: { article: string; ruleKeys: string[]; predicted: number | null; final: number | null; kind: string; note?: string }[] },
+  ) => api<LoadingListRecord>('POST', `/loading/lists/${id}/reconcile`, body),
+  loadingBenches: () => api<BenchRow[]>('GET', '/loading/benches'),
+  saveLoadingBench: (b: Omit<BenchRow, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> & { listId?: string | null }) => api<BenchRow>('POST', '/loading/benches', b),
+  deleteLoadingBench: (id: string) => api<null>('DELETE', `/loading/benches/${id}`),
   structureLibrary: () => api<ServerLibraryRow[]>('GET', '/structure/library'),
   saveLibraryEntry: (p: LibraryPayload) => api<ServerLibraryRow>('POST', '/structure/library', p),
   deleteLibraryEntry: (id: string) => api<null>('DELETE', `/structure/library/${id}`),

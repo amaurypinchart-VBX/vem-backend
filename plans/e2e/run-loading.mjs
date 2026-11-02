@@ -1,4 +1,4 @@
-// Test navigateur de la loading liste (L1 : Réglages › Règles de loading) : règles de la base de départ en français,
+// Test navigateur de la loading liste (L1 : Réglages › Règles de loading ; … ; L6 : chantier réel, rapprochement, banc) : règles de la base de départ en français,
 // contradictions à trancher, ajout d'une référence manquante au catalogue (4-700-001, absente d'Odoo). Captures dans e2e/shots/loading-*.png.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -165,6 +165,35 @@ await page.getByText('✔ Liste validée / envoyée à l’entrepôt').first().w
 await page.getByRole('button', { name: /4\. Loading liste/ }).click();
 check(await page.getByText('liste validée (figée)').isVisible(), 'liste figée après validation');
 await page.screenshot({ path: `${shots}loading-export.png` });
+// ─── L6 : chantier réel — le bordereau téléchargé relu (tout identique), puis un bon collé avec des écarts ───
+await page.getByRole('button', { name: /6\. Chantier réel/ }).click();
+await page.getByTestId('recon-file').setInputFiles(`${shots}${download.suggestedFilename()}`);
+await page.getByTestId('recon-score').waitFor();
+const score0 = (await page.getByTestId('recon-score').innerText()).trim();
+const [n0, t0] = score0.match(/\d+/g).map(Number);
+check(n0 === t0 && t0 > 10, `bordereau relu comme liste réelle : tout identique (${score0})`);
+check(await page.getByTestId('recon-columns').isVisible(), 'colonnes devinées et corrigeables');
+const shukoRow = page.locator('[data-testid="recon-rows"] tr[data-article="4-730-008"]');
+await page.getByTestId('recon-paste').evaluate((el) => (el.closest('details').open = true));
+await page.getByTestId('recon-paste').fill('Rental Delivery Slip RVIE/OUT/00099\n[4-730-008] SHUKO CABLE 10,00 Units\n[9-999-999] PIECE INCONNUE 2,00 Units\n[7-962-016] VIEWBOX STANDARD M16 60 MM 5900x2500 H3 4,00 Units');
+await page.getByRole('button', { name: 'Lire le texte collé' }).click();
+await page.getByTestId('recon-read').getByText('3 référence(s) lue(s)').waitFor();
+check(await page.getByText('bon RVIE/OUT/00099').first().isVisible(), 'n° de bon lu dans le texte collé');
+check((await shukoRow.getAttribute('data-kind')) === 'plus' && (await shukoRow.getAttribute('data-real')) === '10', '4-730-008 : un peu plus dans la liste (12 / 10)');
+check((await page.locator('[data-testid="recon-rows"] tr[data-article="7-962-016"]').getAttribute('data-real')) === '4', '7-962-016 : 4 lus dans « 4,00 Units »');
+check(await page.locator('[data-testid="recon-rows"] tr[data-article="9-999-999"][data-kind="reel_seul"]').count() === 1, '9-999-999 : seulement dans le réel');
+await shukoRow.getByTestId('recon-decision').selectOption('chantier');
+await page.locator('[data-testid="recon-rows"] tr[data-article="9-999-999"]').getByTestId('recon-decision').selectOption('erreur_bordereau');
+await page.screenshot({ path: `${shots}loading-reel.png`, fullPage: true });
+await page.getByTestId('recon-save').click();
+await page.getByText('Rapprochement enregistré').waitFor();
+check(await page.getByTestId('recon-stored').isVisible(), 'rapprochement gardé sur la liste');
+await page.getByRole('button', { name: '➕ Ajouter comme banc d’étalonnage' }).click();
+await page.getByTestId('recon-bench-name').fill('Banc e2e NVIDIA');
+page.once('dialog', (d) => d.accept());
+await page.getByRole('button', { name: 'Ajouter le banc' }).click();
+await page.getByText('Banc « Banc e2e NVIDIA » ajouté').waitFor();
+check(true, 'banc d’étalonnage ajouté depuis le rapprochement');
 // Réglages : la règle apprise, l'ancienne remplacée, la question en attente
 await page.getByRole('button', { name: 'Réglages' }).click();
 await page.getByRole('button', { name: 'Règles de loading' }).click();
@@ -178,6 +207,11 @@ check(await page.locator('.badge:visible', { hasText: 'question en attente' }).f
 await page.locator('b:visible', { hasText: /^4-730-008$/ }).first().click();
 await page.getByText('✎ Modifier la règle').waitFor();
 await page.screenshot({ path: `${shots}loading-reglages-l5.png`, fullPage: true });
+await page.getByRole('button', { name: 'Bancs d’étalonnage' }).click();
+await page.locator('[data-testid="loading-benches"]:visible').getByText('Banc e2e NVIDIA').waitFor();
+check(await page.locator('[data-testid="loading-benches"]:visible').getByText('Klokgebouw', { exact: false }).first().isVisible(), 'Réglages › Bancs : bancs de base rejoués');
+check(await page.locator('[data-testid="loading-benches"]:visible').getByText('ajouté dans l’app').first().isVisible(), 'Réglages › Bancs : banc ajouté dans l’app');
+await page.screenshot({ path: `${shots}loading-bancs.png`, fullPage: true });
 const [classeur] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '⬇ Classeur Excel' }).click()]);
 check(/^VIEWBOX_regles_loading_.*\.xlsx$/.test(classeur.suggestedFilename()), `classeur exporté (${classeur.suggestedFilename()})`);
 
