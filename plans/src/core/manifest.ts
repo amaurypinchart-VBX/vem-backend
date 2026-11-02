@@ -26,6 +26,19 @@ export interface ManifestEntry {
   articleRef?: string | null;
   materials?: string[];
   bboxWorld?: ManifestBBox;
+  /** cadre textile marqué dans SketchUp (extension ≥ 1.4.0) : repère F1… propre à ce cadre (dans cette box) et visuel */
+  textileFrame?: { ref?: string | null; visual?: string | null } | null;
+}
+
+/** Cadre textile du manifest, lu avec tolérance : repère « F12 » normalisé, visuel ≤ 120 caractères. */
+export function cleanTextileFrame(raw: unknown): { ref?: string; visual?: string } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const out: { ref?: string; visual?: string } = {};
+  const m = typeof o.ref === 'string' ? /^\s*F?\s*0*(\d{1,4})\s*$/i.exec(o.ref) : null;
+  if (m && Number(m[1]) > 0) out.ref = `F${Number(m[1])}`;
+  if (typeof o.visual === 'string' && o.visual.trim()) out.visual = o.visual.trim().slice(0, 120);
+  return out;
 }
 
 export interface ManifestModule {

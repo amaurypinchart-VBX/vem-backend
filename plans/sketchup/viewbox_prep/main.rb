@@ -7,6 +7,8 @@
 #     et la réf. article de chaque type de composant, et le type / les dimensions nominales des Viewbox.
 #   - Structure de la box (profils)… : profils relevés dans le composant de la box sélectionnée (rôle, section,
 #     nuance à confirmer) ; exportés dans le manifest (« structures ») pour l'étude structure de VEM.
+#   - Cadres textile (F1, F2…)…      : objets marqués « cadre textile » (tissu tendu), un repère F1, F2… et un visuel
+#     par cadre, repris par VEM (nomenclature, planches cotées, repères sur les plans).
 #   - Préparer & exporter pour VEM…  : numérote les Viewbox sans nom (VBX-01…), exporte le .dae aux
 #     bons réglages + textures + manifest.json dans un .zip à déposer dans VEM.
 # Clic droit sur des groupes/composants › Viewbox › Catégorie / désignation… : même correction, sur la sélection.
@@ -27,7 +29,7 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.3.0'.freeze
+    VERSION = '1.4.0'.freeze
     DICT = 'viewbox'.freeze
     C = Core
 
@@ -199,17 +201,19 @@ module Viewbox
     end
 
     def self.classified_inside?(defn)
-      defn.entities.any? { |c| container?(c) && !category_for(c).first.nil? }
+      defn.entities.any? { |c| container?(c) && (!category_for(c).first.nil? || textile_marked?(c)) } || contains_textile?(defn, @textile_cache ||= {})
     end
 
     # Parcourt les objets d'un module : yield(entité, catégorie, source, transformation monde du parent).
     # Un groupe non classé qui contient des objets classés est "ouvert" ; les objets ignorés sont sautés.
     def self.each_item(entities, parent_tr, depth = 0, &block)
+      @textile_cache = {} if depth.zero? # cadres textile cherchés une fois par parcours
       entities.each do |e|
         next unless container?(e)
         cat, source = category_for(e)
         next if cat == C::IGNORE
-        if cat
+        # un cadre textile est toujours un objet à part dans le manifest (son repère F1… le suit dans VEM)
+        if cat || textile_marked?(e)
           yield(e, cat, source, parent_tr)
         elsif depth < 3 && classified_inside?(definition_of(e))
           each_item(definition_of(e).entities, parent_tr * e.transformation, depth + 1, &block)
@@ -255,7 +259,7 @@ module Viewbox
       a = analyze(model)
       n = unclassified_types(model, a)
       frames = (a.named + a.candidates).map { |m| definition_of(m) }.uniq.flat_map { |d| frame_report_lines(d) }
-      text = (report_lines(a) + frames).join("\n")
+      text = (report_lines(a) + frames + textile_report_lines(model, a)).join("\n")
       text += "\n\nTypes de composants non classés : #{n} (Extensions › Viewbox › Réviser les catégories…)" if n > 0
       puts "[Viewbox] Contrôle du modèle\n#{text}"
       UI.messagebox("Viewbox #{VERSION} — contrôle du modèle\n\n#{text}")
@@ -290,13 +294,18 @@ module Viewbox
 
     # Manifest ; namer.call(e) donne à e son nom technique d'export et retourne [nom technique, nom d'origine].
     def self.build_manifest(model, a, namer)
-      entry = lambda do |e, cat, source, parent_tr|
+      # cadres textile (repère F1… et visuel par cadre ; un cadre du composant de la box a les siens dans chaque box)
+      textile = textile_manifest(model, a)
+      entry = lambda do |e, cat, source, parent_tr, owner = nil|
         export_name, original = namer.call(e)
-        {
+        h = {
           'exportName' => export_name, 'name' => original, 'category' => cat, 'categorySource' => source,
           'label' => label_for(e), 'tag' => tag_name(e), 'definition' => definition_of(e).name.to_s,
           'articleRef' => article_for(e), 'materials' => materials_of(e), 'bboxWorld' => bbox_json(world_bbox(e, parent_tr))
         }
+        tf = textile[[owner, e]] || textile[[nil, e]]
+        h['textileFrame'] = tf if tf
+        h
       end
       modules = (a.named + a.candidates).select { |m| C.module_id(m.name) }
       # structure dessinée de chaque définition de module (relevée avant tout renommage technique)
@@ -317,12 +326,13 @@ module Viewbox
         'upAxis' => 'Z',
         'structSchemaVersion' => 1,
         'frameSchemaVersion' => 1,
+        'textileSchemaVersion' => 1,
         'structures' => structures,
         'modules' => modules.map do |m|
           defn = definition_of(m)
           tr = m.transformation.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
           items = []
-          each_item(defn.entities, m.transformation) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr) }
+          each_item(defn.entities, m.transformation) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr, m) }
           {
             'id' => C.module_id(m.name), 'definition' => defn.name.to_s, 'tag' => tag_name(m), 'level' => a.levels[m] || 0,
             'type' => module_type(defn), 'nominalPlanMm' => nominal_dims(defn),
@@ -551,6 +561,7 @@ end
 
 require File.join(__dir__, 'review')
 require File.join(__dir__, 'frame')
+require File.join(__dir__, 'textile')
 
 module Viewbox
   module Prep
@@ -561,12 +572,24 @@ module Viewbox
       menu.add_item('Préparer & exporter pour VEM…') { prepare_and_export }
       menu.add_item('Structure des Viewbox sélectionnées…') { edit_structure(Sketchup.active_model, Sketchup.active_model.selection.select { |e| container?(e) }) }
       menu.add_item('Structure de la box (profils)…') { show_frame_dialog }
+      menu.add_item('Cadres textile (F1, F2…)…') { show_textile_dialog }
       UI.add_context_menu_handler do |context_menu|
         model = Sketchup.active_model
         sel = model.selection.select { |e| container?(e) }
         next if sel.empty?
         sub = context_menu.add_submenu('Viewbox')
         sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
+        if sel.all? { |e| textile_marked?(e) }
+          sub.add_item('Ce n’est pas un cadre textile') { mark_textile(model, sel, false) }
+        else
+          sub.add_item('Marquer comme cadre textile (F1, F2…)') do
+            n = mark_textile(model, sel, true)
+            UI.messagebox("#{n} cadre(s) textile marqué(s) et numéroté(s).\n\nExtensions › Viewbox › Cadres textile… pour voir / changer les repères et saisir le visuel de chaque cadre.")
+          rescue StandardError => e
+            fail_with(e)
+          end
+        end
+        sub.add_item('Cadres textile (F1, F2…)…') { show_textile_dialog(model) }
         if sel.all? { |e| C.module_id(e.name) || standard_size?(e) || module_type(definition_of(e)) }
           sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) }
           sub.add_item('Structure de la box (profils)…') { show_frame_dialog(model, sel) }

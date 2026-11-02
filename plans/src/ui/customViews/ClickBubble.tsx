@@ -48,7 +48,7 @@ export function ClickBubble({ ctx, crumbs, level, scopeNodes, onLevel, onHover, 
       </div>
       {tag && (
         <div className="hint">
-          Étiquette : <b>{tag.label}</b> {tag.source === 'memorised' ? '(mémorisé)' : tag.source === 'name' ? '(deviné par le nom)' : '(par la catégorie)'}
+          Étiquette : <b>{tag.label}</b> {tag.source === 'sketchup' ? '(marqué dans SketchUp)' : tag.source === 'memorised' ? '(mémorisé)' : tag.source === 'name' ? '(deviné par le nom)' : '(par la catégorie)'}
         </div>
       )}
       <div className="cv-actions">

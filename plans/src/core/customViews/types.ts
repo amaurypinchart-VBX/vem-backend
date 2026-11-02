@@ -123,6 +123,8 @@ export interface ViewStyle {
   ghostTone: number;
   /** calque catégorie existant (vues de dessus) */
   categoryColors: boolean;
+  /** détail toiture / plancher : sur les planches, chaîne de cotes des couches coupées et repères (absent = non) */
+  layerDims?: 'roof' | 'floor';
 }
 
 export interface CustomViewSpec {

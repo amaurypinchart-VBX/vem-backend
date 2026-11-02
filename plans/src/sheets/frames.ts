@@ -1,8 +1,9 @@
-// Cadres textile (tissu tendu, SEG) sur les planches : détection (étiquette de vue « cadre-textile » : catégorie
-// FRAME-FOR-TEXTILE, nom TEXTILE / TISSU / FABRIC / SEG…, ou étiquette mémorisée), mesure dans le repère de leur
-// Viewbox (largeur × hauteur × épaisseur), regroupement en types F1, F2… (même définition, mêmes dimensions à 2 mm),
-// planches de détail (chaque type vu de face, coté hors tout) avec la nomenclature, repères « F1 » sur les autres vues.
-// La mesure lit la géométrie (three) ; regroupement, planches et repères sont purs.
+// Cadres textile (tissu tendu, SEG) sur les planches : détection (marqués dans SketchUp — extension ≥ 1.4.0 —, sinon
+// étiquette de vue « cadre-textile » : catégorie FRAME-FOR-TEXTILE, nom TEXTILE / TISSU / FABRIC / SEG…, étiquette
+// mémorisée), mesure dans le repère de leur Viewbox (largeur × hauteur × épaisseur), **un repère par cadre** F1, F2…
+// (celui saisi dans SketchUp, sinon numéroté dans l'ordre Viewbox / tour de la box : chaque cadre a son impression),
+// nomenclature ligne par ligne, dessins de détail regroupés par taille (« F1, F3 — 2 000 × 2 000 »), repères sur les vues.
+// La mesure lit la géométrie (three) ; numérotation, regroupement, planches et repères sont purs.
 import type { Mesh } from 'three';
 import { Vector3 } from 'three';
 import type { Vec3, ViewKind, ViewSpec } from '../core/views';
@@ -41,11 +42,22 @@ export interface FrameInfo {
   side: ViewKind;
   /** centre (monde, mm) */
   center: Vec3;
+  /** position le long du côté (mm, de gauche à droite vu de face) : ordre de numérotation */
+  along?: number;
+  /** repère du cadre : saisi dans SketchUp, sinon donné par numberFrames */
+  ref?: string;
+  /** repère venu de SketchUp (« Cadres textile… » de l'extension) */
+  refSource?: 'sketchup' | 'auto';
+  /** visuel / impression saisi dans SketchUp */
+  visual?: string;
 }
 
-/** Type de cadre (cadres identiques regroupés). */
+/** Cadres de même taille (même composant, dimensions à 2 mm) : un seul dessin de détail pour tous. */
 export interface FrameType {
+  /** repères des cadres du groupe, compactés : « F1 », « F1, F3 », « F1–F4 » */
   ref: string;
+  /** repère de chaque cadre du groupe (même ordre que nodeIds) */
+  refs: string[];
   label: string;
   definition?: string;
   w: number;
@@ -53,6 +65,8 @@ export interface FrameType {
   t: number;
   /** cadre dessiné sur la planche de détail */
   rep: FrameInfo;
+  /** cadres du groupe (repère, visuel, emplacement) */
+  frames: FrameInfo[];
   nodeIds: string[];
   /** « VBX-01 Left » … (une entrée par cadre) */
   locations: string[];
@@ -164,6 +178,7 @@ export function measureFrames(scene: LoadedScene, nodeIds?: string[]): FrameInfo
       const d = dot(bs.toward, normal);
       if (d > bestDot) [best, bestDot] = [k, d];
     }
+    const bs = viewBasis({ kind: best, frame: ax.frame }, scene.frames);
     out.push({
       nodeId: id,
       moduleId,
@@ -175,34 +190,102 @@ export function measureFrames(scene: LoadedScene, nodeIds?: string[]): FrameInfo
       view: { kind: best, frame: ax.frame },
       side: best,
       center,
+      along: dot(bs.right, center),
+      ...(node.textileFrame?.ref ? { ref: node.textileFrame.ref, refSource: 'sketchup' as const } : {}),
+      ...(node.textileFrame?.visual ? { visual: node.textileFrame.visual } : {}),
     });
   }
   return out;
 }
 
-// ─── regroupement ───
+// ─── numérotation et regroupement ───
 
-/** Cadres identiques (même définition SketchUp, mêmes dimensions à `tol` mm près) → types F1, F2… (plus grands d'abord). */
+const SIDE_ORDER: ViewKind[] = ['front', 'right', 'back', 'left', 'top', 'bottom'];
+
+/** Ordre des cadres : Viewbox (VBX-01, VBX-02…, éléments communs à la fin), tour de la box, de gauche à droite, de bas en haut. */
+export function frameOrder(frames: FrameInfo[]): FrameInfo[] {
+  const num = (m: string | null) => (m ? Number(/\d+/.exec(m)?.[0] ?? 9998) : 9999);
+  return [...frames].sort(
+    (a, b) =>
+      num(a.moduleId) - num(b.moduleId) ||
+      (a.moduleId ?? '').localeCompare(b.moduleId ?? '') ||
+      SIDE_ORDER.indexOf(a.side) - SIDE_ORDER.indexOf(b.side) ||
+      Math.round(a.along ?? 0) - Math.round(b.along ?? 0) ||
+      Math.round(a.center[1]) - Math.round(b.center[1]),
+  );
+}
+
+/**
+ * Un repère par cadre : celui saisi dans SketchUp (gardé s'il est unique), les autres reçoivent les plus petits
+ * numéros libres dans l'ordre de `frameOrder`. Renvoie les cadres dans cet ordre, triés par repère.
+ */
+export function numberFrames(frames: FrameInfo[]): FrameInfo[] {
+  const ordered = frameOrder(frames);
+  const taken = new Set<string>();
+  const out = ordered.map((f) => {
+    if (f.ref && f.refSource === 'sketchup' && !taken.has(f.ref)) {
+      taken.add(f.ref);
+      return { ...f };
+    }
+    return { ...f, ref: undefined, refSource: 'auto' as const };
+  });
+  let n = 0;
+  for (const f of out) {
+    if (f.ref) continue;
+    do n++;
+    while (taken.has(`F${n}`));
+    f.ref = `F${n}`;
+    taken.add(f.ref);
+  }
+  return out.sort((a, b) => refNumber(a.ref) - refNumber(b.ref));
+}
+
+const refNumber = (r?: string) => Number(/\d+/.exec(r ?? '')?.[0] ?? 0);
+
+/** « F1, F2, F3, F5 » → « F1–F3, F5 ». */
+export function compactRefs(refs: string[]): string {
+  const ns = [...new Set(refs.map(refNumber))].filter((n) => n > 0).sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < ns.length; ) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++;
+    parts.push(j - i >= 2 ? `F${ns[i]}–F${ns[j]}` : ns.slice(i, j + 1).map((n) => `F${n}`).join(', '));
+    i = j + 1;
+  }
+  return parts.join(', ');
+}
+
+/**
+ * Cadres de même taille regroupés pour les dessins de détail (même composant SketchUp, dimensions à `tol` mm près),
+ * plus grands d'abord ; les cadres sont numérotés (`numberFrames`) s'ils ne le sont pas déjà.
+ */
 export function groupFrames(frames: FrameInfo[], lang: FrameLang = 'en', tol = 2): FrameType[] {
+  const numbered = frames.every((f) => f.ref) ? [...frames].sort((a, b) => refNumber(a.ref) - refNumber(b.ref)) : numberFrames(frames);
   const types: FrameType[] = [];
-  const sorted = [...frames].sort((a, b) => (a.moduleId ?? '~').localeCompare(b.moduleId ?? '~', 'fr', { numeric: true }) || a.side.localeCompare(b.side));
-  for (const f of sorted) {
+  for (const f of numbered) {
     const key = f.definition ?? f.label;
     const t = types.find((x) => (x.definition ?? x.label) === key && Math.abs(x.w - f.w) <= tol && Math.abs(x.h - f.h) <= tol && Math.abs(x.t - f.t) <= tol);
     if (t) {
       t.nodeIds.push(f.nodeId);
+      t.refs.push(f.ref!);
+      t.frames.push(f);
       t.locations.push(frameLocation(f, lang));
-    } else types.push({ ref: '', label: f.label, definition: f.definition, w: f.w, h: f.h, t: f.t, rep: f, nodeIds: [f.nodeId], locations: [frameLocation(f, lang)] });
+    } else types.push({ ref: '', refs: [f.ref!], label: f.label, definition: f.definition, w: f.w, h: f.h, t: f.t, rep: f, nodeIds: [f.nodeId], frames: [f], locations: [frameLocation(f, lang)] });
   }
-  types.sort((a, b) => b.w * b.h - a.w * a.h || a.label.localeCompare(b.label));
-  types.forEach((t, i) => (t.ref = `F${i + 1}`));
+  types.sort((a, b) => b.w * b.h - a.w * a.h || refNumber(a.refs[0]) - refNumber(b.refs[0]));
+  for (const t of types) t.ref = compactRefs(t.refs);
   return types;
 }
 
-/** Nœud → repère du type (« F2 »). */
+/** Tous les cadres, dans l'ordre des repères. */
+export function framesOf(types: FrameType[]): FrameInfo[] {
+  return types.flatMap((t) => t.frames).sort((a, b) => refNumber(a.ref) - refNumber(b.ref));
+}
+
+/** Nœud → repère du cadre (« F2 »). */
 export function frameRefs(types: FrameType[]): Map<string, string> {
   const m = new Map<string, string>();
-  for (const t of types) for (const id of t.nodeIds) m.set(id, t.ref);
+  for (const t of types) t.nodeIds.forEach((id, i) => m.set(id, t.refs[i]));
   return m;
 }
 
@@ -212,18 +295,20 @@ const L = {
   en: {
     title: 'Textile frames',
     schedule: 'TEXTILE FRAME SCHEDULE',
-    cols: ['Ref', 'Size W × H (mm)', 'Depth', 'Qty', 'Face m²', 'Location', 'Description'],
-    total: (n: number, m2: string) => `Total: ${n} frame${n > 1 ? 's' : ''} · ${m2} m² of fabric face`,
+    cont: '(continued)',
+    cols: ['Ref', 'Size W × H (mm)', 'Depth', 'Face m²', 'Location', 'Visual / print', 'Description'],
+    total: (n: number, m2: string, sizes: number) => `Total: ${n} frame${n > 1 ? 's' : ''} in ${sizes} size${sizes > 1 ? 's' : ''} · ${m2} m² of fabric face`,
     caption: (t: FrameType) => `Depth ${fmt(t.t)} mm · Qty ${t.nodeIds.length}`,
-    note: 'Overall dimensions measured on the 3D model (frame profile included) — check on site before production.',
+    note: 'Overall dimensions measured on the 3D model (frame profile included) — check on site before production. One reference per frame: each print is different.',
   },
   fr: {
     title: 'Cadres textile',
     schedule: 'NOMENCLATURE DES CADRES TEXTILE',
-    cols: ['Repère', 'Dimensions L × H (mm)', 'Ép.', 'Qté', 'Face m²', 'Emplacement', 'Désignation'],
-    total: (n: number, m2: string) => `Total : ${n} cadre${n > 1 ? 's' : ''} · ${m2} m² de face textile`,
+    cont: '(suite)',
+    cols: ['Repère', 'Dimensions L × H (mm)', 'Ép.', 'Face m²', 'Emplacement', 'Visuel / impression', 'Désignation'],
+    total: (n: number, m2: string, sizes: number) => `Total : ${n} cadre${n > 1 ? 's' : ''} en ${sizes} taille${sizes > 1 ? 's' : ''} · ${m2} m² de face textile`,
     caption: (t: FrameType) => `Ép. ${fmt(t.t)} mm · Qté ${t.nodeIds.length}`,
-    note: 'Dimensions hors tout mesurées sur la maquette 3D (profil compris) — à vérifier sur site avant fabrication.',
+    note: 'Dimensions hors tout mesurées sur la maquette 3D (profil compris) — à vérifier sur site avant fabrication. Un repère par cadre : chaque impression est différente.',
   },
 };
 
@@ -258,8 +343,9 @@ export interface FrameSheetOptions {
 }
 
 /**
- * Planches « Cadres textile » : nomenclature (repère, dimensions, épaisseur, quantité, surface, emplacements) puis un
- * cadre par case, vu de face, seul, avec ses cotes hors tout (posées après le calcul : `pendingAutoDims`).
+ * Planches « Cadres textile » : nomenclature, une ligne par cadre (repère, dimensions, épaisseur, surface, emplacement,
+ * visuel), puis un dessin par taille de cadre (« F1, F3 — 2 000 × 2 000 mm »), vu de face, seul, avec ses cotes hors
+ * tout (posées après le calcul : `pendingAutoDims`).
  */
 export function frameSheets(types: FrameType[], opts: FrameSheetOptions): Sheet[] {
   if (!types.length) return [];
@@ -276,49 +362,65 @@ export function frameSheets(types: FrameType[], opts: FrameSheetOptions): Sheet[
   const text = (rect: RectMm, t: string, size: number, extra: Partial<TextItem> = {}): TextItem => ({ id: newId('t'), type: 'text', rect: scaleRect(rect, k), text: t, size: size * k, font: 'sans', ...extra });
   const line = (x0: number, y0: number, x1: number, y1: number, w = 0.25): ShapeItem => ({ id: newId('h'), type: 'shape', shape: 'line', rect: scaleRect({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, k), strokeMm: w * k });
 
-  // ─── nomenclature ───
+  // ─── nomenclature : une ligne par cadre (suite sur la planche suivante si besoin) ───
   const first = newSheet();
+  let sheet = first;
   const x0 = area.x + 6;
   const width = area.w - 12;
   const size = 3.2;
   const pad = 1.6;
+  const bottom = area.y + area.h - 6;
   // largeurs de colonnes (mm A1) : la dernière prend le reste
-  const fixed = [16, 46, 18, 14, 20, 210];
+  const fixed = [16, 46, 18, 20, 62, 170];
   const widths = [...fixed, width - fixed.reduce((a, b) => a + b, 0)];
   const xs = widths.reduce<number[]>((acc, w) => [...acc, acc[acc.length - 1] + w], [x0]);
-  let y = area.y + 8;
-  first.items.push(text({ x: x0, y, w: width, h: 8 }, T.schedule, 5.2, { bold: true }));
-  y += 10;
-  const rowTop = y;
   const headerH = size * 1.2 + 2 * pad;
-  T.cols.forEach((c, i) => first.items.push(text({ x: xs[i] + pad, y: y + pad, w: widths[i] - 2 * pad, h: headerH }, c, size, { bold: true })));
-  y += headerH;
-  const rowLines: number[] = [rowTop, y];
+  let y = area.y + 8;
+  let rowTop = 0;
+  let rowLines: number[] = [];
+  const closeTable = () => {
+    for (const ly of rowLines) sheet.items.push(line(x0, ly, x0 + width, ly, ly === rowLines[1] ? 0.35 : 0.18));
+    for (const lx of xs) sheet.items.push(line(lx, rowTop, lx, y, 0.18));
+  };
+  const openTable = (cont: boolean) => {
+    sheet.items.push(text({ x: x0, y, w: width, h: 8 }, cont ? `${T.schedule} ${T.cont}` : T.schedule, 5.2, { bold: true }));
+    y += 10;
+    rowTop = y;
+    T.cols.forEach((c, i) => sheet.items.push(text({ x: xs[i] + pad, y: y + pad, w: widths[i] - 2 * pad, h: headerH }, c, size, { bold: true })));
+    y += headerH;
+    rowLines = [rowTop, y];
+  };
+  openTable(false);
   let totalArea = 0;
-  for (const t of types) {
-    const m2 = (t.w * t.h * t.nodeIds.length) / 1e6;
+  const all = framesOf(types);
+  for (const f of all) {
+    const m2 = (f.w * f.h) / 1e6;
     totalArea += m2;
-    const cells = [t.ref, frameSize(t), fmt(t.t), String(t.nodeIds.length), m2.toFixed(2), compactLocations(t.locations), t.label];
+    const cells = [f.ref ?? '', frameSize(f), fmt(f.t), m2.toFixed(2), frameLocation(f, lang), f.visual ?? '', f.label];
     const n = Math.max(...cells.map((c, i) => lines(c, widths[i] - 2 * pad, size)));
     const h = n * size * 1.2 + 2 * pad;
-    cells.forEach((c, i) => first.items.push(text({ x: xs[i] + pad, y: y + pad, w: widths[i] - 2 * pad, h }, c, size, i === 0 ? { bold: true } : {})));
+    if (y + h > bottom) {
+      closeTable();
+      sheet = newSheet();
+      y = area.y + 8;
+      openTable(true);
+    }
+    cells.forEach((c, i) => sheet.items.push(text({ x: xs[i] + pad, y: y + pad, w: widths[i] - 2 * pad, h }, c, size, i === 0 ? { bold: true } : {})));
     y += h;
     rowLines.push(y);
   }
-  for (const ly of rowLines) first.items.push(line(x0, ly, x0 + width, ly, ly === rowLines[1] ? 0.35 : 0.18));
-  for (const lx of xs) first.items.push(line(lx, rowTop, lx, y, 0.18));
+  closeTable();
   y += 3;
-  first.items.push(text({ x: x0, y, w: width, h: 6 }, T.total(types.reduce((a, t) => a + t.nodeIds.length, 0), totalArea.toFixed(2)), size, { bold: true }));
+  sheet.items.push(text({ x: x0, y, w: width, h: 6 }, T.total(all.length, totalArea.toFixed(2), types.length), size, { bold: true }));
   y += 6;
-  first.items.push(text({ x: x0, y, w: width, h: 6 }, T.note, size * 0.9));
-  y += 8;
+  sheet.items.push(text({ x: x0, y, w: width, h: 10 }, T.note, size * 0.9));
+  y += 10;
 
   // ─── cadres : 3 par rangée, cases de même hauteur ───
   const cols = 3;
   const gap = 8;
   const cellW = (area.w - 2 * 6 - (cols - 1) * gap) / cols;
   const cellH = 250;
-  let sheet = first;
   let top = y + 4;
   let col = 0;
   const titleSize = VIEW_TITLE_SIZE * 0.55;
@@ -348,7 +450,7 @@ export function frameSheets(types: FrameType[], opts: FrameSheetOptions): Sheet[
     sheet.items.push(vp);
     const capY = vpRect.y + vpRect.h + 2;
     sheet.items.push(text({ x: cx, y: capY, w: cellW, h: 6 }, T.caption(t), size, { bold: true }));
-    sheet.items.push(text({ x: cx, y: capY + 5, w: cellW, h: 8 }, compactLocations(t.locations), size * 0.9));
+    sheet.items.push(text({ x: cx, y: capY + 5, w: cellW, h: 8 }, t.frames.map((f) => `${f.ref} ${frameLocation(f, lang)}`).join(' · '), size * 0.9));
     col++;
     if (col === cols) {
       col = 0;

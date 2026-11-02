@@ -93,6 +93,39 @@ export const VIEW_PRESETS: ViewPreset[] = [
     },
   },
   {
+    key: 'roof-detail',
+    name: 'Détail toiture (coupe)',
+    description:
+      'Coupe transversale au milieu de chaque type de Viewbox, recadrée sur la toiture : panneau, cadre acier, vide technique, plafond tendu — cotés couche par couche sur les planches.',
+    spec: {
+      ...base(),
+      scope: { modules: 'all', common: false },
+      camera: { ...DEFAULT_CAMERA, frame: 'module', dir: 'front' },
+      cuts: [
+        { id: 'c-d', frame: 'module', axis: 'short', ref: { kind: 'module', ref: 'mid' }, offset: 0, keep: 'negative', depth: 400 },
+        { id: 'c-roof-zone', frame: 'module', axis: 'horizontal', ref: { kind: 'level', ref: 'ceiling' }, offset: -250, keep: 'positive' },
+      ],
+      layout: { ...DEFAULT_LAYOUT, mode: 'per-module', groupIdentical: true, labels: 'id' },
+      style: { ...DEFAULT_STYLE, layerDims: 'roof' },
+    },
+  },
+  {
+    key: 'floor-detail',
+    name: 'Détail plancher (coupe)',
+    description: 'Coupe transversale au milieu de chaque type de Viewbox, recadrée sur le plancher : revêtement, contreplaqué, structure — cotés couche par couche.',
+    spec: {
+      ...base(),
+      scope: { modules: 'all', common: false },
+      camera: { ...DEFAULT_CAMERA, frame: 'module', dir: 'front' },
+      cuts: [
+        { id: 'c-d', frame: 'module', axis: 'short', ref: { kind: 'module', ref: 'mid' }, offset: 0, keep: 'negative', depth: 400 },
+        { id: 'c-floor-zone', frame: 'module', axis: 'horizontal', ref: { kind: 'level', ref: 'floor-top' }, offset: 250, keep: 'negative' },
+      ],
+      layout: { ...DEFAULT_LAYOUT, mode: 'per-module', groupIdentical: true, labels: 'id' },
+      style: { ...DEFAULT_STYLE, layerDims: 'floor' },
+    },
+  },
+  {
     key: 'structure-only',
     name: 'Structure seule',
     description: 'Vue iso sans façades, plafond tendu, éclairage ni mobilier.',

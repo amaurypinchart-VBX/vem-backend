@@ -35,7 +35,7 @@ await page.getByRole('button', { name: /Générer un jeu de plans/ }).click();
 // assistant : « Vue du sol » et « Cadres textile » cochées par défaut, avec le nombre de cadres
 await page.locator('[data-kind=floorPlan] input').check(); // cochée par défaut
 const framesKind = await page.locator('[data-kind=frames]').innerText();
-check(`assistant : ${framesKind.trim()}`, /8 cadre\(s\), 2 type\(s\)/.test(framesKind) && (await page.locator('[data-kind=frames] input').isChecked()));
+check(`assistant : ${framesKind.trim()}`, /8 cadre\(s\) F1–F7, F12, 2 taille\(s\)/.test(framesKind) && (await page.locator('[data-kind=frames] input').isChecked()));
 await page.screenshot({ path: shots + 'wizard.png' });
 await page.getByRole('button', { name: 'Générer', exact: true }).click();
 await page.locator('.sheet-editor').waitFor({ timeout: 900000 });
@@ -81,7 +81,8 @@ await page.waitForTimeout(2500);
 await canvasShot('frames-sheet');
 const scheduleTexts = await svgTexts();
 check('encadré « Extract - Textile frames - … »', scheduleTexts.some((t) => t.startsWith('Extract - Textile frames')));
-check('nomenclature : F1 2 000 × 2 000, F2 2 300 × 350', scheduleTexts.some((t) => t.includes('2 000 × 2 000')) && scheduleTexts.some((t) => t.includes('2 300 × 350')));
+check('nomenclature : une ligne par cadre (F1…F7, F12), tailles 2 000 × 2 000 et 2 300 × 350', ['F1', 'F7', 'F12'].every((r) => scheduleTexts.includes(r)) && scheduleTexts.some((t) => t.includes('2 000 × 2 000')) && scheduleTexts.some((t) => t.includes('2 300 × 350')));
+check('visuel saisi dans SketchUp repris (« Logo IKEA bleu »)', scheduleTexts.includes('Logo IKEA bleu'));
 check('cotes des cadres posées (2000 mm / 350 mm)', scheduleTexts.some((t) => /^2000 mm$/.test(t)) && scheduleTexts.some((t) => /^350 mm$/.test(t)));
 
 // vue du sol d'un niveau
@@ -136,13 +137,14 @@ await page.getByTestId('open-frames').click();
 await page.getByTestId('frames-dialog').waitFor();
 await page.screenshot({ path: shots + 'frames-dialog.png' });
 const rows = await page.getByTestId('frames-table').locator('tbody tr').count();
-check(`dialogue : ${rows} types de cadres`, rows === 2);
+check(`dialogue : ${rows} cadres (un repère par cadre)`, rows === 8);
+check('repère F12 marqué « SketchUp »', (await page.getByTestId('frames-table').locator('tr', { hasText: 'F12' }).innerText()).includes('SketchUp'));
 await page.getByTestId('frames-apply').click();
 await waitViews();
 await thumbs.nth(vbx01).click();
 await waitViews();
 const labels = await svgTexts();
-check('repères F1 / F2 sur la planche VBX-01', labels.includes('F1') && labels.includes('F2'));
+check('repères F1 / F12 sur la planche VBX-01', labels.includes('F1') && labels.includes('F12'));
 await canvasShot('vbx01-frames-labels');
 
 // « Sur tout le jeu » : cadres masqués partout
@@ -161,12 +163,38 @@ await page.getByRole('button', { name: 'Fermer' }).click();
 await waitViews();
 await canvasShot('vbx01-frames-hidden');
 
+// détail toiture : Vues 2D › Vues spéciales › « Détail toiture (coupe) » → planche 1:10, couches cotées
+await page.getByRole('button', { name: 'Vues 2D' }).click();
+await page.locator('[data-testid="tab-special-views"]').click();
+await page.locator('[data-testid="cv-preset-roof-detail"]').click();
+await page.waitForFunction(() => ['done', 'error'].includes(document.querySelector('[data-testid="cv-preview"]')?.getAttribute('data-status') ?? ''), null, { timeout: 600000, polling: 500 });
+await page.locator('.cv-main').screenshot({ path: shots + 'roof-detail-preview.png' });
+await page.locator('[data-testid="cv-save"]').click();
+await page.locator('[data-testid="cv-save-state"]').waitFor();
+await page.locator('[data-testid="cv-add-sheet"]').click();
+await page.locator('[data-testid="cv-sheet-dialog"]').waitFor();
+check('ajout à une planche : 1:10 proposé', (await page.locator('[data-testid="cv-sheet-scale"]').inputValue()) === '10');
+await page.locator('[data-testid="cv-sheet-add"]').click();
+await page.locator('[data-testid="cv-sheet-info"]').waitFor({ timeout: 120000 });
+await page.locator('[data-testid="cv-sheet-dialog"]').getByRole('button', { name: 'Fermer' }).click();
+await page.getByRole('button', { name: 'Planches A1' }).click();
+await page.waitForTimeout(800);
+const nThumbs = await thumbs.count();
+check(`planche(s) du détail ajoutée(s) : ${nThumbs - titles.length}`, nThumbs > titles.length);
+await thumbs.nth(nThumbs - 1).click();
+await waitViews();
+await page.waitForTimeout(2000);
+const detail = await svgTexts();
+console.log('   détail toiture :', detail.filter((t) => / mm$/.test(t)).join(' | '));
+check('détail toiture : couches cotées et nommées', detail.includes('Vide technique — 90 mm') && detail.includes('Plafond tendu — 10 mm') && detail.some((t) => /— 100 mm$/.test(t)));
+await canvasShot('roof-detail-sheet');
+
 await page.getByText('✓ Enregistré').waitFor({ timeout: 30000 });
 await page.getByRole('button', { name: '← Jeux de plans' }).click();
 await page.getByRole('button', { name: 'Ouvrir' }).first().click();
 await page.locator('.sheet-editor').waitFor();
 await page.waitForTimeout(1500);
-check('jeu rouvert', (await thumbs.count()) === titles.length);
+check(`jeu rouvert (${nThumbs} planches)`, (await thumbs.count()) === nThumbs);
 await thumbs.nth(vbx01).click();
 await waitViews();
 await canvasShot('reopened-vbx01');

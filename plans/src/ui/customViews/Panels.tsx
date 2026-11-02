@@ -402,6 +402,24 @@ export function StylePanel({ spec, onChange }: { spec: CustomViewSpec; onChange:
         <input type="checkbox" checked={st.categoryColors} onChange={(e) => set({ categoryColors: e.target.checked })} />
         Colorer par catégorie (vues de dessus)
       </label>
+      <div className="row" title="Sur les planches : chaîne de cotes verticale des couches coupées (panneau, acier, vide technique, plafond…) et un repère par couche, mesurés sur la maquette">
+        <span className="hint">Coter les couches</span>
+        <select
+          value={st.layerDims ?? ''}
+          data-testid="cv-layer-dims"
+          onChange={(e) => {
+            const next: ViewStyle = { ...st };
+            if (e.target.value) next.layerDims = e.target.value as 'roof' | 'floor';
+            else delete next.layerDims;
+            onChange({ ...spec, style: next });
+          }}
+          style={{ flex: 1 }}
+        >
+          <option value="">non</option>
+          <option value="roof">toiture (pièces au-dessus du recadrage)</option>
+          <option value="floor">plancher (pièces sous le recadrage)</option>
+        </select>
+      </div>
     </Panel>
   );
 }

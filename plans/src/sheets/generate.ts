@@ -28,7 +28,7 @@ export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   levels: 'Plan de chaque niveau (sans toit)',
   floorPlan: 'Vue du sol de chaque niveau (coupe à 1,20 m : plancher, murs, vitres, poteaux — passage des câbles)',
   perModule: 'Une planche par Viewbox (3D, dessus, avant, arrière, gauche, droite)',
-  frames: 'Cadres textile : nomenclature + chaque type de cadre coté (F1, F2…)',
+  frames: 'Cadres textile : nomenclature (un repère F1, F2… par cadre) + chaque taille de cadre cotée',
 };
 
 export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'floorPlan', 'perModule', 'frames'];

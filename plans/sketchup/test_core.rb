@@ -9,6 +9,29 @@ require_relative 'viewbox_prep/core'
 class CoreTest < Minitest::Test
   C = Viewbox::Prep::Core
 
+  def test_textile_frame_refs
+    assert_equal 'F3', C.frame_ref('f3')
+    assert_equal 'F12', C.frame_ref(' F 012 ')
+    assert_equal 'F4', C.frame_ref('4')
+    assert_nil C.frame_ref('F0')
+    assert_nil C.frame_ref('cadre')
+    assert_equal '-y', C.frame_side([1500, -25, 1400], [0, 0, 0], [5900, 2500, 3080])
+    assert_equal '+x', C.frame_side([5920, 1250, 2500], [0, 0, 0], [5900, 2500, 3080])
+    assert_equal 'top', C.frame_side([2900, 1250, 3200], [0, 0, 0], [5900, 2500, 3080], [3000, 1200, 30])
+    rows = [
+      { 'key' => 'a', 'module' => 'VBX-02', 'side' => '-y', 'along' => 100, 'z' => 0 },
+      { 'key' => 'b', 'module' => 'VBX-01', 'side' => '+x', 'along' => 0, 'z' => 0 },
+      { 'key' => 'c', 'module' => 'VBX-01', 'side' => '-y', 'along' => 3000, 'z' => 0 },
+      { 'key' => 'd', 'module' => 'VBX-01', 'side' => '-y', 'along' => 500, 'z' => 0, 'ref' => 'F2' },
+      { 'key' => 'e', 'module' => nil, 'side' => '-y', 'along' => 0, 'z' => 0 }
+    ]
+    assert_equal %w[d c b a e], C.frame_order(rows).map { |r| r['key'] }
+    # repère saisi gardé (d = F2), les autres prennent les numéros libres dans l'ordre
+    assert_equal({ 'd' => 'F2', 'c' => 'F1', 'b' => 'F3', 'a' => 'F4', 'e' => 'F5' }, C.assign_frame_refs(rows))
+    assert_equal({ 'd' => 'F1', 'c' => 'F2', 'b' => 'F3', 'a' => 'F4', 'e' => 'F5' }, C.assign_frame_refs(rows, renumber: true))
+    assert_equal({ 'F2' => %w[a d] }, C.frame_duplicates(rows.map { |r| r['key'] == 'a' ? r.merge('ref' => 'f2') : r }))
+  end
+
   def test_module_id
     assert_equal 'VBX-01', C.module_id('VBX-01')
     assert_equal 'VBX-07', C.module_id('vbx_7')

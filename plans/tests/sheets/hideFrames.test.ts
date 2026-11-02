@@ -17,14 +17,20 @@ import { createInlineRunner } from '../../src/linework/runner';
 import { hideRuleCounts, subsetEnv, subsetMeshes, subsetScope, textileFrameOf } from '../../src/linework/subset';
 import type { LineworkRequest } from '../../src/linework/types';
 import { DEFAULT_LINE_STYLE } from '../../src/linework/types';
-import { compactLocations, frameLabels, frameOrientation, frameRefs, frameSheets, framesInView, groupFrames, measureFrames } from '../../src/sheets/frames';
+import { compactLocations, compactRefs, frameLabels, frameOrientation, frameRefs, frameSheets, framesInView, framesOf, groupFrames, measureFrames, numberFrames } from '../../src/sheets/frames';
+import { cleanTextileFrame } from '../../src/core/manifest';
+import { VIEW_PRESETS, specFromPreset } from '../../src/core/customViews/presets';
+import { computeSpecialView } from '../../src/linework/customView';
+import { customViewSheets } from '../../src/sheets/customSheets';
+import { layerStack, spreadLabels } from '../../src/sheets/layers';
+import { strToU8, zipSync } from 'fflate';
 import type { FrameInfo } from '../../src/sheets/frames';
 import { planDimensions } from '../../src/sheets/dimensions';
 import { autoDimensionViewport } from '../../src/sheets/autoDim';
 import { generateDrawingSet } from '../../src/sheets/generate';
 import { hiddenCount, setHidden, standardViewports, withHidden } from '../../src/sheets/hideSet';
 import { emptyTitleBlock } from '../../src/sheets/types';
-import type { TextItem, ViewportItem } from '../../src/sheets/types';
+import type { DimensionItem, LabelItem, TextItem, ViewportItem } from '../../src/sheets/types';
 import { makeSketchupDae } from '../fixtures/sketchupDae';
 
 async function textileScene(): Promise<LoadedScene> {
@@ -88,16 +94,39 @@ describe('orientation d’un cadre', () => {
     expect(frameOrientation([2000, 40, 2000], { a: 0, b: -3 })).toMatchObject({ thin: 'b', w: 2000, h: 2000, normal: { b: -1 } });
     expect(frameOrientation([3000, 1200, 30], { a: 0, b: 0 })).toMatchObject({ thin: 'up', w: 3000, h: 1200, t: 30 });
   });
-  it('types : même composant et mêmes dimensions à 2 mm, plus grands d’abord', () => {
-    const f = (id: string, def: string, w: number, h: number, m: string): FrameInfo => ({ nodeId: id, moduleId: m, label: def, definition: def, w, h, t: 40, view: { kind: 'front', frame: { moduleId: m } }, side: 'front', center: [0, 0, 0] });
+  const f = (id: string, def: string, w: number, h: number, m: string | null, extra: Partial<FrameInfo> = {}): FrameInfo => ({ nodeId: id, moduleId: m, label: def, definition: def, w, h, t: 40, view: { kind: 'front', frame: m ? { moduleId: m } : 'world' }, side: 'front', center: [0, 0, 0], ...extra });
+  it('un repère par cadre (Viewbox, tour de la box, gauche → droite) ; dessins regroupés par taille, plus grands d’abord', () => {
     const types = groupFrames([f('1', 'A', 1000, 500, 'VBX-02'), f('2', 'A', 1001.5, 499, 'VBX-01'), f('3', 'B', 2000, 2000, 'VBX-01'), f('4', 'A', 1200, 500, 'VBX-01')]);
     expect(types.map((t) => [t.ref, t.definition, Math.round(t.w), t.nodeIds.length])).toEqual([
-      ['F1', 'B', 2000, 1],
-      ['F2', 'A', 1200, 1],
-      ['F3', 'A', 1002, 2],
+      ['F2', 'B', 2000, 1],
+      ['F3', 'A', 1200, 1],
+      ['F1, F4', 'A', 1002, 2],
     ]);
     expect(types[2].locations).toEqual(['VBX-01 Front', 'VBX-02 Front']);
+    expect(frameRefs(types).get('1')).toBe('F4');
+    expect(framesOf(types).map((x) => x.ref)).toEqual(['F1', 'F2', 'F3', 'F4']);
     expect(compactLocations(['VBX-01 Left', 'VBX-01 Left', 'VBX-02 Left'])).toBe('VBX-01 Left ×2, VBX-02 Left');
+  });
+  it('repères saisis dans SketchUp gardés ; doublon ou absent → numéro libre ; ordre tour de la box', () => {
+    const list = numberFrames([
+      f('a', 'A', 1000, 500, 'VBX-01', { side: 'left', ref: 'F2', refSource: 'sketchup', visual: 'Logo' }),
+      f('b', 'A', 1000, 500, 'VBX-01', { side: 'front', along: 900 }),
+      f('c', 'A', 1000, 500, 'VBX-01', { side: 'front', along: -300 }),
+      f('d', 'A', 1000, 500, 'VBX-02', { side: 'front', ref: 'F2', refSource: 'sketchup' }),
+      f('e', 'A', 1000, 500, null, { side: 'front' }),
+    ]);
+    expect(list.map((x) => [x.nodeId, x.ref, x.refSource])).toEqual([
+      ['c', 'F1', 'auto'],
+      ['a', 'F2', 'sketchup'],
+      ['b', 'F3', 'auto'],
+      ['d', 'F4', 'auto'],
+      ['e', 'F5', 'auto'],
+    ]);
+    expect(list[1].visual).toBe('Logo');
+    expect(compactRefs(['F1', 'F2', 'F3', 'F5', 'F7', 'F8'])).toBe('F1–F3, F5, F7, F8');
+    expect(cleanTextileFrame({ ref: ' f 07 ', visual: '  Logo IKEA  ' })).toEqual({ ref: 'F7', visual: 'Logo IKEA' });
+    expect(cleanTextileFrame({ ref: 'cadre' })).toEqual({});
+    expect(cleanTextileFrame(null)).toBeNull();
   });
 });
 
@@ -162,13 +191,14 @@ describe('modèle avec plafond tendu et cadres textile', async () => {
     expect(lw.boundsMm.maxX - lw.boundsMm.minX).toBeGreaterThan(5800);
   });
 
-  it('cadres mesurés dans le repère de leur Viewbox : 2 types (F1 grand cadre, F2 bandeau), vues de face', () => {
+  it('cadres mesurés dans le repère de leur Viewbox : un repère par cadre, 2 tailles (grand cadre, bandeau), vues de face', () => {
     const frames = measureFrames(scene);
     expect(frames).toHaveLength(8);
     const types = groupFrames(frames);
+    // tour de chaque box : bandeau (face avant) puis grand cadre (côté gauche) ; VBX-01, VBX-02…
     expect(types.map((t) => [t.ref, Math.round(t.w), Math.round(t.h), Math.round(t.t), t.nodeIds.length])).toEqual([
-      ['F1', 2000, 2000, 40, 4],
-      ['F2', 2300, 350, 40, 4],
+      ['F2, F4, F6, F8', 2000, 2000, 40, 4],
+      ['F1, F3, F5, F7', 2300, 350, 40, 4],
     ]);
     // grand cadre sur le grand côté −Y : vue « gauche » de sa Viewbox ; bandeau sur le petit côté +X (face avant)
     expect(new Set(types[0].locations.map((l) => l.split(' ')[1]))).toEqual(new Set(['Left']));
@@ -182,7 +212,11 @@ describe('modèle avec plafond tendu et cadres textile', async () => {
     const [f1] = groupFrames(measureFrames(scene));
     const sheets = frameSheets([f1], { paper: 'A1', modelKey: scene.modelKey, style: DEFAULT_LINE_STYLE, title: 'T' });
     const vp = sheets[0].items.find((i): i is ViewportItem => i.type === 'viewport')!;
-    expect(vp.frameView).toEqual({ nodeId: f1.rep.nodeId, ref: 'F1' });
+    expect(vp.frameView).toEqual({ nodeId: f1.rep.nodeId, ref: 'F2, F4, F6, F8' });
+    expect(vp.label).toBe('F2, F4, F6, F8 — 2 000 × 2 000 mm');
+    // nomenclature : une ligne par cadre
+    const texts = sheets[0].items.filter((i): i is TextItem => i.type === 'text').map((i) => i.text);
+    expect(['F2', 'F4', 'F6', 'F8'].every((r) => texts.includes(r))).toBe(true);
     const lw = await prov.getLinework(vp.request);
     expect(lw.boundsMm.maxX - lw.boundsMm.minX).toBeCloseTo(2000, 0);
     expect(lw.boundsMm.maxY - lw.boundsMm.minY).toBeCloseTo(2000, 0);
@@ -190,16 +224,16 @@ describe('modèle avec plafond tendu et cadres textile', async () => {
     expect(r.dims.map((d) => d.orient).sort()).toEqual(['h', 'v']);
   });
 
-  it('repères F1 / F2 sur une élévation, cotes des cadres en plus des cotes automatiques', async () => {
+  it('repères F3 / F4 (VBX-02) sur une élévation, cotes des cadres en plus des cotes automatiques', async () => {
     const types = groupFrames(measureFrames(scene));
     const refs = frameRefs(types);
     const one = subsetForModule(scene.index, 'VBX-02');
     const vp: ViewportItem = { id: 'v1', type: 'viewport', rect: { x: 20, y: 60, w: 680, h: 300 }, request: { ...req({}, one), view: { kind: 'left', frame: { moduleId: 'VBX-02' } } }, scale: 25, showLabel: false, renderStyle: 'trait' };
     const lw = await prov.getLinework(vp.request);
     const inView = framesInView(scene, lw);
-    expect([...inView].map((id) => refs.get(id)).sort()).toEqual(['F1', 'F2']);
+    expect([...inView].map((id) => refs.get(id)).sort()).toEqual(['F3', 'F4']);
     const labels = frameLabels(scene, vp, lw, lw.meta.basis, refs, 1);
-    expect(labels.map((l) => l.text).sort()).toEqual(['F1', 'F2']);
+    expect(labels.map((l) => l.text).sort()).toEqual(['F3', 'F4']);
     expect(labels.every((l) => l.viewportId === 'v1' && l.auto === 'frame' && !!l.anchor3d)).toBe(true);
     const plain = autoDimensionViewport(vp, lw, lw.meta.basis, scene);
     const withFrames = autoDimensionViewport({ ...vp, dimFrames: true }, lw, lw.meta.basis, scene);
@@ -219,7 +253,7 @@ describe('modèle avec plafond tendu et cadres textile', async () => {
     expect(fr.length).toBeGreaterThanOrEqual(1);
     expect(fr[0].items.some((i) => i.type === 'text' && (i as TextItem).text === 'TEXTILE FRAME SCHEDULE')).toBe(true);
     const details = fr.flatMap((s) => s.items).filter((i): i is ViewportItem => i.type === 'viewport');
-    expect(details.map((v) => v.frameView?.ref)).toEqual(['F1', 'F2']);
+    expect(details.map((v) => v.frameView?.ref)).toEqual(['F2, F4, F6, F8', 'F1, F3, F5, F7']);
     expect(details.every((v) => dimensioned.includes(v.id) && !v.pendingAutoDims && !v.request.subset.hide)).toBe(true);
     // les autres vues masquent les cadres
     for (const v of standardViewports(set)) expect(v.request.subset.hide?.[0].match).toEqual({ viewTags: [TEXTILE_TAG] });
@@ -267,5 +301,86 @@ describe('cotes automatiques des cadres', () => {
   it('sans cadres : cotes inchangées', () => {
     const inp = { purpose: 'elevation' as const, bounds: { minX: 0, minY: 0, maxX: 5900, maxY: 3000 }, modules: [mod], doors: [], feet: [] };
     expect(planDimensions({ ...inp, frames: [] })).toEqual(planDimensions(inp));
+  });
+});
+
+describe('repères et visuels saisis dans SketchUp (manifest, extension 1.4)', async () => {
+  const dae = makeSketchupDae({ twoSided: false, textile: true });
+  const manifest = {
+    schema: 'viewbox-manifest/1',
+    units: 'mm',
+    upAxis: 'Z',
+    textileSchemaVersion: 1,
+    modules: [{ id: 'VBX-01', accessories: [{ name: 'SEG frame 2000', textileFrame: { ref: 'F12', visual: 'Logo IKEA bleu' } }] }],
+    common: [],
+  };
+  const zip = zipSync({ 'export/m.dae': strToU8(dae), 'export/manifest.json': strToU8(JSON.stringify(manifest)) });
+  const res = await ingest({ fileName: 'm.zip', data: zip.buffer as ArrayBuffer, sha256: 'tm', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
+  const pkg = await loadPackage(await exportPackage(res.root));
+  const scene = makeLoadedScene(pkg.root, pkg.objectsById, res.index, 'tm');
+
+  it('le cadre de VBX-01 garde F12 et son visuel ; les autres sont numérotés autour', () => {
+    const marked = scene.index.nodes.filter((n) => n.textileFrame);
+    expect(marked.map((n) => [n.moduleId, n.textileFrame])).toEqual([['VBX-01', { ref: 'F12', visual: 'Logo IKEA bleu' }]]);
+    expect(subsetEnv(scene).tags.ownTag(marked[0].id)).toMatchObject({ tag: TEXTILE_TAG, source: 'sketchup' });
+    const frames = framesOf(groupFrames(measureFrames(scene)));
+    const seg1 = frames.find((x) => x.nodeId === marked[0].id)!;
+    expect([seg1.ref, seg1.refSource, seg1.visual]).toEqual(['F12', 'sketchup', 'Logo IKEA bleu']);
+    expect(frames.map((x) => x.ref)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F12']);
+  });
+});
+
+describe('détail toiture / plancher : couches coupées cotées', async () => {
+  const scene = await textileScene();
+  const deps = { scene, runner: createInlineRunner(), glassTest: makeGlassTest(compileRules(DEFAULT_RULES).glassMaterial), noCache: true };
+  const preset = (key: string) => specFromPreset(VIEW_PRESETS.find((p) => p.key === key)!, key, '2026-11-02');
+
+  it('toiture : plafond tendu 10 mm, vide technique 90 mm, toiture 100 mm (mesurés), un bloc par type de box', async () => {
+    const spec = preset('roof-detail');
+    expect(spec.style.layerDims).toBe('roof');
+    const res = await computeSpecialView(spec, deps, DEFAULT_LINE_STYLE);
+    // 4 Viewbox du même type : les identiques ne sont dessinées qu'une fois (une porte posée à côté d'une seule en fait 2)
+    expect(res.blocks.length).toBeLessThan(scene.index.modules.length);
+    const b = res.blocks[0];
+    const stack = layerStack(b.lw, scene, 'roof')!;
+    expect(stack.layers.map((l) => [l.kind, Math.round(l.y1 - l.y0)])).toEqual([
+      ['part', 100],
+      ['gap', 90],
+      ['part', 10],
+    ]);
+    expect(stack.layers.map((l) => l.name)).toEqual(['STRUCTURE cadre', 'Vide technique', 'Plafond tendu']);
+    // sur une planche (1:10) : chaîne des couches + total à droite, largeur en bas, un repère par couche
+    const [sheet] = customViewSheets(
+      spec,
+      [{ key: b.key, title: b.title, modules: b.modules, lw: b.lw, basis: b.basis, view: b.view }],
+      { paper: 'A1', mode: 'one', perSheet: 1, scale: 10, blocks: [], subtitle: '', style: DEFAULT_LINE_STYLE, modelKey: scene.modelKey, dims: true },
+      { include: () => [], autoDim: (vp, blk, min) => autoDimensionViewport(vp, blk.lw, blk.basis, scene, min) },
+    );
+    const vp = sheet.items.find((i): i is ViewportItem => i.type === 'viewport')!;
+    expect(vp.layerDims).toBe('roof');
+    const dims = sheet.items.filter((i): i is DimensionItem => i.type === 'dimension');
+    expect(dims.map((d) => [d.orient, d.anchors3d.length])).toEqual([
+      ['v', 4],
+      ['v', 2],
+      ['h', 2],
+    ]);
+    const labels = sheet.items.filter((i): i is LabelItem => i.type === 'label');
+    expect(labels.map((l) => l.text)).toEqual(['STRUCTURE cadre — 100 mm', 'Vide technique — 90 mm', 'Plafond tendu — 10 mm']);
+    expect(labels.every((l) => l.viewportId === vp.id && l.auto === 'layer')).toBe(true);
+    // repères en colonne à gauche du dessin, au moins 6 mm d'écart
+    for (let i = 1; i < labels.length; i++) expect(labels[i].textPos.y - labels[i - 1].textPos.y).toBeGreaterThanOrEqual(5.9);
+  });
+
+  it('plancher : couches sous le recadrage (pas les vitres coupées par le recadrage)', async () => {
+    const res = await computeSpecialView(preset('floor-detail'), deps, DEFAULT_LINE_STYLE);
+    const stack = layerStack(res.blocks[0].lw, scene, 'floor')!;
+    // dalle du plancher de la fixture : 150 mm
+    expect(stack.layers.map((l) => Math.round(l.y1 - l.y0))).toContain(150);
+    expect(stack.layers.every((l) => !/VITRE|Vitre/.test(l.name))).toBe(true);
+  });
+
+  it('repères écartés sans changer l’ordre', () => {
+    expect(spreadLabels([10, 11, 12], 6)).toEqual([5, 11, 17]);
+    expect(spreadLabels([0, 50], 6)).toEqual([0, 50]);
   });
 });

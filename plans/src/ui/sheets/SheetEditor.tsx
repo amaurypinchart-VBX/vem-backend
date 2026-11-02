@@ -507,7 +507,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 
   /** « Coter automatiquement » des fenêtres de vue : remplace leurs cotes automatiques, ajuste échelle et centrage. */
   const autoDimension = (vps: ViewportItem[]) => {
-    const results: Array<{ vp: ViewportItem; dims: DimensionItem[]; scale: number; center: [number, number] }> = [];
+    const results: Array<{ vp: ViewportItem; dims: DimensionItem[]; scale: number; center: [number, number]; labels?: LabelItem[] }> = [];
     let missing = 0;
     for (const vp of vps) {
       const data = bank.data(vp);
@@ -526,7 +526,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     useEditor.getState().apply('Cotes automatiques', (d) => {
       const s = d.sheets.find((x) => x.id === sheet.id);
       if (!s) return;
-      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)));
+      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)) && !(i.type === 'label' && i.auto === 'layer' && ids.has(i.viewportId ?? '')));
       for (const r of results) {
         const it = s.items.find((i) => i.id === r.vp.id) as ViewportItem | undefined;
         if (it) {
@@ -534,8 +534,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           it.center = r.center;
           if (r.vp.dimFrames) it.dimFrames = true;
           else delete it.dimFrames;
+          if (r.vp.layerDims) it.layerDims = r.vp.layerDims;
+          else delete it.layerDims;
         }
         s.items.push(...(r.dims as typeof s.items));
+        if (r.labels) s.items.push(...(r.labels as typeof s.items));
       }
     });
   };
@@ -1767,6 +1770,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onDuplicateForModules={sheetModule(sheet) ? () => setRetarget(sheet) : undefined}
           onHideTool={() => setTool('hide')}
           onSetWide={() => setSetHideOpen(true)}
+          onLayerDims={(vp, mode) => autoDimension([{ ...vp, layerDims: mode ?? undefined }])}
           onDimFrames={(vp, on) => {
             if (!on) {
               actions.updateItem(vp.id, { dimFrames: undefined } as Partial<SheetItem>, 'Cadres non cotés');

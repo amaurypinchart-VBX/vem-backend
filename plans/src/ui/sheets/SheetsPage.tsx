@@ -21,7 +21,7 @@ import type { ViewTagRule } from '../../core/customViews/types';
 import { LineworkBank, dimensionDrawingSet, fitDrawingSet } from '../../sheets/bank';
 import { setSubsetViewTags } from '../../linework/subset';
 import type { FrameType } from '../../sheets/frames';
-import { groupFrames, measureFrames } from '../../sheets/frames';
+import { compactRefs, groupFrames, measureFrames } from '../../sheets/frames';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
@@ -387,7 +387,7 @@ function Wizard({
                 {k === 'frames' && (
                   <span className="hint">
                     {' '}
-                    — {frames.length ? `${frames.reduce((a, t) => a + t.nodeIds.length, 0)} cadre(s), ${frames.length} type(s)` : 'aucun cadre textile dans le modèle'}
+                    — {frames.length ? `${frames.reduce((a, t) => a + t.nodeIds.length, 0)} cadre(s) ${compactRefs(frames.flatMap((t) => t.refs))}, ${frames.length} taille(s)` : 'aucun cadre textile dans le modèle'}
                   </span>
                 )}
               </label>

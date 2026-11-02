@@ -45,8 +45,8 @@ export function normText(s: string): string {
 export interface TagHit {
   tag: string;
   label: string;
-  /** mémorisée (clic) / devinée par le nom / par la catégorie */
-  source: 'memorised' | 'name' | 'category';
+  /** marquée dans SketchUp (cadre textile, extension ≥ 1.4.0) / mémorisée (clic) / devinée par le nom / par la catégorie */
+  source: 'sketchup' | 'memorised' | 'name' | 'category';
 }
 
 export interface TagResolver {
@@ -96,7 +96,10 @@ export function makeTagResolver(index: SceneIndex, memorised: ViewTagRule[] = []
     if (cache.has(id)) return cache.get(id)!;
     const n = byId.get(id);
     let hit: TagHit | null = null;
-    if (n && n.role !== 'module' && n.role !== 'context') {
+    if (n && n.role !== 'module' && n.role !== 'context' && n.textileFrame) {
+      // « Marquer comme cadre textile » dans SketchUp : rien ne passe avant
+      hit = { tag: TEXTILE_TAG, label: labels.get(TEXTILE_TAG) ?? 'Cadres textile', source: 'sketchup' };
+    } else if (n && n.role !== 'module' && n.role !== 'context') {
       const mem = (n.definition && byDef.get(n.definition)) || (n.articleRef && byRef.get(n.articleRef)) || undefined;
       const texts = nodeTexts(n);
       const pat = mem ? undefined : byPattern.find((p) => texts.some((t) => p.re.test(t)))?.rule;

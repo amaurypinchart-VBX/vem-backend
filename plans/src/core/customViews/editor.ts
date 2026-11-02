@@ -149,6 +149,7 @@ export function proposeName(spec: CustomViewSpec, tagLabel: (tag: string) => str
   const parts: string[] = [];
   const hz = spec.cuts.find((c) => c.axis === 'horizontal' && c.ref.kind === 'level');
   const vertical = spec.cuts.find((c) => c.axis === 'long' || c.axis === 'short');
+  if (spec.style.layerDims) return spec.style.layerDims === 'roof' ? 'Détail toiture (coupe)' : 'Détail plancher (coupe)';
   if (vertical?.label) parts.push(`Coupe ${vertical.label}-${vertical.label}`);
   else if (vertical) parts.push(vertical.axis === 'long' ? 'Coupe longitudinale' : 'Coupe transversale');
   else if (spec.camera.dir === 'bottom' && hz && (hz.ref.kind === 'level' && (hz.ref.ref === 'roof-bottom' || hz.ref.ref === 'ceiling'))) parts.push('Dessous de toiture');

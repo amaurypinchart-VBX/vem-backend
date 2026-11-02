@@ -2,7 +2,7 @@
 // quantités, emplacements) et ce qu'on veut en faire sur le jeu (planches de détail, repères, cotes, masquage).
 import { useState } from 'react';
 import type { FrameLang, FrameType } from '../../sheets/frames';
-import { compactLocations, fmt, frameSize } from '../../sheets/frames';
+import { compactRefs, fmt, frameLocation, frameSize, framesOf } from '../../sheets/frames';
 
 export interface FramesChoice {
   lang: FrameLang;
@@ -31,7 +31,9 @@ export function FramesDialog({
 }) {
   const [c, setC] = useState<FramesChoice>({ lang: 'en', sheets: true, labels: true, dims: true, hide: false });
   const set = (patch: Partial<FramesChoice>) => setC((x) => ({ ...x, ...patch }));
-  const total = types.reduce((a, t) => a + t.nodeIds.length, 0);
+  const frames = framesOf(types);
+  const total = frames.length;
+  const fromSketchup = frames.filter((f) => f.refSource === 'sketchup').length;
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal frames-dialog" role="dialog" aria-label="Cadres textile" data-testid="frames-dialog">
@@ -45,14 +47,16 @@ export function FramesDialog({
         <div className="modal-body">
           {!types.length ? (
             <div className="hint" data-testid="frames-none">
-              Aucun cadre textile trouvé dans le modèle. Un cadre est reconnu par sa catégorie (ex. « FRAME-FOR-TEXTILE ») ou par son nom (textile,
-              tissu, fabric, SEG…). Sinon : Vues 2D › Vues spéciales, clic sur le cadre › « Mémoriser comme » › « Cadres textile ».
+              Aucun cadre textile trouvé dans le modèle. Le plus sûr : dans SketchUp (extension Viewbox 1.4), clic droit sur le cadre › Viewbox ›
+              « Marquer comme cadre textile », puis réexporter. Sinon un cadre est reconnu par sa catégorie (ex. « FRAME-FOR-TEXTILE ») ou par son
+              nom (textile, tissu, fabric, SEG…).
             </div>
           ) : (
             <>
               <div className="hint" style={{ marginBottom: 8 }}>
-                {total} cadre{total > 1 ? 's' : ''} en {types.length} type{types.length > 1 ? 's' : ''} : cadres identiques regroupés (même composant
-                SketchUp, mêmes dimensions à 2 mm). Dimensions hors tout mesurées sur la maquette, dans le repère de leur Viewbox.
+                {total} cadre{total > 1 ? 's' : ''} ({compactRefs(frames.map((f) => f.ref ?? ''))}) en {types.length} taille{types.length > 1 ? 's' : ''} : un repère
+                par cadre (chaque impression est différente), un dessin coté par taille. Repères et visuels saisis dans SketchUp (extension
+                1.4 › Cadres textile…) repris tels quels{fromSketchup < total ? ` ; ${total - fromSketchup} cadre(s) numéroté(s) ici automatiquement (Viewbox, tour de la box)` : ''}.
               </div>
               <table className="list frames-table" data-testid="frames-table">
                 <thead>
@@ -60,22 +64,22 @@ export function FramesDialog({
                     <th>Repère</th>
                     <th>L × H (mm)</th>
                     <th>Ép.</th>
-                    <th>Qté</th>
                     <th>Emplacement</th>
+                    <th>Visuel</th>
                     <th>Désignation</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {types.map((t) => (
-                    <tr key={t.ref}>
+                  {frames.map((f) => (
+                    <tr key={f.nodeId}>
                       <td>
-                        <b>{t.ref}</b>
+                        <b>{f.ref}</b> {f.refSource === 'sketchup' ? <span className="badge">SketchUp</span> : <span className="hint">auto</span>}
                       </td>
-                      <td>{frameSize(t)}</td>
-                      <td>{fmt(t.t)}</td>
-                      <td>{t.nodeIds.length}</td>
-                      <td>{compactLocations(t.locations)}</td>
-                      <td className="hint">{t.label}</td>
+                      <td>{frameSize(f)}</td>
+                      <td>{fmt(f.t)}</td>
+                      <td>{frameLocation(f, 'fr')}</td>
+                      <td>{f.visual ?? <span className="hint">—</span>}</td>
+                      <td className="hint">{f.label}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -83,7 +87,7 @@ export function FramesDialog({
               <div className="frames-options">
                 <label className="check">
                   <input type="checkbox" checked={c.sheets} data-testid="frames-sheets" onChange={(e) => set({ sheets: e.target.checked })} />
-                  Planches « Cadres textile » : nomenclature + chaque type dessiné de face, coté (largeur × hauteur)
+                  Planches « Cadres textile » : nomenclature (une ligne par cadre) + chaque taille dessinée de face, cotée
                   {existing > 0 && <span className="badge">remplace les {existing} planche(s) actuelle(s)</span>}
                 </label>
                 <label className="check">

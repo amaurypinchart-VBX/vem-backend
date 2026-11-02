@@ -303,7 +303,7 @@ describe('disposition et Viewbox identiques', () => {
 
 describe('préréglages et lecture tolérante', () => {
   it('préréglages portables, sans identifiant de nœud ; options ajoutées', () => {
-    expect(VIEW_PRESETS.map((p) => p.key)).toEqual(['roof-under-no-ceiling', 'roof-under', 'box-under', 'plan-cut-1200', 'section-long', 'section-short', 'structure-only', 'feet-layout']);
+    expect(VIEW_PRESETS.map((p) => p.key)).toEqual(['roof-under-no-ceiling', 'roof-under', 'box-under', 'plan-cut-1200', 'section-long', 'section-short', 'roof-detail', 'floor-detail', 'structure-only', 'feet-layout']);
     for (const p of VIEW_PRESETS) {
       const sp = specFromPreset(p, 'id', 'now');
       expect(isPortable(sp)).toBe(true);
