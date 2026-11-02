@@ -124,6 +124,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [busy, setBusy] = useState('');
   /** cartouche : champs changés dans le projet VEM depuis la dernière reprise */
   const [projectUpdate, setProjectUpdate] = useState<{ fresh: ProjectValues; fields: ProjectField[] } | null>(null);
+  /** fenêtres du jeu « obsolètes » (modèle changé depuis leur mise en page) : bandeau « Tout mettre à jour » */
+  const [staleIds, setStaleIds] = useState<string[]>([]);
   const [syncMessage, setSyncMessage] = useState('');
   /** choix d'une image 3D : image à remplacer, ou null = nouvelle image */
   const [picker, setPicker] = useState<{ itemId: string | null } | null>(null);
@@ -177,6 +179,33 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     else setReady({ name, blob });
   };
   const bankTick = useBank(bank);
+  useEffect(() => {
+    let alive = true;
+    const vps = doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+    bank.staleViewports(vps).then(
+      (ids) => alive && setStaleIds((old) => (old.join('|') === ids.join('|') ? old : ids)),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [doc.sheets, bank, bankTick]);
+  /** « Recalculer » de toutes les fenêtres obsolètes du jeu, en une étape d'historique */
+  const updateAllViews = () => {
+    const ids = new Set(staleIds);
+    if (!ids.size) return;
+    actions.editDoc(`Mettre à jour ${ids.size} vue(s)`, (d) => {
+      for (const sh of d.sheets)
+        for (const it of sh.items)
+          if (it.type === 'viewport' && ids.has(it.id)) {
+            delete it.lineworkKey;
+            delete it.center;
+          }
+    });
+    // ordinateur : toutes les vues mises à jour sont calculées tout de suite (téléphone : à l'affichage de leur planche)
+    if (!lightDevice) bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport' && ids.has(i.id))));
+    setStaleIds([]);
+  };
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
   // aperçu (face sous le doigt) et zone choisie dans le panneau : contour orange par-dessus la vue
@@ -634,7 +663,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           out.set(vp.id, await runSliced(job, () => previewGen.current !== gen));
         } catch (e) {
           if (e instanceof SlicedCancelled) return;
-          throw e;
+          console.error('Aperçu de peinture', vp.label, e);
+          setToast(`Aperçu impossible sur la vue « ${vp.label || 'sans nom'} » : ${(e as Error).message}`);
+          continue;
         }
         if (previewGen.current !== gen) return;
         setPaintPreview(new Map(out));
@@ -1275,6 +1306,17 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </span>
       </div>
 
+      {staleIds.length > 0 && (
+        <div className="sync-banner" data-testid="stale-banner">
+          <span>
+            ⚠ <b>{staleIds.length} vue{staleIds.length > 1 ? 's' : ''}</b> du jeu {staleIds.length > 1 ? 'ne sont' : 'n’est'} plus à jour : le modèle a changé depuis leur mise en page.
+          </span>
+          <span className="spacer" />
+          <button className="btn small primary" data-testid="update-all-views" onClick={updateAllViews} title="Recalcule et recentre toutes les vues obsolètes de toutes les planches (Ctrl+Z pour annuler)">
+            ↻ Tout mettre à jour
+          </button>
+        </div>
+      )}
       {projectUpdate && (
         <div className="sync-banner">
           <span>
@@ -1463,6 +1505,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             mode={paintMode}
             saving={paint.state.saving}
             computing={bank.paintPending() > 0}
+            failures={sheet.items.flatMap((i) => (i.type === 'viewport' && bank.paintFailures().has(i.id) ? [`« ${i.label || 'vue'} » : ${bank.paintFailures().get(i.id)}`] : []))}
             error={paint.state.error}
             disabled={paint.state.disabled}
             selectedZone={selectedZone}

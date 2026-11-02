@@ -86,6 +86,8 @@ interface FaceGroup {
 
 /** Silhouette d'un maillage dans une vue : contours (unités Clipper) et leur emprise (mm du dessin). */
 interface Silhouette {
+  /** clipper2-js a échoué sur ce maillage : ses triangles sont soustraits un par un */
+  failed?: boolean;
   paths: Paths64;
   /** minX minY maxX maxY par contour */
   boxes: Float64Array;
@@ -205,18 +207,27 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       if (!hits.length) continue;
       // tout ce qui touche la face est devant : la silhouette de la pièce suffit (ses autres triangles ne la touchent pas)
       const cached = silhouettes.get(o.mesh)?.get(viewKey);
-      if (!behind && (cached || (hits.length >= SILHOUETTE_MIN && hits.length >= o.n * SILHOUETTE_SHARE))) {
-        const sil = cached ?? (yield* silhouetteSteps(o, viewKey));
+      const sil = !behind && (cached || (hits.length >= SILHOUETTE_MIN && hits.length >= o.n * SILHOUETTE_SHARE)) ? cached ?? (yield* silhouetteSteps(o, viewKey)) : null;
+      // silhouette impossible (Clipper) : les triangles un par un
+      if (sil && !sil.failed) {
         for (let i = 0; i < sil.paths.length; i++) {
           const b = sil.boxes;
           if (b[i * 4 + 2] <= g.minX || b[i * 4] >= g.maxX || b[i * 4 + 3] <= g.minY || b[i * 4 + 1] >= g.maxY) continue;
           clip.push(ownedPath(sil.paths[i]));
         }
-      } else for (const t of hits) clip.push(path(o.p.subarray(t * 6, t * 6 + 6)));
+      } else
+        for (const t of hits) {
+          const q = path(o.p.subarray(t * 6, t * 6 + 6));
+          if (q) clip.push(q);
+        }
     }
     const subject = new Paths64();
-    for (const p of g.tris) subject.push(path(p));
-    const visible = owned(clip.length ? Clipper.Difference(subject, clip, FillRule.NonZero) : Clipper.Union(subject, undefined, FillRule.NonZero));
+    for (const p of g.tris) {
+      const q = path(p);
+      if (q) subject.push(q);
+    }
+    if (!subject.length) continue;
+    const visible = visiblePart(subject, clip);
     if (visible.length) {
       const l = byColor.get(g.colorId) ?? [];
       l.push(visible);
@@ -251,11 +262,11 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
  * la même vitre derrière : des trous apparaissaient dans la vitre de devant) ; deux à deux, le résultat est juste.
  */
 function* unionPairs(parts: Paths64[]): Generator<void, Paths64, void> {
-  let level = parts.length === 1 ? [owned(Clipper.Union(parts[0], undefined, FillRule.NonZero))] : parts;
+  let level = parts.length === 1 ? [unionTwo(parts[0], new Paths64())] : parts;
   while (level.length > 1) {
     const next: Paths64[] = [];
     for (let i = 0; i < level.length; i += 2) {
-      next.push(i + 1 < level.length ? owned(Clipper.Union(level[i], level[i + 1], FillRule.NonZero)) : level[i]);
+      next.push(i + 1 < level.length ? unionTwo(level[i], level[i + 1]) : level[i]);
       yield;
     }
     level = next;
@@ -263,16 +274,38 @@ function* unionPairs(parts: Paths64[]): Generator<void, Paths64, void> {
   return level[0] ?? new Paths64();
 }
 
+/** Union de deux morceaux ; si clipper2-js plante, les deux sont gardés tels quels (déjà propres chacun). */
+function unionTwo(a: Paths64, b: Paths64): Paths64 {
+  try {
+    return owned(Clipper.Union(a, b, FillRule.NonZero));
+  } catch {
+    const out = new Paths64();
+    for (const q of a) out.push(q);
+    for (const q of b) out.push(q);
+    return out;
+  }
+}
+
 /** Union des triangles projetés d'un maillage, par morceaux puis deux à deux (une étape par union), gardée. */
 function* silhouetteSteps(o: OccMesh, viewKey: string): Generator<void, Silhouette, void> {
   const parts: Paths64[] = [];
-  for (let s = 0; s < o.n; s += SILHOUETTE_CHUNK) {
-    const chunk = new Paths64();
-    for (let t = s; t < Math.min(o.n, s + SILHOUETTE_CHUNK); t++) chunk.push(path(o.p.subarray(t * 6, t * 6 + 6)));
-    parts.push(owned(Clipper.Union(chunk, undefined, FillRule.NonZero)));
-    yield;
+  let paths: Paths64;
+  try {
+    for (let s = 0; s < o.n; s += SILHOUETTE_CHUNK) {
+      const chunk = new Paths64();
+      for (let t = s; t < Math.min(o.n, s + SILHOUETTE_CHUNK); t++) {
+        const q = path(o.p.subarray(t * 6, t * 6 + 6));
+        if (q) chunk.push(q);
+      }
+      parts.push(owned(Clipper.Union(chunk, undefined, FillRule.NonZero)));
+      yield;
+    }
+    paths = parts.length > 1 ? yield* unionPairs(parts) : (parts[0] ?? new Paths64());
+  } catch {
+    const failed: Silhouette = { failed: true, paths: new Paths64(), boxes: new Float64Array(0) };
+    remember(o.mesh, viewKey, failed);
+    return failed;
   }
-  const paths = parts.length > 1 ? yield* unionPairs(parts) : (parts[0] ?? new Paths64());
   const boxes = new Float64Array(paths.length * 4);
   paths.forEach((q, i) => {
     let x0 = Infinity;
@@ -288,12 +321,48 @@ function* silhouetteSteps(o: OccMesh, viewKey: string): Generator<void, Silhouet
     boxes.set([x0 / K, y0 / K, x1 / K, y1 / K], i * 4);
   });
   const sil = { paths, boxes };
-  let byView = silhouettes.get(o.mesh);
-  if (!byView) silhouettes.set(o.mesh, (byView = new Map()));
+  remember(o.mesh, viewKey, sil);
+  return sil;
+}
+
+function remember(mesh: Mesh, viewKey: string, sil: Silhouette): void {
+  let byView = silhouettes.get(mesh);
+  if (!byView) silhouettes.set(mesh, (byView = new Map()));
   byView.set(viewKey, sil);
   // quelques directions par maillage suffisent (vues de la planche affichée) : les plus anciennes sont oubliées
   while (byView.size > 6) byView.delete(byView.keys().next().value!);
-  return sil;
+}
+
+/**
+ * Face − ce qui est devant elle. clipper2-js plante parfois sur une grande opération (contours presque confondus
+ * d'un vrai modèle) : on refait alors la soustraction par paquets de triangles, plus petits.
+ */
+function visiblePart(subject: Paths64, clip: Paths64): Paths64 {
+  if (!clip.length) return owned(Clipper.Union(subject, undefined, FillRule.NonZero));
+  try {
+    return owned(Clipper.Difference(subject, clip, FillRule.NonZero));
+  } catch {
+    let rest = owned(Clipper.Union(subject, undefined, FillRule.NonZero));
+    for (let i = 0; i < clip.length && rest.length; i += 64) {
+      const part = new Paths64();
+      for (const q of clip.slice(i, i + 64)) part.push(q);
+      try {
+        rest = owned(Clipper.Difference(rest, part, FillRule.NonZero));
+      } catch {
+        // dernier recours : triangle par triangle (un triangle qui fait encore planter Clipper est ignoré)
+        for (const q of part) {
+          const one = new Paths64();
+          one.push(q);
+          try {
+            rest = owned(Clipper.Difference(rest, one, FillRule.NonZero));
+          } catch {
+            /* triangle dégénéré pour Clipper */
+          }
+        }
+      }
+    }
+    return rest;
+  }
 }
 
 /**
@@ -313,11 +382,12 @@ function ownedPath(q: Path64): Path64 {
   return Clipper.makePath(flat);
 }
 
-function path(p: ArrayLike<number>): Path64 {
-  // sens trigonométrique pour l'union NonZero
-  const cross = (p[2] - p[0]) * (p[5] - p[1]) - (p[3] - p[1]) * (p[4] - p[0]);
-  const pts = cross >= 0 ? [p[0], p[1], p[2], p[3], p[4], p[5]] : [p[0], p[1], p[4], p[5], p[2], p[3]];
-  return Clipper.makePath(pts.map((x) => Math.round(x * K)));
+/** Triangle en unités Clipper, sens trigonométrique (union NonZero) ; null s'il est plat une fois arrondi au 1/100 mm. */
+function path(p: ArrayLike<number>): Path64 | null {
+  const q = [0, 1, 2, 3, 4, 5].map((i) => Math.round(p[i] * K));
+  const cross = (q[2] - q[0]) * (q[5] - q[1]) - (q[3] - q[1]) * (q[4] - q[0]);
+  if (cross === 0) return null;
+  return Clipper.makePath(cross > 0 ? q : [q[0], q[1], q[4], q[5], q[2], q[3]]);
 }
 
 /**

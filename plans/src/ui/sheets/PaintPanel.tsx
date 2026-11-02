@@ -16,6 +16,7 @@ export function PaintPanel({
   mode,
   saving,
   computing,
+  failures,
   error,
   disabled,
   selectedZone,
@@ -39,6 +40,8 @@ export function PaintPanel({
   saving: boolean;
   /** repères encore en calcul sur des vues (en arrière-plan) */
   computing?: boolean;
+  /** vues de la planche où la peinture n'a pas pu être calculée */
+  failures?: string[];
   error: string;
   disabled: boolean;
   selectedZone: string | null;
@@ -69,6 +72,14 @@ export function PaintPanel({
       <div className="sheet-props-body">
         {disabled && <div className="error-box">Modèle pas encore enregistré : la peinture ne peut pas être gardée.</div>}
         {error && <div className="error-box">{error}</div>}
+        {!!failures?.length && (
+          <div className="error-box" data-testid="paint-failures">
+            Peinture non calculée sur {failures.length > 1 ? `${failures.length} vues` : 'une vue'} de cette planche :
+            {failures.map((f) => (
+              <div key={f}>{f}</div>
+            ))}
+          </div>
+        )}
         <div className="paint-modes">
           {(
             [

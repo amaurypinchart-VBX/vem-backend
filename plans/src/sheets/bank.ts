@@ -76,6 +76,8 @@ export class LineworkBank {
   private readonly paintRegions = new Map<string, PaintRegion[]>();
   private paintQueue: ViewportItem[] = [];
   private paintRunning = false;
+  /** peinture impossible à calculer sur une vue (message par fenêtre) */
+  private readonly paintErrors = new Map<string, string>();
 
   constructor(
     readonly scene: LoadedScene,
@@ -108,6 +110,30 @@ export class LineworkBank {
     return this.keys.get(this.reqKey(vp));
   }
 
+  /** Clé de calcul d'une fenêtre (sans calculer ses traits). */
+  async keyFor(vp: ViewportItem): Promise<string> {
+    const reqKey = this.reqKey(vp);
+    let key = this.keys.get(reqKey);
+    if (!key) {
+      key = vp.custom ? `custom-${await hashKey(reqKey)}` : await this.provider.cacheKey(vp.request);
+      this.keys.set(reqKey, key);
+    }
+    return key;
+  }
+
+  /**
+   * Fenêtres « obsolètes » du jeu : mises en page sur un calcul qui ne correspond plus au modèle (nouvel export
+   * SketchUp, face avant changée, vue spéciale modifiée…). Seules les clés sont calculées, pas les traits.
+   */
+  async staleViewports(vps: ViewportItem[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const vp of vps) {
+      if (!vp.lineworkKey) continue;
+      if ((await this.keyFor(vp)) !== vp.lineworkKey) out.push(vp.id);
+    }
+    return out;
+  }
+
   /** Traits gardés en mémoire : clé du calcul + ce qui est ajouté après (couleurs, repères façade). */
   private entryKey(key: string, vp: ViewportItem): string {
     return `${key}|${vp.request.style.colorByCategory ? 'c' : ''}${vp.request.style.facadeMarks ? 'f' : ''}`;
@@ -117,6 +143,7 @@ export class LineworkBank {
   setPaint(src: PaintSource | null): void {
     this.paintSrc = src;
     this.paintRegions.clear();
+    this.paintErrors.clear();
     this.emit();
   }
 
@@ -174,15 +201,26 @@ export class LineworkBank {
           try {
             const regions = await runSliced(job, () => this.paintSrc !== src);
             this.storePaint(pk, regions);
+            this.paintErrors.delete(vp.id);
             this.emit();
           } catch (e) {
-            if (!(e instanceof SlicedCancelled)) throw e;
+            if (e instanceof SlicedCancelled) continue;
+            // une vue qui échoue ne bloque pas les autres : elle est signalée dans le panneau Peinture
+            console.error('Peinture de la vue', vp.label ?? vp.id, e);
+            this.storePaint(pk, []);
+            this.paintErrors.set(vp.id, (e as Error).message || String(e));
+            this.emit();
           }
         }
       } finally {
         this.paintRunning = false;
       }
     })();
+  }
+
+  /** Vues dont la peinture n'a pas pu être calculée : fenêtre → message. */
+  paintFailures(): Map<string, string> {
+    return this.paintErrors;
   }
 
   /** Vues dont la peinture est encore en calcul (en arrière-plan). */
@@ -242,12 +280,7 @@ export class LineworkBank {
   async load(vp: ViewportItem, signal?: AbortSignal, opts: { cacheOnly?: boolean } = {}): Promise<{ key: string; lw: Linework2D } | null> {
     // seulement les caches (génération sur téléphone) : les vues spéciales attendent l'affichage
     if (opts.cacheOnly && vp.custom) return null;
-    const reqKey = this.reqKey(vp);
-    let key = this.keys.get(reqKey);
-    if (!key) {
-      key = vp.custom ? `custom-${await hashKey(reqKey)}` : await this.provider.cacheKey(vp.request);
-      this.keys.set(reqKey, key);
-    }
+    const key = await this.keyFor(vp);
     const ek = this.entryKey(key, vp);
     const e = this.entries.get(ek);
     if (e?.lw) return { key, lw: e.lw };
