@@ -141,6 +141,11 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       const len = n.length();
       if (len < 1e-9) continue;
       n.multiplyScalar(1 / len);
+      // export SketchUp en faces simples (`doublesided_faces: false`) : le sens d'une face ne dit pas de quel côté on la
+      // voit — une face retournée (envers vers l'extérieur, très courant) est dessinée par les lignes cachées (rayons
+      // double face) et rendue en 3D (DoubleSide). On la prend donc dans le sens de l'observateur ; vue de l'autre côté
+      // d'une pièce fermée, elle reste cachée par les faces de la pièce qui sont devant.
+      if (n.dot(toward) < -FACING) n.negate();
       if (n.dot(toward) <= FACING) continue;
       const p = w.flatMap((v) => [v.dot(right), v.dot(up)]);
       const a = n.dot(right);

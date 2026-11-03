@@ -7,7 +7,11 @@ import { inlineRunner } from '../../src/ingest/cleanup';
 import { exportPackage, loadPackage } from '../../src/ingest/package';
 import { DEFAULT_RULES } from '../../src/core/classification';
 import type { LoadedScene } from '../../src/scene/loadedScene';
-import { makeLoadedScene } from '../../src/scene/loadedScene';
+import { makeLoadedScene, meshesOfNode, nodeIdOf } from '../../src/scene/loadedScene';
+import { FrontSide } from 'three';
+import type { Material } from 'three';
+import { castInView } from '../../src/sheets/viewRay';
+import type { ViewportItem } from '../../src/sheets/types';
 import { makeSketchupDae } from '../fixtures/sketchupDae';
 import { nodeSoup, paintScene, toLocalPoint } from '../../src/linework/paintScene';
 import { computePaintOverlay } from '../../src/linework/paintOverlay';
@@ -107,6 +111,47 @@ describe('peinture sur une vue', () => {
     // 0,04 m² par Viewbox (même la Viewbox tournée de 90°)
     expect(painted.areaByColor.get('c')).toBeCloseTo(0.04 * s.index.modules.length, 3);
     expect(painted.noEffect.size).toBe(0);
+  });
+});
+
+describe('export SketchUp en faces simples : faces retournées', () => {
+  // Bug 03.11.2026 (Xiaomi Hangar Y) : peinture comptée en m² mais aucun repère ni légende sur la planche. L'extension
+  // exporte des faces simples ; une face SketchUp retournée (envers vers l'extérieur) est dessinée par les lignes
+  // cachées (double face), mais le clic la traversait et le calcul des repères la jetait (normale dos à la vue).
+  it('clic et repère sur une face retournée', async () => {
+    const res = await ingest({ fileName: 'rev.dae', data: new TextEncoder().encode(makeSketchupDae({ twoSided: false })).buffer as ArrayBuffer, sha256: 'rev', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
+    const pkg = await loadPackage(await exportPackage(res.root));
+    const s = makeLoadedScene(pkg.root, pkg.objectsById, res.index, 'rev');
+    const misc = meshAt(s, 'VBX-01', [2000, 150, -1200, 2200, 400, -1000])!;
+    const slab = meshAt(s, 'VBX-01', [0, 0, -2500, 5900, 150, 0])!;
+    const meshes = meshesOfNode(s.objectsById.get(misc));
+    expect(meshes.length).toBeGreaterThan(0);
+    // toutes les faces de la pièce retournées, matériau simple face (avant la première lecture de ses triangles)
+    for (const m of meshes) {
+      const g = m.geometry;
+      const a = g.index!.array;
+      for (let i = 0; i < a.length; i += 3) [a[i + 1], a[i + 2]] = [a[i + 2], a[i + 1]];
+      g.index!.needsUpdate = true;
+      expect((m.material as Material).side).toBe(FrontSide);
+    }
+    // clic au centre de la pièce vu d'en haut : la face du dessus (retournée), pas celle du dessous
+    const objs = [...meshes, ...meshesOfNode(s.objectsById.get(slab))];
+    const vp = { request: {} } as unknown as ViewportItem;
+    const [x, y] = [2100, 1100]; // dessin « fromAbove » : x = X monde, y = −Z monde
+    const hit = castInView(s, vp, fromAbove, x, y, objs);
+    expect(hit && nodeIdOf(hit.object)).toBe(misc);
+    expect(hit!.point.y).toBeCloseTo(400, 0);
+    // le matériau d'origine n'est pas modifié par le clic
+    for (const m of meshes) expect((m.material as Material).side).toBe(FrontSide);
+    const painted = paintScene(s, zonePaint(s, misc, [hit!.point.x, hit!.point.y, hit!.point.z]));
+    expect(painted.areaByColor.get('c')).toBeCloseTo(0.04, 4);
+    const top = computePaintOverlay({ scene: s, painted, meshIds: [misc, slab], basis: fromAbove });
+    expect(top.length).toBe(1);
+    expect(top[0].area).toBeCloseTo(40000, -1);
+    expect(top[0].anchor.x).toBeCloseTo(2100, -1);
+    expect(top[0].anchor.y).toBeCloseTo(1100, -1);
+    // vu d'en dessous : la face peinte reste cachée par le reste de la pièce et la dalle
+    expect(computePaintOverlay({ scene: s, painted, meshIds: [misc, slab], basis: fromBelow })).toEqual([]);
   });
 });
 
