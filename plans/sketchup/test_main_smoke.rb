@@ -449,7 +449,7 @@ class MainSmokeTest < Minitest::Test
     end
   end
 
-  # ─── 1.4.0 : cadres textile, un repère F1, F2… par cadre (un cadre du composant de la box : un repère par box) ───
+  # ─── 1.4.0 / 1.4.1 : cadres textile, un repère F1, F2… par cadre (un cadre du composant de la box : un repère par box) ───
   def test_textile_frames
     model, d = build_model
     seg_def = S::ComponentDefinition.new('SEG frame 2000', [box(0, 0, 0, 2000, 40, 2000)])
@@ -463,7 +463,11 @@ class MainSmokeTest < Minitest::Test
     PREP.prepare(model, PREP.analyze(model)) # VBX-02 nommée
 
     assert_equal 0, PREP.textile_rows(model)['rows'].size
+    before = PREP.unclassified_types(model, PREP.analyze(model))
     assert_equal 2, PREP.mark_textile(model, [seg, band], true)
+    # 1.4.1 : un cadre marqué est classé (« Frame extérieur » par défaut), l'export ne le dit plus « non classé »
+    assert_equal ['FRAME-EXTERIEUR', 'cadre textile'], PREP.category_for(seg)
+    assert_equal before - 2, PREP.unclassified_types(model, PREP.analyze(model))
     rows = PREP.textile_rows(model)['rows']
     # le cadre du composant compte une fois par box ; numérotation : VBX-01 (face -Y puis -X), puis VBX-02
     assert_equal [%w[F1 VBX-01 -y], %w[F2 VBX-01 -x], %w[F3 VBX-02 -y]], rows.map { |r| [r['ref'], r['module'], r['side']] }
@@ -475,6 +479,7 @@ class MainSmokeTest < Minitest::Test
     assert_equal 'F1', JSON.parse(vbx1.get_attribute('viewbox', 'textileFrames')).values.first['ref']
     assert_equal 'F3', JSON.parse(vbx2.get_attribute('viewbox', 'textileFrames')).values.first['ref']
     assert_equal 'F2', band.get_attribute('viewbox', 'frameRef')
+    assert_equal %w[FRAME-EXTERIEUR] * 3, rows.map { |r| r['place'] }
 
     # saisie : visuel, repère changé à la main (« f7 » → F7), doublon signalé
     payload = { 'rows' => [{ 'key' => rows[0]['key'], 'ref' => 'f7', 'visual' => 'Logo IKEA bleu' }, { 'key' => rows[2]['key'], 'ref' => 'F2', 'visual' => '' }] }
@@ -502,9 +507,27 @@ class MainSmokeTest < Minitest::Test
     end
     assert_match(/Cadres textile : 3/, PREP.textile_report_lines(model, PREP.analyze(model)).join)
 
-    # retirer la marque
+    # pose intérieure : dans la fenêtre (colonne « Pose ») ou au marquage ; exportée comme catégorie
+    key = PREP.textile_rows(model)['rows'].find { |r| r['name'] == 'Bandeau' }['key']
+    assert_equal 1, PREP.apply_textile(model, { 'rows' => [{ 'key' => key, 'ref' => 'F2', 'visual' => '', 'place' => 'FRAME-INTERIEUR' }] })
+    assert_equal ['FRAME-INTERIEUR', 'manuel'], PREP.category_for(band)
+    Dir.mktmpdir do |dir|
+      _c, manifest = PREP.export_zip(model, PREP.analyze(model), File.join(dir, 'tx2.zip'), 'tx2')
+      assert_equal 'FRAME-INTERIEUR', manifest['common'].find { |x| x['definition'] == 'Bandeau' }['category']
+      assert_equal 'FRAME-EXTERIEUR', manifest['modules'][0]['accessories'].find { |x| x['definition'] == 'SEG frame 2000' }['category']
+    end
+
+    # retirer la marque : la catégorie Frame part avec elle
     assert_equal 1, PREP.mark_textile(model, [band], false)
     assert_equal 2, PREP.textile_rows(model)['rows'].size
+    assert_nil PREP.category_for(band).first
+
+    # catégorie « Frame intérieur » choisie à la main (révision) = cadre textile, sans marque
+    band.set_attribute('viewbox', 'userCategory', 'FRAME-INTERIEUR')
+    assert PREP.textile_marked?(band)
+    assert_equal 3, PREP.textile_rows(model)['rows'].size
+    assert_equal 1, PREP.mark_textile(model, [band], true, 'FRAME-EXTERIEUR')
+    assert_equal 'FRAME-EXTERIEUR', PREP.textile_place(band)
   end
 
   def test_full_menu_flow

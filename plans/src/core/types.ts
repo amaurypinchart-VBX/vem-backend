@@ -20,6 +20,9 @@ export const BUILTIN_CATEGORIES = [
   'ESCALIER',
   'TERRASSE',
   'GARDE-CORPS',
+  'FRAME-EXTERIEUR',
+  'FRAME-INTERIEUR',
+  'BOARDING',
 ] as const;
 
 /** Clé de catégorie : intégrée (BUILTIN_CATEGORIES) ou personnalisée (Réglages, manifest). */

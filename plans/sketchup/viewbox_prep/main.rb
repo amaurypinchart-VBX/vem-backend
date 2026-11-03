@@ -29,7 +29,7 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.4.0'.freeze
+    VERSION = '1.4.1'.freeze
     DICT = 'viewbox'.freeze
     C = Core
 
@@ -123,12 +123,14 @@ module Viewbox
       blank?(v) ? nil : v.to_s
     end
 
-    # Catégorie déduite automatiquement : balise (tag) > nom d'instance > nom de définition.
+    # Catégorie déduite automatiquement : balise (tag) > nom d'instance > nom de définition ; un objet marqué
+    # « cadre textile » sans autre catégorie est un « Frame extérieur » (sinon l'export le disait « non classé »).
     def self.auto_category(e)
       [[tag_name(e), 'balise'], [e.name.to_s, 'nom'], [definition_of(e).name.to_s, 'définition']].each do |name, source|
         c = C.category(name)
         return [c, source] if c
       end
+      return [C::DEFAULT_FRAME_CATEGORY, 'cadre textile'] if textile_flag?(e)
       [nil, nil]
     end
 
@@ -579,16 +581,17 @@ module Viewbox
         next if sel.empty?
         sub = context_menu.add_submenu('Viewbox')
         sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
-        if sel.all? { |e| textile_marked?(e) }
-          sub.add_item('Ce n’est pas un cadre textile') { mark_textile(model, sel, false) }
-        else
-          sub.add_item('Marquer comme cadre textile (F1, F2…)') do
-            n = mark_textile(model, sel, true)
-            UI.messagebox("#{n} cadre(s) textile marqué(s) et numéroté(s).\n\nExtensions › Viewbox › Cadres textile… pour voir / changer les repères et saisir le visuel de chaque cadre.")
+        marked = sel.all? { |e| textile_marked?(e) }
+        [['FRAME-EXTERIEUR', 'extérieur'], ['FRAME-INTERIEUR', 'intérieur']].each do |place, word|
+          next if marked && sel.all? { |e| textile_place(e) == place }
+          sub.add_item(marked ? "Cadre textile #{word}" : "Marquer comme cadre textile #{word} (F1, F2…)") do
+            n = mark_textile(model, sel, true, place)
+            UI.messagebox("#{n} cadre(s) textile #{word}(s) marqué(s) et numéroté(s).\n\nExtensions › Viewbox › Cadres textile… pour voir / changer les repères et saisir le visuel de chaque cadre.") unless marked
           rescue StandardError => e
             fail_with(e)
           end
         end
+        sub.add_item('Ce n’est pas un cadre textile') { mark_textile(model, sel, false) } if marked
         sub.add_item('Cadres textile (F1, F2…)…') { show_textile_dialog(model) }
         if sel.all? { |e| C.module_id(e.name) || standard_size?(e) || module_type(definition_of(e)) }
           sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) }
