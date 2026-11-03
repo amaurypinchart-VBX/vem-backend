@@ -387,7 +387,7 @@ http.createServer(async (req, res) => {
       return json(res, m.settings.paint);
     }
     const st = a.match(/^\/plans\/models\/(\w+)\/settings$/);
-    if (st && req.method === 'PATCH') { const b = JSON.parse((await body(req)).toString()); const m = models.get(st[1]); m.settings = { ...m.settings, ...b.settings }; return json(res, { id: m.id, settings: m.settings }); }
+    if (st && req.method === 'PATCH') { const b = JSON.parse((await body(req)).toString()); delete b.settings?.paint; const m = models.get(st[1]); m.settings = { ...m.settings, ...b.settings }; return json(res, { id: m.id, settings: m.settings }); }
     const gm = a.match(/^\/plans\/models\/(\w+)$/);
     if (gm && req.method === 'GET') return json(res, models.get(gm[1]));
     if (a === '/plans/project/p1/drawing-sets' && req.method === 'GET') return json(res, [...sets.values()].map(({ data, ...r }) => r));

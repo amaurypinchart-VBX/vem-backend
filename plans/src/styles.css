@@ -430,3 +430,18 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (max-width: 900px) {
   .paint-toast { bottom: auto; top: max(8px, env(safe-area-inset-top)); }
 }
+
+/* Peinture › « 🧱 Côtés extérieurs » */
+.exterior-dialog { width: min(980px, 100%); }
+.exterior-body { display: flex; flex-direction: column; gap: 8px; overflow: auto; padding: 10px 14px; }
+.exterior-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.3fr); gap: 16px; align-items: start; }
+.exterior-modules { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; max-height: 120px; overflow: auto; }
+.exterior-cats { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.exterior-cats .hint { margin-left: auto; padding-left: 10px; }
+.exterior-plan { width: 100%; max-height: 420px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+@media (max-width: 900px) {
+  .exterior-grid { grid-template-columns: 1fr; }
+}
+.exterior-cats .check { display: flex; }
+.exterior-plans { display: flex; flex-direction: column; gap: 6px; }
+.exterior-plans .exterior-plan { max-height: 260px; }

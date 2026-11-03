@@ -127,10 +127,10 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
       v.setPaintDisplay(null);
       return;
     }
-    const painted = paintScene(scene, paintSettings);
+    const painted = paintScene(scene, paintSettings, undefined, glassTest);
     const hex = new Map(paintSettings.colors.map((c) => [c.id, parseInt(c.hex.slice(1), 16)]));
     v.setPaintDisplay(paintLayers3D(scene, painted).map((l) => ({ nodeId: l.nodeId, color: hex.get(l.colorId) ?? 0x888888, positions: l.positions })));
-  }, [scene, paintSettings, showPaint, framesVersion]);
+  }, [scene, paintSettings, showPaint, framesVersion, glassTest]);
 
   useEffect(() => {
     viewerRef.current?.setVisibility(includeIds, hiddenCats, ghosts);
