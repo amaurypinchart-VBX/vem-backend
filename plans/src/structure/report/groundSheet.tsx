@@ -51,12 +51,25 @@ export interface PlanPlate {
   color: string;
   /** centrée sous l'appui (dépasse de l'installation) */
   centered?: boolean;
+  /** texte écrit dans la plaque (pression au sol…) */
+  label?: string[];
 }
 
 /** Plaques de calage des appuis (couche du dessous), pour les plans A4. */
-export function planPlates(checks: SupportCheck[]): PlanPlate[] {
-  return checks.filter((c) => c.plan).map((c) => ({ id: c.id, corners: c.plan!.corners, color: typeColor(c.typeKey), centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5 }));
+export function planPlates(checks: SupportCheck[], opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[] } = {}): PlanPlate[] {
+  return checks
+    .filter((c) => c.plan)
+    .map((c) => ({
+      id: c.id,
+      corners: c.plan!.corners,
+      color: opts.color?.(c) ?? typeColor(c.typeKey),
+      centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5,
+      ...(opts.label ? { label: opts.label(c) } : {}),
+    }));
 }
+
+/** « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). */
+export const pressureLines = (c: SupportCheck): string[] => [`${fmtNumber(c.pressure * 1e3, c.pressure * 1e3 < 10 ? 1 : 0)} kN/m²`, `${fmtNumber((c.pressure * 1e6) / 9.81, 0)} kg/m²`];
 
 /** « VBX-01/04 » : numéros des Viewbox d'une même emprise, triés (même préfixe regroupé). */
 export function compactModuleIds(ids: string[]): string {
@@ -143,6 +156,18 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
             strokeWidth={text * 0.09}
             strokeDasharray={p.centered ? `${text * 0.35} ${text * 0.2}` : undefined}
           />
+          {p.label?.map((t, k) => {
+            const xs = p.corners.map((q) => X(q[0]));
+            const ys = p.corners.map((q) => Y(q[1]));
+            const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+            const yb = Math.max(...ys);
+            const n = p.label!.length;
+            return (
+              <text key={`lb${k}`} fontFamily={FONT_SANS} x={cx} y={yb - text * 0.35 - (n - 1 - k) * text * 0.85} fontSize={text * 0.72} textAnchor="middle" fontWeight={k === 0 ? 700 : undefined} fill={k === 0 ? p.color : '#374151'}>
+                {t}
+              </text>
+            );
+          })}
           {p.centered && (
             <text fontFamily={FONT_SANS} x={X(Math.max(...p.corners.map((q) => q[0])))} y={Y(Math.min(...p.corners.map((q) => q[1]))) + text * 0.7} fontSize={text * 0.75} textAnchor="end" fill={p.color}>
               ▲
