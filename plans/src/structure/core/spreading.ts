@@ -9,6 +9,7 @@ import type { CalcRecord } from './records';
 import { kgm2 } from './roadway';
 import { fmtNumber } from './units';
 import type { BlockChain } from './blocks';
+import { blockPlateCaps } from './blocks';
 
 /** Une couche choisie : n plaques identiques du stock (clé `plateKey`) empilées. */
 export interface LayerRef {
@@ -27,6 +28,8 @@ export interface CalageChoices {
   roadway?: boolean;
   /** longrines bois sous les grands côtés retenues à la place des plaques (sinon : variante proposée seulement) */
   longrine?: boolean;
+  /** pose des plaques choisie pour un appui (« P4 », « B2 ») : à fleur de la Viewbox ou centrées ; absent = réglage général */
+  placeBySupport?: Record<string, 'flush' | 'centered'>;
 }
 
 const f = (v: number, d = 1) => fmtNumber(v, d);
@@ -296,8 +299,7 @@ export function checkChain(inp: ChainInput): ChainResult {
     c = [eu, ev];
   }
   // plaques sous un bloc : centrées sur le bloc, la charge est à `offset` du centre de la plaque
-  const capsOf = (L: SpreadLayer): [number, number] =>
-    blk ? [Math.max(1, L.l - 2 * Math.abs(blk.offset[0])), Math.max(1, L.w - 2 * Math.abs(blk.offset[1]))] : caps;
+  const capsOf = (L: SpreadLayer): [number, number] => (blk ? blockPlateCaps(blk, L.l, L.w) : caps);
   const capText = () => {
     const d = Math.min(...(inp.edgeDist ?? [Infinity, Infinity]));
     return Number.isFinite(d)
@@ -309,7 +311,7 @@ export function checkChain(inp: ChainInput): ChainResult {
     results.push(r);
     const lab = `${L.n > 1 ? `${L.n} × ` : ''}${L.label}`;
     let note: string | undefined;
-    if (r.eccentric) note = blk ? 'plaque centrée sous le bloc : emprise centrée sur la charge (B\' = B − 2 e)' : capText();
+    if (r.eccentric) note = blk ? (blk.plate === 'flush' ? 'plaque à fleur de la Viewbox sous le bloc : emprise centrée sur la charge (B\' = B − 2 e)' : 'plaque centrée sous le bloc : emprise centrée sur la charge (B\' = B − 2 e)') : capText();
     if (r.flexible) {
       const fx = r.flexible;
       const soft =
@@ -437,7 +439,9 @@ export function bestStockLayers(base: Omit<ChainInput, 'layers'>, stock: StockPl
 function stockCandidates(stock: StockPlate[]): SpreadLayer[][] {
   const plates = stock.filter((s) => s.length > 0 && s.width > 0 && s.thickness > 0);
   const cands: SpreadLayer[][] = [];
-  for (const s of plates) for (const n of [1, 2, 3]) cands.push([stockLayer(s, n)]);
+  // plaque rectangulaire : les deux sens de pose
+  const turned = (L: SpreadLayer): SpreadLayer[] => (L.l !== L.w ? [L, { ...L, l: L.w, w: L.l }] : [L]);
+  for (const s of plates) for (const n of [1, 2, 3]) for (const L of turned(stockLayer(s, n))) cands.push([L]);
   for (const top of plates)
     for (const bottom of plates) {
       if (top.length * top.width >= bottom.length * bottom.width) continue;

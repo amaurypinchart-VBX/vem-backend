@@ -13,11 +13,13 @@ import { DEFAULTS } from '../../structure/library/defaults';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
 import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PLATE_LABEL, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
 import type { PlateMaterial } from '../../structure/core/ground';
-import type { CalageChoices, LayerRef } from '../../structure/core/spreading';
+import type { CalageChoices } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
-import { GroundPlan, planPlates } from '../../structure/report/groundSheet';
+import { GroundPlan, planPlates, pressureLines } from '../../structure/report/groundSheet';
+import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
+import { calageRemedies } from '../../structure/core/calageRemedies';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
 import type { Terrain } from '../../structure/core/wind';
@@ -260,6 +262,83 @@ function Records({ records }: { records: CalcRecord[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+const REMEDY_BADGE: Record<RemedyVerdict, { cls: string; text: string }> = {
+  ok: { cls: 'ok', text: '✔ passe (calculé)' },
+  fail: { cls: 'ko', text: '✖ ne suffit pas' },
+  study: { cls: 'orange', text: 'à dimensionner' },
+  info: { cls: '', text: 'information' },
+};
+
+/** Pistes chiffrées quand le calage ne passe pas : ce que propose l'outil, avec ses hypothèses et le matériel. */
+function RemediesCard({ remedies, bearing, searching, onSearch }: { remedies: CalageRemedy[] | null; bearing: number; searching: boolean; onSearch: () => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!remedies)
+    return (
+      <div className="card" data-testid="calage-remedies">
+        <div className="card-head">
+          <h2>🛠 Solutions pour que le sol passe</h2>
+          <div className="spacer" style={{ flex: 1 }} />
+          <button className="btn small primary" disabled={searching} onClick={onSearch} data-testid="remedies-search">
+            {searching ? 'Recherche en cours…' : 'Chercher des solutions'}
+          </button>
+        </div>
+        <div className="card-body hint">
+          L’outil essaie : blocs centrés sous les pieds, surface d’appui nécessaire, grille de madriers C24 sous chaque rangée, plateau continu en madriers (avec et sans les blocs,
+          sans débord puis 50 cm), et dit ce que chaque piste suppose. Quelques secondes.
+        </div>
+      </div>
+    );
+  return (
+    <div className="card" data-testid="calage-remedies">
+      <div className="card-head">
+        <h2>🛠 Solutions pour que le sol passe</h2>
+        <span className="hint">
+          portance {n(bearing * 1e3, bearing * 1e3 < 10 ? 1 : 0)} kN/m² ({n((bearing * 1e6) / 9.81, 0)} kg/m²) — pistes calculées par l’outil, les vérifiées d’abord
+        </span>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {remedies.map((r) => (
+          <div key={r.key} style={{ borderLeft: `3px solid ${r.verdict === 'ok' ? '#16a34a' : r.verdict === 'fail' ? '#dc2626' : r.verdict === 'study' ? '#d97706' : '#9ca3af'}`, paddingLeft: 10 }}>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <b>{r.title}</b>
+              <span className={`badge ${REMEDY_BADGE[r.verdict].cls}`}>
+                {REMEDY_BADGE[r.verdict].text}
+                {r.eta !== undefined ? ` · η ${n(r.eta, 2)}` : ''}
+              </span>
+              {(r.details.length > 0 || r.records.length > 0 || r.notes.length > 0) && (
+                <button className="btn small ghost" onClick={() => setOpen(open === r.key ? null : r.key)}>
+                  {open === r.key ? 'Masquer le détail' : 'Voir le détail'}
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{r.summary}</div>
+            {!!r.materials.length && (
+              <div className="hint">
+                Matériel : {r.materials.map((m) => `${m.quantity} × ${m.label} ${m.dims} (${n(m.massKg, 0)} kg)`).join(' ; ')}
+              </div>
+            )}
+            {open === r.key && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                {r.details.map((d, k) => (
+                  <div key={k} className="hint">
+                    • {d}
+                  </div>
+                ))}
+                {r.notes.map((d, k) => (
+                  <div key={`n${k}`} className="hint" style={{ fontStyle: 'italic' }}>
+                    {d}
+                  </div>
+                ))}
+                {!!r.records.length && <Records records={r.records} />}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -593,16 +672,32 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   // choix de calage (enregistrés avec les hypothèses)
   const choices: CalageChoices = hyp.calage ?? {};
   const setChoices = (update: (c: CalageChoices) => CalageChoices) => setHyp((h) => ({ ...h, calage: update(h.calage ?? {}) }));
-  const setIn = (map: Record<string, LayerRef[]> | undefined, k: string, v: LayerRef[] | undefined) => {
+  const setIn = <T,>(map: Record<string, T> | undefined, k: string, v: T | undefined) => {
     const out = { ...(map ?? {}) };
     if (v === undefined) delete out[k];
     else out[k] = v;
     return out;
   };
+  // pistes pour faire passer le sol (madriers, plateau, blocs centrés…) : cherchées sur demande (quelques secondes)
+  const [remedies, setRemedies] = useState<CalageRemedy[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => setRemedies(null), [result]);
+  const searchRemedies = () => {
+    if (!result) return;
+    setSearching(true);
+    setTimeout(() => {
+      try {
+        setRemedies(calageRemedies(input, result));
+      } finally {
+        setSearching(false);
+      }
+    }, 20);
+  };
   const choiceSet: ChoiceSetters = {
     choices,
     setType: (k, v) => setChoices((c) => ({ ...c, byType: setIn(c.byType, k, v) })),
     setSupport: (id, v) => setChoices((c) => ({ ...c, bySupport: setIn(c.bySupport, id, v) })),
+    setPlace: (id, v) => setChoices((c) => ({ ...c, placeBySupport: setIn(c.placeBySupport, id, v) })),
     setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
     reset: () => setChoices(() => ({})),
   };
@@ -838,7 +933,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   text={14}
                   selected={selected}
                   onSelect={planView === 'level' ? setSelected : select}
-                  plates={planPlates(result.checks)}
+                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines } : {})}
                   {...(planView === 'level'
                     ? {
                         pointColor: (r) => levelPointStyle(result, hyp.groundLevels, r).color,
@@ -867,7 +962,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 {planView === 'level'
                   ? 'Niveau du sol relevé sous chaque pied (mm, valeurs relatives) ; ↑ = rehausse à apporter pour poser la Viewbox de niveau (le point le plus haut sert de référence).'
                   : planView === 'check'
-                    ? 'Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.'
+                    ? `Chiffres dans chaque plaque ou bloc = pression au sol finale (portance admise : ${n(input.bearing * 1e3, input.bearing * 1e3 < 10 ? 1 : 0)} kN/m² = ${n((input.bearing * 1e6) / 9.81, 0)} kg/m²). Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.`
                     : 'Couleur = type d’appui.'}{' '}
                 Plaques dessinées à l’échelle à leur place (pointillés ▲ = plaque centrée, elle dépasse de la Viewbox) ; les vérins voisins sont sur une même plaque.
               </div>
@@ -894,6 +989,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
           </div>
 
           <CalageDiagnostic result={result} set={choiceSet} onSelect={select} publicLine={publicLine} />
+          {result.checks.some((c) => c.eta > 1) && (
+            <RemediesCard remedies={remedies} bearing={input.bearing} searching={searching} onSearch={searchRemedies} />
+          )}
 
           {roadway && (
             <div className="card">

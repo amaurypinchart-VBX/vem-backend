@@ -147,6 +147,8 @@ export interface ChoiceSetters {
   choices: CalageChoices;
   setType: (key: string, v: LayerRef[] | undefined) => void;
   setSupport: (id: string, v: LayerRef[] | undefined) => void;
+  /** pose des plaques d'un appui (à fleur / centrées), undefined = réglage général */
+  setPlace: (id: string, v: 'flush' | 'centered' | undefined) => void;
   setRoadway: (on: boolean) => void;
   reset: () => void;
 }
@@ -191,6 +193,19 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
           {c.tuv ? ` Prüfbuch TÜV : ${c.tuv.text}.` : ''}
         </div>
         <ChainTable c={c} />
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <span className="hint" style={{ minWidth: 140 }}>Pose des plaques de {c.id}</span>
+          <select
+            value={set.choices.placeBySupport?.[c.id] ?? ''}
+            style={{ maxWidth: 360 }}
+            onChange={(e) => set.setPlace(c.id, (e.target.value || undefined) as 'flush' | 'centered' | undefined)}
+            title="À fleur : la plaque part du bord de la Viewbox et ne dépasse pas (seule la zone centrée sous la charge compte). Centrée : la plaque dépasse mais répartit mieux. Pour empiler des plaques ici, choisir 2 ou 3 plaques dans « Calage de … » ci-dessous."
+          >
+            <option value="">comme le réglage général ({c.placement === 'flush' ? 'ici : à fleur' : 'ici : centrée'})</option>
+            <option value="flush">à fleur de la Viewbox (ne dépasse pas)</option>
+            <option value="centered">centrée sous l’appui (peut dépasser)</option>
+          </select>
+        </div>
         <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
           <span className="hint" style={{ minWidth: 140, paddingTop: 4 }}>
             Calage de {c.id}

@@ -12,7 +12,7 @@ import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, Plat
 import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
-import type { CalageChoices, ChainResult, LayerRef } from './spreading';
+import type { CalageChoices, ChainInput, ChainResult, LayerRef } from './spreading';
 import { adviseChain, bestStockForAll, bestStockLayers, checkChain, dimsCm, pressureText, resolveLayers } from './spreading';
 import type { BlockChain, BlockSupport, DrawnBlock } from './blocks';
 import { assignBlocks, blockAxes, blockChain, blockDimsText, blockMaterial, blockOutline, centredBlock } from './blocks';
@@ -100,8 +100,25 @@ export interface SupportCheck extends ChainResult {
   placement: 'flush' | 'centered';
   /** conformité au minimum du Prüfbuch (null : pied central, non prévu) */
   tuv: TuvCheck | null;
-  /** appui posé sur un bloc de calage bois dessiné : le bloc (contour en plan, dimensions, masse) */
-  block?: { id: string; label: string; dims: string; massKg: number; massSource: DrawnBlock['massSource']; outline: [P2, P2, P2, P2]; feet: string[] };
+  /** appui posé sur un bloc de calage bois dessiné : le bloc (contour en plan, dimensions, masse) et le même bloc centré sous l'appui */
+  block?: {
+    id: string;
+    label: string;
+    dims: string;
+    massKg: number;
+    massSource: DrawnBlock['massSource'];
+    outline: [P2, P2, P2, P2];
+    feet: string[];
+    /** côtés du bloc (mm, u, v) et décalage de la charge au centre du bloc (mm) */
+    size: [number, number];
+    offset: number;
+    /** même bloc centré sous la résultante des pieds, sans plaque : pression au sol et taux */
+    centred: { pressure: number; eta: number };
+  };
+  /** entrée de la chaîne de répartition de l'appui (sans les couches) : pour rejouer l'appui avec d'autres plaques */
+  chainBase: Omit<ChainInput, 'layers'>;
+  /** centre de l'appui en plan (monde x, z, mm) */
+  at: P2;
 }
 
 export interface CalageType {
@@ -198,7 +215,8 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
   const est = limit(est0);
-  const placementMode: PlatePlacement = inp.placement ?? 'auto';
+  const placementModeAll: PlatePlacement = inp.placement ?? 'auto';
+  const placementMode = placementModeAll;
   // Prüfbuch TÜV 190060 B : seulement sous des Viewbox (types personnalisés S12 : « non comparable », aucun texte TÜV)
   const custom = new Set(inp.modules.filter((m) => m.family === 'other').map((m) => m.id));
   const viewboxPresent = !inp.modules.length || inp.modules.some((m) => m.family !== 'other');
@@ -368,14 +386,26 @@ export function computeCalage(inp: CalageInput): CalageResult {
         const r = g.reaction;
         const geo = geos.get(g)!;
         const Rk = inp.staticoConversion ? r.REd / 1.35 : r.Rk;
+        // pose des plaques : choix propre à cet appui, sinon le réglage général
+        const placementMode: PlatePlacement = choices.placeBySupport?.[r.group.id] ?? placementModeAll;
         const bs = blockOf.get(g);
         if (bs) {
-          // bloc dessiné : pieds → bloc → (plaques sous le bloc, centrées sur lui) → sol
+          // bloc dessiné : pieds → bloc → (plaques sous le bloc : à fleur de la Viewbox ou centrées sur le bloc) → sol
           // pas de répartition uniforme sous un bloc (voir l'avertissement plaques de roulage + blocs)
-          const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale) };
-          const chain = checkChain({ ...base, layers });
-          const bottom = layers[layers.length - 1];
-          return { r, geo, Rk, base, flushBase: base, centeredBase: base, chain, atFlush: chain, atCenter: chain, placement: 'centered' as const, eccentric: false, bottom };
+          const run = (ls: SpreadLayer[], plate: 'centered' | 'flush') => {
+            const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale, plate) };
+            return { base, chain: checkChain({ ...base, layers: ls }), ls };
+          };
+          // plaque rectangulaire : dans le sens qui répartit le mieux
+          const options = [layers, ...(layers.some((L) => L.l !== L.w) ? [rotated(layers)] : [])];
+          const best = (plate: 'centered' | 'flush') => options.map((ls) => run(ls, plate)).reduce((a, b) => (b.chain.eta < a.chain.eta - 1e-9 ? b : a));
+          const fl = best('flush');
+          const ce = best('centered');
+          const hasEdge = bs.s.edges.some((x) => x !== null);
+          let placement: 'flush' | 'centered' = placementMode === 'centered' || !layers.length || !hasEdge ? 'centered' : 'flush';
+          if (placementMode === 'auto' && placement === 'flush' && fl.chain.eta > 1 && ce.chain.eta < fl.chain.eta) placement = 'centered';
+          const pick = placement === 'flush' ? fl : ce;
+          return { r, geo, Rk, base: pick.base, flushBase: fl.base, centeredBase: ce.base, chain: pick.chain, atFlush: fl.chain, atCenter: ce.chain, placement, eccentric: false, bottom: pick.ls[pick.ls.length - 1], layersUsed: pick.ls };
         }
         const flush = flushCaps(geo);
         const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k };
@@ -387,14 +417,24 @@ export function computeCalage(inp: CalageInput): CalageResult {
         let placement: 'flush' | 'centered' = placementMode === 'centered' ? 'centered' : 'flush';
         if (placementMode === 'auto' && eccentric && atFlush.eta > 1 && atCenter.eta < atFlush.eta) placement = 'centered';
         const chain = placement === 'flush' ? atFlush : atCenter;
-        return { r, geo, Rk, base: placement === 'flush' ? flushBase : base, flushBase, centeredBase: base, chain, atFlush, atCenter, placement, eccentric, bottom };
+        return { r, geo, Rk, base: placement === 'flush' ? flushBase : base, flushBase, centeredBase: base, chain, atFlush, atCenter, placement, eccentric, bottom, layersUsed: layers };
       };
       const passes = (layers: SpreadLayer[]) => part.groups.every((g) => evaluate(g, layers).chain.eta <= 1);
       // blocs : sans plaque si le bloc suffit, sinon les plaques du stock (sous le bloc) qui suffisent à tous les blocs du type
       let blockAuto: SpreadLayer[] | null = null;
       if (onBlock && !part.refs) {
         if (passes([])) blockAuto = [];
-        else blockAuto = bestStockForAll(part.groups.map((g) => evaluate(g, []).base), inp.stock)?.layers ?? [];
+        else {
+          // plaques du stock sous les blocs, posées comme demandé (à fleur d'abord, sauf pose centrée)
+          const basesFor = (plate: 'centered' | 'flush') =>
+            part.groups.map((g) => {
+              const bs = blockOf.get(g)!;
+              const e = evaluate(g, []);
+              return { ...e.base, block: blockChain(bs.s, bs.scale, bs.s.edges.some((x) => x !== null) ? plate : 'centered') };
+            });
+          const found = (placementMode !== 'centered' ? bestStockForAll(basesFor('flush'), inp.stock) : null) ?? (placementMode !== 'flush' ? bestStockForAll(basesFor('centered'), inp.stock) : null);
+          blockAuto = found?.layers ?? [];
+        }
       }
       const conformTuv = (layers: SpreadLayer[]) => tuvConformity(containers, middle || stair, layers, terrace && middle)?.ok === true;
       const auto0 = recommended(d.solutions);
@@ -428,7 +468,9 @@ export function computeCalage(inp: CalageInput): CalageResult {
         if (!inp.noAdvice && !onBlock && placementMode === 'auto' && e.placement === 'flush' && e.chain.eta > 1 && !roadwayOn && !bestStockLayers(e.flushBase, inp.stock) && bestStockLayers(e.centeredBase, inp.stock))
           advice = `${adviseChain(r.group.id, e.atCenter, layers, { ...ctx, base: e.centeredBase })} (plaque centrée sous l’appui : à fleur de la Viewbox, aucune plaque ne suffit, la charge est trop près du bord).`;
         const bs = blockOf.get(g)?.s;
-        const plan = bs ? blockPlan(bs, e.bottom) : e.bottom ? platePlan(e.geo, e.bottom.l, e.bottom.w, e.placement) : null;
+        const plan = bs ? blockPlan(bs, e.bottom, e.placement) : e.bottom ? platePlan(e.geo, e.bottom.l, e.bottom.w, e.placement) : null;
+        if (!inp.noAdvice && bs && plan && e.bottom && plan.overhang > 5)
+          advice += ` Plaque centrée sous le bloc : elle dépasse de l’installation de ${Math.round(plan.overhang / 10)} cm${e.atFlush.eta <= 1 ? '' : ` (à fleur de la Viewbox : ${pressureText(e.atFlush.pressure)}, η ${fmtNumber(e.atFlush.eta, 2)})`}.`;
         // bloc excentré qui ne passe pas : le même bloc centré sous la résultante des pieds
         const bc = (e.base as { block?: BlockChain }).block;
         if (!inp.noAdvice && bs && e.chain.eta > 1 && e.chain.etaGround > 1 && bc) {
@@ -452,7 +494,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
           reaction: r,
           typeKey: key,
           source,
-          layerList: layers,
+          layerList: e.layersUsed,
           Rzk: e.Rk,
           REd: r.REd,
           advice: advice.trim(),
@@ -461,6 +503,8 @@ export function computeCalage(inp: CalageInput): CalageResult {
           plan,
           placement: e.placement,
           tuv: tuvOn && vbxOnly ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null,
+          chainBase: e.base,
+          at: [e.geo.u[0] * e.geo.center[0] + e.geo.v[0] * e.geo.center[1], e.geo.u[1] * e.geo.center[0] + e.geo.v[1] * e.geo.center[1]],
           ...(bs
             ? {
                 block: {
@@ -471,6 +515,12 @@ export function computeCalage(inp: CalageInput): CalageResult {
                   massSource: bs.block.massSource,
                   outline: blockOutline(bs.block),
                   feet: bs.feet.map((f) => f.id),
+                  size: [bs.rect[1] - bs.rect[0], bs.rect[3] - bs.rect[2]],
+                  offset: Math.hypot(...(e.base as { block: BlockChain }).block.offset),
+                  centred: (() => {
+                    const cc = checkChain({ ...e.base, layers: [], block: blockChain(centredBlock(bs), blockOf.get(g)!.scale) });
+                    return { pressure: cc.pressure, eta: cc.eta };
+                  })(),
                 },
               }
             : {}),
@@ -739,20 +789,36 @@ function blockTypeLabel(n: number, middle: boolean, jack: boolean, capital = fal
 }
 
 /** Contour en plan d'un appui sur bloc : la plaque du dessous (centrée sur le bloc), sinon le bloc lui-même. */
-function blockPlan(bs: BlockSupport, bottom: SpreadLayer | undefined): PlatePlan {
+/** Plaque (n plaques identiques par couche) tournée d'un quart de tour : longueur et largeur échangées. */
+function rotated(layers: SpreadLayer[]): SpreadLayer[] {
+  return layers.map((L) => (L.l !== L.w ? { ...L, l: L.w, w: L.l } : L));
+}
+
+/**
+ * Contour en plan d'un appui sur bloc : la plaque du dessous — centrée sur le bloc, ou à fleur de la Viewbox (elle
+ * part du bord extérieur de l'installation, vers l'intérieur) — sinon le bloc lui-même ; dépassement hors de l'installation.
+ */
+function blockPlan(bs: BlockSupport, bottom: SpreadLayer | undefined, placement: 'flush' | 'centered'): PlatePlan {
   const b = bs.block;
   const { u, v } = bs.geometry;
   const [u0, u1, v0, v1] = bs.rect;
-  const [cu, cv] = [(u0 + u1) / 2, (v0 + v1) / 2];
-  const [l, w] = bottom ? [Math.max(bottom.l, u1 - u0), Math.max(bottom.w, v1 - v0)] : [u1 - u0, v1 - v0];
+  const centre = [(u0 + u1) / 2, (v0 + v1) / 2];
   const P = (a: number, c: number): P2 => [u[0] * a + v[0] * c, u[1] * a + v[1] * c];
-  return {
-    placement: 'centered',
-    corners: bottom ? [P(cu - l / 2, cv - w / 2), P(cu + l / 2, cv - w / 2), P(cu + l / 2, cv + w / 2), P(cu - l / 2, cv + w / 2)] : blockOutline(b),
-    caps: [Infinity, Infinity],
-    edgeDist: [Infinity, Infinity],
-    overhang: 0,
-  };
+  if (!bottom)
+    return { placement: 'centered', corners: blockOutline(b), caps: [Infinity, Infinity], edgeDist: [Infinity, Infinity], overhang: 0 };
+  const dims = [bottom.l, bottom.w];
+  let overhang = 0;
+  const span = [0, 1].map((k): [number, number] => {
+    const L = dims[k];
+    const edge = bs.edges[k];
+    const c = centre[k];
+    if (placement === 'flush' && edge !== null) return c >= edge ? [edge, edge + L] : [edge - L, edge];
+    const sp: [number, number] = [c - L / 2, c + L / 2];
+    if (edge !== null) overhang = Math.max(overhang, c >= edge ? edge - sp[0] : sp[1] - edge);
+    return sp;
+  });
+  const [[a0, a1], [b0, b1]] = span;
+  return { placement, corners: [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)], caps: [Infinity, Infinity], edgeDist: [Infinity, Infinity], overhang: Math.max(0, overhang) };
 }
 
 function materialLabel(l: SpreadLayer): string {

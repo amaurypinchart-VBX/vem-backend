@@ -170,6 +170,8 @@ export interface BlockSupport {
   geometry: SupportGeometry;
   /** rectangle du bloc dans les axes (u, v) */
   rect: [number, number, number, number];
+  /** bord extérieur de l'installation le long de u, v (coordonnée), null = Viewbox des deux côtés */
+  edges: [number | null, number | null];
 }
 
 /** Résistance de calcul en compression transversale du bois du bloc (N/mm²) : kc,90 = 1,0 (sens du fil inconnu). */
@@ -201,7 +203,7 @@ const areaOf = (r: readonly number[]) => Math.max(0, r[1] - r[0]) * Math.max(0, 
  */
 export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], blocks: DrawnBlock[], tol = 300): BlockAssignment {
   const warnings: string[] = [];
-  const onBlock = new Map<DrawnBlock, Array<{ g: PlateGroup; geo: SupportGeometry; rect: number[]; coverage: number }>>();
+  const onBlock = new Map<DrawnBlock, Array<{ g: PlateGroup; geo: SupportGeometry; geo0: SupportGeometry; rect: number[]; coverage: number }>>();
   const free: PlateGroup[] = [];
   for (const g of groups) {
     const geo0 = supportGeometry(g, modules);
@@ -226,7 +228,7 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
     }
     if (best) {
       if (!onBlock.has(best.b)) onBlock.set(best.b, []);
-      onBlock.get(best.b)!.push({ g, geo, rect, coverage: best.a / (geo.contact[0] * geo.contact[1]) });
+      onBlock.get(best.b)!.push({ g, geo, geo0, rect, coverage: best.a / (geo.contact[0] * geo.contact[1]) });
     } else {
       free.push(g);
       if (near && near.d <= tol)
@@ -285,7 +287,9 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
     };
     const pg: PlateGroup = { reaction, members: list.flatMap((x) => x.g.members) };
     out.push(pg);
-    support.set(pg, { block: b, feet, geometry, rect: br });
+    // bord extérieur de l'installation vu de l'appui (pose des plaques à fleur de la Viewbox)
+    const edges = first.geo0.sides.map((sd) => (sd.side === 'both' ? null : sd.edge)) as [number | null, number | null];
+    support.set(pg, { block: b, feet, geometry, rect: br, edges });
   }
   const unused = blocks.filter((b) => !onBlock.has(b));
   return { groups: out, support, unused, warnings };
@@ -308,6 +312,12 @@ export interface BlockChain {
   c90: { foot: string; sigma: number; fc90d: number; area: number; REd: number };
   /** la diffusion à 45° (et non le bloc) limite l'emprise */
   diffusionLimited: boolean;
+  /**
+   * plaques sous le bloc : centrées sur le bloc, ou à fleur de la Viewbox (elles partent du bord extérieur de
+   * l'installation et ne dépassent pas) ; distance de la résultante à ce bord (mm, null = pas de bord de ce côté)
+   */
+  plate: 'centered' | 'flush';
+  edge: [number | null, number | null];
 }
 
 /**
@@ -316,7 +326,7 @@ export interface BlockChain {
  * centrée sur la résultante (B' = 2 × distance au bord le plus proche), poids du bloc. `scale` = rapport réaction
  * limitée / réaction complète (public limité), appliqué aux pieds.
  */
-export function blockChain(s: BlockSupport, scale = 1): BlockChain {
+export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flush' = 'centered'): BlockChain {
   const b = s.block;
   const h = Math.max(0, b.top - b.bottom);
   const [u0, u1, v0, v1] = s.rect;
@@ -349,7 +359,21 @@ export function blockChain(s: BlockSupport, scale = 1): BlockChain {
     weightD: 1.35 * W,
     c90,
     diffusionLimited: eu < byBlock[0] - 1 || ev < byBlock[1] - 1,
+    plate,
+    edge: [s.edges[0] === null ? null : Math.abs(cu - s.edges[0]), s.edges[1] === null ? null : Math.abs(cv - s.edges[1])],
   };
+}
+
+/** Emprise efficace maximale d'une plaque l × w sous le bloc (B' = B − 2 e, e = écart charge ↔ centre de la plaque). */
+export function blockPlateCaps(b: BlockChain, l: number, w: number): [number, number] {
+  const dims = [l, w];
+  return [0, 1].map((k) => {
+    const L = dims[k];
+    const d = b.edge[k];
+    // à fleur : la plaque part du bord extérieur, son centre est à L/2 du bord
+    const e = b.plate === 'flush' && d !== null ? Math.abs(L / 2 - d) : Math.abs(b.offset[k]);
+    return Math.max(1, L - 2 * e);
+  }) as [number, number];
 }
 
 /** Même bloc déplacé pour que son centre soit sous la résultante des pieds (conseil « centrer le bloc »). */

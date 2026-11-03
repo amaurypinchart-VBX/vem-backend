@@ -207,3 +207,68 @@ describe('blocs + plaques de roulage (revue 03.11.2026)', () => {
     expect(on.checks.find((x) => x.block?.id === 'BL1')!.eta).toBeGreaterThan(1);
   });
 });
+
+describe('pose des plaques sous les blocs et solutions (A. Pinchart 03.11.2026)', () => {
+  const pehd = { label: 'PEHD', length: 2200, width: 1100, thickness: 38, quantity: 0, material: 'hdpe' as const, massKg: 46 };
+  const corner = [block('BL1', xs[0] + 500, zs[0] + 500)];
+
+  it('plaque à fleur de la Viewbox sous un bloc d’angle : elle ne dépasse pas ; centrée : elle dépasse', async () => {
+    const { plateKey } = await import('../../src/structure/core/ground');
+    const choose = { byType: { B1: [{ plate: plateKey(pehd), n: 1 }] } };
+    const flush = computeCalage({ ...base, blocks: corner, stock: [pehd], choices: choose, placement: 'flush' });
+    const c = flush.checks.find((x) => x.block)!;
+    expect(c.placement).toBe('flush');
+    expect(c.plan!.overhang).toBe(0);
+    // le contour part du bord des Viewbox
+    expect(Math.min(...c.plan!.corners.map((p) => p[0]))).toBeCloseTo(xs[0], 3);
+    expect(Math.min(...c.plan!.corners.map((p) => p[1]))).toBeCloseTo(zs[0], 3);
+    const centred = computeCalage({ ...base, blocks: corner, stock: [pehd], choices: choose, placement: 'centered' });
+    const cc = centred.checks.find((x) => x.block)!;
+    expect(cc.plan!.overhang).toBeGreaterThan(0);
+    expect(cc.advice).toContain('dépasse de l’installation');
+    // choix propre à l'appui : prime sur le réglage général
+    const own = computeCalage({ ...base, blocks: corner, stock: [pehd], choices: { ...choose, placeBySupport: { [cc.id]: 'flush' } }, placement: 'centered' });
+    expect(own.checks.find((x) => x.block)!.placement).toBe('flush');
+  });
+
+  it('plaque rectangulaire posée dans le sens qui répartit le mieux', async () => {
+    const { plateKey } = await import('../../src/structure/core/ground');
+    const r = computeCalage({ ...base, blocks: corner, stock: [pehd], choices: { byType: { B1: [{ plate: plateKey(pehd), n: 1 }] } }, placement: 'centered' });
+    const c = r.checks.find((x) => x.block)!;
+    const turned = { ...c.layerList[0], l: c.layerList[0].w, w: c.layerList[0].l };
+    const { checkChain } = await import('../../src/structure/core/spreading');
+    expect(c.eta).toBeLessThanOrEqual(checkChain({ ...c.chainBase, layers: [turned] }).eta + 1e-9);
+  });
+
+  it('pression au sol écrite sur le plan, en kN/m² et kg/m²', async () => {
+    const { pressureLines } = await import('../../src/structure/report/groundSheet');
+    const c = computeCalage({ ...base, blocks: nine }).checks.find((x) => x.block?.id === 'BL5')!;
+    const [a, b] = pressureLines(c);
+    expect(a).toContain(String(Math.round(c.pressure * 1e3)));
+    expect(a).toMatch(/kN\/m²$/);
+    expect(b).toMatch(/kg\/m²$/);
+  });
+
+  it('450 kg/m² : les pistes — blocs centrés insuffisants, plateau en grille de madriers vérifié', async () => {
+    const { calageRemedies } = await import('../../src/structure/core/calageRemedies');
+    const hyp450 = { ...hyp, bearingValue: 450, bearingUnit: 'kg/m²' as const, liveGround: 0.981, publicMode: 'persons' as const, persons: 4 };
+    const inp = { ...calageInput(mods, hyp450, { plates: [], commercial: [] }, true), blocks: nine };
+    const res = computeCalage(inp);
+    expect(res.checks.some((c) => c.eta > 1)).toBe(true);
+    const rem = calageRemedies(inp, res);
+    const keys = rem.map((x) => x.key);
+    expect(keys).toEqual(expect.arrayContaining(['centre-blocks', 'area', 'sleepers', 'platform', 'platform-no-blocks', 'load']));
+    expect(rem.find((x) => x.key === 'centre-blocks')!.verdict).toBe('fail');
+    const plat = rem.find((x) => x.key === 'platform')!;
+    // une piste « passe » est vérifiée par le calcul (η ≤ 1) et donne son matériel
+    if (plat.verdict === 'ok') {
+      expect(plat.eta!).toBeLessThanOrEqual(1);
+      expect(plat.materials.length).toBeGreaterThan(0);
+    }
+    // les pistes vérifiées d'abord
+    const firstNotOk = rem.findIndex((x) => x.verdict !== 'ok');
+    expect(rem.slice(firstNotOk).every((x) => x.verdict !== 'ok')).toBe(true);
+    // sans aucun appui qui dépasse : rien à proposer
+    expect(calageRemedies(base, computeCalage(base))).toEqual([]);
+  }, 60000);
+});
