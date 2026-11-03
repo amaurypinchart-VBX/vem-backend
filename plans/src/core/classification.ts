@@ -24,6 +24,11 @@ export const DEFAULT_RULES: ClassificationRules = {
     { key: 'PORTE-SIMPLE', patterns: ['PORTE[-_ ]?SIMPLE', 'SINGLE[-_ ]?DOOR'], accessory: true },
     { key: 'MUR-LEGER', patterns: ['MUR[-_ ]?LEGER', 'WALL[-_ ]?LIGHT', 'LIGHT[-_ ]?WALL'], accessory: true },
     { key: 'MUR-LOURD', patterns: ['MUR[-_ ]?LOURD', 'WALL[-_ ]?HEAVY', 'HEAVY[-_ ]?WALL'], accessory: true },
+    // cadres de tissu tendu (SEG) posés à l'extérieur / à l'intérieur de la box (extension SketchUp ≥ 1.4.1)
+    { key: 'FRAME-EXTERIEUR', label: 'Frame extérieur', patterns: ['FRAME[-_ ]?EXT', 'CADRE[-_ ]?(TEXTILE[-_ ]?)?EXT', '(OUTSIDE|OUTER|EXTERIOR)[-_ ]?FRAME'] },
+    { key: 'FRAME-INTERIEUR', label: 'Frame intérieur', patterns: ['FRAME[-_ ]?INT', 'CADRE[-_ ]?(TEXTILE[-_ ]?)?INT', '(INSIDE|INNER|INTERIOR)[-_ ]?FRAME'] },
+    // protection de sol (plaques bakélite)
+    { key: 'BOARDING', label: 'Boarding', patterns: ['BOARDING', 'BAKELIT'] },
     { key: 'GARDE-CORPS', patterns: ['GARDE[-_ ]?CORPS', 'RAILING', 'HANDRAIL', 'BALUSTRADE'] },
     { key: 'ESCALIER', patterns: ['ESCALIER', 'STAIR'] },
     // élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
@@ -134,6 +139,14 @@ export function categoryInfo(key: Category, rules?: ClassificationRules): { labe
   };
 }
 
+/** Catégories intégrées ajoutées après la première version des réglages : [clé, catégorie après laquelle l'insérer]. */
+const LATER_BUILTINS: Array<[string, string]> = [
+  ['TERRASSE', 'ESCALIER'],
+  ['FRAME-EXTERIEUR', 'MUR-LOURD'],
+  ['FRAME-INTERIEUR', 'FRAME-EXTERIEUR'],
+  ['BOARDING', 'FRAME-INTERIEUR'],
+];
+
 /** Fusionne des règles enregistrées (éventuellement partielles/anciennes) avec les valeurs par défaut. */
 export function mergeRules(saved: (Partial<ClassificationRules> & { moduleDims?: { long?: number; short?: number; toleranceMm?: number } }) | null | undefined): ClassificationRules {
   const base = structuredClone(DEFAULT_RULES);
@@ -148,10 +161,12 @@ export function mergeRules(saved: (Partial<ClassificationRules> & { moduleDims?:
     moduleSizes: Array.isArray(saved.moduleSizes) && saved.moduleSizes.length ? saved.moduleSizes : base.moduleSizes,
     moduleToleranceMm: saved.moduleToleranceMm ?? moduleDims?.toleranceMm ?? base.moduleToleranceMm,
   };
-  // catégories intégrées ajoutées après coup (TERRASSE) : reprises dans des réglages enregistrés avant elles
-  if (!merged.categories.some((c) => c.key === 'TERRASSE')) {
-    const t = base.categories.find((c) => c.key === 'TERRASSE')!;
-    const at = merged.categories.findIndex((c) => c.key === 'ESCALIER');
+  // catégories intégrées ajoutées après coup : reprises dans des réglages enregistrés avant elles, juste après
+  // la catégorie qui les précède dans les règles par défaut (l'ordre compte : premier motif trouvé)
+  for (const [key, after] of LATER_BUILTINS) {
+    if (merged.categories.some((c) => c.key === key)) continue;
+    const t = base.categories.find((c) => c.key === key)!;
+    const at = merged.categories.findIndex((c) => c.key === after);
     merged.categories = at >= 0 ? [...merged.categories.slice(0, at + 1), t, ...merged.categories.slice(at + 1)] : [t, ...merged.categories];
   }
   // Anciens réglages (une seule taille "moduleDims") : conservée en tête de liste.

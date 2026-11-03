@@ -32,6 +32,19 @@ class CoreTest < Minitest::Test
     assert_equal({ 'F2' => %w[a d] }, C.frame_duplicates(rows.map { |r| r['key'] == 'a' ? r.merge('ref' => 'f2') : r }))
   end
 
+  # 1.4.1 : catégories Frame extérieur / intérieur et Boarding
+  def test_frame_and_boarding_categories
+    assert_equal 'FRAME-EXTERIEUR', C.category('Frame ext 2000x2000')
+    assert_equal 'FRAME-EXTERIEUR', C.category('Cadre textile extérieur')
+    assert_equal 'FRAME-INTERIEUR', C.category('FRAME_INT_1')
+    assert_equal 'FRAME-INTERIEUR', C.category('cadre intérieur')
+    assert_equal 'BOARDING', C.category('Boarding 2440x1220')
+    assert_equal 'BOARDING', C.category('Plaque bakélite')
+    assert_equal 'VITRE-CADRE', C.category('Window frame 1200')
+    assert_includes C::CATEGORIES, 'FRAME-EXTERIEUR'
+    assert_includes C::CATEGORIES, 'BOARDING'
+  end
+
   def test_module_id
     assert_equal 'VBX-01', C.module_id('VBX-01')
     assert_equal 'VBX-07', C.module_id('vbx_7')

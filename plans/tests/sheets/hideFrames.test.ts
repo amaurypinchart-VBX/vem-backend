@@ -73,6 +73,9 @@ describe('étiquette « cadre textile »', () => {
       node('e', 'Préfabriqué'),
       node('f', 'Barrisol plafond'),
       node('g', 'Logo textile print'),
+      node('h', 'Bloc 8', 'FRAME-EXTERIEUR', 'manifest'),
+      node('i', 'Bloc 9', 'FRAME-INTERIEUR', 'manifest'),
+      node('j', 'Bloc 10', 'BOARDING', 'manifest'),
     ],
     modules: [],
   } as unknown as SceneIndex;
@@ -85,6 +88,10 @@ describe('étiquette « cadre textile »', () => {
     expect(tags.ownTag('e')).toBeNull();
     expect(tags.ownTag('f')?.tag).toBe('plafond-tendu');
     expect(tags.ownTag('g')?.tag).toBe(TEXTILE_TAG);
+    // catégories « Frame extérieur / intérieur » de l'extension SketchUp 1.4.1
+    expect(tags.ownTag('h')).toMatchObject({ tag: TEXTILE_TAG, source: 'category' });
+    expect(tags.ownTag('i')).toMatchObject({ tag: TEXTILE_TAG, source: 'category' });
+    expect(tags.ownTag('j')?.tag).not.toBe(TEXTILE_TAG);
   });
 });
 

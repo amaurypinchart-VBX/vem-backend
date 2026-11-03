@@ -16,7 +16,7 @@ export const BASE_VIEW_TAGS: BaseViewTag[] = [
   {
     tag: 'cadre-textile',
     label: 'Cadres textile (tissu tendu)',
-    categoryPatterns: ['TEXTILE', 'TISSU', 'FABRIC([^A-Z]|$)', '(^|[^A-Z])TOILES?([^A-Z]|$)'],
+    categoryPatterns: ['TEXTILE', 'TISSU', 'FABRIC([^A-Z]|$)', '(^|[^A-Z])TOILES?([^A-Z]|$)', '^FRAME-(EXTERIEUR|INTERIEUR)$'],
     patterns: ['TEXTILE', 'TISSU', 'FABRIC([^A-Z]|$)', '(^|[^A-Z])TOILES?([^A-Z]|$)', 'FRAME.?FOR.?TEXT', 'SEG.?FRAME', 'CADRE.?SEG', 'SPANNRAHMEN', 'STOFFRAHMEN', '(^|[^A-Z])SEG([^A-Z]|$)'],
   },
   { tag: 'plafond-tendu', label: 'Plafond tendu', patterns: ['PLAFOND', 'CEILING', 'CIELING', 'TENDU', 'BARRISOL', 'STRETCH', 'SPANNDECKE'] },

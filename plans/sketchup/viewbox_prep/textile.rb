@@ -15,8 +15,20 @@ module Viewbox
   module Prep
     TEXTILE_MAX_DEPTH = 6
 
-    def self.textile_marked?(e)
+    # Marque posée par « Marquer comme cadre textile » (sur l'objet ou sa définition).
+    def self.textile_flag?(e)
       user_value(e, 'textileFrame') == 'true'
+    end
+
+    # Cadre textile = marqué, ou classé « Frame extérieur / intérieur » (catégorie choisie ou trouvée dans le nom).
+    def self.textile_marked?(e)
+      textile_flag?(e) || C::FRAME_CATEGORIES.include?(category_for(e).first)
+    end
+
+    # « Frame extérieur » / « Frame intérieur » d'un cadre (nil si l'objet a une autre catégorie).
+    def self.textile_place(e)
+      cat = category_for(e).first
+      C::FRAME_CATEGORIES.include?(cat) ? cat : nil
     end
 
     def self.persistent_key(e)
@@ -157,6 +169,14 @@ module Viewbox
       changes
     end
 
+    # Extérieur / intérieur d'un cadre (sur l'objet : un cadre du composant de la box l'est dans chaque box de ce type).
+    def self.textile_set_place(e, place)
+      place = C.category_key(place.to_s)
+      return 0 unless C::FRAME_CATEGORIES.include?(place) && textile_place(e) != place
+      set_or_clear(e, 'userCategory', place)
+      1
+    end
+
     def self.textile_name(e)
       label_for(e) || (e.name.to_s.empty? ? definition_of(e).name.to_s : e.name.to_s)
     end
@@ -168,7 +188,8 @@ module Viewbox
         ref, visual = textile_data(o)
         { 'key' => o[:key], 'ref' => ref.to_s, 'visual' => visual.to_s, 'module' => o[:module], 'side' => o[:side],
           'sideLabel' => C::FRAME_SIDE_LABELS[o[:side]] || o[:side], 'along' => o[:along].round, 'z' => o[:z].round,
-          'dims' => o[:dims], 'name' => textile_name(o[:entity]), 'inBox' => !o[:owner].nil? }
+          'dims' => o[:dims], 'name' => textile_name(o[:entity]), 'inBox' => !o[:owner].nil?,
+          'place' => textile_place(o[:entity]) || C::DEFAULT_FRAME_CATEGORY }
       end
       rows = C.frame_order(rows)
       dups = C.frame_duplicates(rows)
@@ -186,7 +207,9 @@ module Viewbox
       begin
         (payload['rows'] || []).each do |r|
           o = by_key[r['key'].to_s]
-          changes += textile_write(o, r['ref'], r['visual']) if o
+          next unless o
+          changes += textile_write(o, r['ref'], r['visual'])
+          changes += textile_set_place(o[:entity], r['place'])
         end
         model.commit_operation
       rescue StandardError
@@ -214,15 +237,24 @@ module Viewbox
     end
 
     # Marque (ou démarque) des objets comme cadres textile, puis numérote les nouveaux. Renvoie le nombre d'objets.
-    def self.mark_textile(model, entities, on)
+    # place = 'FRAME-EXTERIEUR' / 'FRAME-INTERIEUR' : catégorie donnée en même temps (sinon : celle déjà choisie, ou
+    # « Frame extérieur »). Démarquer retire aussi une catégorie Frame choisie à la main.
+    def self.mark_textile(model, entities, on, place = nil)
       list = entities.select { |e| container?(e) }
       return 0 if list.empty?
       model.start_operation(on ? 'Viewbox : marquer comme cadres textile' : 'Viewbox : ce ne sont pas des cadres', true)
       begin
         list.each do |e|
           set_or_clear(e, 'textileFrame', on ? 'true' : nil)
+          set_or_clear(e, 'userCategory', place) if on && C::FRAME_CATEGORIES.include?(place)
+          next if on
+          d = definition_of(e)
           # démarqué alors que sa définition l'est : marque de la définition retirée aussi
-          set_or_clear(definition_of(e), 'textileFrame', nil) if !on && definition_of(e).get_attribute(DICT, 'textileFrame')
+          set_or_clear(d, 'textileFrame', nil) if d.get_attribute(DICT, 'textileFrame')
+          [e, d].each do |t|
+            v = t.get_attribute(DICT, 'userCategory')
+            set_or_clear(t, 'userCategory', nil) if v && C::FRAME_CATEGORIES.include?(C.category_key(v))
+          end
         end
         model.commit_operation
       rescue StandardError
@@ -280,7 +312,7 @@ module Viewbox
       dlg.add_action_callback('save') { |_ctx, json| run.call('enregistré') { apply_textile(model, JSON.parse(json.to_s)) } }
       dlg.add_action_callback('number') { |_ctx| run.call('numéroté') { number_textile(model) } }
       dlg.add_action_callback('renumber') { |_ctx| run.call('renuméroté') { number_textile(model, renumber: true) } }
-      dlg.add_action_callback('mark') { |_ctx| run.call('marqué') { mark_textile(model, model.selection.to_a, true) } }
+      dlg.add_action_callback('mark') { |_ctx, place| run.call('marqué') { mark_textile(model, model.selection.to_a, true, place.to_s.empty? ? nil : place.to_s) } }
       dlg.add_action_callback('unmark') { |_ctx| run.call('démarqué') { mark_textile(model, model.selection.to_a, false) } }
       dlg.add_action_callback('select') { |_ctx, key| select_textile(model, key) }
       dlg.add_action_callback('close') { |_ctx| dlg.close }

@@ -27,6 +27,12 @@ module Viewbox
         ['PORTE-SIMPLE', [/PORTE[-_ ]?SIMPLE/, /SINGLE[-_ ]?DOOR/]],
         ['MUR-LEGER', [/MUR[-_ ]?LEGER/, /WALL[-_ ]?LIGHT/, /LIGHT[-_ ]?WALL/]],
         ['MUR-LOURD', [/MUR[-_ ]?LOURD/, /WALL[-_ ]?HEAVY/, /HEAVY[-_ ]?WALL/]],
+        # cadres de tissu tendu (SEG) posés à l'extérieur / à l'intérieur de la box : un cadre de ces catégories est
+        # toujours un cadre textile (repère F1, F2…)
+        ['FRAME-EXTERIEUR', [/FRAME[-_ ]?EXT/, /CADRE[-_ ]?(TEXTILE[-_ ]?)?EXT/, /(OUTSIDE|OUTER|EXTERIOR)[-_ ]?FRAME/]],
+        ['FRAME-INTERIEUR', [/FRAME[-_ ]?INT/, /CADRE[-_ ]?(TEXTILE[-_ ]?)?INT/, /(INSIDE|INNER|INTERIOR)[-_ ]?FRAME/]],
+        # protection de sol (plaques bakélite)
+        ['BOARDING', [/BOARDING/, /BAKELIT/]],
         ['GARDE-CORPS', [/GARDE[-_ ]?CORPS/, /RAILING/, /HANDRAIL/, /BALUSTRADE/]],
         ['ESCALIER', [/ESCALIER/, /STAIR/]],
         # élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
@@ -38,6 +44,9 @@ module Viewbox
         ['VITRE', [/(\A|[^A-Z])VITRE/, /VITRAGE/, /GLAZING/]]
       ].freeze
       CATEGORIES = CATEGORY_RULES.map(&:first).freeze
+      # Catégories des cadres textile ; un cadre marqué sans catégorie est classé « extérieur » (le cas courant).
+      FRAME_CATEGORIES = %w[FRAME-EXTERIEUR FRAME-INTERIEUR].freeze
+      DEFAULT_FRAME_CATEGORY = 'FRAME-EXTERIEUR'.freeze
       # Choix "Ignorer à l'export" dans la fenêtre de révision : l'objet n'est pas exporté.
       IGNORE = 'IGNORER'.freeze
       EXPORT_PREFIX = 'VBXE-'.freeze

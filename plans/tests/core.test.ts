@@ -33,6 +33,13 @@ describe('classification par le nom', () => {
     // réglages enregistrés avant la catégorie TERRASSE : elle est ajoutée après ESCALIER
     const saved = mergeRules({ categories: DEFAULT_RULES.categories.filter((c) => c.key !== 'TERRASSE') });
     expect(saved.categories.map((c) => c.key).indexOf('TERRASSE')).toBe(saved.categories.map((c) => c.key).indexOf('ESCALIER') + 1);
+    // cadres textile extérieur / intérieur, boarding (extension SketchUp 1.4.1) ; anciens réglages complétés dans l'ordre
+    expect(categoryFromName('Frame ext 2000x2000', rules)).toBe('FRAME-EXTERIEUR');
+    expect(categoryFromName('Cadre textile intérieur', rules)).toBe('FRAME-INTERIEUR');
+    expect(categoryFromName('Boarding 2440x1220', rules)).toBe('BOARDING');
+    expect(categoryFromName('Plaque bakélite', rules)).toBe('BOARDING');
+    const old = mergeRules({ categories: DEFAULT_RULES.categories.filter((c) => !['FRAME-EXTERIEUR', 'FRAME-INTERIEUR', 'BOARDING'].includes(c.key)) });
+    expect(old.categories.map((c) => c.key)).toEqual(DEFAULT_RULES.categories.map((c) => c.key));
     expect(categoryFromName('VBX-03|PORTE-SIMPLE|02', rules)).toBe('PORTE-SIMPLE');
     expect(categoryFromName('Full Sliding Door', rules)).toBe('PORTE-COULISSANTE');
     expect(categoryFromName('Full Slidding door', rules)).toBe('PORTE-COULISSANTE');
