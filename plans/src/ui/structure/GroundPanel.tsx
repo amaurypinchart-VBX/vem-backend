@@ -1001,7 +1001,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 {t.tuv && <span className={`badge ${t.tuv.ok === false ? 'warn' : ''}`} title={t.tuv.text}>{t.tuv.ok === false ? 'Prüfbuch ✖' : t.tuv.ok ? 'Prüfbuch ✔' : 'Prüfbuch —'}</span>}
                 <span className="hint">
                   {t.reactions.length} appui(s) — Rz,k maxi {kN(t.Rzk)}, Rz,Ed maxi {kN(t.RzEd)} (statico : Rz,Ed / 1,35 = {kN(t.RzEd / 1.35)}) — contact{' '}
-                  {t.a1 / 10} × {t.a2 / 10} cm
+                  {n(t.a1 / 10, 0)} × {n(t.a2 / 10, 0)} cm
                 </span>
                 <div className="spacer" style={{ flex: 1 }} />
                 <span className={`badge ${t.standard ? 'ok' : 'orange'}`}>

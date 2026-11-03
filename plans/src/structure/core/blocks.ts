@@ -267,6 +267,8 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
         corners: middle ? 0 : corners,
         middle,
         ...(rs.some((r) => r.group.jack) ? { jack: true } : {}),
+        // pied de poteau du modèle posé sur le même bloc (libellé « … et un pied de poteau »)
+        ...(rs.some((r) => r.group.post) && rs.some((r) => !r.group.post) ? { post: true } : {}),
         block: b.id,
         moduleIds: [...new Set(rs.flatMap((r) => r.group.moduleIds))],
       },

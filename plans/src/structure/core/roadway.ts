@@ -55,11 +55,13 @@ export const kgm2 = (q: number) => (q * 1e6) / GRAVITY;
  * Répartition sous plaques de roulage. `bearing` = portance admissible (N/mm²), `plates` = poids propre des plaques
  * (N/mm²). La charge d'un groupe d'appuis partagé par plusieurs Viewbox posées au sol est partagée à parts égales.
  */
-export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearing: number, plates = 0): RoadwayResult {
+export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearing: number, plates = 0, extra: Array<{ at: P2; N: number }> = []): RoadwayResult {
   const ground = modules.filter((m) => m.level === 0);
   const groundIds = new Set(ground.map((m) => m.id));
   const area = ground.reduce((s, m) => s + m.area, 0);
-  const load = est.verticalK ?? est.totalG + est.totalQ;
+  // poids posés au sol sous les Viewbox (blocs de calage dessinés) : comptés en plus des réactions des pieds
+  const extraN = extra.reduce((s, e) => s + e.N, 0);
+  const load = (est.verticalK ?? est.totalG + est.totalQ) + extraN;
   const mean = area > 0 ? load / area + plates : 0;
   // Viewbox empilées : rattachées à l'emprise au sol qui contient leur centre
   const stackOf = new Map<string, string[]>(ground.map((m) => [m.id, [m.id]]));
@@ -73,6 +75,13 @@ export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearin
   for (const r of est.reactions) {
     const own = r.group.moduleIds.filter((id) => groundIds.has(id));
     for (const id of own) loadOf.set(id, loadOf.get(id)! + r.Rk / own.length);
+  }
+  for (const e of extra) {
+    const m = ground.find((g) => inside(e.at, g.corners)) ?? ground.reduce<EstimateModule | null>((a, g) => {
+      const d = (q: EstimateModule) => Math.hypot(centroid(q.corners)[0] - e.at[0], centroid(q.corners)[1] - e.at[1]);
+      return !a || d(g) < d(a) ? g : a;
+    }, null);
+    if (m) loadOf.set(m.id, loadOf.get(m.id)! + e.N);
   }
   const zones: RoadwayZone[] = ground.map((m) => {
     const L = loadOf.get(m.id)!;
@@ -89,7 +98,7 @@ export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearin
       title: 'Répartition uniforme sous plaques de roulage',
       clause: 'plaques rigides et jointives sur toute la surface couverte',
       formula: 'q = ΣRz,k / A + poids des plaques ≤ portance admissible',
-      withValues: `ΣRz,k = ${f(load / 1e3)} kN ; A = ${f(area / 1e6, 2)} m² ; q = ${f(load / 1e3)} / ${f(area / 1e6, 2)} + ${f(kNm2(plates), 2)} = ${f(kNm2(mean), 2)} kN/m² (${f(kgm2(mean), 0)} kg/m²) ; portance ${f(kNm2(bearing), 0)} kN/m²`,
+      withValues: `ΣRz,k${extraN > 0 ? ` + blocs ${f(extraN / 1e3)} kN` : ''} = ${f(load / 1e3)} kN ; A = ${f(area / 1e6, 2)} m² ; q = ${f(load / 1e3)} / ${f(area / 1e6, 2)} + ${f(kNm2(plates), 2)} = ${f(kNm2(mean), 2)} kN/m² (${f(kgm2(mean), 0)} kg/m²) ; portance ${f(kNm2(bearing), 0)} kN/m²`,
       eta: etaMean,
     },
   ];
