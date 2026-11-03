@@ -1,8 +1,8 @@
 // Clic sur une vue de planche → pièce 3D sous le point : rayon dans la direction de la vue, sur les maillages dessinés
 // (catégories et éléments masqués exclus). « Vue du sol » : ce qui est au-dessus de la coupe est ignoré (le rayon
 // traverse la toiture et le plafond retirés par la coupe).
-import { Raycaster, Vector3 } from 'three';
-import type { Intersection, Object3D } from 'three';
+import { DoubleSide, Raycaster, Vector3 } from 'three';
+import type { Intersection, Material, Mesh, Object3D, Side } from 'three';
 import type { ViewBasis } from '../core/views';
 import { unprojectPoint } from '../core/views';
 import { floorCutPlanes } from '../core/subsetHide';
@@ -21,7 +21,7 @@ export function castInView(scene: LoadedScene, vp: ViewportItem, basis: ViewBasi
   raycaster.set(new Vector3(...unprojectPoint(basis, x, y, 1e7)), new Vector3(...basis.toward).negate());
   const cut = vp.request.floorCut;
   (raycaster as Raycaster & { firstHitOnly?: boolean }).firstHitOnly = cut == null;
-  const hits = raycaster.intersectObjects(objects, false);
+  const hits = doubleSided(objects, () => raycaster.intersectObjects(objects, false));
   if (cut == null) return hits[0];
   const ids = [...new Set(hits.map((h) => nodeIdOf(h.object)).filter((id): id is string => !!id))];
   if (!ids.length) return undefined;
@@ -31,4 +31,24 @@ export function castInView(scene: LoadedScene, vp: ViewportItem, basis: ViewBasi
     const planes = id ? byNode.get(id) : undefined;
     return !planes || planes.every((p) => p.n[0] * h.point.x + p.n[1] * h.point.y + p.n[2] * h.point.z >= p.d - 1);
   });
+}
+
+/**
+ * Rayon sur toutes les faces, quel que soit leur sens : l'extension SketchUp exporte des faces simples, une face
+ * retournée (envers vers l'extérieur) est pourtant dessinée (lignes cachées en double face) et cache ce qui est
+ * derrière. Le matériau d'origine n'est jamais affiché tel quel (les vues 3D en font une copie) : son côté est changé
+ * le temps du lancer, puis remis.
+ */
+function doubleSided<T>(objects: Object3D[], run: () => T): T {
+  const saved = new Map<Material, Side>();
+  for (const o of objects) {
+    const m = (o as Mesh).material as Material | Material[] | undefined;
+    for (const x of Array.isArray(m) ? m : m ? [m] : []) if (x.side !== DoubleSide && !saved.has(x)) saved.set(x, x.side);
+  }
+  for (const x of saved.keys()) x.side = DoubleSide;
+  try {
+    return run();
+  } finally {
+    for (const [x, side] of saved) x.side = side;
+  }
 }

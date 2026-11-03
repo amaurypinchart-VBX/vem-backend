@@ -230,15 +230,17 @@ router.post('/models/:id/package/part', upload.single('file'), async (req: AuthR
 router.patch('/models/:id/settings', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const patch = cleanSettings(req.body?.settings);
-    const model = await db.plansModelVersion.findUnique({ where: { id: req.params.id }, select: { id: true, settings: true } });
-    if (!model) throw new AppError('Modèle introuvable', 404);
-    const current = model.settings && typeof model.settings === 'object' && !Array.isArray(model.settings) ? model.settings : {};
-    const updated = await db.plansModelVersion.update({
-      where: { id: model.id },
-      data: { settings: { ...current, ...patch } },
-      select: { id: true, settings: true },
-    });
-    res.json({ success: true, data: updated });
+    // la peinture n'est écrite que par PATCH /models/:id/paint (opérations) : une copie ancienne envoyée avec d'autres
+    // réglages ne doit pas l'écraser
+    delete patch.paint;
+    // fusion des clés en une seule requête (atomique) : une peinture enregistrée au même moment n'est pas perdue
+    const rows: Array<{ id: string; settings: unknown }> = await prisma.$queryRaw`UPDATE plans_model_versions
+      SET settings = (CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END) || ${JSON.stringify(patch)}::jsonb,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${req.params.id}
+      RETURNING id, settings`;
+    if (!rows.length) throw new AppError('Modèle introuvable', 404);
+    res.json({ success: true, data: rows[0] });
   } catch (err) { next(err); }
 });
 
@@ -254,19 +256,26 @@ router.patch('/models/:id/paint', async (req: AuthRequest, res: Response, next: 
       throw new AppError((e as Error).message, 400);
     }
     const by = req.user ? [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || req.user.email : undefined;
-    const paint = await prisma.$transaction(async (tx: any) => {
-      const rows: Array<{ settings: unknown }> = await tx.$queryRaw`SELECT settings FROM plans_model_versions WHERE id = ${req.params.id} FOR UPDATE`;
-      if (!rows.length) throw new AppError('Modèle introuvable', 404);
-      const settings = rows[0].settings && typeof rows[0].settings === 'object' && !Array.isArray(rows[0].settings) ? (rows[0].settings as Record<string, unknown>) : {};
-      let next;
-      try {
-        next = applyPaintOps(currentPaint(settings.paint), ops, by);
-      } catch (e) {
-        throw new AppError((e as Error).message, 400);
-      }
-      await tx.plansModelVersion.update({ where: { id: req.params.id }, data: { settings: { ...settings, paint: next } } });
-      return next;
-    });
+    // Seule la clé `paint` est lue et écrite (jsonb_set) : l'ancienne version passait par plansModelVersion.update, qui
+    // relisait toute la ligne (index de scène de plusieurs Mo) → > 5 s sur un gros modèle, transaction expirée (500).
+    const paint = await prisma.$transaction(
+      async (tx: any) => {
+        const rows: Array<{ paint: unknown }> = await tx.$queryRaw`SELECT settings -> 'paint' AS paint FROM plans_model_versions WHERE id = ${req.params.id} FOR UPDATE`;
+        if (!rows.length) throw new AppError('Modèle introuvable', 404);
+        let next;
+        try {
+          next = applyPaintOps(currentPaint(rows[0].paint), ops, by);
+        } catch (e) {
+          throw new AppError((e as Error).message, 400);
+        }
+        await tx.$executeRaw`UPDATE plans_model_versions
+          SET settings = jsonb_set(CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END, '{paint}', ${JSON.stringify(next)}::jsonb, true),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${req.params.id}`;
+        return next;
+      },
+      { maxWait: 15_000, timeout: 30_000 },
+    );
     res.json({ success: true, data: paint });
   } catch (err) { next(err); }
 });
