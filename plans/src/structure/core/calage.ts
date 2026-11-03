@@ -9,7 +9,7 @@ import type { Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } fro
 import type { AddedSupport } from './estimate';
 import { addSupports, estimateReactions, fullPublic, limitPublic } from './estimate';
 import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
-import { C24_BEAMS, PANELS, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
+import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
 import type { CalageChoices, ChainResult, LayerRef } from './spreading';
@@ -190,7 +190,7 @@ const typeLabel = (corners: number, middle: boolean, jack = false, stair = false
 /** Clé du type d'appui de calage : nombre d'angles (1…4) ou pied central (M, M2 = deux vérins centraux sur une plaque). */
 export const calageTypeKey = (r: GroupReaction, members = 1): string =>
   r.group.block
-    ? `B${r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.max(1, Math.min(4, r.group.corners)))}`
+    ? `B${r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.max(1, Math.min(4, r.group.corners)))}${r.group.post ? 'R' : ''}`
     : r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.post ? 'R' : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
 
 export function computeCalage(inp: CalageInput): CalageResult {
@@ -233,15 +233,20 @@ export function computeCalage(inp: CalageInput): CalageResult {
     byType.get(key)!.push(g);
   }
   const choices = inp.choices ?? {};
-  const roadway = roadwayPressure(inp.modules, est, inp.bearing, inp.roadwayPlates ?? 0);
+  // poids des blocs dessinés (posés au sol sous les pieds) compté dans la charge totale et dans leur emprise
+  const roadway = roadwayPressure(inp.modules, est, inp.bearing, inp.roadwayPlates ?? 0, (inp.blocks ?? []).map((b) => ({ at: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2] as P2, N: b.massKg * 9.81 })));
   // plaques de roulage : il faut l'emprise au sol des Viewbox
   const roadwayOn = !!choices.roadway && roadway.area > 0;
   if (choices.roadway && !roadwayOn) warnings.push('Plaques de roulage : emprise au sol des Viewbox inconnue, non prises en compte.');
-  // poids des blocs dessinés (sous les pieds) ajouté à la charge répartie par les plaques de roulage
-  const blocksW = (inp.blocks ?? []).reduce((a, b) => a + b.massKg * 9.81, 0);
-  const rw = { mean: roadway.mean + (roadway.area > 0 ? blocksW / roadway.area : 0), area: roadway.area, load: roadway.load + blocksW };
+  const rw = { mean: roadway.mean, area: roadway.area, load: roadway.load };
+  // blocs dessinés : la charge n'arrive au sol que par les blocs ; des plaques de roulage posées dessous ne
+  // répartissent pas la charge de toute l'installation sur toute la surface (il faudrait un plateau rigide)
+  if (roadwayOn && blk && blockOf.size)
+    warnings.push(
+      `Plaques de roulage et blocs de calage : la charge n’arrive au sol que par les ${blockOf.size} bloc(s) ; des plaques de roulage posées sous les blocs ne la répartissent pas uniformément sur toute la surface (il faudrait un plateau rigide). Chaque bloc est donc vérifié avec sa propre emprise (+ les plaques choisies sous lui) ; la répartition uniforme reste affichée pour information (moyenne sur l’emprise, utile pour une dalle de bâtiment).`,
+    );
   const types: CalageType[] = [];
-  const order = (k: string): number => (k.startsWith('B') ? 30 + order(k.slice(1)) : k === 'R' ? 21 : k === 'E' ? 20 : k === 'T' ? 18 : k === 'TM' ? 19 : k.startsWith('M') ? 9 + k.length : Number(k));
+  const order = (k: string): number => (k.startsWith('B') ? 30 + order(k.slice(1).replace(/R$/, '')) + (k.endsWith('R') ? 0.5 : 0) : k === 'R' ? 21 : k === 'E' ? 20 : k === 'T' ? 18 : k === 'TM' ? 19 : k.startsWith('M') ? 9 + k.length : Number(k));
   for (const [key, all] of [...byType.entries()].sort((a, b) => order(a[0]) - order(b[0]))) {
     const r0 = all[0].reaction;
     const middle = r0.group.middle;
@@ -267,11 +272,12 @@ export function computeCalage(inp: CalageInput): CalageResult {
       const w = jack ? 'Pieds à vérin : platine 15 × 15 cm supposée (7-309-002, à confirmer).' : 'Pieds centraux : surface de contact 15 × 15 cm supposée (à confirmer).';
       if (!warnings.includes(w)) warnings.push(w);
     }
+    const withPost = onBlock && !!r0.group.post;
     const baseLabel = onBlock
-      ? `bloc bois sous ${blockTypeLabel(n, middle, jack)}`
+      ? `bloc bois sous ${blockTypeLabel(n, middle, jack)}${withPost ? ' et un pied de poteau' : ''}`
       : terrace ? (middle ? 'pied central de terrasse' : 'pied d’angle de terrasse') : r0.group.post ? 'pied de poteau' : typeLabel(n, middle, jack, stair);
     const unit = onBlock ? 'bloc' : terrace ? 'pied de terrasse' : r0.group.post ? 'pied de poteau' : stair ? 'pied d’escalier' : jack ? (n > 1 ? 'groupe' : 'vérin') : middle ? 'pied central' : r0.group.corners === 1 ? 'angle' : 'groupe';
-    const contactLabelOf = (g: SupportGeometry) => onBlock ? `${blockTypeLabel(n, middle, jack, true)} sur le bloc, ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm` : `${terrace ? 'Pied de terrasse' : r0.group.post ? 'Pied de poteau' : stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
+    const contactLabelOf = (g: SupportGeometry) => onBlock ? `${blockTypeLabel(n, middle, jack, true)}${withPost ? ' + pied de poteau' : ''} sur le bloc, ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm` : `${terrace ? 'Pied de terrasse' : r0.group.post ? 'Pied de poteau' : stair ? 'Pied d’escalier' : jack ? (n > 1 ? `${n} platines de vérin` : 'Platine de vérin') : middle ? 'Pied central' : r0.group.corners === 1 ? 'Angle' : `${r0.group.corners} angles`} ${Math.round(g.contact[0] / 10)} × ${Math.round(g.contact[1] / 10)} cm`;
     // appuis du type regroupés par calage : automatique, choix du type, choix propre à un appui
     const parts = new Map<string, { refs: LayerRef[] | null; groups: PlateGroup[]; own: boolean }>();
     for (const g of all) {
@@ -308,7 +314,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       if (onBlock) d.solutions = [];
       if (tp) {
         const stockOk = inp.stock
-          .filter((st) => Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
+          .filter((st) => isWoodPlate(st.material) && Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
           .flatMap((st) => [1, 2, 3].filter((k) => st.thickness >= tp.t[k - 1]).slice(0, 1).map((k) => ({ st, k })))
           .sort((a, b) => a.k - b.k || a.st.length * a.st.width - b.st.length * b.st.width || a.st.thickness - b.st.thickness)[0];
         const pick = [1, 2, 3].map((k) => ({ k, t: inp.thicknesses.find((t) => t >= tp.t[k - 1]) })).find((x) => x.t !== undefined);
@@ -329,7 +335,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
           };
         };
         if (stockOk) {
-          const mat = PANELS[stockOk.st.material ?? 'F40'];
+          const mat = PANELS[(stockOk.st.material ?? 'F40') as PanelMaterial];
           d.solutions.push(
             tuvSolution(stockLayer(stockOk.st, stockOk.k), 'plywood-stock', `Plaques du stock${stockOk.st.label ? ` « ${stockOk.st.label} »` : ''}`, stockOk.k, `${mat.label} (stock${stockOk.st.quantity > 0 ? '' : ', quantité à vérifier au dépôt'})`),
           );
@@ -365,13 +371,14 @@ export function computeCalage(inp: CalageInput): CalageResult {
         const bs = blockOf.get(g);
         if (bs) {
           // bloc dessiné : pieds → bloc → (plaques sous le bloc, centrées sur lui) → sol
-          const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, block: blockChain(bs.s, bs.scale) };
+          // pas de répartition uniforme sous un bloc (voir l'avertissement plaques de roulage + blocs)
+          const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale) };
           const chain = checkChain({ ...base, layers });
           const bottom = layers[layers.length - 1];
           return { r, geo, Rk, base, flushBase: base, centeredBase: base, chain, atFlush: chain, atCenter: chain, placement: 'centered' as const, eccentric: false, bottom };
         }
         const flush = flushCaps(geo);
-        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax };
+        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k };
         const bottom = layers[layers.length - 1];
         const flushBase = { ...base, caps: flush.caps, edgeDist: flush.edgeDist };
         const atFlush = checkChain({ ...flushBase, layers });
@@ -385,7 +392,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       const passes = (layers: SpreadLayer[]) => part.groups.every((g) => evaluate(g, layers).chain.eta <= 1);
       // blocs : sans plaque si le bloc suffit, sinon les plaques du stock (sous le bloc) qui suffisent à tous les blocs du type
       let blockAuto: SpreadLayer[] | null = null;
-      if (onBlock && !part.refs && !roadwayOn) {
+      if (onBlock && !part.refs) {
         if (passes([])) blockAuto = [];
         else blockAuto = bestStockForAll(part.groups.map((g) => evaluate(g, []).base), inp.stock)?.layers ?? [];
       }
@@ -410,12 +417,12 @@ export function computeCalage(inp: CalageInput): CalageResult {
         for (const m of res.missing) warnings.push(`Calage choisi : la plaque « ${m} » n’est plus dans le stock, elle est ignorée.`);
       } else if (blockAuto) layers = blockAuto;
       else if (!roadwayOn) layers = autoChosen?.layers ?? [];
-      const custom = !!part.refs || roadwayOn;
+      const custom = !!part.refs || (roadwayOn && !onBlock);
       const checks = part.groups.map((g): SupportCheck => {
         const e = evaluate(g, layers);
         const r = e.r;
         const source = choices.bySupport?.[r.group.id] ? 'support' : choices.byType?.[key] ? 'type' : 'auto';
-        const ctx = { stock: inp.stock, roadway: rw, roadwayOn, custom: !!part.refs };
+        const ctx = { stock: inp.stock, roadway: rw, roadwayOn: roadwayOn && !onBlock, custom: !!part.refs };
         let advice = inp.noAdvice ? '' : adviseChain(r.group.id, e.chain, layers, { ...ctx, base: e.base });
         // automatique : aucune plaque du stock ne suffit à fleur de la Viewbox (charge près du bord) → conseil en plaque centrée
         if (!inp.noAdvice && !onBlock && placementMode === 'auto' && e.placement === 'flush' && e.chain.eta > 1 && !roadwayOn && !bestStockLayers(e.flushBase, inp.stock) && bestStockLayers(e.centeredBase, inp.stock))
@@ -482,7 +489,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       if (custom || layers.length || onBlock) {
         const bottom = layers[layers.length - 1];
         const stack = layers.map((l) => `${l.n} × ${l.l / 10} × ${l.w / 10}${l.t ? ` × ${l.t} mm` : ' cm'}`).join(' + ');
-        const title = onBlock && !custom
+        const title = onBlock && !part.refs
           ? layers.length
             ? 'Bloc bois dessiné + plaques de répartition sous le bloc'
             : 'Bloc bois dessiné, sans plaque'
@@ -500,10 +507,8 @@ export function computeCalage(inp: CalageInput): CalageResult {
           title,
           summary: onBlock
             ? layers.length
-              ? `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? ', sur plaques de roulage' : ''}`
-              : roadwayOn
-                ? 'bloc posé sur les plaques de roulage'
-                : 'bloc posé directement au sol'
+              ? `${stack} sous chaque bloc, centrées sur le bloc`
+              : 'bloc posé directement au sol'
             : layers.length ? `${stack} par ${unit}${placeText}${roadwayOn ? ', sur plaques de roulage' : ''}` : roadwayOn ? 'pied posé sur les plaques de roulage' : 'pied posé directement au sol',
           feasible: worst.eta <= 1,
           remarks: worst.problems,
@@ -753,7 +758,7 @@ function blockPlan(bs: BlockSupport, bottom: SpreadLayer | undefined): PlatePlan
 function materialLabel(l: SpreadLayer): string {
   if (l.material === 'commercial') return l.label;
   if (l.material === 'steel') return 'Tôle acier S235';
-  return PANELS[l.material].label;
+  return PLATE_LABEL[l.material];
 }
 
 /** Lignes de matériel identiques (même désignation et mêmes dimensions) additionnées. */

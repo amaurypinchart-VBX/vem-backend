@@ -188,3 +188,22 @@ describe('blocs : extraction du modèle 3D', () => {
     expect(blocks.every((b) => Math.abs(b.x1 - b.x0 - 1000) < 1e-6)).toBe(true);
   });
 });
+
+describe('blocs + plaques de roulage (revue 03.11.2026)', () => {
+  it('sur blocs, la charge ne se répartit pas uniformément : chaque bloc garde sa propre emprise ; poids des blocs dans la moyenne', () => {
+    const soft = { ...base, bearing: bearingFrom(450, 'kg/m²') };
+    const off = computeCalage({ ...soft, blocks: nine });
+    const on = computeCalage({ ...soft, blocks: nine, choices: { roadway: true } });
+    // la moyenne (information, dalle) compte les 9 blocs de 270 kg
+    expect(on.roadway.load - computeCalage({ ...soft, choices: { roadway: true } }).roadway.load).toBeCloseTo(9 * 270 * 9.81, 3);
+    // le verdict de chaque bloc ne change pas avec les plaques de roulage
+    for (const c of on.checks.filter((x) => x.block)) {
+      const same = off.checks.find((x) => x.id === c.id)!;
+      expect(c.eta).toBeCloseTo(same.eta, 9);
+      expect(c.steps.some((s) => s.label.includes('roulage'))).toBe(false);
+    }
+    expect(on.warnings.some((w) => w.includes('Plaques de roulage et blocs de calage'))).toBe(true);
+    // 450 kg/m² : un bloc de 1 m² sous un angle ne passe pas
+    expect(on.checks.find((x) => x.block?.id === 'BL1')!.eta).toBeGreaterThan(1);
+  });
+});

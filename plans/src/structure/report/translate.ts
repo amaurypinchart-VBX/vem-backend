@@ -18,6 +18,7 @@ const PATTERNS: Rule[] = [
   [/bloc bois sous un vérin central/g, 'Holzklotz unter einem mittleren Spindelfuß', 'timber block under one middle jack'],
   [/bloc bois sous (\d+) pieds centraux/g, 'Holzklotz unter $1 Mittelfüßen', 'timber block under $1 middle feet'],
   [/bloc bois sous un pied central/g, 'Holzklotz unter einem Mittelfuß', 'timber block under one middle foot'],
+  [/ \+ plaques ([\d,.]+ kN) \//g, ' + Platten $1 /', ' + plates $1 /'],
   [/Bloc bois (BL\d+) /g, 'Holzklotz $1 ', 'Timber block $1 '],
   [/Compression transversale du bloc sous l’appui ([A-Z]+\d+)/g, 'Querdruck im Holzklotz unter Auflager $1', 'Compression perpendicular to grain of the block under support $1'],
   [/Bloc de calage ([^()]+) \(dessiné dans le modèle\)/g, 'Holzklotz $1 (im Modell gezeichnet)', 'Timber packing block $1 (drawn in the model)'],

@@ -11,8 +11,8 @@ import { TERRACE } from '../../structure/core/terrace';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
-import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PANELS, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
-import type { PanelMaterial } from '../../structure/core/ground';
+import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PLATE_LABEL, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
+import type { PlateMaterial } from '../../structure/core/ground';
 import type { CalageChoices, LayerRef } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
@@ -325,10 +325,10 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
         {draft.plates.map((p, i) => (
           <div className="row" key={i}>
             <input type="text" style={{ width: 160 }} placeholder="nom" value={p.label ?? ''} onChange={(e) => setPlate(i, { label: e.target.value })} />
-            <select value={p.material ?? 'F40'} style={{ width: 150 }} onChange={(e) => setPlate(i, { material: e.target.value as PanelMaterial })}>
-              {(Object.keys(PANELS) as PanelMaterial[]).map((k) => (
+            <select value={p.material ?? 'F40'} style={{ width: 150 }} onChange={(e) => setPlate(i, { material: e.target.value as PlateMaterial })}>
+              {(Object.keys(PLATE_LABEL) as PlateMaterial[]).map((k) => (
                 <option key={k} value={k}>
-                  {PANELS[k].label}
+                  {PLATE_LABEL[k]}
                 </option>
               ))}
             </select>
@@ -340,6 +340,21 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
             <button className="btn small ghost" onClick={() => setDraft({ ...draft, plates: draft.plates.filter((_, j) => j !== i) })}>
               ✕
             </button>
+            {p.material === 'hdpe' && (
+              <div className="row hint" style={{ width: '100%', paddingLeft: 12, gap: 6, flexWrap: 'wrap' }}>
+                fiche technique :
+                <Num value={p.massKg ?? 0} onChange={(v) => setPlate(i, { massKg: v > 0 ? v : undefined })} width={50} /> kg / plaque · module E
+                <Num value={p.E ?? 0} onChange={(v) => setPlate(i, { E: v > 0 ? v : undefined })} width={60} /> N/mm² · compression
+                <Num value={p.fc ?? 0} onChange={(v) => setPlate(i, { fc: v > 0 ? v : undefined })} width={60} /> N/mm² · flexion
+                <Num value={p.fm ?? 0} onChange={(v) => setPlate(i, { fm: v > 0 ? v : undefined })} width={50} /> N/mm² · poinçonnement
+                <Num value={p.punchingKg ?? 0} onChange={(v) => setPlate(i, { punchingKg: v > 0 ? v : undefined })} width={60} /> kg sur Ø
+                <Num value={p.punchingDiameter ?? 0} onChange={(v) => setPlate(i, { punchingDiameter: v > 0 ? v : undefined })} width={40} /> mm
+                <span style={{ width: '100%' }}>
+                  Plaque souple : elle ne répartit que près de ce qui est posé dessus. Sans module E (ou si la plaque n’est pas pleine : masse &lt; 80 % du PEHD plein), seule la diffusion à 45° dans
+                  son épaisseur est comptée. La raideur du sol est celle choisie dans « Sol » (module de réaction).
+                </span>
+              </div>
+            )}
           </div>
         ))}
         <div>
@@ -348,6 +363,15 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
           </button>
           <button className="btn small ghost" onClick={() => setDraft({ ...draft, plates: [...draft.plates, ...VIEWBOX_STOCK.filter((v) => !draft.plates.some((p) => p.length === v.length && p.thickness === v.thickness && p.material === v.material))] })}>
             + Plaques Viewbox standard
+          </button>
+          <button
+            className="btn small ghost"
+            title="Plaque de répartition en polyéthylène vierge haute densité 2,2 × 1,1 m × 38 mm, 46 kg ; compression 7 288 kN/m² ; poinçonnement 1 173 kg sur Ø 20 mm (données fournisseur) — module E à saisir depuis la fiche technique"
+            onClick={() =>
+              setDraft({ ...draft, plates: [...draft.plates, { label: 'PEHD 220 × 110 × 38', length: 2200, width: 1100, thickness: 38, quantity: 0, material: 'hdpe', massKg: 46, fc: 7.288, punchingKg: 1173, punchingDiameter: 20 }] })
+            }
+          >
+            + Plaque PEHD 220 × 110 × 38
           </button>
         </div>
         <b style={{ fontSize: 12 }}>Plaques de répartition du commerce (capacité du fabricant)</b>
@@ -1001,7 +1025,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 {t.tuv && <span className={`badge ${t.tuv.ok === false ? 'warn' : ''}`} title={t.tuv.text}>{t.tuv.ok === false ? 'Prüfbuch ✖' : t.tuv.ok ? 'Prüfbuch ✔' : 'Prüfbuch —'}</span>}
                 <span className="hint">
                   {t.reactions.length} appui(s) — Rz,k maxi {kN(t.Rzk)}, Rz,Ed maxi {kN(t.RzEd)} (statico : Rz,Ed / 1,35 = {kN(t.RzEd / 1.35)}) — contact{' '}
-                  {t.a1 / 10} × {t.a2 / 10} cm
+                  {n(t.a1 / 10, 0)} × {n(t.a2 / 10, 0)} cm
                 </span>
                 <div className="spacer" style={{ flex: 1 }} />
                 <span className={`badge ${t.standard ? 'ok' : 'orange'}`}>

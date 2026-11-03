@@ -153,7 +153,7 @@ export interface ChoiceSetters {
 
 /** Libellé « automatique » d'un type : la solution retenue sans choix de l'utilisateur. */
 function autoLabel(t: CalageType | undefined, roadwayOn: boolean): string {
-  if (roadwayOn) return 'Automatique : pied posé sur les plaques de roulage';
+  if (roadwayOn && !t?.block) return 'Automatique : pied posé sur les plaques de roulage';
   if (!t?.chosen) return 'Automatique : aucune solution standard';
   return `Automatique : ${t.chosen.summary}`;
 }
