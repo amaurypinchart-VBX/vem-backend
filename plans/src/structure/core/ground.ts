@@ -39,6 +39,7 @@ export const BEARING_PRESETS: BearingPreset[] = [
   { key: 'firm', label: 'Sol ferme', value: 0.5, source: 'statico 24-0571 § 3.12.2' },
   { key: 'asphalt', label: 'Enrobé', value: null, source: 'à renseigner (exploitant du site)' },
   { key: 'concrete', label: 'Béton', value: null, source: 'à renseigner (exploitant du site)' },
+  { key: 'operator', label: 'Charge admissible imposée par l’exploitant du site', value: null, source: 'donnée par l’exploitant du site, à cet endroit (surface)' },
   { key: 'slab', label: 'Dalle / plancher de hall', value: null, pointLoad: true, source: 'à renseigner (fiche du bâtiment : charge surfacique et ponctuelle)' },
   { key: 'roof', label: 'Toiture-terrasse', value: null, pointLoad: true, source: 'à renseigner (bureau d’études du bâtiment)' },
 ];
