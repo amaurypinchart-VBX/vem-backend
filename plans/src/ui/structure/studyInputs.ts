@@ -93,6 +93,7 @@ export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMo
     sls: !hyp.staticoConversion,
     options: calc,
     blocking: sceneModel.errors,
+    ...(sceneModel.blocks?.length ? { groundBlocks: sceneModel.blocks } : {}),
   };
   // modifications de SketchUp (« Structure… ») d'abord, puis celles de l'étude et des variantes (elles l'emportent)
   return { base, mods: sceneModel.structMods ? mergeMods(sceneModel.structMods, src.mods) : src.mods };

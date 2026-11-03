@@ -712,18 +712,19 @@ export function buildReport(inp: ReportInput): ReportOutput {
     for (const t of c.types) {
       blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: L.groundCase(E(t.label), N(inp.bearing?.value ?? 0, 0)) });
       const CL = CALAGE_LABELS[inp.lang];
-      const placed = t.checks.filter((x) => x.plan);
+      const placed = t.checks.filter((x) => x.plan && !x.block);
       const centered = placed.filter((x) => x.plan!.placement === 'centered');
       blocks.push({
         t: 'kv',
         rows: [
           [L.actions, `Rz,Ed ≤ ${kN(t.RzEd, 2)} ; Rz,k ≈ ${kN(t.Rzk, 2)} (${t.reactions.length} × ${E(t.label)})`],
           [L.contactArea, `a1 × a2 = ${N(t.a1 / 10, 0)} × ${N(t.a2 / 10, 0)} cm`],
-          [CL.timberRow, CL.timberValue],
+          ...(t.block ? [] : ([[CL.timberRow, CL.timberValue]] as Array<[string, string]>)),
           ...(placed.length ? ([[CL.placementRow, CL.placementValue(placed.length - centered.length, centered.length, N(Math.max(0, ...centered.map((x) => x.plan!.overhang)) / 10, 0))]] as Array<[string, string]>) : []),
           ...(c.tuv.tuvMinimum ? ([[CL.tuvRow, t.tuv ? E(t.tuv.text) : CL.tuvNone]] as Array<[string, string]>) : []),
         ],
       });
+      if (!t.block) {
       blocks.push({
         t: 'figure',
         h: 46,
@@ -731,8 +732,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
         caption: L.plateFigure,
       });
       for (const r of t.plate.records) blocks.push(rec(r));
+      }
       for (const r of t.extra) blocks.push(rec(r));
-      blocks.push({
+      if (!t.block) blocks.push({
         t: 'table',
         cols: [
           { title: L.plateTable.stack, w: 30, align: 'middle' },

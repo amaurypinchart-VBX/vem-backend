@@ -185,7 +185,9 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
         <div style={{ fontSize: 13, lineHeight: 1.45 }}>{c.advice}</div>
         <div className="hint">
           {c.members.length > 1 || c.members[0] !== c.id ? `Une plaque sous ${c.members.length > 1 ? `les appuis ${c.members.join(', ')}` : `l’appui ${c.members[0]}`}. ` : ''}
-          {c.plan ? (c.plan.placement === 'flush' ? 'Plaque à fleur de la Viewbox (ne dépasse pas).' : `Plaque centrée sous l’appui : elle dépasse de ${over} cm.`) : ''}
+          {c.block
+            ? `Posé sur le bloc bois dessiné ${c.block.id} (${c.block.dims}, ${n(c.block.massKg, 0)} kg${c.block.massSource === 'computed' ? ' = volume × masse volumique' : ''})${c.layerList.length ? ', plaques centrées sous le bloc' : ''}.`
+            : c.plan ? (c.plan.placement === 'flush' ? 'Plaque à fleur de la Viewbox (ne dépasse pas).' : `Plaque centrée sous l’appui : elle dépasse de ${over} cm.`) : ''}
           {c.tuv ? ` Prüfbuch TÜV : ${c.tuv.text}.` : ''}
         </div>
         <ChainTable c={c} />

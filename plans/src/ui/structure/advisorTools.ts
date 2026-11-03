@@ -421,7 +421,8 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
       if (input.plaques_roulage !== undefined) hyp.calage = { ...(hyp.calage ?? {}), roadway: bool(input.plaques_roulage) };
       const addedIds = new Set(run.structure.modules.map((m) => m.id));
       const modules = [...ctx.groundModules.filter((m) => addedIds.has(m.id)), ...run.structure.modules.filter((m) => !ctx.groundModules.some((g) => g.id === m.id)).map(placedToEstimate)];
-      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks, groundExtras(buildStudyInputs(vs).inputs)), reactions: run.ground };
+      const vin = buildStudyInputs(vs).inputs;
+      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks, groundExtras(vin)), blocks: vin.groundBlocks, reactions: run.ground };
       const cal = computeCalage(cin);
       const mp = maxPublic(cin, hyp.personKg);
       const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);

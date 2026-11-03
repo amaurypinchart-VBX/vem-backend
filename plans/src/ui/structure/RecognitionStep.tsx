@@ -8,7 +8,7 @@ import { SceneViewer } from '../../viewer/SceneViewer';
 import type { LibraryEntry, ModuleTypeEntry, PartAssignment, PartNature, PartRole, SectionEntry, WeightUnit } from '../../structure/core/library';
 import { NATURE_LABEL, NATURES_BY_ROLE, ROLE_LABEL, TEMPLATE_NATURES } from '../../structure/core/library';
 import type { PartType, Recognition, RecognitionStatus } from '../../structure/core/recognition';
-import { STATUS_COLOR, STATUS_LABEL } from '../../structure/core/recognition';
+import { STATUS_COLOR, STATUS_LABEL, isViewboxBody } from '../../structure/core/recognition';
 import { MATERIALS } from '../../structure/core/materials';
 import { placeFromFrame } from '../../structure/core/assemble';
 import { templateSegments } from '../../structure/core/templateView';
@@ -348,7 +348,7 @@ function PartForm({
                 ))}
               </select>
               Nature
-              <select value={a.nature} style={{ maxWidth: 260 }} onChange={(e) => patch({ nature: e.target.value as PartNature })}>
+              <select value={a.nature} style={{ maxWidth: 260 }} onChange={(e) => patch({ nature: e.target.value as PartNature, ...(e.target.value === 'timber-block' ? { material: a.material ?? 'C24', ...(a.weight?.unit === 'kg/m' ? { weight: undefined } : {}) } : {}) })}>
                 {NATURES_BY_ROLE[a.role].map((k) => (
                   <option key={k} value={k}>
                     {NATURE_LABEL[k]}
@@ -425,6 +425,14 @@ function PartForm({
             )}
             {a.nature === 'viewbox' && (
               <>
+                {fp && !isViewboxBody(fp.dims, { long: moduleDims?.long ?? 5900, short: moduleDims?.short ?? 2500 }) && (
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    <b style={{ color: 'var(--warn)' }}>⚠ Ces dimensions ({fp.dims.join(' × ')} mm) ne sont pas celles d’une Viewbox.</b>
+                    <button className="btn small" type="button" onClick={() => patch({ role: 'structural', nature: 'timber-block', material: a.material ?? 'C24', weight: undefined })}>
+                      C’est un calage bois sous les pieds
+                    </button>
+                  </div>
+                )}
                 <div className="hint">
                   C’est la Viewbox elle-même (son composant SketchUp) : rien à saisir ici, elle est calculée avec la structure de son type de Viewbox
                   {bodyTemplate ? ` (${bodyTemplate.name})` : ''} — poids et barres ci-dessous.
@@ -432,6 +440,26 @@ function PartForm({
                 {bodyTemplate && (
                   <ViewboxStructure entry={bodyTemplate} library={library} canEdit={canEditLibrary} who={who} highlight={highlight} onHighlight={onHighlight} onSaveEntries={onSaveEntries} />
                 )}
+              </>
+            )}
+            {a.nature === 'timber-block' && (
+              <>
+                <div className="hint">
+                  Cales / blocs de bois posés sous les pieds des Viewbox : pas dans le calcul de la structure, mais à l’étape « Sol & calage » chaque bloc dessiné
+                  devient un appui de calage — les pieds posés dessus s’additionnent, le bois est vérifié sous chaque pied, la charge se diffuse dans le bloc
+                  (45°, centrée sur la charge) et son poids s’ajoute au sol. Si ça ne passe pas, des plaques de répartition se posent sous le bloc.
+                </div>
+                <label className="row hint">
+                  Bois
+                  <select value={a.material ?? 'C24'} style={{ maxWidth: 260 }} onChange={(e) => patch({ material: e.target.value })}>
+                    {MATERIALS.filter((m) => m.family === 'timber' || m.family === 'plywood').map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.name} ({m.rho} kg/m³)
+                      </option>
+                    ))}
+                  </select>
+                  <span>Poids : laisser vide = volume dessiné × masse volumique ; sinon kg pour l’objet entier (réparti sur ses blocs) ou kg/m² d’emprise.</span>
+                </label>
               </>
             )}
             {a.role !== 'ignored' && a.nature !== 'viewbox' && (
@@ -442,9 +470,9 @@ function PartForm({
                   style={{ width: 90 }}
                   min={0}
                   value={a.weight?.value ?? ''}
-                  onChange={(e) => patch({ weight: e.target.value === '' ? undefined : { value: Number(e.target.value), unit: a.weight?.unit ?? 'kg/m' } })}
+                  onChange={(e) => patch({ weight: e.target.value === '' ? undefined : { value: Number(e.target.value), unit: a.weight?.unit ?? (a.nature === 'timber-block' ? 'kg' : 'kg/m') } })}
                 />
-                <select value={a.weight?.unit ?? 'kg/m'} style={{ width: 80 }} onChange={(e) => patch({ weight: { value: a.weight?.value ?? 0, unit: e.target.value as WeightUnit } })}>
+                <select value={a.weight?.unit ?? (a.nature === 'timber-block' ? 'kg' : 'kg/m')} style={{ width: 80 }} onChange={(e) => patch({ weight: { value: a.weight?.value ?? 0, unit: e.target.value as WeightUnit } })}>
                   <option>kg/m</option>
                   <option>kg/m²</option>
                   <option>kg</option>

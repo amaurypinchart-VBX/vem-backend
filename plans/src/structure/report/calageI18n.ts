@@ -37,6 +37,8 @@ export interface CalageDocLabels {
   verdictText: { ok: string; limit: string; fail: string; incomplete: string };
   cols: { point: string; type: string; modules: string; plate: string; calage: string };
   noPlate: string;
+  /** appui sur bloc de calage bois dessiné */
+  onBlock: (dims: string) => string;
   roadwaySuffix: string;
   exceeded: string;
   limit: string;
@@ -136,6 +138,7 @@ const FR: CalageDocLabels = {
   verdictText: { ok: 'OK', limit: 'limite', fail: 'dépassé', incomplete: '—' },
   cols: { point: 'Point', type: 'Type', modules: 'Viewbox au sol', plate: 'Plaque', calage: 'Calage · pression au sol' },
   noPlate: 'sans plaque',
+  onBlock: (d) => `bloc bois ${d}`,
   roadwaySuffix: ' + roulage',
   exceeded: ' — DÉPASSÉ',
   limit: ' (limite)',
@@ -223,6 +226,7 @@ const DE: CalageDocLabels = {
   verdictText: { ok: 'OK', limit: 'Grenze', fail: 'überschritten', incomplete: '—' },
   cols: { point: 'Punkt', type: 'Typ', modules: 'Viewbox EG', plate: 'Platte', calage: 'Unterpallung · Bodenpressung' },
   noPlate: 'ohne Platte',
+  onBlock: (d) => `Holzklotz ${d}`,
   roadwaySuffix: ' + Fahrplatten',
   exceeded: ' — ÜBERSCHRITTEN',
   limit: ' (Grenze)',
@@ -310,6 +314,7 @@ const EN: CalageDocLabels = {
   verdictText: { ok: 'OK', limit: 'limit', fail: 'exceeded', incomplete: '—' },
   cols: { point: 'Point', type: 'Type', modules: 'Ground Viewbox', plate: 'Plate', calage: 'Packing · ground pressure' },
   noPlate: 'no plate',
+  onBlock: (d) => `timber block ${d}`,
   roadwaySuffix: ' + roadway',
   exceeded: ' — EXCEEDED',
   limit: ' (limit)',

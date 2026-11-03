@@ -84,6 +84,8 @@ export interface StudyInputs {
   comboIds?: string[];
   /** assemblages des Viewbox modifiées par l'étude (statuts, capacités recalculées ou indicatives) */
   joints?: JointRevalidation;
+  /** blocs de calage bois dessinés sous les pieds : seulement pour le calage (pas dans le calcul ni `inputKey`) */
+  groundBlocks?: import('./core/blocks').DrawnBlock[];
 }
 
 export interface StudyRun {

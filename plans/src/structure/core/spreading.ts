@@ -8,6 +8,7 @@ import { PANELS, plateKey, stockLayer } from './ground';
 import type { CalcRecord } from './records';
 import { kgm2 } from './roadway';
 import { fmtNumber } from './units';
+import type { BlockChain } from './blocks';
 
 /** Une couche choisie : n plaques identiques du stock (clé `plateKey`) empilées. */
 export interface LayerRef {
@@ -138,6 +139,12 @@ export interface ChainInput {
   /** plaques à fleur de la Viewbox : emprise efficace maximale (u, v) et distance de la charge au bord (mm) */
   caps?: [number, number];
   edgeDist?: [number, number];
+  /**
+   * appui posé sur un bloc de calage bois dessiné : le bloc est la première couche (compression ⊥ sous les pieds,
+   * diffusion, poids propre) ; Rzk / REd = réactions des pieds seules, le poids du bloc est ajouté ici ; les plaques
+   * éventuelles sont sous le bloc, centrées sur lui (emprise efficace B − 2 e)
+   */
+  block?: BlockChain;
 }
 
 export interface ChainResult {
@@ -160,7 +167,11 @@ export const layersText = (layers: SpreadLayer[]) => layers.map((l) => `${l.n} �
 
 /** Chaîne de répartition d'un appui : contact → chaque couche (emprise efficace) → sol ou plaques de roulage. */
 export function checkChain(inp: ChainInput): ChainResult {
-  const { Rzk, REd, bearing } = inp;
+  const { bearing } = inp;
+  const blk = inp.block;
+  // poids du bloc ajouté sous le bloc : réactions au sol = pieds + bloc
+  const Rzk = inp.Rzk + (blk?.weightK ?? 0);
+  const REd = inp.REd + (blk?.weightD ?? 0);
   const steps: ChainStep[] = [];
   const records: CalcRecord[] = [];
   const problems: string[] = [];
@@ -170,11 +181,50 @@ export function checkChain(inp: ChainInput): ChainResult {
     return { label, dims, area, pressure, eta: pressure / bearing, note };
   };
   let c: [number, number] = [...inp.contact];
-  steps.push(stepOf(inp.contactLabel, c));
+  // surface de contact des pieds : pression sous les pieds seuls
+  steps.push({ ...stepOf(inp.contactLabel, c), pressure: inp.Rzk / (c[0] * c[1]), eta: inp.Rzk / (c[0] * c[1]) / bearing });
   const results: LayerResult[] = [];
   let etaC90 = 0;
   let etaCapacity = 0;
   const caps = inp.caps ?? [Infinity, Infinity];
+  if (blk) {
+    const [eu, ev] = blk.eff;
+    const effA = Math.max(1, eu * ev);
+    const blockA = blk.dims[0] * blk.dims[1];
+    // pieds sur l'emprise efficace + poids du bloc sur toute sa base (superposition, côté de la sécurité)
+    const q = inp.Rzk / effA + blk.weightK / blockA;
+    const e = Math.hypot(blk.offset[0], blk.offset[1]);
+    const notes: string[] = [];
+    if (e > 10) notes.push(`résultante des pieds à ${f(Math.abs(blk.offset[0]) / 10, 0)} / ${f(Math.abs(blk.offset[1]) / 10, 0)} cm du centre du bloc : emprise centrée sur la charge, B' = B − 2 e`);
+    if (blk.diffusionLimited) notes.push(`diffusion à 45° sur ${f(blk.height / 10, 0)} cm de hauteur : le bloc ne répartit pas sur toute sa base`);
+    if (eu <= 1 || ev <= 1) problems.push(`${blk.label} : la charge des pieds n’est pas sur le bloc (dessin à vérifier)`);
+    steps.push({ label: `+ ${blk.label}`, dims: [eu, ev], area: effA, pressure: q, eta: q / bearing, note: notes.join(' ; ') || undefined });
+    const eta90 = blk.c90.sigma / blk.c90.fc90d;
+    etaC90 = Math.max(etaC90, eta90);
+    if (eta90 > 1) problems.push(`${blk.label} : bois écrasé sous l’appui ${blk.c90.foot} (σc,90,d = ${f(blk.c90.sigma, 2)} > ${f(blk.c90.fc90d, 2)} N/mm²) — tôle acier sous le pied`);
+    records.push({
+      key: 'block.c90',
+      title: `Compression transversale du bloc sous l’appui ${blk.c90.foot}`,
+      clause: 'DIN EN 1995-1-1 6.1.5 (kc,90 = 1,0 : sens du fil inconnu, côté de la sécurité ; kmod 0,9, γM 1,3)',
+      formula: 'σc,90,d = Rz,Ed / A ≤ fc,90,d = kmod · fc,90,k / γM',
+      withValues: `σc,90,d = ${kN(blk.c90.REd)} / ${m2(blk.c90.area)} = ${f(blk.c90.sigma, 2)} N/mm² ≤ ${f(blk.c90.fc90d, 2)} N/mm²`,
+      result: blk.c90.sigma,
+      limit: blk.c90.fc90d,
+      eta: eta90,
+    });
+    records.push({
+      key: 'block.spread',
+      title: `Répartition par ${blk.label}`,
+      clause: 'diffusion à 45° dans la hauteur du bloc, emprise centrée sur la résultante (EN 1997-1 annexe D, B\' = B − 2 e) ; poids du bloc sur toute sa base',
+      formula: 'σ = Rz,k,pieds / (B\'u · B\'v) + Gbloc / (Bu · Bv)',
+      withValues: `σ = ${kN(inp.Rzk)} / ${m2(effA)} (${dimsCm([eu, ev])}) + ${kN(blk.weightK)} / ${m2(blockA)} = ${pressureText(q)}`,
+      result: q,
+    });
+    c = [eu, ev];
+  }
+  // plaques sous un bloc : centrées sur le bloc, la charge est à `offset` du centre de la plaque
+  const capsOf = (L: SpreadLayer): [number, number] =>
+    blk ? [Math.max(1, L.l - 2 * Math.abs(blk.offset[0])), Math.max(1, L.w - 2 * Math.abs(blk.offset[1]))] : caps;
   const capText = () => {
     const d = Math.min(...(inp.edgeDist ?? [Infinity, Infinity]));
     return Number.isFinite(d)
@@ -182,11 +232,11 @@ export function checkChain(inp: ChainInput): ChainResult {
       : 'plaque excentrée : emprise centrée sur la charge (B\' = B − 2 e)';
   };
   for (const L of inp.layers) {
-    const r = spreadLayer(L, c, REd, caps);
+    const r = spreadLayer(L, c, REd, capsOf(L));
     results.push(r);
     const lab = `${L.n > 1 ? `${L.n} × ` : ''}${L.label}`;
     let note: string | undefined;
-    if (r.eccentric) note = capText();
+    if (r.eccentric) note = blk ? 'plaque centrée sous le bloc : emprise centrée sur la charge (B\' = B − 2 e)' : capText();
     if (!r.full) {
       const thin = `trop mince pour répartir sur toute la plaque : emprise efficace ${dimsCm(r.footprint)} (il faudrait ${f(r.tFull, 0)} mm par plaque)`;
       note = note ? `${note} ; ${thin}` : thin;
@@ -235,7 +285,9 @@ export function checkChain(inp: ChainInput): ChainResult {
     formula: 'σB = Rz,k / A ≤ portance admissible',
     withValues: inp.roadway
       ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
-      : `σB = ${kN(Rzk)} / ${m2(last.area)} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`,
+      : blk && !inp.layers.length
+        ? `σB = ${kN(inp.Rzk)} / ${m2(last.area)} + ${kN(blk.weightK)} / ${m2(blk.dims[0] * blk.dims[1])} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
+        : `σB = ${kN(Rzk)} / ${m2(last.area)} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`,
     result: last.pressure,
     limit: bearing,
     eta: last.eta,
@@ -273,6 +325,10 @@ export function resolveLayers(refs: LayerRef[], stock: StockPlate[]): { layers: 
  * moins d'épaisseur.
  */
 export function bestStockLayers(base: Omit<ChainInput, 'layers'>, stock: StockPlate[]): { layers: SpreadLayer[]; chain: ChainResult } | null {
+  return bestStockForAll([base], stock);
+}
+
+function stockCandidates(stock: StockPlate[]): SpreadLayer[][] {
   const plates = stock.filter((s) => s.length > 0 && s.width > 0 && s.thickness > 0);
   const cands: SpreadLayer[][] = [];
   for (const s of plates) for (const n of [1, 2, 3]) cands.push([stockLayer(s, n)]);
@@ -281,10 +337,24 @@ export function bestStockLayers(base: Omit<ChainInput, 'layers'>, stock: StockPl
       if (top.length * top.width >= bottom.length * bottom.width) continue;
       for (const nb of [1, 2]) cands.push([stockLayer(top, 1), stockLayer(bottom, nb)]);
     }
+  return cands;
+}
+
+/** Même choix que `bestStockLayers`, pour que tous les appuis donnés passent (chaîne de l'appui le plus défavorable). */
+export function bestStockForAll(bases: Array<Omit<ChainInput, 'layers'>>, stock: StockPlate[]): { layers: SpreadLayer[]; chain: ChainResult } | null {
+  if (!bases.length) return null;
   let best: { layers: SpreadLayer[]; chain: ChainResult; pieces: number; area: number; thick: number } | null = null;
-  for (const layers of cands) {
-    const chain = checkChain({ ...base, layers });
-    if (chain.eta > 1) continue;
+  for (const layers of stockCandidates(stock)) {
+    let chain: ChainResult | null = null;
+    for (const base of bases) {
+      const c = checkChain({ ...base, layers });
+      if (c.eta > 1) {
+        chain = null;
+        break;
+      }
+      if (!chain || c.eta > chain.eta) chain = c;
+    }
+    if (!chain) continue;
     const pieces = layers.reduce((a, l) => a + l.n, 0);
     const bottom = layers[layers.length - 1];
     const area = bottom.l * bottom.w;
@@ -306,12 +376,15 @@ export interface AdviceContext {
 
 /** Diagnostic d'un appui en une ou deux phrases : ce qui se passe, pourquoi, et quoi faire. */
 export function adviseChain(id: string, chain: ChainResult, layers: SpreadLayer[], ctx: AdviceContext): string {
-  const { Rzk, bearing } = ctx.base;
+  const { bearing } = ctx.base;
+  const Rzk = ctx.base.Rzk + (ctx.base.block?.weightK ?? 0);
   const last = chain.steps[chain.steps.length - 1];
   const where = last.dims ? `${m2(last.area)} (${dimsCm(last.dims)})` : `${m2(last.area)} de plaques de roulage`;
   const what = ctx.roadwayOn
     ? `${id} : ${kN(Rzk)} ; avec les plaques de roulage, toute l’installation (${kN(ctx.roadway?.load ?? 0)}) est répartie sur ${where} → ${pressureText(last.pressure)}`
-    : `${id} : ${kN(Rzk)} sur ${where} → ${pressureText(last.pressure)}`;
+    : ctx.base.block && !layers.length
+      ? `${id} : ${kN(ctx.base.Rzk)} des pieds + ${kN(ctx.base.block.weightK)} de bloc, répartis par ${ctx.base.block.label} sur ${where} → ${pressureText(last.pressure)}`
+      : `${id} : ${kN(Rzk)}${ctx.base.block ? ` (pieds + bloc ${kN(ctx.base.block.weightK)})` : ''} sur ${where} → ${pressureText(last.pressure)}`;
   const thin = chain.layers.filter((r) => !r.full).map((r) => `${r.layer.label} trop mince, ne répartit que sur ${dimsCm(r.footprint)}`);
   const other = chain.problems.filter((p) => !p.includes('trop mince'));
   if (chain.eta <= 1) {
@@ -330,7 +403,7 @@ export function adviseChain(id: string, chain: ChainResult, layers: SpreadLayer[
     parts.push(
       ctx.roadwayOn
         ? `${what}, le sol accepte ${pressureText(bearing)} : même avec des plaques de roulage partout, la surface couverte est trop petite pour ce sol (il faudrait ${m2((ctx.roadway?.load ?? 0) / bearing)}) — lest réduit, autre implantation ou étude spécifique.`
-        : `${what}, le sol accepte ${pressureText(bearing)} : il faut au moins ${m2(chain.areaRequired)} au sol (≈ ${cm(side)} × ${cm(side)} cm).`,
+        : `${what}, le sol accepte ${pressureText(bearing)} : il faut au moins ${m2(chain.areaRequired)} au sol (≈ ${cm(side)} × ${cm(side)} cm${ctx.base.block ? ', plaques de répartition sous le bloc' : ''}).`,
     );
   } else parts.push(`${what} ≤ ${pressureText(bearing)} admissibles, mais :`);
   if (thin.length) parts.push(`${thin.join(' ; ')}.`);
