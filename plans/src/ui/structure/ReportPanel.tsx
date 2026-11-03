@@ -166,7 +166,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   // calage avec les réactions du calcul (mêmes entrées que l'étape 5)
   const calage = useMemo((): CalageResult | null => {
     if (!run || stale || !modules.length) return null;
-    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), reactions: run.ground, jackMax: inputs.options.jackExtension };
+    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), blocks: inputs.groundBlocks, reactions: run.ground, jackMax: inputs.options.jackExtension };
     if (!(input.bearing > 0)) return null;
     try {
       return computeCalage(input);

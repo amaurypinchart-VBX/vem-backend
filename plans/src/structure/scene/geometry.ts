@@ -3,6 +3,8 @@
 import { Box3, Matrix4, Quaternion, Vector3 } from 'three';
 import type { BufferGeometry, Mesh } from 'three';
 import type { LoadedScene } from '../../scene/loadedScene';
+import type { BoxMm } from '../core/blocks';
+import { components } from '../core/sectionDetect';
 
 export function itemBoxDims(scene: LoadedScene, ids: Iterable<string>): Map<string, [number, number, number]> {
   const out = new Map<string, [number, number, number]>();
@@ -100,4 +102,44 @@ export function itemBar(scene: LoadedScene, id: string): { a: [number, number, n
   const axes = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].map((a) => a.applyQuaternion(q));
   const j = order.slice(1).reduce((x, y) => (Math.abs(axes[y].y) > Math.abs(axes[x].y) ? y : x));
   return { a: lo.toArray() as [number, number, number], b: hi.toArray() as [number, number, number], depth: size[j] };
+}
+
+/**
+ * Pièces d'un calage dessiné (blocs de bois sous les pieds) : chaque solide séparé de ses maillages (triangles reliés
+ * par des sommets communs), en boîte du monde (mm) avec son volume (boîte). Gros maillages : une boîte par maillage.
+ */
+export function blockPieces(scene: LoadedScene, id: string): BoxMm[] {
+  const obj = scene.objectsById.get(id);
+  if (!obj) return [];
+  obj.updateWorldMatrix(true, true);
+  const out: BoxMm[] = [];
+  const v = new Vector3();
+  obj.traverse((o) => {
+    const mesh = o as Mesh;
+    const g = mesh.geometry as BufferGeometry | undefined;
+    const pos = g?.attributes?.position;
+    if (!mesh.isMesh || !pos) return;
+    const idx = g!.index;
+    const nTri = idx ? idx.count / 3 : pos.count / 3;
+    const soup = new Float32Array(nTri * 9);
+    for (let t = 0; t < nTri; t++)
+      for (let i = 0; i < 3; i++) {
+        const k = idx ? idx.getX(3 * t + i) : 3 * t + i;
+        v.fromBufferAttribute(pos, k).applyMatrix4(mesh.matrixWorld);
+        soup.set([v.x, v.y, v.z], 9 * t + 3 * i);
+      }
+    const parts = nTri > 200000 ? [soup] : components(soup, 0.5);
+    for (const p of parts) {
+      const min: [number, number, number] = [Infinity, Infinity, Infinity];
+      const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < p.length; i += 3)
+        for (let k = 0; k < 3; k++) {
+          min[k] = Math.min(min[k], p[i + k]);
+          max[k] = Math.max(max[k], p[i + k]);
+        }
+      if (!Number.isFinite(min[0])) continue;
+      out.push({ min, max, volume: (max[0] - min[0]) * (max[1] - min[1]) * (max[2] - min[2]) });
+    }
+  });
+  return out;
 }

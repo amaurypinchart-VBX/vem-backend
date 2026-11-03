@@ -27,7 +27,7 @@ import { wrapText } from './metrics';
 import { translate, typo } from './translate';
 
 /** Couleur d'un type d'appui de calage (« 1 »…« 4 », « M », « M2 »). */
-export const typeColor = (key: string) => TYPE_HEX[key] ?? TYPE_HEX[key.startsWith('M') ? 'M' : String(Math.min(4, Number(key) || 1))];
+export const typeColor = (key: string): string => TYPE_HEX[key] ?? (key.startsWith('B') ? TYPE_HEX.B : TYPE_HEX[key.startsWith('M') ? 'M' : String(Math.min(4, Number(key) || 1))]);
 
 /** « 3 × 70 × 70 × 36 mm » : couches d'un appui (plaque du dessus d'abord). */
 export function layersShort(layers: SpreadLayer[]): string {
@@ -78,7 +78,7 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
     const over = c.plan && c.plan.placement === 'centered' && c.plan.overhang > 5 ? ` · ${C.overhang(N(c.plan.overhang / 10))}` : '';
     out.push({
       id: c.id,
-      label: c.layerList.length ? layersShort(c.layerList) : C.noPlate,
+      label: c.block ? `${C.onBlock(c.block.dims.replace(/,/g, lang === 'en' ? '.' : ','))}${c.layerList.length ? ` + ${layersShort(c.layerList)}` : ''}` : c.layerList.length ? layersShort(c.layerList) : C.noPlate,
       sub: `Rz,k ${N(c.Rzk / 1e3)} kN${over}`,
       color: typeColor(c.typeKey),
       corners: rect.map(W),
@@ -203,9 +203,10 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
   else if (c.longrine && !c.allPlates) blocks[0].lines.push({ text: C.longrineVariant(E(c.longrine.solution.summary), N(c.longrine.result.eta, 2)) });
   blocks.push({ title: C.materialsTitle, lines: c.materials.map((m) => ({ text: `${m.quantity} × ${E(m.label)} ${E(m.dims)}` })) });
-  const centered = c.checks.filter((x) => x.plan?.placement === 'centered');
+  // appuis sur blocs dessinés : ni « à fleur » ni « centré » (la plaque éventuelle est sous le bloc)
+  const centered = c.checks.filter((x) => !x.block && x.plan?.placement === 'centered');
   const lay: Block['lines'] = [];
-  if (c.checks.some((x) => x.plan)) {
+  if (c.checks.some((x) => x.plan && !x.block)) {
     if (!centered.length) lay.push({ text: C.flushAll });
     else if (centered.length === c.checks.filter((x) => x.plan).length && c.placement === 'centered') lay.push({ text: C.centeredAll });
     else {

@@ -1,6 +1,7 @@
 // Panneau « Sol & calage » : hypothèses (portance, charges, vent), estimation des réactions par groupe d'appuis,
 // solutions de répartition par type d'appui, variante longrines, liste de matériel, stock de l'entrepôt, fiche PDF.
 // Alimenté par le modèle analysé (onglet Étude structure) ou par une grille de Viewbox (calculateur rapide).
+import type { DrawnBlock } from '../../structure/core/blocks';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
@@ -398,6 +399,8 @@ export interface GroundPanelProps {
   jacks?: boolean;
   /** appuis hors des Viewbox (pieds des éléments terrasse posés au sol) */
   extraSupports?: AddedSupport[];
+  /** blocs de calage bois dessinés dans le modèle sous les pieds */
+  blocks?: DrawnBlock[];
   /** calage rapide sans modèle : murs, vitrages… saisis en forfait par Viewbox */
   withoutModel?: boolean;
   /** sortie de tige de vérin vérifiée par le calcul (mm) : rattrapage des niveaux pris par les vérins jusque-là */
@@ -408,7 +411,7 @@ export interface GroundPanelProps {
   onCalage?: (r: CalageResult | null) => void;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, withoutModel = false, jackMax, onSendToPlans, onCalage }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, blocks, withoutModel = false, jackMax, onSendToPlans, onCalage }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -451,8 +454,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   }, [hyp, storageKey, hypProp]);
 
   const input = useMemo(
-    () => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined, ...(jackMax ? { jackMax } : {}) }),
-    [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel, jackMax],
+    () => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined, ...(jackMax ? { jackMax } : {}), ...(blocks?.length ? { blocks } : {}) }),
+    [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel, jackMax, blocks],
   );
   useEffect(() => {
     setPending(true);
@@ -1007,6 +1010,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <TypeChoice t={t} result={result} stock={input.stock} set={choiceSet} onSelect={select} selected={selected} />
+                {t.block && (
+                  <div className="hint">
+                    Blocs de bois dessinés dans le modèle : {[...new Set(t.checks.map((c) => `${c.block!.id} ${c.block!.dims} (${n(c.block!.massKg, 0)} kg${c.block!.massSource === 'computed' ? ', calculé' : ''})`))].join(' · ')}. Pieds → bois sous chaque pied → diffusion dans le bloc (45°, centrée
+                    sur la charge) → poids du bloc → sol ; les plaques choisies se posent sous le bloc, centrées.
+                  </div>
+                )}
+                {!t.block && (
                 <table className="list" style={{ maxWidth: 520 }}>
                   <thead>
                     <tr>
@@ -1029,6 +1039,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                     </tr>
                   </tbody>
                 </table>
+                )}
                 {t.solutions.map((s, k) => (
                   <SolutionRow key={k} s={s} chosen={s === t.chosen} />
                 ))}

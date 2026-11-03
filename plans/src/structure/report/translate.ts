@@ -9,6 +9,19 @@ type Rule = readonly [string | RegExp, string, string];
 
 /** Motifs (appliqués dans l'ordre). */
 const PATTERNS: Rule[] = [
+  // blocs de calage bois dessinés (avant les motifs « N angles »)
+  [/bloc bois sous (\d+) angles/g, 'Holzklotz unter $1 Ecken', 'timber block under $1 corners'],
+  [/bloc bois sous un angle/g, 'Holzklotz unter einer Ecke', 'timber block under one corner'],
+  [/bloc bois sous (\d+) vérins d’angle/g, 'Holzklotz unter $1 Eck-Spindelfüßen', 'timber block under $1 corner jacks'],
+  [/bloc bois sous un vérin d’angle/g, 'Holzklotz unter einem Eck-Spindelfuß', 'timber block under one corner jack'],
+  [/bloc bois sous (\d+) vérins centraux/g, 'Holzklotz unter $1 mittleren Spindelfüßen', 'timber block under $1 middle jacks'],
+  [/bloc bois sous un vérin central/g, 'Holzklotz unter einem mittleren Spindelfuß', 'timber block under one middle jack'],
+  [/bloc bois sous (\d+) pieds centraux/g, 'Holzklotz unter $1 Mittelfüßen', 'timber block under $1 middle feet'],
+  [/bloc bois sous un pied central/g, 'Holzklotz unter einem Mittelfuß', 'timber block under one middle foot'],
+  [/Bloc bois (BL\d+) /g, 'Holzklotz $1 ', 'Timber block $1 '],
+  [/Compression transversale du bloc sous l’appui ([A-Z]+\d+)/g, 'Querdruck im Holzklotz unter Auflager $1', 'Compression perpendicular to grain of the block under support $1'],
+  [/Bloc de calage ([^()]+) \(dessiné dans le modèle\)/g, 'Holzklotz $1 (im Modell gezeichnet)', 'Timber packing block $1 (drawn in the model)'],
+  [/sous chaque bloc, centrées sur le bloc/g, 'unter jedem Holzklotz, mittig', 'under each block, centred on the block'],
   [/La variante longrines passe \(η = ([\d,]+)\) : elle peut être retenue à l’étape Sol & calage\./g, 'Die Variante mit Kanthölzern ist ausreichend (η = $1): sie kann im Schritt Boden & Unterpallung gewählt werden.', 'The sleeper variant passes (η = $1): it can be selected in the Ground & packing step.'],
   [/grand côté (\d)/g, 'Längsseite $1', 'long side $1'],
   [/petit côté (\d)/g, 'Stirnseite $1', 'short side $1'],
@@ -158,6 +171,14 @@ const PATTERNS: Rule[] = [
 
 /** Expressions (appliquées de la plus longue à la plus courte). */
 const PHRASES: Rule[] = [
+  ['DIN EN 1995-1-1 6.1.5 (kc,90 = 1,0 : sens du fil inconnu, côté de la sécurité ; kmod 0,9, γM 1,3)', 'DIN EN 1995-1-1 6.1.5 (kc,90 = 1,0: Faserrichtung unbekannt, auf der sicheren Seite; kmod 0,9, γM 1,3)', 'DIN EN 1995-1-1 6.1.5 (kc,90 = 1.0: grain direction unknown, on the safe side; kmod 0.9, γM 1.3)'],
+  ["diffusion à 45° dans la hauteur du bloc, emprise centrée sur la résultante (EN 1997-1 annexe D, B’ = B − 2 e) ; poids du bloc sur toute sa base", "Lastausbreitung unter 45° über die Klotzhöhe, wirksame Fläche mittig zur Resultierenden (EN 1997-1 Anhang D, B' = B − 2 e); Eigengewicht des Klotzes auf der ganzen Grundfläche", "45° spread over the block height, effective area centred on the resultant (EN 1997-1 Annex D, B' = B − 2 e); block self-weight over its whole base"],
+  ["plaque centrée sous le bloc : emprise centrée sur la charge (B’ = B − 2 e)", "Platte mittig unter dem Klotz: wirksame Fläche mittig zur Last (B' = B − 2 e)", "plate centred under the block: effective area centred on the load (B' = B − 2 e)"],
+  ['Bloc bois dessiné + plaques de répartition sous le bloc', 'Gezeichneter Holzklotz + Lastverteilungsplatten darunter', 'Drawn timber block + spreading plates under the block'],
+  ['Bloc bois dessiné, sans plaque', 'Gezeichneter Holzklotz, ohne Platte', 'Drawn timber block, no plate'],
+  ['bloc posé directement au sol', 'Holzklotz direkt auf dem Boden', 'block placed directly on the ground'],
+  ['bloc posé sur les plaques de roulage', 'Holzklotz auf Fahrplatten', 'block placed on the roadway plates'],
+  ['plaques de répartition à poser sous le bloc (aucune plaque du stock ne suffit : plaque sur mesure ou plaques de roulage)', 'Lastverteilungsplatten unter den Holzklotz legen (keine Lagerplatte reicht: Sonderplatte oder Fahrplatten)', 'spreading plates to be placed under the block (no stock plate is enough: custom plate or roadway plates)'],
   [' — torsion (6.23)', ' — Torsion (6.23)', ' — torsion (6.23)'],
   [' — effort tranchant (6.17)', ' — Querkraft (6.17)', ' — shear (6.17)'],
   ['V,Ed / (k · Vpl,Rd) ≤ 1, k = réduction due à la torsion (1 si τt,Ed < 5 % τRd)', 'V,Ed / (k · Vpl,Rd) ≤ 1, k = Abminderung infolge Torsion (1 für τt,Ed < 5 % τRd)', 'V,Ed / (k · Vpl,Rd) ≤ 1, k = reduction due to torsion (1 if τt,Ed < 5 % τRd)'],

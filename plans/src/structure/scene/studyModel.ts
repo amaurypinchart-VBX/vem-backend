@@ -18,7 +18,9 @@ import type { StairKitParams } from '../core/templates/stair';
 import { STAIR_KITS } from '../library/seed';
 import type { PlacedTerrace } from '../core/terrace';
 import { placeTerrace } from '../core/terrace';
-import { endHeights, itemBar } from './geometry';
+import { blockPieces, endHeights, itemBar } from './geometry';
+import type { DrawnBlock } from '../core/blocks';
+import { clusterBlocks, makeBlocks } from '../core/blocks';
 import type { StudyMods } from '../core/mods';
 import { modsCount, modsFromStructParams } from '../core/mods';
 
@@ -32,6 +34,8 @@ export interface SceneStudyModel {
   terraces: PlacedTerrace[];
   /** poutres et poteaux porteurs dessinés dans le modèle (axe de la pièce, section de la reconnaissance) */
   members?: ModelMember[];
+  /** blocs de calage bois dessinés sous les pieds (étape Sol & calage : ils répartissent la charge et pèsent) */
+  blocks?: DrawnBlock[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
   errors: string[];
@@ -45,7 +49,7 @@ export interface IgnoredPart {
   count: number;
 }
 
-const STRUCTURAL_NATURES = new Set(['beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace']);
+const STRUCTURAL_NATURES = new Set(['beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace', 'timber-block']);
 
 /** Types de pièces porteuses (catégorie ou nature structurelle) que l'utilisateur a choisi d'ignorer. */
 export function ignoredStructural(recognition: Recognition): IgnoredPart[] {
@@ -188,6 +192,10 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const stairs: PlacedStair[] = [];
   const terraces: PlacedTerrace[] = [];
   const members: ModelMember[] = [];
+  const blocks: DrawnBlock[] = [];
+  // dessous des Viewbox posées au sol : un objet entièrement en dessous n'est pas la Viewbox (calage dessiné ?)
+  const placedIds = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
+  const groundBottom = Math.min(...scene.index.modules.filter((m) => placedIds.has(m.id)).map((m) => m.bboxMm[1]));
   const unmodelled = new Map<string, number>();
   const windOnly = new Map<string, number>();
   for (const t of recognition.types) {
@@ -203,7 +211,30 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     if (a.role === 'ignored') continue;
     // la Viewbox elle-même (composant classé d'un bloc) : calculée par le gabarit de sa Viewbox
     if (a.nature === 'viewbox') {
-      if (!t.moduleIds.length) errors.push(`${t.label} : Viewbox hors des modules numérotés (VBX-xx) — la numéroter dans SketchUp (extension viewbox_prep)`);
+      const below = t.nodeIds.filter((id) => {
+        const b = scene.look.byId.get(id)?.bboxMm;
+        return b && Number.isFinite(groundBottom) && b[4] <= groundBottom + 50;
+      });
+      if (below.length)
+        warnings.push(
+          `${t.label} : répondu « Viewbox (gabarit) » mais l’objet est sous les Viewbox (dessus à ${fmtNumber(Math.max(...below.map((id) => scene.look.byId.get(id)!.bboxMm![4])) - groundBottom, 0)} mm de leur dessous) — ce n’est pas la Viewbox. Si ce sont des cales ou blocs de bois sous les pieds, choisir « ${NATURE_LABEL['timber-block']} » (étape 1) pour qu’ils comptent dans le calage.`,
+        );
+      else if (!t.moduleIds.length) errors.push(`${t.label} : Viewbox hors des modules numérotés (VBX-xx) — la numéroter dans SketchUp (extension viewbox_prep)`);
+      continue;
+    }
+    // blocs de calage bois sous les pieds : pas dans le calcul de la structure, appuis de calage de l'étape Sol & calage
+    if (a.role === 'structural' && a.nature === 'timber-block') {
+      const w = a.weight && a.weight.unit !== 'kg/m' ? (a.weight as { value: number; unit: 'kg' | 'kg/m²' }) : undefined;
+      if (a.weight?.unit === 'kg/m') warnings.push(`${t.label} : poids en kg/m ignoré pour des blocs de calage (saisir des kg pour l’objet entier, ou rien = volume dessiné × masse volumique).`);
+      for (const nodeId of t.nodeIds) {
+        const pieces = blockPieces(scene, nodeId);
+        if (!pieces.length) {
+          warnings.push(`${t.label} : géométrie introuvable, blocs non pris en compte.`);
+          continue;
+        }
+        const made = makeBlocks(clusterBlocks(pieces), { label: t.label, material: a.material, weight: w, firstIndex: blocks.length + 1 });
+        blocks.push(...made);
+      }
       continue;
     }
     if (a.role === 'structural' && (a.nature === 'stair' || a.nature === 'landing')) {
@@ -271,7 +302,14 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const custom = scene.index.modules.filter((m) => m.structParams && placed.has(m.id)).map((m) => ({ id: m.id, params: m.structParams! }));
   const structMods = custom.length ? modsFromStructParams(custom) : undefined;
   if (structMods && modsCount(structMods)) warnings.push(`${custom.length} Viewbox modifiée(s) dans SketchUp (${custom.map((c) => c.id).join(', ')}) : paramètres de structure repris (hauteur, profils, nuances).`);
-  return { modules, ignored, stairs, terraces, members, edgeItems, pointItems, errors, warnings, ...(structMods ? { structMods } : {}) };
+  if (blocks.length) {
+    const kg = blocks.reduce((s, b) => s + b.massKg, 0);
+    const given = blocks.every((b) => b.massSource === 'given');
+    warnings.push(
+      `${blocks.length} bloc(s) de calage dessiné(s) sous les pieds (${fmtNumber(kg, 0)} kg${given ? ', poids saisi' : ', poids = volume dessiné × masse volumique, saisir le poids à l’étape 1 s’il est connu'}) : comptés à l’étape Sol & calage (répartition et poids) ; le calcul de la structure garde les appuis aux pieds.`,
+    );
+  }
+  return { modules, ignored, stairs, terraces, members, edgeItems, pointItems, errors, warnings, ...(blocks.length ? { blocks } : {}), ...(structMods ? { structMods } : {}) };
 }
 
 function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {

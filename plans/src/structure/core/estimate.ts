@@ -124,6 +124,8 @@ export interface SupportGroup {
   post?: boolean;
   /** pied d'un élément terrasse posé au sol (angle ou milieu d'un grand côté, platine de vérin) */
   terrace?: boolean;
+  /** appuis posés sur un bloc de calage bois dessiné (identifiant du bloc) : un seul appui de calage par bloc */
+  block?: string;
   moduleIds: string[];
 }
 

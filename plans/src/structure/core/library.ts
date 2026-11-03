@@ -301,6 +301,7 @@ export type PartNature =
   | 'stair'
   | 'landing'
   | 'terrace'
+  | 'timber-block'
   | 'railing'
   | 'wall'
   | 'glazing'
@@ -327,6 +328,7 @@ export const NATURE_LABEL: Record<PartNature, string> = {
   stair: 'Escalier',
   landing: 'Palier',
   terrace: 'Terrasse',
+  'timber-block': 'Blocs de calage bois (sous les pieds)',
   railing: 'Garde-corps',
   wall: 'Mur plein',
   glazing: 'Vitrage',
@@ -339,14 +341,14 @@ export const NATURE_LABEL: Record<PartNature, string> = {
 };
 
 export const NATURES_BY_ROLE: Record<PartRole, PartNature[]> = {
-  structural: ['viewbox', 'beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace', 'other'],
+  structural: ['viewbox', 'beam', 'column', 'bracing', 'deck', 'stair', 'landing', 'terrace', 'timber-block', 'other'],
   load: ['wall', 'glazing', 'door', 'railing', 'sign', 'ballast', 'deck', 'other'],
   wind: ['sign', 'wall', 'other'],
   ignored: ['decor', 'spreading-plate', 'other'],
 };
 
 /** Natures porteuses calculées par un gabarit de la bibliothèque (pas de section à saisir). */
-export const TEMPLATE_NATURES: ReadonlySet<PartNature> = new Set<PartNature>(['viewbox', 'stair', 'landing', 'terrace']);
+export const TEMPLATE_NATURES: ReadonlySet<PartNature> = new Set<PartNature>(['viewbox', 'stair', 'landing', 'terrace', 'timber-block']);
 
 export type WeightUnit = 'kg/m' | 'kg/m²' | 'kg';
 

@@ -392,7 +392,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     // personnes ou portance absente : sol non compté
     const withGround = bearingFrom(hyp.bearingValue, hyp.bearingUnit) > 0 && hyp.publicMode !== 'persons';
     const groundEta = (r: StudyRun, inp: StudyInputs) => {
-      const res = computeCalage({ ...calageInput(groundModules, hyp, stock, calcOpts.jacks, groundExtras(inp)), reactions: r.ground, noAdvice: true });
+      const res = computeCalage({ ...calageInput(groundModules, hyp, stock, calcOpts.jacks, groundExtras(inp)), blocks: inp.groundBlocks, reactions: r.ground, noAdvice: true });
       return res.checks.length ? Math.max(...res.checks.map((c) => c.eta)) : null;
     };
     let capacity: LiveCapacity;
@@ -873,6 +873,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           reactions={run && !stale ? run.result.ground : null}
           jacks={calcOpts.jacks}
           extraSupports={extraSupports}
+          blocks={studyInputs.groundBlocks}
           jackMax={calcOpts.jackExtension}
           onSendToPlans={() => setStep('report')}
           onCalage={(r) =>

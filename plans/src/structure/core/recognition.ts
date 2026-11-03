@@ -125,9 +125,16 @@ export function proposeFor(category: string | null, accessory: boolean): { assig
     return { assignment: { role: 'load', nature: 'railing', windClosed: false, weight: { value: kgPerM(0.1), unit: 'kg/m' } }, reason: 'catégorie garde-corps : 0,10 kN/m, non habillé' };
   if (category === 'ESCALIER') return { assignment: { role: 'structural', nature: 'stair' }, reason: 'catégorie escalier : gabarit escalier de la bibliothèque' };
   if (category === 'TERRASSE' || category === 'TERRACE') return { assignment: { role: 'structural', nature: 'terrace' }, reason: 'catégorie terrasse : élément terrasse 5,9 × 2,5 m (statico 18-0573 § 3.5)' };
+  if (isBlockCategory(category))
+    return { assignment: { role: 'structural', nature: 'timber-block', material: 'C24' }, reason: 'catégorie calage : blocs de calage bois sous les pieds (répartissent la charge au sol, poids = volume dessiné × 420 kg/m³ sauf poids saisi)' };
   if (category === 'STRUCTURE') return { assignment: { role: 'structural', nature: 'beam' }, reason: 'catégorie structure : pièce porteuse hors Viewbox' };
   if (accessory) return { assignment: { role: 'load', nature: 'other', windClosed: true, weight: { value: kgPerM(0.5), unit: 'kg/m' } }, reason: 'accessoire de façade : 0,50 kN/m, face fermée au vent' };
   return null;
+}
+
+/** Catégorie d'un calage dessiné sous les pieds (cales, plots, sous-bois, madriers) : blocs de calage bois. */
+export function isBlockCategory(category: string): boolean {
+  return /(^|[-_ ])(CALL?ES?|CALAGES?|PLOTS?|SOUS-?BOIS|MADRIERS?|CRIBS?|TIMBER-?BLOCKS?|BLOCS?-BOIS)([-_ ]|$)/.test(category.toUpperCase());
 }
 
 /** Donnée encore nécessaire au calcul (null = rien ne manque). */
