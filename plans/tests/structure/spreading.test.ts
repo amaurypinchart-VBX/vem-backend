@@ -60,9 +60,11 @@ describe('chaîne de répartition et conseil', () => {
     const chain = checkChain({ ...base, layers: [stockLayer(plate(700, 36), 2)] });
     expect(chain.steps.map((s) => s.label)).toEqual(['2 angles 42 × 21 cm', '+ 2 × Multiplex bouleau 70 × 70 × 36 mm']);
     expect(chain.steps[0].pressure).toBeCloseTo(61e3 / (420 * 210), 9);
-    expect(chain.pressure).toBeCloseTo(61e3 / 490e3, 9);
-    expect(chain.etaGround).toBeCloseTo(61e3 / 490e3 / 0.04, 6);
-    expect(chain.areaRequired).toBeCloseTo(1.525e6, 0);
+    // poids propre des 2 plaques (multiplex 680 kg/m³) ajouté au sol
+    const wPlates = 2 * 0.7 * 0.7 * 0.036 * 680 * 9.81;
+    expect(chain.pressure).toBeCloseTo((61e3 + wPlates) / 490e3, 9);
+    expect(chain.etaGround).toBeCloseTo((61e3 + wPlates) / 490e3 / 0.04, 6);
+    expect(chain.areaRequired).toBeCloseTo((61e3 + wPlates) / 0.04, 0);
     const txt = adviseChain('P4', chain, [stockLayer(plate(700, 36), 2)], {
       base,
       stock: VIEWBOX_STOCK,
@@ -72,7 +74,7 @@ describe('chaîne de répartition et conseil', () => {
     });
     expect(txt).toContain('P4 : 61,0 kN sur 0,49 m² (70 × 70 cm)');
     expect(txt).toContain('le sol accepte 40 kN/m² (4 077 kg/m²)');
-    expect(txt).toContain('il faut au moins 1,53 m² au sol (≈ 123 × 123 cm)');
+    expect(txt).toContain('il faut au moins 1,53 m² au sol (≈ 124 × 124 cm)');
     expect(txt).toContain('Aucune plaque du stock ne suffit ; plaques de roulage sur toute la surface : 8,8 kN/m² (897 kg/m²), OK');
   });
 
@@ -260,5 +262,41 @@ describe('public limité à un nombre de personnes', () => {
     expect(at(mp.persons).checks.every((c) => c.eta <= 1)).toBe(true);
     expect(at(mp.persons + 1).checks.some((c) => c.eta > 1)).toBe(true);
     expect(at(mp.persons).publicLimit!.load).toBeCloseTo(mp.persons * W80, 9);
+  });
+});
+
+describe('plaques PEHD (plaques souples, A. Pinchart 03.11.2026)', () => {
+  const pehd = (extra: Partial<import('../../src/structure/core/ground').StockPlate> = {}) => stockLayer({ length: 2200, width: 1100, thickness: 38, quantity: 0, material: 'hdpe', fc: 7.288, ...extra }, 1);
+
+  it('plaque pleine avec module E : débord 1/β = (4 E I / k)^¼ (poutre sur sol élastique)', () => {
+    const L = pehd({ E: 1000 });
+    expect(L.hdpe!.solid).toBe(true);
+    const r = spreadLayer(L, [1000, 1000], 20e3, [Infinity, Infinity], 0.03);
+    const EI = (1000 * 38 ** 3) / 12;
+    expect(r.flexible!.mode).toBe('stiffness');
+    expect(r.flexible!.overhang).toBeCloseTo(Math.pow((4 * EI) / 0.03, 0.25), 6);
+    expect(r.footprint[0]).toBeCloseTo(1000 + 2 * r.flexible!.overhang, 6);
+    // largeur limitée à la plaque (1,10 m)
+    expect(r.footprint[1]).toBe(1100);
+  });
+
+  it('plaque de 46 kg pour 2,2 × 1,1 × 0,038 m (500 kg/m³ : pas pleine) ou sans module E : diffusion dans l’épaisseur seulement', () => {
+    const light = pehd({ E: 1000, massKg: 46 });
+    expect(light.hdpe!.solid).toBe(false);
+    expect(light.massKg).toBe(46);
+    const r = spreadLayer(light, [1000, 1000], 20e3, [Infinity, Infinity], 0.03);
+    expect(r.flexible!.mode).toBe('thickness');
+    expect(r.footprint[0]).toBeCloseTo(1076, 6);
+    const noE = spreadLayer(pehd(), [1000, 1000], 20e3, [Infinity, Infinity], 0.03);
+    expect(noE.flexible!.reason).toContain('module d’élasticité');
+  });
+
+  it('chaîne : poids des plaques au sol, compression du PEHD, pas de « trop mince »', () => {
+    const L = pehd({ massKg: 46 });
+    const chain = checkChain({ Rzk: 14e3, REd: 18e3, contact: [1000, 1000], contactLabel: 'bloc', bearing: bearingFrom(450, 'kg/m²'), layers: [L], subgrade: 0.03 });
+    expect(chain.pressure).toBeCloseTo((14e3 + 46 * 9.81) / (1076 * 1076), 9);
+    expect(chain.etaC90).toBeCloseTo(18e3 / 1e6 / (7.288 / 1.3), 9);
+    expect(chain.problems.some((p) => p.includes('trop mince'))).toBe(false);
+    expect(chain.records.some((x) => x.key === 'spread.hdpe')).toBe(true);
   });
 });

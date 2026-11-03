@@ -395,7 +395,7 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
               <b>Calage aussi sous les pieds du milieu des grands côtés</b>
               <div className="hint">{jacks ? 'Avec les pieds à vérin, les 6 pieds de chaque Viewbox sont toujours calés.' : 'Répartit mieux le poids du plancher ; sinon seuls les 4 angles portent.'}</div>
             </Check>
-            <Q label="Type de sol sous les longrines (madriers)" help="Sert seulement à la variante « longrines » (madriers sous les grands côtés) : plus le sol est dur, mieux le madrier répartit. Valeurs indicatives.">
+            <Q label="Raideur du sol (longrines, plaques PEHD)" help="Sert à la variante « longrines » (madriers sous les grands côtés) et aux plaques souples en PEHD : plus le sol est dur, moins une plaque souple répartit loin de l’appui. Valeurs indicatives du module de réaction, à confirmer par l’exploitant ou le géotechnicien.">
               <select value={hyp.subgrade} onChange={(e) => set('subgrade', e.target.value)}>
                 {SUBGRADE_PRESETS.map((s) => (
                   <option key={s.key} value={s.key}>

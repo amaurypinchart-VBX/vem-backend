@@ -85,6 +85,18 @@ export const PANELS: Record<PanelMaterial, { panel: WoodPanel; label: string }> 
   F40: { panel: PLYWOOD_F40, label: 'Contreplaqué F40/30' },
 };
 
+/**
+ * Matériau d'une plaque du stock : bois (méthode statico en flexion) ou polyéthylène haute densité (plaque souple :
+ * sa répartition dépend de sa raideur et de celle du sol, voir `spreading.ts`).
+ */
+export type PlateMaterial = PanelMaterial | 'hdpe';
+export const PLATE_LABEL: Record<PlateMaterial, string> = { birch: PANELS.birch.label, F40: PANELS.F40.label, hdpe: 'Polyéthylène haute densité (PEHD)' };
+export const isWoodPlate = (m: string | undefined): m is PanelMaterial => m === undefined || m === 'birch' || m === 'F40';
+/** Masse volumique du PEHD plein (kg/m³) : 940 à 970 (ISO 17855-1), 950 retenu pour reconnaître une plaque pleine. */
+export const HDPE_RHO = 950;
+/** Coefficient partiel appliqué à la résistance à la compression donnée par le fabricant du PEHD (hypothèse VEM). */
+export const HDPE_GAMMA = 1.3;
+
 export interface PlateInput {
   /** réaction de calcul (ELU) et caractéristique (ELS) du groupe d'appuis (N) ; Rzk absent = Rz,Ed / rdToRk */
   RzEd: number;
@@ -218,14 +230,23 @@ export interface StockPlate {
   /** pièces disponibles au dépôt ; 0 = quantité non renseignée (pas de contrôle de quantité) */
   quantity: number;
   /** matériau de la plaque (défaut F40/30, comme avant les plaques de calage Viewbox) */
-  material?: PanelMaterial;
+  material?: PlateMaterial;
+  /** masse d'une plaque donnée par le fabricant (kg) ; sinon volume × masse volumique */
+  massKg?: number;
+  /** PEHD (fiche technique) : module d'élasticité en flexion, résistances à la compression et à la flexion (N/mm²) */
+  E?: number;
+  fc?: number;
+  fm?: number;
+  /** PEHD : charge admissible au poinçonnement (kg) sur un poinçon de diamètre donné (mm), pour information */
+  punchingKg?: number;
+  punchingDiameter?: number;
 }
 
 /** Clé d'une plaque du stock (choix de calage enregistrés) : matériau et dimensions. */
 export const plateKey = (s: StockPlate) => `${s.material ?? 'F40'}:${s.length}x${s.width}x${s.thickness}`;
 
 /** « Multiplex bouleau 70 × 70 × 36 mm ». */
-export const stockPlateLabel = (s: StockPlate) => `${PANELS[s.material ?? 'F40'].label} ${s.length / 10} × ${s.width / 10} × ${s.thickness} mm`;
+export const stockPlateLabel = (s: StockPlate) => `${PLATE_LABEL[s.material ?? 'F40']} ${s.length / 10} × ${s.width / 10} × ${s.thickness} mm`;
 
 /**
  * Couche de calage sous un appui : n plaques identiques empilées (bois ou tôle, elles fléchissent séparément), ou
@@ -238,15 +259,23 @@ export interface SpreadLayer {
   w: number;
   t: number;
   n: number;
-  material: PanelMaterial | 'steel' | 'commercial';
+  material: PlateMaterial | 'steel' | 'commercial';
   capacity?: number;
   /** masse d'une plaque (kg) */
   massKg: number;
+  /** PEHD : données de la fiche technique ; `solid` = masse compatible avec une plaque pleine (sinon nervurée / alvéolée) */
+  hdpe?: { E?: number; fc?: number; fm?: number; solid: boolean; rho: number };
 }
 
 export function stockLayer(s: StockPlate, n: number): SpreadLayer {
   const mat = s.material ?? 'F40';
-  return { key: plateKey(s), label: stockPlateLabel(s), l: s.length, w: s.width, t: s.thickness, n, material: mat, massKg: (s.length * s.width * s.thickness * PANELS[mat].panel.rho) / 1e9 };
+  const vol = (s.length * s.width * s.thickness) / 1e9;
+  if (mat === 'hdpe') {
+    const massKg = s.massKg && s.massKg > 0 ? s.massKg : vol * HDPE_RHO;
+    const rho = vol > 0 ? massKg / vol : HDPE_RHO;
+    return { key: plateKey(s), label: stockPlateLabel(s), l: s.length, w: s.width, t: s.thickness, n, material: mat, massKg, hdpe: { E: s.E, fc: s.fc, fm: s.fm, solid: rho >= 0.8 * HDPE_RHO, rho } };
+  }
+  return { key: plateKey(s), label: stockPlateLabel(s), l: s.length, w: s.width, t: s.thickness, n, material: mat, massKg: s.massKg && s.massKg > 0 ? s.massKg : vol * PANELS[mat].panel.rho };
 }
 
 /** Plaques de calage Viewbox : multiplex bouleau 18 et 36 mm, 40 × 40, 70 × 70 et 100 × 100 cm (quantités à saisir). */
@@ -259,9 +288,11 @@ export function chooseFromStock(base: PlateInput, stock: StockPlate[], groups: n
   const out: Array<PlyChoice & { result: PlateResult }> = [];
   const need = sizePlate(base).side;
   stock.forEach((s, k) => {
+    // méthode statico : plaques de bois seulement (le PEHD est vérifié appui par appui, `spreading.ts`)
+    if (!isWoodPlate(s.material)) return;
     const side = Math.min(s.length, s.width);
     if (side < need || s.thickness < (base.minThickness ?? 12)) return;
-    const result = sizePlate({ ...base, side, panel: PANELS[s.material ?? 'F40'].panel });
+    const result = sizePlate({ ...base, side, panel: PANELS[(s.material ?? 'F40') as PanelMaterial].panel });
     const n = Math.max(1, Math.ceil((6 * result.Wreq) / (s.thickness * s.thickness) - 1e-9));
     out.push({ t: s.thickness, n, stockIndex: k, needed: n * groups, available: s.quantity > 0 ? s.quantity : undefined, result });
   });
@@ -631,7 +662,7 @@ export function designGroup(g: GroupDesignInput): { plate: PlateResult; solution
   // plaques du stock
   for (const c of chooseFromStock(base, g.stock ?? [], g.groups).slice(0, 2)) {
     const st = g.stock![c.stockIndex!];
-    const mat = PANELS[st.material ?? 'F40'];
+    const mat = PANELS[(st.material ?? 'F40') as PanelMaterial];
     const remarks: string[] = [];
     if (c.available !== undefined && c.available < c.needed) remarks.push(`stock insuffisant : ${c.needed} pièces nécessaires, ${c.available} disponibles`);
     if (c.n > maxPlies) remarks.push(`${c.n} plaques empilées (plus de ${maxPlies})`);

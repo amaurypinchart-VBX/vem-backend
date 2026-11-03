@@ -4,7 +4,7 @@
 // efficace des platines EN 1993-1-8 § 6.2.5). Choix par type d'appui ou par appui, diagnostic et conseil (« 70 × 70 :
 // 61 kN sur 0,49 m² → 125 kN/m² > 40 kN/m², il faut 1,53 m² → 2 × 100 × 100 × 36 »). Fonctions pures ; N, mm, N/mm².
 import type { SpreadLayer, StockPlate } from './ground';
-import { PANELS, plateKey, stockLayer } from './ground';
+import { HDPE_GAMMA, PANELS, plateKey, stockLayer } from './ground';
 import type { CalcRecord } from './records';
 import { kgm2 } from './roadway';
 import { fmtNumber } from './units';
@@ -41,6 +41,7 @@ export const pressureText = (q: number) => `${f(q * 1e3, q * 1e3 < 10 ? 1 : 0)} 
 function layerStrength(layer: SpreadLayer): { fmd: number | null; fc90d: number | null } {
   if (layer.material === 'commercial') return { fmd: null, fc90d: null };
   if (layer.material === 'steel') return { fmd: 235 / 1.0, fc90d: null };
+  if (layer.material === 'hdpe') return { fmd: layer.hdpe?.fm ? layer.hdpe.fm / HDPE_GAMMA : null, fc90d: layer.hdpe?.fc ? layer.hdpe.fc / HDPE_GAMMA : null };
   const p = PANELS[layer.material].panel;
   return { fmd: (p.kmod * p.fmk) / p.gammaM, fc90d: (p.kmod * p.fc90k) / p.gammaM };
 }
@@ -59,9 +60,76 @@ export interface LayerResult {
   MRd: number;
   /** épaisseur de chaque plaque (mm, n plaques empilées) pour répartir sur toute la plaque */
   tFull: number;
-  /** compression transversale sous l'appui (bois) */
+  /** compression transversale sous l'appui (bois) ; compression du PEHD */
   sigmaC90: number;
   fc90d: number | null;
+  /**
+   * plaque souple (PEHD) : débord efficace au-delà de l'appui (mm) et comment il est obtenu — raideur de la plaque et
+   * du sol (poutre sur sol élastique), limité par la flexion, ou diffusion à 45° dans l'épaisseur seulement
+   */
+  flexible?: { mode: 'stiffness' | 'strength' | 'thickness'; overhang: number; reason?: string };
+}
+
+/**
+ * Plaque souple (PEHD) sous un appui a1 × a2 : la plaque fléchit bien plus que le sol ne s'enfonce, elle ne répartit
+ * donc que près de l'appui. Débord efficace de chaque côté c = 1/β, β = (k / (4 E I))^¼ avec E I = n · E · t³ / 12 par mm
+ * de largeur (n plaques non collées) et k = module de réaction du sol (poutre sur sol élastique, Hetényi : appui rigide
+ * sur une plaque semi-infinie, ∫ w dx = w0 / β) ; limité par la flexion si fm est donnée (q · c² / 2 ≤ fm/γ · n t² / 6).
+ * Sans module E, sans raideur du sol ou si la plaque n'est pas pleine (masse < 80 % du PEHD plein : nervurée,
+ * alvéolée), seule la diffusion à 45° dans l'épaisseur est comptée (c = n · t), côté de la sécurité.
+ */
+function spreadHdpe(layer: SpreadLayer, contact: [number, number], REd: number, caps: [number, number], subgrade?: number): LayerResult {
+  const [c1, c2] = contact;
+  const l = Math.min(layer.l, Math.max(caps[0], c1));
+  const w = Math.min(layer.w, Math.max(caps[1], c2));
+  const b1 = Math.min(c1, l);
+  const b2 = Math.min(c2, w);
+  const h = layer.hdpe;
+  const { fmd, fc90d } = layerStrength(layer);
+  const T = layer.n * layer.t;
+  let mode: 'stiffness' | 'strength' | 'thickness' = 'thickness';
+  let reason: string | undefined;
+  let c = T;
+  if (!h?.E) reason = 'module d’élasticité du PEHD non saisi (fiche technique)';
+  else if (!(subgrade && subgrade > 0)) reason = 'raideur du sol inconnue';
+  else if (!h.solid) reason = `plaque non pleine (${f(h.rho, 0)} kg/m³ < ${f(0.8 * 950, 0)}) : raideur à donner par le fabricant`;
+  else {
+    const EI = (layer.n * h.E * layer.t ** 3) / 12;
+    c = Math.max(T, 1 / Math.pow(subgrade / (4 * EI), 0.25));
+    mode = 'stiffness';
+  }
+  // flexion de la plaque (si fm connue) : q · c² / 2 ≤ fm,d · n · t² / 6
+  const MRd = fmd === null ? Infinity : (fmd * layer.n * layer.t * layer.t) / 6;
+  const dims = (cc: number): [number, number] => [Math.min(l, b1 + 2 * cc), Math.min(w, b2 + 2 * cc)];
+  const M = (cc: number) => {
+    const [a, b] = dims(cc);
+    return ((REd / (a * b)) * cc * cc) / 2;
+  };
+  if (mode === 'stiffness' && M(c) > MRd) {
+    let lo = T;
+    let hi = c;
+    for (let k = 0; k < 60; k++) {
+      const mid = (lo + hi) / 2;
+      if (M(mid) > MRd) hi = mid;
+      else lo = mid;
+    }
+    c = lo;
+    mode = 'strength';
+  }
+  const [a, b] = dims(c);
+  return {
+    layer,
+    contact,
+    footprint: [a, b],
+    full: a >= l - 0.5 && b >= w - 0.5,
+    eccentric: l < layer.l || w < layer.w,
+    MEdFull: M(c),
+    MRd,
+    tFull: 0,
+    sigmaC90: REd / (b1 * b2),
+    fc90d,
+    flexible: { mode, overhang: c, ...(reason ? { reason } : {}) },
+  };
 }
 
 /**
@@ -70,7 +138,8 @@ export interface LayerResult {
  * grand λ ≤ 1 (MEd croît avec λ). λ = 1 : méthode statico, toute la plaque répartit. Plaque posée excentrée (à fleur
  * de la Viewbox) : `caps` = emprise centrée sur la charge au plus (B' = B − 2 e), la plaque au-delà ne compte pas.
  */
-export function spreadLayer(layer: SpreadLayer, contact: [number, number], REd: number, caps: [number, number] = [Infinity, Infinity]): LayerResult {
+export function spreadLayer(layer: SpreadLayer, contact: [number, number], REd: number, caps: [number, number] = [Infinity, Infinity], subgrade?: number): LayerResult {
+  if (layer.material === 'hdpe') return spreadHdpe(layer, contact, REd, caps, subgrade);
   const { fmd, fc90d } = layerStrength(layer);
   const [c1, c2] = contact;
   const l = Math.min(layer.l, Math.max(caps[0], c1));
@@ -145,6 +214,8 @@ export interface ChainInput {
    * éventuelles sont sous le bloc, centrées sur lui (emprise efficace B − 2 e)
    */
   block?: BlockChain;
+  /** module de réaction du sol (N/mm³) : répartition des plaques souples (PEHD) */
+  subgrade?: number;
 }
 
 export interface ChainResult {
@@ -175,9 +246,11 @@ export function checkChain(inp: ChainInput): ChainResult {
   const steps: ChainStep[] = [];
   const records: CalcRecord[] = [];
   const problems: string[] = [];
+  // poids propre des plaques déjà posées (ajouté sous chaque couche)
+  let wLayers = 0;
   const stepOf = (label: string, dims: [number, number], note?: string): ChainStep => {
     const area = dims[0] * dims[1];
-    const pressure = Rzk / area;
+    const pressure = (Rzk + wLayers) / area;
     return { label, dims, area, pressure, eta: pressure / bearing, note };
   };
   let c: [number, number] = [...inp.contact];
@@ -232,11 +305,43 @@ export function checkChain(inp: ChainInput): ChainResult {
       : 'plaque excentrée : emprise centrée sur la charge (B\' = B − 2 e)';
   };
   for (const L of inp.layers) {
-    const r = spreadLayer(L, c, REd, capsOf(L));
+    const r = spreadLayer(L, c, REd, capsOf(L), inp.subgrade);
     results.push(r);
     const lab = `${L.n > 1 ? `${L.n} × ` : ''}${L.label}`;
     let note: string | undefined;
     if (r.eccentric) note = blk ? 'plaque centrée sous le bloc : emprise centrée sur la charge (B\' = B − 2 e)' : capText();
+    if (r.flexible) {
+      const fx = r.flexible;
+      const soft =
+        fx.mode === 'thickness'
+          ? `plaque souple : diffusion à 45° dans son épaisseur seulement (${f(fx.overhang / 10, 1)} cm de chaque côté) — ${fx.reason}`
+          : `plaque souple : ne répartit qu’à ${f(fx.overhang / 10, 0)} cm au-delà de l’appui (raideur de la plaque et du sol${fx.mode === 'strength' ? ', limitée par la flexion' : ''})`;
+      note = note ? `${note} ; ${soft}` : soft;
+      if (r.fc90d !== null) {
+        const eta = r.sigmaC90 / r.fc90d;
+        etaC90 = Math.max(etaC90, eta);
+        if (eta > 1) problems.push(`${lab} : PEHD écrasé sous l’appui (σ = ${f(r.sigmaC90, 2)} > ${f(r.fc90d, 2)} N/mm²)`);
+      }
+      const EI = L.hdpe?.E ? (L.n * L.hdpe.E * L.t ** 3) / 12 : 0;
+      records.push({
+        key: 'spread.hdpe',
+        title: `Répartition par ${lab}`,
+        clause:
+          fx.mode === 'thickness'
+            ? `plaque souple en PEHD : diffusion à 45° dans l’épaisseur seulement (${fx.reason})`
+            : 'plaque souple en PEHD sur sol élastique (poutre de Hetényi, appui rigide) : débord efficace 1/β de chaque côté de l’appui',
+        formula: fx.mode === 'thickness' ? 'c = n · t ; emprise = (a1 + 2 c) × (a2 + 2 c) ≤ plaque' : 'β = (k / (4 E I))^¼, E I = n · E · t³ / 12 ; c = 1/β ; emprise = (a1 + 2 c) × (a2 + 2 c) ≤ plaque',
+        withValues:
+          fx.mode === 'thickness'
+            ? `c = ${L.n} × ${f(L.t, 0)} = ${f(fx.overhang, 0)} mm ; emprise ${dimsCm(r.footprint)}`
+            : `E = ${f(L.hdpe!.E!, 0)} N/mm², t = ${f(L.t, 0)} mm, n = ${L.n} : E I = ${f(EI / 1e6, 2)} kN·m²/m ; k = ${f((inp.subgrade ?? 0) * 1e3, 0)} MN/m³ → c = ${f(fx.overhang, 0)} mm${fx.mode === 'strength' ? ' (limité par la flexion)' : ''} ; emprise ${dimsCm(r.footprint)}${r.fc90d !== null ? ` ; σ sous l’appui ${f(r.sigmaC90, 3)} ≤ ${f(r.fc90d, 2)} N/mm²` : ''}`,
+        eta: r.fc90d !== null ? r.sigmaC90 / r.fc90d : undefined,
+      });
+      wLayers += L.n * L.massKg * 9.81;
+      steps.push(stepOf(`+ ${lab}`, r.footprint, note));
+      c = r.footprint;
+      continue;
+    }
     if (!r.full) {
       const thin = `trop mince pour répartir sur toute la plaque : emprise efficace ${dimsCm(r.footprint)} (il faudrait ${f(r.tFull, 0)} mm par plaque)`;
       note = note ? `${note} ; ${thin}` : thin;
@@ -268,6 +373,7 @@ export function checkChain(inp: ChainInput): ChainResult {
           : `appui ${dimsCm(c)} sur ${cm(L.l)} × ${cm(L.w)} cm${r.eccentric ? ` (${capText()})` : ''} : MEd = ${f(r.MEdFull / 1e3, 2)} kNcm/cm ; MRd = ${f(r.MRd / 1e3, 2)} kNcm/cm → ${r.full ? (r.eccentric ? `emprise efficace ${dimsCm(r.footprint)}` : 'toute la plaque répartit') : `emprise efficace ${dimsCm(r.footprint)}`}`,
       eta: L.material === 'commercial' ? Rzk / (L.capacity ?? Infinity) : Math.min(1, r.MEdFull / r.MRd),
     });
+    wLayers += L.n * L.massKg * 9.81;
     steps.push(stepOf(`+ ${lab}`, r.footprint, note));
     c = r.footprint;
   }
@@ -287,7 +393,7 @@ export function checkChain(inp: ChainInput): ChainResult {
       ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
       : blk && !inp.layers.length
         ? `σB = ${kN(inp.Rzk)} / ${m2(last.area)} + ${kN(blk.weightK)} / ${m2(blk.dims[0] * blk.dims[1])} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
-        : `σB = ${kN(Rzk)} / ${m2(last.area)} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`,
+        : `σB = ${kN(Rzk)}${wLayers > 0 ? ` + plaques ${kN(wLayers)}` : ''} / ${m2(last.area)} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`,
     result: last.pressure,
     limit: bearing,
     eta: last.eta,
@@ -301,7 +407,7 @@ export function checkChain(inp: ChainInput): ChainResult {
     etaCapacity,
     etaPoint,
     eta: Math.max(last.eta, etaC90, etaCapacity, etaPoint),
-    areaRequired: Rzk / bearing,
+    areaRequired: (Rzk + wLayers) / bearing,
     problems,
     records,
   };

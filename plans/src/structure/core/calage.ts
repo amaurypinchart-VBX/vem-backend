@@ -9,7 +9,7 @@ import type { Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } fro
 import type { AddedSupport } from './estimate';
 import { addSupports, estimateReactions, fullPublic, limitPublic } from './estimate';
 import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
-import { C24_BEAMS, PANELS, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
+import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
 import type { CalageChoices, ChainResult, LayerRef } from './spreading';
@@ -314,7 +314,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
       if (onBlock) d.solutions = [];
       if (tp) {
         const stockOk = inp.stock
-          .filter((st) => Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
+          .filter((st) => isWoodPlate(st.material) && Math.min(st.length, st.width) >= tp.side && st.thickness > 0)
           .flatMap((st) => [1, 2, 3].filter((k) => st.thickness >= tp.t[k - 1]).slice(0, 1).map((k) => ({ st, k })))
           .sort((a, b) => a.k - b.k || a.st.length * a.st.width - b.st.length * b.st.width || a.st.thickness - b.st.thickness)[0];
         const pick = [1, 2, 3].map((k) => ({ k, t: inp.thicknesses.find((t) => t >= tp.t[k - 1]) })).find((x) => x.t !== undefined);
@@ -335,7 +335,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
           };
         };
         if (stockOk) {
-          const mat = PANELS[stockOk.st.material ?? 'F40'];
+          const mat = PANELS[(stockOk.st.material ?? 'F40') as PanelMaterial];
           d.solutions.push(
             tuvSolution(stockLayer(stockOk.st, stockOk.k), 'plywood-stock', `Plaques du stock${stockOk.st.label ? ` « ${stockOk.st.label} »` : ''}`, stockOk.k, `${mat.label} (stock${stockOk.st.quantity > 0 ? '' : ', quantité à vérifier au dépôt'})`),
           );
@@ -372,13 +372,13 @@ export function computeCalage(inp: CalageInput): CalageResult {
         if (bs) {
           // bloc dessiné : pieds → bloc → (plaques sous le bloc, centrées sur lui) → sol
           // pas de répartition uniforme sous un bloc (voir l'avertissement plaques de roulage + blocs)
-          const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, block: blockChain(bs.s, bs.scale) };
+          const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale) };
           const chain = checkChain({ ...base, layers });
           const bottom = layers[layers.length - 1];
           return { r, geo, Rk, base, flushBase: base, centeredBase: base, chain, atFlush: chain, atCenter: chain, placement: 'centered' as const, eccentric: false, bottom };
         }
         const flush = flushCaps(geo);
-        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax };
+        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k };
         const bottom = layers[layers.length - 1];
         const flushBase = { ...base, caps: flush.caps, edgeDist: flush.edgeDist };
         const atFlush = checkChain({ ...flushBase, layers });
@@ -758,7 +758,7 @@ function blockPlan(bs: BlockSupport, bottom: SpreadLayer | undefined): PlatePlan
 function materialLabel(l: SpreadLayer): string {
   if (l.material === 'commercial') return l.label;
   if (l.material === 'steel') return 'Tôle acier S235';
-  return PANELS[l.material].label;
+  return PLATE_LABEL[l.material];
 }
 
 /** Lignes de matériel identiques (même désignation et mêmes dimensions) additionnées. */
