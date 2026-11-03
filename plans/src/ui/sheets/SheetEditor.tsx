@@ -76,6 +76,8 @@ import { PaintPanel } from './PaintPanel';
 import type { PaintMode } from './PaintPanel';
 import { PaintBubble } from './PaintBubble';
 import { ColorDialog } from './ColorDialog';
+import { ExteriorDialog } from './ExteriorDialog';
+import { exteriorLabel } from '../../core/paint/exterior';
 import type { ColorDraft } from './ColorDialog';
 import { ClickBubble } from '../customViews/ClickBubble';
 import type { ActionProposal, ClickAction, Crumb } from '../../core/customViews/editor';
@@ -168,6 +170,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [activeColor, setActiveColor] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [colorDialog, setColorDialog] = useState<{ edit?: PaintColor } | null>(null);
+  const [exteriorOpen, setExteriorOpen] = useState(false);
   const [bubble, setBubble] = useState<{ vp: ViewportItem; pick: FacePick; options: TargetOption[]; choice: TargetKey; at: { x: number; y: number } } | null>(null);
   const [quick, setQuick] = useState<{ on: boolean; key: TargetKey }>({ on: false, key: 'face-box' });
   const [toast, setToast] = useState('');
@@ -675,7 +678,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const gen = ++previewGen.current;
     setPaintPreview(null);
     if (!temp || !paint) return;
-    const painted = paintScene(scene, temp, paint.ctx);
+    const painted = paintScene(scene, temp, paint.ctx, glassTest);
     const vps = sheet.items.filter((vp): vp is ViewportItem => vp.type === 'viewport' && !vp.custom);
     vps.sort((a, b) => (b.id === first ? 1 : 0) - (a.id === first ? 1 : 0));
     void (async () => {
@@ -750,6 +753,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       return;
     }
     if (paintMode === 'eraser') {
+      const zone = hit && paint.state.paint.zones.find((z) => z.id === hit.zoneId);
+      // une zone « côtés extérieurs » couvre toute l'installation : on demande avant de tout retirer
+      if (zone?.target.scope === 'exterior' && !window.confirm(`Cette face fait partie de « ${zone.label} ».\n\nRetirer toute cette zone (tous les côtés extérieurs) ?`)) return;
       if (hit) applyPaint([{ op: 'zone.del', id: hit.zoneId }], 'gomme');
       else setToast('Cette face n’est pas peinte.');
       return;
@@ -1704,6 +1710,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             }}
             onMode={setPaintMode}
             onNewColor={() => setColorDialog({})}
+            onExterior={() => setExteriorOpen(true)}
             onEditColor={(c) => setColorDialog({ edit: c })}
             onReplace={(from, to) => {
               const a = paint.state.paint.colors.find((c) => c.id === from);
@@ -1865,6 +1872,35 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onClose={() => {
             setBubble(null);
             showPreview(null);
+          }}
+        />
+      )}
+      {exteriorOpen && paint && (
+        <ExteriorDialog
+          scene={scene}
+          ctx={paint.ctx}
+          glassTest={glassTest}
+          paint={paint.state.paint}
+          activeColor={activeColor}
+          categoryLabel={(k) => (k ? legendColors.get(k)?.label ?? k : 'Structure de la box (sans catégorie)')}
+          onNewColor={() => setColorDialog({})}
+          onClose={() => setExteriorOpen(false)}
+          onApply={(rule, colorId, replaceZone) => {
+            const color = paint.state.paint.colors.find((c) => c.id === colorId);
+            const zone: PaintZone = {
+              id: replaceZone ?? uid('z'),
+              colorId,
+              target: { scope: 'exterior', match: {}, exterior: rule },
+              label: exteriorLabel(rule, scene.frames.size),
+              source: 'click',
+              createdAt: new Date().toISOString(),
+              ...(paint.userName ? { by: paint.userName } : {}),
+            };
+            applyPaint([{ op: 'zone.put', zone }], `côtés extérieurs ${color?.tag ?? ''}`);
+            setActiveColor(colorId);
+            setToast(`${color?.tag ?? ''} · ${color ? colorCode(color) || color.name : ''} · côtés extérieurs des Viewbox`);
+            if (!sheet.items.some((i) => i.type === 'paintLegend')) actions.addItems([paintLegend()], 'Ajouter la légende de la peinture');
+            setExteriorOpen(false);
           }}
         />
       )}

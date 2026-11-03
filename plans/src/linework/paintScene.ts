@@ -9,6 +9,8 @@ import { selectTriangles, trianglesArea } from '../core/paint/region';
 import type { PaintContext, ResolvedZone } from '../core/paint/resolve';
 import { paintContext, resolvePaint } from '../core/paint/resolve';
 import type { PaintSettings, Vec3 } from '../core/paint/types';
+import type { GlassTest } from './packets';
+import { exteriorSelection, exteriorSurvey } from './paintExterior';
 
 /** Triangles d'une pièce : repère propre (mm), passage au monde, maillages d'origine. */
 export interface NodeSoup {
@@ -79,17 +81,27 @@ export interface PaintedScene {
   ctx: PaintContext;
 }
 
-export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: PaintContext): PaintedScene {
+/** `isGlass` : vitrages reconnus pour les zones « côtés extérieurs » (non peints sauf demande). */
+export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: PaintContext, isGlass?: GlassTest): PaintedScene {
   const c = ctx ?? paintContext(scene.index);
   const resolved = resolvePaint(c, paint);
+  const exterior = paint.zones.some((z) => z.target.scope === 'exterior') ? exteriorSurvey(scene, c, isGlass) : null;
   const nodes = new Map<string, Map<number, { colorId: string; zoneId: string }>>();
   const touched = new Set<string>();
   for (const [nodeId, zones] of resolved) {
-    const ns = nodeSoup(scene, nodeId);
-    if (!ns) continue;
+    // triangles de la pièce lus seulement si une zone en a besoin (« côtés extérieurs » : déjà dans le relevé ; la
+    // plupart des pièces d'une Viewbox n'ont aucune face extérieure)
+    let ns: NodeSoup | null | undefined;
+    const soup = () => (ns === undefined ? (ns = nodeSoup(scene, nodeId)) : ns);
     const tris = new Map<number, { colorId: string; zoneId: string }>();
     for (const z of zones as ResolvedZone[]) {
-      const sel = selectTriangles(ns.soup, z.target.scope, z.target.face);
+      let sel: number[] | null;
+      if (z.target.scope === 'exterior') sel = exterior && z.target.exterior ? exteriorSelection(exterior, z.target.exterior).get(nodeId) ?? null : null;
+      else {
+        const s = soup();
+        if (!s) continue;
+        sel = selectTriangles(s.soup, z.target.scope, z.target.face);
+      }
       if (!sel?.length) continue;
       touched.add(z.zoneId);
       for (const t of sel) tris.set(t, { colorId: z.colorId, zoneId: z.zoneId });

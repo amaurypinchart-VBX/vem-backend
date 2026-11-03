@@ -86,9 +86,9 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   const paintState = usePaint(model?.id, paint, onPaintSaved);
   const paintCtx = useMemo(() => paintContext(scene.index), [scene]);
   const painted = useMemo(
-    () => (paintState.paint.zones.length ? paintScene(scene, paintState.paint, paintCtx) : null),
+    () => (paintState.paint.zones.length ? paintScene(scene, paintState.paint, paintCtx, glassTest) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scene, paintCtx, paintState.version],
+    [scene, paintCtx, paintState.version, glassTest, framesVersion],
   );
   useEffect(() => {
     bank.setPaint(painted ? { painted, colors: new Map(paintState.paint.colors.map((c) => [c.id, c])), version: String(paintState.version), isGlass: glassTest } : null);

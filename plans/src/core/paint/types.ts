@@ -2,6 +2,8 @@
 // (plans_model_versions.settings.paint, reprise à la version suivante) : le modèle, l'index de scène et la
 // classification ne sont jamais modifiés. Une zone vise d'abord des clés stables d'une version à l'autre (chemin dans
 // la définition de la Viewbox, définition SketchUp) ; la face est décrite dans le repère propre de la pièce.
+import type { ExteriorRule } from './exterior';
+
 export type Vec3 = [number, number, number];
 
 export interface PaintSettings {
@@ -47,10 +49,12 @@ export interface PaintZone {
 }
 
 export interface PaintTarget {
-  /** cette face · toutes les faces de ce côté · pièce entière */
-  scope: 'face' | 'side' | 'node';
+  /** cette face · toutes les faces de ce côté · pièce entière · côtés extérieurs des Viewbox (règle, exterior.ts) */
+  scope: 'face' | 'side' | 'node' | 'exterior';
   match: PaintMatch;
   face?: FaceSelector;
+  /** scope 'exterior' : la règle (match vide) */
+  exterior?: ExteriorRule;
 }
 
 /** Champs combinés en ET, valeurs d'un même tableau en OU (comme les règles des vues spéciales). */

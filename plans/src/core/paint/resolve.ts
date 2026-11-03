@@ -31,7 +31,7 @@ export function paintContext(index: SceneIndex, paths?: PathIndex): PaintContext
 }
 
 /** Viewbox d'un nœud : dans sa hiérarchie, sinon celle à laquelle il est rattaché. */
-const moduleOfNode = (ctx: PaintContext, id: string) => ctx.paths.moduleOf(id) ?? ctx.byId.get(id)?.moduleId ?? null;
+export const moduleOfNode = (ctx: PaintContext, id: string) => ctx.paths.moduleOf(id) ?? ctx.byId.get(id)?.moduleId ?? null;
 
 /** Nœuds visés par une correspondance (avant expansion aux maillages). */
 export function matchNodes(ctx: PaintContext, m: PaintMatch): string[] {
@@ -72,8 +72,7 @@ export function resolvePaint(ctx: PaintContext, paint: PaintSettings): Map<strin
   const colors = new Set(paint.colors.map((c) => c.id));
   for (const z of paint.zones) {
     if (!colors.has(z.colorId)) continue;
-    const nodes = matchNodes(ctx, z.target.match);
-    const meshes = z.target.scope === 'node' ? nodes.flatMap((id) => meshDescendants(ctx, id)) : nodes.filter((id) => ctx.byId.get(id)?.kind === 'mesh');
+    const meshes = z.target.scope === 'exterior' ? exteriorCandidates(ctx, z.target) : resolveMeshes(ctx, z.target);
     for (const id of new Set(meshes)) {
       const l = out.get(id) ?? [];
       l.push({ zoneId: z.id, colorId: z.colorId, target: z.target });
@@ -83,8 +82,52 @@ export function resolvePaint(ctx: PaintContext, paint: PaintSettings): Map<strin
   return out;
 }
 
+function resolveMeshes(ctx: PaintContext, target: PaintTarget): string[] {
+  const nodes = matchNodes(ctx, target.match);
+  return target.scope === 'node' ? nodes.flatMap((id) => meshDescendants(ctx, id)) : nodes.filter((id) => ctx.byId.get(id)?.kind === 'mesh');
+}
+
+/**
+ * « Côtés extérieurs » : pièces maillées des Viewbox concernées (hiérarchie ou rattachées), hors catégories exclues.
+ * Les triangles réellement peints (côté extérieur, vus de dehors) sont choisis sur la géométrie (paintExterior.ts).
+ */
+export function exteriorCandidates(ctx: PaintContext, target: PaintTarget): string[] {
+  const r = target.exterior;
+  if (!r) return [];
+  const mods = r.modules ? new Set(r.modules) : null;
+  const ex = new Set(r.exclude);
+  const cat = categoryOfNode(ctx);
+  return ctx.index.nodes
+    .filter((n) => {
+      if (n.kind !== 'mesh' || !n.triangles || n.role === 'context') return false;
+      const m = moduleOfNode(ctx, n.id);
+      if (!m || (mods && !mods.has(m))) return false;
+      return !ex.has(cat(n.id) ?? '');
+    })
+    .map((n) => n.id);
+}
+
+const catCaches = new WeakMap<PaintContext, (id: string) => string | null>();
+/** Catégorie effective d'un nœud (lui, sinon son plus proche parent classé). */
+export function categoryOfNode(ctx: PaintContext): (id: string) => string | null {
+  let f = catCaches.get(ctx);
+  if (!f) {
+    const cache = new Map<string, string | null>();
+    const g = (id: string): string | null => {
+      if (cache.has(id)) return cache.get(id)!;
+      const n = ctx.byId.get(id);
+      const c = !n ? null : n.category ?? (n.parentId ? g(n.parentId) : null);
+      cache.set(id, c);
+      return c;
+    };
+    catCaches.set(ctx, (f = g));
+  }
+  return f;
+}
+
 /** Nombre de pièces que toucherait une cible (comptes de la bulle). */
 export function countTargets(ctx: PaintContext, target: PaintTarget): number {
+  if (target.scope === 'exterior') return exteriorCandidates(ctx, target).length;
   const nodes = matchNodes(ctx, target.match);
   return target.scope === 'node' ? nodes.length : nodes.filter((id) => ctx.byId.get(id)?.kind === 'mesh').length;
 }

@@ -2,6 +2,7 @@
 // (annuler / rétablir du panneau Peinture), repères P1, P2…
 import type { FaceSelector, PaintColor, PaintMatch, PaintOp, PaintSettings, PaintTarget, PaintZone, Vec3 } from './types';
 import { DEFAULT_CREASE_DEG, PAINT_FINISHES, emptyPaint } from './types';
+import { cleanExterior } from './exterior';
 
 const str = (v: unknown, max = 200): string | undefined => (typeof v === 'string' && v.trim() ? v.slice(0, max) : undefined);
 const strs = (v: unknown): string[] | undefined => {
@@ -65,13 +66,20 @@ export function cleanZone(v: unknown): PaintZone | null {
   const id = str(o.id, 80);
   const colorId = str(o.colorId, 80);
   const t = o.target as Record<string, unknown> | undefined;
+  const source = (['click', 'duplicate', 'import'] as const).find((s) => s === o.source) ?? 'click';
+  const common = { label: str(o.label, 300) ?? '', source, createdAt: str(o.createdAt, 40) ?? '', ...(str(o.by, 120) ? { by: str(o.by, 120) } : {}) };
+  // côtés extérieurs des Viewbox : une règle, pas de pièce visée
+  if (t?.scope === 'exterior') {
+    const exterior = cleanExterior(t.exterior);
+    if (!id || !colorId || !exterior) return null;
+    return { id, colorId, target: { scope: 'exterior', match: {}, exterior }, ...common };
+  }
   const scope = t && (['face', 'side', 'node'] as const).find((s) => s === t.scope);
   const match = t ? cleanMatch(t.match) : null;
   const face = t ? cleanFace(t.face) : undefined;
   if (!id || !colorId || !scope || !match || (scope !== 'node' && !face)) return null;
   const target: PaintTarget = { scope, match, ...(face ? { face } : {}) };
-  const source = (['click', 'duplicate', 'import'] as const).find((s) => s === o.source) ?? 'click';
-  return { id, colorId, target, label: str(o.label, 300) ?? '', source, createdAt: str(o.createdAt, 40) ?? '', ...(str(o.by, 120) ? { by: str(o.by, 120) } : {}) };
+  return { id, colorId, target, ...common };
 }
 
 /** Peinture lue telle quelle depuis les réglages : champs inconnus ignorés, entrées invalides retirées. */

@@ -23,6 +23,7 @@ export function PaintPanel({
   onActive,
   onMode,
   onNewColor,
+  onExterior,
   onEditColor,
   onReplace,
   onDeleteColor,
@@ -48,6 +49,8 @@ export function PaintPanel({
   onActive: (id: string) => void;
   onMode: (m: PaintMode) => void;
   onNewColor: () => void;
+  /** « 🧱 Côtés extérieurs » : tous les côtés des Viewbox vus de dehors, d'un coup */
+  onExterior: () => void;
   onEditColor: (c: PaintColor) => void;
   onReplace: (from: string, to: string) => void;
   onDeleteColor: (c: PaintColor) => void;
@@ -100,6 +103,9 @@ export function PaintPanel({
           </button>
         </div>
         {!paint.colors.length && <div className="hint">Aucune couleur — « ＋ Couleur » pour commencer.</div>}
+        <button className="btn small" data-testid="paint-exterior" disabled={disabled} onClick={onExterior} title="Peindre d’un coup tous les côtés des Viewbox qu’on voit de dehors (jamais un côté collé à une autre box)">
+          🧱 Côtés extérieurs des Viewbox…
+        </button>
         <div className="paint-colors">
           {paint.colors.map((c) => {
             const zones = zonesOf(c);
