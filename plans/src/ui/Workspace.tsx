@@ -23,6 +23,7 @@ import { Views2DPage } from './Views2DPage';
 import { CustomViewsPage } from './customViews/CustomViewsPage';
 import { SheetsPage } from './sheets/SheetsPage';
 import { clearStep, markDetail, markStep } from './crashLog';
+import { registerReleaser, startMemoryWatch } from '../linework/memory';
 import { bigModel, lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
@@ -94,6 +95,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
     });
   }, [scene, glassTest, categoryColors]);
   useEffect(() => () => provider?.dispose(), [provider]);
+  // budget mémoire (voir linework/memory.ts) : paquets 3D libérés quand le tas approche de sa limite, surveillance
+  useEffect(() => (provider ? registerReleaser('hlr-packets', () => provider.releasePackets()) : undefined), [provider]);
+  useEffect(() => startMemoryWatch(), []);
 
   const open = (t: Tab) => {
     setTab(t);
