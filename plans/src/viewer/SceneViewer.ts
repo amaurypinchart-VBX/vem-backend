@@ -40,6 +40,7 @@ import type { LoadedScene } from '../scene/loadedScene';
 import { nodeIdOf } from '../scene/loadedScene';
 import type { GlassTest } from '../linework/packets';
 import type { ClipPlane } from '../core/customViews/cuts';
+import { pngBlob } from './pngAsync';
 import { finishCapture } from './captureImage';
 
 // raycast accéléré (BVH) : survol fluide même avec des dizaines de milliers d'objets
@@ -56,6 +57,22 @@ export const ISO_LABELS: Record<IsoKind, string> = { 'iso-ne': 'Iso NE', 'iso-nw
 const GLASS_COLOR = 0xcfe6f0;
 const GLASS_OPACITY = 0.35;
 const EDGE_ANGLE = 30;
+/**
+ * Arêtes vives de chaque géométrie (repère local), partagées par tous les viewers : ils partagent les maillages du
+ * modèle, et EdgesGeometry coûte des secondes sur un gros modèle (1,6 M de triangles : la page se figeait à chaque
+ * image 3D des planches, chaque viewer caché recalculant tout).
+ */
+const EDGE_CACHE = new WeakMap<BufferGeometry, Float32Array>();
+function localEdges(g: BufferGeometry): Float32Array {
+  let local = EDGE_CACHE.get(g);
+  if (!local) {
+    const eg = new EdgesGeometry(g, EDGE_ANGLE);
+    local = eg.getAttribute('position').array as Float32Array;
+    eg.dispose();
+    EDGE_CACHE.set(g, local);
+  }
+  return local;
+}
 
 export interface PickInfo {
   nodeId: string;
@@ -144,7 +161,6 @@ export class SceneViewer {
   private readonly entries: Entry[] = [];
   private readonly byNode = new Map<string, Entry[]>();
   private readonly byItem = new Map<string, Entry[]>();
-  private readonly edgeCache = new Map<string, Float32Array>();
   private readonly overlay = new Group();
   private edges: Group | null = null;
   private readonly markers = new Group();
@@ -183,6 +199,8 @@ export class SceneViewer {
     private readonly container: HTMLElement,
     private readonly model: LoadedScene,
     isGlass: GlassTest,
+    /** viewer caché des captures : pas d'arêtes affichées (la capture fait les siennes) */
+    private readonly opts: { offscreen?: boolean } = {},
   ) {
     this.renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -537,12 +555,7 @@ export class SceneViewer {
     const parts: Array<{ local: Float32Array; e: Entry }> = [];
     let total = 0;
     for (const e of list) {
-      const g = e.mesh.geometry as BufferGeometry;
-      let local = this.edgeCache.get(g.uuid);
-      if (!local) {
-        local = new EdgesGeometry(g, EDGE_ANGLE).getAttribute('position').array as Float32Array;
-        this.edgeCache.set(g.uuid, local);
-      }
+      const local = localEdges(e.mesh.geometry as BufferGeometry);
       parts.push({ local, e });
       total += local.length;
     }
@@ -563,12 +576,33 @@ export class SceneViewer {
     return out;
   }
 
+  /**
+   * Calcule à l'avance les arêtes des objets affichés, par petits morceaux (la page reste réactive) : la capture
+   * suivante les trouve dans le cache partagé.
+   */
+  async prepareEdges(sliceMs = 30): Promise<void> {
+    let t = performance.now();
+    for (const e of this.shownEntries()) {
+      if (this.disposed) return;
+      localEdges(e.mesh.geometry as BufferGeometry);
+      if (performance.now() - t > sliceMs) {
+        await new Promise((r) => setTimeout(r, 0));
+        t = performance.now();
+      }
+    }
+  }
+
   private rebuildEdges(): void {
     if (this.edges) {
       this.overlay.remove(this.edges);
       for (const c of this.edges.children) (c as LineSegments).geometry.dispose();
     }
     this.edges = new Group();
+    // viewer caché : rien à afficher, les arêtes sont calculées par la capture (une fois, pas à chaque visibilité)
+    if (this.opts.offscreen) {
+      this.overlay.add(this.edges);
+      return;
+    }
     for (const grp of this.edgeGroups()) {
       const g = new BufferGeometry();
       g.setAttribute('position', new Float32BufferAttribute(grp.positions, 3));
@@ -1074,7 +1108,8 @@ export class SceneViewer {
     this.overlay.add(fat);
 
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    const samples = Math.min(8, (gl.getParameter(gl.MAX_SAMPLES) as number) || 0);
+    // 4 échantillons : à 2 400 px, 8 coûtaient ≈ 250 Mo de mémoire graphique pour un gain invisible
+    const samples = Math.min(4, (gl.getParameter(gl.MAX_SAMPLES) as number) || 0);
     const rt = new WebGLRenderTarget(w, h, { samples, colorSpace: SRGBColorSpace });
     const pixels = new Uint8Array(w * h * 4);
     const prevClear = this.renderer.getClearAlpha();
@@ -1083,7 +1118,15 @@ export class SceneViewer {
       this.renderer.setRenderTarget(rt);
       this.renderer.clear();
       this.renderer.render(this.scene3, cam);
-      this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
+      // lecture asynchrone (WebGL 2) : la page reste réactive pendant que la carte graphique dessine — la lecture
+      // synchrone attendait la fin du rendu sur le fil principal (gros modèle : plusieurs secondes figées par image,
+      // « Page ne répondant pas »)
+      try {
+        await this.renderer.readRenderTargetPixelsAsync(rt, 0, 0, w, h, pixels);
+      } catch {
+        this.renderer.setRenderTarget(rt);
+        this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
+      }
     } finally {
       this.renderer.setRenderTarget(null);
       this.renderer.setClearColor(0xffffff, prevClear);
@@ -1105,12 +1148,10 @@ export class SceneViewer {
     // recadrage, marge, fond (pixels prémultipliés, origine en bas à gauche)
     const img = finishCapture(pixels, w, h, opts.marginPct, opts.background);
     if (!img) throw new Error('Capture vide : rien n’est affiché.');
-    const out = document.createElement('canvas');
-    out.width = img.width;
-    out.height = img.height;
-    out.getContext('2d')!.putImageData(new ImageData(img.data as Uint8ClampedArray<ArrayBuffer>, img.width, img.height), 0, 0);
-    const blob = await new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('Encodage PNG impossible'))), 'image/png'));
-    return { blob, width: out.width, height: out.height, clamped: size < opts.size };
+    // PNG encodé dans un Worker : canvas.toBlob attendait la carte graphique sur le fil principal (≈ 8 s figées par
+    // image sur un gros modèle)
+    const blob = await pngBlob(img.data, img.width, img.height);
+    return { blob, width: img.width, height: img.height, clamped: size < opts.size };
   }
 
   dispose(): void {

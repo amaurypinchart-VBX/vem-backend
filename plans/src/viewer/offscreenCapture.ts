@@ -31,7 +31,7 @@ export async function captureOffscreen(
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;left:-10000px;top:0;width:1200px;height:900px;pointer-events:none;';
   document.body.appendChild(host);
-  const viewer = new SceneViewer(host, scene, glassTest);
+  const viewer = new SceneViewer(host, scene, glassTest, { offscreen: true });
   viewer.setFrontMarkers(false);
   const results: OffscreenResult[] = [];
   try {
@@ -40,6 +40,8 @@ export async function captureOffscreen(
       host.style.width = `${Math.round(900 * s.aspect)}px`;
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       viewer.setVisibility(s.include, s.hideCategories, false);
+      // arêtes calculées par morceaux avant le rendu (gros modèle : sinon la page se fige plusieurs secondes)
+      await viewer.prepareEdges();
       const pose = viewer.poseFor(s.view, undefined, s.aspect, 1.02, s.projection);
       const r = await viewer.capture({ size, background: 'transparent', marginPct: 2, pose });
       results.push(r);
