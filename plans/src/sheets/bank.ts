@@ -21,6 +21,7 @@ import { autoDimensionViewport } from './autoDim';
 import { subsetMeshes } from '../linework/subset';
 import type { PaintColor } from '../core/paint/types';
 import type { PaintedScene } from '../linework/paintScene';
+import { changedPaintNodes } from '../linework/paintScene';
 import type { PaintRegion } from '../linework/paintOverlay';
 import { computePaintOverlay, paintOverlaySteps } from '../linework/paintOverlay';
 import { runSliced, SlicedCancelled } from '../linework/sliced';
@@ -72,8 +73,12 @@ export class LineworkBank {
   /** téléphone : traits gardés en mémoire au plus pour N vues (les plus anciennes sont relues du cache au besoin) */
   maxEntries = 0;
   private paintSrc: PaintSource | null = null;
-  /** peinture visible par vue : clé = vue + calcul + version de la peinture */
-  private readonly paintRegions = new Map<string, PaintRegion[]>();
+  /**
+   * peinture visible par vue : clé = vue + calcul (sans la version de la peinture), avec la version pour laquelle elle a
+   * été calculée. Une version plus ancienne reste affichée pendant le recalcul (les repères ne disparaissent plus à
+   * chaque coup de pinceau) ; une vue dont aucune pièce n'a changé de peinture garde ses repères sans recalcul.
+   */
+  private readonly paintRegions = new Map<string, { version: string; regions: PaintRegion[]; meshes: Set<string> }>();
   private paintQueue: ViewportItem[] = [];
   private paintRunning = false;
   /** peinture impossible à calculer sur une vue (message par fenêtre) */
@@ -139,25 +144,50 @@ export class LineworkBank {
     return `${key}|${vp.request.style.colorByCategory ? 'c' : ''}${vp.request.style.facadeMarks ? 'f' : ''}`;
   }
 
-  /** Nouvelle peinture : les vues la recalculent (seulement la peinture, jamais les traits). */
+  /**
+   * Nouvelle peinture : seules les vues qui montrent une pièce dont la peinture a changé la recalculent (jamais les
+   * traits) ; les autres gardent leurs repères (Xiaomi 04.11.2026 : tout effacer et tout recalculer à chaque action, deux
+   * fois avec la réponse du serveur, laissait « Calcul des repères… » sans fin sur un gros modèle).
+   */
   setPaint(src: PaintSource | null): void {
+    const prev = this.paintSrc;
     this.paintSrc = src;
-    this.paintRegions.clear();
     this.paintErrors.clear();
+    if (!src) this.paintRegions.clear();
+    else if (prev && prev.isGlass === src.isGlass) {
+      const changed = changedPaintNodes(prev.painted, src.painted);
+      for (const e of this.paintRegions.values()) {
+        if (e.version !== prev.version) continue;
+        let touched = false;
+        for (const id of changed)
+          if (e.meshes.has(id)) {
+            touched = true;
+            break;
+          }
+        if (!touched) e.version = src.version;
+      }
+    }
     this.emit();
   }
 
-  private paintKey(vp: ViewportItem): string | null {
+  /** clé de la peinture d'une vue, sans la version (null = pas de peinture sur cette vue) */
+  private paintBase(vp: ViewportItem): string | null {
     const key = this.keyOf(vp);
     if (!this.paintSrc || !key || vp.custom || vp.paint === 'off' || vp.request.floorCut != null) return null;
-    return `${vp.id}|${key}|${this.paintSrc.version}|${JSON.stringify(vp.request.subset)}|${vp.request.style.glassTransparent ?? ''}`;
+    return `${vp.id}|${key}|${JSON.stringify(vp.request.subset)}|${vp.request.style.glassTransparent ?? ''}`;
+  }
+
+  /** repères à jour pour la peinture actuelle */
+  private currentPaint(base: string): PaintRegion[] | null {
+    const e = this.paintRegions.get(base);
+    return e && this.paintSrc && e.version === this.paintSrc.version ? e.regions : null;
   }
 
   /** Peinture visible d'une vue (calcul immédiat, d'un seul tenant — exports ; null = rien à peindre / vue pas calculée). */
   paintOf(vp: ViewportItem): PaintRegion[] | null {
-    const pk = this.paintKey(vp);
-    if (!pk) return null;
-    const hit = this.paintRegions.get(pk);
+    const base = this.paintBase(vp);
+    if (!base) return null;
+    const hit = this.currentPaint(base);
     if (hit) return hit;
     const basis = this.data(vp).basis;
     if (!basis || !this.paintSrc || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) return null;
@@ -170,7 +200,7 @@ export class LineworkBank {
       isGlass: this.paintSrc.isGlass,
       glassTransparent: vp.request.style.glassTransparent !== false,
     });
-    this.storePaint(pk, regions);
+    this.storePaint(base, this.paintSrc.version, regions, meshIds);
     return regions;
   }
 
@@ -181,8 +211,8 @@ export class LineworkBank {
   ensurePaint(vps: ViewportItem[]): void {
     if (!this.paintSrc) return;
     const missing = vps.filter((vp) => {
-      const pk = this.paintKey(vp);
-      return pk && !this.paintRegions.has(pk) && this.keyOf(vp) && this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw;
+      const base = this.paintBase(vp);
+      return base && !this.currentPaint(base) && this.keyOf(vp) && this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw;
     });
     if (!missing.length) return;
     this.paintQueue = [...missing, ...this.paintQueue.filter((v) => !missing.some((m) => m.id === v.id))];
@@ -192,22 +222,26 @@ export class LineworkBank {
       try {
         for (let vp = this.paintQueue.shift(); vp; vp = this.paintQueue.shift()) {
           const src = this.paintSrc;
-          const pk = this.paintKey(vp);
-          if (!src || !pk || this.paintRegions.has(pk)) continue;
+          const base = this.paintBase(vp);
+          if (!src || !base || this.currentPaint(base)) continue;
           const basis = this.data(vp).basis;
           if (!basis || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) continue;
           const meshIds = subsetMeshes(this.scene, vp.request.subset);
           const job = paintOverlaySteps({ scene: this.scene, painted: src.painted, meshIds, basis, isGlass: src.isGlass, glassTransparent: vp.request.style.glassTransparent !== false });
           try {
             const regions = await runSliced(job, () => this.paintSrc !== src);
-            this.storePaint(pk, regions);
+            this.storePaint(base, src.version, regions, meshIds);
             this.paintErrors.delete(vp.id);
             this.emit();
           } catch (e) {
-            if (e instanceof SlicedCancelled) continue;
+            if (e instanceof SlicedCancelled) {
+              // peinture changée pendant le calcul : la vue est reprise avec la nouvelle (si elle est encore demandée)
+              if (this.paintSrc && !this.paintQueue.some((v) => v.id === vp!.id)) this.paintQueue.push(vp);
+              continue;
+            }
             // une vue qui échoue ne bloque pas les autres : elle est signalée dans le panneau Peinture
             console.error('Peinture de la vue', vp.label ?? vp.id, e);
-            this.storePaint(pk, []);
+            this.storePaint(base, src.version, [], meshIds);
             this.paintErrors.set(vp.id, (e as Error).message || String(e));
             this.emit();
           }
@@ -228,8 +262,9 @@ export class LineworkBank {
     return this.paintQueue.length + (this.paintRunning ? 1 : 0);
   }
 
-  private storePaint(pk: string, regions: PaintRegion[]): void {
-    this.paintRegions.set(pk, regions);
+  private storePaint(base: string, version: string, regions: PaintRegion[], meshIds: string[]): void {
+    this.paintRegions.delete(base);
+    this.paintRegions.set(base, { version, regions, meshes: new Set(meshIds) });
     while (this.paintRegions.size > 400) this.paintRegions.delete(this.paintRegions.keys().next().value!);
   }
 
@@ -248,8 +283,11 @@ export class LineworkBank {
         ? moduleOverlays(this.scene.frames.values(), new Set(this.scene.index.modules.filter((m) => include.has(m.nodeId)).map((m) => m.id)), basis)
         : undefined;
     const spec = vp.custom ? this.custom?.spec(vp.custom.viewId) : undefined;
-    const pk = this.paintSrc ? this.paintKey(vp) : null;
-    const regions = pk ? this.paintRegions.get(pk) : undefined;
+    // repères de la peinture actuelle, sinon ceux d'avant tant que le recalcul n'est pas fini (couleurs retirées exclues)
+    const base = this.paintSrc ? this.paintBase(vp) : null;
+    const src = this.paintSrc;
+    const stored = base ? this.paintRegions.get(base)?.regions : undefined;
+    const regions = stored && src ? stored.filter((r) => src.colors.has(r.colorId)) : undefined;
     return {
       ...(regions?.length && this.paintSrc ? { paint: { regions, colors: this.paintSrc.colors, mode: vp.paint === 'fill' ? ('fill' as const) : ('marks' as const) } } : {}),
       lw: e?.lw,

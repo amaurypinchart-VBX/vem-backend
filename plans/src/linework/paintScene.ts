@@ -250,3 +250,28 @@ export function paintLayers3D(scene: LoadedScene, painted: PaintedScene): PaintL
   }
   return out;
 }
+
+/**
+ * Pièces dont la peinture diffère entre deux résultats (triangles, couleur, ou passage en / hors zone « côtés
+ * extérieurs ») : seules les vues qui montrent une de ces pièces ont à recalculer leurs repères.
+ */
+export function changedPaintNodes(a: PaintedScene, b: PaintedScene): Set<string> {
+  const out = new Set<string>();
+  const ext = (p: PaintedScene, zoneId: string) => p.exteriorZones?.has(zoneId) ?? false;
+  for (const [id, ma] of a.nodes) {
+    const mb = b.nodes.get(id);
+    if (!mb || mb.size !== ma.size) {
+      out.add(id);
+      continue;
+    }
+    for (const [t, va] of ma) {
+      const vb = mb.get(t);
+      if (!vb || vb.colorId !== va.colorId || ext(a, va.zoneId) !== ext(b, vb.zoneId)) {
+        out.add(id);
+        break;
+      }
+    }
+  }
+  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) out.add(id);
+  return out;
+}

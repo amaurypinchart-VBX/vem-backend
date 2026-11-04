@@ -45,8 +45,8 @@ export function PaintPanel({
   active: string | null;
   mode: PaintMode;
   saving: boolean;
-  /** repères encore en calcul sur des vues (en arrière-plan) */
-  computing?: boolean;
+  /** nombre de vues dont les repères sont encore en calcul (en arrière-plan) */
+  computing?: number;
   /** vues de la planche où la peinture n'a pas pu être calculée */
   failures?: string[];
   error: string;
@@ -239,7 +239,7 @@ export function PaintPanel({
           ⬇ Liste peinture (Excel)
         </button>
         <div className="hint">
-          {saving ? 'Enregistrement…' : computing ? 'Calcul des repères sur les vues…' : 'Enregistré avec le modèle, repris à la version suivante.'} Ctrl+Z / ↶ annule la dernière action de peinture tant que l’outil est ouvert.
+          {saving ? 'Enregistrement…' : computing ? `Calcul des repères sur les vues… (${computing} vue${computing > 1 ? 's' : ''} restante${computing > 1 ? 's' : ''})` : 'Enregistré avec le modèle, repris à la version suivante.'} Ctrl+Z / ↶ annule la dernière action de peinture tant que l’outil est ouvert.
         </div>
       </div>
     </aside>

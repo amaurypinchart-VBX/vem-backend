@@ -1741,7 +1741,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             active={activeColor}
             mode={paintMode}
             saving={paint.state.saving}
-            computing={bank.paintPending() > 0}
+            computing={bank.paintPending()}
             failures={sheet.items.flatMap((i) => (i.type === 'viewport' && bank.paintFailures().has(i.id) ? [`« ${i.label || 'vue'} » : ${bank.paintFailures().get(i.id)}`] : []))}
             error={paint.state.error}
             disabled={paint.state.disabled}

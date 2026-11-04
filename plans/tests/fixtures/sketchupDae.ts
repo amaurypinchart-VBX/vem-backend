@@ -86,6 +86,12 @@ export interface FixtureOptions {
   /** petites pièces (boulonnerie, profils) ajoutées dans chaque Viewbox : nombre de boîtes */
   detail?: number;
   /**
+   * les petites pièces `detail` en autant de nœuds séparés (comme un composant Viewbox très détaillé, Xiaomi), plus
+   * `bolts` têtes de vis sur la face extérieure du grand côté +y (peinture « côtés extérieurs » sur un gros modèle)
+   */
+  detailNodes?: boolean;
+  bolts?: number;
+  /**
    * plafond tendu + cadres textile dans chaque Viewbox (planches : masquer le plafond, vue du sol, cadres) : plafond
    * sous la toiture, bandeau textile au-dessus de la porte (petit côté +X), grand cadre sur le grand côté −Y
    */
@@ -153,6 +159,14 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
     material('MAT_edge', 0, 0, 0),
   ];
 
+  // pièces séparées (option detailNodes) et têtes de vis extérieures (option bolts)
+  const detailParts: GeomSpec[] = [];
+  if (opts.detailNodes) detailBoxes(opts.detail ?? 0).forEach((b, i) => detailParts.push(G(`GEO_d${i}`, [b])));
+  for (let i = 0; i < (opts.bolts ?? 0); i++) {
+    const x = 150 + (i * 5600) / Math.max(1, (opts.bolts ?? 1) - 1);
+    detailParts.push(G(`GEO_b${i}`, [[[x - 12, 2500, 60], [x + 12, 2512, 84]]]));
+  }
+  const allGeoms = [...Object.values(geoms), ...detailParts];
   return `<?xml version="1.0" encoding="utf-8"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
   <asset>
@@ -186,7 +200,8 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
       <node id="N_doorInst" name="instance_3">${translate(0, 0, 0)}<instance_node url="#DEF_door"/></node>
       ${feet}
       <node id="N_misc" name="Group 12">${instGeom(geoms.misc)}</node>
-      ${opts.detail ? `<node id="N_detail" name="STRUCTURE_boulonnerie">${instGeom(geoms.detail)}</node>` : ''}
+      ${opts.detail && !opts.detailNodes ? `<node id="N_detail" name="STRUCTURE_boulonnerie">${instGeom(geoms.detail)}</node>` : ''}
+      ${detailParts.map((g, i) => `<node id="N_d${i}" name="STRUCTURE_piece_${i}">${instGeom(g)}</node>`).join('')}
       ${
         opts.textile
           ? `<node id="N_ceiling" name="black_cieling">${instGeom((geoms as Record<string, GeomSpec>).ceiling)}</node>
@@ -197,7 +212,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
     </node>
     <node id="DEF_door" name="Porte simple 900">${instGeom(geoms.door)}</node>
   </library_nodes>
-  <library_geometries>${Object.values(geoms).map(geometryXml).join('')}</library_geometries>
+  <library_geometries>${allGeoms.map(geometryXml).join('')}</library_geometries>
   <library_materials>${mats.map((m) => m.mat).join('')}</library_materials>
   <library_effects>${mats.map((m) => m.fx).join('')}</library_effects>
   <scene><instance_visual_scene url="#ID1"/></scene>
