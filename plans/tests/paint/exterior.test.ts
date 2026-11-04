@@ -153,3 +153,34 @@ describe('sur le modèle (8 Viewbox en 2 rangées de 4)', () => {
     expect(back.reduce((a, r) => a + r.area, 0) / 1e6).toBeCloseTo(1.155, 1);
   });
 });
+
+describe('gros modèle (bug 04.11.2026 : « ça fait planter tout le site » sur le Xiaomi)', () => {
+  it('16 Viewbox × 1 000 pièces : surfaces et repères d’une vue d’ensemble en quelques secondes, faces du côté opposé ignorées', async () => {
+    const res = await ingest({ fileName: 'big.dae', data: new TextEncoder().encode(makeSketchupDae({ modules: 16, detail: 1000 })).buffer as ArrayBuffer, sha256: 'big', rules: DEFAULT_RULES, runner: inlineRunner, skipTextures: true });
+    const pkg = await loadPackage(await exportPackage(res.root));
+    const s = makeLoadedScene(pkg.root, pkg.objectsById, res.index, 'big');
+    const glass = makeGlassTest(/VITRE|GLASS|VERRE/);
+    const ctx = paintContext(s.index);
+    const survey = exteriorSurvey(s, ctx, glass);
+    const rule: ExteriorRule = { sides: ['long', 'short'], exclude: defaultExclude(exteriorAreas(survey, { sides: ['long', 'short'] }).byCategory.keys()) };
+    const paint: PaintSettings = {
+      v: 1,
+      colors: [{ id: 'c', tag: 'P1', name: '', system: 'RAL', code: '7047', hex: '#D0D0D0', createdAt: '' }],
+      zones: [{ id: 'z', colorId: 'c', target: { scope: 'exterior', match: {}, exterior: rule }, label: '', source: 'click', createdAt: '' }],
+      updatedAt: '',
+    };
+    let t = performance.now();
+    const painted = paintScene(s, paint, ctx, glass);
+    expect(performance.now() - t).toBeLessThan(2000);
+    expect(painted.exteriorOut.size).toBe(painted.nodes.size);
+    const meshIds = subsetMeshes(s, { include: s.index.modules.map((m) => m.nodeId) });
+    t = performance.now();
+    // vue d'ensemble de face (−Z monde = grands côtés −y de la 1re rangée) : 22 s avant la correction
+    const front = computePaintOverlay({ scene: s, painted, meshIds, basis: viewBasis({ kind: 'front', frame: 'world' }, s.frames), isGlass: glass, glassTransparent: false });
+    expect(performance.now() - t).toBeLessThan(5000);
+    expect(front.length).toBeGreaterThan(0);
+    // vue de VBX-02 vers son petit côté collé à VBX-03 : rien (le côté extérieur opposé ne se voit pas à travers la box)
+    const ids2 = subsetMeshes(s, { include: subsetForModules(s.index, ['VBX-02']) });
+    expect(computePaintOverlay({ scene: s, painted, meshIds: ids2, basis: viewBasis({ kind: 'front', frame: { moduleId: 'VBX-02' } }, s.frames), isGlass: glass, glassTransparent: false })).toEqual([]);
+  }, 120000);
+});
