@@ -15,7 +15,7 @@ import type { PaintSettings } from '../../src/core/paint/types';
 import { NO_PAINT } from '../../src/core/paint/types';
 import { makeGlassTest } from '../../src/linework/packets';
 import { exteriorAreas, exteriorSurvey } from '../../src/linework/paintExterior';
-import { paintScene } from '../../src/linework/paintScene';
+import { changedPaintNodes, paintScene } from '../../src/linework/paintScene';
 
 describe('Sans peinture', () => {
   it('lecture : une zone « none » est gardée sans couleur de palette', () => {
@@ -49,6 +49,9 @@ describe('Sans peinture', () => {
     expect(after.areaByZone.get('none')).toBeCloseTo(1.935, 2);
     expect(after.areaByColor.get('c')).toBeCloseTo(before.areaByColor.get('c')! - 1.935, 2);
     expect(after.noEffect.size).toBe(0);
+    // seule la porte a changé : seules les vues qui la montrent recalculent leurs repères (bug « Calcul des repères » sans fin)
+    expect([...changedPaintNodes(before, after)]).toEqual([door]);
+    expect(changedPaintNodes(before, paintScene(s, base, ctx, glass)).size).toBe(0);
     // posée AVANT la zone extérieure, elle est repeinte par elle (la dernière zone gagne)
     const first = paintScene(s, { ...base, zones: [{ ...after_none(door) }, ...base.zones] }, ctx, glass);
     expect(first.nodes.has(door)).toBe(true);
