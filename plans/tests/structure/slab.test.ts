@@ -26,8 +26,10 @@ describe('dalle en charge répartie admissible', () => {
     const s = r.slab!;
     const poly = (c: Array<[number, number]>) => Math.abs(c.reduce((a, p, i) => a + p[0] * c[(i + 1) % c.length][1] - c[(i + 1) % c.length][0] * p[1], 0)) / 2;
     const footprint = mods.reduce((a, m) => a + poly(m.corners as Array<[number, number]>), 0);
-    expect(s.zones.reduce((a, z) => a + z.area, 0)).toBeCloseTo(footprint, -3);
-    expect(s.global.area).toBeCloseTo(footprint, -3);
+    expect(s.zones.reduce((a, z) => a + z.area, 0)).toBeCloseTo(s.global.area, -3);
+    // l'emprise, plus ce que les plaques automatiques dépassent (quelques cm aux angles)
+    expect(s.global.area).toBeGreaterThanOrEqual(footprint - 1000);
+    expect(s.global.area).toBeLessThan(footprint * 1.01);
     for (const c of r.checks) {
       const z = c.zone!;
       expect(z.q).toBeCloseTo(z.load / z.area, 12);
@@ -80,5 +82,60 @@ describe('dalle en charge répartie admissible', () => {
     expect(zones.filter((z) => z.label).every((z) => /kg\/m²$/.test(z.label![0]) && /kg sur .* m²$/.test(z.label![1]))).toBe(true);
     // en mode dalle, les plaques ne portent plus la pression
     expect(plates.filter((p) => !p.zone).every((p) => !p.label)).toBe(true);
+  });
+
+  it('plaques de roulage qui dépassent tout autour : zones du bord plus grandes, charge au m² plus faible', () => {
+    const a = computeCalage({ ...slab, choices: { roadway: true } });
+    const b = computeCalage({ ...slab, choices: { roadway: true, roadwayOverhang: 300 } });
+    expect(b.slab!.global.area).toBeGreaterThan(a.slab!.global.area + 2e6);
+    const corner = (r: typeof a) => r.slab!.zones.reduce((x, z) => (z.area < x.area ? z : x));
+    expect(corner(b).area).toBeGreaterThan(corner(a).area);
+    expect(Math.max(...b.slab!.zones.map((z) => z.q))).toBeLessThan(Math.max(...a.slab!.zones.map((z) => z.q)));
+    // la répartition uniforme (mode pression) suit aussi la surface couverte
+    expect(b.roadway.area).toBeGreaterThan(a.roadway.area);
+  });
+
+  it('plaque centrée qui dépasse de l’installation sous un angle : la zone s’agrandit (à fleur : non)', async () => {
+    const { VIEWBOX_STOCK, plateKey } = await import('../../src/structure/core/ground');
+    const big = VIEWBOX_STOCK.find((p) => p.length === 1000 && p.thickness === 36)!;
+    const pick = { bySupport: {} as Record<string, Array<{ plate: string; n: number }>> };
+    const r0 = computeCalage({ ...slab, stock: VIEWBOX_STOCK });
+    const corner = r0.checks.reduce((x, c) => (c.zone!.area < x.zone!.area ? c : x));
+    pick.bySupport[corner.id] = [{ plate: plateKey(big), n: 3 }];
+    const flush = computeCalage({ ...slab, stock: VIEWBOX_STOCK, choices: { ...pick, placeBySupport: { [corner.id]: 'flush' } } });
+    const centred = computeCalage({ ...slab, stock: VIEWBOX_STOCK, choices: { ...pick, placeBySupport: { [corner.id]: 'centered' } } });
+    const z = (r: typeof r0) => r.checks.find((c) => c.id === corner.id)!.zone!;
+    expect(z(flush).area).toBeCloseTo(z(r0).area, -3);
+    expect(z(centred).area).toBeGreaterThan(z(r0).area * 1.1);
+    expect(z(centred).q).toBeLessThan(z(r0).q);
+  });
+
+  it('blocs sur plaques de roulage : « bloc posé sur les plaques de roulage »', async () => {
+    const blk = { id: 'BL1', label: 'Bloc', x0: 0, x1: 0, z0: 0, z1: 0, bottom: -244, top: 0, massKg: 22, massSource: 'computed' as const, material: 'C24', pieces: 1 };
+    const m0 = mods[0].corners;
+    const xs = m0.map((p) => p[0]);
+    const zs = m0.map((p) => p[1]);
+    const x = Math.min(...xs) + 500;
+    const zc = Math.min(...zs) + 500;
+    const b = { ...blk, x0: x - 500, x1: x + 500, z0: zc - 500, z1: zc + 500 };
+    const r = computeCalage({ ...slab, blocks: [b], choices: { roadway: true } });
+    const t = r.types.find((x) => x.block)!;
+    expect(t.chosen!.summary).toBe('bloc posé sur les plaques de roulage');
+  });
+
+  it('vérins + calcul 3D : chaque appui garde au moins la réaction de l’estimation (enveloppe)', async () => {
+    const { estimateReactions } = await import('../../src/structure/core/estimate');
+    const est = estimateReactions(slab.modules, slab.estimate);
+    // calcul 3D fictif : pieds centraux presque déchargés, angles plus chargés
+    const k = (r: (typeof est.reactions)[number], f: number) => ({ ...r, Rk: r.Rk * f, REd: r.REd * f, combos: r.combos?.map((c) => ({ ...c, R: c.R * f })) });
+    const fem = { ...est, method: 'fem' as const, reactions: est.reactions.map((r) => k(r, r.group.middle ? 0.2 : 1.3)) };
+    const env = computeCalage({ ...slab, reactions: fem });
+    const only = computeCalage({ ...slab, reactions: fem, reactionsEnvelope: false });
+    expect(env.estimate.envelope).toBe(true);
+    expect(env.warnings.some((w) => w.startsWith('Pieds à vérin : le calcul 3D suppose'))).toBe(true);
+    const mid = (r: typeof env) => Math.max(...r.estimate.reactions.filter((x) => x.group.middle).map((x) => x.Rk));
+    expect(mid(env)).toBeGreaterThan(mid(only) * 3);
+    const corner = (r: typeof env) => Math.max(...r.estimate.reactions.filter((x) => !x.group.middle).map((x) => x.Rk));
+    expect(corner(env)).toBeCloseTo(corner(only), 6);
   });
 });

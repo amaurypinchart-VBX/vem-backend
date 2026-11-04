@@ -150,6 +150,8 @@ export interface ChoiceSetters {
   /** pose des plaques d'un appui (à fleur / centrées), undefined = réglage général */
   setPlace: (id: string, v: 'flush' | 'centered' | undefined) => void;
   setRoadway: (on: boolean) => void;
+  /** débord des plaques de roulage tout autour (mm) */
+  setRoadwayOverhang: (mm: number) => void;
   reset: () => void;
 }
 
@@ -193,6 +195,13 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
           {c.tuv ? ` Prüfbuch TÜV : ${c.tuv.text}.` : ''}
         </div>
         <ChainTable c={c} />
+        {c.zone && (
+          <div className="hint">
+            Dalle en charge répartie : ce qui compte, c’est la surface de dalle que charge ce pied ({n(c.zone.area / 1e6, 2)} m²). Des plaques posées sous le pied <b>à l’intérieur</b> de
+            l’installation n’y changent rien (elles ajoutent seulement leur poids) ; elles agrandissent la zone quand elles <b>dépassent de l’installation</b> (plaque plus grande que le bloc, pose
+            centrée) ou avec des plaques de roulage qui débordent tout autour. Pour un pied du bord, il faudrait {n(c.zone.load / (result.slab?.bearing ?? 1) / 1e6, 2)} m² pour passer.
+          </div>
+        )}
         {c.chainBase.timber ? (
           <div className="hint">
             Appui posé sur les madriers de la solution retenue (« {result.remedy?.remedy.title} ») : pas de plaque ici. Pour revenir aux plaques, « Retirer » la solution dans « 🛠 Solutions pour que le sol passe ».
@@ -298,6 +307,24 @@ export function CalageDiagnostic({
             <span className={`badge ${badgeOf(rw.etaMean)}`}>η {n(rw.etaMean, 2)}</span>
           </span>
         </label>
+        {result.roadwayOn && (
+          <label className="row" style={{ gap: 6, marginLeft: 22 }}>
+            <span>Les plaques de roulage dépassent de l’installation de</span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              style={{ width: 70 }}
+              value={Math.round((set.choices.roadwayOverhang ?? 0) / 10)}
+              onChange={(e) => set.setRoadwayOverhang(Math.max(0, (parseFloat(e.target.value) || 0) * 10))}
+              data-testid="roadway-overhang"
+            />
+            <span>cm tout autour</span>
+            <span className="hint">
+              {result.slab ? '— agrandit la surface de dalle chargée par les pieds du bord (zones des angles et des côtés).' : '— agrandit la surface couverte de la répartition uniforme.'}
+            </span>
+          </label>
+        )}
         <div className="hint">
           Choisir le calage d’un type dans sa carte ci-dessous, ou d’un seul appui en cliquant sur le plan. Une plaque trop mince ne compte que pour la partie qu’elle peut porter en flexion
           (emprise efficace).
