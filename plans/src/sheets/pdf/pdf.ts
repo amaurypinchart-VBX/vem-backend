@@ -5,6 +5,7 @@
 import { jsPDF } from 'jspdf';
 import { svg2pdf } from 'svg2pdf.js';
 import type { Paper } from '../types';
+import type { PdfLineSink } from '../SheetSvg';
 import { PAPER_MM } from '../template';
 
 export type FontFamily = 'Gelasio' | 'Arimo';
@@ -53,12 +54,74 @@ function base64(buf: ArrayBuffer): string {
   return btoa(s);
 }
 
+// ─── traits des vues écrits directement dans le PDF ───
+// svg2pdf transforme chaque segment d'un chemin en objets (≈ 1 Ko de mémoire par trait, 90 octets de texte par trait
+// dans la page) : une vue de toute l'installation d'un gros modèle (centaines de milliers de traits) faisait planter
+// l'onglet. SheetSvg (prop pdfLines) remplace chaque calque de traits par un chemin repère « M x y » aux coordonnées
+// impossibles ; quand svg2pdf le dessine, il a déjà posé la transformation, le découpage, l'épaisseur, la couleur et
+// les tirets du calque : on écrit alors les vrais traits à sa place, puis svg2pdf termine par son « S ».
+const MARK_X0 = -987650000;
+const MARK_Y = -123450000;
+
+/** Traits des vues de l'export en cours (remis par SheetSvg, écrits par le PDF à la place de leur repère). */
+export class PdfLines implements PdfLineSink {
+  private items = new Map<number, Float64Array[]>();
+  private next = 0;
+  add(polylines: Float64Array[]): string {
+    const i = this.next++;
+    this.items.set(i, polylines);
+    return `M${MARK_X0 - i} ${MARK_Y}`;
+  }
+  take(x: number, y: number): Float64Array[] | undefined {
+    if (y !== MARK_Y) return undefined;
+    // gardés jusqu'à clear() : le même SVG peut être converti deux fois (PDF refait plus léger pour le projet)
+    return this.items.get(MARK_X0 - x);
+  }
+  clear(): void {
+    this.items.clear();
+  }
+}
+
+/** coordonnée à 0,001 près (unités utilisateur après la transformation de svg2pdf), écriture courte */
+const fmt = (v: number) => String(Math.round(v * 1000) / 1000);
+
+function hookLines(pdf: jsPDF, lines: PdfLines | undefined): void {
+  if (!lines) return;
+  const api = pdf as unknown as { moveTo(x: number, y: number): jsPDF; lineTo(x: number, y: number): jsPDF; isAdvancedAPI(): boolean; internal: { write(s: string): void } };
+  const moveTo = api.moveTo.bind(pdf);
+  const lineTo = api.lineTo.bind(pdf);
+  api.moveTo = (x: number, y: number) => {
+    const pls = lines.take(x, y);
+    if (!pls) return moveTo(x, y);
+    // mode avancé (celui de svg2pdf) : coordonnées écrites telles quelles ; sinon par jsPDF
+    const raw = api.isAdvancedAPI();
+    let buf: string[] = [];
+    for (const pl of pls) {
+      if (pl.length < 4) continue;
+      if (!raw) {
+        moveTo(pl[0], pl[1]);
+        for (let i = 2; i < pl.length; i += 2) lineTo(pl[i], pl[i + 1]);
+        continue;
+      }
+      buf.push(`${fmt(pl[0])} ${fmt(pl[1])} m`);
+      for (let i = 2; i < pl.length; i += 2) buf.push(`${fmt(pl[i])} ${fmt(pl[i + 1])} l`);
+      if (buf.length > 4000) {
+        api.internal.write(buf.join('\n'));
+        buf = [];
+      }
+    }
+    if (buf.length) api.internal.write(buf.join('\n'));
+    return pdf;
+  };
+}
+
 /** Document PDF du jeu de plans (une page par planche). */
-export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta, onPage?: (done: number, total: number) => void): Promise<jsPDF> {
+export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta, onPage?: (done: number, total: number) => void, lines?: PdfLines): Promise<jsPDF> {
   if (!pages.length) throw new Error('Aucune planche à exporter');
   const size = (p: PdfPage): [number, number] => (p.size ? [p.size.w, p.size.h] : [PAPER_MM[p.paper].w, PAPER_MM[p.paper].h]);
   const orientation = (p: PdfPage) => (size(p)[0] >= size(p)[1] ? 'landscape' : 'portrait');
   const pdf = new jsPDF({ unit: 'mm', format: size(pages[0]), orientation: orientation(pages[0]), compress: true, putOnlyUsedFonts: true });
+  hookLines(pdf, lines);
   for (const [key, buf] of Object.entries(fonts) as Array<[FontKey, ArrayBuffer]>) {
     const [family, variant] = key.split('-') as [FontFamily, FontVariant];
     const file = `${family}-${FONT_FILE[variant]}.ttf`;
@@ -101,7 +164,7 @@ export async function buildPdfBlob(
   fonts: FontFiles,
   meta: PdfMeta,
   onPage?: (done: number, total: number) => void,
-  opts: { maxSvgChars?: number } = {},
+  opts: { maxSvgChars?: number; lines?: PdfLines } = {},
 ): Promise<Blob> {
   if (!pages.length) throw new Error('Aucune planche à exporter');
   const limit = opts.maxSvgChars ?? Infinity;
@@ -109,6 +172,7 @@ export async function buildPdfBlob(
   const orientation = (p: PdfPage) => (size(p)[0] >= size(p)[1] ? 'landscape' : 'portrait');
   const start = (p: PdfPage) => {
     const pdf = new jsPDF({ unit: 'mm', format: size(p), orientation: orientation(p), compress: true, putOnlyUsedFonts: true });
+    hookLines(pdf, opts.lines);
     for (const [key, buf] of Object.entries(fonts) as Array<[FontKey, ArrayBuffer]>) {
       const [family, variant] = key.split('-') as [FontFamily, FontVariant];
       const file = `${family}-${FONT_FILE[variant]}.ttf`;
@@ -137,6 +201,8 @@ export async function buildPdfBlob(
       if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);
       await svg2pdf(svg, pdf, { x: 0, y: 0, width: w, height: h });
       host.innerHTML = '';
+      // page refaite à chaque fois (fonction) : ses traits écrits ne servent plus (la vue peut quitter la mémoire)
+      if (typeof src === 'function') opts.lines?.clear();
       onPage?.(i + 1, pages.length);
       if (chars >= limit && i < pages.length - 1) {
         chunks.push(pdf.output('arraybuffer'));

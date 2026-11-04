@@ -71,6 +71,17 @@ export interface SheetSvgProps {
   paint?: PaintSheetInfo;
   /** adresse affichée d'une image 3D (téléphone : version réduite) ; absente = l'image d'origine */
   imageSrc?: (url: string) => string;
+  /**
+   * export PDF : les traits des vues ne sont pas écrits dans le SVG (un repère à la place) mais remis à l'export, qui
+   * les écrit directement dans le PDF (svg2pdf coûtait ≈ 1 Ko de mémoire par trait : une vue de toute l'installation
+   * d'un gros modèle faisait planter l'onglet)
+   */
+  pdfLines?: PdfLineSink;
+}
+
+/** Reçoit les traits d'un calque de vue et rend le chemin repère qui les remplace dans le SVG (voir sheets/pdf/pdf.ts). */
+export interface PdfLineSink {
+  add(polylines: Float64Array[]): string;
 }
 
 const num = (v: number) => Math.round(v * 1000) / 1000;
@@ -320,7 +331,23 @@ function viewportCenter(vp: ViewportItem, lw?: Linework2D): [number, number] {
   return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
 }
 
-function ViewportContent({ vp, data, rect, thumbnail, categoryColors, k = 1 }: { vp: ViewportItem; data?: ViewportData; rect: RectMm; thumbnail?: boolean; categoryColors: Map<string, string>; k?: number }) {
+function ViewportContent({
+  vp,
+  data,
+  rect,
+  thumbnail,
+  categoryColors,
+  k = 1,
+  pdfLines,
+}: {
+  vp: ViewportItem;
+  data?: ViewportData;
+  rect: RectMm;
+  thumbnail?: boolean;
+  categoryColors: Map<string, string>;
+  k?: number;
+  pdfLines?: PdfLineSink;
+}) {
   const lw = data?.lw;
   const clipId = `clip-${vp.id}`;
   if (!lw || !vp.scale || thumbnail) {
@@ -340,7 +367,10 @@ function ViewportContent({ vp, data, rect, thumbnail, categoryColors, k = 1 }: {
   const cx = rect.x + rect.w / 2;
   const cy = rect.y + rect.h / 2;
   const tr = `translate(${num(cx)} ${num(cy)}) scale(${num(1 / s)} ${num(-1 / s)}) translate(${num(-c[0])} ${num(-c[1])})`;
-  const paths = layerPaths(lw);
+  // export PDF : un repère par calque, les traits sont écrits par l'export (pas de chemin géant en mémoire)
+  const paths = pdfLines
+    ? lw.layers.map((l) => ({ key: l.key, d: l.polylines.some((pl) => pl.length >= 4) ? pdfLines.add(l.polylines) : '' }))
+    : layerPaths(lw);
   const overlays = data?.overlays ?? [];
   const toPaper = viewportTransform(rect, s, c).toPaper;
   return (
@@ -995,7 +1025,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         const data = viewData(item);
         body = (
           <>
-            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} k={k} />
+            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} k={k} pdfLines={props.pdfLines} />
             {item.showLabel && item.label && !item.custom && (
               <ViewTitle text={item.label} pos={item.labelPos ?? { x: item.rect.x, y: item.rect.y - titleSize * 1.3 }} size={item.labelSize ?? titleSize} />
             )}

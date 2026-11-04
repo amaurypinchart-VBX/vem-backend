@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FONT_FILE, buildPdf, buildPdfBlob, fontsUsed } from '../src/sheets/pdf/pdf';
+import { FONT_FILE, PdfLines, buildPdf, buildPdfBlob, fontsUsed } from '../src/sheets/pdf/pdf';
+import { inflateSync } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
 import type { FontFiles, FontKey } from '../src/sheets/pdf/pdf';
 import { SheetSvg } from '../src/sheets/SheetSvg';
@@ -144,5 +145,36 @@ describe('export PDF', () => {
     const single = await buildPdfBlob(pages, readFonts(keys), { title: 'Xiaomi' });
     expect((await PDFDocument.load(new Uint8Array(await single.arrayBuffer()))).getPageCount()).toBe(3);
     if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(/\.pdf$/, '-morceaux.pdf'), bytes);
+  });
+
+  it('traits des vues écrits directement (sans svg2pdf) : même dessin, aucun repère restant', async () => {
+    const tb = { ...emptyTitleBlock(), projectName: 'Xiaomi' };
+    const s1 = sheet('A1', 'A1.1');
+    const keys: FontKey[] = ['Arimo-bold', 'Arimo-normal', 'Gelasio-bold', 'Gelasio-italic', 'Gelasio-normal'];
+    const lines = new PdfLines();
+    const svgWith = renderToStaticMarkup(createElement(SheetSvg, { sheet: s1, titleBlock: tb, notes: '', legend: [], viewData: () => ({ lw, basis }), pdfLines: lines }));
+    // le SVG ne porte plus les traits : un repère par calque
+    expect(svgWith).not.toContain('M5900 0');
+    expect((svgWith.match(/M-98765\d+ -123450000/g) ?? []).length).toBe(lw.layers.length);
+    const pdf = await buildPdf([{ paper: 'A1', svg: svgWith }], readFonts(keys), { title: 'Xiaomi' }, undefined, lines);
+    // deux fois le même SVG (PDF refait plus léger pour les fichiers du projet) : les traits restent jusqu'à clear()
+    await buildPdf([{ paper: 'A1', svg: svgWith }], readFonts(keys), { title: 'Xiaomi' }, undefined, lines);
+    lines.clear();
+    const bytes = new Uint8Array(pdf.output('arraybuffer'));
+    // (TextDecoder « latin1 » = windows-1252 : il abîmerait les flux compressés)
+    const raw = Buffer.from(bytes).toString('latin1');
+    // contenu des pages décompressé
+    let content = '';
+    for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+      try {
+        content += inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1');
+      } catch {
+        /* flux non compressé ou police */
+      }
+    }
+    expect(content).toContain('5900 2800 l');
+    expect(content).toContain('100 150 m');
+    expect(content).not.toMatch(/-98765\d{4}/);
+    if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(/\.pdf$/, '-traits.pdf'), bytes);
   });
 });
