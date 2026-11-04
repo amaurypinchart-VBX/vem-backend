@@ -131,8 +131,14 @@ interface Props {
 
 type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 
-/** téléphone : images 3D réduites par Cloudinary (planche affichée / vignettes) */
+/**
+ * images 3D réduites par Cloudinary : vignettes 320 px partout (avant, l'image d'origine jusqu'à 3 000 px dans chaque
+ * vignette : des centaines de Mo décodés dès l'ouverture d'un jeu de 40 planches), planche affichée 1 400 px sur
+ * téléphone ; le PDF garde les images d'origine
+ */
 const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
+/** très gros modèle sur ordinateur : la mémoire de l'onglet est déjà prise par le modèle, images 3D à 2 000 px à l'écran */
+const BIG_MODEL_IMAGE = (url: string) => screenImageUrl(url, 2000);
 const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
 const lightDevice = lowPowerDevice();
 /** taille d'un morceau de l'export PDF allégé (caractères de SVG) ; localStorage `vem_plans_pdf_chunk` pour les tests */
@@ -1751,7 +1757,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               }}
             >
               {selectMode && <input className="thumb-check" type="checkbox" readOnly checked={sheetSelection.includes(s.id)} aria-label={`Choisir la planche ${s.number}`} />}
-              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail paint={paintInfo} imageSrc={lightDevice ? THUMB_IMAGE : undefined} style={{ width: '100%', height: 'auto', display: 'block' }} />
+              <SheetSvg sheet={s} titleBlock={doc.titleBlock} notes={doc.notes} legend={legend} viewData={viewData} thumbnail paint={paintInfo} imageSrc={THUMB_IMAGE} style={{ width: '100%', height: 'auto', display: 'block' }} />
               <div className="thumb-foot">
                 <b>{s.number}</b>
                 <span className="thumb-title">{s.kind === 'cover' ? 'Couverture' : (s.items.find((x) => x.type === 'viewport' && (x as ViewportItem).label) as ViewportItem | undefined)?.label ?? s.title}</span>
@@ -1783,7 +1789,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           </button>
         </aside>
         <SheetCanvas
-          imageSrc={lightDevice ? PHONE_IMAGE : undefined}
+          imageSrc={lightDevice ? PHONE_IMAGE : bigScene ? BIG_MODEL_IMAGE : undefined}
           doc={doc}
           sheet={sheet}
           legend={legend}
