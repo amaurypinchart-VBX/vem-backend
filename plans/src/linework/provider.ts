@@ -258,6 +258,11 @@ export class BrowserHlrProvider implements LineworkProvider {
     return this.opts.runner;
   }
 
+  /** Mémoire pleine : les paquets 3D préparés sont refaits au besoin (un paquet de tout le modèle pèse ≈ 100 Mo). */
+  releasePackets(): void {
+    this.packets.clear();
+  }
+
   dispose(): void {
     this.packets.clear();
     this.opts.runner.dispose();

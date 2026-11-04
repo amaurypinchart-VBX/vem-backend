@@ -13,6 +13,7 @@ import { NO_PAINT } from '../core/paint/types';
 import type { GlassTest } from './packets';
 import { exteriorInfo, exteriorSelection, exteriorSurvey } from './paintExterior';
 import type { ExteriorTri } from './paintExterior';
+import { registerReleaser } from './memory';
 
 /** Triangles d'une pièce : repère propre (mm), passage au monde, maillages d'origine. */
 export interface NodeSoup {
@@ -25,7 +26,19 @@ export interface NodeSoup {
   parts: Array<{ mesh: Mesh; start: number; count: number }>;
 }
 
-const soups = new WeakMap<Object3D, NodeSoup>();
+/**
+ * Soupes de triangles des pièces cliquées / peintes (repère propre), avec un budget : avant, toutes restaient en
+ * mémoire toute la session. Les plus anciennes partent d'abord ; refaites au besoin.
+ */
+const soups = new Map<Object3D, NodeSoup>();
+let soupFloats = 0;
+/** nombres gardés (positions + index) : 20 M ≈ 160 Mo au plus */
+const SOUP_FLOATS_MAX = 20_000_000;
+const soupSize = (s: NodeSoup) => s.soup.pos.length + s.soup.index.length;
+registerReleaser('paint-soups', () => {
+  soups.clear();
+  soupFloats = 0;
+});
 
 export function nodeSoup(scene: LoadedScene, nodeId: string): NodeSoup | null {
   const obj = scene.objectsById.get(nodeId);
@@ -61,6 +74,12 @@ export function nodeSoup(scene: LoadedScene, nodeId: string): NodeSoup | null {
   }
   const out: NodeSoup = { soup: { pos: Float64Array.from(pos), index: Uint32Array.from(index) }, toWorld, toLocal, parts };
   soups.set(obj, out);
+  soupFloats += soupSize(out);
+  while (soupFloats > SOUP_FLOATS_MAX && soups.size > 1) {
+    const [first, v] = soups.entries().next().value!;
+    soups.delete(first);
+    soupFloats -= soupSize(v);
+  }
   return out;
 }
 

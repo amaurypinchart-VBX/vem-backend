@@ -58,19 +58,13 @@ const GLASS_COLOR = 0xcfe6f0;
 const GLASS_OPACITY = 0.35;
 const EDGE_ANGLE = 30;
 /**
- * Arêtes vives de chaque géométrie (repère local), partagées par tous les viewers : ils partagent les maillages du
- * modèle, et EdgesGeometry coûte des secondes sur un gros modèle (1,6 M de triangles : la page se figeait à chaque
- * image 3D des planches, chaque viewer caché recalculant tout).
+ * Arêtes vives d'une géométrie (repère local). Le cache appartient à chaque viewer et disparaît avec lui (partagé par
+ * tous, il gardait les arêtes de tout le modèle toute la session) ; les captures d'un lot partagent un seul viewer.
  */
-const EDGE_CACHE = new WeakMap<BufferGeometry, Float32Array>();
-function localEdges(g: BufferGeometry): Float32Array {
-  let local = EDGE_CACHE.get(g);
-  if (!local) {
-    const eg = new EdgesGeometry(g, EDGE_ANGLE);
-    local = eg.getAttribute('position').array as Float32Array;
-    eg.dispose();
-    EDGE_CACHE.set(g, local);
-  }
+function computeEdges(g: BufferGeometry): Float32Array {
+  const eg = new EdgesGeometry(g, EDGE_ANGLE);
+  const local = eg.getAttribute('position').array as Float32Array;
+  eg.dispose();
   return local;
 }
 
@@ -555,7 +549,7 @@ export class SceneViewer {
     const parts: Array<{ local: Float32Array; e: Entry }> = [];
     let total = 0;
     for (const e of list) {
-      const local = localEdges(e.mesh.geometry as BufferGeometry);
+      const local = this.localEdges(e.mesh.geometry as BufferGeometry);
       parts.push({ local, e });
       total += local.length;
     }
@@ -580,11 +574,18 @@ export class SceneViewer {
    * Calcule à l'avance les arêtes des objets affichés, par petits morceaux (la page reste réactive) : la capture
    * suivante les trouve dans le cache partagé.
    */
+  private readonly edgeCache = new WeakMap<BufferGeometry, Float32Array>();
+  private localEdges(g: BufferGeometry): Float32Array {
+    let local = this.edgeCache.get(g);
+    if (!local) this.edgeCache.set(g, (local = computeEdges(g)));
+    return local;
+  }
+
   async prepareEdges(sliceMs = 30): Promise<void> {
     let t = performance.now();
     for (const e of this.shownEntries()) {
       if (this.disposed) return;
-      localEdges(e.mesh.geometry as BufferGeometry);
+      this.localEdges(e.mesh.geometry as BufferGeometry);
       if (performance.now() - t > sliceMs) {
         await new Promise((r) => setTimeout(r, 0));
         t = performance.now();

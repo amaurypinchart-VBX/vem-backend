@@ -13,6 +13,7 @@ import { hashKey } from '../linework/cache';
 import type { LoadedScene } from '../scene/loadedScene';
 import type { BrowserHlrProvider } from '../linework/provider';
 import { HEAVY_VIEW, NotCachedError } from '../linework/provider';
+import { lineworkBytes, registerReleaser } from '../linework/memory';
 import type { Linework2D } from '../linework/types';
 import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
@@ -41,7 +42,14 @@ interface Entry {
   error?: string;
   /** vue spéciale : base du bloc (rotation / miroir / plafond réfléchi compris) */
   basis?: ViewBasis;
+  /** octets approximatifs des traits (budget mémoire) */
+  bytes?: number;
+  /** dernier usage (affichage, export) : les vues les plus anciennes quittent la mémoire d'abord */
+  used?: number;
 }
+
+/** une vue utilisée depuis moins longtemps n'est jamais retirée (planche affichée, page en cours d'export) */
+const IN_USE_MS = 5000;
 
 /** Vues spéciales d'un modèle, pour les fenêtres de vue `custom`. */
 export interface CustomSource {
@@ -72,6 +80,12 @@ export class LineworkBank {
   custom: CustomSource | null = null;
   /** téléphone : traits gardés en mémoire au plus pour N vues (les plus anciennes sont relues du cache au besoin) */
   maxEntries = 0;
+  /**
+   * budget des traits en mémoire (octets, 0 = sans limite) : une vue de toute l'installation d'un très gros modèle pèse
+   * des dizaines de Mo, compter les vues ne suffit pas. Les vues retirées sont relues de l'IndexedDB / du serveur.
+   */
+  maxBytes = 0;
+  private bytes = 0;
   private paintSrc: PaintSource | null = null;
   /**
    * peinture visible par vue : clé = vue + calcul (sans la version de la peinture), avec la version pour laquelle elle a
@@ -87,7 +101,68 @@ export class LineworkBank {
   constructor(
     readonly scene: LoadedScene,
     readonly provider: BrowserHlrProvider,
-  ) {}
+  ) {
+    // mémoire pleine : on ne garde que les vues en cours d'usage (`trim`), ou plus rien de ce qui peut être relu (`all`)
+    // référence faible : une banque abandonnée sans dispose() (aperçu du rapport) ne reste pas en mémoire
+    const ref = new WeakRef(this);
+    const name = `bank:${Math.random()}`;
+    this.unregister = registerReleaser(name, (level) => {
+      const b = ref.deref();
+      if (b) b.relieve(level);
+      else unregister();
+    });
+    const unregister = this.unregister;
+  }
+  private readonly unregister: () => void;
+
+  /** La banque n'est plus utilisée (changement de modèle) : elle ne répond plus aux demandes de mémoire. */
+  dispose(): void {
+    this.unregister();
+    this.entries.clear();
+    this.bytes = 0;
+    this.customRuns.clear();
+    this.paintRegions.clear();
+  }
+
+  /** Retire de la mémoire les traits des vues qui ne sont plus utiles maintenant (relus de l'IndexedDB au besoin). */
+  private relieve(level: 'trim' | 'all'): void {
+    const now = Date.now();
+    for (const [k, e] of this.entries) {
+      if (!e.lw || this.pendingKeys.has(k)) continue;
+      if (level === 'trim' && now - (e.used ?? 0) < IN_USE_MS) continue;
+      this.drop(k);
+    }
+    this.customRuns.clear();
+    this.emit();
+  }
+
+  private drop(k: string): void {
+    const e = this.entries.get(k);
+    if (!e) return;
+    this.bytes -= e.bytes ?? 0;
+    this.entries.delete(k);
+  }
+
+  private put(k: string, e: Entry): void {
+    this.drop(k);
+    if (e.lw) {
+      e.bytes = lineworkBytes(e.lw);
+      this.bytes += e.bytes;
+    }
+    e.used = Date.now();
+    this.entries.set(k, e);
+  }
+
+  /** Export PDF : les vues d'une page déjà écrite quittent la mémoire (sauf celles de la planche affichée). */
+  release(viewports: ViewportItem[], keep: ViewportItem[] = []): void {
+    const kept = new Set(keep.map((vp) => this.keyOf(vp) && this.entryKey(this.keyOf(vp)!, vp)));
+    for (const vp of viewports) {
+      const key = this.keyOf(vp);
+      if (!key) continue;
+      const ek = this.entryKey(key, vp);
+      if (!kept.has(ek) && !this.pendingKeys.has(ek)) this.drop(ek);
+    }
+  }
 
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -252,6 +327,34 @@ export class LineworkBank {
     })();
   }
 
+  /**
+   * Export : calcule la peinture des vues par tranches (sans figer la page) avant de dessiner leur planche ; paintOf
+   * la retrouve ensuite toute prête. Avant, paintOf la calculait d'un seul bloc au milieu de l'export (vue de toute
+   * l'installation peinte = plusieurs secondes figées et des centaines de Mo d'un coup sur un très gros modèle).
+   */
+  async preparePaint(vps: ViewportItem[], cancelled: () => boolean = () => false): Promise<void> {
+    for (const vp of vps) {
+      const src = this.paintSrc;
+      const base = this.paintBase(vp);
+      if (!src || !base || this.currentPaint(base) || vp.paint === 'off') continue;
+      const basis = this.data(vp).basis;
+      if (!basis || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) continue;
+      const meshIds = subsetMeshes(this.scene, vp.request.subset);
+      const job = paintOverlaySteps({ scene: this.scene, painted: src.painted, meshIds, basis, isGlass: src.isGlass, glassTransparent: vp.request.style.glassTransparent !== false });
+      try {
+        this.storePaint(base, src.version, await runSliced(job, () => this.paintSrc !== src || cancelled()), meshIds);
+      } catch (e) {
+        if (e instanceof SlicedCancelled) {
+          if (cancelled()) throw new Error('annulé');
+          continue;
+        }
+        console.error('Peinture de la vue', vp.label ?? vp.id, e);
+        this.storePaint(base, src.version, [], meshIds);
+        this.paintErrors.set(vp.id, (e as Error).message || String(e));
+      }
+    }
+  }
+
   /** Vues dont la peinture n'a pas pu être calculée : fenêtre → message. */
   paintFailures(): Map<string, string> {
     return this.paintErrors;
@@ -271,6 +374,7 @@ export class LineworkBank {
   data(vp: ViewportItem): ViewportData {
     const key = this.keyOf(vp);
     const e = key ? this.entries.get(this.entryKey(key, vp)) : undefined;
+    if (e?.lw) e.used = Date.now();
     let basis;
     try {
       basis = e?.basis ?? viewBasis(vp.request.view, this.scene.frames);
@@ -321,7 +425,10 @@ export class LineworkBank {
     const key = await this.keyFor(vp);
     const ek = this.entryKey(key, vp);
     const e = this.entries.get(ek);
-    if (e?.lw) return { key, lw: e.lw };
+    if (e?.lw) {
+      e.used = Date.now();
+      return { key, lw: e.lw };
+    }
     if (this.pendingKeys.has(ek)) {
       // déjà en cours : on attend la fin
       await new Promise<void>((resolve) => {
@@ -341,7 +448,8 @@ export class LineworkBank {
     try {
       if (vp.custom) {
         const block = await this.customBlock(vp, signal);
-        this.entries.set(ek, { lw: block.lw, basis: block.basis });
+        this.put(ek, { lw: block.lw, basis: block.basis });
+        this.trim();
         return { key, lw: block.lw };
       }
       const lw = await this.provider.getLinework(vp.request, undefined, signal, opts);
@@ -350,7 +458,7 @@ export class LineworkBank {
         this.entries.delete(ek);
         return { key, lw };
       }
-      this.entries.set(ek, { lw });
+      this.put(ek, { lw });
       this.trim();
       return { key, lw };
     } catch (err) {
@@ -363,13 +471,25 @@ export class LineworkBank {
       this.emit();
     }
   }
-  /** Garde au plus `maxEntries` vues calculées (les plus anciennes d'abord), jamais celles en cours. */
+  /**
+   * Garde au plus `maxEntries` vues et `maxBytes` octets de traits : les moins récemment utilisées partent d'abord,
+   * jamais une vue en cours de calcul ni une vue utilisée il y a moins de 5 s (planche affichée, page exportée).
+   */
   private trim(): void {
-    if (!this.maxEntries || this.entries.size <= this.maxEntries) return;
-    for (const [k, e] of this.entries) {
-      if (this.entries.size <= this.maxEntries) break;
-      if (e.lw && !this.pendingKeys.has(k)) this.entries.delete(k);
+    const count = () => [...this.entries.values()].filter((e) => e.lw).length;
+    const over = () => (this.maxEntries > 0 && count() > this.maxEntries) || (this.maxBytes > 0 && this.bytes > this.maxBytes);
+    if (!over()) return;
+    const now = Date.now();
+    const old = [...this.entries].filter(([k, e]) => e.lw && !this.pendingKeys.has(k) && now - (e.used ?? 0) >= IN_USE_MS).sort((a, b) => (a[1].used ?? 0) - (b[1].used ?? 0));
+    for (const [k] of old) {
+      if (!over()) break;
+      this.drop(k);
     }
+  }
+
+  /** Mémoire des traits gardés (octets approximatifs, vues gardées) — diagnostic. */
+  memoryUse(): { bytes: number; views: number } {
+    return { bytes: this.bytes, views: [...this.entries.values()].filter((e) => e.lw).length };
   }
 
   /** Bloc d'une vue spéciale (la vue entière est calculée une fois pour toutes ses fenêtres). */

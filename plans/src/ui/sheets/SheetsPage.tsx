@@ -35,6 +35,13 @@ import { paintContext } from '../../core/paint/resolve';
 import { paintScene } from '../../linework/paintScene';
 import type { PaintSettings } from '../../core/paint/types';
 import type { ColorDraft } from './ColorDialog';
+import type { PaintColor } from '../../core/paint/types';
+import type { ExteriorChoice } from '../../core/paint/exteriorWizard';
+import { exteriorPaintOps } from '../../core/paint/exteriorWizard';
+import type { RalColor } from '../../core/paint/ral';
+import { searchRal } from '../../core/paint/ral';
+import { colorCode } from '../../core/paint/ops';
+import { placePaintLegend } from '../../sheets/paintLegendPlace';
 
 interface Props {
   scene: LoadedScene;
@@ -56,12 +63,18 @@ interface Props {
 export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
   const bank = useMemo(() => {
     const b = new LineworkBank(scene, provider);
-    // téléphone : mémoire limitée (les vues relues du cache IndexedDB en un instant)
-    if (lowPowerDevice()) b.maxEntries = 24;
-    // très gros modèle sur ordinateur : vues gardées limitées (les plus anciennes sont relues du cache au besoin)
-    else if (bigModel(scene.index)) b.maxEntries = 40;
+    // budget des traits gardés en mémoire (les vues retirées sont relues de l'IndexedDB / du serveur en un instant) :
+    // téléphone 24 vues / 120 Mo, très gros modèle 40 vues / 250 Mo, sinon 600 Mo
+    if (lowPowerDevice()) {
+      b.maxEntries = 24;
+      b.maxBytes = 120e6;
+    } else if (bigModel(scene.index)) {
+      b.maxEntries = 40;
+      b.maxBytes = 250e6;
+    } else b.maxBytes = 600e6;
     return b;
   }, [scene, provider]);
+  useEffect(() => () => bank.dispose(), [bank]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
   // vues spéciales : la banque relit les vues du modèle (une vue modifiée rend ses fenêtres « obsolètes »)
   const [viewTags, setViewTags] = useState<ViewTagRule[]>([]);
@@ -189,6 +202,8 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
       {wizard && !progress && (
         <Wizard
           scene={scene}
+          palette={paintState.paint.colors}
+          canPaint={!paintState.disabled}
           defaultTitle={project?.name ?? index0Title(scene)}
           onCancel={() => setWizard(false)}
           onGenerate={async (opts) => {
@@ -246,6 +261,24 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
                     Object.assign(it, { url, width: r.width, height: r.height });
                   },
                 );
+              }
+              // « Peindre les côtés extérieurs » : couleur + zone posées sur le modèle (comme 🎨 › 🧱 dans l'éditeur), légende
+              // PAINTING sur chaque planche qui a une vue standard
+              if (opts.exterior && !paintState.disabled) {
+                const categories = new Set(scene.index.nodes.map((n) => n.category ?? '').filter(Boolean));
+                const res = exteriorPaintOps(paintState.paint, opts.exterior, {
+                  categories,
+                  moduleCount: scene.index.modules.length,
+                  uid: (p) => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`),
+                  by: who ? [who.firstName, who.lastName].filter(Boolean).join(' ') : undefined,
+                });
+                if (res) {
+                  paintState.apply(res.ops, `côtés extérieurs ${res.tag}`);
+                  for (const sh of set.sheets) {
+                    const hasView = sh.items.some((i) => i.type === 'viewport' && !i.custom && !i.frameView);
+                    if (hasView && !sh.items.some((i) => i.type === 'paintLegend')) sh.items.push(placePaintLegend(sh, (vp) => bank.data(vp)));
+                  }
+                }
               }
               setProgress({ label: 'Enregistrement', fraction: 0.97 });
               const rec = await vem.createDrawingSet(PROJECT_ID, { title: set.title, modelVersionId: set.modelVersionId, data: set });
@@ -317,14 +350,30 @@ function index0Title(scene: LoadedScene): string {
 
 function Wizard({
   scene,
+  palette,
+  canPaint,
   defaultTitle,
   onCancel,
   onGenerate,
 }: {
   scene: LoadedScene;
+  palette: PaintColor[];
+  canPaint: boolean;
   defaultTitle: string;
   onCancel: () => void;
-  onGenerate: (o: { modules: string[]; units?: InstallUnit[]; kinds: SheetKind[]; paper: Paper; title: string; facadeMarks: boolean; opaqueGlass: boolean; topColors: boolean; frames: FrameType[]; hideFrames: boolean }) => void;
+  onGenerate: (o: {
+    modules: string[];
+    units?: InstallUnit[];
+    kinds: SheetKind[];
+    paper: Paper;
+    title: string;
+    facadeMarks: boolean;
+    opaqueGlass: boolean;
+    topColors: boolean;
+    frames: FrameType[];
+    hideFrames: boolean;
+    exterior?: ExteriorChoice;
+  }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
   const detected = useMemo(() => detectUnits(scene.index, scene.frames), [scene]);
@@ -338,6 +387,17 @@ function Wizard({
   const [opaqueGlass, setOpaqueGlass] = useState(true);
   const [topColors, setTopColors] = useState(true);
   const [hideFrames, setHideFrames] = useState(false);
+  // « Peindre les côtés extérieurs des Viewbox » (couleur de la palette ou nouveau RAL)
+  const [exterior, setExterior] = useState(false);
+  const [extColor, setExtColor] = useState(() => palette[0]?.id ?? '');
+  const [ralQuery, setRalQuery] = useState('');
+  const [ralPick, setRalPick] = useState<RalColor | null>(null);
+  const [extSides, setExtSides] = useState<Set<'long' | 'short'>>(() => new Set(['long', 'short']));
+  const ralResults = useMemo(() => (extColor ? [] : searchRal(ralQuery, 12)), [extColor, ralQuery]);
+  const exteriorChoice: ExteriorChoice | undefined = exterior
+    ? { ...(extColor ? { colorId: extColor } : ralPick ? { ral: ralPick } : {}), sides: (['long', 'short'] as const).filter((x) => extSides.has(x)) }
+    : undefined;
+  const exteriorReady = !exterior || ((!!exteriorChoice?.colorId || !!exteriorChoice?.ral) && !!exteriorChoice?.sides.length);
   // cadres textile du modèle (mesurés une fois) : planches « Cadres textile » si on en a
   const allFrames = useMemo(() => {
     try {
@@ -407,6 +467,51 @@ function Wizard({
           <label className="check" title="Trait épais de la couleur de la légende le long de la face qui porte l’accessoire (modifiable ensuite vue par vue)">
             <input type="checkbox" checked={topColors} onChange={(e) => setTopColors(e.target.checked)} data-testid="wizard-top-colors" /> Colorer par catégorie
           </label>
+          <label>Peinture</label>
+          <div className="wizard-exterior">
+            <label className="check" title={canPaint ? 'Couleur posée sur les faces extérieures de chaque Viewbox, pas là où deux box se touchent (modifiable ensuite : 🎨 Peinture › 🧱 Côtés extérieurs)' : 'Modèle non enregistré : peinture impossible'}>
+              <input type="checkbox" checked={exterior} disabled={!canPaint} onChange={(e) => setExterior(e.target.checked)} data-testid="wizard-exterior" /> Peindre les côtés extérieurs des Viewbox (pas là où deux box se touchent)
+            </label>
+            {exterior && (
+              <div className="wizard-exterior-body">
+                <div className="row">
+                  <span>Couleur</span>
+                  <select value={extColor} onChange={(e) => setExtColor(e.target.value)} data-testid="wizard-exterior-color">
+                    {palette.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.tag} · {colorCode(c) || c.name}
+                      </option>
+                    ))}
+                    <option value="">Nouvelle couleur RAL…</option>
+                  </select>
+                </div>
+                {!extColor && (
+                  <>
+                    <input type="text" placeholder="RAL : code ou nom (7016, anthracite…)" value={ralQuery} onChange={(e) => setRalQuery(e.target.value)} data-testid="wizard-ral" />
+                    <div className="wizard-ral-results" data-testid="wizard-ral-results">
+                      {ralResults.map((r) => (
+                        <button key={r.code} type="button" className={`btn small ghost${ralPick?.code === r.code ? ' on' : ''}`} onClick={() => setRalPick(r)} title={`${r.fr} / ${r.en}`}>
+                          <span className="swatch" style={{ background: r.hex, display: 'inline-block', width: 12, height: 12, borderRadius: 2, marginRight: 4, border: '1px solid #8886', verticalAlign: 'middle' }} />
+                          RAL {r.code} {r.fr}
+                        </button>
+                      ))}
+                    </div>
+                    {ralPick && <div className="hint">Choisi : RAL {ralPick.code} {ralPick.fr} (nouvelle couleur de la palette)</div>}
+                  </>
+                )}
+                <div className="row">
+                  {(['long', 'short'] as const).map((k) => (
+                    <label key={k} className="check">
+                      <input type="checkbox" checked={extSides.has(k)} onChange={() => setExtSides((s0) => toggle(s0, k))} /> {k === 'long' ? 'Grands côtés' : 'Petits côtés'}
+                    </label>
+                  ))}
+                </div>
+                <div className="hint">
+                  Vitrages, cadres textile, pieds, escaliers, garde-corps et terrasses ne sont pas peints. Repères P sur les vues et légende PAINTING sur les planches ; tout reste modifiable ensuite (🎨 Peinture).
+                </div>
+              </div>
+            )}
+          </div>
           {frames.length > 0 && (
             <>
               <label>Cadres textile</label>
@@ -463,7 +568,12 @@ function Wizard({
           </div>
         )}
         <div className="row">
-          <button className="btn primary" disabled={!nSheets || (!modules.size && !kinds.has('cover'))} onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames })}>
+          <button
+            className="btn primary"
+            disabled={!nSheets || (!modules.size && !kinds.has('cover')) || !exteriorReady}
+            title={exteriorReady ? undefined : 'Choisis la couleur des côtés extérieurs'}
+            onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames, exterior: exteriorChoice })}
+          >
             Générer
           </button>
           <button className="btn" onClick={onCancel}>

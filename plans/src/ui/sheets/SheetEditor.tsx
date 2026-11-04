@@ -19,13 +19,14 @@ import type { DrawingSet, Image3dItem, LabelItem, PointMm, Sheet, SheetItem, Sym
 import { SYMBOL_BY_KEY, SYMBOL_SIZE, alongWall, orientToWall } from '../../sheets/symbols';
 import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
-import { SheetSvg, itemBox } from '../../sheets/SheetSvg';
+import { SheetSvg } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { dimensionDrawingSet, useBank } from '../../sheets/bank';
 import type { LineworkBank } from '../../sheets/bank';
 import { actions, useEditor } from '../../sheets/store';
 import { fitScale, viewportTransform } from '../../sheets/scales';
 import { newId } from '../../sheets/generate';
+import { LEGEND_AREAS_KEY, legendAreasPref, placePaintLegend } from '../../sheets/paintLegendPlace';
 import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import type { IsoKind, Projection } from '../../viewer/SceneViewer';
@@ -51,7 +52,8 @@ import { freshImport, NewVersionError } from '../newVersion';
 import { retargetSheet, sheetModule } from '../../sheets/duplicate';
 import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
 import { bigModel, lowPowerDevice, useDevice } from '../useDevice';
-import { clearStep, markStep } from '../crashLog';
+import { clearStep, markDetail, markStep } from '../crashLog';
+import { heapInfo, relieveMemory } from '../../linework/memory';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
 import type { ReadyFile } from '../FileReady';
@@ -107,15 +109,6 @@ export interface PaintBundle {
   onFavorites: (list: ColorDraft[]) => void;
 }
 
-const LEGEND_AREAS_KEY = 'vem_paint_legend_areas';
-/** m² dans une nouvelle légende peinture : dernier choix fait dans le panneau (oui par défaut). */
-function legendAreasPref(): boolean {
-  try {
-    return localStorage.getItem(LEGEND_AREAS_KEY) !== '0';
-  } catch {
-    return true;
-  }
-}
 
 const uid = (p: string) => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : newId(p));
 
@@ -311,6 +304,12 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   useEffect(() => {
     if (!sheet) return;
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
+    // vues de la planche affichée retirées de la mémoire (budget, mémoire pleine) : relues du cache
+    const gone = own.filter((vp) => {
+      const d = bank.data(vp);
+      return !d.lw && !d.busy && !d.error;
+    });
+    if (gone.length) bank.ensure(gone);
     bank.ensurePaint(own);
     // export en cours : son étape reste notée (sinon « Affichage de la planche » la remplace et l'efface 3 s après)
     if (exporting.current) return;
@@ -694,23 +693,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   // ─── peinture : clic sur une face ───
-  const paintLegend = (): PaintLegendItem => {
-    const k = templateScale(sheet.paper);
-    const w = 90 * k;
-    const h = 40 * k;
-    // premier emplacement libre de la zone de dessin (de bas en haut, de droite à gauche), sinon en bas à gauche
-    const area = scaleRect(DRAW_AREA, k);
-    const boxes = sheet.items.map((i) => itemBox(i, sheet, viewData, k));
-    const free = (x: number, y: number) => !boxes.some((b) => x < b.x + b.w + 2 * k && x + w + 2 * k > b.x && y < b.y + b.h + 2 * k && y + h + 2 * k > b.y);
-    let rect = { x: area.x + 4 * k, y: area.y + area.h - h - 4 * k, w, h };
-    search: for (let y = area.y + area.h - h - 4 * k; y >= area.y + 4 * k; y -= 5 * k)
-      for (let x = area.x + area.w - w - 4 * k; x >= area.x + 4 * k; x -= 5 * k)
-        if (free(x, y)) {
-          rect = { x, y, w, h };
-          break search;
-        }
-    return { id: newId('g'), type: 'paintLegend', rect, lang: 'en', scope: 'sheet', areas: legendAreasPref() };
-  };
+  const paintLegend = (): PaintLegendItem => placePaintLegend(sheet, viewData);
   // m² dans les légendes PAINTING (A. Pinchart 04.11.2026 : « je peux vouloir choisir de mettre les m² ou pas ») :
   // réglé pour tout le jeu depuis le panneau Peinture, choix gardé pour les prochaines légendes
   const paintLegends = doc.sheets.flatMap((sh) => sh.items.filter((i): i is PaintLegendItem => i.type === 'paintLegend'));
@@ -1090,6 +1073,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       if (!light) {
         const vps = sheets.flatMap(vpsOf);
         await Promise.all(vps.map((vp) => bank.load(vp)));
+        setBusy('PDF : peinture des vues…');
+        await bank.preparePaint(vps, () => cancelExport.current);
         missing = vps.filter((vp) => !bank.data(vp).lw).length;
         if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
       }
@@ -1099,23 +1084,32 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       pdfLinesRef.current = lines;
       const { loadFonts, pdfImageDataUrl, MAX_IMAGE_PX_MOBILE } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
-      const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
+      const imagesOf = (s: Sheet) => s.items.flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : []));
+      const urls = [...new Set(sheets.flatMap(imagesOf))];
       const images = new Map<string, string>();
-      let failed = 0;
+      const failedUrls = new Set<string>();
       // Fichiers du projet : 10 Mo au plus (Cloudinary) ⇒ images allégées d'emblée, puis encore plus si le PDF dépasse
-      const loadImages = async (quality: number, maxPx: number | undefined) => {
-        images.clear();
-        failed = 0;
-        for (const [n, url] of urls.entries()) {
-          setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
-          try {
-            images.set(url, maxPx ? await pdfImageDataUrl(url, quality, maxPx) : await pdfImageDataUrl(url));
-          } catch {
-            failed++;
-          }
+      let imgOpts: { q: number; px: number | undefined } = { q: 0.88, px: light || toProject ? MAX_IMAGE_PX_MOBILE : undefined };
+      const loadImage = async (url: string) => {
+        if (images.has(url) || failedUrls.has(url)) return;
+        try {
+          images.set(url, imgOpts.px ? await pdfImageDataUrl(url, imgOpts.q, imgOpts.px) : await pdfImageDataUrl(url));
+        } catch {
+          failedUrls.add(url);
         }
       };
-      await loadImages(0.88, light || toProject ? MAX_IMAGE_PX_MOBILE : undefined);
+      const loadImages = async (quality: number, maxPx: number | undefined) => {
+        imgOpts = { q: quality, px: maxPx };
+        images.clear();
+        failedUrls.clear();
+        // allégé : chaque image est préparée juste avant la première page qui l'utilise et oubliée après la dernière
+        if (light) return;
+        for (const [n, url] of urls.entries()) {
+          setBusy(`PDF : images 3D (${n + 1}/${urls.length})…`);
+          await loadImage(url);
+        }
+      };
+      await loadImages(imgOpts.q, imgOpts.px);
       const markup = (s: Sheet) =>
         renderToStaticMarkup(
           <SheetSvg
@@ -1151,17 +1145,40 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             return [...keys].sort() as ReturnType<typeof fontsUsed>;
           })()
         : null;
+      // allégé (très gros modèle, téléphone) : une page à la fois — ses vues lues l'une après l'autre, sa peinture
+      // calculée par tranches, ses images préparées ; la page écrite, ses vues et les images qui ne servent plus
+      // quittent la mémoire, et les caches sont vidés si le tas approche de sa limite
       const counted = new Set<string>();
-      const lazy = (s: Sheet) => async () => {
+      const lastUse = new Map<string, number>();
+      sheets.forEach((s, i) => imagesOf(s).forEach((u) => lastUse.set(u, i)));
+      const keepVps = vpsOf(sheet);
+      let previous: ViewportItem[] = [];
+      const afterPage = () => {
+        bank.release(previous, keepVps);
+        previous = [];
+        const h = heapInfo();
+        if (h && h.used / h.limit > 0.5) relieveMemory('all');
+      };
+      const lazy = (s: Sheet, index: number) => async () => {
+        afterPage();
+        for (const [u, last] of lastUse) if (last < index) images.delete(u);
+        markDetail(`planche ${s.number} (${index + 1}/${sheets.length})`);
         const vps = vpsOf(s);
-        await Promise.all(vps.map((vp) => bank.load(vp)));
+        for (const vp of vps) {
+          if (cancelExport.current) throw new Error('annulé');
+          await bank.load(vp);
+        }
+        await bank.preparePaint(vps, () => cancelExport.current);
+        for (const u of imagesOf(s)) await loadImage(u);
         if (!counted.has(s.id)) {
           counted.add(s.id);
           missing += vps.filter((vp) => !bank.data(vp).lw).length;
         }
+        previous = vps;
+        markDetail(`planche ${s.number} (${index + 1}/${sheets.length}) — conversion`);
         return markup(s);
       };
-      const pages = sheets.map((s) => ({ paper: s.paper, svg: light ? lazy(s) : markup(s) }));
+      const pages = sheets.map((s, i) => ({ paper: s.paper, svg: light ? lazy(s, i) : markup(s) }));
       setBusy('PDF : polices…');
       const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
       const one = sheets.length === 1 && !all;
@@ -1172,7 +1189,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           setBusy(`PDF : planche ${d}/${n}…`);
         };
         // allégé : le PDF est écrit par morceaux (≈ 40 Mo de dessin chacun) puis réuni, la mémoire ne grossit plus avec le jeu
-        if (light) return buildPdfBlob(pages, fonts, meta, progress, { maxSvgChars: pdfChunkChars(), lines });
+        if (light) {
+          try {
+            return await buildPdfBlob(pages, fonts, meta, progress, { maxSvgChars: pdfChunkChars(), lines });
+          } finally {
+            afterPage();
+            images.clear();
+          }
+        }
         return (await buildPdf(pages, fonts, meta, progress, lines)).output('blob');
       };
       let blob = await build();
@@ -1197,7 +1221,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         await vem.saveProjectFile(PROJECT_ID, blob, fileName);
         setSavedNote(`✓ « ${fileName} » enregistré dans les Fichiers du projet VEM`);
       } else deliver(fileName, blob);
-      if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
+      if (failedUrls.size) window.alert(`${failedUrls.size} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
       if (light && missing) window.alert(`${missing} vue(s) n’ont pas pu être calculées : cadre vide dans le PDF.`);
     } catch (e) {
       if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`${toProject ? 'Enregistrement dans le projet' : 'Export PDF'} impossible : ${(e as Error).message}`);

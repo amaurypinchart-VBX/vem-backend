@@ -17,6 +17,7 @@ import { meshesOfNode } from '../scene/loadedScene';
 import { loopArea, poleOfInaccessibility } from '../core/paint/region';
 import type { GlassTest } from './packets';
 import type { PaintedScene } from './paintScene';
+import { registerReleaser } from './memory';
 import { nodeTriangles } from './paintScene';
 import { moduleOfNode } from '../core/paint/resolve';
 
@@ -113,8 +114,20 @@ interface Silhouette {
   boxes: Float64Array;
 }
 
-/** Silhouettes gardées par maillage et par direction de vue (le modèle ne bouge pas). */
-const silhouettes = new WeakMap<Mesh, Map<string, Silhouette>>();
+/**
+ * Silhouettes gardées par maillage et par direction de vue (le modèle ne bouge pas), avec un budget : avant, toutes
+ * les silhouettes calculées restaient en mémoire toute la session (6 directions × chaque pièce d'un très gros modèle =
+ * des centaines de Mo). Les plus anciennes partent d'abord ; refaites au besoin.
+ */
+const silhouettes = new Map<string, { mesh: Mesh; sil: Silhouette; points: number }>();
+let silhouettePoints = 0;
+/** ≈ 50 octets par point d'un contour clipper2-js : 3 M de points ≈ 150 Mo */
+const SILHOUETTE_POINTS_MAX = 3_000_000;
+const silKey = (mesh: Mesh, viewKey: string) => `${mesh.uuid}|${viewKey}`;
+registerReleaser('paint-silhouettes', () => {
+  silhouettes.clear();
+  silhouettePoints = 0;
+});
 
 /** Partie visible des faces peintes d'une vue (calcul d'un seul tenant ; voir `paintOverlaySteps`). */
 export function computePaintOverlay(inp: PaintOverlayInput): PaintRegion[] {
@@ -287,7 +300,7 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       }
       if (!hits.length) continue;
       // tout ce qui touche la face est devant : la silhouette de la pièce suffit (ses autres triangles ne la touchent pas)
-      const cached = silhouettes.get(o.mesh)?.get(viewKey);
+      const cached = silhouettes.get(silKey(o.mesh, viewKey))?.sil;
       const sil = !behind && (cached || (hits.length >= SILHOUETTE_MIN && hits.length >= o.n * SILHOUETTE_SHARE)) ? cached ?? (yield* silhouetteSteps(o, viewKey)) : null;
       // silhouette impossible (Clipper) : les triangles un par un
       if (sil && !sil.failed) {
@@ -407,11 +420,22 @@ function* silhouetteSteps(o: OccMesh, viewKey: string): Generator<void, Silhouet
 }
 
 function remember(mesh: Mesh, viewKey: string, sil: Silhouette): void {
-  let byView = silhouettes.get(mesh);
-  if (!byView) silhouettes.set(mesh, (byView = new Map()));
-  byView.set(viewKey, sil);
-  // quelques directions par maillage suffisent (vues de la planche affichée) : les plus anciennes sont oubliées
-  while (byView.size > 6) byView.delete(byView.keys().next().value!);
+  const k = silKey(mesh, viewKey);
+  const prev = silhouettes.get(k);
+  if (prev) {
+    silhouettePoints -= prev.points;
+    silhouettes.delete(k);
+  }
+  let points = 0;
+  for (const p of sil.paths) points += p.length;
+  silhouettes.set(k, { mesh, sil, points });
+  silhouettePoints += points;
+  // les plus anciennes d'abord (ordre d'insertion)
+  while (silhouettePoints > SILHOUETTE_POINTS_MAX && silhouettes.size > 1) {
+    const [first, v] = silhouettes.entries().next().value!;
+    silhouettes.delete(first);
+    silhouettePoints -= v.points;
+  }
 }
 
 /**
