@@ -234,6 +234,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const cancelExport = useRef(false);
   /** export PDF en cours (journal des fermetures) */
   const exporting = useRef(false);
+  /** traits des vues de l'export PDF en cours (libérés à la fin) */
+  const pdfLinesRef = useRef<{ clear(): void } | null>(null);
   const deliver = (name: string, blob: Blob) => {
     if (deliveryPlan(device) === 'download') downloadBlob(name, blob);
     else setReady({ name, blob });
@@ -1085,7 +1087,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         missing = vps.filter((vp) => !bank.data(vp).lw).length;
         if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
       }
-      const { buildPdf, buildPdfBlob, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
+      const { buildPdf, buildPdfBlob, fontsUsed, PdfLines } = await freshImport(() => import('../../sheets/pdf/pdf'));
+      // traits des vues écrits directement dans le PDF (voir pdf.ts)
+      const lines = new PdfLines();
+      pdfLinesRef.current = lines;
       const { loadFonts, pdfImageDataUrl, MAX_IMAGE_PX_MOBILE } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
       const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
@@ -1114,6 +1119,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             legend={legend}
             viewData={(vp) => (bank.paintOf(vp), bank.data(vp))}
             paint={paintInfo}
+            pdfLines={lines}
           />,
         );
       // allégé : polices relevées planche par planche sur un SVG sans vues ni images (avant : le SVG complet de toutes
@@ -1160,8 +1166,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           setBusy(`PDF : planche ${d}/${n}…`);
         };
         // allégé : le PDF est écrit par morceaux (≈ 40 Mo de dessin chacun) puis réuni, la mémoire ne grossit plus avec le jeu
-        if (light) return buildPdfBlob(pages, fonts, meta, progress, { maxSvgChars: pdfChunkChars() });
-        return (await buildPdf(pages, fonts, meta, progress)).output('blob');
+        if (light) return buildPdfBlob(pages, fonts, meta, progress, { maxSvgChars: pdfChunkChars(), lines });
+        return (await buildPdf(pages, fonts, meta, progress, lines)).output('blob');
       };
       let blob = await build();
       const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;
@@ -1190,6 +1196,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     } catch (e) {
       if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`${toProject ? 'Enregistrement dans le projet' : 'Export PDF'} impossible : ${(e as Error).message}`);
     } finally {
+      pdfLinesRef.current?.clear();
+      pdfLinesRef.current = null;
       exporting.current = false;
       clearStep();
       setBusy('');
