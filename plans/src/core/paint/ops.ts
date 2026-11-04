@@ -1,7 +1,7 @@
 // Lecture tolérante de la peinture, opérations (ajout / modification / suppression par id) et leurs inverses
 // (annuler / rétablir du panneau Peinture), repères P1, P2…
 import type { FaceSelector, PaintColor, PaintMatch, PaintOp, PaintSettings, PaintTarget, PaintZone, Vec3 } from './types';
-import { DEFAULT_CREASE_DEG, PAINT_FINISHES, emptyPaint } from './types';
+import { DEFAULT_CREASE_DEG, NO_PAINT, PAINT_FINISHES, emptyPaint } from './types';
 import { cleanExterior } from './exterior';
 
 const str = (v: unknown, max = 200): string | undefined => (typeof v === 'string' && v.trim() ? v.slice(0, max) : undefined);
@@ -88,7 +88,7 @@ export function cleanPaint(v: unknown): PaintSettings {
   const o = v as Record<string, unknown>;
   const colors = (Array.isArray(o.colors) ? o.colors : []).map(cleanColor).filter((c): c is PaintColor => !!c);
   const ids = new Set(colors.map((c) => c.id));
-  const zones = (Array.isArray(o.zones) ? o.zones : []).map(cleanZone).filter((z): z is PaintZone => !!z && ids.has(z.colorId));
+  const zones = (Array.isArray(o.zones) ? o.zones : []).map(cleanZone).filter((z): z is PaintZone => !!z && (ids.has(z.colorId) || z.colorId === NO_PAINT));
   return { v: 1, colors, zones, updatedAt: str(o.updatedAt, 40) ?? '', ...(str(o.updatedBy, 120) ? { updatedBy: str(o.updatedBy, 120) } : {}) };
 }
 
@@ -109,7 +109,7 @@ export function applyOps(p: PaintSettings, ops: PaintOp[]): PaintSettings {
     } else if (o.op === 'zone.del') zones = zones.filter((z) => z.id !== o.id);
   }
   const ids = new Set(colors.map((c) => c.id));
-  zones = zones.filter((z) => ids.has(z.colorId));
+  zones = zones.filter((z) => ids.has(z.colorId) || z.colorId === NO_PAINT);
   return { ...p, colors, zones };
 }
 

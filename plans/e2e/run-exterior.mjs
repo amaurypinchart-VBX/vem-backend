@@ -96,6 +96,61 @@ const legend = await page.evaluate(() => document.querySelector('.sheet-canvas s
 check(/RAL 7047/.test(legend), 'légende PAINTING : RAL 7047');
 await page.screenshot({ path: shots + 'exterior-sheet.png' });
 
+// m² dans la légende : au choix, pour toutes les légendes du jeu (panneau Peinture)
+// texte de la légende PAINTING seulement (les notes générales du cartouche contiennent « kg/m² »)
+const legendText = () => page.evaluate(() => [...document.querySelectorAll('.sheet-canvas svg [data-item-type="paintLegend"]')].map((g) => g.textContent).join(' '));
+const areasBox = page.getByTestId('paint-legend-areas');
+check(await areasBox.isChecked(), 'case « Afficher les m² dans la légende » cochée par défaut');
+check(/m²/.test(await legendText()), 'légende : surface en m² affichée');
+await areasBox.uncheck();
+await page.waitForTimeout(500);
+check(!/m²/.test(await legendText()) && /RAL 7047/.test(await legendText()), 'm² décochés : légende sans surface, couleur toujours là');
+await areasBox.check();
+await page.waitForTimeout(500);
+check(/m²/.test(await legendText()), 'm² recochés : surface de retour');
+await areasBox.uncheck();
+await page.waitForTimeout(300);
+
+// « ⊘ Sans peinture » : gomme sur une face de la zone « côtés extérieurs » → bulle, « Sans peinture » choisi, la zone
+// extérieure reste entière (seule la pièce choisie n'est plus peinte)
+const toScreen = (x, y) =>
+  page.evaluate(([x, y]) => {
+    const m = document.querySelector('.sheet-canvas svg').getScreenCTM();
+    return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
+  }, [x, y]);
+const vpRects = await page.evaluate(() =>
+  [...document.querySelectorAll('.sheet-canvas svg [data-item-type="viewport"] clipPath rect')].map((r) => ({ x: +r.getAttribute('x'), y: +r.getAttribute('y'), w: +r.getAttribute('width'), h: +r.getAttribute('height') })),
+);
+const areaOfP1 = async () => (await page.getByTestId('paint-color-P1').innerText()).match(/(\d+,\d+) m²/)?.[1];
+const before = await areaOfP1();
+await page.getByTestId('paint-mode-eraser').click();
+let bubble = false;
+search: for (const vp of [vpRects[1], vpRects[3], vpRects[4]])
+  for (const fy of [0.5, 0.15, 0.85, 0.08, 0.92])
+    for (const fx of [0.04, 0.96, 0.5, 0.08, 0.92]) {
+      const p = await toScreen(vp.x + vp.w * fx, vp.y + vp.h * fy);
+      await page.mouse.click(p.x, p.y);
+      await page.waitForTimeout(150);
+      if (await page.getByTestId('paint-bubble').isVisible().catch(() => false)) {
+        bubble = true;
+        break search;
+      }
+    }
+check(bubble, 'gomme sur une face des côtés extérieurs : bulle (pas de suppression de toute la zone)');
+check(/\bon\b/.test((await page.getByTestId('bubble-color-none').getAttribute('class')) ?? ''), 'bulle : « ⊘ Sans peinture » présélectionné');
+await page.getByTestId('paint-target-node-box').check();
+await page.getByTestId('paint-apply').click();
+await page.waitForTimeout(1500);
+const panel = await page.getByTestId('paint-panel').innerText();
+check(/Sans peinture — /.test(panel), 'zone « ⊘ Sans peinture » listée dans le panneau');
+check(/Côtés extérieurs — toutes les Viewbox/.test(panel), 'zone « côtés extérieurs » toujours là');
+const after = await areaOfP1();
+console.log('surface P1 avant / après :', before, after);
+check(before && after && parseFloat(after.replace(',', '.')) < parseFloat(before.replace(',', '.')), 'surface peinte P1 diminuée');
+await page.screenshot({ path: shots + 'exterior-nopaint.png' });
+await page.getByTestId('paint-mode-brush').click();
+
+
 // rechargement : la zone est gardée avec le modèle (même fichier ré-analysé = même version)
 await page.reload();
 await page.getByRole('button', { name: 'Analyser' }).click();

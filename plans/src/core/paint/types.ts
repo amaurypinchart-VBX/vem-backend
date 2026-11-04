@@ -90,6 +90,13 @@ export type PaintOp =
   | { op: 'zone.put'; zone: PaintZone }
   | { op: 'zone.del'; id: string };
 
+/**
+ * « ⊘ Sans peinture » (A. Pinchart 04.11.2026 : « j'ai mis une zone en peinture et finalement il n'y a pas de peinture
+ * à cet endroit ») : une zone avec cette couleur retire la peinture des zones précédentes là où elle s'applique (la
+ * dernière zone gagne, comme pour repeindre). Pas une couleur de la palette : jamais dans la légende ni l'Excel des m².
+ */
+export const NO_PAINT = 'none';
+
 export const DEFAULT_CREASE_DEG = 30;
 export const DEFAULT_SIDE_DEG = 30;
 /** Limites (même valeurs côté serveur) */

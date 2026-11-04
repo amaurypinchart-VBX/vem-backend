@@ -64,6 +64,8 @@ import { paintOverlaySteps } from '../../linework/paintOverlay';
 import { runSliced, SlicedCancelled } from '../../linework/sliced';
 import type { PaintContext } from '../../core/paint/resolve';
 import type { PaintColor, PaintOp, PaintSettings, PaintZone } from '../../core/paint/types';
+import { NO_PAINT } from '../../core/paint/types';
+import { countTargets } from '../../core/paint/resolve';
 import { colorCode, nextTag, reassignOps } from '../../core/paint/ops';
 import type { TargetKey, TargetOption } from '../../core/paint/targets';
 import { paintBreadcrumb, targetOptions, zoneLabel } from '../../core/paint/targets';
@@ -103,6 +105,16 @@ export interface PaintBundle {
   canEditFavorites: boolean;
   userName?: string;
   onFavorites: (list: ColorDraft[]) => void;
+}
+
+const LEGEND_AREAS_KEY = 'vem_paint_legend_areas';
+/** m² dans une nouvelle légende peinture : dernier choix fait dans le panneau (oui par défaut). */
+function legendAreasPref(): boolean {
+  try {
+    return localStorage.getItem(LEGEND_AREAS_KEY) !== '0';
+  } catch {
+    return true;
+  }
 }
 
 const uid = (p: string) => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : newId(p));
@@ -171,6 +183,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [colorDialog, setColorDialog] = useState<{ edit?: PaintColor } | null>(null);
   const [exteriorOpen, setExteriorOpen] = useState(false);
+  /** redessine le panneau quand le choix « m² dans la légende » change sans légende sur le jeu */
+  const [, setPrefTick] = useState(0);
   const [bubble, setBubble] = useState<{ vp: ViewportItem; pick: FacePick; options: TargetOption[]; choice: TargetKey; at: { x: number; y: number } } | null>(null);
   const [quick, setQuick] = useState<{ on: boolean; key: TargetKey }>({ on: false, key: 'face-box' });
   const [toast, setToast] = useState('');
@@ -668,7 +682,25 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           rect = { x, y, w, h };
           break search;
         }
-    return { id: newId('g'), type: 'paintLegend', rect, lang: 'en', scope: 'sheet', areas: true };
+    return { id: newId('g'), type: 'paintLegend', rect, lang: 'en', scope: 'sheet', areas: legendAreasPref() };
+  };
+  // m² dans les légendes PAINTING (A. Pinchart 04.11.2026 : « je peux vouloir choisir de mettre les m² ou pas ») :
+  // réglé pour tout le jeu depuis le panneau Peinture, choix gardé pour les prochaines légendes
+  const paintLegends = doc.sheets.flatMap((sh) => sh.items.filter((i): i is PaintLegendItem => i.type === 'paintLegend'));
+  const legendAreas: boolean | null = paintLegends.length ? (paintLegends.every((i) => i.areas) ? true : paintLegends.every((i) => !i.areas) ? false : null) : legendAreasPref();
+  const setLegendAreas = (on: boolean) => {
+    try {
+      localStorage.setItem(LEGEND_AREAS_KEY, on ? '1' : '0');
+    } catch {
+      /* stockage indisponible : le choix vaut pour ce jeu seulement */
+    }
+    if (!paintLegends.length) {
+      setPrefTick((n) => n + 1);
+      return;
+    }
+    actions.editDoc(on ? 'm² dans les légendes peinture' : 'Sans m² dans les légendes peinture', (d) => {
+      for (const sh of d.sheets) for (const it of sh.items) if (it.type === 'paintLegend') it.areas = on;
+    });
   };
   /**
    * Aperçu (contour orange) d'une peinture provisoire (une zone) sur les vues de la planche, calculé en arrière-plan
@@ -707,6 +739,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     zones: [{ id: '__preview', colorId: '__preview', target, label: '', source: 'click', createdAt: '' }],
     updatedAt: '',
   });
+  /** couleur active encore valable : une couleur de la palette, ou « ⊘ Sans peinture » */
+  const validColor = (id: string | null): string | null => (id && (id === NO_PAINT || paint?.state.paint.colors.some((c) => c.id === id)) ? id : null);
   const applyPaint = (ops: PaintOp[], label: string) => {
     if (!paint || paint.state.disabled) return;
     paint.state.apply(ops, label);
@@ -723,9 +757,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       createdAt: new Date().toISOString(),
       ...(paint.userName ? { by: paint.userName } : {}),
     };
-    applyPaint([{ op: 'zone.put', zone }], `peinture ${color?.tag ?? ''}`);
-    setToast(`${color?.tag ?? ''} · ${color ? colorCode(color) || color.name : ''} · ${opt.label.replace(/ \(\d+\)$/, '')}${opt.count > 1 ? ` (${opt.count})` : ''}`);
-    if (!sheet.items.some((i) => i.type === 'paintLegend')) actions.addItems([paintLegend()], 'Ajouter la légende de la peinture');
+    const none = colorId === NO_PAINT;
+    applyPaint([{ op: 'zone.put', zone }], none ? 'sans peinture' : `peinture ${color?.tag ?? ''}`);
+    setToast(`${none ? '⊘ Sans peinture' : `${color?.tag ?? ''} · ${color ? colorCode(color) || color.name : ''}`} · ${opt.label.replace(/ \(\d+\)$/, '')}${opt.count > 1 ? ` (${opt.count})` : ''}`);
+    if (!none && !sheet.items.some((i) => i.type === 'paintLegend')) actions.addItems([paintLegend()], 'Ajouter la légende de la peinture');
     setBubble(null);
     showPreview(null);
   };
@@ -753,16 +788,22 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       return;
     }
     if (paintMode === 'eraser') {
-      const zone = hit && paint.state.paint.zones.find((z) => z.id === hit.zoneId);
-      // une zone « côtés extérieurs » couvre toute l'installation : on demande avant de tout retirer
-      if (zone?.target.scope === 'exterior' && !window.confirm(`Cette face fait partie de « ${zone.label} ».\n\nRetirer toute cette zone (tous les côtés extérieurs) ?`)) return;
-      if (hit) applyPaint([{ op: 'zone.del', id: hit.zoneId }], 'gomme');
-      else setToast('Cette face n’est pas peinte.');
-      return;
+      if (!hit) {
+        setToast('Cette face n’est pas peinte.');
+        return;
+      }
+      const zone = paint.state.paint.zones.find((z) => z.id === hit.zoneId);
+      // zone posée sur cette seule pièce : on la retire ; zone plus large (côtés extérieurs, toutes les Viewbox, un type…) :
+      // « ⊘ Sans peinture » ici, le reste de la zone reste peint (A. Pinchart 04.11.2026)
+      if (zone && zone.target.scope !== 'exterior' && countTargets(paint.ctx, zone.target) <= 1) {
+        applyPaint([{ op: 'zone.del', id: hit.zoneId }], 'gomme');
+        return;
+      }
+      setActiveColor(NO_PAINT);
     }
     const options = targetOptions(paint.ctx, pick.nodeId, pick.face);
-    const color = activeColor && paint.state.paint.colors.some((c) => c.id === activeColor) ? activeColor : null;
-    if (quick.on && color) {
+    const color = validColor(activeColor);
+    if (quick.on && color && paintMode !== 'eraser') {
       const opt = options.find((o) => o.key === quick.key) ?? options[0];
       addZone(vp, pick, opt, color);
       return;
@@ -770,6 +811,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const choice: TargetKey = options.some((o) => o.key === quick.key) ? quick.key : 'face-box';
     const at = { x: Math.min(lastPointer.current.x + 12, window.innerWidth - 380), y: Math.min(lastPointer.current.y + 12, window.innerHeight - 320) };
     setBubble({ vp, pick, options, choice, at });
+    if (paintMode === 'eraser') setToast('Partie d’une zone plus large : choisis où retirer la peinture, « ⊘ Sans peinture » est sélectionné.');
     showPreview(tempPaint(options.find((o) => o.key === choice)!.target), vp.id);
   };
   // zone choisie dans le panneau : montrée en orange sur les vues de la planche (recalculée quand une vue de la planche
@@ -1736,6 +1778,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
               })
             }
             onAddLegend={() => actions.addItems([paintLegend()], 'Ajouter la légende de la peinture')}
+            legendAreas={legendAreas}
+            onLegendAreas={setLegendAreas}
             onExcel={async () => {
               const { paintListXlsx } = await freshImport(() => import('../../core/paint/excel'));
               const pd = paint.painted;
@@ -1854,7 +1898,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           options={bubble.options}
           choice={bubble.choice}
           colors={paint.state.paint.colors}
-          colorId={activeColor && paint.state.paint.colors.some((c) => c.id === activeColor) ? activeColor : null}
+          colorId={validColor(activeColor)}
           quick={quick.on}
           at={bubble.at}
           onChoice={(choice) => {
@@ -1867,7 +1911,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           onApply={() => {
             const opt = bubble.options.find((o) => o.key === bubble.choice)!;
             if (quick.on) setQuick({ on: true, key: bubble.choice });
-            if (activeColor) addZone(bubble.vp, bubble.pick, opt, activeColor);
+            const col = validColor(activeColor);
+            if (col) addZone(bubble.vp, bubble.pick, opt, col);
           }}
           onClose={() => {
             setBubble(null);

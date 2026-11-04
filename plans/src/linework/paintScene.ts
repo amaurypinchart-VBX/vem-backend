@@ -9,8 +9,10 @@ import { selectTriangles } from '../core/paint/region';
 import type { PaintContext, ResolvedZone } from '../core/paint/resolve';
 import { paintContext, resolvePaint } from '../core/paint/resolve';
 import type { PaintSettings, Vec3 } from '../core/paint/types';
+import { NO_PAINT } from '../core/paint/types';
 import type { GlassTest } from './packets';
-import { exteriorSelection, exteriorSides, exteriorSurvey } from './paintExterior';
+import { exteriorInfo, exteriorSelection, exteriorSurvey } from './paintExterior';
+import type { ExteriorTri } from './paintExterior';
 
 /** Triangles d'une pièce : repère propre (mm), passage au monde, maillages d'origine. */
 export interface NodeSoup {
@@ -148,6 +150,7 @@ export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: Paint
   const exterior = paint.zones.some((z) => z.target.scope === 'exterior') ? exteriorSurvey(scene, c, isGlass) : null;
   const exteriorZones = new Set(paint.zones.filter((z) => z.target.scope === 'exterior').map((z) => z.id));
   const exteriorOut = new Map<string, Map<number, Vec3>>();
+  const clearedArea = new Map<string, number>();
   const nodes = new Map<string, Map<number, { colorId: string; zoneId: string }>>();
   const touched = new Set<string>();
   for (const [nodeId, zones] of resolved) {
@@ -166,30 +169,43 @@ export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: Paint
       }
       if (!sel?.length) continue;
       touched.add(z.zoneId);
-      for (const t of sel) tris.set(t, { colorId: z.colorId, zoneId: z.zoneId });
+      if (z.colorId === NO_PAINT) {
+        // retire seulement ce qui était peint jusque-là (sa surface = ce qu'elle a vraiment retiré)
+        for (const t of sel) if (tris.has(t) && tris.get(t)!.colorId !== NO_PAINT) tris.set(t, { colorId: NO_PAINT, zoneId: z.zoneId });
+      } else for (const t of sel) tris.set(t, { colorId: z.colorId, zoneId: z.zoneId });
     }
+    // « Sans peinture » gagnant : le triangle n'est plus peint (sa surface est comptée sur la zone qui l'a retiré)
+    for (const [t, v] of tris)
+      if (v.colorId === NO_PAINT) {
+        tris.delete(t);
+        const nt = nodeTriangles(scene, nodeId);
+        if (nt) clearedArea.set(v.zoneId, (clearedArea.get(v.zoneId) ?? 0) + worldArea(nt, t) / 1e6);
+      }
     if (tris.size) nodes.set(nodeId, tris);
     // côté (normale sortante) de chaque triangle encore peint par une zone « côtés extérieurs »
     if (exterior && tris.size) {
-      const side = exteriorSides(exterior).get(nodeId);
-      if (side) {
+      const info = exteriorInfo(exterior).get(nodeId);
+      if (info) {
         const outs = new Map<number, Vec3>();
         for (const [t, { zoneId }] of tris) {
-          const k = exteriorZones.has(zoneId) ? side.get(t) : undefined;
-          if (k !== undefined) outs.set(t, exterior.sides[k].out);
+          const x = exteriorZones.has(zoneId) ? info.get(t) : undefined;
+          if (x) outs.set(t, exterior.sides[x.side].out);
         }
         if (outs.size) exteriorOut.set(nodeId, outs);
       }
     }
   }
-  const areaByZone = new Map<string, number>();
+  const areaByZone = new Map<string, number>(clearedArea);
   const areaByColor = new Map<string, number>();
   const areaByColorModule = new Map<string, Map<string, number>>();
   for (const [nodeId, tris] of nodes) {
     const nt = nodeTriangles(scene, nodeId)!;
     const mod = c.paths.moduleOf(nodeId) ?? c.byId.get(nodeId)?.moduleId ?? '—';
+    // surfaces des côtés extérieurs déjà mesurées par le relevé (pas de relecture des maillages à chaque action)
+    const info: Map<number, ExteriorTri> | undefined = exterior ? exteriorInfo(exterior).get(nodeId) : undefined;
     for (const [t, { colorId, zoneId }] of tris) {
-      const a = worldArea(nt, t) / 1e6;
+      const known = exteriorZones.has(zoneId) ? info?.get(t) : undefined;
+      const a = (known ? known.area : worldArea(nt, t)) / 1e6;
       areaByZone.set(zoneId, (areaByZone.get(zoneId) ?? 0) + a);
       areaByColor.set(colorId, (areaByColor.get(colorId) ?? 0) + a);
       const pm = areaByColorModule.get(colorId) ?? new Map<string, number>();

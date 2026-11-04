@@ -2,10 +2,14 @@
 // pipette / gomme, zones peintes par couleur (surface, ⚠ sans effet), affichage sur les vues, légende.
 import { useState } from 'react';
 import type { PaintColor, PaintSettings } from '../../core/paint/types';
+import { NO_PAINT } from '../../core/paint/types';
 import { colorCode } from '../../core/paint/ops';
 import type { PaintedScene } from '../../linework/paintScene';
 
 export type PaintMode = 'brush' | 'pipette' | 'eraser';
+
+/** ligne « ⊘ Sans peinture » de la liste des zones (zones qui retirent la peinture à un endroit) */
+const NONE_ROW: PaintColor = { id: NO_PAINT, tag: '⊘', name: 'Sans peinture', system: 'autre', hex: '#FFFFFF', createdAt: '' };
 
 const m2 = (v: number) => `${v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`;
 
@@ -31,6 +35,8 @@ export function PaintPanel({
   onSelectZone,
   onDisplayAll,
   onAddLegend,
+  legendAreas,
+  onLegendAreas,
   onExcel,
   onClose,
 }: {
@@ -59,6 +65,9 @@ export function PaintPanel({
   onDisplayAll: (mode: 'marks' | 'fill' | 'off') => void;
   onExcel: () => void;
   onAddLegend: () => void;
+  /** m² dans les légendes PAINTING du jeu : true / false, null = mélange */
+  legendAreas: boolean | null;
+  onLegendAreas: (on: boolean) => void;
   onClose: () => void;
 }) {
   const [menu, setMenu] = useState<string | null>(null);
@@ -157,20 +166,31 @@ export function PaintPanel({
             );
           })}
         </div>
+        <button
+          className={`paint-color-main paint-none${active === NO_PAINT ? ' on' : ''}`}
+          data-testid="paint-color-none"
+          onClick={() => onActive(NO_PAINT)}
+          title="Tape ensuite une face : la peinture posée avant y est retirée (pas de peinture spéciale), le reste des zones reste peint"
+        >
+          <i style={{ background: 'repeating-linear-gradient(45deg, #fff 0 3px, #bbb 3px 5px)' }} />
+          <b>⊘</b>
+          <span className="nm">Sans peinture (retirer à un endroit)</span>
+        </button>
         {!!paint.zones.length && (
           <>
             <div className="prop-title" style={{ marginTop: 6 }}>
               Zones peintes
             </div>
             <div className="paint-zones">
-              {paint.colors.map((c) =>
+              {[...paint.colors, NONE_ROW].map((c) =>
                 zonesOf(c).map((z) => {
                   const dead = painted?.noEffect.has(z.id);
                   return (
                     <div key={z.id} className={`paint-zone${selectedZone === z.id ? ' on' : ''}${dead ? ' dead' : ''}`}>
                       <button className="paint-zone-main" onClick={() => onSelectZone(selectedZone === z.id ? null : z.id)} title={dead ? 'Cette zone ne touche plus rien (modèle changé)' : 'Montrer la zone'}>
-                        <i style={{ background: c.hex }} />
+                        <i style={{ background: c.id === NO_PAINT ? 'repeating-linear-gradient(45deg, #fff 0 3px, #bbb 3px 5px)' : c.hex }} />
                         <span className="nm">
+                          {c.id === NO_PAINT && '⊘ Sans peinture — '}
                           {dead && '⚠ '}
                           {z.label}
                         </span>
@@ -203,6 +223,18 @@ export function PaintPanel({
         <button className="btn small" onClick={onAddLegend}>
           ＋ Légende « PAINTING » sur la planche
         </button>
+        <label className="check" title="Surface peinte à côté de chaque couleur, dans toutes les légendes PAINTING du jeu (et les prochaines)">
+          <input
+            type="checkbox"
+            data-testid="paint-legend-areas"
+            checked={legendAreas === true}
+            ref={(el) => {
+              if (el) el.indeterminate = legendAreas === null;
+            }}
+            onChange={(e) => onLegendAreas(e.target.checked)}
+          />
+          Afficher les m² dans la légende{legendAreas === null ? ' (selon la planche)' : ''}
+        </label>
         <button className="btn small" disabled={!paint.colors.length} onClick={onExcel} data-testid="paint-excel">
           ⬇ Liste peinture (Excel)
         </button>

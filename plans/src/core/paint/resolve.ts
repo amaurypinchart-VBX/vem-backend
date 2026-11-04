@@ -4,6 +4,7 @@ import type { NodeInfo, SceneIndex } from '../types';
 import type { PathIndex } from '../customViews/paths';
 import { makePathIndex, segmentOf } from '../customViews/paths';
 import type { PaintMatch, PaintSettings, PaintTarget } from './types';
+import { NO_PAINT } from './types';
 
 export interface ResolvedZone {
   zoneId: string;
@@ -71,7 +72,7 @@ export function resolvePaint(ctx: PaintContext, paint: PaintSettings): Map<strin
   const out = new Map<string, ResolvedZone[]>();
   const colors = new Set(paint.colors.map((c) => c.id));
   for (const z of paint.zones) {
-    if (!colors.has(z.colorId)) continue;
+    if (!colors.has(z.colorId) && z.colorId !== NO_PAINT) continue;
     const meshes = z.target.scope === 'exterior' ? exteriorCandidates(ctx, z.target) : resolveMeshes(ctx, z.target);
     for (const id of new Set(meshes)) {
       const l = out.get(id) ?? [];

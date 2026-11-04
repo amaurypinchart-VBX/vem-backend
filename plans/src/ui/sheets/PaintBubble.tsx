@@ -1,6 +1,7 @@
 // Bulle après un clic sur une face (outil Peinture) : fil d'Ariane, cible avec le nombre de pièces touchées, couleur,
 // « Appliquer », « Application rapide » (les clics suivants appliquent la même cible et la même couleur).
 import type { PaintColor } from '../../core/paint/types';
+import { NO_PAINT } from '../../core/paint/types';
 import { colorCode } from '../../core/paint/ops';
 import type { TargetKey, TargetOption } from '../../core/paint/targets';
 
@@ -64,6 +65,14 @@ export function PaintBubble({
             {c.tag}
           </button>
         ))}
+        <button
+          className={`paint-dot${colorId === NO_PAINT ? ' on' : ''}`}
+          title="Pas de peinture spéciale ici : retire la peinture des zones posées avant (le reste de ces zones reste peint)"
+          onClick={() => onColor(NO_PAINT)}
+          data-testid="bubble-color-none"
+        >
+          <i style={{ background: 'repeating-linear-gradient(45deg, #fff 0 3px, #bbb 3px 5px)' }} />⊘ Sans peinture
+        </button>
         <button className="btn small" onClick={onNewColor}>
           ＋ Couleur
         </button>

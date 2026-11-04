@@ -4,6 +4,7 @@ import type { XCell, XSheet, XStyle } from '../../loading/xlsx/write';
 import { writeXlsx } from '../../loading/xlsx/write';
 import { colorCode } from './ops';
 import type { PaintSettings } from './types';
+import { NO_PAINT } from './types';
 
 export interface PaintAreas {
   byColor: Map<string, number>;
@@ -69,7 +70,7 @@ export function paintListSheets(paint: PaintSettings, areas: PaintAreas, title: 
       ...paint.zones.map((z) => {
         const col = paint.colors.find((x) => x.id === z.colorId);
         const dead = areas.noEffect.has(z.id);
-        return [c(col?.tag ?? ''), c(col ? colorCode(col) : ''), c(z.label), c(dead ? null : r2(areas.byZone.get(z.id) ?? 0)), { v: dead ? 'sans effet' : 'ok', s: dead ? 'warn' : 'cell' } as XCell];
+        return [c(col?.tag ?? (z.colorId === NO_PAINT ? '⊘' : '')), c(col ? colorCode(col) : z.colorId === NO_PAINT ? 'Sans peinture' : ''), c(z.label), c(dead ? null : r2(areas.byZone.get(z.id) ?? 0)), { v: dead ? 'sans effet' : 'ok', s: dead ? 'warn' : 'cell' } as XCell];
       }),
     ],
   };

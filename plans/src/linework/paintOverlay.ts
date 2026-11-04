@@ -142,6 +142,7 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
   const e2 = new Vector3();
   const n = new Vector3();
   const groups = new Map<string, FaceGroup>();
+  let seenTris = 0;
   let bx0 = Infinity;
   let by0 = Infinity;
   let bx1 = -Infinity;
@@ -152,7 +153,17 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
     if (!nt || !tris) continue;
     const mod = moduleOfNode(painted.ctx, id);
     const outs = painted.exteriorOut?.get(id);
+    // étape courte toutes les 2 000 faces : une zone « côtés extérieurs » en compte des centaines de milliers sur un gros
+    // modèle, d'un seul tenant la page se figeait à chaque coup de pinceau
+    if (++seenTris > 2000) {
+      seenTris = 0;
+      yield;
+    }
     for (const [t, { colorId, zoneId }] of tris) {
+      if (++seenTris > 2000) {
+        seenTris = 0;
+        yield;
+      }
       if (inp.only && !inp.only.has(colorId)) continue;
       // côté extérieur d'une box : on sait de quel côté il se voit — tourné à l'opposé de la vue, il ne se voit pas
       const out = outs?.get(t);

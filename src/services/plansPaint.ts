@@ -3,6 +3,9 @@
 // identifiant (deux personnes qui peignent en même temps ne s'écrasent pas). Même logique que
 // plans/src/core/paint/ops.ts `applyOps` (les deux côtés ne peuvent pas s'importer : build Docker séparé).
 
+/** zone « Sans peinture » (même valeur que plans/src/core/paint/types.ts NO_PAINT) */
+export const NO_PAINT = 'none';
+
 export const PAINT_LIMITS = { colors: 200, zones: 5000, bytes: 150_000, ops: 2000 };
 
 type Obj = Record<string, unknown>;
@@ -60,7 +63,8 @@ export function applyPaintOps(p: PaintDoc, ops: ReturnType<typeof cleanOps>, by?
     } else if (o.op === 'zone.del') zones = zones.filter((z) => z.id !== o.id);
   }
   const ids = new Set(colors.map((c) => c.id));
-  zones = zones.filter((z) => ids.has(z.colorId));
+  // colorId 'none' = « Sans peinture » (retire la peinture des zones précédentes à cet endroit) : pas dans la palette
+  zones = zones.filter((z) => ids.has(z.colorId as string) || z.colorId === NO_PAINT);
   if (colors.length > PAINT_LIMITS.colors) throw new Error(`Plus de ${PAINT_LIMITS.colors} couleurs`);
   if (zones.length > PAINT_LIMITS.zones) throw new Error(`Plus de ${PAINT_LIMITS.zones} zones peintes`);
   const out: PaintDoc = { v: 1, colors, zones, updatedAt: new Date().toISOString(), ...(by ? { updatedBy: by } : {}) };
