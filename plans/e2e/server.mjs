@@ -5,7 +5,10 @@
 //   node e2e/run-sheets.mjs        (autre terminal)
 // FAIL_UPLOADS=n : les n premiers envois de morceaux du paquet 3D sont refusés (comme Cloudinary > 10 Mo).
 import http from 'node:http';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { fork } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { gunzipSync } from 'node:zlib';
 import { join, extname, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -74,11 +77,21 @@ const projectFiles = [];
 // vues 2D partagées (PUT / GET / HEAD /plans/linework/:key) ; GET /__test/linework = nombre de vues reçues
 const sharedLinework = new Map();
 
+// PDF fait par le serveur : même rendu compilé que le backend (../plans-server, `vite build -c vite.server.config.ts`) ;
+// NO_SERVER_PDF=1 = absent (export dans le navigateur). GET /__test/pdf-jobs = tâches terminées.
+const RENDERER = join(here, '..', '..', 'plans-server', 'pdf-render.mjs');
+const pdfJobs = new Map();
+const pdfDone = [];
+let pdfSeq = 0;
+const pdfAvailable = () => !process.env.NO_SERVER_PDF && existsSync(RENDERER);
+const pdfStatus = (j) => ({ id: j.id, status: j.status, page: j.page, pages: j.pages, detail: j.detail, message: j.message, size: j.size, failedImages: j.failedImages, missingViews: j.missingViews });
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   if (p === '/__test/project-files') return json(res, projectFiles);
   if (p === '/__test/linework') return json(res, { count: sharedLinework.size });
+  if (p === '/__test/pdf-jobs') return json(res, pdfDone);
   if (p.startsWith('/api/v1/')) {
     if (req.headers.authorization !== 'Bearer tok') return json(res, 'Non autorisé', 401);
     const a = p.slice(7);
@@ -94,6 +107,74 @@ http.createServer(async (req, res) => {
       if (!b) { res.writeHead(204); return res.end(); }
       res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
       return res.end(req.method === 'HEAD' ? undefined : b);
+    }
+    if (a === '/plans/pdf-jobs/available') return json(res, { available: pdfAvailable() });
+    if (a === '/plans/project/p1/pdf-jobs' && req.method === 'POST') {
+      if (!pdfAvailable()) return json(res, 'absent', 503);
+      const { manifest } = JSON.parse((await body(req)).toString());
+      // images du faux serveur : adresses relatives → absolues pour le processus de rendu
+      for (const s of manifest.sheets) for (const i of s.items) if (i.type === 'image3d' && i.url?.startsWith('/')) i.url = `http://localhost:${PORT}${i.url}`;
+      const id = `job${++pdfSeq}`;
+      const dir = mkdtempSync(join(tmpdir(), 'vem-e2e-pdf-'));
+      mkdirSync(join(dir, 'views'));
+      mkdirSync(join(dir, 'lw'));
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest));
+      if (process.env.PDF_DEBUG) for (const s of manifest.sheets) for (const i of s.items) if (i.type === 'viewport') console.log(`[server] fenêtre ${i.id} ${s.number} ${i.label ?? ''} ${JSON.stringify(i.request.view)} ${i.frameView ? 'cadre' : ''} ${i.custom ? 'custom' : ''} ${i.request.floorCut ?? ''} ${i.lineworkKey ? 'clé' : 'SANS-CLÉ'}`);
+      pdfJobs.set(id, { id, dir, keys: [], status: 'waiting', fileName: manifest.fileName, uploaded: 0, views: 0 });
+      return json(res, { id }, 201);
+    }
+    const pj = a.match(/^\/plans\/pdf-jobs\/([a-z0-9]+)(?:\/(missing|start|file|save|linework|views)(?:\/([^/]+))?)?$/);
+    if (pj && pdfJobs.has(pj[1])) {
+      const j = pdfJobs.get(pj[1]);
+      const what = pj[2];
+      if (what === 'missing') {
+        const { keys } = JSON.parse((await body(req)).toString());
+        j.keys = keys;
+        return json(res, { missing: keys.filter((k) => !sharedLinework.has(k)) });
+      }
+      if (what === 'linework') { writeFileSync(join(j.dir, 'lw', `${pj[3]}.bin`), await body(req)); j.uploaded++; return json(res, { key: pj[3] }); }
+      if (what === 'views') {
+        const b = await body(req);
+        writeFileSync(join(j.dir, 'views', `${pj[3]}.bin`), b);
+        j.views++;
+        if (process.env.PDF_DEBUG) {
+          const raw = gunzipSync(b);
+          const head = JSON.parse(raw.subarray(8, 8 + raw.readUInt32LE(4)).toString());
+          console.log(`[server] vue ${pj[3]} : clé ${head.key ? head.key.slice(0, 12) : '—'} ${head.error ?? ''} ${head.paint ? 'peinte' : ''}`);
+        }
+        return json(res, null);
+      }
+      if (what === 'start') {
+        const o = JSON.parse((await body(req)).toString());
+        writeFileSync(join(j.dir, 'options.json'), JSON.stringify(o));
+        for (const k of j.keys) if (sharedLinework.has(k) && !existsSync(join(j.dir, 'lw', `${k}.bin`))) writeFileSync(join(j.dir, 'lw', `${k}.bin`), sharedLinework.get(k));
+        Object.assign(j, { status: 'running', page: 0, pages: undefined, size: undefined, message: undefined, options: o });
+        const child = fork(RENDERER, [j.dir], { execArgv: ['--max-old-space-size=1024', '--expose-gc'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+        j.child = child;
+        child.on('message', (m) => {
+          if (m.type === 'progress') Object.assign(j, { page: m.page, pages: m.pages });
+          else if (m.type === 'done') Object.assign(j, { status: 'done', size: m.size, failedImages: m.failedImages, missingViews: m.missingViews });
+          else if (m.type === 'error') j.message = m.message;
+        });
+        child.on('exit', (code) => {
+          j.child = null;
+          if (j.status !== 'done') Object.assign(j, { status: 'error', message: j.message ?? `code ${code}` });
+          else pdfDone.push({ id: j.id, size: j.size, uploaded: j.uploaded, views: j.views, keys: j.keys.length, options: j.options, missingViews: j.missingViews, failedImages: j.failedImages });
+          console.log(`[server] PDF ${j.id} : ${j.status} ${j.size ?? ''} o ${j.message ?? ''}`);
+        });
+        return json(res, pdfStatus(j));
+      }
+      if (what === 'file') { const b = readFileSync(join(j.dir, 'out.pdf')); res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': b.length }); return res.end(b); }
+      if (what === 'save') {
+        const b = readFileSync(join(j.dir, 'out.pdf'));
+        const key = 'file-' + blobs.size;
+        blobs.set(key, { buf: b, type: 'application/pdf' });
+        const row = { id: key, projectId: 'p1', fileName: j.fileName, fileUrl: '/blob/' + key, fileSize: b.length, category: 'plans', createdAt: new Date().toISOString(), serverPdf: true };
+        projectFiles.push(row);
+        return json(res, row, 201);
+      }
+      if (req.method === 'DELETE') { j.child?.kill('SIGKILL'); pdfJobs.delete(j.id); rmSync(j.dir, { recursive: true, force: true }); return json(res, null); }
+      return json(res, pdfStatus(j));
     }
     if (a === '/plans/ai/status') return json(res, { enabled: true, model: 'mock-haiku' });
     if (a === '/plans/ai/view' && req.method === 'POST') {

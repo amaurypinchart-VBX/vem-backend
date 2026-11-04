@@ -190,6 +190,19 @@ export class LineworkBank {
     return this.keys.get(this.reqKey(vp));
   }
 
+  /**
+   * Clé des traits dessinés d'une fenêtre dans le cache partagé du serveur (vue décorée comprise) ; vue spéciale = sa
+   * clé locale (jamais sur le serveur : envoyée avec le PDF). undefined = vue impossible (base introuvable…).
+   */
+  async serverKey(vp: ViewportItem): Promise<string | undefined> {
+    try {
+      const key = await this.keyFor(vp);
+      return vp.custom ? key : await this.provider.displayKey(vp.request);
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Clé de calcul d'une fenêtre (sans calculer ses traits). */
   async keyFor(vp: ViewportItem): Promise<string> {
     const reqKey = this.reqKey(vp);
@@ -332,13 +345,15 @@ export class LineworkBank {
    * la retrouve ensuite toute prête. Avant, paintOf la calculait d'un seul bloc au milieu de l'export (vue de toute
    * l'installation peinte = plusieurs secondes figées et des centaines de Mo d'un coup sur un très gros modèle).
    */
-  async preparePaint(vps: ViewportItem[], cancelled: () => boolean = () => false): Promise<void> {
+  async preparePaint(vps: ViewportItem[], cancelled: () => boolean = () => false, opts: { withoutLinework?: boolean } = {}): Promise<void> {
     for (const vp of vps) {
+      // PDF du serveur : la clé suffit (la peinture ne lit pas les traits, seulement la base de la vue et la scène)
+      if (opts.withoutLinework) await this.keyFor(vp);
       const src = this.paintSrc;
       const base = this.paintBase(vp);
       if (!src || !base || this.currentPaint(base) || vp.paint === 'off') continue;
       const basis = this.data(vp).basis;
-      if (!basis || !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw) continue;
+      if (!basis || (!opts.withoutLinework && !this.entries.get(this.entryKey(this.keyOf(vp)!, vp))?.lw)) continue;
       const meshIds = subsetMeshes(this.scene, vp.request.subset);
       const job = paintOverlaySteps({ scene: this.scene, painted: src.painted, meshIds, basis, isGlass: src.isGlass, glassTransparent: vp.request.style.glassTransparent !== false });
       try {

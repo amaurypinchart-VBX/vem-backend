@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build && node scripts/build-rbz.mjs",
+    "build": "tsc --noEmit && vite build && vite build -c vite.server.config.ts && node scripts/build-rbz.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e:fixture": "E2E_FIXTURE_OUT=e2e/fixture.zip vitest run tests/e2e-fixture.test.ts",

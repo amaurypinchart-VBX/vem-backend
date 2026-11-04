@@ -21,11 +21,20 @@ function typedName(v: unknown): TypedName | null {
 
 const MAGIC = [0x56, 0x4c, 0x57, 0x31]; // VLW1
 
-export function encodeLinework(lw: Linework2D): Uint8Array {
+export function encodeLinework(lw: Linework2D, level: 1 | 3 | 6 = 6): Uint8Array {
+  return encodePacked(lw, level);
+}
+
+export function decodeLinework(bytes: Uint8Array): Linework2D {
+  return decodePacked<Linework2D>(bytes);
+}
+
+/** Objet JSON contenant des tableaux typés → binaire compressé (format VLW1, nombres copiés à l'identique). */
+export function encodePacked(value: unknown, level: 1 | 3 | 6 = 6): Uint8Array {
   const arrays: Typed[] = [];
   let offset = 0;
   const offsets: number[] = [];
-  const header = JSON.stringify(lw, function (_k, v) {
+  const header = JSON.stringify(value, function (_k, v) {
     const t = typedName(v);
     if (!t) return v;
     const a = v as Typed;
@@ -43,10 +52,10 @@ export function encodeLinework(lw: Linework2D): Uint8Array {
   new DataView(out.buffer).setUint32(4, head.length, true);
   out.set(head, 8);
   arrays.forEach((a, i) => out.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), start + offsets[i]));
-  return gzipSync(out, { level: 6 });
+  return gzipSync(out, { level });
 }
 
-export function decodeLinework(bytes: Uint8Array): Linework2D {
+export function decodePacked<T>(bytes: Uint8Array): T {
   const raw = gunzipSync(bytes);
   if (raw.length < 8 || MAGIC.some((m, i) => raw[i] !== m)) throw new Error('Vue partagée illisible');
   const len = new DataView(raw.buffer, raw.byteOffset, raw.byteLength).getUint32(4, true);
@@ -60,7 +69,7 @@ export function decodeLinework(bytes: Uint8Array): Linework2D {
     const copy = new Uint8Array(bytesLen);
     copy.set(raw.subarray(start + v.o, start + v.o + bytesLen));
     return new C(copy.buffer);
-  }) as Linework2D;
+  }) as T;
 }
 
 /** Vue partagée la plus lourde envoyée au serveur (après compression). */

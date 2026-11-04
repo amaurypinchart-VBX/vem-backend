@@ -9,6 +9,7 @@ import type { MaterialSearchResult } from '../structure/core/composite';
 import type { SceneIndex, Warning, IngestStats, ClassificationRules } from '../core/types';
 import type { FrontSide, Vec3 } from '../core/views';
 import { unpackPackage } from '../ingest/package';
+import type { PdfJobManifest, PdfJobOptions, PdfJobStatus } from '../sheets/pdf/serverJob';
 
 const params = new URLSearchParams(window.location.search);
 export const PROJECT_ID = params.get('projectId') ?? '';
@@ -333,6 +334,14 @@ export const vem = {
     fd.append('file', blob, fileName);
     return api<{ id: string; fileUrl: string }>('POST', `/plans/project/${projectId}/files`, fd);
   },
+  /** PDF du jeu fait par le serveur (voir sheets/pdf/serverExport.ts) */
+  pdfJobAvailable: () => api<{ available: boolean }>('GET', '/plans/pdf-jobs/available'),
+  pdfJobCreate: (projectId: string, manifest: PdfJobManifest) => api<{ id: string }>('POST', `/plans/project/${projectId}/pdf-jobs`, { manifest }),
+  pdfJobMissing: (id: string, keys: string[]) => api<{ missing: string[] }>('POST', `/plans/pdf-jobs/${id}/missing`, { keys }),
+  pdfJobStart: (id: string, options: PdfJobOptions) => api<PdfJobStatus>('POST', `/plans/pdf-jobs/${id}/start`, options),
+  pdfJobStatus: (id: string) => api<PdfJobStatus>('GET', `/plans/pdf-jobs/${id}`),
+  pdfJobSave: (id: string) => api<{ id: string; fileUrl: string }>('POST', `/plans/pdf-jobs/${id}/save`),
+  pdfJobDelete: (id: string) => api<null>('DELETE', `/plans/pdf-jobs/${id}`),
   loadingRules: () => api<ServerRuleRow[]>('GET', '/loading/rules'),
   saveLoadingRule: (rule: LoadingRule, reason: string, projectId?: string, listId?: string | null) =>
     api<ServerRuleRow>('POST', '/loading/rules', { rule, reason, projectId: projectId || undefined, listId: listId || undefined }),
@@ -467,4 +476,24 @@ export async function putSharedLinework(key: string, modelKey: string, bytes: Ui
     headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' },
     body: new Blob([bytes as BlobPart]),
   });
+}
+
+/** PDF du serveur : envoie des traits (`linework`) ou les données d'une fenêtre de vue (`views`), binaire gzip. */
+export async function putPdfJobPart(id: string, kind: 'linework' | 'views', name: string, bytes: Uint8Array): Promise<void> {
+  const r = await fetch(`/api/v1/plans/pdf-jobs/${id}/${kind}/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' },
+    body: new Blob([bytes as BlobPart]),
+  });
+  if (!r.ok) {
+    const json = (await r.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(json?.error || `Envoi au serveur impossible (HTTP ${r.status})`, r.status);
+  }
+}
+
+/** PDF terminé par le serveur. */
+export async function getPdfJobFile(id: string): Promise<Blob> {
+  const r = await fetch(`/api/v1/plans/pdf-jobs/${id}/file`, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new ApiError(`PDF du serveur illisible (HTTP ${r.status})`, r.status);
+  return new Blob([await r.arrayBuffer()], { type: 'application/pdf' });
 }

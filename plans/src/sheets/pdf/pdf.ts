@@ -67,6 +67,8 @@ const MARK_Y = -123450000;
 export class PdfLines implements PdfLineSink {
   private items = new Map<number, Float64Array[]>();
   private next = 0;
+  /** nombres écrits dans le PDF depuis la dernière lecture (taille du morceau en cours, voir buildPdfBlob) */
+  written = 0;
   add(polylines: Float64Array[]): string {
     const i = this.next++;
     this.items.set(i, polylines);
@@ -98,6 +100,7 @@ function hookLines(pdf: jsPDF, lines: PdfLines | undefined): void {
     let buf: string[] = [];
     for (const pl of pls) {
       if (pl.length < 4) continue;
+      lines.written += pl.length;
       if (!raw) {
         moveTo(pl[0], pl[1]);
         for (let i = 2; i < pl.length; i += 2) lineTo(pl[i], pl[i + 1]);
@@ -199,8 +202,11 @@ export async function buildPdfBlob(
       host.innerHTML = markup;
       const svg = host.querySelector('svg');
       if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);
+      if (opts.lines) opts.lines.written = 0;
       await svg2pdf(svg, pdf, { x: 0, y: 0, width: w, height: h });
       host.innerHTML = '';
+      // traits écrits directement (hors SVG) : ≈ 8 caractères par nombre dans la page
+      if (opts.lines) chars += opts.lines.written * 8;
       // page refaite à chaque fois (fonction) : ses traits écrits ne servent plus (la vue peut quitter la mémoire)
       if (typeof src === 'function') opts.lines?.clear();
       onPage?.(i + 1, pages.length);
