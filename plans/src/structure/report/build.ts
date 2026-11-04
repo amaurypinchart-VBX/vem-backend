@@ -310,6 +310,15 @@ export function buildReport(inp: ReportInput): ReportOutput {
         rows: c.types.map((t) => [E(t.label), String(t.reactions.length), kN(t.Rzk), kN(t.RzEd), t.chosen ? E(t.chosen.summary) + (t.standard ? '' : ` (${E('hors standard')})`) : L.noStandardSolution, t.chosen ? etaCell(t.chosen.eta) : verdictCell('fail')]),
       },
     ];
+    if (c.slab) {
+      const w = c.slab.worst;
+      out.push({
+        t: 'para',
+        text: E(`Dalle en charge répartie admissible ${N((c.slab.bearing * 1e6) / 9.81, 0)} kg/m² : ensemble de l’installation ${N((c.slab.global.q * 1e6) / 9.81, 0)} kg/m²${w ? ` ; zone la plus chargée ${w.id} : ${N((w.q * 1e6) / 9.81, 0)} kg/m² (η = ${N(w.eta)})` : ''}.`),
+        bold: true,
+        size: SIZE.small,
+      });
+    }
     if (c.remedy) out.push({ t: 'para', text: `${L.chosenSolution} : ${E(c.remedy.remedy.title)} — ${E(c.remedy.remedy.summary)}`, bold: true, size: SIZE.small });
     else if (c.longrine) out.push({ t: 'para', text: `${L.longrine} : ${E(c.longrine.solution.summary)} (η = ${N(c.longrine.result.eta)}).`, size: SIZE.small });
     out.push({

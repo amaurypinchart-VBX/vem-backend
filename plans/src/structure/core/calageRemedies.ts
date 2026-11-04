@@ -386,6 +386,7 @@ export function evaluateRemedy(inp: CalageInput, res: CalageResult, applied: App
 export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemedy[] {
   const failing = res.checks.filter((c) => c.eta > 1);
   if (!failing.length || !(inp.bearing > 0)) return [];
+  if (inp.bearingMode === 'distributed' && res.slab) return slabRemedies(inp, res);
   const out: CalageRemedy[] = [];
   const u = rowAxis(inp);
   const q = inp.bearing;
@@ -608,3 +609,36 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
 
 /** Masse volumique C24 (kg/m³), pour l'affichage. */
 export const SLEEPER_RHO = C24.rho;
+
+/**
+ * Dalle en charge répartie : ce qui fait baisser la charge au m² des zones trop chargées. Les plaques sous les pieds
+ * n'y changent presque rien (seule la surface de dalle chargée compte) : alléger ou agrandir la surface chargée.
+ */
+function slabRemedies(inp: CalageInput, res: CalageResult): CalageRemedy[] {
+  const slab = res.slab!;
+  const over = slab.zones.filter((z) => z.eta > 1).sort((a, b) => b.eta - a.eta);
+  const kg = (q: number) => `${f((q * 1e6) / G, 0)} kg/m²`;
+  const blocksKg = res.checks.reduce((a, c) => a + (c.block?.massKg ?? 0), 0);
+  const details = over.slice(0, 8).map((z) => `${z.id} : ${f(z.load / 1e3, 1)} kN sur ${f(z.area / 1e6, 2)} m² → ${kg(z.q)} ; pour ${kg(inp.bearing)} il faudrait ${f(z.load / inp.bearing / 1e6, 2)} m² de dalle ou ${f(Math.max(0, z.load - inp.bearing * z.area) / G, 0)} kg de moins.`);
+  const levers = [
+    slab.global.eta > 1
+      ? `L’ensemble de l’installation dépasse déjà (${kg(slab.global.q)} > ${kg(inp.bearing)}) : il faut alléger ou couvrir une plus grande surface de dalle (plateau qui dépasse de l’installation).`
+      : `L’ensemble de l’installation passe (${kg(slab.global.q)}) : il faut mieux répartir les pieds les plus chargés sur la dalle — plateau de madriers ou plaques de roulage rigides qui relient les zones (et dépassent de l’installation au droit des angles).`,
+    'Installation à l’intérieur ou abritée : vent à 0 à l’étape 2 — les pieds d’angle (pire cas = vent) se déchargent nettement.',
+    ...(blocksKg > 0 ? [`Blocs dessinés : ${f(blocksKg, 0)} kg posés sur la dalle — des cales plus légères allègent d’autant.`] : []),
+    inp.publicLimit ? `Public déjà limité à ${inp.publicLimit.persons} personne(s).` : 'Limiter le public (étape 2, « Public pour le sol »).',
+    'Demander à l’exploitant la charge ponctuelle admissible et la portée de la dalle : avec elles, un calcul de la dalle (moments) remplace ce contrôle zone par zone.',
+  ];
+  return [
+    {
+      key: 'load',
+      title: 'Dalle : faire baisser la charge au m² des zones trop chargées',
+      verdict: 'info',
+      summary: `${over.length} zone(s) de dalle au-dessus de ${kg(inp.bearing)} ; la plus chargée : ${over[0]?.id ?? '—'} ${over[0] ? kg(over[0].q) : ''}.`,
+      details: [...details, ...levers],
+      materials: [],
+      records: [],
+      notes: ['Contrôle « charge répartie » : poids de la zone de chaque pied (pire cas + calage) / surface de dalle de la zone. Des plaques plus grandes sous un pied ne changent presque rien : c’est la surface de dalle chargée qui compte.'],
+    },
+  ];
+}

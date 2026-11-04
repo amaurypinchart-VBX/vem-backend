@@ -8,7 +8,7 @@ import { DEFAULT_SITE, TERRAIN_LABEL, peakPressure } from '../../structure/core/
 import type { WindZone } from '../../structure/core/wind';
 import { fmtNumber } from '../../structure/core/units';
 import type { Hypotheses } from './GroundPanel';
-import { DEFAULT_HYP } from './GroundPanel';
+import { DEFAULT_HYP, bearingModeOf } from './GroundPanel';
 
 const G = 9.81;
 const n = (v: number, d = 0) => fmtNumber(v, d);
@@ -178,8 +178,22 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
             <option>kg/cm²</option>
           </select>
         </Q>
-        {preset?.pointLoad && (
-          <Q label="Charge maximale sous un seul pied" help="Une dalle ou une toiture a aussi une limite par point (sous un pied). Valeur de la fiche du bâtiment." conv={`= ${n(hyp.pointLoadKN, 1)} kN`}>
+        <Q
+          label="Que veut dire cette valeur ?"
+          help={
+            <>
+              <b>Sol</b> (prairie, terre, enrobé) : c’est la pression maximale sous chaque plaque. <b>Dalle, plancher, toiture, bouche de métro…</b> : c’est le <b>poids admis par m²</b> de dalle (charge
+              répartie) — l’outil vérifie le poids au m² sur la zone de dalle de chaque pied (la moitié de la distance aux pieds voisins), pas la pression juste sous la plaque.
+            </>
+          }
+        >
+          <select value={bearingModeOf(hyp)} onChange={(e) => set('bearingMode', e.target.value as 'pressure' | 'distributed')} data-testid="bearing-mode">
+            <option value="pressure">Pression maximale sous chaque plaque (sol)</option>
+            <option value="distributed">Poids admis par m² de dalle (charge répartie : dalle, plancher, toiture)</option>
+          </select>
+        </Q>
+        {(preset?.pointLoad || bearingModeOf(hyp) === 'distributed') && (
+          <Q label="Charge maximale sous un seul pied" help="Une dalle ou une toiture a aussi une limite par point (sous un pied, poinçonnement). Valeur de la fiche du bâtiment ; 0 = inconnue (à faire confirmer par l’exploitant)." conv={`= ${n(hyp.pointLoadKN, 1)} kN`}>
             <Num value={(hyp.pointLoadKN * 1000) / G} onChange={(v) => set('pointLoadKN', (v * G) / 1000)} /> kg
           </Q>
         )}
