@@ -16,14 +16,14 @@ import type { LoadedScene } from '../scene/loadedScene';
 import { computeFrames, makeLoadedScene } from '../scene/loadedScene';
 import { makeGlassTest } from '../linework/packets';
 import { BrowserHlrProvider } from '../linework/provider';
-import { createInlineRunner, createWorkerPool } from '../linework/runner';
+import { createInlineRunner, createWorkerPool, defaultPoolSize } from '../linework/runner';
 import { ProgressBar } from './common';
 import { Viewer3DPage } from './Viewer3DPage';
 import { Views2DPage } from './Views2DPage';
 import { CustomViewsPage } from './customViews/CustomViewsPage';
 import { SheetsPage } from './sheets/SheetsPage';
 import { clearStep, markDetail, markStep } from './crashLog';
-import { lowPowerDevice } from './useDevice';
+import { bigModel, lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
 
@@ -77,9 +77,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
 
   const provider = useMemo(() => {
     if (!scene) return null;
-    const runner = typeof Worker !== 'undefined' ? createWorkerPool() : createInlineRunner();
-    // téléphone / tablette : peu de vues préparées à la fois (chaque calcul en attente garde une copie du modèle)
+    // téléphone / tablette : peu de vues préparées à la fois (chaque calcul en attente garde une copie du modèle) ;
+    // très gros modèle sur ordinateur : 2 Workers au plus et une seule préparation gardée (mémoire de l'onglet)
     const light = lowPowerDevice();
+    const big = !light && bigModel(scene.index);
+    const runner = typeof Worker !== 'undefined' ? createWorkerPool(big ? Math.min(2, defaultPoolSize()) : undefined) : createInlineRunner();
     // vues partagées par le serveur : un téléphone lit celles déjà calculées sur un ordinateur
     const remote = serverLineworkCache(scene.modelKey, { get: getSharedLinework, has: hasSharedLinework, put: putSharedLinework });
     return new BrowserHlrProvider(scene, {
@@ -88,7 +90,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       categoryColors: () => categoryColors,
       remote,
       note: markDetail,
-      ...(light ? { maxConcurrent: 1, maxPackets: 1, heavyTriangles: HEAVY_TRIANGLES_PHONE } : {}),
+      ...(light ? { maxConcurrent: 1, maxPackets: 1, heavyTriangles: HEAVY_TRIANGLES_PHONE } : big ? { maxConcurrent: 2, maxPackets: 1 } : {}),
     });
   }, [scene, glassTest, categoryColors]);
   useEffect(() => () => provider?.dispose(), [provider]);

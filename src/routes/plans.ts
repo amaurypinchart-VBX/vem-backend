@@ -113,9 +113,21 @@ router.get('/project/:projectId/models', async (req: AuthRequest, res: Response,
 // GET /plans/models/:id — une version complète (avec l'index de scène)
 router.get('/models/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const model = await db.plansModelVersion.findUnique({ where: { id: req.params.id } });
-    if (!model) throw new AppError('Modèle introuvable', 404);
-    res.json({ success: true, data: model });
+    // Le JSON est fabriqué par Postgres et envoyé tel quel : l'index de scène d'un gros modèle (Xiaomi, des dizaines de Mo)
+    // n'est plus décodé en objets puis ré-encodé par le serveur (pics de mémoire ≈ 5 × sa taille à chaque ouverture).
+    const ts = (c: string) => `to_char(${c} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+    const rows: Array<{ j: string }> = await prisma.$queryRawUnsafe(
+      `SELECT json_build_object(
+        'id', id, 'projectId', project_id, 'sourceFileId', source_file_id, 'fileName', file_name, 'sourceUrl', source_url,
+        'sha256', sha256, 'sizeBytes', size_bytes, 'status', status, 'engineVersion', engine_version, 'unitMeter', unit_meter,
+        'upAxis', up_axis, 'stats', stats, 'warnings', warnings, 'sceneIndex', scene_index, 'glbUrl', glb_url,
+        'glbPublicId', glb_public_id, 'glbSize', glb_size, 'glbParts', glb_parts, 'glbEncoding', glb_encoding,
+        'settings', settings, 'createdById', created_by, 'createdAt', ${ts('created_at')}, 'updatedAt', ${ts('updated_at')}
+      )::text AS j FROM plans_model_versions WHERE id = $1`,
+      req.params.id,
+    );
+    if (!rows.length) throw new AppError('Modèle introuvable', 404);
+    res.type('application/json').send(`{"success":true,"data":${rows[0].j}}`);
   } catch (err) { next(err); }
 });
 
