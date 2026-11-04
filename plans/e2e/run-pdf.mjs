@@ -20,6 +20,15 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('dialog', (d) => { console.log('Dialogue :', d.message()); d.accept(); });
 
+// LONGTASKS=1 : relève les blocages du fil principal (> 200 ms) avec l'étape affichée à ce moment
+if (process.env.LONGTASKS)
+  await page.addInitScript(() => {
+    window.__long = [];
+    new PerformanceObserver((l) => {
+      for (const e of l.getEntries())
+        if (e.duration > 200) window.__long.push({ ms: Math.round(e.duration), at: Math.round(e.startTime), step: document.querySelector('.save-status')?.textContent ?? '' });
+    }).observe({ type: 'longtask', buffered: true });
+  });
 await page.goto(URL0);
 await page.getByRole('button', { name: 'Analyser' }).click();
 await page.getByText('paquet 3D enregistrés').waitFor({ timeout: 300000 });
@@ -34,6 +43,18 @@ for (const [label, file] of [['⬇ PDF du jeu', 'jeu.pdf'], ['⬇ PDF planche', 
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), page.getByRole('button', { name: label }).click()]);
   await dl.saveAs(shots + file);
   console.log(`${label} : ${dl.suggestedFilename()} en ${Date.now() - t0} ms (${n} planches dans le jeu)`);
+  if (process.env.LONGTASKS) {
+    const long = await page.evaluate(() => window.__long.splice(0));
+    const by = {};
+    for (const l of long) {
+      const k = l.step.replace(/\(\d+\/\d+\)/, '(n)');
+      by[k] = by[k] ?? { n: 0, total: 0, max: 0 };
+      by[k].n++;
+      by[k].total += l.ms;
+      by[k].max = Math.max(by[k].max, l.ms);
+    }
+    console.log('  blocages > 200 ms par étape :', JSON.stringify(by));
+  }
 }
 console.log('Erreurs console :', errors.length ? errors : 'aucune');
 await browser.close();
