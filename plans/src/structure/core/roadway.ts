@@ -55,10 +55,11 @@ export const kgm2 = (q: number) => (q * 1e6) / GRAVITY;
  * Répartition sous plaques de roulage. `bearing` = portance admissible (N/mm²), `plates` = poids propre des plaques
  * (N/mm²). La charge d'un groupe d'appuis partagé par plusieurs Viewbox posées au sol est partagée à parts égales.
  */
-export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearing: number, plates = 0, extra: Array<{ at: P2; N: number }> = []): RoadwayResult {
+export function roadwayPressure(modules: EstimateModule[], est: Estimate, bearing: number, plates = 0, extra: Array<{ at: P2; N: number }> = [], coveredArea?: number): RoadwayResult {
   const ground = modules.filter((m) => m.level === 0);
   const groundIds = new Set(ground.map((m) => m.id));
-  const area = ground.reduce((s, m) => s + m.area, 0);
+  // surface couverte : l'emprise des Viewbox, ou plus quand les plaques de roulage débordent tout autour
+  const area = coveredArea && coveredArea > 0 ? coveredArea : ground.reduce((s, m) => s + m.area, 0);
   // poids posés au sol sous les Viewbox (blocs de calage dessinés) : comptés en plus des réactions des pieds
   const extraN = extra.reduce((s, e) => s + e.N, 0);
   const load = (est.verticalK ?? est.totalG + est.totalQ) + extraN;

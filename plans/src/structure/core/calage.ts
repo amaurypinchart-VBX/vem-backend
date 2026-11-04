@@ -5,7 +5,7 @@
 // plaques → sol, `spreading.ts`) avec un diagnostic. Utilisé par le panneau « Sol & calage », la fiche PDF et le
 // rapport. Fonctions pures.
 import type { CalcRecord } from './records';
-import type { Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } from './estimate';
+import type { ComboReaction, Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } from './estimate';
 import type { AddedSupport } from './estimate';
 import { addSupports, estimateReactions, fullPublic, limitPublic } from './estimate';
 import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
@@ -27,7 +27,7 @@ import { fmtNumber } from './units';
 import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedies';
 import { evaluateRemedy } from './calageRemedies';
 import type { SlabResult, SlabZone } from './slabZones';
-import { globalRecord, loadPerM2Text, slabZones, zoneRecord } from './slabZones';
+import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, zoneRecord } from './slabZones';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -82,6 +82,12 @@ export interface CalageInput {
    * calage « B… » réparti par le bloc ; les plaques choisies se posent sous le bloc
    */
   blocks?: DrawnBlock[];
+  /**
+   * pieds à vérin avec les réactions du calcul complet : enveloppe avec l'estimation instantanée (défaut : oui). Le
+   * calcul 3D suppose tous les vérins exactement au même niveau ; réglés sur site, ils se partagent la charge autrement
+   * (les pieds centraux peuvent porter bien plus que dans le calcul) — chaque appui garde le plus défavorable des deux.
+   */
+  reactionsEnvelope?: boolean;
   /**
    * lecture de la portance : 'pressure' (sol : pression maxi sous chaque appui, défaut) ou 'distributed' (dalle,
    * plancher, toiture : charge répartie admissible, vérifiée sur la zone de dalle de chaque pied — `slabZones.ts`)
@@ -227,6 +233,58 @@ export const calageTypeKey = (r: GroupReaction, members = 1): string =>
     ? `B${r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.max(1, Math.min(4, r.group.corners)))}${r.group.post ? 'R' : ''}`
     : r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.post ? 'R' : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
 
+/**
+ * Enveloppe calcul 3D / estimation (pieds à vérin) : chaque appui du calcul reçoit en plus les combinaisons de
+ * l'appui de l'estimation au même endroit (± 300 mm, même genre de pied) ; les maxima (et le public limité) se
+ * calculent alors sur les deux séries. La charge totale garde aussi la plus lourde des deux.
+ */
+export function envelopeReactions(fem: Estimate, est: Estimate): Estimate {
+  const used = new Set<GroupReaction>();
+  let matched = 0;
+  const reactions = fem.reactions.map((r): GroupReaction => {
+    if (r.group.stair || r.group.terrace || r.group.post) return r;
+    let best: GroupReaction | null = null;
+    let bd = 300;
+    for (const e of est.reactions) {
+      if (used.has(e) || e.group.middle !== r.group.middle || e.group.stair || e.group.terrace) continue;
+      const d = Math.hypot(e.group.position[0] - r.group.position[0], e.group.position[1] - r.group.position[1]);
+      if (d < bd) [bd, best] = [d, e];
+    }
+    if (!best) return r;
+    used.add(best);
+    matched++;
+    const tag = (c: ComboReaction): ComboReaction => ({ ...c, combo: `estim. ${c.combo}` });
+    const combos = r.combos && best.combos ? [...r.combos, ...best.combos.map(tag)] : r.combos;
+    const fromEst = best.Rk > r.Rk;
+    return {
+      ...r,
+      Rk: Math.max(r.Rk, best.Rk),
+      REd: Math.max(r.REd, best.REd),
+      RkMin: Math.min(r.RkMin, best.RkMin),
+      REdMin: Math.min(r.REdMin, best.REdMin),
+      combo: best.REd > r.REd ? `estim. ${best.combo}` : r.combo,
+      comboK: fromEst ? `estim. ${best.comboK}` : r.comboK,
+      G: Math.max(r.G, best.G),
+      Q: Math.max(r.Q, best.Q),
+      ...(combos ? { combos } : {}),
+    };
+  });
+  if (!matched) return fem;
+  const totals = fem.totals && est.totals ? [...fem.totals, ...est.totals.map((c) => ({ ...c, combo: `estim. ${c.combo}` }))] : fem.totals;
+  const verticalK = Math.max(fem.verticalK ?? fem.totalG + fem.totalQ, est.verticalK ?? est.totalG + est.totalQ);
+  return {
+    ...fem,
+    reactions,
+    verticalK,
+    ...(totals ? { totals } : {}),
+    envelope: true,
+    warnings: [
+      ...fem.warnings,
+      `Pieds à vérin : le calcul 3D suppose tous les vérins exactement au même niveau (les pieds centraux y portent peu) ; réglés sur site, ils se partagent la charge autrement. Pour le sol, chaque appui garde le plus défavorable du calcul 3D et de l’estimation par surfaces tributaires.`,
+    ],
+  };
+}
+
 export function computeCalage(inp: CalageInput): CalageResult {
   const base = computeCalageBase(inp);
   const applied = inp.choices?.remedy;
@@ -234,7 +292,42 @@ export function computeCalage(inp: CalageInput): CalageResult {
   return inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
 }
 
-const polyArea = (r: P2[]) => Math.abs(r.reduce((a, p, i) => a + p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1], 0)) / 2;
+/**
+ * Partie efficace du dessous du calage d'un appui (monde) : le contour de la plaque (ou du bloc) du dessous, réduit à
+ * l'emprise efficace calculée par la chaîne (centrée sur la charge) — une plaque trop souple ou excentrée ne compte que
+ * pour ce qu'elle répartit vraiment.
+ */
+function bottomEffective(c: SupportCheck): P2[] | null {
+  const outline = c.plan?.corners;
+  const last = [...c.steps].reverse().find((s) => s.dims);
+  if (!outline || !last?.dims) return null;
+  const { u, v } = c.geometry;
+  const [du, dv] = [last.dims[0] / 2, last.dims[1] / 2];
+  // rectangle efficace centré sur la charge (axes de l'appui), coupé au contour réel
+  let poly: P2[] = outline.map((p) => [p[0], p[1]] as P2);
+  const half = (n: P2, d: number) => {
+    const out: P2[] = [];
+    const sd = (p: P2) => (p[0] - c.at[0]) * n[0] + (p[1] - c.at[1]) * n[1] - d;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const sa = sd(a);
+      const sb = sd(b);
+      if (sa <= 0) out.push(a);
+      if ((sa < 0 && sb > 0) || (sa > 0 && sb < 0)) {
+        const t = sa / (sa - sb);
+        out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+      }
+    }
+    poly = out;
+  };
+  half(u, du);
+  half([-u[0], -u[1]], du);
+  half(v, dv);
+  half([-v[0], -v[1]], dv);
+  return poly.length >= 3 ? poly : null;
+}
+
 
 /**
  * Dalle en charge répartie admissible : chaque appui est vérifié sur sa zone de dalle (poids au m² à cet endroit) au
@@ -242,9 +335,17 @@ const polyArea = (r: P2[]) => Math.abs(r.reduce((a, p, i) => a + p[0] * r[(i + 1
  */
 function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   const plat = res.remedy?.outlines.find((o) => o.id === 'PL');
-  const surface: P2[][] = plat ? [plat.corners] : inp.modules.filter((m) => m.level === 0).map((m) => m.corners);
+  // surface de dalle chargée : emprise des Viewbox (agrandie du débord des plaques de roulage), plateau retenu, et la
+  // partie efficace de la plaque (ou du bloc) du dessous de chaque appui quand elle dépasse de l'installation
+  const over = res.roadwayOn ? Math.max(0, inp.choices?.roadwayOverhang ?? 0) : 0;
+  const surface: P2[][] = plat ? [plat.corners] : inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, over));
+  for (const c of res.checks) {
+    if (c.reaction.group.stair || c.reaction.group.terrace) continue;
+    const eff = bottomEffective(c);
+    if (eff) surface.push(eff);
+  }
   const spreadN = (res.roadwayOn ? res.roadway.plates * res.roadway.area : 0) + (res.remedy ? res.remedy.remedy.materials.reduce((s, l) => s + l.massKg * 9.81, 0) : 0);
-  const area = surface.reduce((s, r) => s + polyArea(r), 0);
+  const area = coveredArea(surface);
   const slab = slabZones(res, inp.bearing, surface, area > 0 ? spreadN / area : 0);
   const zoneOf = new Map(slab.zones.map((z) => [z.id, z]));
   const point = inp.pointLoadMax;
@@ -394,7 +495,8 @@ function withRemedy(inp: CalageInput, res: CalageResult, applied: AppliedRemedy)
 }
 
 function computeCalageBase(inp: CalageInput): CalageResult {
-  const est0 = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
+  const fem = inp.reactions && inp.estimate.jacks && inp.reactionsEnvelope !== false && inp.modules.length ? envelopeReactions(inp.reactions, estimateReactions(inp.modules, inp.estimate)) : inp.reactions;
+  const est0 = addSupports(fem ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
   const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
   const est = limit(est0);
@@ -447,7 +549,10 @@ function computeCalageBase(inp: CalageInput): CalageResult {
   }
   const choices = inp.choices ?? {};
   // poids des blocs dessinés (posés au sol sous les pieds) compté dans la charge totale et dans leur emprise
-  const roadway = roadwayPressure(inp.modules, est, inp.bearing, inp.roadwayPlates ?? 0, (inp.blocks ?? []).map((b) => ({ at: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2] as P2, N: b.massKg * 9.81 })));
+  // plaques de roulage qui débordent tout autour de l'installation : surface couverte agrandie
+  const overhang = choices.roadway ? Math.max(0, choices.roadwayOverhang ?? 0) : 0;
+  const covered = overhang > 0 ? coveredArea(inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, overhang))) : undefined;
+  const roadway = roadwayPressure(inp.modules, est, inp.bearing, inp.roadwayPlates ?? 0, (inp.blocks ?? []).map((b) => ({ at: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2] as P2, N: b.massKg * 9.81 })), covered);
   // plaques de roulage : il faut l'emprise au sol des Viewbox
   const roadwayOn = !!choices.roadway && roadway.area > 0;
   if (choices.roadway && !roadwayOn) warnings.push('Plaques de roulage : emprise au sol des Viewbox inconnue, non prises en compte.');
@@ -762,8 +867,10 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           title,
           summary: onBlock
             ? layers.length
-              ? `${stack} sous chaque bloc, centrées sur le bloc`
-              : 'bloc posé directement au sol'
+              ? `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? ', sur les plaques de roulage' : ''}`
+              : roadwayOn
+                ? 'bloc posé sur les plaques de roulage'
+                : 'bloc posé directement au sol'
             : layers.length ? `${stack} par ${unit}${placeText}${roadwayOn ? ', sur plaques de roulage' : ''}` : roadwayOn ? 'pied posé sur les plaques de roulage' : 'pied posé directement au sol',
           feasible: worst.eta <= 1,
           remarks: worst.problems,

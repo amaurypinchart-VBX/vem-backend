@@ -167,6 +167,8 @@ export interface Estimate {
   verticalK?: number;
   /** origine des réactions : calcul complet (modèle 3D) ou estimation instantanée */
   method?: 'fem' | 'estimate';
+  /** pieds à vérin : chaque appui garde au moins la réaction de l'estimation (enveloppe calcul 3D / estimation) */
+  envelope?: boolean;
   /** somme de tous les appuis par combinaison (charge verticale totale avec un public limité) */
   totals?: ComboReaction[];
   /**

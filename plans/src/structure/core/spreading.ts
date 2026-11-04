@@ -27,6 +27,8 @@ export interface CalageChoices {
   bySupport?: Record<string, LayerRef[]>;
   /** plaques de roulage jointives sur toute la surface couverte, sous tous les appuis */
   roadway?: boolean;
+  /** débord des plaques de roulage tout autour de l'installation (mm, 0 = juste l'emprise des Viewbox) */
+  roadwayOverhang?: number;
   /** longrines bois sous les grands côtés retenues à la place des plaques (sinon : variante proposée seulement) */
   longrine?: boolean;
   /** pose des plaques choisie pour un appui (« P4 », « B2 ») : à fleur de la Viewbox ou centrées ; absent = réglage général */

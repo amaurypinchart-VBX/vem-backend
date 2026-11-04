@@ -7,6 +7,7 @@
 // cas des combinaisons) + son bloc + ses plaques + sa part des plaques de roulage / madriers ; charge de la zone =
 // poids / surface ≤ charge admissible. L'ensemble = charge verticale totale (combinaison la plus lourde) + calage,
 // sur toute l'emprise. Fonctions pures ; N, mm, N/mm².
+import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { CalageResult, SupportCheck } from './calage';
 import type { P2 } from './estimate';
 import type { CalcRecord } from './records';
@@ -64,6 +65,47 @@ function clipHalf(poly: P2[], m: P2, n: P2): P2[] {
   return out;
 }
 
+/** Polygones → chemins Clipper en mm entiers (sens trigonométrique). */
+function toPaths(polys: P2[][]): Paths64 {
+  const out = new Paths64();
+  for (const p of polys) {
+    const q = ccw(p);
+    if (q.length >= 3 && areaOf(q) > 1) out.push(Clipper.makePath(q.flatMap((a) => [Math.round(a[0]), Math.round(a[1])])));
+  }
+  return out;
+}
+/** Résultat Clipper copié (ses points sont partagés avec son état interne) : boucles en mm, aire signée. */
+function fromPaths(ps: Paths64): Array<{ loop: P2[]; area: number }> {
+  const out: Array<{ loop: P2[]; area: number }> = [];
+  for (const path of ps) {
+    const loop: P2[] = path.map((pt) => [Number(pt.x), Number(pt.y)] as P2);
+    if (loop.length >= 3) out.push({ loop, area: Clipper.area(path) });
+  }
+  return out;
+}
+
+/** Rectangle (4 angles) agrandi de `d` mm de chaque côté. */
+export function grownRect(c: P2[], d: number): P2[] {
+  if (!(d > 0) || c.length !== 4) return c;
+  const unit = (a: P2, b: P2): P2 => {
+    const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+    return [(a[0] - b[0]) / l, (a[1] - b[1]) / l];
+  };
+  return c.map((a, k) => {
+    const prev = c[(k + 3) % 4];
+    const next = c[(k + 1) % 4];
+    const u1 = unit(a, next);
+    const u2 = unit(a, prev);
+    return [a[0] + d * (u1[0] + u2[0]), a[1] + d * (u1[1] + u2[1])] as P2;
+  });
+}
+
+/** Surface couverte (union des polygones) et son aire (mm²). */
+export function coveredArea(polys: P2[][]): number {
+  const u = Clipper.Union(toPaths(polys), undefined, FillRule.NonZero);
+  return fromPaths(u).reduce((s, x) => s + x.area, 0);
+}
+
 /** Contour d'un rectangle (4 angles) remis dans le sens trigonométrique. */
 function ccw(p: P2[]): P2[] {
   const s = p.reduce((acc, a, i) => { const b = p[(i + 1) % p.length]; return acc + a[0] * b[1] - b[0] * a[1]; }, 0);
@@ -79,23 +121,28 @@ const platesWeight = (c: SupportCheck) => c.layerList.reduce((s, l) => s + l.n *
  * Les pieds d'escalier et de terrasse, hors de l'emprise, gardent la surface de leur plaque (ou de leur contact).
  */
 export function slabZones(res: CalageResult, bearing: number, surface: P2[][], spread: number): SlabResult {
-  const rects = surface.map(ccw);
-  const total = rects.reduce((s, r) => s + areaOf(r), 0);
+  // surface de dalle chargée = union de l'emprise (+ débord des plaques de roulage) et des plaques qui dépassent
+  const covered = Clipper.Union(toPaths(surface), undefined, FillRule.NonZero);
+  const coveredLoops = fromPaths(covered);
+  const total = coveredLoops.reduce((s, x) => s + x.area, 0);
+  const pts = coveredLoops.flatMap((x) => x.loop);
+  const [minX, maxX, minY, maxY] = pts.length
+    ? [Math.min(...pts.map((p) => p[0])) - 10, Math.max(...pts.map((p) => p[0])) + 10, Math.min(...pts.map((p) => p[1])) - 10, Math.max(...pts.map((p) => p[1])) + 10]
+    : [0, 0, 0, 0];
   const sites = res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
   const zones: SlabZone[] = [];
   for (const c of sites) {
-    const pieces: P2[][] = [];
-    for (const r of rects) {
-      let poly = r;
-      for (const o of sites) {
-        if (o === c || !poly.length) continue;
-        const n: P2 = [o.at[0] - c.at[0], o.at[1] - c.at[1]];
-        if (Math.hypot(n[0], n[1]) < 1) continue;
-        poly = clipHalf(poly, [(o.at[0] + c.at[0]) / 2, (o.at[1] + c.at[1]) / 2], n);
-      }
-      if (poly.length >= 3 && areaOf(poly) > 1) pieces.push(poly);
+    // cellule de Voronoï du pied (convexe), puis intersection avec la surface couverte
+    let cell: P2[] = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
+    for (const o of sites) {
+      if (o === c || !cell.length) continue;
+      const n: P2 = [o.at[0] - c.at[0], o.at[1] - c.at[1]];
+      if (Math.hypot(n[0], n[1]) < 1) continue;
+      cell = clipHalf(cell, [(o.at[0] + c.at[0]) / 2, (o.at[1] + c.at[1]) / 2], n);
     }
-    const area = pieces.reduce((s, p) => s + areaOf(p), 0);
+    const inter = cell.length >= 3 ? fromPaths(Clipper.Intersect(toPaths([cell]), covered, FillRule.NonZero)) : [];
+    const area = inter.reduce((s, x) => s + x.area, 0);
+    const pieces = inter.filter((x) => x.area > 0).map((x) => x.loop);
     const parts = { feet: c.Rzk, block: c.block ? c.block.massKg * G : 0, plates: platesWeight(c), spread: spread * area };
     const load = parts.feet + parts.block + parts.plates + parts.spread;
     const q = area > 0 ? load / area : Infinity;

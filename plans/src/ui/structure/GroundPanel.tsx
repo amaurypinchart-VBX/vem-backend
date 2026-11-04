@@ -691,7 +691,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         feet: jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm ; vérins voisins sur une même plaque'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
         place: ['Pose des plaques', { auto: 'à fleur de la Viewbox, centrées seulement si nécessaire', flush: 'toujours à fleur de la Viewbox', centered: 'centrées sous chaque appui (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} niveau${levels > 1 ? 'x' : ''})`],
-        src: ['Réactions', reactions ? 'calcul complet (modèle 3D, 2ᵉ ordre)' : 'estimation instantanée (surfaces tributaires)'],
+        src: ['Réactions', reactions ? (jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : 'estimation instantanée (surfaces tributaires)'],
       },
       de: {
         bearing: ['Zul. Bodenpressung', `${bearing} (${preset?.label ?? 'Eingabe'})`],
@@ -704,7 +704,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         feet: jacks ? ['Spindelfüße', '6 je Viewbox (4 Ecken + 2 Mitte), Gewindestangen Tr 24 × 5, Auszug ≤ 5 cm; benachbarte Spindeln auf einer Platte'] : ['Mittelfüße', hyp.middleFeet ? 'verwendet' : 'nein (nur Ecken)'],
         place: ['Lage der Platten', { auto: 'bündig mit der Viewbox, nur wenn nötig mittig', flush: 'immer bündig mit der Viewbox', centered: 'mittig unter jedem Auflager (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} Ebene${levels > 1 ? 'n' : ''})`],
-        src: ['Auflagerkräfte', reactions ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)' : 'Sofortschätzung (Einzugsflächen)'],
+        src: ['Auflagerkräfte', reactions ? (jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
       },
       en: {
         bearing: ['Allowable bearing', `${bearing} (${preset?.label ?? 'entered'})`],
@@ -717,7 +717,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         feet: jacks ? ['Jack feet', '6 per Viewbox (4 corners + 2 middle), Tr 24 × 5 rods, extension ≤ 5 cm; neighbouring jacks on one plate'] : ['Middle feet', hyp.middleFeet ? 'used' : 'no (corners only)'],
         place: ['Plate laying', { auto: 'flush with the Viewbox, centred only where needed', flush: 'always flush with the Viewbox', centered: 'centred under each support (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} level${levels > 1 ? 's' : ''})`],
-        src: ['Reactions', reactions ? 'full calculation (3D model, 2nd order)' : 'instant estimate (tributary areas)'],
+        src: ['Reactions', reactions ? (jacks ? 'full calculation (3D model, 2nd order), at least the estimate under each jack (adjustable jacks)' : 'full calculation (3D model, 2nd order)') : 'instant estimate (tributary areas)'],
       },
     }[lang];
     return [T.bearing, T.weight, T.finishes, T.live, T.pub, T.wind, T.react, T.feet, T.place, T.vbx, T.src] as Array<[string, string]>;
@@ -805,6 +805,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setSupport: (id, v) => setChoices((c) => ({ ...c, bySupport: setIn(c.bySupport, id, v) })),
     setPlace: (id, v) => setChoices((c) => ({ ...c, placeBySupport: setIn(c.placeBySupport, id, v) })),
     setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
+    setRoadwayOverhang: (mm) => setChoices((c) => ({ ...c, roadwayOverhang: mm })),
     reset: () => setChoices(() => ({})),
   };
   const bearingLabel = pdfLang === 'fr' ? bearingText() : `${num(pdfLang, bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3, 0)} kN/m²`;
@@ -1095,7 +1096,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               {selCheck && planView !== 'level' && <SupportPanel c={selCheck} result={result} stock={input.stock} set={choiceSet} onClose={() => setSelected(null)} />}
               <div className="hint" style={{ marginTop: 6 }}>
                 {result.estimate.method === 'fem'
-                  ? 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
+                  ? result.estimate.envelope
+                    ? 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico), et au moins celles de l’estimation sous chaque vérin : le calcul 3D met tous les vérins exactement au même niveau, sur site leur réglage répartit la charge autrement (les pieds centraux peuvent porter plus).'
+                    : 'Réactions du modèle 3D (2ᵉ ordre, combinaisons statico) : Rz,k maxi de chaque appui sur les combinaisons ELS.'
                   : 'Estimation par surfaces tributaires et basculement en bloc rigide : ordre de grandeur, remplacé par le calcul complet de l’étude structure.'}{' '}
                 {GROUND_NOTE}
               </div>
@@ -1245,8 +1248,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 </span>
                 {t.tuv && <span className={`badge ${t.tuv.ok === false ? 'warn' : ''}`} title={t.tuv.text}>{t.tuv.ok === false ? 'Prüfbuch ✖' : t.tuv.ok ? 'Prüfbuch ✔' : 'Prüfbuch —'}</span>}
                 <span className="hint">
-                  {t.reactions.length} appui(s) — Rz,k maxi {kN(t.Rzk)}, Rz,Ed maxi {kN(t.RzEd)} (statico : Rz,Ed / 1,35 = {kN(t.RzEd / 1.35)}) — contact{' '}
-                  {n(t.a1 / 10, 0)} × {n(t.a2 / 10, 0)} cm
+                  {t.reactions.length} appui(s) — Rz,k maxi {kN(t.Rzk)}, Rz,Ed maxi {kN(t.RzEd)} (statico : Rz,Ed / 1,35 = {kN(t.RzEd / 1.35)}) —{' '}
+                  {t.block && t.checks[0]?.block
+                    ? `pied ${n(t.a1 / 10, 0)} × ${n(t.a2 / 10, 0)} cm sur le bloc, bloc ${t.checks[0].block.dims} ${result.roadwayOn ? 'sur les plaques de roulage' : t.checks[0].layerList.length ? 'sur les plaques choisies' : 'au sol'}`
+                    : `contact ${n(t.a1 / 10, 0)} × ${n(t.a2 / 10, 0)} cm`}
                 </span>
                 <div className="spacer" style={{ flex: 1 }} />
                 <span className={`badge ${t.standard ? 'ok' : 'orange'}`}>

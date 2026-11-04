@@ -9,6 +9,9 @@ type Rule = readonly [string | RegExp, string, string];
 
 /** Motifs (appliqués dans l'ordre). */
 const PATTERNS: Rule[] = [
+  [/Pieds à vérin : le calcul 3D suppose tous les vérins exactement au même niveau \(les pieds centraux y portent peu\) ; réglés sur site, ils se partagent la charge autrement\. Pour le sol, chaque appui garde le plus défavorable du calcul 3D et de l’estimation par surfaces tributaires\./g, 'Spindelfüße: die 3D-Berechnung setzt alle Spindeln exakt auf gleiche Höhe (die Mittelfüße tragen dort wenig); vor Ort eingestellt, teilen sie die Last anders auf. Für den Boden gilt je Auflager der ungünstigere Wert aus 3D-Berechnung und Schätzung nach Einzugsflächen.', 'Jacks: the 3D calculation assumes all jacks at exactly the same level (the middle feet carry little there); adjusted on site, they share the load differently. For the ground, each support keeps the worse of the 3D calculation and the tributary-area estimate.'],
+  [/bloc posé sur les plaques de roulage/g, 'Holzklotz auf den Fahrplatten', 'block on the roadway plates'],
+  [/, sur les plaques de roulage/g, ', auf den Fahrplatten', ', on the roadway plates'],
   // dalle en charge répartie admissible (zones de dalle des pieds)
   [/Dalle en charge répartie admissible ([\d  .,]+) kg\/m² : ensemble de l’installation ([\d  .,]+) kg\/m²/g, 'Decke mit zulässiger Flächenlast $1 kg/m²: gesamte Anlage $2 kg/m²', 'Slab with allowable distributed load $1 kg/m²: whole installation $2 kg/m²'],
   [/Dalle en charge répartie : ensemble ([\d  .,]+) kg\/m²/g, 'Decke, Flächenlast: gesamt $1 kg/m²', 'Slab, distributed load: whole $1 kg/m²'],
