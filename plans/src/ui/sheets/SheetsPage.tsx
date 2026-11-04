@@ -27,7 +27,7 @@ import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
 import { ProgressBar } from '../common';
 import { SheetEditor } from './SheetEditor';
-import { lowPowerDevice } from '../useDevice';
+import { bigModel, lowPowerDevice } from '../useDevice';
 import { clearStep, markStep } from '../crashLog';
 import type { PaintBundle } from './SheetEditor';
 import { usePaint } from './usePaint';
@@ -58,6 +58,8 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     const b = new LineworkBank(scene, provider);
     // téléphone : mémoire limitée (les vues relues du cache IndexedDB en un instant)
     if (lowPowerDevice()) b.maxEntries = 24;
+    // très gros modèle sur ordinateur : vues gardées limitées (les plus anciennes sont relues du cache au besoin)
+    else if (bigModel(scene.index)) b.maxEntries = 40;
     return b;
   }, [scene, provider]);
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);

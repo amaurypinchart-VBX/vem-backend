@@ -50,7 +50,7 @@ import type { Person, TitleBlockData } from '../../sheets/types';
 import { freshImport, NewVersionError } from '../newVersion';
 import { retargetSheet, sheetModule } from '../../sheets/duplicate';
 import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
-import { lowPowerDevice, useDevice } from '../useDevice';
+import { bigModel, lowPowerDevice, useDevice } from '../useDevice';
 import { clearStep, markStep } from '../crashLog';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
@@ -135,8 +135,12 @@ type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
 const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
 const lightDevice = lowPowerDevice();
+const bigScenes = new WeakMap<object, boolean>();
 
 export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
+  // très gros modèle (bigModel) : calculé une fois par scène
+  let bigScene = bigScenes.get(scene.index);
+  if (bigScene === undefined) bigScenes.set(scene.index, (bigScene = bigModel(scene.index)));
   const doc = useEditor((s) => s.doc)!;
   const sheetId = useEditor((s) => s.sheetId);
   const selection = useEditor((s) => s.selection);
@@ -274,7 +278,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     bank.ensure(own);
     bank.ensurePaint(own);
     // téléphone : seulement la planche affichée (calculer tout le jeu d'avance remplit la mémoire et iOS ferme la page)
-    if (device.isTouch || lowPowerDevice()) return;
+    // très gros modèle : pas de calcul de tout le jeu d'avance non plus (la mémoire de l'onglet, puis du navigateur)
+    if (device.isTouch || lowPowerDevice() || bigScene) return;
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);

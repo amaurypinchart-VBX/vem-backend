@@ -56,3 +56,23 @@ export function useDevice(): DeviceInfo {
   }, []);
   return info;
 }
+
+/**
+ * Très gros modèle (A. Pinchart 04.11.2026, Xiaomi : « je vérifiais planche par planche et ça a planté », jusqu'aux
+ * autres onglets) : au-delà de ce nombre de triangles, l'ordinateur se règle comme un téléphone pour la mémoire — moins
+ * de calculs en parallèle (chaque Worker garde sa copie du modèle), vues gardées limitées, pas de calcul de tout le jeu
+ * d'avance. Le dessin obtenu est le même.
+ */
+export const BIG_MODEL_TRIANGLES = 800_000;
+export function bigModel(index: { nodes: Array<{ kind: string; triangles: number }> }): boolean {
+  // essais : localStorage vem_plans_bigmodel = 1 / 0 force le réglage
+  try {
+    const f = localStorage.getItem('vem_plans_bigmodel');
+    if (f === '1' || f === '0') return f === '1';
+  } catch {
+    /* stockage indisponible */
+  }
+  let n = 0;
+  for (const node of index.nodes) if (node.kind === 'mesh') n += node.triangles || 0;
+  return n > BIG_MODEL_TRIANGLES;
+}
