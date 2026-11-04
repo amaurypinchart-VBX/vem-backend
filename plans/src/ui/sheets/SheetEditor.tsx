@@ -1041,6 +1041,78 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     downloadText(`${doc.titleBlock.projectNumber || doc.title}_${sheet.number}.svg`.replace(/\s+/g, '_'), markup, 'image/svg+xml');
   };
 
+  /**
+   * PDF par le serveur ? Oui pour un jeu ou une sélection, et pour une planche seule sur téléphone / très gros modèle ;
+   * localStorage `vem_plans_pdf_server` = 1 / 0 force l'un ou l'autre (essais).
+   */
+  const serverPdfWanted = async (scope: 'all' | 'sheet' | 'selection', light: boolean): Promise<boolean> => {
+    let force: string | null = null;
+    try {
+      force = localStorage.getItem('vem_plans_pdf_server');
+    } catch {
+      /* rien */
+    }
+    if (force === '0' || !PROJECT_ID) return false;
+    if (force !== '1' && scope === 'sheet' && !light) return false;
+    const { serverPdfAvailable } = await freshImport(() => import('../../sheets/pdf/serverExport'));
+    return serverPdfAvailable();
+  };
+
+  /** PDF fait par le serveur ; 'fallback' = le refaire dans le navigateur (le serveur n'a pas pu). */
+  const exportPdfOnServer = async (sheets: Sheet[], toProject: boolean, light: boolean, meta: { title: string; subject: string }, fileName: string): Promise<'done' | 'fallback'> => {
+    const { prepareServerPdf, runServerPdf, serverStatusText, CancelledError } = await freshImport(() => import('../../sheets/pdf/serverExport'));
+    const { packPaintInfo } = await freshImport(() => import('../../sheets/pdf/serverJob'));
+    const cancelled = () => cancelExport.current;
+    let id: string | null = null;
+    try {
+      setBusy('PDF (serveur) : préparation…');
+      id = await prepareServerPdf({
+        projectId: PROJECT_ID,
+        manifest: { v: 1, title: meta.title, subject: meta.subject, fileName, sheets, titleBlock: doc.titleBlock, notes: doc.notes, legend, paint: packPaintInfo(paintInfo) },
+        bank,
+        keep: sheet.items.filter((i): i is ViewportItem => i.type === 'viewport'),
+        onStep: setBusy,
+        cancelled,
+        note: (d) => markDetail(d),
+      });
+      markDetail('rendu sur le serveur');
+      const hasImages = sheets.some((s) => s.items.some((i) => i.type === 'image3d' && i.url));
+      // Fichiers du projet : 10 Mo au plus ⇒ images 2 000 px, puis 1 200 et 800 px si le PDF dépasse
+      const tries = toProject
+        ? [
+            { imagePx: 2000, jpegQuality: 0.88 },
+            { imagePx: 1200, jpegQuality: 0.75 },
+            { imagePx: 800, jpegQuality: 0.6 },
+          ]
+        : [{ imagePx: light ? 2000 : 3000, jpegQuality: 0.88 }];
+      let st = await runServerPdf(id, tries[0], (x) => setBusy(serverStatusText(x)), cancelled);
+      for (const o of tries.slice(1)) {
+        if ((st.size ?? 0) <= PROJECT_FILE_MAX || !hasImages) break;
+        setBusy('PDF (serveur) : plus de 10 Mo, images 3D allégées…');
+        st = await runServerPdf(id, o, (x) => setBusy(serverStatusText(x)), cancelled);
+      }
+      if (toProject && (st.size ?? 0) <= PROJECT_FILE_MAX) {
+        setBusy('PDF : enregistrement dans les Fichiers du projet…');
+        await vem.pdfJobSave(id);
+        setSavedNote(`✓ « ${fileName} » enregistré dans les Fichiers du projet VEM`);
+      } else {
+        if (toProject && !window.confirm(`Le PDF fait ${formatSize(st.size ?? 0)} : les Fichiers du projet acceptent 10 Mo au plus.\n\nLe télécharger à la place ?`)) return 'done';
+        setBusy('PDF : téléchargement…');
+        const { getPdfJobFile } = await import('../../api/vem');
+        deliver(fileName, await getPdfJobFile(id));
+      }
+      if (st.failedImages) window.alert(`${st.failedImages} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
+      if (st.missingViews) window.alert(`${st.missingViews} vue(s) n’ont pas pu être calculées : cadre vide dans le PDF.`);
+      return 'done';
+    } catch (e) {
+      if (e instanceof CancelledError || cancelled() || e instanceof NewVersionError) return 'done';
+      console.error('PDF serveur', e);
+      return window.confirm(`Le serveur n’a pas pu faire le PDF : ${(e as Error).message}\n\nLe faire dans ce navigateur à la place ? (plus lent, peut fermer l’onglet sur un très gros modèle)`) ? 'fallback' : 'done';
+    } finally {
+      if (id) void vem.pdfJobDelete(id).catch(() => undefined);
+    }
+  };
+
   /** PDF vectoriel du jeu entier ou de la planche affichée (une page par planche, format exact). */
   const exportPdf = async (scope: 'all' | 'sheet' | 'selection', target: 'deliver' | 'project' = 'deliver') => {
     const toProject = target === 'project';
@@ -1065,7 +1137,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     cancelExport.current = false;
     exporting.current = true;
     markStep(`Export PDF (${sheets.length} planche${sheets.length > 1 ? 's' : ''})`);
+    const one = sheets.length === 1 && !all;
+    const meta = { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` };
+    const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;
+    const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${suffix}`;
+    const fileName = `${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`;
     try {
+      // le serveur fait le PDF (processus séparé) : l'onglet ne prépare que les vues, une à la fois
+      if ((await serverPdfWanted(scope, light)) && (await exportPdfOnServer(sheets, toProject, light, meta, fileName)) === 'done') return;
       setBusy('PDF : calcul des vues…');
       const vpsOf = (s: Sheet) => s.items.filter((i): i is ViewportItem => i.type === 'viewport');
       // allégé : les vues de chaque planche sont lues au moment de sa page (toutes à la fois = toute la mémoire)
@@ -1181,9 +1260,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       const pages = sheets.map((s, i) => ({ paper: s.paper, svg: light ? lazy(s, i) : markup(s) }));
       setBusy('PDF : polices…');
       const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
-      const one = sheets.length === 1 && !all;
       const build = async () => {
-        const meta = { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` };
         const progress = (d: number, n: number) => {
           if (cancelExport.current) throw new Error('annulé');
           setBusy(`PDF : planche ${d}/${n}…`);
@@ -1200,9 +1277,6 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         return (await buildPdf(pages, fonts, meta, progress, lines)).output('blob');
       };
       let blob = await build();
-      const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;
-      const base = `${doc.titleBlock.projectNumber ? `${doc.titleBlock.projectNumber}_` : ''}${doc.title}${suffix}`;
-      const fileName = `${base.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_')}.pdf`;
       if (toProject) {
         // trop lourd : images 3D plus petites (1 200 px, JPEG 0,75), puis 800 px
         for (const [q, px] of [

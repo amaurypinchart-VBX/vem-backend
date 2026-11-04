@@ -111,11 +111,28 @@ export class BrowserHlrProvider implements LineworkProvider {
     return { key, packet, meshIds };
   }
 
+  /** Décorations ajoutées après le calcul (couleurs par catégorie sur les vues de dessus, repères sur les élévations). */
+  private decorations(req: LineworkRequest, basis: ViewBasis) {
+    return { cat: !!req.style.colorByCategory && isTopView(basis), marks: !!req.style.facadeMarks && isElevation(basis) };
+  }
+
+  /**
+   * Clé des traits tels qu'ils sont dessinés (vue décorée s'il y a des décorations) : celle du cache partagé du serveur
+   * (PDF fait par le serveur). undefined = pas de cache.
+   */
+  async displayKey(req: LineworkRequest): Promise<string | undefined> {
+    if (this.opts.noCache) return undefined;
+    const basis = viewBasis(req.view, this.scene.frames);
+    const cacheKey = await this.cacheKey(req);
+    const { cat, marks } = this.decorations(req, basis);
+    if (!cat && !marks) return cacheKey;
+    return hashKey({ base: cacheKey, cat, marks, colors: this.opts.categoryColors() });
+  }
+
   async getLinework(req: LineworkRequest, onProgress?: (p: number) => void, signal?: AbortSignal, opts: { cacheOnly?: boolean } = {}): Promise<Linework2D> {
     const basis = viewBasis(req.view, this.scene.frames);
     const cacheKey = await this.cacheKey(req);
-    const cat = !!req.style.colorByCategory && isTopView(basis);
-    const marks = !!req.style.facadeMarks && isElevation(basis);
+    const { cat, marks } = this.decorations(req, basis);
     if (!cat && !marks) return this.baseLinework(req, basis, cacheKey, onProgress, signal, opts.cacheOnly);
     // vue décorée (couleurs, repères façade) gardée elle aussi : les repères demandent un index 3D de tout ce qui est
     // dessiné, trop lourd pour un téléphone — il lit la vue décorée par l'ordinateur au lieu de la refaire

@@ -22,6 +22,9 @@ COPY tsconfig.json ./
 COPY src ./src/
 COPY public ./public/
 COPY --from=plans-build /build/public/plans ./public/plans/
+# rendu PDF des jeux de plans côté serveur (processus séparé lancé par src/services/plansPdfJobs.ts ; jsdom vient des
+# dépendances du backend)
+COPY --from=plans-build /build/plans-server ./plans-server/
 # (supprimé) RUN npx prisma db pull --force || true
 # ^ Cette ligne écrasait schema.prisma avec la base à chaque build.
 #   schema.prisma est désormais la source de vérité.

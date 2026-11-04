@@ -10,6 +10,11 @@ import { AppError } from '../utils/AppError';
 import { upload, uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinaryService';
 import { PLANS_VIEW_MODEL, ViewAiInput, describeView, viewAiEnabled } from '../services/plansViewAi';
 import { applyPaintOps, cleanOps, currentPaint } from '../services/plansPaint';
+import fs from 'fs';
+import {
+  PdfJob, createJob as createPdfJob, deleteJob as deletePdfJob, getJob as getPdfJob, jobStatus as pdfJobStatus, missingKeys as missingPdfKeys,
+  outFile as pdfOutFile, rendererPath, startJob as startPdfJob, writeLinework as writePdfLinework, writeView as writePdfView,
+} from '../services/plansPdfJobs';
 
 const router = Router();
 const db = prisma as any; // modèle ajouté au schéma ; client typé régénéré au build Docker
@@ -373,25 +378,142 @@ router.post('/project/:projectId/assets', upload.single('file'), async (req: Aut
 // POST /plans/project/:projectId/files — PDF / DXF / .zip d'un jeu de plans (fait dans le navigateur) enregistré dans
 // les Fichiers du projet VEM (Cloudinary raw, 10 Mo maximum ; catégorie « plans »)
 const PLANS_FILE_TYPES: Record<string, string> = { pdf: 'application/pdf', dxf: 'application/dxf', zip: 'application/zip', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+const PROJECT_FILE_MAX = 10 * 1024 * 1024;
+
+/** Fichier de plans → Cloudinary raw + Fichiers du projet (catégorie « plans »). */
+async function saveProjectPlansFile(projectId: string, userId: string | null, buffer: Buffer, rawName: string) {
+  if (buffer.length > PROJECT_FILE_MAX) throw new AppError('Fichier de plus de 10 Mo : refusé par Cloudinary', 413);
+  const fileName = String(rawName || 'plans.pdf').slice(0, 200).replace(/[\\/:*?"<>|]+/g, '-');
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  const fileType = PLANS_FILE_TYPES[ext];
+  if (!fileType) throw new AppError('Seuls les PDF, DXF, .zip et .xlsx de plans sont acceptés', 400);
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new AppError('Projet introuvable', 404);
+  const { url, publicId } = await uploadToCloudinary(buffer, `projects/${project.id}/plans`, {
+    resource_type: 'raw',
+    public_id: `${fileName.replace(/\.[^.]+$/, '')}-${Date.now()}.${ext}`,
+  });
+  return prisma.projectFile.create({
+    data: { projectId: project.id, uploadedBy: userId, fileName, fileUrl: url, publicId, fileType, fileSize: buffer.length, category: 'plans' },
+  });
+}
+
 router.post('/project/:projectId/files', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) throw new AppError('Fichier manquant', 400);
-    if (req.file.size > 10 * 1024 * 1024) throw new AppError('Fichier de plus de 10 Mo : refusé par Cloudinary', 413);
     const raw = typeof req.body?.fileName === 'string' ? req.body.fileName : req.file.originalname;
-    const fileName = String(raw || 'plans.pdf').slice(0, 200).replace(/[\\/:*?"<>|]+/g, '-');
-    const ext = (fileName.split('.').pop() || '').toLowerCase();
-    const fileType = PLANS_FILE_TYPES[ext];
-    if (!fileType) throw new AppError('Seuls les PDF, DXF, .zip et .xlsx de plans sont acceptés', 400);
-    const project = await prisma.project.findUnique({ where: { id: req.params.projectId }, select: { id: true } });
-    if (!project) throw new AppError('Projet introuvable', 404);
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `projects/${project.id}/plans`, {
-      resource_type: 'raw',
-      public_id: `${fileName.replace(/\.[^.]+$/, '')}-${Date.now()}.${ext}`,
-    });
-    const file = await prisma.projectFile.create({
-      data: { projectId: project.id, uploadedBy: req.user?.id ?? null, fileName, fileUrl: url, publicId, fileType, fileSize: req.file.size, category: 'plans' },
-    });
+    const file = await saveProjectPlansFile(req.params.projectId, req.user?.id ?? null, req.file.buffer, raw);
     res.status(201).json({ success: true, data: file });
+  } catch (err) { next(err); }
+});
+
+// ─── PDF du jeu de plans fait par le serveur (processus séparé, voir services/plansPdfJobs.ts) ───
+const PDF_VIEW_KEY = /^(custom-)?[0-9a-f]{64}$/;
+const PDF_VP_ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+function ownJob(req: AuthRequest): PdfJob {
+  const job = getPdfJob(String(req.params.id));
+  if (!job) throw new AppError('PDF introuvable (serveur redémarré ou tâche expirée) : relancer l’export', 404);
+  if (job.userId !== req.user?.id) throw new AppError('Non autorisé', 403);
+  return job;
+}
+
+// GET /plans/pdf-jobs/available — le rendu PDF du serveur est-il installé ?
+router.get('/pdf-jobs/available', (_req: AuthRequest, res: Response) => {
+  res.json({ success: true, data: { available: !!rendererPath() } });
+});
+
+// POST /plans/project/:projectId/pdf-jobs { manifest } — planches à écrire (sans les vues) → { id }
+router.post('/project/:projectId/pdf-jobs', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!rendererPath()) throw new AppError('Rendu PDF du serveur absent', 503);
+    const m = req.body?.manifest;
+    if (!m || typeof m !== 'object' || !Array.isArray(m.sheets) || !m.sheets.length) throw new AppError('Planches manquantes', 400);
+    const fileName = String(m.fileName || 'plans.pdf').slice(0, 200).replace(/[\\/:*?"<>|]+/g, '-');
+    const job = createPdfJob(req.params.projectId, req.user!.id, m, fileName);
+    res.status(201).json({ success: true, data: { id: job.id } });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/pdf-jobs/:id/missing { keys } — vues que le navigateur doit envoyer (absentes du cache partagé)
+router.post('/pdf-jobs/:id/missing', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    const keys = Array.isArray(req.body?.keys) ? req.body.keys.map(String) : [];
+    if (keys.some((k: string) => !PDF_VIEW_KEY.test(k))) throw new AppError('Clé de vue invalide', 400);
+    res.json({ success: true, data: { missing: await missingPdfKeys(job, keys) } });
+  } catch (err) { next(err); }
+});
+
+// PUT /plans/pdf-jobs/:id/linework/:key — traits d'une vue absente du cache partagé (binaire gzip)
+router.put('/pdf-jobs/:id/linework/:key', express.raw({ type: 'application/octet-stream', limit: '300mb' }), (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    const key = String(req.params.key);
+    if (!PDF_VIEW_KEY.test(key)) throw new AppError('Clé invalide', 400);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new AppError('Vue vide', 400);
+    writePdfLinework(job, key, req.body);
+    res.json({ success: true, data: { key, size: req.body.length } });
+  } catch (err) { next(err); }
+});
+
+// PUT /plans/pdf-jobs/:id/views/:vpId — ce que le navigateur a préparé pour une fenêtre de vue (peinture, contours…)
+router.put('/pdf-jobs/:id/views/:vpId', express.raw({ type: 'application/octet-stream', limit: '100mb' }), (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    const vpId = String(req.params.vpId);
+    if (!PDF_VP_ID.test(vpId)) throw new AppError('Fenêtre invalide', 400);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new AppError('Données vides', 400);
+    writePdfView(job, vpId, req.body);
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/pdf-jobs/:id/start { imagePx, jpegQuality } — lance (ou relance, images plus légères) le rendu
+router.post('/pdf-jobs/:id/start', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    const imagePx = Math.max(400, Math.min(4000, Math.round(Number(req.body?.imagePx) || 2000)));
+    const jpegQuality = Math.max(0.3, Math.min(0.95, Number(req.body?.jpegQuality) || 0.88));
+    await startPdfJob(job, { imagePx, jpegQuality });
+    res.json({ success: true, data: pdfJobStatus(job) });
+  } catch (err) { next(err); }
+});
+
+// GET /plans/pdf-jobs/:id — avancement
+router.get('/pdf-jobs/:id', (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: pdfJobStatus(ownJob(req)) });
+  } catch (err) { next(err); }
+});
+
+// GET /plans/pdf-jobs/:id/file — le PDF terminé
+router.get('/pdf-jobs/:id/file', (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    if (job.status !== 'done') throw new AppError('PDF pas encore prêt', 409);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(job.fileName)}`);
+    res.sendFile(pdfOutFile(job), (err) => { if (err && !res.headersSent) next(err); });
+  } catch (err) { next(err); }
+});
+
+// POST /plans/pdf-jobs/:id/save — le PDF terminé va dans les Fichiers du projet (≤ 10 Mo)
+router.post('/pdf-jobs/:id/save', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const job = ownJob(req);
+    if (job.status !== 'done') throw new AppError('PDF pas encore prêt', 409);
+    const buffer = fs.readFileSync(pdfOutFile(job));
+    const file = await saveProjectPlansFile(job.projectId, req.user?.id ?? null, buffer, job.fileName);
+    res.status(201).json({ success: true, data: file });
+  } catch (err) { next(err); }
+});
+
+// DELETE /plans/pdf-jobs/:id — annulé ou récupéré : processus arrêté, fichiers effacés
+router.delete('/pdf-jobs/:id', (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    deletePdfJob(ownJob(req));
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
