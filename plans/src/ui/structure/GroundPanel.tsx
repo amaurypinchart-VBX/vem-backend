@@ -273,9 +273,64 @@ const REMEDY_BADGE: Record<RemedyVerdict, { cls: string; text: string }> = {
   info: { cls: '', text: 'information' },
 };
 
+/** Solution(s) retenue(s) parmi les pistes : ce qui est appliqué au calage, avec « Retirer ». */
+function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageResult; centreBlocks: boolean; onRemove: (what: 'remedy' | 'centre') => void }) {
+  const r = result.remedy?.remedy;
+  if (!r && !centreBlocks) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6 }} data-testid="remedy-applied">
+      {centreBlocks && (
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <b>✔ Retenu : blocs centrés sous les pieds</b>
+          <span className="hint">
+            {result.centredBlocks?.length ? result.centredBlocks.map((b) => `${b.id} à déplacer de ${n(b.move / 10, 0)} cm`).join(', ') : 'blocs déjà centrés'} — le modèle n’est pas modifié, à poser ainsi sur site
+          </span>
+          <div className="spacer" style={{ flex: 1 }} />
+          <button className="btn small ghost" onClick={() => onRemove('centre')} data-testid="remedy-remove-centre">
+            Retirer
+          </button>
+        </div>
+      )}
+      {r && (
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <b>✔ Solution retenue : {r.title}</b>
+          <span className={`badge ${r.verdict === 'ok' ? 'ok' : 'ko'}`}>{r.verdict === 'ok' ? 'passe' : 'ne passe pas'}{r.eta !== undefined ? ` · η ${n(r.eta, 2)}` : ''}</span>
+          <div className="spacer" style={{ flex: 1 }} />
+          <button className="btn small ghost" onClick={() => onRemove('remedy')} data-testid="remedy-remove">
+            Retirer (revenir aux plaques)
+          </button>
+          <div className="hint" style={{ width: '100%' }}>
+            {r.summary} Le plan, la vérification de chaque appui, le matériel, la fiche, le plan de calage A3 et le rapport sont calculés avec cette solution ; elle est revérifiée à chaque changement (charges, portance, raideur du sol).
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Pistes chiffrées quand le calage ne passe pas : ce que propose l'outil, avec ses hypothèses et le matériel. */
-function RemediesCard({ remedies, bearing, searching, onSearch }: { remedies: CalageRemedy[] | null; bearing: number; searching: boolean; onSearch: () => void }) {
+function RemediesCard({
+  remedies,
+  bearing,
+  searching,
+  onSearch,
+  result,
+  choices,
+  onApply,
+  onRemove,
+}: {
+  remedies: CalageRemedy[] | null;
+  bearing: number;
+  searching: boolean;
+  onSearch: () => void;
+  result: CalageResult;
+  choices: CalageChoices;
+  onApply: (r: CalageRemedy) => void;
+  onRemove: (what: 'remedy' | 'centre') => void;
+}) {
   const [open, setOpen] = useState<string | null>(null);
+  const applied = <AppliedRemedies result={result} centreBlocks={!!choices.centreBlocks} onRemove={onRemove} />;
+  const isApplied = (r: CalageRemedy) => (r.apply === 'centre-blocks' ? !!choices.centreBlocks : !!r.apply && choices.remedy?.key === r.apply.key);
   if (!remedies)
     return (
       <div className="card" data-testid="calage-remedies">
@@ -286,9 +341,12 @@ function RemediesCard({ remedies, bearing, searching, onSearch }: { remedies: Ca
             {searching ? 'Recherche en cours…' : 'Chercher des solutions'}
           </button>
         </div>
-        <div className="card-body hint">
-          L’outil essaie : blocs centrés sous les pieds, surface d’appui nécessaire, grille de madriers C24 sous chaque rangée, plateau continu en madriers (avec et sans les blocs,
-          sans débord puis 50 cm), et dit ce que chaque piste suppose. Quelques secondes.
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {applied}
+          <div className="hint">
+            L’outil essaie : blocs centrés sous les pieds, surface d’appui nécessaire, grille de madriers C24 sous chaque rangée, plateau continu en madriers (avec et sans les blocs,
+            sans débord puis 50 cm), et dit ce que chaque piste suppose. Quelques secondes. Chaque piste calculée peut ensuite être appliquée : le calage est recalculé avec elle.
+          </div>
         </div>
       </div>
     );
@@ -301,6 +359,8 @@ function RemediesCard({ remedies, bearing, searching, onSearch }: { remedies: Ca
         </span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {applied}
+        {!remedies.length && <div className="hint">Aucune autre piste : tous les appuis passent avec le calage actuel.</div>}
         {remedies.map((r) => (
           <div key={r.key} style={{ borderLeft: `3px solid ${r.verdict === 'ok' ? '#16a34a' : r.verdict === 'fail' ? '#dc2626' : r.verdict === 'study' ? '#d97706' : '#9ca3af'}`, paddingLeft: 10 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -314,6 +374,19 @@ function RemediesCard({ remedies, bearing, searching, onSearch }: { remedies: Ca
                   {open === r.key ? 'Masquer le détail' : 'Voir le détail'}
                 </button>
               )}
+              {r.apply &&
+                (isApplied(r) ? (
+                  <span className="badge ok">✔ retenue</span>
+                ) : (
+                  <button
+                    className={`btn small ${r.verdict === 'ok' ? 'primary' : ''}`}
+                    onClick={() => onApply(r)}
+                    data-testid={`remedy-apply-${r.key}`}
+                    title={r.verdict === 'ok' ? 'Recalculer le calage avec cette solution' : 'Cette piste ne passe pas seule : l’appliquer pour voir le calage avec elle (ou la combiner avec une autre)'}
+                  >
+                    Appliquer cette solution
+                  </button>
+                ))}
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{r.summary}</div>
             {!!r.materials.length && (
@@ -681,17 +754,39 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   // pistes pour faire passer le sol (madriers, plateau, blocs centrés…) : cherchées sur demande (quelques secondes)
   const [remedies, setRemedies] = useState<CalageRemedy[] | null>(null);
   const [searching, setSearching] = useState(false);
-  useEffect(() => setRemedies(null), [result]);
+  // les pistes restent affichées quand on en applique ou en retire une (le calcul change, pas les pistes)
+  const keepRemedies = useRef(false);
+  useEffect(() => {
+    if (keepRemedies.current) keepRemedies.current = false;
+    else setRemedies(null);
+  }, [result]);
   const searchRemedies = () => {
     if (!result) return;
     setSearching(true);
     setTimeout(() => {
       try {
-        setRemedies(calageRemedies(input, result));
+        // pistes cherchées sur le calage sans la solution retenue (les plaques), blocs centrés gardés s'ils sont retenus
+        const baseInput = input.choices?.remedy ? { ...input, choices: { ...input.choices, remedy: undefined } } : input;
+        setRemedies(calageRemedies(baseInput, baseInput === input ? result : computeCalage(baseInput)));
       } finally {
         setSearching(false);
       }
     }, 20);
+  };
+  const applyRemedy = (r: CalageRemedy) => {
+    if (!r.apply) return;
+    const a = r.apply;
+    keepRemedies.current = true;
+    setChoices((c) => (a === 'centre-blocks' ? { ...c, centreBlocks: true } : { ...c, remedy: a, roadway: false, longrine: false }));
+  };
+  const removeRemedy = (what: 'remedy' | 'centre') => {
+    keepRemedies.current = true;
+    setChoices((c) => {
+      const out = { ...c };
+      if (what === 'remedy') delete out.remedy;
+      else delete out.centreBlocks;
+      return out;
+    });
   };
   const choiceSet: ChoiceSetters = {
     choices,
@@ -722,6 +817,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         levels: result.levels,
         lang: pdfLang,
         noTuv: !!result.tuv.notApplicable,
+        remedy: result.remedy,
         info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
@@ -933,7 +1029,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   text={14}
                   selected={selected}
                   onSelect={planView === 'level' ? setSelected : select}
-                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines } : {})}
+                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines, remedy: result.remedy } : { remedy: result.remedy })}
                   {...(planView === 'level'
                     ? {
                         pointColor: (r) => levelPointStyle(result, hyp.groundLevels, r).color,
@@ -989,8 +1085,17 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
           </div>
 
           <CalageDiagnostic result={result} set={choiceSet} onSelect={select} publicLine={publicLine} />
-          {result.checks.some((c) => c.eta > 1) && (
-            <RemediesCard remedies={remedies} bearing={input.bearing} searching={searching} onSearch={searchRemedies} />
+          {(result.checks.some((c) => c.eta > 1) || !!choices.remedy || !!choices.centreBlocks) && (
+            <RemediesCard
+              remedies={remedies}
+              bearing={input.bearing}
+              searching={searching}
+              onSearch={searchRemedies}
+              result={result}
+              choices={choices}
+              onApply={applyRemedy}
+              onRemove={removeRemedy}
+            />
           )}
 
           {roadway && (

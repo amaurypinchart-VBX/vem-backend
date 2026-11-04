@@ -64,6 +64,13 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
     return out;
   }
   const W = (p: readonly [number, number]): Vec3 => [p[0], y, p[1]];
+  // madriers de la solution retenue (grille, plateau), sous les blocs / pieds
+  for (const o of calage.remedy?.outlines ?? []) {
+    const cx = o.corners.reduce((a, p) => a + p[0], 0) / 4;
+    const cz = o.corners.reduce((a, p) => a + p[1], 0) / 4;
+    const label = o.id === 'PL' || o.id.startsWith('G');
+    out.push({ id: `T${o.id}`, label: label ? o.label : '', ...(label && o.sub ? { sub: o.sub } : {}), color: '#a16207', corners: o.corners.map(W), at: W([cx, cz]) });
+  }
   for (const c of calage.checks) {
     const g = c.geometry;
     // sans plaque : la surface de contact
@@ -78,7 +85,9 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
     const over = c.plan && c.plan.placement === 'centered' && c.plan.overhang > 5 ? ` · ${C.overhang(N(c.plan.overhang / 10))}` : '';
     out.push({
       id: c.id,
-      label: c.block ? `${C.onBlock(c.block.dims.replace(/,/g, lang === 'en' ? '.' : ','))}${c.layerList.length ? ` + ${layersShort(c.layerList)}` : ''}` : c.layerList.length ? layersShort(c.layerList) : C.noPlate,
+      label: c.block
+        ? `${C.onBlock(c.block.dims.replace(/,/g, lang === 'en' ? '.' : ','))}${c.chainBase.timber ? ` ${C.onTimber}` : c.layerList.length ? ` + ${layersShort(c.layerList)}` : ''}`
+        : c.chainBase.timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList) : C.noPlate,
       sub: `Rz,k ${N(c.Rzk / 1e3)} kN${over}`,
       color: typeColor(c.typeKey),
       corners: rect.map(W),
@@ -200,7 +209,8 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
       color: typeColor(t.typeKey),
     })),
   });
-  if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
+  if (c.remedy) blocks[0].lines.push({ text: `${E(c.remedy.remedy.title)} : ${E(c.remedy.remedy.summary)}`, bold: true });
+  else if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
   else if (c.longrine && !c.allPlates) blocks[0].lines.push({ text: C.longrineVariant(E(c.longrine.solution.summary), N(c.longrine.result.eta, 2)) });
   blocks.push({ title: C.materialsTitle, lines: c.materials.map((m) => ({ text: `${m.quantity} × ${E(m.label)} ${E(m.dims)}` })) });
   // appuis sur blocs dessinés : ni « à fleur » ni « centré » (la plaque éventuelle est sous le bloc)

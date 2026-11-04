@@ -2,7 +2,7 @@
 // (numéro, réaction caractéristique), repère x / y, pression sous plaques de roulage (répartition uniforme sur toute
 // la surface et emprise la plus chargée), tableau des points avec leurs coordonnées. SVG en mm (210 × 297).
 import type { ReactElement } from 'react';
-import type { SupportCheck } from '../core/calage';
+import type { CalageResult, SupportCheck } from '../core/calage';
 import type { Estimate, EstimateModule } from '../core/estimate';
 import type { RoadwayResult } from '../core/roadway';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../core/roadway';
@@ -47,6 +47,8 @@ export interface GroundPointsInput {
   lang?: Lang;
   /** aucune Viewbox (types de structure personnalisés) : pas de références TÜV */
   noTuv?: boolean;
+  /** solution retenue (grille / plateau de madriers) : dessinée sous les plaques */
+  remedy?: CalageResult['remedy'];
 }
 
 const ROW = 2.4 * 1.55;
@@ -130,9 +132,9 @@ export function compactIds(ids: string[]): string {
 }
 
 /** « 2 × 100 × 100 × 36 mm · 61 kN/m² » (▲ = plaque centrée, elle dépasse) */
-function calageCell(c: SupportCheck, roadway: boolean, lang: Lang): string {
+function calageCell(c: SupportCheck, roadway: boolean, lang: Lang, timber = false): string {
   const C = CALAGE_LABELS[lang];
-  const lay = c.layerList.length ? layersShort(c.layerList) : C.noPlate;
+  const lay = timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList) : C.noPlate;
   const q = c.pressure * 1e3;
   const mark = verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : '';
   const over = c.plan?.placement === 'centered' && c.plan.overhang > 5 ? ' ▲' : '';
@@ -171,7 +173,7 @@ function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; hea
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false, remedy }: GroundPointsInput): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const R = C.roadwayRows;
   const E = (t: string) => translate(lang, t);
@@ -181,7 +183,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   const ground = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
   // plaque de chaque point : la vérification de l'appui de calage qui le contient (vérins voisins sur une même plaque)
   const checkOf = new Map((checks ?? []).flatMap((c) => (c.members?.length ? c.members : [c.id]).map((id) => [id, c] as const)));
-  const roadwayOn = !!checks?.some((c) => c.steps.some((s) => s.dims === null));
+  const roadwayOn = !remedy && !!checks?.some((c) => c.steps.some((s) => s.dims === null));
   const withLevels = !!levels?.known;
   const cols = colsOf(lang, !!checks?.length, withLevels);
   const levelCells = (id: string): string[] => {
@@ -196,7 +198,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     const list = ids.length ? ids : r.group.moduleIds;
     const head = [r.group.id, E(supportType(r)), checks?.length ? compactIds(list) : list.join(', '), n1(x / 1e3, 2), n1(y / 1e3, 2), ...levelCells(r.group.id), n1(r.Rk / 1e3), n1(r.REd / 1e3)];
     if (!checks?.length) return [...head, n1(r.Rk / 9.81e3, 2)];
-    return [...head, c && c.id !== r.group.id ? `  ${c.id}` : '', c ? calageCell(c, roadwayOn, lang) : ''];
+    return [...head, c && c.id !== r.group.id ? `  ${c.id}` : '', c ? calageCell(c, roadwayOn, lang, !!remedy && !!c.chainBase.timber) : ''];
   });
   const title = (t: string, y: number) => (
     <text fontFamily={FONT_SANS} x={M} y={y} fontSize={3.4} fontWeight={700} fill="#1a021d">
@@ -224,7 +226,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         h={planH}
         text={2.2}
         axes
-        plates={checks?.length ? planPlates(checks) : undefined}
+        plates={checks?.length ? planPlates(checks, { remedy }) : undefined}
         zoneFill={(m) => (zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
           const z = zoneOf.get(m.id);

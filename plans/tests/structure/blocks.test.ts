@@ -271,4 +271,51 @@ describe('pose des plaques sous les blocs et solutions (A. Pinchart 03.11.2026)'
     // sans aucun appui qui dépasse : rien à proposer
     expect(calageRemedies(base, computeCalage(base))).toEqual([]);
   }, 60000);
+
+  it('solution choisie : le calage est recalculé avec elle (pression, matériel, plan) ; blocs centrés', async () => {
+    const { calageRemedies } = await import('../../src/structure/core/calageRemedies');
+    const hyp450 = { ...hyp, bearingValue: 450, bearingUnit: 'kg/m²' as const, liveGround: 0.981, publicMode: 'persons' as const, persons: 4 };
+    const inp = { ...calageInput(mods, hyp450, { plates: [], commercial: [] }, true), blocks: nine };
+    const res = computeCalage(inp);
+    const rem = calageRemedies(inp, res);
+    const plat = rem.find((x) => x.key === 'platform')!;
+    expect(typeof plat.apply).toBe('object');
+    const applied = computeCalage({ ...inp, choices: { remedy: plat.apply as Exclude<typeof plat.apply, 'centre-blocks' | undefined> } });
+    expect(applied.remedy?.remedy.key).toBe('platform');
+    // chaque appui porte sur le plateau : même pression au sol, celle trouvée par la recherche
+    for (const c of applied.checks) {
+      expect(c.pressure).toBeCloseTo(applied.checks[0].pressure, 9);
+      expect(c.steps[c.steps.length - 1].label).toMatch(/^\+ Plateau de madriers/);
+      expect(c.layerList).toEqual([]);
+    }
+    expect(applied.remedy!.remedy.eta).toBeCloseTo(plat.eta!, 6);
+    expect(applied.allPlates).toBe(plat.verdict === 'ok');
+    // matériel : les blocs + les madriers, plus de plaques
+    expect(applied.materials.some((l) => l.label.startsWith('Bloc de calage'))).toBe(true);
+    expect(applied.materials.some((l) => l.label.includes('plateau'))).toBe(true);
+    expect(applied.remedy!.outlines.length).toBeGreaterThan(1);
+    // sans les blocs : les blocs ne sont plus posés ni comptés
+    const no = rem.find((x) => x.key === 'platform-no-blocks')!;
+    const appliedNo = computeCalage({ ...inp, choices: { remedy: no.apply as Exclude<typeof no.apply, 'centre-blocks' | undefined> } });
+    expect(appliedNo.checks.every((c) => !c.block)).toBe(true);
+    expect(appliedNo.materials.some((l) => l.label.startsWith('Bloc de calage'))).toBe(false);
+    expect(appliedNo.remedy!.remedy.eta).toBeCloseTo(no.eta!, 6);
+    // la solution suit les charges : plus de public → pression plus forte
+    const more = computeCalage({ ...inp, publicLimit: { persons: 40, kg: 80 }, choices: { remedy: plat.apply as Exclude<typeof plat.apply, 'centre-blocks' | undefined> } });
+    expect(more.remedy!.remedy.eta!).toBeGreaterThan(applied.remedy!.remedy.eta!);
+    // grille par rangée retenue
+    const sl = rem.find((x) => x.key === 'sleepers')!;
+    if (sl.apply) {
+      const a = computeCalage({ ...inp, choices: { remedy: sl.apply as Exclude<typeof sl.apply, 'centre-blocks' | undefined> } });
+      expect(a.remedy!.remedy.key).toBe('sleepers');
+      expect(a.checks.every((c) => /Grille de madriers/.test(c.steps[c.steps.length - 1].label))).toBe(true);
+    }
+    // blocs centrés : même résultat que la piste, déplacements listés
+    const cb = rem.find((x) => x.key === 'centre-blocks')!;
+    expect(cb.apply).toBe('centre-blocks');
+    const centred = computeCalage({ ...inp, choices: { centreBlocks: true } });
+    expect(centred.centredBlocks!.length).toBeGreaterThan(0);
+    expect(Math.max(...centred.checks.map((c) => c.eta))).toBeCloseTo(cb.eta!, 2);
+    expect(centred.warnings.some((w) => w.startsWith('Blocs centrés sous les pieds'))).toBe(true);
+  }, 60000);
 });

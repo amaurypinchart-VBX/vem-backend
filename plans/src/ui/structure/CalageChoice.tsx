@@ -193,6 +193,12 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
           {c.tuv ? ` Prüfbuch TÜV : ${c.tuv.text}.` : ''}
         </div>
         <ChainTable c={c} />
+        {c.chainBase.timber ? (
+          <div className="hint">
+            Appui posé sur les madriers de la solution retenue (« {result.remedy?.remedy.title} ») : pas de plaque ici. Pour revenir aux plaques, « Retirer » la solution dans « 🛠 Solutions pour que le sol passe ».
+          </div>
+        ) : (
+        <>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
           <span className="hint" style={{ minWidth: 140 }}>Pose des plaques de {c.id}</span>
           <select
@@ -217,6 +223,8 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
             inheritLabel={typeRefs !== undefined ? `Comme les autres « ${label} » : ${refsText(typeRefs, stock)}` : autoLabel(autoType, result.roadwayOn)}
           />
         </div>
+        </>
+        )}
         <div className="hint">Pression au sol si le calage s’arrêtait à chaque étape ; la dernière ligne est celle vérifiée. Choix enregistré avec l’étude.</div>
       </div>
     </div>

@@ -310,7 +310,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
         rows: c.types.map((t) => [E(t.label), String(t.reactions.length), kN(t.Rzk), kN(t.RzEd), t.chosen ? E(t.chosen.summary) + (t.standard ? '' : ` (${E('hors standard')})`) : L.noStandardSolution, t.chosen ? etaCell(t.chosen.eta) : verdictCell('fail')]),
       },
     ];
-    if (c.longrine) out.push({ t: 'para', text: `${L.longrine} : ${E(c.longrine.solution.summary)} (η = ${N(c.longrine.result.eta)}).`, size: SIZE.small });
+    if (c.remedy) out.push({ t: 'para', text: `${L.chosenSolution} : ${E(c.remedy.remedy.title)} — ${E(c.remedy.remedy.summary)}`, bold: true, size: SIZE.small });
+    else if (c.longrine) out.push({ t: 'para', text: `${L.longrine} : ${E(c.longrine.solution.summary)} (η = ${N(c.longrine.result.eta)}).`, size: SIZE.small });
     out.push({
       t: 'table',
       cols: [
@@ -756,7 +757,15 @@ export function buildReport(inp: ReportInput): ReportOutput {
           items: others.map((x) => `${L.otherSolutions} : ${E(x.title)} — ${E(x.summary)} — η = ${N(x.eta)}${x.feasible ? '' : ` (${x.remarks.map(E).join(' ; ') || E('hors standard')})`}`),
         });
     }
-    if (c.longrine) {
+    if (c.remedy) {
+      // solution retenue parmi les pistes (madriers) : description, hypothèses, matériel dans le tableau de la synthèse
+      const r = c.remedy.remedy;
+      blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: `${L.chosenSolution} : ${E(r.title)}` });
+      blocks.push({ t: 'para', text: E(r.summary) });
+      if (r.details.length) blocks.push({ t: 'bullets', items: r.details.map(E) });
+      if (r.notes.length) blocks.push({ t: 'bullets', size: SIZE.small, items: r.notes.map(E) });
+      if (r.eta !== undefined) blocks.push({ t: 'eta', eta: r.eta });
+    } else if (c.longrine) {
       blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: L.longrine });
       blocks.push({ t: 'para', text: `${E(c.longrine.solution.title)} — ${E(c.longrine.solution.summary)}` });
       for (const r of c.longrine.solution.records) blocks.push(rec(r));

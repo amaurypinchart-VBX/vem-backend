@@ -24,6 +24,8 @@ import type { GroundLevel, LevelSurvey } from './groundLevels';
 import { JACK_MAX_EXTENSION, levelSurvey } from './groundLevels';
 import { verdictOf } from './records';
 import { fmtNumber } from './units';
+import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedies';
+import { evaluateRemedy } from './calageRemedies';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -185,6 +187,10 @@ export interface CalageResult {
   tuv: { bearingOk: boolean; ok: boolean | null; tuvMinimum: boolean; notApplicable?: true };
   /** niveaux du sol relevés et rattrapage par pied (null : aucun relevé saisi) */
   levels: LevelSurvey | null;
+  /** solution retenue parmi les pistes (`CalageChoices.remedy`), revérifiée avec les charges actuelles */
+  remedy?: { applied: AppliedRemedy; remedy: CalageRemedy; outlines: RemedyOutline[] };
+  /** blocs centrés sous leurs pieds (`CalageChoices.centreBlocks`) : déplacement à faire sur site (mm) */
+  centredBlocks?: Array<{ id: string; move: number }>;
 }
 
 const typeLabel = (corners: number, middle: boolean, jack = false, stair = false) =>
@@ -211,6 +217,106 @@ export const calageTypeKey = (r: GroupReaction, members = 1): string =>
     : r.group.terrace ? (r.group.middle ? 'TM' : 'T') : r.group.post ? 'R' : r.group.stair ? 'E' : r.group.middle ? (members > 1 ? `M${members}` : 'M') : String(Math.min(4, r.group.corners));
 
 export function computeCalage(inp: CalageInput): CalageResult {
+  const base = computeCalageBase(inp);
+  const applied = inp.choices?.remedy;
+  return applied ? withRemedy(inp, base, applied) : base;
+}
+
+/**
+ * Solution retenue appliquée au calage : chaque appui concerné est revérifié sans ses plaques (et sans son bloc pour
+ * les variantes « sans les blocs »), posé sur la grille / le plateau de madriers — pression au sol calculée pour toute la
+ * rangée ou tout le plateau, taux du bois. Matériel = blocs gardés + madriers + calage des autres appuis.
+ */
+function withRemedy(inp: CalageInput, res: CalageResult, applied: AppliedRemedy): CalageResult {
+  const ev = evaluateRemedy(inp, res, applied);
+  if (!ev)
+    return {
+      ...res,
+      warnings: [...res.warnings, 'Solution retenue (madriers) : les appuis ont changé depuis la recherche, elle n’est plus appliquée — relancer « Chercher des solutions » et la choisir à nouveau.'],
+    };
+  const noBlocks = applied.key.endsWith('no-blocks');
+  const replaced = (c: SupportCheck): SupportCheck => {
+    const s = ev.perSupport.get(c.id);
+    if (!s) return c;
+    const { block: _b, caps: _c, edgeDist: _e, ...rest } = c.chainBase;
+    const base: Omit<ChainInput, 'layers'> = {
+      ...rest,
+      ...(noBlocks ? { contactLabel: rest.contactLabel.replace(' sur le bloc', ' sur les madriers') } : {}),
+      roadway: null,
+      ...(!noBlocks && _b ? { block: _b } : {}),
+      timber: s,
+    };
+    const chain = checkChain({ ...base, layers: [] });
+    const out: SupportCheck = {
+      ...c,
+      ...chain,
+      chainBase: base,
+      layerList: [],
+      advice: chain.eta > 1 ? `${c.id} : ${chain.problems.join(' ; ') || `pression au sol ${pressureText(chain.pressure)} > ${pressureText(inp.bearing)}`} (solution retenue : ${ev.remedy.title}).` : '',
+      plan: !noBlocks && c.block ? { placement: 'flush', corners: c.block.outline, caps: [Infinity, Infinity], edgeDist: [Infinity, Infinity], overhang: 0 } : null,
+      placement: 'flush',
+      tuv: null,
+    };
+    if (noBlocks) delete out.block;
+    return out;
+  };
+  const types = res.types.map((t): CalageType => {
+    if (!t.checks.some((c) => ev.perSupport.has(c.id))) return t;
+    const checks = t.checks.map(replaced);
+    const worst = checks.reduce((a, c) => (c.eta > a.eta ? c : a));
+    const chosen: Solution = {
+      kind: 'custom',
+      title: ev.remedy.title,
+      summary: noBlocks ? 'vérin posé sur les madriers (bloc retiré)' : t.block ? 'bloc posé sur les madriers' : 'pied posé sur les madriers',
+      feasible: worst.eta <= 1,
+      remarks: worst.problems,
+      eta: worst.eta,
+      materials: [],
+      records: worst.records,
+      layers: [],
+    };
+    return {
+      ...t,
+      ...(noBlocks && t.block ? { label: t.label.replace(/^bloc bois sous /, '') + ' — sur les madriers (bloc retiré)' } : {}),
+      checks,
+      chosen,
+      solutions: [chosen],
+      standard: verdictOf(worst.eta) !== 'fail',
+      tuv: null,
+      advice: worst.advice,
+      custom: false,
+    };
+  });
+  const checks = res.checks.map((c) => types.flatMap((t) => t.checks).find((x) => x.id === c.id) ?? c);
+  // matériel : blocs gardés, madriers de la solution, calage des appuis non concernés (escalier, terrasse)
+  const blockLines = res.materials.filter((l) => l.label.startsWith('Bloc de calage'));
+  const others = types.filter((t) => !t.checks.some((c) => ev.perSupport.has(c.id))).flatMap((t) => t.chosen?.materials ?? []);
+  const materials = mergeMaterials([...(noBlocks ? [] : blockLines), ...others, ...ev.remedy.materials]);
+  const allPlates = types.every((t) => t.standard);
+  const drop = [/^Aucune solution standard/, /^La variante longrines passe/, /^Longrines : aucune section/, /^Plaques de roulage et blocs de calage/, /^Plaques de roulage : emprise/, ...(noBlocks ? [/^Appuis sur blocs de calage bois dessinés/] : [])];
+  const warnings = res.warnings.filter((w) => !drop.some((r) => r.test(w)));
+  if (noBlocks) {
+    const ids = [...new Set(res.checks.flatMap((c) => (c.block ? [c.block.id] : [])))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (ids.length) warnings.push(`Solution retenue sans les blocs dessinés (${ids.join(', ')}) : ils ne sont pas posés ; leur poids n’est pas compté.`);
+  }
+  if (!allPlates) warnings.push(`Solution retenue « ${ev.remedy.title} » : certains appuis ne passent pas avec les charges actuelles — relancer la recherche de solutions.`);
+  const tuvList = types.map((t) => t.tuv).filter((x): x is TuvCheck => !!x);
+  const tuvOk = !tuvList.length ? null : tuvList.some((x) => x.ok === false) ? false : tuvList.every((x) => x.ok === true) ? true : null;
+  return {
+    ...res,
+    types,
+    checks,
+    materials,
+    allPlates,
+    warnings,
+    roadwayOn: false,
+    longrineChosen: false,
+    tuv: { ...res.tuv, ok: tuvOk },
+    remedy: { applied, remedy: ev.remedy, outlines: ev.outlines },
+  };
+}
+
+function computeCalageBase(inp: CalageInput): CalageResult {
   const est0 = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
   const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
@@ -226,6 +332,15 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const groupsP = plateGroups(est0.reactions, inp.modules, inp.estimate.groupTolerance);
   // blocs de calage dessinés : les appuis posés sur un même bloc = un appui de calage (réactions additionnées)
   const blk = inp.blocks?.length ? assignBlocks(groupsP, inp.modules, inp.blocks) : null;
+  // piste « Centrer les blocs » retenue : chaque bloc chargé hors de son centre est déplacé sous la résultante de ses pieds
+  const centredBlocks: Array<{ id: string; move: number }> = [];
+  if (blk && inp.choices?.centreBlocks)
+    for (const [g, s] of [...blk.support]) {
+      const move = Math.hypot(s.geometry.center[0] - (s.rect[0] + s.rect[1]) / 2, s.geometry.center[1] - (s.rect[2] + s.rect[3]) / 2);
+      if (move <= 50) continue;
+      blk.support.set(g, centredBlock(s));
+      centredBlocks.push({ id: s.block.id, move });
+    }
   const groups0 = blk ? blk.groups : groupsP;
   const plateEst = limit({ ...est0, reactions: groups0.map((g) => g.reaction) });
   const groups: PlateGroup[] = groups0.map((g, k) => ({ reaction: plateEst.reactions[k], members: g.members }));
@@ -242,6 +357,8 @@ export function computeCalage(inp: CalageInput): CalageResult {
         `${blk.unused.length} bloc(s) de calage sous aucun appui (${blk.unused.map((b) => b.id).join(', ')})${inp.estimate.middleFeet || inp.estimate.jacks ? '' : ' : si les pieds centraux des Viewbox posent sur ces blocs, cocher « pieds centraux » (étape 2)'} — leur poids n’est pas compté.`,
       );
   }
+  if (centredBlocks.length)
+    warnings.push(`Blocs centrés sous les pieds (solution retenue) : ${centredBlocks.map((b) => `${b.id} à déplacer de ${Math.round(b.move / 10)} cm`).join(', ')} — le dessin du modèle n’est pas modifié, à poser ainsi sur site (le bloc peut dépasser de la Viewbox).`);
   if (unknownContact.length) warnings.push(`Surface d’appui d’un pied à renseigner pour ${unknownContact.join(', ')} (type de structure personnalisé) : calage indicatif, 21 × 21 cm supposés.`);
   const reach = 2 * inp.estimate.groupTolerance + (est.reactions.some((r) => r.group.jack) ? 250 : 0);
   const byType = new Map<string, PlateGroup[]>();
@@ -742,6 +859,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
     tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(viewboxPresent ? {} : { notApplicable: true }) },
+    ...(centredBlocks.length ? { centredBlocks } : {}),
     levels: inp.levels?.length ? levelSurvey(est.reactions.map((r) => ({ id: r.group.id, position: r.group.position, jack: !!r.group.jack })), inp.levels, inp.jackMax ?? JACK_MAX_EXTENSION) : null,
   };
 }
