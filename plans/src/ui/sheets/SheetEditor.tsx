@@ -135,6 +135,16 @@ type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
 const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
 const lightDevice = lowPowerDevice();
+/** taille d'un morceau de l'export PDF allégé (caractères de SVG) ; localStorage `vem_plans_pdf_chunk` pour les tests */
+function pdfChunkChars(): number {
+  try {
+    const v = Number(localStorage.getItem('vem_plans_pdf_chunk'));
+    if (v > 0) return v;
+  } catch {
+    /* stockage indisponible */
+  }
+  return 40e6;
+}
 const bigScenes = new WeakMap<object, boolean>();
 
 export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
@@ -1075,7 +1085,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         missing = vps.filter((vp) => !bank.data(vp).lw).length;
         if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
       }
-      const { buildPdf, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
+      const { buildPdf, buildPdfBlob, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
       const { loadFonts, pdfImageDataUrl, MAX_IMAGE_PX_MOBILE } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
       const urls = [...new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : [])))];
@@ -1106,8 +1116,29 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             paint={paintInfo}
           />,
         );
-      // téléphone : le SVG de chaque planche est refait au moment de sa page (polices relevées sans garder les textes)
-      const fontKeys = light ? fontsUsed(sheets.map((s) => markup(s).replace(/<image[^>]*>/g, ''))) : null;
+      // allégé : polices relevées planche par planche sur un SVG sans vues ni images (avant : le SVG complet de toutes
+      // les planches d'un coup, images 3D comprises — des centaines de Mo, la page plantait juste après « images 3D »),
+      // plus les variantes de base au cas où un texte ne s'affiche qu'avec sa vue
+      const fontKeys = light
+        ? (() => {
+            const keys = new Set<string>(['Arimo-bold', 'Arimo-normal', 'Gelasio-bold', 'Gelasio-normal']);
+            for (const s of sheets)
+              for (const k of fontsUsed([
+                renderToStaticMarkup(
+                  <SheetSvg
+                    sheet={{ ...s, items: s.items.map((i) => (i.type === 'image3d' ? { ...i, url: '' } : i)) }}
+                    titleBlock={doc.titleBlock}
+                    notes={doc.notes}
+                    legend={legend}
+                    viewData={() => undefined}
+                    paint={paintInfo}
+                  />,
+                ),
+              ]))
+                keys.add(k);
+            return [...keys].sort() as ReturnType<typeof fontsUsed>;
+          })()
+        : null;
       const counted = new Set<string>();
       const lazy = (s: Sheet) => async () => {
         const vps = vpsOf(s);
@@ -1123,11 +1154,14 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
       const one = sheets.length === 1 && !all;
       const build = async () => {
-        const pdf = await buildPdf(pages, fonts, { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` }, (d, n) => {
+        const meta = { title: doc.title, subject: one ? `${sheets[0].number} ${sheets[0].title}` : `${sheets.length} planche(s)` };
+        const progress = (d: number, n: number) => {
           if (cancelExport.current) throw new Error('annulé');
           setBusy(`PDF : planche ${d}/${n}…`);
-        });
-        return pdf.output('blob');
+        };
+        // allégé : le PDF est écrit par morceaux (≈ 40 Mo de dessin chacun) puis réuni, la mémoire ne grossit plus avec le jeu
+        if (light) return buildPdfBlob(pages, fonts, meta, progress, { maxSvgChars: pdfChunkChars() });
+        return (await buildPdf(pages, fonts, meta, progress)).output('blob');
       };
       let blob = await build();
       const suffix = all ? '' : one ? `_${sheets[0].number}` : `_${sheets[0].number}-${sheets[sheets.length - 1].number}`;

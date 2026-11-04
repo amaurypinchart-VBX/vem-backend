@@ -89,3 +89,80 @@ export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta
   }
   return pdf;
 }
+
+/**
+ * Comme buildPdf, mais par morceaux pour les très gros jeux : jsPDF garde le dessin de toutes les pages en texte non
+ * compressé jusqu'à la fin, ce qui dépassait la mémoire de l'onglet sur un gros modèle (Xiaomi, 1,6 M de triangles).
+ * Dès que le SVG des pages en cours dépasse `maxSvgChars`, le morceau est écrit (compressé) et oublié ; les morceaux
+ * sont réunis à la fin avec pdf-lib. Un seul morceau ⇒ même fichier que buildPdf.
+ */
+export async function buildPdfBlob(
+  pages: PdfPage[],
+  fonts: FontFiles,
+  meta: PdfMeta,
+  onPage?: (done: number, total: number) => void,
+  opts: { maxSvgChars?: number } = {},
+): Promise<Blob> {
+  if (!pages.length) throw new Error('Aucune planche à exporter');
+  const limit = opts.maxSvgChars ?? Infinity;
+  const size = (p: PdfPage): [number, number] => (p.size ? [p.size.w, p.size.h] : [PAPER_MM[p.paper].w, PAPER_MM[p.paper].h]);
+  const orientation = (p: PdfPage) => (size(p)[0] >= size(p)[1] ? 'landscape' : 'portrait');
+  const start = (p: PdfPage) => {
+    const pdf = new jsPDF({ unit: 'mm', format: size(p), orientation: orientation(p), compress: true, putOnlyUsedFonts: true });
+    for (const [key, buf] of Object.entries(fonts) as Array<[FontKey, ArrayBuffer]>) {
+      const [family, variant] = key.split('-') as [FontFamily, FontVariant];
+      const file = `${family}-${FONT_FILE[variant]}.ttf`;
+      pdf.addFileToVFS(file, base64(buf));
+      pdf.addFont(file, family, variant);
+    }
+    pdf.setProperties({ title: meta.title, subject: meta.subject ?? '', author: 'Viewbox International SA', creator: 'VEM · Plans Viewbox' });
+    return pdf;
+  };
+  const chunks: ArrayBuffer[] = [];
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;width:10px;height:10px;overflow:hidden';
+  document.body.appendChild(host);
+  let pdf: jsPDF | null = null;
+  let chars = 0;
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      const [w, h] = size(pages[i]);
+      if (!pdf) pdf = start(pages[i]);
+      else pdf.addPage([w, h], orientation(pages[i]));
+      const src = pages[i].svg;
+      const markup = typeof src === 'function' ? await src() : src;
+      chars += markup.length;
+      host.innerHTML = markup;
+      const svg = host.querySelector('svg');
+      if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);
+      await svg2pdf(svg, pdf, { x: 0, y: 0, width: w, height: h });
+      host.innerHTML = '';
+      onPage?.(i + 1, pages.length);
+      if (chars >= limit && i < pages.length - 1) {
+        chunks.push(pdf.output('arraybuffer'));
+        pdf = null;
+        chars = 0;
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  } finally {
+    host.remove();
+  }
+  if (!chunks.length) return pdf!.output('blob');
+  chunks.push(pdf!.output('arraybuffer'));
+  pdf = null;
+  // réunion des morceaux (flux déjà compressés, copiés tels quels)
+  const { PDFDocument } = await import('pdf-lib');
+  const out = await PDFDocument.create();
+  for (const c of chunks.splice(0)) {
+    const part = await PDFDocument.load(c);
+    for (const p of await out.copyPages(part, part.getPageIndices())) out.addPage(p);
+  }
+  out.setTitle(meta.title);
+  out.setSubject(meta.subject ?? '');
+  out.setAuthor('Viewbox International SA');
+  out.setCreator('VEM · Plans Viewbox');
+  out.setProducer('VEM · Plans Viewbox');
+  const bytes = await out.save({ useObjectStreams: true });
+  return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' });
+}

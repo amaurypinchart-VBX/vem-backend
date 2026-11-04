@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FONT_FILE, buildPdf, fontsUsed } from '../src/sheets/pdf/pdf';
+import { FONT_FILE, buildPdf, buildPdfBlob, fontsUsed } from '../src/sheets/pdf/pdf';
+import { PDFDocument } from 'pdf-lib';
 import type { FontFiles, FontKey } from '../src/sheets/pdf/pdf';
 import { SheetSvg } from '../src/sheets/SheetSvg';
 import { emptyTitleBlock } from '../src/sheets/types';
@@ -114,5 +115,34 @@ describe('export PDF', () => {
     // style trait : aucune image
     expect(text).not.toMatch(/\/Subtype \/Image/);
     expect(text).toContain('/Title (NVIDIA)');
+  });
+
+  it('gros jeu : écrit par morceaux puis réuni (mêmes pages, mêmes formats, polices intégrées)', async () => {
+    const tb = { ...emptyTitleBlock(), projectName: 'Xiaomi' };
+    const sheets = [sheet('A1', 'A1.1'), sheet('A3', 'A1.2'), sheet('A1', 'A1.3')];
+    const pages = sheets.map((s) => ({
+      paper: s.paper,
+      // fonction : comme l'export allégé (une planche en mémoire à la fois)
+      svg: async () => renderToStaticMarkup(createElement(SheetSvg, { sheet: s, titleBlock: tb, notes: '', legend: [], viewData: () => ({ lw, basis }) })),
+    }));
+    const keys: FontKey[] = ['Arimo-bold', 'Arimo-normal', 'Gelasio-bold', 'Gelasio-italic', 'Gelasio-normal'];
+    const done: number[] = [];
+    // limite minuscule : un morceau par planche
+    const blob = await buildPdfBlob(pages, readFonts(keys), { title: 'Xiaomi', subject: '3 planche(s)' }, (d) => done.push(d), { maxSvgChars: 1 });
+    expect(done).toEqual([1, 2, 3]);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getPageCount()).toBe(3);
+    const sizes = doc.getPages().map((p) => p.getSize());
+    expect(sizes[0].width).toBeCloseTo(2383.94, 1);
+    expect(sizes[1].width).toBeCloseTo(1190.55, 1);
+    expect(sizes[2].height).toBeCloseTo(1683.78, 1);
+    expect(doc.getTitle()).toBe('Xiaomi');
+    const text = new TextDecoder('latin1').decode(bytes);
+    expect(text).not.toMatch(/\/BaseFont \/(Times|Helvetica)/);
+    // sans limite : un seul morceau, comme buildPdf
+    const single = await buildPdfBlob(pages, readFonts(keys), { title: 'Xiaomi' });
+    expect((await PDFDocument.load(new Uint8Array(await single.arrayBuffer()))).getPageCount()).toBe(3);
+    if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(/\.pdf$/, '-morceaux.pdf'), bytes);
   });
 });
