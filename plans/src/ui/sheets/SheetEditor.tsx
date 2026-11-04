@@ -50,7 +50,7 @@ import type { Person, TitleBlockData } from '../../sheets/types';
 import { freshImport, NewVersionError } from '../newVersion';
 import { retargetSheet, sheetModule } from '../../sheets/duplicate';
 import { SheetSelectionBar, ModulePickDialog } from './SheetSelectionBar';
-import { lowPowerDevice, useDevice } from '../useDevice';
+import { bigModel, lowPowerDevice, useDevice } from '../useDevice';
 import { clearStep, markStep } from '../crashLog';
 import { ItemMenu } from './ItemMenu';
 import { FileReadyDialog } from '../FileReady';
@@ -135,8 +135,12 @@ type SaveStatus = 'saved' | 'pending' | 'saving' | 'error';
 const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
 const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
 const lightDevice = lowPowerDevice();
+const bigScenes = new WeakMap<object, boolean>();
 
 export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
+  // très gros modèle (bigModel) : calculé une fois par scène
+  let bigScene = bigScenes.get(scene.index);
+  if (bigScene === undefined) bigScenes.set(scene.index, (bigScene = bigModel(scene.index)));
   const doc = useEditor((s) => s.doc)!;
   const sheetId = useEditor((s) => s.sheetId);
   const selection = useEditor((s) => s.selection);
@@ -218,6 +222,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     return () => clearTimeout(t);
   }, [savedNote]);
   const cancelExport = useRef(false);
+  /** export PDF en cours (journal des fermetures) */
+  const exporting = useRef(false);
   const deliver = (name: string, blob: Blob) => {
     if (deliveryPlan(device) === 'download') downloadBlob(name, blob);
     else setReady({ name, blob });
@@ -274,7 +280,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     bank.ensure(own);
     bank.ensurePaint(own);
     // téléphone : seulement la planche affichée (calculer tout le jeu d'avance remplit la mémoire et iOS ferme la page)
-    if (device.isTouch || lowPowerDevice()) return;
+    // très gros modèle : pas de calcul de tout le jeu d'avance non plus (la mémoire de l'onglet, puis du navigateur)
+    if (device.isTouch || lowPowerDevice() || bigScene) return;
     const t = setTimeout(() => bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'))), 1500);
     return () => clearTimeout(t);
   }, [sheet, doc.sheets, bank]);
@@ -287,6 +294,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     if (!sheet) return;
     const own = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport');
     bank.ensurePaint(own);
+    // export en cours : son étape reste notée (sinon « Affichage de la planche » la remplace et l'efface 3 s après)
+    if (exporting.current) return;
     // journal des fermetures (téléphone) : calcul puis affichage de la planche en cours (effacé 3 s après l'affichage)
     if (own.some((vp) => bank.data(vp).busy && !bank.data(vp).error)) {
       markStep(`Calcul des vues de la planche ${sheet.number}`);
@@ -1037,9 +1046,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const all = scope === 'all';
     const sheets = all ? doc.sheets : scope === 'sheet' ? [sheet] : doc.sheets.filter((s) => sheetSelection.includes(s.id));
     if (!sheets.length) return;
-    // téléphone / tablette : images plus légères, une planche en mémoire à la fois, jeu lourd signalé avant de lancer
-    const light = device.isTouch;
-    if (light) {
+    // téléphone / tablette, très gros modèle : images plus légères, une planche (et ses vues) en mémoire à la fois ;
+    // jeu lourd signalé avant de lancer sur téléphone
+    const light = device.isTouch || lightDevice || bigScene;
+    if (device.isTouch) {
       const nImages = new Set(sheets.flatMap((s) => s.items).flatMap((i) => (i.type === 'image3d' && i.url ? [i.url] : []))).size;
       const mb = estimatePdfMb(sheets.length, nImages, true);
       if (
@@ -1052,13 +1062,19 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         return;
     }
     cancelExport.current = false;
+    exporting.current = true;
     markStep(`Export PDF (${sheets.length} planche${sheets.length > 1 ? 's' : ''})`);
     try {
       setBusy('PDF : calcul des vues…');
-      const vps = sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
-      await Promise.all(vps.map((vp) => bank.load(vp)));
-      const missing = vps.filter((vp) => !bank.data(vp).lw).length;
-      if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
+      const vpsOf = (s: Sheet) => s.items.filter((i): i is ViewportItem => i.type === 'viewport');
+      // allégé : les vues de chaque planche sont lues au moment de sa page (toutes à la fois = toute la mémoire)
+      let missing = 0;
+      if (!light) {
+        const vps = sheets.flatMap(vpsOf);
+        await Promise.all(vps.map((vp) => bank.load(vp)));
+        missing = vps.filter((vp) => !bank.data(vp).lw).length;
+        if (missing && !window.confirm(`${missing} vue(s) n’ont pas pu être calculées (cadre vide dans le PDF). Exporter quand même ?`)) return;
+      }
       const { buildPdf, fontsUsed } = await freshImport(() => import('../../sheets/pdf/pdf'));
       const { loadFonts, pdfImageDataUrl, MAX_IMAGE_PX_MOBILE } = await freshImport(() => import('../../sheets/pdf/assets'));
       // images 3D (PNG si transparentes, sinon JPEG), une conversion par image
@@ -1092,7 +1108,17 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         );
       // téléphone : le SVG de chaque planche est refait au moment de sa page (polices relevées sans garder les textes)
       const fontKeys = light ? fontsUsed(sheets.map((s) => markup(s).replace(/<image[^>]*>/g, ''))) : null;
-      const pages = sheets.map((s) => ({ paper: s.paper, svg: light ? () => markup(s) : markup(s) }));
+      const counted = new Set<string>();
+      const lazy = (s: Sheet) => async () => {
+        const vps = vpsOf(s);
+        await Promise.all(vps.map((vp) => bank.load(vp)));
+        if (!counted.has(s.id)) {
+          counted.add(s.id);
+          missing += vps.filter((vp) => !bank.data(vp).lw).length;
+        }
+        return markup(s);
+      };
+      const pages = sheets.map((s) => ({ paper: s.paper, svg: light ? lazy(s) : markup(s) }));
       setBusy('PDF : polices…');
       const fonts = await loadFonts(fontKeys ?? fontsUsed(pages.map((p) => p.svg as string)));
       const one = sheets.length === 1 && !all;
@@ -1126,9 +1152,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         setSavedNote(`✓ « ${fileName} » enregistré dans les Fichiers du projet VEM`);
       } else deliver(fileName, blob);
       if (failed) window.alert(`${failed} image(s) 3D n’ont pas pu être intégrées au PDF (image inaccessible).`);
+      if (light && missing) window.alert(`${missing} vue(s) n’ont pas pu être calculées : cadre vide dans le PDF.`);
     } catch (e) {
       if (!(e instanceof NewVersionError) && !cancelExport.current) window.alert(`${toProject ? 'Enregistrement dans le projet' : 'Export PDF'} impossible : ${(e as Error).message}`);
     } finally {
+      exporting.current = false;
       clearStep();
       setBusy('');
     }

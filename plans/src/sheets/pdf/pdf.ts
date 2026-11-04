@@ -19,9 +19,9 @@ export const FONT_FILE: Record<FontVariant, string> = { normal: 'Regular', bold:
 export interface PdfPage {
   /**
    * SVG de la planche (renderToStaticMarkup de SheetSvg, sans édition) ; ou une fonction qui le produit au moment de
-   * convertir la page (téléphone : une seule planche en mémoire à la fois)
+   * convertir la page (téléphone, très gros modèle : une seule planche en mémoire à la fois, vues lues à ce moment)
    */
-  svg: string | (() => string);
+  svg: string | (() => string | Promise<string>);
   paper: Paper;
   /** format explicite en mm (ex. A4 portrait 210 × 297 des fiches de l'étude structure) ; sinon celui de `paper` */
   size?: { w: number; h: number };
@@ -75,7 +75,7 @@ export async function buildPdf(pages: PdfPage[], fonts: FontFiles, meta: PdfMeta
       const [w, h] = size(pages[i]);
       if (i > 0) pdf.addPage([w, h], orientation(pages[i]));
       const src = pages[i].svg;
-      host.innerHTML = typeof src === 'function' ? src() : src;
+      host.innerHTML = typeof src === 'function' ? await src() : src;
       const svg = host.querySelector('svg');
       if (!svg) throw new Error(`Planche ${i + 1} : SVG invalide`);
       await svg2pdf(svg, pdf, { x: 0, y: 0, width: w, height: h });
