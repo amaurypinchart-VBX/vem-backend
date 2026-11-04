@@ -28,6 +28,9 @@ export interface PaintState {
 
 const HISTORY = 50;
 
+/** même palette et mêmes zones (dans le même ordre) — la date / l'auteur de l'enregistrement ne comptent pas */
+const sameContent = (a: PaintSettings, b: PaintSettings) => JSON.stringify([a.colors, a.zones]) === JSON.stringify([b.colors, b.zones]);
+
 export function usePaint(modelId: string | undefined, initial: unknown, onSaved?: (p: PaintSettings) => void): PaintState {
   const [paint, setPaint] = useState<PaintSettings>(() => cleanPaint(initial));
   const [version, setVersion] = useState(0);
@@ -71,6 +74,8 @@ export function usePaint(modelId: string | undefined, initial: unknown, onSaved?
           savedCb.current?.(fresh);
           // ce que les autres ont peint entre-temps arrive avec la réponse ; nos opérations encore en route restent
           const merged = applyOps(fresh, pending.current.flat());
+          // réponse identique à ce qui est déjà affiché (le cas normal) : rien à recalculer
+          if (sameContent(merged, ref.current)) return;
           ref.current = merged;
           setPaint(merged);
           setVersion((v) => v + 1);

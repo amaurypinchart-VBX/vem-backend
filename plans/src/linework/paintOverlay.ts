@@ -9,7 +9,7 @@
 // Le calcul est découpé en étapes (`paintOverlaySteps`) pour être réparti sur plusieurs tâches du navigateur.
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { Path64 } from 'clipper2-js';
-import { Vector3 } from 'three';
+import { Box3, Vector3 } from 'three';
 import type { BufferGeometry, Material, Mesh } from 'three';
 import type { ViewBasis } from '../core/views';
 import type { LoadedScene } from '../scene/loadedScene';
@@ -17,7 +17,8 @@ import { meshesOfNode } from '../scene/loadedScene';
 import { loopArea, poleOfInaccessibility } from '../core/paint/region';
 import type { GlassTest } from './packets';
 import type { PaintedScene } from './paintScene';
-import { nodeSoup, worldTriangle } from './paintScene';
+import { nodeTriangles } from './paintScene';
+import { moduleOfNode } from '../core/paint/resolve';
 
 export interface PaintRegion {
   colorId: string;
@@ -82,6 +83,25 @@ interface FaceGroup {
   minY: number;
   maxX: number;
   maxY: number;
+  /** profondeur la plus faible de ses sommets : une pièce entièrement derrière ne peut pas la cacher */
+  minD: number;
+  /** triangles d'une zone « côtés extérieurs » : déjà vus de dehors dans leur box (relevé paintExterior) */
+  ext: boolean;
+  module: string | null;
+}
+
+/** Pièce de la vue qui peut cacher : enveloppe (boîte monde projetée) d'abord, triangles projetés à la demande. */
+interface OccCandidate {
+  mesh: Mesh;
+  module: string | null;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  /** profondeur maximale (vers l'observateur) */
+  maxD: number;
+  /** undefined = pas encore projetée, null = rien qui cache */
+  occ?: OccMesh | null;
 }
 
 /** Silhouette d'un maillage dans une vue : contours (unités Clipper) et leur emprise (mm du dessin). */
@@ -122,22 +142,36 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
   const e2 = new Vector3();
   const n = new Vector3();
   const groups = new Map<string, FaceGroup>();
+  let seenTris = 0;
   let bx0 = Infinity;
   let by0 = Infinity;
   let bx1 = -Infinity;
   let by1 = -Infinity;
   for (const id of ids) {
-    const ns = nodeSoup(scene, id);
+    const nt = nodeTriangles(scene, id);
     const tris = painted.nodes.get(id);
-    if (!ns || !tris) continue;
-    // le repère propre peut être un miroir de l'instance : le sens des triangles s'inverse dans le monde
-    const sign = ns.toWorld.determinant() < 0 ? -1 : 1;
-    for (const [t, { colorId }] of tris) {
+    if (!nt || !tris) continue;
+    const mod = moduleOfNode(painted.ctx, id);
+    const outs = painted.exteriorOut?.get(id);
+    // étape courte toutes les 2 000 faces : une zone « côtés extérieurs » en compte des centaines de milliers sur un gros
+    // modèle, d'un seul tenant la page se figeait à chaque coup de pinceau
+    if (++seenTris > 2000) {
+      seenTris = 0;
+      yield;
+    }
+    for (const [t, { colorId, zoneId }] of tris) {
+      if (++seenTris > 2000) {
+        seenTris = 0;
+        yield;
+      }
       if (inp.only && !inp.only.has(colorId)) continue;
-      worldTriangle(ns, t, w);
+      // côté extérieur d'une box : on sait de quel côté il se voit — tourné à l'opposé de la vue, il ne se voit pas
+      const out = outs?.get(t);
+      if (out && out[0] * toward.x + out[1] * toward.y + out[2] * toward.z <= FACING) continue;
+      nt.world(t, w);
       e1.subVectors(w[1], w[0]);
       e2.subVectors(w[2], w[0]);
-      n.crossVectors(e1, e2).multiplyScalar(sign);
+      n.crossVectors(e1, e2);
       const len = n.length();
       if (len < 1e-9) continue;
       n.multiplyScalar(1 / len);
@@ -153,10 +187,12 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       const cz = n.dot(toward);
       const c = n.dot(w[0]);
       // même plan à 1e-6 près (normale) et 0,01 mm (distance) : l'écart de profondeur reste négligeable devant FRONT_EPS
-      const key = `${id}|${colorId}|${Math.round(a * 1e6)}|${Math.round(b * 1e6)}|${Math.round(cz * 1e6)}|${Math.round(c * 100)}`;
+      const ext = !!out && (painted.exteriorZones?.has(zoneId) ?? false);
+      const key = `${id}|${colorId}|${ext ? 'e' : ''}|${Math.round(a * 1e6)}|${Math.round(b * 1e6)}|${Math.round(cz * 1e6)}|${Math.round(c * 100)}`;
       let g = groups.get(key);
-      if (!g) groups.set(key, (g = { colorId, a, b, cz, c, tris: [], minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }));
+      if (!g) groups.set(key, (g = { colorId, a, b, cz, c, tris: [], minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, minD: Infinity, ext, module: mod }));
       g.tris.push(p);
+      for (const v of w) g.minD = Math.min(g.minD, v.dot(toward));
       for (let k = 0; k < 6; k += 2) {
         g.minX = Math.min(g.minX, p[k]);
         g.maxX = Math.max(g.maxX, p[k]);
@@ -170,16 +206,43 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
     }
   }
   if (!groups.size) return [];
-  // 2. maillages qui peuvent cacher (pièces dessinées dans la vue, dans l'emprise des faces peintes)
-  const occ: OccMesh[] = [];
+  // 2. pièces qui peuvent cacher : seulement leur enveloppe (8 coins de leur boîte), leurs triangles sont projetés plus
+  // tard, et seulement si une face peinte peut être derrière. Projeter tout le modèle pour chaque vue (zone « côtés
+  // extérieurs » = toute l'installation) remplissait la mémoire jusqu'à fermer l'onglet (Xiaomi, 04.11.2026).
+  const cands: OccCandidate[] = [];
   const v = new Vector3();
-  for (const id of inp.meshIds)
+  const box3 = new Box3();
+  let seen = 0;
+  for (const id of inp.meshIds) {
+    const module = moduleOfNode(painted.ctx, id);
     for (const mesh of meshesOfNode(scene.objectsById.get(id))) {
       const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as Material | undefined;
       if (inp.glassTransparent && inp.isGlass?.(mat)) continue;
-      const o = projectMesh(mesh, right, up, toward, [bx0, by0, bx1, by1], v);
-      if (o) occ.push(o);
+      const g = mesh.geometry as BufferGeometry;
+      if (!g.attributes.position) continue;
+      if (!g.boundingBox) g.computeBoundingBox();
+      mesh.updateWorldMatrix(true, false);
+      box3.copy(g.boundingBox!);
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      let d1 = -Infinity;
+      for (let k = 0; k < 8; k++) {
+        v.set(k & 1 ? box3.max.x : box3.min.x, k & 2 ? box3.max.y : box3.min.y, k & 4 ? box3.max.z : box3.min.z).applyMatrix4(mesh.matrixWorld);
+        const x = v.dot(right);
+        const y = v.dot(up);
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        y0 = Math.min(y0, y);
+        y1 = Math.max(y1, y);
+        d1 = Math.max(d1, v.dot(toward));
+      }
+      if (x1 <= bx0 || x0 >= bx1 || y1 <= by0 || y0 >= by1) continue;
+      cands.push({ mesh, module, minX: x0, minY: y0, maxX: x1, maxY: y1, maxD: d1 });
     }
+    if (++seen % 500 === 0) yield;
+  }
   yield;
   // 3. partie visible de chaque groupe : ses triangles − ce qui est devant son plan
   const byColor = new Map<string, Paths64[]>();
@@ -198,7 +261,20 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       return (d[t * 3] + d[t * 3 + 1] + d[t * 3 + 2]) / 3 > depthAt(cx, cy) + FRONT_EPS;
     };
     const clip = new Paths64();
-    for (const o of occ) {
+    // face d'un côté extérieur tourné vers la vue et vue de face : sa propre box a déjà été vérifiée le long de ce côté
+    // (relevé paintExterior) — les autres pièces (autres box, éléments communs) restent testées
+    const ownChecked = g.ext && g.cz >= 0.98 && g.module !== null;
+    for (const cand of cands) {
+      if (cand.maxX <= g.minX || cand.minX >= g.maxX || cand.maxY <= g.minY || cand.minY >= g.maxY) continue;
+      // entièrement derrière la face (au plus au niveau de son point le plus reculé) : ne peut pas la cacher
+      if (cand.maxD <= g.minD + FRONT_EPS) continue;
+      if (ownChecked && cand.module === g.module) continue;
+      if (cand.occ === undefined) {
+        cand.occ = projectMesh(cand.mesh, right, up, toward, [bx0, by0, bx1, by1], v);
+        yield;
+      }
+      const o = cand.occ;
+      if (!o) continue;
       if (o.maxX <= g.minX || o.minX >= g.maxX || o.maxY <= g.minY || o.minY >= g.maxY) continue;
       // triangles de la pièce qui touchent l'emprise du groupe : devant ou non
       const hits: number[] = [];

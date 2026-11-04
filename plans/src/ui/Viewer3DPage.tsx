@@ -3,6 +3,7 @@
 // Les captures sont enregistrées avec le modèle (images Cloudinary) : les planches les proposent pour leurs images 3D.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cleanPaint } from '../core/paint/ops';
+import { paintContext } from '../core/paint/resolve';
 import { paintLayers3D, paintScene } from '../linework/paintScene';
 import type { FrontSide } from '../core/views';
 import { VIEW_LABELS, frontFromNormal } from '../core/views';
@@ -70,6 +71,10 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
   const [camName, setCamName] = useState('');
   // peinture du projet (réglages du modèle) : calque de couleur sur les faces peintes
   const paintSettings = useMemo(() => cleanPaint(settings.paint), [settings.paint]);
+  // contexte de peinture construit une fois par modèle (le refaire à chaque enregistrement coûtait cher sur un gros modèle)
+  const paintCtx = useMemo(() => paintContext(scene.index), [scene]);
+  /** peinture affichée en 3D = celle de cette version (recalculée seulement quand l'onglet est visible) */
+  const shownPaint = useRef<unknown>(null);
   const [showPaint, setShowPaint] = useState(() => {
     try {
       return localStorage.getItem('vem_paint_3d') !== '0';
@@ -125,12 +130,20 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     if (!v) return;
     if (!showPaint || !paintSettings.zones.length) {
       v.setPaintDisplay(null);
+      shownPaint.current = null;
       return;
     }
-    const painted = paintScene(scene, paintSettings, undefined, glassTest);
+    // onglet caché (resté chargé sur ordinateur) : on ne recalcule pas à chaque coup de pinceau des Planches — cela
+    // figeait la page (A. Pinchart 04.11.2026 « ça freeze sans raison quand je touche à la peinture ») ; fait à l'ouverture
+    if (!active) return;
+    const key = [paintSettings, framesVersion, glassTest];
+    const prev = shownPaint.current as unknown[] | null;
+    if (prev && prev.every((x, i) => x === key[i])) return;
+    shownPaint.current = key;
+    const painted = paintScene(scene, paintSettings, paintCtx, glassTest);
     const hex = new Map(paintSettings.colors.map((c) => [c.id, parseInt(c.hex.slice(1), 16)]));
     v.setPaintDisplay(paintLayers3D(scene, painted).map((l) => ({ nodeId: l.nodeId, color: hex.get(l.colorId) ?? 0x888888, positions: l.positions })));
-  }, [scene, paintSettings, showPaint, framesVersion, glassTest]);
+  }, [scene, paintSettings, showPaint, framesVersion, glassTest, active, paintCtx]);
 
   useEffect(() => {
     viewerRef.current?.setVisibility(includeIds, hiddenCats, ghosts);

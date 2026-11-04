@@ -445,3 +445,6 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .exterior-cats .check { display: flex; }
 .exterior-plans { display: flex; flex-direction: column; gap: 6px; }
 .exterior-plans .exterior-plan { max-height: 260px; }
+/* Peinture › « ⊘ Sans peinture » */
+.paint-color-main.paint-none { flex: none; width: 100%; border: 1px dashed var(--border); border-radius: 6px; background: var(--bg-3); }
+.paint-color-main.paint-none.on { border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }

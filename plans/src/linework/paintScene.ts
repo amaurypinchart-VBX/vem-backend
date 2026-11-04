@@ -5,12 +5,14 @@ import type { BufferGeometry, Mesh, Object3D } from 'three';
 import type { LoadedScene } from '../scene/loadedScene';
 import { meshesOfNode } from '../scene/loadedScene';
 import type { TriSoup } from '../core/paint/region';
-import { selectTriangles, trianglesArea } from '../core/paint/region';
+import { selectTriangles } from '../core/paint/region';
 import type { PaintContext, ResolvedZone } from '../core/paint/resolve';
 import { paintContext, resolvePaint } from '../core/paint/resolve';
 import type { PaintSettings, Vec3 } from '../core/paint/types';
+import { NO_PAINT } from '../core/paint/types';
 import type { GlassTest } from './packets';
-import { exteriorSelection, exteriorSurvey } from './paintExterior';
+import { exteriorInfo, exteriorSelection, exteriorSurvey } from './paintExterior';
+import type { ExteriorTri } from './paintExterior';
 
 /** Triangles d'une pièce : repère propre (mm), passage au monde, maillages d'origine. */
 export interface NodeSoup {
@@ -62,6 +64,62 @@ export function nodeSoup(scene: LoadedScene, nodeId: string): NodeSoup | null {
   return out;
 }
 
+/**
+ * Triangles d'une pièce lus directement dans ses maillages (coordonnées monde, mm), sans copie — même numérotation que
+ * `nodeSoup`. Pour les surfaces, les repères et la 3D : une zone « côtés extérieurs » touche des milliers de pièces, et
+ * recopier leur géométrie (nodeSoup, gardée en mémoire) faisait fermer l'onglet sur un gros modèle (Xiaomi, 04.11.2026).
+ */
+export interface NodeTriangles {
+  count: number;
+  /** sommets monde du triangle t */
+  world(t: number, out: Vector3[]): void;
+}
+const triCache = new WeakMap<Object3D, NodeTriangles>();
+export function nodeTriangles(scene: LoadedScene, nodeId: string): NodeTriangles | null {
+  const obj = scene.objectsById.get(nodeId);
+  if (!obj) return null;
+  const hit = triCache.get(obj);
+  if (hit) return hit;
+  obj.updateWorldMatrix(true, true);
+  const parts: Array<{ mesh: Mesh; start: number; count: number }> = [];
+  let start = 0;
+  for (const mesh of meshesOfNode(obj)) {
+    const g = mesh.geometry as BufferGeometry;
+    const p = g.attributes.position;
+    if (!p) continue;
+    const count = (g.index ? g.index.count : p.count) / 3;
+    parts.push({ mesh, start, count });
+    start += count;
+  }
+  const out: NodeTriangles = {
+    count: start,
+    world(t, o) {
+      let part = parts[0];
+      for (const q of parts) if (t >= q.start && t < q.start + q.count) part = q;
+      const g = part.mesh.geometry as BufferGeometry;
+      const pos = g.attributes.position;
+      const k = t - part.start;
+      for (let j = 0; j < 3; j++) {
+        const i = g.index ? g.index.getX(k * 3 + j) : k * 3 + j;
+        o[j].fromBufferAttribute(pos, i).applyMatrix4(part.mesh.matrixWorld);
+      }
+    },
+  };
+  triCache.set(obj, out);
+  return out;
+}
+
+const _w = [new Vector3(), new Vector3(), new Vector3()];
+const _e1 = new Vector3();
+const _e2 = new Vector3();
+/** Aire monde (mm²) du triangle t d'une pièce. */
+function worldArea(nt: NodeTriangles, t: number): number {
+  nt.world(t, _w);
+  _e1.subVectors(_w[1], _w[0]);
+  _e2.subVectors(_w[2], _w[0]);
+  return _e1.cross(_e2).length() / 2;
+}
+
 /** Point monde → repère propre de la pièce (mm). */
 export function toLocalPoint(ns: NodeSoup, p: Vec3): Vec3 {
   const v = new Vector3(...p).applyMatrix4(ns.toLocal);
@@ -79,6 +137,10 @@ export interface PaintedScene {
   areaByColor: Map<string, number>;
   areaByColorModule: Map<string, Map<string, number>>;
   ctx: PaintContext;
+  /** zones « côtés extérieurs » (leurs faces sont déjà vues de dehors : paintOverlay ne revérifie pas leur propre box) */
+  exteriorZones: Set<string>;
+  /** pièce → triangle peint par une de ces zones → normale sortante de son côté de box (monde) */
+  exteriorOut: Map<string, Map<number, Vec3>>;
 }
 
 /** `isGlass` : vitrages reconnus pour les zones « côtés extérieurs » (non peints sauf demande). */
@@ -86,6 +148,9 @@ export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: Paint
   const c = ctx ?? paintContext(scene.index);
   const resolved = resolvePaint(c, paint);
   const exterior = paint.zones.some((z) => z.target.scope === 'exterior') ? exteriorSurvey(scene, c, isGlass) : null;
+  const exteriorZones = new Set(paint.zones.filter((z) => z.target.scope === 'exterior').map((z) => z.id));
+  const exteriorOut = new Map<string, Map<number, Vec3>>();
+  const clearedArea = new Map<string, number>();
   const nodes = new Map<string, Map<number, { colorId: string; zoneId: string }>>();
   const touched = new Set<string>();
   for (const [nodeId, zones] of resolved) {
@@ -104,18 +169,43 @@ export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: Paint
       }
       if (!sel?.length) continue;
       touched.add(z.zoneId);
-      for (const t of sel) tris.set(t, { colorId: z.colorId, zoneId: z.zoneId });
+      if (z.colorId === NO_PAINT) {
+        // retire seulement ce qui était peint jusque-là (sa surface = ce qu'elle a vraiment retiré)
+        for (const t of sel) if (tris.has(t) && tris.get(t)!.colorId !== NO_PAINT) tris.set(t, { colorId: NO_PAINT, zoneId: z.zoneId });
+      } else for (const t of sel) tris.set(t, { colorId: z.colorId, zoneId: z.zoneId });
     }
+    // « Sans peinture » gagnant : le triangle n'est plus peint (sa surface est comptée sur la zone qui l'a retiré)
+    for (const [t, v] of tris)
+      if (v.colorId === NO_PAINT) {
+        tris.delete(t);
+        const nt = nodeTriangles(scene, nodeId);
+        if (nt) clearedArea.set(v.zoneId, (clearedArea.get(v.zoneId) ?? 0) + worldArea(nt, t) / 1e6);
+      }
     if (tris.size) nodes.set(nodeId, tris);
+    // côté (normale sortante) de chaque triangle encore peint par une zone « côtés extérieurs »
+    if (exterior && tris.size) {
+      const info = exteriorInfo(exterior).get(nodeId);
+      if (info) {
+        const outs = new Map<number, Vec3>();
+        for (const [t, { zoneId }] of tris) {
+          const x = exteriorZones.has(zoneId) ? info.get(t) : undefined;
+          if (x) outs.set(t, exterior.sides[x.side].out);
+        }
+        if (outs.size) exteriorOut.set(nodeId, outs);
+      }
+    }
   }
-  const areaByZone = new Map<string, number>();
+  const areaByZone = new Map<string, number>(clearedArea);
   const areaByColor = new Map<string, number>();
   const areaByColorModule = new Map<string, Map<string, number>>();
   for (const [nodeId, tris] of nodes) {
-    const ns = nodeSoup(scene, nodeId)!;
+    const nt = nodeTriangles(scene, nodeId)!;
     const mod = c.paths.moduleOf(nodeId) ?? c.byId.get(nodeId)?.moduleId ?? '—';
+    // surfaces des côtés extérieurs déjà mesurées par le relevé (pas de relecture des maillages à chaque action)
+    const info: Map<number, ExteriorTri> | undefined = exterior ? exteriorInfo(exterior).get(nodeId) : undefined;
     for (const [t, { colorId, zoneId }] of tris) {
-      const a = trianglesArea(ns.soup, [t]) / 1e6;
+      const known = exteriorZones.has(zoneId) ? info?.get(t) : undefined;
+      const a = (known ? known.area : worldArea(nt, t)) / 1e6;
       areaByZone.set(zoneId, (areaByZone.get(zoneId) ?? 0) + a);
       areaByColor.set(colorId, (areaByColor.get(colorId) ?? 0) + a);
       const pm = areaByColorModule.get(colorId) ?? new Map<string, number>();
@@ -124,7 +214,7 @@ export function paintScene(scene: LoadedScene, paint: PaintSettings, ctx?: Paint
     }
   }
   const noEffect = new Set(paint.zones.filter((z) => !touched.has(z.id)).map((z) => z.id));
-  return { nodes, noEffect, areaByZone, areaByColor, areaByColorModule, ctx: c };
+  return { nodes, noEffect, areaByZone, areaByColor, areaByColorModule, ctx: c, exteriorZones, exteriorOut };
 }
 
 /** Sommets monde d'un triangle de la soupe. */
@@ -147,16 +237,41 @@ export function paintLayers3D(scene: LoadedScene, painted: PaintedScene): PaintL
   const out: PaintLayer3D[] = [];
   const w = [new Vector3(), new Vector3(), new Vector3()];
   for (const [nodeId, tris] of painted.nodes) {
-    const ns = nodeSoup(scene, nodeId);
-    if (!ns) continue;
+    const nt = nodeTriangles(scene, nodeId);
+    if (!nt) continue;
     const byColor = new Map<string, number[]>();
     for (const [t, { colorId }] of tris) {
-      worldTriangle(ns, t, w);
+      nt.world(t, w);
       const l = byColor.get(colorId) ?? [];
       for (const v of w) l.push(v.x, v.y, v.z);
       byColor.set(colorId, l);
     }
     for (const [colorId, l] of byColor) out.push({ nodeId, colorId, positions: Float32Array.from(l) });
   }
+  return out;
+}
+
+/**
+ * Pièces dont la peinture diffère entre deux résultats (triangles, couleur, ou passage en / hors zone « côtés
+ * extérieurs ») : seules les vues qui montrent une de ces pièces ont à recalculer leurs repères.
+ */
+export function changedPaintNodes(a: PaintedScene, b: PaintedScene): Set<string> {
+  const out = new Set<string>();
+  const ext = (p: PaintedScene, zoneId: string) => p.exteriorZones?.has(zoneId) ?? false;
+  for (const [id, ma] of a.nodes) {
+    const mb = b.nodes.get(id);
+    if (!mb || mb.size !== ma.size) {
+      out.add(id);
+      continue;
+    }
+    for (const [t, va] of ma) {
+      const vb = mb.get(t);
+      if (!vb || vb.colorId !== va.colorId || ext(a, va.zoneId) !== ext(b, vb.zoneId)) {
+        out.add(id);
+        break;
+      }
+    }
+  }
+  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) out.add(id);
   return out;
 }

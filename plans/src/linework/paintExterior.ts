@@ -185,3 +185,15 @@ export function exteriorAreas(survey: ExteriorSurvey, rule: Pick<ExteriorRule, '
   return { byCategory, glass };
 }
 
+
+const infoMaps = new WeakMap<ExteriorSurvey, Map<string, Map<number, ExteriorTri>>>();
+/** Pièce → triangle extérieur → son côté (indice dans `survey.sides`) et sa surface. */
+export function exteriorInfo(survey: ExteriorSurvey): Map<string, Map<number, ExteriorTri>> {
+  let m = infoMaps.get(survey);
+  if (!m) {
+    m = new Map();
+    for (const [node, tris] of survey.byNode) m.set(node, new Map(tris.map((x) => [x.t, x])));
+    infoMaps.set(survey, m);
+  }
+  return m;
+}

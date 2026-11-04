@@ -382,7 +382,7 @@ http.createServer(async (req, res) => {
         else if (o.op === 'zone.put') { const i = zones.findIndex((z) => z.id === o.zone.id); if (i >= 0) zones[i] = o.zone; else zones.push(o.zone); }
         else if (o.op === 'zone.del') zones = zones.filter((z) => z.id !== o.id);
       }
-      zones = zones.filter((z) => colors.some((c) => c.id === z.colorId));
+      zones = zones.filter((z) => z.colorId === 'none' || colors.some((c) => c.id === z.colorId));
       m.settings = { ...m.settings, paint: { v: 1, colors, zones, updatedAt: new Date().toISOString(), updatedBy: 'Amaury Pinchart' } };
       return json(res, m.settings.paint);
     }
