@@ -55,9 +55,24 @@ export interface PlanPlate {
   label?: string[];
 }
 
-/** Plaques de calage des appuis (couche du dessous), pour les plans A4. */
-export function planPlates(checks: SupportCheck[], opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[] } = {}): PlanPlate[] {
-  return checks
+/** Couleur des madriers de la solution retenue (grille, plateau) sur les plans. */
+export const TIMBER_COLOR = '#a16207';
+
+/**
+ * Plaques de calage des appuis (couche du dessous), pour les plans A4 ; madriers de la solution retenue
+ * (`CalageResult.remedy`) dessous, le contour d'ensemble avec son libellé.
+ */
+export function planPlates(
+  checks: SupportCheck[],
+  opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[]; remedy?: CalageResult['remedy'] } = {},
+): PlanPlate[] {
+  const timber: PlanPlate[] = (opts.remedy?.outlines ?? []).map((o) => ({
+    id: `T${o.id}`,
+    corners: o.corners,
+    color: TIMBER_COLOR,
+    ...(o.id === 'PL' || o.id.startsWith('G') ? { label: [o.label, ...(o.sub ? [o.sub] : [])] } : {}),
+  }));
+  return [...timber, ...checks
     .filter((c) => c.plan)
     .map((c) => ({
       id: c.id,
@@ -65,7 +80,7 @@ export function planPlates(checks: SupportCheck[], opts: { color?: (c: SupportCh
       color: opts.color?.(c) ?? typeColor(c.typeKey),
       centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5,
       ...(opts.label ? { label: opts.label(c) } : {}),
-    }));
+    }))];
 }
 
 /** « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). */
@@ -362,7 +377,7 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
   blocks.push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
-      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} plates={planPlates(result.checks)} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
+      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} plates={planPlates(result.checks, { remedy: result.remedy })} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
     </g>,
   );
   y += planH + 8;

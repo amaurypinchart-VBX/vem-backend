@@ -9,6 +9,23 @@ type Rule = readonly [string | RegExp, string, string];
 
 /** Motifs (appliqués dans l'ordre). */
 const PATTERNS: Rule[] = [
+  // solution retenue parmi les pistes du sol (grille / plateau de madriers)
+  [/Plateau continu en grille de madriers, sans les blocs \(vérins sur le plateau\)/g, 'Durchgehende Kantholz-Rostplatte ohne Holzklötze (Spindelfüße auf der Platte)', 'Continuous timber-sleeper platform without the blocks (jacks on the platform)'],
+  [/Plateau continu en grille de madriers \(2 couches\)/g, 'Durchgehende Kantholz-Rostplatte (2 Lagen)', 'Continuous timber-sleeper platform (2 layers)'],
+  [/Grille de madriers C24 sans les blocs \(vérins directement sur les madriers\)/g, 'Kantholzrost C24 ohne Holzklötze (Spindelfüße direkt auf den Kanthölzern)', 'C24 sleeper grid without the blocks (jacks directly on the sleepers)'],
+  [/Grille de madriers C24 sous chaque rangée de blocs/g, 'Kantholzrost C24 unter jeder Klotzreihe', 'C24 sleeper grid under each row of blocks'],
+  [/Plateau de madriers ([\d,]+) m × ([\d,]+) m : (\d+) × (\d+) × (\d+) mm \+ (\d+) × (\d+) × (\d+) mm sous chaque rangée/g, 'Kantholzplatte $1 m × $2 m: $3 × $4 × $5 mm + $6 × $7 × $8 mm unter jeder Reihe', 'Sleeper platform $1 m × $2 m: $3 × $4 × $5 mm + $6 × $7 × $8 mm under each row'],
+  [/Grille de madriers, rangée (\d+) : /g, 'Kantholzrost, Reihe $1: ', 'Sleeper grid, row $1: '],
+  [/ \+ répartiteurs (\d+) × (\d+)/g, ' + Querhölzer $1 × $2', ' + cross spreaders $1 × $2'],
+  [/vérin posé sur les madriers \(bloc retiré\)/g, 'Spindelfuß auf den Kanthölzern (Klotz entfernt)', 'jack on the sleepers (block removed)'],
+  [/bloc posé sur les madriers/g, 'Holzklotz auf den Kanthölzern', 'block on the sleepers'],
+  [/pied posé sur les madriers/g, 'Fuß auf den Kanthölzern', 'foot on the sleepers'],
+  [/ — sur les madriers \(bloc retiré\)/g, ' — auf den Kanthölzern (Klotz entfernt)', ' — on the sleepers (block removed)'],
+  [/Madrier bois C24 \(plateau, couche du dessous\)/g, 'Kantholz C24 (Platte, untere Lage)', 'C24 timber sleeper (platform, lower layer)'],
+  [/Madrier bois C24 \(plateau, couche du dessus\)/g, 'Kantholz C24 (Platte, obere Lage)', 'C24 timber sleeper (platform, upper layer)'],
+  [/Madrier bois C24 \(répartiteur transversal\)/g, 'Kantholz C24 (Querverteiler)', 'C24 timber sleeper (cross spreader)'],
+  [/Madrier bois C24/g, 'Kantholz C24', 'C24 timber sleeper'],
+  [/Solution retenue sans les blocs dessinés \(([^)]*)\) : ils ne sont pas posés ; leur poids n’est pas compté\./g, 'Gewählte Lösung ohne die gezeichneten Holzklötze ($1): sie werden nicht verlegt, ihr Gewicht wird nicht angesetzt.', 'Chosen solution without the drawn blocks ($1): they are not laid, their weight is not counted.'],
   // blocs de calage bois dessinés (avant les motifs « N angles »)
   [/bloc bois sous (\d+) angles/g, 'Holzklotz unter $1 Ecken', 'timber block under $1 corners'],
   [/bloc bois sous un angle/g, 'Holzklotz unter einer Ecke', 'timber block under one corner'],

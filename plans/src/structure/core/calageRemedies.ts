@@ -14,6 +14,51 @@ import { fmtNumber } from './units';
 
 export type RemedyVerdict = 'ok' | 'fail' | 'study' | 'info';
 
+type Beam = Pick<TimberBeam, 'b' | 'h'>;
+
+/** Grille de madriers retenue pour une rangée d'appuis (appuis par leur id, pour retrouver la rangée). */
+export interface SleeperRowDesign {
+  ids: string[];
+  beam: Beam;
+  count: number;
+  /** répartiteurs transversaux du dessus (null : aucun) */
+  top: Beam | null;
+}
+
+/**
+ * Solution choisie à l'étape Sol & calage (`CalageChoices.remedy`) : la géométrie trouvée par la recherche, figée ;
+ * le calage la revérifie à chaque calcul (charges, portance et raideur du sol actuelles).
+ */
+export type AppliedRemedy =
+  | { key: 'sleepers' | 'sleepers-no-blocks'; rows: SleeperRowDesign[] }
+  | { key: 'platform' | 'platform-no-blocks'; over: number; lower: Beam; upper: Beam };
+
+/** Contour en plan d'une partie de la solution (monde x, z, mm), pour les plans. */
+export interface RemedyOutline {
+  id: string;
+  corners: [P2, P2, P2, P2];
+  label: string;
+  sub?: string;
+}
+
+/** Ce que la solution appliquée apporte à chaque appui : pression au sol, taux du bois, libellé de l'étape. */
+export interface RemedySupport {
+  label: string;
+  /** pression maxi au sol sous les madriers (N/mm²) et surface de la partie qui porte l'appui (mm²) */
+  pressure: number;
+  area: number;
+  /** taux du bois (flexion, cisaillement, compression transversale, répartiteurs) */
+  etaTimber: number;
+  records: CalcRecord[];
+  note?: string;
+}
+
+export interface RemedyEvaluation {
+  remedy: CalageRemedy;
+  perSupport: Map<string, RemedySupport>;
+  outlines: RemedyOutline[];
+}
+
 export interface CalageRemedy {
   key: 'centre-blocks' | 'area' | 'sleepers' | 'sleepers-no-blocks' | 'platform' | 'platform-no-blocks' | 'load';
   title: string;
@@ -26,6 +71,8 @@ export interface CalageRemedy {
   records: CalcRecord[];
   /** hypothèses et limites de la piste */
   notes: string[];
+  /** ce qu'il faut retenir pour appliquer la piste (absent : piste d'information) */
+  apply?: AppliedRemedy | 'centre-blocks';
 }
 
 const f = (v: number, d = 1) => fmtNumber(v, d);
@@ -56,58 +103,131 @@ export function supportRows(checks: SupportCheck[], u: P2): Array<{ v: number; i
 }
 
 interface RowDesign {
-  beam: Pick<TimberBeam, 'b' | 'h'>;
+  beam: Beam;
   count: number;
   length: number;
   pressure: number;
+  /** taux de la pression au sol et taux du bois */
+  etaGround: number;
+  etaTimber: number;
   eta: number;
   massKg: number;
   records: CalcRecord[];
-  /** répartiteurs transversaux sous chaque appui (couche du dessus), quand la charge est plus étroite que les madriers */
-  top: { beam: Pick<TimberBeam, 'b' | 'h'>; perSupport: number; length: number; massKg: number; eta: number } | null;
+  /** répartiteurs transversaux sous les appuis (couche du dessus), quand la charge est plus étroite que les madriers */
+  top: { beam: Beam; pieces: number; perSupport: number; length: number; massKg: number; eta: number } | null;
 }
 
+type TopPiece = { beam: Beam; perSupport: number; length: number; massKg: number; eta: number };
+
 /**
- * Répartiteurs transversaux (couche du dessus d'une grille de madriers) : sous un appui de largeur `width`, des madriers
- * posés en travers sur toute la largeur B des madriers du dessous, en nombre suffisant pour couvrir l'appui le long de
- * la rangée (`along`). Au-delà du bord de l'appui, un madrier sur sol élastique ne porte que sur ≈ 1/β (comme une
- * plaque souple, Hetényi) : β = (k · b / 4 E I)^¼ = (3 k / E h³)^¼ ; largeur chargée = width + 2/β, au plus B.
- * Flexion du porte-à-faux : M = P / n · (B − a) / 8 ≤ fm,d · W.
+ * Répartiteurs transversaux d'une section donnée (couche du dessus d'une grille de madriers) : sous un appui de
+ * largeur `width`, des madriers posés en travers sur toute la largeur B des madriers du dessous, en nombre suffisant
+ * pour couvrir l'appui le long de la rangée (`along`). Au-delà du bord de l'appui, un madrier sur sol élastique ne
+ * porte que sur ≈ 1/β (comme une plaque souple, Hetényi) : β = (k · b / 4 E I)^¼ = (3 k / E h³)^¼ ; largeur chargée =
+ * width + 2/β, au plus B. Flexion du porte-à-faux : M = P / n · (B − a) / 8 ≤ fm,d · W.
  */
-function designTop(P: number, width: number, along: number, B: number, k: number): { top: RowDesign['top']; reach: number } {
+function topFixed(P: number, width: number, along: number, B: number, k: number, beam: Beam | null): { top: TopPiece | null; reach: number } {
   if (width >= B - 1) return { top: null, reach: B };
+  if (!beam) return { top: null, reach: width };
   const fmd = (0.9 * C24.fmk) / 1.3;
-  let best: { top: NonNullable<RowDesign['top']>; reach: number } | null = null;
-  for (const beam of [...C24_BEAMS, { b: 200, h: 300 }, { b: 250, h: 300 }]) {
-    const n = Math.max(1, Math.ceil(along / beam.b - 1e-9));
-    const beta = Math.pow((3 * k) / (C24.E * beam.h ** 3), 0.25);
-    const reach = Math.min(B, width + 2 / beta);
-    const M = ((P / n) * (reach - Math.min(width, reach))) / 8;
-    const eta = M / ((beam.b * beam.h * beam.h) / 6) / fmd;
-    if (eta > 1) continue;
-    const massKg = (n * beam.b * beam.h * B * C24.rho) / 1e9;
-    // la plus grande largeur chargée, puis la plus légère
-    if (!best || reach > best.reach + 1 || (Math.abs(reach - best.reach) <= 1 && massKg < best.top.massKg)) best = { top: { beam, perSupport: n, length: B, massKg, eta }, reach };
+  const n = Math.max(1, Math.ceil(along / beam.b - 1e-9));
+  const beta = Math.pow((3 * k) / (C24.E * beam.h ** 3), 0.25);
+  const reach = Math.min(B, width + 2 / beta);
+  const M = ((P / n) * (reach - Math.min(width, reach))) / 8;
+  const eta = M / ((beam.b * beam.h * beam.h) / 6) / fmd;
+  return { top: { beam, perSupport: n, length: B, massKg: (n * beam.b * beam.h * B * C24.rho) / 1e9, eta }, reach };
+}
+
+const TOP_BEAMS: Beam[] = [...C24_BEAMS, { b: 200, h: 300 }, { b: 250, h: 300 }];
+
+/** Répartiteurs les mieux adaptés : la plus grande largeur chargée, puis les plus légers. */
+function designTop(P: number, width: number, along: number, B: number, k: number): { top: TopPiece | null; reach: number } {
+  if (width >= B - 1) return { top: null, reach: B };
+  let best: { top: TopPiece; reach: number } | null = null;
+  for (const beam of TOP_BEAMS) {
+    const t = topFixed(P, width, along, B, k, beam);
+    if (!t.top || t.top.eta > 1) continue;
+    if (!best || t.reach > best.reach + 1 || (Math.abs(t.reach - best.reach) <= 1 && t.top.massKg < best.top.massKg)) best = { top: t.top, reach: t.reach };
   }
   return best ?? { top: null, reach: width };
 }
 
+type RowLoad = { x: number; Pk: number; PEd: number; width: number; along: number };
+
 /**
- * Grille de madriers C24 sous une rangée d'appuis : madriers jointifs le long de la rangée (largeur au plus
- * `maxWidth`), vérifiés en poutre sur sol élastique sans traction (pression maxi + poids propre de la grille, flexion,
- * cisaillement, compression transversale), et répartiteurs transversaux rigides sous chaque appui quand l'appui est
- * plus étroit que les madriers. La plus légère qui passe.
+ * Une grille de madriers C24 donnée sous une rangée : madriers jointifs le long de la rangée (`count` × `beam`),
+ * vérifiés en poutre sur sol élastique sans traction (pression maxi + poids propre de la grille, flexion,
+ * cisaillement, compression transversale), et répartiteurs transversaux sous chaque appui plus étroit que les
+ * madriers (`topBeam` ; undefined = choisis au mieux pour chaque appui, null = aucun). Si les répartiteurs ne chargent
+ * pas toute la largeur, la pression est rapportée à la largeur qu'ils chargent. null : répartiteurs automatiques et
+ * largeur inutile (au-delà de ce qu'ils peuvent charger).
  */
-function designRow(
-  loads: Array<{ x: number; Pk: number; PEd: number; width: number; along: number }>,
-  length: number,
-  inp: CalageInput,
-  maxWidth: number,
-): RowDesign | null {
+function evalRow(loads: RowLoad[], length: number, inp: CalageInput, beam: Beam, count: number, topBeam?: Beam | null): RowDesign | null {
+  const B = beam.b * count;
+  const contact = Math.min(...loads.map((l) => l.along));
+  const tops = loads.map((l) => (topBeam === undefined ? designTop(l.PEd, l.width, l.along, B, inp.longrine.k) : topFixed(l.PEd, l.width, l.along, B, inp.longrine.k, topBeam)));
+  if (topBeam === undefined && tops.some((t) => t.reach < B - 1)) return null;
+  const topList = tops.map((t) => t.top).filter((t): t is TopPiece => !!t);
+  const topKg = topList.reduce((a, t) => a + t.massKg, 0);
+  const ld = loads.map((l, k) => {
+    const t = tops[k].top;
+    const w = t ? t.massKg * G : 0;
+    return { x: l.x, Pk: l.Pk + w, PEd: l.PEd + 1.35 * w };
+  });
+  const r = checkLongrine({ loads: ld, length, beam, count, k: inp.longrine.k, bearing: inp.bearing, contact });
+  const self = (r.massKg * G) / (B * length);
+  // largeur réellement chargée par les répartiteurs (la plus faible de la rangée)
+  const loaded = Math.min(B, ...tops.map((t) => t.reach));
+  const narrow = loaded < B - 1 ? B / Math.max(loaded, 1) : 1;
+  const pressure = r.pMaxK * narrow + self;
+  const others = r.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
+  const etaTimber = Math.max(0, ...others, ...topList.map((t) => t.eta));
+  const etaGround = pressure / inp.bearing;
+  const rec: CalcRecord = {
+    key: 'sleepers.pressure',
+    title: 'Pression au sol sous les madriers (sol élastique + poids de la grille)',
+    clause: 'poutre sur sol élastique sans traction (Winkler), charges caractéristiques ; poids propre réparti',
+    formula: narrow > 1 ? 'max p = max (k · w) · B / largeur chargée + G madriers / (B · L) ≤ portance' : 'max p = max (k · w) + G madriers / (B · L) ≤ portance',
+    withValues: `k = ${f(inp.longrine.k * 1e3, 0)} MN/m³ ; B = ${count} × ${beam.b} = ${f(B / 10, 0)} cm${narrow > 1 ? ` (chargés sur ${f(loaded / 10, 0)} cm)` : ''} ; L = ${m(length)} ; max p = ${pressureText(r.pMaxK * narrow)} + ${pressureText(self)} = ${pressureText(pressure)} ≤ ${pressureText(inp.bearing)}`,
+    result: pressure,
+    limit: inp.bearing,
+    eta: etaGround,
+  };
+  const topRec: CalcRecord[] = topList.length
+    ? [
+        {
+          key: 'sleepers.top',
+          title: 'Répartiteurs transversaux sous les appuis (rigidité et flexion)',
+          clause: 'madriers sur sol élastique (Hetényi) : au-delà de l’appui, ils ne chargent que ≈ 1/β, β = (3 k / E h³)^¼ ; flexion du porte-à-faux M = P (B − a) / 8',
+          formula: 'largeur chargée = a + 2/β ≥ B ; σm,d = M / W ≤ fm,d',
+          withValues: `${topList[0].perSupport} × C24 ${topList[0].beam.b} × ${topList[0].beam.h} mm, L = ${m(B)} sous chaque appui ; η ≤ ${f(Math.max(...topList.map((t) => t.eta)), 2)}`,
+          eta: Math.max(...topList.map((t) => t.eta)),
+        },
+      ]
+    : [];
+  const heaviest = topList.length ? topList.reduce((a, t) => (t.massKg > a.massKg ? t : a)) : null;
+  return {
+    beam,
+    count,
+    length,
+    pressure,
+    etaGround,
+    etaTimber,
+    eta: Math.max(etaGround, etaTimber),
+    massKg: r.massKg + topKg,
+    records: [rec, ...r.records.filter((x) => x.key !== 'longrine.pressure'), ...topRec],
+    top: heaviest && { ...heaviest, pieces: topList.reduce((a, t) => a + t.perSupport, 0), massKg: topKg },
+  };
+}
+
+/**
+ * Grille de madriers C24 sous une rangée d'appuis (largeur au plus `maxWidth`) : la plus légère qui passe ; les
+ * répartiteurs sont ensuite unifiés (une seule section par rangée, celle de l'appui le plus exigeant).
+ */
+function designRow(loads: RowLoad[], length: number, inp: CalageInput, maxWidth: number): RowDesign | null {
   let best: RowDesign | null = null;
   const beams = inp.longrine.beams.length ? inp.longrine.beams : C24_BEAMS;
   const sum = loads.reduce((a, l) => a + l.Pk, 0);
-  const contact = Math.min(...loads.map((l) => l.along));
   for (const beam of beams) {
     // nombre minimal de pièces en pression uniforme (charges + poids propre) : évite les calculs inutiles
     const w1 = (beam.b * beam.h * length * C24.rho * G) / 1e9;
@@ -115,64 +235,46 @@ function designRow(
     if (den <= 0) continue;
     const n0 = Math.max(1, Math.ceil(sum / den - 1e-9));
     for (let count = n0; count * beam.b <= maxWidth; count++) {
-      const B = beam.b * count;
-      // répartiteurs du dessus sous chaque appui : au-delà de la largeur qu'ils chargent, des madriers de plus ne servent à rien
-      const tops = loads.map((l) => designTop(l.PEd, l.width, l.along, B, inp.longrine.k));
-      if (tops.some((t) => t.reach < B - 1)) break;
-      const topList = tops.map((t) => t.top).filter((t): t is NonNullable<RowDesign['top']> => !!t);
-      const topKg = topList.reduce((a, t) => a + t.massKg, 0);
-      const ld = loads.map((l, k) => {
-        const t = tops[k].top;
-        const w = t ? t.massKg * G : 0;
-        return { x: l.x, Pk: l.Pk + w, PEd: l.PEd + 1.35 * w };
-      });
-      const r = checkLongrine({ loads: ld, length, beam, count, k: inp.longrine.k, bearing: inp.bearing, contact });
-      const self = (r.massKg * G) / (B * length);
-      const pressure = r.pMaxK + self;
-      const others = r.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
-      const eta = Math.max(pressure / inp.bearing, ...others, ...topList.map((t) => t.eta));
-      if (eta > 1) continue;
-      const rec: CalcRecord = {
-        key: 'sleepers.pressure',
-        title: 'Pression au sol sous les madriers (sol élastique + poids de la grille)',
-        clause: 'poutre sur sol élastique sans traction (Winkler), charges caractéristiques ; poids propre réparti',
-        formula: 'max p = max (k · w) + G madriers / (B · L) ≤ portance',
-        withValues: `k = ${f(inp.longrine.k * 1e3, 0)} MN/m³ ; B = ${count} × ${beam.b} = ${f(B / 10, 0)} cm ; L = ${m(length)} ; max p = ${pressureText(r.pMaxK)} + ${pressureText(self)} = ${pressureText(pressure)} ≤ ${pressureText(inp.bearing)}`,
-        result: pressure,
-        limit: inp.bearing,
-        eta: pressure / inp.bearing,
-      };
-      const topRec: CalcRecord[] = topList.length
-        ? [
-            {
-              key: 'sleepers.top',
-              title: 'Répartiteurs transversaux sous les appuis (rigidité et flexion)',
-              clause: 'madriers sur sol élastique (Hetényi) : au-delà de l’appui, ils ne chargent que ≈ 1/β, β = (3 k / E h³)^¼ ; flexion du porte-à-faux M = P (B − a) / 8',
-              formula: 'largeur chargée = a + 2/β ≥ B ; σm,d = M / W ≤ fm,d',
-              withValues: `${topList[0].perSupport} × C24 ${topList[0].beam.b} × ${topList[0].beam.h} mm, L = ${m(B)} sous chaque appui ; η ≤ ${f(Math.max(...topList.map((t) => t.eta)), 2)}`,
-              eta: Math.max(...topList.map((t) => t.eta)),
-            },
-          ]
-        : [];
-      const top = topList.length ? topList.reduce((a, t) => (t.massKg > a.massKg ? t : a)) : null;
-      const cand: RowDesign = { beam, count, length, pressure, eta, massKg: r.massKg + topKg, records: [rec, ...r.records.filter((x) => x.key !== 'longrine.pressure'), ...topRec], top: top && { ...top, massKg: topKg } };
+      // au-delà de la largeur que chargent les répartiteurs, des madriers de plus ne servent à rien
+      const cand = evalRow(loads, length, inp, beam, count);
+      if (!cand) break;
+      if (cand.eta > 1) continue;
       if (!best || cand.massKg < best.massKg - 1e-6 || (Math.abs(cand.massKg - best.massKg) < 1e-6 && cand.eta < best.eta)) best = cand;
       // plus de pièces = plus lourd : le premier nombre qui passe suffit pour cette section
       break;
     }
   }
+  if (best?.top) {
+    const fixed = evalRow(loads, length, inp, best.beam, best.count, best.top.beam);
+    if (fixed && fixed.eta <= 1) return fixed;
+  }
   return best;
 }
 
-/** Madriers sous chaque rangée d'appuis (avec les blocs, ou vérins / pieds posés directement sur les madriers). */
-function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolean): CalageRemedy | null {
-  const checks = res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
+/** Appuis qui reçoivent une grille ou un plateau de madriers (pas les pieds d'escalier ni de terrasse). */
+const gridChecks = (res: CalageResult) => res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
+
+/** Point en plan (monde) depuis les coordonnées le long de u et de v = u tourné de 90°. */
+const fromUV = (u: P2, s: number, t: number): P2 => [s * u[0] - t * u[1], s * u[1] + t * u[0]];
+const rectUV = (u: P2, s0: number, s1: number, t0: number, t1: number): [P2, P2, P2, P2] => [fromUV(u, s0, t0), fromUV(u, s1, t0), fromUV(u, s1, t1), fromUV(u, s0, t1)];
+const rowKey = (ids: string[]) => [...ids].sort().join('|');
+
+/**
+ * Madriers sous chaque rangée d'appuis (avec les blocs, ou vérins / pieds posés directement sur les madriers) :
+ * recherche (`fixed` absent) ou vérification d'une grille retenue (null si les rangées ont changé).
+ */
+function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolean, fixed?: SleeperRowDesign[]): RemedyEvaluation | null {
+  const checks = gridChecks(res);
   if (checks.length < 2) return null;
   const rows = supportRows(checks, u);
+  if (fixed && (fixed.length !== rows.length || rows.some((r) => !fixed.some((x) => rowKey(x.ids) === rowKey(r.items.map((i) => i.c.id)))))) return null;
   const oh = Math.max(inp.longrine.overhang, 100);
   const details: string[] = [];
   const materials: MaterialLine[] = [];
   const records: CalcRecord[] = [];
+  const perSupport = new Map<string, RemedySupport>();
+  const outlines: RemedyOutline[] = [];
+  const design: SleeperRowDesign[] = [];
   let eta = 0;
   let ok = true;
   rows.forEach((row, k) => {
@@ -186,25 +288,35 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
     // largeur au plus : jusqu'à 10 cm des rangées voisines (entraxe)
     const gaps = rows.filter((r) => r !== row).map((r) => Math.abs(r.v - row.v));
     const maxWidth = Math.min(gaps.length ? Math.min(...gaps) - 100 : 3000, 3000);
-    const d = designRow(loads, L, inp, maxWidth);
-    const label = `rangée ${k + 1} (${row.items.map((i) => i.c.id).join(', ')})`;
+    const ids = row.items.map((i) => i.c.id);
+    const fx = fixed?.find((x) => rowKey(x.ids) === rowKey(ids));
+    const d = fx ? evalRow(loads, L, inp, fx.beam, fx.count, fx.top) : designRow(loads, L, inp, maxWidth);
+    const label = `rangée ${k + 1} (${ids.join(', ')})`;
     if (!d) {
       ok = false;
       const sum = loads.reduce((a, l) => a + l.Pk, 0);
       details.push(`${label} : ${kN(sum)} sur ${m(L)} — aucune largeur de madriers ≤ ${f(maxWidth / 10, 0)} cm ne suffit (il faudrait au moins ${f(sum / (inp.bearing * L) / 10, 0)} cm de large en pression uniforme) : plateau continu sur toute la surface.`);
       return;
     }
+    if (d.eta > 1) ok = false;
     eta = Math.max(eta, d.eta);
+    design.push({ ids, beam: d.beam, count: d.count, top: d.top?.beam ?? null });
     const lowerKg = d.massKg - (d.top?.massKg ?? 0);
+    const B = d.count * d.beam.b;
     details.push(
-      `${label} : couche du dessous ${d.count} madriers C24 ${d.beam.b} × ${d.beam.h} mm jointifs le long de la rangée (${f((d.count * d.beam.b) / 10, 0)} cm de large), L = ${m(L)}${
+      `${label} : couche du dessous ${d.count} madriers C24 ${d.beam.b} × ${d.beam.h} mm jointifs le long de la rangée (${f(B / 10, 0)} cm de large), L = ${m(L)}${
         d.top ? ` ; couche du dessus ${d.top.perSupport} madriers ${d.top.beam.b} × ${d.top.beam.h} mm en travers sous chaque appui (L = ${m(d.top.length)})` : ''
       } — pression maxi ${pressureText(d.pressure)} (η ${f(d.eta, 2)}).`,
     );
     materials.push({ label: 'Madrier bois C24', dims: `${d.beam.b} × ${d.beam.h} × ${Math.round(L)} mm`, quantity: d.count, massKg: lowerKg });
     if (d.top)
-      materials.push({ label: 'Madrier bois C24 (répartiteur transversal)', dims: `${d.top.beam.b} × ${d.top.beam.h} × ${Math.round(d.top.length)} mm`, quantity: d.top.perSupport * row.items.length, massKg: d.top.massKg });
-    records.push(...d.records.map((r) => ({ ...r, title: `${r.title} — ${label}` })));
+      materials.push({ label: 'Madrier bois C24 (répartiteur transversal)', dims: `${d.top.beam.b} × ${d.top.beam.h} × ${Math.round(d.top.length)} mm`, quantity: d.top.pieces, massKg: d.top.massKg });
+    const rowRecords = d.records.map((r) => ({ ...r, title: `${r.title} — ${label}` }));
+    records.push(...rowRecords);
+    const stepLabel = `Grille de madriers, ${label.replace(/ \(.*\)$/, '')} : ${d.count} × ${d.beam.b} × ${d.beam.h} mm${d.top ? ` + répartiteurs ${d.top.beam.b} × ${d.top.beam.h}` : ''}`;
+    for (const it of row.items)
+      perSupport.set(it.c.id, { label: stepLabel, pressure: d.pressure, area: B * L, etaTimber: d.etaTimber, records: rowRecords, note: 'pression maxi sous la rangée (sol élastique, toutes les charges de la rangée + poids de la grille)' });
+    outlines.push({ id: `G${k + 1}`, corners: rectUV(u, s0, s1, row.v - B / 2, row.v + B / 2), label: `${d.count} × ${d.beam.b} × ${d.beam.h} mm`, sub: `L = ${m(L)}` });
   });
   const merged = mergeLines(materials);
   const mass = merged.reduce((a, x) => a + x.massKg, 0);
@@ -216,18 +328,27 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
   ];
   if (withBlocks) notes.push('Les blocs dessinés restent sur les madriers, centrés sur leur largeur.');
   else notes.push(`Sans les blocs : les vérins (ou les pieds) se posent directement sur les madriers — ${f(blocksKg, 0)} kg de moins au sol, hauteur de l’installation abaissée de la hauteur des blocs (à vérifier avec l’exploitant et les accès).`);
+  const complete = design.length === rows.length;
+  const key = withBlocks ? 'sleepers' : 'sleepers-no-blocks';
   return {
-    key: withBlocks ? 'sleepers' : 'sleepers-no-blocks',
-    title: withBlocks ? 'Grille de madriers C24 sous chaque rangée de blocs' : 'Grille de madriers C24 sans les blocs (vérins directement sur les madriers)',
-    verdict: ok ? 'ok' : 'fail',
-    ...(ok ? { eta } : {}),
-    summary: ok
-      ? `${rows.length} rangée(s), ${merged.reduce((a, x) => a + x.quantity, 0)} madriers, ${f(mass, 0)} kg de bois : la pression au sol passe partout (η ${f(eta, 2)}).`
-      : `Même avec des madriers jointifs sur toute la largeur disponible, certaines rangées ne passent pas : il faut un plateau continu.`,
-    details,
-    materials: merged,
-    records,
-    notes,
+    remedy: {
+      key,
+      title: withBlocks ? 'Grille de madriers C24 sous chaque rangée de blocs' : 'Grille de madriers C24 sans les blocs (vérins directement sur les madriers)',
+      verdict: ok ? 'ok' : 'fail',
+      ...(complete ? { eta } : {}),
+      summary: ok
+        ? `${rows.length} rangée(s), ${merged.reduce((a, x) => a + x.quantity, 0)} madriers, ${f(mass, 0)} kg de bois : la pression au sol passe partout (η ${f(eta, 2)}).`
+        : complete
+          ? `${rows.length} rangée(s), ${f(mass, 0)} kg de bois : certaines rangées ne passent pas (η ${f(eta, 2)}).`
+          : 'Même avec des madriers jointifs sur toute la largeur disponible, certaines rangées ne passent pas : il faut un plateau continu.',
+      details,
+      materials: merged,
+      records,
+      notes,
+      ...(complete ? { apply: { key, rows: design } } : {}),
+    },
+    perSupport,
+    outlines,
   };
 }
 
@@ -243,13 +364,30 @@ function mergeLines(lines: MaterialLine[]): MaterialLine[] {
   return out;
 }
 
+/** Axe des rangées : grand côté de la première Viewbox posée au sol. */
+const rowAxis = (inp: CalageInput): P2 => {
+  const ground = inp.modules.filter((x) => x.level === 0);
+  return ground[0] ? moduleAxes(ground[0]).u : [1, 0];
+};
+
+/**
+ * Vérifie une solution retenue (`CalageChoices.remedy`) sur le calage `res` calculé sans elle : pression au sol et
+ * taux du bois de chaque appui, matériel, contours en plan. null : la solution ne correspond plus aux appuis (rangées
+ * changées, plus de rangées) — il faut relancer la recherche.
+ */
+export function evaluateRemedy(inp: CalageInput, res: CalageResult, applied: AppliedRemedy): RemedyEvaluation | null {
+  if (!(inp.bearing > 0)) return null;
+  const u = rowAxis(inp);
+  if ('rows' in applied) return sleepers(inp, res, u, applied.key === 'sleepers', applied.rows);
+  return platformGrid(inp, res, u, applied.key === 'platform', { over: applied.over, lower: applied.lower, upper: applied.upper });
+}
+
 /** Pistes chiffrées quand au moins un appui ne passe pas (vide sinon). */
 export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemedy[] {
   const failing = res.checks.filter((c) => c.eta > 1);
   if (!failing.length || !(inp.bearing > 0)) return [];
   const out: CalageRemedy[] = [];
-  const ground = inp.modules.filter((x) => x.level === 0);
-  const u: P2 = ground[0] ? moduleAxes(ground[0]).u : [1, 0];
+  const u = rowAxis(inp);
   const q = inp.bearing;
 
   // 1. blocs centrés sous les pieds
@@ -269,6 +407,7 @@ export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemed
       materials: [],
       records: [],
       notes: ['Un bloc chargé près de son bord ne porte que sur la zone centrée sous la charge (B’ = B − 2 e) : le bloc doit être centré sous le pied, quitte à dépasser de la Viewbox.'],
+      apply: 'centre-blocks',
     });
   }
 
@@ -303,18 +442,18 @@ export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemed
 
   // 3. madriers continus sous chaque rangée (avec les blocs, puis sans)
   const withBlocks = sleepers(inp, res, u, true);
-  if (withBlocks) out.push(withBlocks);
+  if (withBlocks) out.push(withBlocks.remedy);
   if (res.checks.some((c) => c.block)) {
     const without = sleepers(inp, res, u, false);
-    if (without) out.push(without);
+    if (without) out.push(without.remedy);
   }
 
   // 4. plateau continu en grille de madriers (2 couches), sans débord puis avec 50 cm de débord ; avec et sans les blocs
   const plat = platformGrid(inp, res, u, true);
-  if (plat) out.push(plat);
+  if (plat) out.push(plat.remedy);
   if (res.checks.some((c) => c.block)) {
     const platNo = platformGrid(inp, res, u, false);
-    if (platNo) out.push(platNo);
+    if (platNo) out.push(platNo.remedy);
   }
 
   // 5. réduire la charge
@@ -340,8 +479,8 @@ export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemed
  * sur sa largeur, et il est vérifié en poutre sur sol élastique sans traction (pression maxi + poids des deux couches,
  * flexion, cisaillement). Sans débord, puis 50 cm de débord de chaque côté.
  */
-function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolean): CalageRemedy | null {
-  const checks = res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
+function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolean, fixed?: { over: number; lower: Beam; upper: Beam }): RemedyEvaluation | null {
+  const checks = gridChecks(res);
   const rows = supportRows(checks, u);
   if (rows.length < 2) return null;
   const v: P2 = [-u[1], u[0]];
@@ -351,12 +490,12 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const vs = pts.map((p) => p[0] * v[0] + p[1] * v[1]);
   const [U0, U1, V0, V1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
   const fmd = (0.9 * C24.fmk) / 1.3;
-  type Grid = { over: number; lower: Pick<TimberBeam, 'b' | 'h'>; upper: Pick<TimberBeam, 'b' | 'h'>; nUpper: number; eta: number; pressure: number; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
+  type Grid = { over: number; lower: Beam; upper: Beam; nUpper: number; eta: number; etaTimber: number; pressure: number; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
   let best: Grid | null = null;
   let leastBad: Grid | null = null;
-  for (const over of [100, 500])
-    for (const lower of C24_BEAMS)
-      for (const upper of C24_BEAMS) {
+  for (const over of fixed ? [fixed.over] : [100, 500])
+    for (const lower of fixed ? [fixed.lower] : C24_BEAMS)
+      for (const upper of fixed ? [fixed.upper] : C24_BEAMS) {
         const L = U1 - U0 + 2 * over;
         const W = V1 - V0 + 2 * over;
         // couche du dessus : sous chaque rangée, de la largeur de ses appuis
@@ -387,7 +526,8 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
         const Mup = (Pmax * Math.min(span, 2 / beta)) / 8 / nUpper;
         const etaUp = Mup / ((upper.b * upper.h ** 2) / 6) / fmd;
         const others = rr.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
-        const eta = Math.max(pressure / inp.bearing, etaUp, ...others);
+        const etaTimber = Math.max(etaUp, ...others);
+        const eta = Math.max(pressure / inp.bearing, etaTimber);
         const nLower = Math.ceil(L / lower.b - 1e-9);
         const massKg = ((nLower * lower.b * lower.h * W + rows.length * nUpper * upper.b * upper.h * L) * C24.rho) / 1e9;
         const records: CalcRecord[] = [
@@ -411,7 +551,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
             eta: etaUp,
           },
         ];
-        const g: Grid = { over, lower, upper, nUpper, eta, pressure, massKg, records, L, W, reach };
+        const g: Grid = { over, lower, upper, nUpper, eta, etaTimber, pressure, massKg, records, L, W, reach };
         if (eta <= 1 && (!best || g.over < best.over || (g.over === best.over && g.massKg < best.massKg))) best = g;
         if (!leastBad || g.eta < leastBad.eta) leastBad = g;
       }
@@ -421,14 +561,30 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const blocksKg = res.checks.reduce((a, c) => a + (c.block?.massKg ?? 0), 0);
   const nLower = Math.ceil(g.L / g.lower.b - 1e-9);
   const ok = !!best;
-  return {
-    key: withBlocks ? 'platform' : 'platform-no-blocks',
+  const key = withBlocks ? 'platform' : 'platform-no-blocks';
+  const perSupport = new Map<string, RemedySupport>();
+  const stepLabel = `Plateau de madriers ${m(g.L)} × ${m(g.W)} : ${nLower} × ${g.lower.b} × ${g.lower.h} mm + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm sous chaque rangée`;
+  for (const c of checks)
+    perSupport.set(c.id, { label: stepLabel, pressure: g.pressure, area: g.L * g.W, etaTimber: g.etaTimber, records: g.records, note: 'pression maxi sous le plateau (sol élastique, charge de chaque rangée répartie par la couche du dessus + poids des deux couches)' });
+  const s0 = U0 - g.over;
+  const t0 = V0 - g.over;
+  const outlines: RemedyOutline[] = [
+    { id: 'PL', corners: rectUV(u, s0, s0 + g.L, t0, t0 + g.W), label: `${nLower} × ${g.lower.b} × ${g.lower.h} mm`, sub: `${m(g.L)} × ${m(g.W)}` },
+    ...rows.map((r, k): RemedyOutline => {
+      const half = (g.nUpper * g.upper.b) / 2;
+      return { id: `PR${k + 1}`, corners: rectUV(u, s0, s0 + g.L, r.v - half, r.v + half), label: `${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm` };
+    }),
+  ];
+  const remedy: CalageRemedy = {
+    key,
     title: withBlocks ? 'Plateau continu en grille de madriers (2 couches)' : 'Plateau continu en grille de madriers, sans les blocs (vérins sur le plateau)',
     verdict: ok ? 'ok' : 'fail',
     eta: g.eta,
     summary: ok
       ? `Plateau ${m(g.L)} × ${m(g.W)}${g.over > 100 ? ` (débord ${f(g.over / 10, 0)} cm de chaque côté)` : ' (sans débord)'} : ${nLower} madriers ${g.lower.b} × ${g.lower.h} en travers + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} sous chaque rangée, ${f(g.massKg, 0)} kg de bois — pression maxi ${pressureText(g.pressure)} (η ${f(g.eta, 2)}).`
-      : `Même un plateau continu en grille de madriers ne passe pas (meilleur essai : η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) : la charge (${kN(totalN)}) est trop grande pour ${pressureText(inp.bearing)} sur cette emprise — alléger, agrandir l’emprise ou faire préciser la portance.`,
+      : fixed
+        ? `Plateau retenu ${m(g.L)} × ${m(g.W)} : ne passe pas avec les charges actuelles (η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) — relancer la recherche de solutions.`
+        : `Même un plateau continu en grille de madriers ne passe pas (meilleur essai : η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) : la charge (${kN(totalN)}) est trop grande pour ${pressureText(inp.bearing)} sur cette emprise — alléger, agrandir l’emprise ou faire préciser la portance.`,
     details: [
       `Couche du dessous : ${nLower} madriers C24 ${g.lower.b} × ${g.lower.h} mm jointifs, longueur ${m(g.W)}, posés en travers des rangées d’appuis sur toute la longueur ${m(g.L)}.`,
       `Couche du dessus : sous chaque rangée, ${g.nUpper} madriers ${g.upper.b} × ${g.upper.h} mm le long de la rangée (longueur ${m(g.L)}), vissés aux madriers du dessous ; chaque appui (bloc ou pied) posé dessus, centré.`,
@@ -445,7 +601,9 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
       'Modèle simplifié (chaque madrier du dessous calculé seul, charge des rangées répartie par la couche du dessus) : à faire valider par un ingénieur pour l’exécution.',
       ...(withBlocks || !blocksKg ? [] : [`Sans les blocs : ${f(blocksKg, 0)} kg de moins ; l’installation est plus basse de la hauteur des blocs moins celle du plateau.`]),
     ],
+    apply: { key, over: g.over, lower: g.lower, upper: g.upper },
   };
+  return { remedy, perSupport, outlines };
 }
 
 /** Masse volumique C24 (kg/m³), pour l'affichage. */

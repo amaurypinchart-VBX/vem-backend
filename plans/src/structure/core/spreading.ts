@@ -10,6 +10,7 @@ import { kgm2 } from './roadway';
 import { fmtNumber } from './units';
 import type { BlockChain } from './blocks';
 import { blockPlateCaps } from './blocks';
+import type { AppliedRemedy, RemedySupport } from './calageRemedies';
 
 /** Une couche choisie : n plaques identiques du stock (clé `plateKey`) empilées. */
 export interface LayerRef {
@@ -30,6 +31,10 @@ export interface CalageChoices {
   longrine?: boolean;
   /** pose des plaques choisie pour un appui (« P4 », « B2 ») : à fleur de la Viewbox ou centrées ; absent = réglage général */
   placeBySupport?: Record<string, 'flush' | 'centered'>;
+  /** blocs de calage dessinés centrés sous la résultante de leurs pieds (piste « Centrer les blocs », à déplacer sur site) */
+  centreBlocks?: boolean;
+  /** solution retenue parmi les pistes (grille de madriers, plateau) : remplace les plaques de tous les appuis concernés */
+  remedy?: AppliedRemedy;
 }
 
 const f = (v: number, d = 1) => fmtNumber(v, d);
@@ -219,6 +224,11 @@ export interface ChainInput {
   block?: BlockChain;
   /** module de réaction du sol (N/mm³) : répartition des plaques souples (PEHD) */
   subgrade?: number;
+  /**
+   * appui posé sur la grille / le plateau de madriers de la solution retenue : pression maxi au sol calculée pour
+   * toute la rangée (ou tout le plateau), taux du bois ; remplace les couches et les plaques de roulage
+   */
+  timber?: RemedySupport;
 }
 
 export interface ChainResult {
@@ -379,7 +389,13 @@ export function checkChain(inp: ChainInput): ChainResult {
     steps.push(stepOf(`+ ${lab}`, r.footprint, note));
     c = r.footprint;
   }
-  if (inp.roadway) {
+  const tb = inp.timber;
+  if (tb) {
+    steps.push({ label: `+ ${tb.label}`, dims: null, area: tb.area, pressure: tb.pressure, eta: tb.pressure / bearing, note: tb.note });
+    records.push(...tb.records);
+    etaCapacity = Math.max(etaCapacity, tb.etaTimber);
+    if (tb.etaTimber > 1) problems.push(`${tb.label} : madriers insuffisants (η ${f(tb.etaTimber, 2)})`);
+  } else if (inp.roadway) {
     const q = inp.roadway.mean;
     steps.push({ label: '+ Plaques de roulage sur toute la surface (charge totale répartie uniformément)', dims: null, area: inp.roadway.area, pressure: q, eta: q / bearing });
   }
@@ -389,9 +405,13 @@ export function checkChain(inp: ChainInput): ChainResult {
   records.push({
     key: 'spread.ground',
     title: 'Pression au sol',
-    clause: inp.roadway ? 'plaques de roulage jointives : charge verticale totale / surface couverte' : 'pression uniforme sous l’emprise efficace de la dernière couche',
-    formula: 'σB = Rz,k / A ≤ portance admissible',
-    withValues: inp.roadway
+    clause: tb
+      ? 'grille de madriers sur sol élastique : pression maxi sous la partie qui porte l’appui (toutes ses charges + poids des madriers)'
+      : inp.roadway ? 'plaques de roulage jointives : charge verticale totale / surface couverte' : 'pression uniforme sous l’emprise efficace de la dernière couche',
+    formula: tb ? 'σB = max p (Winkler) ≤ portance admissible' : 'σB = Rz,k / A ≤ portance admissible',
+    withValues: tb
+      ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
+      : inp.roadway
       ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
       : blk && !inp.layers.length
         ? `σB = ${kN(inp.Rzk)} / ${m2(last.area)} + ${kN(blk.weightK)} / ${m2(blk.dims[0] * blk.dims[1])} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
