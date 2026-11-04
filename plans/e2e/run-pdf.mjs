@@ -9,10 +9,12 @@ const shots = join(dirname(fileURLToPath(import.meta.url)), 'shots') + '/';
 mkdirSync(shots, { recursive: true });
 const URL0 = `http://localhost:${process.env.PORT || 4173}/plans/?projectId=p1&token=tok`;
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM ?? process.env.HOME + '/.cache/ms-playwright/chromium-1134/chrome-linux/chrome',
+  executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell',
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const page = await browser.newPage({ viewport: { width: 1700, height: 1050 }, acceptDownloads: true });
+// BIG=1 : mode « très gros modèle » (export allégé : vues lues planche par planche, images ≤ 2 000 px)
+if (process.env.BIG) await page.addInitScript(() => localStorage.setItem('vem_plans_bigmodel', '1'));
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

@@ -121,9 +121,10 @@ function hasPlansAccess() {
 
 // Module Plans Viewbox (servi à /plans/, sources dans plans/) : analyse des modèles SketchUp
 // exportés (.zip) et préparation des jeux de plans. Le jeton est retiré de l'URL par la page.
+// « noopener » : onglet dans son propre processus — si Plans manque de mémoire, VEM ne devient pas blanc.
 function openPlansViewbox(projectId) {
   if (!hasPlansAccess()) { toast('Accès aux Plans 2D non activé pour ton compte', 'error'); return; }
-  window.open('/plans/?projectId=' + encodeURIComponent(projectId || '') + '&token=' + encodeURIComponent(TOKEN || ''), '_blank');
+  window.open('/plans/?projectId=' + encodeURIComponent(projectId || '') + '&token=' + encodeURIComponent(TOKEN || ''), '_blank', 'noopener');
 }
 
 async function openFileViewer(url, filename) {
