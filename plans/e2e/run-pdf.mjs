@@ -15,6 +15,8 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1700, height: 1050 }, acceptDownloads: true });
 // BIG=1 : mode « très gros modèle » (export allégé : vues lues planche par planche, images ≤ 2 000 px)
 if (process.env.BIG) await page.addInitScript(() => localStorage.setItem('vem_plans_bigmodel', '1'));
+// CHUNK=n : morceaux de n caractères de SVG dans l'export allégé (force la réunion par pdf-lib)
+if (process.env.CHUNK) await page.addInitScript((n) => localStorage.setItem('vem_plans_pdf_chunk', n), process.env.CHUNK);
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -40,9 +42,26 @@ await page.waitForTimeout(1500);
 const n = await page.locator('.sheet-thumb').count();
 for (const [label, file] of [['⬇ PDF du jeu', 'jeu.pdf'], ['⬇ PDF planche', 'planche.pdf']]) {
   const t0 = Date.now();
+  // MEM=1 : tas JS le plus haut par étape de l'export (toutes les 300 ms)
+  const mem = {};
+  let sampling = !!process.env.MEM;
+  const cdpMem = sampling ? await page.context().newCDPSession(page) : null;
+  const sampler = (async () => {
+    while (sampling) {
+      try {
+        const { usedSize } = await cdpMem.send('Runtime.getHeapUsage');
+        const step = ((await page.locator('.save-status').textContent({ timeout: 200 }).catch(() => '')) ?? '').replace(/\(\d+\/\d+\)/, '(n)').replace(/\d+\/\d+/, 'n');
+        mem[step] = Math.max(mem[step] ?? 0, Math.round(usedSize / 1e6));
+      } catch {}
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  })();
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), page.getByRole('button', { name: label }).click()]);
   await dl.saveAs(shots + file);
   console.log(`${label} : ${dl.suggestedFilename()} en ${Date.now() - t0} ms (${n} planches dans le jeu)`);
+  sampling = false;
+  await sampler;
+  if (process.env.MEM) console.log('  tas JS max par étape (Mo) :', JSON.stringify(mem));
   if (process.env.LONGTASKS) {
     const long = await page.evaluate(() => window.__long.splice(0));
     const by = {};
