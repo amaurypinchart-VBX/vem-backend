@@ -49,6 +49,8 @@ export interface GroundPointsInput {
   noTuv?: boolean;
   /** solution retenue (grille / plateau de madriers) : dessinée sous les plaques */
   remedy?: CalageResult['remedy'];
+  /** dalle en charge répartie : zones de dalle des pieds (poids au m²) */
+  slab?: CalageResult['slab'];
 }
 
 const ROW = 2.4 * 1.55;
@@ -135,6 +137,7 @@ export function compactIds(ids: string[]): string {
 function calageCell(c: SupportCheck, roadway: boolean, lang: Lang, timber = false): string {
   const C = CALAGE_LABELS[lang];
   const lay = timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList) : C.noPlate;
+  if (c.zone) return `  ${lay} · ${num(lang, (c.zone.q * 1e6) / 9.81, 0)} kg/m² (${num(lang, c.zone.area / 1e6, 2)} m²)${verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : ''}`;
   const q = c.pressure * 1e3;
   const mark = verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : '';
   const over = c.plan?.placement === 'centered' && c.plan.overhang > 5 ? ' ▲' : '';
@@ -173,7 +176,7 @@ function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; hea
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false, remedy }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false, remedy, slab }: GroundPointsInput): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const R = C.roadwayRows;
   const E = (t: string) => translate(lang, t);
@@ -183,7 +186,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   const ground = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
   // plaque de chaque point : la vérification de l'appui de calage qui le contient (vérins voisins sur une même plaque)
   const checkOf = new Map((checks ?? []).flatMap((c) => (c.members?.length ? c.members : [c.id]).map((id) => [id, c] as const)));
-  const roadwayOn = !remedy && !!checks?.some((c) => c.steps.some((s) => s.dims === null));
+  const roadwayOn = !remedy && !!checks?.some((c) => !c.zone && c.steps.some((s) => s.dims === null));
   const withLevels = !!levels?.known;
   const cols = colsOf(lang, !!checks?.length, withLevels);
   const levelCells = (id: string): string[] => {
@@ -226,7 +229,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         h={planH}
         text={2.2}
         axes
-        plates={checks?.length ? planPlates(checks, { remedy }) : undefined}
+        plates={checks?.length ? planPlates(checks, { remedy, slab }) : undefined}
         zoneFill={(m) => (zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
           const z = zoneOf.get(m.id);

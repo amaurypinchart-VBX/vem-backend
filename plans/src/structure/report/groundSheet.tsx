@@ -53,6 +53,8 @@ export interface PlanPlate {
   centered?: boolean;
   /** texte écrit dans la plaque (pression au sol…) */
   label?: string[];
+  /** zone de dalle d'un pied (charge répartie) : fond léger, trait fin, texte au centre */
+  zone?: boolean;
 }
 
 /** Couleur des madriers de la solution retenue (grille, plateau) sur les plans. */
@@ -64,24 +66,39 @@ export const TIMBER_COLOR = '#a16207';
  */
 export function planPlates(
   checks: SupportCheck[],
-  opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[]; remedy?: CalageResult['remedy'] } = {},
+  opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[]; remedy?: CalageResult['remedy']; slab?: CalageResult['slab']; zoneColor?: (eta: number) => string } = {},
 ): PlanPlate[] {
+  // dalle en charge répartie : la zone de dalle de chaque pied, avec son poids au m² (texte dans le plus grand morceau)
+  const zones: PlanPlate[] = (opts.slab?.zones ?? []).flatMap((z) => {
+    const area = (p: P2[]) => Math.abs(p.reduce((s, a, i) => s + a[0] * p[(i + 1) % p.length][1] - p[(i + 1) % p.length][0] * a[1], 0)) / 2;
+    const big = z.pieces.reduce((a, p) => (area(p) > area(a) ? p : a), z.pieces[0] ?? []);
+    return z.pieces.map((p, k) => ({
+      id: `Z${z.id}-${k}`,
+      corners: p,
+      color: opts.zoneColor?.(z.eta) ?? '#64748b',
+      zone: true,
+      ...(p === big ? { label: zoneLines(z) } : {}),
+    }));
+  });
   const timber: PlanPlate[] = (opts.remedy?.outlines ?? []).map((o) => ({
     id: `T${o.id}`,
     corners: o.corners,
     color: TIMBER_COLOR,
     ...(o.id === 'PL' || o.id.startsWith('G') ? { label: [o.label, ...(o.sub ? [o.sub] : [])] } : {}),
   }));
-  return [...timber, ...checks
+  return [...zones, ...timber, ...checks
     .filter((c) => c.plan)
     .map((c) => ({
       id: c.id,
       corners: c.plan!.corners,
       color: opts.color?.(c) ?? typeColor(c.typeKey),
       centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5,
-      ...(opts.label ? { label: opts.label(c) } : {}),
+      ...(opts.label && !opts.slab ? { label: opts.label(c) } : {}),
     }))];
 }
+
+/** « 292 kg/m² » / « 6,0 kN sur 2,06 m² » : poids au m² de la zone de dalle d'un pied. */
+export const zoneLines = (z: NonNullable<SupportCheck['zone']>): string[] => [`${fmtNumber((z.q * 1e6) / 9.81, 0)} kg/m²`, `${fmtNumber(z.load / 9.81, 0)} kg sur ${fmtNumber(z.area / 1e6, 2)} m²`];
 
 /** « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). */
 export const pressureLines = (c: SupportCheck): string[] => [`${fmtNumber(c.pressure * 1e3, c.pressure * 1e3 < 10 ? 1 : 0)} kN/m²`, `${fmtNumber((c.pressure * 1e6) / 9.81, 0)} kg/m²`];
@@ -166,17 +183,18 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
           <polygon
             points={p.corners.map((q) => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}
             fill={p.color}
-            fillOpacity={0.22}
+            fillOpacity={p.zone ? 0.1 : 0.22}
             stroke={p.color}
-            strokeWidth={text * 0.09}
-            strokeDasharray={p.centered ? `${text * 0.35} ${text * 0.2}` : undefined}
+            strokeWidth={text * (p.zone ? 0.05 : 0.09)}
+            strokeDasharray={p.centered ? `${text * 0.35} ${text * 0.2}` : p.zone ? `${text * 0.2} ${text * 0.15}` : undefined}
           />
           {p.label?.map((t, k) => {
             const xs = p.corners.map((q) => X(q[0]));
             const ys = p.corners.map((q) => Y(q[1]));
             const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-            const yb = Math.max(...ys);
             const n = p.label!.length;
+            // zone de dalle : texte vers le milieu de la zone, sous le point d'appui
+            const yb = p.zone ? (Math.min(...ys) + Math.max(...ys)) / 2 + text * 1.6 + (n - 1) * text * 0.85 : Math.max(...ys);
             return (
               <text key={`lb${k}`} fontFamily={FONT_SANS} x={cx} y={yb - text * 0.35 - (n - 1 - k) * text * 0.85} fontSize={text * 0.72} textAnchor="middle" fontWeight={k === 0 ? 700 : undefined} fill={k === 0 ? p.color : '#374151'}>
                 {t}
@@ -377,7 +395,7 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
   blocks.push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
-      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} plates={planPlates(result.checks, { remedy: result.remedy })} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
+      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} plates={planPlates(result.checks, { remedy: result.remedy, slab: result.slab })} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
     </g>,
   );
   y += planH + 8;

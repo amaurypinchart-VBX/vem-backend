@@ -209,6 +209,13 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
       color: typeColor(t.typeKey),
     })),
   });
+  if (c.slab) {
+    const w = c.slab.worst;
+    blocks[0].lines.push({
+      text: E(`Dalle en charge répartie : ensemble ${N((c.slab.global.q * 1e6) / 9.81)} kg/m²${w ? ` ; zone la plus chargée ${w.id} : ${N((w.q * 1e6) / 9.81)} kg/m²` : ''} ; admis ${N((c.slab.bearing * 1e6) / 9.81)} kg/m²`),
+      bold: true,
+    });
+  }
   if (c.remedy) blocks[0].lines.push({ text: `${E(c.remedy.remedy.title)} : ${E(c.remedy.remedy.summary)}`, bold: true });
   else if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
   else if (c.longrine && !c.allPlates) blocks[0].lines.push({ text: C.longrineVariant(E(c.longrine.solution.summary), N(c.longrine.result.eta, 2)) });

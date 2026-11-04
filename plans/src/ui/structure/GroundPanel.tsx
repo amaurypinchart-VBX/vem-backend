@@ -41,6 +41,11 @@ export interface Hypotheses {
   bearingPreset: string;
   bearingValue: number;
   bearingUnit: BearingUnit;
+  /**
+   * lecture de la valeur : pression maxi sous chaque appui (sol) ou charge répartie admissible (dalle, plancher,
+   * toiture : poids au m² vérifié sur la zone de dalle de chaque pied) ; absent = selon le type de support
+   */
+  bearingMode?: 'pressure' | 'distributed';
   pointLoadKN: number;
   /** poids pesé d'une Viewbox (kg) : structure, plancher, sol, plafond et isolants compris */
   moduleWeightKg: number;
@@ -141,6 +146,11 @@ export const roofSnow = (h: Pick<Hypotheses, 'snowKgm2'>) => (0.8 * Math.max(0, 
  * Viewbox. Le poids pesé est retenu tel quel (tout compris) ; murs, vitrages… : portés par chaque module d'après le
  * modèle (`EstimateModule.carried`), ou forfait par Viewbox du calage rapide sans modèle (`withoutModel`).
  */
+/** Supports dont la valeur se lit d'office comme une charge répartie admissible (dalle, toiture, exploitant). */
+export const DISTRIBUTED_PRESETS = ['slab', 'roof', 'operator'];
+/** Lecture de la portance : choix enregistré, sinon selon le type de support. */
+export const bearingModeOf = (h: Pick<Hypotheses, 'bearingMode' | 'bearingPreset'>): 'pressure' | 'distributed' => h.bearingMode ?? (DISTRIBUTED_PRESETS.includes(h.bearingPreset) ? 'distributed' : 'pressure');
+
 export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
   return {
@@ -172,7 +182,8 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       extraFactor: h.extraPct / 100,
     },
     bearing: bearingFrom(h.bearingValue, h.bearingUnit),
-    pointLoadMax: BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
+    pointLoadMax: (BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad || bearingModeOf(h) === 'distributed') && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
+    bearingMode: bearingModeOf(h),
     staticoConversion: h.staticoConversion,
     thicknesses: h.thicknesses
       .split(/[;,\s]+/)
@@ -818,6 +829,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         lang: pdfLang,
         noTuv: !!result.tuv.notApplicable,
         remedy: result.remedy,
+        slab: result.slab,
         info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
@@ -890,6 +902,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               portance admissible <BearingInputs hyp={hyp} set={(k, v) => setHyp((h) => ({ ...h, [k]: v }))} />
             </span>
             <span className="hint">{bearingConversions(hyp.bearingValue, hyp.bearingUnit)}</span>
+            <select value={bearingModeOf(hyp)} onChange={(e) => setHyp((h) => ({ ...h, bearingMode: e.target.value as 'pressure' | 'distributed' }))} data-testid="bearing-mode-quick">
+              <option value="pressure">pression maxi sous chaque plaque (sol)</option>
+              <option value="distributed">poids admis par m² de dalle (charge répartie)</option>
+            </select>
           </div>
         </div>
       )}
@@ -928,7 +944,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             )}
             <div className="stat">
               <div className="v">{n(kNm2(input.bearing), kNm2(input.bearing) < 10 ? 1 : 0)} kN/m²</div>
-              <div className="l">portance admissible ({n(kgm2(input.bearing), 0)} kg/m²)</div>
+              <div className="l">{result.slab ? `charge admise sur la dalle (${n(kgm2(input.bearing), 0)} kg/m²) — ensemble : ${n(kgm2(result.slab.global.q), 0)} kg/m²` : `portance admissible (${n(kgm2(input.bearing), 0)} kg/m²)`}</div>
             </div>
             <div className={`stat ${failing ? 'warn' : ''}`}>
               <div className="v">{failing ? `${failing} ✖` : 'OK'}</div>
@@ -1029,7 +1045,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   text={14}
                   selected={selected}
                   onSelect={planView === 'level' ? setSelected : select}
-                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines, remedy: result.remedy } : { remedy: result.remedy })}
+                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines, remedy: result.remedy, slab: result.slab, zoneColor: checkColor } : { remedy: result.remedy })}
                   {...(planView === 'level'
                     ? {
                         pointColor: (r) => levelPointStyle(result, hyp.groundLevels, r).color,
@@ -1058,7 +1074,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 {planView === 'level'
                   ? 'Niveau du sol relevé sous chaque pied (mm, valeurs relatives) ; ↑ = rehausse à apporter pour poser la Viewbox de niveau (le point le plus haut sert de référence).'
                   : planView === 'check'
-                    ? `Chiffres dans chaque plaque ou bloc = pression au sol finale (portance admise : ${n(input.bearing * 1e3, input.bearing * 1e3 < 10 ? 1 : 0)} kN/m² = ${n((input.bearing * 1e6) / 9.81, 0)} kg/m²). Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.`
+                    ? result.slab
+                      ? `Dalle en charge répartie (${n((input.bearing * 1e6) / 9.81, 0)} kg/m² admis) : chaque zone en pointillés = la surface de dalle que charge un pied (la moitié de la distance aux pieds voisins). Chiffres = poids sur la dalle au m² à cet endroit (poids du pied, pire cas, + son calage, divisé par la surface de la zone). Ensemble de l’installation : ${n((result.slab.global.q * 1e6) / 9.81, 0)} kg/m². Cliquer sur un appui pour voir le détail.`
+                      : `Chiffres dans chaque plaque ou bloc = pression au sol finale (portance admise : ${n(input.bearing * 1e3, input.bearing * 1e3 < 10 ? 1 : 0)} kN/m² = ${n((input.bearing * 1e6) / 9.81, 0)} kg/m²). Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.`
                     : 'Couleur = type d’appui.'}{' '}
                 Plaques dessinées à l’échelle à leur place (pointillés ▲ = plaque centrée, elle dépasse de la Viewbox) ; les vérins voisins sont sur une même plaque.
               </div>

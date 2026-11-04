@@ -9,6 +9,16 @@ type Rule = readonly [string | RegExp, string, string];
 
 /** Motifs (appliqués dans l'ordre). */
 const PATTERNS: Rule[] = [
+  // dalle en charge répartie admissible (zones de dalle des pieds)
+  [/Dalle en charge répartie admissible ([\d  .,]+) kg\/m² : ensemble de l’installation ([\d  .,]+) kg\/m²/g, 'Decke mit zulässiger Flächenlast $1 kg/m²: gesamte Anlage $2 kg/m²', 'Slab with allowable distributed load $1 kg/m²: whole installation $2 kg/m²'],
+  [/Dalle en charge répartie : ensemble ([\d  .,]+) kg\/m²/g, 'Decke, Flächenlast: gesamt $1 kg/m²', 'Slab, distributed load: whole $1 kg/m²'],
+  [/ ; zone la plus chargée ([A-Z]+\d+) : /g, '; am stärksten belastete Zone $1: ', '; most loaded zone $1: '],
+  [/ ; admis ([\d  .,]+) kg\/m²/g, '; zulässig $1 kg/m²', '; allowable $1 kg/m²'],
+  [/Charge sur la dalle — zone de ([A-Z]+\d+)/g, 'Deckenlast — Zone von $1', 'Load on the slab — zone of $1'],
+  [/Charge sur la dalle — ensemble de l’installation/g, 'Deckenlast — gesamte Anlage', 'Load on the slab — whole installation'],
+  [/Zone de dalle de ([A-Z]+\d+) : ([\d,.]+) kN sur ([\d,.]+) m²/g, 'Deckenzone von $1: $2 kN auf $3 m²', 'Slab zone of $1: $2 kN on $3 m²'],
+  [/Plaques du stock \(dalle en charge répartie : la plaque sert à poser le pied\)/g, 'Platten aus dem Lager (Decke mit Flächenlast: die Platte dient nur als Auflage des Fußes)', 'Stock plates (slab with distributed load: the plate only seats the foot)'],
+  [/Pression juste sous le calage \(information : le critère est la charge de la zone de dalle\)/g, 'Pressung direkt unter der Unterpallung (Information: maßgebend ist die Last der Deckenzone)', 'Pressure just under the packing (information: the criterion is the load of the slab zone)'],
   // solution retenue parmi les pistes du sol (grille / plateau de madriers)
   [/Plateau continu en grille de madriers, sans les blocs \(vérins sur le plateau\)/g, 'Durchgehende Kantholz-Rostplatte ohne Holzklötze (Spindelfüße auf der Platte)', 'Continuous timber-sleeper platform without the blocks (jacks on the platform)'],
   [/Plateau continu en grille de madriers \(2 couches\)/g, 'Durchgehende Kantholz-Rostplatte (2 Lagen)', 'Continuous timber-sleeper platform (2 layers)'],
