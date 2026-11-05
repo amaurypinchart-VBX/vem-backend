@@ -25,7 +25,7 @@ export interface PaintRegion {
   colorId: string;
   /** contour extérieur (sens trigo) + trous (autre sens), mm du dessin */
   loops: Float64Array[];
-  /** point le plus intérieur (mm du dessin) et sa distance au bord (mm) */
+  /** point le plus intérieur (mm du dessin) et sa distance au bord (mm) ; d < 0 = petites régions réunies, sans repère */
   anchor: { x: number; y: number; d: number };
   /** aire visible (mm² du dessin) */
   area: number;
@@ -54,6 +54,8 @@ const SILHOUETTE_MIN = 24;
 const SILHOUETTE_SHARE = 0.25;
 /** triangles réunis par étape (union par morceaux, puis morceaux réunis deux à deux) */
 const SILHOUETTE_CHUNK = 400;
+/** régions d'une couleur qui gardent leur repère (les plus grandes) ; les autres = une seule région sans repère */
+export const TAGGED_REGIONS = 24;
 
 /** Triangles d'un maillage projetés dans le dessin (vus par la tranche exclus). */
 interface OccMesh {
@@ -329,25 +331,142 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
     }
     yield;
   }
-  // 4. contours par couleur, régions (contour extérieur + trous), point d'ancrage
+  // 4. contours par couleur, régions (contour extérieur + trous), point d'ancrage. Façade très détaillée (bardage,
+  // profils, boulons : une région par pièce, des dizaines de milliers par vue) : seules les plus grandes régions gardent
+  // leur repère ; les autres sont réunies en une région par couleur, sans repère (anchor.d = −1), et tous les contours
+  // d'une couleur partagent un seul tableau (avant : ≈ 20 Mo gardés par vue, 400 vues gardées = l'onglet fermé).
   const out: PaintRegion[] = [];
   for (const [colorId, parts] of byColor) {
-    const merged = (yield* unionPairs(parts))
-      .map((q) => Clipper.trimCollinear(Clipper.stripDuplicates(q, true)))
-      .filter((q) => q.length >= 3)
-      .map((q) => Float64Array.from(q.flatMap((pt) => [pt.x / K, pt.y / K])));
-    const outers = merged.filter((l) => loopArea(l) > 0);
-    const holes = merged.filter((l) => loopArea(l) < 0);
-    for (const o of outers) {
-      const mine = holes.filter((h) => insideLoop(h[0], h[1], o));
-      const all = [o, ...mine];
-      const area = loopArea(o) + mine.reduce((s, h) => s + loopArea(h), 0);
-      if (area < 1) continue;
-      out.push({ colorId, loops: all, anchor: poleOfInaccessibility(all, 1), area });
-      yield;
+    // réunion seulement des morceaux dont les emprises se recouvrent : les autres ne peuvent pas se toucher en surface
+    // (réunir d'un bloc les faces visibles de toute une façade de bardage = plusieurs secondes de Clipper par vue)
+    const merged0: Paths64 = new Paths64();
+    let steps = 0;
+    for (const cluster of overlapClusters(parts)) {
+      const u = cluster.length === 1 ? cluster[0] : yield* unionPairs(cluster);
+      for (const q of u) merged0.push(q);
+      if (++steps % 2000 === 0) yield;
     }
+    const raw = [...merged0].map((q) => Clipper.trimCollinear(Clipper.stripDuplicates(q, true))).filter((q) => q.length >= 3);
+    let total = 0;
+    for (const q of raw) total += q.length * 2;
+    const buf = new Float64Array(total);
+    const merged: Float64Array[] = [];
+    let o = 0;
+    for (const q of raw) {
+      const start = o;
+      for (const pt of q) {
+        buf[o++] = pt.x / K;
+        buf[o++] = pt.y / K;
+      }
+      merged.push(buf.subarray(start, o));
+    }
+    yield;
+    const outers = merged.map((l) => ({ l, a: loopArea(l) })).filter((x) => x.a > 0);
+    const holes = merged.filter((l) => loopArea(l) < 0);
+    // trous rangés dans leur contour (boîte d'abord : des milliers de contours sur une grande façade)
+    const boxOf = (l: Float64Array) => {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (let i = 0; i < l.length; i += 2) {
+        if (l[i] < x0) x0 = l[i];
+        if (l[i] > x1) x1 = l[i];
+        if (l[i + 1] < y0) y0 = l[i + 1];
+        if (l[i + 1] > y1) y1 = l[i + 1];
+      }
+      return [x0, y0, x1, y1];
+    };
+    const holeBoxes = holes.map(boxOf);
+    const regions: Array<{ loops: Float64Array[]; area: number }> = [];
+    for (const [n, { l, a }] of outers.entries()) {
+      const b = boxOf(l);
+      const mine: Float64Array[] = [];
+      let area = a;
+      holes.forEach((h, i) => {
+        const hb = holeBoxes[i];
+        if (hb[0] < b[0] || hb[2] > b[2] || hb[1] < b[1] || hb[3] > b[3]) return;
+        if (!insideLoop(h[0], h[1], l)) return;
+        mine.push(h);
+        area += loopArea(h);
+      });
+      if (area >= 1) regions.push({ loops: [l, ...mine], area });
+      if (n % 2000 === 1999) yield;
+    }
+    regions.sort((x, y) => y.area - x.area);
+    const tail: Float64Array[] = [];
+    let tailArea = 0;
+    for (const [i, r] of regions.entries()) {
+      if (i < TAGGED_REGIONS) {
+        out.push({ colorId, loops: r.loops, anchor: poleOfInaccessibility(r.loops, 1), area: r.area });
+        yield;
+      } else {
+        for (const l of r.loops) tail.push(l);
+        tailArea += r.area;
+      }
+    }
+    if (tail.length) out.push({ colorId, loops: tail, anchor: { x: tail[0][0], y: tail[0][1], d: -1 }, area: tailArea });
   }
   return out.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * Contours de morceaux déjà propres chacun (sortie de Clipper : sans recouvrement, trous dans leur contour), regroupés
+ * quand leurs emprises se recouvrent (surface > 0), de proche en proche. Un groupe venu d'un seul morceau n'a pas
+ * besoin d'être réuni ; les autres sont réunis (Clipper) — seulement là où deux morceaux se touchent vraiment.
+ */
+export function overlapClusters(parts: Paths64[]): Paths64[][] {
+  const loops: Path64[] = [];
+  const owner: number[] = [];
+  parts.forEach((ps, i) => {
+    for (const q of ps) {
+      loops.push(q);
+      owner.push(i);
+    }
+  });
+  const n = loops.length;
+  const box = new Float64Array(n * 4);
+  loops.forEach((q, i) => {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const pt of q) {
+      if (pt.x < x0) x0 = pt.x;
+      if (pt.x > x1) x1 = pt.x;
+      if (pt.y < y0) y0 = pt.y;
+      if (pt.y > y1) y1 = pt.y;
+    }
+    box[i * 4] = x0;
+    box[i * 4 + 1] = y0;
+    box[i * 4 + 2] = x1;
+    box[i * 4 + 3] = y1;
+  });
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+    return i;
+  };
+  // balayage en x : seuls les contours qui se chevauchent en x sont comparés
+  const order = [...Array(n).keys()].sort((a, b) => box[a * 4] - box[b * 4]);
+  let active: number[] = [];
+  for (const i of order) {
+    const x0 = box[i * 4];
+    active = active.filter((j) => box[j * 4 + 2] > x0);
+    for (const j of active) if (box[j * 4 + 3] > box[i * 4 + 1] && box[j * 4 + 1] < box[i * 4 + 3]) parent[find(i)] = find(j);
+    active.push(i);
+  }
+  // groupe → morceau d'origine → ses contours (réunis ensuite deux à deux, voir unionPairs)
+  const groups = new Map<number, Map<number, Paths64>>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    let g = groups.get(r);
+    if (!g) groups.set(r, (g = new Map()));
+    let ps = g.get(owner[i]);
+    if (!ps) g.set(owner[i], (ps = new Paths64()));
+    ps.push(loops[i]);
+  }
+  return [...groups.values()].map((g) => [...g.values()]);
 }
 
 /**

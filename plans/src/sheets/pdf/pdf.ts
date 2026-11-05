@@ -98,19 +98,29 @@ function hookLines(pdf: jsPDF, lines: PdfLines | undefined): void {
     // mode avancé (celui de svg2pdf) : coordonnées écrites telles quelles ; sinon par jsPDF
     const raw = api.isAdvancedAPI();
     let buf: string[] = [];
+    // une polyligne peut en contenir plusieurs, séparées par un couple NaN (contours / hachures de la peinture)
     for (const pl of pls) {
       if (pl.length < 4) continue;
       lines.written += pl.length;
-      if (!raw) {
-        moveTo(pl[0], pl[1]);
-        for (let i = 2; i < pl.length; i += 2) lineTo(pl[i], pl[i + 1]);
-        continue;
-      }
-      buf.push(`${fmt(pl[0])} ${fmt(pl[1])} m`);
-      for (let i = 2; i < pl.length; i += 2) buf.push(`${fmt(pl[i])} ${fmt(pl[i + 1])} l`);
-      if (buf.length > 4000) {
-        api.internal.write(buf.join('\n'));
-        buf = [];
+      let start = true;
+      for (let i = 0; i + 1 < pl.length; i += 2) {
+        const x = pl[i];
+        const y = pl[i + 1];
+        if (Number.isNaN(x) || Number.isNaN(y)) {
+          start = true;
+          continue;
+        }
+        if (!raw) {
+          if (start) moveTo(x, y);
+          else lineTo(x, y);
+        } else {
+          buf.push(`${fmt(x)} ${fmt(y)} ${start ? 'm' : 'l'}`);
+          if (buf.length > 4000) {
+            api.internal.write(buf.join('\n'));
+            buf = [];
+          }
+        }
+        start = false;
       }
     }
     if (buf.length) api.internal.write(buf.join('\n'));

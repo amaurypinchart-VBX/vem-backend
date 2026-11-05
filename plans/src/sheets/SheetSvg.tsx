@@ -382,7 +382,7 @@ function ViewportContent({
       </defs>
       <g clipPath={`url(#${clipId})`}>
         <g transform={tr} fill="none" strokeLinecap="round" strokeLinejoin="round">
-          {(data?.paint || data?.paintPreview) && <PaintOutlines paint={data.paint} s={s} preview={data.paintPreview} />}
+          {(data?.paint || data?.paintPreview) && <PaintOutlines paint={data.paint} s={s} preview={data.paintPreview} pdfLines={pdfLines} />}
           {vp.overlays?.statusColors &&
             overlays.map((o) =>
               vp.overlays?.statusColors?.[o.moduleId] ? (

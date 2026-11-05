@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { cleanPaint } from '../core/paint/ops';
 import { paintContext } from '../core/paint/resolve';
 import { paintLayers3D, paintScene } from '../linework/paintScene';
+import { prepareExteriorSurvey } from '../linework/paintExterior';
 import type { FrontSide } from '../core/views';
 import { VIEW_LABELS, frontFromNormal } from '../core/views';
 import type { ViewKind } from '../core/views';
@@ -140,9 +141,24 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     const prev = shownPaint.current as unknown[] | null;
     if (prev && prev.every((x, i) => x === key[i])) return;
     shownPaint.current = key;
-    const painted = paintScene(scene, paintSettings, paintCtx, glassTest);
-    const hex = new Map(paintSettings.colors.map((c) => [c.id, parseInt(c.hex.slice(1), 16)]));
-    v.setPaintDisplay(paintLayers3D(scene, painted).map((l) => ({ nodeId: l.nodeId, color: hex.get(l.colorId) ?? 0x888888, positions: l.positions })));
+    let alive = true;
+    let done = false;
+    // « côtés extérieurs » : relevé par tranches d'abord (sans figer la page), puis la peinture
+    const exterior = paintSettings.zones.some((z) => z.target.scope === 'exterior');
+    void (exterior ? prepareExteriorSurvey(scene, paintCtx, glassTest) : Promise.resolve(null))
+      .then(() => {
+        if (!alive) return;
+        const painted = paintScene(scene, paintSettings, paintCtx, glassTest);
+        const hex = new Map(paintSettings.colors.map((c) => [c.id, parseInt(c.hex.slice(1), 16)]));
+        v.setPaintDisplay(paintLayers3D(scene, painted).map((l) => ({ nodeId: l.nodeId, color: hex.get(l.colorId) ?? 0x888888, positions: l.positions })));
+        done = true;
+      })
+      .catch((e) => console.error('Peinture 3D', e));
+    return () => {
+      alive = false;
+      // interrompu avant d'afficher : à refaire au prochain passage
+      if (!done) shownPaint.current = null;
+    };
   }, [scene, paintSettings, showPaint, framesVersion, glassTest, active, paintCtx]);
 
   useEffect(() => {

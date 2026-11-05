@@ -96,6 +96,37 @@ export interface FixtureOptions {
    * sous la toiture, bandeau textile au-dessus de la porte (petit côté +X), grand cadre sur le grand côté −Y
    */
   textile?: boolean;
+  /**
+   * bardage extérieur en petites tuiles (10 mm d'épaisseur) sur les 4 côtés de chaque Viewbox : `cladding` tuiles par
+   * rangée sur un grand côté — des centaines de milliers de faces « côtés extérieurs » comme un vrai modèle détaillé
+   */
+  cladding?: number;
+}
+
+/** Tuiles de bardage collées à l'extérieur des 4 côtés d'une Viewbox 5900 × 2500 (z 150…2800). */
+function claddingBoxes(n: number): Array<[V3, V3]> {
+  const out: Array<[V3, V3]> = [];
+  const nz = Math.max(1, Math.round((n * 2650) / 5900));
+  const dz = 2650 / nz;
+  const nl = n;
+  const ns = Math.max(1, Math.round((n * 2500) / 5900));
+  for (let k = 0; k < nz; k++) {
+    const z0 = 150 + k * dz + 1;
+    const z1 = 150 + (k + 1) * dz - 1;
+    for (let i = 0; i < nl; i++) {
+      const x0 = (i * 5900) / nl + 1;
+      const x1 = ((i + 1) * 5900) / nl - 1;
+      out.push([[x0, -10, z0], [x1, 0, z1]]);
+      out.push([[x0, 2500, z0], [x1, 2510, z1]]);
+    }
+    for (let j = 0; j < ns; j++) {
+      const y0 = (j * 2500) / ns + 1;
+      const y1 = ((j + 1) * 2500) / ns - 1;
+      out.push([[-10, y0, z0], [0, y1, z1]]);
+      out.push([[5900, y0, z0], [5910, y1, z1]]);
+    }
+  }
+  return out;
 }
 
 /** Boîtes de 20 à 80 mm réparties sur le plancher, les montants et la toiture (déterministe). */
@@ -133,6 +164,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
     spatial: G('GEO_spatial', [[[8000, 1000, 500], [8100, 1500, 2000]]]),
     ground: G('GEO_ground', [[[-10000, -10000, -10], [40000, 20000, 0]]]),
     detail: G('GEO_detail', detailBoxes(opts.detail ?? 0)),
+    ...(opts.cladding ? { cladding: G('GEO_cladding', claddingBoxes(opts.cladding), 'MAT_door') } : {}),
     ...(opts.textile
       ? {
           ceiling: G('GEO_ceiling', [[[100, 100, 2600], [5800, 2400, 2610]]], 'MAT_door'),
@@ -201,6 +233,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
       ${feet}
       <node id="N_misc" name="Group 12">${instGeom(geoms.misc)}</node>
       ${opts.detail && !opts.detailNodes ? `<node id="N_detail" name="STRUCTURE_boulonnerie">${instGeom(geoms.detail)}</node>` : ''}
+      ${opts.cladding ? `<node id="N_cladding" name="MUR-LEGER_bardage">${instGeom((geoms as Record<string, GeomSpec>).cladding)}</node>` : ''}
       ${detailParts.map((g, i) => `<node id="N_d${i}" name="STRUCTURE_piece_${i}">${instGeom(g)}</node>`).join('')}
       ${
         opts.textile

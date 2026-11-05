@@ -92,7 +92,13 @@ export class LineworkBank {
    * été calculée. Une version plus ancienne reste affichée pendant le recalcul (les repères ne disparaissent plus à
    * chaque coup de pinceau) ; une vue dont aucune pièce n'a changé de peinture garde ses repères sans recalcul.
    */
-  private readonly paintRegions = new Map<string, { version: string; regions: PaintRegion[]; meshes: Set<string> }>();
+  private readonly paintRegions = new Map<string, { version: string; regions: PaintRegion[]; meshes: Set<string>; bytes: number; used: number }>();
+  /**
+   * budget des repères de peinture gardés (octets, 0 = sans limite) : sur une façade très détaillée une vue peinte pèse
+   * des dizaines de Mo de contours ; ils étaient gardés pour 400 vues (Xiaomi, « ça plante depuis la peinture »).
+   */
+  maxPaintBytes = 0;
+  private paintBytes = 0;
   private paintQueue: ViewportItem[] = [];
   private paintRunning = false;
   /** peinture impossible à calculer sur une vue (message par fenêtre) */
@@ -122,6 +128,7 @@ export class LineworkBank {
     this.bytes = 0;
     this.customRuns.clear();
     this.paintRegions.clear();
+    this.paintBytes = 0;
   }
 
   /** Retire de la mémoire les traits des vues qui ne sont plus utiles maintenant (relus de l'IndexedDB au besoin). */
@@ -132,6 +139,7 @@ export class LineworkBank {
       if (level === 'trim' && now - (e.used ?? 0) < IN_USE_MS) continue;
       this.drop(k);
     }
+    for (const [k, e] of this.paintRegions) if (level === 'all' || now - e.used >= IN_USE_MS) this.dropPaint(k);
     this.customRuns.clear();
     this.emit();
   }
@@ -162,6 +170,19 @@ export class LineworkBank {
       const ek = this.entryKey(key, vp);
       if (!kept.has(ek) && !this.pendingKeys.has(ek)) this.drop(ek);
     }
+    // repères de peinture des vues écrites (pas ceux de la planche affichée)
+    const keptPaint = new Set(keep.map((vp) => this.paintBase(vp)));
+    for (const vp of viewports) {
+      const base = this.paintBase(vp);
+      if (base && !keptPaint.has(base)) this.dropPaint(base);
+    }
+  }
+
+  private dropPaint(base: string): void {
+    const e = this.paintRegions.get(base);
+    if (!e) return;
+    this.paintBytes -= e.bytes;
+    this.paintRegions.delete(base);
   }
 
   subscribe(fn: () => void): () => void {
@@ -241,7 +262,10 @@ export class LineworkBank {
     const prev = this.paintSrc;
     this.paintSrc = src;
     this.paintErrors.clear();
-    if (!src) this.paintRegions.clear();
+    if (!src) {
+      this.paintRegions.clear();
+      this.paintBytes = 0;
+    }
     else if (prev && prev.isGlass === src.isGlass) {
       const changed = changedPaintNodes(prev.painted, src.painted);
       for (const e of this.paintRegions.values()) {
@@ -268,6 +292,7 @@ export class LineworkBank {
   /** repères à jour pour la peinture actuelle */
   private currentPaint(base: string): PaintRegion[] | null {
     const e = this.paintRegions.get(base);
+    if (e) e.used = Date.now();
     return e && this.paintSrc && e.version === this.paintSrc.version ? e.regions : null;
   }
 
@@ -381,9 +406,28 @@ export class LineworkBank {
   }
 
   private storePaint(base: string, version: string, regions: PaintRegion[], meshIds: string[]): void {
-    this.paintRegions.delete(base);
-    this.paintRegions.set(base, { version, regions, meshes: new Set(meshIds) });
-    while (this.paintRegions.size > 400) this.paintRegions.delete(this.paintRegions.keys().next().value!);
+    this.dropPaint(base);
+    let bytes = 200 + meshIds.length * 40;
+    for (const r of regions) {
+      bytes += 160;
+      for (const l of r.loops) bytes += 80 + l.length * 8;
+    }
+    this.paintRegions.set(base, { version, regions, meshes: new Set(meshIds), bytes, used: Date.now() });
+    this.paintBytes += bytes;
+    // les plus anciennes d'abord, jamais une vue utilisée il y a moins de 5 s (planche affichée, page en cours)
+    const over = () => this.paintRegions.size > 400 || (this.maxPaintBytes > 0 && this.paintBytes > this.maxPaintBytes);
+    if (!over()) return;
+    const now = Date.now();
+    const old = [...this.paintRegions].filter(([k, e]) => k !== base && now - e.used >= IN_USE_MS).sort((a, b) => a[1].used - b[1].used);
+    for (const [k] of old) {
+      if (!over()) break;
+      this.dropPaint(k);
+    }
+  }
+
+  /** Mémoire des repères de peinture gardés (octets approximatifs, vues) — diagnostic. */
+  paintMemoryUse(): { bytes: number; views: number } {
+    return { bytes: this.paintBytes, views: this.paintRegions.size };
   }
 
   data(vp: ViewportItem): ViewportData {
@@ -405,7 +449,9 @@ export class LineworkBank {
     // repères de la peinture actuelle, sinon ceux d'avant tant que le recalcul n'est pas fini (couleurs retirées exclues)
     const base = this.paintSrc ? this.paintBase(vp) : null;
     const src = this.paintSrc;
-    const stored = base ? this.paintRegions.get(base)?.regions : undefined;
+    const entry = base ? this.paintRegions.get(base) : undefined;
+    if (entry) entry.used = Date.now();
+    const stored = entry?.regions;
     const regions = stored && src ? stored.filter((r) => src.colors.has(r.colorId)) : undefined;
     return {
       ...(regions?.length && this.paintSrc ? { paint: { regions, colors: this.paintSrc.colors, mode: vp.paint === 'fill' ? ('fill' as const) : ('marks' as const) } } : {}),

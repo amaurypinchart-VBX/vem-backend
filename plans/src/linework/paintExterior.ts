@@ -14,6 +14,7 @@ import { categoryOfNode, moduleOfNode } from '../core/paint/resolve';
 import type { Vec3 } from '../core/views';
 import { dot } from '../core/views';
 import type { GlassTest } from './packets';
+import { runSliced } from './sliced';
 
 /** Triangle vu de dehors sur un côté extérieur. */
 export interface ExteriorTri {
@@ -44,12 +45,42 @@ export function exteriorSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: 
   if (!byGlass) surveys.set(scene.frames, (byGlass = new Map()));
   const hit = byGlass.get(isGlass);
   if (hit) return hit;
-  const out = computeSurvey(scene, ctx, isGlass);
-  byGlass.set(isGlass, out);
-  return out;
+  const job = surveySteps(scene, ctx, isGlass);
+  let r = job.next();
+  while (!r.done) r = job.next();
+  byGlass.set(isGlass, r.value);
+  return r.value;
 }
 
-function computeSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTest): ExteriorSurvey {
+/** Relevé déjà fait pour cette scène (et ce test des vitrages) ? */
+export function hasExteriorSurvey(scene: LoadedScene, isGlass?: GlassTest): boolean {
+  return !!surveys.get(scene.frames)?.has(isGlass);
+}
+
+const pending = new WeakMap<object, Map<GlassTest | undefined, Promise<ExteriorSurvey>>>();
+/**
+ * Même relevé, calculé par tranches sans figer la page (des secondes sur un très gros modèle : « Page ne répondant
+ * pas »). Ensuite `exteriorSurvey` le retrouve tout fait.
+ */
+export function prepareExteriorSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTest): Promise<ExteriorSurvey> {
+  const hit = surveys.get(scene.frames)?.get(isGlass);
+  if (hit) return Promise.resolve(hit);
+  let byGlass = pending.get(scene.frames);
+  if (!byGlass) pending.set(scene.frames, (byGlass = new Map()));
+  const running = byGlass.get(isGlass);
+  if (running) return running;
+  const p = runSliced(surveySteps(scene, ctx, isGlass)).then((out) => {
+    let done = surveys.get(scene.frames);
+    if (!done) surveys.set(scene.frames, (done = new Map()));
+    if (!done.has(isGlass)) done.set(isGlass, out);
+    return done.get(isGlass)!;
+  });
+  p.finally(() => byGlass!.delete(isGlass)).catch(() => undefined);
+  byGlass.set(isGlass, p);
+  return p;
+}
+
+function* surveySteps(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTest): Generator<void, ExteriorSurvey, void> {
   const sides = boxSides(scene.frames.values());
   const sidesOf = new Map<string, number[]>();
   sides.forEach((s, i) => sidesOf.set(s.moduleId, [...(sidesOf.get(s.moduleId) ?? []), i]));
@@ -93,6 +124,7 @@ function computeSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTes
         const glass = !!isGlass?.(Array.isArray(m) ? m[0] : m);
         const w = mesh.matrixWorld;
         for (let t = 0; t < nt; t++) {
+          if ((t & 4095) === 4095) yield;
           const i0 = idx ? idx.getX(t * 3) : t * 3;
           const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
           const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
@@ -126,10 +158,12 @@ function computeSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTes
         }
         t0 += nt;
       }
+      yield;
     }
-    per.forEach((q, k) => {
-      if (!q.refs.length) return;
+    for (const [k, q] of per.entries()) {
+      if (!q.refs.length) continue;
       const vis = visibleFromOutside({ uv: q.uv, depth: q.depth });
+      yield;
       const sideIndex = sidesOf.get(moduleId)![k];
       q.refs.forEach((r, i) => {
         if (!vis[i] || r.covered) return;
@@ -141,7 +175,7 @@ function computeSurvey(scene: LoadedScene, ctx: PaintContext, isGlass?: GlassTes
           module.set(r.node, moduleId);
         }
       });
-    });
+    }
   }
   return { sides, byNode, category, module };
 }

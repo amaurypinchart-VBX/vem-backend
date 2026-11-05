@@ -71,21 +71,60 @@ const loopsD = (loops: Float64Array[]) => {
   return d;
 };
 
-/** Contours des faces peintes (repère du dessin, mm modèle ; `s` = échelle) : sous les traits de la vue. */
-export function PaintOutlines({ paint, s, preview }: { paint?: ViewportPaint; s: number; preview?: PaintRegion[] }) {
+/** Contours (fermés) en une seule polyligne, les contours séparés par un couple NaN (export PDF direct, voir pdf.ts). */
+export function loopsRun(loops: Float64Array[]): Float64Array {
+  let n = 0;
+  for (const l of loops) if (l.length >= 6) n += l.length + 4;
+  const out = new Float64Array(n);
+  let o = 0;
+  for (const l of loops) {
+    if (l.length < 6) continue;
+    out.set(l, o);
+    o += l.length;
+    out[o++] = l[0];
+    out[o++] = l[1];
+    out[o++] = NaN;
+    out[o++] = NaN;
+  }
+  return out;
+}
+
+/** Hachures de régions en une seule polyligne (segments séparés par un couple NaN). */
+function hatchRun(regions: PaintRegion[], spacing: number): Float64Array {
+  const segs: number[] = [];
+  for (const r of regions) for (const seg of hatchSegments(r.loops, spacing, PAINT_HATCH.angleDeg)) segs.push(seg[0], seg[1], seg[2], seg[3], NaN, NaN);
+  return Float64Array.from(segs);
+}
+
+/** Reçoit des traits et rend le chemin repère qui les remplace (export PDF : voir SheetSvg `pdfLines`). */
+interface LineSink {
+  add(polylines: Float64Array[]): string;
+}
+
+/**
+ * Contours des faces peintes (repère du dessin, mm modèle ; `s` = échelle) : sous les traits de la vue. Export PDF
+ * (`pdfLines`) : contours et hachures écrits directement dans le PDF comme les traits des vues (une façade très
+ * détaillée = des centaines de milliers de points, que svg2pdf transformait en objets un à un).
+ */
+export function PaintOutlines({ paint, s, preview, pdfLines }: { paint?: ViewportPaint; s: number; preview?: PaintRegion[]; pdfLines?: LineSink }) {
   if (!paint?.regions.length && !preview?.length) return null;
   const byColor = new Map<string, PaintRegion[]>();
-  for (const r of paint?.regions ?? []) byColor.set(r.colorId, [...(byColor.get(r.colorId) ?? []), r]);
+  for (const r of paint?.regions ?? []) {
+    const l = byColor.get(r.colorId);
+    if (l) l.push(r);
+    else byColor.set(r.colorId, [r]);
+  }
   return (
     <>
       {[...byColor].map(([colorId, regions]) => {
         const c = paint!.colors.get(colorId);
         if (!c) return null;
+        const loops = regions.flatMap((r) => r.loops);
         return (
           <g key={`paint-${colorId}`}>
           {paint!.mode === 'fill' && (
             <path
-              d={regions.map((r) => hatchD(r, PAINT_HATCH.spacingMm * s)).join('')}
+              d={pdfLines ? pdfLines.add([hatchRun(regions, PAINT_HATCH.spacingMm * s)]) : regions.map((r) => hatchD(r, PAINT_HATCH.spacingMm * s)).join('')}
               fill="none"
               stroke={strokeOf(c.hex)}
               strokeWidth={num(PAINT_HATCH.strokeMm * s)}
@@ -95,7 +134,7 @@ export function PaintOutlines({ paint, s, preview }: { paint?: ViewportPaint; s:
             />
           )}
           <path
-            d={loopsD(regions.flatMap((r) => r.loops))}
+            d={pdfLines ? pdfLines.add([loopsRun(loops)]) : loopsD(loops)}
             fill="none"
             stroke={strokeOf(c.hex)}
             strokeWidth={num(0.35 * s)}
@@ -123,7 +162,7 @@ export function PaintTags({ paint, s, k, toPaper, rect }: { paint?: ViewportPain
   const tags: Array<{ key: string; c: PaintColor; at: PointMm; from?: PointMm }> = [];
   for (const [i, reg] of paint.regions.entries()) {
     const c = paint.colors.get(reg.colorId);
-    if (!c) continue;
+    if (!c || reg.anchor.d < 0) continue;
     const n = perColor.get(c.id) ?? 0;
     if (n >= 8) continue;
     // région de moins de 1,5 × 1,5 mm sur le papier : contour seulement
