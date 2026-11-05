@@ -1177,12 +1177,13 @@
     }
   });
   async function exportDocument() {
-    const snapshot = M.copy(S.doc),
+    const originalSnapshot = M.copy(S.doc),
       session = S;
     const options = dialog(
       "Préparer le PDF",
-      `<p>Texte sélectionnable, liens actifs et pagination mesurée. Les pages historiques Fabric restent des images.</p><label>Langue<select name="lang"><option value="fr">Français</option><option value="en">Anglais (traduction du texte descriptif)</option></select></label><p>Le PDF s’enregistre via la boîte d’impression du navigateur. Il peut ensuite être ajouté aux fichiers du projet.</p><fieldset><legend>Pages à exporter</legend>${snapshot.pages.map((p, i) => `<label><input type="checkbox" data-export-page="${i}" checked> ${i + 1} · ${E(p.title)}</label>`).join("")}</fieldset>`,
+      `<p>Texte sélectionnable, liens actifs et pagination mesurée. Les pages historiques Fabric restent des images.</p><label>Langue<select name="lang"><option value="fr">Français</option><option value="en">Anglais (traduction du texte descriptif)</option></select></label><p>Le PDF s’enregistre via la boîte d’impression du navigateur. Il peut ensuite être ajouté aux fichiers du projet.</p><fieldset><legend>Pages à exporter</legend>${originalSnapshot.pages.map((p, i) => `<label><input type="checkbox" data-export-page="${i}" checked> ${i + 1} · ${E(p.title)}</label>`).join("")}</fieldset>`,
       async (l) => {
+        const snapshot = M.copy(originalSnapshot);
         const lang = l.querySelector("[name=lang]").value;
         const indices = new Set(
           [...l.querySelectorAll("[data-export-page]:checked")].map((n) =>

@@ -70,7 +70,13 @@ for (let i = 0; i < 20; i++)
     id: "f" + i,
     block: "photo",
     title: "Image de démonstration " + i,
-    fields: { url: "/demo-image.png?image=" + i },
+    fields: {
+      url: "/demo-image.png?image=" + i,
+      caption:
+        i === 0
+          ? "Légende longue à conserver après la photo. ".repeat(120)
+          : "Photo de recette",
+    },
   });
 sources.push({
   kind: "file",
@@ -237,6 +243,20 @@ if (process.env.BRIEFING_DEMO_ONLY) {
           .x,
         20,
       );
+      await page.reload();
+      await page.locator("main .bn-photo-frame").first().click();
+      assert.equal(
+        await page.locator("[data-image=ratio]").inputValue(),
+        "portrait",
+      );
+      assert.equal(await page.locator("[data-image=x]").inputValue(), "20");
+      await page
+        .locator("main .bn-photo-frame")
+        .first()
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(out, "studio-next-brand-crop.png"),
+      });
       await page.locator("[data-doc=format]").selectOption("a4");
       await page.locator("[data-action=save]").click();
       const exportStart = Date.now();
