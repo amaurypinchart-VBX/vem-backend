@@ -223,6 +223,16 @@
     const x = copy(value);
     x.id = uid();
     if (x.blocks) x.blocks = x.blocks.map(duplicate);
+    if (x.graphic) {
+      const groups = new Map();
+      x.graphic.nodes.forEach((n) => {
+        n.id = uid();
+        if (n.group) {
+          if (!groups.has(n.group)) groups.set(n.group, uid());
+          n.group = groups.get(n.group);
+        }
+      });
+    }
     return x;
   }
   // Portable kit deliberately contains no project content, IDs or asset URLs.

@@ -27,6 +27,50 @@ const style = z
     size: z.number().min(14).max(64).optional(),
   })
   .strict();
+const graphic = z
+  .object({
+    backgroundId: id.optional(),
+    width: z.literal(1000),
+    height: z.literal(600),
+    nodes: z
+      .array(
+        z
+          .object({
+            id,
+            type: z.enum(["text", "rect", "ellipse", "arrow", "marker"]),
+            x: z.number().min(0).max(1000),
+            y: z.number().min(0).max(600),
+            width: z.number().min(24).max(1000),
+            height: z.number().min(24).max(600),
+            text: z.string().max(2000),
+            font: z.enum(["Arial", "Georgia", "Verdana"]),
+            fontSize: z.number().min(12).max(96),
+            fill: z.string().regex(/^#[0-9a-f]{6}$/i),
+            stroke: z.string().regex(/^#[0-9a-f]{6}$/i),
+            strokeWidth: z.number().min(1).max(20),
+            direction: z.enum(["left", "right"]),
+            group: id.optional(),
+            locked: z.boolean().optional(),
+            hidden: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(200),
+  })
+  .strict()
+  .superRefine((g, ctx) => {
+    const ids = new Set<string>();
+    for (const n of g.nodes) {
+      if (ids.has(n.id))
+        ctx.addIssue({ code: "custom", message: "Objet graphique dupliqué" });
+      ids.add(n.id);
+      if (
+        !n.hidden &&
+        (n.x + n.width > g.width + 0.01 || n.y + n.height > g.height + 0.01)
+      )
+        ctx.addIssue({ code: "custom", message: "Objet graphique hors page" });
+    }
+  });
 export const documentSchema = z
   .object({
     version: z.literal(1),
@@ -75,6 +119,7 @@ export const documentSchema = z
                       "note",
                       "legacy",
                       "table",
+                      "graphic",
                     ]),
                     title: z.string().max(250),
                     layout: z.enum(["list", "cards", "table"]),
@@ -84,6 +129,7 @@ export const documentSchema = z
                     content: fields,
                     annotation: text,
                     style: style.optional(),
+                    graphic: graphic.optional(),
                     image: z
                       .object({
                         ratio: z.enum([
@@ -119,6 +165,15 @@ export const documentSchema = z
         if (ids.has(x.id))
           ctx.addIssue({ code: "custom", message: "Identifiant dupliqué" });
         ids.add(x.id);
+        if (
+          "graphic" in x &&
+          x.graphic?.backgroundId &&
+          (x.source?.kind !== "file" || x.source?.id !== x.graphic.backgroundId)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Fond graphique sans source projet correspondante",
+          });
         if (
           "content" in x &&
           x.content.url &&

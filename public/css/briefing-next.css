@@ -441,3 +441,105 @@
   border: 1px solid #ccd;
   border-radius: 8px;
 }
+
+.bn-graphic-visual,
+.bn-graphic-description {
+  grid-column: 1/-1;
+  min-width: 0;
+}
+.bn-graphic-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.bn-graphic-description {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.bn-graphic-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #edf0f5;
+  display: flex;
+  flex-direction: column;
+  color: #000a3d;
+  font: 14px Arial;
+}
+.bn-graphic-toolbar,
+.bn-graphic-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  background: white;
+  border-bottom: 1px solid #ccd;
+  align-items: center;
+}
+.bn-graphic-tools label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+}
+.bn-graphic-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  flex: 1;
+  min-height: 0;
+}
+.bn-graphic-viewport {
+  overflow: auto;
+  padding: 24px;
+}
+.bn-graphic-viewport [data-stage] {
+  min-width: 300px;
+  margin: auto;
+  box-shadow: 0 3px 15px #0002;
+}
+.bn-graphic-viewport svg {
+  touch-action: none;
+  user-select: none;
+}
+.bn-graphic-viewport [data-node] {
+  cursor: move;
+}
+.bn-graphic-body aside {
+  display: block !important;
+  overflow: auto;
+  background: white;
+  padding: 16px;
+}
+.bn-graphic-body aside button {
+  margin: 3px;
+}
+@media (max-width: 700px) {
+  .bn-graphic-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .bn-graphic-viewport {
+    min-height: 300px;
+  }
+  .bn-graphic-body aside {
+    overflow: visible;
+  }
+  .bn-graphic-toolbar {
+    position: sticky;
+    top: 0;
+  }
+}
+
+.bn-graphic-description .bn-graphic-text {
+  display: none;
+}
+.bn-preview .bn-graphic-description .bn-graphic-text {
+  display: block;
+}
+@media print {
+  .bn-graphic-description .bn-graphic-text {
+    display: none !important;
+  }
+}

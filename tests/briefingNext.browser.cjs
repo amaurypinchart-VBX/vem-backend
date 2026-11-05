@@ -145,7 +145,7 @@ app.get("/blank", (req, res) =>
 );
 app.get("/demo", (req, res) =>
   res.send(
-    '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/briefing-next.css"></head><body><script>function toast(){};function loadDetailBriefing(){};function openChecklistFull(){}</script><script src="/js/briefing-next-model.js"></script><script src="/js/briefing-next.js"></script><script>openBriefingNext("b")</script></body></html>',
+    '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/briefing-next.css"></head><body><script>function toast(){};function loadDetailBriefing(){};function openChecklistFull(){}</script><script src="/js/briefing-next-model.js"></script><script src="/js/briefing-next-graphics.js"></script><script src="/js/briefing-next.js"></script><script>openBriefingNext("b")</script></body></html>',
   ),
 );
 if (process.env.BRIEFING_DEMO_ONLY) {
@@ -264,6 +264,76 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await page.screenshot({
         path: path.join(out, "studio-next-brand-crop.png"),
       });
+      // Free composition: actual SVG interactions, semantic persistence and history.
+      await page.locator("[data-action=addGraphic]").click();
+      const editor = page.locator(".bn-graphic-editor");
+      await editor.locator("[data-g-background]").selectOption("f1");
+      const prop = async (key, value) => {
+        const field = editor.locator(`[data-g-prop=${key}]`);
+        await field.fill(String(value));
+        await field.dispatchEvent("change");
+      };
+      await editor.locator("[data-g=add-text]").click();
+      await prop("text", "SCHÉMA LOGISTIQUE — DÉMONSTRATION");
+      await prop("width", 850);
+      await prop("x", 60);
+      await prop("y", 40);
+      await editor.locator("[data-g=add-rect]").click();
+      await prop("x", 80);
+      await prop("y", 380);
+      await prop("width", 300);
+      await prop("height", 120);
+      await editor.locator("[data-g=add-marker]").click();
+      await prop("x", 150);
+      await prop("y", 400);
+      await prop("text", "Zone de déchargement à confirmer");
+      await editor.locator("[data-g=add-arrow]").click();
+      await prop("x", 400);
+      await prop("y", 400);
+      await prop("width", 250);
+      await prop("height", 80);
+      await editor.locator("svg").focus();
+      await page.keyboard.press("Control+a");
+      await editor.locator("[data-g=group]").click();
+      await editor.locator("svg").focus();
+      await page.keyboard.press("ArrowRight");
+      await editor.locator("[data-g=lock]").click();
+      const lockedGraphic = await editor.locator("svg").innerHTML();
+      await editor.locator("svg").focus();
+      await page.keyboard.press("ArrowRight");
+      assert.equal(await editor.locator("svg").innerHTML(), lockedGraphic);
+      await editor.locator("[data-g=lock]").click();
+      await editor.locator("[data-g=duplicate]").click();
+      assert.equal(await editor.locator("[data-node]").count(), 8);
+      await editor.locator("[data-g=undo]").click();
+      assert.equal(await editor.locator("[data-node]").count(), 4);
+      await page.screenshot({
+        path: path.join(out, "studio-next-free-composition.png"),
+      });
+      await editor.locator("[data-g=apply]").click();
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      const graphic = row.document.pages[0].blocks.find(
+        (b) => b.kind === "graphic",
+      );
+      assert.equal(graphic.graphic.nodes.length, 4);
+      assert.equal(new Set(graphic.graphic.nodes.map((n) => n.group)).size, 1);
+      assert.equal(graphic.graphic.nodes[0].x, 61);
+      assert.equal(graphic.source.id, "f1");
+      await page.locator("[data-action=undo]").click();
+      assert.equal(await page.locator("main .bn-graphic-visual").count(), 0);
+      await page.locator("[data-action=redo]").click();
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      await page.reload();
+      await page.locator("main .bn-graphic-visual").click();
+      await page.locator("[data-action=editGraphic]").click();
+      assert.equal(await editor.locator("[data-node]").count(), 4);
+      await editor.locator("[data-g=cancel]").click();
       await page.locator("[data-doc=format]").selectOption("a4");
       await page.locator("[data-action=save]").click();
       const exportStart = Date.now();
@@ -293,6 +363,16 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       assert.ok(
         (await frame.locator(".bn-kicker").first().innerText()).includes(
           "ACME QA",
+        ),
+      );
+      assert.equal(await frame.locator(".bn-graphic-visual svg").count(), 1);
+      assert.equal(
+        await frame.locator(".bn-graphic-visual svg image").count(),
+        1,
+      );
+      assert.ok(
+        (await frame.locator("body").innerText()).includes(
+          "Zone de déchargement à confirmer",
         ),
       );
       const html = await frame.content();
@@ -386,7 +466,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         fixturePages: 25,
         availableImages: 20,
         checks:
-          "save/reopen, theme, refresh, annotation, mobile, brand, photo focal crop, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
+          "save/reopen, theme, refresh, annotation, mobile, brand, photo focal crop, free graphic groups/lock/keyboard/copy/undo/persistence/vector export, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
         limitations:
           "No PostgreSQL, live auth, Cloudinary, real translation or production data in this browser harness.",
       };

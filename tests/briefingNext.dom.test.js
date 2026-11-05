@@ -54,6 +54,7 @@ async function setup() {
     return { ok: true, json: async () => result };
   };
   w.eval(fs.readFileSync("public/js/briefing-next-model.js", "utf8"));
+  w.eval(fs.readFileSync("public/js/briefing-next-graphics.js", "utf8"));
   w.eval(fs.readFileSync("public/js/briefing-next.js", "utf8"));
   await w.openBriefingNext("b");
   return {

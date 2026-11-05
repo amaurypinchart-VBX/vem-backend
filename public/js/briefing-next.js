@@ -270,7 +270,12 @@
     let content = Object.entries(b.content)
       .map(([k, v]) => fieldHtml(k, v))
       .join("");
-    if (b.kind === "legacy")
+    if (b.kind === "graphic" && b.graphic)
+      content = window.BriefingNextGraphics.html(
+        b.graphic,
+        b.graphic.backgroundId ? b.content.url : "",
+      );
+    else if (b.kind === "legacy")
       content = `<div class="bn-legacy" data-legacy="${E(b.id)}">Chargement de l’original…</div>`;
     else if (
       b.kind === "photo" &&
@@ -333,7 +338,7 @@
  ${S.conflict ? `<div class="bn-warning">Une autre session a enregistré une nouvelle révision. ${btn("backup", "Télécharger ma copie JSON")}${btn("reload", "Recharger le serveur")}</div>` : ""}
  <div class="bn-body"><nav><h3>Pages · ${S.doc.pages.length}</h3><input aria-label="Rechercher une page" placeholder="Rechercher…" data-search>
  ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme, S.doc.brand)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
- ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("media", "Médias du projet")}${btn("original", "Copie éditable de l’original")}` : ""}
+ ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("addGraphic", "+ Composition libre")}${btn("media", "Médias du projet")}${btn("original", "Copie éditable de l’original")}` : ""}
  </nav><main>${S.preview ? S.doc.pages.map((p, i) => paperHtml(p, i)).join("") : paperHtml(p, S.page)}</main><aside>
  <h3>Direction artistique</h3>${editing ? btn("brand", "Kit de marque") : ""}${S.doc.brand ? `<p class="bn-count">Identité : ${E(S.doc.brand.name)} · les styles locaux sont conservés.</p>` : ""}${Object.entries(
    M.themes,
@@ -383,6 +388,8 @@
          )}</select></label><label>Ajustement<select data-image="fit"><option value="cover" ${b.image?.fit !== "contain" ? "selected" : ""}>Remplir / recadrer</option><option value="contain" ${b.image?.fit === "contain" ? "selected" : ""}>Voir toute l’image</option></select></label>${["x", "y"].map((k) => `<label>Point focal ${k === "x" ? "horizontal" : "vertical"} (${b.image?.[k] ?? 50} %)<input type="range" min="0" max="100" data-image="${k}" value="${b.image?.[k] ?? 50}"></label>`).join("")}<p>Le fichier original reste intact.</p></fieldset>`
      : ""
  }
+ ${b.kind === "photo" && editing ? btn("annotateGraphic", "Créer un schéma annoté") : ""}
+ ${b.kind === "graphic" && editing && !b.locked ? btn("editGraphic", "Modifier la composition libre") : ""}
  <label>Annotation personnelle<textarea data-block-field="annotation" ${!editing ? "disabled" : ""}>${E(b.annotation)}</textarea></label>
  <label>Police<select data-style="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${b.style?.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label><label>Couleur<input type="color" data-style="color" value="${E(b.style?.color || M.themes[S.doc.theme].ink)}"></label><label>Taille<input type="number" min="14" max="64" data-style="size" value="${b.style?.size || 18}"></label>
  ${editing ? `<div class="bn-row">${btn("resetStyle", "Réinitialiser style")}${btn("copyStyle", "Copier style")}${btn("pasteStyle", "Coller style")}</div><div class="bn-row">${btn("copy", "Copier")}${btn("duplicate", "Dupliquer")}${btn("delete", "Supprimer")}${btn("up", "↑")}${btn("down", "↓")}${btn("lock", b.locked ? "Déverrouiller" : "Verrouiller")}${btn("hide", b.hidden ? "Afficher" : "Masquer")}</div>` : ""}`
@@ -592,6 +599,76 @@
       }
       if (!S.permissions.write || S.publication) return;
       if (act === "task") return taskDialog(a.dataset.id);
+      if (["addGraphic", "editGraphic", "annotateGraphic"].includes(act)) {
+        if (act === "editGraphic" && (!b || b.locked)) return;
+        const session = S;
+        const files = S.sources.filter(
+          (f) =>
+            f.kind === "file" &&
+            /\.(png|jpe?g|webp|gif)(?:\?|$)/i.test(f.fields.url || ""),
+        );
+        if (
+          b?.source?.kind === "file" &&
+          b.content.url &&
+          !files.some((f) => f.id === b.source.id)
+        )
+          files.push({
+            kind: "file",
+            id: b.source.id,
+            title: b.title,
+            fields: { url: b.content.url },
+          });
+        window.BriefingNextGraphics.open({
+          files,
+          parent: S.root,
+          scene:
+            act === "editGraphic"
+              ? b.graphic
+              : act === "annotateGraphic"
+                ? {
+                    ...window.BriefingNextGraphics.blank(),
+                    backgroundId: b.source?.id,
+                  }
+                : undefined,
+          onApply: (graphic, background) => {
+            if (S !== session) return;
+            change(() => {
+              const attach = (block) => {
+                block.graphic = graphic;
+                if (background) {
+                  block.source = { kind: "file", id: background.id };
+                  block.content.url = background.fields.url;
+                  block.baseline = { ...background.fields };
+                  block.mode = "linked";
+                } else {
+                  delete block.source;
+                  delete block.content.url;
+                  block.baseline = {};
+                  block.mode = "custom";
+                }
+              };
+              if (act === "editGraphic") attach(b);
+              else {
+                const block = {
+                  id: M.uid(),
+                  kind: "graphic",
+                  title: "Schéma chantier",
+                  layout: "list",
+                  mode: "custom",
+                  baseline: {},
+                  content: {},
+                  annotation: "",
+                  graphic,
+                };
+                attach(block);
+                current().blocks.push(block);
+                S.selected = block.id;
+              }
+            });
+          },
+        });
+        return;
+      }
       if (act === "brand") return brandDialog();
       if (act === "generate") return generator();
       if (act === "refresh") return refresh();
@@ -1268,7 +1345,7 @@
             width = wide ? 1120 : 794,
             height = wide ? 630 : 1123;
           const style = doc.createElement("style");
-          style.textContent = `body{margin:0;background:#dfe3e9}.bn.bn-print{position:static;display:block;background:none;padding:20px}.bn-print .bn-paper{width:${width}px!important;max-width:none;height:${height}px;margin:0 auto 20px;padding:35px;overflow:hidden;position:relative;box-sizing:border-box}.bn-print footer{position:absolute;bottom:20px;left:35px;right:35px}.bn-print .bn-page-content{height:${height - 190}px;overflow:hidden}.bn-print .bn-block{font-size:16px}.bn-print h1{font-size:30px;margin:12px 0 18px}.bn-print .bn-fields{grid-template-columns:${wide ? "repeat(2,minmax(0,1fr))" : "1fr"}}.bn-print .bn-photo-frame{max-width:calc(${height - 320}px * var(--photo-ratio, 1));margin:auto}.bn-print img{max-height:${height - 260}px;max-width:100%}.bn-print .bn-block h2{font-size:20px}.bn-print .bn-source{font-size:9px}@page{size:${wide ? "296.33mm 166.69mm" : "A4 portrait"};margin:0}@media print{body{background:white}.bn.bn-print{padding:0}.bn-print .bn-paper{margin:0;box-shadow:none;break-after:page}.bn-print .bn-paper:last-child{break-after:auto}}`;
+          style.textContent = `body{margin:0;background:#dfe3e9}.bn.bn-print{position:static;display:block;background:none;padding:20px}.bn-print .bn-paper{width:${width}px!important;max-width:none;height:${height}px;margin:0 auto 20px;padding:35px;overflow:hidden;position:relative;box-sizing:border-box}.bn-print footer{position:absolute;bottom:20px;left:35px;right:35px}.bn-print .bn-page-content{height:${height - 190}px;overflow:hidden}.bn-print .bn-block{font-size:16px}.bn-print h1{font-size:30px;margin:12px 0 18px}.bn-print .bn-fields{grid-template-columns:${wide ? "repeat(2,minmax(0,1fr))" : "1fr"}}.bn-print .bn-photo-frame{max-width:calc(${height - 320}px * var(--photo-ratio, 1));margin:auto}.bn-print .bn-graphic-visual{max-width:${Math.min(width - 110, ((height - 340) * 1000) / 600)}px;margin:auto}.bn-print img{max-height:${height - 260}px;max-width:100%}.bn-print .bn-block h2{font-size:20px}.bn-print .bn-source{font-size:9px}@page{size:${wide ? "296.33mm 166.69mm" : "A4 portrait"};margin:0}@media print{body{background:white}.bn.bn-print{padding:0}.bn-print .bn-paper{margin:0;box-shadow:none;break-after:page}.bn-print .bn-paper:last-child{break-after:auto}}`;
           doc.head.append(style);
           await doc.fonts.ready;
           const host = doc.querySelector(".bn-print");
@@ -1318,6 +1395,31 @@
                 if (!img.naturalWidth)
                   throw new Error("Image indisponible : " + b.title);
               }
+              for (const image of node.querySelectorAll("svg image")) {
+                await new Promise((resolve, reject) => {
+                  const img = new Image(),
+                    timer = setTimeout(
+                      () =>
+                        reject(
+                          new Error(
+                            "Image graphique indisponible : " + b.title,
+                          ),
+                        ),
+                      15000,
+                    );
+                  img.onload = () => {
+                    clearTimeout(timer);
+                    resolve();
+                  };
+                  img.onerror = () => {
+                    clearTimeout(timer);
+                    reject(
+                      new Error("Image graphique indisponible : " + b.title),
+                    );
+                  };
+                  img.src = image.getAttribute("href");
+                });
+              }
               if (container.scrollHeight <= container.clientHeight) continue;
               node.remove();
               if (container.childElementCount) container = newPage(p, true);
@@ -1325,7 +1427,9 @@
               if (container.scrollHeight <= container.clientHeight) continue;
               // Oversized single block: reflow as measured field fragments with repeated heading.
               node.remove();
-              const photo = node.querySelector(".bn-photo-frame");
+              const photo = node.querySelector(
+                ".bn-photo-frame,.bn-graphic-visual",
+              );
               if (photo) {
                 const part = doc.createElement("section");
                 part.className = "bn-block";
@@ -1337,7 +1441,7 @@
               }
               const fields = [
                 ...node.querySelectorAll(
-                  ".bn-field,.bn-annotation,.bn-legacy,.bn-tsv tr",
+                  ".bn-field:not(.bn-graphic-text),.bn-annotation,.bn-legacy,.bn-tsv tr",
                 ),
               ];
               if (!fields.length)
