@@ -1,6 +1,6 @@
 # Briefing Studio Next — tranche initiale, PR brouillon
 
-Cette branche intègre un parcours utilisable dans l'application existante. Elle ne constitue pas la totalité du cahier des charges « Studio Next » et ne doit pas être fusionnée avant la recette navigateur et PostgreSQL ci-dessous.
+Cette branche intègre un parcours utilisable dans l'application existante. Elle ne constitue pas la totalité du cahier des charges « Studio Next ». La recette navigateur synthétique et PostgreSQL jetable a réussi ; la PR reste en brouillon pour les fonctionnalités restantes et la recette métier réelle.
 
 ## Utilisation
 
@@ -28,7 +28,7 @@ Cette branche intègre un parcours utilisable dans l'application existante. Elle
 
 Le dépôt utilise les migrations idempotentes au démarrage, pas `prisma migrate deploy`. Le schéma Prisma et `src/utils/migrations.ts` ajoutent deux colonnes et une table. Aucun champ historique n'est effacé. Les trois instructions SQL doivent réussir pour initialiser cette fonctionnalité.
 
-Avant fusion : sauvegarder la base et tester un démarrage puis un second démarrage sur une base de recette. L'application doit pouvoir lire un briefing classique, un Studio et un document Next. Cette vérification PostgreSQL est ajoutée au workflow sur une base jetable ; consulter le résultat de la dernière exécution.
+Avant fusion : sauvegarder la base et tester un démarrage puis un second démarrage sur une base de recette. L'application doit pouvoir lire un briefing classique, un Studio et un document Next. Cette vérification a réussi dans le workflow sur PostgreSQL 16 jetable ; consulter QA.md pour la preuve et les limites.
 
 Retour arrière applicatif : revenir au commit précédent et conserver les colonnes/tables supplémentaires. Les anciens éditeurs retrouvent leurs contenus historiques. Les travaux Next restent dans `document` et `briefing_publications`, mais ne sont pas éditables par l'ancienne application. Ne pas supprimer ces colonnes pour revenir en arrière.
 
@@ -57,6 +57,6 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.
 - Pas de diffusion client dédiée, ni de présélection « synthèse client ». L'audience reste interne ; aucun contrôle serveur de publication client n'est promis.
 - Export FR et traduction des champs descriptifs en EN seulement : titres/labels système ne sont pas entièrement localisés. Pagination A4 vérifiée dans le navigateur sur la fixture synthétique ; recette 16:9 et traduction complète encore à compléter. Anciennes pages Fabric rasterisées. Les grandes images nécessitent une recette de charge et l'export serveur reste à évaluer.
-- Aucun test réel de Cloudinary, PostgreSQL, preuve photographique, permissions sur compte réel, traduction réseau ou Railway. Les règles qualité sont réutilisées via la fiche existante, sans nouveau chemin de validation.
+- PostgreSQL 16 et la migration ont été testés sur une base CI jetable. Aucun test réel de Cloudinary, preuve photographique, permissions sur compte réel, traduction réseau ou Railway. Les règles qualité sont réutilisées via la fiche existante, sans nouveau chemin de validation.
 
 La branche doit rester en brouillon tant que ces limites et les critères de recette non couverts n'ont pas été traités ou acceptés explicitement.

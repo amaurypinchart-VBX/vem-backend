@@ -1,30 +1,37 @@
 # Validation — 5 novembre 2026
 
-État avant publication de la PR :
+Code validé : `82e9f5383e59fa66cdf37203df1bd1bf82481f43`.
+
+[Exécution GitHub Actions réussie](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42029733390) · [Captures et PDF de démonstration](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42029733390/artifacts/13415197541).
 
 | Vérification | Résultat |
 |---|---|
-| Installation npm et génération du client Prisma | Réussies |
-| Compilation TypeScript | Réussie |
-| Tests Briefing Next | 21 / 21 réussis |
-| Tests existants info-requests | 62 / 62 réussis |
-| Validation du schéma Prisma | Réussie avec URL PostgreSQL fictive ; aucune connexion à une base |
-| Analyse syntaxique des JS modifiés | Réussie |
-| `git diff --check` | Réussi |
-| Navigateur local | Bloqué au démarrage par une erreur de socket de profil |
-| Navigateur distant | Connexion au serveur local refusée |
-| Installation du premier navigateur de test | Archive téléchargée invalide |
-| PostgreSQL / migrations réellement exécutées | Non exécutés |
-| Recette Chromium sur GitHub Actions | Réussie : 25 pages source, 50 tâches, 20 images, export A4 de 47 pages, zéro débordement détecté |
+| Installation npm, génération Prisma, compilation TypeScript | Réussies localement et en CI |
+| Tests Briefing Next (logique, DOM, routes, export isolé) | 21 / 21 réussis |
+| Tests existants info-requests | 62 / 62 réussis localement |
+| Schéma Prisma | Valide |
+| Migration PostgreSQL 16 | Réussie deux fois sur une base CI jetable |
+| Sauvegardes concurrentes en PostgreSQL réel | Une sauvegarde réussit ; l’autre reçoit 409 |
+| Conservation des anciennes slides | Vérifiée en PostgreSQL |
+| Publication immuable, répétition idempotente et suppression en cascade | Vérifiées en PostgreSQL |
+| Recette Chromium | Réussie sur 25 pages source, 50 tâches et 20 images synthétiques |
+| A4 paginé | 47 pages, zéro débordement DOM détecté ; les 50 tâches sont présentes |
+| Desktop et mobile | Captures inspectées |
+| PDF de démonstration | Généré sur une page isolée sans interface ; page échantillon rendue et inspectée |
+| Syntaxe JS et `git diff --check` | Réussis |
 
-Les durées de tests DOM ne sont pas des mesures d'ouverture, de réactivité ou d'export du produit. Aucun résultat de performance du Studio n'est inventé.
+## Mesures de cette exécution
 
-Le workflow de PR peut compléter la recette navigateur sur un hôte compatible. Une exécution verte ne remplace pas les essais sur PostgreSQL, avec Cloudinary et avec les droits métier réels. Voir README pour le périmètre non encore implémenté.
+Ubuntu / Chromium headless, API simulée, jeu synthétique. Ces durées ne sont pas des garanties de performance en production.
 
-## Première recette navigateur réussie
+- Ouverture : **131 ms**.
+- Composition de l’aperçu paginé : **873 ms**.
+- Export et vérifications complémentaires du scénario : **1 325 ms**.
 
-[Exécution GitHub Actions](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943) sur le commit `873f5bfb` : succès. [Captures, PDF de démonstration et mesures](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943/artifacts/13414922469). Les captures desktop/mobile ont été inspectées. Le premier PDF de test a été rejeté à l’inspection visuelle : la page de test relançait l’application pendant la capture. Le harnais a été corrigé pour imprimer depuis une page vierge et vérifier l’absence de toute interface. Utiliser les artefacts de la dernière exécution réussie, pas ce premier PDF.
+Les valeurs brutes et les limites du harnais sont dans `qa-browser.json`. Le test PostgreSQL est distinct du scénario navigateur : les deux réussissent mais ne constituent pas un test bout en bout avec authentification et base réelles simultanément.
 
-Ouverture mesurée : 89 ms sur le runner Linux/Chromium et API simulée. La valeur historique `exportMs: 2656` du premier rapport inclut aussi la création du PDF et les vérifications suivantes : elle ne représente pas le seul temps de composition. Le script distingue désormais `paginationMs` du reste du parcours. Ce ne sont pas des garanties de performance en production.
+## Recette encore nécessaire
 
-Le test PostgreSQL jetable est ajouté au workflow pour vérifier la migration deux fois, les 50 sources, la sauvegarde concurrente et les éditions immuables ; son résultat sera visible sur la dernière exécution de la PR.
+Authentification réelle, permissions sur comptes métier, Cloudinary, photos obligatoires dans la fiche qualité réelle, traduction réseau, export 16:9, polices sur les postes utilisateurs, anciens documents représentatifs et déploiement Railway. Aucune opération de production n’a été exécutée. Les fonctionnalités manquantes du cahier des charges sont listées dans README.md.
+
+Le navigateur local était indisponible ; les essais visuels ont été exécutés sur GitHub Actions. Les artefacts de la dernière exécution ci-dessus remplacent ceux des premiers essais.

@@ -1,7 +1,8 @@
 {
   "environment": "Chromium headless / Linux / mocked authenticated API / synthetic data",
-  "openMs": 89,
-  "exportMs": 2656,
+  "openMs": 131,
+  "paginationMs": 873,
+  "exportAndVerificationMs": 1325,
   "pages": 47,
   "overflow": 0,
   "sourceTasks": 50,
