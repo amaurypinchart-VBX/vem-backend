@@ -13,6 +13,16 @@ Cette branche intègre un parcours utilisable dans l'application existante. Elle
 7. **Diffusions** enregistre une édition immuable, consultable par les personnes déjà autorisées au projet. Il n'existe aucun lien public ni route de modification d'une édition.
 8. **PDF / imprimer** prépare une copie isolée et un aperçu paginé, avec texte sélectionnable et liens. Choisir ensuite « Enregistrer en PDF » dans l'impression du navigateur, sans en-têtes/pieds de page du navigateur, avec arrière-plans activés. L'export Next ne téléverse pas automatiquement le PDF ; l'ajouter ensuite aux fichiers du projet. L'export Studio historique conserve son téléversement et utilise désormais un canevas isolé.
 
+## Composition libre
+
+**+ Composition libre** ouvre un bloc vectoriel de 1000 × 600 : textes, rectangles, ellipses, flèches dans huit directions, repères numérotés et légendes. Une photo du projet peut servir de fond ; « Créer un schéma annoté » conserve la photo originale. Le fond entier est ajusté au cadre ; remplacer le fond conserve les annotations, dont les positions doivent être revérifiées.
+
+Maj + clic et Ctrl/Cmd+A sélectionnent ; les groupes se déplacent ensemble. Alignements, distribution, calques, verrouillage, visibilité, copie de style, duplication, zoom et grille sont disponibles. Les flèches clavier déplacent de 1 px (Maj : 10 px). Redimensionner le texte modifie sa largeur sans étirer sa police. Limites explicites : 200 objets et 2 000 caractères par texte.
+
+L’historique local regroupe chaque geste ; Appliquer constitue une opération dans l’historique du document, puis utilise la sauvegarde avec révision. Annuler abandonne les changements du panneau. Un dépassement de page bloque l’application. Les textes et légendes sont lisibles dans la vue chantier ; l’export conserve le SVG vectoriel et attend les images.
+
+Le module utilise les primitives SVG natives, sans dépendance supplémentaire. Le serveur valide une liste typée de formes ; aucun SVG ou HTML utilisateur n’est chargé. Le fond passe par les contrôles de sources du projet. Fabric et les anciens objets restent préservés dans l’éditeur historique.
+
 ## Compléments graphiques
 
 - **Kit de marque** : nom, couleurs texte/fond/accent et police enregistrés dans le document et les diffusions. Import/export JSON versionné pour réutiliser une identité entre projets, sans contenu chantier, identifiants ou URLs. Les exceptions de style locales sont préservées. Le retour aux thèmes et l’application du kit sont annulables. La régénération conserve le kit.
@@ -57,7 +67,7 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 
 ## Écarts restant au cahier des charges
 
-- L'édition graphique libre, groupes Fabric, alignement/distribution, guides, zoom, flèches et repères de plans restent dans le Studio historique ; Next propose des blocs en flux, pas un remplacement complet de Fabric.
+- La composition libre concerne un bloc graphique ; les pages sémantiques restent en flux. Conversion complète des anciens objets Fabric, rotation libre, groupes imbriqués et magnétisme entre objets restent à réaliser. Les fonds Next acceptent les images ; l’import PDF reste dans le parcours historique.
 - Pas encore de bibliothèque partagée de kits de marque ou de logos, galerie photographique élaborée, modèles réutilisables entre projets, import de pages PDF en blocs Next ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
 - Les filtres de génération ne sont pas stockés en tant que requête dynamique ; les exclusions d'IDs sont stockées. Les nouveaux éléments sont présentés à la comparaison pour décision.
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.

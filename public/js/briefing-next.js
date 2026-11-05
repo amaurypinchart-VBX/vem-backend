@@ -270,6 +270,8 @@
     let content = Object.entries(b.content)
       .map(([k, v]) => fieldHtml(k, v))
       .join("");
+    if (print && b.graphic && window.BriefingNextGraphics.issues(window.BriefingNextGraphics.normalize(M.copy(b.graphic))).length)
+      throw new Error("Texte ou objet graphique hors page : " + b.title);
     if (b.kind === "graphic" && b.graphic)
       content = window.BriefingNextGraphics.html(
         b.graphic,
@@ -635,6 +637,7 @@
             change(() => {
               const attach = (block) => {
                 block.graphic = graphic;
+                if (background && block.source?.kind === "file" && block.source.id === background.id) return;
                 if (background) {
                   block.source = { kind: "file", id: background.id };
                   block.content.url = background.fields.url;

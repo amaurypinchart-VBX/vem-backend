@@ -48,7 +48,7 @@ const graphic = z
             fill: z.string().regex(/^#[0-9a-f]{6}$/i),
             stroke: z.string().regex(/^#[0-9a-f]{6}$/i),
             strokeWidth: z.number().min(1).max(20),
-            direction: z.enum(["left", "right"]),
+            direction: z.enum(["left", "right", "up", "down", "ne", "se", "sw", "nw"]),
             group: id.optional(),
             locked: z.boolean().optional(),
             hidden: z.boolean().optional(),

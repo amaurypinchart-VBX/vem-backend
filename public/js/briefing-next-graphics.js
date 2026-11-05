@@ -32,8 +32,8 @@
       let line = "";
       for (const char of Array.from(paragraph)) {
         if (line && measure(line + char) > max) {
-          lines.push(line);
-          line = "";
+          const space=line.lastIndexOf(" ");
+          if(space>=0){lines.push(line.slice(0,space+1));line=line.slice(space+1);}else{lines.push(line);line="";}
         }
         line += char;
       }
@@ -166,11 +166,11 @@
     if (n.type === "ellipse")
       body = `<ellipse cx="${n.width / 2}" cy="${n.height / 2}" rx="${n.width / 2}" ry="${n.height / 2}" ${a}/>`;
     if (n.type === "arrow") {
-      const end = n.direction === "left" ? 8 : n.width - 8,
-        start = n.direction === "left" ? n.width - 8 : 8,
-        sign = n.direction === "left" ? 1 : -1,
-        y = n.height / 2;
-      body = `<path d="M ${start} ${y} L ${end} ${y} M ${end + sign * 16} ${y - 12} L ${end} ${y} L ${end + sign * 16} ${y + 12}" fill="none" stroke="${esc(n.stroke)}" stroke-width="${n.strokeWidth}"/>`;
+      const vector={right:[1,0],left:[-1,0],up:[0,-1],down:[0,1],ne:[1,-1],se:[1,1],sw:[-1,1],nw:[-1,-1]}[n.direction]||[1,0];
+      const sx=n.width/2-vector[0]*(n.width/2-14),sy=n.height/2-vector[1]*(n.height/2-14);
+      const ex=n.width/2+vector[0]*(n.width/2-14),ey=n.height/2+vector[1]*(n.height/2-14);
+      const length=Math.hypot(ex-sx,ey-sy)||1,ux=(ex-sx)/length,uy=(ey-sy)/length;
+      body=`<path d="M ${sx} ${sy} L ${ex} ${ey} M ${ex-ux*14-uy*9} ${ey-uy*14+ux*9} L ${ex} ${ey} L ${ex-ux*14+uy*9} ${ey-uy*14-ux*9}" fill="none" stroke="${esc(n.stroke)}" stroke-width="${n.strokeWidth}"/>`;
     }
     if (n.type === "marker")
       body = `<ellipse cx="${n.width / 2}" cy="${n.height / 2}" rx="${n.width / 2}" ry="${n.height / 2}" ${a}/><text x="${n.width / 2}" y="${n.height / 2}" text-anchor="middle" dominant-baseline="central" fill="${esc(n.stroke)}" font-family="Arial" font-size="${Math.min(n.width, n.height) * 0.48}">${number}</text>`;
@@ -282,7 +282,7 @@
         .map(([a, t]) => button("add-" + a, t))
         .join(
           "",
-        )}${button("undo", "↶")}${button("redo", "↷")}${button("copy", "Copier")}${button("paste", "Coller")}${button("duplicate", "Dupliquer")}${button("delete", "Supprimer")}<label>Zoom<select data-g-zoom>${[50, 75, 100, 125, 150, 200].map((z) => `<option ${z === zoom ? "selected" : ""}>${z}</option>`).join("")}</select></label>${button("fit", "Ajuster")}${button("grid", grid ? "Grille : oui" : "Grille : non")}</div><div class="bn-graphic-body"><div class="bn-graphic-viewport"><div data-stage></div></div><aside><p>Maj + clic : multisélection. Glisser pour déplacer ; poignée bleue pour redimensionner. Flèches clavier : 1 px, Maj : 10 px.</p><p>Les repères et itinéraires sont renseignés par vous. Aucun emplacement technique n’est déduit.</p><label>Fond du projet<select data-g-background><option value="">Sans image</option>${files.map((f) => `<option value="${esc(f.id)}" ${scene.backgroundId === f.id ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select></label><h3>${ids.length} objet(s)</h3><label>Calque<select data-g-layer><option value="">Choisir…</option>${scene.nodes.map((x, i) => `<option value="${esc(x.id)}" ${n?.id === x.id ? "selected" : ""}>${i + 1} · ${x.hidden ? "◌ " : ""}${x.locked ? "🔒 " : ""}${esc(x.text.slice(0, 35) || x.type)}</option>`).join("")}</select></label>${n ? `<fieldset ${blocked ? "disabled" : ""}><label>Texte / légende<textarea data-g-prop="text" maxlength="2000">${esc(n.text)}</textarea></label>${["x", "y", "width", "height", "fontSize", "strokeWidth"].map((k) => `<label>${{ x: "Position X", y: "Position Y", width: "Largeur", height: "Hauteur", fontSize: "Taille du texte", strokeWidth: "Épaisseur" }[k]}<input type="number" data-g-prop="${k}" value="${n[k]}" ${k === "height" && n.type === "text" ? "disabled" : ""}></label>`).join("")}<label>Police<select data-g-prop="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${n.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label>${["fill", "stroke"].map((k) => `<label>${k === "fill" ? "Fond / texte" : "Contour"}<input type="color" data-g-prop="${k}" value="${n[k]}"></label>`).join("")}${n.type === "arrow" ? `<label>Direction<select data-g-prop="direction"><option value="right" ${n.direction === "right" ? "selected" : ""}>Droite</option><option value="left" ${n.direction === "left" ? "selected" : ""}>Gauche</option></select></label>` : ""}</fieldset><div>${button("lock", blocked ? "Déverrouiller" : "Verrouiller")}${button("hide", n.hidden ? "Afficher" : "Masquer")}${button("front", "Premier plan")}${button("back", "Arrière-plan")}${button("group", "Grouper")}${button("ungroup", "Dégrouper")}${button("copyStyle", "Copier style")}${button("pasteStyle", "Coller style")}</div>` : ""}<h3>Aligner / distribuer</h3><div>${[
+        )}${button("undo", "↶")}${button("redo", "↷")}${button("copy", "Copier")}${button("paste", "Coller")}${button("duplicate", "Dupliquer")}${button("delete", "Supprimer")}<label>Zoom<select data-g-zoom>${[50, 75, 100, 125, 150, 200].map((z) => `<option ${z === zoom ? "selected" : ""}>${z}</option>`).join("")}</select></label>${button("fit", "Ajuster")}${button("grid", grid ? "Grille : oui" : "Grille : non")}</div><div class="bn-graphic-body"><div class="bn-graphic-viewport"><div data-stage></div></div><aside><p>Maj + clic : multisélection. Glisser pour déplacer ; poignée bleue pour redimensionner. Flèches clavier : 1 px, Maj : 10 px.</p><p>Les repères et itinéraires sont renseignés par vous. Aucun emplacement technique n’est déduit.</p><label>Fond du projet<select data-g-background><option value="">Sans image</option>${files.map((f) => `<option value="${esc(f.id)}" ${scene.backgroundId === f.id ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select></label><h3>${ids.length} objet(s)</h3><label>Calque<select data-g-layer><option value="">Choisir…</option>${scene.nodes.map((x, i) => `<option value="${esc(x.id)}" ${n?.id === x.id ? "selected" : ""}>${i + 1} · ${x.hidden ? "◌ " : ""}${x.locked ? "🔒 " : ""}${esc(x.text.slice(0, 35) || x.type)}</option>`).join("")}</select></label>${n ? `<fieldset ${blocked ? "disabled" : ""}><label>Texte / légende<textarea data-g-prop="text" maxlength="2000">${esc(n.text)}</textarea></label>${["x", "y", "width", "height", "fontSize", "strokeWidth"].map((k) => `<label>${{ x: "Position X", y: "Position Y", width: "Largeur", height: "Hauteur", fontSize: "Taille du texte", strokeWidth: "Épaisseur" }[k]}<input type="number" data-g-prop="${k}" value="${n[k]}" ${k === "height" && n.type === "text" ? "disabled" : ""}></label>`).join("")}<label>Police<select data-g-prop="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${n.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label>${["fill", "stroke"].map((k) => `<label>${k === "fill" ? "Fond / texte" : "Contour"}<input type="color" data-g-prop="${k}" value="${n[k]}"></label>`).join("")}${n.type === "arrow" ? `<label>Direction<select data-g-prop="direction">${Object.entries({right:"→",left:"←",up:"↑",down:"↓",ne:"↗",se:"↘",sw:"↙",nw:"↖"}).map(([v,t])=>`<option value="${v}" ${n.direction===v?"selected":""}>${t}</option>`).join("")}</select></label>` : ""}</fieldset><div>${button("lock", blocked ? "Déverrouiller" : "Verrouiller")}${button("hide", n.hidden ? "Afficher" : "Masquer")}${button("front", "Premier plan")}${button("back", "Arrière-plan")}${button("group", "Grouper")}${button("ungroup", "Dégrouper")}${button("copyStyle", "Copier style")}${button("pasteStyle", "Coller style")}</div>` : ""}<h3>Aligner / distribuer</h3><div>${[
         ["left", "Gauche"],
         ["centerX", "Centre horizontal"],
         ["right", "Droite"],
@@ -352,6 +352,9 @@
             ]),
           );
         return;
+      }
+      if ((a.startsWith("add-") && scene.nodes.length>=200) || ((a==="paste"||a==="duplicate") && scene.nodes.length+(a==="paste"?clipboard.length:ids.length)>200)){
+        layer.querySelector('[data-g-status]').textContent='Limite de 200 objets : créez une autre composition.';return;
       }
       commit(() => {
         if (a.startsWith("add-")) {
@@ -588,10 +591,10 @@
       const text = e.clipboardData?.getData("text/plain");
       if (text) {
         e.preventDefault();
+        if(text.length>2000){layer.querySelector('[data-g-status]').textContent='Texte trop long (2 000 caractères maximum) : répartissez-le en plusieurs objets.';return;}
+        const previousCount=scene.nodes.length;
         action("add-text");
-        commit(() => {
-          selected()[0].text = text.slice(0, 2000);
-        });
+        if(scene.nodes.length>previousCount){selected()[0].text=text;normalize(scene);render();}
       }
     });
     layer.addEventListener("keydown", (e) => {
