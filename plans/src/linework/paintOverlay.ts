@@ -7,6 +7,7 @@
 // la face est retirée par sa silhouette (union de ses triangles, gardée par vue) : soustraire un à un des milliers de
 // petits triangles (boulonnerie, détails) figeait la page plusieurs minutes sur une façade de toute l'installation.
 // Le calcul est découpé en étapes (`paintOverlaySteps`) pour être réparti sur plusieurs tâches du navigateur.
+import '../core/clipperFix';
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { Path64 } from 'clipper2-js';
 import { Box3, Vector3 } from 'three';
@@ -54,6 +55,12 @@ const SILHOUETTE_MIN = 24;
 const SILHOUETTE_SHARE = 0.25;
 /** triangles réunis par étape (union par morceaux, puis morceaux réunis deux à deux) */
 const SILHOUETTE_CHUNK = 400;
+/**
+ * Ce qui cache une face est soustrait par paquets (une étape chacun) : une seule soustraction de milliers de contours
+ * qui se chevauchent (élévation de toute l'installation, Xiaomi : 45 s dans clipper2-js, `processIntersectList` est
+ * quadratique dans les croisements d'une même bande) figeait la page plusieurs secondes d'affilée.
+ */
+const CLIP_CHUNK = 200;
 /** régions d'une couleur qui gardent leur repère (les plus grandes) ; les autres = une seule région sans repère */
 export const TAGGED_REGIONS = 24;
 
@@ -323,7 +330,7 @@ export function* paintOverlaySteps(inp: PaintOverlayInput): Generator<void, Pain
       if (q) subject.push(q);
     }
     if (!subject.length) continue;
-    const visible = visiblePart(subject, clip);
+    const visible = yield* visibleSteps(subject, clip);
     if (visible.length) {
       const l = byColor.get(g.colorId) ?? [];
       l.push(visible);
@@ -558,22 +565,39 @@ function remember(mesh: Mesh, viewKey: string, sil: Silhouette): void {
 }
 
 /**
- * Face − ce qui est devant elle. clipper2-js plante parfois sur une grande opération (contours presque confondus
- * d'un vrai modèle) : on refait alors la soustraction par paquets de triangles, plus petits.
+ * Face − ce qui est devant elle, par paquets de `CLIP_CHUNK` contours (une étape par paquet). clipper2-js plante parfois
+ * sur une grande opération (contours presque confondus d'un vrai modèle) : on refait alors le paquet triangle par
+ * triangle (un triangle qui fait encore planter Clipper est ignoré).
  */
+function* visibleSteps(subject: Paths64, clip: Paths64): Generator<void, Paths64, void> {
+  if (clip.length <= CLIP_CHUNK) return visiblePart(subject, clip);
+  let rest = visiblePart(subject, new Paths64());
+  for (let i = 0; i < clip.length && rest.length; i += CLIP_CHUNK) {
+    yield;
+    const part = new Paths64();
+    for (const q of clip.slice(i, i + CLIP_CHUNK)) part.push(q);
+    rest = visiblePart(rest, part);
+  }
+  return rest;
+}
+
 function visiblePart(subject: Paths64, clip: Paths64): Paths64 {
-  if (!clip.length) return owned(Clipper.Union(subject, undefined, FillRule.NonZero));
   try {
+    if (!clip.length) return owned(Clipper.Union(subject, undefined, FillRule.NonZero));
     return owned(Clipper.Difference(subject, clip, FillRule.NonZero));
   } catch {
-    let rest = owned(Clipper.Union(subject, undefined, FillRule.NonZero));
+    let rest: Paths64;
+    try {
+      rest = owned(Clipper.Union(subject, undefined, FillRule.NonZero));
+    } catch {
+      rest = owned(subject);
+    }
     for (let i = 0; i < clip.length && rest.length; i += 64) {
       const part = new Paths64();
       for (const q of clip.slice(i, i + 64)) part.push(q);
       try {
         rest = owned(Clipper.Difference(rest, part, FillRule.NonZero));
       } catch {
-        // dernier recours : triangle par triangle (un triangle qui fait encore planter Clipper est ignoré)
         for (const q of part) {
           const one = new Paths64();
           one.push(q);
