@@ -1,4 +1,4 @@
-# Briefing Studio Next — tranche initiale, PR brouillon
+# Briefing Studio Next — développement en cours, PR brouillon
 
 Cette branche intègre un parcours utilisable dans l'application existante. Elle ne constitue pas la totalité du cahier des charges « Studio Next ». La recette navigateur synthétique et PostgreSQL jetable a réussi ; la PR reste en brouillon pour les fonctionnalités restantes et la recette métier réelle.
 
@@ -12,6 +12,12 @@ Cette branche intègre un parcours utilisable dans l'application existante. Elle
 6. **Vue chantier** affiche le contenu sémantique sur mobile. Changer un statut appelle l'API `Task` existante ; le briefing reste un instantané jusqu'à actualisation. Les contrôles ouvrent la fiche qualité existante avec ses preuves, droits et historique. Aucun bouton Next ne valide directement un contrôle.
 7. **Diffusions** enregistre une édition immuable, consultable par les personnes déjà autorisées au projet. Il n'existe aucun lien public ni route de modification d'une édition.
 8. **PDF / imprimer** prépare une copie isolée et un aperçu paginé, avec texte sélectionnable et liens. Choisir ensuite « Enregistrer en PDF » dans l'impression du navigateur, sans en-têtes/pieds de page du navigateur, avec arrière-plans activés. L'export Next ne téléverse pas automatiquement le PDF ; l'ajouter ensuite aux fichiers du projet. L'export Studio historique conserve son téléversement et utilise désormais un canevas isolé.
+
+## Compléments graphiques
+
+- **Kit de marque** : nom, couleurs texte/fond/accent et police enregistrés dans le document et les diffusions. Import/export JSON versionné pour réutiliser une identité entre projets, sans contenu chantier, identifiants ou URLs. Les exceptions de style locales sont préservées. Le retour aux thèmes et l’application du kit sont annulables. La régénération conserve le kit.
+- **Cadrage photo** : original, 16:9, carré ou portrait ; remplir/recadrer ou contenir ; point focal horizontal et vertical. Réglages enregistrés séparément des données source, préservés à l’actualisation et à la duplication. Aucun fichier original n’est modifié.
+- **Export sélectif** : choix explicite des pages avant préparation. Le moteur conserve les images quand une longue légende doit passer sur une page suivante.
 
 ## Architecture et compatibilité
 
@@ -52,11 +58,11 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 ## Écarts restant au cahier des charges
 
 - L'édition graphique libre, groupes Fabric, alignement/distribution, guides, zoom, flèches et repères de plans restent dans le Studio historique ; Next propose des blocs en flux, pas un remplacement complet de Fabric.
-- Pas de kit de marque persistant, galerie photographique élaborée, recadrage/point focal, modèles réutilisables entre projets, import de pages PDF en blocs Next ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
+- Pas encore de bibliothèque partagée de kits de marque ou de logos, galerie photographique élaborée, modèles réutilisables entre projets, import de pages PDF en blocs Next ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
 - Les filtres de génération ne sont pas stockés en tant que requête dynamique ; les exclusions d'IDs sont stockées. Les nouveaux éléments sont présentés à la comparaison pour décision.
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.
 - Pas de diffusion client dédiée, ni de présélection « synthèse client ». L'audience reste interne ; aucun contrôle serveur de publication client n'est promis.
-- Export FR et traduction des champs descriptifs en EN seulement : titres/labels système ne sont pas entièrement localisés. Pagination A4 vérifiée dans le navigateur sur la fixture synthétique ; recette 16:9 et traduction complète encore à compléter. Anciennes pages Fabric rasterisées. Les grandes images nécessitent une recette de charge et l'export serveur reste à évaluer.
+- Export FR et traduction des champs descriptifs en EN seulement : titres/labels système ne sont pas entièrement localisés. Pagination A4 vérifiée dans le navigateur sur la fixture synthétique ; traduction complète encore à compléter ; une recette 16:9 sélective est ajoutée au workflow. Anciennes pages Fabric rasterisées. Les grandes images nécessitent une recette de charge et l'export serveur reste à évaluer.
 - PostgreSQL 16 et la migration ont été testés sur une base CI jetable. Aucun test réel de Cloudinary, preuve photographique, permissions sur compte réel, traduction réseau ou Railway. Les règles qualité sont réutilisées via la fiche existante, sans nouveau chemin de validation.
 
 La branche doit rester en brouillon tant que ces limites et les critères de recette non couverts n'ont pas été traités ou acceptés explicitement.

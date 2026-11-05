@@ -141,3 +141,35 @@ test("filter combines date, priority and open status", () => {
     false,
   );
 });
+
+test("brand kits validate portable data and reject project or executable fields", () => {
+  const brand = {
+    name: "ACME",
+    ink: "#112233",
+    paper: "#ffffff",
+    accent: "#abcdef",
+    font: "Arial",
+  };
+  assert.deepEqual(
+    M.brandKit({ type: "vem-brand-kit", version: 1, brand }),
+    brand,
+  );
+  assert.throws(() => M.brandKit({ ...brand, projectId: "secret" }));
+  assert.throws(() => M.brandKit({ ...brand, ink: "red; background:url(x)" }));
+  const d = M.generate("p", "Test", sources.slice(0, 1));
+  d.brand = brand;
+  d.pages[0].blocks[0].image = {
+    ratio: "portrait",
+    fit: "cover",
+    x: 20,
+    y: 80,
+  };
+  assert.ok(documentSchema.safeParse(d).success);
+  const remote = M.copy(sources.slice(0, 1));
+  remote[0].fields.status = "done";
+  const next = M.apply(d, M.diff(d, remote), { 0: "remote" });
+  assert.deepEqual(next.brand, brand);
+  assert.deepEqual(next.pages[0].blocks[0].image, d.pages[0].blocks[0].image);
+  d.pages[0].blocks[0].image.x = 101;
+  assert.equal(documentSchema.safeParse(d).success, false);
+});

@@ -225,7 +225,38 @@
     if (x.blocks) x.blocks = x.blocks.map(duplicate);
     return x;
   }
+  // Portable kit deliberately contains no project content, IDs or asset URLs.
+  function brandKit(value) {
+    const b =
+      value?.type === "vem-brand-kit" && value.version === 1
+        ? value.brand
+        : value;
+    if (
+      !b ||
+      typeof b.name !== "string" ||
+      !b.name.trim() ||
+      b.name.length > 100 ||
+      !["Arial", "Georgia", "Verdana"].includes(b.font) ||
+      ![b.ink, b.paper, b.accent].every(
+        (c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c),
+      ) ||
+      Object.keys(b).some(
+        (k) => !["name", "ink", "paper", "accent", "font"].includes(k),
+      )
+    )
+      throw new Error(
+        "Kit invalide : nom, trois couleurs hexadécimales et police requis.",
+      );
+    return {
+      name: b.name.trim(),
+      ink: b.ink,
+      paper: b.paper,
+      accent: b.accent,
+      font: b.font,
+    };
+  }
   const api = {
+    brandKit,
     copy,
     uid,
     key,

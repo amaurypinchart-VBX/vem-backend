@@ -422,3 +422,20 @@
 .bn-wide-field {
   grid-column: 1 / -1;
 }
+
+.bn-photo-frame {
+  grid-column: 1 / -1;
+  width: 100%;
+  overflow: hidden;
+  background: #8881;
+}
+.bn-photo-frame img {
+  display: block;
+  margin: 0 auto;
+}
+.bn fieldset {
+  min-width: 0;
+  margin: 12px 0;
+  border: 1px solid #ccd;
+  border-radius: 8px;
+}

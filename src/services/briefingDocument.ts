@@ -35,6 +35,16 @@ export const documentSchema = z
     theme: z.enum(["signature", "field", "editorial"]),
     format: z.enum(["wide", "a4"]),
     audience: z.literal("internal"),
+    brand: z
+      .object({
+        name: z.string().min(1).max(100),
+        ink: z.string().regex(/^#[0-9a-f]{6}$/i),
+        paper: z.string().regex(/^#[0-9a-f]{6}$/i),
+        accent: z.string().regex(/^#[0-9a-f]{6}$/i),
+        font: z.enum(["Arial", "Georgia", "Verdana"]),
+      })
+      .strict()
+      .optional(),
     updatedAt: z.string().datetime(),
     excluded: z.array(z.string().max(200)).max(10000),
     pages: z
@@ -74,6 +84,20 @@ export const documentSchema = z
                     content: fields,
                     annotation: text,
                     style: style.optional(),
+                    image: z
+                      .object({
+                        ratio: z.enum([
+                          "original",
+                          "wide",
+                          "square",
+                          "portrait",
+                        ]),
+                        fit: z.enum(["cover", "contain"]),
+                        x: z.number().min(0).max(100),
+                        y: z.number().min(0).max(100),
+                      })
+                      .strict()
+                      .optional(),
                     refreshedAt: z.string().datetime().optional(),
                     hidden: z.boolean().optional(),
                     locked: z.boolean().optional(),

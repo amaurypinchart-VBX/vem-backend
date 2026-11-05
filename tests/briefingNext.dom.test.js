@@ -183,3 +183,31 @@ test("DOM: generation includes all selected tasks and no silent priority cap", a
     s.dom.window.close();
   }
 });
+
+test("DOM: brand persists, resets and undo restores it without changing local styles", async () => {
+  const s = await setup(),
+    d = s.document;
+  try {
+    click(d, "[data-block]");
+    input(s.w, "[data-style=color]", "#aa1122");
+    click(d, "[data-action=brand]");
+    input(s.w, "[name=brand-name]", "ACME chantier");
+    click(d, "[data-submit]");
+    click(d, "[data-action=save]");
+    await tick();
+    assert.equal(s.saved.brand.name, "ACME chantier");
+    assert.equal(s.saved.pages[0].blocks[0].style.color, "#aa1122");
+    assert.ok(
+      d.querySelector(".bn-kicker").textContent.includes("ACME chantier"),
+    );
+    click(d, "[data-action=brand]");
+    click(d, "[data-kit-reset]");
+    assert.ok(d.querySelector(".bn-kicker").textContent.includes("VIEWBOX"));
+    click(d, "[data-action=undo]");
+    assert.ok(
+      d.querySelector(".bn-kicker").textContent.includes("ACME chantier"),
+    );
+  } finally {
+    s.dom.window.close();
+  }
+});

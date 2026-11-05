@@ -122,8 +122,8 @@
     status(e.message);
     if (typeof toast === "function") toast(e.message, "error");
   }
-  function themeCss(theme) {
-    const t = M.themes[theme] || M.themes.signature;
+  function themeCss(theme, brand) {
+    const t = brand || M.themes[theme] || M.themes.signature;
     return `--ink:${t.ink};--paper:${t.paper};--accent:${t.accent};--font:${t.font}`;
   }
   function btn(action, text, extra = "") {
@@ -278,7 +278,7 @@
       /\.(png|jpe?g|webp|gif)(?:\?|$)/i.test(b.content.url)
     )
       content =
-        `<img src="${E(safeUrl(b.content.url))}" alt="${E(b.content.caption || b.title)}" loading="lazy">` +
+        `<div class="bn-photo-frame" style="${b.image && b.image.ratio !== "original" ? "--photo-ratio:" + { wide: 16 / 9, square: 1, portrait: 3 / 4 }[b.image.ratio] + ";aspect-ratio:" + { wide: "16/9", square: "1/1", portrait: "3/4" }[b.image.ratio] + ";" : ""}"><img src="${E(safeUrl(b.content.url))}" alt="${E(b.content.caption || b.title)}" loading="lazy" style="${b.image && b.image.ratio !== "original" ? "width:100%;height:100%;max-height:none;object-fit:" + b.image.fit + ";object-position:" + b.image.x + "% " + b.image.y + "%;" : ""}"></div>` +
         fieldHtml("caption", b.content.caption || "");
     else if (b.kind === "table")
       content = `<div class="bn-tsv"><table>${(b.content.table || "")
@@ -314,7 +314,7 @@
   }
   function paperHtml(p, index, print = false, document = S.doc) {
     const theme = p.theme || document.theme;
-    return `<article class="bn-paper ${theme === "editorial" ? "bn-editorial" : theme === "field" ? "bn-field-theme" : ""}" style="${themeCss(theme)}"><div class="bn-kicker">VIEWBOX INTERNATIONAL · ${E(document.title)}</div><h1>${E(p.title)}</h1><div class="bn-page-content">${p.blocks
+    return `<article class="bn-paper ${theme === "editorial" ? "bn-editorial" : theme === "field" ? "bn-field-theme" : ""}" style="${themeCss(theme, document.brand)}"><div class="bn-kicker">${E(document.brand?.name || "VIEWBOX INTERNATIONAL")} · ${E(document.title)}</div><h1>${E(p.title)}</h1><div class="bn-page-content">${p.blocks
       .filter((b) => !(print || S.preview) || !b.hidden)
       .map((b) => blockHtml(b, print))
       .join(
@@ -332,10 +332,12 @@
     S.root.innerHTML = `<header><strong>STUDIO NEXT</strong><input aria-label="Nom du briefing" data-doc="title" value="${E(S.doc.title)}" ${!editing ? "readonly" : ""}><span class="bn-status">${S.publication ? "Édition publiée · lecture seule" : S.conflict ? "Conflit : votre copie est conservée" : S.dirty ? "Non enregistré" : "Révision " + S.revision}</span>${editing ? btn("undo", "↶", 'aria-label="Annuler" ' + (!S.undo.length ? "disabled" : "")) + btn("redo", "↷", 'aria-label="Rétablir" ' + (!S.redo.length ? "disabled" : "")) + btn("generate", "Générer", 'class="primary"') + btn("refresh", "Actualiser") + btn("save", "Enregistrer") : ""}${btn("preview", S.preview ? "Designer" : "Vue chantier")}${btn("export", "PDF / imprimer")}${btn("versions", "Diffusions")}${btn("close", "Fermer")}</header>
  ${S.conflict ? `<div class="bn-warning">Une autre session a enregistré une nouvelle révision. ${btn("backup", "Télécharger ma copie JSON")}${btn("reload", "Recharger le serveur")}</div>` : ""}
  <div class="bn-body"><nav><h3>Pages · ${S.doc.pages.length}</h3><input aria-label="Rechercher une page" placeholder="Rechercher…" data-search>
- ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
+ ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme, S.doc.brand)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
  ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("media", "Médias du projet")}${btn("original", "Copie éditable de l’original")}` : ""}
  </nav><main>${S.preview ? S.doc.pages.map((p, i) => paperHtml(p, i)).join("") : paperHtml(p, S.page)}</main><aside>
- <h3>Direction artistique</h3>${Object.entries(M.themes)
+ <h3>Direction artistique</h3>${editing ? btn("brand", "Kit de marque") : ""}${S.doc.brand ? `<p class="bn-count">Identité : ${E(S.doc.brand.name)} · les styles locaux sont conservés.</p>` : ""}${Object.entries(
+   M.themes,
+ )
    .map(([k, t]) =>
      btn(
        "theme",
@@ -363,6 +365,23 @@
          )
          .join("")
      : "<p>Original préservé. Utilisez « Copie éditable de l’original » pour ses objets libres.</p>"
+ }
+ ${
+   b.kind === "photo"
+     ? `<fieldset ${!editing || b.locked ? "disabled" : ""}><legend>Cadrage photo</legend><label>Cadre<select data-image="ratio">${[
+         ["original", "Image entière"],
+         ["wide", "16:9"],
+         ["square", "Carré"],
+         ["portrait", "Portrait 3:4"],
+       ]
+         .map(
+           ([v, t]) =>
+             `<option value="${v}" ${(b.image?.ratio || "original") === v ? "selected" : ""}>${t}</option>`,
+         )
+         .join(
+           "",
+         )}</select></label><label>Ajustement<select data-image="fit"><option value="cover" ${b.image?.fit !== "contain" ? "selected" : ""}>Remplir / recadrer</option><option value="contain" ${b.image?.fit === "contain" ? "selected" : ""}>Voir toute l’image</option></select></label>${["x", "y"].map((k) => `<label>Point focal ${k === "x" ? "horizontal" : "vertical"} (${b.image?.[k] ?? 50} %)<input type="range" min="0" max="100" data-image="${k}" value="${b.image?.[k] ?? 50}"></label>`).join("")}<p>Le fichier original reste intact.</p></fieldset>`
+     : ""
  }
  <label>Annotation personnelle<textarea data-block-field="annotation" ${!editing ? "disabled" : ""}>${E(b.annotation)}</textarea></label>
  <label>Police<select data-style="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${b.style?.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label><label>Couleur<input type="color" data-style="color" value="${E(b.style?.color || M.themes[S.doc.theme].ink)}"></label><label>Taille<input type="number" min="14" max="64" data-style="size" value="${b.style?.size || 18}"></label>
@@ -486,6 +505,16 @@
       )
         return;
       change(() => (selected()[t.dataset.blockField] = t.value));
+    } else if (t.dataset.image) {
+      if (!selected() || selected().locked || selected().kind !== "photo")
+        return;
+      change(() => {
+        const b = selected();
+        b.image = b.image || { ratio: "original", fit: "cover", x: 50, y: 50 };
+        b.image[t.dataset.image] = ["x", "y"].includes(t.dataset.image)
+          ? Math.min(100, Math.max(0, Number(t.value) || 0))
+          : t.value;
+      });
     } else if (t.dataset.style) {
       if (selected()?.locked) return;
       change(() => {
@@ -563,6 +592,7 @@
       }
       if (!S.permissions.write || S.publication) return;
       if (act === "task") return taskDialog(a.dataset.id);
+      if (act === "brand") return brandDialog();
       if (act === "generate") return generator();
       if (act === "refresh") return refresh();
       if (act === "media") return media();
@@ -701,6 +731,88 @@
     };
     return layer;
   }
+  function brandDialog() {
+    const initial = S.doc.brand || {
+      ...M.themes[S.doc.theme],
+      name: "VIEWBOX INTERNATIONAL",
+    };
+    const layer = dialog(
+      "Kit de marque",
+      `<p>Enregistré dans ce briefing. Exportez ce kit pour le réutiliser dans un autre projet sans transmettre de contenu chantier.</p><label>Nom<input name="brand-name" maxlength="100" value="${E(initial.name)}"></label>${[
+        ["ink", "Texte"],
+        ["paper", "Fond"],
+        ["accent", "Accent"],
+      ]
+        .map(
+          ([k, t]) =>
+            `<label>${t}<input type="color" name="brand-${k}" value="${E(initial[k])}"></label>`,
+        )
+        .join(
+          "",
+        )}<label>Police<select name="brand-font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${initial.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label><div class="bn-row"><button data-kit-export>Exporter le kit JSON</button><label>Importer un kit JSON<input type="file" accept=".json,application/json" data-kit-import></label><button data-kit-reset>Revenir aux thèmes</button></div>`,
+      (l) =>
+        change(() => {
+          S.doc.brand = read(l);
+        }),
+    );
+    function read(l) {
+      return M.brandKit(
+        Object.fromEntries(
+          ["name", "ink", "paper", "accent", "font"].map((k) => [
+            k,
+            l.querySelector(`[name=brand-${k}]`).value,
+          ]),
+        ),
+      );
+    }
+    layer.querySelector("[data-kit-export]").onclick = () => {
+      try {
+        const url = URL.createObjectURL(
+          new Blob(
+            [
+              JSON.stringify(
+                { type: "vem-brand-kit", version: 1, brand: read(layer) },
+                null,
+                2,
+              ),
+            ],
+            { type: "application/json" },
+          ),
+        );
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "vem-kit-marque.json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        layer.querySelector("[data-error]").textContent = e.message;
+      }
+    };
+    layer.querySelector("[data-kit-import]").onchange = async (e) => {
+      try {
+        const f = e.target.files[0];
+        if (!f) return;
+        if (f.size > 10000)
+          throw new Error("Kit trop volumineux (10 Ko maximum).");
+        const envelope = JSON.parse(await f.text());
+        if (envelope.type !== "vem-brand-kit" || envelope.version !== 1)
+          throw new Error("Format de kit non reconnu.");
+        const brand = M.brandKit(envelope);
+        for (const [k, v] of Object.entries(brand))
+          layer.querySelector(`[name=brand-${k}]`).value = v;
+        layer.querySelector("[data-error]").textContent =
+          "Kit chargé : cliquez sur Appliquer pour l’enregistrer.";
+      } catch (e) {
+        layer.querySelector("[data-error]").textContent = e.message;
+      }
+    };
+    layer.querySelector("[data-kit-reset]").onclick = () => {
+      change(() => {
+        delete S.doc.brand;
+      });
+      layer.remove();
+    };
+  }
   async function generator() {
     const r = await request(
       "GET",
@@ -726,7 +838,9 @@
           (x) => x.dataset.source,
         );
         change(() => {
+          const brand = S.doc.brand;
           S.doc = M.generate(S.doc.projectId, S.doc.title, S.sources, options);
+          if (brand) S.doc.brand = brand;
           S.page = 0;
           S.selected = null;
         });
@@ -1067,9 +1181,16 @@
       session = S;
     const options = dialog(
       "Préparer le PDF",
-      `<p>Texte sélectionnable, liens actifs et pagination mesurée. Les pages historiques Fabric restent des images.</p><label>Langue<select name="lang"><option value="fr">Français</option><option value="en">Anglais (traduction du texte descriptif)</option></select></label><p>Le PDF s’enregistre via la boîte d’impression du navigateur. Il peut ensuite être ajouté aux fichiers du projet.</p>`,
+      `<p>Texte sélectionnable, liens actifs et pagination mesurée. Les pages historiques Fabric restent des images.</p><label>Langue<select name="lang"><option value="fr">Français</option><option value="en">Anglais (traduction du texte descriptif)</option></select></label><p>Le PDF s’enregistre via la boîte d’impression du navigateur. Il peut ensuite être ajouté aux fichiers du projet.</p><fieldset><legend>Pages à exporter</legend>${snapshot.pages.map((p, i) => `<label><input type="checkbox" data-export-page="${i}" checked> ${i + 1} · ${E(p.title)}</label>`).join("")}</fieldset>`,
       async (l) => {
         const lang = l.querySelector("[name=lang]").value;
+        const indices = new Set(
+          [...l.querySelectorAll("[data-export-page]:checked")].map((n) =>
+            Number(n.dataset.exportPage),
+          ),
+        );
+        if (!indices.size) throw new Error("Sélectionnez au moins une page.");
+        snapshot.pages = snapshot.pages.filter((p, i) => indices.has(i));
         if (lang === "en") {
           // Translate prose only. Names, addresses, quantities, times and statuses stay sourced.
           const targets = [];
@@ -1146,7 +1267,7 @@
             width = wide ? 1120 : 794,
             height = wide ? 630 : 1123;
           const style = doc.createElement("style");
-          style.textContent = `body{margin:0;background:#dfe3e9}.bn.bn-print{position:static;display:block;background:none;padding:20px}.bn-print .bn-paper{width:${width}px!important;max-width:none;height:${height}px;margin:0 auto 20px;padding:35px;overflow:hidden;position:relative;box-sizing:border-box}.bn-print footer{position:absolute;bottom:20px;left:35px;right:35px}.bn-print .bn-page-content{height:${height - 190}px;overflow:hidden}.bn-print .bn-block{font-size:16px}.bn-print h1{font-size:30px;margin:12px 0 18px}.bn-print .bn-fields{grid-template-columns:${wide ? "repeat(2,minmax(0,1fr))" : "1fr"}}.bn-print img{max-height:${height - 260}px;max-width:100%}.bn-print .bn-block h2{font-size:20px}.bn-print .bn-source{font-size:9px}@page{size:${wide ? "296.33mm 166.69mm" : "A4 portrait"};margin:0}@media print{body{background:white}.bn.bn-print{padding:0}.bn-print .bn-paper{margin:0;box-shadow:none;break-after:page}.bn-print .bn-paper:last-child{break-after:auto}}`;
+          style.textContent = `body{margin:0;background:#dfe3e9}.bn.bn-print{position:static;display:block;background:none;padding:20px}.bn-print .bn-paper{width:${width}px!important;max-width:none;height:${height}px;margin:0 auto 20px;padding:35px;overflow:hidden;position:relative;box-sizing:border-box}.bn-print footer{position:absolute;bottom:20px;left:35px;right:35px}.bn-print .bn-page-content{height:${height - 190}px;overflow:hidden}.bn-print .bn-block{font-size:16px}.bn-print h1{font-size:30px;margin:12px 0 18px}.bn-print .bn-fields{grid-template-columns:${wide ? "repeat(2,minmax(0,1fr))" : "1fr"}}.bn-print .bn-photo-frame{max-width:calc(${height - 320}px * var(--photo-ratio, 1));margin:auto}.bn-print img{max-height:${height - 260}px;max-width:100%}.bn-print .bn-block h2{font-size:20px}.bn-print .bn-source{font-size:9px}@page{size:${wide ? "296.33mm 166.69mm" : "A4 portrait"};margin:0}@media print{body{background:white}.bn.bn-print{padding:0}.bn-print .bn-paper{margin:0;box-shadow:none;break-after:page}.bn-print .bn-paper:last-child{break-after:auto}}`;
           doc.head.append(style);
           await doc.fonts.ready;
           const host = doc.querySelector(".bn-print");
@@ -1203,6 +1324,16 @@
               if (container.scrollHeight <= container.clientHeight) continue;
               // Oversized single block: reflow as measured field fragments with repeated heading.
               node.remove();
+              const photo = node.querySelector(".bn-photo-frame");
+              if (photo) {
+                const part = doc.createElement("section");
+                part.className = "bn-block";
+                part.append(node.querySelector("h2").cloneNode(true), photo);
+                container.append(part);
+                if (container.scrollHeight > container.clientHeight)
+                  throw new Error("Image ou titre trop grand : " + b.title);
+                container = newPage(p, true);
+              }
               const fields = [
                 ...node.querySelectorAll(
                   ".bn-field,.bn-annotation,.bn-legacy,.bn-tsv tr",

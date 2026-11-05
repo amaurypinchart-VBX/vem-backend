@@ -134,7 +134,9 @@ app.post("/api/v1/briefings/b/publish", (req, res) => {
   pub.push(v);
   res.json({ success: true, data: v });
 });
-app.get("/blank", (req,res)=>res.send("<!doctype html><html><body></body></html>"));
+app.get("/blank", (req, res) =>
+  res.send("<!doctype html><html><body></body></html>"),
+);
 app.get("/demo", (req, res) =>
   res.send(
     '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/briefing-next.css"></head><body><script>function toast(){};function loadDetailBriefing(){};function openChecklistFull(){}</script><script src="/js/briefing-next-model.js"></script><script src="/js/briefing-next.js"></script><script>openBriefingNext("b")</script></body></html>',
@@ -217,6 +219,24 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       );
       await page.setViewportSize({ width: 1550, height: 1000 });
       await page.locator("[data-action=preview]").click();
+      // Persisted brand and non-destructive crop must survive reload and print.
+      await page.locator("[data-action=brand]").click();
+      await page.locator("[name=brand-name]").fill("ACME QA");
+      await page.locator("[data-submit]").click();
+      await page.locator("main .bn-photo-frame").first().click();
+      await page.locator("[data-image=ratio]").selectOption("portrait");
+      await page.locator("[data-image=x]").fill("20");
+      await page.locator("[data-image=x]").dispatchEvent("change");
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      assert.equal(row.document.brand.name, "ACME QA");
+      assert.equal(
+        row.document.pages.flatMap((p) => p.blocks).find((b) => b.image).image
+          .x,
+        20,
+      );
       await page.locator("[data-doc=format]").selectOption("a4");
       await page.locator("[data-action=save]").click();
       const exportStart = Date.now();
@@ -242,23 +262,62 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       const text = await frame.locator("body").innerText();
       for (let i = 1; i <= 50; i++)
         assert.ok(text.includes("Action " + i), "Missing action " + i);
+      assert.equal(await frame.locator(".bn-photo-frame").count(), 20);
+      assert.ok(
+        (await frame.locator(".bn-kicker").first().innerText()).includes(
+          "ACME QA",
+        ),
+      );
       const html = await frame.content();
       const printPage = await browser.newPage();
-      await printPage.goto("http://127.0.0.1:" + server.address().port + "/blank");
+      await printPage.goto(
+        "http://127.0.0.1:" + server.address().port + "/blank",
+      );
       await printPage.setContent(
         html.replace(
           'href="/css/briefing-next.css"',
           `href="http://127.0.0.1:${server.address().port}/css/briefing-next.css"`,
         ),
       );
-      assert.equal(await printPage.locator("header,nav,aside").count(),0);
-      assert.equal(await printPage.locator(".bn-paper").count(),pages);
+      assert.equal(await printPage.locator("header,nav,aside").count(), 0);
+      assert.equal(await printPage.locator(".bn-paper").count(), pages);
       await printPage.pdf({
         path: path.join(out, "demo-briefing-a4.pdf"),
         preferCSSPageSize: true,
         printBackground: true,
       });
       await printPage.close();
+      await page.getByRole("button", { name: "Fermer l’aperçu" }).click();
+      // Wide layout and selective export use the same immutable snapshot.
+      await page.locator("[data-doc=format]").selectOption("wide");
+      await page.locator("[data-action=export]").click();
+      await page
+        .locator("[data-export-page]")
+        .evaluateAll((nodes) => nodes.forEach((n, i) => (n.checked = i === 0)));
+      await page.locator("[data-submit]").click();
+      await page
+        .getByRole("button", {
+          name: "Imprimer / Enregistrer en PDF",
+          exact: true,
+        })
+        .waitFor({ timeout: 30000 });
+      const wideFrame = page.frames().find((f) => f !== page.mainFrame());
+      assert.equal(await wideFrame.locator(".bn-photo-frame").count(), 1);
+      assert.ok(
+        (await wideFrame.locator("body").innerText()).includes("Action 1"),
+      );
+      assert.ok(
+        !(await wideFrame.locator("body").innerText()).includes("Action 50"),
+      );
+      assert.equal(
+        await wideFrame
+          .locator(".bn-page-content")
+          .evaluateAll(
+            (nodes) =>
+              nodes.filter((n) => n.scrollHeight > n.clientHeight + 1).length,
+          ),
+        0,
+      );
       await page.getByRole("button", { name: "Fermer l’aperçu" }).click();
       // System paste must reach the paste event, not be swallowed by editor shortcuts.
 
@@ -300,7 +359,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         fixturePages: 25,
         availableImages: 20,
         checks:
-          "save/reopen, theme, refresh, annotation, mobile, A4 pagination, all tasks, native TSV paste, 409 conflict",
+          "save/reopen, theme, refresh, annotation, mobile, brand, photo focal crop, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
         limitations:
           "No PostgreSQL, live auth, Cloudinary, real translation or production data in this browser harness.",
       };
