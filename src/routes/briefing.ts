@@ -2,7 +2,48 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { generateBriefingDraft } from '../services/briefingAI';
 
+import { documentSchema, validateSources } from '../services/briefingDocument';
+import { briefingSources } from '../services/briefingSources';
+import { AuthRequest } from '../middleware/auth';
+import { randomUUID } from 'crypto';
 const router = Router();
+router.get('/project/:projectId/sources', async (req: AuthRequest, res, next) => {
+  try { res.json({ success:true, data:await briefingSources(req.params.projectId), permissions: { write:!!req.access?.write, checklists:!!req.access?.write || !!req.access?.grants.includes('checklists') } }); }
+  catch(e) { next(e); }
+});
+router.put('/:id/document', async (req, res, next) => {
+  try {
+    if (!Number.isInteger(req.body.revision) || req.body.revision < 0) return res.status(400).json({success:false,error:'Révision requise'});
+    if (Buffer.byteLength(JSON.stringify(req.body.document || {})) > 8 * 1024 * 1024) return res.status(413).json({success:false,error:'Document trop volumineux (8 Mo maximum)'});
+    const parsed = documentSchema.safeParse(req.body.document);
+    if (!parsed.success) return res.status(400).json({success:false,error:'Document invalide',details:parsed.error.flatten()});
+    const db = prisma as any;
+    const before = await db.briefing.findUnique({where:{id:req.params.id}});
+    if (!before) return res.status(404).json({success:false,error:'Briefing introuvable'});
+    if (parsed.data.projectId !== before.projectId) return res.status(403).json({success:false,error:'Projet incorrect'});
+    try { validateSources(parsed.data, await briefingSources(before.projectId), before.document); }
+    catch { return res.status(403).json({success:false,error:'Source étrangère ou inaccessible'}); }
+    const result = await db.briefing.updateMany({where:{id:before.id,revision:req.body.revision},data:{document:parsed.data,title:parsed.data.title,revision:{increment:1}}});
+    if (!result.count) return res.status(409).json({success:false,error:'Une autre session a modifié ce briefing. Vos changements restent dans cet onglet.'});
+    res.json({success:true,data:{revision:req.body.revision+1}});
+  } catch(e) { next(e); }
+});
+router.post('/:id/publish', async (req, res, next) => {
+  try {
+    const db = prisma as any;
+    const b = await db.briefing.findUnique({where:{id:req.params.id}});
+    if (!b?.document) return res.status(400).json({success:false,error:'Enregistrez le document avant diffusion'});
+    if (req.body.revision !== b.revision) return res.status(409).json({success:false,error:'Révision différente, rechargez avant diffusion'});
+    // No update/delete API: a published snapshot is immutable. Retries are idempotent.
+    const publication = await db.briefingPublication.upsert({where:{briefingId_revision:{briefingId:b.id,revision:b.revision}},
+      create:{id:randomUUID(),briefingId:b.id,revision:b.revision,document:b.document},update:{}});
+    res.json({success:true,data:publication});
+  } catch(e) { next(e); }
+});
+router.get('/:id/publications', async (req,res,next) => {
+  try { res.json({success:true,data:await (prisma as any).briefingPublication.findMany({where:{briefingId:req.params.id},orderBy:{createdAt:'desc'}})}); }
+  catch(e) { next(e); }
+});
 
 // ═══════════════════════════════════════════════════════════
 // LISTE des briefings d'un projet
@@ -19,6 +60,7 @@ router.get('/project/:projectId', async (req: Request, res: Response) => {
         projectId: true,
         title: true,
         studioSlides: true,
+        document: true,
         slides: true,
         createdAt: true,
         updatedAt: true,
@@ -35,8 +77,8 @@ router.get('/project/:projectId', async (req: Request, res: Response) => {
         id: b.id,
         projectId: b.projectId,
         title: b.title || 'Briefing sans titre',
-        mode: hasStudio ? 'studio' : 'classic',
-        nbSlides,
+        mode: (b as any).document ? 'next' : hasStudio ? 'studio' : 'classic',
+        nbSlides: (b as any).document?.pages?.length || nbSlides,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
       };
@@ -114,11 +156,15 @@ router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { title, slides, studioSlides } = req.body;
-    const data: any = {};
+    const current = await (prisma as any).briefing.findUnique({where:{id}});
+    if (current?.document) return res.status(409).json({success:false,error:'Ce briefing est édité dans Studio Next. Créez une copie pour modifier l’original.'});
+    const data: any = { revision: { increment: 1 } };
     if (title !== undefined) data.title = title;
     if (slides !== undefined) data.slides = slides;
     if (studioSlides !== undefined) data.studioSlides = studioSlides;
-    const brief = await prisma.briefing.update({ where: { id }, data });
+    const written = await (prisma as any).briefing.updateMany({ where: { id, revision: current?.revision }, data });
+    if (!written.count) return res.status(409).json({success:false,error:'Briefing modifié dans une autre session'});
+    const brief = await prisma.briefing.findUnique({where:{id}});
     res.json({ success: true, data: brief });
   } catch (e: any) {
     console.error('[briefings patch]', e);

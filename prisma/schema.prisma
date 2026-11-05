@@ -894,6 +894,9 @@ model Briefing {
   title        String?
   slides       Json     @default("[]")
   studioSlides Json?    @map("studio_slides")
+  document     Json?
+  revision     Int      @default(0)
+  publications BriefingPublication[]
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -1403,4 +1406,15 @@ model InfoRequestItem {
 
   @@index([requestId])
   @@map("info_request_items")
+}
+
+model BriefingPublication {
+  id String @id @default(uuid())
+  briefingId String @map("briefing_id")
+  revision Int
+  document Json
+  createdAt DateTime @default(now()) @map("created_at")
+  briefing Briefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
+  @@unique([briefingId, revision])
+  @@map("briefing_publications")
 }

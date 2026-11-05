@@ -1580,4 +1580,18 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] info_requests : ${e.message}`);
   }
+  await migrateBriefingNext();
+}
+
+/** Additive and repeatable; exported for the PostgreSQL integration test. */
+export async function migrateBriefingNext() {
+  // Additive Studio Next migration. Fail startup if persistence cannot be initialized.
+  await prisma.$executeRawUnsafe('ALTER TABLE "briefings" ADD COLUMN IF NOT EXISTS "document" JSONB');
+  await prisma.$executeRawUnsafe('ALTER TABLE "briefings" ADD COLUMN IF NOT EXISTS "revision" INTEGER NOT NULL DEFAULT 0');
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "briefing_publications" (
+    "id" TEXT PRIMARY KEY, "briefing_id" TEXT NOT NULL REFERENCES "briefings"("id") ON DELETE CASCADE,
+    "revision" INTEGER NOT NULL, "document" JSONB NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE ("briefing_id", "revision"))`);
+
 }

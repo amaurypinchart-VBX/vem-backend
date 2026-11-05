@@ -141,7 +141,7 @@ async function loadDetailBriefing(projectId) {
     ` : `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
         ${briefings.map(b => {
-          const modeLabel = b.mode === 'studio' ? '🎨 Studio' : '📝 Classique';
+          const modeLabel = b.mode === 'next' ? 'Studio Next' : b.mode === 'studio' ? '🎨 Studio' : '📝 Classique';
           const modeBg = b.mode === 'studio' ? 'linear-gradient(135deg,#0a2540,#1a3a60)' : 'var(--bg3)';
           const modeColor = b.mode === 'studio' ? '#fff' : 'var(--text2)';
           const dt = new Date(b.updatedAt).toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'short'});
@@ -218,6 +218,7 @@ async function openBriefingEditor(briefingId) {
   }
 
   CURRENT_BRIEFING = briefRes.data;
+  if (CURRENT_BRIEFING.document) { await openBriefingNext(briefingId); return; }
 
   // Normalise les 2 champs
   if (!Array.isArray(CURRENT_BRIEFING.slides)) CURRENT_BRIEFING.slides = [];
@@ -282,6 +283,7 @@ function renderBriefing() {
         <input class="input" id="brf-title" placeholder="Nom du briefing…" value="${(CURRENT_BRIEFING.title||'').replace(/"/g,'&quot;')}" style="max-width:280px;" onchange="CURRENT_BRIEFING.title=this.value">
       </div>
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-primary btn-sm" onclick="openBriefingNext(CURRENT_BRIEFING.id)">Studio Next</button>
         <button class="btn btn-outline btn-sm" onclick="briefingStudioStart()" title="Nouveau mode : éditeur visuel type Canva" style="background:linear-gradient(135deg,#0a2540,#1a3a60);color:#fff;border:none;">🎨 Studio</button>
         <button class="btn btn-outline btn-sm" onclick="printBriefing()">🖨️ Imprimer</button>
         <button class="btn btn-primary btn-sm" onclick="saveBriefing()">💾 Enregistrer</button>
