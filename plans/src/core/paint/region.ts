@@ -3,6 +3,7 @@
 // proche), surfaces ; contours 2D des triangles projetés et point le plus intérieur d'un contour (pour le repère).
 import type { FaceSelector, Vec3 } from './types';
 import { DEFAULT_SIDE_DEG } from './types';
+import '../clipperFix';
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 
 /** Triangles d'une pièce : positions (x, y, z par sommet, mm) et indices (3 par triangle). */

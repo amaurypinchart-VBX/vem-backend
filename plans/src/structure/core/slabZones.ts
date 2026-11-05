@@ -7,6 +7,7 @@
 // cas des combinaisons) + son bloc + ses plaques + sa part des plaques de roulage / madriers ; charge de la zone =
 // poids / surface ≤ charge admissible. L'ensemble = charge verticale totale (combinaison la plus lourde) + calage,
 // sur toute l'emprise. Fonctions pures ; N, mm, N/mm².
+import '../../core/clipperFix';
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { CalageResult, SupportCheck } from './calage';
 import type { P2 } from './estimate';
