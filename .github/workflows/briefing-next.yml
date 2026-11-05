@@ -1,0 +1,40 @@
+name: Briefing Studio Next
+on:
+  pull_request:
+    paths:
+      - 'public/js/*briefing*'
+      - 'public/css/briefing-next.css'
+      - 'src/**'
+      - 'prisma/**'
+      - 'tests/briefingNext*'
+      - 'package*.json'
+      - '.github/workflows/briefing-next.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:briefing-next
+      - run: npx prisma validate
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/briefingNext.browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: briefing-next-browser-qa
+          path: |
+            docs/briefing-next/*.png
+            docs/briefing-next/*.pdf
+            docs/briefing-next/qa-browser.json
+          if-no-files-found: ignore

@@ -222,6 +222,11 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'POST', p: '/:id/send', need: 'write', proj: async (p) => [await look.visit(p.id)] },
   ],
   briefings: [
+    { m: 'GET', p: '/project/:projectId/sources', need: 'read', proj: (p) => [p.projectId] },
+    { m: 'PUT', p: '/:id/document', need: 'write', proj: async (p) => [await look.briefing(p.id)] },
+    { m: 'POST', p: '/:id/publish', need: 'write', proj: async (p) => [await look.briefing(p.id)] },
+    { m: 'GET', p: '/:id/publications', need: 'read', proj: async (p) => [await look.briefing(p.id)] },
+
     { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },
     { m: 'POST', p: '/project/:projectId', need: 'write', proj: (p) => [p.projectId] },
     { m: 'POST', p: '/project/:projectId/generate', need: 'write', proj: (p) => [p.projectId] },

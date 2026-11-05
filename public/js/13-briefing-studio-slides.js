@@ -619,8 +619,32 @@ async function brfTranslateSlideTexts(canvas, targetLang) {
     return translations.length;
   } catch (e) {
     console.error('[brf translate]', e);
-    return 0;
+    throw new Error('Traduction impossible : ' + e.message);
   }
+}
+async function brfLoadIsolatedSlide(canvas, json, logoUrl) {
+  await new Promise((resolve, reject) => {
+    let failed = false;
+    const timer = setTimeout(() => reject(new Error('Chargement de la page expiré')), 30000);
+    canvas.loadFromJSON(json || { objects: [] }, () => {
+      clearTimeout(timer);
+      failed ? reject(new Error('Une image de la page est indisponible')) : resolve();
+    }, (serialized, object) => { if (serialized.type === 'image' && !object) failed = true; });
+  });
+  if (logoUrl) await new Promise((resolve, reject) => {
+    const image = new Image();
+    const timer = setTimeout(() => reject(new Error('Chargement du logo expiré')), 20000);
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      clearTimeout(timer);
+      const logo = new fabric.Image(image);
+      logo.scaleToWidth(BRF_CANVAS_W * 0.20);
+      logo.set({ left: BRF_CANVAS_W - logo.getScaledWidth() - 30, top: BRF_CANVAS_H - logo.getScaledHeight() - 30, opacity: 0.25, selectable: false, evented: false });
+      canvas.setBackgroundImage(logo, resolve);
+    };
+    image.onerror = () => { clearTimeout(timer); reject(new Error('Logo indisponible pour l’export')); };
+    image.src = logoUrl;
+  });
 }
 async function briefingStudioExportPDF(btn) {
   saveCurrentSlideJson();
@@ -640,37 +664,27 @@ async function briefingStudioExportPDF(btn) {
     const imgW = pageW;
     const imgH = pageW * (BRF_CANVAS_H / BRF_CANVAS_W);
     const offsetY = (pageH - imgH) / 2;
-    const curIdx = BRF_STUDIO.curIdx;
+    const exportSlides = JSON.parse(JSON.stringify(BRF_STUDIO.slides));
+    const exportLogo = BRF_STUDIO.logoUrl;
+    await document.fonts.ready;
 
     let totalTranslated = 0;
 
-    for (let i = 0; i < BRF_STUDIO.slides.length; i++) {
-      if (btn) btn.innerHTML = `⏳ Slide ${i + 1}/${BRF_STUDIO.slides.length}...`;
-
-      BRF_STUDIO.curIdx = i;
-      loadSlideIntoCanvas(i);
-
-      // attendre rendu initial (images, background, logo)
-      await new Promise(r => setTimeout(r, 1000));
-
-      // 2. Traduction IA si lang === 'en'
-      if (lang === 'en') {
-        if (btn) btn.innerHTML = `🌐 Traduction slide ${i + 1}/${BRF_STUDIO.slides.length}...`;
-        const n = await brfTranslateSlideTexts(BRF_STUDIO.fabricCanvas, lang);
-        totalTranslated += n;
-        // Petit délai pour que le canvas se re-rende après les set('text')
-        await new Promise(r => setTimeout(r, 300));
-      }
-
-      // 3. Export du canvas
-      const dataUrl = BRF_STUDIO.fabricCanvas.toDataURL({ format: 'jpeg', quality: 0.9, multiplier: 2 });
-      if (i > 0) pdf.addPage();
-      pdf.addImage(dataUrl, 'JPEG', 0, offsetY, imgW, imgH);
+    for (let i = 0; i < exportSlides.length; i++) {
+      if (btn) btn.textContent = `Export ${i + 1}/${exportSlides.length}…`;
+      // Isolated canvas: failures and translations cannot alter the live editor.
+      const canvas = new fabric.StaticCanvas(document.createElement('canvas'), {
+        width: BRF_CANVAS_W, height: BRF_CANVAS_H, backgroundColor: '#ffffff',
+      });
+      try {
+        await brfLoadIsolatedSlide(canvas, exportSlides[i].json, exportLogo);
+        if (lang === 'en') totalTranslated += await brfTranslateSlideTexts(canvas, lang);
+        canvas.renderAll();
+        const dataUrl = canvas.toDataURL({ format: 'jpeg', quality: 0.95, multiplier: 2 });
+        if (i > 0) pdf.addPage();
+        pdf.addImage(dataUrl, 'JPEG', 0, offsetY, imgW, imgH);
+      } finally { canvas.dispose(); }
     }
-
-    // 4. Restaurer la slide originale (la traduction n'est pas persistée — on recharge le JSON original)
-    BRF_STUDIO.curIdx = curIdx;
-    loadSlideIntoCanvas(curIdx);
 
     // 5. Save PDF (téléchargement local)
     const safeTitle = (BRF_STUDIO.title || 'briefing').replace(/[^\w-]/g, '_');
