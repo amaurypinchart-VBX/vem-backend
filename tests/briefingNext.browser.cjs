@@ -254,6 +254,13 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         .locator("main .bn-photo-frame")
         .first()
         .scrollIntoViewIfNeeded();
+      await page.locator("aside fieldset").scrollIntoViewIfNeeded();
+      assert.ok(
+        await page
+          .locator("main .bn-photo-frame")
+          .first()
+          .evaluate((n) => n.getBoundingClientRect().height <= 501),
+      );
       await page.screenshot({
         path: path.join(out, "studio-next-brand-crop.png"),
       });

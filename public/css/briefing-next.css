@@ -424,6 +424,8 @@
 }
 
 .bn-photo-frame {
+  max-width: min(100%, calc(500px * var(--photo-ratio, 2)));
+  margin: auto;
   grid-column: 1 / -1;
   width: 100%;
   overflow: hidden;
