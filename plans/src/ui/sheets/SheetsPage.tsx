@@ -33,6 +33,7 @@ import type { PaintBundle } from './SheetEditor';
 import { usePaint } from './usePaint';
 import { paintContext } from '../../core/paint/resolve';
 import { paintScene } from '../../linework/paintScene';
+import { hasExteriorSurvey, prepareExteriorSurvey } from '../../linework/paintExterior';
 import type { PaintSettings } from '../../core/paint/types';
 import type { ColorDraft } from './ColorDialog';
 import type { PaintColor } from '../../core/paint/types';
@@ -68,10 +69,15 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     if (lowPowerDevice()) {
       b.maxEntries = 24;
       b.maxBytes = 120e6;
+      b.maxPaintBytes = 30e6;
     } else if (bigModel(scene.index)) {
       b.maxEntries = 40;
       b.maxBytes = 250e6;
-    } else b.maxBytes = 600e6;
+      b.maxPaintBytes = 80e6;
+    } else {
+      b.maxBytes = 600e6;
+      b.maxPaintBytes = 200e6;
+    }
     return b;
   }, [scene, provider]);
   useEffect(() => () => bank.dispose(), [bank]);
@@ -100,10 +106,25 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   // ─── peinture du projet : résolue sur la scène, dessinée par la banque des vues ───
   const paintState = usePaint(model?.id, paint, onPaintSaved);
   const paintCtx = useMemo(() => paintContext(scene.index), [scene]);
+  // « côtés extérieurs » : relevé des faces extérieures fait d'abord par tranches (plusieurs secondes d'un bloc sur un
+  // très gros modèle = « Page ne répondant pas »), la peinture est résolue ensuite
+  const needsSurvey = paintState.paint.zones.some((z) => z.target.scope === 'exterior');
+  const [surveyTick, setSurveyTick] = useState(0);
+  const surveyReady = !needsSurvey || hasExteriorSurvey(scene, glassTest);
+  useEffect(() => {
+    if (surveyReady) return;
+    let alive = true;
+    void prepareExteriorSurvey(scene, paintCtx, glassTest)
+      .catch((e) => console.error('Relevé des côtés extérieurs', e))
+      .finally(() => alive && setSurveyTick((n) => n + 1));
+    return () => {
+      alive = false;
+    };
+  }, [scene, paintCtx, glassTest, surveyReady, framesVersion]);
   const painted = useMemo(
-    () => (paintState.paint.zones.length ? paintScene(scene, paintState.paint, paintCtx, glassTest) : null),
+    () => (paintState.paint.zones.length && surveyReady ? paintScene(scene, paintState.paint, paintCtx, glassTest) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scene, paintCtx, paintState.version, glassTest, framesVersion],
+    [scene, paintCtx, paintState.version, glassTest, framesVersion, surveyReady, surveyTick],
   );
   useEffect(() => {
     bank.setPaint(painted ? { painted, colors: new Map(paintState.paint.colors.map((c) => [c.id, c])), version: String(paintState.version), isGlass: glassTest } : null);

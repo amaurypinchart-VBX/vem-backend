@@ -11,7 +11,7 @@ import { defaultExclude, sideText } from '../../core/paint/exterior';
 import { colorCode } from '../../core/paint/ops';
 import type { GlassTest } from '../../linework/packets';
 import type { ExteriorSurvey } from '../../linework/paintExterior';
-import { exteriorAreas, exteriorSurvey } from '../../linework/paintExterior';
+import { exteriorAreas, prepareExteriorSurvey } from '../../linework/paintExterior';
 
 const m2 = (v: number) => `${v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`;
 
@@ -41,15 +41,17 @@ export function ExteriorDialog({
   const [error, setError] = useState('');
   // relevé des faces extérieures (une fois par modèle) : après l'affichage du dialogue, la page ne se fige pas sans rien
   useEffect(() => {
-    const t = setTimeout(() => {
-      try {
-        setSurvey(exteriorSurvey(scene, ctx, glassTest));
-      } catch (e) {
+    let alive = true;
+    // par tranches : la page reste utilisable pendant le relevé d'un très gros modèle
+    prepareExteriorSurvey(scene, ctx, glassTest)
+      .then((sv) => alive && setSurvey(sv))
+      .catch((e) => {
         console.error('Côtés extérieurs', e);
-        setError((e as Error).message || String(e));
-      }
-    }, 30);
-    return () => clearTimeout(t);
+        if (alive) setError((e as Error).message || String(e));
+      });
+    return () => {
+      alive = false;
+    };
   }, [scene, ctx, glassTest]);
   const [colorId, setColorId] = useState<string | null>(activeColor);
   // une couleur créée depuis ce dialogue devient la couleur active : on la prend

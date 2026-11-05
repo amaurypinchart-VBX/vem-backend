@@ -178,3 +178,26 @@ describe('export PDF', () => {
     if (process.env.PDF_OUT) writeFileSync(process.env.PDF_OUT.replace(/\.pdf$/, '-traits.pdf'), bytes);
   });
 });
+
+describe('traits directs : plusieurs polylignes dans une (séparées par NaN)', () => {
+  it('un « m » à chaque reprise après NaN, rien d’autre', async () => {
+    const lines = new PdfLines();
+    const marker = lines.add([Float64Array.from([0, 0, 10, 0, NaN, NaN, 20, 20, 30, 20, 30, 30])]);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"><path d="${marker}" stroke="#000" fill="none"/></svg>`;
+    const pdf = await buildPdf([{ paper: 'A3', svg, size: { w: 100, h: 100 } }], {}, { title: 't' }, undefined, lines);
+    const raw = Buffer.from(pdf.output('arraybuffer'));
+    const text = raw.toString('latin1');
+    const streams = [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)].map((m) => {
+      const b = Buffer.from(m[1], 'latin1');
+      try {
+        return inflateSync(b).toString('latin1');
+      } catch {
+        return m[1];
+      }
+    });
+    const page = streams.find((x) => x.includes(' m\n') || x.includes(' m ')) ?? '';
+    expect(page.match(/ m\n/g)?.length).toBe(2);
+    expect(page.match(/ l\n/g)?.length).toBe(3);
+    expect(page).not.toMatch(/NaN|-98765/);
+  });
+});
