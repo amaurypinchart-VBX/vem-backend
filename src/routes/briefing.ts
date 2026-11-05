@@ -6,7 +6,43 @@ import { documentSchema, validateSources } from '../services/briefingDocument';
 import { briefingSources } from '../services/briefingSources';
 import { AuthRequest } from '../middleware/auth';
 import { randomUUID } from 'crypto';
+import { isDeepStrictEqual } from 'util';
+import { briefingTemplateSchema } from '../services/briefingDocument';
+import { pdfPageCount } from '../services/briefingPdf';
 const router = Router();
+
+router.get('/project/:projectId/templates',async(req:AuthRequest,res,next)=>{
+  try {if(!req.user)return res.status(401).json({error:'Authentification requise'});
+    res.json({success:true,data:await (prisma as any).briefingTemplate.findMany({where:{ownerId:req.user.id},orderBy:{createdAt:'desc'}})});
+  }catch(e){next(e);}
+});
+router.put('/project/:projectId/templates/:templateId',async(req:AuthRequest,res,next)=>{
+  try {if(!req.user)return res.status(401).json({error:'Authentification requise'});
+    if(!/^[a-zA-Z0-9-]{1,150}$/.test(req.params.templateId)||typeof req.body.name!=='string'||!req.body.name.trim()||req.body.name.length>120)return res.status(400).json({error:'Nom ou identifiant invalide'});
+    if(Buffer.byteLength(JSON.stringify(req.body.blueprint||{}))>1024*1024)return res.status(413).json({error:'Modèle supérieur à 1 Mo'});
+    const parsed=briefingTemplateSchema.safeParse(req.body.blueprint);
+    if(!parsed.success)return res.status(400).json({error:'Modèle non portable ou invalide'});
+    // Immutable create/retry: never overwrite another owner's model or a prior revision.
+    const data=await (prisma as any).briefingTemplate.upsert({where:{id:req.params.templateId},create:{id:req.params.templateId,ownerId:req.user.id,name:req.body.name.trim(),blueprint:parsed.data},update:{}});
+    if(data.ownerId!==req.user.id)return res.status(403).json({error:'Modèle inaccessible'});
+    if(!isDeepStrictEqual(data.blueprint,parsed.data)||data.name!==req.body.name.trim())return res.status(409).json({error:'Identifiant déjà utilisé : créez un nouveau modèle'});
+    res.json({success:true,data});
+  }catch(e){next(e);}
+});
+router.delete('/project/:projectId/templates/:templateId',async(req:AuthRequest,res,next)=>{
+  try {if(!req.user)return res.status(401).json({error:'Authentification requise'});
+    const result=await (prisma as any).briefingTemplate.deleteMany({where:{id:req.params.templateId,ownerId:req.user.id}});
+    if(!result.count)return res.status(404).json({error:'Modèle introuvable'});res.json({success:true});
+  }catch(e){next(e);}
+});
+router.get('/project/:projectId/pdf/:fileId',async(req:AuthRequest,res,next)=>{
+  try {
+    const file=await prisma.projectFile.findFirst({where:{id:req.params.fileId,projectId:req.params.projectId}});
+    if(!file)return res.status(404).json({error:'Fichier introuvable'});
+    try{res.json({success:true,data:{pages:await pdfPageCount(file.fileUrl),url:file.fileUrl,name:file.fileName}});}
+    catch(e:any){res.status(422).json({error:e.message || 'PDF illisible ou protégé'});}
+  }catch(e){next(e);}
+});
 router.get('/project/:projectId/sources', async (req: AuthRequest, res, next) => {
   try { res.json({ success:true, data:await briefingSources(req.params.projectId), permissions: { write:!!req.access?.write, checklists:!!req.access?.write || !!req.access?.grants.includes('checklists') } }); }
   catch(e) { next(e); }

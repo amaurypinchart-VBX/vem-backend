@@ -543,3 +543,6 @@
     display: none !important;
   }
 }
+
+.bn-pdf-page {max-width:100%;background:white;}
+.bn-pdf-page img {width:auto;max-width:100%;height:auto;}

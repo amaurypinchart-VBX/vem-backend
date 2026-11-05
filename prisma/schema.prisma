@@ -1418,3 +1418,13 @@ model BriefingPublication {
   @@unique([briefingId, revision])
   @@map("briefing_publications")
 }
+
+model BriefingTemplate {
+  id String @id
+  ownerId String @map("owner_id")
+  name String
+  blueprint Json
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([ownerId])
+  @@map("briefing_templates")
+}

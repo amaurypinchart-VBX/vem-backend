@@ -83,7 +83,9 @@ sources.push({
   id: "pdf",
   block: "plan",
   title: "Plan PDF de démonstration (3 pages)",
-  fields: { url: "/demo-plan.pdf" },
+  fields: {
+    url: "https://res.cloudinary.com/demo/image/upload/v1/briefing.pdf",
+  },
 });
 const d = M.generate("p", "DÉMONSTRATION · Briefing chantier", sources, {
   selected: sources.filter((s) => s.kind === "task").map(M.key),
@@ -108,6 +110,40 @@ let row = {
     ],
   },
   pub = [];
+
+const templateRecords = [];
+app.get("/api/v1/briefings/project/p/templates", (req, res) =>
+  res.json({ success: true, data: templateRecords }),
+);
+app.put("/api/v1/briefings/project/p/templates/:id", (req, res) => {
+  const parsed =
+    require("../dist/services/briefingDocument").briefingTemplateSchema.safeParse(
+      req.body.blueprint,
+    );
+  if (!parsed.success)
+    return res.status(400).json({ error: "Modèle invalide" });
+  let t = templateRecords.find((t) => t.id === req.params.id);
+  if (!t) {
+    t = { id: req.params.id, name: req.body.name, blueprint: parsed.data };
+    templateRecords.push(t);
+  }
+  res.json({ success: true, data: t });
+});
+app.delete("/api/v1/briefings/project/p/templates/:id", (req, res) => {
+  const i = templateRecords.findIndex((t) => t.id === req.params.id);
+  if (i >= 0) templateRecords.splice(i, 1);
+  res.json({ success: true });
+});
+app.get("/api/v1/briefings/project/p/pdf/pdf", (req, res) =>
+  res.json({
+    success: true,
+    data: {
+      pages: 3,
+      url: "https://res.cloudinary.com/demo/image/upload/v1/briefing.pdf",
+      name: "Plan PDF",
+    },
+  }),
+);
 app.get("/api/v1/briefings/b", (req, res) =>
   res.json({ success: true, data: row }),
 );
@@ -161,9 +197,25 @@ if (process.env.BRIEFING_DEMO_ONLY) {
           ? { executablePath: process.env.CHROMIUM_PATH }
           : {}),
       });
-      const page = await browser.newPage({
+      const context = await browser.newContext({
         viewport: { width: 1550, height: 1000 },
       });
+      const page = await context.newPage();
+      let failPdfPage = false;
+      await context.route(
+        "https://res.cloudinary.com/demo/image/upload/**",
+        (route) => {
+          const match = route
+            .request()
+            .url()
+            .match(/pg_(\d+)/);
+          if (!match || failPdfPage) return route.abort();
+          return route.fulfill({
+            contentType: "image/svg+xml",
+            body: `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#edf0f5"/><text x="40" y="100" font-size="30">PDF — PAGE ${match[1]}</text><path d="M 60 150 H 500 V 700 H 60 Z" stroke="#000a3d" stroke-width="6" fill="none"/></svg>`,
+          });
+        },
+      );
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       const start = Date.now();
@@ -278,19 +330,32 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await prop("width", 850);
       await prop("x", 60);
       await prop("y", 40);
-      const handle=await editor.locator('[data-resize]').boundingBox();
-      await page.mouse.move(handle.x+6,handle.y+6);await page.mouse.down();await page.mouse.move(handle.x-70,handle.y+6,{steps:5});await page.mouse.up();
-      assert.equal(await editor.locator('[data-g-prop=fontSize]').inputValue(),'28');
-      assert.ok(Number(await editor.locator('[data-g-prop=width]').inputValue())<850);
+      const handle = await editor.locator("[data-resize]").boundingBox();
+      await page.mouse.move(handle.x + 6, handle.y + 6);
+      await page.mouse.down();
+      await page.mouse.move(handle.x - 70, handle.y + 6, { steps: 5 });
+      await page.mouse.up();
+      assert.equal(
+        await editor.locator("[data-g-prop=fontSize]").inputValue(),
+        "28",
+      );
+      assert.ok(
+        Number(await editor.locator("[data-g-prop=width]").inputValue()) < 850,
+      );
       await editor.locator("[data-g=add-rect]").click();
       await prop("x", 80);
       await prop("y", 380);
       await prop("width", 300);
       await prop("height", 120);
-      const rect=await editor.locator('[data-node] rect').boundingBox();
-      await page.mouse.move(rect.x+20,rect.y+20);await page.mouse.down();await page.mouse.move(rect.x+60,rect.y+40,{steps:5});await page.mouse.up();
-      assert.ok(Number(await editor.locator('[data-g-prop=x]').inputValue())>80);
-      await editor.locator('[data-g=undo]').click();
+      const rect = await editor.locator("[data-node] rect").boundingBox();
+      await page.mouse.move(rect.x + 20, rect.y + 20);
+      await page.mouse.down();
+      await page.mouse.move(rect.x + 60, rect.y + 40, { steps: 5 });
+      await page.mouse.up();
+      assert.ok(
+        Number(await editor.locator("[data-g-prop=x]").inputValue()) > 80,
+      );
+      await editor.locator("[data-g=undo]").click();
       await editor.locator("[data-g=add-marker]").click();
       await prop("x", 150);
       await prop("y", 400);
@@ -342,6 +407,62 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await page.locator("[data-action=editGraphic]").click();
       assert.equal(await editor.locator("[data-node]").count(), 4);
       await editor.locator("[data-g=cancel]").click();
+
+      // Portable template: no project prose/assets, explicit new source bindings, undo.
+      await page.locator("[data-action=templates]").click();
+      await page.locator("[name=template-name]").fill("Gabarit QA");
+      await page.locator("[data-submit]").click();
+      await page.locator(".bn-dialog-wrap").waitFor({ state: "detached" });
+      assert.equal(templateRecords.length, 1);
+      const portable = JSON.stringify(templateRecords[0].blueprint);
+      assert.ok(!portable.includes("Zone de déchargement"));
+      assert.ok(!portable.includes("/demo-image"));
+      assert.ok(!portable.includes("SCHÉMA LOGISTIQUE"));
+      await page.locator("[data-action=templates]").click();
+      await page.locator('[data-template-use="0"]').click();
+      await page.locator('[data-template-bind="0:0"]').selectOption("task:t0");
+      await page.locator("[data-submit]").click();
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      assert.equal(row.document.pages.length, 50);
+      assert.equal(row.document.pages[25].blocks[0].source.id, "t0");
+      assert.equal(row.document.pages[25].blocks[1].source, undefined);
+      await page.locator("[data-action=undo]").click();
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      assert.equal(row.document.pages.length, 25);
+      await page.locator('[data-action=page][data-index="0"]').click();
+      // A failed preview must add no partial PDF pages.
+      await page.locator("[data-action=pdfImport]").click();
+      await page.locator("[name=pdf-pages]").fill("1,3");
+      failPdfPage = true;
+      await page.locator("[data-submit]").click();
+      await page
+        .locator("[data-error]")
+        .filter({ hasText: "Aperçu indisponible" })
+        .waitFor();
+      assert.equal(row.document.pages.length, 25);
+      failPdfPage = false;
+      await page.locator("[data-submit]").click();
+      await page.locator(".bn-dialog-wrap").waitFor({ state: "detached" });
+      await page.locator("[data-action=save]").click();
+      await page.waitForFunction(() =>
+        document.querySelector(".bn-status").textContent.includes("Enregistré"),
+      );
+      assert.deepEqual(
+        row.document.pages.slice(-2).map((p) => p.blocks[0].pdf.page),
+        [1, 3],
+      );
+      await page.reload();
+      await page.locator('[data-action=page][data-index="25"]').click();
+      await page.locator(".bn-pdf-page img").waitFor();
+      await page.screenshot({
+        path: path.join(out, "studio-next-pdf-page.png"),
+      });
       await page.locator("[data-doc=format]").selectOption("a4");
       await page.locator("[data-action=save]").click();
       const exportStart = Date.now();
@@ -367,7 +488,10 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       const text = await frame.locator("body").innerText();
       for (let i = 1; i <= 50; i++)
         assert.ok(text.includes("Action " + i), "Missing action " + i);
-      assert.equal(await frame.locator(".bn-photo-frame").count(), 20);
+      assert.equal(
+        await frame.locator(".bn-photo-frame:not(.bn-pdf-page)").count(),
+        20,
+      );
       assert.ok(
         (await frame.locator(".bn-kicker").first().innerText()).includes(
           "ACME QA",
@@ -383,8 +507,11 @@ if (process.env.BRIEFING_DEMO_ONLY) {
           "Zone de déchargement à confirmer",
         ),
       );
+      assert.equal(await frame.locator(".bn-pdf-page").count(), 2);
+      assert.equal(await frame.locator('a[href$="#page=1"]').count(), 1);
+      assert.equal(await frame.locator('a[href$="#page=3"]').count(), 1);
       const html = await frame.content();
-      const printPage = await browser.newPage();
+      const printPage = await context.newPage();
       await printPage.goto(
         "http://127.0.0.1:" + server.address().port + "/blank",
       );
@@ -474,7 +601,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         fixturePages: 25,
         availableImages: 20,
         checks:
-          "save/reopen, theme, refresh, annotation, mobile, brand, photo focal crop, free graphic groups/lock/keyboard/copy/undo/persistence/vector export, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
+          "save/reopen, theme, refresh, annotation, mobile, private portable templates and explicit destination links, selected PDF pages/failure atomicity, brand, photo focal crop, free graphic groups/lock/keyboard/copy/undo/persistence/vector export, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
         limitations:
           "No PostgreSQL, live auth, Cloudinary, real translation or production data in this browser harness.",
       };

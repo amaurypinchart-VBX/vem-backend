@@ -13,6 +13,16 @@ Cette branche intègre un parcours utilisable dans l'application existante. Elle
 7. **Diffusions** enregistre une édition immuable, consultable par les personnes déjà autorisées au projet. Il n'existe aucun lien public ni route de modification d'une édition.
 8. **PDF / imprimer** prépare une copie isolée et un aperçu paginé, avec texte sélectionnable et liens. Choisir ensuite « Enregistrer en PDF » dans l'impression du navigateur, sans en-têtes/pieds de page du navigateur, avec arrière-plans activés. L'export Next ne téléverse pas automatiquement le PDF ; l'ajouter ensuite aux fichiers du projet. L'export Studio historique conserve son téléversement et utilise désormais un canevas isolé.
 
+## Modèles réutilisables et pages PDF
+
+**Mes modèles** enregistre une structure privée dans `briefing_templates`, liée au compte connecté et utilisable sur ses autres projets autorisés. Titres, textes, annotations, sources, fichiers, fonds graphiques, identifiants projet et données de marque ne sont pas copiés. Les compositions conservent leurs formes et styles ; leurs textes sont vidés et leurs repères remis à compléter. Chaque bloc lié peut être explicitement relié à une source du projet destinataire. L’ajout à la suite est proposé par défaut ; le remplacement du document reste annulable. Export/import JSON versionné, validation serveur stricte, suppression et retry idempotent sont inclus. Les modèles ne constituent pas une copie de contenu client autorisé : ce mode de copie reste à réaliser.
+
+**Pages d’un PDF** utilise les PDF déjà présents dans les fichiers du projet. Le serveur vérifie projet/fichier puis compte les pages dans le document réel avec `pdf-lib` existant. Téléchargement limité à 10 Mo, délai de 20 secondes, redirections interdites et hôte Cloudinary explicite. Il ne déduit plus la fin du document d’une erreur réseau. Le choix accepte `1, 3-5`, avec au maximum 50 pages par lot et 500 pages par document. Chaque aperçu est chargé avant l’ajout atomique des pages ; échec ou annulation conserve le briefing initial. Les pages ajoutées sont sauvegardées, exportées et liées à l’original.
+
+Limite : le rendu utilise le service PDF-vers-image Cloudinary existant, en PNG jusqu’à 2 000 px. Il requiert un PDF de type `image/upload` dont les transformations sont autorisées ; les fichiers protégés, privés non transformables ou hors Cloudinary sont refusés explicitement. Le plan intégré est rasterisé, l’original reste disponible pour sa précision vectorielle. Les règles de qualité métier ne changent pas. Aucune nouvelle dépendance de production.
+
+Migration additive : la table `briefing_templates` et son index propriétaire sont créés par `migrateBriefingNext()` au démarrage, également déclarés dans Prisma. Retour arrière : conserver la table et revenir au code antérieur ; aucune donnée existante n’est supprimée. Les modèles restent privés au compte ; partage entre collaborateurs non implémenté.
+
 ## Composition libre
 
 **+ Composition libre** ouvre un bloc vectoriel de 1000 × 600 : textes, rectangles, ellipses, flèches dans huit directions, repères numérotés et légendes. Une photo du projet peut servir de fond ; « Créer un schéma annoté » conserve la photo originale. Le fond entier est ajusté au cadre ; remplacer le fond conserve les annotations, dont les positions doivent être revérifiées.
@@ -67,8 +77,8 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 
 ## Écarts restant au cahier des charges
 
-- La composition libre concerne un bloc graphique ; les pages sémantiques restent en flux. Conversion complète des anciens objets Fabric, rotation libre, groupes imbriqués et magnétisme entre objets restent à réaliser. Les fonds Next acceptent les images ; l’import PDF reste dans le parcours historique.
-- Pas encore de bibliothèque partagée de kits de marque ou de logos, galerie photographique élaborée, modèles réutilisables entre projets, import de pages PDF en blocs Next ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
+- La composition libre concerne un bloc graphique ; les pages sémantiques restent en flux. Conversion complète des anciens objets Fabric, rotation libre, groupes imbriqués et magnétisme entre objets restent à réaliser. Les fonds graphiques Next acceptent les images ; les pages PDF disposent d’un parcours d’import séparé.
+- Pas encore de bibliothèque partagée de kits de marque ou de logos, galerie photographique élaborée, partage des modèles entre collaborateurs ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
 - Les filtres de génération ne sont pas stockés en tant que requête dynamique ; les exclusions d'IDs sont stockées. Les nouveaux éléments sont présentés à la comparaison pour décision.
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.
 - Pas de diffusion client dédiée, ni de présélection « synthèse client ». L'audience reste interne ; aucun contrôle serveur de publication client n'est promis.

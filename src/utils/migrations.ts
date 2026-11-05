@@ -1585,6 +1585,10 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
 
 /** Additive and repeatable; exported for the PostgreSQL integration test. */
 export async function migrateBriefingNext() {
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "briefing_templates" (
+    "id" TEXT PRIMARY KEY, "owner_id" TEXT NOT NULL, "name" TEXT NOT NULL,
+    "blueprint" JSONB NOT NULL, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "briefing_templates_owner_id_idx" ON "briefing_templates" ("owner_id")');
   // Additive Studio Next migration. Fail startup if persistence cannot be initialized.
   await prisma.$executeRawUnsafe('ALTER TABLE "briefings" ADD COLUMN IF NOT EXISTS "document" JSONB');
   await prisma.$executeRawUnsafe('ALTER TABLE "briefings" ADD COLUMN IF NOT EXISTS "revision" INTEGER NOT NULL DEFAULT 0');

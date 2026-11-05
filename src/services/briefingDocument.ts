@@ -48,7 +48,16 @@ const graphic = z
             fill: z.string().regex(/^#[0-9a-f]{6}$/i),
             stroke: z.string().regex(/^#[0-9a-f]{6}$/i),
             strokeWidth: z.number().min(1).max(20),
-            direction: z.enum(["left", "right", "up", "down", "ne", "se", "sw", "nw"]),
+            direction: z.enum([
+              "left",
+              "right",
+              "up",
+              "down",
+              "ne",
+              "se",
+              "sw",
+              "nw",
+            ]),
             group: id.optional(),
             locked: z.boolean().optional(),
             hidden: z.boolean().optional(),
@@ -130,6 +139,10 @@ export const documentSchema = z
                     annotation: text,
                     style: style.optional(),
                     graphic: graphic.optional(),
+                    pdf: z
+                      .object({ page: z.number().int().min(1).max(500) })
+                      .strict()
+                      .optional(),
                     image: z
                       .object({
                         ratio: z.enum([
@@ -166,6 +179,15 @@ export const documentSchema = z
           ctx.addIssue({ code: "custom", message: "Identifiant dupliqué" });
         ids.add(x.id);
         if (
+          "pdf" in x &&
+          x.pdf &&
+          (x.kind !== "plan" || x.source?.kind !== "file")
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Page PDF sans fichier source",
+          });
+        if (
           "graphic" in x &&
           x.graphic?.backgroundId &&
           (x.source?.kind !== "file" || x.source?.id !== x.graphic.backgroundId)
@@ -200,7 +222,81 @@ export function validateSources(
     for (const b of p.blocks)
       if (b.source) {
         const key = b.source.kind + ":" + b.source.id;
+        if (b.pdf) {
+          const source = catalogue.find(
+            (s) => s.kind === "file" && s.id === b.source!.id,
+          );
+          const prior = previous?.pages
+            ?.flatMap((p: any) => p.blocks)
+            .find((x: any) => x.id === b.id);
+          const expected =
+            source?.fields?.url ||
+            (old.get(b.id) === key ? prior?.content?.url : null);
+          if (!expected || expected !== b.content.url)
+            throw new Error("URL PDF différente de sa source");
+        }
         if (!available.has(key) && old.get(b.id) !== key)
           throw new Error("Source étrangère ou inaccessible");
       }
 }
+
+const blockSchema =
+  documentSchema._def.schema.shape.pages.element.shape.blocks.element;
+export const briefingTemplateSchema = z
+  .object({
+    version: z.literal(1),
+    theme: z.enum(["signature", "field", "editorial"]),
+    format: z.enum(["wide", "a4"]),
+    pages: z
+      .array(
+        z
+          .object({
+            theme: z.enum(["signature", "field", "editorial"]).optional(),
+            blocks: z
+              .array(
+                z
+                  .object({
+                    kind: blockSchema.shape.kind,
+                    layout: blockSchema.shape.layout,
+                    style: style.optional(),
+                    image: blockSchema.shape.image,
+                    binding: sourceSchema.shape.kind.optional(),
+                    graphic: graphic.optional(),
+                  })
+                  .strict(),
+              )
+              .max(1000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(500),
+  })
+  .strict()
+  .superRefine((t, ctx) => {
+    for (const p of t.pages)
+      for (const b of p.blocks) {
+        if (b.kind === "legacy")
+          ctx.addIssue({ code: "custom", message: "Original non portable" });
+        if (b.graphic) {
+          if (b.graphic.backgroundId)
+            ctx.addIssue({
+              code: "custom",
+              message: "Fond projet non portable",
+            });
+          for (const n of b.graphic.nodes)
+            if (
+              n.text !==
+              (n.type === "text"
+                ? ""
+                : n.type === "marker"
+                  ? "Repère à renseigner"
+                  : "")
+            )
+              ctx.addIssue({
+                code: "custom",
+                message: "Texte chantier non portable",
+              });
+        }
+      }
+  });
