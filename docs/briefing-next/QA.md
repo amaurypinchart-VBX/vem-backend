@@ -15,8 +15,16 @@
 | Navigateur distant | Connexion au serveur local refusée |
 | Installation du premier navigateur de test | Archive téléchargée invalide |
 | PostgreSQL / migrations réellement exécutées | Non exécutés |
-| PDF / captures / performances visuelles | Non validés localement ; workflow GitHub préparé |
+| Recette Chromium sur GitHub Actions | Réussie : 25 pages source, 50 tâches, 20 images, export A4 de 47 pages, zéro débordement détecté |
 
 Les durées de tests DOM ne sont pas des mesures d'ouverture, de réactivité ou d'export du produit. Aucun résultat de performance du Studio n'est inventé.
 
 Le workflow de PR peut compléter la recette navigateur sur un hôte compatible. Une exécution verte ne remplace pas les essais sur PostgreSQL, avec Cloudinary et avec les droits métier réels. Voir README pour le périmètre non encore implémenté.
+
+## Première recette navigateur réussie
+
+[Exécution GitHub Actions](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943) sur le commit `873f5bfb` : succès. [Captures, PDF de démonstration et mesures](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943/artifacts/13414922469). Les captures desktop/mobile ont été inspectées. Le PDF contient 47 pages A4 selon `pdfinfo`.
+
+Ouverture mesurée : 89 ms sur le runner Linux/Chromium et API simulée. La valeur historique `exportMs: 2656` du premier rapport inclut aussi la création du PDF et les vérifications suivantes : elle ne représente pas le seul temps de composition. Le script distingue désormais `paginationMs` du reste du parcours. Ce ne sont pas des garanties de performance en production.
+
+Le test PostgreSQL jetable est ajouté au workflow pour vérifier la migration deux fois, les 50 sources, la sauvegarde concurrente et les éditions immuables ; son résultat sera visible sur la dernière exécution de la PR.

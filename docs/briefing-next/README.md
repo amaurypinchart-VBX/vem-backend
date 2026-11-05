@@ -28,7 +28,7 @@ Cette branche intègre un parcours utilisable dans l'application existante. Elle
 
 Le dépôt utilise les migrations idempotentes au démarrage, pas `prisma migrate deploy`. Le schéma Prisma et `src/utils/migrations.ts` ajoutent deux colonnes et une table. Aucun champ historique n'est effacé. Les trois instructions SQL doivent réussir pour initialiser cette fonctionnalité.
 
-Avant fusion : sauvegarder la base et tester un démarrage puis un second démarrage sur une base de recette. L'application doit pouvoir lire un briefing classique, un Studio et un document Next. Cette vérification PostgreSQL n'a pas été exécutée ici.
+Avant fusion : sauvegarder la base et tester un démarrage puis un second démarrage sur une base de recette. L'application doit pouvoir lire un briefing classique, un Studio et un document Next. Cette vérification PostgreSQL est ajoutée au workflow sur une base jetable ; consulter le résultat de la dernière exécution.
 
 Retour arrière applicatif : revenir au commit précédent et conserver les colonnes/tables supplémentaires. Les anciens éditeurs retrouvent leurs contenus historiques. Les travaux Next restent dans `document` et `briefing_publications`, mais ne sont pas éditables par l'ancienne application. Ne pas supprimer ces colonnes pour revenir en arrière.
 
@@ -41,13 +41,13 @@ Retour arrière applicatif : revenir au commit précédent et conserver les colo
 
 Les tests avec doublure de base ne démontrent pas une transaction PostgreSQL réelle ; jsdom ne démontre ni la géométrie ni la pagination d'impression.
 
-## Recette navigateur préparée, non exécutée
+## Recette navigateur exécutée sur GitHub Actions
 
 `tests/briefingNext.browser.cjs` prépare 25 pages, 50 tâches (dont un très long texte), 20 images synthétiques, cinq statuts qualité et une source PDF de trois pages. Il vérifie l'ouverture, la sauvegarde/réouverture, le thème, l'actualisation, la vue mobile, le collage TSV, le conflit de révision et l'export A4. Il produit des captures, un PDF et les mesures réelles uniquement après exécution réussie.
 
 Prérequis : Playwright et son Chromium installés dans l'environnement de recette. Exécuter `node tests/briefingNext.browser.cjs` ; `CHROMIUM_PATH` permet un navigateur installé. `BRIEFING_DEMO_ONLY=1` démarre uniquement le serveur synthétique sur le port 4317. Ne pas déployer ce serveur de démonstration.
 
-Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), le navigateur distant ne joint pas le serveur local et le téléchargement du navigateur de test retourne une archive invalide. Aucune capture avant/après, mesure de rendu ou exemple PDF vérifié n'est donc annoncé comme livré.
+Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), le navigateur distant ne joint pas le serveur local et le téléchargement du navigateur de test retourne une archive invalide. La recette a ensuite réussi sur GitHub Actions : captures desktop/mobile et PDF de démonstration sont disponibles dans les artefacts de l’exécution liée dans QA.md. Il n’y a pas de capture avant/après de la production.
 
 ## Écarts restant au cahier des charges
 
@@ -56,7 +56,7 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 - Les filtres de génération ne sont pas stockés en tant que requête dynamique ; les exclusions d'IDs sont stockées. Les nouveaux éléments sont présentés à la comparaison pour décision.
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.
 - Pas de diffusion client dédiée, ni de présélection « synthèse client ». L'audience reste interne ; aucun contrôle serveur de publication client n'est promis.
-- Export FR et traduction des champs descriptifs en EN seulement : titres/labels système ne sont pas entièrement localisés. Pagination A4/16:9 implémentée mais non validée visuellement. Anciennes pages Fabric rasterisées. Les grandes images nécessitent une recette de charge et l'export serveur reste à évaluer.
+- Export FR et traduction des champs descriptifs en EN seulement : titres/labels système ne sont pas entièrement localisés. Pagination A4 vérifiée dans le navigateur sur la fixture synthétique ; recette 16:9 et traduction complète encore à compléter. Anciennes pages Fabric rasterisées. Les grandes images nécessitent une recette de charge et l'export serveur reste à évaluer.
 - Aucun test réel de Cloudinary, PostgreSQL, preuve photographique, permissions sur compte réel, traduction réseau ou Railway. Les règles qualité sont réutilisées via la fiche existante, sans nouveau chemin de validation.
 
 La branche doit rester en brouillon tant que ces limites et les critères de recette non couverts n'ont pas été traités ou acceptés explicitement.

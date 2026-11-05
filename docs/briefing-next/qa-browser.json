@@ -1,0 +1,12 @@
+{
+  "environment": "Chromium headless / Linux / mocked authenticated API / synthetic data",
+  "openMs": 89,
+  "exportMs": 2656,
+  "pages": 47,
+  "overflow": 0,
+  "sourceTasks": 50,
+  "fixturePages": 25,
+  "availableImages": 20,
+  "checks": "save/reopen, theme, refresh, annotation, mobile, A4 pagination, all tasks, native TSV paste, 409 conflict",
+  "limitations": "No PostgreSQL, live auth, Cloudinary, real translation or production data in this browser harness."
+}

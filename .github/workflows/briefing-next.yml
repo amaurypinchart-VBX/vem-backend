@@ -16,6 +16,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/test
     steps:
@@ -27,6 +41,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run test:briefing-next
       - run: npx prisma validate
+      - run: npx prisma db push --skip-generate
+      - run: node tests/briefingNext.postgres.cjs
+        env:
+          BRIEFING_TEST_DATABASE: '1'
       - run: npx playwright install --with-deps chromium
       - run: node tests/briefingNext.browser.cjs
       - uses: actions/upload-artifact@v4
