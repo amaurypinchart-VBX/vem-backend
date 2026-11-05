@@ -23,7 +23,7 @@ Le workflow de PR peut compléter la recette navigateur sur un hôte compatible.
 
 ## Première recette navigateur réussie
 
-[Exécution GitHub Actions](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943) sur le commit `873f5bfb` : succès. [Captures, PDF de démonstration et mesures](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943/artifacts/13414922469). Les captures desktop/mobile ont été inspectées. Le PDF contient 47 pages A4 selon `pdfinfo`.
+[Exécution GitHub Actions](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943) sur le commit `873f5bfb` : succès. [Captures, PDF de démonstration et mesures](https://github.com/amaurypinchart-VBX/vem-backend/actions/runs/42028755943/artifacts/13414922469). Les captures desktop/mobile ont été inspectées. Le premier PDF de test a été rejeté à l’inspection visuelle : la page de test relançait l’application pendant la capture. Le harnais a été corrigé pour imprimer depuis une page vierge et vérifier l’absence de toute interface. Utiliser les artefacts de la dernière exécution réussie, pas ce premier PDF.
 
 Ouverture mesurée : 89 ms sur le runner Linux/Chromium et API simulée. La valeur historique `exportMs: 2656` du premier rapport inclut aussi la création du PDF et les vérifications suivantes : elle ne représente pas le seul temps de composition. Le script distingue désormais `paginationMs` du reste du parcours. Ce ne sont pas des garanties de performance en production.
 

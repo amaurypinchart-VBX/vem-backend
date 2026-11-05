@@ -134,6 +134,7 @@ app.post("/api/v1/briefings/b/publish", (req, res) => {
   pub.push(v);
   res.json({ success: true, data: v });
 });
+app.get("/blank", (req,res)=>res.send("<!doctype html><html><body></body></html>"));
 app.get("/demo", (req, res) =>
   res.send(
     '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/briefing-next.css"></head><body><script>function toast(){};function loadDetailBriefing(){};function openChecklistFull(){}</script><script src="/js/briefing-next-model.js"></script><script src="/js/briefing-next.js"></script><script>openBriefingNext("b")</script></body></html>',
@@ -243,15 +244,15 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         assert.ok(text.includes("Action " + i), "Missing action " + i);
       const html = await frame.content();
       const printPage = await browser.newPage();
-      await printPage.goto(
-        "http://127.0.0.1:" + server.address().port + "/demo",
-      );
+      await printPage.goto("http://127.0.0.1:" + server.address().port + "/blank");
       await printPage.setContent(
         html.replace(
           'href="/css/briefing-next.css"',
           `href="http://127.0.0.1:${server.address().port}/css/briefing-next.css"`,
         ),
       );
+      assert.equal(await printPage.locator("header,nav,aside").count(),0);
+      assert.equal(await printPage.locator(".bn-paper").count(),pages);
       await printPage.pdf({
         path: path.join(out, "demo-briefing-a4.pdf"),
         preferCSSPageSize: true,
