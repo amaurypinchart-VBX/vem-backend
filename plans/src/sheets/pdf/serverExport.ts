@@ -78,6 +78,8 @@ export async function prepareServerPdf(inp: PrepareInput): Promise<string> {
         }
       }
       if (key && missing.has(key)) key = undefined;
+      // base de la vue : calculée sans les traits avec le modèle 3D, lue dans l'instantané en consultation
+      if (key && !bank.data(vp).basis) await bank.serverKey(vp);
       await bank.preparePaint([vp], inp.cancelled, { withoutLinework: true }).catch((e) => {
         if (inp.cancelled()) throw new CancelledError();
         throw e;

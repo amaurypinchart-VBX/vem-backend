@@ -26,6 +26,10 @@ import { changedPaintNodes } from '../linework/paintScene';
 import type { PaintRegion } from '../linework/paintOverlay';
 import { computePaintOverlay, paintOverlaySteps } from '../linework/paintOverlay';
 import { runSliced, SlicedCancelled } from '../linework/sliced';
+import type { LightSource } from './consult';
+import { NOT_PREPARED } from './consult';
+import type { PdfJobViewport } from './pdf/serverJob';
+import { restoreView } from './pdf/serverJob';
 
 /** Peinture du projet résolue sur la scène (SheetsPage) : les vues dessinent la partie visible des faces peintes. */
 export interface PaintSource {
@@ -44,6 +48,8 @@ interface Entry {
   basis?: ViewBasis;
   /** octets approximatifs des traits (budget mémoire) */
   bytes?: number;
+  /** consultation sans 3D : instantané relu du serveur (base, contours, peinture…) */
+  snap?: PdfJobViewport;
   /** dernier usage (affichage, export) : les vues les plus anciennes quittent la mémoire d'abord */
   used?: number;
 }
@@ -104,9 +110,26 @@ export class LineworkBank {
   /** peinture impossible à calculer sur une vue (message par fenêtre) */
   private readonly paintErrors = new Map<string, string>();
 
+  /**
+   * consultation sans le modèle 3D (scene.light) : les fenêtres sont relues de leurs instantanés sur le serveur, rien
+   * n'est calculé ici (voir sheets/consult.ts)
+   */
+  light: LightSource | null = null;
+  /** consultation : instantanés lus (légers), gardés même quand les traits quittent la mémoire */
+  private readonly snaps = new Map<string, PdfJobViewport | null>();
+
+  /** Instantané d'une fenêtre (consultation), lu une fois. */
+  private async snapshotOf(key: string): Promise<PdfJobViewport | null> {
+    if (this.snaps.has(key)) return this.snaps.get(key)!;
+    const snap = this.light ? await this.light.snapshot(key) : null;
+    this.snaps.set(key, snap);
+    while (this.snaps.size > 600) this.snaps.delete(this.snaps.keys().next().value!);
+    return snap;
+  }
+
   constructor(
     readonly scene: LoadedScene,
-    readonly provider: BrowserHlrProvider,
+    readonly provider: BrowserHlrProvider | null,
   ) {
     // mémoire pleine : on ne garde que les vues en cours d'usage (`trim`), ou plus rien de ce qui peut être relu (`all`)
     // référence faible : une banque abandonnée sans dispose() (aperçu du rapport) ne reste pas en mémoire
@@ -202,6 +225,7 @@ export class LineworkBank {
 
   /** Clé de la demande : la requête (vue standard) ou la vue spéciale + son bloc. */
   private reqKey(vp: ViewportItem): string {
+    if (this.scene.light) return JSON.stringify(['light', vp.request, vp.lineworkKey ?? null, vp.custom ?? null, vp.paint ?? null, vp.overlays ?? null, vp.frameView ?? null]);
     if (!vp.custom) return JSON.stringify(vp.request);
     const spec = this.custom?.spec(vp.custom.viewId);
     return `custom|${vp.custom.viewId}|${vp.custom.block}|${spec ? specForKey(spec) : 'absente'}`;
@@ -216,6 +240,14 @@ export class LineworkBank {
    * clé locale (jamais sur le serveur : envoyée avec le PDF). undefined = vue impossible (base introuvable…).
    */
   async serverKey(vp: ViewportItem): Promise<string | undefined> {
+    if (this.scene.light) {
+      if (!this.light) return undefined;
+      // instantané seulement : les traits sont déjà sur le serveur
+      const snap = await this.snapshotOf(await this.keyFor(vp));
+      this.emit();
+      return snap?.key;
+    }
+    if (!this.provider) return undefined;
     try {
       const key = await this.keyFor(vp);
       return vp.custom ? key : await this.provider.displayKey(vp.request);
@@ -229,7 +261,9 @@ export class LineworkBank {
     const reqKey = this.reqKey(vp);
     let key = this.keys.get(reqKey);
     if (!key) {
-      key = vp.custom ? `custom-${await hashKey(reqKey)}` : await this.provider.cacheKey(vp.request);
+      if (this.light) key = await this.light.key(vp);
+      else if (!this.provider) throw new Error('Modèle 3D non chargé');
+      else key = vp.custom ? `custom-${await hashKey(reqKey)}` : await this.provider.cacheKey(vp.request);
       this.keys.set(reqKey, key);
     }
     return key;
@@ -241,6 +275,8 @@ export class LineworkBank {
    */
   async staleViewports(vps: ViewportItem[]): Promise<string[]> {
     const out: string[] = [];
+    // consultation : l'état « obsolète » vient de l'instantané (calculé avec le modèle)
+    if (this.scene.light) return out;
     for (const vp of vps) {
       if (!vp.lineworkKey) continue;
       if ((await this.keyFor(vp)) !== vp.lineworkKey) out.push(vp.id);
@@ -395,6 +431,33 @@ export class LineworkBank {
     }
   }
 
+  /**
+   * Consultation : fenêtres sans instantané sur le serveur (jeu jamais préparé, modèle réanalysé, peinture changée…),
+   * vérifiées sans rien lire. -1 = source pas encore prête.
+   */
+  async unprepared(vps: ViewportItem[]): Promise<number> {
+    if (!this.scene.light || !this.light) return -1;
+    const keys = new Map<string, number>();
+    for (const vp of vps) {
+      const k = await this.keyFor(vp);
+      keys.set(k, (keys.get(k) ?? 0) + 1);
+    }
+    let n = 0;
+    for (const [k, count] of keys) if (!(this.snaps.get(k) ?? (await this.light.has(k)))) n += count;
+    return n;
+  }
+
+  /** Peinture de la vue à jour (ou pas de peinture sur cette vue) : son instantané peut être écrit. */
+  paintReady(vp: ViewportItem): boolean {
+    const base = this.paintBase(vp);
+    return !base || !!this.currentPaint(base);
+  }
+
+  /** Version de la peinture posée dans la banque (null = aucune). */
+  paintVersion(): string | null {
+    return this.paintSrc?.version ?? null;
+  }
+
   /** Vues dont la peinture n'a pas pu être calculée : fenêtre → message. */
   paintFailures(): Map<string, string> {
     return this.paintErrors;
@@ -434,6 +497,13 @@ export class LineworkBank {
     const key = this.keyOf(vp);
     const e = key ? this.entries.get(this.entryKey(key, vp)) : undefined;
     if (e?.lw) e.used = Date.now();
+    if (this.scene.light) {
+      if (e?.error) return { error: e.error };
+      if (e?.lw) return restoreView(e.snap, e.lw);
+      // traits pas (ou plus) en mémoire : base, contours, peinture de l'instantané déjà lu
+      const snap = key ? this.snaps.get(key) : undefined;
+      return snap ? { ...restoreView(snap, undefined), error: undefined, busy: true } : { busy: true };
+    }
     let basis;
     try {
       basis = e?.basis ?? viewBasis(vp.request.view, this.scene.frames);
@@ -468,6 +538,7 @@ export class LineworkBank {
 
   /** Téléphone : calcule quand même les vues refusées comme trop lourdes (risque de fermeture par iOS). */
   retryHeavy(viewports: ViewportItem[]): void {
+    if (!this.provider) return;
     this.provider.allowHeavy = true;
     for (const [k, e] of this.entries) if (e.error === HEAVY_VIEW) this.entries.delete(k);
     this.emit();
@@ -481,6 +552,8 @@ export class LineworkBank {
 
   /** Traits d'une fenêtre de vue (calcul si besoin). */
   async load(vp: ViewportItem, signal?: AbortSignal, opts: { cacheOnly?: boolean } = {}): Promise<{ key: string; lw: Linework2D } | null> {
+    // consultation : rien tant que la source des instantanés n'est pas prête
+    if (this.scene.light && !this.light) return null;
     // seulement les caches (génération sur téléphone) : les vues spéciales attendent l'affichage
     if (opts.cacheOnly && vp.custom) return null;
     const key = await this.keyFor(vp);
@@ -507,6 +580,23 @@ export class LineworkBank {
     this.entries.set(ek, { busy: true });
     this.emit();
     try {
+      if (this.light) {
+        // consultation : instantané puis ses traits, du serveur
+        const snap = await this.snapshotOf(key);
+        if (!snap) {
+          this.entries.set(ek, { error: NOT_PREPARED });
+          return null;
+        }
+        const lw = snap.key ? await this.light.linework(snap.key) : null;
+        if (!lw) {
+          this.entries.set(ek, { error: snap.error ?? NOT_PREPARED });
+          return null;
+        }
+        this.put(ek, { lw, snap });
+        this.trim();
+        return { key, lw };
+      }
+      if (!this.provider) throw new Error('Modèle 3D non chargé');
       if (vp.custom) {
         const block = await this.customBlock(vp, signal);
         this.put(ek, { lw: block.lw, basis: block.basis });
@@ -559,6 +649,7 @@ export class LineworkBank {
     const src = this.custom;
     const spec = src?.spec(ref.viewId);
     if (!src || !spec) throw new Error(DELETED_VIEW);
+    if (!this.provider) throw new Error('Modèle 3D non chargé');
     const runKey = `${ref.viewId}|${specForKey(spec)}|${JSON.stringify(vp.request.style)}`;
     let run = this.customRuns.get(runKey);
     if (!run) {

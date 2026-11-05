@@ -1,6 +1,7 @@
 // Espace de travail d'un modèle analysé : Contrôle (inspecteur) · Vue 3D (isolation, captures) · Vues 2D (plans) ·
 // Planches · Étude structure · Loading liste.
-// Le modèle 3D (paquet GLB) n'est chargé qu'à l'ouverture de la vue 3D ou des vues 2D.
+// Le modèle 3D (paquet GLB) n'est chargé qu'à l'ouverture d'un onglet qui en a besoin ; les Planches s'ouvrent sans lui
+// (consultation, vues relues du serveur) et le demandent seulement pour générer, recalculer ou utiliser un outil 3D.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ClassificationRules, SceneIndex } from '../core/types';
@@ -13,7 +14,7 @@ import { downloadPackage, getSharedLinework, hasSharedLinework, putSharedLinewor
 import { serverLineworkCache } from '../linework/remoteCache';
 import { loadPackage } from '../ingest/package';
 import type { LoadedScene } from '../scene/loadedScene';
-import { computeFrames, makeLoadedScene } from '../scene/loadedScene';
+import { computeFrames, makeLightScene, makeLoadedScene } from '../scene/loadedScene';
 import { makeGlassTest } from '../linework/packets';
 import { BrowserHlrProvider } from '../linework/provider';
 import { createInlineRunner, createWorkerPool, defaultPoolSize } from '../linework/runner';
@@ -62,6 +63,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   const lightDevice = useMemo(() => lowPowerDevice(), []);
   const settingsRef = useRef(settings);
   const loadStarted = useRef(false);
+  // Planches : modèle 3D demandé (génération, outil, vue à recalculer)
+  const [sceneWanted, setSceneWanted] = useState(false);
+  const lightScene = useMemo(() => makeLightScene(index), [index]);
   // analyse fraîche : la version enregistrée arrive après coup, avec les réglages repris de la précédente
   useEffect(() => {
     if (model?.settings) setSettings((settingsRef.current = model.settings));
@@ -105,7 +109,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   };
 
   useEffect(() => {
-    if (tab === 'control' || loadStarted.current) return;
+    if (tab === 'control' || (tab === 'sheets' && !sceneWanted) || loadStarted.current) return;
     loadStarted.current = true;
     (async () => {
       try {
@@ -139,7 +143,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
         loadStarted.current = false;
       }
     })();
-  }, [tab, glb, model, index, settings.fronts, busy]);
+  }, [tab, glb, model, index, settings.fronts, busy, sceneWanted]);
 
   // les envois de captures finissent dans le désordre : chaque modification part des réglages à jour
   const saveSettings = async (update: SettingsUpdate) => {
@@ -207,8 +211,8 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       )}
       <div style={{ display: tab === 'control' ? 'block' : 'none' }}>{inspector}</div>
       {tab !== 'control' && loading && <ProgressBar label={loading.label} fraction={loading.fraction} />}
-      {tab !== 'control' && !scene && !loading && busy && !glb && <ProgressBar label="Préparation du modèle 3D…" fraction={0.5} />}
-      {tab !== 'control' && !scene && missing && (
+      {tab !== 'control' && (tab !== 'sheets' || sceneWanted) && !scene && !loading && busy && !glb && <ProgressBar label="Préparation du modèle 3D…" fraction={0.5} />}
+      {tab !== 'control' && (tab !== 'sheets' || sceneWanted) && !scene && missing && (
         <div className="card">
           <div className="card-body">
             <p style={{ marginBottom: 10 }}>
@@ -238,11 +242,14 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           />
         </div>
       )}
-      {scene && provider && visited.has('sheets') && (
+      {visited.has('sheets') && (
         <div style={{ display: tab === 'sheets' ? 'block' : 'none' }}>
           <SheetsPage
-            scene={scene}
-            provider={provider}
+            scene={scene && provider ? scene : lightScene}
+            provider={scene ? provider : null}
+            onNeedScene={() => setSceneWanted(true)}
+            sceneLoading={sceneWanted && !scene}
+            fronts={settings.fronts}
             glassTest={glassTest}
             model={model}
             rules={rules}

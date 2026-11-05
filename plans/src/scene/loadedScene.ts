@@ -1,7 +1,7 @@
 // Modèle chargé en mémoire (paquet GLB ou analyse fraîche) + ce qu'il faut pour le viewer et le moteur 2D :
 // correspondance nœud ↔ objet three.js, catégories effectives, repères des Viewbox.
 import type { BufferGeometry, Mesh, Object3D } from 'three';
-import { Vector3 } from 'three';
+import { Group, Vector3 } from 'three';
 import type { SceneIndex } from '../core/types';
 import type { FrontSide, ModuleFrame, Vec3 } from '../core/views';
 import { dot, frameAxesFromMatrix, makeModuleFrame } from '../core/views';
@@ -16,6 +16,16 @@ export interface LoadedScene {
   frames: Map<string, ModuleFrame>;
   /** empreinte du fichier source : clé du cache des vues */
   modelKey: string;
+  /**
+   * consultation sans le modèle 3D (planches déjà préparées, relues du serveur) : index seulement, aucun maillage —
+   * ce qui a besoin de la 3D demande de la charger
+   */
+  light?: boolean;
+}
+
+/** Scène sans 3D (onglet Planches en consultation) : index, catégories, repères des Viewbox s'ils sont connus. */
+export function makeLightScene(index: SceneIndex, frames: Map<string, ModuleFrame> = new Map()): LoadedScene {
+  return { root: new Group(), objectsById: new Map(), index, look: makeLookup(index), frames, modelKey: index.source.sha256, light: true };
 }
 
 /** Identifiant de nœud d'un objet three.js (un maillage multi-matériaux rechargé du GLB devient un groupe de

@@ -73,7 +73,7 @@ export function decodePacked<T>(bytes: Uint8Array): T {
 }
 
 /** Vue partagée la plus lourde envoyée au serveur (après compression). */
-export const REMOTE_MAX_BYTES = 8 * 1024 * 1024;
+export const REMOTE_MAX_BYTES = 24 * 1024 * 1024;
 
 export interface RemoteLineworkCache {
   get(key: string, signal?: AbortSignal): Promise<Linework2D | null>;

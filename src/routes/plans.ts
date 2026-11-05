@@ -53,7 +53,7 @@ function cleanSettings(v: unknown): Record<string, unknown> {
 // Vues 2D partagées entre appareils (traits calculés dans le navigateur, gzip) : clé = empreinte SHA-256 du cache
 // IndexedDB (modèle, sous-ensemble, vue, style, version du moteur). Un téléphone lit la vue au lieu de la calculer.
 const LINEWORK_KEY = /^[0-9a-f]{64}$/;
-const LINEWORK_MAX = 8 * 1024 * 1024;
+const LINEWORK_MAX = 24 * 1024 * 1024;
 /** au-delà, les vues les moins utilisées sont effacées (place en base) */
 const LINEWORK_TOTAL_MAX = 1500 * 1024 * 1024;
 
