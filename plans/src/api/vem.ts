@@ -471,11 +471,12 @@ export async function hasSharedLinework(key: string): Promise<boolean> {
 
 /** Envoie une vue calculée ici au serveur (les autres appareils la liront au lieu de la calculer). */
 export async function putSharedLinework(key: string, modelKey: string, bytes: Uint8Array): Promise<void> {
-  await fetch(`/api/v1/plans/linework/${key}?model=${encodeURIComponent(modelKey)}`, {
+  const r = await fetch(`/api/v1/plans/linework/${key}?model=${encodeURIComponent(modelKey)}`, {
     method: 'PUT',
     headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/octet-stream' },
     body: new Blob([bytes as BlobPart]),
   });
+  if (!r.ok) throw new ApiError(`Vue non enregistrée sur le serveur (HTTP ${r.status})`, r.status);
 }
 
 /** PDF du serveur : envoie des traits (`linework`) ou les données d'une fenêtre de vue (`views`), binaire gzip. */

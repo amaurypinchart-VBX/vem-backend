@@ -97,11 +97,14 @@ import type { FrameLang, FrameType } from '../../sheets/frames';
 import { frameLabels, frameRefs, frameSheets, groupFrames, measureFrames } from '../../sheets/frames';
 import { TEXTILE_TAG } from '../../core/customViews/tags';
 import { renumber } from '../../sheets/generate';
+import { NOT_PREPARED } from '../../sheets/consult';
 
 /** Peinture du projet (SheetsPage) : état, résolution sur la scène, favoris partagés. */
 export interface PaintBundle {
   state: PaintState;
   painted: PaintedScene | null;
+  /** surfaces peintes par couleur (légende) : de la peinture résolue, ou relues du serveur sans le modèle 3D */
+  areas: Map<string, number> | null;
   ctx: PaintContext;
   favorites: ColorDraft[];
   canEditFavorites: boolean;
@@ -114,7 +117,12 @@ const uid = (p: string) => (typeof crypto !== 'undefined' && crypto.randomUUID ?
 
 interface Props {
   paint?: PaintBundle;
+  /** scène chargée, ou sans 3D (`scene.light`) : consultation, les outils qui ont besoin de la 3D la demandent */
   scene: LoadedScene;
+  onNeedScene?: () => void;
+  sceneLoading?: boolean;
+  /** consultation : repères / surfaces relus du serveur (nouveau rendu) */
+  lightTick?: number;
   bank: LineworkBank;
   glassTest: GlassTest;
   legendColors: Map<string, LegendEntry>;
@@ -146,7 +154,9 @@ function pdfChunkChars(): number {
 }
 const bigScenes = new WeakMap<object, boolean>();
 
-export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint }: Props) {
+export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint, onNeedScene, sceneLoading, lightTick }: Props) {
+  /** consultation sans le modèle 3D */
+  const light = !!scene.light;
   // très gros modèle (bigModel) : calculé une fois par scène
   let bigScene = bigScenes.get(scene.index);
   if (bigScene === undefined) bigScenes.set(scene.index, (bigScene = bigModel(scene.index)));
@@ -157,7 +167,24 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const version = useEditor((s) => s.version);
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
-  const [tool, setTool] = useState<Tool>('select');
+  const [tool, setToolRaw] = useState<Tool>('select');
+  /**
+   * consultation sans le modèle 3D : une action qui en a besoin (outils sur les vues, vue à recalculer, images 3D…)
+   * lance son chargement et le dit ; l'action est à refaire une fois le modèle chargé
+   */
+  const needs3D = (what: string, resumes = false): boolean => {
+    if (!light) return false;
+    onNeedScene?.();
+    setToast(`${what} : chargement du modèle 3D…${resumes ? '' : ' (refais l’action quand il est chargé)'}`);
+    return true;
+  };
+  const setTool = (t: Tool) => {
+    if (light && (t === 'label' || t === 'paint' || t === 'hide' || t === 'dim' || t === 'chain')) {
+      pendingTool.current = t;
+      if (needs3D(t === 'paint' ? 'Peinture' : t === 'hide' ? 'Masquer' : t === 'label' ? 'Repère' : 'Cotes', true)) return;
+    }
+    setToolRaw(t);
+  };
   const [symbolKey, setSymbolKey] = useState('prise-2pt');
   const [hidden, setHidden] = useState<{ drawing?: boolean; annotations?: boolean; dims?: boolean }>({});
   const [fitSignal, setFitSignal] = useState(0);
@@ -253,6 +280,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   }, [doc.sheets, bank, bankTick]);
   /** « Recalculer » de toutes les fenêtres obsolètes du jeu, en une étape d'historique */
   const updateAllViews = () => {
+    if (needs3D('Mise à jour des vues')) return;
     const ids = new Set(staleIds);
     if (!ids.size) return;
     actions.editDoc(`Mettre à jour ${ids.size} vue(s)`, (d) => {
@@ -328,7 +356,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const fixes: Array<{ sheetId: string; id: string; key: string; scale?: number; center?: [number, number] }> = [];
     for (const s of doc.sheets)
       for (const it of s.items) {
-        if (it.type !== 'viewport' || it.pendingAutoDims || (it.lineworkKey && it.scale && it.center)) continue;
+        if (light || it.type !== 'viewport' || it.pendingAutoDims || (it.lineworkKey && it.scale && it.center)) continue;
         const key = bank.keyOf(it);
         const lw = bank.data(it).lw;
         if (!key || !lw) continue;
@@ -347,6 +375,43 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     });
   }, [bankTick, doc.sheets, bank]);
 
+  // consultation : jeu pas (ou plus) préparé sans la 3D — jamais affiché avec le modèle, modèle réanalysé, peinture ou
+  // vue changée depuis — → le modèle 3D est chargé tout de suite (vues calculées, vues « obsolètes » signalées) plutôt
+  // que de laisser des cadres vides
+  const askedScene = useRef(false);
+  const checkedSet = useRef<LineworkBank | null>(null);
+  useEffect(() => {
+    if (!light || askedScene.current) return;
+    const ask = (n: number) => {
+      askedScene.current = true;
+      onNeedScene?.();
+      setToast(`${n} vue${n > 1 ? 's' : ''} du jeu ${n > 1 ? 'ne sont' : 'n’est'} pas encore prête${n > 1 ? 's' : ''} sans le modèle 3D : chargement du modèle…`);
+    };
+    const shown = sheet?.items.filter((i): i is ViewportItem => i.type === 'viewport') ?? [];
+    const missing = shown.filter((vp) => bank.data(vp).error === NOT_PREPARED).length;
+    if (missing) return ask(missing);
+    if (checkedSet.current === bank) return;
+    let alive = true;
+    const vps = doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport'));
+    void bank.unprepared(vps).then((n) => {
+      if (n < 0 || !alive) return;
+      checkedSet.current = bank;
+      if (n > 0 && !askedScene.current) ask(n);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [light, bankTick, sheet, bank]);
+  // outil demandé en consultation (il a besoin de la 3D) : choisi dès que le modèle est chargé
+  const pendingTool = useRef<Tool | null>(null);
+  useEffect(() => {
+    if (!light && pendingTool.current) {
+      setToolRaw(pendingTool.current);
+      pendingTool.current = null;
+    }
+  }, [light]);
+
   // jeu généré sur téléphone : cotes automatiques posées dès que les vues d'une planche sont là (échelle commune
   // sur une planche par Viewbox, comme à la génération) — sans entrée d'historique
   useEffect(() => {
@@ -355,6 +420,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       return !!x.lw && !!x.basis;
     };
     const todo: string[] = [];
+    // cotes automatiques : il faut le modèle 3D (portes, pieds… lus dans la scène)
+    if (light) return;
     for (const s of doc.sheets) {
       const pend = s.items.filter((i): i is ViewportItem => i.type === 'viewport' && !!i.pendingAutoDims);
       if (pend.length && !pend.some((vp) => bank.data(vp).busy) && pend.some(ready)) todo.push(s.id);
@@ -377,7 +444,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   // jeu généré sur téléphone : images 3D rendues ici (ordinateur), envoyées puis posées sans entrée d'historique
   const capturing = useRef(false);
   useEffect(() => {
-    if (lightDevice || capturing.current) return;
+    if (lightDevice || light || capturing.current) return;
     const jobs = doc.sheets.flatMap((s) => s.items.filter((i): i is Image3dItem => i.type === 'image3d' && !!i.pendingCapture).map((item) => ({ sheetId: s.id, item })));
     if (!jobs.length) return;
     capturing.current = true;
@@ -591,6 +658,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
    * centrage et cotes automatiques (refaites si la vue en avait) changent en une seule action (un seul Ctrl+Z).
    */
   const setViewportInclude = async (vp: ViewportItem, include: string[], label: string) => {
+    if (needs3D('Unités affichées')) return;
     const next: ViewportItem = { ...vp, request: { ...vp.request, subset: { ...vp.request.subset, include } } };
     setBusy('Calcul de la vue…');
     const r = await bank.load(next);
@@ -843,9 +911,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       setSelectedZone(null);
     }
   }, [tool]);
-  const paintInfo: PaintSheetInfo | undefined = paint?.painted
-    ? { colors: paint.state.paint.colors, areas: paint.painted.areaByColor, usedInSet: new Set([...paint.painted.areaByColor].filter(([, a]) => a > 0).map(([id]) => id)) }
+  const paintInfo: PaintSheetInfo | undefined = paint?.areas
+    ? { colors: paint.state.paint.colors, areas: paint.areas, usedInSet: new Set([...paint.areas].filter(([, a]) => a > 0).map(([id]) => id)) }
     : undefined;
+  void lightTick;
 
   const onPlace = (t: Tool, p: PointMm, vp: ViewportItem | null) => {
     const k = templateScale(sheet.paper);
@@ -925,7 +994,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   // ─── cadres textile : planches de détail, repères F1…, cotes, masquage ───
-  const openFrames = (lang: FrameLang = frames?.lang ?? 'en') => setFrames({ types: groupFrames(measureFrames(scene), lang), lang });
+  const openFrames = (lang: FrameLang = frames?.lang ?? 'en') => {
+    if (needs3D('Cadres textile')) return;
+    setFrames({ types: groupFrames(measureFrames(scene), lang), lang });
+  };
   const applyFrames = (types: FrameType[], c: FramesChoice) => {
     const k = templateScale(sheet.paper);
     const refs = frameRefs(types);
@@ -991,6 +1063,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
 
   // ─── captures 3D ───
   const capture = async (item: Image3dItem | null, viewSpec: string, include?: string[]) => {
+    if (needs3D('Image 3D')) return;
     const [view, projection] = viewSpec.split('|') as [IsoKind, Projection];
     const target = item ?? null;
     const inc = include ?? scene.index.modules.map((m) => m.nodeId).concat(scene.index.modules.flatMap((m) => m.itemIds), scene.index.commonIds);
@@ -1363,6 +1436,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
    * clé, cotes automatiques refaites), posées après la planche source en une seule entrée d'historique.
    */
   const duplicateForModules = async (src: Sheet, targets: string[]) => {
+    if (needs3D('Copie pour d’autres Viewbox')) return;
     const from = sheetModule(src);
     if (!from || !targets.length) return;
     const warnings: string[] = [];
@@ -1473,6 +1547,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   };
 
   const addViewport = () => {
+    if (needs3D('Nouvelle vue')) return;
     const k = templateScale(sheet.paper);
     const base = doc.sheets.flatMap((s) => s.items).find((i): i is ViewportItem => i.type === 'viewport');
     const include = scene.index.modules.map((m) => m.nodeId).concat(scene.index.modules.flatMap((m) => m.itemIds), scene.index.commonIds);
@@ -1717,6 +1792,21 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </span>
       </div>
 
+      {light && (
+        <div className="sync-banner" data-testid="light-banner">
+          <span>
+            🧊 <b>Consultation</b> : planches relues du serveur, sans le modèle 3D (plus léger).
+            {(() => {
+              const n = sheet.items.filter((i): i is ViewportItem => i.type === 'viewport' && bank.data(i).error === NOT_PREPARED).length;
+              return n ? ` ${n} vue${n > 1 ? 's' : ''} de cette planche ${n > 1 ? 'ne sont' : 'n’est'} pas encore prête${n > 1 ? 's' : ''} sans lui.` : '';
+            })()}
+          </span>
+          <span className="spacer" />
+          <button className="btn small" data-testid="load-3d" disabled={sceneLoading} onClick={() => onNeedScene?.()} title="Nécessaire pour générer, recalculer une vue, peindre, masquer, coter, faire une image 3D">
+            {sceneLoading ? 'Chargement du modèle 3D…' : 'Charger le modèle 3D'}
+          </button>
+        </div>
+      )}
       {staleIds.length > 0 && (
         <div className="sync-banner" data-testid="stale-banner">
           <span>

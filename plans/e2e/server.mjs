@@ -81,6 +81,7 @@ const sharedLinework = new Map();
 // NO_SERVER_PDF=1 = absent (export dans le navigateur). GET /__test/pdf-jobs = tâches terminées.
 const RENDERER = join(here, '..', '..', 'plans-server', 'pdf-render.mjs');
 const pdfJobs = new Map();
+let packageDownloads = 0;
 const pdfDone = [];
 let pdfSeq = 0;
 const pdfAvailable = () => !process.env.NO_SERVER_PDF && existsSync(RENDERER);
@@ -92,6 +93,7 @@ http.createServer(async (req, res) => {
   if (p === '/__test/project-files') return json(res, projectFiles);
   if (p === '/__test/linework') return json(res, { count: sharedLinework.size });
   if (p === '/__test/pdf-jobs') return json(res, pdfDone);
+  if (p === '/__test/package-downloads') return json(res, { count: packageDownloads });
   if (p.startsWith('/api/v1/')) {
     if (req.headers.authorization !== 'Bearer tok') return json(res, 'Non autorisé', 401);
     const a = p.slice(7);
@@ -513,6 +515,10 @@ http.createServer(async (req, res) => {
     return json(res, 'inconnu ' + a, 404);
   }
   if (p === '/files/model.zip') { res.writeHead(200, { 'Content-Length': statSync(ZIP).size }); return res.end(readFileSync(ZIP)); }
+  if (p.startsWith('/blob/')) {
+    // téléchargements du modèle 3D (morceaux du paquet GLB) : GET /__test/package-downloads
+    if (/^\w+-\d+-\d+$/.test(p.slice(6))) packageDownloads++;
+  }
   if (p.startsWith('/blob/')) { const g = blobs.get(p.slice(6)); res.writeHead(200, { 'Content-Length': g.buf.length, 'Content-Type': g.type }); return res.end(g.buf); }
   const f = join(PUBLIC, p.endsWith('/') ? p + 'index.html' : p);
   if (!existsSync(f)) { res.writeHead(404); return res.end(); }

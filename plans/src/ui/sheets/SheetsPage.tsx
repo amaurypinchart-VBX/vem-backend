@@ -1,5 +1,5 @@
 // Onglet « Planches » : jeux de plans du projet, assistant de génération, éditeur.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClassificationRules } from '../../core/types';
 import { LEGEND } from '../../core/types';
 import type { LoadedScene } from '../../scene/loadedScene';
@@ -43,10 +43,19 @@ import type { RalColor } from '../../core/paint/ral';
 import { searchRal } from '../../core/paint/ral';
 import { colorCode } from '../../core/paint/ops';
 import { placePaintLegend } from '../../sheets/paintLegendPlace';
+import { consultEnv } from '../../sheets/consult';
+import { ConsultWriter, fetchConsultInfo, serverLightSource } from './consultIo';
 
 interface Props {
+  /** scène chargée, ou scène sans 3D (`light`) : planches en consultation, relues de leurs instantanés */
   scene: LoadedScene;
-  provider: BrowserHlrProvider;
+  provider: BrowserHlrProvider | null;
+  /** demande le chargement du modèle 3D (génération, outils, vue à recalculer) */
+  onNeedScene?: () => void;
+  /** chargement du modèle 3D en cours */
+  sceneLoading?: boolean;
+  /** faces avant des Viewbox (réglages du modèle) : dans la clé des instantanés */
+  fronts?: unknown;
   glassTest: GlassTest;
   model?: ModelVersion;
   rules: ClassificationRules;
@@ -61,7 +70,7 @@ interface Props {
   onPaintSaved?: (p: PaintSettings) => void;
 }
 
-export function SheetsPage({ scene, provider, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
+export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
   const bank = useMemo(() => {
     const b = new LineworkBank(scene, provider);
     // budget des traits gardés en mémoire (les vues retirées sont relues de l'IndexedDB / du serveur en un instant) :
@@ -84,11 +93,13 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   useEffect(() => bank.invalidateKeys(), [bank, framesVersion]);
   // vues spéciales : la banque relit les vues du modèle (une vue modifiée rend ses fenêtres « obsolètes »)
   const [viewTags, setViewTags] = useState<ViewTagRule[]>([]);
+  const [viewTagsLoaded, setViewTagsLoaded] = useState(false);
   useEffect(() => {
     vem
       .getSetting<unknown>('plans.viewTags')
       .then((v) => setViewTags(cleanViewTags(v)))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setViewTagsLoaded(true));
   }, []);
   useEffect(() => {
     const list = cleanCustomViews(customViews);
@@ -106,13 +117,14 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   // ─── peinture du projet : résolue sur la scène, dessinée par la banque des vues ───
   const paintState = usePaint(model?.id, paint, onPaintSaved);
   const paintCtx = useMemo(() => paintContext(scene.index), [scene]);
+  const light = !!scene.light;
   // « côtés extérieurs » : relevé des faces extérieures fait d'abord par tranches (plusieurs secondes d'un bloc sur un
   // très gros modèle = « Page ne répondant pas »), la peinture est résolue ensuite
   const needsSurvey = paintState.paint.zones.some((z) => z.target.scope === 'exterior');
   const [surveyTick, setSurveyTick] = useState(0);
-  const surveyReady = !needsSurvey || hasExteriorSurvey(scene, glassTest);
+  const surveyReady = !needsSurvey || light || hasExteriorSurvey(scene, glassTest);
   useEffect(() => {
-    if (surveyReady) return;
+    if (surveyReady || light) return;
     let alive = true;
     void prepareExteriorSurvey(scene, paintCtx, glassTest)
       .catch((e) => console.error('Relevé des côtés extérieurs', e))
@@ -122,7 +134,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     };
   }, [scene, paintCtx, glassTest, surveyReady, framesVersion]);
   const painted = useMemo(
-    () => (paintState.paint.zones.length && surveyReady ? paintScene(scene, paintState.paint, paintCtx, glassTest) : null),
+    () => (paintState.paint.zones.length && surveyReady && !light ? paintScene(scene, paintState.paint, paintCtx, glassTest) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scene, paintCtx, paintState.version, glassTest, framesVersion, surveyReady, surveyTick],
   );
@@ -130,6 +142,64 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
     bank.setPaint(painted ? { painted, colors: new Map(paintState.paint.colors.map((c) => [c.id, c])), version: String(paintState.version), isGlass: glassTest } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bank, painted, glassTest]);
+  // ─── consultation sans le modèle 3D : instantanés des vues sur le serveur (sheets/consult.ts) ───
+  const specOf = useMemo(() => {
+    const list = cleanCustomViews(customViews);
+    return (id: string) => list.find((v) => v.id === id);
+  }, [customViews]);
+  const [env, setEnv] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewTagsLoaded) return;
+    let alive = true;
+    void consultEnv({ modelKey: scene.modelKey, fronts: fronts ?? {}, paint: paintState.paint, rules, viewTags }).then((e) => alive && setEnv(e));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene.modelKey, fronts, paintState.version, rules, viewTags, viewTagsLoaded]);
+  const [lightAreas, setLightAreas] = useState<Map<string, number> | null>(null);
+  const [lightTick, setLightTick] = useState(0);
+  useEffect(() => {
+    if (!light || !env) return;
+    bank.light = serverLightSource(env, specOf);
+    bank.invalidateKeys();
+    let alive = true;
+    void fetchConsultInfo(env).then((info) => {
+      if (!alive || !info) return;
+      scene.frames.clear();
+      for (const f of info.frames) scene.frames.set(f.moduleId, f);
+      setLightAreas(new Map(info.areas));
+      setLightTick((n) => n + 1);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [light, env, bank, specOf, scene]);
+  // modèle 3D chargé : instantanés des vues du jeu ouvert écrits en arrière-plan (la prochaine ouverture n'en aura plus
+  // besoin) ; seulement quand la peinture est à jour dans la banque
+  const writer = useMemo(() => (light ? null : new ConsultWriter(bank, scene.modelKey)), [light, bank, scene.modelKey]);
+  const expectedPaint = paintState.paint.zones.length ? String(paintState.version) : null;
+  const paintSettled = !paintState.paint.zones.length || !!painted;
+  const readyRef = useRef<() => boolean>(() => false);
+  readyRef.current = () => paintSettled && bank.paintVersion() === expectedPaint;
+  const openDoc = useEditor((st) => st.doc);
+  const openSheetId = useEditor((st) => st.sheetId);
+  useEffect(() => {
+    if (!writer || !env || !paintSettled) return;
+    void writer.writeInfo(env, scene.frames.values(), painted?.areaByColor ?? null);
+  }, [writer, env, paintSettled, painted, scene]);
+  useEffect(() => {
+    if (!writer || !env || !openDoc || !paintSettled) return;
+    const t = setTimeout(() => {
+      // téléphone : seulement la planche affichée (pas de passe sur tout le jeu)
+      const doc = lowPowerDevice() ? { ...openDoc, sheets: openDoc.sheets.filter((x) => x.id === openSheetId) } : openDoc;
+      void writer.run(doc, env, specOf, () => readyRef.current(), openSheetId).catch(() => undefined);
+    }, 2000);
+    return () => {
+      clearTimeout(t);
+      writer.stop();
+    };
+  }, [writer, env, openDoc, openSheetId, paintSettled, specOf]);
   const [favorites, setFavorites] = useState<ColorDraft[]>([]);
   useEffect(() => {
     vem
@@ -141,6 +211,14 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   const [sets, setSets] = useState<DrawingSetRecord[]>([]);
   const [error, setError] = useState('');
   const [wizard, setWizard] = useState(false);
+  // « Générer » demandé sans le modèle 3D : l'assistant s'ouvre quand il est chargé
+  const [pendingWizard, setPendingWizard] = useState(false);
+  useEffect(() => {
+    if (pendingWizard && !light) {
+      setPendingWizard(false);
+      setWizard(true);
+    }
+  }, [pendingWizard, light]);
   const [progress, setProgress] = useState<{ label: string; fraction: number } | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [me, setMe] = useState<VemUser | null>(null);
@@ -185,6 +263,7 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
   const paintBundle: PaintBundle = {
     state: paintState,
     painted,
+    areas: painted?.areaByColor ?? lightAreas,
     ctx: paintCtx,
     favorites,
     canEditFavorites: me?.role === 'admin' || me?.role === 'technical_manager',
@@ -204,6 +283,9 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
       <SheetEditor
         paint={paintBundle}
         scene={scene}
+        onNeedScene={onNeedScene}
+        sceneLoading={sceneLoading}
+        lightTick={lightTick}
         bank={bank}
         glassTest={glassTest}
         legendColors={legendColors}
@@ -321,7 +403,18 @@ export function SheetsPage({ scene, provider, glassTest, model, rules, framesVer
           <div className="card-head">
             <h2>Jeux de plans</h2>
             <div className="spacer" />
-            <button className="btn primary" onClick={() => setWizard(true)}>
+            <button
+              className="btn primary"
+              onClick={() => {
+                // générer = calculer les vues : il faut le modèle 3D
+                if (light) {
+                  onNeedScene?.();
+                  setPendingWizard(true);
+                  return;
+                }
+                setWizard(true);
+              }}
+            >
               ✨ Générer un jeu de plans
             </button>
           </div>
