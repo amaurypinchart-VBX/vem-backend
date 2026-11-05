@@ -30,6 +30,7 @@ import type { JointRevalidation } from './core/jointRevalidation';
 import type { ConnectionSet } from './core/checks/joints';
 import type { TypeChecks } from './core/moduleTypes';
 import { typeChecks } from './core/moduleTypes';
+import type { GroundContactOptions } from './core/groundContact';
 
 export interface CalcOptions {
   ec3Method: Ec3Method;
@@ -49,6 +50,11 @@ export interface CalcOptions {
   stairClad?: boolean;
   /** sans vérins, pieds centraux calés : cale directement sous la rive (UNP) au lieu de sous la réception centrale */
   middleUnderRim?: boolean;
+  /**
+   * sans vérins : comment les Viewbox touchent le sol — angles calés (défaut), posées directement au sol (toute la rive
+   * UNP porte), ou posées sur des plaques / blocs (la rive, ou les profils du plancher, portent sur chaque plaque)
+   */
+  contact?: GroundContactOptions;
 }
 
 export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true, stairClad: false };
@@ -86,6 +92,11 @@ export interface StudyInputs {
   joints?: JointRevalidation;
   /** blocs de calage bois dessinés sous les pieds : seulement pour le calage (pas dans le calcul ni `inputKey`) */
   groundBlocks?: import('./core/blocks').DrawnBlock[];
+  /**
+   * contact au sol par tronçons (sans vérins) : mode, plaques / blocs sous la structure (dessinés ou générés) et raideur
+   * du sol (N/mm³) — dans le calcul et dans `inputKey`
+   */
+  groundContact?: { mode: 'rims' | 'pads'; pads: import('./core/blocks').DrawnBlock[]; k: number } | null;
 }
 
 export interface StudyRun {
@@ -130,6 +141,7 @@ export function assembleStudy(inp: StudyInputs): StructuralModel {
     stairs: inp.stairs,
     members: inp.members,
     addedSupports: inp.addedSupports,
+    groundContact: o.jacks ? null : (inp.groundContact ?? null),
   });
 }
 
@@ -424,5 +436,5 @@ export function inputKey(inp: StudyInputs): string {
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}:${(e as SectionEntry).material ?? ''}${typeExtra(e)}`)}`)
     .join('|');
   const joints = inp.joints ? inp.joints.rows.map((r) => `${r.connection}:${r.status}:${r.modules.join('+')}:${r.capacities.map((c) => Math.round(c.after ?? 0)).join('/')}`) : [];
-  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
+  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], ...(inp.groundContact && !inp.options.jacks ? [inp.groundContact] : []), inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
 }

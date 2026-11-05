@@ -4,6 +4,8 @@
 // Les angles distants de moins de 100 mm en plan forment un groupe d'appuis (une plaque commune). Fonctions pures.
 import type { CalcRecord } from './records';
 import { fmtNumber } from './units';
+import type { DrawnBlock } from './blocks';
+import { contactStrips, floorOfEstimate } from './groundContact';
 
 export type P2 = [number, number];
 
@@ -88,6 +90,12 @@ export interface EstimateOptions {
    */
   jacks?: boolean;
   footOffset?: number;
+  /**
+   * contact par tronçons (sans vérins) : Viewbox posées au sol (toute la rive porte) ou posées sur des plaques / blocs —
+   * un groupe d'appuis par tronçon de rive / profil, charges réparties comme un plancher rigide sur appuis élastiques
+   * (raideur de chaque tronçon, `groundContact.ts`) ; le calcul complet affine la répartition
+   */
+  contact?: { mode: 'rims' | 'pads'; pads: DrawnBlock[]; k: number } | null;
   /** hors service, le dernier niveau est évacué (en plus des terrasses) */
   evacuateTopLevel: boolean;
   /** majoration forfaitaire supplémentaire (0,1 = +10 %) */
@@ -126,11 +134,39 @@ export interface SupportGroup {
   terrace?: boolean;
   /** appuis posés sur un bloc de calage bois dessiné (identifiant du bloc) : un seul appui de calage par bloc */
   block?: string;
+  /**
+   * tronçon de rive (UNP) ou de profil du plancher qui porte directement (posée au sol, ou sur une plaque / un bloc) :
+   * surface de contact = la semelle du profil sur la longueur du tronçon (`groundContact.ts`)
+   */
+  strip?: StripInfo;
   moduleIds: string[];
 }
 
-/** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier, « T » / « TM » pied de terrasse. */
-export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair' | 'terrace' | 'post'>) => (g.terrace ? (g.middle ? 'TM' : 'T') : g.post ? 'R' : g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners)));
+/** Tronçon de profil qui porte au sol (repris de `ContactStrip`, sans les stations). */
+export interface StripInfo {
+  kind: 'rim' | 'secondary';
+  label: string;
+  /** plaque ou bloc sous le tronçon */
+  pad?: string;
+  /** centre (monde, plan), direction le long du tronçon, longueur et largeur de contact (mm) */
+  center: P2;
+  along: P2;
+  length: number;
+  width: number;
+  corner: boolean;
+  middle: boolean;
+}
+
+/** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier, « T » / « TM » pied de terrasse, « L… » tronçon de rive / profil. */
+export const groupTypeKey = (g: Pick<SupportGroup, 'corners' | 'middle' | 'stair' | 'terrace' | 'post' | 'strip'>) =>
+  g.strip ? stripTypeKey(g.strip) : g.terrace ? (g.middle ? 'TM' : 'T') : g.post ? 'R' : g.stair ? 'E' : g.middle ? 'M' : String(Math.min(4, g.corners));
+
+/** Type d'un tronçon : « LA » rive à un angle, « LM » rive au milieu d'un grand côté, « L » autre tronçon de rive, « LS » traverse / lisse. */
+export const stripTypeKey = (s: Pick<StripInfo, 'kind' | 'corner' | 'middle'>) => (s.kind === 'secondary' ? 'LS' : s.corner ? 'LA' : s.middle ? 'LM' : 'L');
+
+/** Libellé d'un type de tronçon. */
+export const stripTypeLabel = (key: string) =>
+  key === 'LS' ? 'traverse / lisse du plancher' : key === 'LA' ? 'rive (UNP) à un angle' : key === 'LM' ? 'rive (UNP) au milieu d’un grand côté' : 'rive (UNP)';
 
 /** Réaction d'un groupe d'appuis dans une combinaison et part du public qu'elle contient (public limité). */
 export interface ComboReaction {
@@ -251,7 +287,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   const center = (c: number[]): P2 => [c.reduce((s, i) => s + pts[i].pos[0], 0) / c.length, c.reduce((s, i) => s + pts[i].pos[1], 0) / c.length];
   // rangées de 500 mm : des groupes décalés de quelques mm (2, 3 ou 4 angles) restent sur la même rangée
   ground.sort((a, b) => Math.round(center(a)[1] / 500) - Math.round(center(b)[1] / 500) || center(a)[0] - center(b)[0]);
-  const groups: SupportGroup[] = ground.map((c, k) => ({
+  let groups: SupportGroup[] = ground.map((c, k) => ({
     id: `${pts[c[0]].middle ? 'M' : 'P'}${k + 1}`,
     position: center(c),
     corners: pts[c[0]].middle ? 0 : c.filter((i) => pts[i].level === 0).length,
@@ -280,7 +316,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   const isTop = modules.map((m) =>
     !modules.some((o) => o.level === m.level + 1 && o.corners.some((c) => m.corners.some((d) => dist(c, d) <= opt.groupTolerance))),
   );
-  const parts: Part[] = groups.map(() => ({ G: 0, Q: 0, QaB: 0, S: 0 }));
+  let parts: Part[] = groups.map(() => ({ G: 0, Q: 0, QaB: 0, S: 0 }));
   let totalG = 0;
   let totalQ = 0;
   let totalS = 0;
@@ -307,7 +343,13 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     totalS += S;
     return { G, Q: Qfloor + Qroof, QaB, floorG: (L.floorFinish + (L.floorExtra ?? 0)) * m.area + 0.5 * weight, Qfloor, S };
   });
-  modules.forEach((_, k) => {
+  // ─── contact par tronçons : un groupe par tronçon de rive / profil, plancher rigide sur appuis élastiques ───
+  const strip = opt.contact && !opt.jacks ? stripDistribution(modules, opt.contact, perModule, warnings) : null;
+  if (strip) {
+    groups = strip.groups;
+    parts = strip.parts;
+  }
+  if (!strip) modules.forEach((_, k) => {
     const lm = perModule[k];
     const cornerPts = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.module === k && !p.middle);
     const midPts = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.module === k && p.middle);
@@ -339,6 +381,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
   const unitIds = [...new Set(unitOf)];
   const units = unitIds.map((u) => modules.filter((_, k) => unitOf[k] === u).map((m) => m.id));
   const groupUnit = groups.map((g) => unitOf[modules.findIndex((m) => m.id === g.moduleIds[0])]);
+  const weightOf = (g: number) => strip?.weights[g] ?? 1;
 
   // ─── combinaisons ───
   interface Combo {
@@ -395,7 +438,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const d = c.dir;
     const perp: P2 = [-d[1], d[0]];
     for (const { u, mods, levels } of levelData) {
-      const gi = groups.map((_, g) => g).filter((g) => groupUnit[g] === u && !groups[g].middle);
+      const gi = groups.map((_, g) => g).filter((g) => groupUnit[g] === u && (!!strip || !groups[g].middle));
       if (gi.length < 2) continue;
       let M = 0;
       for (const lv of levels) {
@@ -412,13 +455,14 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
         const Fi = opt.sway * V;
         M += (Fw + Fi) * (z0 + h / 2) + Fh * z0;
       }
-      // bloc rigide, appuis de même raideur : ΔR = M · s / Σ s²
-      const cx = gi.reduce((s, g) => s + groups[g].position[0], 0) / gi.length;
-      const cy = gi.reduce((s, g) => s + groups[g].position[1], 0) / gi.length;
+      // bloc rigide, appuis de même raideur : ΔR = M · s / Σ s² (tronçons : raideurs w, ΔR = M · w · s / Σ w s²)
+      const W = gi.reduce((a, g) => a + weightOf(g), 0);
+      const cx = gi.reduce((s, g) => s + weightOf(g) * groups[g].position[0], 0) / W;
+      const cy = gi.reduce((s, g) => s + weightOf(g) * groups[g].position[1], 0) / W;
       const s = gi.map((g) => (groups[g].position[0] - cx) * d[0] + (groups[g].position[1] - cy) * d[1]);
-      const s2 = s.reduce((a, b) => a + b * b, 0);
-      if (s2 < 1) continue;
-      gi.forEach((g, k) => (R[g] += (M * s[k]) / s2));
+      const s2 = gi.reduce((a, g, k) => a + weightOf(g) * s[k] * s[k], 0);
+      if (s2 < 1e-9) continue;
+      gi.forEach((g, k) => (R[g] += (M * weightOf(g) * s[k]) / s2));
     }
     return R;
   };
@@ -458,7 +502,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     combos: perGroup[i],
   }));
   let outGroups = groups;
-  if (opt.jacks) {
+  if (opt.jacks && !strip) {
     // un vérin par Viewbox posée au sol dans chaque groupe, à parts égales, à la position de sa réception de pied
     const off = opt.footOffset ?? 155;
     const split: GroupReaction[] = [];
@@ -492,7 +536,9 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     {
       key: 'estimate.vertical',
       title: 'Charges verticales (surfaces tributaires)',
-      clause: 'estimation — chaque Viewbox descend ses charges à ses 4 angles',
+      clause: strip
+        ? `estimation — ${opt.contact!.mode === 'rims' ? 'Viewbox posées au sol : rives (UNP) en appui continu' : 'Viewbox posées sur plaques / blocs'}, plancher rigide sur appuis élastiques (raideur des tronçons)`
+        : 'estimation — chaque Viewbox descend ses charges à ses 4 angles',
       formula: L.weightMode === 'weighed' ? 'G = poids Viewbox pesé + divers ; Q = q · A' : 'G = max(poids Viewbox pesé, barres + (plafond + sol) · A) + divers ; Q = q · A',
       withValues: `ΣG = ${n0(totalG)} kN ; ΣQ = ${n0(totalQ)} kN (${modules.length} Viewbox)`,
       result: totalG + totalQ,
@@ -709,4 +755,108 @@ export function addSupports(est: Estimate, extras: readonly AddedSupport[] | und
     verticalK: est.verticalK === undefined ? undefined : est.verticalK + G + Q,
     totals,
   };
+}
+
+const unit2 = (a: P2): P2 => {
+  const d = Math.hypot(a[0], a[1]) || 1;
+  return [a[0] / d, a[1] / d];
+};
+
+/**
+ * Parts d'une charge P appliquée en p reprises par des appuis élastiques (raideurs w) sous un plancher rigide :
+ * R_i = w_i (a + b · (x_i − x̄)), équilibre des forces et des moments ; appuis soulevés retirés (compression seule).
+ */
+export function rigidShares(pos: P2[], w: number[], p: P2): number[] {
+  const on = pos.map(() => true);
+  let out = pos.map(() => 0);
+  for (let it = 0; it < 12; it++) {
+    const idx = pos.map((_, i) => i).filter((i) => on[i] && w[i] > 0);
+    if (!idx.length) return pos.map(() => 1 / pos.length);
+    const W = idx.reduce((a, i) => a + w[i], 0);
+    const cx = idx.reduce((a, i) => a + w[i] * pos[i][0], 0) / W;
+    const cy = idx.reduce((a, i) => a + w[i] * pos[i][1], 0) / W;
+    let [sxx, sxy, syy] = [0, 0, 0];
+    for (const i of idx) {
+      const dx = pos[i][0] - cx;
+      const dy = pos[i][1] - cy;
+      sxx += w[i] * dx * dx;
+      sxy += w[i] * dx * dy;
+      syy += w[i] * dy * dy;
+    }
+    const [mx, my] = [p[0] - cx, p[1] - cy];
+    const det = sxx * syy - sxy * sxy;
+    let [bx, by] = [0, 0];
+    if (det > 1e-9 * Math.max(1, sxx * syy)) {
+      bx = (mx * syy - my * sxy) / det;
+      by = (my * sxx - mx * sxy) / det;
+    } else if (sxx + syy > 1e-9) {
+      // appuis alignés : seule la composante du moment le long de la ligne est reprise
+      const e = unit2(sxx >= syy ? [sxx, sxy] : [sxy, syy]);
+      const S = idx.reduce((a, i) => a + w[i] * ((pos[i][0] - cx) * e[0] + (pos[i][1] - cy) * e[1]) ** 2, 0);
+      const t = S > 0 ? (mx * e[0] + my * e[1]) / S : 0;
+      [bx, by] = [t * e[0], t * e[1]];
+    }
+    out = pos.map((q, i) => (on[i] && w[i] > 0 ? w[i] * (1 / W + bx * (q[0] - cx) + by * (q[1] - cy)) : 0));
+    const neg = out.map((v, i) => (v < -1e-9 ? i : -1)).filter((i) => i >= 0);
+    if (!neg.length) break;
+    for (const i of neg) on[i] = false;
+  }
+  const tot = out.reduce((a, v) => a + Math.max(0, v), 0) || 1;
+  return out.map((v) => Math.max(0, v) / tot);
+}
+
+/** Groupes d'appuis par tronçon et charges verticales de chaque module réparties sur les tronçons de la Viewbox au sol qui le porte. */
+function stripDistribution(
+  modules: EstimateModule[],
+  contact: NonNullable<EstimateOptions['contact']>,
+  perModule: Array<{ G: number; Q: number; QaB: number; S: number }>,
+  warnings: string[],
+): { groups: SupportGroup[]; parts: Part[]; weights: number[] } {
+  const ground = modules.filter((m) => m.level === 0);
+  const plan = contactStrips(ground.map(floorOfEstimate), contact.mode, contact.pads, contact.k, 0);
+  warnings.push(...plan.warnings);
+  const strips = plan.strips;
+  strips.sort((a, b) => Math.round(a.center[1] / 500) - Math.round(b.center[1] / 500) || a.center[0] - b.center[0]);
+  const groups: SupportGroup[] = strips.map((st, k) => ({
+    id: `L${k + 1}`,
+    position: st.center,
+    corners: st.corner ? 1 : 0,
+    middle: st.middle,
+    strip: { kind: st.kind, label: st.label, ...(st.pad ? { pad: st.pad } : {}), center: st.center, along: st.along, length: st.length, width: st.width, corner: st.corner, middle: st.middle },
+    moduleIds: [st.module],
+  }));
+  const weights = strips.map((st) => st.stations.reduce((a, x) => a + x.kv, 0));
+  const parts: Part[] = groups.map(() => ({ G: 0, Q: 0, QaB: 0, S: 0 }));
+  const centre = (m: EstimateModule): P2 => [m.corners.reduce((a, c) => a + c[0], 0) / m.corners.length, m.corners.reduce((a, c) => a + c[1], 0) / m.corners.length];
+  const inside = (m: EstimateModule, p: P2) => {
+    const xs = m.corners.map((c) => c[0]);
+    const ys = m.corners.map((c) => c[1]);
+    return p[0] >= Math.min(...xs) - 1 && p[0] <= Math.max(...xs) + 1 && p[1] >= Math.min(...ys) - 1 && p[1] <= Math.max(...ys) + 1;
+  };
+  const without = new Set<string>();
+  modules.forEach((m, k) => {
+    const c = centre(m);
+    // Viewbox au sol qui porte ce module : elle-même, sinon celle sous son centre, sinon la plus proche
+    const host = m.level === 0 ? m : (ground.find((g) => inside(g, c)) ?? ground.reduce((a, g) => (dist(centre(g), c) < dist(centre(a), c) ? g : a), ground[0]));
+    let idx = groups.map((_, i) => i).filter((i) => host && groups[i].moduleIds[0] === host.id);
+    if (!idx.length) {
+      if (host) without.add(host.id);
+      idx = groups.map((_, i) => i);
+    }
+    if (!idx.length) return;
+    const shares = rigidShares(
+      idx.map((i) => groups[i].position),
+      idx.map((i) => weights[i]),
+      c,
+    );
+    const lm = perModule[k];
+    idx.forEach((i, j) => {
+      parts[i].G += lm.G * shares[j];
+      parts[i].Q += lm.Q * shares[j];
+      parts[i].QaB += lm.QaB * shares[j];
+      parts[i].S! += lm.S * shares[j];
+    });
+  });
+  if (without.size) warnings.push(`${[...without].join(', ')} : aucune rive ni aucun profil ne porte sur une plaque — charges réparties sur les autres tronçons (disposition des plaques à revoir).`);
+  return { groups, parts, weights };
 }

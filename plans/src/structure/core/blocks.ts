@@ -115,6 +115,20 @@ export function makeBlocks(
   });
 }
 
+/** Surface de l'union de rectangles [u0, u1, v0, v1] (compression de coordonnées). */
+export function unionArea(rects: ReadonlyArray<readonly [number, number, number, number] | readonly number[]>): number {
+  const xs = [...new Set(rects.flatMap((r) => [r[0], r[1]]))].sort((a, b) => a - b);
+  const ys = [...new Set(rects.flatMap((r) => [r[2], r[3]]))].sort((a, b) => a - b);
+  let a = 0;
+  for (let i = 0; i + 1 < xs.length; i++)
+    for (let j = 0; j + 1 < ys.length; j++) {
+      const cx = (xs[i] + xs[i + 1]) / 2;
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      if (rects.some((r) => cx > r[0] && cx < r[1] && cy > r[2] && cy < r[3])) a += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+    }
+  return a;
+}
+
 const cm = (mm: number) => fmtNumber(mm / 10, mm % 10 ? 1 : 0);
 
 /** « 100 × 100 × 64,5 cm » (plan le long des axes de la Viewbox, puis hauteur). */
@@ -159,6 +173,8 @@ export interface BlockFoot {
   rect: [number, number, number, number];
   /** part de la surface de contact du pied qui porte sur le bloc (1 = entièrement sur le bloc) */
   coverage: number;
+  /** tronçon de rive / profil posé sur le bloc (semelle sur la largeur du bloc), pas un pied ponctuel */
+  strip?: boolean;
   REd: number;
   Rk: number;
 }
@@ -210,14 +226,16 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
     // pieds centraux de deux Viewbox voisines (un seul groupe d'appuis) : deux platines côte à côte sur le bloc
     const r0 = g.reaction.group;
     const geo: SupportGeometry =
-      r0.middle && !r0.jack && r0.moduleIds.length > 1
+      r0.middle && !r0.jack && !r0.strip && r0.moduleIds.length > 1
         ? { ...geo0, contact: [geo0.contact[0], 2 * geo0.contact[1]] }
         : geo0;
     const { u, v } = geo;
     const rect = [geo.center[0] - geo.contact[0] / 2, geo.center[0] + geo.contact[0] / 2, geo.center[1] - geo.contact[1] / 2, geo.center[1] + geo.contact[1] / 2];
     let best: { b: DrawnBlock; a: number } | null = null;
     let near: { b: DrawnBlock; d: number } | null = null;
-    for (const b of blocks) {
+    // tronçon de rive / profil posé sur une plaque connue : cette plaque
+    const own = r0.strip?.pad ? blocks.find((b) => b.id === r0.strip!.pad) : undefined;
+    for (const b of own ? [own] : blocks) {
       const br = blockRect(b, u, v);
       const a = areaOf(overlap(rect, br));
       if (a > 0 && (!best || a > best.a)) best = { b, a };
@@ -248,7 +266,7 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
     const br = blockRect(b, u, v);
     const feet: BlockFoot[] = list.map((x) => {
       const r = overlap(x.rect, br) as [number, number, number, number];
-      return { id: x.g.reaction.group.id, rect: r, coverage: x.coverage, REd: x.g.reaction.REd, Rk: x.g.reaction.Rk };
+      return { id: x.g.reaction.group.id, rect: r, coverage: x.coverage, REd: x.g.reaction.REd, Rk: x.g.reaction.Rk, ...(x.g.reaction.group.strip ? { strip: true } : {}) };
     });
     for (const f of feet)
       if (f.coverage < 0.999) warnings.push(`Appui ${f.id} : seulement ${fmtNumber(f.coverage * 100, 0)} % de sa surface d’appui porte sur le bloc ${b.id} (pied au bord du bloc, dessin à vérifier).`);
@@ -271,6 +289,18 @@ export function assignBlocks(groups: PlateGroup[], modules: EstimateModule[], bl
         ...(rs.some((r) => r.group.jack) ? { jack: true } : {}),
         // pied de poteau du modèle posé sur le même bloc (libellé « … et un pied de poteau »)
         ...(rs.some((r) => r.group.post) && rs.some((r) => !r.group.post) ? { post: true } : {}),
+        // tronçons de rive / profils posés sur la plaque : résumé (angle, milieu, profils seulement)
+        ...(rs.every((r) => r.group.strip)
+          ? {
+              strip: {
+                ...rs[0].group.strip!,
+                kind: rs.every((r) => r.group.strip!.kind === 'secondary') ? ('secondary' as const) : ('rim' as const),
+                corner: rs.some((r) => r.group.strip!.corner),
+                middle: rs.some((r) => r.group.strip!.middle) && !rs.some((r) => r.group.strip!.corner),
+                length: rs.reduce((a, r) => a + r.group.strip!.length, 0),
+              },
+            }
+          : {}),
         block: b.id,
         moduleIds: [...new Set(rs.flatMap((r) => r.group.moduleIds))],
       },
@@ -318,6 +348,8 @@ export interface BlockChain {
    */
   plate: 'centered' | 'flush';
   edge: [number | null, number | null];
+  /** tronçons de rive / profils posés sur la plaque : portée de la répartition de chaque côté de la semelle (mm) */
+  stripReach?: number;
 }
 
 /**
@@ -338,9 +370,40 @@ export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flus
     Math.max(...s.feet.map((f) => f.rect[3])) + h,
   ];
   const reg = [Math.max(u0, fr[0]), Math.min(u1, fr[1]), Math.max(v0, fr[2]), Math.min(v1, fr[3])];
-  const eu = 2 * Math.max(0, Math.min(cu - reg[0], reg[1] - cu));
-  const ev = 2 * Math.max(0, Math.min(cv - reg[2], reg[3] - cv));
+  let eu = 2 * Math.max(0, Math.min(cu - reg[0], reg[1] - cu));
+  let ev = 2 * Math.max(0, Math.min(cv - reg[2], reg[3] - cv));
   const byBlock = [2 * Math.max(0, Math.min(cu - u0, u1 - cu)), 2 * Math.max(0, Math.min(cv - v0, v1 - cv))];
+  // tronçons de rive / profils posés sur la plaque (semelles étroites en L, en ligne…) : l'emprise efficace ne dépasse
+  // pas l'union des semelles élargies à 45° sur la hauteur de la plaque (une plaque mince ne porte pas le coin
+  // intérieur entre deux rives, une épaisse oui) — même aire, mêmes proportions
+  // Une plaque mince répartit aussi en flexion : console c = t · √(fm,d / (3 q)) au-delà de la semelle (pression q
+  // sous la plaque, M = q c² / 2 ≤ fm,d t² / 6) — point fixe sur q, au moins la diffusion à 45° (c ≥ h).
+  let stripLimited = false;
+  let stripReach = h;
+  if (s.feet.length && s.feet.every((f) => f.strip)) {
+    const m = blockMaterial(b.material);
+    const fmd = (0.9 * (m.strength?.fmk ?? 24)) / 1.3;
+    const Rk = s.feet.reduce((a, f) => a + Math.max(0, f.Rk), 0) * scale;
+    const Wb = b.massKg * 9.81;
+    const blockArea = Math.max(1, (u1 - u0) * (v1 - v0));
+    const unionWith = (c: number) => unionArea(s.feet.map((f) => [Math.max(u0, f.rect[0] - c), Math.min(u1, f.rect[1] + c), Math.max(v0, f.rect[2] - c), Math.min(v1, f.rect[3] + c)] as const));
+    let A = unionWith(h);
+    let c = h;
+    for (let it = 0; it < 30 && Rk > 0; it++) {
+      const q = Rk / Math.max(1, Math.min(A, eu * ev)) + Wb / blockArea;
+      const next = Math.max(h, h * Math.sqrt(fmd / (3 * Math.max(q, 1e-9))));
+      if (Math.abs(next - c) < 1) break;
+      c = next;
+      A = unionWith(c);
+    }
+    stripReach = c;
+    if (A > 0 && eu * ev > A) {
+      const k = Math.sqrt(A / (eu * ev));
+      eu *= k;
+      ev *= k;
+      stripLimited = true;
+    }
+  }
   const { fc90d } = blockFc90d(b);
   let c90 = { foot: s.feet[0]?.id ?? '', sigma: 0, fc90d, area: 1, REd: 0 };
   for (const f of s.feet) {
@@ -350,7 +413,7 @@ export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flus
   }
   const W = b.massKg * 9.81;
   return {
-    label: `Bloc bois ${b.id} ${cm(u1 - u0)} × ${cm(v1 - v0)} × ${cm(h)} cm (${fmtNumber(b.massKg, 0)} kg)`,
+    label: `${b.id.startsWith('PL') ? 'Plaque bois' : 'Bloc bois'} ${b.id} ${cm(u1 - u0)} × ${cm(v1 - v0)} × ${cm(h)} cm (${fmtNumber(b.massKg, 0)} kg)`,
     dims: [u1 - u0, v1 - v0],
     height: h,
     eff: [eu, ev],
@@ -358,7 +421,8 @@ export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flus
     weightK: W,
     weightD: 1.35 * W,
     c90,
-    diffusionLimited: eu < byBlock[0] - 1 || ev < byBlock[1] - 1,
+    diffusionLimited: stripLimited || eu < byBlock[0] - 1 || ev < byBlock[1] - 1,
+    ...(s.feet.length && s.feet.every((f) => f.strip) ? { stripReach } : {}),
     plate,
     edge: [s.edges[0] === null ? null : Math.abs(cu - s.edges[0]), s.edges[1] === null ? null : Math.abs(cv - s.edges[1])],
   };

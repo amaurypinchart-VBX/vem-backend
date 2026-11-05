@@ -11,6 +11,9 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import type { Recognition } from '../../structure/core/recognition';
 import { fmtNumber } from '../../structure/core/units';
 import type { CalcOptions, StudyRun } from '../../structure/studyRun';
+import type { GroundContactMode, PadLayout } from '../../structure/core/groundContact';
+import { PAD_LAYOUT_DEFAULT } from '../../structure/core/groundContact';
+import { SUBGRADE_PRESETS } from '../../structure/core/ground';
 import type { ElementChecks } from '../../structure/core/checks/facade';
 import { modelSegments } from '../../structure/core/templateView';
 import { familyName } from '../../structure/report/build';
@@ -124,6 +127,142 @@ export interface CalcPanelProps {
   modsLines?: string[];
   /** pieds du milieu calés (Site & hypothèses › options avancées) */
   middleFeet?: boolean;
+  /** blocs de calage dessinés dans le modèle (étape 1) et raideur du sol de l'étape 2 */
+  modelBlocks?: number;
+  subgrade?: string;
+}
+
+type SupportChoice = 'jacks' | GroundContactMode;
+
+/** Comment les Viewbox reposent au sol : vérins, angles calés, posées au sol (rive continue), sur plaques / blocs. */
+function GroundSupportChoice({ o, set, p }: { o: CalcOptions; set: <K extends keyof CalcOptions>(k: K, v: CalcOptions[K]) => void; p: CalcPanelProps }) {
+  const choice: SupportChoice = o.jacks ? 'jacks' : (o.contact?.mode ?? 'points');
+  const pick = (c: SupportChoice) => p.setOptions({ ...o, jacks: c === 'jacks', contact: c === 'jacks' || c === 'points' ? (o.contact ? { ...o.contact, mode: 'points' } : undefined) : { ...(o.contact ?? {}), mode: c } });
+  const layout: PadLayout = { ...PAD_LAYOUT_DEFAULT, ...(o.contact?.layout ?? {}) };
+  const setContact = (u: Partial<NonNullable<CalcOptions['contact']>>) => set('contact', { ...(o.contact ?? { mode: choice === 'jacks' ? 'points' : choice }), ...u });
+  const setLayout = (u: Partial<PadLayout>) => setContact({ layout: { ...layout, ...u } });
+  const usesModel = choice === 'pads' && (p.modelBlocks ?? 0) > 0 && o.contact?.pads !== 'layout';
+  const opt = (c: SupportChoice, title: string, hint: string) => (
+    <label className="row" style={{ alignItems: 'flex-start', gap: 6 }}>
+      <input type="radio" name="ground-support" checked={choice === c} onChange={() => pick(c)} data-testid={`support-${c}`} />
+      <span>
+        {title}
+        <div className="hint">{hint}</div>
+      </span>
+    </label>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid="ground-support">
+      <b>Comment les Viewbox reposent au sol</b>
+      {opt('jacks', 'Sur les pieds à vérin', '6 appuis par Viewbox (4 angles + milieu des grands côtés), sous les réceptions de pied, 155 mm à l’intérieur.')}
+      {opt('points', 'Angles calés directement (sans vérin)', 'Appuis aux 4 angles (+ milieux des grands côtés si les pieds centraux sont calés, étape 2).')}
+      {opt('rims', 'Posées directement au sol : toute la rive (UNP) du plancher porte', 'Appui continu sous les 4 rives : le calcul 3D répartit la charge le long de l’UNP selon la raideur du sol. Le sol est vérifié par tronçon d’environ 1 m sous la semelle de l’UNP.')}
+      {opt('pads', 'Sur des plaques ou des blocs (bois…)', 'La rive (UNP) porte sur toute la largeur de chaque plaque ; une plaque placée sous le milieu de la Viewbox (hors rive) porte les traverses / lisses du plancher, calées à leur niveau.')}
+      {choice === 'jacks' && (
+        <div className="hint" style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {p.jack ? (
+            <>
+              <span>
+                Tige Tr {n(p.jack.d, 0)} × 5 classe 10.9 (noyau {n(p.jack.d3, 1)} mm, fy {n(p.jack.fy, 0)} N/mm²), {n(p.jack.perModule, 0)} vérins par Viewbox (4 angles + milieu des 2 grands côtés), sortie{' '}
+                {n(p.jack.extensionMax / 10, 0)} cm au plus.
+              </span>
+              <label className="row" style={{ gap: 6 }}>
+                Sortie des tiges
+                <input
+                  type="number"
+                  step={0.5}
+                  min={0.5}
+                  max={p.jack.extensionMax / 10}
+                  value={Math.min(o.jackExtension, p.jack.extensionMax) / 10}
+                  onChange={(e) => set('jackExtension', Math.min(p.jack!.extensionMax, Math.max(5, (parseFloat(e.target.value) || 0) * 10)))}
+                  style={{ width: 70 }}
+                />{' '}
+                cm (maxi {n(p.jack.extensionMax / 10, 0)} cm, calcul au plus défavorable par défaut)
+              </label>
+            </>
+          ) : (
+            <span>Tige de vérin absente ou désactivée dans la bibliothèque (VBX-JACK).</span>
+          )}
+        </div>
+      )}
+      {choice === 'points' && (
+        <label className="row" style={{ paddingLeft: 22 }} title="Sans vérins : la cale du milieu du grand côté est posée directement sous la rive (UNP) et non sous la réception centrale, 155 mm à l’intérieur — la rive n’est plus tordue par l’appui du milieu">
+          <input type="checkbox" checked={!!o.middleUnderRim} disabled={!p.middleFeet} onChange={(e) => set('middleUnderRim', e.target.checked)} /> Cale du milieu directement sous la rive (UNP)
+          {!p.middleFeet && <span className="hint">&nbsp;— pieds du milieu non calés (Site & hypothèses › options avancées)</span>}
+        </label>
+      )}
+      {(choice === 'rims' || choice === 'pads') && (
+        <div style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label className="row" style={{ gap: 6 }} title="Raideur du sol (module de réaction k) : plus le sol est raide, plus la charge se concentre près des angles et sous les poteaux ; plus il est souple, plus la rive répartit">
+            Raideur du sol
+            <select value={o.contact?.subgrade ?? ''} onChange={(e) => setContact({ subgrade: e.target.value || undefined })} data-testid="contact-subgrade">
+              <option value="">comme à l’étape 2 ({SUBGRADE_PRESETS.find((x) => x.key === p.subgrade)?.label ?? '—'})</option>
+              {SUBGRADE_PRESETS.map((x) => (
+                <option key={x.key} value={x.key}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {choice === 'pads' && (
+            <>
+              {(p.modelBlocks ?? 0) > 0 && (
+                <label className="row" style={{ gap: 6 }}>
+                  Plaques
+                  <select value={usesModel ? 'model' : 'layout'} onChange={(e) => setContact({ pads: e.target.value as 'model' | 'layout' })} data-testid="contact-pads-source">
+                    <option value="model">les {p.modelBlocks} bloc(s) dessinés dans le modèle</option>
+                    <option value="layout">une disposition choisie ici</option>
+                  </select>
+                </label>
+              )}
+              {!usesModel && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-testid="pad-layout">
+                  <label className="row" style={{ gap: 6 }}>
+                    Plaques de
+                    <input type="number" min={20} max={300} step={5} value={layout.size / 10} onChange={(e) => setLayout({ size: Math.max(200, (parseFloat(e.target.value) || 100) * 10) })} style={{ width: 64 }} /> ×{' '}
+                    {n(layout.size / 10, 0)} cm, épaisseur
+                    <input type="number" min={1} max={100} step={0.5} value={layout.thickness / 10} onChange={(e) => setLayout({ thickness: Math.max(10, (parseFloat(e.target.value) || 4) * 10) })} style={{ width: 56 }} /> cm
+                    <select value={layout.material} onChange={(e) => setLayout({ material: e.target.value })}>
+                      <option value="C24">bois massif C24</option>
+                      <option value="CP-F40/30">contreplaqué F40/30</option>
+                      <option value="CP-F20/15">contreplaqué F20/15</option>
+                    </select>
+                  </label>
+                  <label className="row">
+                    <input type="checkbox" checked={layout.corners} onChange={(e) => setLayout({ corners: e.target.checked })} /> une plaque à chaque angle (l’UNP des deux côtés de l’angle porte dessus)
+                  </label>
+                  <label className="row">
+                    <input type="checkbox" checked={layout.middles} onChange={(e) => setLayout({ middles: e.target.checked })} /> une plaque au milieu de chaque grand côté
+                  </label>
+                  <label className="row" style={{ gap: 6 }}>
+                    Blocs au centre de chaque Viewbox, sous les profils du plancher :
+                    <select value={layout.centre} onChange={(e) => setLayout({ centre: Number(e.target.value) })} data-testid="pad-centre">
+                      {[0, 1, 2, 3].map((k) => (
+                        <option key={k} value={k}>
+                          {k === 0 ? 'aucun' : k}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="row" style={{ gap: 6 }}>
+                    Pose
+                    <select value={layout.placement ?? 'flush'} onChange={(e) => setLayout({ placement: e.target.value as 'flush' | 'centered' })} data-testid="pad-placement">
+                      <option value="flush">à fleur de l’installation (ne dépassent pas)</option>
+                      <option value="centered">centrées sous la rive (dépassent de la moitié)</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+              <div className="hint">
+                Équilibre d’une plaque : le sol ne peut porter que sur une zone centrée sous la charge. Une plaque à fleur sous une rive de bord ne travaille donc que sur une bande de la largeur de la semelle (≈ 8 cm) ; à l’angle, l’UNP des deux côtés ramène la
+                charge vers l’intérieur et la plaque travaille mieux. Centrée sous la rive, la plaque travaille sur toute sa surface.
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CalcPanel(p: CalcPanelProps) {
@@ -203,44 +342,7 @@ export function CalcPanel(p: CalcPanelProps) {
               0,4
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label className="row">
-              <input type="checkbox" checked={o.jacks} onChange={(e) => set('jacks', e.target.checked)} /> Pieds à vérin utilisés (appuis aux réceptions de pied)
-            </label>
-            {o.jacks && (
-              <div className="hint" style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {p.jack ? (
-                  <>
-                    <span>
-                      Tige Tr {n(p.jack.d, 0)} × 5 classe 10.9 (noyau {n(p.jack.d3, 1)} mm, fy {n(p.jack.fy, 0)} N/mm²), {n(p.jack.perModule, 0)} vérins par Viewbox (4 angles + milieu des 2 grands côtés), sortie{' '}
-                      {n(p.jack.extensionMax / 10, 0)} cm au plus.
-                    </span>
-                    <label className="row" style={{ gap: 6 }}>
-                      Sortie des tiges
-                      <input
-                        type="number"
-                        step={0.5}
-                        min={0.5}
-                        max={p.jack.extensionMax / 10}
-                        value={Math.min(o.jackExtension, p.jack.extensionMax) / 10}
-                        onChange={(e) => set('jackExtension', Math.min(p.jack!.extensionMax, Math.max(5, (parseFloat(e.target.value) || 0) * 10)))}
-                        style={{ width: 70 }}
-                      />{' '}
-                      cm (maxi {n(p.jack.extensionMax / 10, 0)} cm, calcul au plus défavorable par défaut)
-                    </label>
-                  </>
-                ) : (
-                  <span>Tige de vérin absente ou désactivée dans la bibliothèque (VBX-JACK).</span>
-                )}
-              </div>
-            )}
-          </div>
-          {!o.jacks && (
-            <label className="row" title="Sans vérins : la cale du milieu du grand côté est posée directement sous la rive (UNP) et non sous la réception centrale, 155 mm à l’intérieur — la rive n’est plus tordue par l’appui du milieu">
-              <input type="checkbox" checked={!!o.middleUnderRim} disabled={!p.middleFeet} onChange={(e) => set('middleUnderRim', e.target.checked)} /> Cale du milieu directement sous la rive (UNP)
-              {!p.middleFeet && <span className="hint">&nbsp;— pieds du milieu non calés (Site & hypothèses › options avancées)</span>}
-            </label>
-          )}
+          <GroundSupportChoice o={o} set={set} p={p} />
           <label className="row">
             <input type="checkbox" checked={o.upliftAll} onChange={(e) => set('upliftAll', e.target.checked)} /> Appui soulevé : plus de retenue horizontale (prudent)
           </label>

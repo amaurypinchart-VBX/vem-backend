@@ -17,6 +17,8 @@ import { TERRACE, terraceSupports } from '../../structure/core/terrace';
 import type { AddedSupport } from '../../structure/core/estimate';
 import { moduleTypes, typeLoadInputs } from '../../structure/core/moduleTypes';
 import { frameSections } from '../../structure/core/templates/frameModule';
+import { resolveGroundContact } from '../../structure/core/groundContact';
+import { SUBGRADE_PRESETS } from '../../structure/core/ground';
 
 /** Appuis du calage hors des Viewbox : pieds des éléments terrasse posés au sol (5,0 kN/m² au rez-de-chaussée). */
 export function groundExtras(inp: Pick<StudyInputs, 'terraces' | 'loads'>): AddedSupport[] {
@@ -43,7 +45,22 @@ export interface InputsSource {
 
 export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; added: PlacedModule[]; warnings: string[] } {
   const { base, mods } = studyBase(src);
-  return withMods(base, mods);
+  const out = withMods(base, mods);
+  // contact au sol (sans vérins) : rives posées au sol, ou plaques / blocs (dessinés ou disposition générée, Viewbox
+  // ajoutées par l'étude comprises) — dans le calcul ; les plaques deviennent les blocs du calage
+  const k = SUBGRADE_PRESETS.find((x) => x.key === (src.calc.contact?.subgrade ?? src.hyp.subgrade))?.k ?? 0.03;
+  const gc = resolveGroundContact(src.calc.contact, src.calc.jacks, out.inputs.modules, src.sceneModel.blocks, k);
+  if (!gc) return out;
+  const { groundBlocks: _drawn, ...rest } = out.inputs;
+  const inputs: StudyInputs = { ...rest, groundContact: { mode: gc.mode, pads: gc.pads, k: gc.k }, ...(gc.mode === 'pads' && gc.pads.length ? { groundBlocks: gc.pads } : {}) };
+  const warnings = [...out.warnings];
+  if (gc.mode === 'rims' && src.sceneModel.blocks?.length) warnings.push(`${src.sceneModel.blocks.length} bloc(s) de calage dessiné(s) : ignorés, les Viewbox sont posées directement au sol (choisir « sur plaques / blocs » pour les utiliser).`);
+  return { ...out, inputs, warnings };
+}
+
+/** Contact au sol de l'étape 5 (estimation instantanée) : le même que celui du calcul. */
+export function groundContactOf(inp: Pick<StudyInputs, 'groundContact' | 'options'>): NonNullable<StudyInputs['groundContact']> | null {
+  return inp.options.jacks ? null : (inp.groundContact ?? null);
 }
 
 /** Entrées avant les modifications de l'étude, et ces modifications (SketchUp « Structure… » puis étude / variante). */

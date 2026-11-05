@@ -12,7 +12,11 @@ import type { ModuleFrame } from '../../core/views';
 import type { LibraryEntry, ModuleTypeEntry, SectionEntry, ViewboxTemplateParams } from './library';
 import { materialByKey, steelStrength } from './materials';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } from './templates/viewboxEU';
+import { nodeKey } from './templates/viewboxEU';
 import { moduleTemplate } from './templates/frameModule';
+import type { ContactPlan, ModuleFloor } from './groundContact';
+import { contactStrips, floorLinesOfTemplate, splitFloor } from './groundContact';
+import type { DrawnBlock } from './blocks';
 import type { StairFamily, StairKitParams } from './templates/stair';
 import { stairGeometry } from './templates/stair';
 import { fmtNumber, KN_PER_CM } from './units';
@@ -133,6 +137,12 @@ export interface AssembleOptions {
   members?: ModelMember[];
   /** appuis ajoutés par l'étude sous des angles de Viewbox posés dans le vide */
   addedSupports?: CornerSupport[];
+  /**
+   * contact des Viewbox posées au sol (sans vérins) : rives posées directement au sol (appui continu) ou profils posés
+   * sur des plaques / blocs — appuis élastiques rapprochés, compression seule (`groundContact.ts`) ; absent = appuis
+   * ponctuels aux angles (ou aux vérins)
+   */
+  groundContact?: { mode: 'rims' | 'pads'; pads: DrawnBlock[]; k: number } | null;
 }
 
 /**
@@ -253,7 +263,9 @@ export interface StructuralModel {
   lines: Map<string, EdgeLoadTarget[]>;
   faces: FaceInfo[];
   /** appuis : Viewbox et angle */
-  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' | 'stair' | 'post'; jack: boolean; label?: string }>;
+  supportMeta: Array<{ module: string; corner: number; kind: 'corner' | 'foot' | 'middle' | 'stair' | 'post' | 'line'; jack: boolean; label?: string; strip?: string }>;
+  /** contact au sol par tronçons de rives / profils (posées au sol ou sur plaques) */
+  contact?: ContactPlan;
   /** escaliers extérieurs du modèle */
   stairs: StairModel[];
   /** modules sans rien au-dessus (toiture exposée, dernier niveau évacué) */
@@ -838,12 +850,44 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
   // ─── gabarit posé sur chaque Viewbox ───
   const tplCache = new Map<string, ViewboxTemplate>();
   const tplOf = new Map<PlacedModule, ViewboxTemplate>();
-  for (const pm of modules) {
+  const baseTpl = (pm: PlacedModule) => {
     const ex = extras.get(pm) ?? {};
     // une Viewbox modifiée par l'étude (sections, poteaux) a ses propres paramètres : la clé les contient
     const key = `${pm.templateKey}|${JSON.stringify(pm.params)}|${SIDES.map((sd) => [...new Set(ex[sd] ?? [])].sort((a, b) => a - b).join(',')).join('|')}`;
     let tpl = tplCache.get(key);
     if (!tpl) tplCache.set(key, (tpl = moduleTemplate(pm.params, ex)));
+    return tpl;
+  };
+  // ─── contact au sol par tronçons (rives posées au sol, plaques / blocs) : nœuds d'appui sur les profils du plancher ───
+  let contact: ContactPlan | undefined;
+  const contactOf = new Map<string, ContactPlan['strips']>();
+  if (opt.groundContact && opt.raise && opt.raise.height > 0) warnings.push('Surélévation : les poteaux sont posés sur le calage, le contact des rives au sol n’est pas utilisé.');
+  else if (opt.groundContact) {
+    const floors: ModuleFloor[] = modules
+      .filter((pm) => pm.level === 0)
+      .map((pm) => {
+        const tpl = baseTpl(pm);
+        const p = pm.params;
+        return {
+          id: pm.id,
+          origin: [pm.origin[0], pm.origin[2]],
+          u: [pm.u[0], pm.u[2]],
+          v: [pm.v[0], pm.v[2]],
+          size: [p.x0 + p.x1, p.y0 + p.y1],
+          lines: floorLinesOfTemplate(tpl, (k) => opt.sections.get(k)?.section.dims.b),
+        };
+      });
+    const kh0 = modules.find((m) => m.level === 0)?.params.springs.supportHorizontal ?? HOKA_SUPPORT_K;
+    contact = contactStrips(floors, opt.groundContact.mode, opt.groundContact.pads, opt.groundContact.k, kh0);
+    warnings.push(...contact.warnings);
+    for (const st of contact.strips) {
+      if (!contactOf.has(st.module)) contactOf.set(st.module, []);
+      contactOf.get(st.module)!.push(st);
+    }
+  }
+  for (const pm of modules) {
+    const strips = pm.level === 0 ? contactOf.get(pm.id) : undefined;
+    const tpl = strips?.length ? splitFloor(baseTpl(pm), strips.flatMap((x) => x.stations)) : baseTpl(pm);
     tplOf.set(pm, tpl);
     for (const n of tpl.nodes) {
       const [x, y, z] = worldOf(pm, n.u, n.v, n.z);
@@ -1159,8 +1203,23 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
       supports.push({ node, dofs: [kh, kv, kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
       supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks && !raise });
     };
-    (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
-    if (opt.middleFeet || opt.jacks) (opt.middleUnderRim && !opt.jacks ? tpl.middleRim : tpl.middleFeet).forEach((k, c) => place(k, 4 + c, 'middle'));
+    const strips = raise ? undefined : contactOf.get(pm.id);
+    if (strips?.length) {
+      // contact par tronçons : un appui élastique à chaque station (compression seule)
+      let c = 0;
+      for (const st of strips)
+        for (const x of st.stations) {
+          const node = P(pm, nodeKey(x.u, x.v, pm.params.floorZ));
+          if (node === undefined) continue;
+          supports.push({ node, dofs: [x.kh, x.kv, x.kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
+          supportMeta.push({ module: pm.id, corner: c++, kind: 'line', jack: false, label: `${pm.id} · ${st.label}${st.pad ? ` sur ${st.pad}` : ' au sol'}`, strip: st.id });
+        }
+    } else if (opt.groundContact && !raise) {
+      errors.push(`${pm.id} : aucune rive ni aucun profil du plancher ne porte sur une plaque — la Viewbox n’a pas d’appui (disposition des plaques à revoir).`);
+    } else {
+      (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
+      if (opt.middleFeet || opt.jacks) (opt.middleUnderRim && !opt.jacks ? tpl.middleRim : tpl.middleFeet).forEach((k, c) => place(k, 4 + c, 'middle'));
+    }
     // croix entre les pieds des poteaux et la tête des poteaux voisins, dans le plan de chaque côté (angles 1-2, 2-3, 3-4, 4-1)
     if (raise?.bracing)
       for (let c = 0; c < 4; c++) {
@@ -1336,6 +1395,7 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
     lines,
     faces,
     supportMeta,
+    ...(contact ? { contact } : {}),
     stairs,
     topModules,
     outerSides,

@@ -21,7 +21,7 @@ import { diagnose, slidingBallastN } from '../../structure/advisor/diagnose';
 import type { RunDigest } from '../../structure/advisor/digest';
 import { compareDigests, runDigest } from '../../structure/advisor/digest';
 import type { InputsSource } from './studyInputs';
-import { buildStudyInputs, groundExtras } from './studyInputs';
+import { buildStudyInputs, groundContactOf, groundExtras } from './studyInputs';
 import type { StructureStock } from './GroundPanel';
 import { calageInput } from './GroundPanel';
 
@@ -422,7 +422,7 @@ export async function runAdvisorTool(name: string, input: Json, ctx: AdvisorCont
       const addedIds = new Set(run.structure.modules.map((m) => m.id));
       const modules = [...ctx.groundModules.filter((m) => addedIds.has(m.id)), ...run.structure.modules.filter((m) => !ctx.groundModules.some((g) => g.id === m.id)).map(placedToEstimate)];
       const vin = buildStudyInputs(vs).inputs;
-      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks, groundExtras(vin)), blocks: vin.groundBlocks, reactions: run.ground };
+      const cin = { ...calageInput(modules, hyp, ctx.stock, vs.calc.jacks, groundExtras(vin), false, groundContactOf(vin)), blocks: vin.groundBlocks, reactions: run.ground };
       const cal = computeCalage(cin);
       const mp = maxPublic(cin, hyp.personKg);
       const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit);

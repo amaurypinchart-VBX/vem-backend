@@ -48,7 +48,7 @@ import type { BrowserHlrProvider } from '../../linework/provider';
 import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
-import { buildStudyInputs, carriedWeights, groundExtras, studyBase } from './studyInputs';
+import { buildStudyInputs, carriedWeights, groundContactOf, groundExtras, studyBase } from './studyInputs';
 import { SupportsCard } from './SupportsCard';
 import { designation } from '../../structure/core/library';
 import { addedSupportEtas, sizeAddedSupports, supportKey } from '../../structure/advisor/supports';
@@ -392,7 +392,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
     // personnes ou portance absente : sol non compté
     const withGround = bearingFrom(hyp.bearingValue, hyp.bearingUnit) > 0 && hyp.publicMode !== 'persons';
     const groundEta = (r: StudyRun, inp: StudyInputs) => {
-      const res = computeCalage({ ...calageInput(groundModules, hyp, stock, calcOpts.jacks, groundExtras(inp)), blocks: inp.groundBlocks, reactions: r.ground, noAdvice: true });
+      const res = computeCalage({ ...calageInput(groundModules, hyp, stock, calcOpts.jacks, groundExtras(inp), false, groundContactOf(inp)), blocks: inp.groundBlocks, reactions: r.ground, noAdvice: true });
       return res.checks.length ? Math.max(...res.checks.map((c) => c.eta)) : null;
     };
     let capacity: LiveCapacity;
@@ -728,6 +728,8 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           error={calcError}
           onRun={() => void startRun()}
           middleFeet={hyp.middleFeet}
+          modelBlocks={sceneModel.blocks?.length ?? 0}
+          subgrade={hyp.subgrade}
           modsLines={describeMods(mods, sectionName)}
           onCancel={cancelRun}
           onShowResults={() => setStep('results')}
@@ -874,6 +876,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           jacks={calcOpts.jacks}
           extraSupports={extraSupports}
           blocks={studyInputs.groundBlocks}
+          contact={groundContactOf(studyInputs)}
           jackMax={calcOpts.jackExtension}
           onSendToPlans={() => setStep('report')}
           onCalage={(r) =>

@@ -43,7 +43,7 @@ import { downloadBlob } from '../common';
 import { moduleEtaColors } from './CalcResults';
 import type { Hypotheses, StructureStock } from './GroundPanel';
 import { calageInput } from './GroundPanel';
-import { groundExtras } from './studyInputs';
+import { groundContactOf, groundExtras } from './studyInputs';
 import { freshImport } from '../newVersion';
 
 /** Version affichée dans les rapports. */
@@ -166,7 +166,7 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
   // calage avec les réactions du calcul (mêmes entrées que l'étape 5)
   const calage = useMemo((): CalageResult | null => {
     if (!run || stale || !modules.length) return null;
-    const input = { ...calageInput(modules, hyp, stock, false, groundExtras(inputs)), blocks: inputs.groundBlocks, reactions: run.ground, jackMax: inputs.options.jackExtension };
+    const input = { ...calageInput(modules, hyp, stock, inputs.options.jacks, groundExtras(inputs), false, groundContactOf(inputs)), blocks: inputs.groundBlocks, reactions: run.ground, jackMax: inputs.options.jackExtension };
     if (!(input.bearing > 0)) return null;
     try {
       return computeCalage(input);

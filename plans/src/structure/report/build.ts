@@ -376,7 +376,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     t: 'bullets',
     items: [
       ...L.generalNotes.slice(0, 3),
-      noVbx ? CX.jacks : study.options.jacks ? L.jacksUsed : L.jacksForbidden,
+      noVbx ? CX.jacks : study.options.jacks ? L.jacksUsed : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRims : L.groundPads(study.groundContact.pads.length, padsUnderProfiles(run))) : L.jacksForbidden,
       ...L.generalNotes.slice(3),
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
@@ -423,7 +423,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.overturning, `${L.verdict[run.stability.overturning.verdict]} — ${overturnText}`],
       [L.sliding, `${L.slidingValue(N(run.stability.sliding.muReq), N(mu))} (${run.stability.sliding.combo || '—'})`],
       [L.ballast, run.stability.overturning.verdict === 'fail' ? L.ballastOverturning : ballast > 0 ? L.ballastRequired(N(ballast / 1e3, 1), N(Math.ceil(ballast / GRAVITY / 10) * 10, 0)) : L.ballastNone],
-      [L.jacks, study.options.jacks ? L.jacksYes : L.jacksNo],
+      [L.jacks, study.options.jacks ? L.jacksYes : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRimsShort : L.groundPadsShort(study.groundContact.pads.length)) : L.jacksNo],
       ...(inp.bearing ? ([[L.bearing, L.bearingValue(N(inp.bearing.value, 0), inp.bearing.label)]] as Array<[string, string]>) : []),
     ],
   });
@@ -1187,3 +1187,11 @@ function fmtDate(d: Date): string {
   return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
+
+/** Plaques sous le milieu des Viewbox (elles portent les traverses / lisses, pas une rive). */
+function padsUnderProfiles(run?: { structure: { contact?: { strips: Array<{ kind: string; pad?: string }> } } }): number {
+  const strips = run?.structure.contact?.strips;
+  if (!strips) return 0;
+  const rim = new Set(strips.filter((x) => x.kind === 'rim').map((x) => x.pad));
+  return new Set(strips.filter((x) => x.kind === 'secondary' && !rim.has(x.pad)).map((x) => x.pad)).size;
+}

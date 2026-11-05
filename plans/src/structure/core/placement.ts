@@ -189,6 +189,13 @@ export function supportGeometry(g: PlateGroup, modules: EstimateModule[]): Suppo
   const mods = ground.length ? ground : modules.filter((m) => m.level === 0);
   const first = mods[0];
   const { u, v } = first ? moduleAxes(first) : { u: [1, 0] as P2, v: [0, 1] as P2 };
+  // tronçon de rive / profil qui porte : sa semelle sur la longueur du tronçon (un seul tronçon par appui de calage)
+  const strip = r.group.strip;
+  if (strip && g.members.length === 1) {
+    const alongU = Math.abs(dot(strip.along, u)) >= Math.abs(dot(strip.along, v));
+    const center: [number, number] = [dot(strip.center, u), dot(strip.center, v)];
+    return { u, v, center, contact: alongU ? [strip.length, strip.width] : [strip.width, strip.length], sides: [axisSide(strip.center, u, mods), axisSide(strip.center, v, mods)] };
+  }
   if (r.group.jack) {
     const us = g.members.map((m) => dot(m.group.position, u));
     const vs = g.members.map((m) => dot(m.group.position, v));

@@ -395,6 +395,7 @@ export const SUBGRADE_PRESETS = [
   { key: 'medium', label: 'Sol moyen (30 MN/m³)', k: 0.03 },
   { key: 'firm', label: 'Sol compact (80 MN/m³)', k: 0.08 },
   { key: 'gravel', label: 'Grave compactée (150 MN/m³)', k: 0.15 },
+  { key: 'slab', label: 'Dalle béton / enrobé (quasi rigide, 1 000 MN/m³)', k: 1 },
 ];
 
 export interface LongrineInput {

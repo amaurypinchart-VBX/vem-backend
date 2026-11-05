@@ -289,7 +289,12 @@ export function checkChain(inp: ChainInput): ChainResult {
     const e = Math.hypot(blk.offset[0], blk.offset[1]);
     const notes: string[] = [];
     if (e > 10) notes.push(`résultante des pieds à ${f(Math.abs(blk.offset[0]) / 10, 0)} / ${f(Math.abs(blk.offset[1]) / 10, 0)} cm du centre du bloc : emprise centrée sur la charge, B' = B − 2 e`);
-    if (blk.diffusionLimited) notes.push(`diffusion à 45° sur ${f(blk.height / 10, 0)} cm de hauteur : le bloc ne répartit pas sur toute sa base`);
+    if (blk.diffusionLimited)
+      notes.push(
+        blk.stripReach !== undefined
+          ? `rives / profils posés sur la plaque : répartition jusqu’à ${f(blk.stripReach / 10, 0)} cm de chaque semelle (45° sur ${f(blk.height / 10, 0)} cm, flexion de la plaque) — la plaque ne porte pas sur toute sa surface`
+          : `diffusion à 45° sur ${f(blk.height / 10, 0)} cm de hauteur : le bloc ne répartit pas sur toute sa base`,
+      );
     if (eu <= 1 || ev <= 1) problems.push(`${blk.label} : la charge des pieds n’est pas sur le bloc (dessin à vérifier)`);
     steps.push({ label: `+ ${blk.label}`, dims: [eu, ev], area: effA, pressure: q, eta: q / bearing, note: notes.join(' ; ') || undefined });
     const eta90 = blk.c90.sigma / blk.c90.fc90d;

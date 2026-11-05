@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalageInput, CalageResult } from '../../structure/core/calage';
 import type { PublicMax } from '../../structure/core/calage';
 import { computeCalage, maxPublic } from '../../structure/core/calage';
-import type { AddedSupport, Estimate, EstimateModule } from '../../structure/core/estimate';
+import type { AddedSupport, Estimate, EstimateModule, EstimateOptions } from '../../structure/core/estimate';
 import { TERRACE } from '../../structure/core/terrace';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import { DEFAULTS } from '../../structure/library/defaults';
@@ -151,7 +151,7 @@ export const DISTRIBUTED_PRESETS = ['slab', 'roof', 'operator'];
 /** Lecture de la portance : choix enregistré, sinon selon le type de support. */
 export const bearingModeOf = (h: Pick<Hypotheses, 'bearingMode' | 'bearingPreset'>): 'pressure' | 'distributed' => h.bearingMode ?? (DISTRIBUTED_PRESETS.includes(h.bearingPreset) ? 'distributed' : 'pressure');
 
-export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false): CalageInput {
+export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false, contact: EstimateOptions['contact'] = null): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
   return {
     modules,
@@ -178,6 +178,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       cp: h.cp,
       middleFeet: h.middleFeet || jacks,
       jacks,
+      ...(contact && !jacks ? { contact } : {}),
       evacuateTopLevel: h.evacuateTop,
       extraFactor: h.extraPct / 100,
     },
@@ -586,8 +587,10 @@ export interface GroundPanelProps {
   jacks?: boolean;
   /** appuis hors des Viewbox (pieds des éléments terrasse posés au sol) */
   extraSupports?: AddedSupport[];
-  /** blocs de calage bois dessinés dans le modèle sous les pieds */
+  /** blocs de calage bois dessinés dans le modèle sous les pieds (ou plaques sous la structure, contact par tronçons) */
   blocks?: DrawnBlock[];
+  /** contact par tronçons (étape 3) : Viewbox posées au sol ou sur plaques / blocs */
+  contact?: EstimateOptions['contact'];
   /** calage rapide sans modèle : murs, vitrages… saisis en forfait par Viewbox */
   withoutModel?: boolean;
   /** sortie de tige de vérin vérifiée par le calcul (mm) : rattrapage des niveaux pris par les vérins jusque-là */
@@ -598,7 +601,7 @@ export interface GroundPanelProps {
   onCalage?: (r: CalageResult | null) => void;
 }
 
-export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, blocks, withoutModel = false, jackMax, onSendToPlans, onCalage }: GroundPanelProps) {
+export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, onHypChange, showHypotheses = true, reactions, jacks = false, extraSupports, blocks, contact = null, withoutModel = false, jackMax, onSendToPlans, onCalage }: GroundPanelProps) {
   const [localHyp, setLocalHyp] = useState<Hypotheses>(() => ({ ...DEFAULT_HYP, ...readStored(storageKey) }));
   const hyp = hypProp ?? localHyp;
   const setHyp = (update: (h: Hypotheses) => Hypotheses) => {
@@ -641,8 +644,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   }, [hyp, storageKey, hypProp]);
 
   const input = useMemo(
-    () => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel), reactions: reactions ?? undefined, ...(jackMax ? { jackMax } : {}), ...(blocks?.length ? { blocks } : {}) }),
-    [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel, jackMax, blocks],
+    () => ({ ...calageInput(modules, hyp, stock, jacks, extraSupports, withoutModel, contact), reactions: reactions ?? undefined, ...(jackMax ? { jackMax } : {}), ...(blocks?.length ? { blocks } : {}) }),
+    [modules, hyp, stock, reactions, jacks, extraSupports, withoutModel, jackMax, blocks, contact],
   );
   useEffect(() => {
     setPending(true);
@@ -688,10 +691,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)` : 'charge réglementaire (public libre)'],
         wind: ['Vent en / hors service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
-        feet: jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm ; vérins voisins sur une même plaque'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
+        feet: contact
+          ? ['Pose au sol', contact.mode === 'rims' ? 'posées directement au sol : toute la rive (UNP) porte, appui continu (tronçons d’environ 1 m vérifiés un par un)' : `sur ${contact.pads.length} plaque(s) / bloc(s) : la rive (UNP) porte sur la largeur de chaque plaque, une plaque hors rive porte les traverses / lisses`]
+          : jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm ; vérins voisins sur une même plaque'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
         place: ['Pose des plaques', { auto: 'à fleur de la Viewbox, centrées seulement si nécessaire', flush: 'toujours à fleur de la Viewbox', centered: 'centrées sous chaque appui (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} niveau${levels > 1 ? 'x' : ''})`],
-        src: ['Réactions', reactions ? (jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : 'estimation instantanée (surfaces tributaires)'],
+        src: ['Réactions', reactions ? (contact ? 'calcul complet (modèle 3D, 2ᵉ ordre), appuis élastiques le long des rives / profils (raideur du sol)' : jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : contact ? 'estimation instantanée (plancher rigide sur appuis élastiques)' : 'estimation instantanée (surfaces tributaires)'],
       },
       de: {
         bearing: ['Zul. Bodenpressung', `${bearing} (${preset?.label ?? 'Eingabe'})`],
@@ -701,10 +706,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; Tragwerk mit der Normlast nachgewiesen)` : 'Normlast (freies Publikum)'],
         wind: ['Wind in / außer Betrieb', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Auflagerkraft für die Fläche', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'charakteristisch (GZG)'],
-        feet: jacks ? ['Spindelfüße', '6 je Viewbox (4 Ecken + 2 Mitte), Gewindestangen Tr 24 × 5, Auszug ≤ 5 cm; benachbarte Spindeln auf einer Platte'] : ['Mittelfüße', hyp.middleFeet ? 'verwendet' : 'nein (nur Ecken)'],
+        feet: contact
+          ? ['Auflagerung', contact.mode === 'rims' ? 'direkt auf dem Boden: der ganze Randträger (UNP) trägt, durchgehende Auflagerung (Abschnitte von etwa 1 m einzeln nachgewiesen)' : `auf ${contact.pads.length} Platte(n) / Klotz/Klötzen: der Randträger (UNP) liegt über die Breite jeder Platte auf, eine Platte ohne Randträger trägt die Quer- / Längsträger`]
+          : jacks ? ['Spindelfüße', '6 je Viewbox (4 Ecken + 2 Mitte), Gewindestangen Tr 24 × 5, Auszug ≤ 5 cm; benachbarte Spindeln auf einer Platte'] : ['Mittelfüße', hyp.middleFeet ? 'verwendet' : 'nein (nur Ecken)'],
         place: ['Lage der Platten', { auto: 'bündig mit der Viewbox, nur wenn nötig mittig', flush: 'immer bündig mit der Viewbox', centered: 'mittig unter jedem Auflager (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} Ebene${levels > 1 ? 'n' : ''})`],
-        src: ['Auflagerkräfte', reactions ? (jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
+        src: ['Auflagerkräfte', reactions ? (contact ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), elastische Bettung entlang der Träger (Bettungsmodul)' : jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
       },
       en: {
         bearing: ['Allowable bearing', `${bearing} (${preset?.label ?? 'entered'})`],
@@ -714,10 +721,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; structure checked with the code load)` : 'code load (free public)'],
         wind: ['Wind in / out of service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Reaction for the area', hyp.staticoConversion ? 'Rz,Ed / 1.35 (statico)' : 'characteristic (SLS)'],
-        feet: jacks ? ['Jack feet', '6 per Viewbox (4 corners + 2 middle), Tr 24 × 5 rods, extension ≤ 5 cm; neighbouring jacks on one plate'] : ['Middle feet', hyp.middleFeet ? 'used' : 'no (corners only)'],
+        feet: contact
+          ? ['Bearing on the ground', contact.mode === 'rims' ? 'placed directly on the ground: the whole floor edge beam (UNP) bears, continuous support (segments of about 1 m checked one by one)' : `on ${contact.pads.length} plate(s) / block(s): the edge beam (UNP) bears over the width of each plate, a plate away from the edge carries the cross / longitudinal members`]
+          : jacks ? ['Jack feet', '6 per Viewbox (4 corners + 2 middle), Tr 24 × 5 rods, extension ≤ 5 cm; neighbouring jacks on one plate'] : ['Middle feet', hyp.middleFeet ? 'used' : 'no (corners only)'],
         place: ['Plate laying', { auto: 'flush with the Viewbox, centred only where needed', flush: 'always flush with the Viewbox', centered: 'centred under each support (statico)' }[placement]],
         vbx: ['Viewbox', `${modules.length} (${levels} level${levels > 1 ? 's' : ''})`],
-        src: ['Reactions', reactions ? (jacks ? 'full calculation (3D model, 2nd order), at least the estimate under each jack (adjustable jacks)' : 'full calculation (3D model, 2nd order)') : 'instant estimate (tributary areas)'],
+        src: ['Reactions', reactions ? (contact ? 'full calculation (3D model, 2nd order), elastic supports along the beams (subgrade modulus)' : jacks ? 'full calculation (3D model, 2nd order), at least the estimate under each jack (adjustable jacks)' : 'full calculation (3D model, 2nd order)') : 'instant estimate (tributary areas)'],
       },
     }[lang];
     return [T.bearing, T.weight, T.finishes, T.live, T.pub, T.wind, T.react, T.feet, T.place, T.vbx, T.src] as Array<[string, string]>;

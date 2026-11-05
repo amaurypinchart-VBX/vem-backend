@@ -86,13 +86,22 @@ export function planPlates(
     color: TIMBER_COLOR,
     ...(o.id === 'PL' || o.id.startsWith('G') ? { label: [o.label, ...(o.sub ? [o.sub] : [])] } : {}),
   }));
+  // tronçon de rive / profil posé directement au sol (sans plaque) : sa semelle
+  const outline = (c: SupportCheck): P2[] | null => {
+    if (c.plan) return c.plan.corners;
+    if (!c.reaction.group.strip) return null;
+    const { u, v, center, contact } = c.geometry;
+    const P = (a: number, b: number): P2 => [u[0] * a + v[0] * b, u[1] * a + v[1] * b];
+    const [a0, a1, b0, b1] = [center[0] - contact[0] / 2, center[0] + contact[0] / 2, center[1] - contact[1] / 2, center[1] + contact[1] / 2];
+    return [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
+  };
   return [...zones, ...timber, ...checks
-    .filter((c) => c.plan)
+    .filter((c) => outline(c))
     .map((c) => ({
       id: c.id,
-      corners: c.plan!.corners,
+      corners: outline(c)!,
       color: opts.color?.(c) ?? typeColor(c.typeKey),
-      centered: c.plan!.placement === 'centered' && c.plan!.overhang > 5,
+      centered: !!c.plan && c.plan.placement === 'centered' && c.plan.overhang > 5,
       ...(opts.label && !opts.slab ? { label: opts.label(c) } : {}),
     }))];
 }

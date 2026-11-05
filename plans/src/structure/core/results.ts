@@ -6,7 +6,7 @@
 import type { MemberFamily, StructuralModel } from './assemble';
 import { FAMILY_LABEL } from './assemble';
 import type { Combination } from './combos';
-import type { ComboReaction, Estimate, GroupReaction, P2, SupportGroup } from './estimate';
+import type { ComboReaction, Estimate, GroupReaction, P2, StripInfo, SupportGroup } from './estimate';
 import type { AnalysisResult, Reaction } from './fem/types';
 import type { Ec3Options, StationForces } from './checks/ec3';
 import { checkSpan } from './checks/ec3';
@@ -498,6 +498,11 @@ export function groundEstimate(
     for (const b of pts) {
       if (b <= a) continue;
       const [ma, mb] = [s.supportMeta[a], s.supportMeta[b]];
+      // tronçons de rive / profil : un groupe par tronçon (sa surface de contact), jamais par distance
+      if (ma.kind === 'line' || mb.kind === 'line') {
+        if (ma.strip && ma.strip === mb.strip) parent[find(a)] = find(b);
+        continue;
+      }
       if ((ma.kind === 'middle') !== (mb.kind === 'middle') || (ma.kind === 'stair') !== (mb.kind === 'stair') || (ma.kind === 'post') !== (mb.kind === 'post')) continue;
       const [pa, pb] = [pos(a), pos(b)];
       if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) <= tolerance) parent[find(a)] = find(b);
@@ -516,6 +521,11 @@ export function groundEstimate(
     const post = s.supportMeta[c[0]].kind === 'post';
     const stair = s.supportMeta[c[0]].kind === 'stair' || post;
     const jack = s.supportMeta[c[0]].jack;
+    const strip = s.supportMeta[c[0]].kind === 'line' ? s.contact?.strips.find((x) => x.id === s.supportMeta[c[0]].strip) : undefined;
+    if (strip) {
+      const info: StripInfo = { kind: strip.kind, label: strip.label, ...(strip.pad ? { pad: strip.pad } : {}), center: strip.center, along: strip.along, length: strip.length, width: strip.width, corner: strip.corner, middle: strip.middle };
+      return { id: `L${k + 1}`, position: strip.center, corners: strip.corner ? 1 : 0, middle: strip.middle, strip: info, moduleIds: [strip.module] };
+    }
     return { id: `${post ? 'R' : stair ? 'E' : middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle || stair ? 0 : c.length, middle, jack, ...(stair ? { stair } : {}), ...(post ? { post } : {}), moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };
   });
   const sum = (c: number[], id: string) => {
