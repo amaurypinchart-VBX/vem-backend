@@ -111,13 +111,12 @@ export const zoneLines = (z: NonNullable<SupportCheck['zone']>): string[] => [`$
 
 /**
  * « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). Dalle en charge répartie :
- * le poids au m² juste sous le calage de l'appui (information ; la vérification est celle de la zone de sa Viewbox).
+ * pas de pression — le poids réparti sur la dalle à cet endroit, celui de la Viewbox sous laquelle est l'appui
+ * (« 294 kg/m² » / « dalle VBX-01 »), le même que celui écrit au milieu de sa zone.
  */
 export const pressureLines = (c: SupportCheck): string[] => {
-  const q = c.underPressure ?? c.pressure;
-  const kg = `${fmtNumber((q * 1e6) / 9.81, 0)} kg/m²`;
-  const kn = `${fmtNumber(q * 1e3, q * 1e3 < 10 ? 1 : 0)} kN/m²`;
-  return c.underPressure !== undefined ? [kg, kn] : [kn, kg];
+  if (c.zone) return [`${fmtNumber((c.zone.q * 1e6) / 9.81, 0)} kg/m²`, `dalle ${c.zone.id}`];
+  return [`${fmtNumber(c.pressure * 1e3, c.pressure * 1e3 < 10 ? 1 : 0)} kN/m²`, `${fmtNumber((c.pressure * 1e6) / 9.81, 0)} kg/m²`];
 };
 
 /** « VBX-01/04 » : numéros des Viewbox d'une même emprise, triés (même préfixe regroupé). */

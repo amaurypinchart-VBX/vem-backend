@@ -85,14 +85,12 @@ describe('dalle en charge répartie admissible', () => {
     const zones = plates.filter((p) => p.zone);
     expect(zones.length).toBeGreaterThanOrEqual(mods.length);
     expect(zones.filter((z) => z.label).every((z) => /kg\/m²$/.test(z.label![0]) && /kg sur .* m²$/.test(z.label![1]))).toBe(true);
-    // chaque appui garde son poids au m² juste sous son calage (information), en kg/m² d'abord
+    // chaque appui porte le poids réparti sur la dalle de sa Viewbox (pas la pression sous sa plaque)
     const sup = plates.filter((p) => !p.zone && !p.id.startsWith('T'));
     expect(sup.length).toBeGreaterThan(0);
     for (const p of sup) {
       const c = d.checks.find((x) => x.id === p.id)!;
-      expect(c.underPressure).toBeGreaterThan(c.zone!.q);
-      expect(p.label![0]).toBe(`${fmtNumber((c.underPressure! * 1e6) / 9.81, 0)} kg/m²`);
-      expect(p.label![1]).toMatch(/kN\/m²$/);
+      expect(p.label).toEqual([`${fmtNumber((c.zone!.q * 1e6) / 9.81, 0)} kg/m²`, `dalle ${c.zone!.id}`]);
     }
   });
 
