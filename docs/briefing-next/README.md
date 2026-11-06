@@ -77,7 +77,7 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 
 ## Écarts restant au cahier des charges
 
-- La composition libre concerne un bloc graphique ; les pages sémantiques restent en flux. Conversion complète des anciens objets Fabric, rotation libre, groupes imbriqués et magnétisme entre objets restent à réaliser. Les fonds graphiques Next acceptent les images ; les pages PDF disposent d’un parcours d’import séparé.
+- La composition libre concerne un bloc graphique ; les pages sémantiques restent en flux. Conversion complète des anciens objets Fabric, groupes imbriqués et magnétisme entre objets restent à réaliser. Les fonds graphiques Next acceptent les images ; les pages PDF disposent d’un parcours d’import séparé.
 - Pas encore de bibliothèque partagée de kits de marque ou de logos, galerie photographique élaborée, partage des modèles entre collaborateurs ou presse-papiers riche interapplications. La multisélection Next porte sur les blocs de la page courante.
 - Les critères de génération sont mémorisés pour filtrer les nouvelles sources à proposer. Les blocs déjà présents restent comparés même s’ils ne correspondent plus aux critères ; aucune suppression automatique. Les exclusions d’IDs sont conservées. Les anciens documents sans critères conservent leur comportement.
 - Régénération globale réversible via l'historique ; pas encore de régénération ciblée d'une section ni de propositions IA confirmables.
@@ -100,3 +100,11 @@ Le générateur conserve le préréglage, la phase, la date, la priorité, le re
 Les dates restent des dates fixes, sans bascule automatique au lendemain. Les modèles portables ne transportent pas ces critères, qui peuvent contenir un identifiant de responsable. Pas de migration SQL : champ facultatif dans le document JSON, validé par le serveur. Les documents existants restent compatibles. Retour arrière : conserver les documents ; une ancienne version peut supprimer ce champ facultatif lors d’une sauvegarde.
 
 Validation locale : TypeScript et 38 tests réussis, dont aller-retour JSON, restauration du formulaire, filtrage des ajouts, maintien des exclusions et absence de suppression automatique. Authentification et données de production non testées par ces scénarios.
+
+## Rotation des objets graphiques
+
+Dans une composition libre, sélectionner un objet puis saisir **Rotation (°)** entre -180 et 180. La rotation se fait autour du centre de chaque objet, y compris pour une sélection groupée ; ce n’est pas une rotation du groupe autour d’un pivot commun. Textes, formes, flèches et repères conservent cet angle dans la sauvegarde, les modèles, les copies et l’export vectoriel. Annuler/rétablir couvre cette opération.
+
+Les alignements et distributions tiennent compte des limites visibles après rotation. Les débordements sont contrôlés dans l’éditeur et sur le serveur. Pour un objet tourné, modifier la taille dans les champs largeur/hauteur : la poignée de redimensionnement est disponible à angle nul. La rotation à la souris et les groupes imbriqués restent à réaliser.
+
+Validation locale : compilation TypeScript et 39 tests réussis. La recette Chromium couvre rotation, annulation/rétablissement, sauvegarde, réouverture et présence de la transformation dans l’export. Aucun changement de dépendance ni migration SQL ; propriété JSON facultative. Retour arrière : l’ancien code peut retirer l’angle à la sauvegarde, sans supprimer les objets.

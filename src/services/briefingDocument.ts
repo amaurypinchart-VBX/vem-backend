@@ -42,6 +42,7 @@ const graphic = z
             y: z.number().min(0).max(600),
             width: z.number().min(24).max(1000),
             height: z.number().min(24).max(600),
+            rotation: z.number().min(-180).max(180).optional(),
             text: z.string().max(2000),
             font: z.enum(["Arial", "Georgia", "Verdana"]),
             fontSize: z.number().min(12).max(96),
@@ -73,10 +74,11 @@ const graphic = z
       if (ids.has(n.id))
         ctx.addIssue({ code: "custom", message: "Objet graphique dupliqué" });
       ids.add(n.id);
-      if (
-        !n.hidden &&
-        (n.x + n.width > g.width + 0.01 || n.y + n.height > g.height + 0.01)
-      )
+      const angle = (n.rotation || 0) * Math.PI / 180;
+      const w = Math.abs(n.width * Math.cos(angle)) + Math.abs(n.height * Math.sin(angle));
+      const h = Math.abs(n.width * Math.sin(angle)) + Math.abs(n.height * Math.cos(angle));
+      const x = n.x + (n.width - w) / 2, y = n.y + (n.height - h) / 2;
+      if (!n.hidden && (x < -0.01 || y < -0.01 || x + w > g.width + 0.01 || y + h > g.height + 0.01))
         ctx.addIssue({ code: "custom", message: "Objet graphique hors page" });
     }
   });
