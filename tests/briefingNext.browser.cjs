@@ -368,7 +368,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await prop("rotation", 30);
       assert.match(await editor.locator('[data-node]').last().getAttribute('transform'), /rotate\(30 /);
       await editor.locator('[data-g=undo]').click();
-      assert.equal(await editor.locator('[data-g-prop=rotation]').inputValue(), '0');
+      assert.match(await editor.locator('[data-node]').last().getAttribute('transform'), /rotate\(0 /);
       await editor.locator('[data-g=redo]').click();
       await editor.locator("svg").focus();
       await page.keyboard.press("Control+a");
