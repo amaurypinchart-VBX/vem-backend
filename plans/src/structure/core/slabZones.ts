@@ -117,6 +117,12 @@ export function coveredArea(polys: P2[][]): number {
   return fromPaths(u).reduce((s, x) => s + x.area, 0);
 }
 
+/** Contours extérieurs de l'union de polygones (plaques de roulage jointives sur toute la surface). */
+export function unionLoops(polys: P2[][]): P2[][] {
+  const u = Clipper.Union(toPaths(polys), undefined, FillRule.NonZero);
+  return fromPaths(u).filter((x) => x.area > 0).map((x) => x.loop);
+}
+
 /** Contour d'un rectangle (4 angles) remis dans le sens trigonométrique. */
 function ccw(p: P2[]): P2[] {
   const s = p.reduce((acc, a, i) => { const b = p[(i + 1) % p.length]; return acc + a[0] * b[1] - b[0] * a[1]; }, 0);

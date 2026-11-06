@@ -17,7 +17,7 @@ import type { CalageChoices } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
-import { GroundPlan, planPlates, pressureLines } from '../../structure/report/groundSheet';
+import { GroundPlan, checkPlan, planPlates } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
 import { calageRemedies } from '../../structure/core/calageRemedies';
 import { typeColor } from '../../structure/report/calagePlan';
@@ -29,7 +29,7 @@ import { CALAGE_LABELS } from '../../structure/report/calageI18n';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
 import type { ChoiceSetters } from './CalageChoice';
-import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice, checkColor } from './CalageChoice';
+import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice } from './CalageChoice';
 import type { Project } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
@@ -1055,24 +1055,17 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   text={14}
                   selected={selected}
                   onSelect={planView === 'level' ? setSelected : select}
-                  plates={planPlates(result.checks, planView === 'check' ? { color: (c) => checkColor(c.eta), label: pressureLines, remedy: result.remedy, slab: result.slab, zoneColor: checkColor } : { remedy: result.remedy })}
-                  {...(planView === 'level'
+                  {...(planView === 'check'
+                    ? // même plan que la fiche PDF (checkPlan)
+                      checkPlan(result)
+                    : planView === 'level'
                     ? {
+                        plates: planPlates(result.checks, { remedy: result.remedy }),
                         pointColor: (r) => levelPointStyle(result, hyp.groundLevels, r).color,
                         pointSub: (r) => levelPointStyle(result, hyp.groundLevels, r).sub,
                       }
-                    : planView === 'check'
-                    ? {
-                        pointColor: (r) => {
-                          const c = checkById.get(r.group.id);
-                          return c ? checkColor(c.eta) : undefined;
-                        },
-                        pointSub: (r) => {
-                          const c = checkById.get(r.group.id);
-                          return c ? `${n(r.Rk / 1e3, 0)} kN · η ${n(c.eta, 2)}` : undefined;
-                        },
-                      }
                     : {
+                        plates: planPlates(result.checks, { remedy: result.remedy }),
                         pointColor: (r) => {
                           const c = checkById.get(r.group.id);
                           return c ? typeColor(c.typeKey) : undefined;
@@ -1085,7 +1078,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                   ? 'Niveau du sol relevé sous chaque pied (mm, valeurs relatives) ; ↑ = rehausse à apporter pour poser la Viewbox de niveau (le point le plus haut sert de référence).'
                   : planView === 'check'
                     ? result.slab
-                      ? `Dalle en charge répartie (${n((input.bearing * 1e6) / 9.81, 0)} kg/m² admis) : chaque zone en pointillés = la dalle sous une Viewbox. Chiffres au milieu de chaque zone = poids sur la dalle au m² sous cette Viewbox (tous ses pieds ensemble dans la combinaison la plus lourde + calage, divisé par la surface) : c’est lui qui est vérifié. Chiffres à chaque plaque ou bloc = ce même poids au m² sur la dalle, celui de la Viewbox sous laquelle est l’appui (ce n’est pas une pression). Ajouter des appuis sous une Viewbox répartit sa charge entre ses pieds mais ne change pas ce poids ; la charge sous chaque pied (kN) est à comparer à la charge ponctuelle admise par l’exploitant. Ensemble de l’installation : ${n((result.slab.global.q * 1e6) / 9.81, 0)} kg/m². Cliquer sur un appui pour voir le détail.`
+                      ? `Dalle en charge répartie (${n((input.bearing * 1e6) / 9.81, 0)} kg/m² admis) : chaque zone en pointillés = la dalle sous une Viewbox. « Dalle : … kg/m² » au milieu de chaque zone = poids sur la dalle au m² sous cette Viewbox (tous ses pieds ensemble dans la combinaison la plus lourde + calage, divisé par la surface) : c’est lui qui est vérifié. Le chiffre dans chaque plaque ou bloc = ce même poids au m² sur la dalle à cet endroit (ce n’est pas une pression).${result.roadwayOn ? ' Grand contour en tirets = plaques de roulage sur toute la surface.' : ''} Ajouter des appuis sous une Viewbox répartit sa charge entre ses pieds mais ne change pas ce poids ; la charge sous chaque pied (kN) est à comparer à la charge ponctuelle admise par l’exploitant. Ensemble de l’installation : ${n((result.slab.global.q * 1e6) / 9.81, 0)} kg/m². Cliquer sur un appui pour voir le détail.`
                       : `Chiffres dans chaque plaque ou bloc = pression au sol finale (portance admise : ${n(input.bearing * 1e3, input.bearing * 1e3 < 10 ? 1 : 0)} kN/m² = ${n((input.bearing * 1e6) / 9.81, 0)} kg/m²). Couleur = pression au sol avec le calage appliqué, rapportée à la portance. Cliquer sur un appui pour voir le détail et changer son calage.`
                     : 'Couleur = type d’appui.'}{' '}
                 Plaques dessinées à l’échelle à leur place (pointillés ▲ = plaque centrée, elle dépasse de la Viewbox) ; les vérins voisins sont sur une même plaque.

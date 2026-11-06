@@ -13,8 +13,9 @@ import { fmtNumber } from '../../structure/core/units';
 const n = (v: number, d = 1) => fmtNumber(v, d);
 export const badgeOf = (eta: number) => (verdictOf(eta) === 'ok' ? 'ok' : verdictOf(eta) === 'limit' ? 'orange' : 'ko');
 /** Couleur d'un appui sur le plan selon son taux de travail (vert, orange, rouge). */
-export const CHECK_COLORS = { ok: '#16a34a', limit: '#d97706', fail: '#dc2626' } as const;
-export const checkColor = (eta: number) => CHECK_COLORS[verdictOf(eta) === 'ok' ? 'ok' : verdictOf(eta) === 'limit' ? 'limit' : 'fail'];
+// couleurs des taux : les mêmes que sur les plans (écran et fiche PDF)
+export { CHECK_COLORS, checkColor } from '../../structure/report/groundSheet';
+import { checkColor } from '../../structure/report/groundSheet';
 
 /** Résumé court d'un calage (« 2 × 100 × 100 × 36 mm », « aucune plaque »). */
 export function refsText(refs: LayerRef[] | undefined, stock: StockPlate[]): string {

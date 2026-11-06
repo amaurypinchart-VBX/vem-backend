@@ -6,7 +6,7 @@ import { computeCalage } from '../../src/structure/core/calage';
 import { calageRemedies } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
 import { calageInput, DEFAULT_HYP, bearingModeOf } from '../../src/ui/structure/GroundPanel';
-import { planPlates, pressureLines } from '../../src/structure/report/groundSheet';
+import { checkPlan, planPlates, pressureLines } from '../../src/structure/report/groundSheet';
 import { fmtNumber } from '../../src/structure/core/units';
 
 const mods = gridModules(1, 2, [[1], [1]], false);
@@ -73,6 +73,20 @@ describe('dalle en charge répartie admissible', () => {
     expect(rem[0].details.join(' ')).toContain('m² de dalle');
   });
 
+  it('plans : plaques de roulage dessinées (contour + texte) et même plan à l’écran et dans la fiche (checkPlan)', () => {
+    const d = computeCalage({ ...slab, choices: { ...(slab.choices ?? {}), roadway: true } });
+    expect(d.roadwayOn).toBe(true);
+    expect(d.roadwayOutline?.length).toBe(1);
+    const plan = checkPlan(d);
+    const rw = plan.plates.filter((p) => p.roadway);
+    expect(rw).toHaveLength(1);
+    expect(rw[0].label).toEqual(['Plaques de roulage sur toute la surface']);
+    expect(checkPlan(d, 'en').plates.find((p) => p.roadway)!.label).toEqual(['Roadway plates over the whole area']);
+    const r = d.estimate.reactions[0];
+    expect(plan.pointSub(r)).toMatch(/kN · η /);
+    expect(computeCalage(slab).roadwayOutline).toBeUndefined();
+  });
+
   it('charge ponctuelle admissible donnée : comptée en plus de la zone', () => {
     const d = computeCalage({ ...slab, pointLoadMax: 3000 });
     expect(d.checks.some((c) => c.etaPoint > 1 && c.eta === Math.max(c.etaPoint, c.zone!.eta, c.etaC90, c.etaCapacity))).toBe(true);
@@ -84,13 +98,13 @@ describe('dalle en charge répartie admissible', () => {
     const plates = planPlates(d.checks, { slab: d.slab, label: pressureLines });
     const zones = plates.filter((p) => p.zone);
     expect(zones.length).toBeGreaterThanOrEqual(mods.length);
-    expect(zones.filter((z) => z.label).every((z) => /kg\/m²$/.test(z.label![0]) && /kg sur .* m²$/.test(z.label![1]))).toBe(true);
+    expect(zones.filter((z) => z.label).every((z) => /^Dalle : .* kg\/m²$/.test(z.label![0]) && /kg \/ .* m²$/.test(z.label![1]))).toBe(true);
     // chaque appui porte le poids réparti sur la dalle de sa Viewbox (pas la pression sous sa plaque)
     const sup = plates.filter((p) => !p.zone && !p.id.startsWith('T'));
     expect(sup.length).toBeGreaterThan(0);
     for (const p of sup) {
       const c = d.checks.find((x) => x.id === p.id)!;
-      expect(p.label).toEqual([`${fmtNumber((c.zone!.q * 1e6) / 9.81, 0)} kg/m²`, `dalle ${c.zone!.id}`]);
+      expect(p.label).toEqual([`${fmtNumber((c.zone!.q * 1e6) / 9.81, 0)} kg/m²`]);
     }
   });
 
