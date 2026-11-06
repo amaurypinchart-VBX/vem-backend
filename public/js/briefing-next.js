@@ -270,14 +270,24 @@
     let content = Object.entries(b.content)
       .map(([k, v]) => fieldHtml(k, v))
       .join("");
-    if (print && b.graphic && window.BriefingNextGraphics.issues(window.BriefingNextGraphics.normalize(M.copy(b.graphic))).length)
+    if (
+      print &&
+      b.graphic &&
+      window.BriefingNextGraphics.issues(
+        window.BriefingNextGraphics.normalize(M.copy(b.graphic)),
+      ).length
+    )
       throw new Error("Texte ou objet graphique hors page : " + b.title);
     if (b.kind === "graphic" && b.graphic)
       content = window.BriefingNextGraphics.html(
         b.graphic,
         b.graphic.backgroundId ? b.content.url : "",
       );
-    else if (b.kind === "legacy")
+    else if (b.kind === "plan" && b.pdf) {
+      const preview = M.pdfPreview(b.content.url, b.pdf.page);
+      if (!preview) throw new Error("Aperçu PDF indisponible : " + b.title);
+      content = `<div class="bn-photo-frame bn-pdf-page"><img src="${E(preview)}" alt="${E(b.title)}" loading="lazy"></div><div class="bn-field"><a href="${E(safeUrl(b.content.url))}#page=${b.pdf.page}" target="_blank" rel="noopener noreferrer">Ouvrir le PDF original · page ${b.pdf.page}</a></div>`;
+    } else if (b.kind === "legacy")
       content = `<div class="bn-legacy" data-legacy="${E(b.id)}">Chargement de l’original…</div>`;
     else if (
       b.kind === "photo" &&
@@ -340,7 +350,7 @@
  ${S.conflict ? `<div class="bn-warning">Une autre session a enregistré une nouvelle révision. ${btn("backup", "Télécharger ma copie JSON")}${btn("reload", "Recharger le serveur")}</div>` : ""}
  <div class="bn-body"><nav><h3>Pages · ${S.doc.pages.length}</h3><input aria-label="Rechercher une page" placeholder="Rechercher…" data-search>
  ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme, S.doc.brand)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
- ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("addGraphic", "+ Composition libre")}${btn("media", "Médias du projet")}${btn("original", "Copie éditable de l’original")}` : ""}
+ ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("addGraphic", "+ Composition libre")}${btn("media", "Médias du projet")}${btn("templates", "Mes modèles")}${btn("pdfImport", "Pages d’un PDF")}${btn("original", "Copie éditable de l’original")}` : ""}
  </nav><main>${S.preview ? S.doc.pages.map((p, i) => paperHtml(p, i)).join("") : paperHtml(p, S.page)}</main><aside>
  <h3>Direction artistique</h3>${editing ? btn("brand", "Kit de marque") : ""}${S.doc.brand ? `<p class="bn-count">Identité : ${E(S.doc.brand.name)} · les styles locaux sont conservés.</p>` : ""}${Object.entries(
    M.themes,
@@ -637,7 +647,12 @@
             change(() => {
               const attach = (block) => {
                 block.graphic = graphic;
-                if (background && block.source?.kind === "file" && block.source.id === background.id) return;
+                if (
+                  background &&
+                  block.source?.kind === "file" &&
+                  block.source.id === background.id
+                )
+                  return;
                 if (background) {
                   block.source = { kind: "file", id: background.id };
                   block.content.url = background.fields.url;
@@ -676,6 +691,8 @@
       if (act === "generate") return generator();
       if (act === "refresh") return refresh();
       if (act === "media") return media();
+      if (act === "templates") return templates();
+      if (act === "pdfImport") return pdfImport();
       if (act === "add") return addDialog();
       if (act === "undo" || act === "redo") {
         const from = act === "undo" ? S.undo : S.redo,
@@ -1023,6 +1040,274 @@
           S.selected = b.id;
         }),
     );
+  }
+
+  async function templates() {
+    const session = S;
+    const records = (
+      await request("GET", `/briefings/project/${S.doc.projectId}/templates`)
+    ).data;
+    if (S !== session) return;
+    const blueprint = M.templateFrom(S.doc),
+      id = M.uid();
+    const layer = dialog(
+      "Mes modèles réutilisables",
+      `<p>Modèles privés disponibles dans vos projets. Structure et styles uniquement : textes chantier, contacts, horaires, photos, fonds et liens source sont retirés. Les textes des compositions seront à compléter.</p><label>Nom du nouveau modèle<input name="template-name" value="Gabarit chantier" maxlength="120"></label><h3>Modèles enregistrés</h3>${records.map((r, i) => `<div class="bn-choice"><strong>${E(r.name)}</strong><button data-template-use="${i}">Utiliser</button><button data-template-export="${i}">Exporter JSON</button><button data-template-delete="${i}">Supprimer</button></div>`).join("") || "<p>Aucun modèle enregistré.</p>"}<label>Importer un modèle JSON<input type="file" data-template-import accept=".json,application/json"></label>`,
+      async (l) => {
+        await request(
+          "PUT",
+          `/briefings/project/${session.doc.projectId}/templates/${id}`,
+          { name: l.querySelector("[name=template-name]").value, blueprint },
+        );
+        status("Modèle enregistré");
+      },
+      "Enregistrer la structure actuelle",
+    );
+    layer.addEventListener("click", async (e) => {
+      try {
+        const use = e.target.closest("[data-template-use]"),
+          exp = e.target.closest("[data-template-export]"),
+          del = e.target.closest("[data-template-delete]");
+        if (use) {
+          const record = records[Number(use.dataset.templateUse)];
+          layer.remove();
+          await useTemplate(record);
+        }
+        if (exp) {
+          const record = records[Number(exp.dataset.templateExport)],
+            url = URL.createObjectURL(
+              new Blob(
+                [
+                  JSON.stringify(
+                    {
+                      type: "vem-briefing-template",
+                      version: 1,
+                      name: record.name,
+                      blueprint: record.blueprint,
+                    },
+                    null,
+                    2,
+                  ),
+                ],
+                { type: "application/json" },
+              ),
+            );
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "vem-modele-briefing.json";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        if (del) {
+          const record = records[Number(del.dataset.templateDelete)];
+          if (
+            !confirm(
+              "Supprimer ce modèle ? Les briefings créés restent conservés.",
+            )
+          )
+            return;
+          await request(
+            "DELETE",
+            `/briefings/project/${session.doc.projectId}/templates/${record.id}`,
+          );
+          del.closest(".bn-choice").remove();
+        }
+      } catch (e) {
+        layer.querySelector("[data-error]").textContent = e.message;
+      }
+    });
+    layer.querySelector("[data-template-import]").onchange = async (e) => {
+      try {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 1024 * 1024) throw new Error("Modèle supérieur à 1 Mo");
+        const value = JSON.parse(await file.text());
+        if (value.type !== "vem-briefing-template" || value.version !== 1)
+          throw new Error("Format de modèle inconnu");
+        const r = await request(
+          "PUT",
+          `/briefings/project/${session.doc.projectId}/templates/${M.uid()}`,
+          { name: value.name, blueprint: value.blueprint },
+        );
+        layer.remove();
+        await useTemplate(r.data);
+      } catch (e) {
+        layer.querySelector("[data-error]").textContent = e.message;
+      }
+    };
+  }
+  async function useTemplate(record) {
+    const session = S,
+      sources = (
+        await request("GET", `/briefings/project/${S.doc.projectId}/sources`)
+      ).data;
+    if (S !== session) return;
+    dialog(
+      "Utiliser le modèle",
+      `<p>${E(record.name)} · ${record.blueprint.pages.length} page(s). Les champs non reliés restent à compléter.</p><label>Insertion<select name="template-mode"><option value="append">Ajouter à la suite</option><option value="replace">Remplacer le document (annulable)</option></select></label>${record.blueprint.pages
+        .map((p, i) =>
+          p.blocks
+            .map((b, j) =>
+              b.binding
+                ? `<label>Page ${i + 1} · ${E(M.blockNames[b.kind])}<select data-template-bind="${i}:${j}"><option value="">À compléter sans lien</option>${sources
+                    .filter((s) => s.kind === b.binding)
+                    .map(
+                      (s) =>
+                        `<option value="${E(M.key(s))}">${E(s.title)}</option>`,
+                    )
+                    .join("")}</select></label>`
+                : "",
+            )
+            .join(""),
+        )
+        .join("")}`,
+      (l) => {
+        const bindings = Object.fromEntries(
+          [...l.querySelectorAll("[data-template-bind]")]
+            .filter((x) => x.value)
+            .map((x) => [x.dataset.templateBind, x.value]),
+        );
+        const draft = M.instantiateTemplate(
+          record.blueprint,
+          S.doc.projectId,
+          S.doc.title,
+          sources,
+          bindings,
+        );
+        const append =
+          l.querySelector("[name=template-mode]").value === "append";
+        if (append && S.doc.pages.length + draft.pages.length > 500)
+          throw new Error("Maximum 500 pages par document");
+        change(() => {
+          if (append) {
+            S.page = S.doc.pages.length;
+            draft.pages.forEach((p) => (p.theme = p.theme || draft.theme));
+            S.doc.pages.push(...draft.pages);
+          } else {
+            if (S.doc.brand) draft.brand = M.copy(S.doc.brand);
+            S.doc = draft;
+            S.page = 0;
+          }
+          S.selected = null;
+          S.sources = sources;
+        });
+      },
+    );
+  }
+  async function pdfImport() {
+    const session = S;
+    S.sources = (
+      await request("GET", `/briefings/project/${S.doc.projectId}/sources`)
+    ).data;
+    const pdfs = S.sources.filter(
+      (s) => s.kind === "file" && /\.pdf(?:\?|$)/i.test(s.fields.url),
+    );
+    const layer = dialog(
+      "Importer les pages d’un PDF",
+      `<p>PDF déjà ajouté aux fichiers du projet (10 Mo maximum). Aperçus Cloudinary de 2 000 px, non vectoriels ; l’original reste accessible. Choisissez au maximum 50 pages par lot.</p><label>PDF<select name="pdf-file">${pdfs.map((f, i) => `<option value="${i}">${E(f.title)}</option>`).join("")}</select></label><button data-pdf-info>Lire le nombre de pages</button><p data-pdf-count></p><label>Pages (exemple : 1, 3-5)<input name="pdf-pages" value="1" maxlength="1000"></label><p data-pdf-progress role="status"></p>`,
+      async (l) => {
+        const source = pdfs[Number(l.querySelector("[name=pdf-file]").value)];
+        if (!source)
+          throw new Error("Ajoutez d’abord un PDF aux fichiers du projet");
+        const info = (
+          await request(
+            "GET",
+            `/briefings/project/${session.doc.projectId}/pdf/${source.id}`,
+          )
+        ).data;
+        const pages = M.pdfPages(
+          l.querySelector("[name=pdf-pages]").value,
+          info.pages,
+        );
+        if (S !== session || !l.isConnected) return;
+        if (S.doc.pages.length + pages.length > 500)
+          throw new Error("Maximum 500 pages par document");
+        const controller = new AbortController();
+        l.querySelector("[data-cancel]").addEventListener(
+          "click",
+          () => controller.abort(),
+          { once: true },
+        );
+        for (const [index, page] of pages.entries()) {
+          if (!l.isConnected || S !== session) throw new Error("Import annulé");
+          l.querySelector("[data-pdf-progress]").textContent =
+            `Préparation ${index + 1}/${pages.length} · page ${page}`;
+          const url = M.pdfPreview(info.url, page);
+          if (!url) throw new Error("Aperçus indisponibles pour ce PDF");
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            let timer;
+            const done = (err) => {
+              clearTimeout(timer);
+              controller.signal.removeEventListener("abort", cancel);
+              img.onload = img.onerror = null;
+              if (err) reject(err);
+              else resolve();
+            };
+            const cancel = () => {
+              img.src = "";
+              done(new Error("Import annulé"));
+            };
+            controller.signal.addEventListener("abort", cancel, { once: true });
+            timer = setTimeout(
+              () =>
+                done(
+                  new Error(
+                    `Aperçu indisponible pour la page ${page}. Aucun ajout effectué.`,
+                  ),
+                ),
+              15000,
+            );
+            img.onload = () => done();
+            img.onerror = () =>
+              done(
+                new Error(
+                  `Aperçu indisponible pour la page ${page}. Aucun ajout effectué.`,
+                ),
+              );
+            img.src = url;
+          });
+        }
+        if (!l.isConnected || S !== session) return;
+        change(() => {
+          S.page = S.doc.pages.length;
+          S.doc.pages.push(
+            ...pages.map((page) => {
+              const b = M.block({
+                ...source,
+                fields: { ...source.fields, url: info.url },
+              });
+              b.kind = "plan";
+              b.title = source.title + " · page " + page;
+              b.pdf = { page };
+              return { id: M.uid(), title: b.title, blocks: [b] };
+            }),
+          );
+          S.selected = null;
+        });
+      },
+      "Ajouter les pages sélectionnées",
+    );
+    layer.querySelector("[data-pdf-info]").onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const source =
+          pdfs[Number(layer.querySelector("[name=pdf-file]").value)];
+        if (!source) throw new Error("Aucun PDF dans ce projet");
+        const info = (
+          await request(
+            "GET",
+            `/briefings/project/${session.doc.projectId}/pdf/${source.id}`,
+          )
+        ).data;
+        layer.querySelector("[data-pdf-count]").textContent =
+          info.pages + " page(s) dans ce PDF";
+      } catch (e) {
+        layer.querySelector("[data-error]").textContent = e.message;
+      } finally {
+        e.target.disabled = false;
+      }
+    };
   }
   function media() {
     const files = S.sources.filter((s) => s.kind === "file");

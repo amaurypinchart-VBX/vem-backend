@@ -13,7 +13,29 @@ let row = {
   document: null,
 };
 const publications = [];
+const templates = [];
 global.__prisma = {
+  briefingTemplate: {
+    findMany: async ({ where }) =>
+      structuredClone(templates.filter((t) => t.ownerId === where.ownerId)),
+    upsert: async ({ where, create }) => {
+      let t = templates.find((t) => t.id === where.id);
+      if (!t) {
+        t = structuredClone(create);
+        templates.push(t);
+      }
+      return t;
+    },
+    deleteMany: async ({ where }) => {
+      const i = templates.findIndex(
+        (t) => t.id === where.id && t.ownerId === where.ownerId,
+      );
+      if (i < 0) return { count: 0 };
+      templates.splice(i, 1);
+      return { count: 1 };
+    },
+  },
+  projectFile: { findFirst: async () => null },
   briefing: {
     findUnique: async ({ where }) =>
       where.id === "b" ? structuredClone(row) : null,
@@ -52,7 +74,7 @@ const router = require("../dist/routes/briefing").default;
 const app = express();
 app.use(express.json());
 app.use((req, res, next) => {
-  req.user = { id: "u" };
+  req.user = { id: req.headers["x-role"] === "other" ? "other" : "u" };
   req.scopeProjectIds = ["p"];
   req.access = {
     scope: "team",
@@ -139,4 +161,48 @@ test("legacy patch cannot overwrite converted document", async () => {
     409,
   );
   assert.deepEqual(row.slides, []);
+});
+
+test("templates are private, sanitized, retry-safe and scoped to an accessible project", async () => {
+  const body = {
+    name: "Structure",
+    blueprint: M.templateFrom(M.blank("p", "Secret")),
+  };
+  assert.equal((await call("/project/foreign/templates", "GET")).status, 403);
+  assert.equal(
+    (await call("/project/p/templates/t1", "PUT", body, "reader")).status,
+    403,
+  );
+  assert.equal(
+    (await call("/project/p/templates/t1", "PUT", body)).status,
+    200,
+  );
+  assert.equal(
+    (await call("/project/p/templates/t1", "PUT", body)).status,
+    200,
+  );
+  assert.equal(templates.length, 1);
+  assert.equal(
+    (await call("/project/p/templates/t1", "PUT", body, "other")).status,
+    403,
+  );
+  assert.equal(
+    (
+      await (
+        await call("/project/p/templates", "GET", undefined, "other")
+      ).json()
+    ).data.length,
+    0,
+  );
+  assert.equal(
+    (await call("/project/p/templates/t1", "DELETE", undefined, "other"))
+      .status,
+    404,
+  );
+  const bad = structuredClone(body);
+  bad.blueprint.projectId = "foreign";
+  assert.equal((await call("/project/p/templates/t2", "PUT", bad)).status, 400);
+  assert.equal((await call("/project/p/templates/t1", "DELETE")).status, 200);
+  assert.equal((await call("/project/foreign/pdf/file", "GET")).status, 403);
+  assert.equal((await call("/project/p/pdf/foreign", "GET")).status, 404);
 });

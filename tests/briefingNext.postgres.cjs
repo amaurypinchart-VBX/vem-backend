@@ -26,6 +26,7 @@ const { scopeGuard } = require("../dist/middleware/scopeGuard");
     await prisma.$executeRawUnsafe(
       "ALTER TABLE briefings DROP COLUMN IF EXISTS revision",
     );
+    await prisma.$executeRawUnsafe("DROP TABLE IF EXISTS briefing_templates");
     await migrateBriefingNext();
     await migrateBriefingNext();
     client = await prisma.client.create({
@@ -77,6 +78,41 @@ const { scopeGuard } = require("../dist/middleware/scopeGuard");
       });
     const sources = await briefingSources(p.id),
       doc = M.generate(p.id, "New", sources);
+    const templateId = "template-ci-" + Date.now(),
+      templateBody = { name: "CI", blueprint: M.templateFrom(doc) };
+    assert.equal(
+      (
+        await call(
+          `/project/${p.id}/templates/${templateId}`,
+          "PUT",
+          templateBody,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call(
+          `/project/${p.id}/templates/${templateId}`,
+          "PUT",
+          templateBody,
+        )
+      ).status,
+      200,
+    );
+    await migrateBriefingNext();
+    const templates = await (
+      await call(`/project/${p.id}/templates`, "GET")
+    ).json();
+    assert.equal(templates.data.filter((t) => t.id === templateId).length, 1);
+    assert.deepEqual(
+      templates.data.find((t) => t.id === templateId).blueprint,
+      templateBody.blueprint,
+    );
+    assert.equal(
+      (await call(`/project/${p.id}/templates/${templateId}`, "DELETE")).status,
+      200,
+    );
     const result = await Promise.all([
       call("/" + b.id + "/document", "PUT", { revision: 0, document: doc }),
       call("/" + b.id + "/document", "PUT", { revision: 0, document: doc }),

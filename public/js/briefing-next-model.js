@@ -265,7 +265,176 @@
       font: b.font,
     };
   }
+
+  const blockNames = {
+    cover: "Couverture",
+    summary: "Résumé chantier",
+    contacts: "Contact",
+    team: "Équipe",
+    planning: "Planning",
+    deliveries: "Livraison",
+    access: "Accès",
+    instructions: "Consignes",
+    tasks: "Action",
+    quality: "Contrôle qualité",
+    photo: "Photo",
+    plan: "Plan",
+    note: "Note",
+    legacy: "Contenu à recréer",
+    table: "Tableau",
+    graphic: "Composition libre",
+  };
+  function templateFrom(document) {
+    return {
+      version: 1,
+      theme: document.theme,
+      format: document.format,
+      pages: document.pages.map((p) => ({
+        ...(p.theme ? { theme: p.theme } : {}),
+        blocks: p.blocks.map((b) => {
+          const kind = b.kind === "legacy" ? "note" : b.kind;
+          const t = { kind, layout: b.layout };
+          if (b.source && kind !== "graphic") t.binding = b.source.kind;
+          if (b.style) t.style = copy(b.style);
+          if (b.image) t.image = copy(b.image);
+          if (b.graphic) {
+            t.graphic = copy(b.graphic);
+            delete t.graphic.backgroundId;
+            const groups = new Map();
+            t.graphic.nodes.forEach((n) => {
+              n.id = uid();
+              delete n.locked;
+              delete n.hidden;
+              if (n.group) {
+                if (!groups.has(n.group)) groups.set(n.group, uid());
+                n.group = groups.get(n.group);
+              }
+              n.text =
+                n.type === "text"
+                  ? ""
+                  : n.type === "marker"
+                    ? "Repère à renseigner"
+                    : "";
+            });
+          }
+          return t;
+        }),
+      })),
+    };
+  }
+  function instantiateTemplate(
+    template,
+    projectId,
+    title,
+    sources = [],
+    bindings = {},
+  ) {
+    const d = blank(projectId, title);
+    d.theme = template.theme;
+    d.format = template.format;
+    d.pages = template.pages.map((p, i) => ({
+      id: uid(),
+      title: "Page " + (i + 1),
+      ...(p.theme ? { theme: p.theme } : {}),
+      blocks: p.blocks.map((t, j) => {
+        const chosen = bindings[i + ":" + j];
+        const source = chosen
+          ? sources.find((s) => key(s) === chosen && s.kind === t.binding)
+          : null;
+        if (chosen && !source)
+          throw new Error("Source du modèle inaccessible dans ce projet");
+        const b = source
+          ? block(source)
+          : {
+              id: uid(),
+              kind: t.kind,
+              title: blockNames[t.kind],
+              layout: t.layout,
+              mode: "custom",
+              baseline: {},
+              content:
+                t.kind === "table"
+                  ? { table: "Désignation\tQuantité\nÀ compléter\t" }
+                  : t.kind === "photo" ||
+                      t.kind === "plan" ||
+                      t.kind === "graphic"
+                    ? {}
+                    : { text: "À compléter" },
+              annotation: "",
+            };
+        b.layout = t.layout;
+        if (t.style) b.style = copy(t.style);
+        if (t.image) b.image = copy(t.image);
+        if (t.graphic) {
+          b.graphic = duplicate({ id: uid(), graphic: t.graphic }).graphic;
+        }
+        return b;
+      }),
+    }));
+    const linked = new Set(
+      d.pages
+        .flatMap((p) => p.blocks)
+        .filter((b) => b.source)
+        .map((b) => key(b.source)),
+    );
+    d.excluded = sources.filter((s) => !linked.has(key(s))).map(key);
+    return d;
+  }
+
+  function pdfPages(input, total) {
+    if (
+      typeof input !== "string" ||
+      input.length > 1000 ||
+      !Number.isInteger(total) ||
+      total < 1 ||
+      total > 500
+    )
+      throw new Error("Pages invalides");
+    const pages = new Set();
+    for (const chunk of input.split(",")) {
+      const m = chunk.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+      if (!m) throw new Error("Format attendu : 1, 3-5");
+      const from = Number(m[1]),
+        to = Number(m[2] || m[1]);
+      if (from < 1 || to < from || to > total)
+        throw new Error("Numéro de page hors du PDF");
+      for (let n = from; n <= to; n++) pages.add(n);
+    }
+    if (pages.size > 50)
+      throw new Error(
+        "Maximum 50 pages par import : importez le PDF en plusieurs lots",
+      );
+    return [...pages].sort((a, b) => a - b);
+  }
+  function pdfPreview(url, page) {
+    if (!Number.isInteger(page) || page < 1 || page > 500) return "";
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      return "";
+    }
+    if (
+      u.protocol !== "https:" ||
+      u.hostname !== "res.cloudinary.com" ||
+      u.port ||
+      u.username ||
+      u.password ||
+      !/^\/[^/]+\/image\/upload\//.test(u.pathname) ||
+      !/\.pdf$/i.test(u.pathname)
+    )
+      return "";
+    u.pathname = u.pathname
+      .replace("/upload/", `/upload/f_png,c_limit,w_2000,pg_${page}/`)
+      .replace(/\.pdf$/i, ".png");
+    return u.href;
+  }
   const api = {
+    templateFrom,
+    instantiateTemplate,
+    blockNames,
+    pdfPreview,
+    pdfPages,
     brandKit,
     copy,
     uid,
