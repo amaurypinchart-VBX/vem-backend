@@ -6,7 +6,8 @@ import { computeCalage } from '../../src/structure/core/calage';
 import { calageRemedies } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
 import { calageInput, DEFAULT_HYP, bearingModeOf } from '../../src/ui/structure/GroundPanel';
-import { planPlates } from '../../src/structure/report/groundSheet';
+import { planPlates, pressureLines } from '../../src/structure/report/groundSheet';
+import { fmtNumber } from '../../src/structure/core/units';
 
 const mods = gridModules(1, 2, [[1], [1]], false);
 const hyp450 = { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, middleFeet: true, liveGround: 0.981, publicMode: 'persons' as const, persons: 4 };
@@ -80,12 +81,19 @@ describe('dalle en charge répartie admissible', () => {
 
   it('plan : zones de dalle en pointillés avec le poids au m² (kg/m²)', () => {
     const d = computeCalage(slab);
-    const plates = planPlates(d.checks, { slab: d.slab, label: () => ['x'] });
+    const plates = planPlates(d.checks, { slab: d.slab, label: pressureLines });
     const zones = plates.filter((p) => p.zone);
     expect(zones.length).toBeGreaterThanOrEqual(mods.length);
     expect(zones.filter((z) => z.label).every((z) => /kg\/m²$/.test(z.label![0]) && /kg sur .* m²$/.test(z.label![1]))).toBe(true);
-    // en mode dalle, les plaques ne portent plus la pression
-    expect(plates.filter((p) => !p.zone).every((p) => !p.label)).toBe(true);
+    // chaque appui garde son poids au m² juste sous son calage (information), en kg/m² d'abord
+    const sup = plates.filter((p) => !p.zone && !p.id.startsWith('T'));
+    expect(sup.length).toBeGreaterThan(0);
+    for (const p of sup) {
+      const c = d.checks.find((x) => x.id === p.id)!;
+      expect(c.underPressure).toBeGreaterThan(c.zone!.q);
+      expect(p.label![0]).toBe(`${fmtNumber((c.underPressure! * 1e6) / 9.81, 0)} kg/m²`);
+      expect(p.label![1]).toMatch(/kN\/m²$/);
+    }
   });
 
   it('plaques de roulage qui dépassent tout autour : zones plus grandes, charge au m² plus faible', () => {
