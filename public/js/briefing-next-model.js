@@ -147,7 +147,8 @@
     return d;
   }
   // Three-way merge per field. Deletions are explicit proposals; annotations/style never touched.
-  function diff(d, sources) {
+  function diff(d, sources, blockIds = null) {
+    const scope = blockIds === null ? null : new Set(blockIds);
     const changes = [],
       map = new Map(sources.map((s) => [key(s), s])),
       seen = new Set(d.excluded);
@@ -156,7 +157,7 @@
         if (b.source) {
           const k = key(b.source);
           seen.add(k);
-          if (b.mode === "frozen") continue;
+          if (b.mode === "frozen" || (scope && (!scope.has(b.id) || b.locked))) continue;
           const s = map.get(k);
           if (!s) {
             changes.push({ type: "deleted", blockId: b.id, label: b.title });
@@ -185,7 +186,7 @@
           }
         }
     for (const s of sources)
-      if (!seen.has(key(s)))
+      if (!scope && !seen.has(key(s)))
         changes.push({ type: "added", source: s, label: s.title });
     return changes;
   }

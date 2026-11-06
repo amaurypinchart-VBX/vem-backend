@@ -173,3 +173,28 @@ test("brand kits validate portable data and reject project or executable fields"
   d.pages[0].blocks[0].image.x = 101;
   assert.equal(documentSchema.safeParse(d).success, false);
 });
+
+test("scoped refresh isolates selected blocks, retains exclusions and protects frozen/locked content", () => {
+  const d = M.generate("p", "Chantier", sources.slice(0, 4));
+  const [a, b, c, e] = d.pages[0].blocks;
+  b.locked = true;
+  c.mode = "frozen";
+  a.annotation = "Conserver";
+  a.style = { color: "#abcdef" };
+  a.content.title = "Ma retouche";
+  const remote = M.copy(sources.slice(0, 5));
+  remote.forEach((s) => { s.fields.status = "done"; s.fields.title = "Nouveau"; });
+  const changes = M.diff(d, remote, [a.id, b.id, c.id]);
+  assert.ok(changes.length);
+  assert.ok(changes.every((x) => x.blockId === a.id));
+  const out = M.apply(d, changes, Object.fromEntries(changes.map((x, i) => [i, x.type === "conflict" ? "keep" : "remote"])));
+  assert.equal(out.pages[0].blocks[0].content.status, "done");
+  assert.equal(out.pages[0].blocks[0].content.title, "Ma retouche");
+  assert.equal(out.pages[0].blocks[0].annotation, "Conserver");
+  assert.deepEqual(out.pages[0].blocks[0].style, a.style);
+  assert.deepEqual(out.pages[0].blocks.slice(1), [b, c, e]);
+  assert.deepEqual(out.excluded, d.excluded);
+  assert.deepEqual(M.diff(d, remote, []), []);
+  assert.equal(M.diff(d, remote).filter((x) => x.type === "added").length, 1);
+  assert.deepEqual(M.diff(d, [], [a.id]).map((x) => x.blockId), [a.id]);
+});
