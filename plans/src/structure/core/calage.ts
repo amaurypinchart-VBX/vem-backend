@@ -27,7 +27,7 @@ import { fmtNumber } from './units';
 import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedies';
 import { evaluateRemedy } from './calageRemedies';
 import type { SlabResult, SlabZone } from './slabZones';
-import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, zoneOfSupport, zoneRecord } from './slabZones';
+import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, unionLoops, zoneOfSupport, zoneRecord } from './slabZones';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -194,6 +194,8 @@ export interface CalageResult {
   checks: SupportCheck[];
   roadway: RoadwayResult;
   roadwayOn: boolean;
+  /** plaques de roulage retenues : contour de la surface couverte (emprise au sol + débord), pour les plans */
+  roadwayOutline?: P2[][];
   /** public limité retenu pour le sol (charge totale en N) */
   publicLimit?: { persons: number; kg: number; load: number };
   placement: PlatePlacement;
@@ -1072,6 +1074,8 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     checks,
     roadway,
     roadwayOn,
+    // contour pour les plans : + 3 cm pour fermer les joints entre box voisines (les plaques de roulage les couvrent)
+    ...(roadwayOn ? { roadwayOutline: unionLoops(inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, overhang + 30))) } : {}),
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
     tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(viewboxPresent ? {} : { notApplicable: true }) },
