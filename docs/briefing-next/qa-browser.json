@@ -1,13 +1,13 @@
 {
   "environment": "Chromium headless / Linux / mocked authenticated API / synthetic data",
-  "openMs": 125,
-  "paginationMs": 870,
-  "exportAndVerificationMs": 1509,
-  "pages": 49,
+  "openMs": 129,
+  "paginationMs": 872,
+  "exportAndVerificationMs": 1574,
+  "pages": 51,
   "overflow": 0,
   "sourceTasks": 50,
   "fixturePages": 25,
   "availableImages": 20,
-  "checks": "save/reopen, theme, refresh, annotation, mobile, brand, photo focal crop, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
+  "checks": "save/reopen, theme, refresh, annotation, mobile, private portable templates and explicit destination links, selected PDF pages/failure atomicity, brand, photo focal crop, free graphic groups/lock/keyboard/copy/undo/persistence/vector export, A4/16:9 pagination, selective export, all tasks/images, native TSV paste, 409 conflict",
   "limitations": "No PostgreSQL, live auth, Cloudinary, real translation or production data in this browser harness."
 }
