@@ -1,12 +1,18 @@
 // Dalle, plancher ou toiture donnés en « charge répartie admissible » (kg/m²) — A. Pinchart 04.11.2026 : « la place
 // accepte un poids de 450 kg au m², pas une pression ; ne mets pas la pression au sol mais le poids qu'il y aura sur
 // le sol au m² à cet endroit ». Une telle valeur est la charge moyenne que l'ouvrage porte partout à la fois : le
-// critère n'est pas la pression juste sous une plaque mais le poids rapporté à la surface de dalle que chaque pied
-// charge. Chaque pied reçoit sa zone (la moitié de la distance aux pieds voisins = cellule de Voronoï, limitée à
-// l'emprise au sol des Viewbox, ou au plateau de madriers retenu) ; poids de la zone = réaction maxi du pied (pire
-// cas des combinaisons) + son bloc + ses plaques + sa part des plaques de roulage / madriers ; charge de la zone =
-// poids / surface ≤ charge admissible. L'ensemble = charge verticale totale (combinaison la plus lourde) + calage,
-// sur toute l'emprise. Fonctions pures ; N, mm, N/mm².
+// critère n'est pas la pression juste sous une plaque mais le poids rapporté à la surface de dalle chargée.
+//
+// Contrôle par Viewbox (05–06.11.2026 : « j'ajoute 4 supports au centre, ça devrait alléger les angles ») : la dalle
+// est découpée par Viewbox posée au sol (son emprise, + ce qui dépasse autour d'elle : plaques de roulage, plaques
+// centrées, rattaché à la Viewbox la plus proche) ; poids de la zone = somme, combinaison par combinaison, des
+// réactions des pieds de cette Viewbox (un pied commun à plusieurs Viewbox est partagé à parts égales) + calage, la
+// combinaison la plus lourde ; charge = poids / surface ≤ charge admissible. Ajouter des appuis sous une Viewbox ne
+// change pas le poids qu'elle met sur la dalle : il ne la pénalise jamais (un découpage pied par pied, à mi-chemin des
+// pieds voisins, faisait prendre à un bloc central peu chargé la dalle des angles). La charge sous un seul pied
+// reste affichée (charge ponctuelle admissible de l'exploitant). L'ensemble = charge verticale totale (combinaison la
+// plus lourde) + calage, sur toute l'emprise ; un plateau de madriers retenu = une seule zone.
+// Fonctions pures ; N, mm, N/mm².
 import '../../core/clipperFix';
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { CalageResult, SupportCheck } from './calage';
@@ -17,8 +23,12 @@ import { fmtNumber } from './units';
 const G = 9.81;
 
 export interface SlabZone {
-  /** appui de calage (« P4 », « B2 ») */
+  /** Viewbox (« VBX-01 »), plateau « PL », ou appui hors des Viewbox (pied d'escalier, de terrasse : « E2 ») */
   id: string;
+  /** appuis de calage dont les pieds chargent cette zone */
+  supports: string[];
+  /** combinaison retenue (la plus lourde) */
+  combo?: string;
   /** surface de dalle de la zone (mm²) et poids qui la charge (N, caractéristique) */
   area: number;
   load: number;
@@ -116,39 +126,128 @@ function ccw(p: P2[]): P2[] {
 /** Poids des plaques posées sous un appui (N). */
 const platesWeight = (c: SupportCheck) => c.layerList.reduce((s, l) => s + l.n * l.massKg * G, 0);
 
+/** Options du contrôle par Viewbox. */
+export interface SlabOptions {
+  /** Viewbox posées au sol (zones) ; absent / vide = une seule zone pour toute la surface */
+  modules?: Array<{ id: string; level: number; corners: P2[] }>;
+  /** Rz,k = Rz,Ed / 1,35 (méthode statico) */
+  statico?: boolean;
+  /** toute la surface est une seule zone (plateau de madriers retenu) */
+  single?: string;
+}
+
+const dist2Rect = (p: P2, c: P2[]) => {
+  // distance d'un point à un polygone convexe (0 dedans)
+  let inside = true;
+  let best = Infinity;
+  for (let i = 0; i < c.length; i++) {
+    const a = c[i];
+    const b = c[(i + 1) % c.length];
+    const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    if (cross < 0) inside = false;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]));
+  }
+  return inside ? 0 : best;
+};
+const centroid = (p: P2[]): P2 => [p.reduce((s, a) => s + a[0], 0) / p.length, p.reduce((s, a) => s + a[1], 0) / p.length];
+
 /**
- * Zones de dalle de chaque appui et charge au m². `surface` = rectangles couverts (emprise des Viewbox au sol, ou le
- * plateau de madriers retenu) ; `spread` = poids réparti sur toute la surface (plaques de roulage, madriers), N/mm².
- * Les pieds d'escalier et de terrasse, hors de l'emprise, gardent la surface de leur plaque (ou de leur contact).
+ * Zones de dalle (une par Viewbox posée au sol) et charge au m². `surface` = polygones couverts (emprise des Viewbox
+ * au sol, ce qui dépasse, ou le plateau de madriers retenu) ; `spread` = poids réparti sur toute la surface (plaques de
+ * roulage, madriers), N/mm². Les pieds d'escalier et de terrasse, hors de l'emprise, gardent la surface de leur plaque.
  */
-export function slabZones(res: CalageResult, bearing: number, surface: P2[][], spread: number): SlabResult {
-  // surface de dalle chargée = union de l'emprise (+ débord des plaques de roulage) et des plaques qui dépassent
+export function slabZones(res: CalageResult, bearing: number, surface: P2[][], spread: number, opts: SlabOptions = {}): SlabResult {
   const covered = Clipper.Union(toPaths(surface), undefined, FillRule.NonZero);
   const coveredLoops = fromPaths(covered);
   const total = coveredLoops.reduce((s, x) => s + x.area, 0);
-  const pts = coveredLoops.flatMap((x) => x.loop);
-  const [minX, maxX, minY, maxY] = pts.length
-    ? [Math.min(...pts.map((p) => p[0])) - 10, Math.max(...pts.map((p) => p[0])) + 10, Math.min(...pts.map((p) => p[1])) - 10, Math.max(...pts.map((p) => p[1])) + 10]
-    : [0, 0, 0, 0];
   const sites = res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
-  const zones: SlabZone[] = [];
-  for (const c of sites) {
-    // cellule de Voronoï du pied (convexe), puis intersection avec la surface couverte
-    let cell: P2[] = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
-    for (const o of sites) {
-      if (o === c || !cell.length) continue;
-      const n: P2 = [o.at[0] - c.at[0], o.at[1] - c.at[1]];
-      if (Math.hypot(n[0], n[1]) < 1) continue;
-      cell = clipHalf(cell, [(o.at[0] + c.at[0]) / 2, (o.at[1] + c.at[1]) / 2], n);
+  const boxes = opts.single ? [] : (opts.modules ?? []).filter((m) => m.level === 0).map((m) => ({ id: m.id, poly: ccw(m.corners) }));
+  // surface couverte découpée par Viewbox : entre deux Viewbox voisines, frontière au milieu de l'espace qui les
+  // sépare (perpendiculaire à la ligne de leurs centres) — ce qui dépasse autour d'une Viewbox lui revient
+  const pts = coveredLoops.flatMap((x) => x.loop);
+  const bb: P2[] = pts.length
+    ? [
+        [Math.min(...pts.map((p) => p[0])) - 10, Math.min(...pts.map((p) => p[1])) - 10],
+        [Math.max(...pts.map((p) => p[0])) + 10, Math.min(...pts.map((p) => p[1])) - 10],
+        [Math.max(...pts.map((p) => p[0])) + 10, Math.max(...pts.map((p) => p[1])) + 10],
+        [Math.min(...pts.map((p) => p[0])) - 10, Math.max(...pts.map((p) => p[1])) + 10],
+      ]
+    : [];
+  const regions: Array<{ id: string; pieces: Array<{ loop: P2[]; area: number }> }> = boxes.length
+    ? boxes.map((b, i) => {
+        let cell: P2[] = bb;
+        const ci = centroid(b.poly);
+        boxes.forEach((o, j) => {
+          if (j === i || cell.length < 3) return;
+          const cj = centroid(o.poly);
+          const len = Math.hypot(cj[0] - ci[0], cj[1] - ci[1]);
+          if (len < 1) return;
+          const d: P2 = [(cj[0] - ci[0]) / len, (cj[1] - ci[1]) / len];
+          const pr = (p: P2) => p[0] * d[0] + p[1] * d[1];
+          const hi = Math.max(...b.poly.map(pr));
+          const lo = Math.min(...o.poly.map(pr));
+          // espace entre les deux Viewbox le long de leurs centres ; si elles se chevauchent dans ce sens : milieu des centres
+          const m = lo >= hi - 1 ? (hi + lo) / 2 : (pr(ci) + pr(cj)) / 2;
+          cell = clipHalf(cell, [d[0] * m, d[1] * m], d);
+        });
+        return { id: b.id, pieces: cell.length >= 3 ? fromPaths(Clipper.Intersect(covered, toPaths([cell]), FillRule.NonZero)) : [] };
+      })
+    : [{ id: opts.single ?? 'dalle', pieces: coveredLoops }];
+  // pieds → zones : les Viewbox de l'appui (posées au sol), sinon celle sous le pied, sinon la plus proche
+  const shareOf = (c: SupportCheck): Array<{ k: number; w: number }> => {
+    if (!boxes.length) return [{ k: 0, w: 1 }];
+    const own = c.reaction.group.moduleIds.map((id) => boxes.findIndex((b) => b.id === id)).filter((k) => k >= 0);
+    if (own.length) return [...new Set(own)].map((k) => ({ k, w: 1 / new Set(own).size }));
+    let k = 0;
+    boxes.forEach((b, i) => {
+      if (dist2Rect(c.at, b.poly) < dist2Rect(c.at, boxes[k].poly)) k = i;
+    });
+    return [{ k, w: 1 }];
+  };
+  const shares = sites.map(shareOf);
+  // charge des pieds de chaque zone combinaison par combinaison (public limité : au plus le public limité dans la zone)
+  const est = res.estimate;
+  const cap = est.publicLimit !== undefined ? est.publicLimit * (est.publicCap ?? 1) : Infinity;
+  const allCombos = sites.every((c) => c.reaction.combos?.length);
+  const useSls = !opts.statico && sites.some((c) => c.reaction.combos?.some((x) => x.cls === 'SLS'));
+  const feetOf = (k: number): { N: number; combo?: string } => {
+    const mine = sites.map((c, i) => ({ c, w: shares[i].find((x) => x.k === k)?.w ?? 0 })).filter((x) => x.w > 0);
+    if (!mine.length) return { N: 0 };
+    if (!allCombos) return { N: mine.reduce((a, x) => a + x.w * x.c.Rzk, 0) };
+    const by = new Map<string, { R: number; Q: number; gQ: number; name: string }>();
+    for (const { c, w } of mine)
+      for (const x of c.reaction.combos!) {
+        if (useSls ? x.cls !== 'SLS' : x.cls !== 'ULS') continue;
+        const key = `${x.cls}|${x.combo}`;
+        const acc = by.get(key) ?? { R: 0, Q: 0, gQ: x.gQ, name: x.combo };
+        acc.R += w * x.R;
+        acc.Q += w * x.Q;
+        by.set(key, acc);
+      }
+    let best = { N: 0, combo: undefined as string | undefined };
+    for (const v of by.values()) {
+      const R = (v.R - v.gQ * Math.max(0, v.Q - cap)) / (useSls ? 1 : 1.35);
+      if (R > best.N) best = { N: R, combo: v.name };
     }
-    const inter = cell.length >= 3 ? fromPaths(Clipper.Intersect(toPaths([cell]), covered, FillRule.NonZero)) : [];
-    const area = inter.reduce((s, x) => s + x.area, 0);
-    const pieces = inter.filter((x) => x.area > 0).map((x) => x.loop);
-    const parts = { feet: c.Rzk, block: c.block ? c.block.massKg * G : 0, plates: platesWeight(c), spread: spread * area };
+    return best;
+  };
+  const zones: SlabZone[] = regions.map((r, k) => {
+    const area = r.pieces.reduce((s, x) => s + x.area, 0);
+    const mine = sites.map((c, i) => ({ c, w: shares[i].find((x) => x.k === k)?.w ?? 0 })).filter((x) => x.w > 0);
+    const f = feetOf(k);
+    const parts = {
+      feet: f.N,
+      block: mine.reduce((s, x) => s + x.w * (x.c.block ? x.c.block.massKg * G : 0), 0),
+      plates: mine.reduce((s, x) => s + x.w * platesWeight(x.c), 0),
+      spread: spread * area,
+    };
     const load = parts.feet + parts.block + parts.plates + parts.spread;
     const q = area > 0 ? load / area : Infinity;
-    zones.push({ id: c.id, area, load, q, eta: q / bearing, pieces, parts });
-  }
+    return { id: r.id, supports: mine.map((x) => x.c.id), ...(f.combo ? { combo: f.combo } : {}), area, load, q, eta: q / bearing, pieces: r.pieces.filter((x) => x.area > 0).map((x) => x.loop), parts };
+  });
   // escaliers, terrasses : la surface de leur plaque du dessous (ou du contact)
   for (const c of res.checks.filter((x) => !sites.includes(x))) {
     const poly = c.plan?.corners ?? null;
@@ -156,10 +255,9 @@ export function slabZones(res: CalageResult, bearing: number, surface: P2[][], s
     const parts = { feet: c.Rzk, block: 0, plates: platesWeight(c), spread: 0 };
     const load = parts.feet + parts.plates;
     const q = load / area;
-    zones.push({ id: c.id, area, load, q, eta: q / bearing, pieces: poly ? [poly] : [], parts });
+    zones.push({ id: c.id, supports: [c.id], area, load, q, eta: q / bearing, pieces: poly ? [poly] : [], parts });
   }
   // ensemble : charge verticale de la combinaison la plus lourde (pas la somme des maxima de chaque pied) + calage
-  const est = res.estimate;
   const calageN = sites.reduce((s, c) => s + (c.block ? c.block.massKg * G : 0) + platesWeight(c), 0) + spread * total;
   const gLoad = (est.verticalK ?? est.totalG + est.totalQ) + calageN;
   const gq = total > 0 ? gLoad / total : Infinity;
@@ -167,16 +265,21 @@ export function slabZones(res: CalageResult, bearing: number, surface: P2[][], s
   return { bearing, global: { area: total, load: gLoad, q: gq, eta: gq / bearing }, zones, worst };
 }
 
-/** Fiche de calcul de la zone d'un appui. */
+/** Zone de dalle d'un appui : la plus chargée des zones qu'il charge. */
+export function zoneOfSupport(s: SlabResult, id: string): SlabZone | undefined {
+  return s.zones.filter((z) => z.supports.includes(id)).reduce<SlabZone | undefined>((a, z) => (!a || z.eta > a.eta ? z : a), undefined);
+}
+
+/** Fiche de calcul d'une zone de dalle (une Viewbox). */
 export function zoneRecord(z: SlabZone, bearing: number): CalcRecord {
   const extra = [z.parts.block > 0 ? `bloc ${kN(z.parts.block)}` : '', z.parts.plates > 0 ? `plaques ${kN(z.parts.plates)}` : '', z.parts.spread > 0 ? `plaques de roulage / madriers ${kN(z.parts.spread)}` : '']
     .filter(Boolean)
     .join(' + ');
   return {
     key: 'slab.zone',
-    title: `Charge sur la dalle — zone de ${z.id}`,
-    clause: 'charge répartie admissible de l’ouvrage : poids de la zone (réaction maxi du pied, pire cas, + calage) / surface de dalle de la zone (moitié de la distance aux pieds voisins)',
-    formula: 'q = (Rz,k + G calage) / A zone ≤ charge admissible',
+    title: `Charge sur la dalle — sous ${z.id}`,
+    clause: `charge répartie admissible de l’ouvrage : poids sur la dalle sous ${z.id} (somme des pieds dans la combinaison la plus lourde${z.combo ? ` ${z.combo}` : ''}, + calage) / surface de dalle chargée`,
+    formula: 'q = (ΣRz,k + G calage) / A ≤ charge admissible',
     withValues: `q = (${kN(z.parts.feet)}${extra ? ` + ${extra}` : ''}) / ${m2(z.area)} = ${loadPerM2Text(z.q)} ≤ ${loadPerM2Text(bearing)}`,
     result: z.q,
     limit: bearing,

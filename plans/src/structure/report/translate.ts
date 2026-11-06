@@ -15,11 +15,15 @@ const PATTERNS: Rule[] = [
   // dalle en charge répartie admissible (zones de dalle des pieds)
   [/Dalle en charge répartie admissible ([\d  .,]+) kg\/m² : ensemble de l’installation ([\d  .,]+) kg\/m²/g, 'Decke mit zulässiger Flächenlast $1 kg/m²: gesamte Anlage $2 kg/m²', 'Slab with allowable distributed load $1 kg/m²: whole installation $2 kg/m²'],
   [/Dalle en charge répartie : ensemble ([\d  .,]+) kg\/m²/g, 'Decke, Flächenlast: gesamt $1 kg/m²', 'Slab, distributed load: whole $1 kg/m²'],
-  [/ ; zone la plus chargée ([A-Z]+\d+) : /g, '; am stärksten belastete Zone $1: ', '; most loaded zone $1: '],
+  [/ ; zone la plus chargée (\S+) : /g, '; am stärksten belastete Zone $1: ', '; most loaded zone $1: '],
   [/ ; admis ([\d  .,]+) kg\/m²/g, '; zulässig $1 kg/m²', '; allowable $1 kg/m²'],
   [/Charge sur la dalle — zone de ([A-Z]+\d+)/g, 'Deckenlast — Zone von $1', 'Load on the slab — zone of $1'],
   [/Charge sur la dalle — ensemble de l’installation/g, 'Deckenlast — gesamte Anlage', 'Load on the slab — whole installation'],
   [/Zone de dalle de ([A-Z]+\d+) : ([\d,.]+) kN sur ([\d,.]+) m²/g, 'Deckenzone von $1: $2 kN auf $3 m²', 'Slab zone of $1: $2 kN on $3 m²'],
+  [/Dalle sous (\S+) : ([\d  ,.]+) kN sur ([\d,.]+) m²/g, 'Decke unter $1: $2 kN auf $3 m²', 'Slab under $1: $2 kN on $3 m²'],
+  [/Charge sur la dalle — sous (\S+)/g, 'Deckenlast — unter $1', 'Load on the slab — under $1'],
+  [/charge répartie admissible de l’ouvrage : poids sur la dalle sous (\S+) \(somme des pieds dans la combinaison la plus lourde( \S+)?, \+ calage\) \/ surface de dalle chargée/g, 'zulässige Flächenlast des Bauwerks: Last auf der Decke unter $1 (Summe der Füße in der ungünstigsten Kombination$2, + Unterpallung) / belastete Deckenfläche', 'allowable distributed load of the structure: load on the slab under $1 (sum of the feet in the heaviest combination$2, + packing) / loaded slab area'],
+  [/charge répartie admissible : poids sur la dalle sous la Viewbox \(somme de ses pieds dans la combinaison la plus lourde \+ calage\) \/ surface de dalle chargée/g, 'zulässige Flächenlast: Last auf der Decke unter der Viewbox (Summe ihrer Füße in der ungünstigsten Kombination + Unterpallung) / belastete Deckenfläche', 'allowable distributed load: load on the slab under the unit (sum of its feet in the heaviest combination + packing) / loaded slab area'],
   [/Plaques du stock \(dalle en charge répartie : la plaque sert à poser le pied\)/g, 'Platten aus dem Lager (Decke mit Flächenlast: die Platte dient nur als Auflage des Fußes)', 'Stock plates (slab with distributed load: the plate only seats the foot)'],
   [/Pression juste sous le calage \(information : le critère est la charge de la zone de dalle\)/g, 'Pressung direkt unter der Unterpallung (Information: maßgebend ist die Last der Deckenzone)', 'Pressure just under the packing (information: the criterion is the load of the slab zone)'],
   // solution retenue parmi les pistes du sol (grille / plateau de madriers)

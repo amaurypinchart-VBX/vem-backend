@@ -68,7 +68,7 @@ export function planPlates(
   checks: SupportCheck[],
   opts: { color?: (c: SupportCheck) => string; label?: (c: SupportCheck) => string[]; remedy?: CalageResult['remedy']; slab?: CalageResult['slab']; zoneColor?: (eta: number) => string } = {},
 ): PlanPlate[] {
-  // dalle en charge répartie : la zone de dalle de chaque pied, avec son poids au m² (texte dans le plus grand morceau)
+  // dalle en charge répartie : la dalle sous chaque Viewbox, avec son poids au m² (texte dans le plus grand morceau)
   const zones: PlanPlate[] = (opts.slab?.zones ?? []).flatMap((z) => {
     const area = (p: P2[]) => Math.abs(p.reduce((s, a, i) => s + a[0] * p[(i + 1) % p.length][1] - p[(i + 1) % p.length][0] * a[1], 0)) / 2;
     const big = z.pieces.reduce((a, p) => (area(p) > area(a) ? p : a), z.pieces[0] ?? []);

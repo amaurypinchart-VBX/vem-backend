@@ -638,7 +638,7 @@ function slabRemedies(inp: CalageInput, res: CalageResult): CalageRemedy[] {
       details: [...details, ...levers],
       materials: [],
       records: [],
-      notes: ['Contrôle « charge répartie » : poids de la zone de chaque pied (pire cas + calage) / surface de dalle de la zone. Des plaques plus grandes sous un pied ne changent presque rien : c’est la surface de dalle chargée qui compte.'],
+      notes: ['Contrôle « charge répartie » : poids de chaque Viewbox sur la dalle (tous ses pieds dans la combinaison la plus lourde + calage) / surface de dalle chargée. Des plaques plus grandes sous un pied ou des appuis en plus sous une Viewbox ne changent presque rien : c’est la surface de dalle chargée qui compte.'],
     },
   ];
 }

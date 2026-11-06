@@ -1,6 +1,6 @@
 // Dalle / plancher donné en charge répartie admissible (A. Pinchart 04.11.2026 : « la place accepte 450 kg au m², pas
-// une pression ; mets le poids qu'il y aura sur le sol au m² à cet endroit ») : zone de dalle de chaque pied, poids au
-// m², ensemble de l'installation.
+// une pression ; mets le poids qu'il y aura sur le sol au m² à cet endroit ») : dalle sous chaque Viewbox (06.11.2026,
+// ajouter des appuis ne pénalise plus), poids au m², ensemble de l'installation.
 import { describe, expect, it } from 'vitest';
 import { computeCalage } from '../../src/structure/core/calage';
 import { calageRemedies } from '../../src/structure/core/calageRemedies';
@@ -21,28 +21,32 @@ describe('dalle en charge répartie admissible', () => {
     expect(calageInput(mods, { ...hyp450, bearingPreset: 'operator' }, { plates: [], commercial: [] }, true).bearingMode).toBe('distributed');
   });
 
-  it('chaque pied a sa zone de dalle : les zones couvrent exactement l’emprise, poids au m² = poids / surface', () => {
+  it('une zone de dalle par Viewbox : les zones couvrent exactement l’emprise, poids au m² = poids / surface', () => {
     const r = computeCalage(slab);
     const s = r.slab!;
     const poly = (c: Array<[number, number]>) => Math.abs(c.reduce((a, p, i) => a + p[0] * c[(i + 1) % c.length][1] - c[(i + 1) % c.length][0] * p[1], 0)) / 2;
     const footprint = mods.reduce((a, m) => a + poly(m.corners as Array<[number, number]>), 0);
+    expect(s.zones.map((z) => z.id).sort()).toEqual(mods.map((m) => m.id).sort());
     expect(s.zones.reduce((a, z) => a + z.area, 0)).toBeCloseTo(s.global.area, -3);
     // l'emprise, plus ce que les plaques automatiques dépassent (quelques cm aux angles)
     expect(s.global.area).toBeGreaterThanOrEqual(footprint - 1000);
     expect(s.global.area).toBeLessThan(footprint * 1.01);
     for (const c of r.checks) {
       const z = c.zone!;
+      expect(z.supports).toContain(c.id);
       expect(z.q).toBeCloseTo(z.load / z.area, 12);
-      expect(z.load).toBeGreaterThanOrEqual(c.Rzk);
-      // le critère est la zone : la pression sous la plaque n'est plus qu'une information
+      // le critère est la dalle sous la Viewbox : la pression sous la plaque n'est plus qu'une information
       expect(c.etaGround).toBeCloseTo(z.eta, 12);
       expect(c.pressure).toBeCloseTo(z.q, 12);
-      expect(c.steps[c.steps.length - 1].label).toMatch(/^Zone de dalle de /);
+      expect(c.steps[c.steps.length - 1].label).toMatch(/^Dalle sous VBX-0\d : /);
       expect(c.records.some((x) => x.key === 'slab.zone')).toBe(true);
     }
-    // une zone d'angle est plus petite qu'une zone de milieu
-    const areas = s.zones.map((z) => z.area).sort((a, b) => a - b);
-    expect(areas[0]).toBeLessThan(areas[areas.length - 1] / 2);
+    // poids de la Viewbox = ses pieds dans une même combinaison : pas plus que la somme des maxima de ses pieds
+    for (const z of s.zones) {
+      const sumMax = r.checks.filter((c) => z.supports.includes(c.id)).reduce((a, c) => a + c.Rzk, 0);
+      expect(z.parts.feet).toBeLessThanOrEqual(sumMax + 1);
+      expect(z.parts.feet).toBeGreaterThan(0.5 * sumMax);
+    }
     // ensemble = charge verticale simultanée + calage, pas la somme des pieds au pire cas
     const sumMax = r.checks.reduce((a, c) => a + c.Rzk, 0);
     expect(s.global.load).toBeLessThan(sumMax + 2000);
@@ -78,13 +82,13 @@ describe('dalle en charge répartie admissible', () => {
     const d = computeCalage(slab);
     const plates = planPlates(d.checks, { slab: d.slab, label: () => ['x'] });
     const zones = plates.filter((p) => p.zone);
-    expect(zones.length).toBeGreaterThanOrEqual(d.checks.length);
+    expect(zones.length).toBeGreaterThanOrEqual(mods.length);
     expect(zones.filter((z) => z.label).every((z) => /kg\/m²$/.test(z.label![0]) && /kg sur .* m²$/.test(z.label![1]))).toBe(true);
     // en mode dalle, les plaques ne portent plus la pression
     expect(plates.filter((p) => !p.zone).every((p) => !p.label)).toBe(true);
   });
 
-  it('plaques de roulage qui dépassent tout autour : zones du bord plus grandes, charge au m² plus faible', () => {
+  it('plaques de roulage qui dépassent tout autour : zones plus grandes, charge au m² plus faible', () => {
     const a = computeCalage({ ...slab, choices: { roadway: true } });
     const b = computeCalage({ ...slab, choices: { roadway: true, roadwayOverhang: 300 } });
     expect(b.slab!.global.area).toBeGreaterThan(a.slab!.global.area + 2e6);
@@ -95,19 +99,20 @@ describe('dalle en charge répartie admissible', () => {
     expect(b.roadway.area).toBeGreaterThan(a.roadway.area);
   });
 
-  it('plaque centrée qui dépasse de l’installation sous un angle : la zone s’agrandit (à fleur : non)', async () => {
+  it('plaque centrée qui dépasse de l’installation sous un angle : la zone de sa Viewbox s’agrandit (à fleur : non)', async () => {
     const { VIEWBOX_STOCK, plateKey } = await import('../../src/structure/core/ground');
     const big = VIEWBOX_STOCK.find((p) => p.length === 1000 && p.thickness === 36)!;
     const pick = { bySupport: {} as Record<string, Array<{ plate: string; n: number }>> };
     const r0 = computeCalage({ ...slab, stock: VIEWBOX_STOCK });
-    const corner = r0.checks.reduce((x, c) => (c.zone!.area < x.zone!.area ? c : x));
+    const corner = r0.checks.find((c) => c.reaction.group.corners === 1 && c.reaction.group.moduleIds.length === 1)!;
     pick.bySupport[corner.id] = [{ plate: plateKey(big), n: 3 }];
     const flush = computeCalage({ ...slab, stock: VIEWBOX_STOCK, choices: { ...pick, placeBySupport: { [corner.id]: 'flush' } } });
     const centred = computeCalage({ ...slab, stock: VIEWBOX_STOCK, choices: { ...pick, placeBySupport: { [corner.id]: 'centered' } } });
     const z = (r: typeof r0) => r.checks.find((c) => c.id === corner.id)!.zone!;
     expect(z(flush).area).toBeCloseTo(z(r0).area, -3);
-    expect(z(centred).area).toBeGreaterThan(z(r0).area * 1.1);
-    expect(z(centred).q).toBeLessThan(z(r0).q);
+    // la plaque centrée dépasse d'environ 3/4 de m² autour de l'angle
+    expect(z(centred).area).toBeGreaterThan(z(r0).area + 0.5e6);
+    expect(z(centred).q).toBeLessThan(z(flush).q);
   });
 
   it('blocs sur plaques de roulage : « bloc posé sur les plaques de roulage »', async () => {

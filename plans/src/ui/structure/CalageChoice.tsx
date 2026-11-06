@@ -197,9 +197,9 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
         <ChainTable c={c} />
         {c.zone && (
           <div className="hint">
-            Dalle en charge répartie : ce qui compte, c’est la surface de dalle que charge ce pied ({n(c.zone.area / 1e6, 2)} m²). Des plaques posées sous le pied <b>à l’intérieur</b> de
-            l’installation n’y changent rien (elles ajoutent seulement leur poids) ; elles agrandissent la zone quand elles <b>dépassent de l’installation</b> (plaque plus grande que le bloc, pose
-            centrée) ou avec des plaques de roulage qui débordent tout autour. Pour un pied du bord, il faudrait {n(c.zone.load / (result.slab?.bearing ?? 1) / 1e6, 2)} m² pour passer.
+            Dalle en charge répartie : ce qui compte, c’est le poids de toute la Viewbox {c.zone.id} sur la dalle qu’elle charge ({n(c.zone.load / 1e3, 1)} kN sur {n(c.zone.area / 1e6, 2)} m²). Des plaques posées
+            <b>à l’intérieur</b> de l’installation n’y changent rien (elles ajoutent seulement leur poids) ; la surface augmente avec des plaques qui <b>dépassent de l’installation</b> ou des plaques de roulage
+            qui débordent tout autour. Il faudrait {n(c.zone.load / (result.slab?.bearing ?? 1) / 1e6, 2)} m² pour passer. Sous ce seul appui : {n(c.Rzk / 1e3, 1)} kN (charge ponctuelle).
           </div>
         )}
         {c.chainBase.timber ? (

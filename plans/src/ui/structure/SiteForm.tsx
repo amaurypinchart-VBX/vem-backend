@@ -183,7 +183,7 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
           help={
             <>
               <b>Sol</b> (prairie, terre, enrobé) : c’est la pression maximale sous chaque plaque. <b>Dalle, plancher, toiture, bouche de métro…</b> : c’est le <b>poids admis par m²</b> de dalle (charge
-              répartie) — l’outil vérifie le poids au m² sur la zone de dalle de chaque pied (la moitié de la distance aux pieds voisins), pas la pression juste sous la plaque.
+              répartie) — l’outil vérifie le poids au m² sous chaque Viewbox (tous ses pieds ensemble + le calage, sur la surface de dalle qu’elle charge) et l’ensemble de l’installation, pas la pression juste sous la plaque ; la charge sous chaque pied reste affichée (charge ponctuelle à confirmer avec l’exploitant).
             </>
           }
         >

@@ -27,7 +27,7 @@ import { fmtNumber } from './units';
 import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedies';
 import { evaluateRemedy } from './calageRemedies';
 import type { SlabResult, SlabZone } from './slabZones';
-import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, zoneRecord } from './slabZones';
+import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, zoneOfSupport, zoneRecord } from './slabZones';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -90,7 +90,7 @@ export interface CalageInput {
   reactionsEnvelope?: boolean;
   /**
    * lecture de la portance : 'pressure' (sol : pression maxi sous chaque appui, défaut) ou 'distributed' (dalle,
-   * plancher, toiture : charge répartie admissible, vérifiée sur la zone de dalle de chaque pied — `slabZones.ts`)
+   * plancher, toiture : charge répartie admissible, vérifiée sous chaque Viewbox — `slabZones.ts`)
    */
   bearingMode?: 'pressure' | 'distributed';
 }
@@ -134,7 +134,7 @@ export interface SupportCheck extends ChainResult {
   chainBase: Omit<ChainInput, 'layers'>;
   /** centre de l'appui en plan (monde x, z, mm) */
   at: P2;
-  /** dalle en charge répartie : la zone de dalle de l'appui (poids au m² à cet endroit) */
+  /** dalle en charge répartie : la zone de dalle de l'appui = la dalle sous sa Viewbox (la plus chargée s'il en porte plusieurs) */
   zone?: SlabZone;
 }
 
@@ -348,25 +348,24 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   }
   const spreadN = (res.roadwayOn ? res.roadway.plates * res.roadway.area : 0) + (res.remedy ? res.remedy.remedy.materials.reduce((s, l) => s + l.massKg * 9.81, 0) : 0);
   const area = coveredArea(surface);
-  const slab = slabZones(res, inp.bearing, surface, area > 0 ? spreadN / area : 0);
-  const zoneOf = new Map(slab.zones.map((z) => [z.id, z]));
+  const slab = slabZones(res, inp.bearing, surface, area > 0 ? spreadN / area : 0, { modules: inp.modules, statico: inp.staticoConversion, ...(plat ? { single: 'PL' } : {}) });
   const point = inp.pointLoadMax;
   const t = (kgOrN: number) => fmtNumber(kgOrN / 9.81 / 1000, 2);
   const withZone = (c: SupportCheck): SupportCheck => {
-    const z = zoneOf.get(c.id);
+    const z = zoneOfSupport(slab, c.id);
     if (!z) return c;
     const eta = Math.max(c.etaC90, c.etaCapacity, c.etaPoint, z.eta);
-    const problems = z.eta > 1 ? [`zone de dalle de ${c.id} : ${loadPerM2Text(z.q)} > ${loadPerM2Text(inp.bearing)}`, ...c.problems] : c.problems;
+    const problems = z.eta > 1 ? [`dalle sous ${z.id} : ${loadPerM2Text(z.q)} > ${loadPerM2Text(inp.bearing)}`, ...c.problems] : c.problems;
     const verdict =
       z.eta <= 1
         ? ` ≤ ${loadPerM2Text(inp.bearing)} admissibles : OK (η ${fmtNumber(z.eta, 2)}).`
-        : ` > ${loadPerM2Text(inp.bearing)} admissibles (η ${fmtNumber(z.eta, 2)}) : réduire la charge de ce pied ou la répartir sur une plus grande surface de dalle (plaques ou plateau qui dépassent de l’installation).`;
-    const advice = `${c.id} : ${fmtNumber(z.load / 1e3, 1)} kN ≈ ${t(z.load)} t (pied + calage) sur ${fmtNumber(z.area / 1e6, 2)} m² de dalle → ${loadPerM2Text(z.q)}${verdict}${
-      point ? '' : ` Sous ce seul pied : ${fmtNumber(c.Rzk / 1e3, 1)} kN (${t(c.Rzk)} t) — charge ponctuelle admissible de la dalle à faire confirmer par l’exploitant.`
+        : ` > ${loadPerM2Text(inp.bearing)} admissibles (η ${fmtNumber(z.eta, 2)}) : alléger ou répartir sur une plus grande surface de dalle (plaques de roulage ou plateau qui dépassent de l’installation).`;
+    const advice = `${c.id} : dalle sous ${z.id} : ${fmtNumber(z.load / 1e3, 1)} kN ≈ ${t(z.load)} t (pieds + calage) sur ${fmtNumber(z.area / 1e6, 2)} m² → ${loadPerM2Text(z.q)}${verdict} Sous ce seul appui : ${fmtNumber(c.Rzk / 1e3, 1)} kN (${t(c.Rzk)} t)${
+      point ? '.' : ' — charge ponctuelle admissible de la dalle à faire confirmer par l’exploitant.'
     }`;
     return {
       ...c,
-      steps: [...c.steps, { label: `Zone de dalle de ${c.id} : ${fmtNumber(z.load / 1e3, 1)} kN sur ${fmtNumber(z.area / 1e6, 2)} m²`, dims: null, area: z.area, pressure: z.q, eta: z.eta, note: 'charge répartie admissible : poids de la zone / surface de dalle (moitié de la distance aux pieds voisins)' }],
+      steps: [...c.steps, { label: `Dalle sous ${z.id} : ${fmtNumber(z.load / 1e3, 1)} kN sur ${fmtNumber(z.area / 1e6, 2)} m²`, dims: null, area: z.area, pressure: z.q, eta: z.eta, note: 'charge répartie admissible : poids sur la dalle sous la Viewbox (somme de ses pieds dans la combinaison la plus lourde + calage) / surface de dalle chargée' }],
       pressure: z.q,
       etaGround: z.eta,
       eta,
@@ -389,7 +388,7 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   const warnings = res.warnings.filter((w) => !drop.some((r) => r.test(w)));
   const w = slab.worst;
   warnings.unshift(
-    `Dalle — charge répartie admissible ${loadPerM2Text(inp.bearing)} : chaque pied est vérifié sur sa zone de dalle (la moitié de la distance aux pieds voisins), avec sa charge maxi (pire cas) et le poids de son calage ; ensemble de l’installation : ${loadPerM2Text(slab.global.q)} (η ${fmtNumber(slab.global.eta, 2)})${
+    `Dalle — charge répartie admissible ${loadPerM2Text(inp.bearing)} : vérifiée sous chaque Viewbox (poids de tous ses pieds dans la combinaison la plus lourde + calage, sur la surface de dalle qu’elle charge — ajouter des appuis sous une Viewbox ne change pas ce poids) ; ensemble de l’installation : ${loadPerM2Text(slab.global.q)} (η ${fmtNumber(slab.global.eta, 2)})${
       w ? ` ; zone la plus chargée : ${w.id}, ${loadPerM2Text(w.q)} (η ${fmtNumber(w.eta, 2)})` : ''
     }. La pression juste sous les plaques n’est qu’une information.${
       point ? '' : ` Charge ponctuelle admissible de la dalle inconnue : charge maxi sous un seul pied ${fmtNumber(Math.max(...res.checks.map((c) => c.Rzk)) / 1e3, 1)} kN, à faire confirmer par l’exploitant (poinçonnement).`

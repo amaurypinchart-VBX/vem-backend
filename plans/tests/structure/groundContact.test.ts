@@ -148,6 +148,23 @@ describe('calcul 3D posé au sol / sur plaques', () => {
     expect(cal.checks.every((c) => c.block)).toBe(true);
   }, 120_000);
 
+  it('dalle en charge répartie : des blocs ajoutés au centre ne pénalisent pas la Viewbox (A. Pinchart 05.11.2026)', async () => {
+    const hypSlab = { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, bearingMode: 'distributed' as const };
+    const q = async (centre: number) => {
+      const pads = layoutPads(floors(one), { ...PAD_LAYOUT_DEFAULT, centre });
+      const run = await runStudy({ ...base, groundContact: { mode: 'pads', pads, k: 0.03 } }, createInlineStudyRunner());
+      const cal = computeCalage({ ...calageInput(one.map(placedToEstimate), hypSlab, { plates: [], commercial: [] }, false, [], false, { mode: 'pads', pads, k: 0.03 }), reactions: run.ground, blocks: pads });
+      const corner = cal.checks.filter((c) => c.typeKey === 'BLA').map((c) => c.Rzk);
+      return { zone: cal.slab!.zones[0], corner: Math.max(...corner) };
+    };
+    const a = await q(0);
+    const b = await q(2);
+    // la charge d'angle baisse un peu, le poids de la Viewbox sur la dalle ne change que du poids des 2 plaques ajoutées
+    expect(b.corner).toBeLessThan(a.corner);
+    expect(b.zone.area).toBeCloseTo(a.zone.area, -3);
+    expect(b.zone.load).toBeLessThan(a.zone.load + 2 * 20 * 9.81 + 300);
+  }, 120_000);
+
   it('Viewbox sans aucune plaque sous ses profils : erreur bloquante', () => {
     const far: DrawnBlock = { id: 'PL1', label: 'loin', x0: 10000, x1: 11000, z0: 0, z1: 1000, bottom: -40, top: 0, massKg: 20, massSource: 'computed', material: 'C24', pieces: 1 };
     const s = assembleStructure(one, { sections, jacks: false, middleFeet: false, upliftReleases: 'all', calibration: false, groundContact: { mode: 'pads', pads: [far], k: 0.03 } });
