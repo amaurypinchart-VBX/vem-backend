@@ -233,3 +233,22 @@ test("DOM: scoped page comparison applies as one undoable operation", async () =
     assert.equal(s.saved.pages[0].blocks[0].content.status, "todo");
   } finally { s.dom.window.close(); }
 });
+
+test("DOM: generation criteria are saved and restored on reopening the composer", async () => {
+  const s = await setup(), d = s.document;
+  try {
+    click(d, '[data-action=generate]'); await tick();
+    input(s.w, '[name=date]', '2026-11-06');
+    input(s.w, '[name=priority]', 'high');
+    d.querySelector('[name=open]').checked = true;
+    click(d, '[data-submit]'); await tick();
+    click(d, '[data-action=save]'); await tick();
+    assert.equal(s.saved.generation.date, '2026-11-06');
+    assert.equal(s.saved.generation.priority, 'high');
+    assert.equal(s.saved.generation.open, true);
+    click(d, '[data-action=generate]'); await tick();
+    assert.equal(d.querySelector('[name=date]').value, '2026-11-06');
+    assert.equal(d.querySelector('[name=priority]').value, 'high');
+    assert.equal(d.querySelector('[name=open]').checked, true);
+  } finally { s.dom.window.close(); }
+});
