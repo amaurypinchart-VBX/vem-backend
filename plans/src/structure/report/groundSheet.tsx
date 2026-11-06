@@ -102,15 +102,23 @@ export function planPlates(
       corners: outline(c)!,
       color: opts.color?.(c) ?? typeColor(c.typeKey),
       centered: !!c.plan && c.plan.placement === 'centered' && c.plan.overhang > 5,
-      ...(opts.label && !opts.slab ? { label: opts.label(c) } : {}),
+      ...(opts.label ? { label: opts.label(c) } : {}),
     }))];
 }
 
 /** « 292 kg/m² » / « 6,0 kN sur 2,06 m² » : poids au m² de la zone de dalle d'un pied. */
 export const zoneLines = (z: NonNullable<SupportCheck['zone']>): string[] => [`${fmtNumber((z.q * 1e6) / 9.81, 0)} kg/m²`, `${fmtNumber(z.load / 9.81, 0)} kg sur ${fmtNumber(z.area / 1e6, 2)} m²`];
 
-/** « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). */
-export const pressureLines = (c: SupportCheck): string[] => [`${fmtNumber(c.pressure * 1e3, c.pressure * 1e3 < 10 ? 1 : 0)} kN/m²`, `${fmtNumber((c.pressure * 1e6) / 9.81, 0)} kg/m²`];
+/**
+ * « 148 kN/m² » / « 15 090 kg/m² » : pression au sol finale d'un appui (après bloc et plaques). Dalle en charge répartie :
+ * le poids au m² juste sous le calage de l'appui (information ; la vérification est celle de la zone de sa Viewbox).
+ */
+export const pressureLines = (c: SupportCheck): string[] => {
+  const q = c.underPressure ?? c.pressure;
+  const kg = `${fmtNumber((q * 1e6) / 9.81, 0)} kg/m²`;
+  const kn = `${fmtNumber(q * 1e3, q * 1e3 < 10 ? 1 : 0)} kN/m²`;
+  return c.underPressure !== undefined ? [kg, kn] : [kn, kg];
+};
 
 /** « VBX-01/04 » : numéros des Viewbox d'une même emprise, triés (même préfixe regroupé). */
 export function compactModuleIds(ids: string[]): string {
@@ -153,6 +161,114 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
   let dmin = Infinity;
   for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) dmin = Math.min(dmin, Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]));
   const r = Math.max(text * 0.45, Math.min(Math.max(text * 0.9, 250 * s), 0.4 * dmin));
+  // étiquettes des points (numéro, charge) : à côté du point, au-dessus ou au-dessous ; vers l'extérieur d'un groupe serré
+  const pointLabels = reactions.map((re, k) => {
+    const [qx, qy] = P[k];
+    // appuis voisins très proches (vérins de Viewbox côte à côte) : étiquettes vers l'extérieur du groupe
+    const group = P.filter(([ox, oy]) => Math.hypot(ox - qx, oy - qy) < text * 3.5);
+    const gx = group.reduce((a, g) => a + g[0], 0) / group.length;
+    const gy = group.reduce((a, g) => a + g[1], 0) / group.length;
+    const sx = group.length < 2 || Math.abs(qx - gx) < text * 0.1 ? 0 : Math.sign(qx - gx);
+    const sy = group.length < 2 || Math.abs(qy - gy) < text * 0.1 ? 0 : Math.sign(qy - gy);
+    const lx = sx ? qx + sx * (r + text * 0.25) : qx;
+    const anchor: 'middle' | 'start' | 'end' = sx < 0 ? 'end' : sx > 0 ? 'start' : 'middle';
+    const [y1, y2] =
+      group.length < 2
+        ? [qy - r - text * 0.3, qy + r + text * 0.95]
+        : sx
+          ? [qy - text * 0.1 + sy * text * 0.8, qy + text * 0.8 + sy * text * 0.8]
+          : sy < 0
+            ? [qy - r - text * 1.15, qy - r - text * 0.3]
+            : [qy + r + text * 0.95, qy + r + text * 1.8];
+    const labels = [
+      { t: re.group.id, yy: y1, size: text * 0.85, bold: true },
+      { t: pointSub?.(re) ?? `${n1(re.Rk / 1e3, 0)} kN`, yy: y2, size: text * 0.8, bold: false },
+    ];
+    return { lx, anchor, labels };
+  });
+  // texte des plaques : dedans quand il y tient, sinon dessous, dessus, à droite, à gauche — la première place libre
+  // (ni sur un point d'appui, ni sur ses étiquettes, ni sur le texte d'une autre plaque) ; zones de dalle au milieu
+  type Box = [number, number, number, number];
+  const hit = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  const taken: Box[] = [];
+  P.forEach(([px, py], k) => {
+    taken.push([px - r, py - r, px + r, py + r]);
+    const { lx, anchor, labels } = pointLabels[k];
+    for (const l of labels) {
+      const w = l.t.length * l.size * 0.58;
+      const x0 = anchor === 'end' ? lx - w : anchor === 'start' ? lx : lx - w / 2;
+      taken.push([x0, l.yy - l.size * 0.85, x0 + w, l.yy + l.size * 0.2]);
+    }
+  });
+  // numéro des Viewbox et nombre de niveaux au centre de chaque emprise
+  for (const { m, n, ids } of stacks.values()) {
+    const lines = [compactModuleIds(ids), ...(zoneLabel?.(m, n) ?? ['1 niveau'])];
+    const mx = X(m.corners.reduce((a, q) => a + q[0], 0) / 4);
+    const my = Y(m.corners.reduce((a, q) => a + q[1], 0) / 4);
+    const hw = (Math.max(...lines.map((t) => t.length)) * text * 0.9 * 0.58) / 2;
+    taken.push([mx - hw, my + text * 0.35 - ((lines.length - 1) / 2) * text * 1.1 - text * 0.8, mx + hw, my + text * 0.35 + ((lines.length - 1) / 2) * text * 1.1 + text * 0.2]);
+  }
+  const plateText = new Map<string, { ax: number; anchor: 'middle' | 'start' | 'end'; top: number; outside: boolean }>();
+  for (const p of [...(plates ?? [])].sort((a, b) => Number(!!b.zone) - Number(!!a.zone))) {
+    if (!p.label?.length) continue;
+    const xs = p.corners.map((q) => X(q[0]));
+    const ys = p.corners.map((q) => Y(q[1]));
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const n = p.label.length;
+    const size = text * 0.72;
+    const lh = text * 0.85;
+    const tw = Math.max(...p.label.map((t) => t.length)) * size * 0.56;
+    const th = n * lh + text * 0.1;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const g = text * 0.3;
+    // zone de dalle : vers le milieu de la zone, sous le numéro de la Viewbox et son nombre de niveaux
+    const tries: Array<{ ax: number; anchor: 'middle' | 'start' | 'end'; top: number; outside: boolean }> = p.zone
+      ? [{ ax: cx, anchor: 'middle', top: cy + text * 1.8, outside: false }]
+      : [
+          { ax: cx, anchor: 'middle', top: y1 - th - g, outside: false },
+          { ax: cx, anchor: 'middle', top: y1 + g, outside: true },
+          { ax: cx, anchor: 'middle', top: y0 - th - g, outside: true },
+          { ax: x1 + g, anchor: 'start', top: cy - th / 2, outside: true },
+          { ax: x0 - g, anchor: 'end', top: cy - th / 2, outside: true },
+        ];
+    const boxOf = (t: (typeof tries)[number]): Box => {
+      const bx = t.anchor === 'middle' ? t.ax - tw / 2 : t.anchor === 'start' ? t.ax : t.ax - tw;
+      return [bx, t.top, bx + tw, t.top + th];
+    };
+    const fits = (t: (typeof tries)[number]) => {
+      const b = boxOf(t);
+      if (!t.outside && !p.zone && (b[0] < x0 || b[2] > x1 || b[1] < y0)) return false;
+      if (b[0] < x || b[2] > x + w || b[1] < y || b[3] > y + h) return false;
+      return !taken.some((o) => hit(b, o));
+    };
+    const pick = tries.find(fits) ?? tries[tries.length > 1 ? 1 : 0];
+    const b = boxOf(pick);
+    // marge autour du texte d'une zone : celui d'une plaque ne s'y colle pas (lu comme une seule étiquette)
+    const pad = p.zone ? text * 0.8 : 0;
+    taken.push([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad]);
+    plateText.set(p.id, pick);
+  }
+  const plateLabel = (p: PlanPlate, lines: string[]) => {
+    const pos = plateText.get(p.id);
+    if (!pos) return null;
+    const size = text * 0.72;
+    const lh = text * 0.85;
+    return lines.map((t, k) => {
+      const y = pos.top + (k + 1) * lh - text * 0.1;
+      const w = t.length * size * 0.56;
+      const bx = pos.anchor === 'middle' ? pos.ax - w / 2 : pos.anchor === 'start' ? pos.ax : pos.ax - w;
+      return (
+        <g key={`lb${k}`}>
+          {/* hors de la plaque : fond blanc, le texte reste lisible sur les rives */}
+          {pos.outside && <rect x={bx} y={y - size * 0.85} width={w} height={size * 1.05} fill="#ffffff" />}
+          <text fontFamily={FONT_SANS} x={pos.ax} y={y} fontSize={size} textAnchor={pos.anchor} fontWeight={k === 0 ? 700 : undefined} fill={k === 0 ? p.color : '#374151'}>
+            {t}
+          </text>
+        </g>
+      );
+    });
+  };
   return (
     <g fontFamily={FONT_SANS}>
       {[...stacks.values()].map(({ m, n, ids }) => {
@@ -197,19 +313,7 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
             strokeWidth={text * (p.zone ? 0.05 : 0.09)}
             strokeDasharray={p.centered ? `${text * 0.35} ${text * 0.2}` : p.zone ? `${text * 0.2} ${text * 0.15}` : undefined}
           />
-          {p.label?.map((t, k) => {
-            const xs = p.corners.map((q) => X(q[0]));
-            const ys = p.corners.map((q) => Y(q[1]));
-            const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-            const n = p.label!.length;
-            // zone de dalle : texte vers le milieu de la zone, sous le point d'appui
-            const yb = p.zone ? (Math.min(...ys) + Math.max(...ys)) / 2 + text * 1.6 + (n - 1) * text * 0.85 : Math.max(...ys);
-            return (
-              <text key={`lb${k}`} fontFamily={FONT_SANS} x={cx} y={yb - text * 0.35 - (n - 1 - k) * text * 0.85} fontSize={text * 0.72} textAnchor="middle" fontWeight={k === 0 ? 700 : undefined} fill={k === 0 ? p.color : '#374151'}>
-                {t}
-              </text>
-            );
-          })}
+          {p.label && plateLabel(p, p.label)}
           {p.centered && (
             <text fontFamily={FONT_SANS} x={X(Math.max(...p.corners.map((q) => q[0])))} y={Y(Math.min(...p.corners.map((q) => q[1]))) + text * 0.7} fontSize={text * 0.75} textAnchor="end" fill={p.color}>
               ▲
@@ -222,26 +326,7 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
         const sel = selected === re.group.id;
         // appuis voisins très proches (vérins de Viewbox côte à côte) : étiquettes vers l'extérieur du groupe
         const [qx, qy] = P[k];
-        const group = P.filter(([ox, oy]) => Math.hypot(ox - qx, oy - qy) < text * 3.5);
-        const gx = group.reduce((a, g) => a + g[0], 0) / group.length;
-        const gy = group.reduce((a, g) => a + g[1], 0) / group.length;
-        const sx = group.length < 2 || Math.abs(qx - gx) < text * 0.1 ? 0 : Math.sign(qx - gx);
-        const sy = group.length < 2 || Math.abs(qy - gy) < text * 0.1 ? 0 : Math.sign(qy - gy);
-        const lx = sx ? qx + sx * (r + text * 0.25) : qx;
-        const anchor = sx < 0 ? 'end' : sx > 0 ? 'start' : 'middle';
-        // deux lignes (numéro, charge) : à côté du point, au-dessus ou au-dessous
-        const [y1, y2] =
-          group.length < 2
-            ? [qy - r - text * 0.3, qy + r + text * 0.95]
-            : sx
-              ? [qy - text * 0.1 + sy * text * 0.8, qy + text * 0.8 + sy * text * 0.8]
-              : sy < 0
-                ? [qy - r - text * 1.15, qy - r - text * 0.3]
-                : [qy + r + text * 0.95, qy + r + text * 1.8];
-        const labels = [
-          { t: re.group.id, yy: y1, size: text * 0.85, bold: true },
-          { t: pointSub?.(re) ?? `${n1(re.Rk / 1e3, 0)} kN`, yy: y2, size: text * 0.8, bold: false },
-        ];
+        const { lx, anchor, labels } = pointLabels[k];
         return (
           <g key={re.group.id} onClick={onSelect ? () => onSelect(re.group.id) : undefined} style={onSelect ? { cursor: 'pointer' } : undefined}>
             <circle cx={qx} cy={qy} r={r} fill={col} stroke={sel ? '#111827' : '#ffffff'} strokeWidth={sel ? text * 0.2 : text * 0.08} />
