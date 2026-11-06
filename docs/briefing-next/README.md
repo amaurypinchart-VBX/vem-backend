@@ -86,3 +86,9 @@ Ici, le Chromium disponible échoue au démarrage (socket de profil refusée), l
 - PostgreSQL 16 et la migration ont été testés sur une base CI jetable. Aucun test réel de Cloudinary, preuve photographique, permissions sur compte réel, traduction réseau ou Railway. Les règles qualité sont réutilisées via la fiche existante, sans nouveau chemin de validation.
 
 La branche doit rester en brouillon tant que ces limites et les critères de recette non couverts n'ont pas été traités ou acceptés explicitement.
+
+## Actualisation ciblée (tranche suivante)
+
+**Actualiser une sélection** permet de comparer la page actuelle ou les blocs sélectionnés avec leurs sources projet. Les champs modifiés et les conflits sont présentés avant application. Les blocs figés ou verrouillés sont ignorés dans ce parcours ; les annotations, styles et autres pages sont conservés. Aucune nouvelle source n’est ajoutée et les exclusions restent inchangées. L’application est annulable en une étape. Si le document change pendant la comparaison, il faut relancer celle-ci pour éviter d’écraser une modification récente.
+
+Cette opération actualise les données des blocs existants : elle ne recompose pas la mise en page et ne remplace pas encore la régénération complète d’une section. Tests locaux : compilation TypeScript et 36 tests réussis, dont isolation du périmètre et parcours DOM avec annulation. La recette navigateur de cette tranche est exécutée par la PR dédiée ; le rapport QA précédent concerne la PR #32.

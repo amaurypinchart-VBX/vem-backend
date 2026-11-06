@@ -212,3 +212,24 @@ test("DOM: brand persists, resets and undo restores it without changing local st
     s.dom.window.close();
   }
 });
+
+test("DOM: scoped page comparison applies as one undoable operation", async () => {
+  const s = await setup(), d = s.document;
+  try {
+    s.sources[0].fields.status = "done";
+    click(d, "[data-action=refreshScope]");
+    assert.match(d.querySelector('[name=refresh-scope]').textContent, /Page actuelle/);
+    click(d, "[data-submit]");
+    await tick();
+    assert.ok(d.querySelector('[aria-label="Comparer la sélection"]'));
+    click(d, "[data-submit]");
+    await tick();
+    click(d, "[data-action=save]");
+    await tick();
+    assert.equal(s.saved.pages[0].blocks[0].content.status, "done");
+    click(d, "[data-action=undo]");
+    click(d, "[data-action=save]");
+    await tick();
+    assert.equal(s.saved.pages[0].blocks[0].content.status, "todo");
+  } finally { s.dom.window.close(); }
+});

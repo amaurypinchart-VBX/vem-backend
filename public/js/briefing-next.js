@@ -346,7 +346,7 @@
       editing = S.permissions.write && !S.publication;
     S.root.classList.toggle("bn-preview", S.preview);
     S.root.dataset.format = S.doc.format;
-    S.root.innerHTML = `<header><strong>STUDIO NEXT</strong><input aria-label="Nom du briefing" data-doc="title" value="${E(S.doc.title)}" ${!editing ? "readonly" : ""}><span class="bn-status">${S.publication ? "Édition publiée · lecture seule" : S.conflict ? "Conflit : votre copie est conservée" : S.dirty ? "Non enregistré" : "Révision " + S.revision}</span>${editing ? btn("undo", "↶", 'aria-label="Annuler" ' + (!S.undo.length ? "disabled" : "")) + btn("redo", "↷", 'aria-label="Rétablir" ' + (!S.redo.length ? "disabled" : "")) + btn("generate", "Générer", 'class="primary"') + btn("refresh", "Actualiser") + btn("save", "Enregistrer") : ""}${btn("preview", S.preview ? "Designer" : "Vue chantier")}${btn("export", "PDF / imprimer")}${btn("versions", "Diffusions")}${btn("close", "Fermer")}</header>
+    S.root.innerHTML = `<header><strong>STUDIO NEXT</strong><input aria-label="Nom du briefing" data-doc="title" value="${E(S.doc.title)}" ${!editing ? "readonly" : ""}><span class="bn-status">${S.publication ? "Édition publiée · lecture seule" : S.conflict ? "Conflit : votre copie est conservée" : S.dirty ? "Non enregistré" : "Révision " + S.revision}</span>${editing ? btn("undo", "↶", 'aria-label="Annuler" ' + (!S.undo.length ? "disabled" : "")) + btn("redo", "↷", 'aria-label="Rétablir" ' + (!S.redo.length ? "disabled" : "")) + btn("generate", "Générer", 'class="primary"') + btn("refresh", "Actualiser") + btn("refreshScope", "Actualiser une sélection") + btn("save", "Enregistrer") : ""}${btn("preview", S.preview ? "Designer" : "Vue chantier")}${btn("export", "PDF / imprimer")}${btn("versions", "Diffusions")}${btn("close", "Fermer")}</header>
  ${S.conflict ? `<div class="bn-warning">Une autre session a enregistré une nouvelle révision. ${btn("backup", "Télécharger ma copie JSON")}${btn("reload", "Recharger le serveur")}</div>` : ""}
  <div class="bn-body"><nav><h3>Pages · ${S.doc.pages.length}</h3><input aria-label="Rechercher une page" placeholder="Rechercher…" data-search>
  ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme, S.doc.brand)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
@@ -690,6 +690,7 @@
       if (act === "brand") return brandDialog();
       if (act === "generate") return generator();
       if (act === "refresh") return refresh();
+      if (act === "refreshScope") return refreshScope();
       if (act === "media") return media();
       if (act === "templates") return templates();
       if (act === "pdfImport") return pdfImport();
@@ -984,19 +985,43 @@
     });
     list();
   }
-  async function refresh() {
+  function refreshScope() {
+    const session = S;
+    const pageId = current().id;
+    const selected = [...new Set([...(S.multi || []), S.selected].filter(Boolean))];
+    dialog(
+      "Actualisation ciblée",
+      `<p>Compare les sources existantes sans ajouter de nouveaux éléments. Les blocs figés ou verrouillés sont conservés. Les retouches en conflit restent soumises à votre choix.</p><label>Périmètre<select name="refresh-scope"><option value="page">Page actuelle</option><option value="selection" ${selected.length ? "" : "disabled"}>Blocs sélectionnés (${selected.length})</option></select></label>`,
+      async (l) => {
+        if (S !== session) return;
+        const ids = l.querySelector('[name="refresh-scope"]').value === "selection"
+          ? selected
+          : S.doc.pages.find((p) => p.id === pageId)?.blocks.map((b) => b.id) || [];
+        await refresh(ids);
+      },
+      "Comparer",
+    );
+  }
+  async function refresh(blockIds = null) {
+    const session = S, snapshot = JSON.stringify(S.doc);
     const sources = (
         await request("GET", `/briefings/project/${S.doc.projectId}/sources`)
       ).data,
-      changes = M.diff(S.doc, sources);
+      changes = M.diff(session.doc, sources, blockIds);
+    if (S !== session || JSON.stringify(S.doc) !== snapshot) {
+      if (S === session) status("Le document a changé. Relancez la comparaison.");
+      return;
+    }
     if (!changes.length) {
       status("Données à jour");
       return;
     }
     dialog(
-      "Comparer les données du projet",
+      blockIds === null ? "Comparer les données du projet" : "Comparer la sélection",
       `<p>${changes.length} différences. Vos annotations et styles restent inchangés.</p>${changes.map((c, i) => `<div class="bn-choice"><div style="flex:1"><strong>${E(c.label)}</strong><small>${E(c.type === "conflict" ? "CONFLIT · retouche manuelle" : c.type)} ${E(labels[c.field] || c.field || "")}</small>${c.field ? `<p>Document : ${E(c.local)}<br>Projet : ${E(c.remote)}</p>` : ""}</div><select data-choice="${i}" style="width:185px"><option value="keep">${c.type === "deleted" ? "Conserver et figer" : c.type === "added" ? "Exclure" : "Garder ma retouche"}</option><option value="remote" ${c.type === "modified" ? "selected" : ""}>${c.type === "deleted" ? "Retirer explicitement" : c.type === "added" ? "Ajouter" : "Prendre le projet"}</option></select></div>`).join("")}`,
       (l) => {
+        if (S !== session || JSON.stringify(S.doc) !== snapshot)
+          throw new Error("Le document a changé. Relancez la comparaison.");
         const choices = {};
         l.querySelectorAll("[data-choice]").forEach(
           (x) => (choices[x.dataset.choice] = x.value),
