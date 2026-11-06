@@ -136,8 +136,6 @@ export interface SupportCheck extends ChainResult {
   at: P2;
   /** dalle en charge répartie : la zone de dalle de l'appui = la dalle sous sa Viewbox (la plus chargée s'il en porte plusieurs) */
   zone?: SlabZone;
-  /** dalle en charge répartie : pression juste sous le calage de l'appui (N/mm², information — `pressure` = celle de la zone) */
-  underPressure?: number;
 }
 
 export interface CalageType {
@@ -369,7 +367,6 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
       ...c,
       steps: [...c.steps, { label: `Dalle sous ${z.id} : ${fmtNumber(z.load / 1e3, 1)} kN sur ${fmtNumber(z.area / 1e6, 2)} m²`, dims: null, area: z.area, pressure: z.q, eta: z.eta, note: 'charge répartie admissible : poids sur la dalle sous la Viewbox (somme de ses pieds dans la combinaison la plus lourde + calage) / surface de dalle chargée' }],
       pressure: z.q,
-      underPressure: c.pressure,
       etaGround: z.eta,
       eta,
       problems,
