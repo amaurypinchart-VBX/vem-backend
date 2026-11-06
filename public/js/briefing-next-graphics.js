@@ -52,15 +52,20 @@
     });
     return scene;
   }
+  function nodeBounds(n) {
+    const a = (n.rotation || 0) * Math.PI / 180;
+    const width = Math.abs(n.width * Math.cos(a)) + Math.abs(n.height * Math.sin(a));
+    const height = Math.abs(n.width * Math.sin(a)) + Math.abs(n.height * Math.cos(a));
+    return { x: n.x + (n.width - width) / 2, y: n.y + (n.height - height) / 2, width, height };
+  }
   function issues(scene) {
     return scene.nodes
       .filter(
-        (n) =>
-          !n.hidden &&
-          (n.x < 0 ||
-            n.y < 0 ||
-            n.x + n.width > scene.width ||
-            n.y + n.height > scene.height),
+        (n) => {
+          const b = nodeBounds(n);
+          return !n.hidden && (n.x < 0 || n.y < 0 || b.x < -0.01 || b.y < -0.01 ||
+            b.x + b.width > scene.width + 0.01 || b.y + b.height > scene.height + 0.01);
+        },
       )
       .map((n) => n.text || n.type);
   }
@@ -89,6 +94,7 @@
     });
   }
   function bounds(nodes) {
+    nodes = nodes.map(nodeBounds);
     const x = Math.min(...nodes.map((n) => n.x)),
       y = Math.min(...nodes.map((n) => n.y));
     return {
@@ -186,7 +192,7 @@
             `<tspan x="6" y="${6 + n.fontSize + i * n.fontSize * 1.25}">${esc(line)}</tspan>`,
         )
         .join("")}</text>`;
-    return `<g data-node="${esc(n.id)}" transform="translate(${n.x} ${n.y})">${body}</g>`;
+    return `<g data-node="${esc(n.id)}" transform="translate(${n.x} ${n.y}) rotate(${n.rotation || 0} ${n.width / 2} ${n.height / 2})">${body}</g>`;
   }
   function svg(
     scene,
@@ -205,7 +211,7 @@
             .filter((n) => ids.includes(n.id) && !n.hidden)
             .map(
               (n) =>
-                `<rect x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" fill="none" stroke="#2463eb" stroke-width="2" pointer-events="none"/>${!n.locked && ids.length === 1 ? `<rect data-resize="${esc(n.id)}" x="${n.x + n.width - 6}" y="${n.y + n.height - 6}" width="12" height="12" fill="#2463eb"/>` : ""}`,
+                `<rect transform="rotate(${n.rotation || 0} ${n.x + n.width / 2} ${n.y + n.height / 2})" x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" fill="none" stroke="#2463eb" stroke-width="2" pointer-events="none"/>${!n.locked && !n.rotation && ids.length === 1 ? `<rect data-resize="${esc(n.id)}" x="${n.x + n.width - 6}" y="${n.y + n.height - 6}" width="12" height="12" fill="#2463eb"/>` : ""}`,
             )
             .join("")
         : ""
@@ -282,7 +288,7 @@
         .map(([a, t]) => button("add-" + a, t))
         .join(
           "",
-        )}${button("undo", "↶")}${button("redo", "↷")}${button("copy", "Copier")}${button("paste", "Coller")}${button("duplicate", "Dupliquer")}${button("delete", "Supprimer")}<label>Zoom<select data-g-zoom>${[50, 75, 100, 125, 150, 200].map((z) => `<option ${z === zoom ? "selected" : ""}>${z}</option>`).join("")}</select></label>${button("fit", "Ajuster")}${button("grid", grid ? "Grille : oui" : "Grille : non")}</div><div class="bn-graphic-body"><div class="bn-graphic-viewport"><div data-stage></div></div><aside><p>Maj + clic : multisélection. Glisser pour déplacer ; poignée bleue pour redimensionner. Flèches clavier : 1 px, Maj : 10 px.</p><p>Les repères et itinéraires sont renseignés par vous. Aucun emplacement technique n’est déduit.</p><label>Fond du projet<select data-g-background><option value="">Sans image</option>${files.map((f) => `<option value="${esc(f.id)}" ${scene.backgroundId === f.id ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select></label><h3>${ids.length} objet(s)</h3><label>Calque<select data-g-layer><option value="">Choisir…</option>${scene.nodes.map((x, i) => `<option value="${esc(x.id)}" ${n?.id === x.id ? "selected" : ""}>${i + 1} · ${x.hidden ? "◌ " : ""}${x.locked ? "🔒 " : ""}${esc(x.text.slice(0, 35) || x.type)}</option>`).join("")}</select></label>${n ? `<fieldset ${blocked ? "disabled" : ""}><label>Texte / légende<textarea data-g-prop="text" maxlength="2000">${esc(n.text)}</textarea></label>${["x", "y", "width", "height", "fontSize", "strokeWidth"].map((k) => `<label>${{ x: "Position X", y: "Position Y", width: "Largeur", height: "Hauteur", fontSize: "Taille du texte", strokeWidth: "Épaisseur" }[k]}<input type="number" data-g-prop="${k}" value="${n[k]}" ${k === "height" && n.type === "text" ? "disabled" : ""}></label>`).join("")}<label>Police<select data-g-prop="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${n.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label>${["fill", "stroke"].map((k) => `<label>${k === "fill" ? "Fond / texte" : "Contour"}<input type="color" data-g-prop="${k}" value="${n[k]}"></label>`).join("")}${n.type === "arrow" ? `<label>Direction<select data-g-prop="direction">${Object.entries({right:"→",left:"←",up:"↑",down:"↓",ne:"↗",se:"↘",sw:"↙",nw:"↖"}).map(([v,t])=>`<option value="${v}" ${n.direction===v?"selected":""}>${t}</option>`).join("")}</select></label>` : ""}</fieldset><div>${button("lock", blocked ? "Déverrouiller" : "Verrouiller")}${button("hide", n.hidden ? "Afficher" : "Masquer")}${button("front", "Premier plan")}${button("back", "Arrière-plan")}${button("group", "Grouper")}${button("ungroup", "Dégrouper")}${button("copyStyle", "Copier style")}${button("pasteStyle", "Coller style")}</div>` : ""}<h3>Aligner / distribuer</h3><div>${[
+        )}${button("undo", "↶")}${button("redo", "↷")}${button("copy", "Copier")}${button("paste", "Coller")}${button("duplicate", "Dupliquer")}${button("delete", "Supprimer")}<label>Zoom<select data-g-zoom>${[50, 75, 100, 125, 150, 200].map((z) => `<option ${z === zoom ? "selected" : ""}>${z}</option>`).join("")}</select></label>${button("fit", "Ajuster")}${button("grid", grid ? "Grille : oui" : "Grille : non")}</div><div class="bn-graphic-body"><div class="bn-graphic-viewport"><div data-stage></div></div><aside><p>Maj + clic : multisélection. Glisser pour déplacer ; poignée bleue pour redimensionner. Flèches clavier : 1 px, Maj : 10 px. Pour un objet tourné, réglez largeur et hauteur dans les champs.</p><p>Les repères et itinéraires sont renseignés par vous. Aucun emplacement technique n’est déduit.</p><label>Fond du projet<select data-g-background><option value="">Sans image</option>${files.map((f) => `<option value="${esc(f.id)}" ${scene.backgroundId === f.id ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select></label><h3>${ids.length} objet(s)</h3><label>Calque<select data-g-layer><option value="">Choisir…</option>${scene.nodes.map((x, i) => `<option value="${esc(x.id)}" ${n?.id === x.id ? "selected" : ""}>${i + 1} · ${x.hidden ? "◌ " : ""}${x.locked ? "🔒 " : ""}${esc(x.text.slice(0, 35) || x.type)}</option>`).join("")}</select></label>${n ? `<fieldset ${blocked ? "disabled" : ""}><label>Texte / légende<textarea data-g-prop="text" maxlength="2000">${esc(n.text)}</textarea></label>${["x", "y", "width", "height", "rotation", "fontSize", "strokeWidth"].map((k) => `<label>${{ x: "Position X", y: "Position Y", width: "Largeur", height: "Hauteur", rotation: "Rotation (°)", fontSize: "Taille du texte", strokeWidth: "Épaisseur" }[k]}<input type="number" data-g-prop="${k}" value="${n[k] ?? 0}" ${k === "height" && n.type === "text" ? "disabled" : ""}></label>`).join("")}<label>Police<select data-g-prop="font">${["Arial", "Georgia", "Verdana"].map((f) => `<option ${n.font === f ? "selected" : ""}>${f}</option>`).join("")}</select></label>${["fill", "stroke"].map((k) => `<label>${k === "fill" ? "Fond / texte" : "Contour"}<input type="color" data-g-prop="${k}" value="${n[k]}"></label>`).join("")}${n.type === "arrow" ? `<label>Direction<select data-g-prop="direction">${Object.entries({right:"→",left:"←",up:"↑",down:"↓",ne:"↗",se:"↘",sw:"↙",nw:"↖"}).map(([v,t])=>`<option value="${v}" ${n.direction===v?"selected":""}>${t}</option>`).join("")}</select></label>` : ""}</fieldset><div>${button("lock", blocked ? "Déverrouiller" : "Verrouiller")}${button("hide", n.hidden ? "Afficher" : "Masquer")}${button("front", "Premier plan")}${button("back", "Arrière-plan")}${button("group", "Grouper")}${button("ungroup", "Dégrouper")}${button("copyStyle", "Copier style")}${button("pasteStyle", "Coller style")}</div>` : ""}<h3>Aligner / distribuer</h3><div>${[
         ["left", "Gauche"],
         ["centerX", "Centre horizontal"],
         ["right", "Droite"],
@@ -485,6 +491,10 @@
         const k = t.dataset.gProp;
         commit(() => {
           editable().forEach((n) => {
+            if (k === "rotation") {
+              n.rotation = Math.max(-180, Math.min(180, Number(t.value) || 0));
+              return;
+            }
             n[k] = [
               "x",
               "y",
@@ -666,6 +676,7 @@
     expand,
     duplicate,
     bounds,
+    nodeBounds,
     arrange,
     svg,
     html,

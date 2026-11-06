@@ -146,3 +146,25 @@ test("graphic backgrounds require a matching authorized source reference", () =>
     ),
   );
 });
+
+test("rotation preserves vector geometry, aligns visible bounds and rejects rotated overflow", () => {
+  const n = { ...node("a", 100, 100), rotation: 90 };
+  const b = G.nodeBounds(n);
+  assert.ok(Math.abs(b.width - 60) < 0.001);
+  assert.ok(Math.abs(b.height - 100) < 0.001);
+  const scene = { ...G.blank(), nodes: [n, node("b", 300, 300)] };
+  G.arrange(scene, ["a", "b"], "top");
+  assert.ok(Math.abs(G.nodeBounds(n).y - scene.nodes[1].y) < 0.001);
+  assert.match(G.svg(scene), /rotate\(90 50 30\)/);
+  assert.equal(G.duplicate([n])[0].rotation, 90);
+  const d = M.blank("p", "Rotation");
+  d.pages[0].blocks = [{ id: "g", kind: "graphic", title: "Test", layout: "list", mode: "custom", baseline: {}, content: {}, annotation: "", graphic: scene }];
+  assert.ok(documentSchema.safeParse(d).success);
+  assert.equal(M.templateFrom(d).pages[0].blocks[0].graphic.nodes[0].rotation, 90);
+  n.y = 0;
+  assert.equal(G.issues(scene).length, 1);
+  assert.equal(documentSchema.safeParse(d).success, false);
+  n.y = 100;
+  n.rotation = 181;
+  assert.equal(documentSchema.safeParse(d).success, false);
+});

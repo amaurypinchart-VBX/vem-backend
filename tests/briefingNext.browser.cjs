@@ -365,6 +365,11 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await prop("y", 400);
       await prop("width", 250);
       await prop("height", 80);
+      await prop("rotation", 30);
+      assert.match(await editor.locator('[data-node]').last().getAttribute('transform'), /rotate\(30 /);
+      await editor.locator('[data-g=undo]').click();
+      assert.equal(await editor.locator('[data-g-prop=rotation]').inputValue(), '0');
+      await editor.locator('[data-g=redo]').click();
       await editor.locator("svg").focus();
       await page.keyboard.press("Control+a");
       await editor.locator("[data-g=group]").click();
@@ -392,6 +397,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         (b) => b.kind === "graphic",
       );
       assert.equal(graphic.graphic.nodes.length, 4);
+      assert.equal(graphic.graphic.nodes[3].rotation, 30);
       assert.equal(new Set(graphic.graphic.nodes.map((n) => n.group)).size, 1);
       assert.equal(graphic.graphic.nodes[0].x, 61);
       assert.equal(graphic.source.id, "f1");
@@ -406,6 +412,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
       await page.locator("main .bn-graphic-visual").click();
       await page.locator("[data-action=editGraphic]").click();
       assert.equal(await editor.locator("[data-node]").count(), 4);
+      assert.match(await editor.locator("[data-node]").last().getAttribute("transform"), /rotate\(30 /);
       await editor.locator("[data-g=cancel]").click();
 
       // Portable template: no project prose/assets, explicit new source bindings, undo.
@@ -498,6 +505,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         ),
       );
       assert.equal(await frame.locator(".bn-graphic-visual svg").count(), 1);
+      assert.match(await frame.locator(".bn-graphic-visual [data-node]").last().getAttribute("transform"), /rotate\(30 /);
       assert.equal(
         await frame.locator(".bn-graphic-visual svg image").count(),
         1,
