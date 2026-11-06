@@ -919,7 +919,7 @@
     S.sources = r.data;
     const d = dialog(
       "Composer un briefing",
-      `<p>Génération depuis les données réelles. Le résultat est réversible avec Annuler.</p><div class="bn-row"><label>Préréglage<select name="preset"><option value="all">Briefing complet</option><option value="morning">Réunion du matin</option><option value="installation">Montage</option><option value="dismantling">Démontage</option><option value="logistics">Logistique</option></select></label><label>Thème<select name="theme">${Object.entries(
+      `<p>Génération depuis les données réelles. Le résultat est réversible avec Annuler. Les critères sont mémorisés pour les nouvelles sources proposées à l’actualisation. Les sources précédemment exclues restent décochées ; vous pouvez les réinclure.</p><div class="bn-row"><label>Préréglage<select name="preset"><option value="all">Briefing complet</option><option value="morning">Réunion du matin</option><option value="installation">Montage</option><option value="dismantling">Démontage</option><option value="logistics">Logistique</option></select></label><label>Thème<select name="theme">${Object.entries(
         M.themes,
       )
         .map(([k, t]) => `<option value="${k}">${E(t.name)}</option>`)
@@ -954,6 +954,9 @@
         priority: l.querySelector("[name=priority]").value,
         responsible: l.querySelector("[name=responsible]").value,
         preset,
+        kinds: preset === "logistics"
+          ? ["project", "truck", "contact", "team"]
+          : ["project", "task", "checklist", "truck", "contact", "team"],
       };
     }
     function list() {
@@ -968,7 +971,7 @@
       d.querySelector("[data-items]").innerHTML = eligible
         .map(
           (s) =>
-            `<label class="bn-choice"><input type="checkbox" checked data-source="${E(M.key(s))}"><span>${E(s.title)}<small>${E(s.kind)} · ${E(s.fields.status || s.fields.phase || "")}</small></span></label>`,
+            `<label class="bn-choice"><input type="checkbox" ${S.doc.excluded.includes(M.key(s)) ? "" : "checked"} data-source="${E(M.key(s))}"><span>${E(s.title)}<small>${E(s.kind)} · ${E(s.fields.status || s.fields.phase || "")}</small></span></label>`,
         )
         .join("");
       count();
@@ -983,6 +986,14 @@
       else if (e.target.name && !["theme", "format"].includes(e.target.name))
         list();
     });
+    const previous = S.doc.generation || {};
+    for (const name of ["preset", "date", "priority", "responsible"]) {
+      const field = d.querySelector(`[name="${name}"]`);
+      if (previous[name] !== undefined) field.value = previous[name];
+    }
+    d.querySelector('[name="open"]').checked = !!previous.open;
+    d.querySelector('[name="theme"]').value = S.doc.theme;
+    d.querySelector('[name="format"]').value = S.doc.format;
     list();
   }
   function refreshScope() {
@@ -1018,7 +1029,7 @@
     }
     dialog(
       blockIds === null ? "Comparer les données du projet" : "Comparer la sélection",
-      `<p>${changes.length} différences. Vos annotations et styles restent inchangés.</p>${changes.map((c, i) => `<div class="bn-choice"><div style="flex:1"><strong>${E(c.label)}</strong><small>${E(c.type === "conflict" ? "CONFLIT · retouche manuelle" : c.type)} ${E(labels[c.field] || c.field || "")}</small>${c.field ? `<p>Document : ${E(c.local)}<br>Projet : ${E(c.remote)}</p>` : ""}</div><select data-choice="${i}" style="width:185px"><option value="keep">${c.type === "deleted" ? "Conserver et figer" : c.type === "added" ? "Exclure" : "Garder ma retouche"}</option><option value="remote" ${c.type === "modified" ? "selected" : ""}>${c.type === "deleted" ? "Retirer explicitement" : c.type === "added" ? "Ajouter" : "Prendre le projet"}</option></select></div>`).join("")}`,
+      `<p>${changes.length} différences. Vos annotations et styles restent inchangés. Les nouvelles sources respectent les filtres enregistrés ; les blocs existants restent comparés même hors filtre.</p>${changes.map((c, i) => `<div class="bn-choice"><div style="flex:1"><strong>${E(c.label)}</strong><small>${E(c.type === "conflict" ? "CONFLIT · retouche manuelle" : c.type)} ${E(labels[c.field] || c.field || "")}</small>${c.field ? `<p>Document : ${E(c.local)}<br>Projet : ${E(c.remote)}</p>` : ""}</div><select data-choice="${i}" style="width:185px"><option value="keep">${c.type === "deleted" ? "Conserver et figer" : c.type === "added" ? "Exclure" : "Garder ma retouche"}</option><option value="remote" ${c.type === "modified" ? "selected" : ""}>${c.type === "deleted" ? "Retirer explicitement" : c.type === "added" ? "Ajouter" : "Prendre le projet"}</option></select></div>`).join("")}`,
       (l) => {
         if (S !== session || JSON.stringify(S.doc) !== snapshot)
           throw new Error("Le document a changé. Relancez la comparaison.");

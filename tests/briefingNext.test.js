@@ -198,3 +198,23 @@ test("scoped refresh isolates selected blocks, retains exclusions and protects f
   assert.equal(M.diff(d, remote).filter((x) => x.type === "added").length, 1);
   assert.deepEqual(M.diff(d, [], [a.id]).map((x) => x.blockId), [a.id]);
 });
+
+test("generation filters survive storage and limit only new source proposals", () => {
+  const initial = sources.slice(0, 1);
+  const d = M.generate("p", "Chantier", initial, { open: true, priority: "high", kinds: ["task"] });
+  const restored = documentSchema.parse(JSON.parse(JSON.stringify(d)));
+  assert.deepEqual(restored.generation, { open: true, priority: "high", kinds: ["task"] });
+  const remote = M.copy(sources.slice(0, 5));
+  remote[0].fields.status = "done";
+  remote[2].fields.status = "done";
+  let changes = M.diff(restored, remote);
+  assert.ok(changes.some((x) => x.blockId === d.pages[0].blocks[0].id && x.remote === "done"));
+  assert.deepEqual(changes.filter((x) => x.type === "added").map((x) => x.source.id), ["t4"]);
+  restored.excluded.push("task:t4");
+  assert.equal(M.diff(restored, remote).filter((x) => x.type === "added").length, 0);
+  delete restored.generation;
+  assert.equal(M.diff(restored, remote).filter((x) => x.type === "added").length, 3);
+  assert.equal(M.filter({ kind: "task", fields: {} }, { date: "2026-11-06" }), false);
+  assert.throws(() => documentSchema.parse({ ...d, generation: { arbitrary: "query" } }));
+  assert.equal(M.templateFrom(d).generation, undefined);
+});

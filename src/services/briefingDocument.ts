@@ -100,6 +100,16 @@ export const documentSchema = z
       .optional(),
     updatedAt: z.string().datetime(),
     excluded: z.array(z.string().max(200)).max(10000),
+    generation: z.object({
+      preset: z.enum(["all", "morning", "installation", "dismantling", "logistics"]).optional(),
+      phase: z.enum(["", "installation", "dismantling"]).optional(),
+      open: z.boolean().optional(),
+      date: z.string().regex(/^(?:|\d{4}-\d{2}-\d{2})$/).optional(),
+      priority: z.enum(["", "low", "normal", "high", "critical"]).optional(),
+      responsible: z.string().max(200).optional(),
+      category: z.string().max(200).optional(),
+      kinds: z.array(z.enum(["project", "task", "checklist", "truck", "contact", "team", "file"])).max(7).optional(),
+    }).strict().optional(),
     pages: z
       .array(
         z

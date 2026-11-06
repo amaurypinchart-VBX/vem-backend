@@ -86,13 +86,14 @@
     return d;
   }
   function filter(s, o = {}) {
+    if (o.kinds && !o.kinds.includes(s.kind)) return false;
     if (s.kind === "task") {
       if (o.open && ["done", "cancelled"].includes(s.fields.status))
         return false;
       if (o.priority && s.fields.priority !== o.priority) return false;
       if (o.responsible && s.fields.assignedToId !== o.responsible)
         return false;
-      if (o.date && !s.fields.date.startsWith(o.date)) return false;
+      if (o.date && !(s.fields.date || "").startsWith(o.date)) return false;
     }
     if (s.kind === "checklist") {
       if (o.open && ["ok", "na"].includes(s.fields.status)) return false;
@@ -109,6 +110,9 @@
   }
   function generate(projectId, title, sources, options = {}) {
     const d = blank(projectId, title);
+    d.generation = {};
+    for (const k of ["preset", "phase", "open", "date", "priority", "responsible", "category", "kinds"])
+      if (options[k] !== undefined) d.generation[k] = copy(options[k]);
     d.theme = options.theme || "signature";
     d.format = options.format || "wide";
     const labels = {
@@ -186,7 +190,7 @@
           }
         }
     for (const s of sources)
-      if (!scope && !seen.has(key(s)))
+      if (!scope && !seen.has(key(s)) && filter(s, d.generation || {}))
         changes.push({ type: "added", source: s, label: s.title });
     return changes;
   }
