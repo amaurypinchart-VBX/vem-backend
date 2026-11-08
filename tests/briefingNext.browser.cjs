@@ -591,8 +591,15 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         assert.equal(await freeFrame.locator(".bn-paper").count(), 1);
         assert.equal(await freeFrame.locator(".bn-free-page svg").count(), 1);
         assert.equal(await freeFrame.locator(".bn-page-content").evaluateAll(ns => ns.filter(n => n.scrollHeight > n.clientHeight + 1).length), 0);
-        console.log("FREE_PAGE_GEOMETRY", format, await freeFrame.locator(".bn-paper").evaluate(p => ({html:p.outerHTML, rects:[...p.querySelectorAll('.bn-page-content,.bn-block,.bn-fields,.bn-graphic-visual,svg,[data-node],tspan')].map(n=>({tag:n.tagName,cls:n.getAttribute('class'),rect:n.getBoundingClientRect().toJSON()}))})));
+        assert.ok(await freeFrame.locator(".bn-paper").evaluate(p => {
+          const bounds = p.getBoundingClientRect();
+          const text = p.querySelector("tspan").getBoundingClientRect();
+          return text.width > 0 && text.height > 0 && text.top >= bounds.top && text.bottom <= bounds.bottom && text.left >= bounds.left && text.right <= bounds.right;
+        }), "Graphic text must be visible within the printed page");
+        // The iframe must fit the A4 sheet before taking its screenshot.
+        await page.setViewportSize({width:1550, height:1400});
         await freeFrame.locator(".bn-paper").screenshot({path:path.join(out, `free-page-${format}.png`)});
+        await page.setViewportSize({width:1550, height:1000});
         await page.getByRole("button", { name:"Fermer l’aperçu" }).click();
       }
       // System paste must reach the paste event, not be swallowed by editor shortcuts.
