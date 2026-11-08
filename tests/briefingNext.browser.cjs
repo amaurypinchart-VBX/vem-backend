@@ -591,6 +591,7 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         assert.equal(await freeFrame.locator(".bn-paper").count(), 1);
         assert.equal(await freeFrame.locator(".bn-free-page svg").count(), 1);
         assert.equal(await freeFrame.locator(".bn-page-content").evaluateAll(ns => ns.filter(n => n.scrollHeight > n.clientHeight + 1).length), 0);
+        console.log("FREE_PAGE_GEOMETRY", format, await freeFrame.locator(".bn-paper").evaluate(p => ({html:p.outerHTML, rects:[...p.querySelectorAll('.bn-page-content,.bn-block,.bn-fields,.bn-graphic-visual,svg,[data-node],tspan')].map(n=>({tag:n.tagName,cls:n.getAttribute('class'),rect:n.getBoundingClientRect().toJSON()}))})));
         await freeFrame.locator(".bn-paper").screenshot({path:path.join(out, `free-page-${format}.png`)});
         await page.getByRole("button", { name:"Fermer l’aperçu" }).click();
       }
