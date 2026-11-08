@@ -168,3 +168,21 @@ test("rotation preserves vector geometry, aligns visible bounds and rejects rota
   n.rotation = 181;
   assert.equal(documentSchema.safeParse(d).success, false);
 });
+
+test("full-page scenes preserve portrait/wide geometry through validation and templates", () => {
+  for (const [format, height] of [["a4", 1414], ["wide", 562.5]]) {
+    const scene = G.blank(format);
+    scene.nodes = [node("a", 100, height - 100)];
+    assert.equal(scene.height, height);
+    assert.equal(scene.fullPage, true);
+    assert.equal(G.issues(scene).length, 0);
+    assert.match(G.svg(scene, false, [], false, "/image.png"), new RegExp('height="' + height + '"'));
+    const d = M.blank("p", "Page");
+    d.pages[0].blocks = [{ id:"b", kind:"graphic", title:"Page", layout:"list", mode:"custom", content:{}, baseline:{}, annotation:"", graphic:scene }];
+    assert.ok(documentSchema.safeParse(d).success);
+    assert.equal(M.templateFrom(d).pages[0].blocks[0].graphic.height, height);
+    scene.nodes[0].y = height - 10;
+    assert.equal(documentSchema.safeParse(d).success, false);
+  }
+  assert.equal(G.blank().height, 600);
+});

@@ -331,7 +331,9 @@
   }
   function paperHtml(p, index, print = false, document = S.doc) {
     const theme = p.theme || document.theme;
-    return `<article class="bn-paper ${theme === "editorial" ? "bn-editorial" : theme === "field" ? "bn-field-theme" : ""}" style="${themeCss(theme, document.brand)}"><div class="bn-kicker">${E(document.brand?.name || "VIEWBOX INTERNATIONAL")} · ${E(document.title)}</div><h1>${E(p.title)}</h1><div class="bn-page-content">${p.blocks
+    const visible = p.blocks.filter(b => !b.hidden);
+    const free = visible.length === 1 && visible[0].graphic?.fullPage;
+    return `<article class="bn-paper ${free ? "bn-free-page" : ""} ${theme === "editorial" ? "bn-editorial" : theme === "field" ? "bn-field-theme" : ""}" style="${themeCss(theme, document.brand)}"><div class="bn-kicker">${E(document.brand?.name || "VIEWBOX INTERNATIONAL")} · ${E(document.title)}</div><h1>${E(p.title)}</h1><div class="bn-page-content">${p.blocks
       .filter((b) => !(print || S.preview) || !b.hidden)
       .map((b) => blockHtml(b, print))
       .join(
@@ -350,7 +352,7 @@
  ${S.conflict ? `<div class="bn-warning">Une autre session a enregistré une nouvelle révision. ${btn("backup", "Télécharger ma copie JSON")}${btn("reload", "Recharger le serveur")}</div>` : ""}
  <div class="bn-body"><nav><h3>Pages · ${S.doc.pages.length}</h3><input aria-label="Rechercher une page" placeholder="Rechercher…" data-search>
  ${S.doc.pages.map((p, i) => `<button data-action="page" data-index="${i}" class="${i === S.page ? "active" : ""}"><span class="bn-page-thumb" style="${themeCss(p.theme || S.doc.theme, S.doc.brand)}">${E(p.title)}</span>${i + 1} · ${E(p.title)}</button>`).join("")}
- ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("addGraphic", "+ Composition libre")}${btn("media", "Médias du projet")}${btn("templates", "Mes modèles")}${btn("pdfImport", "Pages d’un PDF")}${btn("original", "Copie éditable de l’original")}` : ""}
+ ${editing ? `<div class="bn-row">${btn("addPage", "+ Page")}${btn("copyPage", "Dupliquer")}${btn("upPage", "↑")}${btn("downPage", "↓")}${btn("deletePage", "Supprimer")}</div><h3>Bibliothèque</h3>${btn("add", "+ Bloc chantier")}${btn("addGraphic", "+ Composition libre")}${btn("addGraphicPage", "+ Page libre")}${btn("media", "Médias du projet")}${btn("templates", "Mes modèles")}${btn("pdfImport", "Pages d’un PDF")}${btn("original", "Copie éditable de l’original")}` : ""}
  </nav><main>${S.preview ? S.doc.pages.map((p, i) => paperHtml(p, i)).join("") : paperHtml(p, S.page)}</main><aside>
  <h3>Direction artistique</h3>${editing ? btn("brand", "Kit de marque") : ""}${S.doc.brand ? `<p class="bn-count">Identité : ${E(S.doc.brand.name)} · les styles locaux sont conservés.</p>` : ""}${Object.entries(
    M.themes,
@@ -611,7 +613,7 @@
       }
       if (!S.permissions.write || S.publication) return;
       if (act === "task") return taskDialog(a.dataset.id);
-      if (["addGraphic", "editGraphic", "annotateGraphic"].includes(act)) {
+      if (["addGraphic", "addGraphicPage", "editGraphic", "annotateGraphic"].includes(act)) {
         if (act === "editGraphic" && (!b || b.locked)) return;
         const session = S;
         const files = S.sources.filter(
@@ -641,7 +643,7 @@
                     ...window.BriefingNextGraphics.blank(),
                     backgroundId: b.source?.id,
                   }
-                : undefined,
+                : act === "addGraphicPage" ? window.BriefingNextGraphics.blank(S.doc.format) : undefined,
           onApply: (graphic, background) => {
             if (S !== session) return;
             change(() => {
@@ -679,7 +681,10 @@
                   graphic,
                 };
                 attach(block);
-                current().blocks.push(block);
+                if (act === "addGraphicPage") {
+                  S.doc.pages.push({ id: M.uid(), title: "Composition libre", blocks: [block] });
+                  S.page = S.doc.pages.length - 1;
+                } else current().blocks.push(block);
                 S.selected = block.id;
               }
             });
@@ -1670,6 +1675,7 @@
             height = wide ? 630 : 1123;
           const style = doc.createElement("style");
           style.textContent = `body{margin:0;background:#dfe3e9}.bn.bn-print{position:static;display:block;background:none;padding:20px}.bn-print .bn-paper{width:${width}px!important;max-width:none;height:${height}px;margin:0 auto 20px;padding:35px;overflow:hidden;position:relative;box-sizing:border-box}.bn-print footer{position:absolute;bottom:20px;left:35px;right:35px}.bn-print .bn-page-content{height:${height - 190}px;overflow:hidden}.bn-print .bn-block{font-size:16px}.bn-print h1{font-size:30px;margin:12px 0 18px}.bn-print .bn-fields{grid-template-columns:${wide ? "repeat(2,minmax(0,1fr))" : "1fr"}}.bn-print .bn-photo-frame{max-width:calc(${height - 320}px * var(--photo-ratio, 1));margin:auto}.bn-print .bn-graphic-visual{max-width:${Math.min(width - 110, ((height - 340) * 1000) / 600)}px;margin:auto}.bn-print img{max-height:${height - 260}px;max-width:100%}.bn-print .bn-block h2{font-size:20px}.bn-print .bn-source{font-size:9px}@page{size:${wide ? "296.33mm 166.69mm" : "A4 portrait"};margin:0}@media print{body{background:white}.bn.bn-print{padding:0}.bn-print .bn-paper{margin:0;box-shadow:none;break-after:page}.bn-print .bn-paper:last-child{break-after:auto}}`;
+          style.textContent += `.bn-print .bn-free-page{padding:0}.bn-print .bn-free-page>.bn-kicker,.bn-print .bn-free-page>h1,.bn-print .bn-free-page>footer{display:none}.bn-print .bn-free-page .bn-page-content{height:100%;width:100%}.bn-print .bn-free-page .bn-block{border:0;padding:0;margin:0;height:100%;background:none}.bn-print .bn-free-page .bn-block>h2,.bn-print .bn-free-page .bn-source,.bn-print .bn-free-page .bn-graphic-description{display:none}.bn-print .bn-free-page .bn-fields{display:block;height:100%}`;
           doc.head.append(style);
           await doc.fonts.ready;
           const host = doc.querySelector(".bn-print");
@@ -1707,6 +1713,7 @@
               template.innerHTML = blockHtml(b, true);
               let node = template.firstElementChild;
               container.append(node);
+              if (b.graphic) node.querySelector(".bn-graphic-visual").style.maxWidth = Math.min(width - 110, (height - 340) * b.graphic.width / b.graphic.height) + "px";
               if (b.kind === "legacy") await hydrateLegacy(node);
               for (const img of node.querySelectorAll("img")) {
                 img.loading = "eager";
@@ -1743,6 +1750,28 @@
                   };
                   img.src = image.getAttribute("href");
                 });
+              }
+              if (b.graphic?.fullPage && p.blocks.filter(x => !x.hidden).length === 1) {
+                const paper = container.closest(".bn-paper");
+                paper.classList.add("bn-free-page");
+                container.style.height = height + "px";
+                const visual = node.querySelector(".bn-graphic-visual");
+                visual.style.cssText = "width:100%;height:100%;max-width:none;margin:0";
+                const svg = visual.querySelector("svg");
+                svg.style.cssText = "width:100%;height:100%;overflow:hidden";
+                // Keep numbered-marker legends and notes on a separate readable page.
+                const description = node.querySelector(".bn-graphic-description");
+                description?.querySelectorAll(".bn-graphic-text").forEach(x => x.remove());
+                const annotation = node.querySelector(".bn-annotation");
+                if (description?.textContent.trim() || annotation?.textContent.trim()) {
+                  const legend = newPage(p, true);
+                  legend.closest(".bn-paper").classList.remove("bn-free-page");
+                  if (description) legend.append(description);
+                  if (annotation) legend.append(annotation);
+                  if (legend.scrollHeight > legend.clientHeight)
+                    throw new Error("Légende trop longue : répartissez les repères sur plusieurs pages.");
+                }
+                continue;
               }
               if (container.scrollHeight <= container.clientHeight) continue;
               node.remove();

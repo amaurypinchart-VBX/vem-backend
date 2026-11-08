@@ -16,7 +16,7 @@
           "'": "&#39;",
         })[c],
     );
-  const blank = () => ({ width: 1000, height: 600, nodes: [] });
+  const blank = (format) => ({ width: 1000, height: format === "a4" ? 1414 : format === "wide" ? 562.5 : 600, ...(format ? { fullPage: true } : {}), nodes: [] });
   function wrap(text, width, size, font, measure) {
     const max = Math.max(1, width - 12),
       lines = [];
@@ -202,7 +202,7 @@
     backgroundUrl = "",
   ) {
     let marker = 0;
-    return `<svg xmlns="http://www.w3.org/2000/svg" class="bn-graphic-svg" viewBox="0 0 ${scene.width} ${scene.height}" role="img" aria-label="Composition graphique" ${editing ? 'tabindex="0"' : ""}><rect width="100%" height="100%" fill="white"/>${backgroundUrl && /^https?:\/\/|^\/(?!\/)/i.test(backgroundUrl) ? `<image href="${esc(backgroundUrl)}" width="1000" height="600" preserveAspectRatio="xMidYMid meet"/>` : ""}${editing && grid ? Array.from({ length: 51 }, (_, i) => `<path d="M ${i * 20} 0 V ${scene.height} M 0 ${i * 20} H ${scene.width}" stroke="#e8edf5"/>`).join("") + `<rect x="20" y="20" width="${scene.width - 40}" height="${scene.height - 40}" fill="none" stroke="#aab" stroke-dasharray="5 5"/>` : ""}${scene.nodes
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="bn-graphic-svg" viewBox="0 0 ${scene.width} ${scene.height}" role="img" aria-label="Composition graphique" ${editing ? 'tabindex="0"' : ""}><rect width="100%" height="100%" fill="white"/>${backgroundUrl && /^https?:\/\/|^\/(?!\/)/i.test(backgroundUrl) ? `<image href="${esc(backgroundUrl)}" width="${scene.width}" height="${scene.height}" preserveAspectRatio="xMidYMid meet"/>` : ""}${editing && grid ? Array.from({ length: Math.ceil(Math.max(scene.width, scene.height) / 20) + 1 }, (_, i) => `<path d="M ${i * 20} 0 V ${scene.height} M 0 ${i * 20} H ${scene.width}" stroke="#e8edf5"/>`).join("") + `<rect x="20" y="20" width="${scene.width - 40}" height="${scene.height - 40}" fill="none" stroke="#aab" stroke-dasharray="5 5"/>` : ""}${scene.nodes
       .filter((n) => !n.hidden)
       .map((n) => nodeSvg(n, n.type === "marker" ? ++marker : 0))
       .join("")}${
@@ -512,7 +512,7 @@
                         ? 12
                         : 24,
                   Math.min(
-                    k === "fontSize" ? 96 : k === "strokeWidth" ? 20 : 1000,
+                    k === "fontSize" ? 96 : k === "strokeWidth" ? 20 : ["y", "height"].includes(k) ? scene.height : scene.width,
                     Number(t.value) || 0,
                   ),
                 )
