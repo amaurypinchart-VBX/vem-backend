@@ -31,7 +31,8 @@ const graphic = z
   .object({
     backgroundId: id.optional(),
     width: z.literal(1000),
-    height: z.literal(600),
+    height: z.union([z.literal(600), z.literal(1414), z.literal(562.5)]),
+    fullPage: z.boolean().optional(),
     nodes: z
       .array(
         z
@@ -39,9 +40,9 @@ const graphic = z
             id,
             type: z.enum(["text", "rect", "ellipse", "arrow", "marker"]),
             x: z.number().min(0).max(1000),
-            y: z.number().min(0).max(600),
+            y: z.number().min(0).max(1414),
             width: z.number().min(24).max(1000),
-            height: z.number().min(24).max(600),
+            height: z.number().min(24).max(1414),
             rotation: z.number().min(-180).max(180).optional(),
             text: z.string().max(2000),
             font: z.enum(["Arial", "Georgia", "Verdana"]),

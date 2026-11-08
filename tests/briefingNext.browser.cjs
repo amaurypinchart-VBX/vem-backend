@@ -569,6 +569,39 @@ if (process.env.BRIEFING_DEMO_ONLY) {
         0,
       );
       await page.getByRole("button", { name: "Fermer l’aperçu" }).click();
+      // Dedicated full-page composition: persist, reopen, vector export in both formats.
+      for (const [format, canvasHeight] of [["a4", 1414], ["wide", 562.5]]) {
+        await page.locator("[data-doc=format]").selectOption(format);
+        await page.locator("[data-action=addGraphicPage]").click();
+        await editor.locator("[data-g=add-text]").click();
+        await prop("text", "PAGE LIBRE " + format);
+        await prop("y", canvasHeight - 150);
+        await editor.locator("[data-g=apply]").click();
+        await page.locator("[data-action=save]").click();
+        await page.waitForFunction(() => document.querySelector(".bn-status").textContent.includes("Enregistré"));
+        assert.equal(row.document.pages.at(-1).blocks[0].graphic.height, canvasHeight);
+        await page.reload();
+        await page.locator('[data-action=page]').last().click();
+        assert.equal(await page.locator("main svg").getAttribute("viewBox"), `0 0 1000 ${canvasHeight}`);
+        await page.locator("[data-action=export]").click();
+        await page.locator("[data-export-page]").evaluateAll(nodes => nodes.forEach((n, i) => n.checked = i === nodes.length - 1));
+        await page.locator("[data-submit]").click();
+        await page.getByRole("button", { name:"Imprimer / Enregistrer en PDF", exact:true }).waitFor({timeout:30000});
+        const freeFrame = page.frames().find(f => f !== page.mainFrame());
+        assert.equal(await freeFrame.locator(".bn-paper").count(), 1);
+        assert.equal(await freeFrame.locator(".bn-free-page svg").count(), 1);
+        assert.equal(await freeFrame.locator(".bn-page-content").evaluateAll(ns => ns.filter(n => n.scrollHeight > n.clientHeight + 1).length), 0);
+        assert.ok(await freeFrame.locator(".bn-paper").evaluate(p => {
+          const bounds = p.getBoundingClientRect();
+          const text = p.querySelector("tspan").getBoundingClientRect();
+          return text.width > 0 && text.height > 0 && text.top >= bounds.top && text.bottom <= bounds.bottom && text.left >= bounds.left && text.right <= bounds.right;
+        }), "Graphic text must be visible within the printed page");
+        // The iframe must fit the A4 sheet before taking its screenshot.
+        await page.setViewportSize({width:1550, height:1400});
+        await freeFrame.locator(".bn-paper").screenshot({path:path.join(out, `free-page-${format}.png`)});
+        await page.setViewportSize({width:1550, height:1000});
+        await page.getByRole("button", { name:"Fermer l’aperçu" }).click();
+      }
       // System paste must reach the paste event, not be swallowed by editor shortcuts.
 
       await page.evaluate(() => {

@@ -546,3 +546,7 @@
 
 .bn-pdf-page {max-width:100%;background:white;}
 .bn-pdf-page img {width:auto;max-width:100%;height:auto;}
+
+/* Dedicated composition pages keep their own aspect ratio in the editor. */
+.bn-free-page .bn-graphic-visual { width:100%; max-width:none; }
+.bn-free-page .bn-block { background:white; }
