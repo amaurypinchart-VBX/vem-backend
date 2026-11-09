@@ -283,8 +283,12 @@ function brfAddRemarksBlock(remarks) {
 // briefing complet de 6 à 10 slides avec un design Viewbox cohérent.
 // L'utilisateur peut ensuite ajuster chaque slide à sa guise.
 
-async function brfAutoGenerateBriefing(btn) {
-  if (!confirm('🪄 Auto-générer un briefing complet à partir des données du projet ?\n\nLes slides actuelles seront REMPLACÉES.\n(Tu peux les éditer ensuite.)')) return;
+// opts.ai = true : « ✨ Générer avec l'IA » — mêmes slides, plus un court texte
+// rédigé par l'IA sous le titre de chaque slide (route /studio-texts : l'IA
+// n'invente rien, les tableaux viennent toujours des vraies données).
+async function brfAutoGenerateBriefing(btn, opts = {}) {
+  const useAI = !!opts.ai;
+  if (!confirm((useAI ? '✨ Générer le briefing avec l\'IA ?\n\nLes slides sont construites à partir des données du projet et l\'IA rédige un court texte pour chacune.' : '🪄 Auto-générer un briefing complet à partir des données du projet ?') + '\n\nLes slides actuelles seront REMPLACÉES.\n(Tu peux les éditer ensuite.)')) return;
 
   const orig = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Génération...'; }
@@ -301,6 +305,10 @@ async function brfAutoGenerateBriefing(btn) {
     ]);
     if (!pRes?.success) throw new Error('Impossible de charger le projet');
     const project = pRes.data;
+    // Textes IA demandés tout de suite : ils se rédigent pendant le choix des fichiers
+    const aiPromise = useAI
+      ? api('POST', `/briefings/project/${projectId}/studio-texts`).catch(e => ({ success: false, error: e?.message }))
+      : null;
     const trucks  = tRes?.data    || [];
     const tasks   = taskRes?.data || [];
     const files   = fileRes?.data || [];
@@ -350,6 +358,14 @@ async function brfAutoGenerateBriefing(btn) {
       toast('Génération annulée', 'info');
       return;
     }
+    let aiTexts = {};
+    if (aiPromise) {
+      if (btn) btn.innerHTML = '✨ Rédaction IA...';
+      const aiRes = await aiPromise;
+      if (aiRes?.success && aiRes.data) aiTexts = aiRes.data;
+      else toast('Textes IA indisponibles (' + (aiRes?.error || 'erreur') + ') — slides générées sans texte', 'warning');
+    }
+    const T = (key) => String(aiTexts?.[key] || '').trim();
     if (btn) btn.innerHTML = '⏳ Génération...';
 
     // Wipe
@@ -373,6 +389,19 @@ async function brfAutoGenerateBriefing(btn) {
       BRF_STUDIO.slides[BRF_STUDIO.curIdx].json = json;
       BRF_STUDIO.suppressSnapshot = false;
     };
+    // Texte d'accompagnement sous le titre (ou sous-titre) → renvoie le y suivant
+    const CONTENT_TOP = 160;
+    const PAGE_BOTTOM = BRF_CANVAS_H - 20;
+    const captionBox = (text, top, fontSize = 18) => new fabric.Textbox(text, {
+      left: 60, top, width: 1160, fontSize, fontFamily: 'Helvetica', fill: '#1f2a44', lineHeight: 1.3,
+    });
+    const addCaption = (text, top, fontSize = 18) => {
+      if (!text) return top;
+      const tb = captionBox(text, top, fontSize);
+      BRF_STUDIO.fabricCanvas.add(tb);
+      return top + tb.height + 16;
+    };
+    const captionHeight = (text, fontSize) => text ? captionBox(text, 0, fontSize).height + 16 : 0;
 
    // ─── SLIDE 1 : COUVERTURE ─────────────────────────────────
     // Slide spéciale : pas d'encadré titre standard, gros titre projet
@@ -407,6 +436,11 @@ async function brfAutoGenerateBriefing(btn) {
         left: 60, top: 520, fontSize: 20, fontFamily: 'Helvetica', fill: '#666',
       }));
     }
+    if (T('intro')) {
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(T('intro'), {
+        left: 60, top: 570, width: 1000, fontSize: 17, fontFamily: 'Helvetica', fill: '#1f2a44', lineHeight: 1.3,
+      }));
+    }
     saveSlide();
 
     // ─── SLIDE PLANNING ─────────────────────────────────────────
@@ -421,7 +455,8 @@ const fmt = d => {
       const rows = [];
       if (project.installationStart) rows.push(['🏗️ Installation', fmt(project.installationStart), fmt(project.installationEnd)]);
       if (project.dismantlingStart)  rows.push(['🔨 Démontage',    fmt(project.dismantlingStart),  fmt(project.dismantlingEnd)]);
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [260, 470, 430] });
+      const yPlan = addCaption(T('planning'), CONTENT_TOP);
+      brfRenderDataTable({ x: 60, y: Math.max(200, yPlan), headers, rows, colWidths: [260, 470, 430] });
       saveSlide();
     }
 
@@ -443,13 +478,126 @@ const fmt = d => {
       newSlide('Lieu', 'Localisation');
       const addr = [project.address, project.city].filter(Boolean).join(', ');
       // Adresse en gros texte au-dessus du plan
-      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(addr, {
+      const addrBox = new fabric.Textbox(addr, {
         left: 60, top: 170, width: 1160, fontSize: 22, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#222',
-      }));
+      });
+      BRF_STUDIO.fabricCanvas.add(addrBox);
+      // Texte IA (accès / arrivée) sous l'adresse, puis le plan réduit pour tenir sous le texte
+      const yMap = T('location') ? addCaption(T('location'), 170 + addrBox.height + 10, 17) : 220;
+      const mapW = Math.min(1100, Math.round((PAGE_BOTTOM - yMap) * 1100 / 600));
       // Plan OSM — drag/resize/draw-on dispos via les outils Studio
-      await brfAddMapToCanvas(addr, 90, 220, 1100);
+      await brfAddMapToCanvas(addr, Math.round((BRF_CANVAS_W - mapW) / 2), yMap, mapW);
       saveSlide();
     }
+
+    // ─── SLIDES D'INFORMATIONS (tableaux) ───────────────────────
+    // Plusieurs petits tableaux sur une même slide tant qu'ils tiennent
+    // (ex. équipe + camions + transport + hôtels) ; un tableau trop long
+    // pour une slide est coupé en « (suite) ».
+    const fmtDM  = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
+    const fmtDMY = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '?';
+    const fmtDT  = d => d ? new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+    const phaseTxt = p => p === 'dismantling' ? '🔨 Démontage' : p === 'installation' ? '🏗️ Install.' : 'Les deux';
+    const sec = (key, title, icon, headers, colWidths, rows, rowHeight = 40) => rows.length ? { key, title, icon, headers, colWidths, rows, rowHeight } : null;
+
+    const infoSections = [
+      sec('team', 'Équipe', '👥', ['Nom', 'Rôle', 'Phase', 'Téléphone'], [340, 260, 200, 360],
+        (project.team || []).map(m => [`${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—', m.role || '', phaseTxt(m.phase), m.user?.phone || ''])),
+      sec('contacts', `Contacts${client?.name ? ' ' + client.name : ''}`, '📞', ['Nom', 'Rôle', 'Téléphone', 'Email'], [280, 260, 240, 380],
+        clientContacts.map(c => [(c.isPrimary ? '★ ' : '') + (c.name || '—'), c.role || '', c.phone || '', c.email || ''])),
+      sec('trucks', 'Logistique', '🚛', ['Type', 'Trajet', 'Chargement', 'Chauffeur'], [180, 420, 240, 320],
+        trucks.map(t => [vehicleLabel(t.vehicleType), `${t.loadingLocation || '?'} → ${t.unloadingLocation || '?'}`,
+          t.loadingDate ? fmtDT(t.loadingDate) : '', t.driverName ? `${t.driverName}${t.driverPhone ? ' · ' + t.driverPhone : ''}` : ''])),
+      sec('teamBookings', 'Transport équipe', '✈️', ['Membre', 'Phase', 'Sur site', 'Aller', 'Retour'], [220, 160, 220, 280, 280],
+        teamBookings.map(bk => [`${bk.user?.firstName || ''} ${bk.user?.lastName || ''}`.trim() || '—',
+          bk.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Install.', `${fmtDM(bk.onSiteStart)} → ${fmtDM(bk.onSiteEnd)}`,
+          bk.outboundMode ? `${bk.outboundMode}${bk.outboundDate ? '\n' + fmtDT(bk.outboundDate) : ''}` : '—',
+          bk.returnMode ? `${bk.returnMode}${bk.returnDate ? '\n' + fmtDT(bk.returnDate) : ''}` : '—']), 50),
+      sec('hotels', 'Hôtels', '🏨', ['Hôtel', 'Phase', 'Séjour', 'Occupants', 'Réf.'], [320, 160, 240, 340, 100],
+        hotelBookings.map(h => [h.hotelName || '—', h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Install.',
+          `${fmtDMY(h.checkin)} → ${fmtDMY(h.checkout)}`,
+          (h.occupants || []).map(o => `${o.user?.firstName || ''} ${o.user?.lastName || ''}`.trim()).filter(Boolean).join(', '), h.reference || ''])),
+    ].filter(Boolean);
+
+    const importantTasks = tasks.filter(t => ['high','critical'].includes(t.priority)).slice(0, 12);
+    const openRemarks = remarks.filter(r => r.status !== 'resolved').slice(0, 10);
+    const followSections = [
+      sec('tasks', 'Tâches importantes', '📋', ['Tâche', 'Date', 'Assigné', 'Statut'], [580, 140, 240, 200],
+        importantTasks.map(t => [t.title || '?', t.taskDate ? fmtDM(t.taskDate) : '',
+          t.assignedTo?.firstName ? `${t.assignedTo.firstName} ${t.assignedTo.lastName || ''}`.trim() : '',
+          t.status === 'completed' ? '✓ Terminé' : t.status === 'in_progress' ? '↻ En cours' : '○ À faire'])),
+      sec('remarks', 'Remarques client', '⚠️', ['Remarque', 'Status', 'Priorité', 'Date'], [620, 180, 160, 200],
+        openRemarks.map(r => [(r.title || r.description || '—').slice(0, 120), r.status === 'in_progress' ? '↻ En cours' : '○ Ouvert',
+          r.priority || '', r.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : ''])),
+    ].filter(Boolean);
+
+    // Hauteur d'un bloc (sous-titre + texte IA + tableau + marge), estimée avec le sous-titre
+    const SUBTITLE_H = 34, TABLE_HEAD_H = 50, BLOCK_GAP = 22;
+    const blockHeight = (s, nRows, withText) =>
+      SUBTITLE_H + (withText ? captionHeight(T(s.key), 15) : 0) + TABLE_HEAD_H + nRows * s.rowHeight + BLOCK_GAP;
+    const packPages = (sections) => {
+      const pages = [];
+      let page = [], y = CONTENT_TOP;
+      const flush = () => { if (page.length) pages.push(page); page = []; y = CONTENT_TOP; };
+      for (const s of sections) {
+        const h = blockHeight(s, s.rows.length, true);
+        if (page.length && y + h - BLOCK_GAP <= PAGE_BOTTOM) { page.push({ s, rows: s.rows, first: true }); y += h; continue; }
+        flush();
+        if (CONTENT_TOP + h - BLOCK_GAP <= PAGE_BOTTOM) { page.push({ s, rows: s.rows, first: true }); y += h; continue; }
+        // Trop long pour une slide : découpé
+        let rest = s.rows, first = true;
+        while (rest.length) {
+          const fixed = blockHeight(s, 0, first);
+          const per = Math.max(1, Math.floor((PAGE_BOTTOM - CONTENT_TOP - fixed + BLOCK_GAP) / s.rowHeight));
+          const chunk = rest.slice(0, per);
+          rest = rest.slice(per);
+          page.push({ s, rows: chunk, first, cont: !first });
+          y = CONTENT_TOP + blockHeight(s, chunk.length, first);
+          if (rest.length) flush();
+          first = false;
+        }
+      }
+      flush();
+      return pages;
+    };
+    const renderPages = (pages, groupTitle) => {
+      for (const page of pages) {
+        const label = b => b.s.title + (b.cont ? ' (suite)' : '');
+        const joined = page.map(label).join(' · ');
+        const title = page.length > 1 && joined.length > 38 ? groupTitle : joined;
+        newSlide(page.length > 1 ? joined : label(page[0]), title);
+        let y = CONTENT_TOP;
+        for (const b of page) {
+          if (page.length > 1) {
+            BRF_STUDIO.fabricCanvas.add(new fabric.IText(`${b.s.icon}  ${label(b)}`, {
+              left: 60, top: y, fontSize: 20, fontFamily: 'Helvetica', fontWeight: 'bold', fill: BRF_TPL.NAVY,
+            }));
+            y += SUBTITLE_H;
+          }
+          if (b.first) y = addCaption(T(b.s.key), y, page.length > 1 ? 15 : 18);
+          y = brfRenderDataTable({ x: 60, y, headers: b.s.headers, rows: b.rows, colWidths: b.s.colWidths, rowHeight: b.s.rowHeight }) + BLOCK_GAP;
+        }
+        saveSlide();
+      }
+    };
+
+    renderPages(packPages(infoSections), 'Équipe & logistique');
+
+    // ─── SLIDE NOTES (TEXTBOX) ──────────────────────────────────
+    if (project.scope || project.installNotes || project.dismantleNotes || project.specialInstructions || project.description) {
+      newSlide('Notes', 'Notes projet');
+      const lines = [];
+      if (project.scope)               { lines.push('▶ OBJET');                  lines.push(project.scope);               lines.push(''); }
+      if (project.description)         { lines.push('▶ DESCRIPTION');            lines.push(project.description);         lines.push(''); }
+      if (project.installNotes)        { lines.push('▶ INSTALLATION');           lines.push(project.installNotes);        lines.push(''); }
+      if (project.dismantleNotes)      { lines.push('▶ DÉMONTAGE');              lines.push(project.dismantleNotes);      lines.push(''); }
+      if (project.specialInstructions) { lines.push('▶ INSTRUCTIONS SPÉCIALES'); lines.push(project.specialInstructions);                  }
+      const yNotes = addCaption(T('notes'), CONTENT_TOP);
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n').trim(), { left: 60, top: Math.max(200, yNotes), width: 1100, fontSize: 16, fontFamily: 'Helvetica', fill: '#222', lineHeight: 1.5 }));
+      saveSlide();
+    }
+
+    renderPages(packPages(followSections), 'Tâches & remarques');
 
     // ─── SLIDES SÉCURITÉ PAYS (images Viewbox, FR → EN à l'export) ──
     if (!safetyChoice.none) {
@@ -461,122 +609,6 @@ const fmt = d => {
         console.warn('[brf safety]', e);
         toast('Slides sécurité non ajoutées : ' + (e.message || e), 'warning');
       }
-    }
-
-    // ─── SLIDE ÉQUIPE (TABLEAU) ─────────────────────────────────
-    if (project.team?.length) {
-      newSlide('Équipe', 'Équipe');
-      const headers = ['Nom', 'Rôle', 'Phase', 'Téléphone'];
-      const rows = project.team.map(m => {
-        const name = `${m.user?.firstName || ''} ${m.user?.lastName || ''}`.trim() || '—';
-        const phase = m.phase === 'dismantling' ? '🔨 Démontage'
-                    : m.phase === 'installation' ? '🏗️ Install.'
-                    : 'Les deux';
-        return [name, m.role || '', phase, m.user?.phone || ''];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [340, 260, 200, 360] });
-      saveSlide();
-    }
-
-    // ─── SLIDE CONTACTS (TABLEAU) ───────────────────────────────
-    if (clientContacts.length) {
-      newSlide('Contacts', `Contacts${client?.name ? ' — ' + client.name : ''}`);
-      const headers = ['Nom', 'Rôle', 'Téléphone', 'Email'];
-      const rows = clientContacts.map(c => [
-        (c.isPrimary ? '★ ' : '') + (c.name || '—'),
-        c.role || '', c.phone || '', c.email || '',
-      ]);
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [280, 260, 240, 380] });
-      saveSlide();
-    }
-
-    // ─── SLIDE LOGISTIQUE CAMIONS (TABLEAU) ─────────────────────
-    if (trucks.length) {
-      newSlide('Logistique', 'Logistique');
-      const headers = ['Type', 'Trajet', 'Chargement', 'Chauffeur'];
-      const rows = trucks.map(t => {
-        const trajet = `${t.loadingLocation || '?'} → ${t.unloadingLocation || '?'}`;
-        const chargement = t.loadingDate ? new Date(t.loadingDate).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
-        const chauffeur = t.driverName ? `${t.driverName}${t.driverPhone ? ' · ' + t.driverPhone : ''}` : '';
-        return [vehicleLabel(t.vehicleType), trajet, chargement, chauffeur];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [180, 420, 240, 320] });
-      saveSlide();
-    }
-
-    // ─── SLIDE TRANSPORT ÉQUIPE (TABLEAU) ───────────────────────
-    if (teamBookings.length) {
-      newSlide('Transport équipe', 'Transport équipe');
-      const fmt  = d => d ? new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
-      const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '?';
-      const headers = ['Membre', 'Phase', 'Sur site', 'Aller', 'Retour'];
-      const rows = teamBookings.map(bk => {
-        const name = `${bk.user?.firstName || ''} ${bk.user?.lastName || ''}`.trim() || '—';
-        const phase = bk.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Install.';
-        const onsite = `${fmtD(bk.onSiteStart)} → ${fmtD(bk.onSiteEnd)}`;
-        const aller  = bk.outboundMode ? `${bk.outboundMode}${bk.outboundDate ? '\n'+fmt(bk.outboundDate) : ''}` : '—';
-        const retour = bk.returnMode   ? `${bk.returnMode}${bk.returnDate     ? '\n'+fmt(bk.returnDate)     : ''}` : '—';
-        return [name, phase, onsite, aller, retour];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [220, 160, 220, 280, 280], rowHeight: 50 });
-      saveSlide();
-    }
-
-    // ─── SLIDE HÔTELS (TABLEAU) ─────────────────────────────────
-    if (hotelBookings.length) {
-      newSlide('Hôtels', 'Hôtels équipe');
-      const fmtD = d => d ? new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '?';
-      const headers = ['Hôtel', 'Phase', 'Séjour', 'Occupants', 'Réf.'];
-      const rows = hotelBookings.map(h => {
-        const phase = h.phase === 'dismantling' ? '🔨 Démontage' : '🏗️ Install.';
-        const sejour = `${fmtD(h.checkin)} → ${fmtD(h.checkout)}`;
-        const occ = (h.occupants || []).map(o => `${o.user?.firstName||''} ${o.user?.lastName||''}`.trim()).filter(Boolean).join(', ');
-        return [h.hotelName || '—', phase, sejour, occ, h.reference || ''];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [320, 160, 240, 340, 100] });
-      saveSlide();
-    }
-
-    // ─── SLIDE NOTES (TEXTBOX) ──────────────────────────────────
-    if (project.scope || project.installNotes || project.dismantleNotes || project.specialInstructions || project.description) {
-      newSlide('Notes', 'Notes projet');
-      const lines = [];
-      if (project.scope)               { lines.push('▶ OBJET');                  lines.push(project.scope);               lines.push(''); }
-      if (project.description)         { lines.push('▶ DESCRIPTION');            lines.push(project.description);         lines.push(''); }
-      if (project.installNotes)        { lines.push('▶ INSTALLATION');           lines.push(project.installNotes);        lines.push(''); }
-      if (project.dismantleNotes)      { lines.push('▶ DÉMONTAGE');              lines.push(project.dismantleNotes);      lines.push(''); }
-      if (project.specialInstructions) { lines.push('▶ INSTRUCTIONS SPÉCIALES'); lines.push(project.specialInstructions);                  }
-      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(lines.join('\n').trim(), { left: 60, top: 200, width: 1100, fontSize: 16, fontFamily: 'Helvetica', fill: '#222', lineHeight: 1.5 }));
-      saveSlide();
-    }
-
-    // ─── SLIDE TÂCHES CLÉS (TABLEAU) ────────────────────────────
-    const importantTasks = tasks.filter(t => ['high','critical'].includes(t.priority)).slice(0, 12);
-    if (importantTasks.length) {
-      newSlide('Tâches clés', 'Tâches importantes');
-      const headers = ['Tâche', 'Date', 'Assigné', 'Statut'];
-      const rows = importantTasks.map(t => {
-        const stat = t.status === 'completed' ? '✓ Terminé' : t.status === 'in_progress' ? '↻ En cours' : '○ À faire';
-        const date = t.taskDate ? new Date(t.taskDate).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '';
-        const ass  = t.assignedTo?.firstName ? `${t.assignedTo.firstName} ${t.assignedTo.lastName || ''}`.trim() : '';
-        return [t.title || '?', date, ass, stat];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [580, 140, 240, 200] });
-      saveSlide();
-    }
-
-    // ─── SLIDE REMARQUES CLIENT (TABLEAU) ───────────────────────
-    const openRemarks = remarks.filter(r => r.status !== 'resolved').slice(0, 10);
-    if (openRemarks.length) {
-      newSlide('Remarques', 'Remarques client');
-      const headers = ['Remarque', 'Status', 'Priorité', 'Date'];
-      const rows = openRemarks.map(r => {
-        const text = (r.title || r.description || '—').slice(0, 120);
-        const status = r.status === 'in_progress' ? '↻ En cours' : '○ Ouvert';
-        return [text, status, r.priority || '', r.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : ''];
-      });
-      brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [620, 180, 160, 200] });
-      saveSlide();
     }
 
     // ─── SLIDES FICHIERS (Feature 3 + PDF multi-page) ────────────
@@ -652,6 +684,9 @@ const fmt = d => {
     BRF_STUDIO.fabricCanvas.setBackgroundColor(BRF_TPL.NAVY, () => {});
     BRF_STUDIO.fabricCanvas.add(new fabric.IText('MERCI', { left: 480, top: 280, fontSize: 96, fontFamily: 'Helvetica', fontWeight: 'bold', fill: '#ffffff' }));
     BRF_STUDIO.fabricCanvas.add(new fabric.IText('Des questions ?', { left: 480, top: 400, fontSize: 26, fontFamily: 'Helvetica', fill: '#aac', fontStyle: 'italic' }));
+    if (T('closing')) {
+      BRF_STUDIO.fabricCanvas.add(new fabric.Textbox(T('closing'), { left: 240, top: 470, width: 800, textAlign: 'center', fontSize: 20, fontFamily: 'Helvetica', fill: '#ffffff', lineHeight: 1.3 }));
+    }
     saveSlide();
 
     // Retour à la première slide
