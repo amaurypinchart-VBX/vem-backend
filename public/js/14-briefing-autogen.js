@@ -342,6 +342,16 @@ async function brfAutoGenerateBriefing(btn) {
       if (btn) btn.innerHTML = '⏳ Génération...';
     }
 
+    // Slides sécurité du pays de l'événement (demande seulement si le pays est inconnu
+    // ou s'il n'existe pas de slides pour ce pays)
+    if (btn) btn.innerHTML = '🦺 Pays de l\'événement...';
+    const safetyChoice = await brfResolveSafetyChoice(project, { cancelLabel: 'Annuler la génération' });
+    if (safetyChoice === null) {
+      toast('Génération annulée', 'info');
+      return;
+    }
+    if (btn) btn.innerHTML = '⏳ Génération...';
+
     // Wipe
     BRF_STUDIO.slides = [];
     BRF_STUDIO.curIdx = 0;
@@ -426,6 +436,18 @@ const fmt = d => {
       // Plan OSM — drag/resize/draw-on dispos via les outils Studio
       await brfAddMapToCanvas(addr, 90, 220, 1100);
       saveSlide();
+    }
+
+    // ─── SLIDES SÉCURITÉ PAYS (images Viewbox, FR → EN à l'export) ──
+    if (!safetyChoice.none) {
+      try {
+        const n = await brfInsertSafetySlides(safetyChoice);
+        BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+        if (n && safetyChoice.code) toast(`🦺 Slides sécurité ${brfCountryName(safetyChoice.code)} ajoutées`, 'info');
+      } catch (e) {
+        console.warn('[brf safety]', e);
+        toast('Slides sécurité non ajoutées : ' + (e.message || e), 'warning');
+      }
     }
 
     // ─── SLIDE ÉQUIPE (TABLEAU) ─────────────────────────────────
@@ -707,3 +729,292 @@ function brfAddContactsBlock(contacts, clientName) {
 }
 
 
+
+// ════════════════════════════════════════════════════════════════════
+// 🦺 SLIDES SÉCURITÉ PAYS (A. Pinchart 09.11.2026)
+// ════════════════════════════════════════════════════════════════════
+// Images 1920 × 1080 dans public/briefing-safety/<fr|en>/ :
+//   common.png = « Règles d'or Viewbox » (tous pays)
+//   <CC>_1.png = cadre légal & documents · <CC>_2.png = EPI & travail en hauteur
+// Sources éditables (PPTX) + prompt : docs/briefing-safety/.
+// Les slides sont insérées en FR ; à l'export PDF « EN », l'image est remplacée
+// par la version anglaise (brfSafetyJsonForLang). Pour ajouter un pays :
+// déposer <CC>_1.png / <CC>_2.png dans fr/ et en/ puis l'ajouter ci-dessous.
+const BRF_SAFETY_BASE = '/briefing-safety';
+const BRF_SAFETY_COUNTRIES = {
+  FR: { fr: 'France',      en: 'France',         flag: '🇫🇷' },
+  BE: { fr: 'Belgique',    en: 'Belgium',        flag: '🇧🇪' },
+  NL: { fr: 'Pays-Bas',    en: 'Netherlands',    flag: '🇳🇱' },
+  DE: { fr: 'Allemagne',   en: 'Germany',        flag: '🇩🇪' },
+  UK: { fr: 'Royaume-Uni', en: 'United Kingdom', flag: '🇬🇧' },
+  IT: { fr: 'Italie',      en: 'Italy',          flag: '🇮🇹' },
+  CH: { fr: 'Suisse',      en: 'Switzerland',    flag: '🇨🇭' },
+};
+
+// Pays reconnus dans le texte de l'adresse (noms FR / EN / NL / DE / IT / langue locale).
+// Les pays sans slides sont aussi reconnus, pour pouvoir dire « pas de slides pour l'Espagne ».
+const BRF_COUNTRY_NAMES = [
+  ['FR', ['france', 'frankrijk', 'frankreich', 'francia']],
+  ['BE', ['belgique', 'belgium', 'belgie', 'belgien', 'belgio']],
+  ['NL', ['pays-bas', 'pays bas', 'netherlands', 'the netherlands', 'nederland', 'niederlande', 'paesi bassi', 'holland', 'hollande']],
+  ['DE', ['allemagne', 'germany', 'deutschland', 'duitsland', 'germania']],
+  ['UK', ['royaume-uni', 'royaume uni', 'united kingdom', 'uk', 'u.k.', 'great britain', 'grande-bretagne', 'england', 'angleterre', 'scotland', 'ecosse', 'wales', 'pays de galles', 'verenigd koninkrijk', 'vereinigtes konigreich', 'regno unito']],
+  ['IT', ['italie', 'italy', 'italia', 'italien']],
+  ['CH', ['suisse', 'switzerland', 'schweiz', 'svizzera', 'zwitserland', 'suisse romande']],
+  ['LU', ['luxembourg', 'luxemburg', 'lussemburgo', 'grand-duche de luxembourg']],
+  ['ES', ['espagne', 'spain', 'espana', 'spanje', 'spanien', 'spagna']],
+  ['PT', ['portugal', 'portogallo']],
+  ['AT', ['autriche', 'austria', 'osterreich', 'oostenrijk']],
+  ['PL', ['pologne', 'poland', 'polska', 'polen']],
+  ['MC', ['monaco', 'monte-carlo', 'monte carlo']],
+  ['IE', ['irlande', 'ireland', 'eire']],
+  ['DK', ['danemark', 'denmark', 'danmark']],
+  ['SE', ['suede', 'sweden', 'sverige']],
+  ['US', ['usa', 'u.s.a.', 'united states', 'etats-unis', 'etats unis']],
+  ['AE', ['emirats arabes unis', 'united arab emirates', 'uae', 'dubai', 'abu dhabi', 'abou dabi']],
+  ['QA', ['qatar', 'doha']],
+  ['SA', ['arabie saoudite', 'saudi arabia', 'riyadh', 'riyad', 'jeddah']],
+  ['MA', ['maroc', 'morocco']],
+];
+
+function brfNormText(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+// Nom lisible d'un code pays (UK accepté), en français
+function brfCountryName(code) {
+  if (!code) return '';
+  if (BRF_SAFETY_COUNTRIES[code]) return BRF_SAFETY_COUNTRIES[code].fr;
+  try {
+    return new Intl.DisplayNames(['fr'], { type: 'region' }).of(code === 'UK' ? 'GB' : code) || code;
+  } catch { return code; }
+}
+
+// Cherche un pays dans un morceau de texte (mot entier)
+function brfCountryInText(text) {
+  const t = ' ' + brfNormText(text).replace(/[(),;/]+/g, ' ') + ' ';
+  for (const [code, names] of BRF_COUNTRY_NAMES) {
+    for (const n of names) {
+      const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(^|[^a-z])${esc}([^a-z]|$)`).test(t)) return code;
+    }
+  }
+  return null;
+}
+
+// Pays depuis le texte de l'adresse : dernier élément de l'adresse, ville, préfixes postaux (B-1000, F-75001…)
+function brfCountryFromAddressText(p) {
+  const address = String(p?.address || '');
+  const city = String(p?.city || '');
+  const lastPart = address.split(/[,\n]/).map(s => s.trim()).filter(Boolean).pop() || '';
+  const cityLast = city.split(/[,\n]/).map(s => s.trim()).filter(Boolean).pop() || '';
+  for (const part of [lastPart, cityLast]) {
+    const c = part && brfCountryInText(part);
+    if (c) return c;
+  }
+  const all = `${address} ${city}`;
+  const pref = all.match(/\b(B|F|D|NL|CH|I|L|A|E)-\s?\d{4,5}\b/);
+  if (pref) return ({ B: 'BE', F: 'FR', D: 'DE', NL: 'NL', CH: 'CH', I: 'IT', L: 'LU', A: 'AT', E: 'ES' })[pref[1]];
+  if (/\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b/.test(all)) return 'UK'; // code postal britannique (SW1A 1AA)
+  return null;
+}
+
+// Pays via le géocodage OpenStreetMap (Nominatim, même service que la carte)
+async function brfCountryFromGeocode(addr) {
+  if (!addr) return null;
+  const variations = brfBuildAddressVariations(addr);
+  for (let i = 0; i < variations.length; i++) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(variations[i])}`;
+      const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+      const data = await r.json();
+      const cc = Array.isArray(data) && data[0]?.address?.country_code;
+      if (cc) return cc.toUpperCase() === 'GB' ? 'UK' : cc.toUpperCase();
+    } catch (e) { console.warn('[brf safety] géocodage pays', e); }
+    if (i < variations.length - 1) await new Promise(r => setTimeout(r, 250));
+  }
+  return null;
+}
+
+// → { code, source: 'adresse' | 'carte' } ou null
+async function brfDetectProjectCountry(p) {
+  const fromText = brfCountryFromAddressText(p);
+  if (fromText) return { code: fromText, source: 'adresse' };
+  const addr = [p?.address, p?.city].filter(Boolean).join(', ');
+  const fromGeo = await brfCountryFromGeocode(addr);
+  if (fromGeo) return { code: fromGeo, source: 'carte' };
+  return null;
+}
+
+function brfSafetyUrl(lang, file) { return `${BRF_SAFETY_BASE}/${lang}/${file}.png`; }
+
+function brfSafetyLastChoiceKey(projectId) { return 'vem_brf_safety_' + (projectId || ''); }
+
+// Fenêtre de choix du pays. Résout :
+//   { code: 'BE' | null, common: bool }  (code null = seulement les règles d'or)
+//   { none: true }                        = pas de slides sécurité
+//   null                                  = annuler
+function brfAskSafetyCountry({ title, message, preselect, cancelLabel = 'Annuler' }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10030;display:flex;align-items:center;justify-content:center;padding:20px;';
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const btns = Object.entries(BRF_SAFETY_COUNTRIES).map(([code, c]) => `
+      <button class="brf-sfc-c" data-code="${code}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:${code === preselect ? '#1f5f3f' : '#222'};border:1px solid ${code === preselect ? '#2ecc71' : '#444'};border-radius:8px;color:#eee;cursor:pointer;font-size:13px;text-align:left;">
+        <span style="font-size:20px;">${c.flag}</span><span style="flex:1;">${c.fr}</span><span style="color:#888;font-size:11px;">${code}</span>
+      </button>`).join('');
+    overlay.innerHTML = `
+      <div style="background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:18px;max-width:560px;width:100%;color:#eee;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:700;">${esc(title)}</div>
+          <button id="brf-sfc-x" style="background:transparent;color:#eee;border:none;font-size:24px;cursor:pointer;padding:0;line-height:1;">×</button>
+        </div>
+        <div style="font-size:12px;color:#bbb;margin-bottom:12px;line-height:1.5;">${message}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">${btns}</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:14px;cursor:pointer;">
+          <input type="checkbox" id="brf-sfc-common" checked style="accent-color:#2ecc71;width:16px;height:16px;">
+          Ajouter aussi la slide « Règles d'or Viewbox » (tous pays)
+        </label>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+          <button id="brf-sfc-cancel" style="background:transparent;color:#aaa;border:1px solid #555;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">${esc(cancelLabel)}</button>
+          <button id="brf-sfc-none" style="background:#333;color:#eee;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">Pas de slides sécurité</button>
+          <button id="brf-sfc-common-only" style="background:#333;color:#eee;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">Seulement les règles d'or</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = v => { overlay.remove(); resolve(v); };
+    const common = () => overlay.querySelector('#brf-sfc-common').checked;
+    overlay.querySelectorAll('.brf-sfc-c').forEach(b => { b.onclick = () => done({ code: b.dataset.code, common: common() }); });
+    overlay.querySelector('#brf-sfc-common-only').onclick = () => done({ code: null, common: true });
+    overlay.querySelector('#brf-sfc-none').onclick = () => done({ none: true });
+    overlay.querySelector('#brf-sfc-cancel').onclick = () => done(null);
+    overlay.querySelector('#brf-sfc-x').onclick = () => done(null);
+  });
+}
+
+// Décide quelles slides sécurité mettre pour ce projet.
+//   pays détecté + slides disponibles → directement, sans question
+//   sinon → demande lequel mettre (pays détecté sans slides / pays inconnu)
+// Résout comme brfAskSafetyCountry (+ detected).
+async function brfResolveSafetyChoice(project, { ask = false, cancelLabel } = {}) {
+  const detected = await brfDetectProjectCountry(project);
+  const code = detected?.code || null;
+  if (!ask && code && BRF_SAFETY_COUNTRIES[code]) return { code, common: true, detected };
+
+  let last = null;
+  try { last = localStorage.getItem(brfSafetyLastChoiceKey(project?.id)); } catch {}
+  const addr = [project?.address, project?.city].filter(Boolean).join(', ');
+  const addrTxt = addr ? `« ${addr.replace(/</g, '&lt;')} »` : '(aucune adresse sur le projet)';
+  let message;
+  if (code && BRF_SAFETY_COUNTRIES[code]) {
+    message = `Pays détecté : <b>${brfCountryName(code)}</b> (${detected.source}). Adresse : ${addrTxt}.<br>Choisis les slides sécurité à insérer.`;
+  } else if (code) {
+    message = `L'événement est en <b>${brfCountryName(code)}</b> (${detected.source} ${addrTxt}) — <b>il n'existe pas encore de slides sécurité pour ce pays.</b><br>Lesquelles faut-il mettre ?`;
+  } else {
+    message = `Impossible de savoir dans quel pays a lieu l'événement — adresse : ${addrTxt}.<br>Quelles slides sécurité faut-il mettre ?`;
+  }
+  const pre = (code && BRF_SAFETY_COUNTRIES[code]) ? code : (BRF_SAFETY_COUNTRIES[last] ? last : null);
+  const res = await brfAskSafetyCountry({ title: '🦺 Slides sécurité pays', message, preselect: pre, cancelLabel });
+  if (res && res.code) { try { localStorage.setItem(brfSafetyLastChoiceKey(project?.id), res.code); } catch {} }
+  return res ? { ...res, detected } : null;
+}
+
+// Liste des slides à créer pour un choix
+function brfSafetySlideDefs(choice) {
+  const defs = [];
+  if (choice?.common) defs.push({ file: 'common', name: "🦺 Sécurité — Règles d'or Viewbox" });
+  const c = choice?.code && BRF_SAFETY_COUNTRIES[choice.code];
+  if (c) {
+    defs.push({ file: `${choice.code}_1`, name: `🦺 ${c.flag} ${c.fr} — Cadre légal & documents` });
+    defs.push({ file: `${choice.code}_2`, name: `🦺 ${c.flag} ${c.fr} — EPI & travail en hauteur` });
+  }
+  return defs;
+}
+
+function brfLoadImageEl(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), 20000);
+    img.onload  = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = url;
+  });
+}
+
+// Construit une slide (objet BRF_STUDIO.slides) avec l'image plein cadre, sans toucher au canvas affiché
+async function brfBuildSafetySlide(def) {
+  const url = brfSafetyUrl('fr', def.file);
+  const el = await brfLoadImageEl(url);
+  if (!el) throw new Error(`Slide sécurité introuvable : ${url}`);
+  const cv = new fabric.StaticCanvas(document.createElement('canvas'), { width: BRF_CANVAS_W, height: BRF_CANVAS_H });
+  try {
+    const img = new fabric.Image(el, { left: 0, top: 0, selectable: false, evented: false });
+    img.scaleX = BRF_CANVAS_W / img.width;
+    img.scaleY = BRF_CANVAS_H / img.height;
+    cv.add(img);
+    const json = cv.toJSON();
+    delete json.backgroundImage;
+    return {
+      id: 'slide-safety-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      name: def.name,
+      json,
+      thumbnail: url,
+    };
+  } finally { cv.dispose(); }
+}
+
+// Ajoute les slides du choix à BRF_STUDIO.slides (à la fin, ou après `afterIdx`). Retourne le nombre ajouté.
+async function brfInsertSafetySlides(choice, afterIdx = null) {
+  const defs = brfSafetySlideDefs(choice);
+  const built = [];
+  for (const d of defs) built.push(await brfBuildSafetySlide(d));
+  if (afterIdx == null) BRF_STUDIO.slides.push(...built);
+  else BRF_STUDIO.slides.splice(afterIdx + 1, 0, ...built);
+  return built.length;
+}
+
+// Une slide sécurité = une image venant de /briefing-safety/
+function brfIsSafetyImageSrc(src) { return /\/briefing-safety\/(fr|en)\//.test(String(src || '')); }
+function brfJsonHasSafetyImage(json) {
+  return !!json?.objects?.some(o => o.type === 'image' && brfIsSafetyImageSrc(o.src));
+}
+function brfCanvasHasSafetyImage(canvas) {
+  return !!canvas?.getObjects?.().some(o => o.type === 'image' && brfIsSafetyImageSrc(o.getSrc?.() || o.src));
+}
+// Verrouille l'image de fond d'une slide sécurité (Fabric ne sauvegarde pas selectable/evented)
+function brfLockSafetyImages(canvas) {
+  canvas?.getObjects?.().forEach(o => {
+    if (o.type === 'image' && brfIsSafetyImageSrc(o.getSrc?.() || o.src)) o.set({ selectable: false, evented: false });
+  });
+}
+// Copie du JSON d'une slide avec les images sécurité dans la langue d'export
+function brfSafetyJsonForLang(json, lang) {
+  if (!json || !brfJsonHasSafetyImage(json)) return json;
+  const l = lang === 'en' ? 'en' : 'fr';
+  const copy = JSON.parse(JSON.stringify(json));
+  copy.objects.forEach(o => {
+    if (o.type === 'image' && brfIsSafetyImageSrc(o.src)) o.src = String(o.src).replace(/\/briefing-safety\/(fr|en)\//, `/briefing-safety/${l}/`);
+  });
+  return copy;
+}
+
+// Menu « 📂 Depuis projet » › Slides sécurité pays : insère après la slide courante
+async function brfAddSafetySlidesFromMenu() {
+  document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
+  try {
+    const r = await api('GET', `/projects/${BRF_STUDIO.projectId}`);
+    if (!r?.success) throw new Error('Projet introuvable');
+    const choice = await brfResolveSafetyChoice(r.data, { ask: true });
+    if (!choice || choice.none) return;
+    saveCurrentSlideJson();
+    const n = await brfInsertSafetySlides(choice, BRF_STUDIO.curIdx);
+    if (!n) { toast('Aucune slide sélectionnée', 'warning'); return; }
+    BRF_STUDIO.curIdx = BRF_STUDIO.curIdx + 1;
+    loadSlideIntoCanvas(BRF_STUDIO.curIdx);
+    renderStudioSidebar();
+    toast(`🦺 ${n} slide(s) sécurité ajoutée(s) — en anglais automatiquement à l'export PDF EN`, 'success');
+  } catch (e) {
+    console.error('[brf safety]', e);
+    toast('Erreur : ' + (e.message || e), 'error');
+  }
+}

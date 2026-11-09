@@ -215,7 +215,8 @@ function brfApplyTemplate(type) {
 function applyLogoBackground() {
   if (!BRF_STUDIO?.fabricCanvas) return;
   const c = BRF_STUDIO.fabricCanvas;
-  if (!BRF_STUDIO.logoUrl) {
+  // Slides sécurité pays : image plein cadre déjà signée Viewbox → pas de logo en filigrane
+  if (!BRF_STUDIO.logoUrl || brfCanvasHasSafetyImage(c)) {
     c.backgroundImage = null;
     c.renderAll();
     return;
@@ -508,6 +509,7 @@ function loadSlideIntoCanvas(idx) {
   BRF_STUDIO.fabricCanvas.clear();
   BRF_STUDIO.fabricCanvas.setBackgroundColor('#ffffff', () => BRF_STUDIO.fabricCanvas.renderAll());
   const finish = () => {
+    brfLockSafetyImages(BRF_STUDIO.fabricCanvas);
     applyLogoBackground();
     BRF_STUDIO.fabricCanvas.renderAll();
     // Reset undo/redo pour cette slide + premier snapshot
@@ -677,7 +679,9 @@ async function briefingStudioExportPDF(btn) {
         width: BRF_CANVAS_W, height: BRF_CANVAS_H, backgroundColor: '#ffffff',
       });
       try {
-        await brfLoadIsolatedSlide(canvas, exportSlides[i].json, exportLogo);
+        // Slides sécurité pays : image dans la langue de l'export, sans logo en filigrane
+        const isSafety = brfJsonHasSafetyImage(exportSlides[i].json);
+        await brfLoadIsolatedSlide(canvas, brfSafetyJsonForLang(exportSlides[i].json, lang), isSafety ? null : exportLogo);
         if (lang === 'en') totalTranslated += await brfTranslateSlideTexts(canvas, lang);
         canvas.renderAll();
         const dataUrl = canvas.toDataURL({ format: 'jpeg', quality: 0.95, multiplier: 2 });
@@ -753,6 +757,8 @@ function brfOpenProjectMenu(btn) {
     <button class="brf-pm-item" onclick="brfPickFromProject('planning')">📅 Planning install/démontage</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('location')">📍 Localisation + lien Maps</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('notes')">📓 Notes projet (scope, install...)</button>
+    <div class="brf-pm-section">SÉCURITÉ</div>
+    <button class="brf-pm-item" onclick="brfAddSafetySlidesFromMenu()">🦺 Slides sécurité pays (FR / BE / NL / DE / UK / IT / CH)</button>
     <div class="brf-pm-section">PERSONNES</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('contacts')">📞 Contacts du client</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('team')">👥 Équipes (+ téléphones)</button>
