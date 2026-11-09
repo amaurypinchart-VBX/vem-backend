@@ -27,6 +27,8 @@ import type { Lang } from '../../structure/report/i18n';
 import { LANGS, LANG_LABEL, num } from '../../structure/report/i18n';
 import { CALAGE_LABELS } from '../../structure/report/calageI18n';
 import { translate } from '../../structure/report/translate';
+import type { FrSnowRegion, FrWindSite } from '../../structure/core/codeFR';
+import { DEFAULT_FR_WIND, frOutOfService, serviceWindPressure, spdHorizontalRatio } from '../../structure/core/codeFR';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from '../../structure/report/stackFigure';
@@ -40,6 +42,15 @@ import { GroundLevelsCard, LEVEL_COLORS, levelPointStyle } from './GroundLevels'
 import { freshImport } from '../newVersion';
 
 export interface Hypotheses {
+  /**
+   * référentiel de calcul : absent / 'DE' = Allemagne (DIN EN 13814, notes statico, Prüfbuch TÜV) ; 'FR' = France
+   * (Eurocodes avec annexes nationales françaises + arrêté du 25 juillet 2022 sur les structures provisoires et démontables)
+   */
+  code?: 'DE' | 'FR';
+  /** France : vent (région, catégorie de terrain, durée de l'installation, vent de service) */
+  frWind?: FrWindSite;
+  /** France : neige (région de la carte, altitude du site en m) — la neige au sol en est déduite (`snowKgm2`) */
+  frSnow?: { region: FrSnowRegion; altitude: number };
   bearingPreset: string;
   bearingValue: number;
   bearingUnit: BearingUnit;
@@ -155,8 +166,30 @@ export const DISTRIBUTED_PRESETS = ['slab', 'roof', 'operator'];
 /** Lecture de la portance : choix enregistré, sinon selon le type de support. */
 export const bearingModeOf = (h: Pick<Hypotheses, 'bearingMode' | 'bearingPreset'>): 'pressure' | 'distributed' => h.bearingMode ?? (DISTRIBUTED_PRESETS.includes(h.bearingPreset) ? 'distributed' : 'pressure');
 
+/**
+ * Pressions du vent retenues (kN/m²) : Allemagne = valeurs de l'étape 2 ; France = vent de service de l'arrêté
+ * (q = ½ ρ v²) et vent hors service de NF EN 1991-1-4/NA à la hauteur de l'installation (mm).
+ */
+export function windPressures(h: Pick<Hypotheses, 'code' | 'frWind' | 'windIn' | 'windOut'>, heightMm: number): { windIn: number; windOut: number } {
+  if (h.code !== 'FR') return { windIn: h.windIn, windOut: h.windOut };
+  const s = h.frWind ?? DEFAULT_FR_WIND;
+  return { windIn: serviceWindPressure(s.serviceSpeed) * 1e3, windOut: frOutOfService(s, heightMm) * 1e3 };
+}
+
+/** Hauteur de l'installation pour le vent (mm) : niveaux × hauteur des Viewbox. */
+export function estimateHeight(modules: readonly EstimateModule[]): number {
+  return modules.length ? Math.max(...modules.map((m) => (m.level + 1) * m.height)) : 3080;
+}
+
+/** Surface des planchers ouverts au public (mm²) : charge horizontale de l'arrêté (6 %, 10 % au-delà de 500 m²). */
+function planArea(corners: ReadonlyArray<readonly [number, number]>): number {
+  return Math.abs(corners.reduce((a, p, i) => a + p[0] * corners[(i + 1) % corners.length][1] - corners[(i + 1) % corners.length][0] * p[1], 0)) / 2;
+}
+
 export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false, contact: EstimateOptions['contact'] = null): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
+  const fr = h.code === 'FR';
+  const wind = windPressures(h, estimateHeight(modules));
   return {
     modules,
     ...(extraSupports.length ? { extraSupports } : {}),
@@ -177,9 +210,10 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
         snowRoof: roofSnow(h),
         terraceG: TERRACE.selfWeight + TERRACE.deck,
       },
-      windInService: kNm2(h.windIn),
-      windOutOfService: kNm2(h.windOut),
+      windInService: kNm2(wind.windIn),
+      windOutOfService: kNm2(wind.windOut),
       cp: h.cp,
+      ...(fr ? { code: 'FR' as const, horizontalRatio: spdHorizontalRatio(modules.reduce((a, m) => a + planArea(m.corners), 0)) } : {}),
       middleFeet: h.middleFeet || jacks,
       jacks,
       ...(contact && !jacks ? { contact } : {}),
@@ -189,7 +223,9 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     bearing: bearingFrom(h.bearingValue, h.bearingUnit),
     pointLoadMax: (BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad || bearingModeOf(h) === 'distributed') && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
     bearingMode: bearingModeOf(h),
-    staticoConversion: h.staticoConversion,
+    // France : réactions caractéristiques (pas de conversion statico), pas de Prüfbuch TÜV
+    staticoConversion: fr ? false : h.staticoConversion,
+    ...(fr ? { code: 'FR' as const } : {}),
     thicknesses: h.thicknesses
       .split(/[;,\s]+/)
       .map((x) => parseFloat(x.replace(',', '.')))

@@ -11,7 +11,8 @@ import { boltDiameter, connectionSet } from './core/checks/joints';
 import type { PlywoodResult } from './core/checks/plywood';
 import { checkPlywoodStrip } from './core/checks/plywood';
 import type { Combination } from './core/combos';
-import { buildCombinations, COMBO_DEFAULTS } from './core/combos';
+import { buildCombinations, COMBO_DEFAULTS, COMBO_FR } from './core/combos';
+import { FR_FACTORS } from './core/codeFR';
 import type { Estimate } from './core/estimate';
 import type { ConnectionEntry, LibraryEntry, ModuleTypeEntry, SectionEntry } from './core/library';
 import type { EdgeItem, LoadInputs, LoadModel, PointItem } from './core/loads';
@@ -60,6 +61,12 @@ export interface CalcOptions {
 export const CALC_DEFAULTS: CalcOptions = { ec3Method: 'envelope', jacks: false, jackExtension: 50, calibration: false, upliftAll: true, friction: DEFAULTS.groundFriction.value, internalPressure: true, stairClad: false };
 
 export interface StudyInputs {
+  /**
+   * référentiel de calcul : absent = Allemagne (DIN EN 13814, notes statico, Prüfbuch TÜV) ; 'FR' = Eurocodes avec
+   * annexes nationales françaises et arrêté du 25 juillet 2022 (structures provisoires et démontables) — combinaisons
+   * NF EN 1990/NA, γM0 = γM1 = 1,00, vent de service / hors service, plancher γM 1,2
+   */
+  code?: 'FR';
   modules: PlacedModule[];
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
@@ -122,6 +129,13 @@ export interface StudyRun {
   types?: TypeChecks;
 }
 
+/** Combinaisons du référentiel de l'étude (Allemagne : notes statico ; France : NF EN 1990/NA). */
+export function studyCombinations(inp: Pick<StudyInputs, 'code' | 'sls' | 'loads'>): Combination[] {
+  const snow = (inp.loads.snowRoof ?? 0) > 0;
+  if (inp.code === 'FR') return buildCombinations({ ...COMBO_FR, snow, stabInService: inp.loads.windInService > inp.loads.windOutOfService + 1e-12 });
+  return buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow });
+}
+
 /** Modèle filaire de l'étude (assemblage seul, sans calcul) : aussi utilisé avant le calcul pour trouver les angles dans le vide. */
 export function assembleStudy(inp: StudyInputs): StructuralModel {
   const o = inp.options;
@@ -151,7 +165,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
   const structure = assembleStudy(inp);
   if (structure.errors.length) return Promise.reject(new Error(structure.errors.join(' ; ')));
   const loads = buildLoadCases(structure, { ...inp.loads, edgeItems: inp.edgeItems, pointItems: inp.pointItems, stairClad: !!o.stairClad }, inp.sections);
-  const combos = buildCombinations({ ...COMBO_DEFAULTS, sls: inp.sls, snow: (inp.loads.snowRoof ?? 0) > 0 }).filter((c) => (!inp.classes || inp.classes.includes(c.cls)) && (!inp.comboIds || inp.comboIds.includes(c.id)));
+  const combos = studyCombinations(inp).filter((c) => (!inp.classes || inp.classes.includes(c.cls)) && (!inp.comboIds || inp.comboIds.includes(c.id)));
   const jobs = prepareJobs(structure, loads, combos, DEFAULTS.sway.value);
   // types personnalisés (S12) : assemblages du type de chaque module (jamais VBX-*), liaison d'empilement de l'étude gardée
   const types = typeChecks({ modules: inp.modules, library: inp.library, sections: inp.sections, jacks: o.jacks, edgeItems: inp.edgeItems, stairs: inp.stairs, terraces: inp.terraces });
@@ -162,7 +176,7 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
     sections: [...inp.sections],
     connections: connectionSet(inp.library),
     ...(inp.joints || Object.keys(types.perModule).length ? { moduleConnections: perModule } : {}),
-    ec3: { ...EC3_DEFAULTS, method: o.ec3Method },
+    ec3: { ...EC3_DEFAULTS, method: o.ec3Method, ...(inp.code === 'FR' ? { gammaM0: FR_FACTORS.gammaM0, gammaM1: FR_FACTORS.gammaM1 } : {}) },
     calibration: o.calibration,
     jackExtension: o.jackExtension ?? CALC_DEFAULTS.jackExtension,
   };
@@ -211,15 +225,17 @@ export function runStudy(inp: StudyInputs, runner: StudyRunner, onProgress?: (do
  * travée, kmod 0,8, pression intérieure en option) ; rez-de-chaussée chargé à plus que les étages (5,0 kN/m²) comme
  * statico 18-0573 § 3.4.4, qui fixe cette charge : trois travées, kmod 0,9, qEd = 1,35 · (g + q).
  */
-export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'> & { library?: readonly LibraryEntry[] }): PlywoodResult {
+export function floorPlywood(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options' | 'code'> & { library?: readonly LibraryEntry[] }): PlywoodResult {
   // types personnalisés (S12) : plancher de chaque type, portée mesurée sur ses barres ; Viewbox seules : inchangé
   if (inp.modules.some((m) => m.params.frame)) return floorPlywoodByType(inp);
   return floorPlywoodOf(inp);
 }
 
-function floorPlywoodOf(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>, deck?: DeckOverride): PlywoodResult {
+function floorPlywoodOf(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options' | 'code'>, deck?: DeckOverride): PlywoodResult {
   const qg = inp.loads.liveGround ?? inp.loads.live;
-  if (!(qg > inp.loads.live)) return plywoodStrip(inp, 'upper', inp.loads.live, deck);
+  // France : la même charge (5 kN/m², arrêté du 25 juillet 2022) peut être partout — rez-de-chaussée (trois travées) et
+  // étages (une travée) vérifiés chacun
+  if (!(qg > inp.loads.live) && inp.code !== 'FR') return plywoodStrip(inp, 'upper', inp.loads.live, deck);
   const ground = plywoodStrip(inp, 'ground', qg, deck);
   const parts = inp.modules.some((m) => m.level > 0) ? [ground, plywoodStrip(inp, 'upper', inp.loads.live, deck)] : [ground];
   const blocked = parts.find((x) => x.blocked)?.blocked;
@@ -231,7 +247,9 @@ function floorPlywoodOf(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>,
  * Bande de plancher sous la charge d'exploitation q (N/mm²) : étage, ou rez-de-chaussée (trois travées, statico
  * 18-0573 § 3.4.4) quand q dépasse la charge des étages ; g = sol compris dans la pesée + revêtement ajouté.
  */
-export function plywoodStrip(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>, target: 'ground' | 'upper', q: number, deck?: DeckOverride): PlywoodResult {
+export function plywoodStrip(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options' | 'code'>, target: 'ground' | 'upper', q: number, deck?: DeckOverride): PlywoodResult {
+  // France : NF EN 1990/NA (1,35 / 1,5) et γM du contreplaqué 1,2 (NF EN 1995-1-1/NA) ; une travée ou trois selon le plancher
+  if (inp.code === 'FR') return plywoodStripFR(inp, target, q, deck);
   const tpl = inp.modules[0]?.params.plywood;
   // couches du plancher (2 × 18 mm croisées sur la Viewbox) ; une seule dans le calage statico, comme ses notes
   const layers = inp.options.calibration ? 1 : (deck?.layers ?? tpl?.floorLayers ?? 1);
@@ -269,6 +287,31 @@ export function plywoodStrip(inp: Pick<StudyInputs, 'modules' | 'loads' | 'optio
   });
 }
 
+/** Bande de plancher, référentiel France : 1,35 g + 1,5 q (+ 1,5 · 0,6 pression intérieure sous le vent de service). */
+function plywoodStripFR(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'>, target: 'ground' | 'upper', q: number, deck?: DeckOverride): PlywoodResult {
+  const tpl = inp.modules[0]?.params.plywood;
+  const ground = target === 'ground';
+  return checkPlywoodStrip({
+    material: deck?.material ?? tpl?.material ?? 'CP-F20/15',
+    thickness: deck?.thickness ?? tpl?.thickness ?? 18,
+    layers: deck?.layers ?? tpl?.floorLayers ?? 1,
+    span: deck?.span ?? tpl?.maxSpan ?? 800,
+    gammaM: FR_FACTORS.plywood,
+    g: (deck?.g ?? inp.loads.floorFinish) + (inp.loads.floorExtra ?? 0),
+    kmod: ground ? 0.9 : 0.8,
+    q,
+    gammaG: FR_FACTORS.gammaGsup,
+    gammaQ: FR_FACTORS.gammaQ,
+    // public présent : pression intérieure sous le vent de service seulement (hors service, la structure est évacuée)
+    internal: inp.options.internalPressure ? 0.8 * inp.loads.windInService : 0,
+    gammaW: FR_FACTORS.gammaQ * FR_FACTORS.psi0Wind,
+    label: `${deck?.name ? `${deck.name} — ` : ''}${ground ? 'Plancher du rez-de-chaussée' : 'Plancher'}`,
+    // rez-de-chaussée : trois travées (plancher continu sur les traverses), comme le référentiel Allemagne
+    ...(ground ? { spans: deck?.spans ?? 3 } : {}),
+    clause: 'NF EN 1995-1-1/NA ; NF EN 1990/NA',
+  });
+}
+
 /** Plancher d'un type personnalisé (S12) : matériau, épaisseur, portée et nombre de travées mesurés sur ses barres. */
 interface DeckOverride {
   name: string;
@@ -302,7 +345,7 @@ export function deckSpan(p: PlacedModule['params']): { span: number; count: numb
   return { span, count: pick.length };
 }
 
-function floorPlywoodByType(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options'> & { library?: readonly LibraryEntry[] }): PlywoodResult {
+function floorPlywoodByType(inp: Pick<StudyInputs, 'modules' | 'loads' | 'options' | 'code'> & { library?: readonly LibraryEntry[] }): PlywoodResult {
   const groups = new Map<string, PlacedModule[]>();
   for (const m of inp.modules) groups.set(m.templateKey, [...(groups.get(m.templateKey) ?? []), m]);
   const parts: PlywoodResult[] = [];
@@ -436,5 +479,5 @@ export function inputKey(inp: StudyInputs): string {
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}:${(e as SectionEntry).material ?? ''}${typeExtra(e)}`)}`)
     .join('|');
   const joints = inp.joints ? inp.joints.rows.map((r) => `${r.connection}:${r.status}:${r.modules.join('+')}:${r.capacities.map((c) => Math.round(c.after ?? 0)).join('/')}`) : [];
-  return JSON.stringify([joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], ...(inp.groundContact && !inp.options.jacks ? [inp.groundContact] : []), inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
+  return JSON.stringify([...(inp.code === 'FR' ? ['code:FR'] : []), joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], ...(inp.groundContact && !inp.options.jacks ? [inp.groundContact] : []), inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
 }

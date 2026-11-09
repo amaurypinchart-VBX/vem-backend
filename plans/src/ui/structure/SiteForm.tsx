@@ -9,6 +9,8 @@ import type { WindZone } from '../../structure/core/wind';
 import { fmtNumber } from '../../structure/core/units';
 import type { Hypotheses } from './GroundPanel';
 import { DEFAULT_HYP, bearingModeOf } from './GroundPanel';
+import type { FrDuration, FrSnowRegion, FrTerrain, FrWindRegion, FrWindSite } from '../../structure/core/codeFR';
+import { DEFAULT_FR_WIND, FR_DURATIONS, FR_DURATION_KEYS, FR_SNOW_KEYS, FR_SNOW_SK200, FR_TERRAINS, FR_TERRAIN_KEYS, FR_WIND_REGIONS, RHO_AIR, SPD, frPeak, frSnowGround, serviceWindPressure } from '../../structure/core/codeFR';
 
 const G = 9.81;
 const n = (v: number, d = 0) => fmtNumber(v, d);
@@ -19,6 +21,16 @@ const kNOf = (kgm2: number) => (kgm2 * G) / 1000;
 const kmhOf = (q: number) => Math.sqrt((2 * q * 1000) / 1.25) * 3.6;
 const qOf = (kmh: number) => (0.5 * 1.25 * (kmh / 3.6) ** 2) / 1000;
 const PERSON_KG = 80;
+
+/** Valeurs propres au référentiel France (arrêté du 25 juillet 2022 : 5 kN/m² partout où le public accède). */
+const FR_DEFAULTS: Partial<Hypotheses> = { code: 'FR', frWind: DEFAULT_FR_WIND, live: 5, liveGround: 5, staticoConversion: false };
+/**
+ * Retour au référentiel Allemagne : charges du public du calcul de type statico 18-0573. Fonction (pas une constante) :
+ * GroundPanel importe ce fichier, DEFAULT_HYP n'existe pas encore quand ce module est évalué.
+ */
+const deDefaults = (): Partial<Hypotheses> => ({ code: 'DE', live: DEFAULT_HYP.live, liveGround: DEFAULT_HYP.liveGround });
+/** km/h de la vitesse v (m/s) */
+const kmh = (v: number) => v * 3.6;
 
 /** Neige au sol (kg/m²) des cas courants, en plaine (à vérifier selon l'altitude du site). */
 const SNOW_PRESETS: Array<{ label: string; kg: number }> = [
@@ -129,20 +141,62 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
   const snow = hyp.snowKgm2 ?? 0;
   const [advanced, setAdvanced] = useState(false);
   const zones: WindZone[] = [1, 2, 3, 4];
+  const fr = hyp.code === 'FR';
+  const frw: FrWindSite = hyp.frWind ?? DEFAULT_FR_WIND;
+  const setFrw = (patch: Partial<FrWindSite>) => setHyp((h) => ({ ...h, frWind: { ...(h.frWind ?? DEFAULT_FR_WIND), ...patch } }));
+  // hauteur pour le vent hors service (l'étude reprend la hauteur exacte du modèle)
+  const heightMm = Math.max(1, levels) * 3080;
+  const frPk = fr ? frPeak(frw, heightMm) : null;
+  const frOut = fr ? (frw.manualQp && frw.manualQp > 0 ? frw.manualQp : frPk!.qp) * 1e3 : 0;
+  const setSnowFR = (region: FrSnowRegion, altitude: number) =>
+    setHyp((h) => ({ ...h, frSnow: { region, altitude }, snowKgm2: Math.round((frSnowGround(region, Math.min(2000, altitude)) * 1000) / G) }));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="card">
         <div className="card-body row" style={{ gap: 10, flexWrap: 'wrap' }}>
           <span style={{ flex: 1, minWidth: 300, lineHeight: 1.5 }}>
             Ces hypothèses décrivent <b>le site et l’usage</b> de l’installation : ce que le sol supporte, combien de personnes montent, le vent, la neige. Le calcul (étape 3) et le calage (étape 5) s’en
-            servent. Les valeurs proposées sont celles des notes de calcul statico ; changez-les seulement si le site ou l’usage est différent. Chaque valeur est expliquée et convertie dans les unités du
+            servent. {fr ? 'Les valeurs proposées sont celles des Eurocodes (annexes nationales françaises) et de l’arrêté du 25 juillet 2022' : 'Les valeurs proposées sont celles des notes de calcul statico'} ; changez-les seulement si le site ou l’usage est différent. Chaque valeur est expliquée et convertie dans les unités du
             calcul (en gris).
           </span>
-          <button className="btn small ghost" onClick={() => setHyp(() => ({ ...DEFAULT_HYP }))}>
+          <button className="btn small ghost" onClick={() => setHyp((h) => ({ ...DEFAULT_HYP, ...(h.code === 'FR' ? FR_DEFAULTS : {}) }))}>
             Revenir aux valeurs par défaut
           </button>
         </div>
       </div>
+
+      <Section
+        icon="📐"
+        title="Référentiel de calcul (pays)"
+        intro="Les règles de calcul dépendent du pays où l’installation est montée : charges, vent, neige, coefficients de sécurité, contrôles."
+      >
+        <Q
+          label="Pays / règles de calcul"
+          help={
+            fr ? (
+              <>
+                <b>France</b> : Eurocodes avec les annexes nationales françaises (NF EN 1990, 1991-1-1, 1991-1-3, 1991-1-4, 1993-1-1, 1995-1-1) et l’<b>arrêté du 25 juillet 2022</b> sur les structures
+                provisoires et démontables. Vent de service au moins 72 km/h (évacuation au-delà), tempête hors exploitation selon la région de vent, 5 kN/m² de public, coefficients 1,35 / 1,5,
+                acier γM0 = 1,00. Pas de Prüfbuch TÜV (livre d’examen allemand). Valeurs des annexes à confirmer sur les textes AFNOR.
+              </>
+            ) : (
+              <>
+                <b>Allemagne</b> : constructions temporaires (DIN EN 13814, DIN EN 1991-1-4/NA), calcul de type statico 18-0573 et Prüfbuch TÜV 190060 B. Valable aussi par défaut hors d’Allemagne quand
+                aucun autre référentiel n’est demandé.
+              </>
+            )
+          }
+        >
+          <select
+            value={fr ? 'FR' : 'DE'}
+            data-testid="design-code"
+            onChange={(e) => setHyp((h) => ({ ...h, ...(e.target.value === 'FR' ? { ...FR_DEFAULTS, frWind: h.frWind ?? DEFAULT_FR_WIND } : deDefaults()) }))}
+          >
+            <option value="DE">Allemagne — DIN EN 13814, statico, Prüfbuch TÜV</option>
+            <option value="FR">France — Eurocodes + arrêté du 25 juillet 2022</option>
+          </select>
+        </Q>
+      </Section>
 
       <Section icon="🌱" title="Le sol" intro="Les Viewbox reposent sur le sol par leurs pieds (et des plaques de calage). Il faut savoir quel poids le sol accepte sans s’enfoncer.">
         <Q label="Sur quoi pose-t-on les Viewbox ?" help={preset?.value ? `Valeur courante pour ce sol : ${n(kgOf(preset.value * 1e3), 0)} kg par m² (${preset.source}).` : 'Pour ce support, la valeur doit être donnée par l’exploitant du site ou du bâtiment.'}>
@@ -285,14 +339,22 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
       <Section icon="👥" title="Le public" intro="Les personnes sur les planchers (et les terrasses) pèsent sur la structure et poussent aussi un peu de côté quand elles bougent.">
         <Q
           label="Charge du public au rez-de-chaussée"
-          help={`Calcul de type statico 18-0573 (Prüfbuch TÜV) : 5,0 kN/m² au rez-de-chaussée (« 500 kg/m² » dans la note), public sans foule dense, soit environ ${n(persons(5), 1)} personnes de ${PERSON_KG} kg par m². Ne la baisser que si l’accès est vraiment limité.`}
+          help={
+            fr
+              ? `Arrêté du 25 juillet 2022 (ensembles accessibles au public) : 5 kN/m², soit environ ${n(persons(5), 1)} personnes de ${PERSON_KG} kg par m², avec une poussée horizontale de 6 % (10 % au-delà de 500 m² de planchers). Ne la baisser que si l’accès est vraiment limité.`
+              : `Calcul de type statico 18-0573 (Prüfbuch TÜV) : 5,0 kN/m² au rez-de-chaussée (« 500 kg/m² » dans la note), public sans foule dense, soit environ ${n(persons(5), 1)} personnes de ${PERSON_KG} kg par m². Ne la baisser que si l’accès est vraiment limité.`
+          }
           conv={`= ${n(hyp.liveGround ?? 5, 2)} kN/m² ≈ ${n(persons(hyp.liveGround ?? 5), 1)} personnes par m²`}
         >
           <Num value={kgOf(hyp.liveGround ?? 5)} onChange={(v) => set('liveGround', kNOf(v))} /> kg/m²
         </Q>
         <Q
           label="Charge du public aux étages"
-          help={`Valeur réglementaire pour un étage ouvert au public sans foule dense (DIN EN 13814, statico 18-0573) : 357 kg par m², soit environ ${n(persons(3.5), 1)} personnes de ${PERSON_KG} kg par m². L’organisateur empêche une foule dense (personnel formé).`}
+          help={
+            fr
+              ? `Arrêté du 25 juillet 2022 : 5 kN/m² aussi aux étages accessibles au public (environ ${n(persons(5), 1)} personnes par m²).`
+              : `Valeur réglementaire pour un étage ouvert au public sans foule dense (DIN EN 13814, statico 18-0573) : 357 kg par m², soit environ ${n(persons(3.5), 1)} personnes de ${PERSON_KG} kg par m². L’organisateur empêche une foule dense (personnel formé).`
+          }
           conv={`= ${n(hyp.live, 2)} kN/m² ≈ ${n(persons(hyp.live), 1)} personnes par m²`}
         >
           <Num value={kgOf(hyp.live)} onChange={(v) => set('live', kNOf(v))} /> kg/m²
@@ -334,6 +396,64 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
           </>
         }
       >
+        {fr ? (
+          <>
+            <Q
+              label="Vent de service (vitesse d’évacuation)"
+              help={`Arrêté du 25 juillet 2022 : la structure, occupée ou non, résiste à un « vent de service » d’au moins 20 m/s (72 km/h) ; au-delà, le public est évacué (consigne du rapport). Une valeur plus haute permet d’exploiter plus longtemps, la structure est alors calculée pour elle.`}
+              conv={`= ${n(frw.serviceSpeed, 1)} m/s ; q = ½ · ${n(RHO_AIR, 3)} · v² = ${n(serviceWindPressure(frw.serviceSpeed) * 1e3, 3)} kN/m²${frw.serviceSpeed < SPD.serviceMin - 1e-9 ? ' — sous le minimum de l’arrêté' : ''}`}
+            >
+              <Num value={kmh(frw.serviceSpeed)} onChange={(v) => setFrw({ serviceSpeed: Math.max(0, v) / 3.6 })} width={60} /> km/h
+            </Q>
+            <Q label="Région de vent (carte de l’annexe nationale)" help="Région du département du site sur la carte des vents de NF EN 1991-1-4/NA (France métropolitaine, 4 régions). Outre-mer ou relief marqué : saisir la pression plus bas.">
+              <select value={frw.region} data-testid="fr-wind-region" onChange={(e) => setFrw({ region: Number(e.target.value) as FrWindRegion })}>
+                {([1, 2, 3, 4] as FrWindRegion[]).map((r) => (
+                  <option key={r} value={r}>
+                    Région {r} — vb,0 = {FR_WIND_REGIONS[r]} m/s
+                  </option>
+                ))}
+              </select>
+            </Q>
+            <Q label="Environnement du site (catégorie de terrain)" help={FR_TERRAINS[frw.terrain].label}>
+              <select value={frw.terrain} data-testid="fr-wind-terrain" onChange={(e) => setFrw({ terrain: e.target.value as FrTerrain })}>
+                {FR_TERRAIN_KEYS.map((t) => (
+                  <option key={t} value={t}>
+                    {t} — {FR_TERRAINS[t].label.split(',')[0]}
+                  </option>
+                ))}
+              </select>
+            </Q>
+            <Q
+              label="Durée de l’installation"
+              help="Une installation de courte durée est calculée pour la tempête de la période correspondante (NF EN 1991-1-6) : 2 ans pour 3 jours, 5 ans pour 3 mois, 10 ans pour un an, 50 ans au-delà — jamais moins de 20 m/s pour moins de 3 mois."
+            >
+              <select value={frw.duration} data-testid="fr-wind-duration" onChange={(e) => setFrw({ duration: e.target.value as FrDuration })}>
+                {FR_DURATION_KEYS.map((d) => (
+                  <option key={d} value={d}>
+                    {FR_DURATIONS[d].label} (tempête sur {FR_DURATIONS[d].years} ans)
+                  </option>
+                ))}
+              </select>
+            </Q>
+            <Q
+              label="Tempête à supporter, installation vide"
+              help={
+                <>
+                  Calculée (NF EN 1991-1-4/NA, relief plat) pour une hauteur de {n(heightMm / 1000, 1)} m — l’étude reprend la hauteur exacte du modèle. Site particulier (colline, bord de falaise, outre-mer) :
+                  saisir la pression de pointe donnée par le bureau d’études (0 = calculée).
+                </>
+              }
+              conv={
+                frw.manualQp && frw.manualQp > 0
+                  ? `pression saisie : ${n(frw.manualQp * 1e3, 2)} kN/m²`
+                  : `vb = ${n(frPk!.vb, 1)} m/s${frPk!.raised ? ' (minimum 20 m/s)' : ''} ; qp = ${n(frOut, 2)} kN/m² ≈ rafale de ${n(kmhOf(frOut))} km/h`
+              }
+            >
+              <Num value={(frw.manualQp ?? 0) * 1e3} onChange={(v) => setFrw({ manualQp: v > 0 ? v / 1e3 : undefined })} width={60} decimals={2} /> kN/m²
+            </Q>
+          </>
+        ) : (
+          <>
         <Q
           label="Vent maximal avec du public (vitesse d’arrêt)"
           help="Au-delà de cette vitesse de vent (rafales), l’exploitation s’arrête et le public est évacué : c’est la consigne de vent du rapport. Valeur de la norme des constructions temporaires (DIN EN 13814) pour une hauteur jusqu’à 8 m : 64 km/h."
@@ -367,10 +487,18 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
         >
           <Num value={kmhOf(hyp.windOut)} onChange={(v) => setHyp((h) => ({ ...h, windOut: qOf(v), windProfile: Math.abs(qOf(v) - h.windOut) > 1e-6 ? 'manual' : h.windProfile }))} width={60} /> km/h
         </Q>
-        <Check checked={hyp.evacuateTop} onChange={(v) => set('evacuateTop', v)}>
-          <b>Le dernier niveau est vidé par vent fort</b>
-          <div className="hint">Hors exploitation, il n’y a plus personne au dernier étage (comme sur les terrasses). Décocher si du public peut rester en haut pendant une tempête.</div>
-        </Check>
+          </>
+        )}
+        {fr ? (
+          <div className="hint" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', lineHeight: 1.45 }}>
+            Au-delà du vent de service, toute l’installation est évacuée : la tempête hors exploitation est calculée sans public.
+          </div>
+        ) : (
+          <Check checked={hyp.evacuateTop} onChange={(v) => set('evacuateTop', v)}>
+            <b>Le dernier niveau est vidé par vent fort</b>
+            <div className="hint">Hors exploitation, il n’y a plus personne au dernier étage (comme sur les terrasses). Décocher si du public peut rester en haut pendant une tempête.</div>
+          </Check>
+        )}
       </Section>
 
       <Section
@@ -383,9 +511,24 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
           help={
             <>
               Poids de la neige tombée sur un m² de sol, d’après la carte de neige du pays (en plaine ; plus en altitude). Sur les toitures plates, on compte 80 % de cette valeur.
+              {fr && (
+                <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 4, alignItems: 'center' }}>
+                  <span>Région de neige (NF EN 1991-1-3/NA) :</span>
+                  <select value={hyp.frSnow?.region ?? ''} data-testid="fr-snow-region" onChange={(e) => (e.target.value ? setSnowFR(e.target.value as FrSnowRegion, hyp.frSnow?.altitude ?? 100) : setHyp((h) => ({ ...h, frSnow: undefined, snowKgm2: 0 })))}>
+                    <option value="">— choisir —</option>
+                    {FR_SNOW_KEYS.map((r) => (
+                      <option key={r} value={r}>
+                        {r} ({n(FR_SNOW_SK200[r], 2)} kN/m² en plaine)
+                      </option>
+                    ))}
+                  </select>
+                  <span>altitude</span>
+                  <Num value={hyp.frSnow?.altitude ?? 100} onChange={(v) => hyp.frSnow && setSnowFR(hyp.frSnow.region, Math.max(0, v))} width={60} /> m
+                </div>
+              )}
               <div className="row" style={{ gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                {SNOW_PRESETS.map((p) => (
-                  <button key={p.label} className={`btn small ${snow === p.kg ? '' : 'ghost'}`} onClick={() => set('snowKgm2', p.kg)}>
+                {SNOW_PRESETS.filter((p) => !fr || p.kg === 0).map((p) => (
+                  <button key={p.label} className={`btn small ${snow === p.kg ? '' : 'ghost'}`} onClick={() => setHyp((h) => ({ ...h, snowKgm2: p.kg, ...(p.kg === 0 ? { frSnow: undefined } : {}) }))}>
                     {p.label}
                   </button>
                 ))}
@@ -424,10 +567,12 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
             <Q label="Marge supplémentaire sur les charges au sol" help="Majoration forfaitaire des réactions au sol (par prudence, si des charges sont mal connues).">
               <Num value={hyp.extraPct} onChange={(v) => set('extraPct', v)} width={60} /> %
             </Q>
-            <Check checked={hyp.staticoConversion} onChange={(v) => set('staticoConversion', v)}>
-              <b>Taille des plaques calculée comme statico</b>
-              <div className="hint">Utilise la charge de calcul divisée par 1,35 au lieu des charges réelles (méthode des notes statico, un peu différente).</div>
-            </Check>
+            {!fr && (
+              <Check checked={hyp.staticoConversion} onChange={(v) => set('staticoConversion', v)}>
+                <b>Taille des plaques calculée comme statico</b>
+                <div className="hint">Utilise la charge de calcul divisée par 1,35 au lieu des charges réelles (méthode des notes statico, un peu différente).</div>
+              </Check>
+            )}
             <Check checked={hyp.diffusion} onChange={(v) => set('diffusion', v)}>
               <b>Proposer des couches continues (diffusion à 45°)</b>
               <div className="hint">Pour un sol avec une couche de grave ou de sable compacté qui répartit la charge.</div>

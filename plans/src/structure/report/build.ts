@@ -28,6 +28,8 @@ import { ellipsis, textWidth, wrapText } from './metrics';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
 import { translate } from './translate';
 import { CUSTOM_LABELS, neutralText } from './customI18n';
+import { FR_CODE_LABELS } from './frCodeI18n';
+import { frWindRecords, speedOfFR } from '../core/codeFR';
 import { isCustomType, typeEntryOf } from '../core/moduleTypes';
 
 export type ReportVariant = 'compact' | 'detailed';
@@ -139,15 +141,19 @@ export function comboFormula(c: Combination, lang: Lang, cases?: ReadonlySet<str
 
 export function buildReport(inp: ReportInput): ReportOutput {
   const { lang, run, study } = inp;
-  const L: Labels = LABELS[lang];
-  const T = TUV_LABELS[lang];
+  // référentiel France (Eurocodes + arrêté du 25 juillet 2022) : ses textes remplacent ceux du référentiel Allemagne
+  const frCode = study.code === 'FR';
+  const FC = FR_CODE_LABELS[lang];
+  const L: Labels = frCode ? { ...LABELS[lang], ...FC.labels, generalNotes: LABELS[lang].generalNotes.map((x) => x.replace('DIN EN 1993-1-8', 'NF EN 1993-1-8')) } : LABELS[lang];
+  const T = frCode ? { ...TUV_LABELS[lang], ...FC.tuv } : TUV_LABELS[lang];
   const E = (s: string) => translate(lang, s);
   const N = (v: number, d = 2) => num(lang, v, d);
   const kN = (v: number, d = 1) => `${N(v / 1e3, d)} kN`;
   const blocks: Block[] = [];
   const rec = (r: CalcRecord): Block => ({
     t: 'record',
-    rec: { ...r, title: E(r.title), clause: E(r.clause), formula: E(r.formula), withValues: E(r.withValues) },
+    // France : la pression au sol se vérifie contre la portance admissible du site (NF EN 1997-1), pas DIN EN 13814
+    rec: { ...r, title: E(r.title), clause: E(frCode && r.clause === 'DIN EN 13814' ? 'NF EN 1997-1' : r.clause), formula: E(r.formula), withValues: E(r.withValues) },
     labels: { combination: L.combination, elements: L.elements },
   });
   const etaCell = (eta: number | undefined, blocked?: boolean): TableCell => {
@@ -168,9 +174,12 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const ground = calageVerdict(inp.calage);
   const verdict = worstVerdict([run.verdict.verdict, ground.verdict]);
   const H = Math.max(...s.modules.map((m) => m.origin[1] + m.params.topZ)) - Math.min(...s.modules.map((m) => m.origin[1]));
-  const vStop = speedLimit(loads.windInService);
-  const vWatch = speedLimit(loads.windInService, 0.75);
-  const vOut = speedLimit(loads.windOutOfService);
+  // France : la consigne est le vent de service lui-même (ρ = 1,225 kg/m³ de NF EN 1991-1-4)
+  const floor1 = (v: number) => Math.floor(v * 10 + 1e-9) / 10;
+  const frWind = frCode ? loads.frSite?.wind : undefined;
+  const vStop = frCode ? floor1(frWind?.serviceSpeed ?? speedOfFR(loads.windInService)) : speedLimit(loads.windInService);
+  const vWatch = frCode ? floor1(0.75 * vStop) : speedLimit(loads.windInService, 0.75);
+  const vOut = frCode ? floor1(speedOfFR(loads.windOutOfService)) : speedLimit(loads.windOutOfService);
   const surfaces = loads.evacuateTopLevel && levels > 1 ? L.topLevelAndOutdoor : L.outdoorSurfaces;
   const closedNames = (loads.closedLevels ?? []).filter((l) => l > 0 && l < levels).map((l) => L.levelName(l)).join(', ');
   const ballast = slidingBallast(run, mu);
@@ -196,7 +205,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   // remarques (avertissements du calcul et du modèle, contrôles du rapport)
   // longueur > 30 m : consigne du § 1.2, pas de doublon dans les remarques
   const remarks: string[] = [...new Set([...inp.sceneWarnings, ...run.warnings.filter((w) => !w.startsWith('Longueur de l’installation')), ...(inp.calage?.warnings ?? [])].map(E))];
-  if (H > 8000 + 1 && loads.windInService < 0.3e-3 - 1e-9) remarks.unshift(L.heightWindWarning(N(H / 1e3, 1), N(loads.windInService * 1e3)));
+  if (!frCode && H > 8000 + 1 && loads.windInService < 0.3e-3 - 1e-9) remarks.unshift(L.heightWindWarning(N(H / 1e3, 1), N(loads.windInService * 1e3)));
   if (!inp.bearing) remarks.unshift(L.bearingMissing);
   // structure d'un type de Viewbox modifiée dans la bibliothèque : toujours signalée en tête
   for (const key of new Set(s.modules.map((m) => m.templateKey))) {
@@ -396,6 +405,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
   blocks.push({ t: 'heading', level: 1, num: '1', text: L.ch1 });
   blocks.push({ t: 'heading', level: 2, num: '1.1', text: L.s11 });
   blocks.push({ t: 'para', text: L.basisText(inp.model.fileName, inp.model.date) });
+  if (frCode) blocks.push({ t: 'para', text: FC.basis, bold: true });
   blocks.push({ t: 'para', text: L.descriptionTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'para', text: inp.texts?.description?.trim() || L.descriptionText(s.modules.length, levels) });
   if (inp.texts?.description?.trim()) blocks.push({ t: 'para', text: L.aiNote, size: SIZE.small, color: GREY });
@@ -418,7 +428,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       L.impactNote,
       (study.loads.snowRoof ?? 0) > 0 ? L.snowNoteWith : L.snowNote,
       ...(closedNames ? [L.closedLevelsNote(closedNames)] : []),
-      ...(levels >= 3 ? [L.beyondPrufbuch(levels)] : []),
+      ...(levels >= 3 && !frCode ? [L.beyondPrufbuch(levels)] : []),
       ...(lengthMax > 30000 + 1 ? [T.beyond30m(N(lengthMax / 1e3, 1))] : []),
       T.frictionNote(N(mu), mu >= 0.6 - 1e-9),
       noVbx ? CX.ballast : T.ballastGroundOnly,
@@ -465,8 +475,11 @@ export function buildReport(inp: ReportInput): ReportOutput {
   });
   blocks.push(...calageTables(false));
   blocks.push({ t: 'para', text: L.groundNote, size: SIZE.small, color: GREY });
-  // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573) : seulement avec des Viewbox
-  if (!noVbx) {
+  // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573) : seulement avec des Viewbox, en Allemagne
+  if (frCode) {
+    blocks.push({ t: 'para', text: FC.legalTitle, bold: true, after: 0.6 });
+    blocks.push({ t: 'bullets', items: FC.legal, size: SIZE.small });
+  } else if (!noVbx) {
     const CL = CALAGE_LABELS[inp.lang];
     const c = inp.calage;
     const tuvLine = !c ? '' : !c.tuv.tuvMinimum ? CL.tuvOff : c.tuv.ok === false ? CL.tuvKo(c.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : c.tuv.ok ? CL.tuvOk : '';
@@ -545,16 +558,20 @@ export function buildReport(inp: ReportInput): ReportOutput {
   });
   blocks.push({ t: 'para', text: L.outOfServiceLive(loads.evacuateTopLevel && levels > 1 ? L.evacuatedTop : L.evacuatedOutdoor) });
   blocks.push({ t: 'heading', level: 3, num: '2.2.2', text: L.s222 });
-  blocks.push({ t: 'bullets', items: [L.horizontalText, ...(noVbx ? [] : [L.handrail]), L.impact] });
+  const publicArea = study.modules.filter((m) => !(loads.closedLevels ?? []).includes(m.level)).reduce((a, m) => a + (m.params.x0 + m.params.x1) * (m.params.y0 + m.params.y1), 0);
+  blocks.push({ t: 'bullets', items: [frCode ? FC.horizontal(N(loads.horizontalRatio * 100, 0), N(publicArea / 1e6, 0)) : L.horizontalText, ...(noVbx && !frCode ? [] : [L.handrail]), L.impact] });
   blocks.push({ t: 'heading', level: 2, num: '2.3', text: L.s23 });
   blocks.push({ t: 'para', text: (study.loads.snowRoof ?? 0) > 0 ? L.snowWith(N((study.loads.snowRoof! / 0.8) * 1e3), N(study.loads.snowRoof! * 1e3), N((study.loads.snowRoof! * 1e6) / 9.81, 0)) : L.snowText });
+  if (frCode && (study.loads.snowRoof ?? 0) > 0 && loads.frSite?.snow) blocks.push({ t: 'para', text: `sk : ${FC.snowRegion(loads.frSite.snow.region, N(loads.frSite.snow.altitude, 0))}`, size: SIZE.small, color: GREY });
   blocks.push({ t: 'heading', level: 2, num: '2.4', text: L.s24 });
   blocks.push({ t: 'para', text: L.windTwoStates });
   blocks.push({ t: 'para', text: L.inServiceTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: [['q', `${N(loads.windInService * 1e3)} kN/m² (h = ${N(H / 1e3, 1)} m)`]], labelWidth: 20 });
   blocks.push({ t: 'para', text: L.outOfServiceTitle, bold: true, after: 0.6 });
-  blocks.push({ t: 'para', text: loads.windProfile ? T.outOfService[loads.windProfile] : L.outOfServiceText });
+  blocks.push({ t: 'para', text: frCode ? `${L.outOfServiceText}${frWind ? ` (${FC.windSite(frWind.region, frWind.terrain, frWind.duration)})` : ''}` : loads.windProfile ? T.outOfService[loads.windProfile] : L.outOfServiceText });
   blocks.push({ t: 'kv', rows: [['qp,k', `${N(loads.windOutOfService * 1e3)} kN/m²`]], labelWidth: 20 });
+  // France : calcul du vent pas à pas (vent de service, vitesse de référence, pression de pointe)
+  if (frWind) for (const r of frWindRecords(frWind, H)) blocks.push(rec(r));
   blocks.push({ t: 'para', text: L.cpTitle, bold: true, after: 0.6 });
   blocks.push({ t: 'kv', rows: L.cpRows.map(([a, b]) => [lang === 'en' ? a.replace(/(\d),(\d)/g, '$1.$2') : a, b] as [string, string]), labelWidth: 26 });
   blocks.push({ t: 'bullets', items: [L.internalPressure, L.roofSuction], size: SIZE.small });
