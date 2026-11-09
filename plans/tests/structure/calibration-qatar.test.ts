@@ -32,7 +32,8 @@ const modules = [0, 1].flatMap((lv) => [vbx(`A${lv}`, 0, 0, 0, lv), vbx(`B${lv}`
 const key = (p: [number, number, number]) => p.map((c) => Math.round(c * 1000)).join(':');
 
 describe.skipIf(!file)('calage statico 24-0569 (Qatar, modèle SCIA)', () => {
-  const M = JSON.parse(readFileSync(file!, 'utf8')) as SciaModel;
+  // describe.skipIf exécute quand même le corps pour collecter les tests : ne lire le fichier que s'il existe
+  const M: SciaModel = file ? (JSON.parse(readFileSync(file, 'utf8')) as SciaModel) : { nodes: {}, members: {} };
   const m = assembleStructure(modules, { sections: sectionMap(SEED), jacks: false, middleFeet: false, upliftReleases: 'vertical', calibration: true });
   const ours = (n: number) => key([m.fem.nodes[n].x / 1000, -m.fem.nodes[n].z / 1000, m.fem.nodes[n].y / 1000]);
   const viewboxFamily = (f: string) => /^(Randträger|Deckenträger|Bodenträger|Stütze|Fußaufnahme)/.test(f);

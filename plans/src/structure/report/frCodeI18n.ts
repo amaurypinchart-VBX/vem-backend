@@ -12,6 +12,10 @@ export interface FrCodeLabels {
   tuv: Partial<TuvLabels>;
   /** référentiel (§ 1.1) */
   basis: string;
+  /** au-delà du vent de service, toute l'installation est évacuée */
+  evacuated: string;
+  /** exploitation hors service (§ 2.2.1) */
+  outOfServiceLive: string;
   horizontal: (pct: string, area: string) => string;
   legalTitle: string;
   legal: string[];
@@ -51,6 +55,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
         ]),
         ['Arrêté du 25 juillet 2022', 'Règles de sécurité et dispositions techniques applicables aux structures provisoires et démontables (modifié le 13 mai 2025)'],
       ],
+      windPlan: {
+        watch: ['Vigilance', 'Surveillance renforcée (anémomètre relevé toutes les 15 min), responsable prévenu, évacuation de l’installation préparée.'],
+        stop: ['Arrêt d’exploitation', 'Vent de service atteint : arrêt de l’exploitation, évacuation de toute l’installation et des abords ; portes et accès fermés.'],
+        limit: ['Limite hors service', 'Limite du dimensionnement hors service : personne dans la construction ni à proximité, périmètre de sécurité.'],
+      },
       liveText: 'Exploitation des planchers (arrêté du 25 juillet 2022, ensembles accessibles au public)',
       handrail: 'Garde-corps et mains courantes : charges de l’arrêté du 25 juillet 2022 — non vérifiés par cette pré-étude.',
       inServiceTitle: 'En service (vent de service, arrêté du 25 juillet 2022)',
@@ -75,6 +84,8 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
           ? `Glissement vérifié avec μ = ${mu} : calage en bois posé sur béton ou asphalte, couches de bois vissées entre elles et au pied (valeur à justifier pour d’autres matériaux). Bois sur bois ou acier sur bois non liés : μ = 0,4, lest à recalculer.`
           : `Glissement vérifié avec μ = ${mu} (bois sur bois, acier sur bois, couches non liées).`,
     },
+    evacuated: 'de toute l’installation',
+    outOfServiceLive: 'Hors service (au-delà du vent de service) : toute l’installation est évacuée, pas d’exploitation.',
     basis:
       'Référentiel de calcul : France — Eurocodes avec les annexes nationales françaises et arrêté du 25 juillet 2022 fixant les règles de sécurité et les dispositions techniques applicables aux structures provisoires et démontables. Les capacités des assemblages et le poids de la Viewbox sont repris des documents du produit.',
     horizontal: (pct, area) => `Charge horizontale dynamique simultanée à l’exploitation verticale, au niveau du plancher, dans les 4 directions (arrêté du 25 juillet 2022) : H = ${pct} % de V (${area} m² de planchers ouverts au public ; 6 % jusqu’à 500 m², 10 % au-delà).`,
@@ -110,6 +121,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
         ]),
         ['Erlass vom 25. Juli 2022', 'Französische Sicherheitsregeln und technische Bestimmungen für vorübergehende, demontierbare Bauten (geändert am 13. Mai 2025)'],
       ],
+      windPlan: {
+        watch: ['Vorwarnung', 'Verstärkte Überwachung (Anemometer alle 15 min ablesen), Verantwortlichen informieren, Räumung der Anlage vorbereiten.'],
+        stop: ['Betriebseinstellung', 'Betriebswind erreicht: Betrieb einstellen, gesamte Anlage und Umgebung räumen; Türen und Zugänge schließen.'],
+        limit: ['Grenze außer Betrieb', 'Bemessungsgrenze außer Betrieb: niemand in oder in der Nähe der Konstruktion, Sicherheitsabstand einhalten.'],
+      },
       liveText: 'Verkehrslast (französischer Erlass vom 25. Juli 2022, öffentlich zugängliche Anlagen)',
       handrail: 'Geländer und Handläufe: Lasten des französischen Erlasses vom 25. Juli 2022 — in dieser Vorbemessung nicht nachgewiesen.',
       inServiceTitle: 'In Betrieb (Betriebswind, französischer Erlass vom 25. Juli 2022)',
@@ -134,6 +150,8 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
           ? `Gleiten nachgewiesen mit μ = ${mu}: Holzunterpallung auf Beton oder Asphalt, Holzlagen untereinander und mit dem Fuß verschraubt (für andere Materialien nachzuweisen). Holz auf Holz oder Stahl auf Holz ohne Verbindung: μ = 0,4, Ballast neu zu berechnen.`
           : `Gleiten nachgewiesen mit μ = ${mu} (Holz auf Holz, Stahl auf Holz, Lagen nicht verbunden).`,
     },
+    evacuated: 'der gesamten Anlage',
+    outOfServiceLive: 'Außer Betrieb (über dem Betriebswind): die gesamte Anlage ist geräumt, keine Verkehrslast.',
     basis:
       'Berechnungsgrundlage: Frankreich — Eurocodes mit den französischen nationalen Anhängen und Erlass vom 25. Juli 2022 über die Sicherheitsregeln und technischen Bestimmungen für vorübergehende, demontierbare Bauten. Die Tragfähigkeiten der Anschlüsse und das Gewicht der Viewbox sind den Produktunterlagen entnommen.',
     horizontal: (pct, area) => `Dynamische Horizontallast gleichzeitig mit der vertikalen Verkehrslast in Höhe der Bodenebene, in den 4 Richtungen (französischer Erlass vom 25. Juli 2022): H = ${pct} % von V (${area} m² öffentlich zugängliche Böden; 6 % bis 500 m², darüber 10 %).`,
@@ -169,6 +187,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
         ]),
         ['Order of 25 July 2022', 'French safety rules and technical provisions for temporary demountable structures (amended on 13 May 2025)'],
       ],
+      windPlan: {
+        watch: ['Alert', 'Increased monitoring (anemometer read every 15 min), person in charge informed, evacuation of the installation prepared.'],
+        stop: ['Stop operation', 'Service wind reached: stop operation, evacuate the whole installation and its surroundings; close doors and accesses.'],
+        limit: ['Out-of-service limit', 'Out-of-service design limit: nobody inside or near the structure, safety perimeter.'],
+      },
       liveText: 'Imposed floor load (French order of 25 July 2022, structures open to the public)',
       handrail: 'Railings and handrails: loads of the French order of 25 July 2022 — not verified by this preliminary study.',
       inServiceTitle: 'In service (service wind, French order of 25 July 2022)',
@@ -193,6 +216,8 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
           ? `Sliding verified with μ = ${mu}: timber packing on concrete or asphalt, timber layers screwed together and to the foot (to be justified for other materials). Timber on timber or steel on timber not fixed: μ = 0.4, ballast to be recalculated.`
           : `Sliding verified with μ = ${mu} (timber on timber, steel on timber, layers not fixed).`,
     },
+    evacuated: 'the whole installation',
+    outOfServiceLive: 'Out of service (above the service wind): the whole installation is cleared, no imposed load.',
     basis:
       'Design basis: France — Eurocodes with the French national annexes and order of 25 July 2022 on the safety rules and technical provisions for temporary demountable structures. The connection capacities and the weight of the Viewbox are taken from the product documents.',
     horizontal: (pct, area) => `Dynamic horizontal load acting with the vertical imposed load, at floor level, in the 4 directions (French order of 25 July 2022): H = ${pct} % of V (${area} m² of floors open to the public; 6 % up to 500 m², 10 % above).`,

@@ -195,7 +195,10 @@ describe('rapport en référentiel France', () => {
       // (sauf la phrase qui dit justement qu'il n'y a pas de Prüfbuch en France)
       expect(all.split('\n').filter((l) => /DIN EN 13814|MVV|Prüfbuch|Fliegende? Bau/.test(l) && !/^(Pas de Prüfbuch|Kein TÜV|No TÜV)/.test(l))).toEqual([]);
       expect(all).toContain('NF EN 1991-1-4/NA');
+      // au-delà du vent de service : toute l'installation est évacuée
+      expect(all).not.toMatch(/dernier niveau et des surfaces|obersten Geschosses und aller|top level and the outdoor/);
       if (lang === 'fr') {
+        expect(all).toContain('évacuation de toute l’installation');
         expect(all).toContain('arrêté du 25 juillet 2022');
         expect(all).toContain('NF EN 1990/NA');
         continue;

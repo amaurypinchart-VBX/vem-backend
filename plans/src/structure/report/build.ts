@@ -180,7 +180,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const vStop = frCode ? floor1(frWind?.serviceSpeed ?? speedOfFR(loads.windInService)) : speedLimit(loads.windInService);
   const vWatch = frCode ? floor1(0.75 * vStop) : speedLimit(loads.windInService, 0.75);
   const vOut = frCode ? floor1(speedOfFR(loads.windOutOfService)) : speedLimit(loads.windOutOfService);
-  const surfaces = loads.evacuateTopLevel && levels > 1 ? L.topLevelAndOutdoor : L.outdoorSurfaces;
+  // France : au-delà du vent de service, toute l'installation est évacuée (arrêté du 25 juillet 2022)
+  const surfaces = frCode ? FC.evacuated : loads.evacuateTopLevel && levels > 1 ? L.topLevelAndOutdoor : L.outdoorSurfaces;
   const closedNames = (loads.closedLevels ?? []).filter((l) => l > 0 && l < levels).map((l) => L.levelName(l)).join(', ');
   const ballast = slidingBallast(run, mu);
   const gTotal = run.loads.cases.filter((c) => c.group === 'G').reduce((a, c) => a - c.resultant[1], 0);
@@ -556,7 +557,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     ],
     labelWidth: 70,
   });
-  blocks.push({ t: 'para', text: L.outOfServiceLive(loads.evacuateTopLevel && levels > 1 ? L.evacuatedTop : L.evacuatedOutdoor) });
+  blocks.push({ t: 'para', text: frCode ? FC.outOfServiceLive : L.outOfServiceLive(loads.evacuateTopLevel && levels > 1 ? L.evacuatedTop : L.evacuatedOutdoor) });
   blocks.push({ t: 'heading', level: 3, num: '2.2.2', text: L.s222 });
   const publicArea = study.modules.filter((m) => !(loads.closedLevels ?? []).includes(m.level)).reduce((a, m) => a + (m.params.x0 + m.params.x1) * (m.params.y0 + m.params.y1), 0);
   blocks.push({ t: 'bullets', items: [frCode ? FC.horizontal(N(loads.horizontalRatio * 100, 0), N(publicArea / 1e6, 0)) : L.horizontalText, ...(noVbx && !frCode ? [] : [L.handrail]), L.impact] });

@@ -293,7 +293,8 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   // notes du cartouche (rapport) : portance et réserve
   const lines: string[] = [];
   if (inp.bearing) lines.push(`${L.bearing} : ${L.bearingValue(N(inp.bearing.value), E(inp.bearing.label))}`);
-  lines.push(`Prüfbuch ${TUV.prufbuch} (TÜV Rheinland) · ${TUV.statics}`);
+  // Prüfbuch TÜV : seulement quand il s'applique (Viewbox, référentiel Allemagne)
+  if (!c.tuv.notApplicable) lines.push(`Prüfbuch ${TUV.prufbuch} (TÜV Rheinland) · ${TUV.statics}`);
   lines.push(L.watermark);
   const notes = lines.flatMap((l) => wrapText(l, 100, 2.9)).slice(0, 20).join('\n');
   const legend: LegendEntry[] = c.types.map((t) => ({ key: `calage-${t.key}`, label: `${E(t.label)} — ${t.reactions.length}`, color: typeColor(t.typeKey) }));
