@@ -1580,6 +1580,37 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] info_requests : ${e.message}`);
   }
+  // Planning estimatif de montage (onglet Infos, js/19-assembly-plan.js) : un par projet et par phase
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "assembly_plans" (
+        "id"              TEXT NOT NULL,
+        "project_id"      TEXT NOT NULL,
+        "phase"           TEXT NOT NULL,
+        "data"            JSONB NOT NULL DEFAULT '{}',
+        "revision"        INTEGER NOT NULL DEFAULT 0,
+        "updated_by"      TEXT,
+        "updated_by_name" TEXT,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "assembly_plans_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "assembly_plans_project_id_phase_key" ON "assembly_plans" ("project_id", "phase")`,
+      `DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'assembly_plans_project_id_fkey') THEN
+          ALTER TABLE "assembly_plans"
+            ADD CONSTRAINT "assembly_plans_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] table assembly_plans créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] assembly_plans : ${e.message}`);
+  }
   await migrateBriefingNext();
 }
 
