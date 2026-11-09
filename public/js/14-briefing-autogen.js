@@ -460,6 +460,19 @@ const fmt = d => {
       saveSlide();
     }
 
+    // ─── SLIDES PLANNING ESTIMATIF (tableau de l'onglet Infos, js/19-assembly-plan.js) ───
+    if (typeof apBriefingImage === 'function') {
+      for (const ph of ['installation', 'dismantling']) {
+        try {
+          const im = await apBriefingImage(projectId, ph);
+          if (!im) continue;
+          newSlide('📅 Planning', im.title);
+          await apFabricImage(BRF_STUDIO.fabricCanvas, im);
+          saveSlide();
+        } catch (e) { console.warn('[brf planning estimatif]', e); }
+      }
+    }
+
    // ─── SLIDE LIEU (avec plan OSM affiché, drawable) ───────────
     if (project.address) {
       newSlide('Lieu', 'Localisation');

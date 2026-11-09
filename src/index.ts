@@ -51,6 +51,7 @@ import assistantRoutes from './routes/assistant';
 import checklistRoutes from './routes/checklists';
 import formationRoutes from './routes/formation';
 import infoRequestRoutes from './routes/infoRequests';
+import assemblyPlanRoutes from './routes/assemblyPlans';
 import publicInfoRequestRoutes from './routes/publicInfoRequest';
 import { startInfoRequestScheduler } from './services/infoRequestService';
 
@@ -138,6 +139,8 @@ app.use(`${API}/tickets`,        authMiddleware, scopeGuard('tickets'), ticketRo
 app.use(`${API}/handover`,       authMiddleware, scopeGuard('handover'), handoverRoutes);
 // Check-list de montage (bibliothèque + check-list de chaque projet, affichée dans le handover)
 app.use(`${API}/checklists`,     authMiddleware, scopeGuard('checklists'), checklistRoutes);
+// Planning estimatif de montage / démontage (onglet Infos du projet)
+app.use(`${API}/assembly-plans`, authMiddleware, scopeGuard('assemblyPlans'), assemblyPlanRoutes);
 
 app.use(`${API}/daily-reports`,  authMiddleware, scopeGuard('daily'), dailyRoutes);
 app.use(`${API}/warehouse`,      authMiddleware, scopeGuard('warehouse'), warehouseRoutes);

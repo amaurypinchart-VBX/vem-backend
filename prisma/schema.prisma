@@ -233,6 +233,7 @@ model Project {
   loadingLists     LoadingList[]
   checklists       ProjectChecklist[]
   infoRequests     InfoRequest[]
+  assemblyPlans    AssemblyPlan[]
 
   @@map("projects")
 }
@@ -1427,4 +1428,23 @@ model BriefingTemplate {
   createdAt DateTime @default(now()) @map("created_at")
   @@index([ownerId])
   @@map("briefing_templates")
+}
+
+// Planning estimatif de montage / démontage (onglet Infos du projet, public/js/19-assembly-plan.js) :
+// un planning par projet et par phase ; `data` = lignes, barres, jalons, réglages d'affichage (JSON, voir le front).
+model AssemblyPlan {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  phase       String   // 'installation' | 'dismantling'
+  data        Json     @default("{}")
+  revision    Int      @default(0)
+  updatedById String?  @map("updated_by")
+  updatedBy   String?  @map("updated_by_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, phase])
+  @@map("assembly_plans")
 }

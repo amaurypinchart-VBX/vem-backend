@@ -157,6 +157,14 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'POST', p: '/:id/send', need: 'handover', proj: async (p) => [await look.handover(p.id)] },
     { m: 'POST', p: '/:id/signature-token', need: 'handover', proj: async (p) => [await look.handover(p.id)] },
   ],
+  // Planning estimatif de montage : lecture pour l'équipe du projet, modification / export / envoi pour le site manager
+  assemblyPlans: [
+    { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },
+    { m: 'PUT', p: '/project/:projectId/:phase', need: 'write', proj: (p) => [p.projectId] },
+    { m: 'DELETE', p: '/project/:projectId/:phase', need: 'write', proj: (p) => [p.projectId] },
+    { m: 'POST', p: '/project/:projectId/:phase/file', need: 'write', proj: (p) => [p.projectId] },
+    { m: 'POST', p: '/project/:projectId/:phase/send', need: 'write', proj: (p) => [p.projectId] },
+  ],
   checklists: [
     { m: 'GET', p: '/templates', need: 'read', list: true },
     { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },

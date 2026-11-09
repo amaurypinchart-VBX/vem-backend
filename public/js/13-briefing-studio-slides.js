@@ -755,6 +755,7 @@ function brfOpenProjectMenu(btn) {
     <div class="brf-pm-section">PROJET</div>
     <button class="brf-pm-item" onclick="brfPickFromProject('infos')">🏷️ Infos projet (résumé)</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('planning')">📅 Planning install/démontage</button>
+    <button class="brf-pm-item" onclick="brfAddAssemblyPlanSlides()">📅 Planning estimatif de montage (tableau)</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('location')">📍 Localisation + lien Maps</button>
     <button class="brf-pm-item" onclick="brfPickFromProject('notes')">📓 Notes projet (scope, install...)</button>
     <div class="brf-pm-section">SÉCURITÉ</div>

@@ -30,6 +30,8 @@ async function loadProjectDetail(id) {
   if (typeof loadChecklistCard === 'function') loadChecklistCard(id, 'prep');
   // Demandes d'infos par mail (js/18-info-requests.js), même logique : chargée à part
   if (typeof loadInfoRequestsCard === 'function') loadInfoRequestsCard(id);
+  // Planning estimatif de montage / démontage (js/19-assembly-plan.js)
+  if (typeof loadAssemblyPlanCard === 'function') loadAssemblyPlanCard(id);
 
   document.getElementById('detail-name').textContent = p.name;
   document.getElementById('detail-sub').textContent = `${p.internalNumber} · ${p.client?.name||''}`;
