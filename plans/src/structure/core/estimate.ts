@@ -6,6 +6,7 @@ import type { CalcRecord } from './records';
 import { fmtNumber } from './units';
 import type { DrawnBlock } from './blocks';
 import { contactStrips, floorOfEstimate } from './groundContact';
+import { FR_FACTORS } from './codeFR';
 
 export type P2 = [number, number];
 
@@ -102,6 +103,11 @@ export interface EstimateOptions {
   evacuateTopLevel: boolean;
   /** majoration forfaitaire supplémentaire (0,1 = +10 %) */
   extraFactor: number;
+  /**
+   * référentiel France (NF EN 1990/NA, arrêté du 25 juillet 2022) : 1,35 G + 1,5 Q / W avec les ψ0 (vent 0,6, public 0,7,
+   * neige 0,5), structure évacuée hors service (pas de public), G favorable 1,0 sous le vent hors service
+   */
+  code?: 'FR';
 }
 
 export const ESTIMATE_DEFAULTS: Omit<EstimateOptions, 'loads'> = {
@@ -405,6 +411,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     { n: 'y−', d: [0, -1] },
   ];
   const combos = (design: boolean): Combo[] => {
+    if (opt.code === 'FR') return combosFR(design);
     const f = (v: number) => (design ? v : 1);
     const out: Combo[] = [{ name: design ? 'CO1 : 1,35 G' : 'G', gG: f(opt.gammaG), gQ: 0, useQaB: false, gW: 0, windQ: 0, withH: false, dir: null }];
     for (const { n, d } of dirs) {
@@ -423,6 +430,35 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       const psi = f(opt.gammaQ) * 0.5;
       out.push({ name: design ? 'G + S (neige)' : 'G + S (neige)', gG: f(opt.gammaGQ), gQ: 0, useQaB: false, gW: 0, windQ: 0, withH: false, dir: null, gS: f(opt.gammaQ) });
       for (const { n, d } of dirs) out.push({ name: `G + W hors service + ψ0 S (${n})`, gG: f(opt.gammaGQ), gQ: 0, useQaB: false, gW: f(opt.gammaW), windQ: opt.windOutOfService, withH: false, dir: d, gS: psi });
+    }
+    return out;
+  };
+
+  // référentiel France : coefficients et ψ0 de NF EN 1990/NA ; hors service, structure évacuée (pas de public)
+  const combosFR = (design: boolean): Combo[] => {
+    const F = FR_FACTORS;
+    const gG = design ? F.gammaGsup : 1;
+    const g = design ? F.gammaQ : 1;
+    const base = { useQaB: false, gS: 0 };
+    const out: Combo[] = [{ ...base, name: design ? 'CO1 : 1,35 G' : 'G', gG, gQ: 0, gW: 0, windQ: 0, withH: false, dir: null }];
+    for (const { n, d } of dirs) {
+      out.push(
+        { ...base, name: `G + Q + H (${n})`, gG, gQ: g, gW: 0, windQ: 0, withH: true, dir: d },
+        { ...base, name: `G + W en service (${n})`, gG, gQ: 0, gW: g, windQ: opt.windInService, withH: false, dir: d },
+        { ...base, name: `G + Q + H + ψ0 W en service (${n})`, gG, gQ: g, gW: g * F.psi0Wind, windQ: opt.windInService, withH: true, dir: d },
+        { ...base, name: `G + ψ0 Q + H + W en service (${n})`, gG, gQ: g * F.psi0Live, gW: g, windQ: opt.windInService, withH: true, dir: d },
+        { ...base, name: `G + W hors service (${n})`, gG, gQ: 0, gW: g, windQ: opt.windOutOfService, withH: false, dir: d },
+      );
+      if (design) out.push({ ...base, name: `G favorable + W hors service (${n})`, gG: F.gammaGinf, gQ: 0, gW: g, windQ: opt.windOutOfService, withH: false, dir: d });
+    }
+    if ((L.snowRoof ?? 0) > 0) {
+      out.push({ ...base, name: 'G + S (neige)', gG, gQ: 0, gW: 0, windQ: 0, withH: false, dir: null, gS: g });
+      for (const { n, d } of dirs)
+        out.push(
+          { ...base, name: `G + W hors service + ψ0 S (${n})`, gG, gQ: 0, gW: g, windQ: opt.windOutOfService, withH: false, dir: d, gS: g * F.psi0Snow },
+          { ...base, name: `G + S + ψ0 W hors service (${n})`, gG, gQ: 0, gW: g * F.psi0Wind, windQ: opt.windOutOfService, withH: false, dir: d, gS: g },
+          { ...base, name: `G + Q + H + ψ0 S (${n})`, gG, gQ: g, gW: 0, windQ: 0, withH: true, dir: d, gS: g * F.psi0Snow },
+        );
     }
     return out;
   };
@@ -664,13 +700,15 @@ export interface AddedSupport {
  * pied central, hors escaliers) s'y ajoute (plaque commune), sinon il forme son propre groupe « T » / « TM ».
  * Par combinaison : ELU 1,35 G (sans public) ou 1,10 G + γQ · Q, ELS G (+ Q), stabilité 1,0 G — côté de la sécurité.
  */
-export function addSupports(est: Estimate, extras: readonly AddedSupport[] | undefined, tol = 100): Estimate {
+export function addSupports(est: Estimate, extras: readonly AddedSupport[] | undefined, tol = 100, code?: 'FR'): Estimate {
   if (!extras?.length) return est;
+  // coefficients des combinaisons avec public : Allemagne (notes statico) 1,10 G + 1,35 Q ; France (NF EN 1990/NA) 1,35 G + 1,5 Q
+  const [gGQ, gQ] = code === 'FR' ? [FR_FACTORS.gammaGsup, FR_FACTORS.gammaQ] : [1.1, 1.35];
   const reactions: GroupReaction[] = est.reactions.map((r) => ({ ...r, combos: r.combos?.map((c) => ({ ...c })) }));
   const add = (c: ComboReaction, G: number, Q: number) => {
     if (c.cls === 'STAB') c.R += G;
     else if (c.cls === 'SLS') c.R += G + (c.gQ > 0 ? c.gQ * Q : 0);
-    else c.R += c.gQ > 0 ? 1.1 * G + c.gQ * Q : 1.35 * G;
+    else c.R += c.gQ > 0 ? gGQ * G + c.gQ * Q : 1.35 * G;
     if (c.gQ > 0) c.Q += Q;
   };
   const refresh = (r: GroupReaction) => {
@@ -712,7 +750,7 @@ export function addSupports(est: Estimate, extras: readonly AddedSupport[] | und
         refresh(best);
       } else {
         best.Rk += x.G + x.Q;
-        best.REd += Math.max(1.35 * x.G, 1.1 * x.G + 1.35 * x.Q);
+        best.REd += Math.max(1.35 * x.G, gGQ * x.G + gQ * x.Q);
         best.RkMin += x.G;
         best.REdMin += x.G;
       }
@@ -721,7 +759,7 @@ export function addSupports(est: Estimate, extras: readonly AddedSupport[] | und
     n++;
     const combos: ComboReaction[] = [
       { combo: 'CO1 : 1,35 G', cls: 'ULS', R: 1.35 * x.G, gQ: 0, Q: 0 },
-      { combo: '1,10 G + 1,35 Q', cls: 'ULS', R: 1.1 * x.G + 1.35 * x.Q, gQ: 1.35, Q: x.Q },
+      { combo: code === 'FR' ? '1,35 G + 1,5 Q' : '1,10 G + 1,35 Q', cls: 'ULS', R: gGQ * x.G + gQ * x.Q, gQ, Q: x.Q },
       { combo: 'G + Q', cls: 'SLS', R: x.G + x.Q, gQ: 1, Q: x.Q },
       { combo: 'G', cls: 'SLS', R: x.G, gQ: 0, Q: 0 },
       { combo: 'G (stabilité)', cls: 'STAB', R: x.G, gQ: 0, Q: 0 },

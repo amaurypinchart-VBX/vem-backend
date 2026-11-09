@@ -52,6 +52,11 @@ export interface CalageInput {
   pointLoadMax?: number;
   /** Rz,k = Rz,Ed / 1,35 (méthode statico) au lieu de la réaction caractéristique calculée */
   staticoConversion: boolean;
+  /**
+   * référentiel France (Eurocodes + arrêté du 25 juillet 2022) : pas de Prüfbuch TÜV (livre d'examen allemand) — ni
+   * plaques minimales, ni texte TÜV ; appuis ajoutés (pieds de terrasse) avec 1,35 G + 1,5 Q
+   */
+  code?: 'FR';
   thicknesses: number[];
   stock: StockPlate[];
   commercial: CommercialPlate[];
@@ -536,7 +541,7 @@ function withRemedy(inp: CalageInput, res: CalageResult, applied: AppliedRemedy)
 
 function computeCalageBase(inp: CalageInput): CalageResult {
   const fem = inp.reactions && inp.estimate.jacks && inp.reactionsEnvelope !== false && inp.modules.length ? envelopeReactions(inp.reactions, estimateReactions(inp.modules, inp.estimate)) : inp.reactions;
-  const est0 = addSupports(fem ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
+  const est0 = addSupports(fem ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance, inp.code);
   const publicLoad = inp.publicLimit ? Math.max(0, inp.publicLimit.persons) * inp.publicLimit.kg * 9.81 : undefined;
   const limit = (e: Estimate) => (publicLoad === undefined ? e : limitPublic(e, publicLoad));
   const est = limit(est0);
@@ -546,7 +551,9 @@ function computeCalageBase(inp: CalageInput): CalageResult {
   // Prüfbuch TÜV 190060 B : seulement sous des Viewbox (types personnalisés S12 : « non comparable », aucun texte TÜV)
   const custom = new Set(inp.modules.filter((m) => m.family === 'other').map((m) => m.id));
   const viewboxPresent = !inp.modules.length || inp.modules.some((m) => m.family !== 'other');
-  const tuvOn = (inp.tuvMinimum ?? true) && viewboxPresent;
+  // France : le Prüfbuch (livre d'examen allemand des constructions temporaires) ne s'applique pas
+  const tuvApplicable = viewboxPresent && inp.code !== 'FR';
+  const tuvOn = (inp.tuvMinimum ?? true) && tuvApplicable;
   const unknownContact = inp.modules.filter((m) => m.contact === null).map((m) => m.id);
   // appuis de calage : vérins voisins sur une même plaque, réactions additionnées par combinaison (avant le public limité)
   const groupsP = plateGroups(est0.reactions, inp.modules, inp.estimate.groupTolerance);
@@ -1076,7 +1083,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     const u = blockAxes(inp.modules);
     materials.unshift(
       ...mergeMaterials(
-        inp.blocks.map((b) => ({ label: `Bloc de calage ${blockMaterial(b.material).name.toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg })),
+        inp.blocks.map((b) => ({ label: `Bloc de calage ${blockMaterial(b.material).name.replace(/\s*\(.*\)$/, '').toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg })),
       ),
     );
     if (tuvOn && blockOf.size) {
@@ -1122,7 +1129,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     ...(roadwayOn ? { roadwayOutline: unionLoops(inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, overhang + 30))) } : {}),
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
-    tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(viewboxPresent ? {} : { notApplicable: true }) },
+    tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(tuvApplicable ? {} : { notApplicable: true }) },
     ...(centredBlocks.length ? { centredBlocks } : {}),
     ...(blk?.unused.length ? { looseBlocks: blk.unused.map((b) => ({ id: b.id, massKg: b.massKg, outline: blockOutline(b) })) } : {}),
     levels: inp.levels?.length ? levelSurvey(est.reactions.map((r) => ({ id: r.group.id, position: r.group.position, jack: !!r.group.jack })), inp.levels, inp.jackMax ?? JACK_MAX_EXTENSION) : null,
@@ -1141,7 +1148,7 @@ export interface PublicMax {
 
 /** Public maximal admissible (personnes de `kg` kg) avec le sol et le calage choisis : recherche par dichotomie. */
 export function maxPublic(inp: CalageInput, kg: number): PublicMax | null {
-  const est = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance);
+  const est = addSupports(inp.reactions ?? estimateReactions(inp.modules, inp.estimate), inp.extraSupports, inp.estimate.groupTolerance, inp.code);
   if (!est.reactions.length || !est.reactions.every((r) => r.combos?.length) || !(kg > 0)) return null;
   const fullPersons = Math.ceil(fullPublic(est) / (kg * 9.81) - 1e-9);
   const ok = (persons: number) => computeCalage({ ...inp, reactions: est, extraSupports: undefined, publicLimit: { persons, kg }, noAdvice: true }).checks.every((c) => c.eta <= 1);

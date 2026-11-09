@@ -238,7 +238,8 @@ await page.locator('a', { hasText: 'Statische Vorbemessung' }).waitFor({ timeout
 console.log('Rapports enregistrés :', await page.locator('a', { hasText: '.pdf' }).count());
 // pieds à vérin : tiges Tr 24 × 5, sortie 5 cm, 6 par Viewbox → calcul, tiges vérifiées, calage sur platines
 await page.getByRole('button', { name: /3\. Calcul/ }).click();
-await page.getByText('Pieds à vérin utilisés').click();
+// étape 3 « Comment les Viewbox reposent au sol » (05.11.2026) : choix « Sur les pieds à vérin »
+await page.getByTestId('support-jacks').check();
 await page.getByText(/Tige Tr 24 × 5 classe 10\.9/).waitFor();
 console.log('Vérins :', (await page.getByText(/Tige Tr 24 × 5 classe 10\.9/).innerText()).trim());
 await page.getByRole('button', { name: /Relancer le calcul|Lancer le calcul/ }).click();
@@ -253,6 +254,26 @@ await shootAll('structure-verins');
 const [dlv] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByRole('button', { name: '⬇ Plan des appuis au sol (PDF)' }).click()]);
 await dlv.saveAs(shots + 'appuis-verins.pdf');
 console.log('Plan des appuis (vérins) :', dlv.suggestedFilename());
+// référentiel France (Eurocodes + arrêté du 25 juillet 2022) : choix à l'étape 2, calcul, calage sans Prüfbuch, rapport
+await page.getByRole('button', { name: /2\. Site/ }).click();
+await page.getByTestId('design-code').selectOption('FR');
+await page.getByTestId('fr-wind-region').selectOption('2');
+await page.getByTestId('fr-wind-duration').selectOption('3m');
+await page.waitForTimeout(300);
+console.log('France — vent hors service :', (await page.getByText(/≈ rafale de/).innerText()).trim());
+await page.getByRole('button', { name: /3\. Calcul/ }).click();
+await page.getByRole('button', { name: /Relancer le calcul|Lancer le calcul/ }).click();
+await page.getByRole('button', { name: /Voir les résultats/ }).waitFor({ timeout: 600000 });
+await page.getByRole('button', { name: /Voir les résultats/ }).click();
+await page.getByText('Par famille').waitFor();
+await page.getByRole('button', { name: /5\. Sol & calage/ }).click();
+await page.getByText('Plaques de roulage — répartition uniforme').waitFor({ timeout: 120000 });
+console.log('France — option Prüfbuch TÜV affichée :', await page.getByText(/Plaques minimales du Prüfbuch/).count());
+await page.getByRole('button', { name: /6\. Rapport/ }).click();
+await page.getByTestId('pdf-lang').first().selectOption('fr');
+const [dlf] = await Promise.all([page.waitForEvent('download', { timeout: 300000 }), page.getByRole('button', { name: '⬇ PDF du rapport' }).click()]);
+await dlf.saveAs(shots + 'rapport-france.pdf');
+console.log('Rapport France :', dlf.suggestedFilename());
 // Réglages › Bibliothèque structure : les réponses mémorisées y figurent
 await page.getByRole('button', { name: '← Modèles' }).click();
 await page.getByRole('button', { name: 'Réglages' }).click();

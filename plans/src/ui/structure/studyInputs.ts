@@ -12,7 +12,8 @@ import type { CalcOptions, StudyInputs } from '../../structure/studyRun';
 import { withMods } from '../../structure/advisor/variant';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { Hypotheses } from './GroundPanel';
-import { roofSnow } from './GroundPanel';
+import { roofSnow, windPressures } from './GroundPanel';
+import { DEFAULT_FR_WIND, spdHorizontalRatio } from '../../structure/core/codeFR';
 import { TERRACE, terraceSupports } from '../../structure/core/terrace';
 import type { AddedSupport } from '../../structure/core/estimate';
 import { moduleTypes, typeLoadInputs } from '../../structure/core/moduleTypes';
@@ -87,8 +88,16 @@ export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMo
   // types de structure personnalisés (S12) : sections de leurs barres (catalogue, nuances), poids et sol par type
   const sections = frameSections(sceneModel.modules, sectionMap(library));
   const types = moduleTypes(sceneModel.modules, library, sections, { viewboxKg: hyp.moduleWeightKg, weights: hyp.moduleWeights });
+  // référentiel France : vent de l'arrêté / de NF EN 1991-1-4 à la hauteur réelle, charge horizontale selon la surface ouverte au public
+  const fr = hyp.code === 'FR';
+  const mods = sceneModel.modules;
+  const height = mods.length ? Math.max(...mods.map((m) => m.origin[1] + m.params.topZ)) - Math.min(...mods.map((m) => m.origin[1])) : 3080;
+  const wind = windPressures(hyp, height);
+  const closed = new Set(hyp.closedLevels ?? []);
+  const publicArea = mods.filter((m) => !closed.has(m.level)).reduce((a, m) => a + (m.params.x0 + m.params.x1) * (m.params.y0 + m.params.y1), 0);
   // murs, vitrages, portes, garde-corps, logos : objet par objet d'après le modèle (étape 1), jamais en forfait
   const base: StudyInputs = {
+    ...(fr ? { code: 'FR' as const } : {}),
     modules: sceneModel.modules,
     edgeItems: sceneModel.edgeItems,
     pointItems: sceneModel.pointItems,
@@ -110,21 +119,21 @@ export function studyBase(src: InputsSource): { base: StudyInputs; mods: StudyMo
       liveGround: kNm2(hyp.liveGround ?? DEFAULTS.liveLoadGround.value * 1e3),
       // le toit d'une Viewbox ne reçoit jamais de public : seulement une Viewbox posée dessus ou un élément terrasse
       roofLive: 0,
-      horizontalRatio: DEFAULTS.horizontalRatio.value,
+      horizontalRatio: fr ? spdHorizontalRatio(publicArea) : DEFAULTS.horizontalRatio.value,
       roofAccessible: false,
       evacuateTopLevel: hyp.evacuateTop,
       closedLevels: hyp.closedLevels ?? [],
       snowRoof: roofSnow(hyp),
-      windInService: kNm2(hyp.windIn),
-      windOutOfService: kNm2(hyp.windOut),
-      windProfile: hyp.windProfile,
+      windInService: kNm2(wind.windIn),
+      windOutOfService: kNm2(wind.windOut),
+      ...(fr ? { frSite: { wind: hyp.frWind ?? DEFAULT_FR_WIND, ...(hyp.frSnow ? { snow: hyp.frSnow } : {}) } } : { windProfile: hyp.windProfile }),
       roofTerraces: sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module!),
       terraceG: TERRACE.selfWeight + TERRACE.deck,
       cp: { windward: DEFAULTS.cpWindward.value, leeward: DEFAULTS.cpLeeward.value, parallel: DEFAULTS.cpParallel.value, roofStability: DEFAULTS.cpRoofStability.value },
       ...typeLoadInputs(types, DEFAULTS.floorFinish.value),
     },
     middleFeet: hyp.middleFeet,
-    sls: !hyp.staticoConversion,
+    sls: fr ? true : !hyp.staticoConversion,
     options: calc,
     blocking: sceneModel.errors,
     ...(sceneModel.blocks?.length ? { groundBlocks: sceneModel.blocks } : {}),

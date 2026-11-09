@@ -229,7 +229,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         h={planH}
         text={2.2}
         axes
-        plates={checks?.length ? planPlates(checks, { remedy, slab }) : undefined}
+        plates={checks?.length ? planPlates(checks, { remedy, slab, lang }) : undefined}
         zoneFill={(m) => (zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
           const z = zoneOf.get(m.id);

@@ -26,6 +26,9 @@ import type { Terrain } from '../../structure/core/wind';
 import type { Lang } from '../../structure/report/i18n';
 import { LANGS, LANG_LABEL, num } from '../../structure/report/i18n';
 import { CALAGE_LABELS } from '../../structure/report/calageI18n';
+import { translate } from '../../structure/report/translate';
+import type { FrSnowRegion, FrWindSite } from '../../structure/core/codeFR';
+import { DEFAULT_FR_WIND, frOutOfService, serviceWindPressure, spdHorizontalRatio } from '../../structure/core/codeFR';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from '../../structure/report/stackFigure';
@@ -39,6 +42,15 @@ import { GroundLevelsCard, LEVEL_COLORS, levelPointStyle } from './GroundLevels'
 import { freshImport } from '../newVersion';
 
 export interface Hypotheses {
+  /**
+   * référentiel de calcul : absent / 'DE' = Allemagne (DIN EN 13814, notes statico, Prüfbuch TÜV) ; 'FR' = France
+   * (Eurocodes avec annexes nationales françaises + arrêté du 25 juillet 2022 sur les structures provisoires et démontables)
+   */
+  code?: 'DE' | 'FR';
+  /** France : vent (région, catégorie de terrain, durée de l'installation, vent de service) */
+  frWind?: FrWindSite;
+  /** France : neige (région de la carte, altitude du site en m) — la neige au sol en est déduite (`snowKgm2`) */
+  frSnow?: { region: FrSnowRegion; altitude: number };
   bearingPreset: string;
   bearingValue: number;
   bearingUnit: BearingUnit;
@@ -154,8 +166,30 @@ export const DISTRIBUTED_PRESETS = ['slab', 'roof', 'operator'];
 /** Lecture de la portance : choix enregistré, sinon selon le type de support. */
 export const bearingModeOf = (h: Pick<Hypotheses, 'bearingMode' | 'bearingPreset'>): 'pressure' | 'distributed' => h.bearingMode ?? (DISTRIBUTED_PRESETS.includes(h.bearingPreset) ? 'distributed' : 'pressure');
 
+/**
+ * Pressions du vent retenues (kN/m²) : Allemagne = valeurs de l'étape 2 ; France = vent de service de l'arrêté
+ * (q = ½ ρ v²) et vent hors service de NF EN 1991-1-4/NA à la hauteur de l'installation (mm).
+ */
+export function windPressures(h: Pick<Hypotheses, 'code' | 'frWind' | 'windIn' | 'windOut'>, heightMm: number): { windIn: number; windOut: number } {
+  if (h.code !== 'FR') return { windIn: h.windIn, windOut: h.windOut };
+  const s = h.frWind ?? DEFAULT_FR_WIND;
+  return { windIn: serviceWindPressure(s.serviceSpeed) * 1e3, windOut: frOutOfService(s, heightMm) * 1e3 };
+}
+
+/** Hauteur de l'installation pour le vent (mm) : niveaux × hauteur des Viewbox. */
+export function estimateHeight(modules: readonly EstimateModule[]): number {
+  return modules.length ? Math.max(...modules.map((m) => (m.level + 1) * m.height)) : 3080;
+}
+
+/** Surface des planchers ouverts au public (mm²) : charge horizontale de l'arrêté (6 %, 10 % au-delà de 500 m²). */
+function planArea(corners: ReadonlyArray<readonly [number, number]>): number {
+  return Math.abs(corners.reduce((a, p, i) => a + p[0] * corners[(i + 1) % corners.length][1] - corners[(i + 1) % corners.length][0] * p[1], 0)) / 2;
+}
+
 export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: StructureStock, jacks = false, extraSupports: AddedSupport[] = [], withoutModel = false, contact: EstimateOptions['contact'] = null): CalageInput {
   const kNm2 = (v: number) => v * 1e-3;
+  const fr = h.code === 'FR';
+  const wind = windPressures(h, estimateHeight(modules));
   return {
     modules,
     ...(extraSupports.length ? { extraSupports } : {}),
@@ -176,9 +210,10 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
         snowRoof: roofSnow(h),
         terraceG: TERRACE.selfWeight + TERRACE.deck,
       },
-      windInService: kNm2(h.windIn),
-      windOutOfService: kNm2(h.windOut),
+      windInService: kNm2(wind.windIn),
+      windOutOfService: kNm2(wind.windOut),
       cp: h.cp,
+      ...(fr ? { code: 'FR' as const, horizontalRatio: spdHorizontalRatio(modules.reduce((a, m) => a + planArea(m.corners), 0)) } : {}),
       middleFeet: h.middleFeet || jacks,
       jacks,
       ...(contact && !jacks ? { contact } : {}),
@@ -188,7 +223,9 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     bearing: bearingFrom(h.bearingValue, h.bearingUnit),
     pointLoadMax: (BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad || bearingModeOf(h) === 'distributed') && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
     bearingMode: bearingModeOf(h),
-    staticoConversion: h.staticoConversion,
+    // France : réactions caractéristiques (pas de conversion statico), pas de Prüfbuch TÜV
+    staticoConversion: fr ? false : h.staticoConversion,
+    ...(fr ? { code: 'FR' as const } : {}),
     thicknesses: h.thicknesses
       .split(/[;,\s]+/)
       .map((x) => parseFloat(x.replace(',', '.')))
@@ -575,9 +612,52 @@ function StockEditor({ stock, onSaved }: { stock: StructureStock; onSaved: (s: S
 import { HypothesesForm } from './SiteForm';
 export { HypothesesForm };
 
+/** Langue des PDF de calage et du rapport : dernier choix, mémorisé dans ce navigateur (étapes 5 et 6). */
+const PDF_LANG_KEY = 'vem_structure_pdf_lang';
+export function storedPdfLang(): Lang {
+  try {
+    const v = localStorage.getItem(PDF_LANG_KEY);
+    return v === 'de' || v === 'en' ? v : 'fr';
+  } catch {
+    return 'fr';
+  }
+}
+export function storePdfLang(l: Lang) {
+  try {
+    localStorage.setItem(PDF_LANG_KEY, l);
+  } catch {
+    /* stockage local indisponible */
+  }
+}
+
+/** Choix de la langue d'un PDF (fiche de calage, plan des appuis, rapport, plan de calage A3). */
+export function PdfLangSelect({ value, onChange, label = 'Langue du PDF' }: { value: Lang; onChange: (l: Lang) => void; label?: string }) {
+  return (
+    <label className="row" style={{ gap: 4 }} title="Langue du document PDF : français, allemand ou anglais">
+      <span className="hint">🌐 {label}</span>
+      <select
+        value={value}
+        data-testid="pdf-lang"
+        onChange={(e) => {
+          const l = e.target.value as Lang;
+          storePdfLang(l);
+          onChange(l);
+        }}
+      >
+        {LANGS.map((l) => (
+          <option key={l} value={l}>
+            {LANG_LABEL[l]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export interface GroundPanelProps {
   modules: EstimateModule[];
-  source: string;
+  /** origine des données, en tête des PDF (texte, ou un texte par langue du PDF) */
+  source: string | Record<Lang, string>;
   /** clé de stockage local des hypothèses (panneau autonome) */
   storageKey: string;
   intro?: React.ReactNode;
@@ -623,8 +703,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   const [pointsBusy, setPointsBusy] = useState(false);
   const [showPoints, setShowPoints] = useState(false);
   const [planView, setPlanView] = useState<'check' | 'type' | 'level'>('check');
-  // langue des PDF de calage (fiche, plan des appuis)
-  const [pdfLang, setPdfLang] = useState<Lang>('fr');
+  // langue des PDF de calage (fiche, plan des appuis) : dernier choix mémorisé
+  const [pdfLang, setPdfLang] = useState<Lang>(storedPdfLang);
+  const sourceIn = (l: Lang) => (typeof source === 'string' ? source : source[l]);
   const [maxPub, setMaxPub] = useState<PublicMax | null>(null);
   const onCalageRef = useRef(onCalage);
   onCalageRef.current = onCalage;
@@ -683,6 +764,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     const N = (v: number, d = 0) => num(lang, v, d);
     const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
     const bearing = `${N(hyp.bearingValue, hyp.bearingUnit === 'kN/m²' || hyp.bearingUnit === 'kg/m²' ? 0 : 2)} ${hyp.bearingUnit}${hyp.bearingUnit === 'kN/m²' ? '' : ` = ${N(q, q < 10 ? 1 : 0)} kN/m²`}`;
+    const presetName = preset ? translate(lang, preset.label) : null;
     const levels = Math.max(0, ...modules.map((m) => m.level)) + 1;
     const placement = hyp.platePlacement ?? 'auto';
     const extras = (hyp.ceilingExtra ?? 0) > 0 || (hyp.floorExtra ?? 0) > 0 ? [((hyp.ceilingExtra ?? 0) * 1000) / 9.81, ((hyp.floorExtra ?? 0) * 1000) / 9.81] : null;
@@ -706,7 +788,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         src: ['Réactions', reactions ? (contact ? 'calcul complet (modèle 3D, 2ᵉ ordre), appuis élastiques le long des rives / profils (raideur du sol)' : jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : contact ? 'estimation instantanée (plancher rigide sur appuis élastiques)' : 'estimation instantanée (surfaces tributaires)'],
       },
       de: {
-        bearing: ['Zul. Bodenpressung', `${bearing} (${preset?.label ?? 'Eingabe'})`],
+        bearing: ['Zul. Bodenpressung', `${bearing} (${presetName ?? 'Eingabe'})`],
         weight: ['Gewicht einer Viewbox', `${N(hyp.moduleWeightKg)} kg gewogen (inkl. Boden, Bodenbelag, Decke und Dämmung)${extras ? ` + Decke ${N(extras[0])} kg/m² + Boden ${N(extras[1])} kg/m² zusätzlich` : ''}`],
         finishes: ['Wände, Verglasungen, Geländer', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg je Viewbox` : 'aus dem Modell, Bauteil für Bauteil'],
         live: ['Verkehrslast', `Erdgeschoss ${N(hyp.liveGround ?? 5, 2)} kN/m², Obergeschosse ${N(hyp.live, 2)} kN/m²`],
@@ -721,7 +803,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         src: ['Auflagerkräfte', reactions ? (contact ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), elastische Bettung entlang der Träger (Bettungsmodul)' : jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
       },
       en: {
-        bearing: ['Allowable bearing', `${bearing} (${preset?.label ?? 'entered'})`],
+        bearing: ['Allowable bearing', `${bearing} (${presetName ?? 'entered'})`],
         weight: ['Weight of one Viewbox', `${N(hyp.moduleWeightKg)} kg weighed (floor, floor finish, ceiling and insulation included)${extras ? ` + ceiling ${N(extras[0])} kg/m² + floor ${N(extras[1])} kg/m² in addition` : ''}`],
         finishes: ['Walls, glazing, railings', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg per Viewbox` : 'from the model, item by item'],
         live: ['Imposed load', `ground floor ${N(hyp.liveGround ?? 5, 2)} kN/m², upper floors ${N(hyp.live, 2)} kN/m²`],
@@ -753,12 +835,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
       const svgs = groundSheetPages({
         result,
         modules,
-        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: assumptions(pdfLang) },
+        info: { project: name, client: project?.client?.name ?? undefined, source: sourceIn(pdfLang), date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: assumptions(pdfLang) },
         lang: pdfLang,
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
       const title = { fr: 'Fiche de calage', de: 'Unterpallungsblatt', en: 'Packing sheet' }[pdfLang];
-      const pdf = await buildPdf(svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })), fonts, { title: `${title} — ${name}`, subject: source });
+      const pdf = await buildPdf(svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })), fonts, { title: `${title} — ${name}`, subject: sourceIn(pdfLang) });
       downloadBlob(`${title} ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
     } catch (e) {
       setError(`PDF impossible : ${(e as Error).message}`);
@@ -822,7 +904,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setRoadwayOverhang: (mm) => setChoices((c) => ({ ...c, roadwayOverhang: mm })),
     reset: () => setChoices(() => ({})),
   };
-  const bearingLabel = pdfLang === 'fr' ? bearingText() : `${num(pdfLang, bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3, 0)} kN/m²`;
+  const bearingLabel = (() => {
+    if (pdfLang === 'fr') return bearingText();
+    const q = bearingFrom(hyp.bearingValue, hyp.bearingUnit) * 1e3;
+    const name = preset ? translate(pdfLang, preset.label) : pdfLang === 'de' ? 'Eingabe' : 'entered';
+    return `${num(pdfLang, q, q < 10 ? 1 : 0)} kN/m² = ${num(pdfLang, (q * 1e3) / 9.81, 0)} kg/m² (${name})`;
+  })();
   const exportPoints = async () => {
     if (!result || !roadway) return;
     setPointsBusy(true);
@@ -845,14 +932,14 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         noTuv: !!result.tuv.notApplicable,
         remedy: result.remedy,
         slab: result.slab,
-        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
+        info: { project: name, client: project?.client?.name ?? undefined, source: sourceIn(pdfLang), date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
       const title = { fr: 'Plan des appuis au sol', de: 'Auflagerplan', en: 'Ground support plan' }[pdfLang];
       const pdf = await buildPdf(
         svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })),
         fonts,
-        { title: `${title} — ${name}`, subject: source },
+        { title: `${title} — ${name}`, subject: sourceIn(pdfLang) },
       );
       downloadBlob(`${title} ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
     } catch (e) {
@@ -1015,13 +1102,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                       {l}
                     </span>
                   ))}
-              <select value={pdfLang} onChange={(e) => setPdfLang(e.target.value as Lang)} title="Langue des PDF de calage (fiche, plan des appuis au sol)">
-                {LANGS.map((l) => (
-                  <option key={l} value={l}>
-                    {LANG_LABEL[l]}
-                  </option>
-                ))}
-              </select>
+              <PdfLangSelect value={pdfLang} onChange={setPdfLang} />
               <button className="btn primary small" disabled={pdfBusy} onClick={() => void exportPdf()}>
                 {pdfBusy ? 'PDF…' : '⬇ Fiche PDF'}
               </button>
@@ -1132,6 +1213,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 <h2>Plaques de roulage — répartition uniforme</h2>
                 <span className="hint">toute la surface couverte par des plaques jointives : charge verticale / surface</span>
                 <div className="spacer" style={{ flex: 1 }} />
+                <PdfLangSelect value={pdfLang} onChange={setPdfLang} />
                 <button className="btn primary small" disabled={pointsBusy} onClick={() => void exportPoints()}>
                   {pointsBusy ? 'PDF…' : '⬇ Plan des appuis au sol (PDF)'}
                 </button>

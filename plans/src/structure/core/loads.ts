@@ -96,6 +96,8 @@ export interface LoadInputs {
   windOutOfService: number;
   /** profil du vent hors service retenu (texte du rapport ; sans effet sur le calcul) */
   windProfile?: import('./wind').Terrain;
+  /** référentiel France : site du vent et de la neige (notes de calcul et rapport ; les pressions sont ci-dessus) */
+  frSite?: { wind: import('./codeFR').FrWindSite; snow?: { region: import('./codeFR').FrSnowRegion; altitude: number } };
   cp: { windward: number; leeward: number; parallel: number; roofStability: number };
   edgeItems: EdgeItem[];
   pointItems: PointItem[];
