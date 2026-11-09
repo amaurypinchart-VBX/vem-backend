@@ -225,7 +225,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.totalPermanent, `ΣG = ${kN(gTotal, 0)}`],
       [L.imposed, T.imposedLevels(N((loads.liveGround ?? loads.live) * 1e3), N(loads.live * 1e3))],
       [L.windInOut, `${N(loads.windInService * 1e3)} / ${N(loads.windOutOfService * 1e3)} kN/m²`],
-      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${inp.bearing.label} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
+      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${E(inp.bearing.label)} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
     ],
   });
   const familyRows: Cell[][] = run.verdict.families.map((f) => {
@@ -460,7 +460,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.sliding, `${L.slidingValue(N(run.stability.sliding.muReq), N(mu))} (${run.stability.sliding.combo || '—'})`],
       [L.ballast, run.stability.overturning.verdict === 'fail' ? L.ballastOverturning : ballast > 0 ? L.ballastRequired(N(ballast / 1e3, 1), N(Math.ceil(ballast / GRAVITY / 10) * 10, 0)) : L.ballastNone],
       [L.jacks, study.options.jacks ? L.jacksYes : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRimsShort : L.groundPadsShort(study.groundContact.pads.length)) : L.jacksNo],
-      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${inp.bearing.label} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
+      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${E(inp.bearing.label)} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
     ],
   });
   blocks.push(...calageTables(false));

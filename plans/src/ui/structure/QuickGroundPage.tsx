@@ -101,5 +101,5 @@ export function QuickGroundPage({ onBack }: { onBack: () => void }) {
       </div>
     </div>
   );
-  return <GroundPanel modules={modules} source="Calage rapide (grille de Viewbox, sans modèle)" storageKey={`vem.structure.quick.${PROJECT_ID}`} intro={intro} withoutModel />;
+  return <GroundPanel modules={modules} source={{ fr: 'Calage rapide (grille de Viewbox, sans modèle)', de: 'Schnelle Unterpallung (Viewbox-Raster, ohne Modell)', en: 'Quick packing (Viewbox grid, no model)' }} storageKey={`vem.structure.quick.${PROJECT_ID}`} intro={intro} withoutModel />;
 }

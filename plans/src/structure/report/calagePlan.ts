@@ -232,7 +232,7 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
     }
     lay.push({ text: C.stacked });
   }
-  if (inp.bearing) lay.push({ text: `${L.bearing} : ${L.bearingValue(N(inp.bearing.value), inp.bearing.label)}` });
+  if (inp.bearing) lay.push({ text: `${L.bearing} : ${L.bearingValue(N(inp.bearing.value), E(inp.bearing.label))}` });
   lay.push({ text: `${L.jacks} : ${inp.jacks ? L.jacksYes : L.jacksNo}` });
   blocks.push({ title: C.layingTitle, lines: lay });
   // niveaux du sol relevés : référence, dénivelé, pente, rattrapage (vérins / cales)
@@ -292,7 +292,7 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   const sheet: Sheet = { id: 'calage', number: inp.number, title: `${L.calagePlan}`, paper: 'A3', orientation: 'landscape', kind: 'standard', items: [viewport, ...columnItems] };
   // notes du cartouche (rapport) : portance et réserve
   const lines: string[] = [];
-  if (inp.bearing) lines.push(`${L.bearing} : ${L.bearingValue(N(inp.bearing.value), inp.bearing.label)}`);
+  if (inp.bearing) lines.push(`${L.bearing} : ${L.bearingValue(N(inp.bearing.value), E(inp.bearing.label))}`);
   lines.push(`Prüfbuch ${TUV.prufbuch} (TÜV Rheinland) · ${TUV.statics}`);
   lines.push(L.watermark);
   const notes = lines.flatMap((l) => wrapText(l, 100, 2.9)).slice(0, 20).join('\n');

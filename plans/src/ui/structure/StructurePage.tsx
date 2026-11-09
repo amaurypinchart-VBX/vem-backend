@@ -869,7 +869,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       {step === 'ground' && (
         <GroundPanel
           modules={groundModules}
-          source={`Modèle ${scene.index.source.fileName}`}
+          source={{ fr: `Modèle ${scene.index.source.fileName}`, de: `Modell ${scene.index.source.fileName}`, en: `Model ${scene.index.source.fileName}` }}
           storageKey={`vem.structure.model.${scene.modelKey}`}
           hyp={hyp}
           onHypChange={setHyp}

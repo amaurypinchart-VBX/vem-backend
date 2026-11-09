@@ -32,7 +32,7 @@ import { buildReport } from '../../structure/report/build';
 import { moduleOverlays } from '../../sheets/overlays';
 import { calageLevelMarks, calagePlates, calageSheet, calageTitleBlock, fitCalageViewport, outlineLinework } from '../../structure/report/calagePlan';
 import type { Lang } from '../../structure/report/i18n';
-import { LABELS, LANG_LABEL, LANGS } from '../../structure/report/i18n';
+import { LABELS, LANG_LABEL } from '../../structure/report/i18n';
 import type { StudyInputs, StudyRun } from '../../structure/studyRun';
 import type { AiTexts, AiUsage, DrawingSetRecord, ModelVersion, Project, StructReportRecord, StudyRecord, VemUser } from '../../api/vem';
 import { studyFacts } from '../../structure/report/facts';
@@ -42,6 +42,7 @@ import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
 import { moduleEtaColors } from './CalcResults';
 import type { Hypotheses, StructureStock } from './GroundPanel';
+import { PdfLangSelect, storedPdfLang } from './GroundPanel';
 import { calageInput } from './GroundPanel';
 import { groundContactOf, groundExtras } from './studyInputs';
 import { freshImport } from '../newVersion';
@@ -107,7 +108,8 @@ async function captureViews(scene: LoadedScene, glassTest: GlassTest, colors: Ma
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
 
 export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hyp, modules, recognition, model, study, me, ai, modifications }: Props) {
-  const [lang, setLang] = useState<Lang>('fr');
+  // langue du rapport et du plan de calage A3 : dernier choix (aussi celui des PDF de l'étape 5)
+  const [lang, setLang] = useState<Lang>(storedPdfLang);
   const [variant, setVariant] = useState<ReportVariant>('compact');
   const [withPlan, setWithPlan] = useState(true);
   const [with3d, setWith3d] = useState(true);
@@ -431,16 +433,9 @@ export function ReportPanel({ scene, provider, glassTest, run, stale, inputs, hy
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {stale && <div className="error-box">Résultat périmé : les données ont changé depuis le calcul. Relancer l’étape 3 avant de faire le rapport.</div>}
             {!stale && !run.capacity && <div className="hint">Charge d’exploitation maximale encore en calcul (étape 4) : elle sera dans le rapport dès qu’elle sera prête (refaire l’aperçu).</div>}
-            <label className="row" style={{ justifyContent: 'space-between' }}>
-              Langue
-              <select value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
-                {LANGS.map((l) => (
-                  <option key={l} value={l}>
-                    {LANG_LABEL[l]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <PdfLangSelect value={lang} onChange={setLang} label="Langue (rapport et plan de calage A3)" />
+            </div>
             <label className="row" style={{ justifyContent: 'space-between' }}>
               Version
               <select value={variant} onChange={(e) => setVariant(e.target.value as ReportVariant)}>

@@ -1076,7 +1076,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     const u = blockAxes(inp.modules);
     materials.unshift(
       ...mergeMaterials(
-        inp.blocks.map((b) => ({ label: `Bloc de calage ${blockMaterial(b.material).name.toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg })),
+        inp.blocks.map((b) => ({ label: `Bloc de calage ${blockMaterial(b.material).name.replace(/\s*\(.*\)$/, '').toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg })),
       ),
     );
     if (tuvOn && blockOf.size) {
