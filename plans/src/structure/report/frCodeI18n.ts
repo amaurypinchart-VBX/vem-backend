@@ -18,7 +18,8 @@ export interface FrCodeLabels {
   outOfServiceLive: string;
   horizontal: (pct: string, area: string) => string;
   legalTitle: string;
-  legal: string[];
+  /** références réglementaires ; `upper` = installation avec étages (hauteur de chute ≥ 2 m) */
+  legal: (upper: boolean) => string[];
   snowRegion: (region: string, altitude: string) => string;
   windSite: (region: number, terrain: FrTerrain, duration: FrDuration) => string;
   terrain: Record<FrTerrain, string>;
@@ -90,8 +91,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
       'Référentiel de calcul : France — Eurocodes avec les annexes nationales françaises et arrêté du 25 juillet 2022 fixant les règles de sécurité et les dispositions techniques applicables aux structures provisoires et démontables. Les capacités des assemblages et le poids de la Viewbox sont repris des documents du produit.',
     horizontal: (pct, area) => `Charge horizontale dynamique simultanée à l’exploitation verticale, au niveau du plancher, dans les 4 directions (arrêté du 25 juillet 2022) : H = ${pct} % de V (${area} m² de planchers ouverts au public ; 6 % jusqu’à 500 m², 10 % au-delà).`,
     legalTitle: 'Références réglementaires (France)',
-    legal: [
-      'Structure provisoire et démontable au sens de l’arrêté du 25 juillet 2022 (modifié le 13 mai 2025) : la classer et organiser les contrôles avec le bureau de contrôle ou la commission de sécurité.',
+    legal: (upper) => [
+      upper
+        ? 'Structure provisoire et démontable (arrêté du 25 juillet 2022, modifié le 13 mai 2025) : avec des étages ouverts au public (hauteur de chute de 2 m ou plus), catégorie OP2 / OP3 probable — contrôle de conception par un organisme agréé avant la première implantation, note de calcul visée par un ingénieur structure, vérification du montage par un organisme accrédité (technicien compétent pour un OP2 de moins de 300 personnes ou 500 m²), inspection tous les 12 mois.'
+        : 'Structure provisoire et démontable (arrêté du 25 juillet 2022, modifié le 13 mai 2025) : plancher de plain-pied à moins de 1,20 m du sol, catégorie OP1 probable — déclaration du fabricant (solidité, stabilité) et attestation de bon montage de l’installateur (modèle de l’annexe V) ; pas d’organisme de contrôle exigé par l’arrêté pour cette catégorie.',
+      'Catégorie à confirmer avec l’organisateur (hauteur de chute réelle, effectif) ; un établissement recevant du public reste aussi soumis au règlement de sécurité ERP.',
       'Notice technique du fabricant : charges admissibles, vent de service et consignes de montage ; note de calcul justifiant le dimensionnement (art. 10).',
       'Évacuation du public dès que le vent atteint le vent de service ; anémomètre sur place.',
       'Pas de Prüfbuch TÜV (livre d’examen allemand) : les plaques de calage sont dimensionnées par le calcul, appui par appui.',
@@ -156,8 +160,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
       'Berechnungsgrundlage: Frankreich — Eurocodes mit den französischen nationalen Anhängen und Erlass vom 25. Juli 2022 über die Sicherheitsregeln und technischen Bestimmungen für vorübergehende, demontierbare Bauten. Die Tragfähigkeiten der Anschlüsse und das Gewicht der Viewbox sind den Produktunterlagen entnommen.',
     horizontal: (pct, area) => `Dynamische Horizontallast gleichzeitig mit der vertikalen Verkehrslast in Höhe der Bodenebene, in den 4 Richtungen (französischer Erlass vom 25. Juli 2022): H = ${pct} % von V (${area} m² öffentlich zugängliche Böden; 6 % bis 500 m², darüber 10 %).`,
     legalTitle: 'Rechtliche Grundlagen (Frankreich)',
-    legal: [
-      'Vorübergehender, demontierbarer Bau im Sinne des Erlasses vom 25. Juli 2022 (geändert am 13. Mai 2025): Einstufung und Prüfungen mit der Prüfstelle oder der Sicherheitskommission abzustimmen.',
+    legal: (upper) => [
+      upper
+        ? 'Vorübergehender, demontierbarer Bau (französischer Erlass vom 25. Juli 2022, geändert am 13. Mai 2025): mit öffentlich zugänglichen Obergeschossen (Absturzhöhe 2 m oder mehr) voraussichtlich Kategorie OP2 / OP3 — Prüfung der Planung durch eine zugelassene Stelle vor dem ersten Aufbau, von einem Tragwerksingenieur gezeichnete statische Berechnung, Abnahme des Aufbaus durch eine akkreditierte Stelle (sachkundiger Techniker bei OP2 unter 300 Personen oder 500 m²), Inspektion alle 12 Monate.'
+        : 'Vorübergehender, demontierbarer Bau (französischer Erlass vom 25. Juli 2022, geändert am 13. Mai 2025): ebenerdiger Boden weniger als 1,20 m über Gelände, voraussichtlich Kategorie OP1 — Erklärung des Herstellers (Standsicherheit) und Bescheinigung über den ordnungsgemäßen Aufbau durch den Aufsteller (Muster in Anhang V); für diese Kategorie verlangt der Erlass keine Prüfstelle.',
+      'Kategorie mit dem Veranstalter zu bestätigen (tatsächliche Absturzhöhe, Personenzahl); eine Versammlungsstätte unterliegt zusätzlich den französischen Brandschutzvorschriften für öffentlich zugängliche Gebäude.',
       'Technisches Merkblatt des Herstellers: zulässige Lasten, Betriebswind und Aufbauanweisungen; statische Berechnung des Tragwerks (Art. 10).',
       'Räumung, sobald der Wind den Betriebswind erreicht; Anemometer vor Ort.',
       'Kein TÜV-Prüfbuch (deutsches Prüfbuch): die Unterpallungsplatten werden je Auflager rechnerisch bemessen.',
@@ -222,8 +229,11 @@ export const FR_CODE_LABELS: Record<Lang, FrCodeLabels> = {
       'Design basis: France — Eurocodes with the French national annexes and order of 25 July 2022 on the safety rules and technical provisions for temporary demountable structures. The connection capacities and the weight of the Viewbox are taken from the product documents.',
     horizontal: (pct, area) => `Dynamic horizontal load acting with the vertical imposed load, at floor level, in the 4 directions (French order of 25 July 2022): H = ${pct} % of V (${area} m² of floors open to the public; 6 % up to 500 m², 10 % above).`,
     legalTitle: 'Regulatory references (France)',
-    legal: [
-      'Temporary demountable structure within the meaning of the order of 25 July 2022 (amended on 13 May 2025): its category and checks are to be agreed with the inspection body or the safety commission.',
+    legal: (upper) => [
+      upper
+        ? 'Temporary demountable structure (French order of 25 July 2022, amended on 13 May 2025): with upper floors open to the public (fall height of 2 m or more), probably category OP2 / OP3 — design check by an approved body before the first installation, structural calculation signed by a structural engineer, erection check by an accredited body (competent technician for an OP2 under 300 persons or 500 m²), inspection every 12 months.'
+        : 'Temporary demountable structure (French order of 25 July 2022, amended on 13 May 2025): ground-level floor less than 1.20 m above the ground, probably category OP1 — manufacturer’s declaration (strength, stability) and erector’s certificate of correct erection (model in annex V); the order requires no inspection body for this category.',
+      'Category to be confirmed with the organiser (actual fall height, number of persons); a building open to the public also remains subject to the French fire safety rules for public buildings.',
       'Manufacturer’s technical notice: allowable loads, service wind and erection instructions; structural calculation justifying the design (art. 10).',
       'Clear the public as soon as the wind reaches the service wind; anemometer on site.',
       'No TÜV Prüfbuch (German inspection book): the packing plates are sized by calculation, support by support.',

@@ -209,3 +209,22 @@ describe('rapport en référentiel France', () => {
     }
   }, 180000);
 });
+
+describe('référentiel France : lieu du projet et catégorie de l’arrêté', () => {
+  it('département tiré du code postal (Corse 2A / 2B, outre-mer sur 3 chiffres)', async () => {
+    const { projectPlace } = await import('../../src/ui/structure/SiteForm');
+    expect(projectPlace({ address: '1 place de l’Opéra, 75009 Paris', city: 'Paris' })).toEqual({ text: '1 place de l’Opéra, 75009 Paris, Paris', department: '75' });
+    expect(projectPlace({ address: 'Port, 20000 Ajaccio' })!.department).toBe('2A');
+    expect(projectPlace({ address: 'Port, 20200 Bastia' })!.department).toBe('2B');
+    expect(projectPlace({ address: 'Rue X, 97400 Saint-Denis' })!.department).toBe('974');
+    expect(projectPlace({ address: 'Messe Berlin', city: null })!.department).toBeNull();
+    expect(projectPlace({ address: '', city: '' })).toBeNull();
+  });
+  it('contrôles : plain-pied = OP1 (déclaration du fabricant), étages = OP2 / OP3 (organisme agréé)', async () => {
+    const { FR_CODE_LABELS } = await import('../../src/structure/report/frCodeI18n');
+    for (const lang of ['fr', 'de', 'en'] as const) {
+      expect(FR_CODE_LABELS[lang].legal(false)[0]).toContain('OP1');
+      expect(FR_CODE_LABELS[lang].legal(true)[0]).toContain('OP2');
+    }
+  });
+});

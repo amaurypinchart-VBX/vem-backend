@@ -479,7 +479,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
   // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573) : seulement avec des Viewbox, en Allemagne
   if (frCode) {
     blocks.push({ t: 'para', text: FC.legalTitle, bold: true, after: 0.6 });
-    blocks.push({ t: 'bullets', items: FC.legal, size: SIZE.small });
+    // étage ouvert au public = hauteur de chute ≥ 2 m (catégorie OP2 / OP3), sinon plain-pied (OP1)
+    const upperPublic = s.modules.some((m) => m.level > 0 && !(loads.closedLevels ?? []).includes(m.level));
+    blocks.push({ t: 'bullets', items: FC.legal(upperPublic), size: SIZE.small });
   } else if (!noVbx) {
     const CL = CALAGE_LABELS[inp.lang];
     const c = inp.calage;

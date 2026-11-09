@@ -9,6 +9,7 @@ import type { WindZone } from '../../structure/core/wind';
 import { fmtNumber } from '../../structure/core/units';
 import type { Hypotheses } from './GroundPanel';
 import { DEFAULT_HYP, bearingModeOf } from './GroundPanel';
+import { PROJECT_ID, vem } from '../../api/vem';
 import type { FrDuration, FrSnowRegion, FrTerrain, FrWindRegion, FrWindSite } from '../../structure/core/codeFR';
 import { DEFAULT_FR_WIND, FR_DURATIONS, FR_DURATION_KEYS, FR_SNOW_KEYS, FR_SNOW_SK200, FR_TERRAINS, FR_TERRAIN_KEYS, FR_WIND_REGIONS, RHO_AIR, SPD, frPeak, frSnowGround, serviceWindPressure } from '../../structure/core/codeFR';
 
@@ -21,6 +22,23 @@ const kNOf = (kgm2: number) => (kgm2 * G) / 1000;
 const kmhOf = (q: number) => Math.sqrt((2 * q * 1000) / 1.25) * 3.6;
 const qOf = (kmh: number) => (0.5 * 1.25 * (kmh / 3.6) ** 2) / 1000;
 const PERSON_KG = 80;
+
+/** Cartes des régions de vent et de neige (France) : la région se choisit d'après la commune du site. */
+const FR_WIND_MAP = 'https://eurocodes-tools.com/en/wind-zones-map-france/';
+const FR_SNOW_MAP = 'https://eurocodes-tools.com/en/snow-zones-map-france/';
+
+/**
+ * Lieu du projet pour choisir les régions : adresse / ville et département (2 premiers chiffres du code postal, Corse
+ * 2A / 2B). Les départements partagés entre plusieurs régions sont découpés par commune dans les annexes nationales.
+ */
+export function projectPlace(p: { address?: string | null; city?: string | null } | null): { text: string; department: string | null } | null {
+  if (!p) return null;
+  const text = [p.address, p.city].filter((x) => x && x.trim()).join(', ');
+  if (!text) return null;
+  const cp = /\b(\d{5})\b/.exec(text)?.[1];
+  const department = !cp ? null : cp.startsWith('20') ? (Number(cp) < 20200 ? '2A' : '2B') : cp.startsWith('97') ? cp.slice(0, 3) : cp.slice(0, 2);
+  return { text, department };
+}
 
 /** Valeurs propres au référentiel France (arrêté du 25 juillet 2022 : 5 kN/m² partout où le public accède). */
 const FR_DEFAULTS: Partial<Hypotheses> = { code: 'FR', frWind: DEFAULT_FR_WIND, live: 5, liveGround: 5, staticoConversion: false };
@@ -142,6 +160,35 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
   const [advanced, setAdvanced] = useState(false);
   const zones: WindZone[] = [1, 2, 3, 4];
   const fr = hyp.code === 'FR';
+  // lieu du projet (adresse VEM) pour choisir les régions de vent et de neige
+  const [place, setPlace] = useState<ReturnType<typeof projectPlace>>(null);
+  useEffect(() => {
+    if (!fr || !PROJECT_ID) return;
+    let alive = true;
+    vem
+      .project(PROJECT_ID)
+      .then((p) => alive && setPlace(projectPlace(p)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [fr]);
+  const placeHint = (map: string, what: string) => (
+    <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 4 }} data-testid={`fr-place-${what}`}>
+      {place ? (
+        <span>
+          Lieu du projet : <b>{place.text}</b>
+          {place.department ? ` (département ${place.department})` : ''}.
+        </span>
+      ) : (
+        <span>Adresse du projet non renseignée dans VEM.</span>
+      )}
+      <a href={map} target="_blank" rel="noreferrer">
+        🗺 Carte des régions de {what}
+      </a>
+      <span>— un département partagé entre plusieurs régions se lit commune par commune.</span>
+    </div>
+  );
   const frw: FrWindSite = hyp.frWind ?? DEFAULT_FR_WIND;
   const setFrw = (patch: Partial<FrWindSite>) => setHyp((h) => ({ ...h, frWind: { ...(h.frWind ?? DEFAULT_FR_WIND), ...patch } }));
   // hauteur pour le vent hors service (l'étude reprend la hauteur exacte du modèle)
@@ -405,7 +452,15 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
             >
               <Num value={kmh(frw.serviceSpeed)} onChange={(v) => setFrw({ serviceSpeed: Math.max(0, v) / 3.6 })} width={60} /> km/h
             </Q>
-            <Q label="Région de vent (carte de l’annexe nationale)" help="Région du département du site sur la carte des vents de NF EN 1991-1-4/NA (France métropolitaine, 4 régions). Outre-mer ou relief marqué : saisir la pression plus bas.">
+            <Q
+              label="Région de vent (carte de l’annexe nationale)"
+              help={
+                <>
+                  Région de la commune du site sur la carte des vents de NF EN 1991-1-4/NA (France métropolitaine, 4 régions). Outre-mer ou relief marqué : saisir la pression plus bas.
+                  {placeHint(FR_WIND_MAP, 'vent')}
+                </>
+              }
+            >
               <select value={frw.region} data-testid="fr-wind-region" onChange={(e) => setFrw({ region: Number(e.target.value) as FrWindRegion })}>
                 {([1, 2, 3, 4] as FrWindRegion[]).map((r) => (
                   <option key={r} value={r}>
@@ -511,6 +566,7 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
           help={
             <>
               Poids de la neige tombée sur un m² de sol, d’après la carte de neige du pays (en plaine ; plus en altitude). Sur les toitures plates, on compte 80 % de cette valeur.
+              {fr && placeHint(FR_SNOW_MAP, 'neige')}
               {fr && (
                 <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 4, alignItems: 'center' }}>
                   <span>Région de neige (NF EN 1991-1-3/NA) :</span>
