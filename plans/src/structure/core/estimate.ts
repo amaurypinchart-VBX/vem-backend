@@ -26,6 +26,8 @@ export interface EstimateModule {
   terrace?: boolean;
   /** murs, vitrages, portes, garde-corps, logos, lest… portés par ce module d'après le modèle (N) */
   carried?: number;
+  /** détail de `carried` par type d'objet (bilan des charges sur la dalle) ; `proposed` = poids type non confirmé */
+  carriedItems?: Array<{ label: string; count: number; N: number; proposed?: true }>;
   /**
    * type de structure personnalisé (S12) : pas de Prüfbuch TÜV ni de données statico ; poids d'acier du type (N) et
    * mode de poids ('computed' = barres + plafond + sol, sans pesée) ; surface de contact d'un pied (null = inconnue)

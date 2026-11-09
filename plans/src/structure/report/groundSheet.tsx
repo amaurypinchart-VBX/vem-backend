@@ -1,6 +1,6 @@
-// Plan des appuis (écran et PDF) et fiche de calage A4 d'une page : hypothèses, plan, calage par type d'appui,
-// matériel à préparer, réserves. SVG en mm (viewBox 210 × 297), converti en PDF vectoriel par sheets/pdf/pdf.ts.
-import type { ReactNode } from 'react';
+// Plan des appuis (écran et PDF) et fiche de calage A4 : hypothèses, plan, calage par type d'appui, matériel à
+// préparer, coupe du calage, charge sur la dalle, réserves (pages suivantes si nécessaire). SVG en mm (viewBox 210 × 297), converti en PDF vectoriel par sheets/pdf/pdf.ts.
+import type { ReactElement, ReactNode } from 'react';
 import type { CalageResult, SupportCheck } from '../core/calage';
 import type { EstimateModule, GroupReaction, P2 } from '../core/estimate';
 import { groupTypeKey } from '../core/estimate';
@@ -9,6 +9,7 @@ import type { Lang } from './i18n';
 import { LABELS, num } from './i18n';
 import { CALAGE_LABELS } from './calageI18n';
 import { translate } from './translate';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
 import { typeColor } from './calagePlan';
 import { verdictOf } from '../core/records';
 import { fmtNumber } from '../core/units';
@@ -592,27 +593,86 @@ function Table({ x, y, cols, rows, size }: { x: number; y: number; cols: Array<{
   );
 }
 
-/** Fiche de calage A4 portrait (une page), en français, allemand ou anglais. */
-export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result: CalageResult; modules: EstimateModule[]; info: SheetInfo; lang?: Lang }) {
+export interface GroundSheetProps {
+  result: CalageResult;
+  modules: EstimateModule[];
+  info: SheetInfo;
+  lang?: Lang;
+}
+
+/** Fiche de calage A4 portrait, première page (voir `groundSheetPages` pour la fiche complète). */
+export function GroundSheetSvg(props: GroundSheetProps) {
+  return groundSheetPages(props)[0];
+}
+
+/**
+ * Fiche de calage A4 portrait, en français, allemand ou anglais : hypothèses, plan des appuis, calage par type
+ * d'appui, matériel, coupe du calage (de la dalle à la Viewbox), charge sur la dalle sous chaque Viewbox (dalle en
+ * charge répartie), références TÜV, réserves. Le contenu continue sur les pages suivantes au lieu d'être coupé.
+ */
+export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundSheetProps): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const L = LABELS[lang];
+  const S = STACK_LABELS[lang];
   const E = (t: string) => translate(lang, t);
   const N = (v: number, d = 1) => num(lang, v, d);
-  const logoW = 34;
   const body = 2.6;
-  const title = (t: string, y: number) => (
-    <text fontFamily={FONT_SANS} x={M} y={y} fontSize={3.4} fontWeight={700} fill="#1a021d">
-      {t}
-    </text>
-  );
+  const BOTTOM = H - 16;
+  const pages: ReactNode[][] = [[]];
   let y = 38;
-  const blocks: ReactNode[] = [];
+  let sec = 0;
+  const push = (n: ReactNode) => pages[pages.length - 1].push(n);
+  const newPage = () => {
+    pages.push([]);
+    y = 30;
+  };
+  const need = (h: number) => {
+    if (y + h > BOTTOM && y > 31) newPage();
+  };
+  const title = (t: string, key: string) => {
+    need(12);
+    push(
+      <text fontFamily={FONT_SANS} key={key} x={M} y={y} fontSize={3.4} fontWeight={700} fill="#1a021d">
+        {`${++sec}. ${t.replace(/^\d+\.\s*/, '')}`}
+      </text>,
+    );
+  };
+  // tableau qui continue sur la page suivante (en-tête répété)
+  const table = (key: string, cols: Array<{ title: string; w: number; align?: 'end' }>, rows: string[][], size = 2.4) => {
+    const lh = size * 1.55;
+    const lines = tableLines(cols, rows, size).map((r) => Math.max(1, ...r.map((c) => c.length)));
+    let start = 0;
+    let part = 0;
+    while (start < rows.length) {
+      need(lh * (1 + Math.min(lines[start], 3)) + 2);
+      let n = 0;
+      let h = lh;
+      while (start + n < rows.length && y + h + lh * lines[start + n] <= BOTTOM) h += lh * lines[start + n++];
+      if (!n) n = 1;
+      push(<Table key={`${key}${part++}`} x={M} y={y} size={size} cols={cols} rows={rows.slice(start, start + n)} />);
+      y += lh * (lines.slice(start, start + n).reduce((a, b) => a + b, 0) + 1) + 4;
+      start += n;
+      if (start < rows.length) newPage();
+    }
+  };
+  const para = (key: string, lines: string[], size: number, step: number, color = '#374151', width = 125) => {
+    for (const [i, n] of lines.entries())
+      for (const [k, line] of wrap(n, width).entries()) {
+        need(step);
+        push(
+          <text fontFamily={FONT_SANS} key={`${key}${i}-${k}`} x={M + (k ? 3 : 0)} y={y} fontSize={size} fill={color}>
+            {k ? line : `• ${line}`}
+          </text>,
+        );
+        y += step;
+      }
+  };
   // 1. hypothèses
-  blocks.push(<g key="t1">{title(C.s1, y)}</g>);
+  title(C.s1, 't1');
   y += 5;
   // une ligne par hypothèse (les valeurs sont parfois longues)
   info.assumptions.forEach(([k, v], i) => {
-    blocks.push(
+    push(
       <g key={`a${i}`}>
         <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={body} fill="#6b7280">
           {k}
@@ -626,9 +686,9 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
   y += info.assumptions.length * 3.6 + 3;
   // 2. plan des appuis et des plaques
   const fem = result.estimate.method === 'fem';
-  blocks.push(<g key="t2">{title(C.s2(fem), y)}</g>);
+  title(C.s2(fem), 't2');
   const planH = 66;
-  blocks.push(
+  push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
       <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} {...checkPlan(result, lang)} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
@@ -636,9 +696,8 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
   );
   y += planH + 8;
   // 3. calage par type
-  blocks.push(<g key="t3">{title(C.s3, y)}</g>);
+  title(C.s3, 't3');
   y += 3;
-  const cols = typeCols(lang);
   const typeRows = result.types.map((t) => [
     E(t.label),
     String(t.reactions.length),
@@ -648,10 +707,10 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
     t.chosen ? N(t.chosen.eta, 2) : '—',
     `  ${t.chosen ? (t.standard ? (verdictOf(t.chosen.eta) === 'limit' ? C.stateLimit : C.stateOk) : C.stateOut) : C.stateNone}`,
   ]);
-  blocks.push(<Table key="types" x={M} y={y} size={2.4} cols={cols} rows={typeRows} />);
-  y += 2.4 * 1.55 * (tableLines(cols, typeRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 4;
+  table('types', typeCols(lang), typeRows);
   if (result.longrine) {
-    blocks.push(
+    need(5);
+    push(
       <text fontFamily={FONT_SANS} key="lg" x={M} y={y} fontSize={body} fill="#111827">
         {C.longrineVariant(E(result.longrine.solution.summary), N(result.longrine.result.eta, 2))}
       </text>,
@@ -659,9 +718,8 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
     y += 5;
   }
   // 4. matériel
-  blocks.push(<g key="t4">{title(C.s4, y)}</g>);
+  title(C.s4, 't4');
   y += 3;
-  const mats = result.materials;
   const SC = C.sheetCols;
   const matCols: Array<{ title: string; w: number; align?: 'end' }> = [
     { title: SC.designation, w: 60 },
@@ -669,32 +727,46 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
     { title: SC.qty, w: 26, align: 'end' },
     { title: SC.mass, w: 40, align: 'end' },
   ];
-  const matRows = mats.length ? mats.map((m) => [E(m.label), E(m.dims), String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[C.none, '', '', '']];
-  blocks.push(<Table key="mat" x={M} y={y} size={2.4} cols={matCols} rows={matRows} />);
-  y += 2.4 * 1.55 * (tableLines(matCols, matRows, 2.4).reduce((a, r) => a + Math.max(1, ...r.map((c) => c.length)), 0) + 1) + 5;
+  const matRows = result.materials.length ? result.materials.map((m) => [E(m.label), E(m.dims), String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[C.none, '', '', '']];
+  table('mat', matCols, matRows);
+  y += 1;
+  // 5. coupe du calage : de la dalle à la Viewbox, couche par couche
+  const stacks = result.stacks ?? [];
+  if (stacks.length) {
+    title(S.stackTitle, 't5');
+    y += 4.5;
+    para('si', [S.stackIntro], 2.2, 3.1, '#6b7280', 140);
+    const figH = Math.ceil(stacks.length / 4) * 44;
+    need(figH + 2);
+    push(<g key="stackfig" dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, lang)(M, y, W - 2 * M, figH) }} />);
+    y += figH + 3;
+    const rows: string[][] = stacks.flatMap((s) => stackLines(s, lang).map((l, k) => [k ? '' : s.supports.join(', '), l, k ? '' : stackHeightText(s, lang)]));
+    table('stack', [
+      { title: S.colSupports, w: 34 },
+      { title: S.colLayers, w: 120 },
+      { title: S.colHeight, w: 32, align: 'end' },
+    ], rows);
+  }
+  // 6. dalle en charge répartie : poids sous chaque Viewbox, poste par poste
+  const budget = slabBudgetTable(result, lang);
+  if (budget) {
+    title(S.slabTitle, 't6');
+    y += 4.5;
+    para('bi', [S.slabIntro], 2.2, 3.1, '#6b7280', 140);
+    const wz = Math.min(40, 100 / (budget.cols.length - 1));
+    table('budget', [{ title: budget.cols[0], w: W - 2 * M - wz * (budget.cols.length - 1) }, ...budget.cols.slice(1).map((c) => ({ title: c, w: wz, align: 'end' as const }))], budget.rows.map((r) => [r.label, ...r.values]));
+  }
+  // références réglementaires (Prüfbuch TÜV) : seulement avec des Viewbox
   const jacks = result.estimate.reactions.some((r) => r.group.jack);
-  const para = (key: string, lines: string[], size: number, step: number, color = '#374151', width = 125) => {
-    for (const [i, n] of lines.entries())
-      for (const [k, line] of wrap(n, width).entries()) {
-        if (y > H - 16) return;
-        blocks.push(
-          <text fontFamily={FONT_SANS} key={`${key}${i}-${k}`} x={M + (k ? 3 : 0)} y={y} fontSize={size} fill={color}>
-            {k ? line : `• ${line}`}
-          </text>,
-        );
-        y += step;
-      }
-  };
-  // 5. références réglementaires (Prüfbuch TÜV) : seulement avec des Viewbox
   if (!result.tuv.notApplicable) {
-    blocks.push(<g key="t5">{title(C.s5, y)}</g>);
+    title(C.s5, 't7');
     y += 4.2;
     const tuvLine = !result.tuv.tuvMinimum ? C.tuvOff : result.tuv.ok === false ? C.tuvKo(result.types.filter((t) => t.tuv?.ok === false).map((t) => E(t.label)).join(', ')) : result.tuv.ok ? C.tuvOk : '';
     para('lg', [...C.legal(jacks), ...(tuvLine ? [tuvLine] : [])], 2.1, 2.9, '#374151', 140);
     y += 2;
   }
-  // 6. réserves
-  blocks.push(<g key="t6">{title(C.s6, y)}</g>);
+  // réserves
+  title(C.s6, 't8');
   y += 4.2;
   const notes = [
     ...result.warnings.map(E),
@@ -703,35 +775,47 @@ export function GroundSheetSvg({ result, modules, info, lang = 'fr' }: { result:
     C.platesNote,
     ...(result.roadwayOn ? [C.roadwayUsed(N(result.roadway.load / 1e3, 0), N(result.roadway.area / 1e6, 1), N(result.roadway.mean * 1e3, 1))] : []),
   ];
-  para('n', notes, 2.2, 3.1);
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={`${W}mm`} height={`${H}mm`} viewBox={`0 0 ${W} ${H}`} fontFamily={FONT_SANS}>
+  para('n', notes, 2.2, 3.1, '#374151', 140);
+  const logoW = 34;
+  return pages.map((content, p) => (
+    <svg key={p} xmlns="http://www.w3.org/2000/svg" width={`${W}mm`} height={`${H}mm`} viewBox={`0 0 ${W} ${H}`} fontFamily={FONT_SANS}>
       <rect x={0} y={0} width={W} height={H} fill="#ffffff" />
       <text fontFamily={FONT_SANS} x={W / 2} y={H / 2} fontSize={8} fill="#9ca3af" fillOpacity={0.18} textAnchor="middle" fontWeight={700} transform={`rotate(-55 ${W / 2} ${H / 2})`}>
         {C.watermark}
       </text>
-      <text fontFamily={FONT_SANS} x={M} y={M + 6} fontSize={6} fontWeight={700} fill="#1a021d">
-        {C.sheetTitle}
-      </text>
-      <text fontFamily={FONT_SANS} x={M} y={M + 11.5} fontSize={3} fill="#111827">
-        {info.project}
-        {info.client ? ` — ${info.client}` : ''}
-      </text>
-      <text fontFamily={FONT_SANS} x={M} y={M + 16} fontSize={2.5} fill="#6b7280">
-        {`${info.source} · ${info.date}`}
-      </text>
+      {p === 0 ? (
+        <>
+          <text fontFamily={FONT_SANS} x={M} y={M + 6} fontSize={6} fontWeight={700} fill="#1a021d">
+            {C.sheetTitle}
+          </text>
+          <text fontFamily={FONT_SANS} x={M} y={M + 11.5} fontSize={3} fill="#111827">
+            {info.project}
+            {info.client ? ` — ${info.client}` : ''}
+          </text>
+          <text fontFamily={FONT_SANS} x={M} y={M + 16} fontSize={2.5} fill="#6b7280">
+            {`${info.source} · ${info.date}`}
+          </text>
+          <line x1={M} x2={W - M} y1={M + 18} y2={M + 18} stroke="#1a021d" strokeWidth={0.3} />
+        </>
+      ) : (
+        <>
+          <text fontFamily={FONT_SANS} x={M} y={M + 4} fontSize={3.4} fontWeight={700} fill="#1a021d">
+            {`${C.sheetTitle} — ${info.project}`}
+          </text>
+          <line x1={M} x2={W - M} y1={M + 8} y2={M + 8} stroke="#1a021d" strokeWidth={0.3} />
+        </>
+      )}
       <g transform={`translate(${W - M - logoW} ${M - 2}) scale(${logoW / VIEWBOX_WORDMARK.width})`}>
         <path d={VIEWBOX_WORDMARK.d} transform={VIEWBOX_WORDMARK.transform} fill={LOGO_COLOR} />
       </g>
-      <line x1={M} x2={W - M} y1={M + 18} y2={M + 18} stroke="#1a021d" strokeWidth={0.3} />
-      {blocks}
+      {content}
       <line x1={M} x2={W - M} y1={H - 12} y2={H - 12} stroke="#d1d5db" strokeWidth={0.2} />
       <text fontFamily={FONT_SANS} x={M} y={H - 8} fontSize={2.2} fill="#6b7280">
         {C.footerSheet(fem)}
       </text>
       <text fontFamily={FONT_SANS} x={W - M} y={H - 8} fontSize={2.2} fill="#6b7280" textAnchor="end">
-        1 / 1
+        {`${p + 1} / ${pages.length}`}
       </text>
     </svg>
-  );
+  ));
 }

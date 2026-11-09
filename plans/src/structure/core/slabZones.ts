@@ -16,7 +16,8 @@
 import '../../core/clipperFix';
 import { Clipper, FillRule, Paths64 } from 'clipper2-js';
 import type { CalageResult, SupportCheck } from './calage';
-import type { P2 } from './estimate';
+import type { BudgetLine } from './calageStack';
+import type { ComboReaction, P2 } from './estimate';
 import type { CalcRecord } from './records';
 import { fmtNumber } from './units';
 
@@ -39,6 +40,12 @@ export interface SlabZone {
   pieces: P2[][];
   /** détail du poids : pied, bloc, plaques, plaques de roulage / madriers (N) */
   parts: { feet: number; block: number; plates: number; spread: number };
+  /** public compris dans le poids des pieds de la combinaison retenue (N, public limité appliqué) */
+  publicN: number;
+  /** blocs dessinés sous aucun appui posés dans la zone (comptés dans `parts.block`) */
+  loose?: string[];
+  /** bilan du poids poste par poste (Viewbox, objets portés, public, report de charge, calage) — `calageStack.ts` */
+  budget?: BudgetLine[];
 }
 
 export interface SlabResult {
@@ -140,6 +147,8 @@ export interface SlabOptions {
   statico?: boolean;
   /** toute la surface est une seule zone (plateau de madriers retenu) */
   single?: string;
+  /** poids posés sur la dalle sans porter d'appui (blocs dessinés sous aucun pied) : comptés dans la zone où ils sont */
+  loose?: Array<{ id: string; at: P2; N: number }>;
 }
 
 const dist2Rect = (p: P2, c: P2[]) => {
@@ -214,18 +223,35 @@ export function slabZones(res: CalageResult, bearing: number, surface: P2[][], s
     return [{ k, w: 1 }];
   };
   const shares = sites.map(shareOf);
+  // appui commun à plusieurs Viewbox (bloc sous les pieds de deux Viewbox) : chaque point d'appui posé dessus va à
+  // sa propre Viewbox (ses combinaisons), au lieu d'une part égale de l'appui commun
+  const boxIndex = (id: string) => boxes.findIndex((b) => b.id === id);
+  const memberShares = (p: NonNullable<SupportCheck['parts']>[number]): Array<{ k: number; w: number }> => {
+    const ks = [...new Set(p.moduleIds.map(boxIndex).filter((k) => k >= 0))];
+    return ks.map((k) => ({ k, w: 1 / ks.length }));
+  };
+  const split = sites.map((c) => (boxes.length && c.parts?.length && c.parts.every((p) => memberShares(p).length) ? c.parts : null));
   // charge des pieds de chaque zone combinaison par combinaison (public limité : au plus le public limité dans la zone)
   const est = res.estimate;
   const cap = est.publicLimit !== undefined ? est.publicLimit * (est.publicCap ?? 1) : Infinity;
   const allCombos = sites.every((c) => c.reaction.combos?.length);
   const useSls = !opts.statico && sites.some((c) => c.reaction.combos?.some((x) => x.cls === 'SLS'));
-  const feetOf = (k: number): { N: number; combo?: string } => {
-    const mine = sites.map((c, i) => ({ c, w: shares[i].find((x) => x.k === k)?.w ?? 0 })).filter((x) => x.w > 0);
-    if (!mine.length) return { N: 0 };
-    if (!allCombos) return { N: mine.reduce((a, x) => a + x.w * x.c.Rzk, 0) };
+  // réactions (combinaisons ou Rz,k) qui chargent la zone k : appuis d'une seule Viewbox entiers, appuis communs
+  // découpés par point d'appui
+  const sourcesOf = (k: number): Array<{ w: number; Rk: number; combos?: ComboReaction[] }> =>
+    sites.flatMap((c, i) => {
+      const parts = split[i];
+      if (parts) return parts.map((p) => ({ w: memberShares(p).find((x) => x.k === k)?.w ?? 0, Rk: p.Rk, ...(p.combos ? { combos: p.combos } : {}) })).filter((x) => x.w > 0);
+      const w = shares[i].find((x) => x.k === k)?.w ?? 0;
+      return w > 0 ? [{ w, Rk: c.Rzk, ...(c.reaction.combos ? { combos: c.reaction.combos } : {}) }] : [];
+    });
+  const feetOf = (k: number): { N: number; combo?: string; Q: number } => {
+    const mine = sourcesOf(k);
+    if (!mine.length) return { N: 0, Q: 0 };
+    if (!allCombos || !mine.every((x) => x.combos?.length)) return { N: mine.reduce((a, x) => a + x.w * x.Rk, 0), Q: 0 };
     const by = new Map<string, { R: number; Q: number; gQ: number; name: string }>();
-    for (const { c, w } of mine)
-      for (const x of c.reaction.combos!) {
+    for (const { combos, w } of mine)
+      for (const x of combos!) {
         if (useSls ? x.cls !== 'SLS' : x.cls !== 'ULS') continue;
         const key = `${x.cls}|${x.combo}`;
         const acc = by.get(key) ?? { R: 0, Q: 0, gQ: x.gQ, name: x.combo };
@@ -233,26 +259,50 @@ export function slabZones(res: CalageResult, bearing: number, surface: P2[][], s
         acc.Q += w * x.Q;
         by.set(key, acc);
       }
-    let best = { N: 0, combo: undefined as string | undefined };
+    let best = { N: 0, combo: undefined as string | undefined, Q: 0 };
     for (const v of by.values()) {
       const R = (v.R - v.gQ * Math.max(0, v.Q - cap)) / (useSls ? 1 : 1.35);
-      if (R > best.N) best = { N: R, combo: v.name };
+      if (R > best.N) best = { N: R, combo: v.name, Q: (v.gQ * Math.min(v.Q, cap)) / (useSls ? 1 : 1.35) };
     }
     return best;
   };
+  // poids posés sans porter d'appui (blocs sous aucun pied) : dans la zone qui les contient, sinon la plus proche
+  const looseOf = new Map<number, Array<{ id: string; N: number }>>();
+  for (const l of opts.loose ?? []) {
+    let k = 0;
+    boxes.forEach((b, i) => {
+      if (dist2Rect(l.at, b.poly) < dist2Rect(l.at, boxes[k].poly)) k = i;
+    });
+    if (!looseOf.has(k)) looseOf.set(k, []);
+    looseOf.get(k)!.push({ id: l.id, N: l.N });
+  }
   const zones: SlabZone[] = regions.map((r, k) => {
     const area = r.pieces.reduce((s, x) => s + x.area, 0);
+    // appuis qui chargent la zone ; poids d'un bloc / de plaques communs à plusieurs Viewbox : parts égales (à cheval)
     const mine = sites.map((c, i) => ({ c, w: shares[i].find((x) => x.k === k)?.w ?? 0 })).filter((x) => x.w > 0);
     const f = feetOf(k);
+    const loose = looseOf.get(k) ?? [];
     const parts = {
       feet: f.N,
-      block: mine.reduce((s, x) => s + x.w * (x.c.block ? x.c.block.massKg * G : 0), 0),
+      block: mine.reduce((s, x) => s + x.w * (x.c.block ? x.c.block.massKg * G : 0), 0) + loose.reduce((s, l) => s + l.N, 0),
       plates: mine.reduce((s, x) => s + x.w * platesWeight(x.c), 0),
       spread: spread * area,
     };
     const load = parts.feet + parts.block + parts.plates + parts.spread;
     const q = area > 0 ? load / area : Infinity;
-    return { id: r.id, supports: mine.map((x) => x.c.id), ...(f.combo ? { combo: f.combo } : {}), area, load, q, eta: q / bearing, pieces: r.pieces.filter((x) => x.area > 0).map((x) => x.loop), parts };
+    return {
+      id: r.id,
+      supports: mine.map((x) => x.c.id),
+      ...(f.combo ? { combo: f.combo } : {}),
+      area,
+      load,
+      q,
+      eta: q / bearing,
+      pieces: r.pieces.filter((x) => x.area > 0).map((x) => x.loop),
+      parts,
+      publicN: f.Q,
+      ...(loose.length ? { loose: loose.map((l) => l.id) } : {}),
+    };
   });
   // escaliers, terrasses : la surface de leur plaque du dessous (ou du contact)
   for (const c of res.checks.filter((x) => !sites.includes(x))) {
@@ -261,10 +311,10 @@ export function slabZones(res: CalageResult, bearing: number, surface: P2[][], s
     const parts = { feet: c.Rzk, block: 0, plates: platesWeight(c), spread: 0 };
     const load = parts.feet + parts.plates;
     const q = load / area;
-    zones.push({ id: c.id, supports: [c.id], area, load, q, eta: q / bearing, pieces: poly ? [poly] : [], parts });
+    zones.push({ id: c.id, supports: [c.id], area, load, q, eta: q / bearing, pieces: poly ? [poly] : [], parts, publicN: 0 });
   }
   // ensemble : charge verticale de la combinaison la plus lourde (pas la somme des maxima de chaque pied) + calage
-  const calageN = sites.reduce((s, c) => s + (c.block ? c.block.massKg * G : 0) + platesWeight(c), 0) + spread * total;
+  const calageN = sites.reduce((s, c) => s + (c.block ? c.block.massKg * G : 0) + platesWeight(c), 0) + spread * total + (opts.loose ?? []).reduce((s, l) => s + l.N, 0);
   const gLoad = (est.verticalK ?? est.totalG + est.totalQ) + calageN;
   const gq = total > 0 ? gLoad / total : Infinity;
   const worst = zones.reduce<SlabZone | null>((a, z) => (!a || z.eta > a.eta ? z : a), null);

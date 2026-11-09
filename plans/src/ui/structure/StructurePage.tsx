@@ -48,7 +48,7 @@ import type { BrowserHlrProvider } from '../../linework/provider';
 import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
-import { buildStudyInputs, carriedWeights, groundContactOf, groundExtras, studyBase } from './studyInputs';
+import { buildStudyInputs, carriedDetail, carriedWeights, groundContactOf, groundExtras, studyBase } from './studyInputs';
 import { SupportsCard } from './SupportsCard';
 import { designation } from '../../structure/core/library';
 import { addedSupportEtas, sizeAddedSupports, supportKey } from '../../structure/advisor/supports';
@@ -345,6 +345,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
   // Viewbox portant un élément terrasse sur leur toiture : son poids et son public descendent par elles
   // murs, vitrages, garde-corps, logos, lest du modèle et de l'étude : portés par leur Viewbox (estimation instantanée)
   const carriedBy = useMemo(() => carriedWeights(studyInputs), [studyInputs]);
+  const carriedItemsBy = useMemo(() => carriedDetail(studyInputs), [studyInputs]);
   const groundModules = useMemo(() => {
     const roofT = new Set(sceneModel.terraces.filter((t) => t.kind === 'roof').map((t) => t.module));
     // Viewbox modifiées par l'étude : hauteur des poteaux et écart de poids des barres
@@ -356,9 +357,10 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
       const own = pm ? estimateTypeFields(pm, types, DEFAULTS.ceiling.value, DEFAULTS.floorFinish.value) : {};
       // poids calculé d'un type sans pesée : déjà avec ses barres modifiées
       const delta = own.weightMode === 'computed' ? 0 : (pm?.weightDelta ?? 0);
-      return { ...m, ...(pm ? { height: pm.params.topZ } : {}), ...own, carried: (carriedBy.get(m.id) ?? 0) + delta, ...(roofT.has(m.id) ? { terrace: true } : {}) };
+      const items = carriedItemsBy.get(m.id);
+      return { ...m, ...(pm ? { height: pm.params.topZ } : {}), ...own, carried: (carriedBy.get(m.id) ?? 0) + delta, ...(items?.length ? { carriedItems: items } : {}), ...(roofT.has(m.id) ? { terrace: true } : {}) };
     });
-  }, [modules, built.added, sceneModel.terraces, carriedBy, studyInputs.modules, studyInputs.library, studyInputs.sections, hyp.moduleWeightKg, hyp.moduleWeights]);
+  }, [modules, built.added, sceneModel.terraces, carriedBy, carriedItemsBy, studyInputs.modules, studyInputs.library, studyInputs.sections, hyp.moduleWeightKg, hyp.moduleWeights]);
   // types de structure personnalisés de l'étude : poids calculé (barres + plafond + sol) pour l'étape 2
   const customTypeRows = useMemo(() => {
     const types = moduleTypes(studyInputs.modules, studyInputs.library, studyInputs.sections, { viewboxKg: hyp.moduleWeightKg, weights: {} });

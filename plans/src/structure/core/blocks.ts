@@ -34,6 +34,17 @@ export interface DrawnBlock {
   material: string;
   /** pièces dessinées qui composent le bloc (madriers d'une pile…) */
   pieces: number;
+  /** ce qui repose sur le bloc dans le dessin (écarts au dessus du bloc, mm) : absent = non mesuré */
+  under?: BlockUnder;
+}
+
+/**
+ * Dessin : écart (mm) entre le dessus du bloc et le dessous de la pièce de Viewbox la plus basse au-dessus de lui —
+ * pieds / vérins (platine), et structure (rive UNP, profils du plancher) ; null = rien dans les 40 cm au-dessus.
+ */
+export interface BlockUnder {
+  feet: number | null;
+  frame: number | null;
 }
 
 export interface BoxMm {
@@ -455,4 +466,64 @@ export function centredBlock(s: BlockSupport): BlockSupport {
 export function blockAxes(modules: EstimateModule[]): P2 {
   const m = modules.find((x) => x.level === 0) ?? modules[0];
   return m ? moduleAxes(m).u : [1, 0];
+}
+
+/** Écart toléré entre le dessus d'un bloc et ce qui repose dessus dans le dessin (mm). */
+export const BLOCK_TOUCH = 5;
+
+/** Ce qui porte sur un bloc dans le dessin : vérins / pieds, ou structure (rive UNP, profils), et l'écart (mm). */
+export function blockBearing(b: Pick<DrawnBlock, 'under'>): { kind: 'feet' | 'frame'; gap: number; frameGap: number | null } | null {
+  const u = b.under;
+  if (!u || (u.feet === null && u.frame === null)) return null;
+  const feetFirst = u.feet !== null && (u.frame === null || u.feet <= u.frame);
+  return { kind: feetFirst ? 'feet' : 'frame', gap: feetFirst ? u.feet! : u.frame!, frameGap: u.frame };
+}
+
+const ids = (bs: DrawnBlock[]) => bs.map((b) => b.id).join(', ');
+const cmText = (mm: number) => `${fmtNumber(mm / 10, 1)} cm`;
+const range = (vs: number[]) => {
+  const [lo, hi] = [Math.min(...vs), Math.max(...vs)];
+  return hi - lo < 5 ? cmText(hi) : `${cmText(lo)} à ${cmText(hi)}`;
+};
+
+/**
+ * Dessin et mode de pose au sol : le calcul doit correspondre à ce qui sera posé. `mode` = vérins (jacks), angles /
+ * pieds posés sur les blocs (points), UPN et profils posés sur les blocs (pads), rives posées au sol (rims). Signale :
+ * des blocs qui portent les vérins quand le calcul fait porter l'UPN (et de combien rehausser), l'inverse, et les blocs
+ * dessinés avec un vide au-dessus (ils ne portent qu'une fois calés).
+ */
+export function blockDrawingNotes(blocks: DrawnBlock[], mode: 'jacks' | 'points' | 'pads' | 'rims'): string[] {
+  if (mode === 'rims') return [];
+  const out: string[] = [];
+  const onFeet = blocks.filter((b) => blockBearing(b)?.kind === 'feet' && Math.abs(blockBearing(b)!.gap) <= BLOCK_TOUCH);
+  const onFrame = blocks.filter((b) => blockBearing(b)?.kind === 'frame' && Math.abs(blockBearing(b)!.gap) <= BLOCK_TOUCH);
+  const apart = blocks.filter((b) => {
+    const k = blockBearing(b);
+    return k && k.gap > BLOCK_TOUCH;
+  });
+  if (mode === 'pads') {
+    const lifted = onFeet.filter((b) => (blockBearing(b)!.frameGap ?? Infinity) > BLOCK_TOUCH);
+    if (lifted.length) {
+      const gaps = lifted.map((b) => blockBearing(b)!.frameGap!).filter((g) => Number.isFinite(g));
+      out.push(
+        `Dessin ≠ calcul : dans le modèle, les Viewbox reposent sur leurs vérins / pieds posés sur ${lifted.length > 1 ? 'les blocs' : 'le bloc'} ${ids(lifted)}${
+          gaps.length ? ` et l’UPN est ${range(gaps)} au-dessus de ${lifted.length > 1 ? 'ces blocs' : 'ce bloc'}` : ''
+        }, alors que le calcul « posées sur plaques / blocs » fait porter l’UPN sur les blocs. Pour réaliser ce calcul : retirer les vérins et rehausser ${lifted.length > 1 ? 'ces blocs' : 'ce bloc'}${gaps.length ? ` de ${range(gaps)}` : ''} (ou caler sous l’UPN sur toute la largeur du bloc) ; sinon choisir « sur vérins » à l’étape 3.`,
+      );
+    }
+  } else if (onFrame.length) {
+    out.push(
+      `Dessin ≠ calcul : dans le modèle, l’UPN ou les profils du plancher reposent directement sur ${onFrame.length > 1 ? 'les blocs' : 'le bloc'} ${ids(onFrame)} (sans vérin), alors que le calcul ${mode === 'jacks' ? 'sur vérins' : 'sur les angles / pieds'} ne les fait pas porter — choisir « sur plaques / blocs » à l’étape 3 pour que ${onFrame.length > 1 ? 'ces blocs portent' : 'ce bloc porte'} dans le calcul.`,
+    );
+  }
+  if (apart.length) {
+    const what = (b: DrawnBlock) => (blockBearing(b)!.kind === 'feet' ? 'les vérins / pieds' : 'la structure (UNP, profils du plancher)');
+    const gaps = apart.map((b) => blockBearing(b)!.gap);
+    out.push(
+      `Dessin : ${apart.length > 1 ? 'les blocs' : 'le bloc'} ${ids(apart)} ${apart.length > 1 ? 'sont' : 'est'} à ${range(gaps)} sous ${what(apart[0])} : ${apart.length > 1 ? 'ils ne portent' : 'il ne porte'} qu’une fois calé${apart.length > 1 ? 's' : ''} (cales bois / coins serrés sur toute la surface)${
+        mode === 'pads' ? ' — le calcul les fait porter comme s’ils étaient calés' : ' — le calcul les compte seulement comme poids sur la dalle / le sol'
+      }.`,
+    );
+  }
+  return out;
 }

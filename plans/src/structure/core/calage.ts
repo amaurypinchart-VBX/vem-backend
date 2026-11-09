@@ -14,8 +14,8 @@ import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
 import type { CalageChoices, ChainInput, ChainResult, LayerRef } from './spreading';
 import { adviseChain, bestStockForAll, bestStockLayers, checkChain, dimsCm, pressureText, resolveLayers } from './spreading';
-import type { BlockChain, BlockSupport, DrawnBlock } from './blocks';
-import { assignBlocks, blockAxes, blockChain, blockDimsText, blockMaterial, blockOutline, centredBlock } from './blocks';
+import type { BlockChain, BlockSupport, BlockUnder, DrawnBlock } from './blocks';
+import { assignBlocks, blockAxes, blockChain, blockDimsText, blockDrawingNotes, blockMaterial, blockOutline, centredBlock } from './blocks';
 import type { PlateGroup, PlatePlacement, PlatePlan, SupportGeometry } from './placement';
 import { flushCaps, plateGroups, platePlan, supportGeometry } from './placement';
 import type { TuvCheck } from './tuv';
@@ -28,6 +28,8 @@ import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedie
 import { evaluateRemedy } from './calageRemedies';
 import type { SlabResult, SlabZone } from './slabZones';
 import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, unionLoops, zoneOfSupport, zoneRecord } from './slabZones';
+import type { CalageStack, GroundMode } from './calageStack';
+import { calageStacks, zoneBudget } from './calageStack';
 
 /** Surface de contact (mm) selon le nombre d'angles posés sur la même plaque (statico 24-0571 § 3.12). */
 export function contactArea(corners: number, middle: boolean, jack = false, stair = false): { a1: number; a2: number; confirmed: boolean } {
@@ -93,6 +95,8 @@ export interface CalageInput {
    * plancher, toiture : charge répartie admissible, vérifiée sous chaque Viewbox — `slabZones.ts`)
    */
   bearingMode?: 'pressure' | 'distributed';
+  /** épaisseur des plaques de roulage (mm, coupe du calage) ; absente = inconnue */
+  roadwayThickness?: number;
 }
 
 /** Vérification d'un appui de calage (une plaque) sous sa propre réaction avec le calage qui lui est appliqué. */
@@ -129,6 +133,9 @@ export interface SupportCheck extends ChainResult {
     offset: number;
     /** même bloc centré sous la résultante des pieds, sans plaque : pression au sol et taux */
     centred: { pressure: number; eta: number };
+    /** hauteur du bloc (mm) et ce qui repose dessus dans le dessin (vérins, UPN, profils ; écarts en mm) */
+    height: number;
+    under?: BlockUnder;
   };
   /** entrée de la chaîne de répartition de l'appui (sans les couches) : pour rejouer l'appui avec d'autres plaques */
   chainBase: Omit<ChainInput, 'layers'>;
@@ -136,6 +143,12 @@ export interface SupportCheck extends ChainResult {
   at: P2;
   /** dalle en charge répartie : la zone de dalle de l'appui = la dalle sous sa Viewbox (la plus chargée s'il en porte plusieurs) */
   zone?: SlabZone;
+  /**
+   * appui commun à plusieurs Viewbox (bloc ou plaque sous les pieds / rives de deux Viewbox) : réaction de chaque
+   * point d'appui posé dessus (ses Viewbox, combinaison par combinaison, public plein) — la charge de la dalle sous
+   * chaque Viewbox reprend ses propres pieds, pas une part égale de l'appui commun
+   */
+  parts?: Array<{ moduleIds: string[]; Rk: number; combos?: ComboReaction[] }>;
 }
 
 export interface CalageType {
@@ -210,6 +223,12 @@ export interface CalageResult {
   centredBlocks?: Array<{ id: string; move: number }>;
   /** dalle en charge répartie admissible : charge au m² de la zone de chaque pied et de l'ensemble */
   slab?: SlabResult;
+  /** blocs dessinés sous aucun appui : ils ne portent rien mais pèsent sur la dalle / le sol */
+  looseBlocks?: Array<{ id: string; massKg: number; outline: [P2, P2, P2, P2] }>;
+  /** pose au sol du calcul (vérins, angles / pieds, UPN sur plaques / blocs, rives au sol) */
+  groundMode?: GroundMode;
+  /** coupe du calage de chaque appui, de la dalle à la Viewbox (appuis identiques regroupés) */
+  stacks?: CalageStack[];
 }
 
 const typeLabel = (corners: number, middle: boolean, jack = false, stair = false) =>
@@ -293,7 +312,9 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const base = computeCalageBase(inp);
   const applied = inp.choices?.remedy;
   const res = applied ? withRemedy(inp, base, applied) : base;
-  return inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
+  const out = inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
+  const mode: GroundMode = inp.estimate.jacks ? 'jacks' : (inp.estimate.contact?.mode ?? 'points');
+  return { ...out, groundMode: mode, stacks: calageStacks(out, mode, inp.roadwayThickness) };
 }
 
 /**
@@ -348,9 +369,25 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
     const eff = bottomEffective(c);
     if (eff) surface.push(eff);
   }
+  // blocs dessinés sous aucun appui : ils ne portent rien mais sont posés sur la dalle (sauf solution « sans les blocs »)
+  const loose = res.remedy?.applied.key.endsWith('no-blocks') ? [] : (res.looseBlocks ?? []);
+  for (const b of loose) surface.push(b.outline);
   const spreadN = (res.roadwayOn ? res.roadway.plates * res.roadway.area : 0) + (res.remedy ? res.remedy.remedy.materials.reduce((s, l) => s + l.massKg * 9.81, 0) : 0);
   const area = coveredArea(surface);
-  const slab = slabZones(res, inp.bearing, surface, area > 0 ? spreadN / area : 0, { modules: inp.modules, statico: inp.staticoConversion, ...(plat ? { single: 'PL' } : {}) });
+  const slab = slabZones(res, inp.bearing, surface, area > 0 ? spreadN / area : 0, {
+    modules: inp.modules,
+    statico: inp.staticoConversion,
+    ...(plat ? { single: 'PL' } : {}),
+    loose: loose.map((b) => ({ id: b.id, N: b.massKg * 9.81, at: [(b.outline[0][0] + b.outline[2][0]) / 2, (b.outline[0][1] + b.outline[2][1]) / 2] as P2 })),
+  });
+  // bilan du poids de chaque zone poste par poste (Viewbox, objets portés, public, report, calage)
+  const publicNote = inp.publicLimit
+    ? `${Math.round(inp.publicLimit.persons)} personnes × ${fmtNumber(inp.publicLimit.kg, 0)} kg au plus sur toute l’installation, toutes comptées dans cette zone`
+    : 'exploitation réglementaire sur le plancher';
+  for (const z of slab.zones) {
+    const b = zoneBudget(z, inp.modules, inp.estimate.loads.moduleWeight, publicNote);
+    if (b) z.budget = b;
+  }
   const point = inp.pointLoadMax;
   const t = (kgOrN: number) => fmtNumber(kgOrN / 9.81 / 1000, 2);
   const withZone = (c: SupportCheck): SupportCheck => {
@@ -535,9 +572,13 @@ function computeCalageBase(inp: CalageInput): CalageResult {
   const warnings = [...new Set([...est.warnings, ...plateEst.warnings])];
   if (blk) {
     warnings.push(...blk.warnings);
+    // le dessin correspond-il au mode de pose calculé (vérins, UPN sur les blocs) ?
+    warnings.push(...blockDrawingNotes(inp.blocks!, inp.estimate.jacks ? 'jacks' : inp.estimate.contact?.mode ?? 'points'));
     if (blk.unused.length)
       warnings.push(
-        `${blk.unused.length} bloc(s) de calage sous aucun appui (${blk.unused.map((b) => b.id).join(', ')})${inp.estimate.middleFeet || inp.estimate.jacks ? '' : ' : si les pieds centraux des Viewbox posent sur ces blocs, cocher « pieds centraux » (étape 2)'} — leur poids n’est pas compté.`,
+        `${blk.unused.length} bloc(s) de calage sous aucun appui (${blk.unused.map((b) => b.id).join(', ')})${inp.estimate.middleFeet || inp.estimate.jacks ? '' : ' : si les pieds centraux des Viewbox posent sur ces blocs, cocher « pieds centraux » (étape 2)'} — ${
+          slabMode ? 'ils ne portent rien mais leur poids est compté sur la dalle (zone de la Viewbox où ils sont posés)' : 'ils ne portent rien (aucun appui ne les charge)'
+        }.`,
       );
   }
   if (centredBlocks.length)
@@ -830,6 +871,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           tuv: tuvOn && vbxOnly ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null,
           chainBase: e.base,
           at: [e.geo.u[0] * e.geo.center[0] + e.geo.v[0] * e.geo.center[1], e.geo.u[1] * e.geo.center[0] + e.geo.v[1] * e.geo.center[1]],
+          ...(memberParts(g) ? { parts: memberParts(g)! } : {}),
           ...(bs
             ? {
                 block: {
@@ -840,6 +882,8 @@ function computeCalageBase(inp: CalageInput): CalageResult {
                   massSource: bs.block.massSource,
                   outline: blockOutline(bs.block),
                   feet: bs.feet.map((f) => f.id),
+                  height: bs.block.top - bs.block.bottom,
+                  ...(bs.block.under ? { under: bs.block.under } : {}),
                   size: [bs.rect[1] - bs.rect[0], bs.rect[3] - bs.rect[2]],
                   offset: Math.hypot(...(e.base as { block: BlockChain }).block.offset),
                   centred: (() => {
@@ -1080,6 +1124,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     placement: placementMode,
     tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(viewboxPresent ? {} : { notApplicable: true }) },
     ...(centredBlocks.length ? { centredBlocks } : {}),
+    ...(blk?.unused.length ? { looseBlocks: blk.unused.map((b) => ({ id: b.id, massKg: b.massKg, outline: blockOutline(b) })) } : {}),
     levels: inp.levels?.length ? levelSurvey(est.reactions.map((r) => ({ id: r.group.id, position: r.group.position, jack: !!r.group.jack })), inp.levels, inp.jackMax ?? JACK_MAX_EXTENSION) : null,
   };
 }
@@ -1110,6 +1155,15 @@ export function maxPublic(inp: CalageInput, kg: number): PublicMax | null {
     else hi = mid;
   }
   return { persons: lo, full: false, empty: false, fullPersons };
+}
+
+/**
+ * Points d'appui d'une plaque / d'un bloc commun à plusieurs Viewbox : la réaction de chacun avec ses Viewbox (pour
+ * rendre à chaque Viewbox ses propres pieds sur la dalle). Null quand l'appui ne porte qu'une Viewbox (ou un seul point).
+ */
+function memberParts(g: PlateGroup): SupportCheck['parts'] | null {
+  if (g.members.length < 2 || new Set(g.members.flatMap((m) => m.group.moduleIds)).size < 2) return null;
+  return g.members.map((m) => ({ moduleIds: m.group.moduleIds, Rk: m.Rk, ...(m.combos ? { combos: m.combos } : {}) }));
 }
 
 /** « 2 angles », « vérin d’angle », « 2 pieds centraux »… posés sur un bloc. */

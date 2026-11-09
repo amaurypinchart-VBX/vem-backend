@@ -163,4 +163,97 @@ describe('dalle en charge répartie admissible', () => {
     const corner = (r: typeof env) => Math.max(...r.estimate.reactions.filter((x) => !x.group.middle).map((x) => x.Rk));
     expect(corner(env)).toBeCloseTo(corner(only), 6);
   });
+
+  // revue du 09.11.2026 (IKEA, place de l’Opéra, 450 kg/m²) : blocs qui ne portent rien, appuis communs, bilan, coupe
+  const box = (i: number) => {
+    const c = mods[i].corners;
+    return { x0: Math.min(...c.map((p) => p[0])), x1: Math.max(...c.map((p) => p[0])), z0: Math.min(...c.map((p) => p[1])), z1: Math.max(...c.map((p) => p[1])) };
+  };
+  const blockAt = (id: string, x: number, z: number, under?: { feet: number | null; frame: number | null }) => ({
+    id, label: 'Bloc', x0: x - 500, x1: x + 500, z0: z - 500, z1: z + 500, bottom: -339, top: -96, massKg: 102.5, massSource: 'computed' as const, material: 'C24', pieces: 1, ...(under ? { under } : {}),
+  });
+
+  it('bloc posé sous aucun pied : il ne porte rien mais son poids compte sur la dalle (sa zone et l’ensemble)', () => {
+    const b0 = box(0);
+    const loose = blockAt('BL9', (b0.x0 + b0.x1) / 2, (b0.z0 + b0.z1) / 2);
+    const without = computeCalage(slab);
+    const withBlock = computeCalage({ ...slab, blocks: [loose] });
+    expect(withBlock.looseBlocks?.map((b) => b.id)).toEqual(['BL9']);
+    const zone = (r: typeof without) => r.slab!.zones.find((z) => z.id === mods[0].id)!;
+    expect(zone(withBlock).load - zone(without).load).toBeCloseTo(102.5 * 9.81, 3);
+    expect(zone(withBlock).loose).toEqual(['BL9']);
+    expect(withBlock.slab!.global.load - without.slab!.global.load).toBeCloseTo(102.5 * 9.81, 3);
+    expect(withBlock.warnings.some((w) => /BL9\) — ils ne portent rien mais leur poids est compté sur la dalle/.test(w))).toBe(true);
+    // l’autre Viewbox n’est pas touchée
+    const other = (r: typeof without) => r.slab!.zones.find((z) => z.id === mods[1].id)!.load;
+    expect(other(withBlock)).toBeCloseTo(other(without), 6);
+  });
+
+  it('bloc commun à deux Viewbox : chaque Viewbox reprend ses propres pieds (pas la moitié du bloc)', async () => {
+    const { estimateReactions } = await import('../../src/structure/core/estimate');
+    const norm = { ...calageInput(mods, { ...hyp450, publicMode: 'norm' as const }, { plates: [], commercial: [] }, true), bearingMode: 'distributed' as const, reactionsEnvelope: false };
+    const est = estimateReactions(norm.modules, norm.estimate);
+    // calcul 3D fictif : la première Viewbox deux fois plus lourde que l’autre
+    const heavy = mods[0].id;
+    const k = (r: (typeof est.reactions)[number], f: number) => ({ ...r, Rk: r.Rk * f, REd: r.REd * f, combos: r.combos?.map((c) => ({ ...c, R: c.R * f, Q: c.Q * f })) });
+    const fem = { ...est, method: 'fem' as const, reactions: est.reactions.map((r) => (r.group.moduleIds.length === 1 && r.group.moduleIds[0] === heavy ? k(r, 2) : r)) };
+    // angle commun aux deux Viewbox : un bloc sous les deux vérins d’angle voisins
+    const pts = mods[0].corners.filter((p) => mods[1].corners.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 50));
+    expect(pts.length).toBe(2);
+    const twin = mods[1].corners.find((q) => Math.hypot(pts[0][0] - q[0], pts[0][1] - q[1]) < 50)!;
+    const shared = blockAt('BL1', (pts[0][0] + twin[0]) / 2, (pts[0][1] + twin[1]) / 2);
+    const r = computeCalage({ ...norm, reactions: fem, blocks: [shared] });
+    const onBlock = r.checks.find((c) => c.block?.id === 'BL1')!;
+    expect(onBlock.reaction.group.moduleIds.length).toBe(2);
+    expect(onBlock.parts?.length).toBe(2);
+    // attendu : pour chaque Viewbox, la combinaison ELS la plus lourde de la somme de ses propres vérins
+    const own = (id: string) => {
+      const by = new Map<string, number>();
+      for (const g of fem.reactions)
+        if (g.group.moduleIds.length === 1 && g.group.moduleIds[0] === id)
+          for (const c of g.combos!) if (c.cls === 'SLS') by.set(c.combo, (by.get(c.combo) ?? 0) + c.R);
+      return Math.max(...by.values());
+    };
+    for (const m of mods) expect(r.slab!.zones.find((z) => z.id === m.id)!.parts.feet).toBeCloseTo(own(m.id), 3);
+  });
+
+  it('bilan de la dalle sous chaque Viewbox : postes (Viewbox, objets portés, public, report, calage) = poids de la zone', () => {
+    const items = [{ label: 'Vitrage', count: 3, N: 3 * 201 * 9.81, proposed: true as const }];
+    const m2 = mods.map((m, i) => (i ? m : { ...m, carried: items[0].N, carriedItems: items }));
+    const inp = { ...calageInput(m2, hyp450, { plates: [], commercial: [] }, true), bearingMode: 'distributed' as const, choices: { roadway: true }, roadwayPlates: (23 * 9.81) / 1e6 };
+    const r = computeCalage(inp);
+    for (const z of r.slab!.zones) {
+      const sum = z.budget!.reduce((a, l) => a + l.N, 0);
+      expect(sum).toBeCloseTo(z.load, 3);
+      expect(z.budget![0]).toMatchObject({ key: 'box', N: 2564 * 9.81 });
+      expect(z.budget!.find((l) => l.key === 'public')?.note).toMatch(/4 personnes × 80 kg/);
+    }
+    // plaques de roulage : tout leur poids, réparti sur la surface couverte
+    const spread = r.slab!.zones.reduce((a, z) => a + z.budget!.find((l) => l.key === 'spread')!.N, 0);
+    expect(spread).toBeCloseTo((23 * 9.81 * r.roadway.area) / 1e6, 3);
+    const glazed = r.slab!.zones.find((z) => z.id === mods[0].id)!.budget!.find((l) => l.key === 'item')!;
+    expect(glazed).toMatchObject({ label: 'Vitrage', count: 3, proposed: true });
+  });
+
+  it('coupe du calage : plaques de roulage → bloc → vérin (d’après le dessin) → dessous de la Viewbox, hauteur totale', () => {
+    // vérins d’angle posés sur des blocs (platine sur le bloc, UPN 9,6 cm au-dessus), plaques de roulage de 20 mm
+    const blocks = [0, 1].flatMap((i) => {
+      const b = box(i);
+      return [blockAt(`BL${2 * i + 1}`, b.x0 + 500, b.z0 + 500, { feet: -2, frame: 96 }), blockAt(`BL${2 * i + 2}`, b.x1 - 500, b.z1 - 500, { feet: -2, frame: 96 })];
+    });
+    const r = computeCalage({ ...slab, blocks, choices: { roadway: true }, roadwayThickness: 20 });
+    expect(r.groundMode).toBe('jacks');
+    const st = r.stacks!.find((s) => s.layers.some((l) => l.kind === 'block'))!;
+    expect(st.layers.map((l) => l.kind)).toEqual(['roadway', 'block', 'jack']);
+    expect(st.layers.map((l) => l.thickness)).toEqual([20, 243, 96]);
+    expect(st.height).toBe(20 + 243 + 96);
+    expect(st.underside).toBe(true);
+    // 4 blocs identiques : une seule coupe
+    expect(st.supports.length).toBe(4);
+    // sans épaisseur des plaques de roulage : hauteur inconnue, partie connue gardée
+    const r2 = computeCalage({ ...slab, blocks, choices: { roadway: true } });
+    const st2 = r2.stacks!.find((s) => s.layers.some((l) => l.kind === 'block'))!;
+    expect(st2.height).toBeNull();
+    expect(st2.known).toBe(243 + 96);
+  });
 });

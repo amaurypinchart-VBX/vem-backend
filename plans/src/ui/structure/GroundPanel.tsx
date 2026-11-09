@@ -28,6 +28,7 @@ import { LANGS, LANG_LABEL, num } from '../../structure/report/i18n';
 import { CALAGE_LABELS } from '../../structure/report/calageI18n';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from '../../structure/report/stackFigure';
 import type { ChoiceSetters } from './CalageChoice';
 import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice } from './CalageChoice';
 import type { Project } from '../../api/vem';
@@ -76,6 +77,8 @@ export interface Hypotheses {
   thicknesses: string;
   /** poids propre des plaques de roulage (kg/m²) */
   roadwayKg: number;
+  /** épaisseur des plaques de roulage (mm, coupe du calage) ; 0 / absent = inconnue */
+  roadwayMm?: number;
   /** public pour le sol : charge réglementaire (kN/m²) ou nombre de personnes limité sur toute l'installation */
   publicMode: 'norm' | 'persons';
   persons: number;
@@ -199,6 +202,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     choices: h.calage,
     ...(h.publicMode === 'persons' ? { publicLimit: { persons: Math.max(0, Math.round(h.persons)), kg: h.personKg } } : {}),
     roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
+    ...(h.roadwayMm && h.roadwayMm > 0 ? { roadwayThickness: h.roadwayMm } : {}),
     placement: h.platePlacement ?? 'auto',
     tuvMinimum: h.tuvMinimum ?? true,
     ...(h.groundLevels?.length ? { levels: h.groundLevels } : {}),
@@ -682,13 +686,16 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     const levels = Math.max(0, ...modules.map((m) => m.level)) + 1;
     const placement = hyp.platePlacement ?? 'auto';
     const extras = (hyp.ceilingExtra ?? 0) > 0 || (hyp.floorExtra ?? 0) > 0 ? [((hyp.ceilingExtra ?? 0) * 1000) / 9.81, ((hyp.floorExtra ?? 0) * 1000) / 9.81] : null;
+    // exploitation du rez-de-chaussée sous les 5 kN/m² du calcul de type statico 18-0573 : la structure n'est pas
+    // vérifiée avec la charge réglementaire (ne pas l'écrire)
+    const liveReduced = (hyp.liveGround ?? 5) < 5 - 1e-9;
     const T = {
       fr: {
         bearing: ['Portance admissible', `${bearing} (${preset?.label ?? 'saisie'})`],
         weight: ['Poids d’une Viewbox', `${N(hyp.moduleWeightKg)} kg pesés (plancher, sol, plafond et isolants compris)${extras ? ` + plafond ${N(extras[0])} kg/m² + sol ${N(extras[1])} kg/m² en plus` : ''}`],
         finishes: ['Murs, vitrages, garde-corps', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg par Viewbox` : 'd’après le modèle, objet par objet'],
         live: ['Exploitation', `rez-de-chaussée ${N(hyp.liveGround ?? 5, 2)} kN/m², étages ${N(hyp.live, 2)} kN/m²`],
-        pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; structure vérifiée avec la charge réglementaire)` : 'charge réglementaire (public libre)'],
+        pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; ${liveReduced ? `structure calculée avec ${N(hyp.liveGround ?? 5, 2)} kN/m² au rez-de-chaussée, moins que la charge réglementaire de 5 kN/m²` : 'structure vérifiée avec la charge réglementaire'})` : 'charge réglementaire (public libre)'],
         wind: ['Vent en / hors service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
         feet: contact
@@ -703,7 +710,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         weight: ['Gewicht einer Viewbox', `${N(hyp.moduleWeightKg)} kg gewogen (inkl. Boden, Bodenbelag, Decke und Dämmung)${extras ? ` + Decke ${N(extras[0])} kg/m² + Boden ${N(extras[1])} kg/m² zusätzlich` : ''}`],
         finishes: ['Wände, Verglasungen, Geländer', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg je Viewbox` : 'aus dem Modell, Bauteil für Bauteil'],
         live: ['Verkehrslast', `Erdgeschoss ${N(hyp.liveGround ?? 5, 2)} kN/m², Obergeschosse ${N(hyp.live, 2)} kN/m²`],
-        pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; Tragwerk mit der Normlast nachgewiesen)` : 'Normlast (freies Publikum)'],
+        pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; ${liveReduced ? `Tragwerk mit ${N(hyp.liveGround ?? 5, 2)} kN/m² im Erdgeschoss berechnet, weniger als die Normlast von 5 kN/m²` : 'Tragwerk mit der Normlast nachgewiesen'})` : 'Normlast (freies Publikum)'],
         wind: ['Wind in / außer Betrieb', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Auflagerkraft für die Fläche', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'charakteristisch (GZG)'],
         feet: contact
@@ -718,7 +725,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         weight: ['Weight of one Viewbox', `${N(hyp.moduleWeightKg)} kg weighed (floor, floor finish, ceiling and insulation included)${extras ? ` + ceiling ${N(extras[0])} kg/m² + floor ${N(extras[1])} kg/m² in addition` : ''}`],
         finishes: ['Walls, glazing, railings', withoutModel ? `${N((hyp.extraKN * 1000) / 9.81)} kg per Viewbox` : 'from the model, item by item'],
         live: ['Imposed load', `ground floor ${N(hyp.liveGround ?? 5, 2)} kN/m², upper floors ${N(hyp.live, 2)} kN/m²`],
-        pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; structure checked with the code load)` : 'code load (free public)'],
+        pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; ${liveReduced ? `structure calculated with ${N(hyp.liveGround ?? 5, 2)} kN/m² on the ground floor, less than the code load of 5 kN/m²` : 'structure checked with the code load'})` : 'code load (free public)'],
         wind: ['Wind in / out of service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Reaction for the area', hyp.staticoConversion ? 'Rz,Ed / 1.35 (statico)' : 'characteristic (SLS)'],
         feet: contact
@@ -736,24 +743,22 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     if (!result) return;
     setPdfBusy(true);
     try {
-      const [{ renderToStaticMarkup }, { buildPdf, fontsUsed }, { loadFonts }, { GroundSheetSvg }] = await Promise.all([
+      const [{ renderToStaticMarkup }, { buildPdf, fontsUsed }, { loadFonts }, { groundSheetPages }] = await Promise.all([
         freshImport(() => import('react-dom/server')),
         freshImport(() => import('../../sheets/pdf/pdf')),
         freshImport(() => import('../../sheets/pdf/assets')),
         freshImport(() => import('../../structure/report/groundSheet')),
       ]);
       const name = project ? `${project.internalNumber ? project.internalNumber + ' · ' : ''}${project.name}` : 'Projet';
-      const svg = renderToStaticMarkup(
-        <GroundSheetSvg
-          result={result}
-          modules={modules}
-          info={{ project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: assumptions(pdfLang) }}
-          lang={pdfLang}
-        />,
-      );
-      const fonts = await loadFonts(fontsUsed([svg]));
+      const svgs = groundSheetPages({
+        result,
+        modules,
+        info: { project: name, client: project?.client?.name ?? undefined, source, date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: assumptions(pdfLang) },
+        lang: pdfLang,
+      }).map((p) => renderToStaticMarkup(p));
+      const fonts = await loadFonts(fontsUsed(svgs));
       const title = { fr: 'Fiche de calage', de: 'Unterpallungsblatt', en: 'Packing sheet' }[pdfLang];
-      const pdf = await buildPdf([{ svg, paper: 'A3', size: { w: 210, h: 297 } }], fonts, { title: `${title} — ${name}`, subject: source });
+      const pdf = await buildPdf(svgs.map((svg) => ({ svg, paper: 'A3' as const, size: { w: 210, h: 297 } })), fonts, { title: `${title} — ${name}`, subject: source });
       downloadBlob(`${title} ${name.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, pdf.output('blob'));
     } catch (e) {
       setError(`PDF impossible : ${(e as Error).message}`);
@@ -1135,6 +1140,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 <Field label="Poids propre des plaques" hint="acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD ≈ 15 kg/m² ; 0 = non compté">
                   <Num value={hyp.roadwayKg} onChange={(v) => setHyp((h) => ({ ...h, roadwayKg: Math.max(0, v) }))} width={60} /> kg/m²
                 </Field>
+                <Field label="Épaisseur des plaques" hint="pour la coupe du calage et la hauteur de la Viewbox au-dessus de la dalle ; 0 = inconnue">
+                  <Num value={hyp.roadwayMm ?? 0} onChange={(v) => setHyp((h) => ({ ...h, roadwayMm: Math.max(0, v) }))} width={60} /> mm
+                </Field>
                 <div className="stats">
                   <div className="stat">
                     <div className="v">{n(roadway.area / 1e6, 1)} m²</div>
@@ -1357,8 +1365,92 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             </div>
           </div>
           {showStock && <StockEditor stock={stock} onSaved={setStock} />}
+          <StackCard result={result} />
+          <SlabBudgetCard result={result} />
         </>
       )}
+    </div>
+  );
+}
+
+/** Coupe du calage (de la dalle à la Viewbox) : croquis et couches de bas en haut, comme la fiche et le rapport. */
+function StackCard({ result }: { result: CalageResult }) {
+  const stacks = result.stacks ?? [];
+  if (!stacks.length) return null;
+  const S = STACK_LABELS.fr;
+  const h = Math.ceil(stacks.length / 4) * 46;
+  return (
+    <div className="card" data-testid="calage-stack">
+      <div className="card-head">
+        <h2>{S.stackTitle}</h2>
+        <span className="hint">ce qui est posé sur la dalle, couche par couche — repris dans la fiche de calage et le rapport</span>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <svg viewBox={`0 0 186 ${h}`} style={{ width: '100%', maxWidth: 760, background: '#fff' }} dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, 'fr')(0, 0, 186, h) }} />
+        <table className="list">
+          <thead>
+            <tr>
+              <th>{S.colSupports}</th>
+              <th>{S.colLayers}</th>
+              <th className="num">{S.colHeight}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stacks.map((st, k) => (
+              <tr key={k}>
+                <td>{st.supports.join(', ')}</td>
+                <td>
+                  {stackLines(st, 'fr').map((l, i) => (
+                    <div key={i}>{l}</div>
+                  ))}
+                </td>
+                <td className="num">{stackHeightText(st, 'fr')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Dalle en charge répartie : poids sous chaque Viewbox, poste par poste. */
+function SlabBudgetCard({ result }: { result: CalageResult }) {
+  const b = slabBudgetTable(result, 'fr');
+  if (!b) return null;
+  const S = STACK_LABELS.fr;
+  return (
+    <div className="card" data-testid="slab-budget">
+      <div className="card-head">
+        <h2>{S.slabTitle}</h2>
+        <span className="hint">{S.slabIntro}</span>
+      </div>
+      <div className="card-body">
+        <table className="list">
+          <thead>
+            <tr>
+              {b.cols.map((c, i) => (
+                <th key={i} className={i ? 'num' : undefined}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {b.rows.map((r, k) => (
+              <tr key={k} style={r.bold ? { fontWeight: 700 } : undefined}>
+                <td style={r.proposed ? { color: '#b45309' } : undefined}>{r.label}</td>
+                {r.values.map((v, i) => (
+                  <td key={i} className="num">
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {b.rows.some((r) => r.proposed) && <div className="hint">En orange : poids type proposé d’après la catégorie (valeur statico), pas confirmé — saisir le poids réel à l’étape 1 (fiche produit).</div>}
+      </div>
     </div>
   );
 }

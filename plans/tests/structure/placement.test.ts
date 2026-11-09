@@ -1,7 +1,6 @@
 // Plaques de calage en plan : vérins voisins sur une même plaque, plaques à fleur de la Viewbox (emprise efficace
 // B' = B − 2 e de la plaque excentrée) ou centrées, minimum du Prüfbuch TÜV, documents de calage en anglais.
 import { describe, expect, it } from 'vitest';
-import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { computeCalage } from '../../src/structure/core/calage';
 import { estimateReactions, gridModules } from '../../src/structure/core/estimate';
@@ -11,7 +10,7 @@ import { flushCaps, plateGroups, platePlan, supportGeometry } from '../../src/st
 import { TUV_PLATES, tuvConformity } from '../../src/structure/core/tuv';
 import { calagePlates, calageSheet } from '../../src/structure/report/calagePlan';
 import { groundPointsPages } from '../../src/structure/report/groundPoints';
-import { GroundSheetSvg } from '../../src/structure/report/groundSheet';
+import { groundSheetPages } from '../../src/structure/report/groundSheet';
 import { calageInput, DEFAULT_HYP } from '../../src/ui/structure/GroundPanel';
 import type { SpreadLayer } from '../../src/structure/core/ground';
 
@@ -195,8 +194,10 @@ describe('documents de calage en anglais', () => {
     const pages = groundPointsPages({ modules: mods, estimate: r.estimate, roadway: r.roadway, checks: r.checks, bearingLabel: '500 kN/m²', lang: 'en', info: { project: 'P', source: 's', date: 'd', assumptions: [] } }).map((p) => renderToStaticMarkup(p));
     const all = pages.join(' ');
     for (const k of ['GROUND SUPPORT PLAN', 'REGULATORY REFERENCES (TÜV)', 'corner jack', 'Plate']) expect(all).toContain(k);
-    const sheet = renderToStaticMarkup(createElement(GroundSheetSvg, { result: r, modules: mods, info: { project: 'P', source: 's', date: 'd', assumptions: [] }, lang: 'en' }));
-    for (const k of ['PACKING SHEET', '5. Regulatory references (TÜV)', '6. Reservations', 'corner jacks on one plate']) expect(sheet).toContain(k);
+    const sheet = groundSheetPages({ result: r, modules: mods, info: { project: 'P', source: 's', date: 'd', assumptions: [] }, lang: 'en' })
+      .map((p) => renderToStaticMarkup(p))
+      .join(' ');
+    for (const k of ['PACKING SHEET', '5. Packing section — from the slab to the Viewbox', '6. Regulatory references (TÜV)', '7. Reservations', 'corner jacks on one plate', 'Layers, bottom to top']) expect(sheet).toContain(k);
     const texts = [...sheet.matchAll(/>([^<]+)</g)].map((m) => m[1]);
     for (const t of texts) expect(t).not.toMatch(FRENCH);
   });
