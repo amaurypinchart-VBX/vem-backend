@@ -34,6 +34,23 @@ export function carriedWeights(inp: { edgeItems: readonly EdgeItem[]; pointItems
   return out;
 }
 
+/** Détail du poids porté par chaque Viewbox, par type d'objet (bilan des charges sur la dalle). */
+export function carriedDetail(inp: { edgeItems: readonly EdgeItem[]; pointItems: readonly PointItem[] }): Map<string, Array<{ label: string; count: number; N: number; proposed?: true }>> {
+  const out = new Map<string, Array<{ label: string; count: number; N: number; proposed?: true }>>();
+  const add = (m: string, label: string, N: number, proposed?: true) => {
+    if (!out.has(m)) out.set(m, []);
+    const list = out.get(m)!;
+    const row = list.find((r) => r.label === label);
+    if (row) {
+      row.count++;
+      row.N += N;
+    } else list.push({ label, count: 1, N, ...(proposed ? { proposed } : {}) });
+  };
+  for (const i of inp.edgeItems) add(i.module, i.label, i.q * Math.abs(i.to - i.from), i.proposed);
+  for (const i of inp.pointItems) add(i.module, i.label, i.F, i.proposed);
+  return out;
+}
+
 export interface InputsSource {
   sceneModel: SceneStudyModel;
   library: LibraryEntry[];

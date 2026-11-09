@@ -7,7 +7,8 @@ import { computeCalage } from '../../src/structure/core/calage';
 import { gridModules } from '../../src/structure/core/estimate';
 import { VIEWBOX_STOCK, bearingFrom } from '../../src/structure/core/ground';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
-import { blockChain, clusterBlocks, makeBlocks } from '../../src/structure/core/blocks';
+import { blockBearing, blockChain, blockDrawingNotes, clusterBlocks, makeBlocks } from '../../src/structure/core/blocks';
+import { translate } from '../../src/structure/report/translate';
 import { calageInput, DEFAULT_HYP } from '../../src/ui/structure/GroundPanel';
 
 // 2 Viewbox côte à côte (grands côtés communs), pieds centraux : 3 × 3 = 9 blocs, comme le modèle IKEA Table d'hôte
@@ -318,4 +319,41 @@ describe('pose des plaques sous les blocs et solutions (A. Pinchart 03.11.2026)'
     expect(Math.max(...centred.checks.map((c) => c.eta))).toBeCloseTo(cb.eta!, 2);
     expect(centred.warnings.some((w) => w.startsWith('Blocs centrés sous les pieds'))).toBe(true);
   }, 60000);
+});
+
+// Revue IKEA 09.11.2026 : dans le dessin, les Viewbox posent sur leurs vérins (platines sur les blocs, UPN 9,6 cm
+// au-dessus) et 4 blocs centraux sont 1,2 cm sous les profils du plancher — le mode de pose calculé doit le dire.
+describe('dessin et mode de pose au sol', () => {
+  const blk = (id: string, under: { feet: number | null; frame: number | null }): DrawnBlock => ({ id, label: 'Sous bois', x0: 0, x1: 1000, z0: 0, z1: 1000, bottom: -339, top: -96, massKg: 102.5, massSource: 'computed', material: 'C24', pieces: 1, under });
+  const onJacks = ['BL1', 'BL2'].map((id) => blk(id, { feet: -2.5, frame: 95.5 }));
+  const centre = ['BL9', 'BL10'].map((id) => blk(id, { feet: null, frame: 11.7 }));
+
+  it('ce qui porte sur un bloc : vérins / pieds ou structure, et l’écart', () => {
+    expect(blockBearing(onJacks[0])).toEqual({ kind: 'feet', gap: -2.5, frameGap: 95.5 });
+    expect(blockBearing(centre[0])).toEqual({ kind: 'frame', gap: 11.7, frameGap: 11.7 });
+    expect(blockBearing({ under: { feet: null, frame: null } })).toBeNull();
+    expect(blockBearing({})).toBeNull();
+  });
+
+  it('UPN sur les blocs calculé, vérins sur les blocs dessinés : de combien rehausser ; blocs centraux à caler', () => {
+    const notes = blockDrawingNotes([...onJacks, ...centre], 'pads');
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toMatch(/^Dessin ≠ calcul : .*les blocs BL1, BL2 et l’UPN est 9,6 cm au-dessus de ces blocs.*rehausser ces blocs de 9,6 cm/);
+    expect(notes[1]).toMatch(/les blocs BL9, BL10 sont à 1,2 cm sous la structure .* le calcul les fait porter comme s’ils étaient calés/);
+    // sur vérins : cohérent pour BL1, BL2 ; les blocs centraux ne comptent que comme poids
+    const jacks = blockDrawingNotes([...onJacks, ...centre], 'jacks');
+    expect(jacks).toHaveLength(1);
+    expect(jacks[0]).toMatch(/compte seulement comme poids/);
+    // UPN directement sur un bloc, calcul sur vérins : à signaler
+    expect(blockDrawingNotes([blk('BL5', { feet: null, frame: 1 })], 'jacks')[0]).toMatch(/l’UPN ou les profils du plancher reposent directement sur le bloc BL5/);
+    expect(blockDrawingNotes([...onJacks], 'rims')).toEqual([]);
+  });
+
+  it('traduits en allemand et en anglais', () => {
+    const notes = [...blockDrawingNotes([...onJacks, ...centre], 'pads'), ...blockDrawingNotes([blk('BL5', { feet: null, frame: 1 }), ...centre], 'jacks')];
+    for (const n of notes) {
+      expect(translate('en', n)).not.toMatch(/\b(blocs?|vérins?|calcul|dessin|rehausser|caler)\b/);
+      expect(translate('de', n)).not.toMatch(/\b(blocs?|vérins?|calcul|dessin|rehausser|caler)\b/);
+    }
+  });
 });

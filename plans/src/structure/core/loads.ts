@@ -43,6 +43,8 @@ export interface EdgeItem {
   label: string;
   /** nature de l'objet (vérification des éléments de façade, statico 18-0573 § 3.6 – 3.7) */
   nature?: 'wall' | 'glazing' | 'door' | 'railing';
+  /** poids proposé d'après la catégorie (valeur type statico), pas confirmé à l'étape 1 */
+  proposed?: true;
 }
 
 /** Charge ponctuelle (logo, équipement) : au nœud le plus proche du module, au niveau donné. */
@@ -55,6 +57,8 @@ export interface PointItem {
   F: number;
   loadCase: 'G3' | 'G5' | 'G7' | 'GB';
   label: string;
+  /** poids proposé d'après la catégorie (valeur type), pas confirmé à l'étape 1 */
+  proposed?: true;
 }
 
 export interface LoadInputs {

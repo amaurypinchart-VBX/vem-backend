@@ -18,7 +18,7 @@ import type { StairKitParams } from '../core/templates/stair';
 import { STAIR_KITS } from '../library/seed';
 import type { PlacedTerrace } from '../core/terrace';
 import { placeTerrace } from '../core/terrace';
-import { blockPieces, endHeights, itemBar } from './geometry';
+import { blockContacts, blockPieces, endHeights, itemBar } from './geometry';
 import type { DrawnBlock } from '../core/blocks';
 import { clusterBlocks, makeBlocks } from '../core/blocks';
 import type { StudyMods } from '../core/mods';
@@ -287,7 +287,7 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
     for (const nodeId of t.nodeIds) {
       const n = scene.look.byId.get(nodeId);
       if (!n?.bboxMm) continue;
-      placeItem(n.bboxMm, n.moduleId, a, `${t.label}`, modules, edgeItems, pointItems);
+      placeItem(n.bboxMm, n.moduleId, a, `${t.label}`, modules, edgeItems, pointItems, t.source === 'proposal');
     }
   }
   for (const [nature, count] of unmodelled)
@@ -303,6 +303,12 @@ export function studyModelFromScene(scene: LoadedScene, recognition: Recognition
   const structMods = custom.length ? modsFromStructParams(custom) : undefined;
   if (structMods && modsCount(structMods)) warnings.push(`${custom.length} Viewbox modifiée(s) dans SketchUp (${custom.map((c) => c.id).join(', ')}) : paramètres de structure repris (hauteur, profils, nuances).`);
   if (blocks.length) {
+    // ce qui repose sur chaque bloc dans le dessin (vérins, rive UNP, profils du plancher) et à quelle distance
+    const under = blockContacts(scene, blocks, placedIds);
+    for (const b of blocks) {
+      const u = under.get(b.id);
+      if (u) b.under = u;
+    }
     const kg = blocks.reduce((s, b) => s + b.massKg, 0);
     const given = blocks.every((b) => b.massSource === 'given');
     warnings.push(
@@ -319,7 +325,8 @@ function loadCaseOf(a: PartAssignment): EdgeItem['loadCase'] | 'G7' {
 }
 
 /** Objet → charge linéique sur la rive la plus proche (à ≤ 300 mm du côté) ou charge ponctuelle au nœud le plus proche. */
-export function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignment, label: string, modules: PlacedModule[], edge: EdgeItem[], point: PointItem[]) {
+export function placeItem(b: readonly number[], moduleId: string | null, a: PartAssignment, label: string, modules: PlacedModule[], edge: EdgeItem[], point: PointItem[], proposed = false) {
+  const flag = proposed ? { proposed: true as const } : {};
   const corners: Vec3[] = [];
   for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) corners.push([x, y, z]);
   const c: Vec3 = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
@@ -372,7 +379,7 @@ export function placeItem(b: readonly number[], moduleId: string | null, a: Part
     if (L > 50 && (w.unit === 'kg/m' || vertical || L > 1000)) {
       const q = w.unit === 'kg/m' ? (w.value * G) / 1000 : vertical ? (w.value * G * height) / 1e6 : (w.value * G) / L;
       const nature = a.nature === 'wall' || a.nature === 'glazing' || a.nature === 'door' || a.nature === 'railing' ? a.nature : undefined;
-      edge.push({ module: pm.id, side: near.side, from, to, level, q, loadCase: lcase === 'G7' ? 'G3' : lcase, label, ...(nature ? { nature } : {}) });
+      edge.push({ module: pm.id, side: near.side, from, to, level, q, loadCase: lcase === 'G7' ? 'G3' : lcase, label, ...(nature ? { nature } : {}), ...flag });
       return;
     }
   }
@@ -381,5 +388,5 @@ export function placeItem(b: readonly number[], moduleId: string | null, a: Part
   if (w.unit === 'kg') F = w.value * G;
   else if (w.unit === 'kg/m') F = (w.value * G * Math.max(b[3] - b[0], b[5] - b[2])) / 1000;
   else F = w.value * G * 1e-6 * (vertical ? Math.max(b[3] - b[0], b[5] - b[2]) * height : (b[3] - b[0]) * (b[5] - b[2]));
-  point.push({ module: pm.id, u: lc.u, v: lc.v, level, F, loadCase: lcase, label });
+  point.push({ module: pm.id, u: lc.u, v: lc.v, level, F, loadCase: lcase, label, ...flag });
 }

@@ -25,6 +25,7 @@ import type { Labels, Lang } from './i18n';
 import { LABELS, num } from './i18n';
 import { TUV_LABELS } from './tuvI18n';
 import { ellipsis, textWidth, wrapText } from './metrics';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
 import { translate } from './translate';
 import { CUSTOM_LABELS, neutralText } from './customI18n';
 import { isCustomType, typeEntryOf } from '../core/moduleTypes';
@@ -154,6 +155,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
     return { text: blocked || eta === undefined || !Number.isFinite(eta) ? L.verdict.incomplete : N(eta), icon: v, color: VERDICT_COLORS[v], bold: true };
   };
   const verdictCell = (v: Verdict): TableCell => ({ text: L.verdict[v], icon: v, color: VERDICT_COLORS[v], bold: true });
+  // portance en kN/m² : une décimale sous 10 kN/m² (dalle à 450 kg/m² = 4,4 kN/m², pas « 4 »)
+  const bearingN = (v: number) => N(v, v < 10 ? 1 : 0);
 
   const s = run.structure;
   const mods = planModules(s);
@@ -222,7 +225,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.totalPermanent, `ΣG = ${kN(gTotal, 0)}`],
       [L.imposed, T.imposedLevels(N((loads.liveGround ?? loads.live) * 1e3), N(loads.live * 1e3))],
       [L.windInOut, `${N(loads.windInService * 1e3)} / ${N(loads.windOutOfService * 1e3)} kN/m²`],
-      ...(inp.bearing ? ([[L.bearing, L.bearingValue(N(inp.bearing.value, 0), inp.bearing.label)]] as Array<[string, string]>) : []),
+      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${inp.bearing.label} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
     ],
   });
   const familyRows: Cell[][] = run.verdict.families.map((f) => {
@@ -293,7 +296,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
     blocks.push({ t: 'para', text: L.cap.footer, size: SIZE.small });
   }
   if (inp.images?.eta3d) blocks.push({ t: 'figure', h: 70, svg: imageSvg(inp.images.eta3d), caption: `${L.figureEta} — ${L.etaLegend}` });
-  const calageTables = (): Block[] => {
+  const calageTables = (withStack = true): Block[] => {
     if (!inp.calage) return [{ t: 'para', text: L.bearingMissing, color: VERDICT_COLORS.incomplete }];
     const c = inp.calage;
     const out: Block[] = [
@@ -331,7 +334,40 @@ export function buildReport(inp: ReportInput): ReportOutput {
       ],
       rows: c.materials.length ? c.materials.map((m) => [E(m.label), E(m.dims), String(m.quantity), `${N(m.massKg, 0)} kg`]) : [[L.noStandardSolution, '', '', '']],
     });
+    // coupe du calage : ce qui est posé sur la dalle / le sol, couche par couche, jusqu'à la Viewbox
+    const stacks = withStack ? (c.stacks ?? []) : [];
+    if (stacks.length) {
+      const S = STACK_LABELS[inp.lang];
+      out.push({ t: 'para', text: S.stackTitle, bold: true, after: 0.6 });
+      out.push({ t: 'para', text: S.stackIntro, size: SIZE.small, color: GREY });
+      out.push({ t: 'figure', h: Math.ceil(stacks.length / 4) * 46, svg: stacksFigureSvg(stacks, inp.lang), caption: S.figure });
+      out.push({
+        t: 'table',
+        cols: [
+          { title: S.colSupports, w: 20 },
+          { title: S.colLayers, w: 62 },
+          { title: S.colHeight, w: 18, align: 'end' },
+        ],
+        rows: stacks.flatMap((st) => stackLines(st, inp.lang).map((l, k) => [k ? '' : st.supports.join(', '), l, k ? '' : stackHeightText(st, inp.lang)])),
+      });
+    }
     return out;
+  };
+  /** charge sur la dalle sous chaque Viewbox, poste par poste (dalle en charge répartie admissible) */
+  const slabBudgetBlocks = (): Block[] => {
+    const b = inp.calage ? slabBudgetTable(inp.calage, inp.lang) : null;
+    if (!b) return [];
+    const S = STACK_LABELS[inp.lang];
+    const wz = Math.min(18, 45 / (b.cols.length - 1));
+    return [
+      { t: 'para', text: S.slabTitle, bold: true, after: 0.6 },
+      { t: 'para', text: S.slabIntro, size: SIZE.small, color: GREY },
+      {
+        t: 'table',
+        cols: [{ title: b.cols[0], w: 100 - wz * (b.cols.length - 1) }, ...b.cols.slice(1).map((c) => ({ title: c, w: wz, align: 'end' as const }))],
+        rows: b.rows.map((r) => [{ text: r.label, ...(r.bold ? { bold: true } : {}), ...(r.proposed ? { color: VERDICT_COLORS.limit } : {}) }, ...r.values.map((v) => ({ text: v, ...(r.bold ? { bold: true } : {}) }))]),
+      },
+    ];
   };
   blocks.push({ t: 'heading', level: 3, num: '', text: L.groundTitle });
   blocks.push(...calageTables());
@@ -424,10 +460,10 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.sliding, `${L.slidingValue(N(run.stability.sliding.muReq), N(mu))} (${run.stability.sliding.combo || '—'})`],
       [L.ballast, run.stability.overturning.verdict === 'fail' ? L.ballastOverturning : ballast > 0 ? L.ballastRequired(N(ballast / 1e3, 1), N(Math.ceil(ballast / GRAVITY / 10) * 10, 0)) : L.ballastNone],
       [L.jacks, study.options.jacks ? L.jacksYes : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRimsShort : L.groundPadsShort(study.groundContact.pads.length)) : L.jacksNo],
-      ...(inp.bearing ? ([[L.bearing, L.bearingValue(N(inp.bearing.value, 0), inp.bearing.label)]] as Array<[string, string]>) : []),
+      ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${inp.bearing.label} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
     ],
   });
-  blocks.push(...calageTables());
+  blocks.push(...calageTables(false));
   blocks.push({ t: 'para', text: L.groundNote, size: SIZE.small, color: GREY });
   // références réglementaires du calage (Prüfbuch TÜV, calcul statico 18-0573) : seulement avec des Viewbox
   if (!noVbx) {
@@ -718,9 +754,10 @@ export function buildReport(inp: ReportInput): ReportOutput {
   if (inp.calage) {
     const c = inp.calage;
     blocks.push({ t: 'figure', h: planHeight(mods.filter((m) => m.level === 0), 150, 90), svg: supportsSvg(mods, c.estimate.reactions, (v) => kN(v, 0)), caption: L.supportsFigure });
+    blocks.push(...slabBudgetBlocks());
     let k = 0;
     for (const t of c.types) {
-      blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: L.groundCase(E(t.label), N(inp.bearing?.value ?? 0, 0)) });
+      blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: L.groundCase(E(t.label), bearingN(inp.bearing?.value ?? 0)) });
       const CL = CALAGE_LABELS[inp.lang];
       const placed = t.checks.filter((x) => x.plan && !x.block);
       const centered = placed.filter((x) => x.plan!.placement === 'centered');
