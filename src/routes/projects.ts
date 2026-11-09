@@ -166,9 +166,22 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 });
 
+// Une fin avant le début est refusée (ex. installation 25/11 → 25/09 : le
+// projet disparaissait du calendrier du dashboard). Démontage vérifié aussi.
+function assertDateOrder(d: { installationStart?: any; installationEnd?: any; dismantlingStart?: any; dismantlingEnd?: any }) {
+  const t = (v: any) => (v ? new Date(v).getTime() : NaN);
+  if (t(d.installationEnd) < t(d.installationStart)) {
+    throw new AppError("La fin de l'installation est avant son début. Corrige les dates.", 400);
+  }
+  if (t(d.dismantlingEnd) < t(d.dismantlingStart)) {
+    throw new AppError('La fin du démontage est avant son début. Corrige les dates.', 400);
+  }
+}
+
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { siteManagerIds = [], engineerIds = [], ...data } = req.body;
+    assertDateOrder(data);
     const project = await prisma.project.create({
       data: {
         ...data,
@@ -213,6 +226,18 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     ];
     const cleanData: any = {};
     for (const k of allowed) if (data[k] !== undefined) cleanData[k] = data[k];
+
+    // Contrôle début / fin avec les dates déjà enregistrées quand une seule est envoyée
+    const dateKeys = ['installationStart','installationEnd','dismantlingStart','dismantlingEnd'] as const;
+    if (dateKeys.some(k => cleanData[k] !== undefined)) {
+      const current = await prisma.project.findUnique({
+        where: { id: req.params.id },
+        select: { installationStart: true, installationEnd: true, dismantlingStart: true, dismantlingEnd: true },
+      });
+      const merged: any = { ...(current || {}) };
+      for (const k of dateKeys) if (cleanData[k] !== undefined) merged[k] = cleanData[k];
+      assertDateOrder(merged);
+    }
 
     const project = await prisma.project.update({
       where: { id: req.params.id },

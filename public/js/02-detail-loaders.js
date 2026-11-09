@@ -1096,6 +1096,14 @@ async function createProject() {
     toast('Remplis les champs obligatoires (Nom, Client, Adresse, Dates installation)', 'error');
     return;
   }
+  if (new Date(end) < new Date(start)) {
+    toast("La fin de l'installation est avant son début — corrige les dates", 'error');
+    return;
+  }
+  if (dismStart && dismEnd && new Date(dismEnd) < new Date(dismStart)) {
+    toast('La fin du démontage est avant son début — corrige les dates', 'error');
+    return;
+  }
 
   const btn = document.getElementById('proj-create-btn');
   const isEdit = !!EDITING_PROJECT_ID;
