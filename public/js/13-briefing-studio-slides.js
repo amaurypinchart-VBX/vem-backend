@@ -1037,7 +1037,7 @@ function brfPickFilesForAutoGen(files) {
           <div style="font-size:15px;font-weight:700;">📁 Fichiers à inclure dans le briefing</div>
           <button id="brf-pickf-x" style="background:transparent;color:#eee;border:none;font-size:24px;cursor:pointer;padding:0;line-height:1;">×</button>
         </div>
-        <div style="font-size:12px;color:#aaa;margin-bottom:12px;">${files.length} fichier(s) disponible(s) — coche ceux à inclure. Chaque fichier coché créera une slide dédiée dans le briefing.</div>
+        <div style="font-size:12px;color:#aaa;margin-bottom:12px;">${files.length} fichier(s) disponible(s) — coche ceux à inclure. Chaque fichier coché créera une slide dédiée dans le briefing, <b>dans l'ordre de la liste</b> : glisse-dépose (⋮⋮) ou ▲ ▼ pour changer l'ordre.</div>
 
         <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;">
           <button class="brf-pickf-act" id="brf-pickf-all">Tout cocher</button>
@@ -1052,13 +1052,17 @@ function brfPickFilesForAutoGen(files) {
             const isImage = ['jpg','jpeg','png','gif','webp','heic','svg'].includes(ext);
             const icon = isImage ? '🖼️' : '📄';
             const escLabel = String(f.fileName || 'fichier').replace(/</g, '&lt;');
-            return `<label class="brf-pickf-row" data-search="${escLabel.toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#222;border:1px solid #333;border-radius:6px;cursor:pointer;">
+            return `<label class="brf-pickf-row" draggable="true" data-search="${escLabel.toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#222;border:1px solid #333;border-radius:6px;cursor:pointer;">
+              <span class="brf-pickf-grip" title="Glisse-dépose pour changer l'ordre" style="color:#666;font-size:16px;cursor:grab;flex-shrink:0;user-select:none;">⋮⋮</span>
+              <span class="brf-pickf-num" style="min-width:22px;text-align:center;font-size:11px;font-weight:700;color:#e63946;flex-shrink:0;"></span>
               <input type="checkbox" class="brf-pickf-cb" data-idx="${i}" style="accent-color:#e63946;width:16px;height:16px;flex-shrink:0;">
               <div style="font-size:24px;flex-shrink:0;">${icon}</div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escLabel}</div>
                 <div style="font-size:11px;color:#aaa;margin-top:2px;">${ext.toUpperCase()}${f.fileSize ? ' · '+Math.round(f.fileSize/1024)+' KB' : ''}</div>
               </div>
+              <button type="button" class="brf-pickf-mv" data-dir="-1" title="Monter">▲</button>
+              <button type="button" class="brf-pickf-mv" data-dir="1" title="Descendre">▼</button>
             </label>`;
           }).join('')}
         </div>
@@ -1072,15 +1076,60 @@ function brfPickFilesForAutoGen(files) {
         <style>
           .brf-pickf-act { background:#333;color:#eee;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;}
           .brf-pickf-row:hover { background:#2a2a2a; }
+          .brf-pickf-mv { background:#333;color:#ccc;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;flex-shrink:0; }
+          .brf-pickf-mv:hover { background:#555;color:#fff; }
+          .brf-pickf-row.dragging { opacity:0.4; }
+          .brf-pickf-row.drop-before { border-top:2px solid #e63946 !important; }
+          .brf-pickf-row.drop-after { border-bottom:2px solid #e63946 !important; }
         </style>
       </div>
     `;
     document.body.appendChild(overlay);
 
+    // Numéro d'ordre des fichiers cochés = ordre des slides créées
     const updateCount = () => {
-      const n = overlay.querySelectorAll('.brf-pickf-cb:checked').length;
+      let n = 0;
+      overlay.querySelectorAll('.brf-pickf-row').forEach(row => {
+        const on = row.querySelector('.brf-pickf-cb').checked;
+        row.querySelector('.brf-pickf-num').textContent = on ? String(++n) : '';
+      });
       overlay.querySelector('#brf-pickf-count').textContent = `${n} fichier(s) coché(s)`;
     };
+
+    // Réordonner : ▲ ▼ et glisser-déposer (l'ordre du DOM = ordre de génération)
+    const list = overlay.querySelector('#brf-pickf-list');
+    list.querySelectorAll('.brf-pickf-mv').forEach(b => {
+      b.onclick = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const row = b.closest('.brf-pickf-row');
+        if (b.dataset.dir === '-1') { const prev = row.previousElementSibling; if (prev) list.insertBefore(row, prev); }
+        else { const next = row.nextElementSibling; if (next) list.insertBefore(next, row); }
+        row.scrollIntoView({ block: 'nearest' });
+        updateCount();
+      };
+    });
+    let dragRow = null;
+    const clearMarks = () => list.querySelectorAll('.drop-before,.drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after'));
+    list.querySelectorAll('.brf-pickf-row').forEach(row => {
+      row.addEventListener('dragstart', (e) => { dragRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ''); } catch {} });
+      row.addEventListener('dragend', () => { row.classList.remove('dragging'); clearMarks(); dragRow = null; });
+      row.addEventListener('dragover', (e) => {
+        if (!dragRow || dragRow === row) return;
+        e.preventDefault();
+        const r = row.getBoundingClientRect();
+        const after = e.clientY > r.top + r.height / 2;
+        clearMarks();
+        row.classList.add(after ? 'drop-after' : 'drop-before');
+      });
+      row.addEventListener('drop', (e) => {
+        if (!dragRow || dragRow === row) return;
+        e.preventDefault();
+        const after = row.classList.contains('drop-after');
+        clearMarks();
+        list.insertBefore(dragRow, after ? row.nextElementSibling : row);
+        updateCount();
+      });
+    });
     overlay.querySelectorAll('.brf-pickf-cb').forEach(cb => cb.addEventListener('change', updateCount));
 
     overlay.querySelector('#brf-pickf-all').onclick  = () => { overlay.querySelectorAll('.brf-pickf-cb').forEach(cb => cb.checked = true);  updateCount(); };
