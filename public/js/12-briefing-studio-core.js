@@ -691,6 +691,7 @@ function buildStudioHTML() {
         style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font-size:13px;max-width:280px;"
         oninput="BRF_STUDIO.title=this.value">
       <button class="btn btn-sm" onclick="brfAutoGenerateBriefing(this)" title="Génère automatiquement un briefing complet à partir des données du projet" style="background:linear-gradient(135deg,#7b2cbf,#c77dff);color:#fff;border:none;font-weight:600;">🪄 Auto-générer</button>
+      <button class="btn btn-sm" onclick="brfAutoGenerateBriefing(this, { ai: true })" title="Comme Auto-générer, avec en plus un court texte rédigé par l'IA sur chaque slide (à partir des données du projet, rien n'est inventé)" style="background:linear-gradient(135deg,#0a2540,#2d6cdf);color:#fff;border:none;font-weight:600;">✨ Générer avec l'IA</button>
       <div style="flex:1;"></div>
       <button class="btn btn-outline btn-sm" onclick="briefingStudioExportPDF(this)" style="border-color:#666;color:#eee;background:#222;">📄 PDF</button>
       <button class="btn btn-primary btn-sm" onclick="briefingStudioSave()">💾 Sauvegarder</button>

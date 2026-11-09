@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { generateBriefingDraft } from '../services/briefingAI';
+import { generateStudioTexts } from '../services/briefingStudioAI';
 
 import { documentSchema, validateSources } from '../services/briefingDocument';
 import { briefingSources } from '../services/briefingSources';
@@ -162,6 +163,16 @@ router.post('/project/:projectId/generate', async (req: Request, res: Response, 
       data: { projectId, title: draft.title, slides: draft.slides },
     });
     res.json({ success: true, data: brief });
+  } catch (err: any) {
+    next(err);
+  }
+});
+
+// Textes IA d'accompagnement des slides du Studio (rien n'est créé)
+// POST /api/v1/briefings/project/:projectId/studio-texts
+router.post('/project/:projectId/studio-texts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json({ success: true, data: await generateStudioTexts(req.params.projectId) });
   } catch (err: any) {
     next(err);
   }
