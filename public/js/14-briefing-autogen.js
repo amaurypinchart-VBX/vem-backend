@@ -438,18 +438,6 @@ const fmt = d => {
       saveSlide();
     }
 
-    // ─── SLIDES SÉCURITÉ PAYS (images Viewbox, FR → EN à l'export) ──
-    if (!safetyChoice.none) {
-      try {
-        const n = await brfInsertSafetySlides(safetyChoice);
-        BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
-        if (n && safetyChoice.code) toast(`🦺 Slides sécurité ${brfCountryName(safetyChoice.code)} ajoutées`, 'info');
-      } catch (e) {
-        console.warn('[brf safety]', e);
-        toast('Slides sécurité non ajoutées : ' + (e.message || e), 'warning');
-      }
-    }
-
     // ─── SLIDE ÉQUIPE (TABLEAU) ─────────────────────────────────
     if (project.team?.length) {
       newSlide('Équipe', 'Équipe');
@@ -564,6 +552,18 @@ const fmt = d => {
       });
       brfRenderDataTable({ x: 60, y: 200, headers, rows, colWidths: [620, 180, 160, 200] });
       saveSlide();
+    }
+
+    // ─── SLIDES SÉCURITÉ PAYS (images Viewbox, FR → EN à l'export) ──
+    if (!safetyChoice.none) {
+      try {
+        const n = await brfInsertSafetySlides(safetyChoice);
+        BRF_STUDIO.curIdx = BRF_STUDIO.slides.length - 1;
+        if (n && safetyChoice.code) toast(`🦺 Slides sécurité ${brfCountryName(safetyChoice.code)} ajoutées`, 'info');
+      } catch (e) {
+        console.warn('[brf safety]', e);
+        toast('Slides sécurité non ajoutées : ' + (e.message || e), 'warning');
+      }
     }
 
     // ─── SLIDES FICHIERS (Feature 3 + PDF multi-page) ────────────
