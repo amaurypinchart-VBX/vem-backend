@@ -51,13 +51,24 @@
     Une ligne par <b>type de composant</b> : ton choix s'applique à tous les objets de ce type (réenregistre le composant dans ta
     bibliothèque pour le garder sur les prochains projets). Laisse <i>Automatique</i> pour garder la catégorie déduite de la balise ou du nom.
     « Autre… » crée une catégorie à toi (ex. <i>Porte orangerie</i>) ; « Ignorer » retire l'objet de l'export.
-    Pour un objet isolé : clic droit dans le modèle › Viewbox › Catégorie / désignation…
+    <b>VIEWBOX</b> = c'est une Viewbox, quel que soit son nom : elle est calculée comme une Viewbox (ex. un <i>Escalier intérieur</i>) ;
+    si l'objet contient plusieurs Viewbox, chacune est calculée comme une Viewbox et garde la désignation de l'ensemble.
+    Pour un objet isolé : clic droit dans le modèle › Viewbox › Catégorie / désignation…, ou › C'est une Viewbox.
   </p>
   <h2>Types de Viewbox</h2>
   <table>
-    <thead><tr><th>Définition</th><th>Viewbox</th><th>Type (désignation)</th><th>Dimensions nominales (mm)</th><th>Mesuré</th><th></th></tr></thead>
+    <thead><tr><th>Définition</th><th>Viewbox</th><th>Reconnue par</th><th>Désignation</th><th>Type de structure</th><th>Dimensions nominales (mm)</th><th>Mesuré</th><th></th></tr></thead>
     <tbody id="modules"></tbody>
   </table>
+  <div id="assembliesBlock" hidden>
+    <h2>Ensembles de Viewbox</h2>
+    <p class="hint">Un objet qui contient plusieurs Viewbox (ex. un escalier intérieur fait de deux Viewbox) : chacune est numérotée et calculée
+      comme une Viewbox ; la désignation s'affiche sur chacune dans VEM.</p>
+    <table>
+      <thead><tr><th>Objet</th><th>Viewbox</th><th>Autres objets</th><th>Désignation</th><th></th></tr></thead>
+      <tbody id="assemblies"></tbody>
+    </table>
+  </div>
   <h2>Composants</h2>
   <table>
     <thead><tr><th>Composant</th><th>Nb</th><th>Où</th><th>Proposé automatiquement</th><th>Catégorie</th><th>Désignation</th><th>Réf. article</th><th></th></tr></thead>
@@ -85,7 +96,7 @@ const VB = (() => {
     const cats = data.categories.slice();
     if (row.category && row.category !== 'IGNORER' && !cats.includes(row.category)) cats.push(row.category);
     return [`<option value="">${esc(autoTxt)}</option>`]
-      .concat(cats.map((c) => `<option value="${esc(c)}" ${c === row.category ? 'selected' : ''}>${esc(c)}</option>`))
+      .concat(cats.map((c) => `<option value="${esc(c)}" ${c === row.category ? 'selected' : ''}>${c === 'VIEWBOX' ? 'VIEWBOX — c’est une Viewbox' : esc(c)}</option>`))
       .concat([`<option value="__other__">Autre… (nouvelle catégorie)</option>`, `<option value="IGNORER" ${row.category === 'IGNORER' ? 'selected' : ''}>Ignorer (ne pas exporter)</option>`])
       .join('');
   }
@@ -95,12 +106,24 @@ const VB = (() => {
       <tr data-i="${i}">
         <td><div class="name">${esc(m.name)}</div><div class="sub">${m.count} Viewbox</div></td>
         <td>${m.modules.map((x) => `<span class="badge">${esc(x)}</span>`).join('')}</td>
+        <td class="sub">${esc((m.how || []).join(', '))}${(m.assemblies || []).length ? `<br>ensemble « ${esc(m.assemblies.join(' », « '))} »` : ''}</td>
+        <td><input type="text" class="label" data-f="label" value="${esc(m.label || '')}" placeholder="ex. Escalier intérieur"></td>
         <td><input type="text" class="label" data-f="type" value="${esc(m.type)}" placeholder="ex. Viewbox M16 5900"></td>
         <td><input type="number" class="num" data-f="n0" value="${m.nominal ? m.nominal[0] : ''}" placeholder="${m.measured[0]}"> ×
             <input type="number" class="num" data-f="n1" value="${m.nominal ? m.nominal[1] : ''}" placeholder="${m.measured[1]}"></td>
         <td class="sub">${m.measured[0]} × ${m.measured[1]}</td>
         <td><button data-sel="${m.id}" title="Sélectionner dans le modèle">🔍</button></td>
-      </tr>`).join('') || '<tr><td colspan="6" class="hint">Aucune Viewbox trouvée.</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="8" class="hint">Aucune Viewbox trouvée.</td></tr>';
+    const asm = data.assemblies || [];
+    $('#assembliesBlock').hidden = !asm.length;
+    $('#assemblies').innerHTML = asm.map((x, i) => `
+      <tr data-i="${i}">
+        <td><div class="name">${esc(x.name)}</div><div class="sub">${x.count > 1 ? `${x.count} exemplaires · ` : ''}${x.marked ? 'catégorie VIEWBOX' : 'contient des Viewbox nommées'}</div></td>
+        <td>${x.modules.map((v) => `<span class="badge">${esc(v)}</span>`).join('')}</td>
+        <td>${x.items}</td>
+        <td><input type="text" class="label" data-f="label" value="${esc(x.label || '')}" placeholder="${esc(x.auto || 'ex. Escalier intérieur')}"></td>
+        <td><button data-sel="${x.id}" title="Sélectionner dans le modèle">🔍</button></td>
+      </tr>`).join('');
   }
 
   function visible(r) {
@@ -141,9 +164,15 @@ const VB = (() => {
     if (!f) return;
     const tr = el.closest('tr');
     const i = +tr.dataset.i;
+    if (tr.parentElement.id === 'assemblies') {
+      data.assemblies[i].label = el.value;
+      $('#save').disabled = false;
+      $('#status').textContent = 'Modifications non enregistrées';
+      return;
+    }
     if (tr.parentElement.id === 'modules') {
       const m = data.modules[i];
-      if (f === 'type') m.type = el.value;
+      if (f === 'type' || f === 'label') m[f] = el.value;
       else {
         const n = m.nominal ? m.nominal.slice() : ['', ''];
         n[f === 'n0' ? 0 : 1] = el.value;
@@ -190,7 +219,8 @@ const VB = (() => {
     afterSave = then || null;
     const payload = {
       components: data.components.map((r) => ({ id: r.id, category: r.category, label: r.label, article: r.article })),
-      modules: data.modules.map((m) => ({ id: m.id, type: m.type, nominal: (m.nominal || []).map(Number) })),
+      modules: data.modules.map((m) => ({ id: m.id, label: m.label || '', type: m.type, nominal: (m.nominal || []).map(Number) })),
+      assemblies: (data.assemblies || []).map((x) => ({ id: x.id, label: x.label || '' })),
     };
     $('#save').disabled = true;
     $('#status').textContent = 'Enregistrement…';

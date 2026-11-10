@@ -25,7 +25,7 @@ import {
   moduleIdFromName,
 } from '../core/classification';
 import { checkPlanDims, groupLevels, levelLabel, nearestSize, suspectScaleFactor } from '../core/units';
-import type { Manifest, ManifestEntry, ManifestModule } from '../core/manifest';
+import type { Manifest, ManifestAssembly, ManifestEntry, ManifestModule } from '../core/manifest';
 import { asCategory, BBoxLookup, cleanStructParams, cleanStructures, cleanTextileFrame, daeNameKey, manifestBBoxToYUp } from '../core/manifest';
 import { stableId } from '../core/hash';
 
@@ -56,6 +56,9 @@ interface Rec {
   label: string | null; // désignation (manifest)
   sourceName: string | null; // nom d'origine SketchUp (manifest)
   textileFrame?: { ref?: string; visual?: string }; // cadre textile marqué dans SketchUp (manifest)
+  // contient des Viewbox (ensemble, ex. « Escalier intérieur » fait de deux Viewbox) : jamais classé ni accessoire —
+  // sinon son nom (« escalier… ») classerait aussi les pièces de ses Viewbox par héritage (categoryOf remonte les parents)
+  assembly?: boolean;
 }
 
 const EXCESSIVE_ITEM_TRIANGLES = 150_000;
@@ -252,6 +255,16 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     }
   };
   markModules(top, null);
+  const markAssemblies = () => {
+    for (const m of moduleRecs) {
+      for (let p = m.parent; p; p = p.parent) {
+        p.assembly = true;
+        p.category = null;
+        p.source = null;
+      }
+    }
+  };
+  markAssemblies();
   for (const [mid, count] of moduleIdCount) {
     if (count > 1) {
       warnings.push({
@@ -327,8 +340,27 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     if (tf) r.textileFrame = tf;
   };
 
+  // ensembles de Viewbox du manifest (extension ≥ 1.5.0) : nom d'origine et désignation du nœud qui les contient
+  const assemblyByKey = new Map<string, ManifestAssembly>();
+  const assemblyByExport = new Map<string, ManifestAssembly>();
+  for (const x of manifest?.assemblies ?? []) {
+    if (!x || typeof x !== 'object') continue;
+    if (x.exportName) {
+      assemblyByKey.set(daeNameKey(x.exportName), x);
+      assemblyByExport.set(x.exportName, x);
+    }
+  }
   for (const r of recs) {
-    if (r.context || r.moduleId) continue;
+    if (!r.assembly || !r.name) continue;
+    const x = assemblyByKey.get(daeNameKey(r.name));
+    if (!x) continue;
+    if (typeof x.label === 'string' && x.label.trim()) r.label = x.label.trim();
+    if (typeof x.name === 'string' && x.name) r.sourceName = x.name;
+    if (typeof x.definition === 'string' && x.definition) r.defName = x.definition;
+  }
+
+  for (const r of recs) {
+    if (r.context || r.moduleId || r.assembly) continue;
     const e = fromManifest(r);
     if (e) applyEntry(r, e, scopedHit.has(r));
     const names = candidates(r);
@@ -356,7 +388,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
     const lookup = new BBoxLookup<Rec>(1);
     for (const r of recs) {
       const b = toBBox(r.box);
-      if (b && !r.context && !r.moduleId && r.source !== 'manifest') lookup.add(b, r);
+      if (b && !r.context && !r.moduleId && !r.assembly && r.source !== 'manifest') lookup.add(b, r);
     }
     for (const e of allManifestEntries) {
       if (manifestMatched.has(e) || !e.bboxWorld) continue;
@@ -367,7 +399,7 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
 
   // Héritage : les pièces d'un accessoire prennent sa catégorie.
   for (const r of recs) {
-    if (r.category || r.context || r.moduleId) continue;
+    if (r.category || r.context || r.moduleId || r.assembly) continue;
     for (let p = r.parent; p && !p.moduleId; p = p.parent) {
       if (p.category) {
         r.category = p.category;
@@ -414,6 +446,8 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       });
     }
   }
+  // Viewbox reconnues à leurs dimensions : leurs conteneurs aussi sont des ensembles (pas classés)
+  if (detectedBy === 'dimensions') markAssemblies();
   // Géométrie brute directement dans la définition d'un module (sans nom) = sa structure.
   for (const m of moduleRecs) {
     for (const c of m.children) {
@@ -464,6 +498,13 @@ export function buildIndex(input: BuildIndexInput): BuildIndexResult {
       detectedBy,
     };
     if (mm?.type) info.type = mm.type;
+    // désignation (« Escalier intérieur ») et ensemble de la Viewbox (extension ≥ 1.5.0)
+    if (typeof mm?.label === 'string' && mm.label.trim()) {
+      info.label = mm.label.trim().slice(0, 120);
+      m.label = info.label;
+    }
+    const asm = typeof mm?.assembly === 'string' ? assemblyByExport.get(mm.assembly) : undefined;
+    if (asm) info.assembly = (typeof asm.label === 'string' && asm.label.trim()) || asm.name || mm!.assembly!;
     const sp = cleanStructParams(mm?.structParams);
     if (sp) info.structParams = sp;
     if (mm?.structSource === 'template' || mm?.structSource === 'drawn') info.structSource = mm.structSource;

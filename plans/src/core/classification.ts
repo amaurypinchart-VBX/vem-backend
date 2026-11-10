@@ -22,7 +22,8 @@ export const DEFAULT_RULES: ClassificationRules = {
     { key: 'PORTE-COULISSANTE', patterns: ['PORTE[-_ ]?COULISSANTE', 'SLID+(E|ING)[-_ ]?DOOR', 'FULL[-_ ]?SLID', 'COULISSANT'], accessory: true },
     { key: 'PORTE-DOUBLE', patterns: ['PORTE[-_ ]?DOUBLE', 'DOUBLE[-_ ]?DOOR'], accessory: true },
     { key: 'PORTE-SIMPLE', patterns: ['PORTE[-_ ]?SIMPLE', 'SINGLE[-_ ]?DOOR'], accessory: true },
-    { key: 'MUR-LEGER', patterns: ['MUR[-_ ]?LEGER', 'WALL[-_ ]?LIGHT', 'LIGHT[-_ ]?WALL'], accessory: true },
+    // murs Nidaplast (« 7-636-008 NIDAPLAST WALL WHITE / WHITE… ») : murs légers
+    { key: 'MUR-LEGER', patterns: ['MUR[-_ ]?LEGER', 'WALL[-_ ]?LIGHT', 'LIGHT[-_ ]?WALL', 'NIDAPLAST'], accessory: true },
     { key: 'MUR-LOURD', patterns: ['MUR[-_ ]?LOURD', 'WALL[-_ ]?HEAVY', 'HEAVY[-_ ]?WALL'], accessory: true },
     // cadres de tissu tendu (SEG) posés à l'extérieur / à l'intérieur de la box (extension SketchUp ≥ 1.4.1)
     { key: 'FRAME-EXTERIEUR', label: 'Frame extérieur', patterns: ['FRAME[-_ ]?EXT', 'CADRE[-_ ]?(TEXTILE[-_ ]?)?EXT', '(OUTSIDE|OUTER|EXTERIOR)[-_ ]?FRAME'] },
@@ -30,6 +31,9 @@ export const DEFAULT_RULES: ClassificationRules = {
     // protection de sol (plaques bakélite)
     { key: 'BOARDING', label: 'Boarding', patterns: ['BOARDING', 'BAKELIT'] },
     { key: 'GARDE-CORPS', patterns: ['GARDE[-_ ]?CORPS', 'RAILING', 'HANDRAIL', 'BALUSTRADE'] },
+    // escalier à l'intérieur d'une Viewbox (entre deux niveaux, extension SketchUp ≥ 1.5.0) : une charge sur le plancher,
+    // pas le gabarit d'escalier extérieur
+    { key: 'ESCALIER-INTERIEUR', label: 'Escalier intérieur', patterns: ['ESCALIER[-_ ]?INT(ERIEUR|[^A-Z]|$)', '(INTERIOR|INTERNAL|INSIDE|INDOOR|INNER)[-_ ]?STAIR', 'STAIR(S|CASE)?[-_ ]?(INTERI|INTERN|INSIDE|INDOOR)'] },
     { key: 'ESCALIER', patterns: ['ESCALIER', 'STAIR'] },
     // élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
     { key: 'TERRASSE', patterns: ['TERRASS', 'TERRACE'] },
@@ -145,7 +149,12 @@ const LATER_BUILTINS: Array<[string, string]> = [
   ['FRAME-EXTERIEUR', 'MUR-LOURD'],
   ['FRAME-INTERIEUR', 'FRAME-EXTERIEUR'],
   ['BOARDING', 'FRAME-INTERIEUR'],
+  // avant ESCALIER (premier motif trouvé) : juste après GARDE-CORPS
+  ['ESCALIER-INTERIEUR', 'GARDE-CORPS'],
 ];
+
+/** Motifs ajoutés après coup à une catégorie intégrée : repris dans des réglages enregistrés avant eux. */
+const LATER_PATTERNS: Array<[string, string]> = [['MUR-LEGER', 'NIDAPLAST']];
 
 /** Fusionne des règles enregistrées (éventuellement partielles/anciennes) avec les valeurs par défaut. */
 export function mergeRules(saved: (Partial<ClassificationRules> & { moduleDims?: { long?: number; short?: number; toleranceMm?: number } }) | null | undefined): ClassificationRules {
@@ -168,6 +177,9 @@ export function mergeRules(saved: (Partial<ClassificationRules> & { moduleDims?:
     const t = base.categories.find((c) => c.key === key)!;
     const at = merged.categories.findIndex((c) => c.key === after);
     merged.categories = at >= 0 ? [...merged.categories.slice(0, at + 1), t, ...merged.categories.slice(at + 1)] : [t, ...merged.categories];
+  }
+  for (const [key, pattern] of LATER_PATTERNS) {
+    merged.categories = merged.categories.map((c) => (c.key === key && Array.isArray(c.patterns) && !c.patterns.includes(pattern) ? { ...c, patterns: [...c.patterns, pattern] } : c));
   }
   // Anciens réglages (une seule taille "moduleDims") : conservée en tête de liste.
   if (moduleDims?.long && moduleDims?.short && !saved.moduleSizes) {

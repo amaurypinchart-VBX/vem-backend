@@ -13,6 +13,8 @@ const NEUTRAL: Record<string, string> = {
   TOIT: '#6b7280',
   PIED: '#a3a3a3',
   ESCALIER: '#f59e0b',
+  'ESCALIER-INTERIEUR': '#d97706',
+  VIEWBOX: '#64748b',
   'GARDE-CORPS': '#fcd34d',
   VITRE: '#7dd3fc',
 };

@@ -18,11 +18,15 @@ export const BUILTIN_CATEGORIES = [
   'TOIT',
   'PIED',
   'ESCALIER',
+  'ESCALIER-INTERIEUR',
   'TERRASSE',
   'GARDE-CORPS',
   'FRAME-EXTERIEUR',
   'FRAME-INTERIEUR',
   'BOARDING',
+  // l'objet est une Viewbox (choix manuel dans l'extension SketchUp ≥ 1.5.0, jamais déduit du nom) ; une pièce de cette
+  // catégorie dans une Viewbox est son corps (compris dans le gabarit)
+  'VIEWBOX',
 ] as const;
 
 /** Clé de catégorie : intégrée (BUILTIN_CATEGORIES) ou personnalisée (Réglages, manifest). */
@@ -111,6 +115,10 @@ export interface ModuleInfo {
   structSource?: 'template' | 'drawn';
   /** transformation SketchUp de l'instance (définition → monde, 16 valeurs en colonnes, translation en mm) */
   skpTransform?: number[];
+  /** désignation saisie dans SketchUp, ou celle de son ensemble (ex. « Escalier intérieur », extension ≥ 1.5.0) */
+  label?: string;
+  /** ensemble dont la Viewbox fait partie : objet SketchUp qui contient plusieurs Viewbox (sa désignation) */
+  assembly?: string;
 }
 
 export interface LevelInfo {

@@ -59,6 +59,27 @@ export interface ManifestModule {
   structureRef?: string | null;
   /** choix « Structure » du type : gabarit Viewbox standard / dessinée dans ce composant */
   structSource?: 'template' | 'drawn' | null;
+  /** désignation (extension ≥ 1.5.0) : saisie, sinon celle de son ensemble (« Escalier intérieur ») */
+  label?: string | null;
+  /** reconnue par : nom VBX-xx, catégorie VIEWBOX (« manuel »), type saisi, taille, dans un ensemble */
+  viewboxBy?: 'nom' | 'manuel' | 'type' | 'taille' | 'ensemble' | null;
+  /** ensemble dont elle fait partie : `exportName` d'une entrée de `Manifest.assemblies` */
+  assembly?: string | null;
+}
+
+/**
+ * Ensemble de Viewbox (extension ≥ 1.5.0) : objet SketchUp qui contient plusieurs Viewbox, ex. un escalier intérieur fait
+ * de deux Viewbox superposées ; chacune est un module (calculé comme une Viewbox), l'ensemble garde sa désignation.
+ */
+export interface ManifestAssembly {
+  exportName?: string;
+  name?: string;
+  label?: string | null;
+  definition?: string;
+  category?: string | null;
+  /** identifiants VBX-xx des Viewbox de l'ensemble */
+  modules?: string[];
+  bboxWorld?: ManifestBBox;
 }
 
 /** Barre relevée par l'extension (≥ 1.3.0) dans le repère de la définition du module (mm, Z vers le haut). */
@@ -194,6 +215,9 @@ export interface Manifest {
   units?: string;
   upAxis?: string;
   modules: ManifestModule[];
+  /** version des ensembles de Viewbox (`assemblies`, extension ≥ 1.5.0) */
+  assemblySchemaVersion?: number;
+  assemblies?: ManifestAssembly[];
   common?: ManifestEntry[];
   context?: ManifestEntry[];
 }

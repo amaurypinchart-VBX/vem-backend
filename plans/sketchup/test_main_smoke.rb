@@ -119,6 +119,22 @@ module Sketchup
       b = definition.bounds
       Geom::BoundingBox.new.add((0..7).map { |i| b.corner(i).transform(transformation) })
     end
+    # copie du composant pour cet exemplaire (les objets qu'il contient sont copiés avec leurs noms et attributs)
+    def make_unique
+      old = definition
+      copy = ComponentDefinition.new("#{old.name}#1", old.entities.map { |c| c.is_a?(ComponentInstance) ? c.copy_instance : c }, group: old.group?)
+      old.attrs.each { |k, v| copy.attrs[k] = v }
+      old.instances.delete(self)
+      @definition = copy
+      copy.instances << self
+      Sketchup.active_model.defs << copy
+      self
+    end
+    def copy_instance
+      c = self.class.new(definition, transformation, name: name, tag: layer.name)
+      attrs.each { |k, v| c.attrs[k] = v }
+      c
+    end
   end
 
   class Group < ComponentInstance; end
@@ -156,6 +172,7 @@ module Sketchup
     def materials = Definitions.new([])
     def layers = Definitions.new([])
     def active_view = Struct.new(:z) { def zoom(*) = true }.new
+    def active_path = nil
     def export(path, options)
       @exported = options
       @names_at_export = all_entities.reject { |e| e.is_a?(Face) || e.hidden }.map(&:name)
@@ -249,6 +266,8 @@ class MainSmokeTest < Minitest::Test
     assert_equal 'balise', comp['7-632-001 Leveling feet']['autoSource']
     assert_equal 2, comp['7-632-001 Leveling feet']['count'] # 1 par Viewbox × 2 Viewbox
     assert_equal 'STRUCTURE', comp['7-355-014 Vertical poles simple']['auto']
+    assert_equal 'MUR-LEGER', comp['7-636-008 NIDAPLAST WALL WHITE  WHITE 1130x2520 COMPLETE - VIEWBOX M16']['auto'] # 1.5.0
+    assert_includes rows['categories'], 'VIEWBOX'
     assert_nil comp['porte orangerie']['auto']
     assert_equal 2, comp['porte orangerie']['count']
     assert_equal '7-355-14:1', comp['Group587']['name'] # groupe : on montre son nom d'instance
@@ -528,6 +547,139 @@ class MainSmokeTest < Minitest::Test
     assert_equal 3, PREP.textile_rows(model)['rows'].size
     assert_equal 1, PREP.mark_textile(model, [band], true, 'FRAME-EXTERIEUR')
     assert_equal 'FRAME-EXTERIEUR', PREP.textile_place(band)
+  end
+
+  # ─── 1.5.0 : « C'est une Viewbox » — un escalier intérieur fait de deux Viewbox superposées ───
+  def add_interior_stair(model, d, x)
+    d[:stair] ||= S::ComponentDefinition.new('Escalier droit 18 marches', [box(600, 300, 0, 4600, 1300, 3300)])
+    d[:assembly] ||= begin
+      a = S::ComponentDefinition.new('Escalier intérieur', [])
+      a.entities << S::ComponentInstance.new(d[:viewbox], t(0, 0, 0)) # Viewbox du bas
+      a.entities << S::ComponentInstance.new(d[:viewbox], t(0, 0, 3300)) # Viewbox du haut
+      a.entities << S::ComponentInstance.new(d[:stair], t(0, 0, 0), name: 'Escalier intérieur 18 marches')
+      model.defs.push(a, d[:stair])
+      a
+    end
+    top = S::ComponentInstance.new(d[:assembly], t(x, 0, 0))
+    model.entities << top
+    top
+  end
+
+  def test_interior_stair_is_two_viewbox
+    model, d = build_model
+    Sketchup.active_model = model
+    stair = add_interior_stair(model, d, 20_000)
+    # avant : un objet « escalier intérieur » parmi d'autres (sa catégorie vient de son nom), pas de Viewbox de plus
+    a = PREP.analyze(model)
+    assert_equal ['ESCALIER-INTERIEUR', 'définition'], PREP.category_for(stair)
+    assert_includes a.others, stair
+    assert_equal 2, (a.named + a.candidates).size
+
+    # clic droit › C'est une Viewbox : catégorie VIEWBOX sur le composant → ensemble de deux Viewbox
+    assert_equal 1, PREP.mark_viewbox(model, [stair])
+    assert_equal ['VIEWBOX', 'manuel'], PREP.category_for(stair)
+    a = PREP.analyze(model)
+    assert_equal 1, a.assemblies.size
+    asm = a.assemblies.first
+    assert_equal 2, asm.modules.size
+    assert_equal %w[ensemble ensemble], asm.modules.map { |m| a.how[m] }
+    assert_equal ['Escalier droit 18 marches'], asm.items.map { |e| e.definition.name }
+    assert_includes a.attached, asm.items.first # l'escalier est posé sur les Viewbox de l'ensemble
+    assert_equal 4, (a.named + a.candidates).size
+    assert_equal [0, 1], asm.modules.map { |m| a.levels[m] } # superposées
+    assert_match(/contient 2 Viewbox .*calculée comme une Viewbox.*« Escalier intérieur »/, PREP.viewbox_status_lines(model, [stair]).first)
+    assert(PREP.report_lines(a).any? { |l| l.start_with?('Ensemble « Escalier intérieur » : 2 Viewbox') })
+    rows = PREP.review_rows(model)
+    assert_equal [{ 'name' => 'Escalier intérieur', 'modules' => ['(à numéroter)', '(à numéroter)'], 'items' => 1, 'auto' => 'Escalier intérieur', 'marked' => true }],
+                 rows['assemblies'].map { |r| r.slice('name', 'modules', 'items', 'auto', 'marked') }
+    assert_includes rows['modules'][0]['how'], 'dans un ensemble'
+
+    # export : 4 Viewbox, celles de l'escalier au bon endroit (repère monde) avec la désignation de l'ensemble
+    PREP.prepare(model, a)
+    a = PREP.analyze(model)
+    assert_equal %w[VBX-01 VBX-02 VBX-03 VBX-04], (a.named + a.candidates).map { |m| PREP::C.module_id(m.name) }.sort
+    names_before = model.all_entities.reject { |e| e.is_a?(S::Face) }.map(&:name)
+    Dir.mktmpdir do |dir|
+      _c, manifest = PREP.export_zip(model, a, File.join(dir, 'esc.zip'), 'esc')
+      mods = manifest['modules'].to_h { |m| [m['id'], m] }
+      assert_equal %w[VBX-01 VBX-02 VBX-03 VBX-04], mods.keys.sort
+      low, high = mods['VBX-03'], mods['VBX-04']
+      assert_equal [20_000.0, 0.0, 0.0], low['transform'][12, 3]
+      assert_equal [20_000.0, 0.0, 3300.0], high['transform'][12, 3]
+      assert_in_delta 20_000.0, low['bboxWorld']['min'][0], 0.1
+      assert_equal ['Escalier intérieur', 'nom'], [low['label'], low['viewboxBy']] # numérotée à la préparation
+      assert_equal 'Escalier intérieur', high['label']
+      assert_nil mods['VBX-01']['label']
+      assert_equal 'nom', mods['VBX-01']['viewboxBy']
+      frame = high['accessories'].find { |x| x['definition'] == 'VBXM16FULL' }
+      assert_in_delta 3300.0, frame['bboxWorld']['min'][2], 0.1 # accessoires en repère monde
+      assert_equal 1, manifest['assemblySchemaVersion']
+      ens = manifest['assemblies'].first
+      assert_equal ['Escalier intérieur', 'Escalier intérieur', 'VIEWBOX', %w[VBX-03 VBX-04]], [ens['label'], ens['definition'], ens['category'], ens['modules'].sort]
+      assert_match(/\AVBXE-\d+\z/, ens['exportName'])
+      assert_equal ens['exportName'], low['assembly']
+      st = manifest['common'].find { |x| x['definition'] == 'Escalier droit 18 marches' }
+      assert_equal ['ESCALIER-INTERIEUR', 'Escalier intérieur 18 marches'], [st['category'], st['name']]
+      assert_in_delta 20_600.0, st['bboxWorld']['min'][0], 0.1
+      assert model.names_at_export.include?(ens['exportName'])
+    end
+    assert_equal names_before, model.all_entities.reject { |e| e.is_a?(S::Face) }.map(&:name) # modèle rétabli
+
+    # un 2e escalier du même composant : rendu unique à la préparation, ses Viewbox ont leurs propres numéros
+    stair2 = add_interior_stair(model, d, 30_000)
+    a = PREP.analyze(model)
+    refute_empty a.shared
+    assert(PREP.report_lines(a).any? { |l| l.include?('utilisé plusieurs fois') })
+    PREP.prepare(model, a)
+    a = PREP.analyze(model)
+    assert_empty a.shared
+    refute_equal stair.definition, stair2.definition
+    assert_equal 'Escalier intérieur#1', stair2.definition.name
+    assert_equal ['VIEWBOX', 'manuel'], PREP.category_for(stair2) # la copie garde la catégorie
+    ids = (a.named + a.candidates).map { |m| PREP::C.module_id(m.name) }
+    assert_equal %w[VBX-01 VBX-02 VBX-03 VBX-04 VBX-05 VBX-06], ids.sort
+    assert_equal %w[VBX-03 VBX-04], a.assemblies.find { |x| x.entity == stair }.modules.map { |m| m.name }.sort
+    assert_empty a.duplicates
+
+    # clic droit › Ce n'est pas une Viewbox (numéros retirés) : l'escalier redevient un objet
+    assert_empty PREP.unmark_viewbox(model, [stair2], clear_names: true)
+    a = PREP.analyze(model)
+    assert_equal 1, a.assemblies.size
+    assert_equal ['ESCALIER-INTERIEUR', 'définition'], PREP.category_for(stair2)
+  end
+
+  def test_marked_single_viewbox
+    model, d = build_model
+    Sketchup.active_model = model
+    # escalier intérieur dessiné dans UNE Viewbox : c'est elle la Viewbox (son corps en est une pièce)
+    single = S::ComponentDefinition.new('Escalier intérieur simple', [])
+    single.entities << S::ComponentInstance.new(d[:frame], t(0, 0, 0))
+    single.entities << S::ComponentInstance.new(S::ComponentDefinition.new('Marches', [box(600, 300, 0, 4600, 1300, 3000)]), t(0, 0, 0))
+    one = S::ComponentInstance.new(single, t(0, 2500, 0))
+    # bloc de deux Viewbox superposées dessiné d'un seul tenant : prévenu, calculé comme une seule
+    block = S::ComponentInstance.new(S::ComponentDefinition.new('Bloc 2 niveaux', [box(0, 0, 0, 5900, 2500, 6400)]), t(12_000, 0, 0))
+    model.entities << one << block
+    model.defs.push(single, block.definition)
+    PREP.mark_viewbox(model, [one, block])
+    a = PREP.analyze(model)
+    assert_equal 'manuel', a.how[one]
+    assert_empty a.assemblies
+    assert_equal 'Escalier intérieur simple', PREP.module_label(a, one)
+    assert_nil PREP.module_label(a, block) # son nom ne dit pas ce que c'est
+    assert_equal [[block, [1, 2]]], a.multiples
+    assert(PREP.report_lines(a).any? { |l| l.include?('fait sans doute 2 Viewbox') })
+    assert_match(/semble faire 2 Viewbox/, PREP.viewbox_status_lines(model, [block]).first)
+    # désignation et type : fenêtre des Viewbox (une Viewbox marquée n'est pas un ensemble)
+    UI.inputs = [['Escalier intérieur VIP', '', '5900', '2500', 'gabarit Viewbox standard']]
+    PREP.edit_selection(model, [one])
+    assert_equal 'Escalier intérieur VIP', single.get_attribute('viewbox', 'userLabel')
+    assert_equal 'Escalier intérieur VIP', PREP.module_label(PREP.analyze(model), one)
+    # marquée à l'intérieur d'une Viewbox : pièce de cette Viewbox, pas une Viewbox de plus
+    body = d[:viewbox].entities.to_a[0]
+    PREP.mark_viewbox(model, [body])
+    a = PREP.analyze(model)
+    assert_equal 4, (a.named + a.candidates).size
+    refute_includes a.named + a.candidates, body
   end
 
   def test_full_menu_flow

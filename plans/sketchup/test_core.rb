@@ -45,6 +45,34 @@ class CoreTest < Minitest::Test
     assert_includes C::CATEGORIES, 'BOARDING'
   end
 
+  # 1.5.0 : catégorie VIEWBOX (jamais déduite du nom), escalier intérieur, murs Nidaplast = murs légers
+  def test_viewbox_and_new_categories
+    assert_equal 'VIEWBOX', C::CATEGORIES.first
+    assert_nil C.category('7-962-016 VIEWBOX STANDARD M16 60MM 5900X2500 H3')
+    assert_equal 'TERRASSE', C.category('7-632-029 TERRACE PLATFORM - VIEWBOX M16')
+    assert_equal 'MUR-LEGER', C.category('7-636-008 NIDAPLAST WALL WHITE  WHITE 1130x2520 COMPLETE - VIEWBOX M16')
+    assert_equal 'MUR-LEGER', C.category('NIDAPLAST WALL WHITE / WHITE 1130x2520 With AIRCO HOLE - VIEWBOX M16')
+    assert_equal 'MUR-LEGER', C.category('Nidaplast / TUV WALL Vinyle White/7024 | 1130x2520 COMPLETE - VIEWBOX M16')
+    assert_equal 'ESCALIER-INTERIEUR', C.category('Escalier intérieur')
+    assert_equal 'ESCALIER-INTERIEUR', C.category('ESCALIER_INT_2')
+    assert_equal 'ESCALIER-INTERIEUR', C.category('Interior staircase')
+    assert_equal 'ESCALIER-INTERIEUR', C.category('Staircase inside VBX')
+    assert_equal 'ESCALIER', C.category('Escalier extérieur 6 marches')
+    assert_equal 'ESCALIER', C.category('Stair intermediate post')
+    assert_equal 'ESCALIER', C.category('STAIR')
+  end
+
+  def test_viewbox_count
+    assert_equal [1, 1], C.viewbox_count(5900, 2500, 3300)
+    assert_equal [1, 2], C.viewbox_count(2500, 5900, 6400) # deux Viewbox superposées
+    assert_equal [2, 1], C.viewbox_count(5900, 5000, 3300) # côte à côte sur le grand côté
+    assert_equal [2, 1], C.viewbox_count(11_800, 2500, 3300) # bout à bout
+    assert_equal [4, 1], C.viewbox_count(11_800, 5000, 3200)
+    assert_equal [1, 1], C.viewbox_count(5900, 5900, 3300) # rien de connu
+    assert_equal [1, 1], C.viewbox_count(5900, 2500, 4500) # logo au-dessus du toit
+    assert_equal [2, 1], C.viewbox_count(8400, 5000, 3300, long: 8400, short: 2500)
+  end
+
   def test_module_id
     assert_equal 'VBX-01', C.module_id('VBX-01')
     assert_equal 'VBX-07', C.module_id('vbx_7')

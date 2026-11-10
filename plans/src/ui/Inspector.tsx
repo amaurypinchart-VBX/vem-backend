@@ -247,6 +247,8 @@ export function Inspector(props: Props) {
                               <b>{m.id}</b>
                               {node && m.name !== m.id && <em>{m.name}</em>}
                               {m.type && <em>· {m.type}</em>}
+                              {m.label && <em title="désignation saisie dans SketchUp (calculée comme une Viewbox)">· {m.label}</em>}
+                              {m.assembly && m.assembly !== m.label && <em title="objet SketchUp qui contient plusieurs Viewbox">· ensemble « {m.assembly} »</em>}
                             </span>
                             <span
                               className={`badge ${m.dimsOk ? 'ok' : 'ko'}`}

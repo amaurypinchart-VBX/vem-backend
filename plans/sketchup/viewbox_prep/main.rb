@@ -12,6 +12,9 @@
 #   - Préparer & exporter pour VEM…  : numérote les Viewbox sans nom (VBX-01…), exporte le .dae aux
 #     bons réglages + textures + manifest.json dans un .zip à déposer dans VEM.
 # Clic droit sur des groupes/composants › Viewbox › Catégorie / désignation… : même correction, sur la sélection.
+# Clic droit › Viewbox › C'est une Viewbox (1.5.0) : catégorie VIEWBOX, l'objet est une Viewbox quel que soit son nom ;
+#   s'il contient plusieurs Viewbox (ex. un « Escalier intérieur » fait de deux Viewbox), c'est un ensemble : chacune
+#   est numérotée et calculée comme une Viewbox, et toutes gardent la désignation de l'ensemble.
 #
 # Pourquoi un manifest : l'export COLLADA (.dae) perd les balises (tags) et SketchUp y réécrit les noms
 # (espaces, "#", ":"…). Pendant l'export, chaque objet reçoit un nom technique unique ("VBXE-12"), noté
@@ -29,7 +32,7 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.4.1'.freeze
+    VERSION = '1.5.0'.freeze
     DICT = 'viewbox'.freeze
     C = Core
 
@@ -165,8 +168,17 @@ module Viewbox
 
     # ─── Analyse (ne modifie rien) ───
 
+    # Analyse du modèle. Une Viewbox (module) est : un objet nommé VBX-xx, un objet de catégorie VIEWBOX (choix manuel
+    # « C'est une Viewbox »), ou — en haut du modèle — un objet d'un type de structure saisi, ou de taille standard
+    # sans catégorie. Un objet qui contient des Viewbox (ex. « Escalier intérieur » = deux Viewbox) est un ensemble :
+    # chacune de ses Viewbox est un module (calculé comme une Viewbox), l'ensemble garde sa désignation.
+    # parents : entité → transformation monde de son parent (Viewbox et objets d'un ensemble ; absent = haut du modèle).
+    # how : Viewbox → 'nom' | 'manuel' | 'type' | 'taille' | 'ensemble' (reconnue par…).
     Analysis = Struct.new(:named, :candidates, :groups_as_modules, :duplicates, :attached, :orphans, :context,
-                          :common, :others, :levels, keyword_init: true)
+                          :common, :others, :levels, :parents, :how, :assemblies, :assembly_of, :shared, :multiples,
+                          keyword_init: true)
+    # Ensemble de Viewbox : l'objet, ses Viewbox, ses autres objets (escalier, garde-corps…).
+    Assembly = Struct.new(:entity, :modules, :items, keyword_init: true)
 
     def self.standard_size?(e)
       a, b = plan_dims(e)
@@ -175,31 +187,229 @@ module Viewbox
       sizes.any? { |l, s| (([a, b].max - l).abs <= 150) && (([a, b].min - s).abs <= 150) }
     end
 
+    # Hauteur (mm) d'une instance dans son propre repère.
+    def self.height_mm(e)
+      a = e.transformation.to_a
+      mm(definition_of(e).bounds.depth) * Math.sqrt(a[8]**2 + a[9]**2 + a[10]**2)
+    end
+
+    # Catégorie VIEWBOX choisie à la main : c'est une Viewbox, quel que soit son nom.
+    def self.viewbox_marked?(e)
+      category_for(e).first == C::VIEWBOX
+    end
+
+    # Objet qui est une Viewbox par son nom ou son marquage (clic droit « C'est une Viewbox » / « Ce n'est pas… »).
+    def self.viewbox_entity?(e)
+      !C.module_id(e.name).nil? || viewbox_marked?(e)
+    end
+
+    # Corps de Viewbox dans un objet marqué « Viewbox » : type de structure saisi, ou taille standard sans catégorie
+    # et toute la hauteur (≥ 2 m : un plancher ou un toit 5 900 × 2 500 n'en est pas un).
+    def self.viewbox_body?(e)
+      return true if module_type(definition_of(e))
+      category_for(e).first.nil? && standard_size?(e) && height_mm(e) >= C::BODY_MIN_HEIGHT
+    end
+
+    # Viewbox à l'intérieur d'un objet qui n'en est pas une : [[entité, transformation monde du parent, chemin]]
+    # (chemin = objets traversés depuis le haut du modèle). Explicites : nom VBX-xx ou catégorie VIEWBOX ; avec
+    # implicit (objet marqué « Viewbox »), aussi les corps de Viewbox. On n'entre jamais dans une Viewbox.
+    def self.inner_viewbox(e, parent_tr, implicit, depth = 0, path = [e], out = [])
+      tr = parent_tr * e.transformation
+      definition_of(e).entities.each do |c|
+        next unless container?(c)
+        next if C.context?(label(c)) || ignored?(c)
+        if viewbox_entity?(c) || (implicit && viewbox_body?(c))
+          out << [c, tr, path]
+        elsif depth < 2
+          inner_viewbox(c, tr, implicit, depth + 1, path + [c], out)
+        end
+      end
+      out
+    end
+
+    # Les Viewbox de e si c'est un ensemble, sinon nil. Un objet marqué « Viewbox » est un ensemble s'il contient une
+    # Viewbox nommée / marquée, ou au moins deux corps de Viewbox ; sinon c'est lui la Viewbox.
+    def self.assembly_modules(e, parent_tr = IDENTITY)
+      return nil if C.module_id(e.name) || C.common?(label(e))
+      marked = viewbox_marked?(e)
+      return nil unless marked || holds_viewbox?(definition_of(e))
+      inner = inner_viewbox(e, parent_tr, marked)
+      explicit = inner.any? { |c, _t, _p| viewbox_entity?(c) }
+      explicit || (marked && inner.size >= 2) ? inner : nil
+    end
+
+    # Une définition contient-elle une Viewbox nommée / marquée (3 niveaux) ? Gardé par analyse : les gros modèles ont
+    # des milliers d'objets libres, chacun aurait été parcouru.
+    def self.holds_viewbox?(defn, depth = 0, cache = @holds_cache || {})
+      key = [defn, depth]
+      return cache[key] if cache.key?(key)
+      cache[key] = defn.entities.any? do |c|
+        container?(c) && !C.context?(label(c)) && !ignored?(c) && (viewbox_entity?(c) || (depth < 2 && holds_viewbox?(definition_of(c), depth + 1, cache)))
+      end
+    end
+
+    # Autres objets d'un ensemble (hors de ses Viewbox) : [[entité, transformation monde du parent]].
+    def self.assembly_items(e, parent_tr, modules, path_set, out = [])
+      tr = parent_tr * e.transformation
+      definition_of(e).entities.each do |c|
+        next unless container?(c)
+        next if modules.include?(c)
+        if path_set[c]
+          assembly_items(c, tr, modules, path_set, out)
+        else
+          out << [c, tr]
+        end
+      end
+      out
+    end
+
+    def self.parent_tr(a, e)
+      (a.parents && a.parents[e]) || IDENTITY
+    end
+
+    def self.world_tr(a, e)
+      parent_tr(a, e) * e.transformation
+    end
+
+    def self.world_bounds(a, e)
+      world_bbox(e, parent_tr(a, e))
+    end
+
     def self.analyze(model)
+      @holds_cache = {} # le temps de cette analyse seulement (les marquages changent ensuite)
+      analyze_model(model)
+    ensure
+      @holds_cache = nil
+    end
+
+    def self.analyze_model(model)
       tops = model.entities.select { |e| container?(e) }
       context = tops.select { |e| C.context?(label(e)) || ignored?(e) }
       rest = tops - context
-      named = rest.select { |e| C.module_id(e.name) }
-      candidates = (rest - named).select do |e|
-        !C.common?(label(e)) && (module_type(definition_of(e)) || (category_for(e).first.nil? && standard_size?(e)))
+      named = []
+      candidates = []
+      parents = {}
+      how = {}
+      assemblies = []
+      assembly_of = {}
+      shared = []
+      seen = {}
+      free = []
+      loose = []
+      add = lambda do |m, ptr, kind, path|
+        # même objet atteint deux fois : composant d'ensemble utilisé plusieurs fois (rendu unique à l'export)
+        if seen[m]
+          shared << { module: m, path: path }
+          return false
+        end
+        seen[m] = true
+        parents[m] = ptr unless path.empty?
+        how[m] = kind
+        (C.module_id(m.name) ? named : candidates) << m
+        true
+      end
+      add_assembly = lambda do |e, inner|
+        asm = Assembly.new(entity: e, modules: [], items: [])
+        inner.each do |c, ptr, path|
+          kind = C.module_id(c.name) ? 'nom' : viewbox_marked?(c) ? 'manuel' : 'ensemble'
+          next unless add.call(c, ptr, kind, path)
+          asm.modules << c
+          assembly_of[c] = asm
+        end
+        path_set = {}
+        inner.each { |_c, _t, path| path.drop(1).each { |p| path_set[p] = true } }
+        assembly_items(e, IDENTITY, inner.map(&:first), path_set).each do |c, ptr|
+          next if seen[c]
+          seen[c] = true
+          parents[c] = ptr
+          asm.items << c
+          loose << c
+        end
+        assemblies << asm
+      end
+      # ordre : nom VBX-xx (on n'entre pas dedans), marquée « Viewbox » (ensemble si elle en contient), candidate par
+      # son type ou sa taille (comme avant 1.5.0 : son corps éventuellement marqué en est une pièce), puis objet qui
+      # contient des Viewbox nommées / marquées
+      rest.each do |e|
+        if C.module_id(e.name)
+          add.call(e, IDENTITY, 'nom', [])
+        elsif viewbox_marked?(e)
+          inner = assembly_modules(e)
+          inner ? add_assembly.call(e, inner) : add.call(e, IDENTITY, 'manuel', [])
+        elsif !C.common?(label(e)) && (module_type(definition_of(e)) || (category_for(e).first.nil? && standard_size?(e)))
+          add.call(e, IDENTITY, module_type(definition_of(e)) ? 'type' : 'taille', [])
+        elsif (inner = assembly_modules(e))
+          add_assembly.call(e, inner)
+        else
+          free << e
+        end
       end
       modules = named + candidates
       ids = named.map { |e| C.module_id(e.name) }
       duplicates = ids.group_by { |x| x }.select { |_, v| v.size > 1 }.keys
-      others = rest - modules
-      common = others.select { |e| C.common?(label(e)) }
-      boxes = modules.map { |m| bbox_mm(m.bounds) }
-      free = others - common
-      attached = free.select do |e|
+      boxes = modules.map { |m| bbox_mm(world_bbox(m, parents[m] || IDENTITY)) }
+      common = free.select { |e| C.common?(label(e)) }
+      others = free - common
+      attached = others.select do |e|
         min, max = bbox_mm(e.bounds)
         boxes.any? { |bmin, bmax| C.center_inside?(min, max, bmin, bmax) }
       end
-      orphans = (free - attached).select { |e| C::ACCESSORY_CATEGORIES.include?(category_for(e).first) }
-      zs = modules.map { |e| mm(e.bounds.min.z) }
+      orphans = (others - attached).select { |e| C::ACCESSORY_CATEGORIES.include?(category_for(e).first) }
+      # objets d'un ensemble : contexte / ignorés à part, éléments communs, sinon posés sur ses Viewbox
+      loose_context = loose.select { |e| C.context?(label(e)) || ignored?(e) }
+      loose_common = (loose - loose_context).select { |e| C.common?(label(e)) }
+      zs = modules.map { |e| mm(world_bbox(e, parents[e] || IDENTITY).min.z) }
       levels = modules.zip(C.group_levels(zs)).to_h
+      # Viewbox marquée d'un seul bloc qui en fait plusieurs (ex. deux Viewbox superposées) : calculée comme une seule
+      multiples = modules.select { |m| how[m] == 'manuel' }.filter_map do |m|
+        nominal = nominal_dims(definition_of(m))
+        n = C.viewbox_count(*plan_dims(m), height_mm(m), **(nominal ? { long: nominal[0], short: nominal[1] } : {}))
+        n.reduce(:*) > 1 ? [m, n] : nil
+      end
       Analysis.new(named: named, candidates: candidates, groups_as_modules: modules.select { |e| e.is_a?(Sketchup::Group) },
-                   duplicates: duplicates, attached: attached, orphans: orphans, context: context, common: common,
-                   others: free - attached - orphans, levels: levels)
+                   duplicates: duplicates, attached: attached + (loose - loose_context - loose_common), orphans: orphans,
+                   context: context + loose_context, common: common + loose_common, others: others - attached - orphans,
+                   levels: levels, parents: parents, how: how, assemblies: assemblies, assembly_of: assembly_of,
+                   shared: shared, multiples: multiples)
+    end
+
+    # Désignation d'un ensemble : saisie, sinon son nom (nom d'instance, ou de composant ; un groupe sans nom n'en a pas).
+    def self.assembly_label(e)
+      own = label_for(e)
+      return own if own
+      return e.name.to_s.strip unless e.name.to_s.strip.empty? || C.module_id(e.name)
+      definition_of(e).group? ? nil : definition_of(e).name.to_s
+    end
+
+    # Désignation d'une Viewbox : saisie, sinon celle de son ensemble, sinon — Viewbox marquée — le nom de son
+    # composant quand il dit ce que c'est (« Escalier intérieur » : catégorie reconnue dans le nom).
+    def self.module_label(a, m)
+      own = label_for(m)
+      return own if own
+      asm = a.assembly_of && a.assembly_of[m]
+      return assembly_label(asm.entity) if asm
+      return nil unless a.how && a.how[m] == 'manuel'
+      d = definition_of(m)
+      return nil if d.group? || C.module_id(d.name)
+      C.category(d.name) ? d.name.to_s : nil
+    end
+
+    # Composants d'ensemble utilisés plusieurs fois : chaque exemplaire est rendu unique (copie du composant) pour que
+    # ses Viewbox aient leurs propres numéros ; une copie garde les noms VBX-xx de l'original, ils sont retirés pour être
+    # renumérotés. Retourne [analyse à jour, nombre de copies].
+    def self.make_assemblies_unique(model, a)
+      made = 0
+      20.times do
+        break if a.shared.empty?
+        target = a.shared.first[:path].find { |c| definition_of(c).instances.size > 1 && c.respond_to?(:make_unique) }
+        break unless target
+        target.make_unique
+        made += 1
+        # la copie garde les noms VBX-xx de l'original : ses Viewbox sont renumérotées
+        inner_viewbox(target, IDENTITY, true).each { |m, _t, _p| m.name = '' if C.module_id(m.name) }
+        a = analyze(model)
+      end
+      [a, made]
     end
 
     def self.classified_inside?(defn)
@@ -239,7 +449,23 @@ module Viewbox
     def self.report_lines(a)
       lines = []
       lines << "Viewbox nommées (VBX-xx) : #{a.named.size}"
-      lines << "Viewbox à nommer (reconnues à leur taille ou à leur type) : #{a.candidates.size}" if a.candidates.any?
+      lines << "Viewbox à nommer (reconnues à leur taille, à leur type ou marquées « Viewbox ») : #{a.candidates.size}" if a.candidates.any?
+      marked = (a.named + a.candidates).count { |m| %w[manuel ensemble].include?(a.how[m]) || a.assembly_of[m] }
+      lines << "dont Viewbox marquées à la main ou dans un ensemble : #{marked}" if marked > 0
+      a.assemblies.select { |x| x.modules.any? }.each do |x|
+        ids = x.modules.map { |m| C.module_id(m.name) || 'à numéroter' }
+        lines << "Ensemble « #{assembly_label(x.entity) || label(x.entity)} » : #{x.modules.size} Viewbox (#{ids.join(', ')}), calculées chacune comme une Viewbox" \
+                 "#{x.items.any? ? " + #{x.items.size} objet(s)" : ''}"
+      end
+      a.shared.map { |sh| sh[:path].first }.uniq.each do |top|
+        lines << "⚠ « #{label(top)} » contient des Viewbox et son composant est utilisé plusieurs fois : chaque exemplaire sera rendu unique à l'export pour numéroter ses Viewbox"
+      end
+      a.multiples.each do |m, (plan, high)|
+        l, w = plan_dims(m).map(&:round)
+        lines << "⚠ « #{module_label(a, m) || label(m)} » est marquée Viewbox mais mesure #{l} × #{w} × #{height_mm(m).round} mm : " \
+                 "elle fait sans doute #{plan * high} Viewbox (#{plan > 1 ? "#{plan} en plan" : ''}#{plan > 1 && high > 1 ? ', ' : ''}#{high > 1 ? "#{high} niveaux" : ''}) " \
+                 "d'un seul bloc et sera calculée comme UNE Viewbox. Ouvre-la et fais un composant par Viewbox (ou mets-y les composants Viewbox), puis marque l'ensemble « C'est une Viewbox »."
+      end
       lines << "Niveaux : #{a.levels.values.uniq.size}" if a.levels.any?
       lines << "⚠ Noms de Viewbox en double : #{a.duplicates.join(', ')}" if a.duplicates.any?
       if a.groups_as_modules.any?
@@ -252,7 +478,7 @@ module Viewbox
       lines << "Éléments communs (COMMUN_) : #{a.common.size}"
       lines << "Contexte / ignorés (non exportés) : #{a.context.size}"
       lines << "Autres objets libres : #{a.others.map { |e| label(e) }.uniq.first(10).join(', ')}" if a.others.any?
-      lines << '✗ Aucune Viewbox trouvée : nomme chaque Viewbox VBX-01, VBX-02… (Infos sur l\'entité › Nom d\'instance).' if a.named.empty? && a.candidates.empty?
+      lines << '✗ Aucune Viewbox trouvée : nomme chaque Viewbox VBX-01, VBX-02… (Infos sur l\'entité › Nom d\'instance), ou clic droit › Viewbox › C\'est une Viewbox.' if a.named.empty? && a.candidates.empty?
       lines
     end
 
@@ -272,12 +498,15 @@ module Viewbox
     # ─── Préparation (modifie le modèle, annulable en une fois avec Ctrl+Z) ───
 
     # Numérote les Viewbox sans nom (triées par niveau, puis X, puis Y) et note leur n° et niveau en attribut.
+    # Un ensemble de Viewbox dont le composant est utilisé plusieurs fois est d'abord rendu unique (une copie par
+    # exemplaire) : sinon ses Viewbox, dans la définition partagée, auraient le même nom partout.
     def self.prepare(model, a)
       renamed = 0
       model.start_operation('Viewbox : préparer pour VEM', true)
       begin
+        a, @uniqued = make_assemblies_unique(model, a)
         used = a.named.map { |e| C.module_id(e.name)[/\d+/].to_i }
-        sorted = a.candidates.sort_by { |e| [a.levels[e] || 0, e.bounds.min.x.to_f, e.bounds.min.y.to_f] }
+        sorted = a.candidates.sort_by { |e| b = world_bounds(a, e); [a.levels[e] || 0, b.min.x.to_f, b.min.y.to_f] }
         C.next_free_numbers(used, sorted.size).each_with_index do |n, i|
           sorted[i].name = format('VBX-%02d', n)
           renamed += 1
@@ -310,6 +539,18 @@ module Viewbox
         h
       end
       modules = (a.named + a.candidates).select { |m| C.module_id(m.name) }
+      # désignations lues avant les noms techniques de l'export (celle d'un ensemble vient de son nom)
+      module_labels = modules.to_h { |m| [m, module_label(a, m)] }
+      # ensembles de Viewbox (ex. « Escalier intérieur »)
+      asm_rows = a.assemblies.select { |x| x.modules.any? { |m| modules.include?(m) } }.map do |x|
+        lbl = assembly_label(x.entity)
+        export_name, original = namer.call(x.entity)
+        [x, {
+          'exportName' => export_name, 'name' => original, 'label' => lbl, 'definition' => definition_of(x.entity).name.to_s,
+          'category' => category_for(x.entity).first, 'modules' => x.modules.map { |m| C.module_id(m.name) }.compact,
+          'bboxWorld' => bbox_json(x.entity.bounds)
+        }]
+      end.to_h
       # structure dessinée de chaque définition de module (relevée avant tout renommage technique)
       structures = {}
       modules.map { |m| definition_of(m) }.uniq.each do |d|
@@ -332,13 +573,19 @@ module Viewbox
         'structures' => structures,
         'modules' => modules.map do |m|
           defn = definition_of(m)
-          tr = m.transformation.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
+          wtr = world_tr(a, m)
+          tr = wtr.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
           items = []
-          each_item(defn.entities, m.transformation) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr, m) }
+          each_item(defn.entities, wtr) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr, m) }
+          asm = a.assembly_of[m] && asm_rows[a.assembly_of[m]]
           {
             'id' => C.module_id(m.name), 'definition' => defn.name.to_s, 'tag' => tag_name(m), 'level' => a.levels[m] || 0,
             'type' => module_type(defn), 'nominalPlanMm' => nominal_dims(defn),
-            'transform' => tr, 'bboxWorld' => bbox_json(m.bounds), 'accessories' => items,
+            'transform' => tr, 'bboxWorld' => bbox_json(world_bounds(a, m)), 'accessories' => items,
+            # désignation (ex. « Escalier intérieur ») ; reconnue par son nom / marquée à la main / dans un ensemble…
+            'label' => module_labels[m], 'viewboxBy' => a.how[m],
+            # ensemble dont elle fait partie (clé exportName de « assemblies »)
+            'assembly' => asm ? asm['exportName'] : nil,
             # Viewbox modifiée (« Structure… ») : attribut de l'instance, seulement les valeurs hors standard
             'structParams' => C.parse_struct(m.get_attribute(DICT, 'structParams')),
             # structure dessinée dans le composant (« structures » ci-dessus) et choix « gabarit / dessinée »
@@ -348,8 +595,11 @@ module Viewbox
         end,
         'common' => (a.common + a.attached + a.orphans + a.others).map do |e|
           cat, source = category_for(e)
-          entry.call(e, cat, source, IDENTITY)
+          entry.call(e, cat, source, parent_tr(a, e))
         end,
+        # ensembles de Viewbox : un objet qui contient plusieurs Viewbox (chacune est un module ci-dessus)
+        'assemblySchemaVersion' => 1,
+        'assemblies' => asm_rows.values,
         'context' => a.context.map { |e| { 'name' => label(e), 'ignored' => ignored?(e) } }
       }
     end
@@ -389,8 +639,17 @@ module Viewbox
       FileUtils.rm_rf(tmp) if tmp && File.directory?(tmp)
     end
 
+    # Sort de l'édition d'un composant (les positions lues pendant l'édition seraient dans le repère du composant ouvert).
+    def self.close_edit(model)
+      10.times do
+        break unless model.respond_to?(:active_path) && model.active_path
+        break unless model.close_active
+      end
+    end
+
     def self.prepare_and_export
       model = Sketchup.active_model
+      close_edit(model)
       a = analyze(model)
       lines = report_lines(a)
       if a.named.empty? && a.candidates.empty?
@@ -419,6 +678,7 @@ module Viewbox
 
       renamed_modules = prepare(model, a)
       a = analyze(model) # recalcul après numérotation
+      uniq_text = @uniqued.to_i > 0 ? " · ensembles rendus uniques : #{@uniqued}" : ''
 
       start_dir = model.path.to_s.empty? ? Dir.home : File.dirname(model.path)
       dir = UI.select_directory(title: 'Dossier où enregistrer le .zip pour VEM', directory: start_dir)
@@ -431,11 +691,11 @@ module Viewbox
       count, manifest = export_zip(model, a, zip_path, base)
       manual = (manifest['modules'].flat_map { |m| m['accessories'] } + manifest['common']).count { |x| x['categorySource'] == 'manuel' }
       report = ["Export VEM — #{Time.now.strftime('%d/%m/%Y %H:%M')}", "Fichier : #{zip_path} (#{count} fichiers)",
-                "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}", '', *report_lines(a)].join("\n")
+                "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}#{uniq_text}", '', *report_lines(a)].join("\n")
       File.write(File.join(dir, "#{base}_rapport.txt"), report)
       puts "[Viewbox] #{report}"
       UI.messagebox("✓ Export terminé (extension Viewbox #{VERSION})\n\n#{zip_path}\n\nDépose ce .zip (et lui seul) dans les fichiers du projet VEM, puis ouvre Plans Viewbox.\n\n" \
-                    "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}")
+                    "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}#{uniq_text}")
     rescue StandardError => e
       fail_with(e)
     ensure
@@ -467,20 +727,23 @@ module Viewbox
 
     def self.edit_selection(model, selection)
       first = selection.first
-      if selection.all? { |e| C.module_id(e.name) }
+      # Viewbox (nommée VBX-xx, ou marquée « Viewbox » et qui n'est pas un ensemble) : désignation et type de structure
+      if selection.all? { |e| C.module_id(e.name) || (viewbox_marked?(e) && !assembly_modules(e)) }
         d = definition_of(first)
         nominal = nominal_dims(d) || plan_dims(first).map(&:round)
         src_labels = C::STRUCT_SOURCES.map { |k| C::STRUCT_SOURCE_LABELS[k] }
-        res = UI.inputbox(['Type de structure (ex. Viewbox 5900, Box concurrent 6 m)', 'Dimension nominale longue (mm)', 'Dimension nominale courte (mm)', 'Structure'],
-                          [module_type(d).to_s, nominal[0].to_s, nominal[1].to_s, C::STRUCT_SOURCE_LABELS[struct_source(d) || 'template']],
-                          ['', '', '', src_labels.join('|')], 'Viewbox — type de structure (tous les objets de ce type)')
+        res = UI.inputbox(['Désignation (ex. Escalier intérieur)', 'Type de structure (ex. Viewbox 5900, Box concurrent 6 m)', 'Dimension nominale longue (mm)', 'Dimension nominale courte (mm)', 'Structure'],
+                          [label_for(first).to_s, module_type(d).to_s, nominal[0].to_s, nominal[1].to_s, C::STRUCT_SOURCE_LABELS[struct_source(d) || 'template']],
+                          ['', '', '', '', src_labels.join('|')], 'Viewbox — désignation et type de structure (tous les objets de ce type)')
         return unless res
         model.start_operation('Viewbox : type de structure', true)
+        selection.each { |e| e.delete_attribute(DICT, 'userLabel') if e.get_attribute(DICT, 'userLabel') } # la valeur du type s'applique
         selection.map { |e| definition_of(e) }.uniq.each do |defn|
-          set_or_clear(defn, 'moduleType', res[0])
-          set_or_clear(defn, 'nominalLong', res[1].to_f > 0 ? res[1].to_f.round.to_s : nil)
-          set_or_clear(defn, 'nominalShort', res[2].to_f > 0 ? res[2].to_f.round.to_s : nil)
-          set_or_clear(defn, 'structSource', C::STRUCT_SOURCES.find { |k| C::STRUCT_SOURCE_LABELS[k] == res[3] })
+          set_or_clear(defn, 'userLabel', res[0])
+          set_or_clear(defn, 'moduleType', res[1])
+          set_or_clear(defn, 'nominalLong', res[2].to_f > 0 ? res[2].to_f.round.to_s : nil)
+          set_or_clear(defn, 'nominalShort', res[3].to_f > 0 ? res[3].to_f.round.to_s : nil)
+          set_or_clear(defn, 'structSource', C::STRUCT_SOURCES.find { |k| C::STRUCT_SOURCE_LABELS[k] == res[4] })
         end
         model.commit_operation
         return
@@ -513,10 +776,69 @@ module Viewbox
       fail_with(e)
     end
 
+    # ─── Clic droit : « C'est une Viewbox » / « Ce n'est pas une Viewbox » ───
+
+    # Ce que devient chaque objet marqué (pour le message) : ensemble, Viewbox, ou rien (dans une autre Viewbox).
+    def self.viewbox_status_lines(model, selection)
+      a = analyze(model)
+      selection.map do |e|
+        name = label_for(e) || label(e)
+        asm = a.assemblies.find { |x| x.entity == e }
+        if asm
+          ids = asm.modules.map { |m| C.module_id(m.name) || 'à numéroter' }
+          "« #{name} » contient #{asm.modules.size} Viewbox (#{ids.join(', ')}) : chacune est calculée comme une Viewbox, " \
+            "et elles s'affichent « #{assembly_label(e) || name} »."
+        elsif (a.named + a.candidates).include?(e)
+          multi = a.multiples.find { |m, _| m == e }
+          line = "« #{name} » est une Viewbox#{C.module_id(e.name) ? " (#{C.module_id(e.name)})" : ', numérotée VBX-xx à l\'export'}" \
+                 "#{module_label(a, e) ? ", désignation « #{module_label(a, e)} »" : ''}."
+          line += "\n⚠ D'un seul bloc, elle semble faire #{multi[1].reduce(:*)} Viewbox : ouvre-la et fais un composant par Viewbox pour qu'elle soit calculée comme #{multi[1].reduce(:*)} Viewbox." if multi
+          line
+        else
+          host = (a.named + a.candidates).find { |m| definition_of(m).entities.include?(e) }
+          host ? "« #{name} » est à l'intérieur de la Viewbox #{C.module_id(host.name) || label(host)} : elle en fait partie (ce n'est pas une Viewbox de plus)." : "« #{name} » : catégorie VIEWBOX enregistrée."
+        end
+      end
+    end
+
+    # « C'est une Viewbox » : catégorie VIEWBOX sur le type de composant (tous ses exemplaires) ; un choix individuel
+    # contraire posé sur l'objet est retiré. Un objet qui contient plusieurs Viewbox devient un ensemble.
+    def self.mark_viewbox(model, selection)
+      model.start_operation('Viewbox : c’est une Viewbox', true)
+      selection.each do |e|
+        e.delete_attribute(DICT, 'userCategory') if e.get_attribute(DICT, 'userCategory')
+        definition_of(e).set_attribute(DICT, 'userCategory', C::VIEWBOX)
+      end
+      model.commit_operation
+      selection.size
+    end
+
+    # « Ce n'est pas une Viewbox » : retire la catégorie VIEWBOX (objet et type) et, après confirmation, le nom VBX-xx
+    # (de l'objet et des Viewbox d'un ensemble). Retourne les objets encore reconnus comme Viewbox (taille, type).
+    def self.unmark_viewbox(model, selection, clear_names: nil)
+      named = selection.select { |e| C.module_id(e.name) }
+      selection.each do |e|
+        inner = assembly_modules(e)
+        named.concat(inner.map(&:first).select { |m| C.module_id(m.name) }) if inner
+      end
+      named.uniq!
+      if clear_names.nil? && named.any?
+        clear_names = UI.messagebox("Retirer aussi le numéro de #{named.map { |m| C.module_id(m.name) }.join(', ')} ?", MB_YESNO) == IDYES
+      end
+      model.start_operation('Viewbox : ce n’est pas une Viewbox', true)
+      selection.each do |e|
+        [e, definition_of(e)].each { |t| t.delete_attribute(DICT, 'userCategory') if C.category_key(t.get_attribute(DICT, 'userCategory').to_s) == C::VIEWBOX }
+      end
+      named.each { |m| m.name = '' } if clear_names
+      model.commit_operation
+      a = analyze(model)
+      selection.select { |e| (a.named + a.candidates).include?(e) || a.assemblies.any? { |x| x.entity == e } }
+    end
+
     # Structure d'une ou plusieurs Viewbox (attribut d'instance : deux instances d'un même composant peuvent différer).
     # Seules les valeurs hors standard sont gardées ; VEM les reprend sans poser de question.
     def self.edit_structure(model, selection)
-      mods = selection.select { |e| C.module_id(e.name) || standard_size?(e) }
+      mods = selection.select { |e| C.module_id(e.name) || (viewbox_marked?(e) && !assembly_modules(e)) || standard_size?(e) }
       if mods.empty?
         UI.messagebox('Viewbox — structure : sélectionne une ou plusieurs Viewbox (VBX-xx).')
         return
@@ -581,6 +903,26 @@ module Viewbox
         next if sel.empty?
         sub = context_menu.add_submenu('Viewbox')
         sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
+        # Viewbox quel que soit son nom (ex. « Escalier intérieur » : calculée comme une Viewbox, ou comme les Viewbox
+        # qu'elle contient), catégorie VIEWBOX
+        if sel.all? { |e| viewbox_entity?(e) }
+          sub.add_item('Ce n’est pas une Viewbox') do
+            still = unmark_viewbox(model, sel)
+            if still.any?
+              UI.messagebox("#{still.map { |e| label(e) }.uniq.first(5).join(', ')} : encore reconnue(s) comme Viewbox (taille standard, type de structure ou Viewbox à l'intérieur).\n\n" \
+                            'Donne-lui une autre catégorie (Catégorie / désignation…) pour qu\'elle ne soit plus une Viewbox.')
+            end
+          rescue StandardError => e
+            fail_with(e)
+          end
+        else
+          sub.add_item('C’est une Viewbox') do
+            mark_viewbox(model, sel)
+            UI.messagebox("Viewbox — catégorie VIEWBOX\n\n#{viewbox_status_lines(model, sel).join("\n\n")}\n\nDésignation : clic droit › Viewbox › Catégorie / désignation…")
+          rescue StandardError => e
+            fail_with(e)
+          end
+        end
         marked = sel.all? { |e| textile_marked?(e) }
         [['FRAME-EXTERIEUR', 'extérieur'], ['FRAME-INTERIEUR', 'intérieur']].each do |place, word|
           next if marked && sel.all? { |e| textile_place(e) == place }
@@ -593,7 +935,7 @@ module Viewbox
         end
         sub.add_item('Ce n’est pas un cadre textile') { mark_textile(model, sel, false) } if marked
         sub.add_item('Cadres textile (F1, F2…)…') { show_textile_dialog(model) }
-        if sel.all? { |e| C.module_id(e.name) || standard_size?(e) || module_type(definition_of(e)) }
+        if sel.all? { |e| viewbox_entity?(e) || standard_size?(e) || module_type(definition_of(e)) }
           sub.add_item('Structure (hauteur, profils, nuances)…') { edit_structure(model, sel) }
           sub.add_item('Structure de la box (profils)…') { show_frame_dialog(model, sel) }
         end

@@ -25,7 +25,8 @@ module Viewbox
         ['PORTE-COULISSANTE', [/PORTE[-_ ]?COULISSANTE/, /SLID+(E|ING)[-_ ]?DOOR/, /FULL[-_ ]?SLID/, /COULISSANT/]],
         ['PORTE-DOUBLE', [/PORTE[-_ ]?DOUBLE/, /DOUBLE[-_ ]?DOOR/]],
         ['PORTE-SIMPLE', [/PORTE[-_ ]?SIMPLE/, /SINGLE[-_ ]?DOOR/]],
-        ['MUR-LEGER', [/MUR[-_ ]?LEGER/, /WALL[-_ ]?LIGHT/, /LIGHT[-_ ]?WALL/]],
+        # murs Nidaplast (« 7-636-008 NIDAPLAST WALL WHITE / WHITE… ») : murs légers
+        ['MUR-LEGER', [/MUR[-_ ]?LEGER/, /WALL[-_ ]?LIGHT/, /LIGHT[-_ ]?WALL/, /NIDAPLAST/]],
         ['MUR-LOURD', [/MUR[-_ ]?LOURD/, /WALL[-_ ]?HEAVY/, /HEAVY[-_ ]?WALL/]],
         # cadres de tissu tendu (SEG) posés à l'extérieur / à l'intérieur de la box : un cadre de ces catégories est
         # toujours un cadre textile (repère F1, F2…)
@@ -34,6 +35,8 @@ module Viewbox
         # protection de sol (plaques bakélite)
         ['BOARDING', [/BOARDING/, /BAKELIT/]],
         ['GARDE-CORPS', [/GARDE[-_ ]?CORPS/, /RAILING/, /HANDRAIL/, /BALUSTRADE/]],
+        # escalier à l'intérieur d'une Viewbox (entre deux niveaux) : une charge sur le plancher, pas un escalier extérieur
+        ['ESCALIER-INTERIEUR', [/ESCALIER[-_ ]?INT(ERIEUR|[^A-Z]|\z)/, /(INTERIOR|INTERNAL|INSIDE|INDOOR|INNER)[-_ ]?STAIR/, /STAIR(S|CASE)?[-_ ]?(INTERI|INTERN|INSIDE|INDOOR)/]],
         ['ESCALIER', [/ESCALIER/, /STAIR/]],
         # élément terrasse 5,9 × 2,5 m (« 7-632-029 TERRACE PLATFORM - VIEWBOX M16 ») : jamais une Viewbox
         ['TERRASSE', [/TERRASS/, /TERRACE/]],
@@ -43,7 +46,11 @@ module Viewbox
         ['STRUCTURE', [/STRUCTURE/, /CHASSIS/, /POTEAU/, /POUTRE/, /(\A|[^A-Z])POLES?([^A-Z]|\z)/, /COLUMN/, /(\A|[^A-Z])BEAM/, /UPN[-_ ]?\d/, /IPE[-_ ]?\d/, /HE[AB][-_ ]?\d/]],
         ['VITRE', [/(\A|[^A-Z])VITRE/, /VITRAGE/, /GLAZING/]]
       ].freeze
-      CATEGORIES = CATEGORY_RULES.map(&:first).freeze
+      # « VIEWBOX » : l'objet est une Viewbox (un module, calculé comme une Viewbox) quel que soit son nom, choisi à la
+      # main (clic droit › C'est une Viewbox, ou la catégorie). Jamais déduite du nom : « TERRACE PLATFORM - VIEWBOX M16 »,
+      # « NIDAPLAST WALL … VIEWBOX M16 » ne sont pas des Viewbox.
+      VIEWBOX = 'VIEWBOX'.freeze
+      CATEGORIES = ([VIEWBOX] + CATEGORY_RULES.map(&:first)).freeze
       # Catégories des cadres textile ; un cadre marqué sans catégorie est classé « extérieur » (le cas courant).
       FRAME_CATEGORIES = %w[FRAME-EXTERIEUR FRAME-INTERIEUR].freeze
       DEFAULT_FRAME_CATEGORY = 'FRAME-EXTERIEUR'.freeze
@@ -110,6 +117,30 @@ module Viewbox
       def self.plan_dims_ok?(a, b, tolerance = 30.0, long: MODULE_LONG, short: MODULE_SHORT)
         l, s = [a, b].max, [a, b].min
         (l - [long, short].max).abs <= tolerance && (s - [long, short].min).abs <= tolerance
+      end
+
+      # Hauteur d'une Viewbox standard (dessus des poteaux, mm) et hauteur minimale d'un corps de Viewbox (même seuil
+      # que VEM, structure/core/recognition.ts isViewboxBody) : un plancher ou un toit de 5 900 × 2 500 n'en est pas un.
+      MODULE_HEIGHT = 3080.0
+      BODY_MIN_HEIGHT = 2000.0
+
+      # Nombre de Viewbox qu'un bloc semble faire d'après ses dimensions (mm) : [en plan, en hauteur]. Sert à prévenir
+      # quand un objet marqué « Viewbox » d'un seul bloc en fait plusieurs (il serait calculé comme une seule).
+      # En plan : n × la longueur ou n × la largeur (± tolerance par Viewbox) ; en hauteur : niveaux superposés.
+      # [1, 1] quand ça ressemble à une seule Viewbox (ou à rien de connu).
+      def self.viewbox_count(a, b, height, long: MODULE_LONG, short: MODULE_SHORT, top: MODULE_HEIGHT, tolerance: 150.0)
+        l, s = [a, b].max.to_f, [a, b].min.to_f
+        long, short = [long, short].max.to_f, [long, short].min.to_f
+        fit = lambda do |len, unit|
+          n = (len / unit).round
+          n >= 1 && (len - n * unit).abs <= tolerance * n ? n : nil
+        end
+        i = fit.(l, long)
+        j = fit.(s, short)
+        plan = i && j ? i * j : 1
+        # une Viewbox mesure le dessus de ses poteaux + toiture, pieds : 2 superposées ≥ 1,9 × la hauteur d'une
+        levels = [(height.to_f / (top * 0.95)).floor, 1].max
+        [plan, levels]
       end
 
       # Regroupe des altitudes (mm) en niveaux (tolérance 200 mm) : retourne le niveau de chaque valeur.

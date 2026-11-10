@@ -1,7 +1,8 @@
 # encoding: UTF-8
 # Viewbox — fenêtre « Réviser les catégories » : un tableau par type de composant (définition) où l'on
-# corrige la catégorie proposée, saisit une désignation et une réf. article, et, pour les Viewbox,
-# leur type et leurs dimensions nominales. Tout est enregistré en attributs sur les définitions
+# corrige la catégorie proposée (dont VIEWBOX : « c'est une Viewbox »), saisit une désignation et une réf. article, et,
+# pour les Viewbox, leur désignation, leur type et leurs dimensions nominales ; les ensembles de Viewbox (un objet qui
+# en contient plusieurs, ex. « Escalier intérieur ») ont leur désignation. Tout est enregistré en attributs sur les définitions
 # (Ctrl+Z annule l'enregistrement en une fois).
 
 module Viewbox
@@ -16,12 +17,25 @@ module Viewbox
     def self.review_rows(model)
       a = analyze(model)
       modules = a.named + a.candidates
+      how_text = { 'nom' => 'nom VBX-xx', 'manuel' => 'catégorie VIEWBOX', 'type' => 'type saisi', 'taille' => 'taille standard', 'ensemble' => 'dans un ensemble' }
       module_rows = modules.group_by { |m| definition_of(m) }.map do |d, inst|
         measured = plan_dims(inst.first).map(&:round)
         {
           'id' => d.entityID, 'name' => d.name.to_s, 'count' => inst.size,
           'modules' => inst.map { |m| C.module_id(m.name) || '(sans nom)' }.sort,
-          'type' => module_type(d).to_s, 'nominal' => nominal_dims(d)&.map(&:round), 'measured' => [measured.max, measured.min]
+          'type' => module_type(d).to_s, 'nominal' => nominal_dims(d)&.map(&:round), 'measured' => [measured.max, measured.min],
+          'label' => d.get_attribute(DICT, 'userLabel').to_s,
+          'how' => inst.map { |m| how_text[a.how[m]] }.compact.uniq,
+          'assemblies' => inst.map { |m| a.assembly_of[m] }.compact.uniq.map { |x| assembly_label(x.entity) || label(x.entity) }
+        }
+      end
+      assembly_rows = a.assemblies.group_by { |x| definition_of(x.entity) }.map do |d, list|
+        {
+          'id' => d.entityID, 'name' => display_name_of(list.first.entity), 'count' => list.size,
+          'modules' => list.flat_map { |x| x.modules.map { |m| C.module_id(m.name) || '(à numéroter)' } }.sort,
+          'items' => list.sum { |x| x.items.size },
+          'label' => d.get_attribute(DICT, 'userLabel').to_s, 'auto' => assembly_label(list.first.entity).to_s,
+          'marked' => viewbox_marked?(list.first.entity)
         }
       end
       rows = {}
@@ -52,7 +66,7 @@ module Viewbox
       # Les types à classer d'abord, puis par portée et par nom.
       components = rows.values.sort_by { |r| [r['auto'].nil? && r['category'].to_s.empty? ? 0 : 1, r['scope'], r['name'].downcase] }
       categories = (C::CATEGORIES + custom_categories(model)).uniq
-      { 'modules' => module_rows, 'components' => components, 'categories' => categories, 'version' => VERSION }
+      { 'modules' => module_rows, 'assemblies' => assembly_rows, 'components' => components, 'categories' => categories, 'version' => VERSION }
     end
 
     # Enregistre les choix de la fenêtre. Retourne le nombre de valeurs modifiées.
@@ -80,11 +94,16 @@ module Viewbox
         Array(payload['modules']).each do |m|
           d = defs[m['id'].to_i]
           next unless d
+          write.call(d, 'userLabel', m['label']) if m.key?('label')
           write.call(d, 'moduleType', m['type'])
           n = Array(m['nominal']).map(&:to_f)
           ok = n.size == 2 && n.all? { |v| v > 0 }
           write.call(d, 'nominalLong', ok ? n.max.round.to_s : '')
           write.call(d, 'nominalShort', ok ? n.min.round.to_s : '')
+        end
+        Array(payload['assemblies']).each do |x|
+          d = defs[x['id'].to_i]
+          write.call(d, 'userLabel', x['label']) if d
         end
         model.commit_operation
       rescue StandardError

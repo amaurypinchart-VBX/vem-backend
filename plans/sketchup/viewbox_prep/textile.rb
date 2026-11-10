@@ -113,12 +113,13 @@ module Viewbox
           dims = frame_dims(min, max)
           side = C.frame_side(c, bmin, bmax, [max[0] - min[0], max[1] - min[1], max[2] - min[2]])
           out << { key: "#{persistent_key(m)}/#{persistent_key(e)}", entity: e, owner: m, module: C.module_id(m.name), side: side,
-                   along: frame_along(side, c), z: c[2], dims: dims, world_tr: m.transformation * tr }
+                   along: frame_along(side, c), z: c[2], dims: dims, world_tr: world_tr(a, m) * tr }
         end
       end
-      boxes = modules.map { |m| [C.module_id(m.name), *bbox_mm(m.bounds)] }
+      boxes = modules.map { |m| [C.module_id(m.name), *bbox_mm(world_bounds(a, m))] }
       (a.attached + a.common + a.others + a.orphans).each do |top|
-        list = textile_marked?(top) ? [[top, IDENTITY]] : textile_in_definition(definition_of(top), cache).map { |e, tr| [e, top.transformation * tr] }
+        # objet libre en haut du modèle, ou dans un ensemble de Viewbox (repère de son parent)
+        list = textile_marked?(top) ? [[top, parent_tr(a, top)]] : textile_in_definition(definition_of(top), cache).map { |e, tr| [e, world_tr(a, top) * tr] }
         list.each do |e, tr|
           min, max = box_of(corners_mm(e, tr))
           c = [0, 1, 2].map { |k| (min[k] + max[k]) / 2.0 }

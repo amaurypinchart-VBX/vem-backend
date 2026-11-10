@@ -93,7 +93,7 @@ export interface AiTypeProposal {
 }
 
 /** Catégories des pièces propres au composant Viewbox, comprises dans son gabarit. */
-export const TEMPLATE_CATEGORIES: ReadonlySet<string> = new Set(['STRUCTURE', 'PLANCHER', 'TOIT', 'PIED']);
+export const TEMPLATE_CATEGORIES: ReadonlySet<string> = new Set(['STRUCTURE', 'PLANCHER', 'TOIT', 'PIED', 'VIEWBOX']);
 
 /**
  * Composant Viewbox entier (le corps du module, classé d'un seul bloc : « 7-962-016 VIEWBOX STANDARD… ») : sa boîte a
@@ -123,6 +123,10 @@ export function proposeFor(category: string | null, accessory: boolean): { assig
     return { assignment: { role: 'load', nature: 'door', windClosed: true, weight: { value: kgPerM(0.5), unit: 'kg/m' } }, reason: 'catégorie porte : 0,50 kN/m, face fermée au vent' };
   if (category === 'GARDE-CORPS')
     return { assignment: { role: 'load', nature: 'railing', windClosed: false, weight: { value: kgPerM(0.1), unit: 'kg/m' } }, reason: 'catégorie garde-corps : 0,10 kN/m, non habillé' };
+  // escalier dans une Viewbox (ex. entre deux Viewbox superposées) : sa charge sur le plancher, poids à saisir — jamais
+  // le gabarit d'escalier extérieur (accroché au côté d'une Viewbox)
+  if (category === 'ESCALIER-INTERIEUR')
+    return { assignment: { role: 'load', nature: 'other', windClosed: false }, reason: 'escalier intérieur : charge sur le plancher de la Viewbox, poids à renseigner' };
   if (category === 'ESCALIER') return { assignment: { role: 'structural', nature: 'stair' }, reason: 'catégorie escalier : gabarit escalier de la bibliothèque' };
   if (category === 'TERRASSE' || category === 'TERRACE') return { assignment: { role: 'structural', nature: 'terrace' }, reason: 'catégorie terrasse : élément terrasse 5,9 × 2,5 m (statico 18-0573 § 3.5)' };
   if (isBlockCategory(category))
