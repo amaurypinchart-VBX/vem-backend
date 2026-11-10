@@ -132,6 +132,8 @@ export interface ModelSettings {
   customViews?: unknown[];
   /** peinture (couleurs + zones) : à relire avec cleanPaint ; écrite seulement par patchPaint (opérations) */
   paint?: unknown;
+  /** Viewbox renumérotées dans l'application (Vue 3D) : à relire avec cleanModuleNumbers (core/moduleNumbers.ts) */
+  moduleNumbers?: unknown;
 }
 
 /** Modification des réglages : clés remplacées, ou fonction des réglages à jour (listes modifiées en parallèle). */

@@ -98,6 +98,9 @@ import { frameLabels, frameRefs, frameSheets, groupFrames, measureFrames } from 
 import { TEXTILE_TAG } from '../../core/customViews/tags';
 import { renumber } from '../../sheets/generate';
 import { NOT_PREPARED } from '../../sheets/consult';
+import type { ModuleLabels } from '../../core/moduleNumbers';
+import { labelChanges } from '../../core/moduleNumbers';
+import { outdatedSheets, relabelDrawingSet, relabelSheet, sheetsWithOtherLabels } from '../../sheets/moduleLabels';
 
 /** Peinture du projet (SheetsPage) : état, résolution sur la scène, favoris partagés. */
 export interface PaintBundle {
@@ -117,6 +120,8 @@ const uid = (p: string) => (typeof crypto !== 'undefined' && crypto.randomUUID ?
 
 interface Props {
   paint?: PaintBundle;
+  /** numéros des Viewbox changés dans la Vue 3D (réglages du modèle) : les planches dessinées avec d'autres sont à mettre à jour */
+  moduleLabels?: ModuleLabels;
   /** scène chargée, ou sans 3D (`scene.light`) : consultation, les outils qui ont besoin de la 3D la demandent */
   scene: LoadedScene;
   onNeedScene?: () => void;
@@ -142,6 +147,7 @@ const PHONE_IMAGE = (url: string) => screenImageUrl(url, 1400);
 const BIG_MODEL_IMAGE = (url: string) => screenImageUrl(url, 2000);
 const THUMB_IMAGE = (url: string) => screenImageUrl(url, 320);
 const lightDevice = lowPowerDevice();
+const NO_LABELS: ModuleLabels = {};
 /** taille d'un morceau de l'export PDF allégé (caractères de SVG) ; localStorage `vem_plans_pdf_chunk` pour les tests */
 function pdfChunkChars(): number {
   try {
@@ -154,7 +160,7 @@ function pdfChunkChars(): number {
 }
 const bigScenes = new WeakMap<object, boolean>();
 
-export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint, onNeedScene, sceneLoading, lightTick }: Props) {
+export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint, onNeedScene, sceneLoading, lightTick, moduleLabels = NO_LABELS }: Props) {
   /** consultation sans le modèle 3D */
   const light = !!scene.light;
   // très gros modèle (bigModel) : calculé une fois par scène
@@ -294,6 +300,37 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     // ordinateur : toutes les vues mises à jour sont calculées tout de suite (téléphone : à l'affichage de leur planche)
     if (!lightDevice) bank.ensure(doc.sheets.flatMap((s) => s.items.filter((i): i is ViewportItem => i.type === 'viewport' && ids.has(i.id))));
     setStaleIds([]);
+  };
+  // ─── numéros des Viewbox changés dans la Vue 3D : planches à mettre à jour ───
+  const numberOutdated = useMemo(() => outdatedSheets(doc, moduleLabels, scene.index.modules), [doc, moduleLabels, scene.index]);
+  /** numéros qui changent sur les planches à mettre à jour (« VBX-01 → VBX-05 ») */
+  const numberChanges = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const s of doc.sheets)
+      if (numberOutdated.includes(s.id))
+        for (const c of labelChanges(
+          scene.index.modules.map((m) => m.id),
+          s.moduleLabels,
+          moduleLabels,
+        ))
+          seen.set(`${c.before} → ${c.after}`, c.before);
+    return [...seen.keys()];
+  }, [doc.sheets, numberOutdated, moduleLabels, scene.index]);
+  // planches où rien de visible ne change : elles prennent les nouveaux numéros sans le demander (pas d'historique),
+  // pour qu'un texte tapé ensuite soit lu avec les bons numéros
+  useEffect(() => {
+    if (numberOutdated.length) return;
+    const other = sheetsWithOtherLabels(doc, moduleLabels);
+    if (!other.length) return;
+    useEditor.getState().patchSilently((d) => {
+      for (const sh of d.sheets) if (other.includes(sh.id)) relabelSheet(sh as Sheet, moduleLabels, scene.index.modules);
+    });
+  }, [doc, moduleLabels, numberOutdated, scene.index]);
+  /** « Mettre à jour les numéros » : textes réécrits, plans d'assemblage renumérotés, planches par Viewbox remises dans l'ordre */
+  const updateNumbers = () => {
+    let res = { texts: 0, reordered: false };
+    actions.editDoc('Mettre à jour les numéros des Viewbox', (d) => void (res = relabelDrawingSet(d as DrawingSet, moduleLabels, scene.index.modules)));
+    setToast(`Numéros des Viewbox mis à jour sur ${numberOutdated.length} planche${numberOutdated.length > 1 ? 's' : ''}${res.reordered ? ' (planches par Viewbox remises dans l’ordre)' : ''}. Ctrl+Z pour annuler.`);
   };
   const sheet = doc.sheets.find((s) => s.id === sheetId) ?? doc.sheets[0];
 
@@ -1015,6 +1052,8 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         if (c.labels) labels.set(vp.id, ls);
       }
     const fresh = c.sheets ? frameSheets(types, { paper: sheet.paper, modelKey: scene.modelKey, style: vps[0]?.request.style ?? { ...DEFAULT_LINE_STYLE }, lang: c.lang, title: doc.title }) : [];
+    // emplacements « VBX-01 Left » écrits avec les numéros de la Vue 3D
+    for (const f of fresh) relabelSheet(f, moduleLabels, scene.index.modules);
     actions.editDoc('Cadres textile', (d) => {
       if (c.sheets) {
         const old = d.sheets.findIndex((s) => s.role === 'frames');
@@ -1443,9 +1482,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     const built: Sheet[] = [];
     try {
       for (const [n, to] of targets.entries()) {
-        setBusy(`Copie pour ${to} (${n + 1}/${targets.length})…`);
+        setBusy(`Copie pour ${moduleLabels[to] ?? to} (${n + 1}/${targets.length})…`);
         const r = retargetSheet(src, from, to, { index: scene.index, frames: scene.frames }, newId);
-        for (const w of r.warnings) warnings.push(`${to} : ${w}`);
+        for (const w of r.warnings) warnings.push(`${moduleLabels[to] ?? to} : ${w}`);
         const vps = r.sheet.items.filter((i): i is ViewportItem => i.type === 'viewport' && r.viewportIds.includes(i.id));
         await Promise.all(vps.map((vp) => bank.load(vp)));
         for (const vp of vps) {
@@ -1464,7 +1503,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         }
         built.push(r.sheet);
       }
-      actions.insertSheets(built, src.id, built.length === 1 ? `Dupliquer pour ${targets[0]}` : `Dupliquer pour ${built.length} Viewbox`);
+      actions.insertSheets(built, src.id, built.length === 1 ? `Dupliquer pour ${moduleLabels[targets[0]] ?? targets[0]}` : `Dupliquer pour ${built.length} Viewbox`);
       if (warnings.length) window.alert(warnings.join('\n'));
     } finally {
       setBusy('');
@@ -1818,6 +1857,18 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           </button>
         </div>
       )}
+      {numberOutdated.length > 0 && (
+        <div className="sync-banner" data-testid="numbers-banner">
+          <span>
+            🔢 Numéros des Viewbox changés dans la Vue 3D ({numberChanges.slice(0, 6).join(' · ')}
+            {numberChanges.length > 6 ? ` · +${numberChanges.length - 6}` : ''}) : <b>{numberOutdated.length} planche{numberOutdated.length > 1 ? 's' : ''}</b> à mettre à jour.
+          </span>
+          <span className="spacer" />
+          <button className="btn small primary" data-testid="update-numbers" onClick={updateNumbers} title="Titres, textes et numéros des plans avec les nouveaux numéros (Ctrl+Z pour annuler)">
+            ↻ Mettre à jour les numéros
+          </button>
+        </div>
+      )}
       {projectUpdate && (
         <div className="sync-banner">
           <span>
@@ -2148,6 +2199,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <ModulePickDialog
           scene={scene}
           from={sheetModule(retarget)!}
+          labels={moduleLabels}
           onCancel={() => setRetarget(null)}
           onConfirm={(targets) => {
             const src = retarget;

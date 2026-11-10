@@ -21,6 +21,8 @@ import { newId } from '../sheets/generate';
 import type { CameraPose, IsoKind, PickInfo, Projection, StandardView } from '../viewer/SceneViewer';
 import { ISO_LABELS, SceneViewer } from '../viewer/SceneViewer';
 import { CategoryChip } from './common';
+import type { ModuleLabels } from '../core/moduleNumbers';
+import { cleanModuleNumbers, entriesFromLabels, formatModuleLabel, labelChanges, labelNumber, labelOf, parseModuleNumber, resolveModuleLabels, setModuleNumber } from '../core/moduleNumbers';
 
 interface Props {
   scene: LoadedScene;
@@ -28,8 +30,18 @@ interface Props {
   active: boolean;
   framesVersion: number;
   settings: ModelSettings;
+  /** noms affichés des Viewbox renumérotées dans l'application (réglages du modèle) */
+  moduleLabels: ModuleLabels;
   onSetFront: (moduleId: string, front: FrontSide | null) => void;
   onSaveSettings: (update: SettingsUpdate) => Promise<void>;
+}
+
+/** Bulle « numéro de cette Viewbox » (mode 🔢 Numéros). */
+interface NumberBubble {
+  moduleId: string;
+  /** position dans la zone 3D (px) */
+  at: { x: number; y: number };
+  value: string;
 }
 
 /** Capture de cette session : fichier pleine résolution + état de l'enregistrement. */
@@ -52,7 +64,7 @@ const VIEW_BUTTONS: ViewKind[] = ['top', 'front', 'back', 'left', 'right'];
 const ISO_BUTTONS: IsoKind[] = ['iso-nw', 'iso-ne', 'iso-sw', 'iso-se'];
 const FRONT_LABEL: Record<FrontSide, string> = { '+x': '+X (rouge)', '-x': '−X', '+y': '+Y (vert)', '-y': '−Y' };
 
-export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings, onSetFront, onSaveSettings }: Props) {
+export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings, moduleLabels, onSetFront, onSaveSettings }: Props) {
   const { index } = scene;
   const holder = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SceneViewer | null>(null);
@@ -85,16 +97,33 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
   });
   const frontPickRef = useRef<string | null>(null);
   frontPickRef.current = frontPick;
+  // ─── numéros des Viewbox (A. Pinchart 10.11.2026 : « cliquer sur la box et dire le numéro ») ───
+  const [numbering, setNumbering] = useState(false);
+  const [bubble, setBubble] = useState<NumberBubble | null>(null);
+  /** numéro proposé au clic suivant (numérotation dans l'ordre des clics) */
+  const [nextNumber, setNextNumber] = useState<number | null>(null);
+  const [numberNote, setNumberNote] = useState('');
+  const numberingRef = useRef(false);
+  numberingRef.current = numbering;
+  const labelsRef = useRef(moduleLabels);
+  labelsRef.current = moduleLabels;
+  const nextRef = useRef(nextNumber);
+  nextRef.current = nextNumber;
+  /** dernier relâchement du pointeur dans la zone 3D (place la bulle à côté du clic) */
+  const lastUp = useRef({ x: 40, y: 40 });
+  const nameOf = (id: string) => labelOf(moduleLabels, id);
+  const changes = useMemo(() => labelChanges(index.modules.map((m) => m.id), {}, moduleLabels), [index, moduleLabels]);
 
   const levels = useMemo(() => {
     const byLevel = new Map<number, typeof index.modules>();
-    for (const m of [...index.modules].sort((a, b) => a.id.localeCompare(b.id))) {
+    const name = (id: string) => moduleLabels[id] ?? id;
+    for (const m of [...index.modules].sort((a, b) => (labelNumber(name(a.id)) ?? 0) - (labelNumber(name(b.id)) ?? 0) || name(a.id).localeCompare(name(b.id)))) {
       const l = byLevel.get(m.level) ?? [];
       l.push(m);
       byLevel.set(m.level, l);
     }
     return [...byLevel.entries()].sort((a, b) => a[0] - b[0]);
-  }, [index]);
+  }, [index, moduleLabels]);
 
   const includeIds = useMemo(() => {
     if (!isolated) return null;
@@ -110,6 +139,18 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     const v = new SceneViewer(holder.current, scene, glassTest);
     viewerRef.current = v;
     v.onPick((p) => {
+      if (numberingRef.current) {
+        const node = p ? scene.look.byId.get(p.itemId) ?? scene.look.byId.get(p.nodeId) : undefined;
+        const moduleId = node?.moduleId ?? null;
+        if (!moduleId) {
+          setBubble(null);
+          v.setHighlightNode(null);
+          setNumberNote(p ? 'Ce n’est pas une Viewbox (élément commun) : clique une box.' : '');
+          return;
+        }
+        openBubble(moduleId, lastUp.current);
+        return;
+      }
       const fp = frontPickRef.current;
       if (fp) {
         const frame = scene.frames.get(fp);
@@ -120,6 +161,7 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
       setPicked(p);
       v.setSelected(p?.itemId ?? null);
     });
+    v.onModuleTag((moduleId, at) => openBubble(moduleId, at));
     return () => {
       v.dispose();
       viewerRef.current = null;
@@ -165,6 +207,17 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     viewerRef.current?.setVisibility(includeIds, hiddenCats, ghosts);
   }, [includeIds, hiddenCats, ghosts]);
 
+  // étiquettes des numéros au-dessus des box (mode 🔢 Numéros)
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    if (!numbering) {
+      v.setModuleTags(null);
+      return;
+    }
+    v.setModuleTags(new Map(index.modules.map((m) => [m.id, labelOf(moduleLabels, m.id)])), bubble?.moduleId ?? null, new Set(Object.keys(moduleLabels)));
+  }, [numbering, moduleLabels, bubble?.moduleId, index, scene]);
+
   useEffect(() => {
     viewerRef.current?.refreshFrames();
   }, [framesVersion]);
@@ -191,6 +244,55 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
       return n;
     });
 
+  /** Bulle du numéro d'une box : numéro proposé = suite des clics, sinon son numéro actuel. */
+  function openBubble(moduleId: string, at: { x: number; y: number }) {
+    const current = labelNumber(labelOf(labelsRef.current, moduleId));
+    const proposed = nextRef.current ?? current;
+    setBubble({ moduleId, at, value: proposed ? String(proposed) : '' });
+    setNumberNote('');
+    const m = index.modules.find((x) => x.id === moduleId);
+    viewerRef.current?.setHighlightNode(m?.nodeId ?? null);
+  }
+
+  const closeBubble = () => {
+    setBubble(null);
+    viewerRef.current?.setHighlightNode(null);
+  };
+
+  /** Donne le numéro saisi à la box de la bulle (échange avec la box qui l'avait), enregistré dans les réglages du modèle. */
+  const applyNumber = () => {
+    if (!bubble) return;
+    const n = parseModuleNumber(bubble.value);
+    if (n === null) {
+      setNumberNote('Numéro invalide : tape un nombre (ex. 5 ou VBX-05).');
+      return;
+    }
+    const r = setModuleNumber(index.modules, moduleLabels, bubble.moduleId, n);
+    const name = formatModuleLabel(n);
+    if (r.changed) {
+      void onSaveSettings((cur) => {
+        // depuis les réglages à jour (deux clics rapides ne s'écrasent pas)
+        const now = resolveModuleLabels(index.modules, cleanModuleNumbers(cur.moduleNumbers));
+        return { moduleNumbers: entriesFromLabels(index.modules, setModuleNumber(index.modules, now, bubble.moduleId, n).labels) };
+      });
+      setNumberNote(
+        r.swappedWith
+          ? `${labelOf(moduleLabels, bubble.moduleId)} → ${name} ; ${name} était pris : l’autre box devient ${labelOf(moduleLabels, bubble.moduleId)}.`
+          : `${labelOf(moduleLabels, bubble.moduleId)} → ${name}.`,
+      );
+    } else setNumberNote(`${name} : inchangé.`);
+    setNextNumber(n + 1);
+    closeBubble();
+  };
+
+  const resetNumbers = () => {
+    if (!window.confirm('Revenir aux numéros de SketchUp pour toutes les Viewbox ? Les planches proposeront de se mettre à jour.')) return;
+    void onSaveSettings({ moduleNumbers: [] });
+    setNextNumber(null);
+    closeBubble();
+    setNumberNote('Numéros SketchUp rétablis.');
+  };
+
   const capturePose = (): CameraPose | undefined => {
     const v = viewerRef.current;
     if (!v || capCamera === 'current') return undefined;
@@ -204,7 +306,7 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
     const mods = isolated?.filter((x) => x !== 'common') ?? [];
     const what = !isolated
       ? 'Tout le modèle'
-      : (mods.length ? (mods.length <= 3 ? mods.join(', ') : `${mods.length} Viewbox`) : '') +
+      : (mods.length ? (mods.length <= 3 ? mods.map(nameOf).join(', ') : `${mods.length} Viewbox`) : '') +
         (isolated.includes('common') ? (mods.length ? ' + éléments communs' : 'Éléments communs') : '');
     let cam = 'vue libre';
     if (capCamera.startsWith('cam:')) cam = capCamera.slice(4);
@@ -312,11 +414,26 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
                 {mods.map((m) => (
                   <label key={m.id} className={`side-row${isolated?.includes(m.id) ? ' on' : ''}`}>
                     <input type="checkbox" checked={checked.has(m.id)} onChange={() => toggleCheck(m.id)} />
-                    <span className="nm" onClick={(e) => (e.preventDefault(), isolate([m.id]))} title="Isoler cette Viewbox">
-                      {m.id}
+                    <span className="nm" onClick={(e) => (e.preventDefault(), isolate([m.id]))} title={moduleLabels[m.id] ? `Isoler cette Viewbox (${m.id} dans SketchUp)` : 'Isoler cette Viewbox'}>
+                      {nameOf(m.id)}
+                      {moduleLabels[m.id] && <em> ({m.id})</em>}
                       {m.type && <em> {m.type}</em>}
                     </span>
-                    <span className="meta">{m.itemIds.length} acc.</span>
+                    {numbering ? (
+                      <button
+                        className="btn small ghost"
+                        data-testid={`renumber-${m.id}`}
+                        title="Changer le numéro de cette Viewbox"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          openBubble(m.id, { x: 40, y: 40 });
+                        }}
+                      >
+                        ✎
+                      </button>
+                    ) : (
+                      <span className="meta">{m.itemIds.length} acc.</span>
+                    )}
                   </label>
                 ))}
               </div>
@@ -340,10 +457,62 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
           </div>
         </div>
 
+        {numbering && (
+          <div className="card" data-testid="numbering-card">
+            <div className="card-head">
+              <h2>Numéros des Viewbox</h2>
+              <div className="spacer" />
+              <button className="btn small ghost" onClick={() => (setNumbering(false), closeBubble())}>
+                ✕
+              </button>
+            </div>
+            <div className="card-body">
+              <div className="hint">
+                Clique une box dans la 3D et tape son numéro (Entrée). Le clic suivant propose le numéro d’après : clique les box dans l’ordre
+                voulu. Un numéro déjà pris est échangé avec l’autre box. Les planches A1 proposent ensuite de se mettre à jour.
+              </div>
+              {numberNote && (
+                <div className="hint" style={{ marginTop: 6, color: 'var(--text)' }} data-testid="numbering-note">
+                  {numberNote}
+                </div>
+              )}
+              {changes.length > 0 ? (
+                <>
+                  <div className="group-title" style={{ marginTop: 8 }}>
+                    Changés par rapport à SketchUp
+                  </div>
+                  {changes.map((c) => (
+                    <div key={c.id} className="side-row" data-testid="numbering-change">
+                      <span className="nm">
+                        {c.before} → <b>{c.after}</b>
+                      </span>
+                    </div>
+                  ))}
+                  <button className="btn small ghost" style={{ marginTop: 6 }} onClick={resetNumbers} data-testid="numbering-reset">
+                    ↺ Revenir aux numéros SketchUp
+                  </button>
+                </>
+              ) : (
+                <div className="hint" style={{ marginTop: 6 }}>
+                  Numéros de SketchUp.
+                </div>
+              )}
+              {nextNumber !== null && (
+                <div className="row" style={{ marginTop: 6 }}>
+                  <span className="hint">Prochain clic : {formatModuleLabel(nextNumber)}</span>
+                  <button className="btn small ghost" onClick={() => setNextNumber(null)} title="Le clic suivant propose le numéro actuel de la box">
+                    Ne plus suivre
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {frame && soloModule && (
           <div className="card">
             <div className="card-head">
-              <h2>Face avant · {soloModule}</h2>
+              <h2>Face avant · {nameOf(soloModule)}</h2>
             </div>
             <div className="card-body">
               <div className="row">
@@ -424,7 +593,23 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
                 <dt>Réf. article</dt>
                 <dd>{pickedNode.articleRef ?? '—'}</dd>
                 <dt>Viewbox</dt>
-                <dd>{pickedNode.moduleId ?? (pickedNode.assignment === 'common' ? 'élément commun' : '—')}</dd>
+                <dd>
+                  {pickedNode.moduleId ? nameOf(pickedNode.moduleId) : pickedNode.assignment === 'common' ? 'élément commun' : '—'}
+                  {pickedNode.moduleId && (
+                    <button
+                      className="btn small ghost"
+                      style={{ marginLeft: 6 }}
+                      data-testid="renumber-picked"
+                      title="Changer le numéro de cette Viewbox (repris par les planches)"
+                      onClick={() => {
+                        setNumbering(true);
+                        openBubble(pickedNode.moduleId!, lastUp.current);
+                      }}
+                    >
+                      ✎ Numéro
+                    </button>
+                  )}
+                </dd>
                 <dt>Dimensions</dt>
                 <dd>{bboxDims(pickedNode)}</dd>
                 <dt>Triangles</dt>
@@ -476,14 +661,86 @@ export function Viewer3DPage({ scene, glassTest, active, framesVersion, settings
               🎨 Peinture
             </button>
           )}
-          {soloModule && <span className="badge">vues relatives à {soloModule}</span>}
+          <button
+            className={`btn small${numbering ? ' primary' : ''}`}
+            data-testid="toggle-numbering"
+            title="Voir les numéros des Viewbox sur la 3D et les changer en cliquant les box (repris par les planches A1)"
+            onClick={() => {
+              if (numbering) closeBubble();
+              else {
+                setPicked(null);
+                viewerRef.current?.setSelected(null);
+              }
+              setNumbering(!numbering);
+              setNumberNote('');
+            }}
+          >
+            🔢 Numéros
+          </button>
+          {soloModule && <span className="badge">vues relatives à {nameOf(soloModule)}</span>}
           <span className="spacer" />
           <span className="hint nav-hint" title="Molette enfoncée = tourner, Maj + molette enfoncée = déplacer (comme SketchUp)">
             Clic gauche : tourner · clic droit : déplacer · molette : zoom · double-clic : centrer ici
           </span>
-          {frontPick && <span className="badge orange">clique une face de {frontPick} pour en faire l’avant</span>}
+          {frontPick && <span className="badge orange">clique une face de {nameOf(frontPick)} pour en faire l’avant</span>}
+          {numbering && !frontPick && <span className="badge orange">clique une Viewbox pour changer son numéro</span>}
         </div>
-        <div className="viewer-canvas" ref={holder} />
+        <div
+          className="viewer-canvas"
+          ref={holder}
+          onPointerUpCapture={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            lastUp.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+          }}
+        >
+          {bubble && (
+            <div
+              className="number-bubble"
+              data-testid="number-bubble"
+              style={{ left: Math.max(8, Math.min(bubble.at.x + 12, (holder.current?.clientWidth ?? 600) - 250)), top: Math.max(8, Math.min(bubble.at.y + 12, (holder.current?.clientHeight ?? 400) - 130)) }}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <div style={{ marginBottom: 6 }}>
+                <b>{nameOf(bubble.moduleId)}</b>
+                {moduleLabels[bubble.moduleId] && <span className="hint"> (SketchUp {bubble.moduleId})</span>}
+              </div>
+              <div className="row">
+                <span>Numéro</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  data-testid="number-input"
+                  value={bubble.value}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setBubble({ ...bubble, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyNumber();
+                    if (e.key === 'Escape') closeBubble();
+                  }}
+                />
+                <button className="btn small primary" data-testid="number-ok" onClick={applyNumber}>
+                  OK
+                </button>
+                <button className="btn small ghost" onClick={closeBubble}>
+                  ✕
+                </button>
+              </div>
+              {(() => {
+                const n = parseModuleNumber(bubble.value);
+                if (n === null) return null;
+                const name = formatModuleLabel(n);
+                const other = index.modules.find((m) => m.id !== bubble.moduleId && labelOf(moduleLabels, m.id) === name);
+                return (
+                  <div className="hint" style={{ marginTop: 6 }}>
+                    → {name}
+                    {other ? ` · déjà pris : l’autre box prendra ${nameOf(bubble.moduleId)}` : ''}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
       </section>
 
       <aside className="viewer-side">

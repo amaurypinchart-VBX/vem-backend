@@ -323,6 +323,12 @@ export interface Sheet {
   unit?: number;
   /** planche générée : « frames » = détail des cadres textile (remplacée quand on les régénère) */
   role?: 'frames';
+  /**
+   * numéros des Viewbox avec lesquels la planche est dessinée (identifiant SketchUp → nom affiché, seulement ceux
+   * renumérotés dans l'application) ; absent = numéros SketchUp. Ils diffèrent de ceux du modèle ⇒ « numéros à mettre
+   * à jour » (voir sheets/moduleLabels.ts)
+   */
+  moduleLabels?: Record<string, string>;
   items: SheetItem[];
 }
 

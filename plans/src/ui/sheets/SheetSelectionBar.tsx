@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { DrawingSet } from '../../sheets/types';
 import { actions } from '../../sheets/store';
 import type { LoadedScene } from '../../scene/loadedScene';
+import { compareLabels, labelOf } from '../../core/moduleNumbers';
 
 export function SheetSelectionBar({ doc, ids, busy, onPdf, onClose }: { doc: DrawingSet; ids: string[]; busy: boolean; onPdf: () => void; onClose: () => void }) {
   const chosen = doc.sheets.filter((s) => ids.includes(s.id));
@@ -55,9 +56,23 @@ export function SheetSelectionBar({ doc, ids, busy, onPdf, onClose }: { doc: Dra
 }
 
 /** Choix des Viewbox cibles d'une planche « une par Viewbox ». */
-export function ModulePickDialog({ scene, from, onConfirm, onCancel }: { scene: LoadedScene; from: string; onConfirm: (ids: string[]) => void; onCancel: () => void }) {
+export function ModulePickDialog({
+  scene,
+  from,
+  labels,
+  onConfirm,
+  onCancel,
+}: {
+  scene: LoadedScene;
+  from: string;
+  /** numéros changés dans la Vue 3D */
+  labels?: Record<string, string>;
+  onConfirm: (ids: string[]) => void;
+  onCancel: () => void;
+}) {
   const src = scene.index.modules.find((m) => m.id === from);
-  const mods = scene.index.modules.filter((m) => m.id !== from).sort((a, b) => a.id.localeCompare(b.id));
+  const name = (id: string) => labelOf(labels, id);
+  const mods = scene.index.modules.filter((m) => m.id !== from).sort((a, b) => compareLabels(name(a.id), name(b.id)));
   const [picked, setPicked] = useState<string[]>([]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -80,12 +95,12 @@ export function ModulePickDialog({ scene, from, onConfirm, onCancel }: { scene: 
         </div>
         <div className="modal-body">
           <div className="hint" style={{ marginBottom: 8 }}>
-            Une copie de la planche de {from} par Viewbox choisie : vues refaites sur la box, cotes automatiques recalculées, image 3D à refaire.
+            Une copie de la planche de {name(from)} par Viewbox choisie : vues refaites sur la box, cotes automatiques recalculées, image 3D à refaire.
           </div>
           <div className="module-pick-list">
             {mods.map((m) => (
               <label key={m.id} className="check">
-                <input type="checkbox" checked={picked.includes(m.id)} onChange={() => toggle(m.id)} /> {m.id}
+                <input type="checkbox" checked={picked.includes(m.id)} onChange={() => toggle(m.id)} /> {name(m.id)}
                 {m.type && m.type !== src?.type && <span className="badge">autre type : cotes manuelles retirées</span>}
               </label>
             ))}

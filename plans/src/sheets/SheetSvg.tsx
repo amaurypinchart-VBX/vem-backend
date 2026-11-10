@@ -339,6 +339,7 @@ function ViewportContent({
   categoryColors,
   k = 1,
   pdfLines,
+  moduleLabels,
 }: {
   vp: ViewportItem;
   data?: ViewportData;
@@ -347,6 +348,8 @@ function ViewportContent({
   categoryColors: Map<string, string>;
   k?: number;
   pdfLines?: PdfLineSink;
+  /** numéros des Viewbox de la planche (Sheet.moduleLabels) */
+  moduleLabels?: Record<string, string>;
 }) {
   const lw = data?.lw;
   const clipId = `clip-${vp.id}`;
@@ -422,7 +425,7 @@ function ViewportContent({
         {vp.overlays?.sectionMarks && data?.basis && <SectionMarks marks={vp.overlays.sectionMarks} basis={data.basis} toPaper={toPaper} />}
         {vp.overlays?.cutLevels && data?.basis && Math.abs(data.basis.up[1]) > 0.9 && <CutLevels levels={vp.overlays.cutLevels} basis={data.basis} toPaper={toPaper} rect={rect} />}
         {vp.overlays?.moduleNumbers &&
-          numberLabels(overlays).map((o) => {
+          numberLabels(overlays, moduleLabels).map((o) => {
             // plan de calage : centre du quart haut gauche de la Viewbox (les étiquettes des plaques sont au-dessus des
             // plaques, donc dans la moitié basse ou hors de la Viewbox), plus petit
             const calage = !!vp.overlays?.calage;
@@ -1025,7 +1028,7 @@ export const SheetSvg = memo(function SheetSvg(props: SheetSvgProps) {
         const data = viewData(item);
         body = (
           <>
-            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} k={k} pdfLines={props.pdfLines} />
+            <ViewportContent vp={item} data={data} rect={item.rect} thumbnail={thumbnail} categoryColors={categoryColors} k={k} pdfLines={props.pdfLines} moduleLabels={sheet.moduleLabels} />
             {item.showLabel && item.label && !item.custom && (
               <ViewTitle text={item.label} pos={item.labelPos ?? { x: item.rect.x, y: item.rect.y - titleSize * 1.3 }} size={item.labelSize ?? titleSize} />
             )}
