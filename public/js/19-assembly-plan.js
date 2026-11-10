@@ -1412,15 +1412,7 @@ function apCurrentPlan() {
 }
 async function apCanvas(plan, project, phase, { internal = false, scale = 2 } = {}) {
   const { svg, width, height } = apSvg(plan, project, phase, { internal, logo: await apLogo() });
-  const k = Math.min(scale, 12000 / width, 12000 / height);
-  const img = new Image();
-  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('Rendu du planning impossible')); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
-  const c = document.createElement('canvas');
-  c.width = Math.round(width * k); c.height = Math.round(height * k);
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(img, 0, 0, c.width, c.height);
-  return c;
+  return apRasterize(svg, width, height, scale);
 }
 function apPdfFromCanvas(canvas) {
   const { jsPDF } = window.jspdf || {};
@@ -1530,44 +1522,367 @@ function apOpenSend() {
 }
 
 // ═══ BRIEFING STUDIO ═══
+// Le planning n'est plus l'image A4 portrait réduite dans la slide (illisible) : il est redessiné pour la slide 16:9
+// (`apSlidePages`). Il remplit la zone sous le bandeau titre, les textes ont la taille des autres tableaux du briefing,
+// et il est coupé sur plusieurs slides quand il a trop de lignes (coupure de préférence avant une section, section
+// rappelée « (suite) », en-tête des jours répété) ou trop de jours pour que les colonnes restent lisibles.
 
-/** image JPEG du planning (version client) pour une slide ; null si pas de planning */
-async function apBriefingImage(projectId, phase) {
+/** zone de contenu d'une slide 1280 × 720 (sous le bandeau titre) ; image rendue × 2 = netteté de l'export PDF */
+const AP_SLIDE = { x: 40, y: 158, w: 1200, h: 546, scale: 2 };
+const AP_SLIDE_NAVY = '#000a3d';
+const AP_FONT = 'Arial, Helvetica, sans-serif';
+
+let AP_MEASURE = null;
+function apTextW(text, size, bold, italic) {
+  if (!AP_MEASURE) AP_MEASURE = document.createElement('canvas').getContext('2d');
+  AP_MEASURE.font = `${italic ? 'italic ' : ''}${bold ? '700 ' : ''}${size}px ${AP_FONT}`;
+  return AP_MEASURE.measureText(String(text ?? '')).width;
+}
+/** texte qui tient dans maxW : taille réduite jusqu'à minScale, puis coupé avec « … » (jamais au milieu d'un emoji) */
+function apFitText(text, maxW, size, { bold = false, italic = false, minScale = 0.86 } = {}) {
+  text = String(text ?? '').trim();
+  if (!text || maxW <= 4) return { text: '', size };
+  const w = apTextW(text, size, bold, italic);
+  if (w <= maxW) return { text, size };
+  const s2 = Math.max(size * minScale, size * maxW / w);
+  if (apTextW(text, s2, bold, italic) <= maxW) return { text, size: s2 };
+  const ch = Array.from(text);
+  let lo = 0, hi = ch.length;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (apTextW(ch.slice(0, m).join('').trimEnd() + '…', s2, bold, italic) <= maxW) lo = m; else hi = m - 1;
+  }
+  return { text: lo ? ch.slice(0, lo).join('').trimEnd() + '…' : '', size: s2 };
+}
+/** libellé sur deux lignes (coupé aux espaces) */
+function apWrap2(text, maxW, size, bold) {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean);
+  let l1 = '', i = 0;
+  for (; i < words.length; i++) {
+    const t = l1 ? `${l1} ${words[i]}` : words[i];
+    if (l1 && apTextW(t, size, bold) > maxW) break;
+    l1 = t;
+  }
+  const rest = words.slice(i).join(' ');
+  return [apFitText(l1, maxW, size, { bold, minScale: 1 }).text, rest ? apFitText(rest, maxW, size, { bold, minScale: 1 }).text : ''].filter(Boolean);
+}
+/** libellés d'un jour, du plus complet au plus court : « Jeudi 12/11 », « Jeu. 12/11 », « 12/11 » */
+function apSlideDayForms(day, lang) {
+  const d = new Date(apT(day) * 60000);
+  const loc = lang === 'en' ? 'en-GB' : 'fr-FR';
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const dm = d.toLocaleDateString(loc, { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  return [`${cap(d.toLocaleDateString(loc, { weekday: 'long', timeZone: 'UTC' }))} ${dm}`, `${cap(d.toLocaleDateString(loc, { weekday: 'short', timeZone: 'UTC' }))} ${dm}`, dm];
+}
+/** le plus complet qui tient dans w */
+function apSlideDayLabel(day, lang, w, size) {
+  const forms = apSlideDayForms(day, lang);
+  return forms.find(c => apTextW(c, size, true) <= w) || apFitText(forms[2], w, size, { bold: true }).text;
+}
+/** coupe les lignes en pages d'au plus `cap` unités, réparties équitablement ; une section ne reste jamais seule
+ *  en bas de page, on coupe plutôt avant une section qui ne tient plus (si ça ne rajoute pas de page), et une page
+ *  qui commence au milieu d'une section la rappelle (`cont`) */
+function apSplitRows(list, cap, unit) {
+  const run = (c, soft) => {
+    const pages = [];
+    let cur = [], u = 0, sec = null;
+    const secUnits = i => { let s = unit(list[i]); for (let j = i + 1; j < list.length && list[j].kind !== 'section'; j++) s += unit(list[j]); return s; };
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i], ur = unit(r), isSec = r.kind === 'section';
+      const need = isSec && list[i + 1] && list[i + 1].kind !== 'section' ? ur + unit(list[i + 1]) : ur;
+      const real = cur.some(x => !x.cont);
+      if (real && (u + need > c + 1e-6 || (soft && isSec && u >= 0.6 * c && u + secUnits(i) > c + 1e-6))) {
+        pages.push(cur); cur = []; u = 0;
+        if (!isSec && sec) { cur.push({ ...sec, cont: true }); u += unit(sec); }
+      }
+      cur.push(r); u += ur;
+      if (isSec) sec = r;
+    }
+    if (cur.length) pages.push(cur);
+    return pages;
+  };
+  if (!list.length) return [[]];
+  const total = list.reduce((s, r) => s + unit(r), 0);
+  const n = run(cap, false).length;
+  for (const soft of [true, false]) {
+    for (let c = Math.max(1, total / n); c <= cap + 1e-6; c += 0.25) {
+      const p = run(c, soft);
+      if (p.length <= n) return p;
+    }
+  }
+  return run(cap, false);
+}
+
+/** pages du planning pour le Briefing Studio : [{ svg, width, height }] ; [] si le planning n'a aucune colonne */
+function apSlidePages(plan, project, phase, { internal = false } = {}) {
+  const lang = plan.lang, T = AP_TXT[lang] || AP_TXT.fr;
+  const allCols = apColumns(plan);
+  if (!allCols.length) return [];
+  const W = AP_SLIDE.w, HMAX = AP_SLIDE.h, P = 12, FT = 25;
+  const H1 = 36, H2 = plan.scale === 'day' ? 0 : 26;
+  const BH = HMAX - 2 * P - FT - H1 - H2;
+  const gw = W - 2 * P;
+  const rows = plan.rows.filter(r => internal || !r.internal);
+  const hasWho = rows.some(r => r.who && r.kind !== 'section');
+  // colonnes « Tâche » / « Qui » à la largeur des textes (mesurés à 15 px), 26 à 46 % de la largeur
+  const labW = Math.max(0, ...rows.filter(r => r.kind !== 'section').map(r => apTextW(r.label, 15, r.kind === 'milestone')));
+  let LAB = Math.round(Math.min(gw * 0.46, Math.max(gw * 0.26, labW + 28)));
+  const whoW = Math.max(0, ...rows.filter(r => r.kind !== 'section' && r.who).map(r => apTextW(r.who, 13.5)));
+  let WHO = hasWho ? Math.round(Math.min(180, Math.max(90, whoW + 22))) : 0;
+  let GW = gw - LAB - WHO;
+  // jours par slide : une case doit rester lisible (sinon les jours sont répartis sur plusieurs slides)
+  const days = apDayGroups(allCols);
+  const perDay = allCols.length / days.length;
+  const minCol = { day: 105, slot: 62, hour: 15 }[plan.scale] || 105;
+  const minDay = Math.max(105, perDay * minCol);
+  const maxDays = Math.max(1, Math.floor(GW / minDay));
+  const nChunks = Math.ceil(days.length / maxDays);
+  const chunks = [];
+  for (let k = 0, a = 0; k < nChunks; k++) { const n = Math.round((days.length - a) / (nChunks - k)); chunks.push(days.slice(a, a + n)); a += n; }
+
+  const SU = 0.82, RH_MIN = 23, RH_MAX = 40;
+  const unit = r => r.kind === 'section' ? SU : 1;
+  const parts = chunks.map((ds, k) => {
+    const set = new Set(ds.map(g => g.day));
+    const cols = allCols.filter(c => set.has(c.day));
+    const first = k === 0, last = k === nChunks - 1;
+    const crew = rows.some(r => r.kind === 'crew') ? apCrewCounts(plan, project, phase, cols) : [];
+    const keep = r => {
+      if (nChunks === 1 || r.kind === 'section') return true;
+      if (r.kind === 'crew') return crew.some(n => n > 0);
+      if (r.kind === 'milestone') {
+        if (!r.at) return first;
+        const d = r.at.slice(0, 10);
+        return set.has(d) || (first && d < ds[0].day) || (last && d > ds[ds.length - 1].day);
+      }
+      if (!(r.bars || []).length) return first;
+      return r.bars.some(b => apRange(cols, apT(b.s), apT(b.e)));
+    };
+    let list = rows.filter(keep);
+    if (nChunks > 1) list = list.filter((r, i) => r.kind !== 'section' || (list[i + 1] && list[i + 1].kind !== 'section'));
+    return { cols, crew, pages: apSplitRows(list, BH / RH_MIN, unit) };
+  });
+  // même hauteur de ligne sur toutes les slides de la phase
+  const pageUnits = parts.flatMap(p => p.pages.map(pg => pg.reduce((s, r) => s + unit(r), 0)));
+  const RH = Math.min(RH_MAX, BH / Math.max(1, ...pageUnits));
+  const SH = RH * SU;
+  const f = Math.max(13.5, Math.min(18, RH * 0.55));  // libellés
+  const fb = Math.max(12, Math.min(15.5, f - 1.5));   // textes des barres, heures
+  // colonnes « Tâche » / « Qui » recalées sur la taille réelle des textes, si les jours tiennent toujours
+  const lab2 = Math.round(Math.min(gw * 0.46, Math.max(LAB, labW * f / 15 + 28)));
+  const who2 = hasWho ? Math.round(Math.min(200, Math.max(WHO, whoW * f * 0.88 / 13.5 + 22))) : 0;
+  if (gw - lab2 - who2 >= Math.max(...chunks.map(c => c.length)) * minDay) { LAB = lab2; WHO = who2; GW = gw - LAB - WHO; }
+  const note = String(plan.note || '').split('\n').map(s => s.trim()).filter(Boolean).join(' ');
+  const cont = lang === 'en' ? '(cont.)' : '(suite)';
+
+  const draw = (cols, crew, pageRows) => {
+    const NC = cols.length, CW = GW / NC;
+    const groups = apDayGroups(cols);
+    const gx = P + LAB + WHO, gy = P, hh = H1 + H2, bodyY = gy + hh;
+    const xc = c => gx + c * CW;
+    let y = bodyY;
+    const ys = pageRows.map(r => { const ry = y; y += r.kind === 'section' ? SH : RH; return ry; });
+    const bodyEnd = y;
+    const H = Math.round(bodyEnd + FT + P - 6);
+    const s = [];
+    const txt = (x, yy, t, size, o = '') => s.push(`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" font-size="${size.toFixed(2)}" ${o}>${apEsc(t)}</text>`);
+    s.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${AP_FONT}">`);
+    s.push(`<defs><pattern id="aphs" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="9" height="9" fill="#e4e6ec"/><line x1="0" y1="0" x2="0" y2="9" stroke="#cfd3dc" stroke-width="4"/></pattern>`
+      + `<clipPath id="apcl"><rect x="${P}" y="${gy}" width="${gw}" height="${bodyEnd - gy}" rx="8"/></clipPath></defs>`);
+    s.push(`<rect width="${W}" height="${H}" rx="14" fill="#ffffff"/>`);
+    s.push(`<g clip-path="url(#apcl)">`);
+    // fonds : en-tête, lignes alternées, sections, jours grisés
+    s.push(`<rect x="${P}" y="${gy}" width="${gw}" height="${hh}" fill="${AP_SLIDE_NAVY}"/>`);
+    if (H2) s.push(`<rect x="${gx}" y="${gy + H1}" width="${GW}" height="${H2}" fill="#1d2a63"/>`);
+    let zebra = 0;
+    pageRows.forEach((r, i) => {
+      if (r.kind === 'section') {
+        zebra = 0;
+        s.push(`<rect x="${P}" y="${ys[i]}" width="${gw}" height="${SH}" fill="${apColorOf(r)}" fill-opacity="0.32"/>`);
+        s.push(`<rect x="${P}" y="${ys[i]}" width="6" height="${SH}" fill="${apColorOf(r)}"/>`);
+      } else if (zebra++ % 2) s.push(`<rect x="${P}" y="${ys[i]}" width="${gw}" height="${RH}" fill="#f4f5f9"/>`);
+    });
+    for (const g of groups.filter(g => g.off)) s.push(`<rect x="${xc(g.a)}" y="${bodyY}" width="${(g.b - g.a + 1) * CW}" height="${bodyEnd - bodyY}" fill="url(#aphs)" fill-opacity="0.8"/>`);
+    // grille
+    pageRows.forEach((r, i) => { if (i) s.push(`<line x1="${P}" y1="${ys[i]}" x2="${W - P}" y2="${ys[i]}" stroke="#e1e4eb"/>`); });
+    cols.forEach((c, i) => {
+      if (!i) return;
+      const sameDay = cols[i - 1].day === c.day;
+      s.push(`<line x1="${xc(i)}" y1="${sameDay ? bodyY : gy + 6}" x2="${xc(i)}" y2="${bodyEnd}" stroke="${sameDay ? '#e9ebf1' : '#aeb5c4'}"/>`);
+      if (!sameDay) s.push(`<line x1="${xc(i)}" y1="${gy + 6}" x2="${xc(i)}" y2="${bodyY}" stroke="#ffffff" stroke-opacity="0.35"/>`);
+      else if (H2) s.push(`<line x1="${xc(i)}" y1="${gy + H1 + 4}" x2="${xc(i)}" y2="${bodyY - 4}" stroke="#ffffff" stroke-opacity="0.2"/>`);
+    });
+    s.push(`<line x1="${gx}" y1="${bodyY}" x2="${gx}" y2="${bodyEnd}" stroke="#8c94a6" stroke-width="1.5"/>`);
+    if (WHO) s.push(`<line x1="${P + LAB}" y1="${bodyY}" x2="${P + LAB}" y2="${bodyEnd}" stroke="#d3d7e0"/>`);
+    // en-têtes
+    txt(P + 14, gy + hh / 2 + 5.5, T.task, 15, 'font-weight="700" fill="#ffffff"');
+    if (WHO) txt(P + LAB + 10, gy + hh / 2 + 5.5, T.who, 15, 'font-weight="700" fill="#ffffff"');
+    // même format pour tous les jours de la slide (le plus complet qui tient partout)
+    const dayW = g => (g.b - g.a + 1) * CW - 12;
+    const form = [0, 1, 2].find(k => groups.every(g => apTextW(apSlideDayForms(g.day, lang)[k], 16, true) <= dayW(g))) ?? 2;
+    for (const g of groups) {
+      const w = (g.b - g.a + 1) * CW;
+      let lbl = apFitText(apSlideDayForms(g.day, lang)[form], w - 12, 16, { bold: true }).text;
+      const offTxt = g.off && plan.offDays?.[g.day];
+      if (offTxt && apTextW(`${lbl} · ${offTxt}`, 16, true) <= w - 12) lbl = `${lbl} · ${offTxt}`;
+      txt(xc(g.a) + w / 2, gy + H1 / 2 + 6, lbl, 16, `font-weight="700" text-anchor="middle" fill="${g.off ? '#aab3cc' : '#ffffff'}"`);
+    }
+    if (H2) cols.forEach((c, i) => {
+      const fs = Math.min(13, Math.max(10, CW * 0.62));
+      const cands = plan.scale === 'hour' ? [`${c.label}h`, c.label] : [c.label, c.sub];
+      const t = cands.find(x => x && apTextW(x, fs) <= CW - 6) || apFitText(cands[0], CW - 6, fs).text;
+      txt(xc(i) + CW / 2, gy + H1 + H2 / 2 + 4.5, t, fs, 'text-anchor="middle" fill="#cdd5ee"');
+    });
+    // lignes
+    pageRows.forEach((r, i) => {
+      const ry = ys[i], h = r.kind === 'section' ? SH : RH, cy = ry + h / 2;
+      if (r.kind === 'section') {
+        const fs = Math.max(13, f * 0.9);
+        const lb = r.cont ? `${r.label} ${cont}` : r.label;
+        const ft = apFitText(lb, gw - 40, fs, { bold: true });
+        txt(P + 18, cy + ft.size * 0.36, ft.text, ft.size, 'font-weight="700" letter-spacing="0.6" fill="#1a1f33"');
+        return;
+      }
+      const bold = r.kind === 'milestone';
+      const lw = LAB - 24, la = `fill="#1a1a1a" ${bold ? 'font-weight="700"' : ''}`;
+      const ft = apFitText(r.label, lw, f, { bold });
+      // trop long : sur deux lignes si la ligne est assez haute (et que ça reste plus grand qu'en le réduisant)
+      const fs2 = Math.min(f, (RH - 6) / 2.3);
+      const oneLine = f * lw / apTextW(r.label, f, bold);
+      if (ft.text.endsWith('…') && RH >= 36 && oneLine < fs2) {
+        const lines = apWrap2(r.label, lw, fs2, bold);
+        lines.forEach((l, k) => txt(P + 14, cy + (k - (lines.length - 1) / 2) * fs2 * 1.12 + fs2 * 0.36, l, fs2, la));
+      } else if (ft.text.endsWith('…') && oneLine >= Math.max(12.5, fs2)) txt(P + 14, cy + oneLine * 0.36, r.label, oneLine, la);
+      else txt(P + 14, cy + ft.size * 0.36, ft.text, ft.size, la);
+      if (WHO && r.who) { const fw = apFitText(r.who, WHO - 18, f * 0.88); txt(P + LAB + 10, cy + fw.size * 0.36, fw.text, fw.size, 'fill="#555b6e"'); }
+      const color = apColorOf(r);
+      if (r.kind === 'crew') {
+        // une pastille par suite de cases du même jour avec le même effectif
+        const max = Math.max(1, ...crew), runs = [];
+        crew.forEach((n, ci) => {
+          const last = runs[runs.length - 1];
+          if (last && last.n === n && last.b === ci - 1 && cols[last.b].day === cols[ci].day) last.b = ci;
+          else runs.push({ n, a: ci, b: ci });
+        });
+        for (const rn of runs.filter(x => x.n)) {
+          const w = (rn.b - rn.a + 1) * CW;
+          s.push(`<rect x="${xc(rn.a) + 4}" y="${ry + 4}" width="${Math.max(4, w - 8)}" height="${h - 8}" rx="5" fill="#8faadc" fill-opacity="${(0.35 + 0.55 * rn.n / max).toFixed(2)}"/>`);
+          txt(xc(rn.a) + w / 2, cy + fb * 0.36, String(rn.n), fb, 'font-weight="700" text-anchor="middle" fill="#10305a"');
+        }
+      } else if (r.kind === 'milestone' && r.at) {
+        const t = apT(r.at);
+        const d = Math.max(10, Math.min(16, RH * 0.48));
+        const mx = Math.max(gx + d * 0.8, Math.min(gx + GW - d * 0.8, gx + Math.max(0, Math.min(NC, apX(cols, t))) * CW));
+        s.push(`<rect x="${mx - d / 2}" y="${cy - d / 2}" width="${d}" height="${d}" transform="rotate(45 ${mx} ${cy})" fill="${color}" stroke="#ffffff" stroke-width="2"/>`);
+        const label = r.noTime ? `${apSlideDayLabel(r.at.slice(0, 10), lang, 999, fb)} (${T.timeTbc})` : r.at.slice(11, 16);
+        const tw = apTextW(label, fb, true);
+        const right = mx + d + tw + 4 < gx + GW;
+        const fx = apFitText(label, right ? gx + GW - mx - d - 6 : mx - gx - d - 6, fb, { bold: true });
+        txt(right ? mx + d * 0.85 + 4 : mx - d * 0.85 - 4, cy + fx.size * 0.36, fx.text, fx.size, `font-weight="700" text-anchor="${right ? 'start' : 'end'}" fill="#1a1a1a"`);
+      } else {
+        for (const b of r.bars || []) {
+          const box = apBarBox(plan, cols, b);
+          if (!box) continue;
+          const c = apColorOf(r, b), bx = gx + box.x * CW + 3, bw = Math.max(6, box.w * CW - 6);
+          s.push(`<rect x="${bx.toFixed(1)}" y="${ry + 4}" width="${bw.toFixed(1)}" height="${h - 8}" rx="5" fill="${c}" stroke="#000" stroke-opacity="0.15"/>`);
+          const label = [b.text, apBarHours(plan, cols, b, box.r)].filter(Boolean).join(' · ');
+          if (!label || bw < 26) continue;
+          const fx = apFitText(label, bw - 10, fb, { bold: true, minScale: 0.8 });
+          if (fx.text) txt(bx + bw / 2, cy + fx.size * 0.36, fx.text, fx.size, `font-weight="700" text-anchor="middle" fill="${apTextOn(c)}"`);
+        }
+      }
+    });
+    s.push('</g>');
+    s.push(`<rect x="${P}" y="${gy}" width="${gw}" height="${bodyEnd - gy}" rx="8" fill="none" stroke="#c3c9d5"/>`);
+    // pied : note à gauche, légende à droite
+    const fy = bodyEnd + 19, fs = 12.5;
+    const leg = [];
+    let lx = W - P;
+    if (groups.some(g => g.off)) {
+      lx -= apTextW(T.off, fs); leg.push(`<text x="${lx}" y="${fy}" font-size="${fs}" fill="#555b6e">${apEsc(T.off)}</text>`);
+      lx -= 26; leg.push(`<rect x="${lx}" y="${fy - 11}" width="20" height="13" fill="url(#aphs)" stroke="#b9bfcc"/>`);
+      lx -= 22;
+    }
+    lx -= apTextW(T.legendMs, fs); leg.push(`<text x="${lx}" y="${fy}" font-size="${fs}" fill="#555b6e">${apEsc(T.legendMs)}</text>`);
+    lx -= 16; leg.push(`<rect x="${lx - 5}" y="${fy - 10}" width="10" height="10" transform="rotate(45 ${lx} ${fy - 5})" fill="${AP_MS_COLOR}"/>`);
+    s.push(...leg);
+    if (note) { const fn = apFitText(note, lx - P - 30, fs, { italic: true, minScale: 0.88 }); txt(P + 2, fy, fn.text, fn.size, 'font-style="italic" fill="#555b6e"'); }
+    s.push('</svg>');
+    return { svg: s.join(''), width: W, height: H };
+  };
+  return parts.flatMap(p => p.pages.map(pg => draw(p.cols, p.crew, pg)));
+}
+
+/** SVG → canvas (fond transparent si bg est vide) */
+async function apRasterize(svg, width, height, scale, bg = '#ffffff') {
+  const k = Math.min(scale, 12000 / width, 12000 / height);
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('Rendu du planning impossible')); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+  const c = document.createElement('canvas');
+  c.width = Math.round(width * k); c.height = Math.round(height * k);
+  const ctx = c.getContext('2d');
+  if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, c.width, c.height); }
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** images des slides du planning d'une phase (version client) : [{ url, w, h, title, name, slide }] ; [] si pas de planning */
+async function apBriefingSlides(projectId, phase) {
   const res = await api('GET', `/assembly-plans/project/${projectId}`);
-  if (!res?.success) return null;
+  if (!res?.success) return [];
   const rec = (res.data.plans || []).find(p => p.phase === phase);
-  if (!rec) return null;
+  if (!rec) return [];
   const plan = apClean(rec.data);
-  apSync(plan, res.data.project, phase);
-  const canvas = await apCanvas(plan, res.data.project, phase, { internal: false, scale: 2 });
-  return { url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height, title: plan.title || AP_TXT[plan.lang].title[phase] };
+  const project = res.data.project;
+  apSync(plan, project, phase);
+  const title = plan.title || AP_TXT[plan.lang].title[phase];
+  const pages = apSlidePages(plan, project, phase, { internal: false });
+  if (!pages.length) {
+    // dates du planning illisibles : ancienne image entière plutôt que rien
+    const canvas = await apCanvas(plan, project, phase, { internal: false, scale: 2 });
+    return [{ url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height, title, name: '📅 Planning', slide: false }];
+  }
+  const out = [];
+  for (let i = 0; i < pages.length; i++) {
+    const c = await apRasterize(pages[i].svg, pages[i].width, pages[i].height, AP_SLIDE.scale, '');
+    const n = pages.length > 1 ? ` (${i + 1}/${pages.length})` : '';
+    out.push({ url: c.toDataURL('image/png'), w: c.width, h: c.height, title: title + n, name: '📅 Planning' + (n ? ` ${i + 1}/${pages.length}` : ''), slide: true });
+  }
+  return out;
 }
 /** pose l'image dans la zone de contenu d'une slide standard (sous le bandeau titre) */
 function apFabricImage(canvas, img) {
   return new Promise(resolve => {
     fabric.Image.fromURL(img.url, fi => {
       if (!fi) { resolve(false); return; }
-      const box = { x: 40, y: 165, w: BRF_CANVAS_W - 80, h: BRF_CANVAS_H - 185 };
+      const box = img.slide
+        ? { x: AP_SLIDE.x, y: AP_SLIDE.y, w: AP_SLIDE.w, h: AP_SLIDE.h }
+        : { x: 40, y: 165, w: BRF_CANVAS_W - 80, h: BRF_CANVAS_H - 185 };
       const k = Math.min(box.w / fi.width, box.h / fi.height);
       fi.set({ left: box.x + (box.w - fi.width * k) / 2, top: box.y, scaleX: k, scaleY: k });
       canvas.add(fi);
+      // filigrane « WB » presque caché par le tableau : on l'enlève plutôt que d'en laisser dépasser un bout
+      if (img.slide) {
+        const bottom = box.y + fi.height * k;
+        canvas.getObjects().filter(o => o.type === 'i-text' && o.text === 'WB' && !o.selectable && o.top + 30 < bottom).forEach(o => canvas.remove(o));
+      }
       resolve(true);
     });
   });
 }
-/** Briefing Studio › 📂 Depuis projet › 📅 Planning estimatif : une slide par phase qui a un planning */
+/** Briefing Studio › 📂 Depuis projet › 📅 Planning estimatif : les slides de chaque phase qui a un planning */
 async function brfAddAssemblyPlanSlides() {
   document.querySelectorAll('.brf-proj-menu').forEach(m => m.remove());
   const projectId = BRF_STUDIO.projectId;
   try {
     toast('⏳ Planning…', 'info');
     const imgs = [];
-    for (const ph of ['installation', 'dismantling']) { const im = await apBriefingImage(projectId, ph); if (im) imgs.push(im); }
+    for (const ph of ['installation', 'dismantling']) imgs.push(...await apBriefingSlides(projectId, ph));
     if (!imgs.length) { toast('Pas encore de planning estimatif : crée-le dans l’onglet Infos du projet', 'warning'); return; }
     for (const im of imgs) {
       saveCurrentSlideJson();
       const at = BRF_STUDIO.curIdx + 1;
-      BRF_STUDIO.slides.splice(at, 0, { id: 'slide-plan-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), name: '📅 Planning', json: null });
+      BRF_STUDIO.slides.splice(at, 0, { id: 'slide-plan-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), name: im.name, json: null });
       BRF_STUDIO.curIdx = at;
       BRF_STUDIO.suppressSnapshot = true;
       BRF_STUDIO.fabricCanvas.clear();
