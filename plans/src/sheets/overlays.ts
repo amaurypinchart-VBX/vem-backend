@@ -46,8 +46,12 @@ export function moduleOverlays(frames: Iterable<ModuleFrame>, moduleIds: Set<str
   return out;
 }
 
-/** Numéros à afficher : des Viewbox empilées (même emprise dans le dessin, vue de dessus) partagent « 1/4 ». */
-export function numberLabels(overlays: ModuleOverlay[]): Array<{ key: string; label: string; center: { x: number; y: number }; minSize: number }> {
+/**
+ * Numéros à afficher : des Viewbox empilées (même emprise dans le dessin, vue de dessus) partagent « 1/4 ».
+ * `labels` = numéros choisis dans l'application (Sheet.moduleLabels), sinon ceux de SketchUp.
+ */
+export function numberLabels(overlays: ModuleOverlay[], labels?: Record<string, string>): Array<{ key: string; label: string; center: { x: number; y: number }; minSize: number }> {
+  const nameOf = (id: string) => labels?.[id] ?? id;
   const groups: ModuleOverlay[][] = [];
   for (const o of overlays) {
     const g = groups.find(([a]) => Math.hypot(a.center.x - o.center.x, a.center.y - o.center.y) < 0.15 * Math.min(a.minSize, o.minSize));
@@ -55,8 +59,8 @@ export function numberLabels(overlays: ModuleOverlay[]): Array<{ key: string; la
     else groups.push([o]);
   }
   return groups.map((g) => {
-    const sorted = [...g].sort((a, b) => Number(moduleNumber(a.moduleId)) - Number(moduleNumber(b.moduleId)) || a.moduleId.localeCompare(b.moduleId));
-    return { key: sorted.map((o) => o.moduleId).join('+'), label: sorted.map((o) => moduleNumber(o.moduleId)).join('/'), center: sorted[0].center, minSize: Math.min(...g.map((o) => o.minSize)) };
+    const sorted = [...g].sort((a, b) => Number(moduleNumber(nameOf(a.moduleId))) - Number(moduleNumber(nameOf(b.moduleId))) || a.moduleId.localeCompare(b.moduleId));
+    return { key: sorted.map((o) => o.moduleId).join('+'), label: sorted.map((o) => moduleNumber(nameOf(o.moduleId))).join('/'), center: sorted[0].center, minSize: Math.min(...g.map((o) => o.minSize)) };
   });
 }
 

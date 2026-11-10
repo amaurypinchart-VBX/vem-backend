@@ -5,6 +5,7 @@ import type { ModuleFrame, Vec3, ViewBasis } from '../core/views';
 import { projectPoint, unprojectPoint, viewBasis } from '../core/views';
 import type { SceneIndex } from '../core/types';
 import { subsetForModule } from '../core/subset';
+import { relabelText } from '../core/moduleNumbers';
 import type { Image3dItem, Sheet, SheetItem, ViewportItem } from './types';
 
 type NewId = (prefix: string) => string;
@@ -131,8 +132,11 @@ export function retargetSheet(sheet: Sheet, from: string, to: string, ctx: { ind
   const sameType = !!ma && !!mb && (ma.type ?? '') === (mb.type ?? '');
   const subA = subsetForModule(ctx.index, from);
   const subB = subsetForModule(ctx.index, to);
+  // titres écrits avec les numéros de la planche (renumérotation dans l'application : core/moduleNumbers.ts)
+  const fromName = sheet.moduleLabels?.[from] ?? from;
+  const toName = sheet.moduleLabels?.[to] ?? to;
   const rename = (s: string) => {
-    const r = s.split(from).join(to);
+    const r = relabelText(s, new Map([[fromName, toName]]));
     return ma?.type && mb?.type && ma.type !== mb.type ? r.split(ma.type).join(mb.type) : r;
   };
   copy.title = rename(copy.title);

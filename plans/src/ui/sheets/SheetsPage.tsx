@@ -45,6 +45,9 @@ import { colorCode } from '../../core/paint/ops';
 import { placePaintLegend } from '../../sheets/paintLegendPlace';
 import { consultEnv } from '../../sheets/consult';
 import { ConsultWriter, fetchConsultInfo, serverLightSource } from './consultIo';
+import type { ModuleLabels } from '../../core/moduleNumbers';
+import { compareLabels, labelOf } from '../../core/moduleNumbers';
+import { relabelDrawingSet } from '../../sheets/moduleLabels';
 
 interface Props {
   /** scène chargée, ou scène sans 3D (`light`) : planches en consultation, relues de leurs instantanés */
@@ -56,6 +59,8 @@ interface Props {
   sceneLoading?: boolean;
   /** faces avant des Viewbox (réglages du modèle) : dans la clé des instantanés */
   fronts?: unknown;
+  /** numéros des Viewbox changés dans la Vue 3D (réglages du modèle) */
+  moduleLabels?: ModuleLabels;
   glassTest: GlassTest;
   model?: ModelVersion;
   rules: ClassificationRules;
@@ -70,7 +75,7 @@ interface Props {
   onPaintSaved?: (p: PaintSettings) => void;
 }
 
-export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
+export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts, moduleLabels = NO_LABELS, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
   const bank = useMemo(() => {
     const b = new LineworkBank(scene, provider);
     // budget des traits gardés en mémoire (les vues retirées sont relues de l'IndexedDB / du serveur en un instant) :
@@ -283,6 +288,7 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
       <SheetEditor
         paint={paintBundle}
         scene={scene}
+        moduleLabels={moduleLabels}
         onNeedScene={onNeedScene}
         sceneLoading={sceneLoading}
         lightTick={lightTick}
@@ -305,6 +311,7 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
       {wizard && !progress && (
         <Wizard
           scene={scene}
+          moduleLabels={moduleLabels}
           palette={paintState.paint.colors}
           canPaint={!paintState.disabled}
           defaultTitle={project?.name ?? index0Title(scene)}
@@ -321,6 +328,9 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
                 { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors, frames: opts.frames, hideFrames: opts.hideFrames },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(fresh, who) },
               );
+              // numéros changés dans la Vue 3D : titres, nomenclatures et plans du jeu avec ces numéros, planches « une
+              // par Viewbox » dans leur ordre
+              if (Object.keys(moduleLabels).length) relabelDrawingSet(set, moduleLabels, scene.index.modules);
               if (fresh) set.projectSync = { at: new Date().toISOString(), values: projectValues(fresh) };
               // téléphone : rien n'est calculé ici (tout le jeu d'un coup ferme la page sur iPhone) — échelles des vues déjà
               // calculées ailleurs, cotes posées planche par planche à l'affichage, images 3D rendues à l'ouverture sur ordinateur
@@ -458,12 +468,15 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
   );
 }
 
+const NO_LABELS: ModuleLabels = {};
+
 function index0Title(scene: LoadedScene): string {
   return scene.index.source.fileName.replace(/\.[^.]+$/, '').replace(/_VEM_\d{8}-\d{4}$/, '');
 }
 
 function Wizard({
   scene,
+  moduleLabels,
   palette,
   canPaint,
   defaultTitle,
@@ -471,6 +484,7 @@ function Wizard({
   onGenerate,
 }: {
   scene: LoadedScene;
+  moduleLabels: ModuleLabels;
   palette: PaintColor[];
   canPaint: boolean;
   defaultTitle: string;
@@ -489,7 +503,7 @@ function Wizard({
     exterior?: ExteriorChoice;
   }) => void;
 }) {
-  const mods = [...scene.index.modules].sort((a, b) => a.id.localeCompare(b.id));
+  const mods = [...scene.index.modules].sort((a, b) => compareLabels(labelOf(moduleLabels, a.id), labelOf(moduleLabels, b.id)));
   const detected = useMemo(() => detectUnits(scene.index, scene.frames), [scene]);
   const [split, setSplit] = useState(true);
   const [unitNames, setUnitNames] = useState<string[]>(() => detected.map((u) => u.name));
@@ -651,7 +665,7 @@ function Wizard({
                       title="Nom sur les planches"
                       onChange={(e) => setUnitNames((ns) => ns.map((n, j) => (j === i ? e.target.value : n)))}
                     />
-                    <span className="hint">{u.moduleIds.filter((id) => modules.has(id)).join(', ') || 'aucune Viewbox choisie'}</span>
+                    <span className="hint">{u.moduleIds.filter((id) => modules.has(id)).map((id) => labelOf(moduleLabels, id)).join(', ') || 'aucune Viewbox choisie'}</span>
                   </div>
                 ))}
             </div>
@@ -662,7 +676,7 @@ function Wizard({
           <div className="wizard-mods">
             {mods.map((m) => (
               <label key={m.id} className="check">
-                <input type="checkbox" checked={modules.has(m.id)} onChange={() => setModules((s) => toggle(s, m.id))} /> {m.id}
+                <input type="checkbox" checked={modules.has(m.id)} onChange={() => setModules((s) => toggle(s, m.id))} /> {labelOf(moduleLabels, m.id)}
               </label>
             ))}
             <button className="btn small ghost" onClick={() => setModules(new Set(modules.size === mods.length ? [] : mods.map((m) => m.id)))}>

@@ -10,6 +10,7 @@ import type { BrowserHlrProvider } from '../linework/provider';
 import type { LineStyleSpec, Linework2D } from '../linework/types';
 import { DEFAULT_LINE_STYLE } from '../linework/types';
 import { lineworkToSvg } from '../linework/svg';
+import { compareLabels, labelOf } from '../core/moduleNumbers';
 import { CategoryChip, downloadText } from './common';
 
 type Scope = { kind: 'module'; moduleId: string } | { kind: 'level'; level: number } | { kind: 'all' };
@@ -32,9 +33,11 @@ interface Props {
   provider: BrowserHlrProvider;
   framesVersion: number;
   categoryColors: Record<string, string>;
+  /** numéros changés dans la Vue 3D */
+  moduleLabels?: Record<string, string>;
 }
 
-export function Views2DPage({ scene, provider, framesVersion, categoryColors }: Props) {
+export function Views2DPage({ scene, provider, framesVersion, categoryColors, moduleLabels }: Props) {
   const { index } = scene;
   const firstModule = [...index.modules].sort((a, b) => a.id.localeCompare(b.id))[0]?.id;
   const [scope, setScope] = useState<Scope>(firstModule ? { kind: 'module', moduleId: firstModule } : { kind: 'all' });
@@ -136,10 +139,10 @@ export function Views2DPage({ scene, provider, framesVersion, categoryColors }: 
             >
               <optgroup label="Une Viewbox (vues relatives à la Viewbox)">
                 {[...index.modules]
-                  .sort((a, b) => a.id.localeCompare(b.id))
+                  .sort((a, b) => compareLabels(labelOf(moduleLabels, a.id), labelOf(moduleLabels, b.id)))
                   .map((m) => (
                     <option key={m.id} value={`m:${m.id}`}>
-                      {m.id}
+                      {labelOf(moduleLabels, m.id)}
                       {m.type ? ` — ${m.type}` : ''} (avec ses {m.itemIds.length} accessoires)
                     </option>
                   ))}

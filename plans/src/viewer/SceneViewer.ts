@@ -674,6 +674,101 @@ export class SceneViewer {
     return best;
   }
 
+  // ─── numéros des Viewbox (Vue 3D › « 🔢 Numéros ») ───
+  private tagLayer: HTMLDivElement | null = null;
+  private readonly tags = new Map<string, HTMLDivElement>();
+  private tagHighlight: string | null = null;
+  private tagClick: ((moduleId: string, at: { x: number; y: number }) => void) | null = null;
+
+  /** Clic sur une étiquette (box du dessous cachée par une autre : on clique son numéro pâli). */
+  onModuleTag(handler: ((moduleId: string, at: { x: number; y: number }) => void) | null): void {
+    this.tagClick = handler;
+  }
+
+  /**
+   * Étiquette HTML au-dessus du toit de chaque Viewbox (nom affiché), qui suit la caméra ; null = aucune. Un clic sur
+   * une étiquette appelle `onModuleTag` (utile pour une box cachée sous une autre). Une étiquette cachée dans une autre
+   * box (niveau du dessous) est pâlie ; celle d'une box masquée n'est pas montrée.
+   */
+  setModuleTags(labels: ReadonlyMap<string, string> | null, highlight: string | null = null, changed?: ReadonlySet<string>): void {
+    this.tagHighlight = highlight;
+    if (!labels) {
+      for (const t of this.tags.values()) t.remove();
+      this.tags.clear();
+      this.tagLayer?.remove();
+      this.tagLayer = null;
+      return;
+    }
+    if (!this.tagLayer) {
+      const layer = document.createElement('div');
+      layer.className = 'module-tags';
+      layer.setAttribute('data-testid', 'module-tags');
+      Object.assign(layer.style, { position: 'absolute', inset: '0', pointerEvents: 'none', overflow: 'hidden' });
+      this.container.appendChild(layer);
+      this.tagLayer = layer;
+    }
+    for (const [id, t] of this.tags)
+      if (!labels.has(id)) {
+        t.remove();
+        this.tags.delete(id);
+      }
+    for (const [id, text] of labels) {
+      let t = this.tags.get(id);
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'module-tag';
+        t.setAttribute('data-module', id);
+        t.style.pointerEvents = 'auto';
+        t.style.cursor = 'pointer';
+        t.addEventListener('pointerup', (ev) => {
+          ev.stopPropagation();
+          const r = this.container.getBoundingClientRect();
+          this.tagClick?.(id, { x: ev.clientX - r.left, y: ev.clientY - r.top });
+        });
+        this.tagLayer.appendChild(t);
+        this.tags.set(id, t);
+      }
+      if (t.textContent !== text) t.textContent = text;
+      t.classList.toggle('hot', id === highlight);
+      t.classList.toggle('changed', !!changed?.has(id));
+    }
+    this.placeTags();
+  }
+
+  /** Centre du toit d'une Viewbox (monde, mm). */
+  private roofCenter(moduleId: string): Vector3 | null {
+    const f = this.model.frames.get(moduleId);
+    if (!f) return null;
+    const cx = (f.min[0] + f.max[0]) / 2;
+    const cy = (f.min[1] + f.max[1]) / 2;
+    return new Vector3(f.origin[0] + f.xAxis[0] * cx + f.yAxis[0] * cy, f.origin[1] + f.max[2] + 30, f.origin[2] + f.xAxis[2] * cx + f.yAxis[2] * cy);
+  }
+
+  private placeTags(): void {
+    if (!this.tagLayer || !this.tags.size) return;
+    const w = this.container.clientWidth || 1;
+    const h = this.container.clientHeight || 1;
+    const shown = this.model.index.modules.filter((m) => !this.include || this.include.has(m.nodeId));
+    const shownIds = new Set(shown.map((m) => m.id));
+    for (const [id, t] of this.tags) {
+      const p = shownIds.has(id) ? this.roofCenter(id) : null;
+      const q = p?.clone().project(this.camera);
+      if (!p || !q || q.z > 1 || q.z < -1) {
+        t.style.display = 'none';
+        continue;
+      }
+      // étiquette dans une autre box affichée (box du dessous) : pâlie
+      const covered = shown.some((m) => {
+        if (m.id === id) return false;
+        const b = m.bboxMm;
+        return p.x > b[0] && p.x < b[3] && p.y > b[1] - 50 && p.y < b[4] && p.z > b[2] && p.z < b[5];
+      });
+      t.style.display = '';
+      t.style.transform = `translate(${((q.x + 1) / 2) * w}px, ${((1 - q.y) / 2) * h}px) translate(-50%, -50%)`;
+      t.classList.toggle('covered', covered && id !== this.tagHighlight);
+    }
+  }
+
   // ─── face avant des Viewbox ───
   setFrontMarkers(show: boolean): void {
     this.showMarkers = show;
@@ -1028,6 +1123,7 @@ export class SceneViewer {
       this.frameRequested = false;
       if (this.disposed) return;
       this.renderer.render(this.scene3, this.camera);
+      this.placeTags();
     });
   }
 
@@ -1179,5 +1275,6 @@ export class SceneViewer {
     for (const m of this.overlayMaterials.values()) m.dispose();
     this.renderer.dispose();
     el.remove();
+    this.setModuleTags(null);
   }
 }

@@ -28,6 +28,7 @@ import { registerReleaser, startMemoryWatch } from '../linework/memory';
 import { bigModel, lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
+import { cleanModuleNumbers, resolveModuleLabels } from '../core/moduleNumbers';
 
 /** téléphone : une vue de plus de triangles n'est pas calculée ici sans le demander (iOS fermerait la page) */
 const HEAVY_TRIANGLES_PHONE = 80_000;
@@ -73,6 +74,8 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
   }, [model?.id]);
 
   const glassTest = useMemo(() => makeGlassTest(compileRules(rules).glassMaterial), [rules]);
+  // numéros des Viewbox changés dans la Vue 3D (« 🔢 Numéros ») : repris par les planches
+  const moduleLabels = useMemo(() => resolveModuleLabels(index.modules, cleanModuleNumbers(settings.moduleNumbers)), [index, settings.moduleNumbers]);
   const categoryColors = useMemo(() => {
     const colors: Record<string, string> = {};
     for (const [k, v] of Object.entries(LEGEND)) colors[k] = v.color;
@@ -237,6 +240,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             active={tab === '3d'}
             framesVersion={framesVersion}
             settings={settings}
+            moduleLabels={moduleLabels}
             onSetFront={setFront}
             onSaveSettings={saveSettings}
           />
@@ -250,6 +254,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             onNeedScene={() => setSceneWanted(true)}
             sceneLoading={sceneWanted && !scene}
             fronts={settings.fronts}
+            moduleLabels={moduleLabels}
             glassTest={glassTest}
             model={model}
             rules={rules}
@@ -294,7 +299,7 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             </button>
           </nav>
           <div style={{ display: sub2d === 'standard' ? 'block' : 'none' }}>
-            <Views2DPage scene={scene} provider={provider} framesVersion={framesVersion} categoryColors={categoryColors} />
+            <Views2DPage scene={scene} provider={provider} framesVersion={framesVersion} categoryColors={categoryColors} moduleLabels={moduleLabels} />
           </div>
           {special2dSeen && (tab === '2d' || !lightDevice) && (
             <div style={{ display: sub2d === 'special' ? 'block' : 'none' }}>
