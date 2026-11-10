@@ -120,15 +120,35 @@ export async function deleteFromCloudinary(publicId: string, resourceType?: 'ima
 
 export interface SplitPart { url: string; publicId: string; size: number }
 
-/** Adresse publique de VEM (liens des fichiers en morceaux, aussi lus par le serveur et mis dans les e-mails). */
-function appBaseUrl(): string {
-  return (process.env.APP_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'https://viewboxsitemanagement.up.railway.app')).replace(/\/+$/, '');
+/** Origine « https://hôte » d'une valeur de configuration (https:// ajouté s'il manque, chemin retiré), sinon null. */
+function originOf(value: string | undefined | null): string | null {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`);
+    return /^https?:$/.test(u.protocol) && u.hostname ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Adresse publique de VEM pour les liens des fichiers en morceaux (ouverts par le navigateur, relus par le serveur,
+ * mis dans les e-mails). Origine seule : un APP_URL sans « https:// » ou avec un chemin donnait un lien que le
+ * navigateur lisait comme une page de VEM (bug du 10.11.2026). Le domaine Railway passe avant APP_URL : il désigne
+ * toujours ce serveur.
+ */
+export function publicBaseUrl(): string {
+  return originOf(process.env.RAILWAY_PUBLIC_DOMAIN) || originOf(process.env.APP_URL) || 'https://viewboxsitemanagement.up.railway.app';
 }
 
 /** URL d'un fichier en morceaux : le nom (avec son extension) au bout, l'app reconnaît le type par l'extension. */
 export function splitFileUrl(id: string, fileName: string): string {
-  return `${appBaseUrl()}/api/v1/public/files/${id}/${encodeURIComponent(fileName)}`;
+  return `${publicBaseUrl()}${SPLIT_PATH}${id}/${encodeURIComponent(fileName)}`;
 }
+
+/** Début du chemin des fichiers en morceaux (routes/publicFiles.ts). */
+export const SPLIT_PATH = '/api/v1/public/files/';
 
 async function storeSplitFile(buffer: Buffer, folder: string, options: Record<string, any>, file: UploadFileInfo) {
   if (buffer.length > FILE_MAX_BYTES) {

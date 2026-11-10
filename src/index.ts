@@ -195,6 +195,16 @@ app.post(`${API}/imap-poll`, authMiddleware, requireRole('admin', 'project_manag
 // 404, jamais la page d'accueil de VEM (le navigateur la refuserait comme script, sans message clair).
 app.use('/plans/assets', (_req, res) => res.status(404).type('text/plain').send('Fichier introuvable : nouvelle version en ligne, recharger la page.'));
 
+// Fichier en morceaux dont le lien a été enregistré avec une adresse VEM mal formée (APP_URL sans « https:// » ou
+// avec un chemin : le navigateur le lit comme /<…>/api/v1/public/files/<id>/<nom>) → servi quand même, pas la page
+// d'accueil de VEM (bug du 10.11.2026 ; les liens enregistrés sont aussi corrigés au démarrage, migrations.ts).
+app.use((req, res, next) => {
+  const i = req.url.indexOf('/api/v1/public/files/');
+  if (i <= 0 || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+  req.url = req.url.slice(i + '/api/v1/public/files'.length);
+  publicFileRoutes(req, res, next);
+});
+
 // Lien « Répondre en ligne » des mails de demande d'infos (page publique, sans connexion)
 app.get('/info/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'info-request.html')));
 

@@ -6,6 +6,7 @@
 
 import { prisma } from '../config/database';
 import { logger } from './logger';
+import { publicBaseUrl } from '../services/cloudinaryService';
 
 // ─── Seeder inline pour les templates de tâches Viewbox ───
 // Idempotent : ne fait rien si la table contient déjà des catégories.
@@ -1626,6 +1627,28 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
     logger.info('[migration] table split_files créée si absente');
   } catch (e: any) {
     logger.warn(`[migration] split_files : ${e.message}`);
+  }
+  // Liens de fichiers en morceaux enregistrés avec une adresse VEM mal formée (APP_URL sans « https:// » ou avec un
+  // chemin, 10.11.2026) → adresse publique correcte, pour que le serveur puisse aussi les relire (PDF des daily reports…)
+  if (process.env.RAILWAY_PUBLIC_DOMAIN || process.env.APP_URL) {
+    const base = publicBaseUrl();
+    const cols: Array<[string, string]> = [
+      ['project_files', 'file_url'], ['daily_report_attachments', 'file_url'], ['project_checklist_photos', 'photo_url'],
+      ['client_remark_photos', 'photo_url'], ['task_photos', 'photo_url'], ['ticket_photos', 'photo_url'],
+      ['box_photos', 'photo_url'], ['handover_photos', 'photo_url'], ['daily_report_photos', 'photo_url'],
+    ];
+    for (const [table, col] of cols) {
+      try {
+        const n = await prisma.$executeRawUnsafe(
+          `UPDATE "${table}" SET "${col}" = $1 || substring("${col}" from position('/api/v1/public/files/' in "${col}"))
+           WHERE "${col}" LIKE '%/api/v1/public/files/%' AND "${col}" NOT LIKE $2`,
+          base, `${base}/api/v1/public/files/%`,
+        );
+        if (n) logger.info(`[migration] ${n} lien(s) de fichier en morceaux corrigé(s) dans ${table}`);
+      } catch (e: any) {
+        logger.warn(`[migration] liens des fichiers en morceaux (${table}) : ${e.message}`);
+      }
+    }
   }
   await migrateBriefingNext();
 }
