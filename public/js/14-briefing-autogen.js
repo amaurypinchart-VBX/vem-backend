@@ -461,14 +461,15 @@ const fmt = d => {
     }
 
     // ─── SLIDES PLANNING ESTIMATIF (tableau de l'onglet Infos, js/19-assembly-plan.js) ───
-    if (typeof apBriefingImage === 'function') {
+    // Redessiné pour la slide (lisible), coupé sur plusieurs slides si trop de lignes / de jours
+    if (typeof apBriefingSlides === 'function') {
       for (const ph of ['installation', 'dismantling']) {
         try {
-          const im = await apBriefingImage(projectId, ph);
-          if (!im) continue;
-          newSlide('📅 Planning', im.title);
-          await apFabricImage(BRF_STUDIO.fabricCanvas, im);
-          saveSlide();
+          for (const im of await apBriefingSlides(projectId, ph)) {
+            newSlide(im.name, im.title);
+            await apFabricImage(BRF_STUDIO.fabricCanvas, im);
+            saveSlide();
+          }
         } catch (e) { console.warn('[brf planning estimatif]', e); }
       }
     }
