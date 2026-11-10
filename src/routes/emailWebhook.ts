@@ -134,7 +134,7 @@ router.post('/brevo-inbound', async (req: Request, res: Response) => {
           // ─── 5) Upload sur Cloudinary + création du ProjectFile ───
           const { url, publicId } = await uploadToCloudinary(buffer, `projects/${project.id}/files`, {
             resource_type: 'auto',
-          });
+          }, { name: filename });
 
           await prisma.projectFile.create({
             data: {

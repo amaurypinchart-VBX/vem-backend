@@ -66,7 +66,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response, next: NextFunction
 router.post('/:id/photos', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'remarks');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'remarks', {}, { name: req.file.originalname, mime: req.file.mimetype });
     const photo = await (prisma as any).clientRemarkPhoto.create({
       data: { remarkId: req.params.id, photoUrl: url, publicId, caption: req.body.caption, phase: req.body.phase || 'problem' },
     });

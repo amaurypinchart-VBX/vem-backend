@@ -89,7 +89,7 @@ export default {
           'Still nothing: send the email again with the right subject, or add the files by hand (⬆️ Ajouter).',
         ]),
         callout('warn', 'VEM <b>never</b> replies to the sender: no acknowledgement, no error message.')
-        + callout('info', 'A very large file (above about 10 MB) may be refused: use the 🔗 URL link (chapter 9).')),
+        + callout('info', 'A very large file (above 20 MB) is refused: use the 🔗 URL link (chapter 9).')),
       visual: 'Troubleshooting procedure + boxes.',
       notes: 'Emails without a subject are ignored.',
     },

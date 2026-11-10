@@ -11,6 +11,8 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
   // Erreurs Prisma classiques
   if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Valeur déjà existante (contrainte unique)' });
   if (err.code === 'P2025') return res.status(404).json({ success: false, error: 'Enregistrement introuvable' });
+  // multer : fichier au-dessus de sa limite (50 Mo, src/services/cloudinaryService.ts)
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ success: false, error: 'Fichier trop lourd' });
 
   // AppError = message explicite contrôlé
   const status = err.statusCode || 500;

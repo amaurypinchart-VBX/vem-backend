@@ -37,6 +37,7 @@ import clientVisitsRoutes from './routes/clientVisits';
 import briefingRoutes from './routes/briefing';
 import plan2dRoutes from './routes/plan2d';
 import plansRoutes from './routes/plans';
+import publicFileRoutes from './routes/publicFiles';
 import structureRoutes from './routes/structure';
 import loadingRoutes from './routes/loading';
 import settingsRoutes from './routes/settings';
@@ -125,6 +126,8 @@ app.use(`${API}/auth`,           authRoutes);
 app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
 // Route PUBLIQUE — page « Répondre en ligne » d'une demande d'infos (accès par le jeton du lien envoyé par mail)
 app.use('/api/v1/public/info-request', publicInfoRequestRoutes);
+// Route PUBLIQUE — fichiers de plus de 10 Mo rangés en morceaux (l'id aléatoire du lien sert de clé, comme une URL Cloudinary)
+app.use('/api/v1/public/files', publicFileRoutes);
 // Route PUBLIQUE — calendrier projets 2 mois pour écran entrepôt
 app.use('/api/v1/public', publicCalendarRoutes);
 

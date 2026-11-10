@@ -23,11 +23,11 @@ export default {
         steps([
           `${q('⬆️ Ajouter')} › choisissez un ou plusieurs fichiers.`,
           'Formats : images, PDF, Word, Excel, PowerPoint, vidéos, modèles 3D (.glb, .gltf, .obj, .stl, .dae, .zip…).',
-          'Limite pratique : <b>environ 10 Mo par fichier</b>.',
+          'Limite : <b>20 Mo par fichier</b> (vidéos : 50 Mo).',
           'Message « n fichier(s) uploadé(s) ✅ ».',
         ]) + callout('tip', 'Modèle 3D avec ses textures ? Sélectionnez-les <b>ensemble</b> : VEM les regroupe en un seul paquet.'),
         win('🔗 Ajouter un fichier via URL', field('Nom du fichier *', 'Paddock_demo.glb') + field('URL du fichier *', 'https://…/Paddock_demo.glb') + `<div class="m-row right">${btn('💾 Ajouter au projet', 'primary')}</div>`)
-        + callout('info', 'Pour un fichier de plus de 10 Mo déjà en ligne : le lien doit pointer <b>directement</b> vers le fichier, et le nom doit garder la bonne extension.')),
+        + callout('info', 'Pour un fichier de plus de 20 Mo déjà en ligne : le lien doit pointer <b>directement</b> vers le fichier, et le nom doit garder la bonne extension.')),
       visual: 'Étapes + maquette « Ajouter un fichier via URL ».',
       notes: 'Le format .ifc est probablement refusé à l\'envoi : à confirmer avant de le promettre.',
     },
@@ -79,7 +79,7 @@ export default {
         'Supprimez un doublon.',
       ]), `<div class="recap"><div class="rt">À retenir</div>${ul([
         '⬆️ Ajouter, 🔗 URL ou mail.',
-        '≈ 10 Mo max par fichier.',
+        '20 Mo max par fichier.',
         'Faire le ménage : logos de mail, doublons de PDF.',
         '.skp → exporter en .glb.',
       ])}</div>`),

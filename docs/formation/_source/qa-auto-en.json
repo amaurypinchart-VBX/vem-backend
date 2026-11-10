@@ -186,7 +186,8 @@
       "inIndex": false,
       "files": [
         "public/js/12-briefing-studio-core.js",
-        "public/js/15-checklists.js"
+        "public/js/15-checklists.js",
+        "public/js/19-assembly-plan.js"
       ]
     },
     {
@@ -196,7 +197,9 @@
       "how": "texte exact",
       "inIndex": false,
       "files": [
-        "public/js/12-briefing-studio-core.js"
+        "public/js/12-briefing-studio-core.js",
+        "public/js/19-assembly-plan.js",
+        "public/js/briefing-next-graphics.js"
       ]
     },
     {
@@ -395,7 +398,8 @@
       "inIndex": true,
       "files": [
         "public/index.html",
-        "public/js/04-edit-clients-templates.js"
+        "public/js/04-edit-clients-templates.js",
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {
@@ -966,7 +970,9 @@
       "how": "texte exact",
       "inIndex": true,
       "files": [
-        "public/index.html"
+        "public/index.html",
+        "public/js/17-whatsapp-import.js",
+        "src/services/whatsappDaily.ts"
       ]
     },
     {
@@ -1079,7 +1085,8 @@
       "how": "texte exact",
       "inIndex": false,
       "files": [
-        "public/js/10-logistics-bookings.js"
+        "public/js/10-logistics-bookings.js",
+        "public/js/19-assembly-plan.js"
       ]
     },
     {
@@ -1194,7 +1201,8 @@
       "inIndex": false,
       "files": [
         "public/js/02-detail-loaders.js",
-        "public/js/08-visits-remarks.js"
+        "public/js/08-visits-remarks.js",
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {
@@ -2095,7 +2103,8 @@
       "inIndex": false,
       "files": [
         "public/js/02-detail-loaders.js",
-        "public/js/08-visits-remarks.js"
+        "public/js/08-visits-remarks.js",
+        "public/js/09-files-team-users.js"
       ]
     },
     {
@@ -2384,7 +2393,8 @@
       "inIndex": true,
       "files": [
         "public/index.html",
-        "public/js/02-detail-loaders.js"
+        "public/js/02-detail-loaders.js",
+        "src/services/infoRequestLogic.ts"
       ]
     },
     {
@@ -2641,7 +2651,8 @@
       "inIndex": true,
       "files": [
         "public/index.html",
-        "public/js/13-briefing-studio-slides.js"
+        "public/js/13-briefing-studio-slides.js",
+        "public/js/briefing-next.js"
       ]
     },
     {
@@ -2766,7 +2777,8 @@
       "how": "texte exact",
       "inIndex": true,
       "files": [
-        "public/index.html"
+        "public/index.html",
+        "public/js/briefing-next.js"
       ]
     },
     {
@@ -2888,7 +2900,7 @@
       "files": [
         "public/index.html",
         "public/js/04-edit-clients-templates.js",
-        "src/services/pdfService.ts"
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {
@@ -3017,7 +3029,8 @@
       "how": "texte exact",
       "inIndex": true,
       "files": [
-        "public/index.html"
+        "public/index.html",
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {
@@ -3040,7 +3053,8 @@
       "inIndex": true,
       "files": [
         "public/index.html",
-        "public/js/04-edit-clients-templates.js"
+        "public/js/04-edit-clients-templates.js",
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {
@@ -3165,7 +3179,8 @@
       "how": "texte exact",
       "inIndex": true,
       "files": [
-        "public/index.html"
+        "public/index.html",
+        "public/js/17-whatsapp-import.js"
       ]
     },
     {

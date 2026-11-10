@@ -373,6 +373,20 @@ model ProjectFile {
   @@map("project_files")
 }
 
+// Fichier plus lourd que la limite de l'offre Cloudinary (10 Mo) : rangé en morceaux « raw » de 9 Mo sur
+// Cloudinary, recollés par GET /api/v1/public/files/:id/:nom (src/routes/publicFiles.ts). L'id, aléatoire, sert de
+// clé d'accès (comme une URL Cloudinary). Table créée par src/utils/migrations.ts.
+model SplitFile {
+  id        String   @id
+  fileName  String   @map("file_name")
+  mimeType  String   @map("mime_type")
+  size      Int
+  parts     Json // [{ url, publicId, size }] dans l'ordre
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("split_files")
+}
+
 model Task {
   id             String     @id @default(uuid())
   projectId      String     @map("project_id")

@@ -23,11 +23,11 @@ export default {
         steps([
           `${q('⬆️ Ajouter')} › choose one or more files.`,
           'Formats: images, PDF, Word, Excel, PowerPoint, videos, 3D models (.glb, .gltf, .obj, .stl, .dae, .zip…).',
-          'Practical limit: <b>about 10 MB per file</b>.',
+          'Limit: <b>20 MB per file</b> (videos: 50 MB).',
           'Message « n fichier(s) uploadé(s) ✅ ».',
         ]) + callout('tip', '3D model with its textures? Select them <b>together</b>: VEM bundles them into a single package.'),
         win('🔗 Ajouter un fichier via URL', field('Nom du fichier *', 'Paddock_demo.glb') + field('URL du fichier *', 'https://…/Paddock_demo.glb') + `<div class="m-row right">${btn('💾 Ajouter au projet', 'primary')}</div>`)
-        + callout('info', 'For a file over 10 MB that is already online: the link must point <b>directly</b> to the file, and the name must keep the right extension.')),
+        + callout('info', 'For a file over 20 MB that is already online: the link must point <b>directly</b> to the file, and the name must keep the right extension.')),
       visual: 'Steps + « Ajouter un fichier via URL » mock-up.',
       notes: 'The .ifc format is probably refused on upload: to be confirmed before promising it.',
     },
@@ -79,7 +79,7 @@ export default {
         'Delete a duplicate.',
       ]), `<div class="recap"><div class="rt">Key points</div>${ul([
         '⬆️ Ajouter, 🔗 URL or e-mail.',
-        '≈ 10 MB max per file.',
+        '20 MB max per file.',
         'Clean up: e-mail logos, duplicate PDFs.',
         '.skp → export to .glb.',
       ])}</div>`),

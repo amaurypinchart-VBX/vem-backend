@@ -1029,7 +1029,7 @@ Le trajet n'est créé que si la personne citée est déjà dans l'onglet 👥 �
 ⚠️ Attention
 VEM ne répond jamais à l'expéditeur : ni accusé de réception, ni message d'erreur.
 ℹ️ Bon à savoir
-Un fichier très lourd (plus de 10 Mo environ) peut être refusé : utilisez le lien 🔗 URL (chapitre 9).
+Un fichier très lourd (plus de 20 Mo) est refusé : utilisez le lien 🔗 URL (chapitre 9).
 
 **Notes orateur** : Les mails sans sujet sont ignorés.
 
@@ -1783,7 +1783,7 @@ Trois façons d'ajouter : « ⬆️ Ajouter » (depuis l'ordinateur ou le télé
 
 - « ⬆️ Ajouter » › choisissez un ou plusieurs fichiers.
 - Formats : images, PDF, Word, Excel, PowerPoint, vidéos, modèles 3D (.glb, .gltf, .obj, .stl, .dae, .zip…).
-- Limite pratique : environ 10 Mo par fichier.
+- Limite : 20 Mo par fichier (vidéos : 50 Mo).
 - Message « n fichier(s) uploadé(s) ✅ ».
 💡 Astuce
 Modèle 3D avec ses textures ? Sélectionnez-les ensemble : VEM les regroupe en un seul paquet.
@@ -1793,7 +1793,7 @@ Nom du fichier *Paddock_demo.glb
 URL du fichier *https://…/Paddock_demo.glb
 💾 Ajouter au projet
 ℹ️ Bon à savoir
-Pour un fichier de plus de 10 Mo déjà en ligne : le lien doit pointer directement vers le fichier, et le nom doit garder la bonne extension.
+Pour un fichier de plus de 20 Mo déjà en ligne : le lien doit pointer directement vers le fichier, et le nom doit garder la bonne extension.
 
 **Notes orateur** : Le format .ifc est probablement refusé à l'envoi : à confirmer avant de le promettre.
 
@@ -1866,7 +1866,7 @@ Plans et photos consultables sur chantier
 - Supprimez un doublon.
 À retenir
 - ⬆️ Ajouter, 🔗 URL ou mail.
-- ≈ 10 Mo max par fichier.
+- 20 Mo max par fichier.
 - Faire le ménage : logos de mail, doublons de PDF.
 - .skp → exporter en .glb.
 
@@ -2175,7 +2175,7 @@ L'IA découpe le texte en entrées horodatées (sans inventer d'heure) et rend l
 
 - « Notes générales / Résumé » : incidents, points importants.
 - « 📸 Prendre / Ajouter photos » : sélectionnez toutes les photos en une fois.
-- « 📎 Pièces jointes » : cochez la check-list à joindre (état actuel), ajoutez PDF / photos / Word / Excel (10 Mo max par fichier).
+- « 📎 Pièces jointes » : cochez la check-list à joindre (état actuel), ajoutez PDF / photos / Word / Excel (20 Mo max par fichier).
 ⚠️ Attention
 Sur téléphone, une nouvelle sélection de photos remplace la précédente. Choisissez-les toutes ensemble, ou ajoutez-en d'autres ensuite en modification.
 ℹ️ Bon à savoir

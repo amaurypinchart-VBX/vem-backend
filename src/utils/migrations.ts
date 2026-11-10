@@ -1611,6 +1611,22 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] assembly_plans : ${e.message}`);
   }
+
+  // Fichiers de plus de 10 Mo (limite de l'offre Cloudinary) rangés en morceaux, recollés par /api/v1/public/files
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "split_files" (
+      "id"         TEXT         NOT NULL,
+      "file_name"  TEXT         NOT NULL,
+      "mime_type"  TEXT         NOT NULL,
+      "size"       INTEGER      NOT NULL,
+      "parts"      JSONB        NOT NULL,
+      "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "split_files_pkey" PRIMARY KEY ("id")
+    )`);
+    logger.info('[migration] table split_files créée si absente');
+  } catch (e: any) {
+    logger.warn(`[migration] split_files : ${e.message}`);
+  }
   await migrateBriefingNext();
 }
 

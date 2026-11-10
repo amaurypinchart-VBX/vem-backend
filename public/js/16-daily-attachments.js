@@ -3,8 +3,8 @@
 // Dans le PDF du rapport : check-lists dessinées dans le rapport, pages des PDF et images ajoutées en annexe
 // (lisibles), Word / Excel listés avec leur lien. Backend : src/routes/dailyReports.ts + src/services/dailyAttachments.ts.
 
-/** Cloudinary refuse les fichiers de plus de 10 Mo. */
-const DAILY_ATT_MAX = 10 * 1024 * 1024;
+/** 20 Mo (au-dessus de 10 Mo, le serveur range le fichier en morceaux sur Cloudinary). */
+const DAILY_ATT_MAX = 20 * 1024 * 1024;
 const DAILY_ATT_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
 const DAILY_CHECKLIST_PHASES = {
   preparation: { label: 'Check-list de préparation', icon: '📋' },
@@ -117,7 +117,7 @@ function reloadDailyAttachmentsBoxes(reportId) {
 async function sendDailyAttachmentFiles(reportId, files) {
   let ok = 0;
   for (const file of files) {
-    if (file.size > DAILY_ATT_MAX) { toast(`${file.name} : trop lourd (10 Mo maximum)`, 'error'); continue; }
+    if (file.size > DAILY_ATT_MAX) { toast(`${file.name} : trop lourd (20 Mo maximum)`, 'error'); continue; }
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -178,7 +178,7 @@ function previewDailyAttachments(input) {
   const files = Array.from(input.files || []);
   input.value = '';
   for (const f of files) {
-    if (f.size > DAILY_ATT_MAX) { toast(`${f.name} : trop lourd (10 Mo maximum)`, 'error'); continue; }
+    if (f.size > DAILY_ATT_MAX) { toast(`${f.name} : trop lourd (20 Mo maximum)`, 'error'); continue; }
     PENDING_DAILY_ATTACHMENTS.push(f);
   }
   renderPendingDailyAttachments();

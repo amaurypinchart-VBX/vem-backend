@@ -184,7 +184,7 @@ async function loadProjectDetail(id) {
         <span class="card-title">📁 Fichiers</span>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="switchTab(document.querySelector('[onclick*=dtab-files]'),'dtab-files');loadDetailFiles('${id}')">Gérer</button>
-          <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${id}')" title="Ajouter un fichier via une URL externe (GitHub Releases, etc.) — utile pour les gros fichiers 3D > 10 Mo">🔗 URL</button>
+          <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${id}')" title="Ajouter un fichier via une URL externe (GitHub Releases, etc.) — utile pour les gros fichiers 3D > 20 Mo">🔗 URL</button>
           <label style="display:flex;align-items:center;gap:4px;background:var(--accent);color:#fff;padding:5px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;">
             ⬆️ Ajouter
            <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.glb,.gltf,.usdz,.skp,.obj,.stl,.fbx,.dae,.ifc,.zip" style="display:none;" onchange="uploadProjectFiles('${id}',this).then(()=>loadProjectDetail('${id}'))">

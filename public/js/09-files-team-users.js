@@ -5,7 +5,7 @@ function showAddFileByUrlModal(projectId) {
     <div class="modal" style="max-width:560px;">
       <div class="modal-head">
         <div><div class="modal-title">🔗 Ajouter un fichier via URL</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px;">Pour les gros fichiers (> 10 Mo) hébergés ailleurs</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px;">Pour les gros fichiers (> 20 Mo) hébergés ailleurs</div></div>
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
 
@@ -126,7 +126,16 @@ async function uploadProjectFiles(projectId, input) {
     }
   }
 
-  toast(`Upload ${files.length} fichier(s)...`, 'info');
+  // 20 Mo par fichier (au-dessus de 10 Mo, le serveur le range en morceaux sur Cloudinary) ; vidéos 50 Mo
+  files = files.filter(f => {
+    const max = (f.type || '').startsWith('video/') ? 50 : 20;
+    if (f.size <= max * 1024 * 1024) return true;
+    toast(`« ${f.name} » est trop lourd (${(f.size / 1024 / 1024).toFixed(1).replace('.', ',')} Mo, ${max} Mo maximum) : utilise 🔗 URL`, 'error');
+    return false;
+  });
+  if (!files.length) return;
+  const big = files.some(f => f.size > 10 * 1024 * 1024);
+  toast(`Upload ${files.length} fichier(s)...${big ? ' (gros fichier : patiente un peu)' : ''}`, 'info');
   let uploaded = 0;
 
   for (const file of files) {
@@ -145,7 +154,9 @@ async function uploadProjectFiles(projectId, input) {
       if (!r.ok) {
         const errText = await r.text().catch(()=>'');
         console.error('Upload failed:', r.status, errText);
-        toast(`Erreur upload ${file.name}: ${r.status}`, 'error');
+        let why = '';
+        try { why = JSON.parse(errText).error || ''; } catch {}
+        toast(`Erreur upload ${file.name}: ${why || r.status}`, 'error');
         continue;
       }
 

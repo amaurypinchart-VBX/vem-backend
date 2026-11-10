@@ -16,7 +16,7 @@ import { AppError } from '../utils/AppError';
 import { sendMail, emailShell } from './emailService';
 import { callClaudeJSON } from './aiService';
 import { createBookingsFromEmail } from './bookingFromEmail';
-import { uploadToCloudinary } from './cloudinaryService';
+import { uploadToCloudinary, FILE_MAX_BYTES } from './cloudinaryService';
 import * as L from './infoRequestLogic';
 
 // Tables créées par du SQL idempotent (migrations.ts) : le client Prisma typé peut être en retard (cf. CLAUDE.md)
@@ -812,11 +812,11 @@ export interface InboundMail {
 async function saveAttachments(req: any, atts: NonNullable<InboundMail['attachments']>) {
   const names: string[] = [];
   for (const a of atts.slice(0, 10)) {
-    // images intégrées (logo de signature) ignorées ; Cloudinary refuse plus de 10 Mo
-    if (a.related || !a.content?.length || a.content.length > 10 * 1024 * 1024) continue;
+    // images intégrées (logo de signature) ignorées ; au-dessus de 10 Mo le fichier est rangé en morceaux (20 Mo max)
+    if (a.related || !a.content?.length || a.content.length > FILE_MAX_BYTES) continue;
     const fileName = a.filename || `reponse-${req.ref}-${names.length + 1}`;
     try {
-      const { url, publicId } = await uploadToCloudinary(a.content, `projects/${req.projectId}/files`, { resource_type: 'auto' });
+      const { url, publicId } = await uploadToCloudinary(a.content, `projects/${req.projectId}/files`, { resource_type: 'auto' }, { name: fileName });
       await prisma.projectFile.create({ data: { projectId: req.projectId, fileName, fileUrl: url, publicId, fileSize: a.content.length, category: 'email' } });
       names.push(fileName);
     } catch (e: any) {

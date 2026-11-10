@@ -7,7 +7,7 @@
 import { PDFDocument, StandardFonts, rgb, degrees, PDFPage, PDFFont } from 'pdf-lib';
 import { prisma } from '../config/database';
 import { logger } from '../utils/logger';
-import { uploadToCloudinary } from './cloudinaryService';
+import { uploadToCloudinary, FILE_MAX_BYTES } from './cloudinaryService';
 import { loadProjectChecklist, checklistPdfData } from './checklistService';
 import { generateDailyReportPdf, DailyAttachmentPdf, HandoverChecklistPdf } from './pdfService';
 
@@ -15,8 +15,8 @@ const db = prisma as any; // modèle ajouté au schéma ; client typé régéné
 
 type Lang = 'fr' | 'en';
 
-/** Cloudinary refuse les fichiers de plus de 10 Mo. */
-export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+/** 20 Mo : au-dessus de 10 Mo (limite de l'offre Cloudinary), le fichier est rangé en morceaux (uploadToCloudinary). */
+export const ATTACHMENT_MAX_BYTES = FILE_MAX_BYTES;
 /** Pages reprises au maximum par PDF joint. */
 const ANNEX_MAX_PAGES = 100;
 /** Au-delà (somme des fichiers intégrés), l'e-mail garde les fichiers en lien : les relais refusent ~25 Mo. */
@@ -49,13 +49,13 @@ export async function inspectPdf(buffer: Buffer): Promise<{ pageCount: number | 
 export async function storeAttachmentFile(buffer: Buffer, fileName: string, cls: FileClass, projectId: string) {
   const folder = `daily-reports/${projectId}/attachments`;
   if (cls === 'image') {
-    const { url, publicId } = await uploadToCloudinary(buffer, folder, { resource_type: 'image' });
+    const { url, publicId } = await uploadToCloudinary(buffer, folder, { resource_type: 'image' }, { name: fileName });
     return { url, publicId, resourceType: 'image' };
   }
   const ext = (fileName.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
   const base = fileName.replace(/\.[^.]*$/, '').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'document';
-  const { url, publicId } = await uploadToCloudinary(buffer, folder, { resource_type: 'raw', public_id: `${base}-${Date.now()}.${ext}` });
+  const { url, publicId } = await uploadToCloudinary(buffer, folder, { resource_type: 'raw', public_id: `${base}-${Date.now()}.${ext}` }, { name: fileName });
   return { url, publicId, resourceType: 'raw' };
 }
 

@@ -308,12 +308,12 @@ router.get('/:id/attachments', async (req: AuthRequest, res: Response, next: Nex
   } catch (err) { next(err); }
 });
 
-// POST /daily-reports/:id/attachments — multipart « file » : PDF, image, Word / Excel / PowerPoint (10 Mo max)
+// POST /daily-reports/:id/attachments — multipart « file » : PDF, image, Word / Excel / PowerPoint (20 Mo max)
 router.post('/:id/attachments', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const r = await reportOr404(req.params.id);
     if (!req.file) throw new AppError('Fichier manquant ou type de fichier non accepté', 400);
-    if (req.file.size > ATTACHMENT_MAX_BYTES) throw new AppError('Fichier trop lourd : 10 Mo maximum.', 413);
+    if (req.file.size > ATTACHMENT_MAX_BYTES) throw new AppError(`Fichier trop lourd : ${Math.round(ATTACHMENT_MAX_BYTES / 1024 / 1024)} Mo maximum.`, 413);
     const fileName = (req.file.originalname || 'document').slice(0, 200);
     const cls = classifyFile(req.file.mimetype, fileName);
     const info = cls === 'pdf' ? await inspectPdf(req.file.buffer) : { pageCount: cls === 'image' ? 1 : null, embeddable: cls === 'image', why: null };

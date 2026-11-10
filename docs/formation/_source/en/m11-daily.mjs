@@ -51,7 +51,7 @@ export default {
         steps([
           `${q('Notes générales / Résumé')} (general notes): incidents, important points.`,
           `${q('📸 Prendre / Ajouter photos')}: select <b>all photos at once</b>.`,
-          `${q('📎 Pièces jointes')} (attachments): tick the checklist to attach (current state), add PDF / photos / Word / Excel (10 MB max per file).`,
+          `${q('📎 Pièces jointes')} (attachments): tick the checklist to attach (current state), add PDF / photos / Word / Excel (20 MB max per file).`,
         ]),
         callout('warn', 'On a phone, a new photo selection <b>replaces</b> the previous one. Pick them all together, or add more later when editing.')
         + callout('info', 'Attached PDFs and photos are added, readable, at the end of the report PDF. Word / Excel stay as links.')),

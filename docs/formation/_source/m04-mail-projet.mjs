@@ -89,7 +89,7 @@ export default {
           'Toujours rien : renvoyez le mail avec le bon sujet, ou ajoutez les fichiers à la main (⬆️ Ajouter).',
         ]),
         callout('warn', 'VEM ne répond <b>jamais</b> à l\'expéditeur : ni accusé de réception, ni message d\'erreur.')
-        + callout('info', 'Un fichier très lourd (plus de 10 Mo environ) peut être refusé : utilisez le lien 🔗 URL (chapitre 9).')),
+        + callout('info', 'Un fichier très lourd (plus de 20 Mo) est refusé : utilisez le lien 🔗 URL (chapitre 9).')),
       visual: 'Procédure de dépannage + encadrés.',
       notes: 'Les mails sans sujet sont ignorés.',
     },

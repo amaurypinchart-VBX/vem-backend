@@ -405,8 +405,8 @@ function checklistShortName(u) {
 
 /** Pièce jointe photo (les documents PDF / Office ne comptent pas pour « photo obligatoire »). */
 const checklistIsPhoto = p => !p.kind || p.kind === 'photo';
-/** Cloudinary refuse les fichiers de plus de 10 Mo. */
-const CHECKLIST_MAX_FILE = 10 * 1024 * 1024;
+/** 20 Mo (au-dessus de 10 Mo, le serveur range le fichier en morceaux sur Cloudinary). */
+const CHECKLIST_MAX_FILE = 20 * 1024 * 1024;
 
 /** Mêmes règles que checklistStats côté serveur (src/services/checklistService.ts). */
 function checklistLocalStats(items) {
@@ -1381,7 +1381,7 @@ async function checklistUploadDocuments(id, input) {
   if (!files.length || !it) return;
   const ok = files.filter(f => {
     if (f.size <= CHECKLIST_MAX_FILE) return true;
-    toast(`« ${f.name} » est trop lourd (max 10 Mo)`, 'error');
+    toast(`« ${f.name} » est trop lourd (max 20 Mo)`, 'error');
     return false;
   });
   if (!ok.length) return;

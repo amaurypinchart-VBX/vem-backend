@@ -732,10 +732,10 @@ function waDayCardHtml(d) {
       <div style="font-size:12px;font-weight:700;margin:14px 0 6px;">📎 Documents partagés ce jour-là <span style="color:var(--text3);font-weight:400;">(à joindre au rapport)</span></div>
       ${docs.map(m => {
         const size = WA.media.get(waBase(m.file))?.size || 0;
-        const tooBig = size > 10 * 1024 * 1024;
+        const tooBig = size > 20 * 1024 * 1024;
         return `<label style="display:flex;gap:8px;align-items:center;font-size:12px;cursor:${tooBig ? 'default' : 'pointer'};padding:2px 0;">
           <input type="checkbox" ${d.docSel.has(m.i) ? 'checked' : ''} ${tooBig ? 'disabled' : ''} onchange="waDocToggle(${d.k},${m.i},this.checked)" style="accent-color:var(--accent);">
-          📄 ${esc(m.file)} <span style="color:var(--text3);">${typeof dailyAttSize === 'function' ? dailyAttSize(size) : ''}${tooBig ? ' · trop lourd (10 Mo max)' : ''}</span></label>`;
+          📄 ${esc(m.file)} <span style="color:var(--text3);">${typeof dailyAttSize === 'function' ? dailyAttSize(size) : ''}${tooBig ? ' · trop lourd (20 Mo max)' : ''}</span></label>`;
       }).join('')}`;
   }
 

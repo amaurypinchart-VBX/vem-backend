@@ -194,7 +194,7 @@ export async function pollImapOnce(): Promise<{ processed: number; skipped: numb
               const filename = att.filename || `mail-${Date.now()}`;
               const { url, publicId } = await uploadToCloudinary(buffer, `projects/${project.id}/files`, {
                 resource_type: 'auto',
-              });
+              }, { name: filename });
               await prisma.projectFile.create({
                 data: {
                   projectId: project.id,

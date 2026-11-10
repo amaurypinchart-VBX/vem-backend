@@ -6,11 +6,14 @@ import { prisma } from '../config/database';
 
 const router = Router();
 
+/** Nom et type du fichier : utiles quand il dépasse 10 Mo (rangé en morceaux, servi par VEM sous son nom). */
+const fileInfo = (f: Express.Multer.File) => ({ name: f.originalname, mime: f.mimetype });
+
 // POST /upload/photo — single photo
 router.post('/photo', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, req.body.folder || 'general');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, req.body.folder || 'general', {}, fileInfo(req.file));
     res.json({ success: true, data: { url, publicId, name: req.file.originalname } });
   } catch (err) { next(err); }
 });
@@ -19,7 +22,7 @@ router.post('/photo', upload.single('file'), async (req: AuthRequest, res: Respo
 router.post('/photos', upload.array('files', 10), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const files = (req.files as Express.Multer.File[]) || [];
-    const results = await Promise.all(files.map(f => uploadToCloudinary(f.buffer, req.body.folder || 'general')));
+    const results = await Promise.all(files.map(f => uploadToCloudinary(f.buffer, req.body.folder || 'general', {}, fileInfo(f))));
     res.json({ success: true, data: results });
   } catch (err) { next(err); }
 });
@@ -28,7 +31,7 @@ router.post('/photos', upload.array('files', 10), async (req: AuthRequest, res: 
 router.post('/task-photo/:taskId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'tasks');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'tasks', {}, fileInfo(req.file));
     const photo = await prisma.taskPhoto.create({
       data: { taskId: req.params.taskId, uploadedBy: req.user!.id, photoUrl: url, publicId, caption: req.body.caption },
     });
@@ -40,7 +43,7 @@ router.post('/task-photo/:taskId', upload.single('file'), async (req: AuthReques
 router.post('/ticket-photo/:ticketId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'tickets');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'tickets', {}, fileInfo(req.file));
     const photo = await prisma.ticketPhoto.create({
       data: { ticketId: req.params.ticketId, uploadedById: req.user!.id, photoUrl: url, publicId, phase: req.body.phase || 'before', caption: req.body.caption },
     });
@@ -52,7 +55,7 @@ router.post('/ticket-photo/:ticketId', upload.single('file'), async (req: AuthRe
 router.post('/project-file/:projectId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'projects');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'projects', {}, fileInfo(req.file));
     const file = await prisma.projectFile.create({
       data: { projectId: req.params.projectId, uploadedBy: req.user!.id, fileName: req.file.originalname, fileUrl: url, publicId, fileType: req.file.mimetype, fileSize: req.file.size, category: req.body.category || 'general' },
     });
@@ -64,7 +67,7 @@ router.post('/project-file/:projectId', upload.single('file'), async (req: AuthR
 router.post('/box-photo/:boxId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'boxes');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'boxes', {}, fileInfo(req.file));
     const photo = await prisma.boxPhoto.create({
       data: { boxId: req.params.boxId, photoUrl: url, publicId, phase: req.body.phase || 'content', caption: req.body.caption },
     });
@@ -76,7 +79,7 @@ router.post('/box-photo/:boxId', upload.single('file'), async (req: AuthRequest,
 router.post('/handover-photo/:handoverId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'handovers');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'handovers', {}, fileInfo(req.file));
     const photo = await prisma.handoverPhoto.create({
       data: { handoverId: req.params.handoverId, uploadedById: req.user!.id, photoUrl: url, publicId, caption: req.body.caption, itemId: req.body.itemId || null },
     });
@@ -88,7 +91,7 @@ router.post('/handover-photo/:handoverId', upload.single('file'), async (req: Au
 router.post('/daily-photo/:reportId', upload.single('file'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier manquant' });
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'daily-reports');
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, 'daily-reports', {}, fileInfo(req.file));
     const photo = await prisma.dailyReportPhoto.create({
       data: { reportId: req.params.reportId, photoUrl: url, publicId, caption: req.body.caption || null },
     });

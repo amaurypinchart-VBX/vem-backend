@@ -51,7 +51,7 @@ export default {
         steps([
           `${q('Notes générales / Résumé')} : incidents, points importants.`,
           `${q('📸 Prendre / Ajouter photos')} : sélectionnez <b>toutes les photos en une fois</b>.`,
-          `${q('📎 Pièces jointes')} : cochez la check-list à joindre (état actuel), ajoutez PDF / photos / Word / Excel (10 Mo max par fichier).`,
+          `${q('📎 Pièces jointes')} : cochez la check-list à joindre (état actuel), ajoutez PDF / photos / Word / Excel (20 Mo max par fichier).`,
         ]),
         callout('warn', 'Sur téléphone, une nouvelle sélection de photos <b>remplace</b> la précédente. Choisissez-les toutes ensemble, ou ajoutez-en d\'autres ensuite en modification.')
         + callout('info', 'PDF et photos joints sont ajoutés lisibles à la fin du PDF du rapport. Word / Excel restent en lien.')),

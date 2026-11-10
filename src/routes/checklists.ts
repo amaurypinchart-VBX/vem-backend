@@ -572,7 +572,7 @@ router.post('/items/:itemId/photos', upload.single('file'), async (req: AuthRequ
     if (!req.file) throw new AppError('Fichier manquant', 400);
     if (!req.file.mimetype.startsWith('image/')) throw new AppError('Seules les photos sont acceptées', 400);
     const item = await itemWithAccess(req, req.params.itemId);
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`);
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`, {}, { name: req.file.originalname, mime: req.file.mimetype });
     const photo = await db.projectChecklistPhoto.create({
       data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'photo', fileName: req.file.originalname || null, mimeType: req.file.mimetype },
     });
@@ -588,7 +588,7 @@ router.post('/items/:itemId/documents', upload.single('file'), async (req: AuthR
     requireRoles(req, FILL_ROLES, 'ajouter un document');
     if (!req.file) throw new AppError('Fichier manquant ou type de fichier non accepté', 400);
     const item = await itemWithAccess(req, req.params.itemId);
-    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`);
+    const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`, {}, { name: req.file.originalname, mime: req.file.mimetype });
     const doc = await db.projectChecklistPhoto.create({
       data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'document', fileName: req.file.originalname || 'document', mimeType: req.file.mimetype },
     });

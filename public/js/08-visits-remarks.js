@@ -1054,7 +1054,7 @@ function renderDetailFiles(projectId, files) {
       <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
       <div style="display:flex;gap:8px;">
         ${hasPlansAccess() ? `<button class="btn btn-ghost btn-sm" onclick="openPlansViewbox('${projectId}')" title="Analyser un modèle SketchUp exporté (.zip) et préparer les plans">📐 Plans Viewbox</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${projectId}')" title="Ajouter un fichier via URL externe (GitHub, Drive...) — utile pour les fichiers > 10 Mo">🔗 URL</button>
+        <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${projectId}')" title="Ajouter un fichier via URL externe (GitHub, Drive...) — utile pour les fichiers > 20 Mo">🔗 URL</button>
         <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
           ⬆️ Ajouter
           <input type="file" multiple accept="image/*,.pdf,.ppt,.pptx,.xls,.xlsx,.doc,.docx,.mp4,.mov,.glb,.gltf,.usdz,.obj,.stl,.skp,.fbx,.dae,.zip" style="display:none;" onchange="uploadProjectFiles('${projectId}',this)">
@@ -1134,7 +1134,7 @@ function renderDetailFiles(projectId, files) {
 
 // ─────────────────────────────────────────────────────────────────
 // Ajouter un fichier au projet via une URL externe (GitHub Releases,
-// Backblaze, son propre serveur, etc.) — utile pour les fichiers > 10 Mo
+// Backblaze, son propre serveur, etc.) — utile pour les fichiers > 20 Mo
 // qui dépassent la limite Cloudinary du plan gratuit.
 // Aucune limite de taille puisque VEM ne télécharge pas le fichier,
 // il enregistre juste l'URL (le viewer 3D ou le navigateur ira chercher

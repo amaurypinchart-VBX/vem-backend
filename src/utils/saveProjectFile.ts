@@ -16,7 +16,7 @@ export async function saveProjectFilePdf(
   uploadedBy?: string | null
 ): Promise<void> {
   try {
-    const { url, publicId } = await uploadToCloudinary(buffer, 'projects', { resource_type: 'auto' });
+    const { url, publicId } = await uploadToCloudinary(buffer, 'projects', { resource_type: 'auto' }, { name: fileName, mime: 'application/pdf' });
     await prisma.projectFile.create({
       data: {
         projectId,
