@@ -104,7 +104,10 @@ function measure() {
     if (outOfView) continue;
     const x = Math.min(Math.max(r.left + r.width / 2, 1), vw - 1), y = Math.min(Math.max(r.top + r.height / 2, 1), vh - 1);
     const hit = document.elementFromPoint(x, y);
-    if (hit && hit !== b && !b.contains(hit)) covered.push(label(b) + ' sous ' + label(hit));
+    // passé sous l'en-tête / le pied collant de sa propre fenêtre en défilant : normal
+    const ownModal = b.closest('.modal');
+    const underOwnBar = ownModal && hit && ownModal.contains(hit) && hit.closest('.modal-head, .modal-foot') && !hit.closest('.modal-foot')?.contains(b);
+    if (hit && hit !== b && !b.contains(hit) && !underOwnBar) covered.push(label(b) + ' sous ' + label(hit));
     else if (r.right > vw + 1) covered.push(label(b) + ' coupé à droite (' + Math.round(r.right) + ' px)');
   }
   // petites cibles tactiles (visibles à l'écran)
