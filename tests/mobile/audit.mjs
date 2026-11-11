@@ -92,6 +92,16 @@ function measure() {
     if (!visible(b) || !ACTION.test(b.textContent || '')) continue;
     const r = b.getBoundingClientRect();
     if (!r.width || r.bottom < 0 || r.top > vh) continue;
+    // plus bas (ou plus haut) dans une zone qui défile : atteignable en défilant, pas « caché »
+    let sc = b.parentElement, outOfView = false;
+    while (sc && sc !== document.body) {
+      if (/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight) {
+        const sr = sc.getBoundingClientRect();
+        if (r.top + r.height / 2 < sr.top || r.top + r.height / 2 > sr.bottom) { outOfView = true; break; }
+      }
+      sc = sc.parentElement;
+    }
+    if (outOfView) continue;
     const x = Math.min(Math.max(r.left + r.width / 2, 1), vw - 1), y = Math.min(Math.max(r.top + r.height / 2, 1), vh - 1);
     const hit = document.elementFromPoint(x, y);
     if (hit && hit !== b && !b.contains(hit)) covered.push(label(b) + ' sous ' + label(hit));
