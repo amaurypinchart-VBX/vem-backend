@@ -29,7 +29,7 @@
   .q-meta{font-size:12px;color:#999;margin-bottom:8px;}
   .q-note{font-size:12px;color:#b45309;background:#fff7ed;border-radius:6px;padding:6px 8px;margin-bottom:8px;}
   .q-answer{font-size:14px;color:#166534;white-space:pre-wrap;}
-  input,textarea{width:100%;font:inherit;font-size:15px;padding:10px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a2e;}
+  input,textarea{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a2e;}
   input:focus,textarea:focus{outline:none;border-color:#e63946;}
   textarea{min-height:84px;resize:vertical;}
   .row{display:flex;gap:8px;}
@@ -90,6 +90,10 @@
   }
 
   function render() {
+    // Ce qui a déjà été tapé est remis après chaque affichage : une erreur réseau ou une réponse
+    // refusée effaçait tout le formulaire sur le téléphone du client (audit X2).
+    var typed = {};
+    root.querySelectorAll('input[id], textarea[id]').forEach(function (el) { if (el.value) typed[el.id] = el.value; });
     var v = VIEW;
     document.documentElement.lang = v.lang;
     document.title = 'VEM — ' + t('title');
@@ -130,6 +134,7 @@
     });
     if (pending.length) html += '<button class="btn" id="send">' + esc(t('send')) + '</button>';
     root.innerHTML = html;
+    Object.keys(typed).forEach(function (id) { var el = document.getElementById(id); if (el) el.value = typed[id]; });
     var btn = document.getElementById('send');
     if (btn) btn.onclick = send;
   }
@@ -152,7 +157,7 @@
 
   function send() {
     var answers = collect();
-    if (!answers.length) { MSG = '<div class="err">' + esc(t('nothing')) + '</div>'; render(); return; }
+    if (!answers.length) { MSG = '<div class="err">' + esc(t('nothing')) + '</div>'; render(); window.scrollTo(0, 0); return; }
     var btn = document.getElementById('send');
     btn.disabled = true; btn.textContent = t('sending');
     fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers: answers }) })
@@ -170,6 +175,7 @@
       .catch(function (e) {
         MSG = '<div class="err">' + esc(e && e.message && e.message !== 'error' ? e.message : t('network')) + '</div>';
         render();
+        window.scrollTo(0, 0); // le message est en haut, le client était en bas du formulaire
       });
   }
 

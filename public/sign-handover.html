@@ -26,7 +26,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .sig-existing { background: #fff; border-radius: 8px; padding: 10px; margin-top: 8px; }
 .sig-existing img { width: 100%; max-height: 80px; object-fit: contain; display: block; }
 .sig-name { font-size: 13px; color: #f0f2f5; margin-top: 6px; font-weight: 600; }
-.input { width: 100%; padding: 12px 14px; background: #22262f; border: 1px solid #2a2f3a; border-radius: 8px; color: #f0f2f5; font-size: 15px; font-family: inherit; }
+.input { width: 100%; padding: 12px 14px; background: #22262f; border: 1px solid #2a2f3a; border-radius: 8px; color: #f0f2f5; font-size: 16px; font-family: inherit; }
 .input:focus { outline: none; border-color: #e63946; }
 canvas { display: block; width: 100%; height: 200px; background: #fff; border-radius: 8px; cursor: crosshair; touch-action: none; border: 2px dashed #2a2f3a; }
 .btn { padding: 14px 22px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; -webkit-tap-highlight-color: transparent; }
@@ -247,32 +247,42 @@ function renderSignaturePage(h) {
   initCanvas();
 }
 
-let ctx, canvas, drawing = false, hasDrawing = false;
-function initCanvas() {
-  canvas = document.getElementById('sig-canvas');
-  // Sizing : ratio device pixel pour signature nette
+let ctx, canvas, drawing = false, hasDrawing = false, strokeLen = 0, last = null;
+// Taille de la zone de dessin = sa taille à l'écran (bordure exclue), en pixels de l'appareil.
+// Recalculée quand on tourne le téléphone / redimensionne : le trait déjà fait est conservé.
+function sizeCanvas() {
   const ratio = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * ratio;
-  canvas.height = rect.height * ratio;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width === Math.round(w * ratio) && canvas.height === Math.round(h * ratio)) return;
+  const prev = hasDrawing ? canvas.toDataURL() : null;
+  canvas.width = Math.round(w * ratio);
+  canvas.height = Math.round(h * ratio);
   ctx = canvas.getContext('2d');
   ctx.scale(ratio, ratio);
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.strokeStyle = '#1a1d24';
+  if (prev) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, w, h); img.src = prev; }
+}
+function initCanvas() {
+  canvas = document.getElementById('sig-canvas');
+  sizeCanvas();
+  window.addEventListener('resize', sizeCanvas);
+  window.addEventListener('orientationchange', () => setTimeout(sizeCanvas, 300));
 
   const pos = e => {
     const r = canvas.getBoundingClientRect();
     const ev = e.touches ? e.touches[0] : e;
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    return { x: ev.clientX - r.left - canvas.clientLeft, y: ev.clientY - r.top - canvas.clientTop };
   };
 
   const start = e => {
     e.preventDefault();
     drawing = true;
-    hasDrawing = true;
     const p = pos(e);
+    last = p;
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
   };
@@ -282,6 +292,10 @@ function initCanvas() {
     const p = pos(e);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
+    // un simple tap n'est pas une signature : il faut un vrai trait
+    strokeLen += Math.hypot(p.x - last.x, p.y - last.y);
+    last = p;
+    if (strokeLen > 30) hasDrawing = true;
   };
   const end = () => { drawing = false; };
 
@@ -297,6 +311,7 @@ function initCanvas() {
 function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   hasDrawing = false;
+  strokeLen = 0;
 }
 
 async function submitSignature() {

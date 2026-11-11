@@ -447,7 +447,7 @@ function apCanEdit() { return !!CURRENT_USER && AP_EDIT_ROLES.includes(CURRENT_U
   .ap-sw span{width:22px;height:22px;border-radius:5px;cursor:pointer;border:2px solid transparent;box-sizing:border-box;}
   .ap-sw span.on{border-color:var(--text);}
   .ap-modal{position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px;}
-  .ap-modal .box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:16px 18px;color:var(--text);}
+  .ap-modal .box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;max-width:560px;width:100%;max-height:92vh;max-height:92dvh;overflow:auto;padding:16px 18px;color:var(--text);}
   .ap-modal label{display:block;font-size:11px;color:var(--text3);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.4px;}
   .ap-modal input[type=text],.ap-modal textarea,.ap-modal select{width:100%;box-sizing:border-box;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;}
   .ap-chk{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0;}

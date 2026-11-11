@@ -925,6 +925,11 @@ async function saveBriefing() {
 // ─── Impression ───
 async function printBriefing() {
   if (!CURRENT_BRIEFING || !CURRENT_PROJECT_ID) return;
+  // La fenêtre est ouverte tout de suite, dans le clic : ouverte après les attentes réseau,
+  // Safari (iPhone / iPad) la bloquait et « Imprimer » ne faisait rien (audit B3).
+  const w = window.open('', '_blank');
+  if (!w) { toast('Le navigateur a bloqué la fenêtre d’impression — autorise les fenêtres pour VEM', 'error'); return; }
+  w.document.write('<p style="font:16px Arial,sans-serif;padding:24px;">Préparation de l’impression…</p>');
   await saveBriefing();
   const projRes = await api('GET', `/projects/${CURRENT_PROJECT_ID}`);
   const proj = projRes?.data || {};
@@ -1067,7 +1072,7 @@ async function printBriefing() {
     ${(CURRENT_BRIEFING.slides||[]).map(s => `<div class="slide">${renderSlide(s)}</div>`).join('')}
     <script>setTimeout(()=>window.print(), 400);<\/script>
     </body></html>`;
-  const w = window.open('', '_blank');
+  if (w.closed) return;
   w.document.open(); w.document.write(html); w.document.close();
 }
 

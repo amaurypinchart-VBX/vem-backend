@@ -866,7 +866,7 @@
 
     <!-- INFOS GÉNÉRALES -->
     <div style="background:var(--bg3);border-radius:var(--radius);padding:14px;margin-bottom:14px;">
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
+      <div class="daily-head-grid" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
         <div class="form-group2" style="margin:0;"><label class="form-label2">Projet *</label><select class="input" id="daily-project" onchange="loadDailyTasks(this.value)"><option value="">— Sélectionner —</option></select></div>
         <div class="form-group2" style="margin:0;"><label class="form-label2">Date *</label><input class="input" type="date" id="daily-date"></div>
         <div class="form-group2" style="margin:0;"><label class="form-label2">Météo</label><select class="input" id="daily-weather"><option>☀️ Ensoleillé</option><option>⛅ Nuageux</option><option>🌧️ Pluie</option><option>❄️ Froid</option><option>🌩️ Orage</option></select></div>
@@ -1004,7 +1004,7 @@
     </div>
 
     <!-- NOTES + PHOTOS -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+    <div class="r-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
       <div class="form-group2" style="margin:0;">
         <label class="form-label2">Notes générales / Résumé</label>
         <textarea class="input" id="daily-notes" rows="3" placeholder="Résumé, incidents, points importants..."></textarea>
@@ -1391,6 +1391,7 @@
 <script src="js/13-briefing-studio-slides.js"></script>
 <script src="js/14-briefing-autogen.js"></script>
 <link rel="stylesheet" href="css/briefing-next.css">
+<link rel="stylesheet" href="css/responsive.css">
 <script src="js/briefing-next-model.js"></script>
 <script src="js/briefing-next-graphics.js"></script>
 <script src="js/briefing-next.js"></script>
@@ -1399,5 +1400,6 @@
 <script src="js/17-whatsapp-import.js"></script>
 <script src="js/18-info-requests.js"></script>
 <script src="js/19-assembly-plan.js"></script>
+<script src="js/20-mobile-ui.js"></script>
 </body>
 </html>

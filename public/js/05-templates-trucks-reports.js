@@ -111,7 +111,7 @@ function showNewTemplateModal(catId='') {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function createTemplate(overlay) {
@@ -162,7 +162,7 @@ async function editTemplate(id, catId, title, priority, hours, phase) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function saveTemplate(id, overlay) {
@@ -202,7 +202,7 @@ function showNewCategoryModal() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function createCategory(overlay) {
@@ -367,7 +367,7 @@ async function openHandoverFull(id) {
       </div>
 
       <!-- Zones — terrain card format -->
-      <div style="max-height:50vh;overflow-y:auto;padding-right:4px;">
+      <div class="r-free" style="max-height:50vh;overflow-y:auto;padding-right:4px;">
         ${items.map((item, idx) => {
           const photos = item.photos || [];
           return `
@@ -406,7 +406,7 @@ async function openHandoverFull(id) {
       <!-- Signatures -->
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
         <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:12px;">✍️ Signatures</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="r-stack" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div>
             <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Site Manager — ${h.siteManager ? h.siteManager.firstName+' '+h.siteManager.lastName : 'N/A'}</div>
             ${h.managerSignedAt
@@ -434,7 +434,7 @@ async function openHandoverFull(id) {
         </div>
       </div>
 
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <div class="r-wrap" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
         <button class="btn btn-ghost btn-sm" onclick="editHandoverFields('${h.id}','${h.projectId||CURRENT_PROJECT_ID}')">✏️</button>
        <button class="btn btn-ghost btn-sm" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
@@ -443,7 +443,7 @@ async function openHandoverFull(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   loadHandoverChecklistSection(h.projectId, h.id);
   setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
 }
@@ -543,7 +543,7 @@ async function openTaskModal(taskId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 function switchTaskTab(el, tabId) {
@@ -654,7 +654,7 @@ function showImportTemplatesModal() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 let IMPORT_TEMPLATES_DATA = [];
@@ -929,7 +929,7 @@ async function openTruckDetail(truckId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function confirmTruckArrival(truckId, projectId, overlay) {

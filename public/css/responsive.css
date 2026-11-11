@@ -1,0 +1,116 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   TÉLÉPHONE / TABLETTE — phase M1 (docs/mobile/PROMPT_Refonte_Mobile_Tablette.md,
+   audit docs/mobile/AUDIT_Mobile_Tablette.md). Chargé après app.css et briefing-next.css.
+   Règle : au-dessus de 1180 px (ordinateur) rien ne change, sauf le bloc « Partout »
+   (corrections de bugs visibles sur tous les écrans).
+   La gestion des fenêtres (barre du bas masquée, page bloquée, retour arrière, pied
+   collant posé automatiquement) est dans js/20-mobile-ui.js.
+   Classes utilitaires posées sur les éléments écrits « en dur » dans les scripts :
+     .r-wrap   rangée flex qui passe à la ligne (≤ 1180 px)
+     .r-stack  grille / rangée → une colonne (≤ 768 px)
+     .r-free   liste à hauteur fixe qui défile → hauteur libre (≤ 768 px : une seule
+               zone qui défile par fenêtre)
+     .r-row2   ligne « case + titre + date + responsable » : date / responsable en 2ᵉ ligne
+     .r-filerow / .r-filename / .r-fileacts  ligne de fichier : actions en 2ᵉ ligne
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Partout ── */
+/* La colonne principale peut devenir plus étroite que son contenu le plus large
+   (onglets, rangées de boutons) : sinon iPad / portable < 1 290 px = page plus large
+   que l'écran (audit S2). Et rien ne fait plus glisser toute la page de côté (S1). */
+.main{min-width:0;overflow-x:clip;}
+/* Messages (toasts) au-dessus de tout : Studios, planning de montage (audit B4 / A1) */
+.toasts{z-index:2147483000;}
+/* Connexion centrée quand l'écran de connexion passe en flex (audit S12) */
+.login-wrap{width:100%;}
+/* Champs date / heure natifs lisibles sur fond sombre (audit S10) — pas dans Studio Next (clair) */
+input[type=date],input[type=time],input[type=datetime-local],input[type=month],input[type=week]{color-scheme:dark;}
+.bn input{color-scheme:light;}
+/* Barre du bas : un onglet masqué par le code (rôle, module caché) reste masqué (audit S6) */
+.bn-item[style*="display:none"],.bn-item[style*="display: none"]{display:none!important;}
+.bn-badge{position:absolute;top:-4px;right:-2px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:10px;font-weight:700;line-height:17px;text-align:center;}
+
+/* ── Tablette et téléphone (≤ 1180 px) ── */
+@media (max-width:1180px){
+  .card-header{flex-wrap:wrap;gap:8px;}
+  .sbar{flex-wrap:wrap;}
+  .sbar > .input{flex:1 1 150px;width:auto!important;min-width:0;}
+  .r-wrap{flex-wrap:wrap!important;}
+  /* .btn-xs n'avait pas de marge propre (héritait de 8 × 16 px) → rangées d'icônes trop larges (audit F1) */
+  .btn-xs{padding:4px 10px;}
+  /* Onglets du projet : léger fondu quand il en reste à droite (posé par 20-mobile-ui.js) */
+  .tabs.tabs-more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);}
+  /* Planning du dashboard : le Gantt défile dans sa carte, colonne des noms collante (audit P1) */
+  .cal-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;}
+  .cal-inner{min-width:calc(var(--cal-name) + 10px + var(--cal-days) * var(--cal-day));}
+  .cal-inner{--cal-day:16px;--cal-name:200px;}
+  .cal-row > :first-child{position:sticky;left:0;z-index:3;background:var(--bg2);}
+  .cal-row.cal-head > :first-child{background:var(--bg2);}
+}
+
+/* ── Doigt (écran tactile, quelle que soit la largeur) ── */
+@media (pointer:coarse){
+  /* le bouton assistant et la barre du bas sont masqués quand une fenêtre est ouverte */
+  body.has-sheet #assistant-widget{display:none!important;}
+}
+@media (max-width:1180px){
+  body.has-sheet #assistant-widget{display:none!important;}
+}
+
+/* ── Téléphone (≤ 768 px, même seuil que app.css) ── */
+@media (max-width:768px){
+  .r-stack{grid-template-columns:minmax(0,1fr)!important;}
+  .r-stack.r-flex,.r-col{flex-direction:column!important;align-items:stretch!important;}
+  .r-free{max-height:none!important;overflow:visible!important;}
+  /* listes à hauteur fixe dans les fenêtres (daily, nouveau projet) : une seule zone qui défile (audit M2) */
+  #daily-taskhours-list,#daily-entries-list,#daily-tasks-list,#ai-entries-list,
+  #er-taskhours-list,#edit-entries-list,#proj-team-selector,#proj-templates-selector,
+  #send-team-list{max-height:none!important;overflow:visible!important;}
+
+  /* Planning du dashboard : colonne des noms plus étroite */
+  .cal-inner{--cal-name:120px;--cal-day:24px;}
+
+  /* Ligne « case + titre + date + responsable » (nouveau projet, plusieurs tâches) (audit N1) */
+  .r-row2{flex-wrap:wrap!important;}
+  .r-row2 > label{flex:1 1 calc(100% - 40px)!important;white-space:normal!important;overflow:visible!important;}
+  .r-row2 > input[type=date],.r-row2 > select{flex:1 1 40%!important;width:auto!important;min-width:0;margin-left:26px;}
+  .r-row2 > select{margin-left:0;}
+  /* Ligne de fichier : nom sur toute la largeur, actions dessous (audit F1) */
+  .r-filerow{flex-wrap:wrap!important;row-gap:8px!important;}
+  .r-filerow > .r-filename{flex:1 1 calc(100% - 110px)!important;}
+  .r-filerow > .r-fileacts{flex:1 1 100%!important;justify-content:flex-end;flex-wrap:wrap;}
+  .ec-contact-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;}
+  .client-contact-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;}
+  /* Nouveau daily : projet sur toute la largeur, puis date / météo / ouvriers (audit M7) */
+  .daily-head-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;}
+  .daily-head-grid > :first-child{grid-column:1 / -1;}
+
+  /* Bouton assistant au-dessus de la barre du bas (audit S5) */
+  #assistant-fab{bottom:calc(78px + env(safe-area-inset-bottom))!important;right:14px!important;}
+  #assistant-panel{bottom:calc(140px + env(safe-area-inset-bottom))!important;right:10px!important;max-height:calc(100dvh - 200px)!important;}
+  /* Visionneuse d'image : « Télécharger » au-dessus de la zone du pouce / de l'indicateur iPhone */
+  .file-viewer-overlay a[download]{bottom:calc(20px + env(safe-area-inset-bottom))!important;}
+
+  /* ── Fenêtres ouvertes (body.has-sheet, posé par 20-mobile-ui.js) ── */
+  body.has-sheet .bottom-nav,body.has-sheet .fab-menu{display:none!important;}
+  .overlay{overscroll-behavior:contain;}
+  /* plus de marge de 110 px pour la barre du bas : elle est masquée */
+  body.has-sheet .modal{padding-bottom:calc(16px + env(safe-area-inset-bottom))!important;max-height:calc(100dvh - 24px)!important;}
+  /* en-tête : marges = marges de la fenêtre (sinon la feuille « tangue » de côté, audit C3) */
+  .modal-head{margin:-18px -16px 12px!important;padding:14px 16px 10px!important;top:-18px!important;}
+  .modal-close{width:40px;height:40px;font-size:20px;flex-shrink:0;}
+  /* pied collant : les boutons Enregistrer / Envoyer restent visibles (audit M3) */
+  body.has-sheet .modal > .modal-foot{
+    position:sticky!important;bottom:calc(-16px - env(safe-area-inset-bottom))!important;z-index:6;
+    margin:14px -16px calc(-16px - env(safe-area-inset-bottom))!important;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom))!important;
+    background:var(--bg2);border-top:1px solid var(--border);
+    display:flex!important;flex-wrap:wrap!important;gap:8px!important;justify-content:flex-end!important;align-items:center!important;
+  }
+  body.has-sheet .modal > .modal-foot > div{display:flex!important;flex-wrap:wrap!important;gap:8px!important;flex:1 1 auto;justify-content:flex-end;}
+  body.has-sheet .modal > .modal-foot .btn{flex:1 1 auto;justify-content:center;}
+}
+@media (max-width:420px){
+  .modal-head{margin:-14px -12px 12px!important;padding:12px 12px 10px!important;top:-14px!important;}
+  body.has-sheet .modal > .modal-foot{margin-left:-12px!important;margin-right:-12px!important;padding-left:12px!important;padding-right:12px!important;}
+}

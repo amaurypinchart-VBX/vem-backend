@@ -15,7 +15,7 @@ async function editHandoverInfo(id, clientName, clientEmail, notes, projectId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function saveHandoverInfo(id, projectId, overlay) {
@@ -362,7 +362,7 @@ async function sendVisitReport(visitId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // Highlight visuel du toggle FR/EN sur clic
   el.querySelectorAll('input[name="vsend-lang"]').forEach(r => {
@@ -1050,9 +1050,9 @@ function renderDetailFiles(projectId, files) {
   };
 
   el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div class="r-wrap" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px;">
       <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
-      <div style="display:flex;gap:8px;">
+      <div class="r-wrap" style="display:flex;gap:8px;">
         ${hasPlansAccess() ? `<button class="btn btn-ghost btn-sm" onclick="openPlansViewbox('${projectId}')" title="Analyser un modèle SketchUp exporté (.zip) et préparer les plans">📐 Plans Viewbox</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="showAddFileByUrlModal('${projectId}')" title="Ajouter un fichier via URL externe (GitHub, Drive...) — utile pour les fichiers > 20 Mo">🔗 URL</button>
         <label style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">
@@ -1109,10 +1109,10 @@ function renderDetailFiles(projectId, files) {
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">📎 Documents (${files.filter(f=>!isImage(f)).length})</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           ${files.filter(f=>!isImage(f)).map(f=>`
-            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);">
+            <div class="r-filerow" style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);">
               <input type="checkbox" class="pf-cb" value="${f.id}" onclick="updatePfSelCount()" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer;">
               <span style="font-size:28px;flex-shrink:0;">${fileIcon(f)}</span>
-              <div style="flex:1;min-width:0;">
+              <div class="r-filename" style="flex:1;min-width:0;">
                 <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.fileName||'Fichier'}</div>
                 <div style="font-size:11px;color:var(--text3);margin-top:2px;">${f.fileType||ext(f).toUpperCase()} · ${f.fileSize?Math.round(f.fileSize/1024)+'KB':''}</div>
               </div>
@@ -1120,7 +1120,7 @@ function renderDetailFiles(projectId, files) {
                 <button class="btn btn-ghost btn-xs" style="padding:1px 6px;" onclick="moveProjectFile('${f.id}','up','${projectId}')" title="Monter">▲</button>
                 <button class="btn btn-ghost btn-xs" style="padding:1px 6px;" onclick="moveProjectFile('${f.id}','down','${projectId}')" title="Descendre">▼</button>
               </div>
-              <div style="display:flex;gap:6px;flex-shrink:0;">
+              <div class="r-fileacts" style="display:flex;gap:6px;flex-shrink:0;">
                 ${is3D(f) ? `<button class="btn btn-primary btn-xs" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${projectId}')" title="Ouvrir dans le viewer 3D (mesures, photos, dimensions)">🎮 Voir en 3D</button>` : ''}
                 <a href="${f.fileUrl}" target="_blank" class="btn btn-ghost btn-xs">👁️ Voir</a>
                 <a href="${f.fileUrl}" download class="btn btn-ghost btn-xs">⬇️</a>

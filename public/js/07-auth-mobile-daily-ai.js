@@ -122,7 +122,7 @@ function showForgotPassword() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   setTimeout(() => document.getElementById('forgot-email')?.focus(), 100);
 }
 
@@ -1106,8 +1106,10 @@ function updateDailySummary() {
 
 async function loadDetailDailyReports(projectId) {
   // check-list de montage / démontage : remplie au jour le jour, reprise dans le handover (js/15-checklists.js)
-  if (typeof loadChecklistCard === 'function') loadChecklistCard(projectId);
+  const cardDone = typeof loadChecklistCard === 'function' ? Promise.resolve(loadChecklistCard(projectId)).catch(() => {}) : null;
   const res = await api('GET', `/daily-reports?projectId=${projectId}`);
+  // la carte check-list (au-dessus) est en place avant la liste : la liste ne descend plus sous le doigt (audit P5)
+  if (cardDone) await cardDone;
   const el = document.getElementById('detail-daily-content');
   if (!res?.success) return;
   const btn = `<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:14px;"><button class="btn btn-ghost btn-sm" onclick="openWhatsAppImport('${projectId}')" title="Créer les rapports à partir d’une conversation WhatsApp exportée">💬 Importer WhatsApp</button><button class="btn btn-primary btn-sm" onclick="showModal('modal-daily')">+ Nouveau Rapport</button></div>`;
@@ -1132,11 +1134,14 @@ async function loadDetailDailyReports(projectId) {
 }
 
 async function openDailyDetail(id, projectId) {
-  const res = await api('GET', `/daily-reports/${id}`);
+  if (openDailyDetail._busy || document.getElementById('daily-view-overlay')) return; // double tap (audit M6)
+  openDailyDetail._busy = true;
+  let res;
+  try { res = await api('GET', `/daily-reports/${id}`); } finally { openDailyDetail._busy = false; }
   if (!res?.success) { toast('Rapport introuvable','error'); return; }
   const r = res.data;
   const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
-  const el = document.createElement('div'); el.className='overlay open';
+  const el = document.createElement('div'); el.className='overlay open'; el.id = 'daily-view-overlay';
   el.innerHTML = `
     <div class="modal" style="max-width:720px;">
       <div class="modal-head">
@@ -1183,7 +1188,7 @@ async function openDailyDetail(id, projectId) {
       <div id="dv-attachments-${r.id}" style="margin-bottom:14px;"></div>
 
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${r.id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="const o=this.closest('.overlay');deleteDailyReport('${r.id}').then(ok=>{if(ok)o.remove();})">🗑️ Supprimer</button>
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.overlay').remove();editDailyReport('${r.id}')">✏️ Modifier</button>
         <button class="btn btn-ghost btn-sm" onclick="downloadDailyPDF('${r.id}')">📄 PDF</button>
@@ -1192,7 +1197,7 @@ async function openDailyDetail(id, projectId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   if (typeof loadDailyAttachmentsBox === 'function') loadDailyAttachmentsBox(`dv-attachments-${r.id}`, r.id, r.projectId, false);
 }
 
@@ -1229,10 +1234,10 @@ async function loadDetailHandovers(projectId) {
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;" onclick="event.stopPropagation()">
           <span class="badge ${sc[h.status]||'badge-muted'}">${sl[h.status]||h.status}</span>
-          <div style="display:flex;gap:4px;">
+          <div class="r-wrap" style="display:flex;gap:4px;justify-content:flex-end;">
             <button class="btn btn-ghost btn-xs" onclick="openHandoverFull('${h.id}')">👁️ Ouvrir</button>
             <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${projectId}')">✏️ Modifier</button>
-            <button class="btn btn-ghost btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+            <button class="btn btn-ghost btn-xs" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
             <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
             <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteHandover('${h.id}')">🗑️</button>
           </div>

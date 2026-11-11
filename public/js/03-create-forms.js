@@ -283,6 +283,7 @@ function stopVoiceRecording() {
 }
 
 // ── LOAD TASKS FOR DAILY REPORT ──────────────────────────────
+let DAILY_TASKS_CACHE = { projectId: null, tasks: [] };
 async function loadDailyTasks(projectId) {
   const el = document.getElementById('daily-tasks-list');
   if (!el || !projectId) return;
@@ -290,10 +291,19 @@ async function loadDailyTasks(projectId) {
   el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Chargement...</div>';
   const res = await api('GET', `/tasks?projectId=${projectId}`);
   if (!res?.success || !res.data.length) {
+    DAILY_TASKS_CACHE = { projectId, tasks: [] };
     el.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:12px;">Aucune tâche dans ce projet</div>';
     return;
   }
-  const active = res.data.filter(t => t.status !== 'cancelled');
+  DAILY_TASKS_CACHE = { projectId, tasks: res.data };
+  renderDailyTasks();
+}
+// Redessine la liste depuis la dernière lecture (cocher / « en cours » ne la recharge plus :
+// elle passait par « Chargement... » et la fenêtre remontait sous le doigt).
+function renderDailyTasks() {
+  const el = document.getElementById('daily-tasks-list');
+  if (!el) return;
+  const active = DAILY_TASKS_CACHE.tasks.filter(t => t.status !== 'cancelled');
   const byStatus = { todo: [], in_progress: [], done: [], blocked: [] };
   active.forEach(t => { if(byStatus[t.status]) byStatus[t.status].push(t); });
 
@@ -330,13 +340,15 @@ function toggleTaskDone(taskId, currentStatus, checked) {
   }
   // Refresh visual
   const projectId = document.getElementById('daily-project').value;
-  if (projectId) loadDailyTasks(projectId);
+  if (projectId && DAILY_TASKS_CACHE.projectId === projectId) renderDailyTasks();
+  else if (projectId) loadDailyTasks(projectId);
 }
 
 function setTaskInProgress(taskId) {
   DAILY_TASK_UPDATES[taskId] = 'in_progress';
   const projectId = document.getElementById('daily-project').value;
-  if (projectId) loadDailyTasks(projectId);
+  if (projectId && DAILY_TASKS_CACHE.projectId === projectId) renderDailyTasks();
+  else if (projectId) loadDailyTasks(projectId);
 }
 
 // ── CREATE DAILY REPORT ──────────────────────────────────────
@@ -474,15 +486,27 @@ async function loadTaskTemplatesFromAPI() {
   TASK_TEMPLATES_DATA = data;
 }
 
+// Les photos s'AJOUTENT à celles déjà choisies : au téléphone, « Prendre une photo » une 2ᵉ fois
+// remplaçait la 1ʳᵉ (audit M9). ✕ sur une vignette = la retirer.
 function previewDailyPhotos(input) {
-  PENDING_DAILY_PHOTOS = Array.from(input.files);
+  PENDING_DAILY_PHOTOS = PENDING_DAILY_PHOTOS.concat(Array.from(input.files || []));
+  input.value = '';
+  renderDailyPhotosPreview();
+}
+function removeDailyPhoto(i) {
+  PENDING_DAILY_PHOTOS.splice(i, 1);
+  renderDailyPhotosPreview();
+}
+function renderDailyPhotosPreview() {
   const preview = document.getElementById('daily-photos-preview');
   const count = document.getElementById('daily-photos-count');
   if (!preview) return;
-  preview.innerHTML = PENDING_DAILY_PHOTOS.map(f => {
+  preview.querySelectorAll('img').forEach(img => URL.revokeObjectURL(img.src));
+  preview.innerHTML = PENDING_DAILY_PHOTOS.map((f, i) => {
     const url = URL.createObjectURL(f);
-    return `<div style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+    return `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
       <img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;">
+      <button type="button" onclick="removeDailyPhoto(${i})" title="Retirer cette photo" style="position:absolute;top:4px;right:4px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;font-size:15px;cursor:pointer;">✕</button>
     </div>`;
   }).join('');
   if (count) count.textContent = PENDING_DAILY_PHOTOS.length > 0 ? `${PENDING_DAILY_PHOTOS.length} photo(s) sélectionnée(s)` : '';
@@ -511,16 +535,20 @@ async function createDailyReport(send=false) {
 
   if (res?.success) {
     // Upload photos
+    let photosFailed = 0;
     if (PENDING_DAILY_PHOTOS.length) {
       toast(`Upload ${PENDING_DAILY_PHOTOS.length} photo(s)...`, 'info');
-      for (const file of PENDING_DAILY_PHOTOS) {
+      for (const original of PENDING_DAILY_PHOTOS) {
+        // réduite avant envoi comme les photos de check-list (4G chantier), réponse vérifiée (audit M9)
+        const file = typeof checklistShrinkPhoto === 'function' ? await checklistShrinkPhoto(original) : original;
         const fd = new FormData();
         fd.append('file', file);
         try {
-          await fetch(`${API}/upload/daily-photo/${res.data.id}`, {
+          const up = await fetch(`${API}/upload/daily-photo/${res.data.id}`, {
             method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd
           });
-        } catch {}
+          if (!up.ok) photosFailed++;
+        } catch { photosFailed++; }
       }
       PENDING_DAILY_PHOTOS = [];
     }
@@ -534,6 +562,7 @@ async function createDailyReport(send=false) {
       ));
     }
     toast(`Rapport sauvegardé ✅${taskUpdates.length?` · ${taskUpdates.length} tâche(s) mises à jour`:''}${PENDING_DAILY_PHOTOS.length?` · photos ajoutées`:''}`, 'success');
+    if (photosFailed) toast(`⚠️ ${photosFailed} photo(s) non envoyée(s) — ajoute-les depuis « Modifier le rapport »`, 'error');
     closeModal('modal-daily');
     resetDailyReport();
     if (send) sendDailyReport(res.data.id);
@@ -985,7 +1014,7 @@ function showProfile() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 function togglePasswordPanel(show) {
@@ -1165,6 +1194,6 @@ async function openClientDetail(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 

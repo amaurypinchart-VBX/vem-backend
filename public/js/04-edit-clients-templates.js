@@ -41,7 +41,7 @@ async function editClient(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{if(e.target===el)el.remove();});
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // Remplir la liste des contacts
   const list = document.getElementById('ec-contacts-list');
@@ -214,7 +214,7 @@ function openTemplateTasksModal() {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) closeTemplateTasksModal(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // On greffe le sélecteur HTML dans le modal en réutilisant la même logique
   // que loadProjTemplateSelector, mais en remplaçant les IDs pour ne pas
@@ -262,7 +262,7 @@ function buildTemplateSelectorInto(containerId, globalAssignId) {
           ${tasks.map((t, idx) => {
             const taskId = `tplmod_${stageId}_${idx}`;
             return `
-            <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;">
+            <div class="r-row2" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;">
               <input type="checkbox" class="proj-tpl-check" id="${taskId}"
                 data-title="${t.title.replace(/"/g,'&quot;')}"
                 data-stage="${stage}"
@@ -430,7 +430,7 @@ function loadProjTemplateSelector() {
             const taskId = `tpl_${stageId}_${idx}`;
             const defaultAssignee = t.assignees?.[0] || '';
             return `
-            <div class="tpl-task-row" id="row-${taskId}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;border:1px solid transparent;transition:all .15s;">
+            <div class="tpl-task-row r-row2" id="row-${taskId}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:8px;border:1px solid transparent;transition:all .15s;">
               <!-- Checkbox -->
               <input type="checkbox" class="proj-tpl-check" id="${taskId}"
                 data-title="${t.title.replace(/"/g,'&quot;')}"
@@ -536,7 +536,12 @@ function getSelectedProjTasks() {
 // EDIT / DELETE — DAILY REPORT
 // ═══════════════════════════════════════════════════════════
 async function editDailyReport(id) {
-  const res = await api('GET', `/daily-reports/${id}`);
+  // Un double tap ouvrait deux fenêtres identiques (mêmes id) : on modifiait la visible et
+  // on enregistrait la cachée (audit M6).
+  if (editDailyReport._busy || document.getElementById('daily-edit-overlay')) return;
+  editDailyReport._busy = true;
+  let res;
+  try { res = await api('GET', `/daily-reports/${id}`); } finally { editDailyReport._busy = false; }
   if (!res?.success) { toast('Rapport introuvable', 'error'); return; }
   const r = res.data;
   const entries = (r.entries||[]).sort((a,b)=>(a.entryTime||'').localeCompare(b.entryTime||''));
@@ -546,7 +551,7 @@ async function editDailyReport(id) {
   window._EDIT_PHASE = r.phase || null;
   window._EDIT_TASK_HOURS = (r.taskHours || []).map(t => ({...t}));
 
-  const el = document.createElement('div'); el.className='overlay open';
+  const el = document.createElement('div'); el.className='overlay open'; el.id = 'daily-edit-overlay';
   el.innerHTML = `
     <div class="modal" style="max-width:680px;">
       <div class="modal-head">
@@ -652,16 +657,16 @@ async function editDailyReport(id) {
       </div>
 
       <!-- Pièces jointes : fichiers + check-lists (js/16-daily-attachments.js) -->
-      <div id="er-attachments" style="margin-top:14px;"></div>
+      <div id="er-attachments" style="margin-top:14px;min-height:120px;"></div>
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteDailyReport('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="const o=this.closest('.overlay');deleteDailyReport('${id}').then(ok=>{if(ok)o.remove();})">🗑️ Supprimer</button>
         <button type="button" class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button type="button" class="btn btn-primary" onclick="saveDailyReport('${id}',this.closest('.overlay'))">💾 Sauvegarder</button>
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   renderEditEntries();
   renderEditTaskHoursGrid();
   if (typeof loadDailyAttachmentsBox === 'function') loadDailyAttachmentsBox('er-attachments', id, r.projectId, true);
@@ -1009,11 +1014,13 @@ async function saveDailyReport(id, overlay) {
   } else toast('Erreur mise à jour','error');
 }
 
+// Renvoie true si le rapport a été supprimé (les fenêtres ne se ferment qu'à ce moment-là, audit M8).
 async function deleteDailyReport(id) {
-  if (!confirm('Supprimer ce rapport ?')) return;
+  if (!confirm('Supprimer ce rapport ?')) return false;
   const res = await api('DELETE', `/daily-reports/${id}`);
-  if (res?.success) { toast('Rapport supprimé','warning'); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); }
-  else toast('Erreur suppression','error');
+  if (res?.success) { toast('Rapport supprimé','warning'); loadDailyReports(); if(CURRENT_PROJECT_ID) loadDetailDailyReports(CURRENT_PROJECT_ID); return true; }
+  toast('Erreur suppression','error');
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1163,7 +1170,7 @@ function showTaskFromMeetingModal(projectId) {
       <div id="meeting-tasks-draft" style="display:none;margin-top:14px;"></div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function parseMeetingWithAI(projectId, overlay) {

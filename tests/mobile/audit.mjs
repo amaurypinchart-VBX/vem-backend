@@ -23,6 +23,7 @@ import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { visitScreens } from './screens.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Playwright : celui installé avec le navigateur de l'environnement Claude Code s'il existe
@@ -49,12 +50,14 @@ const DEVICES = {
 const only = process.argv[2] ? process.argv[2].split(',') : Object.keys(DEVICES);
 
 // Une seule connexion pour tout le passage (la connexion est limitée à 10 essais / 15 min).
-const loginRes = await fetch(BASE + '/api/v1/auth/login', {
-  method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-});
-const login = (await loginRes.json()).data;
-if (!login?.token) throw new Error('Connexion impossible : ' + loginRes.status);
+// VEM_LOGIN_FILE = réponse de /auth/login déjà obtenue (la connexion est limitée à 10 essais / 15 min)
+const login = process.env.VEM_LOGIN_FILE
+  ? JSON.parse(fs.readFileSync(process.env.VEM_LOGIN_FILE, 'utf8')).data
+  : (await (await fetch(BASE + '/api/v1/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    })).json()).data;
+if (!login?.token) throw new Error('Connexion impossible (trop d’essais ? attendre 15 min ou VEM_LOGIN_FILE)');
 
 // ── Mesures faites dans la page ──
 function measure() {
@@ -74,7 +77,8 @@ function measure() {
     if (!r.width || !r.height || r.right <= vw + 2) continue;
     let p = el.parentElement, clipped = false;
     while (p && p !== document.body) {
-      if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(p).overflowX) && p.getBoundingClientRect().right <= vw + 2) { clipped = true; break; }
+      // « clip » (garde-fou de .main) ne compte pas : ce qui est coupé là est invisible et inatteignable
+      if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX) && p.getBoundingClientRect().right <= vw + 2) { clipped = true; break; }
       p = p.parentElement;
     }
     if (!clipped) over.push(el);
@@ -120,53 +124,7 @@ for (const name of only) {
     report[`${name} | ${key}`] = await page.evaluate(measure);
     await page.screenshot({ path: path.join(OUT, `${name}-${key}.png`) });
   };
-  const home = async () => { await page.goto(BASE + '/', { waitUntil: 'networkidle' }); await page.waitForTimeout(800); };
-
-  await home();
-  await snap('dashboard');
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await snap('dashboard-bas');
-  for (const pg of ['projects', 'tasks', 'daily', 'handover', 'templates', 'checklist-templates', 'clients', 'team', 'notifs']) {
-    await page.evaluate(p => goto(p), pg); await page.waitForTimeout(900);
-    await snap('page-' + pg);
-  }
-
-  const pid = await page.evaluate(() => (PROJECTS.find(p => /Audi/.test(p.name)) || PROJECTS[0])?.id);
-  await page.evaluate(id => openProject(id), pid); await page.waitForTimeout(1500);
-  await snap('projet-entete');
-  const tabs = await page.evaluate(() => [...document.querySelectorAll('#proj-tabs .tab')].filter(t => t.style.display !== 'none').map(t => t.textContent.trim()));
-  for (let i = 0; i < tabs.length; i++) {
-    await page.evaluate(i => [...document.querySelectorAll('#proj-tabs .tab')].filter(t => t.style.display !== 'none')[i].click(), i);
-    await page.waitForTimeout(1300);
-    await page.evaluate(() => document.getElementById('proj-tabs')?.scrollIntoView());
-    await snap('onglet-' + i + '-' + tabs[i].normalize('NFD').replace(/[^a-zA-Z]/g, '').slice(0, 14));
-  }
-
-  // fenêtres : [clé, code qui l'ouvre]
-  const DID = await page.evaluate(async () => (await api('GET', '/daily-reports'))?.data?.[0]?.id);
-  const flows = [
-    ['daily-nouveau', `showModal('modal-daily')`],
-    ['daily-lecture', `openDailyDetail('${DID}', '${pid}')`],
-    ['daily-edition', `editDailyReport('${DID}')`],
-    ['projet-nouveau', `showModal('modal-proj')`],
-    ['tache-nouvelle', `showModal('modal-task')`],
-    ['handover-nouveau', `showModal('modal-handover')`],
-    ['checklist-liste', `openChecklistFull('${pid}', 'installation', 'list')`],
-    ['checklist-diaporama', `openChecklistFull('${pid}', 'installation', 'slide')`],
-    ['whatsapp', `openWhatsAppImport('${pid}')`],
-    ['demande-infos', `openInfoRequestModal('${pid}')`],
-    ['planning-montage', `(async () => { await loadAssemblyPlanCard('${pid}'); if (AP.plans[AP.phase]) openAssemblyPlanEditor(); else await apCreate('template'); })()`],
-  ];
-  for (const [key, code] of flows) {
-    await home();
-    await page.evaluate(id => openProject(id), pid); await page.waitForTimeout(1000);
-    try { await page.evaluate(code); } catch (e) { report[`${name} | ${key} | ERREUR`] = String(e).slice(0, 200); }
-    await page.waitForTimeout(1800);
-    await snap(key + '-haut');
-    await page.evaluate(() => {
-      document.querySelectorAll('.overlay.open, .overlay, .overlay .modal, .ap-ov, #clf-view').forEach(e => { e.scrollTop = 1e6; });
-    });
-    await snap(key + '-bas');
-  }
+  await visitScreens(page, BASE, snap, { onError: (key, e) => { report[`${name} | ${key} | ERREUR`] = String(e).slice(0, 200); } });
   report[`${name} | erreurs JS`] = errors;
   await ctx.close();
 }

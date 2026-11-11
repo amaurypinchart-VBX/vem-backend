@@ -937,7 +937,7 @@ async function editHandoverFields(handoverId, projectId) {
         <div style="background:var(--bg3);border-radius:10px;padding:14px;">
           <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">🔍 Points d'inspection (${h.items.length})</div>
           ${h.items.map(item => `
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;">
+            <div class="r-wrap" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:var(--bg2);border-radius:8px;">
               <select style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;width:130px;flex-shrink:0;"
                 onchange="updateHandoverItemStatus('${item.id}','${handoverId}',this.value)">
                 <option value="ok" ${item.status==='ok'?'selected':''}>✅ OK</option>
@@ -954,7 +954,7 @@ async function editHandoverFields(handoverId, projectId) {
 
       </div>
 
-      <div style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:8px;justify-content:flex-end;">
+      <div class="r-wrap" style="flex-shrink:0;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
 <button class="btn btn-ghost btn-sm" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',null).then(()=>downloadHandoverPdf('${handoverId}'))">💾 Sauv. & PDF</button>
         <button class="btn btn-primary" onclick="saveHandoverFields('${handoverId}','${projectId||h.projectId}',this.closest('.overlay'))">💾 Sauvegarder</button>
@@ -1111,7 +1111,7 @@ function renderProjTrucks() {
           style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:18px;flex-shrink:0;">✕</button>
       </div>
       <!-- Plaque + chauffeur + téléphone (sur une ligne) -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
+      <div class="r-stack" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
         <input placeholder="🪪 Immatriculation" value="${t.licensePlate||''}"
           style="padding:5px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"
           oninput="PROJ_TRUCKS[${idx}].licensePlate=this.value">
