@@ -206,6 +206,13 @@ paysage (reste le planning du dashboard, 84 px en portrait). Même cause sur un 
 portable de moins de ≈ 1 290 px** de large (ou une fenêtre réduite) quand la barre latérale est
 dépliée.
 
+**Boutons cachés** (nouvelle version de l'outil, passage iPhone 14 + iPad portrait) :
+- iPhone, nouveau daily : « + Ajouter » (ligne de journal) **sous l'onglet « ☰ Menu » de la barre
+  du bas** ; « 📤 Sauv. & Envoyer » coupé à droite (407 px pour un écran de 390).
+- iPhone, nouveau handover : « + Ajouter » **sous le bouton 🤖**.
+- iPad portrait, nouveau daily : « 💾 Sauvegarder » coupé à droite et « Sauv. & Envoyer »
+  inatteignable (la fenêtre hérite du débordement de la page).
+
 Erreurs JavaScript pendant tout le passage : aucune.
 
 ---
