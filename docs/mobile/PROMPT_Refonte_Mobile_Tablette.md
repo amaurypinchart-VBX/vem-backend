@@ -120,6 +120,30 @@ garder les réponses tapées après une erreur), X4 (pages publiques en 16 px).
 **Critère de fin M1** : `audit.mjs` = 0 débordement et 0 bouton caché sur les 6 appareils ; captures
 ordinateur identiques ; recette § 8 points 1 à 6 validée par A. Pinchart sur iPhone.
 
+### 4.5 État de M1 (11.11.2026)
+
+**Fait** (commit « Téléphone / tablette M1 ») : 4.1 en entier (`.main { min-width: 0 }` +
+`overflow-x: clip`, recherche / en-têtes de carte / rangées de boutons qui passent à la ligne,
+`.btn-xs`, grilles du daily, des contacts, des camions, des bookings, carte et vue handover,
+fichiers, lignes de tâches, planning du dashboard défilant avec noms collants, iPad = barre
+latérale en icônes par défaut) ; 4.2 (`20-mobile-ui.js` : `body.has-sheet`, page bloquée, plus
+aucune fermeture au tap sur le fond, une seule zone qui défile au téléphone, pied collant au
+téléphone, double ouverture du daily, contenu qui ne bouge plus, en-tête des fenêtres aligné,
+`dvh` dans l'envoi du planning de montage) ; 4.3 (historique, `#projet/<id>`) ; 4.4 : H1, M8, M9,
+S6, S7 (onglet actif), S10, S12, E3, C2, B3, B4 / A1 (toasts), X2, X4, et X3 (signature).
+
+**Résultat** (`tests/mobile/audit.mjs`) : 0 px de débordement sur iPhone 14, Android 360 et iPad
+portrait / paysage, sur toutes les pages, onglets et fenêtres ; 0 bouton d'action caché au
+téléphone (sur iPad, 3 signalements étaient des boutons plus bas dans une fenêtre qui défile,
+atteignables en défilant — l'outil ne les compte plus).
+Ordinateur (`desktop-shots.mjs`, 1440 et 1920) : identique au pixel, sauf les icônes calendrier /
+horloge des champs date / heure, désormais visibles (S10, voulu).
+
+**Reporté** : échelle complète des z-index (seuls les toasts sont remontés), pied collant sur
+tablette, S7 (deux ☰), S8, S11, S13, S14, M10, M11, P2, P4, N4 (analyse des temps), E1 (équipe en
+cartes), F3, F4, F6, A2, Studios (B1–B8), visionneuse 3D, Plan 2D Studio, planning public →
+M2 / M3 / M4.
+
 ## 5. Phase M2 — nouveau système visuel téléphone (≤ 640 px)
 
 Principe : **VEM au téléphone = l'outil du chantier**. On garde les couleurs (fond sombre, rouge
