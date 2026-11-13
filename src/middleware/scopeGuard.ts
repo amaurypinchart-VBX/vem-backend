@@ -94,6 +94,16 @@ const look = {
     const r = await db.projectChecklistPhoto.findUnique({ where: { id }, select: { item: { select: { checklist: { select: { projectId: true } } } } } }).catch(() => null);
     return r?.item?.checklist?.projectId ?? null;
   },
+  async roofPoint(id?: string) {
+    if (!id) return null;
+    const r = await db.roofCheckPoint.findUnique({ where: { id }, select: { roofCheck: { select: { projectId: true } } } }).catch(() => null);
+    return r?.roofCheck?.projectId ?? null;
+  },
+  async roofPhoto(id?: string) {
+    if (!id) return null;
+    const r = await db.roofCheckPhoto.findUnique({ where: { id }, select: { point: { select: { roofCheck: { select: { projectId: true } } } } } }).catch(() => null);
+    return r?.point?.roofCheck?.projectId ?? null;
+  },
   async clientProjects(clientId?: string): Promise<string[]> {
     if (!clientId) return [];
     const rows = await prisma.project.findMany({ where: { clientId }, select: { id: true } });
@@ -178,6 +188,15 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'GET', p: '/items/:itemId/logs', need: 'read', proj: async (p) => [await look.checklistItem(p.itemId)] },
     { m: 'PATCH', p: '/:checklistId', need: 'checklists', proj: async (p) => [await look.checklist(p.checklistId)] },
     { m: 'POST', p: '/:checklistId/validate', need: 'checklists', proj: async (p) => [await look.checklist(p.checklistId)] },
+  ],
+  // Plan de contrôle de l'étanchéité de toiture : se remplit comme la check-list (droit « check-lists »)
+  roofChecks: [
+    { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },
+    { m: 'POST', p: '/project/:projectId/points', need: 'checklists', proj: (p) => [p.projectId] },
+    { m: 'PATCH', p: '/points/:pointId', need: 'checklists', proj: async (p) => [await look.roofPoint(p.pointId)] },
+    { m: 'POST', p: '/points/:pointId/photos', need: 'checklists', proj: async (p) => [await look.roofPoint(p.pointId)] },
+    { m: 'DELETE', p: '/photos/:photoId', need: 'checklists', proj: async (p) => [await look.roofPhoto(p.photoId)] },
+    { m: 'GET', p: '/points/:pointId/logs', need: 'read', proj: async (p) => [await look.roofPoint(p.pointId)] },
   ],
   daily: [
     { m: 'GET', p: '/', need: 'read', list: true },

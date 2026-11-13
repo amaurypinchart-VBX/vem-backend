@@ -234,6 +234,7 @@ model Project {
   checklists       ProjectChecklist[]
   infoRequests     InfoRequest[]
   assemblyPlans    AssemblyPlan[]
+  roofChecks       RoofCheck[]
 
   @@map("projects")
 }
@@ -1072,6 +1073,7 @@ model ProjectChecklistItem {
   id             String                  @id @default(uuid())
   checklistId    String                  @map("checklist_id")
   templateItemId String?                 @map("template_item_id") // null = point ajouté manuellement
+  kind           String                  @default("standard") // standard | roofmap (son statut suit le plan de toiture)
   categoryName   String                  @map("category_name")    // copie
   label          String                                           // copie
   hint           String?
@@ -1461,4 +1463,92 @@ model AssemblyPlan {
 
   @@unique([projectId, phase])
   @@map("assembly_plans")
+}
+
+// ─── Contrôle des jonctions de toiture (plan de toiture cliquable, publié depuis Plans Viewbox) ───
+// Un contrôle par projet et phase ; le point « roofmap » de la check-list (checklist_item_id) suit son statut.
+// levels = schéma de chaque niveau [{ level, label, boxes: [{ id, label, c: [[x, z] × 4] }], above: [...] }] (mm, plan)
+model RoofCheck {
+  id              String           @id @default(uuid())
+  projectId       String           @map("project_id")
+  phase           String           @default("installation")
+  checklistItemId String?          @map("checklist_item_id") // point « roofmap » de la check-list (pas une relation)
+  enabled         Boolean          @default(true)
+  modelVersionId  String?          @map("model_version_id")
+  modelSha256     String?          @map("model_sha256")
+  config          Json             @default("{}")
+  levels          Json             @default("[]")
+  engineVersion   String?          @map("engine_version")
+  revision        Int              @default(0)
+  publishedById   String?          @map("published_by")
+  publishedAt     DateTime?        @map("published_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  points          RoofCheckPoint[]
+
+  @@unique([projectId, phase])
+  @@map("roof_checks")
+}
+
+model RoofCheckPoint {
+  id          String           @id @default(uuid())
+  roofCheckId String           @map("roof_check_id")
+  key         String
+  code        String
+  type        String // seam-long | seam-short | cross | tee | end | outer-corner | step | custom
+  level       Int
+  modules     Json             @default("[]")
+  geom        Json             @default("{}") // { at: { x, z, y? }, seg?: { a: [x, z], b: [x, z] }, lengthMm? }
+  label       String?
+  hint        String?
+  tasks       Json             @default("[]") // copie : [{ key, label }]
+  tasksDone   Json             @default("{}") @map("tasks_done")
+  minPhotos   Int              @default(1) @map("min_photos")
+  status      String           @default("pending") // pending | ok | partial | nok | na
+  comment     String?
+  covered     Boolean          @default(false) // sous une box de l'étage du dessus
+  excluded    Boolean          @default(false) // type de point non contrôlé sur ce projet
+  archived    Boolean          @default(false) // plus sur le plan (republication) : gardé, jamais supprimé
+  source      String           @default("model") // model | field (point libre posé sur chantier)
+  sortOrder   Int              @default(0) @map("sort_order")
+  version     Int              @default(0) // verrou optimiste
+  checkedById String?          @map("checked_by")
+  checkedAt   DateTime?        @map("checked_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  roofCheck   RoofCheck        @relation(fields: [roofCheckId], references: [id], onDelete: Cascade)
+  photos      RoofCheckPhoto[]
+  logs        RoofCheckLog[]
+
+  @@unique([roofCheckId, key])
+  @@index([roofCheckId])
+  @@map("roof_check_points")
+}
+
+model RoofCheckPhoto {
+  id           String         @id @default(uuid())
+  pointId      String         @map("point_id")
+  photoUrl     String         @map("photo_url")
+  publicId     String?        @map("public_id")
+  uploadedById String?        @map("uploaded_by")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  point        RoofCheckPoint @relation(fields: [pointId], references: [id], onDelete: Cascade)
+
+  @@index([pointId])
+  @@map("roof_check_photos")
+}
+
+model RoofCheckLog {
+  id         String         @id @default(uuid())
+  pointId    String         @map("point_id")
+  fromStatus String?        @map("from_status")
+  toStatus   String?        @map("to_status")
+  comment    String?
+  userId     String?        @map("user_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  point      RoofCheckPoint @relation(fields: [pointId], references: [id], onDelete: Cascade)
+
+  @@index([pointId])
+  @@map("roof_check_logs")
 }

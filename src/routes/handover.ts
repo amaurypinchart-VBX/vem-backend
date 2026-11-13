@@ -7,6 +7,7 @@ import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { checklistSummaries, handoverChecklist, checklistPdfData } from '../services/checklistService';
+import { withRoofCheck } from '../services/roofCheckService';
 import crypto from 'crypto';
 
 const router = Router();
@@ -284,7 +285,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklist: await withRoofCheck(h.projectId, checklistPdfData(await handoverChecklist(h.projectId))),
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -366,7 +367,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklist: await withRoofCheck(h.projectId, checklistPdfData(await handoverChecklist(h.projectId))),
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
@@ -387,12 +388,14 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
     if (!h) throw new AppError('Handover introuvable', 404);
 
     const summary = (await checklistSummaries([h.projectId])).get(h.projectId);
-    if (summary && (summary.criticalOpen > 0 || summary.pending > 0)) {
+    // pendingBlocking : le plan de contrôle de la toiture ne bloque que s'il est critique (choix fait dans chaque projet)
+    const pendingBlocking = summary ? summary.pendingBlocking ?? summary.pending : 0;
+    if (summary && (summary.criticalOpen > 0 || pendingBlocking > 0)) {
       const canForce = SIGNATURE_FORCE_ROLES.includes(req.user!.role);
       if (req.body?.force !== true || !canForce) {
         const parts = [
           summary.criticalOpen ? `${summary.criticalOpen} point(s) critique(s) non validé(s)` : '',
-          summary.pending ? `${summary.pending} point(s) « À vérifier »` : '',
+          pendingBlocking ? `${pendingBlocking} point(s) « À vérifier »` : '',
         ].filter(Boolean).join(' et ');
         return res.status(409).json({
           success: false,

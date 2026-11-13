@@ -9,6 +9,7 @@ import { prisma } from '../config/database';
 import { logger } from '../utils/logger';
 import { uploadToCloudinary, FILE_MAX_BYTES } from './cloudinaryService';
 import { loadProjectChecklist, checklistPdfData } from './checklistService';
+import { withRoofCheck } from './roofCheckService';
 import { generateDailyReportPdf, DailyAttachmentPdf, HandoverChecklistPdf } from './pdfService';
 
 const db = prisma as any; // modèle ajouté au schéma ; client typé régénéré au build Docker
@@ -72,7 +73,9 @@ export async function checklistSnapshot(projectId: string, phase: string) {
   const siteManagerName = team
     .filter((m: any) => String(m.role) === 'site_manager' || String(m.user?.role) === 'site_manager')
     .map((m: any) => `${m.user.firstName} ${m.user.lastName}`.trim()).join(', ') || null;
-  return { checklist: checklistPdfData(cl)!, siteManagerName, stats: cl.stats };
+  // montage : avec le plan de contrôle de l'étanchéité de toiture s'il est publié
+  const checklist = (await withRoofCheck(projectId, checklistPdfData(cl)!, phase))!;
+  return { checklist, siteManagerName, stats: cl.stats };
 }
 
 // ─── Assemblage du PDF final ───

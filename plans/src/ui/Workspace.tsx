@@ -1,5 +1,5 @@
 // Espace de travail d'un modèle analysé : Contrôle (inspecteur) · Vue 3D (isolation, captures) · Vues 2D (plans) ·
-// Planches · Étude structure · Loading liste.
+// Planches · Étude structure · Loading liste · Toiture (plan de contrôle de l'étanchéité, publié dans VEM).
 // Le modèle 3D (paquet GLB) n'est chargé qu'à l'ouverture d'un onglet qui en a besoin ; les Planches s'ouvrent sans lui
 // (consultation, vues relues du serveur) et le demandent seulement pour générer, recalculer ou utiliser un outil 3D.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -28,12 +28,13 @@ import { registerReleaser, startMemoryWatch } from '../linework/memory';
 import { bigModel, lowPowerDevice } from './useDevice';
 import { StructurePage } from './structure/StructurePage';
 import { LoadingPage } from './loading/LoadingPage';
+import { RoofCheckPage } from './roofCheck/RoofCheckPage';
 import { cleanModuleNumbers, resolveModuleLabels } from '../core/moduleNumbers';
 
 /** téléphone : une vue de plus de triangles n'est pas calculée ici sans le demander (iOS fermerait la page) */
 const HEAVY_TRIANGLES_PHONE = 80_000;
 
-type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure' | 'loading';
+type Tab = 'control' | '3d' | '2d' | 'sheets' | 'structure' | 'loading' | 'roof';
 
 interface Props {
   index: SceneIndex;
@@ -202,6 +203,9 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
           <button className={`tab ${tab === 'loading' ? 'active' : ''}`} onClick={() => open('loading')}>
             Loading liste
           </button>
+          <button className={`tab ${tab === 'roof' ? 'active' : ''}`} onClick={() => open('roof')} data-testid="tab-roof">
+            Toiture
+          </button>
         </nav>
       </div>
       {error && (
@@ -274,6 +278,11 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
       {scene && visited.has('structure') && (
         <div style={{ display: tab === 'structure' ? 'block' : 'none' }}>
           <StructurePage scene={scene} model={model} glassTest={glassTest} rules={rules} framesVersion={framesVersion} active={tab === 'structure'} provider={provider} />
+        </div>
+      )}
+      {scene && visited.has('roof') && (
+        <div style={{ display: tab === 'roof' ? 'block' : 'none' }}>
+          <RoofCheckPage scene={scene} model={model} moduleLabels={moduleLabels} framesVersion={framesVersion} active={tab === 'roof'} />
         </div>
       )}
       {scene && visited.has('loading') && (

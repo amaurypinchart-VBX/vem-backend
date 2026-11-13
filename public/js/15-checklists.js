@@ -568,6 +568,7 @@ async function openChecklistConfig(projectId, phase) {
   const libIds = new Set(lib.data.flatMap(c => (c.items || []).map(i => i.id)));
   const customs = [];
   for (const it of existing?.items || []) {
+    if (it.kind === 'roofmap') continue; // point du plan de toiture : toujours gardé, réglé depuis le plan (js/20-roof-check.js)
     const filled = it.status !== 'pending' || (it.photos || []).length > 0;
     if (it.templateItemId && libIds.has(it.templateItemId)) existingByTpl.set(it.templateItemId, { ...it, filled });
     // points ajoutés à la main, ou dont le modèle a été supprimé de la bibliothèque
@@ -901,7 +902,7 @@ function renderChecklistFull() {
         </div>
       </div>
     </div>
-    ${CLF.mode === 'slides' ? '<div id="cls-root"></div>' : `
+    ${CLF.mode === 'slides' ? `${typeof roofmapSlidesBannerHtml === 'function' ? roofmapSlidesBannerHtml() : ''}<div id="cls-root"></div>` : `
     <div style="max-width:900px;margin:0 auto;padding:14px 14px calc(40px + env(safe-area-inset-bottom));">
       <div id="clf-info"></div>
       <div id="clf-counters" style="margin:-4px 0 12px;"></div>
@@ -1021,6 +1022,8 @@ function checklistRowStyles() {
 }
 
 function checklistFullItemHtml(it) {
+  // point « plan de toiture » : son statut suit le plan (js/20-roof-check.js), on ouvre le plan au lieu des boutons
+  if (it.kind === 'roofmap' && typeof roofmapChecklistRowHtml === 'function') return roofmapChecklistRowHtml(it, CLF.projectId);
   checklistRowStyles();
   const canFill = checklistCanFill();
   const id = it.id;
@@ -1073,6 +1076,7 @@ function checklistDetailsOpen(it) {
 
 /** Met à jour un point affiché sans le recréer (le champ commentaire garde le focus pendant la saisie). */
 function updateChecklistItemView(id) {
+  if (CLF?.items.get(id)?.kind === 'roofmap') return; // ligne dessinée par roofmapChecklistRowHtml
   if (CLF?.mode === 'slides') { updateChecklistSlideView(id); return; }
   const el = document.getElementById(`clf-item-${id}`);
   const it = CLF?.items.get(id);
@@ -1587,7 +1591,8 @@ function checklistSlideStyles() {
 /** Construit la série de cartes selon le filtre (À traiter / Problèmes / Tout), à partir du premier point « À vérifier ». */
 function checklistSlideBuildDeck(startId) {
   const match = CHECKLIST_FILTERS[CLF.filter].match;
-  const ids = CLF.order.filter(id => match(CLF.items.get(id)));
+  // le point « plan de toiture » ne se glisse pas : il a sa bannière au-dessus des cartes
+  const ids = CLF.order.filter(id => match(CLF.items.get(id)) && CLF.items.get(id).kind !== 'roofmap');
   let index = startId ? ids.indexOf(startId) : ids.findIndex(id => CLF.items.get(id).status === 'pending');
   if (index < 0) index = 0;
   CLF.slide = { ids, index, busy: false };

@@ -291,6 +291,15 @@ export interface LoadingListRecord {
 
 export const STRUCTURE_STOCK_KEY = 'plans.structure.stock';
 
+/** Plan de toiture tel que VEM le renvoie (src/services/roofCheckService.ts loadRoofCheckView). */
+export interface RoofCheckView {
+  roofCheck: { id: string; revision: number; publishedAt: string | null; publishedBy: VemUser | null; enabled: boolean; modelVersionId: string | null } | null;
+  config: { critical: boolean | null; includeCovered: boolean };
+  points: Array<{ id: string; key: string; code: string; type: string; level: number; status: string; source: string; photos: unknown[] }>;
+  summary: { status: string; total: number; closed: number; problems: number; percent: number; comment: string } | null;
+  perms: { canConfigure: boolean; canFill: boolean; canPublish: boolean };
+}
+
 export const vem = {
   project: (id: string) => api<Project>('GET', `/projects/${id}`),
   projectFiles: (id: string) => api<ProjectFile[]>('GET', `/projects/${id}/files`),
@@ -317,6 +326,9 @@ export const vem = {
   /** peinture : opérations fusionnées par id côté serveur ; renvoie la peinture à jour */
   patchPaint: (id: string, ops: unknown[]) => api<unknown>('PATCH', `/plans/models/${id}/paint`, { ops }),
   me: () => api<VemUser>('GET', '/auth/me'),
+  /** plan de contrôle de l'étanchéité de toiture (publié depuis l'onglet Toiture, rempli dans VEM) */
+  roofCheck: (projectId: string) => api<RoofCheckView>('GET', `/roof-checks/project/${projectId}`),
+  publishRoofCheck: (projectId: string, body: unknown) => api<RoofCheckView>('POST', `/roof-checks/project/${projectId}/publish`, body),
   listDrawingSets: (projectId: string) => api<DrawingSetRecord[]>('GET', `/plans/project/${projectId}/drawing-sets`),
   getDrawingSet: (id: string) => api<DrawingSetRecord>('GET', `/plans/drawing-sets/${id}`),
   createDrawingSet: (projectId: string, body: { title: string; modelVersionId?: string | null; data: unknown }) =>

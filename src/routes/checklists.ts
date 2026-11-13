@@ -75,6 +75,12 @@ async function itemWithAccess(req: AuthRequest, itemId: string) {
   return item;
 }
 
+/** Point « plan de contrôle de la toiture » : son statut suit le plan de toiture (src/routes/roofChecks.ts). */
+const isRoofmap = (it: { kind?: string | null }) => it.kind === 'roofmap';
+function refuseRoofmap(it: { kind?: string | null }): void {
+  if (isRoofmap(it)) throw new AppError('Ce point se remplit sur le plan de toiture (bouton « 💧 Ouvrir le plan de toiture »).', 400);
+}
+
 // Le rôle client n'a accès à rien ici (la page de signature publique passe par le handover).
 router.use((req: AuthRequest, _res: Response, next: NextFunction) => {
   if (req.user?.role === 'client') return next(new AppError('Permission insuffisante', 403));
@@ -411,6 +417,7 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
     for (const c of customInput) {
       if (!c.id) continue;
       const it = existingItems.find((e) => e.id === c.id);
+      if (it && isRoofmap(it)) continue; // le point du plan de toiture ne se modifie pas ici
       if (!it || isLinked(it)) throw new AppError(`Point spécifique introuvable dans cette check-list (${c.id})`, 400);
       customById.set(c.id, c);
     }
@@ -419,6 +426,8 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
     const removed: any[] = [];
     const linkedKept = new Set<string>();
     for (const it of existingItems) {
+      // le point du plan de toiture est toujours gardé (il se désactive depuis le plan de toiture)
+      if (isRoofmap(it)) { kept.push(it); continue; }
       const keep = isLinked(it)
         ? selected.has(it.templateItemId) && !linkedKept.has(it.templateItemId)
         : customById.has(it.id);
@@ -455,7 +464,10 @@ router.post('/project/:projectId/configure', async (req: AuthRequest, res: Respo
     type Entry = { catRank: number; categoryName: string; itemRank: number; existing?: any; create?: Record<string, unknown>; update?: Record<string, unknown> };
     const entries: Entry[] = [];
     for (const it of [...kept].sort((a, b2) => a.sortOrder - b2.sortOrder)) {
-      if (isLinked(it)) {
+      if (isRoofmap(it)) {
+        // à la fin des points de bibliothèque de sa catégorie, avant les points spécifiques
+        entries.push({ catRank: catRankOf(it.categoryName), categoryName: it.categoryName, itemRank: 50000 + it.sortOrder, existing: it });
+      } else if (isLinked(it)) {
         const t = templates.get(it.templateItemId)!;
         entries.push({ catRank: t.catRank, categoryName: it.categoryName, itemRank: t.itemRank, existing: it });
       } else {
@@ -531,6 +543,7 @@ router.patch('/items/:itemId', async (req: AuthRequest, res: Response, next: Nex
   try {
     requireRoles(req, FILL_ROLES, 'remplir la check-list');
     const item = await itemWithAccess(req, req.params.itemId);
+    refuseRoofmap(item);
     const b = req.body || {};
 
     const status = (b.status === undefined ? item.status : String(b.status)) as ChecklistStatus;
@@ -572,6 +585,7 @@ router.post('/items/:itemId/photos', upload.single('file'), async (req: AuthRequ
     if (!req.file) throw new AppError('Fichier manquant', 400);
     if (!req.file.mimetype.startsWith('image/')) throw new AppError('Seules les photos sont acceptées', 400);
     const item = await itemWithAccess(req, req.params.itemId);
+    refuseRoofmap(item);
     const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`, {}, { name: req.file.originalname, mime: req.file.mimetype });
     const photo = await db.projectChecklistPhoto.create({
       data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'photo', fileName: req.file.originalname || null, mimeType: req.file.mimetype },
@@ -588,6 +602,7 @@ router.post('/items/:itemId/documents', upload.single('file'), async (req: AuthR
     requireRoles(req, FILL_ROLES, 'ajouter un document');
     if (!req.file) throw new AppError('Fichier manquant ou type de fichier non accepté', 400);
     const item = await itemWithAccess(req, req.params.itemId);
+    refuseRoofmap(item);
     const { url, publicId } = await uploadToCloudinary(req.file.buffer, `checklists/${item.checklist.projectId}`, {}, { name: req.file.originalname, mime: req.file.mimetype });
     const doc = await db.projectChecklistPhoto.create({
       data: { itemId: item.id, photoUrl: url, publicId, uploadedById: req.user!.id, kind: 'document', fileName: req.file.originalname || 'document', mimeType: req.file.mimetype },

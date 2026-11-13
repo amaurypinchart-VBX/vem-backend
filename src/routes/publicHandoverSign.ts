@@ -9,6 +9,7 @@ import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { handoverChecklist, checklistPdfData, publicChecklist } from '../services/checklistService';
+import { withRoofCheck } from '../services/roofCheckService';
 
 const router = Router();
 
@@ -123,7 +124,7 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       clientSignatureUrl: signatureBase64,
       date: h.createdAt,
       lang: 'fr',
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklist: await withRoofCheck(h.projectId, checklistPdfData(await handoverChecklist(h.projectId))),
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed.pdf`, 'handover', null);
 

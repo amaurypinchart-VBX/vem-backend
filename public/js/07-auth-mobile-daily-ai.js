@@ -1107,6 +1107,8 @@ function updateDailySummary() {
 async function loadDetailDailyReports(projectId) {
   // check-list de montage / démontage : remplie au jour le jour, reprise dans le handover (js/15-checklists.js)
   if (typeof loadChecklistCard === 'function') loadChecklistCard(projectId);
+  // plan de contrôle de l'étanchéité de toiture (js/20-roof-check.js)
+  if (typeof loadRoofCheckCard === 'function') loadRoofCheckCard(projectId);
   const res = await api('GET', `/daily-reports?projectId=${projectId}`);
   const el = document.getElementById('detail-daily-content');
   if (!res?.success) return;

@@ -53,6 +53,7 @@ import checklistRoutes from './routes/checklists';
 import formationRoutes from './routes/formation';
 import infoRequestRoutes from './routes/infoRequests';
 import assemblyPlanRoutes from './routes/assemblyPlans';
+import roofCheckRoutes from './routes/roofChecks';
 import publicInfoRequestRoutes from './routes/publicInfoRequest';
 import { startInfoRequestScheduler } from './services/infoRequestService';
 
@@ -144,6 +145,8 @@ app.use(`${API}/handover`,       authMiddleware, scopeGuard('handover'), handove
 app.use(`${API}/checklists`,     authMiddleware, scopeGuard('checklists'), checklistRoutes);
 // Planning estimatif de montage / démontage (onglet Infos du projet)
 app.use(`${API}/assembly-plans`, authMiddleware, scopeGuard('assemblyPlans'), assemblyPlanRoutes);
+// Plan de contrôle de l'étanchéité de toiture (publié depuis Plans Viewbox, rempli sur chantier sans l'accès Plans)
+app.use(`${API}/roof-checks`,    authMiddleware, scopeGuard('roofChecks'), roofCheckRoutes);
 
 app.use(`${API}/daily-reports`,  authMiddleware, scopeGuard('daily'), dailyRoutes);
 app.use(`${API}/warehouse`,      authMiddleware, scopeGuard('warehouse'), warehouseRoutes);

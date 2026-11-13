@@ -78,6 +78,24 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.status.na':             'N.A.',
     'checklist.status.pending':        'À vérifier',
     'checklist.photos':                'Photos des points contrôlés',
+    'roof.title':                      'Étanchéité de toiture - plan de contrôle',
+    'roof.intro':                      'Chaque jonction, croisement, extrémité et angle de toiture est contrôlé et photographié sur chantier.',
+    'roof.summary':                    '{closed}/{total} points contrôlés',
+    'roof.col.code':                   'Repère',
+    'roof.col.point':                  'Point',
+    'roof.photos':                     'Photos des points de toiture',
+    'roof.covered':                    'sous l\'étage',
+    'roof.level0':                     'Rez-de-chaussée',
+    'roof.level':                      'Niveau {n}',
+    'roof.legend':                     'Vert = OK, orange = partiel, rouge = non fait, gris = à faire / N.A. ; pointillés = box de l\'étage du dessus.',
+    'roof.type.seam-long':             'Jonction grand côté',
+    'roof.type.seam-short':            'Jonction petit côté',
+    'roof.type.cross':                 'Croisement',
+    'roof.type.tee':                   'Jonction en T / en L',
+    'roof.type.end':                   'Extrémité de jonction',
+    'roof.type.outer-corner':          'Angle de toiture',
+    'roof.type.step':                  'Raccord d\'étage',
+    'roof.type.custom':                'Point ajouté',
     'checklist.recap':                 'Récapitulatif',
     'checklist.points':                'points',
     'checklist.criticalOpen':          '{n} point(s) critique(s) non validé(s)',
@@ -210,6 +228,24 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.status.na':             'N/A',
     'checklist.status.pending':        'To check',
     'checklist.photos':                'Photos of checked items',
+    'roof.title':                      'Roof waterproofing - inspection plan',
+    'roof.intro':                      'Every roof joint, crossing, joint end and roof corner is checked and photographed on site.',
+    'roof.summary':                    '{closed}/{total} points checked',
+    'roof.col.code':                   'Ref.',
+    'roof.col.point':                  'Point',
+    'roof.photos':                     'Photos of the roof points',
+    'roof.covered':                    'under the upper level',
+    'roof.level0':                     'Ground level',
+    'roof.level':                      'Level {n}',
+    'roof.legend':                     'Green = OK, orange = partial, red = not done, grey = to check / N/A; dashed = box of the level above.',
+    'roof.type.seam-long':             'Long-side roof joint',
+    'roof.type.seam-short':            'Short-side roof joint',
+    'roof.type.cross':                 'Crossing',
+    'roof.type.tee':                   'T / L junction',
+    'roof.type.end':                   'Joint end',
+    'roof.type.outer-corner':          'Roof corner',
+    'roof.type.step':                  'Upper level connection',
+    'roof.type.custom':                'Added point',
     'checklist.recap':                 'Summary',
     'checklist.points':                'items',
     'checklist.criticalOpen':          '{n} critical item(s) not validated',
@@ -427,6 +463,30 @@ export interface HandoverChecklistPdf {
     checkedAt?: Date | string | null;
     photos: Array<{ photoUrl: string }>;
   }>;
+  /** plan de contrôle de l'étanchéité de toiture (phase installation, publié) — voir roofCheckService.roofCheckPdfData */
+  roof?: RoofCheckPdf | null;
+}
+
+/** Plan de toiture dans les PDF de la check-list de montage (autonome, handover, daily report). */
+export interface RoofCheckPdf {
+  levels: Array<{ level: number; label: string; boxes: Array<{ id: string; label: string; c: Array<[number, number]> }>; above: Array<{ id: string; label: string; c: Array<[number, number]> }> }>;
+  points: Array<{
+    code: string;
+    type: string;
+    level: number;
+    label: string;
+    modules: string[];
+    lengthMm?: number | null;
+    status: string;
+    comment?: string | null;
+    covered: boolean;
+    source: string;
+    at: { x: number; z: number };
+    seg?: { a: [number, number]; b: [number, number] } | null;
+    checkedByName?: string | null;
+    checkedAt?: Date | string | null;
+    photos: Array<{ photoUrl: string }>;
+  }>;
 }
 
 const CHECKLIST_PDF_COLORS: Record<string, string> = { ok: GREEN, partial: AMBER, nok: RED, na: '#9aa1ad', pending: MUTED };
@@ -467,6 +527,10 @@ async function translateChecklist(cl: HandoverChecklistPdf, lang: Lang): Promise
     if (it.comment) texts.add(it.comment);
   }
   if (cl.notes) texts.add(cl.notes);
+  for (const p of cl.roof?.points || []) {
+    if (p.comment) texts.add(p.comment);
+    if (p.source === 'field') texts.add(p.label);
+  }
   const list = [...texts].filter(Boolean);
   if (!list.length) return;
   const translated = await translateTexts(list, lang);
@@ -478,6 +542,10 @@ async function translateChecklist(cl: HandoverChecklistPdf, lang: Lang): Promise
     it.comment = tr(it.comment);
   }
   cl.notes = tr(cl.notes);
+  for (const p of cl.roof?.points || []) {
+    p.comment = tr(p.comment);
+    if (p.source === 'field') p.label = tr(p.label) as string;
+  }
 }
 
 /**
@@ -647,6 +715,154 @@ function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<
     doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(8).text(`${t('checklist.na', lang).replace('{n}', String(na.length))} : `, X, doc.y, { continued: true, width: W })
       .font('Helvetica').text(na.map(it => s(it.label)).join(' ; '));
   }
+
+  if (cl.roof?.points?.length) renderRoofSection(doc, cl.roof, thumbs, lang);
+}
+
+/** Libellé d'un point du plan de toiture dans la langue du PDF (les libellés enregistrés sont en français). */
+function roofPointLabel(p: RoofCheckPdf['points'][number], names: Map<string, string>, lang: Lang): string {
+  if (lang === 'fr' || p.source === 'field') return s(p.label);
+  const mods = p.modules.map(m => names.get(m) || m).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const len = p.lengthMm && (p.type === 'seam-long' || p.type === 'seam-short') ? ` (${(p.lengthMm / 1000).toFixed(2)} m)` : '';
+  return s(`${t(`roof.type.${p.type}`, lang)} ${mods.join(' / ')}${len}`);
+}
+
+/**
+ * Plan de contrôle de l'étanchéité de toiture : par niveau, le schéma des box avec chaque point coloré par statut,
+ * puis le tableau des points et une photo par point. Toujours sur une nouvelle page.
+ */
+function renderRoofSection(doc: any, roof: RoofCheckPdf, thumbs: Map<number, Buffer[]>, lang: Lang) {
+  const BOTTOM = 790;
+  const X = 40;
+  const W = 515;
+  const statusLabel = (st: string) => t(`checklist.status.${st}`, lang);
+  const names = new Map<string, string>();
+  for (const l of roof.levels) for (const b of [...l.boxes, ...l.above]) names.set(b.id, b.label);
+  const closed = roof.points.filter(p => p.status === 'ok' || p.status === 'na').length;
+
+  doc.addPage();
+  sectionTitle(doc, t('roof.title', lang));
+  doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(t('roof.intro', lang), X, doc.y, { width: W });
+  doc.moveDown(0.3);
+  const totals = [t('roof.summary', lang).replace('{closed}', String(closed)).replace('{total}', String(roof.points.length)),
+    ...['ok', 'partial', 'nok', 'na', 'pending'].map(st => `${roof.points.filter(p => p.status === st).length} ${statusLabel(st)}`)].join('  ·  ');
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(9.5).text(totals, X, doc.y, { width: W });
+  doc.moveDown(0.2);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(7.5).text(t('roof.legend', lang), X, doc.y, { width: W });
+  doc.moveDown(0.5);
+
+  // ─── Schéma de chaque niveau ───
+  for (const lvl of roof.levels) {
+    const pts = roof.points.filter(p => p.level === lvl.level);
+    if (!pts.length) continue;
+    const all = [...lvl.boxes, ...lvl.above].flatMap(b => b.c).concat(pts.map(p => [p.at.x, p.at.z] as [number, number]));
+    const minX = Math.min(...all.map(p => p[0])), maxX = Math.max(...all.map(p => p[0]));
+    const minZ = Math.min(...all.map(p => p[1])), maxZ = Math.max(...all.map(p => p[1]));
+    const pad = 600;
+    const w = maxX - minX + 2 * pad, h = maxZ - minZ + 2 * pad;
+    const k = Math.min(W / w, 330 / h);
+    const ph = h * k;
+    if (doc.y + 18 + ph > BOTTOM) doc.addPage();
+    const title = roof.levels.length > 1 ? (lvl.level === 0 ? t('roof.level0', lang) : t('roof.level', lang).replace('{n}', String(lvl.level))) : '';
+    if (title) {
+      doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(title, X, doc.y);
+      doc.moveDown(0.2);
+    }
+    const ox = X + (W - w * k) / 2, oy = doc.y;
+    const px = (x: number) => ox + (x - minX + pad) * k, py = (z: number) => oy + (z - minZ + pad) * k;
+    doc.save();
+    doc.rect(X, oy, W, ph).lineWidth(0.5).strokeColor('#d5d9e0').stroke();
+    for (const b of lvl.boxes) {
+      doc.polygon(...b.c.map(q => [px(q[0]), py(q[1])])).lineWidth(0.8).fillAndStroke('#eef1f5', '#3b4252');
+      const c = b.c.reduce((acc, q) => [acc[0] + q[0] / 4, acc[1] + q[1] / 4], [0, 0]);
+      doc.fillColor('#9aa3b2').font('Helvetica').fontSize(7).text(s(b.label), px(c[0]) - 40, py(c[1]) + 6, { width: 80, align: 'center', lineBreak: false });
+    }
+    for (const b of lvl.above) {
+      doc.polygon(...b.c.map(q => [px(q[0]), py(q[1])])).lineWidth(0.8).dash(3, { space: 2 }).strokeColor('#5b6577').stroke().undash();
+    }
+    for (const p of pts) {
+      if (!p.seg) continue;
+      doc.moveTo(px(p.seg.a[0]), py(p.seg.a[1])).lineTo(px(p.seg.b[0]), py(p.seg.b[1]))
+        .lineWidth(2.2).lineCap('round').strokeColor(CHECKLIST_PDF_COLORS[p.status] || MUTED).stroke();
+    }
+    const r = 6;
+    for (const p of pts) {
+      const cx = px(p.at.x), cy = py(p.at.z);
+      doc.circle(cx, cy, r).lineWidth(0.8).fillAndStroke(CHECKLIST_PDF_COLORS[p.status] || MUTED, '#ffffff');
+      doc.fillColor('white').font('Helvetica-Bold').fontSize(4.6)
+        .text(s(p.code.replace(/^N\d+-/, '')), cx - r, cy - 2.4, { width: r * 2, align: 'center', lineBreak: false });
+    }
+    doc.restore();
+    doc.y = oy + ph + 8;
+    doc.x = X;
+  }
+
+  // ─── Tableau des points ───
+  const cols = [
+    { label: t('roof.col.code', lang), w: 48 },
+    { label: t('roof.col.point', lang), w: 182 },
+    { label: t('checklist.col.status', lang), w: 62 },
+    { label: t('checklist.col.comment', lang), w: 128 },
+    { label: t('checklist.col.checked', lang), w: 95 },
+  ];
+  const colX = cols.reduce<number[]>((acc, c, i) => [...acc, i ? acc[i - 1] + cols[i - 1].w : X], []);
+  const PAD = 4;
+  const tableHeader = () => {
+    const y = doc.y;
+    doc.rect(X, y, W, 16).fill('#1a1a2e');
+    cols.forEach((c, i) => doc.fillColor('white').font('Helvetica-Bold').fontSize(7.5).text(c.label, colX[i] + PAD, y + 4.5, { width: c.w - PAD * 2, lineBreak: false }));
+    doc.y = y + 16;
+  };
+  doc.moveDown(0.4);
+  if (doc.y + 40 > BOTTOM) doc.addPage();
+  tableHeader();
+  for (const p of roof.points) {
+    const label = roofPointLabel(p, names, lang) + (p.covered ? ` (${t('roof.covered', lang)})` : '');
+    const comment = s(p.comment || '');
+    const checked = p.checkedByName && p.status !== 'pending' ? `${s(p.checkedByName)}\n${p.checkedAt ? fmtChecklistDate(p.checkedAt, lang, true) : ''}` : '-';
+    doc.font('Helvetica').fontSize(8);
+    const rowH = Math.max(
+      doc.heightOfString(label, { width: cols[1].w - PAD * 2 }),
+      comment ? doc.heightOfString(comment, { width: cols[3].w - PAD * 2 }) : 0,
+      doc.fontSize(7.5).heightOfString(checked, { width: cols[4].w - PAD * 2 }),
+      13,
+    ) + PAD * 2;
+    if (doc.y + rowH > BOTTOM) { doc.addPage(); tableHeader(); }
+    const y = doc.y;
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(8).text(s(p.code), colX[0] + PAD, y + PAD, { width: cols[0].w - PAD * 2, lineBreak: false });
+    doc.fillColor(DARK).font('Helvetica').fontSize(8).text(label, colX[1] + PAD, y + PAD, { width: cols[1].w - PAD * 2 });
+    doc.roundedRect(colX[2] + PAD, y + PAD - 1, cols[2].w - PAD * 2, 12, 3).fill(CHECKLIST_PDF_COLORS[p.status] || MUTED);
+    doc.fillColor('white').font('Helvetica-Bold').fontSize(7).text(statusLabel(p.status), colX[2] + PAD, y + PAD + 2, { width: cols[2].w - PAD * 2, align: 'center', lineBreak: false });
+    if (comment) doc.fillColor('#3a3a3a').font('Helvetica').fontSize(8).text(comment, colX[3] + PAD, y + PAD, { width: cols[3].w - PAD * 2 });
+    doc.fillColor(MUTED).font('Helvetica').fontSize(7.5).text(checked, colX[4] + PAD, y + PAD, { width: cols[4].w - PAD * 2 });
+    doc.moveTo(X, y + rowH).lineTo(X + W, y + rowH).strokeColor('#e3e5ea').lineWidth(0.5).stroke();
+    doc.y = y + rowH;
+  }
+
+  // ─── Une photo par point, 4 par ligne ───
+  const withPhotos = roof.points.map((p, n) => ({ p, buf: (thumbs.get(-(n + 1)) || [])[0] })).filter(x => x.buf);
+  if (withPhotos.length) {
+    doc.moveDown(0.8);
+    if (doc.y + 20 + 110 > BOTTOM) doc.addPage();
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11).text(t('roof.photos', lang), X, doc.y);
+    doc.moveDown(0.4);
+    const CELL_W = 122, GAP = 9.6, TH_H = 88, LABEL_H = 20, CELL_H = LABEL_H + TH_H + 10;
+    for (let i = 0; i < withPhotos.length; i += 4) {
+      if (doc.y + CELL_H > BOTTOM) doc.addPage();
+      const y = doc.y;
+      withPhotos.slice(i, i + 4).forEach(({ p, buf }, k) => {
+        const x = X + k * (CELL_W + GAP);
+        doc.fillColor(CHECKLIST_PDF_COLORS[p.status] || MUTED).font('Helvetica-Bold').fontSize(7.5)
+          .text(`${s(p.code)} · ${statusLabel(p.status)}`, x, y, { width: CELL_W, lineBreak: false });
+        doc.fillColor(MUTED).font('Helvetica').fontSize(6.5).text(roofPointLabel(p, names, lang), x, y + 9, { width: CELL_W, height: 10, ellipsis: true, lineBreak: false });
+        try {
+          doc.image(buf, x, y + LABEL_H, { fit: [CELL_W, TH_H], align: 'center', valign: 'center' });
+        } catch { /* image illisible */ }
+      });
+      doc.y = y + CELL_H;
+      doc.x = X;
+    }
+  }
 }
 
 /** Traduit la check-list (hors français) et télécharge ses vignettes (2 par point, hors N.A.), par index de point. */
@@ -657,6 +873,10 @@ async function prepareChecklistForPdf(cl: HandoverChecklistPdf, lang: Lang): Pro
   cl.items.forEach((it, idx) => {
     if (it.status === 'na') return;
     (it.photos || []).slice(0, CHECKLIST_PDF_PHOTOS_PER_ITEM).forEach(p => wanted.push({ idx, url: p.photoUrl }));
+  });
+  // plan de toiture : la première photo de chaque point (clé -(n + 1) dans la même table)
+  (cl.roof?.points || []).forEach((p, n) => {
+    if (p.photos?.[0]) wanted.push({ idx: -(n + 1), url: p.photos[0].photoUrl });
   });
   const bufs = await fetchPdfThumbs(wanted.map(w => w.url), 'f_jpg,c_fill,w_480,h_360,q_auto:good');
   wanted.forEach((w, i) => {
