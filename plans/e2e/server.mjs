@@ -29,6 +29,19 @@ const project = {
   trucks: [{ loadingDate: '2026-10-01T06:00:00Z' }],
 };
 let failUploads = Number(process.env.FAIL_UPLOADS || 0);
+// plan de toiture publié (ROOF_STATUS=ok,partial… colore les premiers points d'une publication suivante)
+let roofCheck = { revision: 0, publishedAt: null, levels: [], points: [] };
+const roofView = () => {
+  const pts = roofCheck.points;
+  const closed = pts.filter((p) => p.status === 'ok' || p.status === 'na').length;
+  return {
+    roofCheck: roofCheck.publishedAt ? { id: 'RC1', revision: roofCheck.revision, publishedAt: roofCheck.publishedAt, publishedBy: null, enabled: true, modelVersionId: null } : null,
+    config: { critical: null, includeCovered: true },
+    points: pts,
+    summary: roofCheck.publishedAt ? { status: 'pending', total: pts.length, closed, problems: 0, percent: pts.length ? Math.round((closed / pts.length) * 100) : 0, comment: '' } : null,
+    perms: { canConfigure: true, canFill: true, canPublish: true },
+  };
+};
 // étude structure : bibliothèque en ligne et études
 const library = new Map();
 const studies = new Map();
@@ -200,6 +213,18 @@ http.createServer(async (req, res) => {
       const key = decodeURIComponent(a.slice('/settings/'.length));
       if (req.method === 'PUT') { appSettings.set(key, JSON.parse((await body(req)).toString()).value); return json(res, appSettings.get(key)); }
       return json(res, appSettings.has(key) ? appSettings.get(key) : null);
+    }
+    // plan de contrôle de l'étanchéité de toiture (src/routes/roofChecks.ts) : publication gardée en mémoire
+    if (a === '/roof-checks/project/p1' && req.method === 'GET') return json(res, roofView());
+    if (a === '/roof-checks/project/p1/publish' && req.method === 'POST') {
+      const b = JSON.parse((await body(req)).toString());
+      if ((b.expectedRevision ?? 0) !== roofCheck.revision) return json(res, { success: false, error: 'Le plan de toiture a été republié entre-temps.' }, 409);
+      const old = new Map(roofCheck.points.map((p) => [p.key, p]));
+      roofCheck = {
+        revision: roofCheck.revision + 1, publishedAt: new Date().toISOString(), levels: b.levels,
+        points: b.points.map((p) => ({ id: `RP-${p.key}`, key: p.key, code: p.code, type: p.type, level: p.level, status: old.get(p.key)?.status ?? 'pending', source: 'model', photos: [] })),
+      };
+      return json(res, roofView());
     }
     if (a === '/loading/rules' && req.method === 'GET') return json(res, [...loadingRules.values()]);
     if (a === '/loading/rules' && req.method === 'POST') {

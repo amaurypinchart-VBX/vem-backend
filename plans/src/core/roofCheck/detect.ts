@@ -47,6 +47,8 @@ export const ROOF_TOL = {
   height: 300,
   /** pas des sondes le long d'un côté de box du dessus (raccord d'étage) */
   step: 250,
+  /** distance libre voulue autour d'une pastille de raccord d'étage (sinon elle glisse le long de son côté) */
+  free: 700,
 };
 
 export interface RoofBox {
@@ -324,6 +326,24 @@ export function detectRoofPoints(boxes: RoofBox[], levelLabels: Readonly<Record<
           k = k2;
         }
       }
+    }
+
+    // un raccord d'étage tombe souvent pile sur le milieu d'une jonction (box du dessus alignée sur une box du
+    // dessous) : sa pastille glisse le long de son côté jusqu'à un endroit libre, pour pouvoir toucher les deux
+    for (const p of mine) {
+      if (p.type !== 'step' || !p.seg) continue;
+      const others = mine.filter((q) => q !== p).map((q): P2 => [q.at.x, q.at.z]);
+      const along = (t: number): P2 => [p.seg!.a[0] + (p.seg!.b[0] - p.seg!.a[0]) * t, p.seg!.a[1] + (p.seg!.b[1] - p.seg!.a[1]) * t];
+      const room = (q: P2) => Math.min(Infinity, ...others.map((o) => dist(o, q)));
+      if (room([p.at.x, p.at.z]) >= ROOF_TOL.free) continue;
+      let best = { t: 0.5, d: -1 };
+      for (const t of [0.3, 0.7, 0.2, 0.8, 0.4, 0.6, 0.12, 0.88]) {
+        const d = room(along(t));
+        if (d > best.d + 1) best = { t, d };
+        if (d >= ROOF_TOL.free) break;
+      }
+      const q = along(best.t);
+      p.at = { ...p.at, x: r1(q[0]), z: r1(q[1]) };
     }
 
     // codes et ordre de passage

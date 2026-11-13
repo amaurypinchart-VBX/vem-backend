@@ -162,6 +162,10 @@ async function openRoofCheck(projectId, pointId) {
   document.body.appendChild(view);
   document.querySelector('.bottom-nav')?.style.setProperty('display', 'none', 'important');
   document.getElementById('assistant-widget')?.style.setProperty('display', 'none');
+  // page du projet plus large que l'écran (barre du bas) : sur téléphone la vue plein écran s'élargirait avec elle
+  RCF.overflow = [document.documentElement.style.overflowX, document.body.style.overflowX];
+  document.documentElement.style.overflowX = 'hidden';
+  document.body.style.overflowX = 'hidden';
   rcRender();
   if (pointId) rcOpenPoint(pointId);
   // un autre téléphone peut remplir en même temps : relecture toutes les 30 s quand aucun point n'est ouvert
@@ -181,6 +185,7 @@ function closeRoofCheck() {
   clearInterval(RCF.poll);
   window.removeEventListener('resize', rcOnResize);
   const projectId = RCF.projectId;
+  if (!document.getElementById('checklist-full')) [document.documentElement.style.overflowX, document.body.style.overflowX] = RCF.overflow || ['', ''];
   RCF = null;
   document.getElementById('roof-check-full')?.remove();
   if (!document.getElementById('checklist-full')) {

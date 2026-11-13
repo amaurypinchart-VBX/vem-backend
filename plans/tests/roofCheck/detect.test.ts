@@ -84,6 +84,10 @@ describe('points de contrôle de toiture', () => {
     expect(steps).toHaveLength(1);
     expect(steps[0].modules).toEqual(['VBX-03', 'VBX-02']);
     expect(steps[0].lengthMm).toBeGreaterThan(5000);
+    // le raccord longe la jonction VBX-01 / VBX-02 : sa pastille ne recouvre pas celle de la jonction
+    const seam = n0.find((p) => p.type === 'seam-long')!;
+    expect(Math.hypot(steps[0].at.x - seam.at.x, steps[0].at.z - seam.at.z)).toBeGreaterThanOrEqual(700);
+    expect(steps[0].at.z).toBe(2500);
     // les angles de VBX-01 sont sous VBX-03
     expect(n0.filter((p) => p.type === 'outer-corner' && p.covered)).toHaveLength(2);
     expect(r.levels[0].above.map((b) => b.id)).toEqual(['VBX-03']);

@@ -826,6 +826,10 @@ async function openChecklistFull(projectId, phase = 'installation', mode) {
   view.id = 'checklist-full';
   view.style.cssText = 'position:fixed;inset:0;z-index:450;background:var(--bg);overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
   document.body.appendChild(view);
+  // page du projet plus large que l'écran (barre du bas) : sur téléphone la vue plein écran s'élargirait avec elle
+  CLF.overflow = [document.documentElement.style.overflowX, document.body.style.overflowX];
+  document.documentElement.style.overflowX = 'hidden';
+  document.body.style.overflowX = 'hidden';
   // la barre du bas (mobile) et l'assistant passeraient par-dessus la vue
   document.querySelector('.bottom-nav')?.style.setProperty('display', 'none', 'important');
   document.getElementById('assistant-widget')?.style.setProperty('display', 'none');
@@ -849,6 +853,7 @@ function closeChecklistFull() {
   if (unsaved && !confirm(`${unsaved} point(s) pas encore enregistré(s) (commentaire manquant ou erreur réseau).\n\nFermer quand même ?`)) return;
   Object.values(CLF.timers).forEach(clearTimeout);
   const projectId = CLF.projectId;
+  if (!document.getElementById('roof-check-full')) [document.documentElement.style.overflowX, document.body.style.overflowX] = CLF.overflow || ['', ''];
   CLF = null;
   document.getElementById('checklist-full')?.remove();
   document.querySelector('.bottom-nav')?.style.removeProperty('display');
@@ -1908,6 +1913,9 @@ function renderChecklistSlideEnd(root) {
   const done = !s.pending;
   const tile = (k, n) => `<div><b style="color:${CHECKLIST_STATUS[k].color};">${n}</b><span>${CHECKLIST_STATUS[k].short}</span></div>`;
   const deckEmpty = !CLF.slide.ids.length;
+  // le point « plan de toiture » ne se glisse pas : il se finit sur le plan (js/20-roof-check.js)
+  const roofPending = [...CLF.items.values()].some(x => x.kind === 'roofmap' && x.status === 'pending') ? 1 : 0;
+  const swipePending = s.pending - roofPending;
   root.innerHTML = `
     <div class="cls-wrap" style="padding-bottom:calc(40px + env(safe-area-inset-bottom));">
       <div class="cls-end">
@@ -1920,7 +1928,8 @@ function renderChecklistSlideEnd(root) {
         </div>
         <div class="cls-tiles">${tile('ok', s.ok)}${tile('partial', s.partial)}${tile('nok', s.nok)}${tile('na', s.na)}${tile('pending', s.pending)}</div>
         <div class="cls-end-btns">
-          ${s.pending ? `<button class="btn btn-primary" onclick="setChecklistFullFilter('todo')">▶ Continuer : ${s.pending} point(s) à vérifier</button>` : ''}
+          ${swipePending ? `<button class="btn btn-primary" onclick="setChecklistFullFilter('todo')">▶ Continuer : ${swipePending} point(s) à vérifier</button>` : ''}
+          ${roofPending ? `<button class="btn ${swipePending ? 'btn-ghost' : 'btn-primary'}" onclick="openRoofCheck(CLF.projectId)">💧 Finir le plan de toiture</button>` : ''}
           ${problems ? `<button class="btn ${s.pending ? 'btn-ghost' : 'btn-primary'}" onclick="setChecklistFullFilter('problems')">⚠️ Revoir les problèmes (${problems})</button>` : ''}
           <button class="btn btn-ghost" onclick="CLF.filter='all';checklistSlideBuildDeck(CLF.order[0]);renderChecklistSlides('in')">↺ Revoir tous les points</button>
           <button class="btn btn-ghost" onclick="setChecklistFullMode('list')">☰ Voir en liste</button>
