@@ -939,13 +939,11 @@ async function editHandoverFields(handoverId, projectId) {
         ${h.checklistSummary ? `
         <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
           <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">☑️ Check-list de montage</div>
-          <div class="form-group2" style="margin:0;">
-            <label class="form-label2">Place dans le PDF et sur la page de signature</label>
-            <select class="input" id="hf-checklistAnnex">
-              <option value="body" ${h.checklistAnnex ? '' : 'selected'}>Dans le document (après les zones inspectées)</option>
-              <option value="annex" ${h.checklistAnnex ? 'selected' : ''}>En annexe seulement (à la fin, après les signatures)</option>
-            </select>
-          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
+            <input type="checkbox" id="hf-checklistAnnex" ${h.checklistAnnex ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;flex-shrink:0;">
+            📎 Mettre la check-list en annexe du PDF (après les signatures)
+          </label>
+          <div style="font-size:12px;color:var(--text3);margin-top:6px;">Coché : un court rappel après les zones, la check-list complète à la fin. Pris en compte avec « 💾 Sauvegarder ».</div>
         </div>` : ''}
 
         <!-- Zones d'inspection -->
@@ -1024,7 +1022,7 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
     generalNotes: document.getElementById('hf-comments') ? (document.getElementById('hf-comments').value.trim() || null) : undefined,
     scopeOfWork: document.getElementById('hf-scope')?.value || null,
     // check-list de montage en annexe (absent quand le projet n'a pas de check-list)
-    checklistAnnex: document.getElementById('hf-checklistAnnex') ? document.getElementById('hf-checklistAnnex').value === 'annex' : undefined,
+    checklistAnnex: document.getElementById('hf-checklistAnnex') ? document.getElementById('hf-checklistAnnex').checked : undefined,
   });
   if (res?.success) {
     toast('Handover mis à jour ✅','success');
