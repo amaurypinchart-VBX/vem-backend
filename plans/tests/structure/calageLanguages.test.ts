@@ -132,6 +132,24 @@ describe('documents de calage en anglais et en allemand', () => {
       expect([...new Set(left)]).toEqual([]);
     }, 120000);
 
+  it('pistes pour le sol (madriers, plateau) : titres, résumés, détails et hypothèses traduits (rapport)', () => {
+    const left: string[] = [];
+    for (const bearing of [450, 800]) {
+      const inp = { ...calageInput(mods, { ...hyp450, bearingValue: bearing }, stock, true), blocks: nine };
+      const rem = calageRemedies(inp, computeCalage(inp)).filter((r) => r.key !== 'area' && r.key !== 'load' && r.key !== 'centre-blocks');
+      expect(rem.some((r) => r.key === 'sleepers' || r.key === 'sleepers-no-blocks')).toBe(true);
+      for (const lang of ['en', 'de'] as const) {
+        const re = frenchRe(lang);
+        for (const r of rem)
+          for (const t of [r.title, r.summary, ...r.details, ...r.notes]) {
+            const out = translate(lang, t);
+            if (re.test(out.replace(/\binformation\b/gi, '')) || (lang === 'en' && /[éèàçêôûœÉÈÀ]/.test(out))) left.push(`[${bearing} ${r.key} ${lang}] ${out}`);
+          }
+      }
+    }
+    expect([...new Set(left)]).toEqual([]);
+  }, 120000);
+
   it('textes corrigés le 09.11.2026 : matériau des blocs, solutions, avertissements, portance', () => {
     expect(translate('en', 'Bloc de calage bois massif c24 (dessiné dans le modèle)')).toBe('Packing block, solid timber C24 (drawn in the model)');
     expect(translate('en', 'Bloc de calage contreplaqué f40/30 non revêtu (dessiné dans le modèle)')).toBe('Packing block, uncoated plywood F40/30 (drawn in the model)');

@@ -3,9 +3,10 @@
 // sur des blocs bois 1 × 1 m, au-dessus du métro à 450 kg/m²).
 //
 // - `calageStacks` : pour chaque appui, les couches posées de la dalle (ou du sol) jusqu'à la Viewbox, de bas en
-//   haut — plaques de roulage, plaques sous le bloc, bloc bois, cales, vérin / pied, et l'élément de la Viewbox qui
-//   porte (rive UNP, traverses du plancher, angle, vérin) — avec leurs épaisseurs et la hauteur totale ; les appuis
-//   identiques sont regroupés. Les épaisseurs viennent du calage retenu et du dessin (bloc, vide au-dessus du bloc).
+//   haut — plaques de roulage, madriers de la solution retenue, plaques sous le bloc, bloc bois, cales, vérin / pied,
+//   et l'élément de la Viewbox qui porte (rive UNP, traverses du plancher, angle, vérin) — avec leurs épaisseurs et la
+//   hauteur totale ; les appuis identiques sont regroupés. Les épaisseurs viennent du calage retenu et du dessin
+//   (bloc, vide au-dessus du bloc).
 // - `zoneBudget` : poids de la dalle sous une Viewbox poste par poste (Viewbox pesée, objets portés type par type,
 //   public, report de charge des combinaisons, blocs, plaques, plaques de roulage) = le poids de la zone.
 // Fonctions pures ; mm, N.
@@ -20,11 +21,13 @@ const G = 9.81;
 export type GroundMode = 'jacks' | 'points' | 'pads' | 'rims';
 
 export interface StackLayer {
-  kind: 'roadway' | 'plate' | 'block' | 'packing' | 'jack' | 'foot';
+  kind: 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot';
   label: string;
   /** épaisseur (mm) ; null = inconnue (à préciser) */
   thickness: number | null;
   note?: string;
+  /** madriers de la solution retenue : coupés (sections côte à côte) ou vus en long dans la coupe */
+  section?: 'cut' | 'long';
 }
 
 export interface CalageStack {
@@ -73,6 +76,8 @@ export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickne
           thickness: roadwayThickness && roadwayThickness > 0 ? roadwayThickness : null,
           ...(roadwayThickness && roadwayThickness > 0 ? {} : { note: 'épaisseur à préciser' }),
         });
+      // madriers de la solution retenue (grille sous la rangée, plateau) : posés sur le sol, sous le bloc ou le pied
+      for (const l of c.chainBase.timber?.stack ?? []) layers.push({ kind: 'timber', label: l.label, thickness: l.thickness, section: l.section });
       // plaques : sous le bloc, ou sous le pied (de bas en haut : la dernière couche choisie est en bas)
       for (const l of [...c.layerList].reverse())
         layers.push({

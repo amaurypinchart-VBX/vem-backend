@@ -6,7 +6,8 @@
 // Tous les chiffres viennent du calcul (StudyRun, CalageResult) : le rapport ne fait que les mettre en page.
 // Fonction pure : pages SVG A4 (+ le plan de calage A3 fourni par l'appelant).
 import type { CalageResult, CalageType } from '../core/calage';
-import { CALAGE_LABELS } from './calageI18n';
+import { CALAGE_LABELS, TIMBER_LABELS, timberLegend } from './calageI18n';
+import { calagePlanFigure } from './planFigure';
 import type { Combination } from '../core/combos';
 import type { CalcRecord, Verdict } from '../core/records';
 import { verdictOf, worstVerdict } from '../core/records';
@@ -348,9 +349,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
     const stacks = withStack ? (c.stacks ?? []) : [];
     if (stacks.length) {
       const S = STACK_LABELS[inp.lang];
-      out.push({ t: 'para', text: S.stackTitle, bold: true, after: 0.6 });
-      out.push({ t: 'para', text: S.stackIntro, size: SIZE.small, color: GREY });
-      out.push({ t: 'figure', h: Math.ceil(stacks.length / 4) * 46, svg: stacksFigureSvg(stacks, inp.lang), caption: S.figure });
+      out.push({ t: 'para', text: c.slab ? S.stackTitle : S.stackTitleGround, bold: true, after: 0.6 });
+      out.push({ t: 'para', text: c.slab ? S.stackIntro : S.stackIntroGround, size: SIZE.small, color: GREY });
+      out.push({ t: 'figure', h: Math.ceil(stacks.length / 4) * 46, svg: stacksFigureSvg(stacks, inp.lang, !!c.slab), caption: S.figure });
       out.push({
         t: 'table',
         cols: [
@@ -828,6 +829,12 @@ export function buildReport(inp: ReportInput): ReportOutput {
       const r = c.remedy.remedy;
       blocks.push({ t: 'heading', level: 3, num: `3.${sec}.${++k}`, text: `${L.chosenSolution} : ${E(r.title)}` });
       blocks.push({ t: 'para', text: E(r.summary) });
+      // plan du calage retenu : madriers (un trait par joint), blocs / plaques par taux de travail, légende des couches
+      const T = TIMBER_LABELS[inp.lang];
+      const pieces = c.remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
+      const legendRows = timberLegend(inp.lang, pieces).length + (c.roadwayOn ? 1 : 0);
+      blocks.push({ t: 'figure', h: planHeight(mods.filter((m) => m.level === 0), 150, 120) + legendRows * 2.5 + 2, svg: calagePlanFigure(c, mods, inp.lang), caption: T.planCaption });
+      if (pieces.length) blocks.push({ t: 'bullets', items: [...timberLegend(inp.lang, pieces).map((l) => l.text), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid')] });
       if (r.details.length) blocks.push({ t: 'bullets', items: r.details.map(E) });
       if (r.notes.length) blocks.push({ t: 'bullets', size: SIZE.small, items: r.notes.map(E) });
       if (r.eta !== undefined) blocks.push({ t: 'eta', eta: r.eta });

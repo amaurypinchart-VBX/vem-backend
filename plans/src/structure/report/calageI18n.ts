@@ -420,3 +420,120 @@ export const LEVEL_LABELS: Record<Lang, LevelDocLabels> = {
     makeUpCol: '↑',
   },
 };
+
+// ─── madriers de la solution retenue (grille sous les rangées, plateau) : légende des plans, pose ───
+
+export interface TimberDocLabels {
+  /** titre de la partie « solution retenue » (fiche, plan des appuis) */
+  chosen: string;
+  /** légende du cartouche (plan de calage A3) */
+  legendShort: string;
+  /** légende de la figure du rapport */
+  planCaption: string;
+  /** couches, pour la légende des plans et la liste de pose (L = longueur « 6,90 m ») */
+  lowerPlatform: (count: number, b: number, h: number, L: string) => string;
+  upperPlatform: (rows: number, count: number, b: number, h: number, L: string) => string;
+  lowerGrid: (rows: string, count: number, b: number, h: number, L: string) => string;
+  upperGrid: (supports: number, count: number, b: number, h: number, L: string) => string;
+  laying: (system: 'grid' | 'platform') => string;
+  /** légende du plan des appuis (à la place de la teinte des plaques de roulage) */
+  coordsLegend: string;
+}
+
+const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
+
+export const TIMBER_LABELS: Record<Lang, TimberDocLabels> = {
+  fr: {
+    chosen: 'Solution retenue',
+    legendShort: 'Madriers C24 (solution retenue)',
+    planCaption: 'Plan du calage retenu : madriers dessinés à l’échelle (un trait fin par joint), blocs et plaques colorés par taux de travail, pression au sol à chaque appui',
+    lowerPlatform: (n, b, h, L) => `Madriers C24, couche du dessous : ${n} × ${b} × ${h} mm, L = ${L}, jointifs, en travers des rangées d’appuis`,
+    upperPlatform: (r, n, b, h, L) => `Couche du dessus : ${n} × ${b} × ${h} mm, L = ${L}, le long de chaque rangée d’appuis (${r} ${plural(r, 'rangée', 'rangées')})`,
+    lowerGrid: (rows, n, b, h, L) => `Madriers C24, couche du dessous${rows ? ` (${rows})` : ''} : ${n} × ${b} × ${h} mm, L = ${L}, jointifs le long de la rangée`,
+    upperGrid: (k, n, b, h, L) => `Répartiteurs : ${n} × ${b} × ${h} mm, L = ${L}, en travers sous chaque appui (${k} ${plural(k, 'appui', 'appuis')})`,
+    laying: (sys) =>
+      sys === 'platform'
+        ? 'Pose : sol réglé et compacté ; couche du dessous jointive (sans vide) ; couche du dessus vissée à la couche du dessous ; chaque bloc ou pied centré sur la couche du dessus de sa rangée.'
+        : 'Pose : sol réglé et compacté ; madriers jointifs le long de chaque rangée ; répartiteurs en travers sous chaque appui, vissés aux madriers du dessous ; chaque appui au milieu de la largeur.',
+    coordsLegend: 'Coordonnées depuis le coin bas gauche de l’installation (x vers la droite, y vers le haut, vue de dessus SketchUp). Blocs, plaques et madriers dessinés à l’échelle à leur place ; chaque trait fin dans les madriers = un joint entre deux madriers (sens de pose) ; légende sous le plan.',
+  },
+  de: {
+    chosen: 'Gewählte Lösung',
+    legendShort: 'Kanthölzer C24 (gewählte Lösung)',
+    planCaption: 'Plan der gewählten Unterpallung: Kanthölzer maßstäblich (eine dünne Linie je Fuge), Klötze und Platten nach Ausnutzung eingefärbt, Bodenpressung an jedem Auflager',
+    lowerPlatform: (n, b, h, L) => `Kanthölzer C24, untere Lage: ${n} × ${b} × ${h} mm, L = ${L}, fugenlos, quer zu den Auflagerreihen`,
+    upperPlatform: (r, n, b, h, L) => `Obere Lage: ${n} × ${b} × ${h} mm, L = ${L}, längs jeder Auflagerreihe (${r} ${plural(r, 'Reihe', 'Reihen')})`,
+    lowerGrid: (rows, n, b, h, L) => `Kanthölzer C24, untere Lage${rows ? ` (${rows})` : ''}: ${n} × ${b} × ${h} mm, L = ${L}, fugenlos längs der Reihe`,
+    upperGrid: (k, n, b, h, L) => `Querverteiler: ${n} × ${b} × ${h} mm, L = ${L}, quer unter jedem Auflager (${k} Auflager)`,
+    laying: (sys) =>
+      sys === 'platform'
+        ? 'Verlegen: Boden planiert und verdichtet; untere Lage fugenlos (ohne Lücken); obere Lage mit der unteren verschraubt; jeder Klotz oder Fuß mittig auf der oberen Lage seiner Reihe.'
+        : 'Verlegen: Boden planiert und verdichtet; Kanthölzer fugenlos längs jeder Reihe; Querverteiler unter jedem Auflager, mit der unteren Lage verschraubt; jedes Auflager in der Mitte der Breite.',
+    coordsLegend: 'Koordinaten ab der linken unteren Ecke der Anlage (x nach rechts, y nach oben, Draufsicht SketchUp). Klötze, Platten und Kanthölzer maßstäblich an ihrer Stelle; jede dünne Linie in den Kanthölzern = eine Fuge zwischen zwei Kanthölzern (Verlegerichtung); Legende unter dem Plan.',
+  },
+  en: {
+    chosen: 'Chosen solution',
+    legendShort: 'C24 sleepers (chosen solution)',
+    planCaption: 'Plan of the chosen packing: sleepers to scale (one thin line per joint), blocks and plates coloured by utilisation, ground pressure at each support',
+    lowerPlatform: (n, b, h, L) => `C24 sleepers, lower layer: ${n} × ${b} × ${h} mm, L = ${L}, butted, across the rows of supports`,
+    upperPlatform: (r, n, b, h, L) => `Upper layer: ${n} × ${b} × ${h} mm, L = ${L}, along each row of supports (${r} ${plural(r, 'row', 'rows')})`,
+    lowerGrid: (rows, n, b, h, L) => `C24 sleepers, lower layer${rows ? ` (${rows})` : ''}: ${n} × ${b} × ${h} mm, L = ${L}, butted along the row`,
+    upperGrid: (k, n, b, h, L) => `Cross spreaders: ${n} × ${b} × ${h} mm, L = ${L}, across under each support (${k} ${plural(k, 'support', 'supports')})`,
+    laying: (sys) =>
+      sys === 'platform'
+        ? 'Laying: ground levelled and compacted; lower layer butted (no gaps); upper layer screwed to the lower one; each block or foot centred on the upper layer of its row.'
+        : 'Laying: ground levelled and compacted; sleepers butted along each row; cross spreaders under each support, screwed to the lower layer; each support in the middle of the width.',
+    coordsLegend: 'Coordinates from the bottom-left corner of the installation (x to the right, y upwards, SketchUp top view). Blocks, plates and sleepers drawn to scale at their place; each thin line in the sleepers = a joint between two sleepers (laying direction); legend below the plan.',
+  },
+};
+
+/** Rangées « rangées 1, 3 » / « Reihen 1, 3 » / « rows 1, 3 ». */
+const rowsText = (lang: Lang, rows: number[]) => {
+  if (!rows.length) return '';
+  const w = { fr: ['rangée', 'rangées'], de: ['Reihe', 'Reihen'], en: ['row', 'rows'] }[lang];
+  return `${rows.length > 1 ? w[1] : w[0]} ${rows.join(', ')}`;
+};
+
+/** Pièces de madriers d'un contour (voir `TimberPiece` de calageRemedies, recopié pour ne pas dépendre du moteur). */
+export interface TimberPieceInfo {
+  layer: 'lower' | 'upper';
+  system: 'grid' | 'platform';
+  count: number;
+  b: number;
+  h: number;
+  length: number;
+  row?: number;
+  support?: string;
+}
+
+/**
+ * Lignes de légende des madriers (une par couche ; les contours identiques regroupés : rangées de même grille,
+ * répartiteurs de même section) dans la langue du document.
+ */
+export function timberLegend(lang: Lang, pieces: TimberPieceInfo[]): Array<{ layer: 'lower' | 'upper'; text: string }> {
+  const T = TIMBER_LABELS[lang];
+  const L = (mm: number) => `${num(lang, mm / 1e3, 2)} m`;
+  const groups = new Map<string, { p: TimberPieceInfo; rows: number[]; n: number }>();
+  for (const p of pieces) {
+    const k = [p.layer, p.system, p.count, p.b, p.h, Math.round(p.length / 10)].join('|');
+    const g = groups.get(k);
+    if (g) {
+      g.n++;
+      if (p.row !== undefined && !g.rows.includes(p.row)) g.rows.push(p.row);
+    } else groups.set(k, { p, rows: p.row !== undefined ? [p.row] : [], n: 1 });
+  }
+  const lowerGrids = [...groups.values()].filter((g) => g.p.layer === 'lower' && g.p.system === 'grid').length;
+  const out: Array<{ layer: 'lower' | 'upper'; text: string }> = [];
+  for (const { p, rows, n } of [...groups.values()].sort((a, b) => (a.p.layer === b.p.layer ? 0 : a.p.layer === 'lower' ? -1 : 1))) {
+    const text =
+      p.system === 'platform'
+        ? p.layer === 'lower'
+          ? T.lowerPlatform(p.count, p.b, p.h, L(p.length))
+          : T.upperPlatform(rows.length || n, p.count, p.b, p.h, L(p.length))
+        : p.layer === 'lower'
+          ? T.lowerGrid(lowerGrids > 1 ? rowsText(lang, rows.sort((a, b) => a - b)) : '', p.count, p.b, p.h, L(p.length))
+          : T.upperGrid(n, p.count, p.b, p.h, L(p.length));
+    out.push({ layer: p.layer, text });
+  }
+  return out;
+}

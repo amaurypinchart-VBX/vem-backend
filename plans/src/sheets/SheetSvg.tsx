@@ -416,7 +416,32 @@ function ViewportContent({
             data?.basis &&
             vp.overlays.calage.map((p) => {
               const pts = p.corners.map((c) => projectPoint(data.basis!, c));
-              return <path key={`p${p.id}`} d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))} fill={p.color} fillOpacity={0.28} stroke={p.color} strokeWidth={num(0.3 * s)} data-dxf="VBX-CALAGE" />;
+              const outline = (
+                <path
+                  key={`p${p.id}`}
+                  d={polyD(Float64Array.from([...pts.flatMap((q) => [q.x, q.y]), pts[0].x, pts[0].y]))}
+                  fill={p.color}
+                  fillOpacity={p.fillOpacity ?? 0.28}
+                  stroke={p.color}
+                  strokeWidth={num((p.dashed ? 0.4 : 0.3) * s)}
+                  strokeDasharray={p.dashed ? `${num(3 * s)} ${num(1.2 * s)}` : undefined}
+                  data-dxf="VBX-CALAGE"
+                />
+              );
+              if (!p.joints?.length) return outline;
+              // joints entre madriers : traits fins dans le sens de leur longueur
+              const d = p.joints
+                .map(([a, b]) => {
+                  const [qa, qb] = [projectPoint(data.basis!, a), projectPoint(data.basis!, b)];
+                  return `M${num(qa.x)} ${num(qa.y)}L${num(qb.x)} ${num(qb.y)}`;
+                })
+                .join('');
+              return (
+                <g key={`p${p.id}`}>
+                  {outline}
+                  <path d={d} fill="none" stroke={p.color} strokeWidth={num(0.13 * s)} data-dxf="VBX-CALAGE-MADRIERS" />
+                </g>
+              );
             })}
         </g>
         {data?.paint && <PaintTags paint={data.paint} s={s} k={k} toPaper={toPaper} rect={rect} />}
@@ -474,7 +499,7 @@ function CalageLabels({ plates, basis, toPaper }: { plates: NonNullable<NonNulla
   const w = (t: string, sz: number) => t.length * sz * 0.52;
   return (
     <g fontFamily={FONT_SANS} data-dxf="VBX-CALAGE">
-      {plates.map((p) => {
+      {plates.filter((p) => !p.noLabel).map((p) => {
         const a = projectPoint(basis, p.at);
         const c = toPaper(a.x, a.y);
         const ys = p.corners.map((q) => toPaper(projectPoint(basis, q).x, projectPoint(basis, q).y).y);

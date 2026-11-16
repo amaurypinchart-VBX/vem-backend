@@ -353,7 +353,7 @@ function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageRes
             Retirer (revenir aux plaques)
           </button>
           <div className="hint" style={{ width: '100%' }}>
-            {r.summary} Le plan, la vérification de chaque appui, le matériel, la fiche, le plan de calage A3 et le rapport sont calculés avec cette solution ; elle est revérifiée à chaque changement (charges, portance, raideur du sol).
+            {r.summary} Le plan, la vérification de chaque appui, le matériel, la fiche, le plan de calage A3 et le rapport sont calculés avec cette solution et la dessinent (madriers à l’échelle avec leurs joints, légende des couches, coupe du calage) ; elle est revérifiée à chaque changement (charges, portance, raideur du sol).
           </div>
         </div>
       )}
@@ -1455,7 +1455,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   );
 }
 
-/** Coupe du calage (de la dalle à la Viewbox) : croquis et couches de bas en haut, comme la fiche et le rapport. */
+/** Coupe du calage (de la dalle ou du sol à la Viewbox) : croquis et couches de bas en haut, comme la fiche et le rapport. */
 function StackCard({ result }: { result: CalageResult }) {
   const stacks = result.stacks ?? [];
   if (!stacks.length) return null;
@@ -1464,11 +1464,11 @@ function StackCard({ result }: { result: CalageResult }) {
   return (
     <div className="card" data-testid="calage-stack">
       <div className="card-head">
-        <h2>{S.stackTitle}</h2>
-        <span className="hint">ce qui est posé sur la dalle, couche par couche — repris dans la fiche de calage et le rapport</span>
+        <h2>{result.slab ? S.stackTitle : S.stackTitleGround}</h2>
+        <span className="hint">ce qui est posé sur {result.slab ? 'la dalle' : 'le sol'}, couche par couche — repris dans la fiche de calage et le rapport</span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <svg viewBox={`0 0 186 ${h}`} style={{ width: '100%', maxWidth: 760, background: '#fff' }} dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, 'fr')(0, 0, 186, h) }} />
+        <svg viewBox={`0 0 186 ${h}`} style={{ width: '100%', maxWidth: 760, background: '#fff' }} dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, 'fr', !!result.slab)(0, 0, 186, h) }} />
         <table className="list">
           <thead>
             <tr>

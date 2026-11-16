@@ -62,6 +62,13 @@ export interface CalagePlateSpec {
   corners: Vec3[];
   /** point d'attache de l'étiquette (centre du groupe d'appuis) */
   at: Vec3;
+  /** pas d'étiquette sur le plan (madriers, plaques de roulage : décrits dans la colonne de texte) */
+  noLabel?: boolean;
+  /** opacité du fond (défaut 0,28) et contour en tirets (plaques de roulage) */
+  fillOpacity?: number;
+  dashed?: boolean;
+  /** traits fins dans le contour (joints entre madriers), monde */
+  joints?: Array<[Vec3, Vec3]>;
 }
 
 /** Niveau du sol relevé sous un pied (plan de calage) : repère ▽ avec sa valeur et la rehausse à apporter. */

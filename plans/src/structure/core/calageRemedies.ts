@@ -9,7 +9,7 @@ import { C24, C24_BEAMS, checkLongrine } from './ground';
 import type { P2 } from './estimate';
 import { moduleAxes } from './placement';
 import type { CalcRecord } from './records';
-import { pressureText } from './spreading';
+import { checkChain, pressureText } from './spreading';
 import { fmtNumber } from './units';
 
 export type RemedyVerdict = 'ok' | 'fail' | 'study' | 'info';
@@ -33,16 +33,77 @@ export type AppliedRemedy =
   | { key: 'sleepers' | 'sleepers-no-blocks'; rows: SleeperRowDesign[] }
   | { key: 'platform' | 'platform-no-blocks'; over: number; lower: Beam; upper: Beam };
 
+/**
+ * Madriers d'un contour de la solution, pour les dessins : couche du dessous (posée sur le sol) ou du dessus (sous les
+ * appuis), nombre de pièces jointives dans le contour, section (b = largeur vue en plan, h = épaisseur), longueur et
+ * sens de la longueur en plan (les joints entre madriers sont dessinés dans ce sens).
+ */
+export interface TimberPiece {
+  layer: 'lower' | 'upper';
+  /** grille sous chaque rangée d'appuis, ou plateau continu */
+  system: 'grid' | 'platform';
+  count: number;
+  b: number;
+  h: number;
+  length: number;
+  /** sens de la longueur des madriers en plan (unitaire, monde x, z) */
+  dir: P2;
+  /** rangée d'appuis (1…) */
+  row?: number;
+  /** répartiteurs sous un appui (grille) */
+  support?: string;
+}
+
 /** Contour en plan d'une partie de la solution (monde x, z, mm), pour les plans. */
 export interface RemedyOutline {
   id: string;
   corners: [P2, P2, P2, P2];
   label: string;
   sub?: string;
+  /** madriers du contour (joints, légende) */
+  timber?: TimberPiece;
+}
+
+/**
+ * Joints entre madriers jointifs d'un contour (polygone convexe, monde) : segments parallèles à `dir` (sens de la
+ * longueur), espacés de `step` (largeur d'un madrier, ou un multiple pour alléger un petit dessin) depuis le bord.
+ */
+export function timberJoints(corners: P2[], dir: P2, step: number): Array<[P2, P2]> {
+  const n: P2 = [-dir[1], dir[0]];
+  const proj = corners.map((c) => c[0] * n[0] + c[1] * n[1]);
+  const [t0, t1] = [Math.min(...proj), Math.max(...proj)];
+  const out: Array<[P2, P2]> = [];
+  if (!(step > 0)) return out;
+  for (let k = 1; t0 + k * step < t1 - 1; k++) {
+    const tt = t0 + k * step;
+    const hits: P2[] = [];
+    corners.forEach((a, i) => {
+      const j = (i + 1) % corners.length;
+      const [da, db] = [proj[i] - tt, proj[j] - tt];
+      if ((da < 0 && db >= 0) || (da >= 0 && db < 0)) {
+        const f = da / (da - db);
+        hits.push([a[0] + f * (corners[j][0] - a[0]), a[1] + f * (corners[j][1] - a[1])]);
+      }
+    });
+    if (hits.length >= 2) out.push([hits[0], hits[1]]);
+  }
+  return out;
+}
+
+/** Couche de madriers sous un appui (coupe du calage), de bas en haut. */
+export interface TimberStackLayer {
+  layer: 'lower' | 'upper';
+  label: string;
+  /** épaisseur (mm) = hauteur du madrier */
+  thickness: number;
+  /** dans la coupe le long de la rangée : madriers coupés (sections côte à côte) ou vus en long */
+  section: 'cut' | 'long';
 }
 
 /** Ce que la solution appliquée apporte à chaque appui : pression au sol, taux du bois, libellé de l'étape. */
 export interface RemedySupport {
+  /** couches de madriers sous l'appui, de bas en haut (coupe du calage) */
+  stack: TimberStackLayer[];
   label: string;
   /** pression maxi au sol sous les madriers (N/mm²) et surface de la partie qui porte l'appui (mm²) */
   pressure: number;
@@ -84,6 +145,20 @@ const G = 9.81;
 function supportLoad(c: SupportCheck, withBlock = true): { Pk: number; PEd: number } {
   const w = withBlock && c.block ? c.block.massKg * G : 0;
   return { Pk: c.Rzk + w, PEd: c.REd + 1.35 * w };
+}
+
+/**
+ * Surface que l'appui charge réellement sur les madriers (mm, le long de la rangée × en travers), centrée sur la
+ * charge : avec son bloc, l'emprise efficace sous le bloc calculée par la chaîne de l'appui (diffusion à 45° dans la
+ * hauteur du bloc, limitée au bloc et centrée sur la résultante, B' = B − 2 e) — un bloc à fleur sous un vérin d'angle
+ * ne répartit que sur ≈ 2 × 15,5 cm, pas sur tout le bloc ; sans bloc, la platine du vérin ou le pied.
+ */
+export function loadedFootprint(c: SupportCheck, withBlock: boolean): [number, number] {
+  if (!withBlock || !c.block) return [c.geometry.contact[0], c.geometry.contact[1]];
+  const { timber: _t, ...base } = c.chainBase;
+  const steps = checkChain({ ...base, roadway: null, layers: [] }).steps;
+  const last = [...steps].reverse().find((x) => x.dims);
+  return last?.dims ? [Math.min(last.dims[0], c.block.size[0]), Math.min(last.dims[1], c.block.size[1])] : [c.block.size[0], c.block.size[1]];
 }
 
 /** Rangées d'appuis alignés le long du grand côté de l'installation (centres à ± 400 mm en travers). */
@@ -215,7 +290,7 @@ function evalRow(loads: RowLoad[], length: number, inp: CalageInput, beam: Beam,
     etaTimber,
     eta: Math.max(etaGround, etaTimber),
     massKg: r.massKg + topKg,
-    records: [rec, ...r.records.filter((x) => x.key !== 'longrine.pressure'), ...topRec],
+    records: [rec, ...asSleepers(r.records.filter((x) => x.key !== 'longrine.pressure')), ...topRec],
     top: heaviest && { ...heaviest, pieces: topList.reduce((a, t) => a + t.perSupport, 0), massKg: topKg },
   };
 }
@@ -251,6 +326,21 @@ function designRow(loads: RowLoad[], length: number, inp: CalageInput, maxWidth:
   return best;
 }
 
+/** Vérifications d'une « longrine » (`checkLongrine`) appliquées aux madriers du dessous : titres explicites. */
+const SLEEPER_TITLES: Record<string, string> = {
+  'Flexion de la longrine': 'Flexion des madriers du dessous',
+  'Cisaillement de la longrine': 'Cisaillement des madriers du dessous',
+  'Compression transversale sous l’angle': 'Compression transversale des madriers du dessous sous la charge',
+};
+const asSleepers = (records: CalcRecord[]): CalcRecord[] => records.map((r) => (SLEEPER_TITLES[r.title] ? { ...r, title: SLEEPER_TITLES[r.title] } : r));
+
+/** Longueur courante maximale d'un madrier d'une pièce (mm) : au-delà, joints décalés à prévoir. */
+export const SLEEPER_STOCK_LENGTH = 6000;
+const longNote = (L: number) =>
+  L > SLEEPER_STOCK_LENGTH + 1
+    ? [`Madriers de ${m(L)} : au-delà de ${m(SLEEPER_STOCK_LENGTH)}, rarement disponibles d’une pièce — le calcul suppose des madriers continus ; s’ils sont aboutés, joints décalés d’un madrier à l’autre et jamais sous un appui.`]
+    : [];
+
 /** Appuis qui reçoivent une grille ou un plateau de madriers (pas les pieds d'escalier ni de terrasse). */
 const gridChecks = (res: CalageResult) => res.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace);
 
@@ -277,13 +367,15 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
   const design: SleeperRowDesign[] = [];
   let eta = 0;
   let ok = true;
+  // surface chargée par chaque appui sur les madriers, centrée sur sa charge (pas tout le bloc)
+  const foot = new Map(checks.map((c) => [c.id, loadedFootprint(c, withBlocks)]));
   rows.forEach((row, k) => {
-    const half = (c: SupportCheck) => (withBlocks && c.block ? c.block.size[0] / 2 : c.geometry.contact[0] / 2);
+    const half = (c: SupportCheck) => foot.get(c.id)![0] / 2;
     const s0 = Math.min(...row.items.map((i) => i.s - half(i.c))) - oh;
     const s1 = Math.max(...row.items.map((i) => i.s + half(i.c))) + oh;
     const L = s1 - s0;
     // largeur de l'appui en travers de la rangée et sa longueur le long de la rangée
-    const across = (c: SupportCheck) => (withBlocks && c.block ? c.block.size[1] : c.geometry.contact[1]);
+    const across = (c: SupportCheck) => foot.get(c.id)![1];
     const loads = row.items.map((i) => ({ x: i.s - s0, ...supportLoad(i.c, withBlocks), width: across(i.c), along: 2 * half(i.c) }));
     // largeur au plus : jusqu'à 10 cm des rangées voisines (entraxe)
     const gaps = rows.filter((r) => r !== row).map((r) => Math.abs(r.v - row.v));
@@ -314,9 +406,25 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
     const rowRecords = d.records.map((r) => ({ ...r, title: `${r.title} — ${label}` }));
     records.push(...rowRecords);
     const stepLabel = `Grille de madriers, ${label.replace(/ \(.*\)$/, '')} : ${d.count} × ${d.beam.b} × ${d.beam.h} mm${d.top ? ` + répartiteurs ${d.top.beam.b} × ${d.top.beam.h}` : ''}`;
-    for (const it of row.items)
-      perSupport.set(it.c.id, { label: stepLabel, pressure: d.pressure, area: B * L, etaTimber: d.etaTimber, records: rowRecords, note: 'pression maxi sous la rangée (sol élastique, toutes les charges de la rangée + poids de la grille)' });
-    outlines.push({ id: `G${k + 1}`, corners: rectUV(u, s0, s1, row.v - B / 2, row.v + B / 2), label: `${d.count} × ${d.beam.b} × ${d.beam.h} mm`, sub: `L = ${m(L)}` });
+    const lower: TimberStackLayer = { layer: 'lower', label: `Grille, couche du dessous : ${d.count} madriers C24 ${d.beam.b} × ${d.beam.h} mm jointifs le long de la rangée (L = ${m(L)})`, thickness: d.beam.h, section: 'long' };
+    const v: P2 = [-u[1], u[0]];
+    outlines.push({ id: `G${k + 1}`, corners: rectUV(u, s0, s1, row.v - B / 2, row.v + B / 2), label: `${d.count} × ${d.beam.b} × ${d.beam.h} mm`, sub: `L = ${m(L)}`, timber: { layer: 'lower', system: 'grid', count: d.count, b: d.beam.b, h: d.beam.h, length: L, dir: u, row: k + 1 } });
+    for (const it of row.items) {
+      // répartiteurs du dessus sous cet appui (s'il est plus étroit que les madriers du dessous) : en travers, sur toute la largeur B
+      const top = d.top && across(it.c) < B - 1 ? { beam: d.top.beam, n: Math.max(1, Math.ceil((2 * half(it.c)) / d.top.beam.b - 1e-9)) } : null;
+      const stack: TimberStackLayer[] = [lower];
+      if (top) {
+        stack.push({ layer: 'upper', label: `Grille, couche du dessus : ${top.n} répartiteur(s) C24 ${top.beam.b} × ${top.beam.h} mm en travers sous l’appui (L = ${m(B)})`, thickness: top.beam.h, section: 'cut' });
+        const w = top.n * top.beam.b;
+        outlines.push({
+          id: `GT${k + 1}-${it.c.id}`,
+          corners: rectUV(u, it.s - w / 2, it.s + w / 2, row.v - B / 2, row.v + B / 2),
+          label: `${top.n} × ${top.beam.b} × ${top.beam.h} mm`,
+          timber: { layer: 'upper', system: 'grid', count: top.n, b: top.beam.b, h: top.beam.h, length: B, dir: v, row: k + 1, support: it.c.id },
+        });
+      }
+      perSupport.set(it.c.id, { stack, label: stepLabel, pressure: d.pressure, area: B * L, etaTimber: d.etaTimber, records: rowRecords, note: 'pression maxi sous la rangée (sol élastique, toutes les charges de la rangée + poids de la grille)' });
+    }
   });
   const merged = mergeLines(materials);
   const mass = merged.reduce((a, x) => a + x.massKg, 0);
@@ -326,7 +434,10 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
     `Raideur du sol prise à ${f(inp.longrine.k * 1e3, 0)} MN/m³ (étape 2, options avancées) : plus le sol est dur, plus la pression se concentre sous les appuis — à confirmer.`,
     'Pression vérifiée sous charges caractéristiques ; bois en classe de service 2, kmod 0,9 (court terme), γM 1,3.',
   ];
-  if (withBlocks) notes.push('Les blocs dessinés restent sur les madriers, centrés sur leur largeur.');
+  const longest = Math.max(0, ...outlines.filter((o) => o.timber?.layer === 'lower').map((o) => o.timber!.length));
+  notes.push(...longNote(longest));
+  if (withBlocks)
+    notes.push('Les blocs dessinés restent sur les madriers ; chaque rangée de madriers est centrée sous la charge des appuis : un bloc chargé près de son bord ne répartit que sur la partie centrée sous la charge (B’ = B − 2 e), c’est elle qui est prise sur les madriers.');
   else notes.push(`Sans les blocs : les vérins (ou les pieds) se posent directement sur les madriers — ${f(blocksKg, 0)} kg de moins au sol, hauteur de l’installation abaissée de la hauteur des blocs (à vérifier avec l’exploitant et les accès).`);
   const complete = design.length === rows.length;
   const key = withBlocks ? 'sleepers' : 'sleepers-no-blocks';
@@ -491,6 +602,8 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const vs = pts.map((p) => p[0] * v[0] + p[1] * v[1]);
   const [U0, U1, V0, V1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
   const fmd = (0.9 * C24.fmk) / 1.3;
+  // surface chargée par chaque appui sur la couche du dessus, centrée sur sa charge (pas tout le bloc)
+  const foot = checks.map((c) => loadedFootprint(c, withBlocks));
   type Grid = { over: number; lower: Beam; upper: Beam; nUpper: number; eta: number; etaTimber: number; pressure: number; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
   let best: Grid | null = null;
   let leastBad: Grid | null = null;
@@ -500,10 +613,10 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
         const L = U1 - U0 + 2 * over;
         const W = V1 - V0 + 2 * over;
         // couche du dessus : sous chaque rangée, de la largeur de ses appuis
-        const across = Math.max(...checks.map((c) => (withBlocks && c.block ? c.block.size[1] : c.geometry.contact[1])));
+        const across = Math.max(...foot.map((f) => f[1]));
         const nUpper = Math.max(1, Math.ceil(across / upper.b - 1e-9));
         const beta = Math.pow((3 * inp.longrine.k) / (C24.E * upper.h ** 3), 0.25);
-        const alongMin = Math.min(...checks.map((c) => (withBlocks && c.block ? c.block.size[0] : c.geometry.contact[0])));
+        const alongMin = Math.min(...foot.map((f) => f[0]));
         const reach = alongMin + 2 / beta;
         // charge d'une rangée par mm le long de la rangée : répartie sur la longueur couverte par ses appuis
         const rowLine = rows.map((r) => {
@@ -542,7 +655,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
             limit: inp.bearing,
             eta: pressure / inp.bearing,
           },
-          ...rr.records.filter((x) => x.key !== 'longrine.pressure'),
+          ...asSleepers(rr.records.filter((x) => x.key !== 'longrine.pressure')),
           {
             key: 'platform.upper',
             title: 'Flexion de la couche du dessus (le long des rangées)',
@@ -565,15 +678,31 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const key = withBlocks ? 'platform' : 'platform-no-blocks';
   const perSupport = new Map<string, RemedySupport>();
   const stepLabel = `Plateau de madriers ${m(g.L)} × ${m(g.W)} : ${nLower} × ${g.lower.b} × ${g.lower.h} mm + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm sous chaque rangée`;
+  // coupe le long d'une rangée : madriers du dessous coupés (en travers des rangées), ceux du dessus vus en long
+  const stack: TimberStackLayer[] = [
+    { layer: 'lower', label: `Plateau, couche du dessous : madriers C24 ${g.lower.b} × ${g.lower.h} mm jointifs en travers des rangées (L = ${m(g.W)})`, thickness: g.lower.h, section: 'cut' },
+    { layer: 'upper', label: `Plateau, couche du dessus : ${g.nUpper} madriers C24 ${g.upper.b} × ${g.upper.h} mm le long de la rangée (L = ${m(g.L)})`, thickness: g.upper.h, section: 'long' },
+  ];
   for (const c of checks)
-    perSupport.set(c.id, { label: stepLabel, pressure: g.pressure, area: g.L * g.W, etaTimber: g.etaTimber, records: g.records, note: 'pression maxi sous le plateau (sol élastique, charge de chaque rangée répartie par la couche du dessus + poids des deux couches)' });
+    perSupport.set(c.id, { stack, label: stepLabel, pressure: g.pressure, area: g.L * g.W, etaTimber: g.etaTimber, records: g.records, note: 'pression maxi sous le plateau (sol élastique, charge de chaque rangée répartie par la couche du dessus + poids des deux couches)' });
   const s0 = U0 - g.over;
   const t0 = V0 - g.over;
   const outlines: RemedyOutline[] = [
-    { id: 'PL', corners: rectUV(u, s0, s0 + g.L, t0, t0 + g.W), label: `${nLower} × ${g.lower.b} × ${g.lower.h} mm`, sub: `${m(g.L)} × ${m(g.W)}` },
+    {
+      id: 'PL',
+      corners: rectUV(u, s0, s0 + g.L, t0, t0 + g.W),
+      label: `${nLower} × ${g.lower.b} × ${g.lower.h} mm`,
+      sub: `${m(g.L)} × ${m(g.W)}`,
+      timber: { layer: 'lower', system: 'platform', count: nLower, b: g.lower.b, h: g.lower.h, length: g.W, dir: v },
+    },
     ...rows.map((r, k): RemedyOutline => {
       const half = (g.nUpper * g.upper.b) / 2;
-      return { id: `PR${k + 1}`, corners: rectUV(u, s0, s0 + g.L, r.v - half, r.v + half), label: `${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm` };
+      return {
+        id: `PR${k + 1}`,
+        corners: rectUV(u, s0, s0 + g.L, r.v - half, r.v + half),
+        label: `${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm`,
+        timber: { layer: 'upper', system: 'platform', count: g.nUpper, b: g.upper.b, h: g.upper.h, length: g.L, dir: u, row: k + 1 },
+      };
     }),
   ];
   const remedy: CalageRemedy = {
@@ -600,6 +729,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
       'Sol réglé et compacté avant pose ; madriers jointifs (sans vide), les deux couches vissées entre elles pour travailler ensemble.',
       `Raideur du sol ${f(inp.longrine.k * 1e3, 0)} MN/m³ (étape 2, options avancées) : à confirmer — plus le sol est dur, plus la pression se concentre sous les rangées.`,
       'Modèle simplifié (chaque madrier du dessous calculé seul, charge des rangées répartie par la couche du dessus) : à faire valider par un ingénieur pour l’exécution.',
+      ...longNote(Math.max(g.L, g.W)),
       ...(withBlocks || !blocksKg ? [] : [`Sans les blocs : ${f(blocksKg, 0)} kg de moins ; l’installation est plus basse de la hauteur des blocs moins celle du plateau.`]),
     ],
     apply: { key, over: g.over, lower: g.lower, upper: g.upper },
