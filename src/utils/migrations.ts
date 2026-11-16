@@ -1633,6 +1633,12 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] handovers.checklist_annex : ${e.message}`);
   }
+  // Handover : langue du lien de signature client (A. Pinchart 16.11.2026)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "signature_lang" TEXT NOT NULL DEFAULT 'fr'`);
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.signature_lang : ${e.message}`);
+  }
   await migrateBriefingNext();
 }
 

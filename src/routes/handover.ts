@@ -410,6 +410,8 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
 
     // Génère un token cryptographique URL-safe (43 caractères)
     const token = crypto.randomBytes(32).toString('base64url');
+    // langue de la page de signature, du PDF signé et de l'e-mail envoyé après la signature
+    const lang = req.body?.lang === 'en' ? 'en' : 'fr';
 
     await prisma.handover.update({
       where: { id: req.params.id },
@@ -417,10 +419,11 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
         signatureToken: token,
         signatureTokenUsed: false,
         signatureTokenCreatedAt: new Date(),
+        signatureLang: lang,
       },
     });
 
-    res.json({ success: true, data: { token } });
+    res.json({ success: true, data: { token, lang } });
   } catch (err) { next(err); }
 });
 export default router;

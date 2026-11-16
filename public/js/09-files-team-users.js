@@ -1032,18 +1032,48 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
 }
 
 // ── Lien de signature client (sans compte) ──
-async function generateSignatureLink(handoverId, force = false) {
+// Choix de la langue du lien de signature : page de signature, PDF signé et e-mail envoyé après la signature.
+// Dernier choix gardé dans localStorage « vem_sign_lang ».
+function askSignatureLang(handoverId, force) {
+  let last = 'fr';
+  try { last = localStorage.getItem('vem_sign_lang') === 'en' ? 'en' : 'fr'; } catch (e) {}
+  const btn = (lang, label) => `<button class="btn ${lang === last ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:14px;font-size:15px;"
+      onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', ${force ? 'true' : 'false'}, '${lang}')">${label}</button>`;
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-head">
+        <div class="modal-title">🌐 Langue du lien de signature</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5;">
+        Langue de la page que le client verra pour signer, du PDF signé et de l’e-mail envoyé après la signature.
+      </div>
+      <div style="display:flex;gap:10px;">
+        ${btn('fr', '🇫🇷 Français')}
+        ${btn('en', '🇬🇧 English')}
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+async function generateSignatureLink(handoverId, force = false, lang = null) {
+  // 0. Langue d'abord (page de signature + PDF signé + e-mail)
+  if (lang !== 'fr' && lang !== 'en') { askSignatureLang(handoverId, force); return; }
+  try { localStorage.setItem('vem_sign_lang', lang); } catch (e) {}
   // 1. Demande un nouveau token au backend (invalide tout token précédent)
   toast('Génération du lien...', 'info');
-  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`, force ? { force: true } : undefined);
+  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`, force ? { force: true, lang } : { lang });
   // Check-list de montage incomplète : avertissement, « Générer quand même » pour admin / technical manager (js/15-checklists.js)
-  if (tokenRes && !tokenRes.success && tokenRes.data?.checklist) { showChecklistSignatureWarning(handoverId, tokenRes.data); return; }
-  if (!tokenRes?.success) { toast('Erreur génération du lien', 'error'); return; }
+  if (tokenRes && !tokenRes.success && tokenRes.data?.checklist) { showChecklistSignatureWarning(handoverId, { ...tokenRes.data, lang }); return; }
+  if (!tokenRes?.success) { toast(tokenRes?.error || 'Erreur génération du lien', 'error'); return; }
   const token = tokenRes.data.token;
+  const en = (tokenRes.data.lang || lang) === 'en';
 
-  // 2. Construit le lien complet vers la page publique
+  // 2. Construit le lien complet vers la page publique (?lang=en : la page s'affiche en anglais dès le chargement)
   const baseUrl = window.location.origin;
-  const link = `${baseUrl}/sign-handover.html?token=${token}`;
+  const link = `${baseUrl}/sign-handover.html?token=${token}${en ? '&lang=en' : ''}`;
 
   // 3. Modal d'affichage du lien
   const overlay = document.createElement('div');
@@ -1055,7 +1085,7 @@ async function generateSignatureLink(handoverId, force = false) {
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
       <div style="background:rgba(45,198,83,.1);border:1px solid rgba(45,198,83,.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--green);">
-        ✅ Nouveau lien généré (les liens précédents pour ce handover sont désactivés)
+        ✅ Nouveau lien généré en <strong>${en ? '🇬🇧 anglais' : '🇫🇷 français'}</strong> (les liens précédents pour ce handover sont désactivés)
       </div>
       <div style="background:var(--bg3);border-radius:10px;padding:16px;margin-bottom:16px;">
         <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Envoyez ce lien au client :</div>
@@ -1072,7 +1102,9 @@ async function generateSignatureLink(handoverId, force = false) {
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
-        <button class="btn btn-primary" onclick="window.open('mailto:?subject=Signature du handover&body=Bonjour,%0A%0AVeuillez signer le document via ce lien :%0A${encodeURIComponent(link)}%0A%0ACordialement,%0AL%27équipe VIEWBOX')">📧 Envoyer par email</button>
+        <button class="btn btn-primary" onclick="window.open('${en
+          ? `mailto:?subject=${encodeURIComponent('Handover signature')}&body=${encodeURIComponent('Hello,\n\nPlease sign the handover document using this link:\n' + link + '\n\nBest regards,\nThe VIEWBOX team').replace(/'/g, '%27')}`
+          : `mailto:?subject=${encodeURIComponent('Signature du handover')}&body=${encodeURIComponent('Bonjour,\n\nVeuillez signer le document via ce lien :\n' + link + '\n\nCordialement,\nL’équipe VIEWBOX').replace(/'/g, '%27')}`}')">📧 Envoyer par email</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);

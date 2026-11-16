@@ -2089,7 +2089,7 @@ function showChecklistSignatureWarning(handoverId, info) {
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         ${info.projectId ? `<button class="btn btn-ghost btn-sm" onclick="openChecklistFullFromHandover('${info.projectId}')">☑️ Ouvrir la check-list</button>` : ''}
-        ${info.canForce ? `<button class="btn btn-primary" onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', true)">Générer quand même</button>` : ''}
+        ${info.canForce ? `<button class="btn btn-primary" onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', true, '${info.lang === 'en' ? 'en' : 'fr'}')">Générer quand même</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(el);
