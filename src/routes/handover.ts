@@ -122,6 +122,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       siteManagerUser,
       ...data
     } = req.body;
+    // check-list de montage seulement en annexe du PDF / de la page de signature
+    if (data.checklistAnnex !== undefined) data.checklistAnnex = data.checklistAnnex === true;
 
     const h = await prisma.handover.update({
       where: { id: req.params.id },
@@ -285,6 +287,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       date: h.createdAt,
       lang,
       checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: h.checklistAnnex === true,
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -367,6 +370,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       date: h.createdAt,
       lang,
       checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: h.checklistAnnex === true,
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;

@@ -1627,6 +1627,12 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] split_files : ${e.message}`);
   }
+  // Handover : check-list de montage seulement en annexe (A. Pinchart 16.11.2026)
+  try {
+    await prisma.$executeRawUnsafe('ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "checklist_annex" BOOLEAN NOT NULL DEFAULT false');
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.checklist_annex : ${e.message}`);
+  }
   await migrateBriefingNext();
 }
 

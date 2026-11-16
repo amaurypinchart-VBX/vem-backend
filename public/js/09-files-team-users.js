@@ -932,6 +932,19 @@ async function editHandoverFields(handoverId, projectId) {
           </div>
         </div>
 
+        <!-- Check-list de montage : dans le document ou seulement en annexe -->
+        ${h.checklistSummary ? `
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">☑️ Check-list de montage</div>
+          <div class="form-group2" style="margin:0;">
+            <label class="form-label2">Place dans le PDF et sur la page de signature</label>
+            <select class="input" id="hf-checklistAnnex">
+              <option value="body" ${h.checklistAnnex ? '' : 'selected'}>Dans le document (après les zones inspectées)</option>
+              <option value="annex" ${h.checklistAnnex ? 'selected' : ''}>En annexe seulement (à la fin, après les signatures)</option>
+            </select>
+          </div>
+        </div>` : ''}
+
         <!-- Zones d'inspection -->
         ${(h.items||[]).length ? `
         <div style="background:var(--bg3);border-radius:10px;padding:14px;">
@@ -997,6 +1010,8 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
     clientEmail: fields.clientContactEmail || undefined,
     generalNotes: document.getElementById('hf-projectSummary')?.value || undefined,
     scopeOfWork: document.getElementById('hf-scope')?.value || null,
+    // check-list de montage en annexe (absent quand le projet n'a pas de check-list)
+    checklistAnnex: document.getElementById('hf-checklistAnnex') ? document.getElementById('hf-checklistAnnex').value === 'annex' : undefined,
   });
   if (res?.success) {
     toast('Handover mis à jour ✅','success');

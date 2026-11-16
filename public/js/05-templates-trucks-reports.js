@@ -444,7 +444,7 @@ async function openHandoverFull(id) {
     </div>`;
   document.body.appendChild(el);
   el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
-  loadHandoverChecklistSection(h.projectId, h.id);
+  loadHandoverChecklistSection(h.projectId, h.id, h.checklistAnnex === true);
   setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
 }
 

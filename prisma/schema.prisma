@@ -455,6 +455,8 @@ model Handover {
   generalNotes        String?   @map("general_notes")
   scopeOfWork          String?   @map("scope_of_work")
   customFields         Json?     @map("custom_fields")
+  /// check-list de montage seulement en annexe (après les signatures) dans le PDF et la page de signature
+  checklistAnnex       Boolean   @default(false) @map("checklist_annex")
   signatureToken          String?   @map("signature_token")
   signatureTokenUsed      Boolean   @default(false) @map("signature_token_used")
   signatureTokenCreatedAt DateTime? @map("signature_token_created_at")
