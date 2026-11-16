@@ -504,12 +504,14 @@ function CalageLabels({ plates, basis, toPaper }: { plates: NonNullable<NonNulla
         const c = toPaper(a.x, a.y);
         const ys = p.corners.map((q) => toPaper(projectPoint(basis, q).x, projectPoint(basis, q).y).y);
         const top = Math.min(...ys) - 1.2;
+        // étiquette centrée (zone de dalle) : sans le repère, le texte en tête dans la couleur de la zone
         const lines: Array<{ t: string; sz: number; bold?: boolean }> = [
-          { t: p.id, sz: size * 1.15, bold: true },
-          { t: p.label, sz: size },
+          ...(p.labelCenter ? [] : [{ t: p.id, sz: size * 1.15, bold: true }]),
+          { t: p.label, sz: size, ...(p.labelCenter ? { bold: true } : {}) },
           ...(p.sub ? [{ t: p.sub, sz: size * 0.9 }] : []),
         ];
-        let y = top - lines.reduce((s2, l) => s2 + l.sz * 1.2, 0);
+        const total = lines.reduce((s2, l) => s2 + l.sz * 1.2, 0);
+        let y = p.labelCenter ? c.y - total / 2 : top - total;
         return (
           <g key={`l${p.id}`}>
             {lines.map((l, i) => {

@@ -6,7 +6,7 @@
 // Tous les chiffres viennent du calcul (StudyRun, CalageResult) : le rapport ne fait que les mettre en page.
 // Fonction pure : pages SVG A4 (+ le plan de calage A3 fourni par l'appelant).
 import type { CalageResult, CalageType } from '../core/calage';
-import { CALAGE_LABELS, TIMBER_LABELS, timberLegend } from './calageI18n';
+import { CALAGE_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import { calagePlanFigure } from './planFigure';
 import type { Combination } from '../core/combos';
 import type { CalcRecord, Verdict } from '../core/records';
@@ -834,7 +834,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
       const pieces = c.remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
       const legendRows = timberLegend(inp.lang, pieces).length + (c.roadwayOn ? 1 : 0);
       blocks.push({ t: 'figure', h: planHeight(mods.filter((m) => m.level === 0), 150, 120) + legendRows * 2.5 + 2, svg: calagePlanFigure(c, mods, inp.lang), caption: T.planCaption });
-      if (pieces.length) blocks.push({ t: 'bullets', items: [...timberLegend(inp.lang, pieces).map((l) => l.text), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid')] });
+      const ground = timberGroundText(inp.lang, c.remedy.outlines, !!c.slab);
+      if (pieces.length) blocks.push({ t: 'bullets', items: [...timberLegend(inp.lang, pieces).map((l) => l.text), ...(ground ? [ground] : []), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper'))] });
       if (r.details.length) blocks.push({ t: 'bullets', items: r.details.map(E) });
       if (r.notes.length) blocks.push({ t: 'bullets', size: SIZE.small, items: r.notes.map(E) });
       if (r.eta !== undefined) blocks.push({ t: 'eta', eta: r.eta });

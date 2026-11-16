@@ -8,7 +8,7 @@ import { groupTypeKey } from '../core/estimate';
 import { GROUND_NOTE } from '../core/ground';
 import type { Lang } from './i18n';
 import { LABELS, num } from './i18n';
-import { CALAGE_LABELS, TIMBER_LABELS, timberLegend } from './calageI18n';
+import { CALAGE_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import { translate } from './translate';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
 import { typeColor } from './calagePlan';
@@ -122,12 +122,24 @@ export function planPlates(
   // madriers : couche du dessous puis du dessus (dessinée par-dessus), chaque madrier visible par ses joints ; leur
   // description dans la légende sous le plan (pas d'étiquette sur le dessin, déjà chargé de plaques et de points)
   const outlines = [...(opts.remedy?.outlines ?? [])].sort((a, b) => (a.timber?.layer === 'upper' ? 1 : 0) - (b.timber?.layer === 'upper' ? 1 : 0));
-  const timber: PlanPlate[] = outlines.map((o) => ({
-    id: `T${o.id}`,
-    corners: o.corners,
-    color: TIMBER_COLOR,
-    ...(o.timber ? { timber: { layer: o.timber.layer, dir: o.timber.dir, pitch: o.timber.b } } : { label: [o.label, ...(o.sub ? [o.sub] : [])] }),
-  }));
+  // charge au sol répartie sous les madriers du dessous, écrite dessus : sol = moyenne et pointe (kg/m²) ; dalle en
+  // charge répartie = charge linéique (la charge au m² est celle de la zone de la Viewbox)
+  const T = TIMBER_LABELS[lang];
+  const kg = (q: number) => num(lang, (q * 1e6) / 9.81, 0);
+  const groundLabel = (o: (typeof outlines)[number]): string[] | null => {
+    if (o.timber?.layer !== 'lower' || !o.ground) return null;
+    if (opts.slab) return o.ground.line ? [T.lineLoad(num(lang, o.ground.line, 1))] : null;
+    return [T.groundMean(kg(o.ground.mean)), T.groundMax(kg(o.ground.max))];
+  };
+  const timber: PlanPlate[] = outlines.map((o) => {
+    const gl = groundLabel(o);
+    return {
+      id: `T${o.id}`,
+      corners: o.corners,
+      color: TIMBER_COLOR,
+      ...(o.timber ? { timber: { layer: o.timber.layer, dir: o.timber.dir, pitch: o.timber.b }, ...(gl ? { label: gl } : {}) } : { label: [o.label, ...(o.sub ? [o.sub] : [])] }),
+    };
+  });
   const legend: PlanPlate[] = timberLegend(
     lang,
     outlines.flatMap((o) => (o.timber ? [o.timber] : [])),
@@ -391,7 +403,8 @@ export function GroundPlan({ modules, reactions, x, y, w, h: hFull, text, select
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     const g = text * 0.3;
-    const tries = p.zone
+    // zones de dalle et madriers : texte dans le contour, sur fond blanc (lisible sur les joints)
+    const tries = p.zone || p.timber
       ? around(cx, cy, (x1 - x0) / 2 - tw / 2, (y1 - y0) / 2 - th / 2, th, true, true)
       : [
           ...around(cx, cy, (x1 - x0) / 2 - tw / 2, (y1 - y0) / 2 - th / 2, th, true, false),
@@ -764,7 +777,8 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
       </text>,
     );
     y += 4;
-    para('rm', [E(result.remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid')], body, 3.4, '#374151', 140);
+    const ground = timberGroundText(lang, result.remedy.outlines, !!result.slab);
+    para('rm', [E(result.remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), ...(ground ? [ground] : []), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper'))], body, 3.4, '#374151', 140);
     y += 2;
   }
   // variante longrines : seulement sans solution retenue en madriers (elle la remplace)

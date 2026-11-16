@@ -19,7 +19,7 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, checkPlan, planPlates } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
-import { calageRemedies } from '../../structure/core/calageRemedies';
+import { SLEEPER_SECTIONS, calageRemedies, isFlat, sleeperOption } from '../../structure/core/calageRemedies';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
 import type { Terrain } from '../../structure/core/wind';
@@ -357,6 +357,133 @@ function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageRes
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** « 10 × 23 cm, à plat (23 cm au sol) » : section d'un madrier (b = largeur au sol, h = épaisseur). */
+const sectionLabel = (b: { b: number; h: number }) =>
+  isFlat(b) ? `${n(b.h / 10, 1)} × ${n(b.b / 10, 1)} cm, à plat (${n(b.b / 10, 1)} cm au sol)` : b.b === b.h ? `${n(b.b / 10, 1)} × ${n(b.h / 10, 1)} cm` : `${n(b.b / 10, 1)} × ${n(b.h / 10, 1)} cm, sur chant`;
+
+/**
+ * Madriers choisis à la main sous les rangées d'appuis (section, nombre par rangée, avec ou sans les blocs) : calculés
+ * sur le calage sans solution retenue, puis appliqués comme les autres pistes. Disponible même quand tout passe (dalle
+ * en charge répartie : répartir la charge de chaque pied le long de la rangée).
+ */
+function SleepersCard({ input, result, choices, onApply }: { input: CalageInput; result: CalageResult; choices: CalageChoices; onApply: (r: CalageRemedy) => void }) {
+  const [sec, setSec] = useState(0);
+  const [count, setCount] = useState(0);
+  const [withBlocks, setWithBlocks] = useState(true);
+  const [option, setOption] = useState<CalageRemedy | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const slab = input.bearingMode === 'distributed';
+  const hasBlocks = result.checks.some((c) => c.block) || (choices.remedy?.key.endsWith('no-blocks') ?? false);
+  // la piste change avec le calage (charges, portance) et les choix : à recalculer
+  useEffect(() => setOption(null), [result, sec, count, withBlocks]);
+  const compute = () => {
+    setBusy(true);
+    setTimeout(() => {
+      try {
+        const base = input.choices?.remedy ? { ...input, choices: { ...input.choices, remedy: undefined } } : input;
+        setOption(sleeperOption(base, base === input ? result : computeCalage(base), { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}), withBlocks }));
+      } finally {
+        setBusy(false);
+      }
+    }, 20);
+  };
+  const applied = !!option && typeof option.apply === 'object' && JSON.stringify(choices.remedy) === JSON.stringify(option.apply);
+  return (
+    <div className="card" data-testid="calage-sleepers">
+      <div className="card-head">
+        <h2>🪵 Madriers sous les rangées d’appuis</h2>
+        <span className="hint">
+          {slab
+            ? 'dalle en charge répartie : les madriers répartissent la charge de chaque pied le long de la rangée ; le critère reste la charge au m² de chaque zone'
+            : 'sol : les madriers doivent porter toute la charge de la rangée à la portance donnée'}
+        </span>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className="row" style={{ gap: 6 }}>
+            Section
+            <select value={sec} onChange={(e) => setSec(Number(e.target.value))} data-testid="sleepers-section">
+              {SLEEPER_SECTIONS.map((b, k) => (
+                <option key={k} value={k}>
+                  {sectionLabel(b)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="row" style={{ gap: 6 }}>
+            Madriers par rangée
+            <select value={count} onChange={(e) => setCount(Number(e.target.value))} data-testid="sleepers-count">
+              <option value={0}>automatique</option>
+              {[1, 2, 3, 4, 5, 6, 8, 10].map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasBlocks && (
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={withBlocks} onChange={(e) => setWithBlocks(e.target.checked)} />
+              garder les blocs dessinés (sinon vérins directement sur les madriers)
+            </label>
+          )}
+          <button className="btn small primary" disabled={busy} onClick={compute} data-testid="sleepers-compute">
+            {busy ? 'Calcul…' : 'Calculer'}
+          </button>
+        </div>
+        {option && (
+          <div style={{ borderLeft: `3px solid ${option.verdict === 'ok' ? '#16a34a' : '#dc2626'}`, paddingLeft: 10 }} data-testid="sleepers-option">
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <b>{option.title}</b>
+              <span className={`badge ${REMEDY_BADGE[option.verdict].cls}`}>
+                {REMEDY_BADGE[option.verdict].text}
+                {option.eta !== undefined ? ` · η ${n(option.eta, 2)}` : ''}
+              </span>
+              <button className="btn small ghost" onClick={() => setOpen(!open)}>
+                {open ? 'Masquer le détail' : 'Voir le détail'}
+              </button>
+              {typeof option.apply === 'object' &&
+                (applied ? (
+                  <span className="badge ok">✔ retenue</span>
+                ) : (
+                  <button className={`btn small ${option.verdict === 'ok' ? 'primary' : ''}`} onClick={() => onApply(option)} data-testid="sleepers-apply">
+                    Appliquer ces madriers
+                  </button>
+                ))}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{option.summary}</div>
+            {!!option.materials.length && (
+              <div className="hint">
+                Matériel : {option.materials.map((m) => `${m.quantity} × ${m.label} ${m.dims} (${n(m.massKg, 0)} kg)`).join(' ; ')}
+              </div>
+            )}
+            {open && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                {option.details.map((d, k) => (
+                  <div key={k} className="hint">
+                    • {d}
+                  </div>
+                ))}
+                {option.notes.map((d, k) => (
+                  <div key={`n${k}`} className="hint" style={{ fontStyle: 'italic' }}>
+                    {d}
+                  </div>
+                ))}
+                {!!option.records.length && <Records records={option.records} />}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="hint">
+          Les madriers sont posés jointifs le long de chaque rangée d’appuis, centrés sous les vérins / pieds. « Automatique » = le moins de madriers de cette section qui passe
+          {slab ? ' (bois vérifié ; la charge au m² de chaque zone de dalle est recalculée avec eux)' : ' (pression au sol sous les madriers ≤ portance)'}. Une fois appliqués, ils sont dessinés sur le plan, la fiche, le plan des appuis, le plan de calage A3 et dans le rapport, avec la charge au sol répartie.
+        </div>
+      </div>
     </div>
   );
 }
@@ -1205,6 +1332,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               onApply={applyRemedy}
               onRemove={removeRemedy}
             />
+          )}
+          {input.bearing > 0 && result.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace).length >= 2 && (
+            <SleepersCard input={input} result={result} choices={choices} onApply={applyRemedy} />
           )}
 
           {roadway && (

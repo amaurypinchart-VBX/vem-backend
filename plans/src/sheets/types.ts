@@ -69,6 +69,8 @@ export interface CalagePlateSpec {
   dashed?: boolean;
   /** traits fins dans le contour (joints entre madriers), monde */
   joints?: Array<[Vec3, Vec3]>;
+  /** étiquette centrée sur `at` (zones de dalle) au lieu d'au-dessus du contour */
+  labelCenter?: boolean;
 }
 
 /** Niveau du sol relevé sous un pied (plan de calage) : repère ▽ avec sa valeur et la rehausse à apporter. */

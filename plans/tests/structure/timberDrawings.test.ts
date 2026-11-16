@@ -8,14 +8,14 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { computeCalage } from '../../src/structure/core/calage';
 import type { AppliedRemedy } from '../../src/structure/core/calageRemedies';
-import { calageRemedies, loadedFootprint, timberJoints } from '../../src/structure/core/calageRemedies';
+import { calageRemedies, loadedFootprint, sleeperOption, timberJoints } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
 import { checkPlan, groundSheetPages, planPlates } from '../../src/structure/report/groundSheet';
 import { groundPointsPages } from '../../src/structure/report/groundPoints';
 import { calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
 import { stackLines, stacksFigureSvg } from '../../src/structure/report/stackFigure';
-import { timberLegend } from '../../src/structure/report/calageI18n';
+import { timberGroundText, timberLegend } from '../../src/structure/report/calageI18n';
 import { calagePlanFigure } from '../../src/structure/report/planFigure';
 import { translate } from '../../src/structure/report/translate';
 import { DEFAULT_HYP, calageInput } from '../../src/ui/structure/GroundPanel';
@@ -119,7 +119,11 @@ describe('madriers de la solution retenue : dessins', () => {
     const timber = plates.filter((p) => p.timber);
     expect(timber.filter((p) => p.timber!.layer === 'lower')).toHaveLength(1);
     expect(timber.filter((p) => p.timber!.layer === 'upper').length).toBe(3);
-    expect(timber.every((p) => !p.label)).toBe(true);
+    // charge au sol répartie écrite sur la couche du dessous (moyenne et pointe), rien sur la couche du dessus
+    const low = timber.find((p) => p.timber!.layer === 'lower')!;
+    expect(low.label![0]).toMatch(/^moy\. [\d  ]+ kg\/m²$/);
+    expect(low.label![1]).toMatch(/^maxi [\d  ]+ kg\/m²$/);
+    expect(timber.filter((p) => p.timber!.layer === 'upper').every((p) => !p.label)).toBe(true);
     const legend = plates.filter((p) => p.legend).map((p) => p.legend!.text);
     expect(legend[0]).toMatch(/^Madriers C24, couche du dessous : \d+ × 100 × 200 mm, L = 6,00 m/);
     expect(legend[1]).toMatch(/^Couche du dessus : 5 × 100 × 200 mm, L = 6,\d\d m, le long de chaque rangée d’appuis \(3 rangées\)$/);
@@ -190,4 +194,65 @@ describe('madriers de la solution retenue : dessins', () => {
     expect(rw.length).toBe(result.roadwayOutline!.length);
     expect(rw.every((p) => p.dashed && p.noLabel)).toBe(true);
   });
+});
+
+// A. Pinchart 16.11.2026 : « on n'a pas la charge au sol répartie ; ça me paraît fort large pour des madriers, je
+// pensais plutôt à des madriers de 10/23 cm » — la place de l'Opéra (450 kg/m²) donne un poids admis au m² (charge
+// répartie), pas une pression sous le calage.
+describe('madriers au choix (10 × 23 cm à plat) et charge au sol répartie', () => {
+  const flat = { b: 230, h: 100 };
+  const slabInput = () => ({ ...input(450, 645, 270), bearingMode: 'distributed' as const, longrine: { ...input(450, 645, 270).longrine, k: 1 } });
+
+  it('dalle en charge répartie : 10 × 23 cm à plat, le moins de madriers dont le bois passe ; zones recalculées', () => {
+    const inp = slabInput();
+    const base = computeCalage(inp);
+    expect(base.slab!.zones.every((z) => z.eta < 1)).toBe(true);
+    const opt = sleeperOption(inp, base, { beam: flat, withBlocks: true })!;
+    expect(opt.verdict).toBe('ok');
+    expect(opt.eta!).toBeLessThanOrEqual(1);
+    const rows = (opt.apply as Extract<AppliedRemedy, { rows: unknown }>).rows;
+    expect(rows.map((r) => r.count).sort()).toEqual([1, 1, 2]);
+    expect(rows.every((r) => r.beam.b === 230 && r.beam.h === 100 && r.top === null)).toBe(true);
+    // la pression sous les madriers n'est qu'une information ; la charge linéique est donnée
+    expect(opt.summary).toContain('information : le critère est la charge répartie de chaque zone de dalle');
+    expect(opt.details.every((d) => /charge linéique ≤ [\d,]+ kN\/m/.test(d))).toBe(true);
+    const applied = computeCalage({ ...inp, choices: { remedy: opt.apply as AppliedRemedy } });
+    // charge répartie de chaque zone : + le poids des madriers, toujours sous 450 kg/m²
+    for (const z of applied.slab!.zones) {
+      const before = base.slab!.zones.find((x) => x.id === z.id)!;
+      expect(z.load).toBeGreaterThan(before.load);
+      expect(z.eta).toBeLessThan(1);
+    }
+    expect(applied.checks.every((c) => c.eta <= 1)).toBe(true);
+    // coupe : le madrier à plat (10 cm) sous le bloc
+    expect(applied.stacks!.every((st) => st.layers[0].kind === 'timber' && st.layers[0].thickness === 100)).toBe(true);
+    // plans : charge linéique sur les madriers, zones de dalle avec leur poids au m², légende « à plat »
+    const plates = checkPlan(applied).plates;
+    expect(plates.filter((p) => p.timber && p.label).every((p) => /^≤ [\d,]+ kN\/m$/.test(p.label![0]))).toBe(true);
+    expect(plates.some((p) => p.zone && p.label?.[0].startsWith('Dalle : '))).toBe(true);
+    expect(plates.filter((p) => p.legend).map((p) => p.legend!.text).join(' ')).toContain('230 × 100 mm à plat');
+    const line = timberGroundText('fr', applied.remedy!.outlines, true)!;
+    expect(line).toMatch(/^Charge linéique sous les madriers : [\d,]+ kN\/m au plus/);
+    const info = { project: 'P', source: 'S', date: 'd', assumptions: [] as Array<[string, string]> };
+    const fiche = groundSheetPages({ result: applied, modules: mods, info }).map((p) => renderToStaticMarkup(p)).join('');
+    expect(fiche).toContain(line);
+    expect(fiche).toContain('Charge sur la dalle sous chaque Viewbox');
+  }, 60000);
+
+  it('sol en pression : 10 × 23 cm ne suffit pas à 450 kg/m², l’outil dit la largeur nécessaire et propose la charge répartie', () => {
+    const inp = input(450, 645, 270);
+    const base = computeCalage(inp);
+    const opt = sleeperOption(inp, base, { beam: flat, withBlocks: true })!;
+    expect(opt.verdict).toBe('fail');
+    expect(opt.summary).toMatch(/^Avec des madriers 230 × 100 mm, certaines rangées ne passent pas/);
+    expect(opt.details[0]).toMatch(/il faudrait au moins \d+ cm de large en pression uniforme/);
+    const load = calageRemedies(inp, base).find((r) => r.key === 'load')!;
+    expect(load.summary).toContain('choisir « charge répartie » à l’étape 2');
+    // nombre imposé : calculé tel quel (ne passe pas), la charge au sol répartie est écrite sur le plan
+    const two = sleeperOption(inp, base, { beam: flat, count: 2, withBlocks: true })!;
+    expect(two.verdict).toBe('fail');
+    const applied = computeCalage({ ...inp, choices: { remedy: two.apply as AppliedRemedy } });
+    const g = timberGroundText('fr', applied.remedy!.outlines, false)!;
+    expect(g).toMatch(/^Charge au sol répartie sous les madriers : [\d  ]+ kg\/m² en moyenne, [\d  ]+ kg\/m² au plus/);
+  }, 60000);
 });

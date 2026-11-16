@@ -13,7 +13,7 @@ import type { SheetInfo } from './groundSheet';
 import { GroundPlan, planPlates, wrap } from './groundSheet';
 import type { Lang } from './i18n';
 import { num } from './i18n';
-import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberLegend } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import type { LevelSurvey } from '../core/groundLevels';
 import { formatLevel } from '../core/groundLevels';
 import { translate } from './translate';
@@ -262,7 +262,8 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     first.push(<g key="t2">{title(`2. ${T.chosen}${lang === 'fr' ? ' : ' : ': '}${E(remedy.remedy.title)}`, y)}</g>);
     y += 5;
     const pieces = remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
-    const items = [E(remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid')];
+    const ground = timberGroundText(lang, remedy.outlines, !!slab);
+    const items = [E(remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), ...(ground ? [ground] : []), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper'))];
     for (const [i, t] of items.entries())
       for (const [k, line] of wrap(t, 130).entries()) {
         first.push(

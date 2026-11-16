@@ -18,7 +18,7 @@ import type { CalagePlateSpec, LevelMarkSpec, RectMm, Sheet, SheetItem, TitleBlo
 import { formatLevel } from '../core/groundLevels';
 import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { TYPE_HEX } from './figures';
-import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberLegend, tuvPlateShort } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberGroundText, timberLegend, tuvPlateShort } from './calageI18n';
 import { timberJoints } from '../core/calageRemedies';
 import type { SpreadLayer } from '../core/ground';
 import { TUV } from '../core/tuv';
@@ -32,6 +32,7 @@ const TIMBER_HEX = '#a16207';
 /** échantillon de la couche du dessous (fond clair sur le plan) */
 const TIMBER_LOWER_SWATCH = '#e9cf9f';
 const ROADWAY_COLOR = '#475569';
+const SLAB_WORD: Record<Lang, string> = { fr: 'Dalle', de: 'Decke', en: 'Slab' };
 const PLAN_ROADWAY: Record<Lang, string> = {
   fr: 'Plaques de roulage sur toute la surface (contour en tirets)',
   de: 'Fahrplatten auf der ganzen Fläche (gestrichelter Umriss)',
@@ -83,6 +84,30 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
       const cz = poly.reduce((a, p) => a + p[1], 0) / poly.length;
       out.push({ id: `RW${k + 1}`, label: '', color: ROADWAY_COLOR, corners: poly.map(W), at: W([cx, cz]), noLabel: true, dashed: true, fillOpacity: 0.05 });
     });
+  // dalle en charge répartie : la zone de dalle de chaque Viewbox, en tirets, avec son poids au m² au milieu
+  for (const z of calage.slab?.zones ?? []) {
+    const area = (q: Array<readonly [number, number]>) => Math.abs(q.reduce((a, p, i) => a + p[0] * q[(i + 1) % q.length][1] - q[(i + 1) % q.length][0] * p[1], 0)) / 2;
+    const pieces = z.pieces.filter((q) => q.length >= 3);
+    if (!pieces.length) continue;
+    const big = pieces.reduce((a, q) => (area(q) > area(a) ? q : a), pieces[0]);
+    const color = z.eta <= 0.9 ? '#16a34a' : z.eta <= 1 ? '#d97706' : '#dc2626';
+    pieces.forEach((q, k) => {
+      const cx = q.reduce((a, p) => a + p[0], 0) / q.length;
+      const cz = q.reduce((a, p) => a + p[1], 0) / q.length;
+      out.push({
+        id: `Z${z.id}${k ? `-${k}` : ''}`,
+        label: q === big ? `${SLAB_WORD[lang]} ${z.id} : ${N((z.q * 1e6) / 9.81)} kg/m²`.replace(' :', lang === 'fr' ? ' :' : ':') : '',
+        ...(q === big ? { sub: `${N(z.load / 9.81)} kg / ${N(z.area / 1e6, 2)} m²` } : {}),
+        color,
+        corners: q.map(W),
+        at: W([cx, cz]),
+        dashed: true,
+        fillOpacity: 0.06,
+        labelCenter: true,
+        ...(q === big ? {} : { noLabel: true }),
+      });
+    });
+  }
   // madriers de la solution retenue (grille, plateau), sous les blocs / pieds : couche du dessous puis du dessus, un
   // trait par joint entre deux madriers ; décrits dans la colonne de texte (pas d'étiquette sur le plan)
   const outlines = [...(calage.remedy?.outlines ?? [])].sort((a, b) => (a.timber?.layer === 'upper' ? 1 : 0) - (b.timber?.layer === 'upper' ? 1 : 0));
@@ -258,7 +283,8 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
         title: T.chosen.toUpperCase(),
         lines: [
           ...timberLegend(inp.lang, pieces).map((l) => ({ text: l.text, color: l.layer === 'lower' ? TIMBER_LOWER_SWATCH : TIMBER_HEX })),
-          { text: T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid') },
+          ...((g) => (g ? [{ text: g, bold: true }] : []))(timberGroundText(inp.lang, c.remedy.outlines, !!c.slab)),
+          { text: T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper')) },
         ],
       });
   }

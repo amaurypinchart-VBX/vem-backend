@@ -403,7 +403,7 @@ export function checkChain(inp: ChainInput): ChainResult {
   }
   const tb = inp.timber;
   if (tb) {
-    steps.push({ label: `+ ${tb.label}`, dims: null, area: tb.area, pressure: tb.pressure, eta: tb.pressure / bearing, note: tb.note });
+    steps.push({ label: `+ ${tb.label}`, dims: null, area: tb.area, pressure: tb.pressure, eta: tb.info ? 0 : tb.pressure / bearing, note: tb.note });
     records.push(...tb.records);
     etaCapacity = Math.max(etaCapacity, tb.etaTimber);
     if (tb.etaTimber > 1) problems.push(`${tb.label} : madriers insuffisants (η ${f(tb.etaTimber, 2)})`);
@@ -414,16 +414,19 @@ export function checkChain(inp: ChainInput): ChainResult {
   const last = steps[steps.length - 1];
   const etaPoint = inp.pointLoadMax ? Rzk / inp.pointLoadMax : 0;
   if (etaPoint > 1) problems.push(`${kN(Rzk)} > charge ponctuelle admissible du support ${kN(inp.pointLoadMax!)}`);
-  const info = !!inp.groundInfo && !tb;
+  // dalle en charge répartie : la pression sous le calage (ou sous les madriers retenus) n'est qu'une information
+  const info = !!inp.groundInfo && (!tb || !!tb.info);
   records.push({
     key: 'spread.ground',
     title: info ? 'Pression juste sous le calage (information : le critère est la charge de la zone de dalle)' : 'Pression au sol',
     clause: tb
       ? 'grille de madriers sur sol élastique : pression maxi sous la partie qui porte l’appui (toutes ses charges + poids des madriers)'
       : inp.roadway ? 'plaques de roulage jointives : charge verticale totale / surface couverte' : 'pression uniforme sous l’emprise efficace de la dernière couche',
-    formula: tb ? 'σB = max p (Winkler) ≤ portance admissible' : 'σB = Rz,k / A ≤ portance admissible',
+    formula: tb ? (info ? 'σ = max p (Winkler)' : 'σB = max p (Winkler) ≤ portance admissible') : 'σB = Rz,k / A ≤ portance admissible',
     withValues: tb
-      ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
+      ? info
+        ? `σ = ${pressureText(last.pressure)}`
+        : `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
       : inp.roadway
       ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
       : blk && !inp.layers.length
