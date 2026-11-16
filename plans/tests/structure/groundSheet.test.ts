@@ -43,7 +43,7 @@ describe('fiche de calage', () => {
   it('SVG A4 : sections, types d’appui, matériel, coupe du calage, filigrane, polices Arimo', () => {
     expect(pages[0]).toContain('viewBox="0 0 210 297"');
     expect(renderToStaticMarkup(createElement(GroundSheetSvg, { result, modules, info }))).toBe(pages[0]);
-    for (const t of ['FICHE DE CALAGE', '1. Installation et hypothèses', '2. Plan des appuis', '3. Calage par type', '4. Matériel à préparer', '5. Coupe du calage — de la dalle à la Viewbox', '6. Références réglementaires (TÜV)', 'Prüfbuch n° 190060 B', '7. Réserves', 'PRÉ-ÉTUDE INTERNE'])
+    for (const t of ['FICHE DE CALAGE', '1. Installation et hypothèses', '2. Plan des appuis', '3. Calage par type', '4. Matériel à préparer', '5. Coupe du calage — du sol à la Viewbox', '6. Références réglementaires (TÜV)', 'Prüfbuch n° 190060 B', '7. Réserves', 'PRÉ-ÉTUDE INTERNE'])
       expect(svg).toContain(t);
     for (const t of result.types) expect(svg).toContain(t.label);
     expect(svg).toContain('Portance à vérifier sur site');

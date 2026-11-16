@@ -2,12 +2,13 @@
 // préparer, coupe du calage, charge sur la dalle, réserves (pages suivantes si nécessaire). SVG en mm (viewBox 210 × 297), converti en PDF vectoriel par sheets/pdf/pdf.ts.
 import type { ReactElement, ReactNode } from 'react';
 import type { CalageResult, SupportCheck } from '../core/calage';
+import { timberJoints } from '../core/calageRemedies';
 import type { EstimateModule, GroupReaction, P2 } from '../core/estimate';
 import { groupTypeKey } from '../core/estimate';
 import { GROUND_NOTE } from '../core/ground';
 import type { Lang } from './i18n';
 import { LABELS, num } from './i18n';
-import { CALAGE_LABELS } from './calageI18n';
+import { CALAGE_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import { translate } from './translate';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
 import { typeColor } from './calagePlan';
@@ -69,8 +70,12 @@ export interface PlanPlate {
   zone?: boolean;
   /** zone de dalle : Viewbox dont c'est la dalle (son poids au m² est écrit avec le numéro de la Viewbox) */
   zoneOf?: string;
-  /** plaques de roulage sur toute la surface : contour de la surface couverte, légende dans un coin du plan */
+  /** plaques de roulage sur toute la surface : contour de la surface couverte, légende sous le plan */
   roadway?: boolean;
+  /** madriers de la solution retenue : couche, sens de la longueur, largeur d'un madrier (un trait par joint) */
+  timber?: { layer: 'lower' | 'upper'; dir: P2; pitch: number };
+  /** ligne de légende sous le plan, sans contour (`corners` vide) */
+  legend?: { text: string; swatch: 'timber-lower' | 'timber-upper' };
 }
 
 /** Couleur des madriers de la solution retenue (grille, plateau) sur les plans. */
@@ -114,12 +119,31 @@ export function planPlates(
       ...(p === big ? { label: zoneLines(z, lang) } : {}),
     }));
   });
-  const timber: PlanPlate[] = (opts.remedy?.outlines ?? []).map((o) => ({
-    id: `T${o.id}`,
-    corners: o.corners,
-    color: TIMBER_COLOR,
-    ...(o.id === 'PL' || o.id.startsWith('G') ? { label: [o.label, ...(o.sub ? [o.sub] : [])] } : {}),
-  }));
+  // madriers : couche du dessous puis du dessus (dessinée par-dessus), chaque madrier visible par ses joints ; leur
+  // description dans la légende sous le plan (pas d'étiquette sur le dessin, déjà chargé de plaques et de points)
+  const outlines = [...(opts.remedy?.outlines ?? [])].sort((a, b) => (a.timber?.layer === 'upper' ? 1 : 0) - (b.timber?.layer === 'upper' ? 1 : 0));
+  // charge au sol répartie sous les madriers du dessous, écrite dessus : sol = moyenne et pointe (kg/m²) ; dalle en
+  // charge répartie = charge linéique (la charge au m² est celle de la zone de la Viewbox)
+  const T = TIMBER_LABELS[lang];
+  const kg = (q: number) => num(lang, (q * 1e6) / 9.81, 0);
+  const groundLabel = (o: (typeof outlines)[number]): string[] | null => {
+    if (o.timber?.layer !== 'lower' || !o.ground) return null;
+    if (opts.slab) return o.ground.line ? [T.lineLoad(num(lang, o.ground.line, 1))] : null;
+    return [T.groundMean(kg(o.ground.mean)), T.groundMax(kg(o.ground.max))];
+  };
+  const timber: PlanPlate[] = outlines.map((o) => {
+    const gl = groundLabel(o);
+    return {
+      id: `T${o.id}`,
+      corners: o.corners,
+      color: TIMBER_COLOR,
+      ...(o.timber ? { timber: { layer: o.timber.layer, dir: o.timber.dir, pitch: o.timber.b }, ...(gl ? { label: gl } : {}) } : { label: [o.label, ...(o.sub ? [o.sub] : [])] }),
+    };
+  });
+  const legend: PlanPlate[] = timberLegend(
+    lang,
+    outlines.flatMap((o) => (o.timber ? [o.timber] : [])),
+  ).map((l, k) => ({ id: `T-legend-${k}`, corners: [], color: TIMBER_COLOR, legend: { text: l.text, swatch: l.layer === 'lower' ? 'timber-lower' : 'timber-upper' } }));
   // tronçon de rive / profil posé directement au sol (sans plaque) : sa semelle
   const outline = (c: SupportCheck): P2[] | null => {
     if (c.plan) return c.plan.corners;
@@ -129,7 +153,7 @@ export function planPlates(
     const [a0, a1, b0, b1] = [center[0] - contact[0] / 2, center[0] + contact[0] / 2, center[1] - contact[1] / 2, center[1] + contact[1] / 2];
     return [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
   };
-  return [...roadway, ...zones, ...timber, ...checks
+  return [...roadway, ...zones, ...timber, ...legend, ...checks
     .filter((c) => outline(c))
     .map((c) => ({
       id: c.id,
@@ -193,9 +217,18 @@ export function compactModuleIds(ids: string[]): string {
 }
 
 /** Vue de dessus : emprises des Viewbox (nombre de niveaux au centre), groupes d'appuis colorés par type avec Rz,k. */
-export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub, plates }: PlanProps) {
+export function GroundPlan({ modules, reactions, x, y, w, h: hFull, text, selected, onSelect, zoneLabel, zoneFill, axes, pointColor, pointSub, plates }: PlanProps) {
   const pts = [...modules.flatMap((m) => m.corners), ...(plates ?? []).flatMap((p) => p.corners)];
   if (!pts.length) return null;
+  // légende sous le plan (plaques de roulage, couches de madriers) : une bande réservée en bas du cadre
+  type LegendRow = { text: string; swatch: 'roadway' | 'timber-lower' | 'timber-upper'; color: string };
+  const legendRows = (plates ?? []).flatMap((p): LegendRow[] =>
+    p.legend ? [{ text: p.legend.text, swatch: p.legend.swatch, color: p.color }] : p.roadway && p.label?.length ? [{ text: p.label[0], swatch: 'roadway', color: p.color }] : [],
+  );
+  const lgSize = text * 0.72;
+  const lgLh = text * 1.05;
+  const band = legendRows.length ? legendRows.length * lgLh + text * 0.6 : 0;
+  const h = hFull - band;
   const minX = Math.min(...pts.map((p) => p[0]));
   const maxX = Math.max(...pts.map((p) => p[0]));
   const minY = Math.min(...pts.map((p) => p[1]));
@@ -370,7 +403,8 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     const g = text * 0.3;
-    const tries = p.zone
+    // zones de dalle et madriers : texte dans le contour, sur fond blanc (lisible sur les joints)
+    const tries = p.zone || p.timber
       ? around(cx, cy, (x1 - x0) / 2 - tw / 2, (y1 - y0) / 2 - th / 2, th, true, true)
       : [
           ...around(cx, cy, (x1 - x0) / 2 - tw / 2, (y1 - y0) / 2 - th / 2, th, true, false),
@@ -382,28 +416,50 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
         ];
     plateText.set(p.id, place(tries, tw, th, bb, text * 0.15));
   }
-  // plaques de roulage : une légende (trait en tirets + texte) dans un coin libre du cadre
-  const roadwayPlate = (plates ?? []).find((p) => p.roadway && p.label?.length);
-  const legend = (() => {
-    if (!roadwayPlate) return null;
-    const t = roadwayPlate.label![0];
-    const sw = text * 2.2;
-    const tw = sw + text * 0.4 + t.length * small * 0.56;
-    const th = lh + text * 0.2;
-    const g = text * 0.3;
-    const pos = place([at(x + g, 'start', y + g, false), at(x + g, 'start', y + h - th - g, false), at(x + w - g, 'end', y + g, false), at(x + w - g, 'end', y + h - th - g, false)], tw, th, [x, y, x + w, y + h]);
-    const bx = pos.anchor === 'end' ? pos.ax - tw : pos.ax;
-    const ly = pos.top + th / 2;
-    return (
-      <g key="rw-legend">
-        <rect x={bx} y={pos.top} width={tw} height={th} fill="#ffffff" />
-        <line x1={bx} x2={bx + sw} y1={ly} y2={ly} stroke={roadwayPlate.color} strokeWidth={text * 0.12} strokeDasharray={`${text * 0.7} ${text * 0.25}`} />
-        <text fontFamily={FONT_SANS} x={bx + sw + text * 0.4} y={ly + small * 0.35} fontSize={small} fontWeight={700} fill="#334155">
-          {t}
-        </text>
-      </g>
-    );
-  })();
+  // madriers : un trait par joint entre deux madriers, dans le sens de leur longueur (au plus un trait tous les
+  // 0,12 × corps de texte : sur un très grand plan, un joint sur deux, trois…)
+  const jointsPath = (p: PlanPlate): string => {
+    const t = p.timber!;
+    const every = Math.max(1, Math.ceil((text * 0.12) / Math.max(t.pitch * s, 1e-9)));
+    return timberJoints(p.corners, t.dir, t.pitch * every)
+      .map(([a, b]) => `M${X(a[0]).toFixed(2)} ${Y(a[1]).toFixed(2)}L${X(b[0]).toFixed(2)} ${Y(b[1]).toFixed(2)}`)
+      .join('');
+  };
+  // bande de légende : échantillon (madriers : rectangle avec joints ; plaques de roulage : tirets) + texte
+  const legend = legendRows.length ? (
+    <g key="legend">
+      {legendRows.map((l, k) => {
+        const ly = y + h + text * 0.3 + k * lgLh + lgLh / 2;
+        const sw = text * 2.4;
+        const sx = x + text * 0.6;
+        const sh = text * 0.8;
+        return (
+          <g key={k}>
+            {l.swatch === 'roadway' ? (
+              <line x1={sx} x2={sx + sw} y1={ly} y2={ly} stroke={l.color} strokeWidth={text * 0.12} strokeDasharray={`${text * 0.7} ${text * 0.25}`} />
+            ) : (
+              <g>
+                <rect x={sx} y={ly - sh / 2} width={sw} height={sh} fill={l.color} fillOpacity={l.swatch === 'timber-lower' ? 0.12 : 0.3} stroke={l.color} strokeWidth={text * 0.07} />
+                <path
+                  d={
+                    l.swatch === 'timber-lower'
+                      ? [1, 2, 3, 4, 5].map((i) => `M${(sx + (i * sw) / 6).toFixed(2)} ${(ly - sh / 2).toFixed(2)}V${(ly + sh / 2).toFixed(2)}`).join('')
+                      : `M${sx.toFixed(2)} ${ly.toFixed(2)}H${(sx + sw).toFixed(2)}`
+                  }
+                  stroke={l.color}
+                  strokeWidth={text * 0.04}
+                  fill="none"
+                />
+              </g>
+            )}
+            <text fontFamily={FONT_SANS} x={sx + sw + text * 0.5} y={ly + lgSize * 0.35} fontSize={lgSize} fontWeight={l.swatch === 'timber-lower' || l.swatch === 'roadway' ? 700 : undefined} fill="#334155">
+              {l.text}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  ) : null;
   const plateLabel = (p: PlanPlate, lines: string[]) => {
     const pos = plateText.get(p.id);
     if (!pos) return null;
@@ -434,16 +490,17 @@ export function GroundPlan({ modules, reactions, x, y, w, h, text, selected, onS
           strokeDasharray={m.level === 0 ? undefined : `${text * 0.4} ${text * 0.3}`}
         />
       ))}
-      {(plates ?? []).map((p) => (
+      {(plates ?? []).filter((p) => p.corners.length).map((p) => (
         <g key={`pl${p.id}`}>
           <polygon
             points={p.corners.map((q) => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}
             fill={p.color}
-            fillOpacity={p.roadway ? 0.06 : p.zone ? 0.1 : 0.22}
+            fillOpacity={p.roadway ? 0.06 : p.zone ? 0.1 : p.timber ? (p.timber.layer === 'lower' ? 0.12 : 0.3) : 0.22}
             stroke={p.color}
-            strokeWidth={text * (p.roadway ? 0.12 : p.zone ? 0.05 : 0.09)}
+            strokeWidth={text * (p.roadway ? 0.12 : p.zone ? 0.05 : p.timber ? 0.07 : 0.09)}
             strokeDasharray={p.roadway ? `${text * 0.7} ${text * 0.25}` : p.centered ? `${text * 0.35} ${text * 0.2}` : p.zone ? `${text * 0.2} ${text * 0.15}` : undefined}
           />
+          {p.timber && <path d={jointsPath(p)} stroke={p.color} strokeWidth={text * 0.035} strokeOpacity={0.8} fill="none" />}
           {p.label && plateLabel(p, p.label)}
           {p.centered && (
             <text fontFamily={FONT_SANS} x={X(Math.max(...p.corners.map((q) => q[0])))} y={Y(Math.min(...p.corners.map((q) => q[1]))) + text * 0.7} fontSize={text * 0.75} textAnchor="end" fill={p.color}>
@@ -687,7 +744,8 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
   // 2. plan des appuis et des plaques
   const fem = result.estimate.method === 'fem';
   title(C.s2(fem), 't2');
-  const planH = 66;
+  // solution retenue en madriers : plan plus grand (madriers, joints et légende sous le plan)
+  const planH = result.remedy ? 92 : 66;
   push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
@@ -708,7 +766,23 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
     `  ${t.chosen ? (t.standard ? (verdictOf(t.chosen.eta) === 'limit' ? C.stateLimit : C.stateOk) : C.stateOut) : C.stateNone}`,
   ]);
   table('types', typeCols(lang), typeRows);
-  if (result.longrine) {
+  // solution retenue (grille / plateau de madriers) : ce qui est posé, couche par couche, et comment le poser
+  if (result.remedy) {
+    const T = TIMBER_LABELS[lang];
+    const pieces = result.remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
+    need(8);
+    push(
+      <text fontFamily={FONT_SANS} key="rmt" x={M} y={y} fontSize={2.8} fontWeight={700} fill="#111827">
+        {`${T.chosen}${lang === 'fr' ? ' : ' : ': '}${E(result.remedy.remedy.title)}`}
+      </text>,
+    );
+    y += 4;
+    const ground = timberGroundText(lang, result.remedy.outlines, !!result.slab);
+    para('rm', [E(result.remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), ...(ground ? [ground] : []), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper'))], body, 3.4, '#374151', 140);
+    y += 2;
+  }
+  // variante longrines : seulement sans solution retenue en madriers (elle la remplace)
+  if (result.longrine && !result.remedy) {
     need(5);
     push(
       <text fontFamily={FONT_SANS} key="lg" x={M} y={y} fontSize={body} fill="#111827">
@@ -733,12 +807,15 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
   // 5. coupe du calage : de la dalle à la Viewbox, couche par couche
   const stacks = result.stacks ?? [];
   if (stacks.length) {
-    title(S.stackTitle, 't5');
-    y += 4.5;
-    para('si', [S.stackIntro], 2.2, 3.1, '#6b7280', 140);
+    const onSlab = !!result.slab;
     const figH = Math.ceil(stacks.length / 4) * 44;
+    // titre, introduction et croquis sur la même page (le croquis ne part pas seul sur la page suivante)
+    need(figH + 22);
+    title(onSlab ? S.stackTitle : S.stackTitleGround, 't5');
+    y += 4.5;
+    para('si', [onSlab ? S.stackIntro : S.stackIntroGround], 2.2, 3.1, '#6b7280', 140);
     need(figH + 2);
-    push(<g key="stackfig" dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, lang)(M, y, W - 2 * M, figH) }} />);
+    push(<g key="stackfig" dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, lang, onSlab)(M, y, W - 2 * M, figH) }} />);
     y += figH + 3;
     const rows: string[][] = stacks.flatMap((s) => stackLines(s, lang).map((l, k) => [k ? '' : s.supports.join(', '), l, k ? '' : stackHeightText(s, lang)]));
     table('stack', [

@@ -13,6 +13,9 @@ export const STACK_LABELS: Record<
   {
     stackTitle: string;
     stackIntro: string;
+    /** posé sur le sol (portance en pression, pas une dalle) */
+    stackTitleGround: string;
+    stackIntroGround: string;
     slabTitle: string;
     slabIntro: string;
     colSupports: string;
@@ -27,13 +30,15 @@ export const STACK_LABELS: Record<
     plusRoadway: string;
     toProfiles: string;
     unknownThickness: string;
-    short: Record<'slab' | 'roadway' | 'plate' | 'block' | 'packing' | 'jack' | 'foot' | 'viewbox' | 'profiles', string>;
+    short: Record<'slab' | 'ground' | 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot' | 'viewbox' | 'profiles', string>;
     figure: string;
   }
 > = {
   fr: {
     stackTitle: 'Coupe du calage — de la dalle à la Viewbox',
     stackIntro: 'Ce qui est posé sur la dalle, couche par couche de bas en haut, sous chaque appui (appuis identiques regroupés). Épaisseurs : calage retenu et dessin du modèle (blocs, vide entre le bloc et la Viewbox).',
+    stackTitleGround: 'Coupe du calage — du sol à la Viewbox',
+    stackIntroGround: 'Ce qui est posé sur le sol, couche par couche de bas en haut, sous chaque appui (appuis identiques regroupés). Épaisseurs : calage retenu et dessin du modèle (blocs, vide entre le bloc et la Viewbox).',
     slabTitle: 'Charge sur la dalle sous chaque Viewbox',
     slabIntro: 'Poids posé sur la dalle sous chaque Viewbox, poste par poste, dans la combinaison la plus lourde (caractéristique), rapporté à la surface de dalle qu’elle charge.',
     colSupports: 'Appuis',
@@ -48,12 +53,14 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ plaques de roulage',
     toProfiles: 'jusqu’au dessous des profils du plancher',
     unknownThickness: 'ép. ?',
-    short: { slab: 'Dalle', roadway: 'Plaques de roulage', plate: 'Plaques', block: 'Bloc bois', packing: 'Cales', jack: 'Vérin', foot: 'Pied', viewbox: 'Viewbox (UNP)', profiles: 'Profils du plancher' },
+    short: { slab: 'Dalle', ground: 'Sol', roadway: 'Plaques de roulage', timber: 'Madriers', plate: 'Plaques', block: 'Bloc bois', packing: 'Cales', jack: 'Vérin', foot: 'Pied', viewbox: 'Viewbox (UNP)', profiles: 'Profils du plancher' },
     figure: 'Coupe du calage (échelle des hauteurs, largeurs schématiques)',
   },
   de: {
     stackTitle: 'Unterpallung im Schnitt — von der Decke bis zur Viewbox',
     stackIntro: 'Was auf der Decke liegt, Lage für Lage von unten nach oben, unter jedem Auflager (gleiche Auflager zusammengefasst). Dicken: gewählte Unterpallung und Zeichnung des Modells (Klötze, Abstand zwischen Klotz und Viewbox).',
+    stackTitleGround: 'Unterpallung im Schnitt — vom Boden bis zur Viewbox',
+    stackIntroGround: 'Was auf dem Boden liegt, Lage für Lage von unten nach oben, unter jedem Auflager (gleiche Auflager zusammengefasst). Dicken: gewählte Unterpallung und Zeichnung des Modells (Klötze, Abstand zwischen Klotz und Viewbox).',
     slabTitle: 'Last auf der Decke unter jeder Viewbox',
     slabIntro: 'Last auf der Decke unter jeder Viewbox, Posten für Posten, in der ungünstigsten Kombination (charakteristisch), bezogen auf die von ihr belastete Deckenfläche.',
     colSupports: 'Auflager',
@@ -68,12 +75,14 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ Fahrplatten',
     toProfiles: 'bis Unterkante der Bodenträger',
     unknownThickness: 'Dicke ?',
-    short: { slab: 'Decke', roadway: 'Fahrplatten', plate: 'Platten', block: 'Holzklotz', packing: 'Keile', jack: 'Spindel', foot: 'Fuß', viewbox: 'Viewbox (UNP)', profiles: 'Bodenträger' },
+    short: { slab: 'Decke', ground: 'Boden', roadway: 'Fahrplatten', timber: 'Kanthölzer', plate: 'Platten', block: 'Holzklotz', packing: 'Keile', jack: 'Spindel', foot: 'Fuß', viewbox: 'Viewbox (UNP)', profiles: 'Bodenträger' },
     figure: 'Unterpallung im Schnitt (Höhen maßstäblich, Breiten schematisch)',
   },
   en: {
     stackTitle: 'Packing section — from the slab to the Viewbox',
     stackIntro: 'What is laid on the slab, layer by layer from bottom to top, under each support (identical supports grouped). Thicknesses: chosen packing and model drawing (blocks, gap between the block and the Viewbox).',
+    stackTitleGround: 'Packing section — from the ground to the Viewbox',
+    stackIntroGround: 'What is laid on the ground, layer by layer from bottom to top, under each support (identical supports grouped). Thicknesses: chosen packing and model drawing (blocks, gap between the block and the Viewbox).',
     slabTitle: 'Load on the slab under each Viewbox',
     slabIntro: 'Weight on the slab under each Viewbox, item by item, in the heaviest combination (characteristic), divided by the slab area it loads.',
     colSupports: 'Supports',
@@ -88,7 +97,7 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ roadway plates',
     toProfiles: 'to the underside of the floor members',
     unknownThickness: 'thickn. ?',
-    short: { slab: 'Slab', roadway: 'Roadway plates', plate: 'Plates', block: 'Timber block', packing: 'Packing', jack: 'Jack', foot: 'Foot', viewbox: 'Viewbox (UNP)', profiles: 'Floor members' },
+    short: { slab: 'Slab', ground: 'Ground', roadway: 'Roadway plates', timber: 'Sleepers', plate: 'Plates', block: 'Timber block', packing: 'Packing', jack: 'Jack', foot: 'Foot', viewbox: 'Viewbox (UNP)', profiles: 'Floor members' },
     figure: 'Packing section (heights to scale, widths schematic)',
   },
 };
@@ -124,13 +133,15 @@ const rect = (x: number, y: number, w: number, h: number, fill: string, stroke =
   `<rect x="${r2(x)}" y="${r2(y)}" width="${r2(w)}" height="${r2(Math.max(h, 0.2))}" fill="${fill}" stroke="${stroke}" stroke-width="${r2(sw)}"${dash ? ' stroke-dasharray="0.8 0.6"' : ''}/>`;
 const line = (x1: number, y1: number, x2: number, y2: number, color = '#374151', w = 0.2) => `<line x1="${r2(x1)}" y1="${r2(y1)}" x2="${r2(x2)}" y2="${r2(y2)}" stroke="${color}" stroke-width="${r2(w)}"/>`;
 
-const FILL: Record<string, string> = { roadway: '#9ca3af', plate: '#fcd34d', block: '#d6a76c', packing: '#f59e0b', jack: '#6b7280', foot: '#6b7280' };
+const FILL: Record<string, string> = { roadway: '#9ca3af', timber: '#e8c58f', plate: '#fcd34d', block: '#d6a76c', packing: '#f59e0b', jack: '#6b7280', foot: '#6b7280' };
+/** Couleur du trait des madriers (comme sur les plans). */
+const TIMBER_STROKE = '#a16207';
 
 /**
  * Croquis d'une coupe dans le cadre (x, y, w, h) en mm : dalle hachurée en bas, couches à l'échelle des hauteurs
  * (épaisseur inconnue : 1,5 cm en pointillés), élément de la Viewbox en haut, cotes à droite, hauteur totale à gauche.
  */
-export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, h: number, lang: Lang, title?: string): string {
+export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, h: number, lang: Lang, title?: string, slab = true): string {
   const S = STACK_LABELS[lang];
   const out: string[] = [];
   const size = Math.min(2.3, w / 16);
@@ -147,8 +158,8 @@ export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, 
   // dalle
   out.push(rect(x + w * 0.04, yy, w * 0.92 - 0.2, slabH, '#e5e7eb', '#6b7280'));
   for (let hx = x + w * 0.06; hx < x + w * 0.95; hx += 2) out.push(line(hx, yy + slabH, Math.min(hx + 2, x + w * 0.96), yy, '#9ca3af', 0.15));
-  out.push(text(x + w * 0.06, yy + slabH - 1, S.short.slab, size * 0.85, { color: '#374151' }));
-  const widthOf = (kind: string) => ({ roadway: full, plate: full * 0.78, block: full * 0.62, packing: full * 0.5, jack: full * 0.12, foot: full * 0.2 })[kind] ?? full * 0.5;
+  out.push(text(x + w * 0.06, yy + slabH - 1, slab ? S.short.slab : S.short.ground, size * 0.85, { color: '#374151' }));
+  const widthOf = (kind: string) => ({ roadway: full, timber: full * 0.92, plate: full * 0.78, block: full * 0.62, packing: full * 0.5, jack: full * 0.12, foot: full * 0.2 })[kind] ?? full * 0.5;
   s.layers.forEach((l, i) => {
     const lh = shown[i] * k;
     yy -= lh;
@@ -158,6 +169,15 @@ export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, 
       const ph = Math.min(lh * 0.25, 1.2);
       out.push(rect(cx - full * 0.13, yy + lh - ph, full * 0.26, ph, FILL.jack));
       out.push(rect(cx - lw / 4, yy, lw / 2, lh - ph, FILL.jack));
+    } else if (l.kind === 'timber' && l.section === 'cut') {
+      // madriers coupés : sections côte à côte (nombre schématique)
+      const n = Math.max(3, Math.min(8, Math.round(lw / Math.max(lh, 0.5))));
+      const pw = lw / n;
+      for (let i = 0; i < n; i++) out.push(rect(cx - lw / 2 + i * pw, yy, pw, lh, FILL.timber, TIMBER_STROKE, 0.18));
+    } else if (l.kind === 'timber') {
+      // madrier vu en long : un trait de fil du bois au milieu
+      out.push(rect(cx - lw / 2, yy, lw, lh, FILL.timber, TIMBER_STROKE, 0.2));
+      out.push(line(cx - lw / 2 + 0.6, yy + lh / 2, cx + lw / 2 - 0.6, yy + lh / 2, TIMBER_STROKE, 0.1));
     } else out.push(rect(cx - lw / 2, yy, lw, lh, FILL[l.kind] ?? '#e5e7eb', '#374151', 0.2, l.thickness === null));
     const label = `${S.short[l.kind as keyof typeof S.short] ?? ''}${l.thickness !== null ? ` ${cmText(lang, l.thickness)}` : ` (${S.unknownThickness})`}`;
     // étiquette à droite de la couche, réduite si elle déborderait du cadre
@@ -185,14 +205,17 @@ export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, 
   return out.join('');
 }
 
-/** Toutes les coupes côte à côte (au plus 4 par rangée), avec le nom des appuis au-dessus de chacune. */
-export function stacksFigureSvg(stacks: CalageStack[], lang: Lang) {
+/**
+ * Toutes les coupes côte à côte (au plus 4 par rangée), avec le nom des appuis au-dessus de chacune. `slab` : posé sur
+ * une dalle (sinon « Sol » en bas de la coupe).
+ */
+export function stacksFigureSvg(stacks: CalageStack[], lang: Lang, slab = true) {
   return (x: number, y: number, w: number, h: number) => {
     const per = Math.min(4, Math.max(1, stacks.length));
     const rows = Math.ceil(stacks.length / per);
     const cw = w / per;
     const rh = h / rows;
-    return stacks.map((s, i) => stackSketchSvg(s, x + (i % per) * cw + 1, y + Math.floor(i / per) * rh, cw - 2, rh - 1, lang, s.supports.length > 3 ? `${s.supports.slice(0, 3).join(', ')}…` : s.supports.join(', '))).join('');
+    return stacks.map((s, i) => stackSketchSvg(s, x + (i % per) * cw + 1, y + Math.floor(i / per) * rh, cw - 2, rh - 1, lang, s.supports.length > 3 ? `${s.supports.slice(0, 3).join(', ')}…` : s.supports.join(', '), slab)).join('');
   };
 }
 
