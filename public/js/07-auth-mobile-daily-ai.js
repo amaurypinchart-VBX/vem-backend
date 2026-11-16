@@ -1232,7 +1232,7 @@ async function loadDetailHandovers(projectId) {
           <div style="display:flex;gap:4px;">
             <button class="btn btn-ghost btn-xs" onclick="openHandoverFull('${h.id}')">👁️ Ouvrir</button>
             <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${projectId}')">✏️ Modifier</button>
-            <button class="btn btn-ghost btn-xs" onclick="generateHandoverPDF('${h.id}')">📄 PDF</button>
+            <button class="btn btn-ghost btn-xs" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
             <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
             <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteHandover('${h.id}')">🗑️</button>
           </div>

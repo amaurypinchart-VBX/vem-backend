@@ -903,8 +903,11 @@ async function editHandoverFields(handoverId, projectId) {
           <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">✍️ Page 2 — Signatures</div>
 
           <div class="form-group2">
-            <label class="form-label2">Comments / Reservations</label>
-            <textarea clasid="hf-comments" rows="3"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <label class="form-label2" style="margin:0;">Comments / Reservations</label>
+              ${(h.items||[]).some(i => i.status !== 'ok') ? `<button type="button" class="btn btn-ghost btn-xs" onclick="fillHandoverReservationsFromZones()" title="Ajoute les zones en remarque / défaut / en attente">↺ Reprendre les zones avec remarque</button>` : ''}
+            </div>
+            <textarea class="input" id="hf-comments" rows="3" placeholder="Remarques ou réserves du client (section « Remarques / Réservations » du PDF, au-dessus des signatures)"></textarea>
           </div>
 
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:10px 0 8px;">CLIENT</div>
@@ -974,14 +977,23 @@ async function editHandoverFields(handoverId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  // Populate comments textarea safely
-  const commentsTA = document.getElementById('hf-comments-area');
+  // Remarques / réserves = generalNotes du handover (PDF, fiche, page de signature) ; valeur posée en JS (pas d'injection HTML)
+  const commentsTA = document.getElementById('hf-comments');
   if (commentsTA) {
-    const existingComments = f['comments'] !== undefined ? f['comments'] : 
-      (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('\n');
-    commentsTA.value = existingComments;
+    commentsTA.value = h.generalNotes || f.comments || '';
+    commentsTA._zones = h.items || []; // pour « ↺ Reprendre les zones avec remarque »
   }
   // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
+}
+
+// « ✏️ Modifier » : ajoute aux remarques / réserves les zones en remarque / défaut / en attente
+function fillHandoverReservationsFromZones() {
+  const ta = document.getElementById('hf-comments');
+  if (!ta) return;
+  const lines = (ta._zones || []).filter(i => i.status !== 'ok')
+    .map(i => '• ' + i.zoneName + (i.comment ? ' — ' + i.comment : ''));
+  if (!lines.length) return;
+  ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + lines.join('\n');
 }
 
 async function updateHandoverItemStatus(itemId, handoverId, status) {
@@ -1008,7 +1020,8 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
     customFields: fields,
     clientName: fields.clientName || undefined,
     clientEmail: fields.clientContactEmail || undefined,
-    generalNotes: document.getElementById('hf-projectSummary')?.value || undefined,
+    // « Comments / Reservations » → remarques / réserves du PDF (vide = aucune)
+    generalNotes: document.getElementById('hf-comments') ? (document.getElementById('hf-comments').value.trim() || null) : undefined,
     scopeOfWork: document.getElementById('hf-scope')?.value || null,
     // check-list de montage en annexe (absent quand le projet n'a pas de check-list)
     checklistAnnex: document.getElementById('hf-checklistAnnex') ? document.getElementById('hf-checklistAnnex').value === 'annex' : undefined,

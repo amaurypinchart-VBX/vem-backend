@@ -121,6 +121,11 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       items,
       generalNotes: h.generalNotes,
       scopeOfWork: h.scopeOfWork,
+      // champs saisis dans « ✏️ Modifier » ; le nom tapé par le client au moment de signer prime sous sa signature
+      customFields: {
+        ...(((h.customFields as Record<string, any> | null) || {})),
+        ...((signerName || '').trim() ? { clientRep: (signerName || '').trim() } : {}),
+      },
       managerSignatureUrl: h.managerSignatureUrl,
       clientSignatureUrl: signatureBase64,
       date: h.createdAt,

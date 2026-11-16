@@ -822,7 +822,11 @@ export async function generateHandoverPdf(data: {
     return (v !== undefined && v !== null && String(v).trim() !== '') ? String(v) : fallback;
   };
 
-  // Données enrichies (customFields > data > défaut)
+  // Données enrichies (customFields > data > défaut) — champs de « ✏️ Modifier » du handover
+  const displayProjectName = f('projectName',        data.project.name);
+  const displayAddress     = f('siteAddress',        data.project.address || '');
+  const typedDate          = cf.handoverDate ? new Date(String(cf.handoverDate)) : null;
+  const displayDate        = typedDate && !isNaN(typedDate.getTime()) ? typedDate : data.date;
   const displayClientName  = f('clientName',         data.clientName);
   const displayContractor  = f('contractor',         t('handover.contractor.name', lang));
   const displaySiteManager = f('spantechRep',        data.siteManagerName);
@@ -869,7 +873,7 @@ export async function generateHandoverPdf(data: {
     scopeText = data.scopeOfWork.trim();
   } else {
     scopeText = t('handover.scope.template', lang)
-      .replace('{name}', data.project.name)
+      .replace('{name}', displayProjectName)
       .replace('{n}', String(data.items.length));
   }
 
@@ -882,9 +886,9 @@ export async function generateHandoverPdf(data: {
 
     // ─── Header ───
     header(doc, t('handover.title', lang), {
-      projectName: data.project.name,
+      projectName: displayProjectName,
       projectRef:  `N° ${data.project.internalNumber}`,
-      reportDate:  fmtPdfDate(data.date, lang),
+      reportDate:  fmtPdfDate(displayDate, lang),
     }, lang);
 
     // ─── Titre principal centré "HANDOVER CERTIFICATE" ───
@@ -898,13 +902,13 @@ export async function generateHandoverPdf(data: {
 
     // ─── Section Informations Projet ───
     sectionTitle(doc, t('handover.section.projectInfo', lang));
-    infoRow(doc, t('handover.field.project', lang),       data.project.name);
+    infoRow(doc, t('handover.field.project', lang),       displayProjectName);
     infoRow(doc, t('handover.field.internalRef', lang),   data.project.internalNumber);
-    infoRow(doc, t('handover.field.address', lang),       data.project.address);
+    infoRow(doc, t('handover.field.address', lang),       displayAddress);
     infoRow(doc, t('handover.field.client', lang),        displayClientName);
     infoRow(doc, t('handover.field.contractor', lang),    displayContractor);
     infoRow(doc, t('handover.field.siteManager', lang),   displaySiteManager);
-    infoRow(doc, t('handover.field.reportDate', lang),    fmtPdfDate(data.date, lang));
+    infoRow(doc, t('handover.field.reportDate', lang),    fmtPdfDate(displayDate, lang));
     // Contacts si renseignés
     if (clientContactEmail || clientContactPhone) {
       const contactStr = [clientContactEmail, clientContactPhone].filter(Boolean).join(' · ');
@@ -1091,7 +1095,7 @@ export async function generateHandoverPdf(data: {
     // ─── Annexe : check-list de montage complète, après les signatures ───
     if (checklist && checklistInAnnex) {
       renderAnnexHeading(doc, t('checklist.annex.title', lang), t('checklist.annex.subtitle', lang)
-        .replace('{name}', s(data.project.name)).replace('{ref}', s(data.project.internalNumber)));
+        .replace('{name}', s(displayProjectName)).replace('{ref}', s(data.project.internalNumber)));
       renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager, hideTitle: true }, lang);
     }
 
