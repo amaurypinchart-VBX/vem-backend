@@ -369,6 +369,8 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   // partie efficace de la plaque (ou du bloc) du dessous de chaque appui quand elle dépasse de l'installation
   const over = res.roadwayOn ? Math.max(0, inp.choices?.roadwayOverhang ?? 0) : 0;
   const surface: P2[][] = plat ? [plat.corners] : inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, over));
+  // madriers retenus sous les rangées : ils chargent la dalle là où ils sont (agrandissent la surface s'ils dépassent)
+  if (!plat) for (const o of res.remedy?.outlines ?? []) if (o.timber?.layer === 'lower') surface.push(o.corners);
   for (const c of res.checks) {
     if (c.reaction.group.stair || c.reaction.group.terrace) continue;
     const eff = bottomEffective(c);

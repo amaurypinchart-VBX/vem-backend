@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { computeCalage } from '../../src/structure/core/calage';
 import type { CalageResult } from '../../src/structure/core/calage';
-import { calageRemedies } from '../../src/structure/core/calageRemedies';
+import { calageRemedies, sleeperOption } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
 import type { EstimateModule } from '../../src/structure/core/estimate';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
@@ -92,6 +92,13 @@ function scenarios(): Array<[string, CalageResult, EstimateModule[]]> {
   out.push(['blocs en contreplaqué', computeCalage({ ...inp, blocks: nine.map((b) => ({ ...b, material: 'CP-F40/30' })) }), mods]);
   for (const r of calageRemedies(inp, res)) if (r.apply && typeof r.apply === 'object') out.push([`solution ${r.key}`, computeCalage({ ...inp, choices: { remedy: r.apply } }), mods]);
   out.push(['blocs centrés', computeCalage({ ...inp, choices: { centreBlocks: true } }), mods]);
+  // madriers 10 × 23 cm à plat choisis à la main : sol (pression) et dalle en charge répartie
+  const flat = { b: 230, h: 100 };
+  const two = sleeperOption(inp, res, { beam: flat, count: 2, withBlocks: true })!;
+  out.push(['madriers 10/23 sur sol', computeCalage({ ...inp, choices: { remedy: two.apply as never } }), mods]);
+  const dal = { ...inp, bearingMode: 'distributed' as const };
+  const dalOpt = sleeperOption(dal, computeCalage(dal), { beam: flat, withBlocks: false })!;
+  out.push(['madriers 10/23 sur dalle', computeCalage({ ...dal, choices: { remedy: dalOpt.apply as never } }), mods]);
   const items = [{ label: 'Glazing', count: 3, N: 3 * 201 * 9.81, proposed: true as const }];
   const m2 = mods.map((m, i) => (i ? m : { ...m, carried: items[0].N, carriedItems: items }));
   const slab = { ...calageInput(m2, hyp450, stock, true), bearingMode: 'distributed' as const };
@@ -131,6 +138,33 @@ describe('documents de calage en anglais et en allemand', () => {
           }
       expect([...new Set(left)]).toEqual([]);
     }, 120000);
+
+  it('pistes pour le sol (madriers, plateau) : titres, résumés, détails et hypothèses traduits (rapport)', () => {
+    const left: string[] = [];
+    for (const bearing of [450, 800]) {
+      const inp = { ...calageInput(mods, { ...hyp450, bearingValue: bearing }, stock, true), blocks: nine };
+      const res = computeCalage(inp);
+      // (« surface nécessaire », « blocs centrés », « réduire la charge » : pistes d'information de l'écran, en français)
+      const rem = calageRemedies(inp, res).filter((r) => r.key !== 'area' && r.key !== 'load' && r.key !== 'centre-blocks');
+      expect(rem.some((r) => r.key === 'sleepers' || r.key === 'sleepers-no-blocks')).toBe(true);
+      // madriers choisis à la main, sur sol et sur dalle en charge répartie
+      for (const mode of ['pressure', 'distributed'] as const)
+        for (const count of [undefined, 1]) {
+          const i2 = { ...inp, bearingMode: mode };
+          const o = sleeperOption(i2, computeCalage(i2), { beam: { b: 230, h: 100 }, ...(count ? { count } : {}), withBlocks: true });
+          if (o) rem.push(o);
+        }
+      for (const lang of ['en', 'de'] as const) {
+        const re = frenchRe(lang);
+        for (const r of rem)
+          for (const t of [r.title, r.summary, ...r.details, ...r.notes]) {
+            const out = translate(lang, t);
+            if (re.test(out.replace(/\binformation\b/gi, '')) || (lang === 'en' && /[éèàçêôûœÉÈÀ]/.test(out))) left.push(`[${bearing} ${r.key} ${lang}] ${out}`);
+          }
+      }
+    }
+    expect([...new Set(left)]).toEqual([]);
+  }, 120000);
 
   it('textes corrigés le 09.11.2026 : matériau des blocs, solutions, avertissements, portance', () => {
     expect(translate('en', 'Bloc de calage bois massif c24 (dessiné dans le modèle)')).toBe('Packing block, solid timber C24 (drawn in the model)');

@@ -18,13 +18,26 @@ import type { CalagePlateSpec, LevelMarkSpec, RectMm, Sheet, SheetItem, TitleBlo
 import { formatLevel } from '../core/groundLevels';
 import { DRAW_AREA, scaleRect, templateScale } from '../../sheets/template';
 import { TYPE_HEX } from './figures';
-import { CALAGE_LABELS, LEVEL_LABELS, tuvPlateShort } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberGroundText, timberLegend, tuvPlateShort } from './calageI18n';
+import { timberJoints } from '../core/calageRemedies';
 import type { SpreadLayer } from '../core/ground';
 import { TUV } from '../core/tuv';
 import type { Lang } from './i18n';
 import { LABELS, num } from './i18n';
 import { wrapText } from './metrics';
 import { translate, typo } from './translate';
+
+/** Couleur des madriers de la solution retenue et des plaques de roulage sur le plan de calage. */
+const TIMBER_HEX = '#a16207';
+/** échantillon de la couche du dessous (fond clair sur le plan) */
+const TIMBER_LOWER_SWATCH = '#e9cf9f';
+const ROADWAY_COLOR = '#475569';
+const SLAB_WORD: Record<Lang, string> = { fr: 'Dalle', de: 'Decke', en: 'Slab' };
+const PLAN_ROADWAY: Record<Lang, string> = {
+  fr: 'Plaques de roulage sur toute la surface (contour en tirets)',
+  de: 'Fahrplatten auf der ganzen Fläche (gestrichelter Umriss)',
+  en: 'Roadway plates over the whole area (dashed outline)',
+};
 
 /** Couleur d'un type d'appui de calage (« 1 »…« 4 », « M », « M2 »). */
 export const typeColor = (key: string): string => TYPE_HEX[key] ?? (key.startsWith('B') ? TYPE_HEX.B : TYPE_HEX[key.startsWith('M') ? 'M' : String(Math.min(4, Number(key) || 1))]);
@@ -64,12 +77,53 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
     return out;
   }
   const W = (p: readonly [number, number]): Vec3 => [p[0], y, p[1]];
-  // madriers de la solution retenue (grille, plateau), sous les blocs / pieds
-  for (const o of calage.remedy?.outlines ?? []) {
+  // plaques de roulage retenues : contour de la surface couverte, en tirets (décrit dans la colonne de texte)
+  if (calage.roadwayOn)
+    (calage.roadwayOutline ?? []).forEach((poly, k) => {
+      const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
+      const cz = poly.reduce((a, p) => a + p[1], 0) / poly.length;
+      out.push({ id: `RW${k + 1}`, label: '', color: ROADWAY_COLOR, corners: poly.map(W), at: W([cx, cz]), noLabel: true, dashed: true, fillOpacity: 0.05 });
+    });
+  // dalle en charge répartie : la zone de dalle de chaque Viewbox, en tirets, avec son poids au m² au milieu
+  for (const z of calage.slab?.zones ?? []) {
+    const area = (q: Array<readonly [number, number]>) => Math.abs(q.reduce((a, p, i) => a + p[0] * q[(i + 1) % q.length][1] - q[(i + 1) % q.length][0] * p[1], 0)) / 2;
+    const pieces = z.pieces.filter((q) => q.length >= 3);
+    if (!pieces.length) continue;
+    const big = pieces.reduce((a, q) => (area(q) > area(a) ? q : a), pieces[0]);
+    const color = z.eta <= 0.9 ? '#16a34a' : z.eta <= 1 ? '#d97706' : '#dc2626';
+    pieces.forEach((q, k) => {
+      const cx = q.reduce((a, p) => a + p[0], 0) / q.length;
+      const cz = q.reduce((a, p) => a + p[1], 0) / q.length;
+      out.push({
+        id: `Z${z.id}${k ? `-${k}` : ''}`,
+        label: q === big ? `${SLAB_WORD[lang]} ${z.id} : ${N((z.q * 1e6) / 9.81)} kg/m²`.replace(' :', lang === 'fr' ? ' :' : ':') : '',
+        ...(q === big ? { sub: `${N(z.load / 9.81)} kg / ${N(z.area / 1e6, 2)} m²` } : {}),
+        color,
+        corners: q.map(W),
+        at: W([cx, cz]),
+        dashed: true,
+        fillOpacity: 0.06,
+        labelCenter: true,
+        ...(q === big ? {} : { noLabel: true }),
+      });
+    });
+  }
+  // madriers de la solution retenue (grille, plateau), sous les blocs / pieds : couche du dessous puis du dessus, un
+  // trait par joint entre deux madriers ; décrits dans la colonne de texte (pas d'étiquette sur le plan)
+  const outlines = [...(calage.remedy?.outlines ?? [])].sort((a, b) => (a.timber?.layer === 'upper' ? 1 : 0) - (b.timber?.layer === 'upper' ? 1 : 0));
+  for (const o of outlines) {
     const cx = o.corners.reduce((a, p) => a + p[0], 0) / 4;
     const cz = o.corners.reduce((a, p) => a + p[1], 0) / 4;
-    const label = o.id === 'PL' || o.id.startsWith('G');
-    out.push({ id: `T${o.id}`, label: label ? o.label : '', ...(label && o.sub ? { sub: o.sub } : {}), color: '#a16207', corners: o.corners.map(W), at: W([cx, cz]) });
+    const t = o.timber;
+    out.push({
+      id: `T${o.id}`,
+      label: t ? '' : o.label,
+      ...(!t && o.sub ? { sub: o.sub } : {}),
+      color: TIMBER_HEX,
+      corners: o.corners.map(W),
+      at: W([cx, cz]),
+      ...(t ? { noLabel: true, fillOpacity: t.layer === 'lower' ? 0.1 : 0.3, joints: timberJoints(o.corners, t.dir, t.b).map(([a, b]) => [W(a), W(b)] as [Vec3, Vec3]) } : {}),
+    });
   }
   for (const c of calage.checks) {
     const g = c.geometry;
@@ -217,8 +271,23 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
     });
   }
   if (c.remedy) blocks[0].lines.push({ text: `${E(c.remedy.remedy.title)} : ${E(c.remedy.remedy.summary)}`, bold: true });
+  if (c.roadwayOn) blocks[0].lines.push({ text: PLAN_ROADWAY[inp.lang], color: ROADWAY_COLOR });
   else if (c.longrineChosen && c.longrine) blocks[0].lines.push({ text: `${L.longrine} : ${E(c.longrine.solution.summary)}`, bold: true });
   else if (c.longrine && !c.allPlates) blocks[0].lines.push({ text: C.longrineVariant(E(c.longrine.solution.summary), N(c.longrine.result.eta, 2)) });
+  // madriers de la solution retenue : chaque couche (échantillon de sa couleur sur le plan) et la pose
+  if (c.remedy) {
+    const T = TIMBER_LABELS[inp.lang];
+    const pieces = c.remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
+    if (pieces.length)
+      blocks.push({
+        title: T.chosen.toUpperCase(),
+        lines: [
+          ...timberLegend(inp.lang, pieces).map((l) => ({ text: l.text, color: l.layer === 'lower' ? TIMBER_LOWER_SWATCH : TIMBER_HEX })),
+          ...((g) => (g ? [{ text: g, bold: true }] : []))(timberGroundText(inp.lang, c.remedy.outlines, !!c.slab)),
+          { text: T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper')) },
+        ],
+      });
+  }
   blocks.push({ title: C.materialsTitle, lines: c.materials.map((m) => ({ text: `${m.quantity} × ${E(m.label)} ${E(m.dims)}` })) });
   // appuis sur blocs dessinés : ni « à fleur » ni « centré » (la plaque éventuelle est sous le bloc)
   const centered = c.checks.filter((x) => !x.block && x.plan?.placement === 'centered');
@@ -298,6 +367,8 @@ export function calageSheet(inp: CalageSheetInput): { sheet: Sheet; notes: strin
   lines.push(L.watermark);
   const notes = lines.flatMap((l) => wrapText(l, 100, 2.9)).slice(0, 20).join('\n');
   const legend: LegendEntry[] = c.types.map((t) => ({ key: `calage-${t.key}`, label: `${E(t.label)} — ${t.reactions.length}`, color: typeColor(t.typeKey) }));
+  if (c.remedy?.outlines.some((o) => o.timber)) legend.push({ key: 'calage-timber', label: TIMBER_LABELS[inp.lang].legendShort, color: TIMBER_HEX });
+  if (c.roadwayOn) legend.push({ key: 'calage-roadway', label: PLAN_ROADWAY[inp.lang], color: ROADWAY_COLOR });
   return { sheet, notes, legend, viewport };
 }
 
