@@ -56,6 +56,8 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
         date: h.createdAt,
         // check-list de montage en lecture seule (sans N.A. ni données internes)
         checklist: publicChecklist(await handoverChecklist(h.projectId)),
+        // true : la check-list est montrée en annexe, après la signature
+        checklistAnnex: h.checklistAnnex === true,
       },
     });
   } catch (err) { next(err); }
@@ -124,6 +126,7 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       date: h.createdAt,
       lang: 'fr',
       checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: h.checklistAnnex === true,
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed.pdf`, 'handover', null);
 

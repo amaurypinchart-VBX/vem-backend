@@ -94,7 +94,23 @@ function openImg(url) {
   o.onclick = () => o.remove();
   document.body.appendChild(o);
 }
-function checklistHTML(cl) {
+// Check-list en annexe : à sa place, un court rappel (le détail est en bas de la page, après la signature)
+function checklistAnnexNoteHTML(cl) {
+  if (!cl || !cl.items || !cl.items.length) return '';
+  const st = cl.stats || {};
+  return `<div class="card">
+    <div class="card-title">☑️ Check-list de montage (${cl.items.length} points)</div>
+    <div class="cl-stats">
+      <span style="color:${CL_COLORS.ok}">● ${st.ok || 0} OK</span>
+      ${st.partial ? `<span style="color:${CL_COLORS.partial}">● ${st.partial} Partiel</span>` : ''}
+      ${st.nok ? `<span style="color:${CL_COLORS.nok}">● ${st.nok} Non fait</span>` : ''}
+      ${st.pending ? `<span style="color:${CL_COLORS.pending}">● ${st.pending} À vérifier</span>` : ''}
+    </div>
+    ${st.criticalOpen ? `<div class="cl-alert">${st.criticalOpen} point(s) critique(s) non validé(s)</div>` : ''}
+    <div class="cl-summary">Le détail est joint en annexe, en bas de cette page.</div>
+  </div>`;
+}
+function checklistHTML(cl, annex) {
   if (!cl || !cl.items || !cl.items.length) return '';
   const st = cl.stats || {};
   const groups = [];
@@ -108,7 +124,7 @@ function checklistHTML(cl) {
     cl.validatedAt ? `✅ Validée le ${fmtDate(cl.validatedAt)}${cl.validatedBy ? ` par ${esc(cl.validatedBy)}` : ''}` : 'Check-list pas encore validée',
   ].filter(Boolean).join('<br>');
   return `<div class="card">
-    <div class="card-title">☑️ Check-list de montage (${cl.items.length} points)</div>
+    <div class="card-title">${annex ? '📎 Annexe — Check-list de montage' : '☑️ Check-list de montage'} (${cl.items.length} points)</div>
     <div class="cl-summary">${summary}</div>
     <div class="cl-stats">
       <span style="color:${CL_COLORS.ok}">● ${st.ok || 0} OK</span>
@@ -212,7 +228,7 @@ function renderSignaturePage(h) {
       ${zonesHTML}
     </div>` : ''}
 
-    ${checklistHTML(h.checklist)}
+    ${h.checklistAnnex ? checklistAnnexNoteHTML(h.checklist) : checklistHTML(h.checklist)}
 
     ${h.generalNotes ? `<div class="card">
       <div class="card-title">📝 Remarques / Réservations</div>
@@ -243,6 +259,8 @@ function renderSignaturePage(h) {
         <button class="btn btn-primary" id="submit-btn" onclick="submitSignature()">✅ Valider la signature</button>
       </div>
     </div>
+
+    ${h.checklistAnnex ? checklistHTML(h.checklist, true) : ''}
   `;
   initCanvas();
 }

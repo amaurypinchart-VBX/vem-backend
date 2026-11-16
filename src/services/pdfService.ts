@@ -92,6 +92,9 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.title.installation':    'CHECK-LIST DE MONTAGE',
     'checklist.title.dismantling':     'CHECK-LIST DÉMONTAGE',
     'checklist.stateAt':               'État au {date}',
+    'checklist.annex.title':           'ANNEXE — CHECK-LIST DE MONTAGE',
+    'checklist.annex.subtitle':        'Annexe au Handover Certificate — {name} (N° {ref})',
+    'checklist.annex.note':            'Le détail de la check-list de montage est joint en annexe, en fin de document.',
     'checklist.email.subject':         'Check-list',
     'checklist.email.bodyLine':        'Veuillez trouver ci-joint la check-list du projet',
 
@@ -224,6 +227,9 @@ const PDF_TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'checklist.title.installation':    'INSTALLATION CHECKLIST',
     'checklist.title.dismantling':     'DISMANTLING CHECKLIST',
     'checklist.stateAt':               'Status as of {date}',
+    'checklist.annex.title':           'APPENDIX — INSTALLATION CHECKLIST',
+    'checklist.annex.subtitle':        'Appendix to the Handover Certificate — {name} (No. {ref})',
+    'checklist.annex.note':            'The full installation checklist is attached as an appendix at the end of this document.',
     'checklist.email.subject':         'Checklist',
     'checklist.email.bodyLine':        'Please find attached the checklist of the project',
 
@@ -492,6 +498,8 @@ export interface ChecklistSectionOptions {
   stateAt?: Date | string | null;
   /** commence la section sur une nouvelle page */
   newPage?: boolean;
+  /** pas de titre de section (annexe du handover : la page porte déjà son titre) */
+  hideTitle?: boolean;
 }
 
 function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<number, Buffer[]>, opts: ChecklistSectionOptions, lang: Lang) {
@@ -506,7 +514,7 @@ function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<
     doc.moveDown(0.8);
     if (doc.y > 640) doc.addPage();
   }
-  sectionTitle(doc, t(`checklist.section.${phase}`, lang));
+  if (!opts.hideTitle) sectionTitle(doc, t(`checklist.section.${phase}`, lang));
   if (opts.stateAt) {
     doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(9)
       .text(t('checklist.stateAt', lang).replace('{date}', fmtChecklistDate(opts.stateAt, lang, true)), X, doc.y, { width: W });
@@ -649,6 +657,47 @@ function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<
   }
 }
 
+/**
+ * Handover avec la check-list en annexe : à la place de la section complète, un court rappel
+ * (totaux, validation, points critiques ouverts) qui renvoie à l'annexe.
+ */
+function renderChecklistAnnexNote(doc: any, cl: HandoverChecklistPdf, lang: Lang) {
+  const X = 40;
+  const W = 515;
+  const statusLabel = (st: string) => t(`checklist.status.${st}`, lang);
+  doc.moveDown(0.8);
+  if (doc.y > 690) doc.addPage();
+  sectionTitle(doc, t('checklist.section.installation', lang));
+  const count = (st: string) => cl.items.filter(it => it.status === st).length;
+  const totals = [`${cl.items.length} ${t('checklist.points', lang)}`,
+    ...['ok', 'partial', 'nok', 'na', 'pending'].filter(st => count(st) > 0).map(st => `${count(st)} ${statusLabel(st)}`)].join('  ·  ');
+  doc.fillColor(DARK).font('Helvetica').fontSize(9.5).text(totals, X, doc.y, { width: W });
+  doc.moveDown(0.2);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(cl.validatedAt
+    ? t('checklist.validatedOn', lang).replace('{date}', fmtChecklistDate(cl.validatedAt, lang, false)).replace('{name}', s(cl.validatedByName || '-'))
+    : t('checklist.notValidated', lang), X, doc.y, { width: W });
+  const criticalOpen = cl.items.filter(it => it.critical && it.status !== 'ok' && it.status !== 'na').length;
+  if (criticalOpen) {
+    doc.moveDown(0.2);
+    doc.fillColor(RED).font('Helvetica-Bold').fontSize(9.5).text(t('checklist.criticalOpen', lang).replace('{n}', String(criticalOpen)), X, doc.y, { width: W });
+  }
+  doc.moveDown(0.3);
+  doc.fillColor(DARK).font('Helvetica-Oblique').fontSize(9.5).text(t('checklist.annex.note', lang), X, doc.y, { width: W });
+  doc.moveDown(0.4);
+}
+
+/** Nouvelle page d'annexe du handover : titre centré + rappel du document auquel elle appartient. */
+function renderAnnexHeading(doc: any, title: string, subtitle: string) {
+  doc.addPage();
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(16)
+    .text(title, 40, doc.y, { width: 515, align: 'center', characterSpacing: 1 });
+  doc.moveDown(0.3);
+  const lineY = doc.y;
+  doc.moveTo(220, lineY).lineTo(375, lineY).strokeColor(RED).lineWidth(2).stroke();
+  doc.moveDown(0.5);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(subtitle, 40, doc.y, { width: 515, align: 'center' });
+}
+
 /** Traduit la check-list (hors français) et télécharge ses vignettes (2 par point, hors N.A.), par index de point. */
 async function prepareChecklistForPdf(cl: HandoverChecklistPdf, lang: Lang): Promise<Map<number, Buffer[]>> {
   await translateChecklist(cl, lang);
@@ -739,6 +788,8 @@ export async function generateHandoverPdf(data: {
   date: Date;
   lang?: Lang;
   checklist?: HandoverChecklistPdf | null;
+  /** true : la check-list n'est que dans une annexe après les signatures (un rappel reste après les zones) */
+  checklistAnnex?: boolean;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
 
@@ -805,6 +856,7 @@ export async function generateHandoverPdf(data: {
   // ─── Check-list de montage : traduction + vignettes (2 par point, hors N.A.) ───
   const checklist = data.checklist && data.checklist.items.length ? data.checklist : null;
   const checklistThumbs = checklist ? await prepareChecklistForPdf(checklist, lang) : new Map<number, Buffer[]>();
+  const checklistInAnnex = !!(checklist && data.checklistAnnex);
 
   // ─── Pré-charge les signatures ───
   const managerSigBuf = await loadSignatureBuffer(data.managerSignatureUrl);
@@ -944,8 +996,9 @@ export async function generateHandoverPdf(data: {
       doc.y = rowBottom;
     }
 
-    // ─── Section Check-list de montage (après les zones) ───
-    if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager }, lang);
+    // ─── Section Check-list de montage (après les zones), ou un simple rappel quand elle est en annexe ───
+    if (checklist && checklistInAnnex) renderChecklistAnnexNote(doc, checklist, lang);
+    else if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager }, lang);
 
     // ─── Section Comments / Reservations ───
     if (data.generalNotes && data.generalNotes.trim()) {
@@ -1034,6 +1087,13 @@ export async function generateHandoverPdf(data: {
     }
 
     doc.y = sigBlockTop + blockH + 10;
+
+    // ─── Annexe : check-list de montage complète, après les signatures ───
+    if (checklist && checklistInAnnex) {
+      renderAnnexHeading(doc, t('checklist.annex.title', lang), t('checklist.annex.subtitle', lang)
+        .replace('{name}', s(data.project.name)).replace('{ref}', s(data.project.internalNumber)));
+      renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager, hideTitle: true }, lang);
+    }
 
     footer(doc, lang);
     doc.end();

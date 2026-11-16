@@ -1947,8 +1947,8 @@ document.addEventListener('keydown', e => {
 // ☑️ CHECK-LIST DANS LE HANDOVER — carte, fiche, lien de signature
 // ═══════════════════════════════════════════════════════════
 
-/** Ligne « ☑️ Check-list : 42/48 OK · … » sur la carte d'un handover (h.checklistSummary). */
-function checklistHandoverLine(s) {
+/** Ligne « ☑️ Check-list : 42/48 OK · … » sur la carte d'un handover (h.checklistSummary ; annex = h.checklistAnnex). */
+function checklistHandoverLine(s, annex) {
   if (!s) return '';
   const parts = [`<strong>${s.ok}/${s.total} OK</strong>`];
   if (s.na) parts.push(`${s.na} N.A.`);
@@ -1956,6 +1956,7 @@ function checklistHandoverLine(s) {
   if (s.pending) parts.push(`${s.pending} à vérifier`);
   if (s.criticalOpen) parts.push(`<span style="color:var(--accent);font-weight:700;">⚠️ ${s.criticalOpen} critique(s) ouvert(s)</span>`);
   if (s.validatedAt) parts.push('<span style="color:var(--green);">✅ validée</span>');
+  if (annex) parts.push('<span title="Dans le PDF et la page de signature, la check-list est mise en annexe, après les signatures">📎 en annexe</span>');
   return `<div style="font-size:11px;color:var(--text2);margin-top:4px;">☑️ Check-list : ${parts.join(' · ')}</div>`;
 }
 
@@ -1965,8 +1966,38 @@ function openChecklistFullFromHandover(projectId) {
   openChecklistFull(projectId, 'installation');
 }
 
+/**
+ * Choix « Dans le document / En annexe seulement » de la check-list (PDF du handover + page de signature du client).
+ * En annexe : un court rappel reste après les zones, le détail complet passe après les signatures.
+ */
+function handoverChecklistPlacementHtml(handoverId, annex) {
+  const opt = (value, label, on) => `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="radio" name="hf-cl-annex-${handoverId}" value="${value}" ${on ? 'checked' : ''} onchange="setHandoverChecklistAnnex('${handoverId}', ${value === 'annex'})">
+      ${label}
+    </label>`;
+  return `
+    <div style="display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;margin-top:8px;font-size:12px;">
+      <span style="color:var(--text3);">📄 Dans le PDF et la page de signature :</span>
+      ${opt('body', 'Dans le document', !annex)}
+      ${opt('annex', 'En annexe seulement (après les signatures)', annex)}
+    </div>`;
+}
+
+async function setHandoverChecklistAnnex(handoverId, annex) {
+  const res = await api('PATCH', `/handover/${handoverId}`, { checklistAnnex: !!annex });
+  if (!res?.success) {
+    toast(res?.error || 'Erreur sauvegarde', 'error');
+    // remet le choix enregistré
+    document.querySelectorAll(`input[name="hf-cl-annex-${handoverId}"]`).forEach(r => { r.checked = (r.value === 'annex') === !annex; });
+    return;
+  }
+  toast(annex ? 'Check-list mise en annexe du handover 📎' : 'Check-list dans le document du handover', 'success');
+  if (typeof loadDetailHandovers === 'function' && CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID);
+}
+
 /** Section « Check-list de montage » de la fiche handover (lecture, par catégorie, photos en vignettes). */
-async function loadHandoverChecklistSection(projectId, handoverId) {
+async function loadHandoverChecklistSection(projectId, handoverId, annex = false) {
   const el = document.getElementById(`hf-checklist-${handoverId}`);
   if (!el) return;
   const res = await api('GET', `/checklists/project/${projectId}?phase=installation`);
@@ -1996,6 +2027,7 @@ async function loadHandoverChecklistSection(projectId, handoverId) {
         </div>
       </div>
       ${cl.boxesChecked ? `<div style="font-size:12px;color:var(--text2);margin-top:6px;">Boxes contrôlées : <strong>${esc(cl.boxesChecked)}</strong></div>` : ''}
+      ${handoverChecklistPlacementHtml(handoverId, annex)}
       ${checklistStatsHtml(cl.stats)}
       <details style="margin-top:10px;">
         <summary style="cursor:pointer;font-size:13px;color:var(--blue);padding:6px 0;">Voir le détail des ${cl.stats.total} points</summary>
