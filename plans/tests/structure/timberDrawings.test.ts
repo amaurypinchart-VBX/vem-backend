@@ -256,3 +256,36 @@ describe('madriers au choix (10 × 23 cm à plat) et charge au sol répartie', (
     expect(g).toMatch(/^Charge au sol répartie sous les madriers : [\d  ]+ kg\/m² en moyenne, [\d  ]+ kg\/m² au plus/);
   }, 60000);
 });
+
+// A. Pinchart 16.11.2026 : « mais du coup pourquoi laisser les blocs de 1 m / 1 m ? » — les deux variantes côte à côte.
+describe('madriers au choix : avec et sans les blocs dessinés', () => {
+  it('dalle en charge répartie (blocs IKEA 24 cm, 102,5 kg) : sans les blocs = moins de charge sur la dalle, conseillée', async () => {
+    const { sleeperVariants } = await import('../../src/structure/core/sleeperCompare');
+    const realBlocks = nine(243, 102.5);
+    const inp = { ...input(450, 243, 102.5), blocks: realBlocks, bearingMode: 'distributed' as const };
+    const base = computeCalage(inp);
+    const v = sleeperVariants(inp, base, { beam: { b: 230, h: 100 } });
+    expect(v.map((x) => x.withBlocks)).toEqual([false, true]);
+    const [without, withB] = v;
+    expect(without.ok && withB.ok).toBe(true);
+    // les blocs n'aident pas la dalle : leur poids en plus
+    expect(withB.slabQ!).toBeGreaterThan(without.slabQ!);
+    expect(withB.packingKg - without.packingKg).toBeGreaterThan(9 * 102.5 - 20);
+    // ils surélèvent : ≈ 24 cm de plus
+    expect(withB.height - without.height).toBeCloseTo(243, 0);
+    expect(without.recommended).toBe(true);
+    expect(withB.recommended).toBeUndefined();
+    // la variante retenue = celle appliquée au calage
+    expect(computeCalage({ ...inp, choices: { remedy: without.remedy.apply as AppliedRemedy } }).slab!.zones.map((z) => z.q)).toEqual(without.result!.slab!.zones.map((z) => z.q));
+  }, 60000);
+
+  it('sans blocs dans le modèle : une seule variante, pas de « conseillée »', async () => {
+    const { sleeperVariants } = await import('../../src/structure/core/sleeperCompare');
+    const inp = { ...calageInput(mods, { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, middleFeet: true }, { plates: [], commercial: [] }, true), bearingMode: 'distributed' as const };
+    const v = sleeperVariants(inp, computeCalage(inp), { beam: { b: 230, h: 100 } });
+    expect(v).toHaveLength(1);
+    expect(v[0].withBlocks).toBe(true);
+    expect(v[0].recommended).toBeUndefined();
+    expect(v[0].remedy.title).toBe('Grille de madriers C24 sous chaque rangée d’appuis');
+  }, 60000);
+});

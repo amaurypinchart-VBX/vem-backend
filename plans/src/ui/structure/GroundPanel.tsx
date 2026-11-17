@@ -19,7 +19,9 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, checkPlan, planPlates } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
-import { SLEEPER_SECTIONS, calageRemedies, isFlat, sleeperOption } from '../../structure/core/calageRemedies';
+import { SLEEPER_SECTIONS, calageRemedies, isFlat } from '../../structure/core/calageRemedies';
+import type { SleeperVariant } from '../../structure/core/sleeperCompare';
+import { sleeperVariants } from '../../structure/core/sleeperCompare';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
 import type { Terrain } from '../../structure/core/wind';
@@ -362,37 +364,40 @@ function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageRes
 }
 
 /** « 10 × 23 cm, à plat (23 cm au sol) » : section d'un madrier (b = largeur au sol, h = épaisseur). */
+const sectionCm = (mm: number) => n(mm / 10, mm % 10 ? 1 : 0);
 const sectionLabel = (b: { b: number; h: number }) =>
-  isFlat(b) ? `${n(b.h / 10, 1)} × ${n(b.b / 10, 1)} cm, à plat (${n(b.b / 10, 1)} cm au sol)` : b.b === b.h ? `${n(b.b / 10, 1)} × ${n(b.h / 10, 1)} cm` : `${n(b.b / 10, 1)} × ${n(b.h / 10, 1)} cm, sur chant`;
+  isFlat(b) ? `${sectionCm(b.h)} × ${sectionCm(b.b)} cm, à plat (${sectionCm(b.b)} cm au sol)` : b.b === b.h ? `${sectionCm(b.b)} × ${sectionCm(b.h)} cm` : `${sectionCm(b.b)} × ${sectionCm(b.h)} cm, sur chant`;
 
 /**
- * Madriers choisis à la main sous les rangées d'appuis (section, nombre par rangée, avec ou sans les blocs) : calculés
- * sur le calage sans solution retenue, puis appliqués comme les autres pistes. Disponible même quand tout passe (dalle
- * en charge répartie : répartir la charge de chaque pied le long de la rangée).
+ * Madriers choisis à la main sous les rangées d'appuis (section, nombre par rangée) : calculés sur le calage sans
+ * solution retenue, avec et sans les blocs dessinés côte à côte (charge sur la dalle ou au sol, poids, hauteur), puis
+ * appliqués comme les autres pistes. Disponible même quand tout passe (dalle en charge répartie : répartir la charge de
+ * chaque pied le long de la rangée).
  */
-function SleepersCard({ input, result, choices, onApply }: { input: CalageInput; result: CalageResult; choices: CalageChoices; onApply: (r: CalageRemedy) => void }) {
+export function SleepersCard({ input, result, choices, onApply }: { input: CalageInput; result: CalageResult; choices: CalageChoices; onApply: (r: CalageRemedy) => void }) {
   const [sec, setSec] = useState(0);
   const [count, setCount] = useState(0);
-  const [withBlocks, setWithBlocks] = useState(true);
-  const [option, setOption] = useState<CalageRemedy | null>(null);
+  const [variants, setVariants] = useState<SleeperVariant[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
   const slab = input.bearingMode === 'distributed';
-  const hasBlocks = result.checks.some((c) => c.block) || (choices.remedy?.key.endsWith('no-blocks') ?? false);
   // la piste change avec le calage (charges, portance) et les choix : à recalculer
-  useEffect(() => setOption(null), [result, sec, count, withBlocks]);
+  useEffect(() => setVariants(null), [result, sec, count]);
   const compute = () => {
     setBusy(true);
     setTimeout(() => {
       try {
         const base = input.choices?.remedy ? { ...input, choices: { ...input.choices, remedy: undefined } } : input;
-        setOption(sleeperOption(base, base === input ? result : computeCalage(base), { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}), withBlocks }));
+        setVariants(sleeperVariants(base, base === input ? result : computeCalage(base), { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}) }));
       } finally {
         setBusy(false);
       }
     }, 20);
   };
-  const applied = !!option && typeof option.apply === 'object' && JSON.stringify(choices.remedy) === JSON.stringify(option.apply);
+  const isApplied = (r: CalageRemedy) => typeof r.apply === 'object' && JSON.stringify(choices.remedy) === JSON.stringify(r.apply);
+  const kg = (q: number) => `${n((q * 1e6) / 9.81, 0)} kg/m²`;
+  const withB = variants?.find((v) => v.withBlocks && variants.length > 1);
+  const without = variants?.find((v) => !v.withBlocks);
   return (
     <div className="card" data-testid="calage-sleepers">
       <div className="card-head">
@@ -426,57 +431,82 @@ function SleepersCard({ input, result, choices, onApply }: { input: CalageInput;
               ))}
             </select>
           </label>
-          {hasBlocks && (
-            <label className="row" style={{ gap: 6 }}>
-              <input type="checkbox" checked={withBlocks} onChange={(e) => setWithBlocks(e.target.checked)} />
-              garder les blocs dessinés (sinon vérins directement sur les madriers)
-            </label>
-          )}
           <button className="btn small primary" disabled={busy} onClick={compute} data-testid="sleepers-compute">
             {busy ? 'Calcul…' : 'Calculer'}
           </button>
         </div>
-        {option && (
-          <div style={{ borderLeft: `3px solid ${option.verdict === 'ok' ? '#16a34a' : '#dc2626'}`, paddingLeft: 10 }} data-testid="sleepers-option">
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <b>{option.title}</b>
-              <span className={`badge ${REMEDY_BADGE[option.verdict].cls}`}>
-                {REMEDY_BADGE[option.verdict].text}
-                {option.eta !== undefined ? ` · η ${n(option.eta, 2)}` : ''}
-              </span>
-              <button className="btn small ghost" onClick={() => setOpen(!open)}>
-                {open ? 'Masquer le détail' : 'Voir le détail'}
-              </button>
-              {typeof option.apply === 'object' &&
-                (applied ? (
-                  <span className="badge ok">✔ retenue</span>
-                ) : (
-                  <button className={`btn small ${option.verdict === 'ok' ? 'primary' : ''}`} onClick={() => onApply(option)} data-testid="sleepers-apply">
-                    Appliquer ces madriers
-                  </button>
-                ))}
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>{option.summary}</div>
-            {!!option.materials.length && (
-              <div className="hint">
-                Matériel : {option.materials.map((m) => `${m.quantity} × ${m.label} ${m.dims} (${n(m.massKg, 0)} kg)`).join(' ; ')}
+        {variants && !variants.length && <div className="hint">Pas de rangée d’appuis où poser des madriers.</div>}
+        {variants && variants.length > 0 && (
+          <table className="list" data-testid="sleepers-variants">
+            <thead>
+              <tr>
+                <th>Variante</th>
+                <th>Madriers</th>
+                <th className="num">Bois η</th>
+                <th className="num">{slab ? 'Charge sur la dalle (zone la plus chargée)' : 'Charge au sol sous les madriers'}</th>
+                <th className="num">Poids du calage</th>
+                <th className="num">Hauteur du calage (hors vérin)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((v, k) => (
+                <tr key={k} data-testid={`sleepers-variant-${v.withBlocks ? 'blocks' : 'no-blocks'}`}>
+                  <td>
+                    <b>{variants.length > 1 ? (v.withBlocks ? 'Avec les blocs dessinés' : 'Sans les blocs (vérins sur les madriers)') : v.remedy.title}</b>
+                    {v.recommended && <span className="badge ok" style={{ marginLeft: 6 }}>conseillée</span>}
+                    <div>
+                      <span className={`badge ${v.ok ? 'ok' : 'ko'}`}>{v.ok ? 'passe' : 'ne passe pas'}</span>{' '}
+                      <button className="btn small ghost" onClick={() => setOpen(open === k ? null : k)}>
+                        {open === k ? 'Masquer le détail' : 'Détail'}
+                      </button>
+                    </div>
+                  </td>
+                  <td>{v.remedy.materials.filter((m) => m.label.startsWith('Madrier')).map((m) => `${m.quantity} × ${m.dims}`).join(' ; ') || '—'}</td>
+                  <td className="num">{v.remedy.eta !== undefined ? n(v.remedy.eta, 2) : '—'}</td>
+                  <td className="num">
+                    {slab ? (v.slabQ !== undefined ? kg(v.slabQ) : '—') : v.groundMean !== undefined ? `moy. ${kg(v.groundMean)} · maxi ${kg(v.groundMax!)}` : '—'}
+                  </td>
+                  <td className="num">{n(v.packingKg, 0)} kg</td>
+                  <td className="num">{v.height > 0 ? `${n(v.height / 10, 1)} cm` : '—'}</td>
+                  <td>
+                    {typeof v.remedy.apply === 'object' &&
+                      (isApplied(v.remedy) ? (
+                        <span className="badge ok">✔ retenue</span>
+                      ) : (
+                        <button className={`btn small ${v.recommended || (v.ok && variants.length === 1) ? 'primary' : ''}`} onClick={() => onApply(v.remedy)} data-testid={`sleepers-apply${variants.length > 1 ? (v.withBlocks ? '-blocks' : '-no-blocks') : ''}`}>
+                          Appliquer
+                        </button>
+                      ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {variants && open !== null && variants[open] && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderLeft: '3px solid #a16207', paddingLeft: 10 }} data-testid="sleepers-option">
+            <div style={{ fontSize: 13, lineHeight: 1.45 }}>{variants[open].remedy.summary}</div>
+            {variants[open].remedy.details.map((d, k) => (
+              <div key={k} className="hint">
+                • {d}
               </div>
-            )}
-            {open && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                {option.details.map((d, k) => (
-                  <div key={k} className="hint">
-                    • {d}
-                  </div>
-                ))}
-                {option.notes.map((d, k) => (
-                  <div key={`n${k}`} className="hint" style={{ fontStyle: 'italic' }}>
-                    {d}
-                  </div>
-                ))}
-                {!!option.records.length && <Records records={option.records} />}
+            ))}
+            {variants[open].remedy.notes.map((d, k) => (
+              <div key={`n${k}`} className="hint" style={{ fontStyle: 'italic' }}>
+                {d}
               </div>
-            )}
+            ))}
+            {!!variants[open].remedy.records.length && <Records records={variants[open].remedy.records} />}
+          </div>
+        )}
+        {withB && without && (
+          <div className="hint" data-testid="sleepers-blocks-note">
+            Les blocs ne servent qu’à surélever la Viewbox (les vérins ne rattrapent que 5 cm) :{' '}
+            {slab
+              ? `en charge répartie ils n’aident pas la dalle, ils ajoutent leur poids (${withB.slabQ !== undefined && without.slabQ !== undefined ? `${kg(withB.slabQ)} avec, ${kg(without.slabQ)} sans` : 'voir le tableau'}).`
+              : 'sans eux, les vérins reposent directement sur les madriers.'}{' '}
+            Sans les blocs, l’installation est plus basse d’environ {n(Math.max(0, withB.height - without.height) / 10, 0)} cm : à garder seulement si cette hauteur est voulue (niveau, câbles, accès).
           </div>
         )}
         <div className="hint">
