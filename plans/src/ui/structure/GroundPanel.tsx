@@ -1512,9 +1512,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <TypeChoice t={t} result={result} stock={input.stock} set={choiceSet} onSelect={select} selected={selected} />
-                {t.block && (
+                {t.block && t.checks.some((c) => c.block) && (
                   <div className="hint">
-                    Blocs de bois dessinés dans le modèle : {[...new Set(t.checks.map((c) => `${c.block!.id} ${c.block!.dims} (${n(c.block!.massKg, 0)} kg${c.block!.massSource === 'computed' ? ', calculé' : ''})`))].join(' · ')}. Pieds → bois sous chaque pied → diffusion dans le bloc (45°, centrée
+                    Blocs de bois dessinés dans le modèle : {[...new Set(t.checks.flatMap((c) => (c.block ? [`${c.block.id} ${c.block.dims} (${n(c.block.massKg, 0)} kg${c.block.massSource === 'computed' ? ', calculé' : ''})`] : [])))].join(' · ')}. Pieds → bois sous chaque pied → diffusion dans le bloc (45°, centrée
                     sur la charge) → poids du bloc → sol ; les plaques choisies se posent sous le bloc, centrées.
                   </div>
                 )}

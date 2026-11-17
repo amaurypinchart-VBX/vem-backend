@@ -47,3 +47,24 @@ describe('carte Madriers sous les rangées d’appuis', () => {
     await act(async () => root.unmount());
   }, 60000);
 });
+
+describe('étape 5 avec les madriers retenus sans les blocs', () => {
+  it('affiche les appuis sans planter (bug 17.11.2026 : « Cannot read properties of undefined (reading id) »)', async () => {
+    const { GroundPanel } = await import('../../src/ui/structure/GroundPanel');
+    const { sleeperVariants } = await import('../../src/structure/core/sleeperCompare');
+    const hyp = { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, middleFeet: true, liveGround: 0.981, publicMode: 'persons' as const, persons: 4, subgrade: 'slab', bearingMode: 'distributed' as const };
+    const input = { ...calageInput(mods, hyp, { plates: [], commercial: [] }, true), blocks: nine, bearingMode: 'distributed' as const };
+    const v = sleeperVariants(input, computeCalage(input), { beam: { b: 230, h: 100 } }).find((x) => !x.withBlocks)!;
+    const apply = v.remedy.apply as Exclude<CalageRemedy['apply'], undefined | 'centre-blocks'>;
+    const errors: unknown[] = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host, { onUncaughtError: (e) => errors.push(e), onCaughtError: (e) => errors.push(e) });
+    await act(async () => root.render(createElement(GroundPanel, { modules: mods, source: 'test', storageKey: 'test-nb', hyp: { ...hyp, calage: { remedy: apply } }, onHypChange: () => {}, jacks: true, blocks: nine })));
+    for (let i = 0; i < 100 && !host.textContent!.includes('madriers (bloc retiré)') && !errors.length; i++) await act(async () => new Promise((r) => setTimeout(r, 100)));
+    expect(errors).toEqual([]);
+    expect(host.textContent).toContain('sur les madriers (bloc retiré)');
+    expect(host.textContent).not.toContain('Blocs de bois dessinés dans le modèle');
+    await act(async () => root.unmount());
+  }, 60000);
+});
