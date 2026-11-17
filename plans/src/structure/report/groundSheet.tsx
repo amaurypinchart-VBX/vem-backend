@@ -1,5 +1,6 @@
 // Plan des appuis (écran et PDF) et fiche de calage A4 : hypothèses, plan, calage par type d'appui, matériel à
 // préparer, coupe du calage, charge sur la dalle, réserves (pages suivantes si nécessaire). SVG en mm (viewBox 210 × 297), converti en PDF vectoriel par sheets/pdf/pdf.ts.
+import { roadwayStiffness } from '../core/roadwayPlates';
 import type { ReactElement, ReactNode } from 'react';
 import type { CalageResult, SupportCheck } from '../core/calage';
 import { timberJoints } from '../core/calageRemedies';
@@ -75,8 +76,16 @@ export interface PlanPlate {
   /** madriers de la solution retenue : couche, sens de la longueur, largeur d'un madrier (un trait par joint) */
   timber?: { layer: 'lower' | 'upper'; dir: P2; pitch: number };
   /** ligne de légende sous le plan, sans contour (`corners` vide) */
-  legend?: { text: string; swatch: 'timber-lower' | 'timber-upper' };
+  legend?: { text: string; swatch: 'timber-lower' | 'timber-upper' | 'spread' };
+  /** sol chargé sous un appui à travers la plaque de roulage choisie (emprise efficace, pointillé fin) */
+  spread?: boolean;
 }
+
+const SPREAD_LEGEND: Record<Lang, string> = {
+  fr: 'Pointillé fin autour de chaque appui : sol chargé à travers la plaque de roulage (pression écrite à l’appui)',
+  de: 'Fein gestrichelt um jedes Auflager: über die Fahrplatte belastete Bodenfläche (Pressung am Auflager angegeben)',
+  en: 'Fine dashes around each support: ground loaded through the roadway plate (pressure written at the support)',
+};
 
 /** Couleur des madriers de la solution retenue (grille, plateau) sur les plans. */
 export const TIMBER_COLOR = '#a16207';
@@ -153,7 +162,19 @@ export function planPlates(
     const [a0, a1, b0, b1] = [center[0] - contact[0] / 2, center[0] + contact[0] / 2, center[1] - contact[1] / 2, center[1] + contact[1] / 2];
     return [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
   };
-  return [...roadway, ...zones, ...timber, ...legend, ...checks
+  // plaque de roulage choisie : sol réellement chargé sous chaque appui (emprise efficace de la dernière étape)
+  const rect = (c: SupportCheck, d: [number, number]): P2[] => {
+    const { u, v, center } = c.geometry;
+    const P = (a: number, b: number): P2 => [u[0] * a + v[0] * b, u[1] * a + v[1] * b];
+    return [P(center[0] - d[0] / 2, center[1] - d[1] / 2), P(center[0] + d[0] / 2, center[1] - d[1] / 2), P(center[0] + d[0] / 2, center[1] + d[1] / 2), P(center[0] - d[0] / 2, center[1] + d[1] / 2)];
+  };
+  const spread: PlanPlate[] = checks.flatMap((c) => {
+    const last = c.steps[c.steps.length - 1];
+    if (!c.chainBase.roadwayPlate || c.chainBase.timber || !last?.dims) return [];
+    return [{ id: `S${c.id}`, corners: rect(c, last.dims), color: opts.color?.(c) ?? typeColor(c.typeKey), spread: true }];
+  });
+  if (spread.length) spread.push({ id: 'S-legend', corners: [], color: '#475569', legend: { text: SPREAD_LEGEND[lang], swatch: 'spread' } });
+  return [...roadway, ...zones, ...timber, ...legend, ...spread, ...checks
     .filter((c) => outline(c))
     .map((c) => ({
       id: c.id,
@@ -221,7 +242,7 @@ export function GroundPlan({ modules, reactions, x, y, w, h: hFull, text, select
   const pts = [...modules.flatMap((m) => m.corners), ...(plates ?? []).flatMap((p) => p.corners)];
   if (!pts.length) return null;
   // légende sous le plan (plaques de roulage, couches de madriers) : une bande réservée en bas du cadre
-  type LegendRow = { text: string; swatch: 'roadway' | 'timber-lower' | 'timber-upper'; color: string };
+  type LegendRow = { text: string; swatch: 'roadway' | 'timber-lower' | 'timber-upper' | 'spread'; color: string };
   const legendRows = (plates ?? []).flatMap((p): LegendRow[] =>
     p.legend ? [{ text: p.legend.text, swatch: p.legend.swatch, color: p.color }] : p.roadway && p.label?.length ? [{ text: p.label[0], swatch: 'roadway', color: p.color }] : [],
   );
@@ -437,6 +458,8 @@ export function GroundPlan({ modules, reactions, x, y, w, h: hFull, text, select
           <g key={k}>
             {l.swatch === 'roadway' ? (
               <line x1={sx} x2={sx + sw} y1={ly} y2={ly} stroke={l.color} strokeWidth={text * 0.12} strokeDasharray={`${text * 0.7} ${text * 0.25}`} />
+            ) : l.swatch === 'spread' ? (
+              <rect x={sx} y={ly - sh / 2} width={sw} height={sh} fill={l.color} fillOpacity={0.05} stroke={l.color} strokeWidth={text * 0.05} strokeDasharray={`${text * 0.25} ${text * 0.2}`} />
             ) : (
               <g>
                 <rect x={sx} y={ly - sh / 2} width={sw} height={sh} fill={l.color} fillOpacity={l.swatch === 'timber-lower' ? 0.12 : 0.3} stroke={l.color} strokeWidth={text * 0.07} />
@@ -495,10 +518,10 @@ export function GroundPlan({ modules, reactions, x, y, w, h: hFull, text, select
           <polygon
             points={p.corners.map((q) => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}
             fill={p.color}
-            fillOpacity={p.roadway ? 0.06 : p.zone ? 0.1 : p.timber ? (p.timber.layer === 'lower' ? 0.12 : 0.3) : 0.22}
+            fillOpacity={p.roadway ? 0.06 : p.spread ? 0.05 : p.zone ? 0.1 : p.timber ? (p.timber.layer === 'lower' ? 0.12 : 0.3) : 0.22}
             stroke={p.color}
-            strokeWidth={text * (p.roadway ? 0.12 : p.zone ? 0.05 : p.timber ? 0.07 : 0.09)}
-            strokeDasharray={p.roadway ? `${text * 0.7} ${text * 0.25}` : p.centered ? `${text * 0.35} ${text * 0.2}` : p.zone ? `${text * 0.2} ${text * 0.15}` : undefined}
+            strokeWidth={text * (p.roadway ? 0.12 : p.zone || p.spread ? 0.05 : p.timber ? 0.07 : 0.09)}
+            strokeDasharray={p.roadway ? `${text * 0.7} ${text * 0.25}` : p.spread ? `${text * 0.25} ${text * 0.2}` : p.centered ? `${text * 0.35} ${text * 0.2}` : p.zone ? `${text * 0.2} ${text * 0.15}` : undefined}
           />
           {p.timber && <path d={jointsPath(p)} stroke={p.color} strokeWidth={text * 0.035} strokeOpacity={0.8} fill="none" />}
           {p.label && plateLabel(p, p.label)}
@@ -850,7 +873,19 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
     lang === 'fr' ? GROUND_NOTE : L.groundNote,
     fem ? C.femNote : C.estimateNote,
     C.platesNote,
-    ...(result.roadwayOn ? [C.roadwayUsed(N(result.roadway.load / 1e3, 0), N(result.roadway.area / 1e6, 1), N(result.roadway.mean * 1e3, 1))] : []),
+    ...(result.roadwayOn
+      ? result.roadwayPlate
+        ? [
+            C.roadwayPlate.used(
+              E(result.roadwayPlate.plate.name),
+              N(result.roadwayPlate.reach / 10, result.roadwayPlate.reach < 100 ? 1 : 0),
+              !roadwayStiffness(result.roadwayPlate.plate).EI,
+              result.roadwayPlate.position === 'joint',
+              result.roadwayPlate.count,
+            ),
+          ]
+        : [C.roadwayUsed(N(result.roadway.load / 1e3, 0), N(result.roadway.area / 1e6, 1), N(result.roadway.mean * 1e3, 1))]
+      : []),
   ];
   para('n', notes, 2.2, 3.1, '#374151', 140);
   const logoW = 34;

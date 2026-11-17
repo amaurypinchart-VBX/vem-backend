@@ -353,13 +353,14 @@ describe('rapport de l’étude structure', () => {
     const k100 = plateKey(VIEWBOX_STOCK.find((s) => s.length === 1000 && s.thickness === 18)!);
     const own = ['Paddock test', 'Client SA', 'Circuit, Spa', 'paddock.zip', 'Vitrage lourd', 'Mur plein', 'Garde-corps 2 m', 'Étude structure', 'Sol légèrement déformable (prairie carrossable)'];
     const first = run.ground.reactions[0].group.id;
-    for (const roadway of [false, true]) {
+    // plaques de roulage : ancien calcul uniforme, tôle acier, plastique sans module (17.11.2026)
+    for (const roadway of [false, true, 'steel-2000x1000x20', 'envhyro-terratrak-plus', 'box-amp-panel']) {
       const c = computeCalage({
         ...calageInputFor(),
         modules: gridModules(1, 2, [[2], [1]], false),
         stock: VIEWBOX_STOCK,
         reactions: run.ground,
-        choices: { byType: { '1': [{ plate: k70, n: 1 }], '2': [] }, bySupport: { [first]: [{ plate: k70, n: 1 }, { plate: k100, n: 1 }] }, roadway },
+        choices: { byType: { '1': [{ plate: k70, n: 1 }], '2': [] }, bySupport: { [first]: [{ plate: k70, n: 1 }, { plate: k100, n: 1 }] }, roadway: !!roadway, ...(typeof roadway === 'string' ? { roadwayPlate: roadway, roadwayPosition: roadway === 'box-amp-panel' ? ('middle' as const) : ('joint' as const) } : {}) },
         publicLimit: { persons: 10, kg: 80 },
       });
       expect(c.publicLimit!.load).toBeCloseTo(10 * 80 * 9.81, 9);

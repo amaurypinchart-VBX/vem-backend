@@ -1059,6 +1059,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPlace: (id, v) => setChoices((c) => ({ ...c, placeBySupport: setIn(c.placeBySupport, id, v) })),
     setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
     setRoadwayOverhang: (mm) => setChoices((c) => ({ ...c, roadwayOverhang: mm })),
+    patchRoadway: (p) =>
+      setChoices((c) => {
+        const out = { ...c, ...p };
+        for (const k of Object.keys(p) as Array<keyof typeof p>) if (p[k] === undefined) delete out[k];
+        return out;
+      }),
     reset: () => setChoices(() => ({})),
   };
   const bearingLabel = (() => {
@@ -1089,6 +1095,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         noTuv: !!result.tuv.notApplicable,
         remedy: result.remedy,
         slab: result.slab,
+        roadwayPlate: result.roadwayPlate,
         info: { project: name, client: project?.client?.name ?? undefined, source: sourceIn(pdfLang), date: new Date().toLocaleDateString(pdfLang === 'en' ? 'en-GB' : pdfLang === 'de' ? 'de-DE' : 'fr-FR'), assumptions: [] },
       }).map((p) => renderToStaticMarkup(p));
       const fonts = await loadFonts(fontsUsed(svgs));
@@ -1370,8 +1377,12 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
           {roadway && (
             <div className="card">
               <div className="card-head">
-                <h2>Plaques de roulage — répartition uniforme</h2>
-                <span className="hint">toute la surface couverte par des plaques jointives : charge verticale / surface</span>
+                <h2>{result.roadwayPlate ? `Plaques de roulage — ${result.roadwayPlate.plate.name}` : 'Plaques de roulage — répartition uniforme'}</h2>
+                <span className="hint">
+                  {result.roadwayPlate
+                    ? 'chaque pied vérifié avec la répartition réelle de la plaque (cartes des types ci-dessous) ; la répartition uniforme n’est qu’une information'
+                    : 'toute la surface couverte par des plaques jointives : charge verticale / surface'}
+                </span>
                 <div className="spacer" style={{ flex: 1 }} />
                 <PdfLangSelect value={pdfLang} onChange={setPdfLang} />
                 <button className="btn primary small" disabled={pointsBusy} onClick={() => void exportPoints()}>
@@ -1379,12 +1390,20 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 </button>
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <Field label="Poids propre des plaques" hint="acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD ≈ 15 kg/m² ; 0 = non compté">
-                  <Num value={hyp.roadwayKg} onChange={(v) => setHyp((h) => ({ ...h, roadwayKg: Math.max(0, v) }))} width={60} /> kg/m²
-                </Field>
-                <Field label="Épaisseur des plaques" hint="pour la coupe du calage et la hauteur de la Viewbox au-dessus de la dalle ; 0 = inconnue">
-                  <Num value={hyp.roadwayMm ?? 0} onChange={(v) => setHyp((h) => ({ ...h, roadwayMm: Math.max(0, v) }))} width={60} /> mm
-                </Field>
+                {result.roadwayPlate ? (
+                  <div className="hint">
+                    Poids propre {n(result.roadway.plates * 1e6 / 9.81, 1)} kg/m² et épaisseur {n(result.roadwayPlate.plate.t, 0)} mm : ceux de la plaque choisie.
+                  </div>
+                ) : (
+                  <>
+                    <Field label="Poids propre des plaques" hint="acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD ≈ 15 kg/m² ; 0 = non compté">
+                      <Num value={hyp.roadwayKg} onChange={(v) => setHyp((h) => ({ ...h, roadwayKg: Math.max(0, v) }))} width={60} /> kg/m²
+                    </Field>
+                    <Field label="Épaisseur des plaques" hint="pour la coupe du calage et la hauteur de la Viewbox au-dessus de la dalle ; 0 = inconnue">
+                      <Num value={hyp.roadwayMm ?? 0} onChange={(v) => setHyp((h) => ({ ...h, roadwayMm: Math.max(0, v) }))} width={60} /> mm
+                    </Field>
+                  </>
+                )}
                 <div className="stats">
                   <div className="stat">
                     <div className="v">{n(roadway.area / 1e6, 1)} m²</div>
@@ -1434,8 +1453,10 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 </svg>
                 <Records records={roadway.records} />
                 <div className="hint">
-                  Portance {bearingLabel}. Répartition uniforme : plaques rigides, jointives et bien posées ; si elles ne répartissent que sous chaque Viewbox, retenir l’emprise la plus chargée (teinte : pression /
-                  portance). Pression locale sous les platines et flexion des plaques non vérifiées.
+                  Portance {bearingLabel}.{' '}
+                  {result.roadwayPlate
+                    ? 'Répartition uniforme et emprise la plus chargée : information seulement (des plaques infiniment rigides). Le calcul retenu est celui de chaque pied sur la plaque choisie : raideur de la plaque et du sol, joints, flexion.'
+                    : 'Répartition uniforme : plaques rigides, jointives et bien posées ; si elles ne répartissent que sous chaque Viewbox, retenir l’emprise la plus chargée (teinte : pression / portance). Pression locale sous les platines et flexion des plaques non vérifiées — choisir la plaque pour les vérifier.'}
                 </div>
                 <div>
                   <button className="btn small ghost" onClick={() => setShowPoints(!showPoints)}>

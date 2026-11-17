@@ -16,6 +16,8 @@ export const badgeOf = (eta: number) => (verdictOf(eta) === 'ok' ? 'ok' : verdic
 // couleurs des taux : les mêmes que sur les plans (écran et fiche PDF)
 export { CHECK_COLORS, checkColor } from '../../structure/report/groundSheet';
 import { checkColor } from '../../structure/report/groundSheet';
+import type { RoadwayPatch } from './RoadwayPicker';
+import { RoadwayPicker } from './RoadwayPicker';
 
 /** Résumé court d'un calage (« 2 × 100 × 100 × 36 mm », « aucune plaque »). */
 export function refsText(refs: LayerRef[] | undefined, stock: StockPlate[]): string {
@@ -153,6 +155,8 @@ export interface ChoiceSetters {
   setRoadway: (on: boolean) => void;
   /** débord des plaques de roulage tout autour (mm) */
   setRoadwayOverhang: (mm: number) => void;
+  /** plaque de roulage choisie (catalogue ou saisie) et position des pieds sur les plaques */
+  patchRoadway: (p: RoadwayPatch) => void;
   reset: () => void;
 }
 
@@ -230,7 +234,7 @@ export function SupportPanel({ c, result, stock, set, onClose }: { c: SupportChe
             value={own}
             onChange={(v) => set.setSupport(c.id, v)}
             stock={stock}
-            inheritLabel={typeRefs !== undefined ? `Comme les autres « ${label} » : ${refsText(typeRefs, stock)}` : autoLabel(autoType, result.roadwayOn)}
+            inheritLabel={typeRefs !== undefined ? `Comme les autres « ${label} » : ${refsText(typeRefs, stock)}` : autoLabel(autoType, result.roadwayOn && !result.roadwayPlate)}
           />
         </div>
         </>
@@ -304,10 +308,22 @@ export function CalageDiagnostic({
         <label className="row" style={{ gap: 6, marginTop: 4 }}>
           <input type="checkbox" checked={result.roadwayOn} onChange={(e) => set.setRoadway(e.target.checked)} />
           <span>
-            <b>Plaques de roulage jointives sur toute la surface</b> : charge totale {kN(rw.load)} / {m2(rw.area)} = {pressureText(rw.mean)}{' '}
-            <span className={`badge ${badgeOf(rw.etaMean)}`}>η {n(rw.etaMean, 2)}</span>
+            <b>Plaques de roulage sur toute la surface</b>
+            {result.roadwayOn && result.roadwayPlate ? (
+              <span className="hint">
+                {' '}
+                — chaque pied est réparti par la plaque choisie (sa raideur, sa résistance) ; si elles étaient infiniment rigides : {kN(rw.load)} / {m2(rw.area)} = {pressureText(rw.mean)} (information)
+              </span>
+            ) : (
+              <>
+                {' '}
+                : charge totale {kN(rw.load)} / {m2(rw.area)} = {pressureText(rw.mean)} <span className={`badge ${badgeOf(rw.etaMean)}`}>η {n(rw.etaMean, 2)}</span>
+                {result.roadwayOn && <span className="hint"> — plaques supposées rigides : choisir la plaque ci-dessous pour vérifier sa vraie répartition</span>}
+              </>
+            )}
           </span>
         </label>
+        {result.roadwayOn && <RoadwayPicker result={result} choices={set.choices} onChange={set.patchRoadway} />}
         {result.roadwayOn && (
           <label className="row" style={{ gap: 6, marginLeft: 22 }}>
             <span>Les plaques de roulage dépassent de l’installation de</span>
@@ -350,7 +366,7 @@ export function TypeChoice({ t, result, stock, set, onSelect, selected }: { t: C
           <span className="hint" style={{ minWidth: 140, paddingTop: 4 }}>
             Calage de ce type
           </span>
-          <LayerPicker value={set.choices.byType?.[t.typeKey]} onChange={(v) => set.setType(t.typeKey, v)} stock={stock} inheritLabel={autoLabel(autoType ?? t, result.roadwayOn)} />
+          <LayerPicker value={set.choices.byType?.[t.typeKey]} onChange={(v) => set.setType(t.typeKey, v)} stock={stock} inheritLabel={autoLabel(autoType ?? t, result.roadwayOn && !result.roadwayPlate)} />
         </div>
       )}
       <div style={{ fontSize: 13, lineHeight: 1.45 }}>{t.advice}</div>

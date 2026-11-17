@@ -9,6 +9,7 @@ import { computeCalage } from '../../src/structure/core/calage';
 import type { CalageResult } from '../../src/structure/core/calage';
 import { calageRemedies, sleeperOption } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
+import { VIEWBOX_STOCK } from '../../src/structure/core/ground';
 import type { EstimateModule } from '../../src/structure/core/estimate';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
 import { withLevel } from '../../src/structure/core/groundLevels';
@@ -37,7 +38,7 @@ const texts = (svg: string) => [...svg.matchAll(/>([^<>]+)</g)].map((m) => decod
 function documentTexts(r: CalageResult, modules: EstimateModule[], lang: 'de' | 'en') {
   const info = { project: 'P', source: 'S', date: 'd', assumptions: [] as Array<[string, string]> };
   const fiche = groundSheetPages({ result: r, modules, info, lang }).map((p) => renderToStaticMarkup(p));
-  const points = groundPointsPages({ modules, estimate: r.estimate, roadway: r.roadway, checks: r.checks, levels: r.levels, bearingLabel: '4.4 kN/m²', lang, noTuv: !!r.tuv.notApplicable, remedy: r.remedy, slab: r.slab, info }).map((p) =>
+  const points = groundPointsPages({ modules, estimate: r.estimate, roadway: r.roadway, checks: r.checks, levels: r.levels, bearingLabel: '4.4 kN/m²', lang, noTuv: !!r.tuv.notApplicable, remedy: r.remedy, slab: r.slab, roadwayPlate: r.roadwayPlate, info }).map((p) =>
     renderToStaticMarkup(p),
   );
   const structure = {
@@ -85,6 +86,12 @@ function scenarios(): Array<[string, CalageResult, EstimateModule[]]> {
   const out: Array<[string, CalageResult, EstimateModule[]]> = [];
   out.push(['vérins, 2 niveaux', computeCalage(calageInput(grid, DEFAULT_HYP, stock, true)), grid]);
   out.push(['plaques de roulage', computeCalage({ ...calageInput(grid, hyp, stock), choices: { roadway: true } }), grid]);
+  // plaques de roulage choisies sur une offre (17.11.2026) : tôle acier, plastique sans module (plaques du stock dessus), alu sur un joint
+  const soft = { ...calageInput(mods, { ...hyp, bearingValue: 60, bearingUnit: 'kN/m²' as const, subgrade: 'medium' }, stock, true), stock: VIEWBOX_STOCK };
+  out.push(['tôles acier de roulage', computeCalage({ ...soft, choices: { roadway: true, roadwayPlate: 'steel-2000x1000x20', roadwayPosition: 'middle' } }), mods]);
+  out.push(['plaques plastique de roulage', computeCalage({ ...soft, choices: { roadway: true, roadwayPlate: 'envhyro-terratrak-plus' } }), mods]);
+  out.push(['plaques alu de roulage, aucune plaque sous les pieds', computeCalage({ ...soft, bearing: soft.bearing / 4, choices: { roadway: true, roadwayPlate: 'box-amp-panel', byType: { '1': [], '2': [], M: [], M2: [] } } }), mods]);
+  out.push(['plaques de roulage acier sur blocs', computeCalage({ ...soft, blocks: nine, choices: { roadway: true, roadwayPlate: 'steel-3000x1500x25' } }), mods]);
   out.push(['sol faible', computeCalage(calageInput(mods, { ...hyp, bearingValue: 40, bearingUnit: 'kN/m²' }, stock, true)), mods]);
   const inp = { ...calageInput(mods, hyp450, stock, true), blocks: nine };
   const res = computeCalage(inp);

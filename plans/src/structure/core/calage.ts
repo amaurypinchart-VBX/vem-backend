@@ -12,6 +12,8 @@ import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, Plat
 import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
+import type { RoadwayPlate, RoadwayPosition } from './roadwayPlates';
+import { findRoadwayPlate, roadwayPlateCount, roadwayPlateWeight, roadwayReach, roadwayStiffness } from './roadwayPlates';
 import type { CalageChoices, ChainInput, ChainResult, LayerRef } from './spreading';
 import { adviseChain, bestStockForAll, bestStockLayers, checkChain, dimsCm, pressureText, resolveLayers } from './spreading';
 import type { BlockChain, BlockSupport, BlockUnder, DrawnBlock } from './blocks';
@@ -214,6 +216,11 @@ export interface CalageResult {
   roadwayOn: boolean;
   /** plaques de roulage retenues : contour de la surface couverte (emprise au sol + débord), pour les plans */
   roadwayOutline?: P2[][];
+  /**
+   * plaque de roulage choisie (catalogue ou saisie) : position des appuis sur les plaques, distance de répartition
+   * autour d'un appui sur ce sol (mm), nombre de plaques ; absente = ancien calcul uniforme (plaques supposées rigides)
+   */
+  roadwayPlate?: { plate: RoadwayPlate; position: RoadwayPosition; reach: number; count: number; stiffness: string };
   /** public limité retenu pour le sol (charge totale en N) */
   publicLimit?: { persons: number; kg: number; load: number };
   placement: PlatePlacement;
@@ -319,7 +326,7 @@ export function computeCalage(inp: CalageInput): CalageResult {
   const res = applied ? withRemedy(inp, base, applied) : base;
   const out = inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
   const mode: GroundMode = inp.estimate.jacks ? 'jacks' : (inp.estimate.contact?.mode ?? 'points');
-  return { ...out, groundMode: mode, stacks: calageStacks(out, mode, inp.roadwayThickness) };
+  return { ...out, groundMode: mode, stacks: calageStacks(out, mode, out.roadwayPlate?.plate.t ?? inp.roadwayThickness) };
 }
 
 /**
@@ -367,7 +374,8 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   const plat = res.remedy?.outlines.find((o) => o.id === 'PL');
   // surface de dalle chargée : emprise des Viewbox (agrandie du débord des plaques de roulage), plateau retenu, et la
   // partie efficace de la plaque (ou du bloc) du dessous de chaque appui quand elle dépasse de l'installation
-  const over = res.roadwayOn ? Math.max(0, inp.choices?.roadwayOverhang ?? 0) : 0;
+  // plaque de roulage choisie : le débord ne compte que jusqu'où elle répartit (une plaque souple ne porte rien à 50 cm du bord)
+  const over = res.roadwayOn ? Math.min(Math.max(0, inp.choices?.roadwayOverhang ?? 0), res.roadwayPlate ? res.roadwayPlate.reach : Infinity) : 0;
   const surface: P2[][] = plat ? [plat.corners] : inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, over));
   // madriers retenus sous les rangées : ils chargent la dalle là où ils sont (agrandissent la surface s'ils dépassent)
   if (!plat) for (const o of res.remedy?.outlines ?? []) if (o.timber?.layer === 'lower') surface.push(o.corners);
@@ -605,14 +613,46 @@ function computeCalageBase(inp: CalageInput): CalageResult {
   // plaques de roulage qui débordent tout autour de l'installation : surface couverte agrandie
   const overhang = choices.roadway ? Math.max(0, choices.roadwayOverhang ?? 0) : 0;
   const covered = overhang > 0 ? coveredArea(inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, overhang))) : undefined;
-  const roadway = roadwayPressure(inp.modules, est, inp.bearing, inp.roadwayPlates ?? 0, (inp.blocks ?? []).map((b) => ({ at: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2] as P2, N: b.massKg * 9.81 })), covered);
+  // plaque de roulage choisie (acier, aluminium, plastique) : sa raideur répartit chaque appui ; sinon ancien calcul uniforme
+  const rp = choices.roadway ? findRoadwayPlate(choices.roadwayPlate, choices.roadwayCustom) : null;
+  const rpPos: RoadwayPosition = choices.roadwayPosition ?? 'joint';
+  const roadway = roadwayPressure(inp.modules, est, inp.bearing, rp ? roadwayPlateWeight(rp) : inp.roadwayPlates ?? 0, (inp.blocks ?? []).map((b) => ({ at: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2] as P2, N: b.massKg * 9.81 })), covered);
   // plaques de roulage : il faut l'emprise au sol des Viewbox
   const roadwayOn = !!choices.roadway && roadway.area > 0;
   if (choices.roadway && !roadwayOn) warnings.push('Plaques de roulage : emprise au sol des Viewbox inconnue, non prises en compte.');
   const rw = { mean: roadway.mean, area: roadway.area, load: roadway.load };
+  const rpOn = roadwayOn ? rp : null;
+  if (roadwayOn && !rp)
+    warnings.push(
+      'Plaques de roulage : modèle de plaque non choisi — calcul simplifié : plaques supposées rigides et jointives, toute la charge répartie uniformément sur toute la surface (non vérifié). Choisir la plaque (acier, aluminium, plastique) pour vérifier sa vraie répartition sous chaque appui.',
+    );
+  if (rpOn && rpOn.material === 'plastic' && !roadwayStiffness(rpOn).EI)
+    warnings.push(`Plaques de roulage « ${rpOn.name} » : le fabricant ne donne pas le module d’élasticité du plastique (pour la durée de la charge) — seule la diffusion dans l’épaisseur (${fmtNumber(rpOn.t / 10, 1)} cm) est comptée. Le demander au fabricant / au loueur et le saisir pour compter la vraie répartition.`);
+  if (rpOn && !(inp.longrine.k > 0)) warnings.push('Plaques de roulage : raideur du sol inconnue (étape 2) — seule la diffusion dans l’épaisseur des plaques est comptée.');
+  // emprise de chaque appui sur les plaques de roulage : au plus jusqu'à mi-distance de l'appui voisin (pas de double compte)
+  const cellOf = new Map<PlateGroup, number>();
+  if (rpOn) {
+    const atOf = (g: PlateGroup): P2 => {
+      const geo = blockOf.get(g)?.s.geometry ?? supportGeometry(g, inp.modules);
+      return [geo.u[0] * geo.center[0] + geo.v[0] * geo.center[1], geo.u[1] * geo.center[0] + geo.v[1] * geo.center[1]];
+    };
+    const pts = groups.map((g) => [g, atOf(g)] as const);
+    for (const [g, p] of pts) {
+      let d = Infinity;
+      for (const [h, q] of pts) if (h !== g) d = Math.min(d, Math.max(Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1])));
+      if (Number.isFinite(d)) cellOf.set(g, d);
+    }
+  }
+  const rpName = rpOn ? ` « ${rpOn.name} »` : '';
+  // bord des plaques de roulage : bord de l'installation + débord (+ 3 cm, comme le contour dessiné)
+  const roadwayEdge = (g: PlateGroup): [number, number] => {
+    const d = flushCaps(blockOf.get(g)?.s.geometry ?? supportGeometry(g, inp.modules)).edgeDist;
+    return [d[0] + overhang + 30, d[1] + overhang + 30];
+  };
+  const roadwayOf = (g: PlateGroup) => (rpOn ? { roadwayPlate: { plate: rpOn, position: rpPos, ...(cellOf.has(g) ? { cell: cellOf.get(g)! } : {}), edge: roadwayEdge(g) } } : {});
   // blocs dessinés : la charge n'arrive au sol que par les blocs ; des plaques de roulage posées dessous ne
   // répartissent pas la charge de toute l'installation sur toute la surface (il faudrait un plateau rigide)
-  if (roadwayOn && blk && blockOf.size)
+  if (roadwayOn && !rpOn && blk && blockOf.size)
     warnings.push(
       `Plaques de roulage et blocs de calage : la charge n’arrive au sol que par les ${blockOf.size} bloc(s) ; des plaques de roulage posées sous les blocs ne la répartissent pas uniformément sur toute la surface (il faudrait un plateau rigide). Chaque bloc est donc vérifié avec sa propre emprise (+ les plaques choisies sous lui) ; la répartition uniforme reste affichée pour information (moyenne sur l’emprise, utile pour une dalle de bâtiment).`,
     );
@@ -760,7 +800,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           // bloc dessiné : pieds → bloc → (plaques sous le bloc : à fleur de la Viewbox ou centrées sur le bloc) → sol
           // pas de répartition uniforme sous un bloc (voir l'avertissement plaques de roulage + blocs)
           const run = (ls: SpreadLayer[], plate: 'centered' | 'flush') => {
-            const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale, plate), ...(slabMode ? { groundInfo: true } : {}) };
+            const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, ...roadwayOf(g), pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale, plate), ...(slabMode ? { groundInfo: true } : {}) };
             return { base, chain: checkChain({ ...base, layers: ls }), ls };
           };
           // plaque rectangulaire : dans le sens qui répartit le mieux
@@ -775,7 +815,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           return { r, geo, Rk, base: pick.base, flushBase: fl.base, centeredBase: ce.base, chain: pick.chain, atFlush: fl.chain, atCenter: ce.chain, placement, eccentric: false, bottom: pick.ls[pick.ls.length - 1], layersUsed: pick.ls };
         }
         const flush = flushCaps(geo);
-        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, ...(slabMode ? { groundInfo: true } : {}) };
+        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn && !rpOn ? rw : null, ...roadwayOf(g), pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, ...(slabMode ? { groundInfo: true } : {}) };
         const bottom = layers[layers.length - 1];
         const flushBase = { ...base, caps: flush.caps, edgeDist: flush.edgeDist };
         const atFlush = checkChain({ ...flushBase, layers });
@@ -807,7 +847,18 @@ function computeCalageBase(inp: CalageInput): CalageResult {
       const auto0 = recommended(d.solutions);
       let autoChosen = auto0 ?? leastBad(d.solutions);
       let slabStock: SpreadLayer[] | null = null;
-      if (!part.refs && !roadwayOn) {
+      // plaque de roulage choisie : pied posé directement dessus s'il passe, sinon les plus petites plaques du stock sous le pied
+      let onRoadway: SpreadLayer[] | null = null;
+      if (!part.refs && rpOn && !onBlock) {
+        // dalle en charge répartie : le pied se pose sur la plaque de roulage (la pression locale n'est qu'une information)
+        if (slabMode || passes([])) onRoadway = [];
+        else {
+          // plaques du stock sous le pied : à fleur de la Viewbox d'abord (sauf pose centrée), sinon centrées
+          const bases = (k: 'flushBase' | 'centeredBase') => part.groups.map((g) => evaluate(g, [])[k]);
+          onRoadway = ((placementModeAll !== 'centered' ? bestStockForAll(bases('flushBase'), inp.stock) : null) ?? (placementModeAll !== 'flush' ? bestStockForAll(bases('centeredBase'), inp.stock) : null))?.layers ?? null;
+        }
+      }
+      if (!part.refs && !(roadwayOn && !rpOn) && !onRoadway) {
         // solution automatique : la première qui passe pour chaque appui de la partie (position des plaques comprise),
         // conforme au Prüfbuch si possible
         const kinds: SolutionKind[] = ['plywood-stock', 'plywood', 'commercial', 'steel'];
@@ -830,17 +881,18 @@ function computeCalageBase(inp: CalageInput): CalageResult {
         layers = res.layers;
         for (const m of res.missing) warnings.push(`Calage choisi : la plaque « ${m} » n’est plus dans le stock, elle est ignorée.`);
       } else if (blockAuto) layers = blockAuto;
+      else if (onRoadway) layers = onRoadway;
       else if (slabStock) layers = slabStock;
-      else if (!roadwayOn) layers = autoChosen?.layers ?? [];
-      const custom = !!part.refs || (roadwayOn && !onBlock);
+      else if (!roadwayOn || rpOn) layers = autoChosen?.layers ?? [];
+      const custom = !!part.refs || (roadwayOn && !rpOn && !onBlock);
       const checks = part.groups.map((g): SupportCheck => {
         const e = evaluate(g, layers);
         const r = e.r;
         const source = choices.bySupport?.[r.group.id] ? 'support' : choices.byType?.[key] ? 'type' : 'auto';
-        const ctx = { stock: inp.stock, roadway: rw, roadwayOn: roadwayOn && !onBlock, custom: !!part.refs };
+        const ctx = { stock: inp.stock, roadway: rpOn ? null : rw, roadwayOn: roadwayOn && !rpOn && !onBlock, custom: !!part.refs };
         let advice = inp.noAdvice ? '' : adviseChain(r.group.id, e.chain, layers, { ...ctx, base: e.base });
         // automatique : aucune plaque du stock ne suffit à fleur de la Viewbox (charge près du bord) → conseil en plaque centrée
-        if (!inp.noAdvice && !onBlock && placementMode === 'auto' && e.placement === 'flush' && e.chain.eta > 1 && !roadwayOn && !bestStockLayers(e.flushBase, inp.stock) && bestStockLayers(e.centeredBase, inp.stock))
+        if (!inp.noAdvice && !onBlock && placementMode === 'auto' && e.placement === 'flush' && e.chain.eta > 1 && (!roadwayOn || rpOn) && !bestStockLayers(e.flushBase, inp.stock) && bestStockLayers(e.centeredBase, inp.stock))
           advice = `${adviseChain(r.group.id, e.atCenter, layers, { ...ctx, base: e.centeredBase })} (plaque centrée sous l’appui : à fleur de la Viewbox, aucune plaque ne suffit, la charge est trop près du bord).`;
         const bs = blockOf.get(g)?.s;
         const plan = bs ? blockPlan(bs, e.bottom, e.placement) : e.bottom ? platePlan(e.geo, e.bottom.l, e.bottom.w, e.placement) : null;
@@ -914,7 +966,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
       })();
       let chosen = autoChosen;
       let solutions = d.solutions;
-      if (custom || layers.length || onBlock) {
+      if (custom || layers.length || onBlock || onRoadway) {
         const bottom = layers[layers.length - 1];
         const stack = layers.map((l) => `${l.n} × ${l.l / 10} × ${l.w / 10}${l.t ? ` × ${l.t} mm` : ' cm'}`).join(' + ');
         const title = onBlock && !part.refs
@@ -929,25 +981,29 @@ function computeCalageBase(inp: CalageInput): CalageResult {
             : roadwayOn
               ? 'Plaques de roulage sur toute la surface'
               : 'Sans plaque'
+          : onRoadway
+            ? layers.length
+              ? 'Plaques du stock sous le pied, sur les plaques de roulage'
+              : 'Pied posé sur les plaques de roulage'
           : slabStock
             ? 'Plaques du stock (dalle en charge répartie : la plaque sert à poser le pied)'
             : (autoChosen?.title ?? 'Calage');
         chosen = {
-          kind: onBlock ? 'custom' : custom ? (layers.length ? 'custom' : 'roadway') : (autoChosen?.kind ?? 'custom'),
+          kind: onBlock ? 'custom' : custom || onRoadway ? (layers.length ? 'custom' : 'roadway') : (autoChosen?.kind ?? 'custom'),
           title,
           summary: onBlock
             ? layers.length
-              ? `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? ', sur les plaques de roulage' : ''}`
+              ? `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? `, sur les plaques de roulage${rpName}` : ''}`
               : roadwayOn
-                ? 'bloc posé sur les plaques de roulage'
+                ? `bloc posé sur les plaques de roulage${rpName}`
                 : 'bloc posé directement au sol'
-            : layers.length ? `${stack} par ${unit}${placeText}${roadwayOn ? ', sur plaques de roulage' : ''}` : roadwayOn ? 'pied posé sur les plaques de roulage' : 'pied posé directement au sol',
+            : layers.length ? `${stack} par ${unit}${placeText}${roadwayOn ? `, sur plaques de roulage${rpName}` : ''}` : roadwayOn ? `pied posé sur les plaques de roulage${rpName}` : 'pied posé directement au sol',
           feasible: worst.eta <= 1,
           remarks: worst.problems,
           eta: worst.eta,
           // automatique : le matériel de la solution (libellés du stock, quantités à vérifier) ; choisi : les couches
           materials:
-            !custom && !onBlock && !slabStock && autoChosen?.materials.length
+            !custom && !onBlock && !slabStock && !onRoadway && autoChosen?.materials.length
               ? autoChosen.materials
               : layers.map((l) => ({
                   label: materialLabel(l),
@@ -956,14 +1012,14 @@ function computeCalageBase(inp: CalageInput): CalageResult {
                   massKg: l.massKg * l.n * reactions.length,
                 })),
           // automatique : vérification statico de la plaque retenue, puis la chaîne de l'appui le plus chargé
-          records: !custom && !onBlock && !slabStock && autoChosen ? [...autoChosen.records, ...worst.records] : worst.records,
+          records: !custom && !onBlock && !slabStock && !onRoadway && autoChosen ? [...autoChosen.records, ...worst.records] : worst.records,
           ...(bottom ? { footprint: { l: bottom.l, w: bottom.w } } : {}),
           layers,
         };
         solutions = [chosen, ...d.solutions.filter((x) => x !== autoChosen)];
         if (onBlock && !custom && !layers.length && worst.eta > 1) chosen.remarks = [...chosen.remarks, 'plaques de répartition à poser sous le bloc (aucune plaque du stock ne suffit : plaque sur mesure ou plaques de roulage)'];
       }
-      const standard = verdictOf(worst.eta) !== 'fail' && (custom || !!chosen?.feasible);
+      const standard = verdictOf(worst.eta) !== 'fail' && (custom || !!onRoadway || !!chosen?.feasible);
       const ids = reactions.map((r) => r.group.id);
       const tuv = tuvOn && vbxOnly ? tuvConformity(containers, middle || stair, layers, terrace && middle) : null;
       types.push({
@@ -1097,7 +1153,15 @@ function computeCalageBase(inp: CalageInput): CalageResult {
       );
     }
   }
-  if (roadwayOn)
+  if (roadwayOn && rpOn) {
+    const count = roadwayPlateCount(rpOn, roadway.area);
+    materials.push({
+      label: `Plaques de roulage « ${rpOn.name} »${rpOn.supplier ? ` (${rpOn.supplier})` : ''}`,
+      dims: `${rpOn.l} × ${rpOn.w} × ${rpOn.t} mm — ${(roadway.area / 1e6).toFixed(1).replace('.', ',')} m² à couvrir, sans les chutes`,
+      quantity: count,
+      massKg: count * rpOn.massKg,
+    });
+  } else if (roadwayOn)
     materials.push({
       label: 'Plaques de roulage jointives',
       dims: `${(roadway.area / 1e6).toFixed(1).replace('.', ',')} m² à couvrir (toute l’emprise au sol)`,
@@ -1129,6 +1193,9 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     roadwayOn,
     // contour pour les plans : + 3 cm pour fermer les joints entre box voisines (les plaques de roulage les couvrent)
     ...(roadwayOn ? { roadwayOutline: unionLoops(inp.modules.filter((m) => m.level === 0).map((m) => grownRect(m.corners, overhang + 30))) } : {}),
+    ...(roadwayOn && rpOn
+      ? { roadwayPlate: { plate: rpOn, position: rpPos, reach: roadwayReach(rpOn, inp.longrine.k), count: roadwayPlateCount(rpOn, roadway.area), stiffness: roadwayStiffness(rpOn).text } }
+      : {}),
     ...(inp.publicLimit && publicLoad !== undefined ? { publicLimit: { ...inp.publicLimit, load: publicLoad } } : {}),
     placement: placementMode,
     tuv: { bearingOk, ok: tuvOk, tuvMinimum: tuvOn, ...(tuvApplicable ? {} : { notApplicable: true }) },

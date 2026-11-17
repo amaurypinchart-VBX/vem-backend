@@ -11,6 +11,8 @@ import { fmtNumber } from './units';
 import type { BlockChain } from './blocks';
 import { blockPlateCaps } from './blocks';
 import type { AppliedRemedy, RemedySupport } from './calageRemedies';
+import type { RoadwayPlate, RoadwayPosition } from './roadwayPlates';
+import { ROADWAY_MATERIALS, roadwayPlateWeight as roadwayPlateWeightOf, roadwaySpread } from './roadwayPlates';
 
 /** Une couche choisie : n plaques identiques du stock (clé `plateKey`) empilées. */
 export interface LayerRef {
@@ -29,6 +31,16 @@ export interface CalageChoices {
   roadway?: boolean;
   /** débord des plaques de roulage tout autour de l'installation (mm, 0 = juste l'emprise des Viewbox) */
   roadwayOverhang?: number;
+  /**
+   * plaque de roulage retenue (clé du catalogue `ROADWAY_PLATES`, ou celle de `roadwayCustom`) : sa raideur et sa
+   * résistance répartissent chaque appui ; absente = ancien calcul (plaques supposées rigides, charge totale répartie
+   * uniformément sur toute la surface), signalé
+   */
+  roadwayPlate?: string;
+  /** plaque saisie à la main (fiche d'un loueur) */
+  roadwayCustom?: RoadwayPlate;
+  /** appuis n'importe où sur les plaques (un joint possible, défaut) ou au milieu d'une plaque (pose contrôlée) */
+  roadwayPosition?: RoadwayPosition;
   /** longrines bois sous les grands côtés retenues à la place des plaques (sinon : variante proposée seulement) */
   longrine?: boolean;
   /** pose des plaques choisie pour un appui (« P4 », « B2 ») : à fleur de la Viewbox ou centrées ; absent = réglage général */
@@ -214,6 +226,11 @@ export interface ChainInput {
   bearing: number;
   /** plaques de roulage : pression uniforme (N/mm²) sur toute la surface couverte (mm²) */
   roadway?: { mean: number; area: number } | null;
+  /**
+   * plaque de roulage choisie sous l'appui (sous les couches et le bloc) : répartition par sa raideur sur le sol
+   * élastique (`roadwaySpread`) ; `cell` = côté maxi de l'emprise (moitié de la distance à l'appui voisin)
+   */
+  roadwayPlate?: { plate: RoadwayPlate; position: RoadwayPosition; cell?: number; edge?: [number, number] } | null;
   pointLoadMax?: number;
   /** plaques à fleur de la Viewbox : emprise efficace maximale (u, v) et distance de la charge au bord (mm) */
   caps?: [number, number];
@@ -407,6 +424,77 @@ export function checkChain(inp: ChainInput): ChainResult {
     records.push(...tb.records);
     etaCapacity = Math.max(etaCapacity, tb.etaTimber);
     if (tb.etaTimber > 1) problems.push(`${tb.label} : madriers insuffisants (η ${f(tb.etaTimber, 2)})`);
+  } else if (inp.roadwayPlate) {
+    const rp = inp.roadwayPlate;
+    const P = rp.plate;
+    const sp = roadwaySpread({ plate: P, contact: c, Rk: Rzk + wLayers, REd: REd + wLayers * 1.35, k: inp.subgrade, position: rp.position, cell: rp.cell, edge: rp.edge });
+    const st = sp.stiffness;
+    const notes: string[] = [];
+    if (sp.mode === 'thickness') notes.push(`la plaque ne répartit que dans son épaisseur (${f(P.t / 10, 1)} cm de chaque côté) : ${st.reason ?? 'raideur du sol inconnue'}`);
+    else notes.push(`la plaque répartit jusqu’à ${f(sp.overhang / 10, 0)} cm autour de l’appui (raideur de la plaque et du sol${sp.mode === 'strength' ? ', limitée par la flexion' : ''})`);
+    if (sp.joint === 'locked') notes.push('appui sur un joint verrouillé possible : moitié de la répartition à travers le joint');
+    if (sp.joint === 'loose') notes.push('appui sur un joint possible, plaques bord à bord : un quart de la répartition à travers le joint');
+    if (sp.limits.includes('plate')) notes.push('emprise limitée à la plaque (plaques bord à bord)');
+    if (sp.limits.includes('cell')) notes.push('emprise limitée à mi-distance de l’appui voisin');
+    if (sp.limits.includes('edge')) notes.push('près du bord des plaques de roulage : seule la partie centrée sous la charge porte (B’ = B − 2 e) — débord des plaques à augmenter');
+    steps.push({ label: `+ Plaque de roulage « ${P.name} »`, dims: sp.footprint, area: sp.footprint[0] * sp.footprint[1], pressure: sp.pressure, eta: sp.pressure / bearing, note: notes.join(' ; ') });
+    const kk = inp.subgrade ?? 0;
+    const jointText = sp.joint === 'none' ? 'appui au milieu d’une plaque' : sp.joint === 'locked' ? 'joint verrouillé : c/2 à travers le joint' : 'joints bord à bord : c/4 à travers le joint, emprise ≤ la plaque';
+    records.push({
+      key: 'roadway.spread',
+      title: `Répartition par la plaque de roulage « ${P.name} »`,
+      clause:
+        sp.mode === 'thickness'
+          ? `plaque de roulage souple : diffusion à 45° dans l’épaisseur seulement (${st.reason ?? 'raideur du sol inconnue'})`
+          : `plaque de roulage sur sol élastique (poutre de Hetényi, appui rigide) : débord efficace c = 1/β de chaque côté de l’appui ; ${jointText}`,
+      formula: sp.mode === 'thickness' ? 'c = t ; σB = Rz,k / A + poids des plaques' : 'c = (4 E I / k)^¼ ; σB = Rz,k / A + poids des plaques',
+      withValues:
+        sp.mode === 'thickness'
+          ? `c = ${f(P.t, 0)} mm ; A = ${dimsCm(sp.footprint)} ; σB = ${kN(Rzk + wLayers)} / ${m2(sp.footprint[0] * sp.footprint[1])} + ${f(sp.weight * 1e3, 2)} kN/m² = ${pressureText(sp.pressure)}`
+          : `${st.text} ; k = ${f(kk * 1e3, 0)} MN/m³ → c = ${f(sp.overhang, 0)} mm${sp.mode === 'strength' ? ' (limité par la flexion)' : ''} ; A = ${dimsCm(sp.footprint)} ; σB = ${kN(Rzk + wLayers)} / ${m2(sp.footprint[0] * sp.footprint[1])} + ${f(sp.weight * 1e3, 2)} kN/m² = ${pressureText(sp.pressure)}`,
+      result: sp.pressure,
+    });
+    if (Number.isFinite(sp.MRd)) {
+      const eta = sp.M / sp.MRd;
+      etaCapacity = Math.max(etaCapacity, eta);
+      if (eta > 1.0001) problems.push(`plaque de roulage « ${P.name} » : flexion dépassée (η ${f(eta, 2)})`);
+      records.push({
+        key: 'roadway.bending',
+        title: `Flexion de la plaque de roulage « ${P.name} »`,
+        clause: `${ROADWAY_MATERIALS[P.material].source}${st.how === 'mass' ? ' ; module de flexion d’une plaque pleine de même masse' : ''}${sp.joint === 'loose' ? ' ; bord libre au joint : κ = 1,29 (Hetényi)' : ''}`,
+        formula: 'MEd = κ · Rz,Ed / A · c² / 2 ≤ MRd = fd · t² / 6',
+        withValues: `MEd = ${f(sp.M / 1e3, 2)} kNcm/cm ; MRd = ${f(st.fd!, 0)} × ${f(st.teq, 1)}² / 6 = ${f(sp.MRd / 1e3, 2)} kNcm/cm`,
+        result: sp.M,
+        limit: sp.MRd,
+        eta,
+      });
+    } else if (sp.mode !== 'thickness') {
+      // plastique sans résistance publiée : contrainte de flexion seulement affichée
+      const sigma = (6 * sp.M) / (st.teq * st.teq);
+      records.push({
+        key: 'roadway.bending',
+        title: `Flexion de la plaque de roulage « ${P.name} » (information)`,
+        clause: 'résistance en flexion non donnée par le fabricant : contrainte à comparer à sa fiche',
+        formula: 'σ = 6 · MEd / t²',
+        withValues: `σ = 6 × ${f(sp.M / 1e3, 2)} kNcm/cm / ${f(st.teq, 1)}² = ${f(sigma, 1)} N/mm²`,
+        result: sigma,
+      });
+    }
+    if (sp.fcd !== null) {
+      const eta = sp.sigmaC / sp.fcd;
+      etaC90 = Math.max(etaC90, eta);
+      if (eta > 1) problems.push(`plaque de roulage « ${P.name} » écrasée sous l’appui (σ = ${f(sp.sigmaC, 2)} > ${f(sp.fcd, 2)} N/mm²)`);
+      records.push({
+        key: 'roadway.compression',
+        title: `Compression de la plaque de roulage « ${P.name} » sous l’appui`,
+        clause: `résistance à la compression du fabricant ${f(P.fc!, 2)} N/mm², γ = ${f(ROADWAY_MATERIALS[P.material].gamma, 1)}`,
+        formula: 'σ = Rz,Ed / A ≤ fc / γ',
+        withValues: `σ = ${kN(REd + wLayers * 1.35)} / ${m2(c[0] * c[1])} = ${f(sp.sigmaC, 3)} ≤ ${f(sp.fcd, 2)} N/mm²`,
+        result: sp.sigmaC,
+        limit: sp.fcd,
+        eta,
+      });
+    }
   } else if (inp.roadway) {
     const q = inp.roadway.mean;
     steps.push({ label: '+ Plaques de roulage sur toute la surface (charge totale répartie uniformément)', dims: null, area: inp.roadway.area, pressure: q, eta: q / bearing });
@@ -421,13 +509,13 @@ export function checkChain(inp: ChainInput): ChainResult {
     title: info ? 'Pression juste sous le calage (information : le critère est la charge de la zone de dalle)' : 'Pression au sol',
     clause: tb
       ? 'grille de madriers sur sol élastique : pression maxi sous la partie qui porte l’appui (toutes ses charges + poids des madriers)'
-      : inp.roadway ? 'plaques de roulage jointives : charge verticale totale / surface couverte' : 'pression uniforme sous l’emprise efficace de la dernière couche',
+      : inp.roadwayPlate ? 'pression sous l’emprise efficace de la plaque de roulage, poids des plaques compris' : inp.roadway ? 'plaques de roulage jointives : charge verticale totale / surface couverte' : 'pression uniforme sous l’emprise efficace de la dernière couche',
     formula: tb ? (info ? 'σ = max p (Winkler)' : 'σB = max p (Winkler) ≤ portance admissible') : 'σB = Rz,k / A ≤ portance admissible',
     withValues: tb
       ? info
         ? `σ = ${pressureText(last.pressure)}`
         : `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
-      : inp.roadway
+      : inp.roadway || inp.roadwayPlate
       ? `σB = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
       : blk && !inp.layers.length
         ? `σB = ${kN(inp.Rzk)} / ${m2(last.area)} + ${kN(blk.weightK)} / ${m2(blk.dims[0] * blk.dims[1])} = ${pressureText(last.pressure)} ≤ ${pressureText(bearing)}`
@@ -444,7 +532,7 @@ export function checkChain(inp: ChainInput): ChainResult {
     etaCapacity,
     etaPoint,
     eta: Math.max(info ? 0 : last.eta, etaC90, etaCapacity, etaPoint),
-    areaRequired: (Rzk + wLayers) / bearing,
+    areaRequired: (Rzk + wLayers) / Math.max(bearing - (inp.roadwayPlate && !tb ? roadwayPlateWeightOf(inp.roadwayPlate.plate) : 0), bearing * 0.05),
     problems,
     records,
   };
@@ -559,8 +647,11 @@ export function adviseChain(id: string, chain: ChainResult, layers: SpreadLayer[
     else {
       const rw = ctx.roadway;
       const rwOk = rw ? rw.mean <= bearing : false;
+      const rp = ctx.base.roadwayPlate;
       parts.push(
-        `→ Aucune plaque du stock ne suffit${rw ? ` ; plaques de roulage sur toute la surface : ${pressureText(rw.mean)}${rwOk ? ', OK' : ', insuffisant aussi'}` : ''} ; sinon longrines ou plaque sur mesure d’au moins ${cm(Math.sqrt(chain.areaRequired))} × ${cm(Math.sqrt(chain.areaRequired))} cm.`,
+        rp
+          ? `→ Aucune plaque du stock ne suffit sur la plaque de roulage « ${rp.plate.name} » ; plaque de roulage plus raide (tôle acier), madriers ou plaque sur mesure d’au moins ${cm(Math.sqrt(chain.areaRequired))} × ${cm(Math.sqrt(chain.areaRequired))} cm.`
+          : `→ Aucune plaque du stock ne suffit${rw ? ` ; plaques de roulage sur toute la surface : ${pressureText(rw.mean)}${rwOk ? ', OK' : ', insuffisant aussi'}` : ''} ; sinon longrines ou plaque sur mesure d’au moins ${cm(Math.sqrt(chain.areaRequired))} × ${cm(Math.sqrt(chain.areaRequired))} cm.`,
       );
     }
   } else if (chain.etaGround <= 1 && (thin.length || other.length)) parts.push('→ Plaque plus épaisse ou tôle acier sous le pied.');

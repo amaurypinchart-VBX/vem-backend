@@ -1,6 +1,7 @@
 // Plan des appuis au sol (PDF A4 portrait, une ou plusieurs pages) : plan d'implantation avec chaque point d'appui
 // (numéro, réaction caractéristique), repère x / y, pression sous plaques de roulage (répartition uniforme sur toute
 // la surface et emprise la plus chargée), tableau des points avec leurs coordonnées. SVG en mm (210 × 297).
+import { roadwayStiffness } from '../core/roadwayPlates';
 import type { ReactElement } from 'react';
 import type { CalageResult, SupportCheck } from '../core/calage';
 import type { Estimate, EstimateModule } from '../core/estimate';
@@ -51,6 +52,8 @@ export interface GroundPointsInput {
   remedy?: CalageResult['remedy'];
   /** dalle en charge répartie : zones de dalle des pieds (poids au m²) */
   slab?: CalageResult['slab'];
+  /** plaque de roulage choisie (catalogue ou saisie) : section 2 = la plaque et sa répartition, pas la répartition uniforme */
+  roadwayPlate?: CalageResult['roadwayPlate'];
 }
 
 const ROW = 2.4 * 1.55;
@@ -176,7 +179,7 @@ function TableRows({ y, rows, header, cols }: { y: number; rows: string[][]; hea
 }
 
 /** Pages SVG du plan des appuis au sol. */
-export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false, remedy, slab }: GroundPointsInput): ReactElement[] {
+export function groundPointsPages({ modules, estimate, roadway, info, bearingLabel, checks, levels, lang = 'fr', noTuv = false, remedy, slab, roadwayPlate }: GroundPointsInput): ReactElement[] {
   const C = CALAGE_LABELS[lang];
   const R = C.roadwayRows;
   const E = (t: string) => translate(lang, t);
@@ -186,7 +189,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
   const ground = new Set(modules.filter((m) => m.level === 0).map((m) => m.id));
   // plaque de chaque point : la vérification de l'appui de calage qui le contient (vérins voisins sur une même plaque)
   const checkOf = new Map((checks ?? []).flatMap((c) => (c.members?.length ? c.members : [c.id]).map((id) => [id, c] as const)));
-  const roadwayOn = !remedy && !!checks?.some((c) => !c.zone && c.steps.some((s) => s.dims === null));
+  const roadwayOn = !remedy && (!!roadwayPlate || !!checks?.some((c) => !c.zone && c.steps.some((s) => s.dims === null)));
   const withLevels = !!levels?.known;
   const cols = colsOf(lang, !!checks?.length, withLevels);
   const levelCells = (id: string): string[] => {
@@ -231,16 +234,17 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         axes
         plates={checks?.length ? planPlates(checks, { remedy, slab, lang }) : undefined}
         // solution retenue (madriers) : pas de teinte « pression sous plaques de roulage », qui ne s'applique pas
-        zoneFill={(m) => (!remedy && zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
+        // plaque de roulage choisie : pas de pression uniforme par emprise (seule la répartition sous chaque appui compte)
+        zoneFill={(m) => (!remedy && !roadwayPlate && zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
-          const z = remedy ? undefined : zoneOf.get(m.id);
+          const z = remedy || roadwayPlate ? undefined : zoneOf.get(m.id);
           return z ? [`${n1(kNm2(z.q), 1)} kN/m²`, C.levels(levels)] : [C.levels(levels)];
         }}
       />
     </g>,
   );
   y += planH + 5.5;
-  const legend = wrap(remedy ? TIMBER_LABELS[lang].coordsLegend : C.coordsLegend, 140);
+  const legend = wrap(remedy ? TIMBER_LABELS[lang].coordsLegend : roadwayPlate ? C.roadwayPlate.coordsLegend : C.coordsLegend, 140);
   if (withLevels) {
     const V = LEVEL_LABELS[lang];
     const extra = [V.legend, V.ref(formatLevel(levels!.ref!), levels!.refIds.join(', '))];
@@ -274,6 +278,40 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         y += 3.2;
       }
     y += 3;
+  } else if (roadwayPlate) {
+    // plaque choisie : ce qu'elle est, comment elle répartit, combien ; la répartition uniforme n'est qu'une information
+    const P = roadwayPlate.plate;
+    const RP = C.roadwayPlate;
+    const thickOnly = !roadwayStiffness(P).EI;
+    first.push(<g key="t2">{title(RP.title(E(P.name)), y)}</g>);
+    y += 5;
+    const lines: Array<[string, string]> = [
+      [RP.plate, `${E(P.name)}${P.supplier ? ` — ${E(P.supplier)}` : ''}${/× \d+ mm/.test(P.name) ? '' : ` · ${n1(P.l, 0)} × ${n1(P.w, 0)} × ${n1(P.t, 0)} mm`} · ${n1(P.massKg, 0)} kg`],
+      [RP.spread, RP.spreadValue(n1(thickOnly ? P.t / 10 : roadwayPlate.reach / 10, thickOnly ? 1 : 0), thickOnly)],
+      [RP.position, RP.positionValue(roadwayPlate.position === 'joint', P.joints === 'locked')],
+      [RP.count, RP.countValue(roadwayPlate.count, n1(roadway.area / 1e6, 1))],
+      [RP.uniform, `${n1(kNm2(roadway.mean), 2)} kN/m² (${n1(kgm2(roadway.mean), 0)} kg/m²)`],
+    ];
+    lines.forEach(([k, t], i) =>
+      first.push(
+        <g key={`rp${i}`}>
+          <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={2.6} fill="#6b7280">
+            {k}
+          </text>
+          <text fontFamily={FONT_SANS} x={M + 42} y={y + i * 3.6} fontSize={2.6} fill="#111827" fontWeight={i === 1 ? 700 : undefined}>
+            {t}
+          </text>
+        </g>,
+      ),
+    );
+    y += lines.length * 3.6 + 1;
+    for (const [k, line] of wrap(RP.note, 130).entries())
+      first.push(
+        <text fontFamily={FONT_SANS} key={`rpn${k}`} x={M} y={y + k * 3.2} fontSize={2.3} fill="#374151">
+          {line}
+        </text>,
+      );
+    y += wrap(RP.note, 130).length * 3.2 + 4;
   } else {
     first.push(<g key="t2">{title(C.roadwayTitle, y)}</g>);
     y += 5;

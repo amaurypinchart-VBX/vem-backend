@@ -72,7 +72,9 @@ export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickne
       if (res.roadwayOn && !c.reaction.group.stair && !c.reaction.group.terrace)
         layers.push({
           kind: 'roadway',
-          label: `Plaques de roulage jointives sur toute l’emprise${res.roadway.plates > 0 ? ` (${fmtNumber((res.roadway.plates * 1e6) / G, 0)} kg/m²)` : ''}`,
+          label: res.roadwayPlate
+            ? `Plaques de roulage « ${res.roadwayPlate.plate.name} » (${fmtNumber((res.roadway.plates * 1e6) / G, 0)} kg/m²)`
+            : `Plaques de roulage jointives sur toute l’emprise${res.roadway.plates > 0 ? ` (${fmtNumber((res.roadway.plates * 1e6) / G, 0)} kg/m²)` : ''}`,
           thickness: roadwayThickness && roadwayThickness > 0 ? roadwayThickness : null,
           ...(roadwayThickness && roadwayThickness > 0 ? {} : { note: 'épaisseur à préciser' }),
         });

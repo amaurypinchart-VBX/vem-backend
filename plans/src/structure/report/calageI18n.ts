@@ -70,6 +70,21 @@ export interface CalageDocLabels {
   estimateNote: string;
   platesNote: string;
   roadwayUsed: (kN: string, m2: string, q: string) => string;
+  /** plaque de roulage choisie (catalogue / saisie) : fiche (réserves) et plan des appuis (section 2) */
+  roadwayPlate: {
+    used: (name: string, reach: string, thickOnly: boolean, joint: boolean, count: number) => string;
+    title: (name: string) => string;
+    plate: string;
+    spread: string;
+    spreadValue: (reach: string, thickOnly: boolean) => string;
+    position: string;
+    positionValue: (joint: boolean, locked: boolean) => string;
+    count: string;
+    countValue: (n: number, m2: string) => string;
+    uniform: string;
+    note: string;
+    coordsLegend: string;
+  };
   watermark: string;
   // rapport (§ 1.4 et § 3 sol et calage)
   timberRow: string;
@@ -168,6 +183,21 @@ const FR: CalageDocLabels = {
   estimateNote: 'Valeurs issues d’une estimation (surfaces tributaires et basculement en bloc rigide), à confirmer par le calcul complet de l’étude structure.',
   platesNote:
     'Plaques : pression uniforme sous l’emprise efficace (méthode statico ; une plaque trop mince ne compte que pour la partie qu’elle peut porter en flexion ; une plaque à fleur ne compte que sur l’emprise centrée sur la charge) ; bois kmod 0,9, γM 1,3.',
+  roadwayPlate: {
+    used: (name, reach, thickOnly, joint, count) =>
+      `Plaques de roulage « ${name} » : chaque appui est vérifié avec la répartition réelle de la plaque sur ce sol (raideur de la plaque et du sol, joints, flexion) — jusqu’à ≈ ${reach} cm autour de l’appui${thickOnly ? ' (épaisseur seulement : module du plastique non donné par le fabricant)' : ''} ; ${joint ? 'un pied peut tomber sur un joint' : 'chaque pied au milieu d’une plaque (pose contrôlée sur site)'} ; ≈ ${count} plaques.`,
+    title: (name) => `2. Plaques de roulage « ${name} »`,
+    plate: 'Plaque',
+    spread: 'Répartition',
+    spreadValue: (reach, thickOnly) => (thickOnly ? `dans son épaisseur seulement (${reach} cm) — module du plastique non donné par le fabricant` : `jusqu’à ≈ ${reach} cm autour de chaque appui (raideur de la plaque et du sol)`),
+    position: 'Pose',
+    positionValue: (joint, locked) => (joint ? `un pied peut tomber sur un joint (${locked ? 'plaques verrouillées' : 'plaques bord à bord'})` : 'chaque pied au milieu d’une plaque (pose contrôlée sur site)'),
+    count: 'Nombre',
+    countValue: (n, m2) => `≈ ${n} plaques pour ${m2} m² (sans les chutes)`,
+    uniform: 'Si rigides (info)',
+    note: 'Chaque point d’appui est vérifié avec la répartition de la plaque choisie (colonne « Calage · pression au sol ») ; la pression uniforme (plaques infiniment rigides) n’est qu’une information.',
+    coordsLegend: 'Coordonnées depuis le coin bas gauche de l’installation (x vers la droite, y vers le haut, vue de dessus SketchUp). Plaques de calage dessinées à l’échelle à leur place (à fleur de la Viewbox, ▲ = centrée, dépasse) ; pointillé fin autour de chaque appui = sol chargé à travers la plaque de roulage.',
+  },
   roadwayUsed: (kN, m2, q) => `Plaques de roulage jointives sur toute la surface : ${kN} kN / ${m2} m² = ${q} kN/m² ; pression locale sur les plaques de roulage à vérifier avec leur fabricant.`,
   watermark: 'PRÉ-ÉTUDE INTERNE — NON VÉRIFIÉE PAR UN INGÉNIEUR',
   timberRow: 'Plaque bois',
@@ -257,6 +287,21 @@ const DE: CalageDocLabels = {
   estimateNote: 'Werte aus einer Schätzung (Einzugsflächen, Kippen als starrer Block), durch die Gesamtberechnung der Tragwerksstudie zu bestätigen.',
   platesNote:
     'Platten: gleichmäßige Pressung unter der wirksamen Fläche (Methode statico; eine zu dünne Platte zählt nur mit dem Teil, den sie auf Biegung tragen kann; eine bündige Platte nur mit der zur Last zentrischen Fläche); Holz kmod 0,9, γM 1,3.',
+  roadwayPlate: {
+    used: (name, reach, thickOnly, joint, count) =>
+      `Fahrplatten „${name}“: jedes Auflager ist mit der tatsächlichen Lastverteilung der Platte auf diesem Boden nachgewiesen (Steifigkeit von Platte und Boden, Fugen, Biegung) — bis ≈ ${reach} cm um das Auflager${thickOnly ? ' (nur Dicke: Elastizitätsmodul des Kunststoffs vom Hersteller nicht angegeben)' : ''}; ${joint ? 'ein Fuß kann auf einer Fuge stehen' : 'jeder Fuß in Plattenmitte (Verlegung auf der Baustelle kontrolliert)'}; ≈ ${count} Platten.`,
+    title: (name) => `2. Fahrplatten „${name}“`,
+    plate: 'Platte',
+    spread: 'Lastverteilung',
+    spreadValue: (reach, thickOnly) => (thickOnly ? `nur in ihrer Dicke (${reach} cm) — Elastizitätsmodul des Kunststoffs vom Hersteller nicht angegeben` : `bis ≈ ${reach} cm um jedes Auflager (Steifigkeit von Platte und Boden)`),
+    position: 'Verlegung',
+    positionValue: (joint, locked) => (joint ? `ein Fuß kann auf einer Fuge stehen (${locked ? 'verriegelte Platten' : 'stumpf gestoßene Platten'})` : 'jeder Fuß in Plattenmitte (Verlegung auf der Baustelle kontrolliert)'),
+    count: 'Anzahl',
+    countValue: (n, m2) => `≈ ${n} Platten für ${m2} m² (ohne Verschnitt)`,
+    uniform: 'Wenn starr (Info)',
+    note: 'Jeder Auflagerpunkt ist mit der Lastverteilung der gewählten Platte nachgewiesen (Spalte „Unterpallung · Bodenpressung“); die gleichmäßige Pressung (unendlich steife Platten) ist nur eine Information.',
+    coordsLegend: 'Koordinaten ab der linken unteren Ecke der Anlage (x nach rechts, y nach oben, Draufsicht SketchUp). Unterpallungsplatten maßstäblich an ihrer Lage (bündig mit der Viewbox, ▲ = mittig, steht über); fein gestrichelt um jedes Auflager = über die Fahrplatte belastete Bodenfläche.',
+  },
   roadwayUsed: (kN, m2, q) => `Dicht gestoßene Fahrplatten über die ganze Fläche: ${kN} kN / ${m2} m² = ${q} kN/m²; örtliche Pressung auf den Fahrplatten beim Hersteller zu prüfen.`,
   watermark: 'VORABZUG – UNGEPRÜFT (INTERNE VORBEMESSUNG)',
   timberRow: 'Holzplatte',
@@ -346,6 +391,21 @@ const EN: CalageDocLabels = {
   estimateNote: 'Values from an estimate (tributary areas, overturning as a rigid block), to be confirmed by the full calculation of the structural study.',
   platesNote:
     'Plates: uniform pressure under the effective area (statico method; a plate that is too thin only counts for the part it can carry in bending; a flush plate only for the area centred on the load); timber kmod 0.9, γM 1.3.',
+  roadwayPlate: {
+    used: (name, reach, thickOnly, joint, count) =>
+      `Roadway plates “${name}”: each support is checked with the real spreading of the plate on this ground (stiffness of the plate and the ground, joints, bending) — up to ≈ ${reach} cm around the support${thickOnly ? ' (thickness only: elastic modulus of the plastic not given by the manufacturer)' : ''}; ${joint ? 'a foot may land on a joint' : 'each foot in the middle of a plate (laying checked on site)'}; ≈ ${count} plates.`,
+    title: (name) => `2. Roadway plates “${name}”`,
+    plate: 'Plate',
+    spread: 'Spreading',
+    spreadValue: (reach, thickOnly) => (thickOnly ? `through its thickness only (${reach} cm) — elastic modulus of the plastic not given by the manufacturer` : `up to ≈ ${reach} cm around each support (stiffness of the plate and the ground)`),
+    position: 'Laying',
+    positionValue: (joint, locked) => (joint ? `a foot may land on a joint (${locked ? 'locked plates' : 'butted plates'})` : 'each foot in the middle of a plate (laying checked on site)'),
+    count: 'Number',
+    countValue: (n, m2) => `≈ ${n} plates for ${m2} m² (without offcuts)`,
+    uniform: 'If rigid (info)',
+    note: 'Each support point is checked with the spreading of the chosen plate (column “Packing · ground pressure”); the uniform pressure (infinitely rigid plates) is information only.',
+    coordsLegend: 'Coordinates from the bottom left corner of the installation (x to the right, y upwards, SketchUp top view). Packing plates drawn to scale in place (flush with the Viewbox, ▲ = centred, protrudes); fine dashes around each support = ground loaded through the roadway plate.',
+  },
   roadwayUsed: (kN, m2, q) => `Butt-jointed roadway plates over the whole area: ${kN} kN / ${m2} m² = ${q} kN/m²; local pressure on the roadway plates to be checked with their manufacturer.`,
   watermark: 'INTERNAL PRE-STUDY — NOT CHECKED BY AN ENGINEER',
   timberRow: 'Timber plate',
