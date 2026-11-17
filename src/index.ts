@@ -54,6 +54,8 @@ import formationRoutes from './routes/formation';
 import infoRequestRoutes from './routes/infoRequests';
 import assemblyPlanRoutes from './routes/assemblyPlans';
 import publicInfoRequestRoutes from './routes/publicInfoRequest';
+import planApprovalRoutes from './routes/planApprovals';
+import publicPlanApprovalRoutes from './routes/publicPlanApproval';
 import { startInfoRequestScheduler } from './services/infoRequestService';
 
 const app  = express();
@@ -128,6 +130,8 @@ app.use('/api/v1/public/handover-sign', publicHandoverSignRoutes);
 app.use('/api/v1/public/info-request', publicInfoRequestRoutes);
 // Route PUBLIQUE — fichiers de plus de 10 Mo rangés en morceaux (l'id aléatoire du lien sert de clé, comme une URL Cloudinary)
 app.use('/api/v1/public/files', publicFileRoutes);
+// Validation des plans par le client : lien personnel + code par e-mail, sans compte
+app.use('/api/v1/public/plan-approval', publicPlanApprovalRoutes);
 // Route PUBLIQUE — calendrier projets 2 mois pour écran entrepôt
 app.use('/api/v1/public', publicCalendarRoutes);
 
@@ -144,6 +148,8 @@ app.use(`${API}/handover`,       authMiddleware, scopeGuard('handover'), handove
 app.use(`${API}/checklists`,     authMiddleware, scopeGuard('checklists'), checklistRoutes);
 // Planning estimatif de montage / démontage (onglet Infos du projet)
 app.use(`${API}/assembly-plans`, authMiddleware, scopeGuard('assemblyPlans'), assemblyPlanRoutes);
+// Validation des plans par le client (envoi : admin / technical manager / sales, vérifié dans le service)
+app.use(`${API}/plan-approvals`, authMiddleware, scopeGuard('planApprovals'), planApprovalRoutes);
 
 app.use(`${API}/daily-reports`,  authMiddleware, scopeGuard('daily'), dailyRoutes);
 app.use(`${API}/warehouse`,      authMiddleware, scopeGuard('warehouse'), warehouseRoutes);
@@ -197,6 +203,8 @@ app.use('/plans/assets', (_req, res) => res.status(404).type('text/plain').send(
 
 // Lien « Répondre en ligne » des mails de demande d'infos (page publique, sans connexion)
 app.get('/info/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'info-request.html')));
+// Lien « Vérifier et valider les plans » envoyé au client (page publique, sans compte)
+app.get('/plan-approval/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'plan-approval.html')));
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

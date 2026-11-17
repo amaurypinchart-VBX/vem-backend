@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Viewbox — Validation des plans</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,Helvetica,sans-serif;background:#f2f3f5;color:#1a1a2e;padding:16px;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:980px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.06);}
+  .hdr{background:#1a1a2e;padding:18px 22px;display:flex;align-items:center;gap:14px;}
+  .logo{color:#e63946;font-size:24px;font-weight:900;letter-spacing:2px;}
+  .hdr .sub{color:rgba(255,255,255,.6);font-size:12px;}
+  .body{padding:22px;}
+  h1{font-size:22px;margin-bottom:6px;}
+  h2{font-size:16px;margin:26px 0 10px;display:flex;align-items:center;gap:8px;}
+  h2 .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#1a1a2e;color:#fff;font-size:13px;flex-shrink:0;}
+  p{color:#555;line-height:1.55;margin-bottom:10px;font-size:14px;}
+  .muted{color:#888;font-size:12px;}
+  .info{background:#f8f8f8;border-radius:8px;padding:10px 14px;margin:12px 0 4px;font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2px 24px;}
+  .info div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid #eee;}
+  .info span:first-child{color:#999;}
+  .info span:last-child{font-weight:700;text-align:right;word-break:break-word;}
+  .msg{white-space:pre-wrap;background:#fff7ed;border-left:4px solid #f4a261;padding:10px 12px;border-radius:6px;font-size:14px;color:#555;margin:12px 0;}
+  .viewer{border:1px solid #e3e5e8;border-radius:10px;overflow:hidden;background:#525659;}
+  .viewer iframe{display:block;width:100%;height:72vh;min-height:420px;border:0;background:#525659;}
+  .viewer-bar{display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#fafafa;border-top:1px solid #e3e5e8;}
+  .open-big{display:flex;align-items:center;gap:14px;padding:18px;border:2px solid #1a1a2e;border-radius:12px;text-decoration:none;color:#1a1a2e;background:#fff;}
+  .open-big .ic{font-size:34px;}
+  .open-big b{display:block;font-size:16px;}
+  .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+  .choice{border:2px solid #e3e5e8;border-radius:12px;padding:14px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;background:#fff;}
+  .choice input{margin-top:3px;width:18px;height:18px;accent-color:#1a1a2e;flex-shrink:0;}
+  .choice b{display:block;font-size:15px;margin-bottom:3px;}
+  .choice span{font-size:12px;color:#777;}
+  .choice.on.approved{border-color:#16a34a;background:#f0fdf4;}
+  .choice.on.reserves{border-color:#d97706;background:#fffbeb;}
+  .choice.on.changes{border-color:#dc2626;background:#fef2f2;}
+  label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 5px;}
+  label.f em{font-style:normal;color:#dc2626;}
+  input[type=text],input[type=email],textarea{width:100%;font:inherit;font-size:15px;padding:10px 12px;border:1px solid #d5d8dc;border-radius:8px;background:#fff;color:#1a1a2e;}
+  input:focus,textarea:focus{outline:none;border-color:#1a1a2e;box-shadow:0 0 0 3px rgba(26,26,46,.08);}
+  textarea{min-height:110px;resize:vertical;}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 12px;}
+  .check{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:14px;cursor:pointer;}
+  .check input{width:20px;height:20px;accent-color:#1a1a2e;flex-shrink:0;margin-top:1px;}
+  .sig{position:relative;border:2px dashed #c4c8cf;border-radius:10px;background:#fff;}
+  .sig canvas{display:block;width:100%;height:190px;touch-action:none;cursor:crosshair;}
+  .sig .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b6bac2;font-size:14px;pointer-events:none;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:10px;padding:12px 18px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none;}
+  .btn:disabled{opacity:.55;cursor:default;}
+  .btn-dark{background:#1a1a2e;color:#fff;}
+  .btn-red{background:#e63946;color:#fff;}
+  .btn-green{background:#16a34a;color:#fff;}
+  .btn-ghost{background:#eef0f3;color:#1a1a2e;}
+  .btn-sm{padding:8px 12px;font-size:13px;}
+  .btn-block{display:flex;width:100%;padding:15px;font-size:16px;margin-top:14px;}
+  .code-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;}
+  .code{max-width:190px;font-size:24px !important;letter-spacing:6px;text-align:center;font-weight:700;}
+  .ok{background:#ecfdf3;border:1px solid #abefc6;color:#067647;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;}
+  .warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;}
+  .err{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:8px;padding:12px 14px;margin:12px 0;font-size:14px;}
+  .done{text-align:center;padding:26px 10px;}
+  .done .big{font-size:56px;margin-bottom:8px;}
+  .done h1{margin-bottom:10px;}
+  .legal{font-size:11px;color:#999;line-height:1.5;margin-top:12px;}
+  .ftr{background:#f8f8f8;padding:12px;text-align:center;color:#999;font-size:11px;}
+  .hide{display:none !important;}
+  @media (max-width:600px){ body{padding:0;} .wrap{border-radius:0;} .body{padding:18px 16px;} h1{font-size:20px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr"><div class="logo">VIEWBOX</div><div class="sub" id="hdr-sub"></div></div>
+  <div class="body" id="root"><p>…</p></div>
+  <div class="ftr" id="ftr"></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var token = (location.pathname.match(/\/plan-approval\/([A-Za-z0-9_-]{20,80})/) || [])[1]
+    || new URLSearchParams(location.search).get('t') || '';
+  var API = '/api/v1/public/plan-approval/' + encodeURIComponent(token);
+  var root = document.getElementById('root');
+  var V = null;              // données de la page
+  var ST = { decision: '', codeSent: false, busy: false };
+
+  var T = {
+    fr: {
+      title: 'Validation des plans', loading: 'Chargement…', hello: 'Bonjour',
+      intro: function (s) { return (s || 'Viewbox') + ' vous envoie les plans ci-dessous pour vérification. Merci de les parcourir puis de donner votre réponse en bas de la page.'; },
+      project: 'Projet', address: 'Adresse', revision: 'Révision', document: 'Document', pages: function (n) { return n + ' page' + (n > 1 ? 's' : ''); },
+      sentBy: 'Envoyé par', validUntil: 'Lien valable jusqu’au', ref: 'Référence',
+      plans: 'Les plans', openFull: '⤢ Ouvrir en plein écran', download: '⬇ Télécharger le PDF',
+      openBig: 'Ouvrir les plans', openBigSub: 'Le PDF s’ouvre dans un nouvel onglet ; revenez ensuite sur cette page pour répondre.',
+      s1: 'Votre réponse',
+      approved: 'Valider les plans', approvedSub: 'Les plans sont bons pour exécution.',
+      reserves: 'Valider avec réserves', reservesSub: 'D’accord, avec des remarques à prendre en compte.',
+      changes: 'Demander des modifications', changesSub: 'Les plans doivent être corrigés avant validation.',
+      reservesLbl: 'Vos réserves', changesLbl: 'Modifications demandées', required: 'obligatoire',
+      commentPh: 'Précisez la planche et ce qui doit être pris en compte ou modifié…',
+      s2: 'Vos coordonnées et signature', name: 'Nom et prénom', title2: 'Fonction', company: 'Société',
+      reviewed: function (n) { return 'J’ai vérifié l’ensemble des plans (' + n + ' page' + (n > 1 ? 's' : '') + ').'; },
+      signHere: 'Signez ici avec le doigt ou la souris', clear: 'Effacer',
+      s3: 'Confirmation par e-mail',
+      codeIntro: function (e) { return 'Pour confirmer qu’il s’agit bien de vous, nous envoyons un code à 6 chiffres à ' + e + '.'; },
+      getCode: '📧 Recevoir mon code', resend: 'Renvoyer un code', codeSent: function (e, m) { return 'Code envoyé à ' + e + ' (valable ' + m + ' minutes). Vérifiez aussi vos courriers indésirables.'; },
+      codePh: '000000',
+      signApproved: '✍️ Signer et valider les plans', signReserves: '✍️ Signer et valider avec réserves', sendChanges: 'Envoyer ma demande de modifications',
+      legal: 'En signant, vous validez les plans affichés ci-dessus (signature électronique simple, règlement (UE) n° 910/2014). Le PDF portant le cachet de validation et un certificat vous sera envoyé par e-mail, ainsi qu’à l’équipe Viewbox du projet.',
+      chooseFirst: 'Choisissez d’abord votre réponse (étape 1).', sending: 'Envoi…', saving: 'Enregistrement…',
+      network: 'Erreur réseau, réessayez.', invalid: 'Lien invalide.',
+      doneApproved: 'Plans validés, merci !', doneReserves: 'Plans validés avec réserves, merci !', doneChanges: 'Demande de modifications envoyée, merci !',
+      doneTxt: 'Un e-mail de confirmation vous est envoyé, ainsi qu’à l’équipe Viewbox du projet.',
+      doneChangesTxt: 'L’équipe Viewbox a reçu vos remarques et vous enverra une nouvelle version des plans.',
+      already: function (d, n) { return 'Réponse donnée le ' + d + ' par ' + n + '.'; },
+      signedPdf: '⬇ Télécharger les plans validés', signedPdfWait: 'Le PDF validé est en préparation : il vous sera envoyé par e-mail.',
+      yourComment: 'Commentaire',
+      cancelled: 'Cette demande de validation a été annulée par Viewbox. Vous n’avez rien à faire.',
+      superseded: function (r) { return 'Une version plus récente des plans vous a été envoyée' + (r ? ' (' + r + ')' : '') + '. Utilisez le lien du dernier e-mail reçu.'; },
+      expired: 'Ce lien a expiré. Répondez à l’e-mail reçu ou contactez Viewbox pour recevoir un nouveau lien.',
+      contact: 'Une question ? Répondez simplement à l’e-mail reçu.'
+    },
+    en: {
+      title: 'Plan approval', loading: 'Loading…', hello: 'Hello',
+      intro: function (s) { return (s || 'Viewbox') + ' is sending you the plans below to check. Please go through them, then give your answer at the bottom of this page.'; },
+      project: 'Project', address: 'Address', revision: 'Revision', document: 'Document', pages: function (n) { return n + ' page' + (n > 1 ? 's' : ''); },
+      sentBy: 'Sent by', validUntil: 'Link valid until', ref: 'Reference',
+      plans: 'The plans', openFull: '⤢ Open full screen', download: '⬇ Download the PDF',
+      openBig: 'Open the plans', openBigSub: 'The PDF opens in a new tab; then come back to this page to answer.',
+      s1: 'Your answer',
+      approved: 'Approve the plans', approvedSub: 'The plans are good for execution.',
+      reserves: 'Approve with reservations', reservesSub: 'Agreed, with remarks to take into account.',
+      changes: 'Request changes', changesSub: 'The plans must be corrected before approval.',
+      reservesLbl: 'Your reservations', changesLbl: 'Changes requested', required: 'required',
+      commentPh: 'Please state the sheet and what must be taken into account or changed…',
+      s2: 'Your details and signature', name: 'Full name', title2: 'Position', company: 'Company',
+      reviewed: function (n) { return 'I have checked all the plans (' + n + ' page' + (n > 1 ? 's' : '') + ').'; },
+      signHere: 'Sign here with your finger or mouse', clear: 'Clear',
+      s3: 'Confirmation by e-mail',
+      codeIntro: function (e) { return 'To confirm it is you, we send a 6-digit code to ' + e + '.'; },
+      getCode: '📧 Get my code', resend: 'Send a new code', codeSent: function (e, m) { return 'Code sent to ' + e + ' (valid ' + m + ' minutes). Please also check your spam folder.'; },
+      codePh: '000000',
+      signApproved: '✍️ Sign and approve the plans', signReserves: '✍️ Sign and approve with reservations', sendChanges: 'Send my change request',
+      legal: 'By signing, you approve the plans shown above (simple electronic signature, Regulation (EU) No 910/2014). The PDF bearing the approval stamp and a certificate will be e-mailed to you and to the Viewbox project team.',
+      chooseFirst: 'Please choose your answer first (step 1).', sending: 'Sending…', saving: 'Saving…',
+      network: 'Network error, please try again.', invalid: 'Invalid link.',
+      doneApproved: 'Plans approved, thank you!', doneReserves: 'Plans approved with reservations, thank you!', doneChanges: 'Change request sent, thank you!',
+      doneTxt: 'A confirmation e-mail is on its way to you and to the Viewbox project team.',
+      doneChangesTxt: 'The Viewbox team has received your remarks and will send you a new version of the plans.',
+      already: function (d, n) { return 'Answer given on ' + d + ' by ' + n + '.'; },
+      signedPdf: '⬇ Download the approved plans', signedPdfWait: 'The approved PDF is being prepared: it will be e-mailed to you.',
+      yourComment: 'Comment',
+      cancelled: 'This approval request was cancelled by Viewbox. Nothing to do.',
+      superseded: function (r) { return 'A newer version of the plans has been sent to you' + (r ? ' (' + r + ')' : '') + '. Please use the link of the latest e-mail.'; },
+      expired: 'This link has expired. Reply to the e-mail you received or contact Viewbox to get a new link.',
+      contact: 'Any question? Simply reply to the e-mail you received.'
+    }
+  };
+  function L() { return T[(V && V.lang) === 'en' ? 'en' : 'fr']; }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function day(d) { return d ? new Date(d).toLocaleDateString((V && V.lang) === 'en' ? 'en-GB' : 'fr-BE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Brussels' }).replace(/\//g, '.') : ''; }
+  function dayTime(d) { return d ? day(d) + ' ' + new Date(d).toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' }).replace(/\s?h\s?/, ':') : ''; }
+  function touch() { return window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 700; }
+  function $(id) { return document.getElementById(id); }
+
+  function call(method, path, body) {
+    return fetch(API + path, { method: method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return { success: false, error: 'HTTP ' + r.status }; }); })
+      .catch(function () { return { success: false, error: L().network }; });
+  }
+
+  function load() {
+    if (!token) { root.innerHTML = '<div class="err">' + esc(T.fr.invalid) + ' / ' + esc(T.en.invalid) + '</div>'; return; }
+    call('GET', '').then(function (r) {
+      if (!r || !r.success) { root.innerHTML = '<div class="err">' + esc((r && r.error) || T.fr.invalid) + '</div>'; return; }
+      V = r.data;
+      document.documentElement.lang = V.lang === 'en' ? 'en' : 'fr';
+      document.title = 'Viewbox — ' + L().title + ' — ' + V.project.name;
+      $('hdr-sub').textContent = L().title;
+      $('ftr').textContent = 'Viewbox International SA · ' + V.ref + ' · ' + L().contact;
+      render();
+    });
+  }
+
+  function header() {
+    var t = L();
+    var rows = [
+      [t.project, V.project.name + (V.project.number ? ' (' + V.project.number + ')' : '')],
+      [t.address, V.project.address],
+      [t.revision, V.revision],
+      [t.document, V.fileName + ' · ' + t.pages(V.pageCount)],
+      [t.sentBy, V.sender],
+      [t.ref, V.ref]
+    ];
+    if (V.status === 'pending') rows.push([t.validUntil, day(V.expiresAt)]);
+    return '<h1>' + esc(t.title) + ' — ' + esc(V.project.name) + '</h1>' +
+      '<div class="info">' + rows.filter(function (x) { return x[1]; }).map(function (x) { return '<div><span>' + esc(x[0]) + '</span><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
+  }
+
+  function render() {
+    var t = L();
+    var s = V.status;
+    if (s === 'cancelled' || s === 'superseded' || s === 'expired') {
+      root.innerHTML = header() + '<div class="warn">' + esc(s === 'cancelled' ? t.cancelled : s === 'expired' ? t.expired : t.superseded(V.replacedBy)) + '</div>';
+      return;
+    }
+    if (V.decision) { renderDone(false); return; }
+    var pdf = API + '/plans.pdf';
+    var viewer = touch()
+      ? '<a class="open-big" href="' + pdf + '" target="_blank" rel="noopener"><span class="ic">📄</span><span><b>' + esc(t.openBig) + ' (' + esc(t.pages(V.pageCount)) + ')</b><span class="muted">' + esc(t.openBigSub) + '</span></span></a>' +
+        '<div style="margin-top:8px;"><a class="btn btn-ghost btn-sm" href="' + pdf + '?download=1">' + esc(t.download) + '</a></div>'
+      : '<div class="viewer"><iframe src="' + pdf + '#view=FitH" title="' + esc(V.fileName) + '"></iframe>' +
+        '<div class="viewer-bar"><a class="btn btn-ghost btn-sm" href="' + pdf + '" target="_blank" rel="noopener">' + esc(t.openFull) + '</a>' +
+        '<a class="btn btn-ghost btn-sm" href="' + pdf + '?download=1">' + esc(t.download) + '</a></div></div>';
+
+    var choice = function (k) {
+      return '<label class="choice ' + k + '" data-k="' + k + '"><input type="radio" name="decision" value="' + k + '"><div><b>' + (k === 'approved' ? '✅ ' : k === 'reserves' ? '🟠 ' : '❌ ') + esc(t[k]) + '</b><span>' + esc(t[k + 'Sub']) + '</span></div></label>';
+    };
+    root.innerHTML = header() +
+      '<p style="margin-top:14px;">' + esc(t.hello) + ' ' + esc(V.signerName) + ',<br>' + esc(t.intro(V.sender)) + '</p>' +
+      (V.message ? '<div class="msg">' + esc(V.message) + '</div>' : '') +
+      '<h2>📄 ' + esc(t.plans) + '</h2>' + viewer +
+
+      '<h2><span class="n">1</span>' + esc(t.s1) + '</h2>' +
+      '<div class="choices">' + choice('approved') + choice('reserves') + choice('changes') + '</div>' +
+      '<div id="comment-box" class="hide"><label class="f" id="comment-lbl" for="comment"></label><textarea id="comment" maxlength="5000" placeholder="' + esc(t.commentPh) + '"></textarea></div>' +
+
+      '<div id="step2" class="hide"><h2><span class="n">2</span>' + esc(t.s2) + '</h2>' +
+      '<div class="row">' +
+        '<div><label class="f" for="name">' + esc(t.name) + ' <em>*</em></label><input type="text" id="name" maxlength="120" autocomplete="name" value="' + esc(V.signerName) + '"></div>' +
+        '<div><label class="f" for="title">' + esc(t.title2) + '</label><input type="text" id="title" maxlength="120" autocomplete="organization-title"></div>' +
+        '<div><label class="f" for="company">' + esc(t.company) + '</label><input type="text" id="company" maxlength="160" autocomplete="organization" value="' + esc(V.clientName) + '"></div>' +
+      '</div>' +
+      '<div id="sign-part">' +
+        '<label class="check"><input type="checkbox" id="reviewed"><span>' + esc(t.reviewed(V.pageCount)) + '</span></label>' +
+        '<label class="f">Signature <em>*</em></label>' +
+        '<div class="sig"><canvas id="sig"></canvas><div class="ph" id="sig-ph">' + esc(t.signHere) + '</div></div>' +
+        '<div style="margin-top:6px;"><button type="button" class="btn btn-ghost btn-sm" id="sig-clear">' + esc(t.clear) + '</button></div>' +
+      '</div></div>' +
+
+      '<div id="step3" class="hide"><h2><span class="n">3</span>' + esc(t.s3) + '</h2>' +
+      '<p>' + esc(t.codeIntro(V.signerEmail)) + '</p>' +
+      '<div class="code-row"><button type="button" class="btn btn-dark" id="get-code">' + esc(t.getCode) + '</button>' +
+      '<input type="text" id="code" class="code hide" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="' + esc(t.codePh) + '"></div>' +
+      '<div id="code-msg"></div>' +
+      '<div id="sign-err"></div>' +
+      '<button type="button" class="btn btn-block btn-green" id="submit" disabled></button>' +
+      '<p class="legal">' + esc(t.legal) + '</p></div>';
+
+    Array.prototype.forEach.call(document.querySelectorAll('.choice input'), function (r) {
+      r.addEventListener('change', function () { setDecision(r.value); });
+    });
+    $('sig-clear').addEventListener('click', function () { pad.clear(); });
+    $('get-code').addEventListener('click', getCode);
+    $('submit').addEventListener('click', submit);
+    $('code').addEventListener('input', function () { this.value = this.value.replace(/[^\d ]/g, ''); refreshSubmit(); });
+    if (V.codeSentAt) showCodeInput(L().codeSent(V.signerEmail, 15));
+    pad.init($('sig'));
+  }
+
+  function setDecision(k) {
+    var t = L();
+    ST.decision = k;
+    Array.prototype.forEach.call(document.querySelectorAll('.choice'), function (c) { c.classList.toggle('on', c.getAttribute('data-k') === k); });
+    var needComment = k === 'reserves' || k === 'changes';
+    $('comment-box').classList.toggle('hide', !needComment);
+    $('comment-lbl').innerHTML = esc(k === 'changes' ? t.changesLbl : t.reservesLbl) + ' <em>* ' + esc(t.required) + '</em>';
+    $('step2').classList.remove('hide');
+    $('step3').classList.remove('hide');
+    $('sign-part').classList.toggle('hide', k === 'changes');
+    var b = $('submit');
+    b.textContent = k === 'approved' ? t.signApproved : k === 'reserves' ? t.signReserves : t.sendChanges;
+    b.className = 'btn btn-block ' + (k === 'approved' ? 'btn-green' : k === 'reserves' ? 'btn-dark' : 'btn-red');
+    pad.resize();
+    refreshSubmit();
+    if (needComment) setTimeout(function () { $('comment').focus(); }, 50);
+  }
+
+  function refreshSubmit() {
+    var code = ($('code').value || '').replace(/\D/g, '');
+    $('submit').disabled = ST.busy || !ST.decision || code.length !== 6;
+  }
+
+  function showCodeInput(msg) {
+    ST.codeSent = true;
+    $('code').classList.remove('hide');
+    $('get-code').textContent = L().resend;
+    $('get-code').className = 'btn btn-ghost btn-sm';
+    $('code-msg').innerHTML = '<div class="ok">' + esc(msg) + '</div>';
+    refreshSubmit();
+  }
+
+  function getCode() {
+    var b = $('get-code');
+    b.disabled = true;
+    var prev = b.textContent;
+    b.textContent = L().sending;
+    call('POST', '/code').then(function (r) {
+      b.disabled = false;
+      b.textContent = prev;
+      if (r && r.success) { showCodeInput(L().codeSent(r.data.sentTo, r.data.minutes)); $('code').value = ''; $('code').focus(); }
+      else $('code-msg').innerHTML = '<div class="err">' + esc((r && r.error) || L().network) + '</div>';
+    });
+  }
+
+  function submit() {
+    var t = L();
+    if (!ST.decision) { $('sign-err').innerHTML = '<div class="err">' + esc(t.chooseFirst) + '</div>'; return; }
+    var body = {
+      decision: ST.decision,
+      comment: ($('comment').value || '').trim(),
+      name: ($('name').value || '').trim(),
+      title: ($('title').value || '').trim(),
+      company: ($('company').value || '').trim(),
+      reviewed: $('reviewed').checked,
+      signature: ST.decision === 'changes' ? null : pad.data(),
+      code: ($('code').value || '').replace(/\D/g, '')
+    };
+    ST.busy = true;
+    refreshSubmit();
+    var b = $('submit'), prev = b.textContent;
+    b.textContent = t.saving;
+    $('sign-err').innerHTML = '';
+    call('POST', '/sign', body).then(function (r) {
+      ST.busy = false;
+      b.textContent = prev;
+      refreshSubmit();
+      if (r && r.success) {
+        V.status = r.data.status;
+        V.decision = { status: r.data.status, at: new Date().toISOString(), name: body.name, title: body.title, company: body.company, comment: body.comment, signedPdf: r.data.signedPdf };
+        renderDone(true);
+        window.scrollTo(0, 0);
+      } else {
+        $('sign-err').innerHTML = '<div class="err">' + esc((r && r.error) || t.network) + '</div>';
+      }
+    });
+  }
+
+  function renderDone(justNow) {
+    var t = L();
+    var d = V.decision;
+    var icon = d.status === 'approved' ? '✅' : d.status === 'reserves' ? '🟠' : '📝';
+    var title = d.status === 'approved' ? t.doneApproved : d.status === 'reserves' ? t.doneReserves : t.doneChanges;
+    var signed = d.status === 'changes' ? '' : d.signedPdf
+      ? '<a class="btn btn-dark" href="' + API + '/signed.pdf?download=1">' + esc(t.signedPdf) + '</a>'
+      : '<div class="warn">' + esc(t.signedPdfWait) + '</div>';
+    root.innerHTML = '<div class="done"><div class="big">' + icon + '</div><h1>' + esc(title) + '</h1>' +
+      '<p>' + esc(t.already(dayTime(d.at), [d.name, d.title, d.company].filter(Boolean).join(', '))) + '</p>' +
+      (justNow ? '<p>' + esc(d.status === 'changes' ? t.doneChangesTxt : t.doneTxt) + '</p>' : '') +
+      (d.comment ? '<div class="msg" style="text-align:left;"><b>' + esc(d.status === 'changes' ? t.changesLbl : d.status === 'reserves' ? t.reservesLbl : t.yourComment) + ' :</b><br>' + esc(d.comment) + '</div>' : '') +
+      '<div style="margin-top:14px;">' + signed + '</div></div>' + header();
+  }
+
+  // ─── pavé de signature (souris, doigt, stylet) ───
+  var pad = (function () {
+    var canvas, ctx, drawing = false, has = false, last = null, box = null, strokes = [];
+    function pos(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    function grow(p) { if (!box) box = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; else { box.x0 = Math.min(box.x0, p.x); box.y0 = Math.min(box.y0, p.y); box.x1 = Math.max(box.x1, p.x); box.y1 = Math.max(box.y1, p.y); } }
+    function setup() {
+      var ratio = Math.max(window.devicePixelRatio || 1, 1);
+      var r = canvas.getBoundingClientRect();
+      if (!r.width) return;
+      canvas.width = Math.round(r.width * ratio);
+      canvas.height = Math.round(r.height * ratio);
+      ctx = canvas.getContext('2d');
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 2.4; ctx.strokeStyle = '#14213d';
+      redraw();
+    }
+    function redraw() {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokes.forEach(function (s) {
+        ctx.beginPath(); ctx.moveTo(s[0].x, s[0].y);
+        if (s.length === 1) ctx.lineTo(s[0].x + 0.1, s[0].y + 0.1);
+        for (var i = 1; i < s.length; i++) ctx.lineTo(s[i].x, s[i].y);
+        ctx.stroke();
+      });
+    }
+    function down(e) { e.preventDefault(); drawing = true; canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId); last = pos(e); strokes.push([last]); grow(last); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(last.x + 0.1, last.y + 0.1); ctx.stroke(); has = true; $('sig-ph').classList.add('hide'); }
+    function move(e) { if (!drawing) return; e.preventDefault(); var p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); strokes[strokes.length - 1].push(p); grow(p); last = p; }
+    function up(e) {
+      drawing = false;
+      // capture relâchée tout de suite : sinon, sur certains téléphones, le « tap » suivant (bouton du code) irait au cadre
+      try { if (e && canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId); } catch (_) { /* rien */ }
+    }
+    return {
+      init: function (c) {
+        canvas = c; setup();
+        canvas.addEventListener('pointerdown', down);
+        canvas.addEventListener('pointermove', move);
+        canvas.addEventListener('pointerup', up);
+        canvas.addEventListener('pointercancel', up);
+        canvas.addEventListener('pointerleave', up);
+        window.addEventListener('resize', function () { setup(); });
+      },
+      resize: function () { setTimeout(setup, 0); },
+      clear: function () { strokes = []; box = null; has = false; redraw(); $('sig-ph').classList.remove('hide'); },
+      /** PNG transparent recadré sur le tracé (il remplit ainsi le cachet du PDF) */
+      data: function () {
+        if (!has || !box) return null;
+        var ratio = canvas.width / canvas.getBoundingClientRect().width;
+        var m = 6;
+        var x = Math.max(0, (box.x0 - m) * ratio), y = Math.max(0, (box.y0 - m) * ratio);
+        var w = Math.min(canvas.width - x, (box.x1 - box.x0 + 2 * m) * ratio), h = Math.min(canvas.height - y, (box.y1 - box.y0 + 2 * m) * ratio);
+        var out = document.createElement('canvas');
+        var k = Math.min(1, 900 / w);
+        out.width = Math.max(1, Math.round(w * k)); out.height = Math.max(1, Math.round(h * k));
+        out.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, out.width, out.height);
+        return out.toDataURL('image/png');
+      }
+    };
+  })();
+
+  load();
+})();
+</script>
+</body>
+</html>
