@@ -657,35 +657,6 @@ function renderChecklistSection(doc: any, cl: HandoverChecklistPdf, thumbs: Map<
   }
 }
 
-/**
- * Handover avec la check-list en annexe : à la place de la section complète, un court rappel
- * (totaux, validation, points critiques ouverts) qui renvoie à l'annexe.
- */
-function renderChecklistAnnexNote(doc: any, cl: HandoverChecklistPdf, lang: Lang) {
-  const X = 40;
-  const W = 515;
-  const statusLabel = (st: string) => t(`checklist.status.${st}`, lang);
-  doc.moveDown(0.8);
-  if (doc.y > 690) doc.addPage();
-  sectionTitle(doc, t('checklist.section.installation', lang));
-  const count = (st: string) => cl.items.filter(it => it.status === st).length;
-  const totals = [`${cl.items.length} ${t('checklist.points', lang)}`,
-    ...['ok', 'partial', 'nok', 'na', 'pending'].filter(st => count(st) > 0).map(st => `${count(st)} ${statusLabel(st)}`)].join('  ·  ');
-  doc.fillColor(DARK).font('Helvetica').fontSize(9.5).text(totals, X, doc.y, { width: W });
-  doc.moveDown(0.2);
-  doc.fillColor(MUTED).font('Helvetica').fontSize(9).text(cl.validatedAt
-    ? t('checklist.validatedOn', lang).replace('{date}', fmtChecklistDate(cl.validatedAt, lang, false)).replace('{name}', s(cl.validatedByName || '-'))
-    : t('checklist.notValidated', lang), X, doc.y, { width: W });
-  const criticalOpen = cl.items.filter(it => it.critical && it.status !== 'ok' && it.status !== 'na').length;
-  if (criticalOpen) {
-    doc.moveDown(0.2);
-    doc.fillColor(RED).font('Helvetica-Bold').fontSize(9.5).text(t('checklist.criticalOpen', lang).replace('{n}', String(criticalOpen)), X, doc.y, { width: W });
-  }
-  doc.moveDown(0.3);
-  doc.fillColor(DARK).font('Helvetica-Oblique').fontSize(9.5).text(t('checklist.annex.note', lang), X, doc.y, { width: W });
-  doc.moveDown(0.4);
-}
-
 /** Nouvelle page d'annexe du handover : titre centré + rappel du document auquel elle appartient. */
 function renderAnnexHeading(doc: any, title: string, subtitle: string) {
   doc.addPage();
@@ -1001,8 +972,8 @@ export async function generateHandoverPdf(data: {
     }
 
     // ─── Section Check-list de montage (après les zones), ou un simple rappel quand elle est en annexe ───
-    if (checklist && checklistInAnnex) renderChecklistAnnexNote(doc, checklist, lang);
-    else if (checklist) renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager }, lang);
+    // en annexe : rien ici, la check-list n'apparaît qu'après les signatures
+    if (checklist && !checklistInAnnex) renderChecklistSection(doc, checklist, checklistThumbs, { phase: 'installation', siteManagerName: displaySiteManager }, lang);
 
     // ─── Section Comments / Reservations ───
     if (data.generalNotes && data.generalNotes.trim()) {
