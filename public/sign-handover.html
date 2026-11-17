@@ -164,16 +164,6 @@ function openImg(url) {
   o.onclick = () => o.remove();
   document.body.appendChild(o);
 }
-// Check-list en annexe : à sa place, un court rappel (le détail est en bas de la page, après la signature)
-function checklistAnnexNoteHTML(cl) {
-  if (!cl || !cl.items || !cl.items.length) return '';
-  const st = cl.stats || {};
-  return `<div class="card">
-    <div class="card-title">${tr('clTitle')} (${cl.items.length} ${tr('points')})</div>
-    ${clStatsHTML(st)}
-    <div class="cl-summary">${tr('clAnnexNote')}</div>
-  </div>`;
-}
 function checklistHTML(cl, annex) {
   if (!cl || !cl.items || !cl.items.length) return '';
   const st = cl.stats || {};
@@ -287,7 +277,7 @@ function renderSignaturePage(h) {
       ${zonesHTML}
     </div>` : ''}
 
-    ${h.checklistAnnex ? checklistAnnexNoteHTML(h.checklist) : checklistHTML(h.checklist)}
+    ${h.checklistAnnex ? '' : checklistHTML(h.checklist)}
 
     ${h.generalNotes ? `<div class="card">
       <div class="card-title">${tr('notes')}</div>
