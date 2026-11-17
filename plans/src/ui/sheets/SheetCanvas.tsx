@@ -16,10 +16,10 @@ import type { DrawingSet } from '../../sheets/types';
 import { actions, useEditor } from '../../sheets/store';
 import type { PaintSheetInfo } from '../../sheets/paintSheet';
 
-export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol' | 'paint' | 'hide';
+export type Tool = 'select' | 'label' | 'text' | 'dim' | 'chain' | 'symbol' | 'paint' | 'hide' | 'piecedim';
 
-/** Outils « tape sur une pièce » (peinture, masquer) : au doigt, un glissement déplace la planche, un tape agit. */
-const tapTool = (t: Tool) => t === 'paint' || t === 'hide';
+/** Outils « tape sur une pièce » (peinture, masquer, coter une pièce) : au doigt, un glissement déplace la planche, un tape agit. */
+const tapTool = (t: Tool) => t === 'paint' || t === 'hide' || t === 'piecedim';
 
 /** Point accroché dans une vue : position dans le dessin, sur la planche, type d'accroche. */
 export interface SnapResult {
@@ -53,6 +53,8 @@ interface Props {
   paint?: PaintSheetInfo;
   /** adresse affichée des images 3D (téléphone : version réduite) */
   imageSrc?: (url: string) => string;
+  /** éléments provisoires en plus (aperçu des cotes de « Coter une pièce ») */
+  extraDraft?: SheetItem[];
 }
 
 /** Appui long (ms) et seuil tape / glisser (px) au doigt. */
@@ -85,7 +87,7 @@ function SnapMarker({ p, kind }: { p: PointMm; kind: SnapKind | null }) {
   return <path d={`M${p.x - r} ${p.y}L${p.x + r} ${p.y}M${p.x} ${p.y - r}L${p.x} ${p.y + r}`} {...common} />;
 }
 
-export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu, paint, imageSrc }: Props) {
+export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, onPlace, snapAt, pointAt, fitSignal, zoomSignal, onOpenItem, readOnly, onItemMenu, paint, imageSrc, extraDraft }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const selection = useEditor((s) => s.selection);
@@ -575,7 +577,9 @@ export function SheetCanvas({ doc, sheet, legend, viewData, tool, hiddenLayers, 
             onHandleDown,
             onItemDoubleClick: (item) => tool === 'select' && onOpenItem?.(item),
             draft:
-              dimDraft && dimDraft.phase === 'place'
+              extraDraft?.length
+                ? extraDraft
+                : dimDraft && dimDraft.phase === 'place'
                 ? [
                     {
                       id: '__draft',

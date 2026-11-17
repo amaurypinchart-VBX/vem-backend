@@ -19,7 +19,7 @@ import type { DrawingSet, Image3dItem, LabelItem, PointMm, Sheet, SheetItem, Sym
 import { SYMBOL_BY_KEY, SYMBOL_SIZE, alongWall, orientToWall } from '../../sheets/symbols';
 import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
-import { SheetSvg } from '../../sheets/SheetSvg';
+import { SheetSvg, dimensionInput } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { dimensionDrawingSet, useBank } from '../../sheets/bank';
 import type { LineworkBank } from '../../sheets/bank';
@@ -97,6 +97,28 @@ import type { FrameLang, FrameType } from '../../sheets/frames';
 import { frameLabels, frameRefs, frameSheets, groupFrames, measureFrames } from '../../sheets/frames';
 import { TEXTILE_TAG } from '../../core/customViews/tags';
 import { renumber } from '../../sheets/generate';
+import type { HeightFrom, PieceCrumb, PieceMode } from '../../sheets/pieceDims';
+import type { Box2 } from '../../sheets/pieceDims';
+import {
+  describePieces,
+  groupPieces,
+  heightAxis,
+  levelPieceOf,
+  pickSource,
+  pieceCrumbs,
+  pieceDimensionItems,
+  pieceOutlines,
+  pieceRefs,
+  placePieceDims,
+  planPieceDims,
+  samePieceOf,
+  seenPieces,
+  skippedSpans,
+  unionBox,
+} from '../../sheets/pieceDims';
+import type { ViewMeshes } from '../../linework/pieceGeometry';
+import { meshAt, meshBox, viewMeshes } from '../../linework/pieceGeometry';
+import { PieceDimBubble } from './PieceDimBubble';
 import { NOT_PREPARED } from '../../sheets/consult';
 import type { ModuleLabels } from '../../core/moduleNumbers';
 import { labelChanges } from '../../core/moduleNumbers';
@@ -185,9 +207,9 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     return true;
   };
   const setTool = (t: Tool) => {
-    if (light && (t === 'label' || t === 'paint' || t === 'hide' || t === 'dim' || t === 'chain')) {
+    if (light && (t === 'label' || t === 'paint' || t === 'hide' || t === 'dim' || t === 'chain' || t === 'piecedim')) {
       pendingTool.current = t;
-      if (needs3D(t === 'paint' ? 'Peinture' : t === 'hide' ? 'Masquer' : t === 'label' ? 'Repère' : 'Cotes', true)) return;
+      if (needs3D(t === 'paint' ? 'Peinture' : t === 'hide' ? 'Masquer' : t === 'label' ? 'Repère' : t === 'piecedim' ? 'Coter une pièce' : 'Cotes', true)) return;
     }
     setToolRaw(t);
   };
@@ -239,6 +261,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [hideAll, setHideAll] = useState(false);
   const [setHideOpen, setSetHideOpen] = useState(false);
   const [frames, setFrames] = useState<{ types: FrameType[]; lang: FrameLang } | null>(null);
+  // ─── coter une pièce : clic sur une pièce → bulle (niveau, pièces identiques, hauteurs depuis) → cotes ───
+  const [pieceBubble, setPieceBubble] = useState<{ vpId: string; crumbs: PieceCrumb[]; level: string; mode: PieceMode; at: { x: number; y: number } } | null>(null);
+  const [pieceHover, setPieceHover] = useState<string | null>(null);
+  const [pieceFrom, setPieceFrom] = useState<HeightFrom>('floor-top');
   const lastPointer = useRef({ x: 0, y: 0 });
   useEffect(() => {
     const rec = (e: PointerEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY });
@@ -338,13 +364,68 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [paintPreview, setPaintPreview] = useState<Map<string, PaintRegion[]> | null>(null);
   /** aperçu en cours de calcul : un nouvel aperçu (ou sa fermeture) abandonne le précédent */
   const previewGen = useRef(0);
+  // « Coter une pièce » : maillages dessinés de la fenêtre et emprise de chacun (gardés tant que la vue ne change pas)
+  const pieceViews = useRef(new Map<string, { lw: Linework2D; view: ViewMeshes; boxes: Map<string, Box2 | null> }>());
+  const pieceViewOf = (vp: ViewportItem) => {
+    const data = bank.data(vp);
+    if (!data.lw || !data.basis || light) return null;
+    let hit = pieceViews.current.get(vp.id);
+    if (!hit || hit.lw !== data.lw) {
+      const spec = vp.custom ? bank.custom?.spec(vp.custom.viewId) : undefined;
+      hit = { lw: data.lw, view: viewMeshes(scene, vp, spec, bank.custom?.viewTags ?? []), boxes: new Map() };
+      pieceViews.current.set(vp.id, hit);
+      while (pieceViews.current.size > 4) pieceViews.current.delete(pieceViews.current.keys().next().value!);
+    }
+    const { view, boxes } = hit;
+    const basis = data.basis;
+    const boxOf = (id: string) => {
+      if (!boxes.has(id)) boxes.set(id, meshBox(scene, id, basis, view.planes.get(id)));
+      return boxes.get(id)!;
+    };
+    return { lw: data.lw, basis, view, boxOf };
+  };
+  // pièces choisies (surbrillance) et cotes proposées (aperçu), recalculées quand le choix change
+  const piecePlan = useMemo(() => {
+    if (!pieceBubble) return null;
+    const vp = sheet.items.find((i): i is ViewportItem => i.type === 'viewport' && i.id === pieceBubble.vpId);
+    const pv = vp && vp.scale ? pieceViewOf(vp) : null;
+    if (!vp || !pv) return null;
+    const { lw, basis, view, boxOf } = pv;
+    const look = scene.look;
+    const level = pieceHover ?? pieceBubble.level;
+    const sameOf = samePieceOf(look, level);
+    const under = view.meshes.filter((m) => look.inSet(m, new Set([level])));
+    const useSame = pieceBubble.mode === 'same' && !pieceHover && !!sameOf;
+    const pieceOf = useSame ? sameOf! : levelPieceOf(look, level, under);
+    const pieces = seenPieces(lw, groupPieces(useSame ? view.meshes : under, pieceOf, boxOf, look.itemOf));
+    const sameCount = sameOf ? (useSame ? pieces.length : seenPieces(lw, groupPieces(view.meshes, sameOf, boxOf, look.itemOf)).length) : 0;
+    const selected = new Set(pieces.flatMap((p) => [...p.sources]));
+    const refs = pieceRefs({ index: scene.index, look, frames: scene.frames, tags: subsetEnv(scene).tags }, lw, basis, pieces, (src) => selected.has(src), pieceFrom);
+    const chains = planPieceDims(pieces, refs);
+    const b = lw.boundsMm;
+    const tr = viewportTransform(vp.rect, vp.scale, vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]);
+    const existing = sheet.items.flatMap((i) => (i.type === 'dimension' && i.viewportId === vp.id ? [dimensionInput(i, sheet, (v) => bank.data(v))] : [])).filter((x): x is NonNullable<typeof x> => !!x);
+    const placed = pieces.length ? placePieceDims(chains, { bounds: b, sel: unionBox(pieces), toPaper: tr.toPaper, existing }) : [];
+    const skipped = skippedSpans(pieces);
+    return {
+      vp,
+      pieces,
+      sameCount,
+      heights: !!heightAxis(basis),
+      notes: [...(pieces.length ? refs.notes : ['Aucune pièce visible à ce niveau.']), ...(skipped ? [`${skipped} longueur(s) différente(s) de plus non cotée(s) : coter ces pièces à part.`] : [])],
+      dims: pieceDimensionItems(placed, vp.id, basis, refs.depth),
+      lines: pieceOutlines(pieces),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pieceBubble, pieceHover, pieceFrom, bankTick, sheet, scene]);
   const viewData = useCallback(
     (vp: ViewportItem) => {
       const d = bank.data(vp);
       const pv = paintPreview?.get(vp.id);
-      return pv?.length ? { ...d, paintPreview: pv } : d;
+      const pick = piecePlan && piecePlan.vp.id === vp.id ? piecePlan.lines : undefined;
+      return pv?.length || pick ? { ...d, ...(pv?.length ? { paintPreview: pv } : {}), ...(pick ? { pickLines: pick } : {}) } : d;
     },
-    [bank, bankTick, paintPreview], // eslint-disable-line react-hooks/exhaustive-deps
+    [bank, bankTick, paintPreview, piecePlan], // eslint-disable-line react-hooks/exhaustive-deps
   );
   // DRAWING LEGEND : toutes les couleurs de catégorie (Viewbox + catégories personnalisées), sur chaque planche
   const legend = useMemo(() => [...legendColors.values()], [legendColors]);
@@ -595,6 +676,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       else if (e.key === 'Delete' || e.key === 'Backspace') st.selection.length && (e.preventDefault(), actions.deleteItems(st.selection));
       else if (e.key === 'Escape') {
         if (toolRef.current === 'hide') setHideBubble(null);
+        if (toolRef.current === 'piecedim') setPieceBubble(null);
         if (toolRef.current === 'paint') {
           setBubble(null);
           previewGen.current++;
@@ -959,6 +1041,10 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
       hideAt(p, vp);
       return;
     }
+    if (t === 'piecedim') {
+      pieceAt(p, vp);
+      return;
+    }
     if (t === 'paint') {
       paintAt(p, vp);
       return;
@@ -1029,6 +1115,53 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     setHideBubble(null);
     setToast(`Masqué : ${a.rule.label}${hideAll ? ` — ${n} vue(s)` : ''} · Ctrl+Z pour annuler`);
   };
+
+  // ─── coter une pièce ───
+  const pieceAt = (p: PointMm, vp: ViewportItem | null) => {
+    setPieceHover(null);
+    if (!vp) {
+      setPieceBubble(null);
+      setToast('Clique une pièce dans une vue.');
+      return;
+    }
+    if (needs3D('Coter une pièce')) return;
+    const data = bank.data(vp);
+    const pv = vp.scale ? pieceViewOf(vp) : null;
+    if (!data.lw || !pv) {
+      setToast('Cette vue n’est pas encore calculée.');
+      return;
+    }
+    const b = data.lw.boundsMm;
+    const [x, y] = viewportTransform(vp.rect, vp.scale, vp.center ?? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]).toModel(p.x, p.y);
+    const tol = (device.isTouch ? 6 : 3) * templateScale(sheet.paper) * vp.scale;
+    // l'objet du trait le plus proche, puis la pièce de cet objet sous le point (faces après coupes, la plus proche)
+    const src = pickSource(data.lw, x, y, tol);
+    const own = src ? pv.view.meshes.filter((m) => scene.look.itemOf(m) === src) : [];
+    const mesh = (own.length ? meshAt(scene, own, pv.basis, pv.view.planes, x, y, tol, pv.boxOf) : null) ?? meshAt(scene, pv.view.meshes, pv.basis, pv.view.planes, x, y, tol, pv.boxOf);
+    if (!mesh) {
+      setPieceBubble(null);
+      setToast('Aucune pièce sous le point : clique sur la pièce à coter.');
+      return;
+    }
+    const { crumbs, level } = pieceCrumbs(scene.look, mesh);
+    const at = { x: Math.min(lastPointer.current.x + 12, window.innerWidth - 580), y: Math.min(lastPointer.current.y + 12, window.innerHeight - 300) };
+    setPieceBubble({ vpId: vp.id, crumbs, level, mode: 'level', at });
+  };
+  const applyPieceDims = () => {
+    if (!piecePlan?.dims.length || !pieceBubble) return;
+    const label = pieceBubble.crumbs.find((c) => c.id === pieceBubble.level)?.label ?? 'pièce';
+    actions.addItems(piecePlan.dims, `Coter : ${label}`);
+    setToast(`${piecePlan.dims.length} cote(s) posée(s) · Ctrl+Z pour annuler · clique une autre pièce pour continuer`);
+    setPieceBubble(null);
+    setPieceHover(null);
+  };
+  useEffect(() => {
+    if (tool !== 'piecedim') {
+      setPieceBubble(null);
+      setPieceHover(null);
+    }
+  }, [tool]);
+  useEffect(() => setPieceBubble(null), [sheet.id]);
 
   // ─── cadres textile : planches de détail, repères F1…, cotes, masquage ───
   const openFrames = (lang: FrameLang = frames?.lang ?? 'en') => {
@@ -1710,6 +1843,17 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           ⇹ Chaîne
         </button>
         <button
+          className={`btn small${tool === 'piecedim' ? ' primary' : ''}`}
+          data-testid="tool-piecedim"
+          onClick={() => {
+            setTool(tool === 'piecedim' ? 'select' : 'piecedim');
+            setMoreOpen(false);
+          }}
+          title="Coter une pièce : clique une pièce (ou un groupe) d’une vue → sa position depuis les poteaux, sa largeur, ses hauteurs depuis le plancher"
+        >
+          📐 Coter une pièce
+        </button>
+        <button
           className="btn small"
           onClick={() => autoDimension(sheet.items.filter((i): i is ViewportItem => i.type === 'viewport'))}
           title="Coter automatiquement toutes les vues de la planche (remplace les cotes automatiques existantes)"
@@ -2044,6 +2188,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
           readOnly={readOnly}
           onItemMenu={(item, at) => setItemMenu({ item, ...at })}
           paint={paintInfo}
+          extraDraft={tool === 'piecedim' ? piecePlan?.dims : undefined}
         />
         <div className={`sheet-side${propsOpen || tool === 'symbol' || tool === 'paint' ? ' open' : ''}${tool === 'paint' ? ' paint' : ''}`}>
         <button className="btn small mobile-only sheet-side-close" onClick={() => (setPropsOpen(false), tool === 'symbol' && setTool('select'))} aria-label="Fermer">
@@ -2172,6 +2317,26 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
             </button>
           </div>
         </ClickBubble>
+      )}
+      {pieceBubble && tool === 'piecedim' && (
+        <PieceDimBubble
+          crumbs={pieceBubble.crumbs}
+          level={pieceBubble.level}
+          mode={pieceBubble.mode}
+          sameCount={piecePlan?.sameCount ?? 0}
+          from={pieceFrom}
+          heights={piecePlan?.heights ?? false}
+          summary={piecePlan ? describePieces(piecePlan.pieces) : 'Vue en calcul…'}
+          notes={piecePlan?.notes ?? []}
+          dimCount={piecePlan?.dims.length ?? 0}
+          style={touchLayout ? undefined : { position: 'fixed', left: Math.max(8, pieceBubble.at.x), top: Math.max(8, pieceBubble.at.y), zIndex: 45 }}
+          onLevel={(id) => setPieceBubble({ ...pieceBubble, level: id })}
+          onHover={setPieceHover}
+          onMode={(mode) => setPieceBubble((b) => (b ? { ...b, mode } : b))}
+          onFrom={setPieceFrom}
+          onApply={applyPieceDims}
+          onClose={() => setPieceBubble(null)}
+        />
       )}
       {setHideOpen && <SetHideDialog doc={doc} scene={scene} onClose={() => setSetHideOpen(false)} />}
       {frames && (

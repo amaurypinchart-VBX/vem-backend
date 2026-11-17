@@ -43,6 +43,8 @@ export interface ViewportData {
   paint?: ViewportPaint;
   /** éditeur : face sous le doigt avant de la peindre (contour orange) */
   paintPreview?: PaintRegion[];
+  /** éditeur : pièces choisies par « Coter une pièce » (traits en surbrillance, jamais exportés) */
+  pickLines?: Float64Array[];
 }
 
 export interface SheetSvgProps {
@@ -410,6 +412,9 @@ function ViewportContent({
             const w = STROKE_MM[key as 'silhouette' | 'visible' | 'fine' | 'hidden'] ?? 0.18;
             return <path key={key} d={d} stroke="#000" strokeWidth={num(w * s)} strokeDasharray={key === 'hidden' ? `${num(1.2 * s)} ${num(0.8 * s)}` : undefined} data-dxf={dxfLayer(key)} />;
           })}
+          {data?.pickLines && data.pickLines.length > 0 && (
+            <path d={data.pickLines.map(openD).join('')} stroke="#2563eb" strokeWidth={num(0.45 * s)} opacity={0.85} data-testid="piece-highlight" />
+          )}
           {vp.overlays?.moduleOutlines &&
             overlays.map((o) => <path key={`o${o.moduleId}`} d={polyD(o.outline)} stroke="#000" strokeWidth={num(0.18 * s)} strokeDasharray={`${num(3 * s)} ${num(1.5 * s)}`} data-dxf="VBX-CONTOURS-MODULES" />)}
           {vp.overlays?.calage &&
@@ -653,6 +658,13 @@ function CutLevels({ levels, basis, toPaper, rect }: { levels: NonNullable<NonNu
       })}
     </g>
   );
+}
+
+/** Polyligne ouverte. */
+function openD(pl: Float64Array): string {
+  let d = `M${num(pl[0])} ${num(pl[1])}`;
+  for (let i = 2; i < pl.length; i += 2) d += `L${num(pl[i])} ${num(pl[i + 1])}`;
+  return d;
 }
 
 function polyD(pl: Float64Array): string {

@@ -101,6 +101,13 @@ export interface FixtureOptions {
    * rangée sur un grand côté — des centaines de milliers de faces « côtés extérieurs » comme un vrai modèle détaillé
    */
   cladding?: number;
+  /**
+   * ossature bois 45 × 45 dans chaque Viewbox (planches : « Coter une pièce ») : groupe « Ossature bois » contre le
+   * grand côté +y avec 3 montants (composant « Bois 45x45 montant », x 1500 / 3000 / 4500, du plancher à 2 700) et
+   * 2 traverses devant (« Bois 45x45 traverse », de poteau à poteau, z 1000 et 1800), plus un 4e montant contre le
+   * côté −y (x 2200, retiré par une coupe longitudinale) ; le plancher est alors nommé (PLANCHER, dessus à 150)
+   */
+  battens?: boolean;
 }
 
 /** Tuiles de bardage collées à l'extérieur des 4 côtés d'une Viewbox 5900 × 2500 (z 150…2800). */
@@ -172,6 +179,12 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
           seg: G('GEO_seg', [[[500, -45, 400], [2500, -5, 2400]]], 'MAT_door'),
         }
       : {}),
+    ...(opts.battens
+      ? {
+          stud: G('GEO_stud', [[[0, 0, 0], [45, 45, 2550]]], 'MAT_door'),
+          rail: G('GEO_rail', [[[0, 0, 0], [5700, 45, 45]]], 'MAT_door'),
+        }
+      : {}),
   };
   const feet = [
     [0, 0], [5900 - 100, 0], [0, 2500 - 100], [5900 - 100, 2500 - 100],
@@ -226,7 +239,7 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
   </library_visual_scenes>
   <library_nodes>
     <node id="DEF_viewbox" name="Viewbox 5900">
-      ${instGeom(geoms.slab)}
+      ${opts.battens ? `<node id="N_slab" name="PLANCHER_plancher">${instGeom(geoms.slab)}</node>` : instGeom(geoms.slab)}
       <node id="N_frame" name="STRUCTURE_cadre">${instGeom(geoms.frame)}</node>
       <node id="N_glass" name="VITRE-SEAMLESS_#7-230-044">${instGeom(geoms.glass)}</node>
       <node id="N_doorInst" name="instance_3">${translate(0, 0, 0)}<instance_node url="#DEF_door"/></node>
@@ -242,8 +255,22 @@ export function makeSketchupDae(opts: FixtureOptions = {}): string {
       <node id="N_seg" name="SEG frame 2000">${instGeom((geoms as Record<string, GeomSpec>).seg)}</node>`
           : ''
       }
+      ${
+        opts.battens
+          ? `<node id="N_wood" name="Ossature bois">
+        ${[[1500, 2300], [3000, 2300], [4500, 2300], [2200, 150]].map(([x, y], i) => `<node id="N_stud${i}" name="instance_${20 + i}">${translate(x, y, 150)}<instance_node url="#DEF_stud"/></node>`).join('')}
+        ${[1000, 1800].map((z, i) => `<node id="N_rail${i}" name="instance_${30 + i}">${translate(100, 2255, z)}<instance_node url="#DEF_rail"/></node>`).join('')}
+      </node>`
+          : ''
+      }
     </node>
     <node id="DEF_door" name="Porte simple 900">${instGeom(geoms.door)}</node>
+    ${
+      opts.battens
+        ? `<node id="DEF_stud" name="Bois 45x45 montant">${instGeom((geoms as Record<string, GeomSpec>).stud)}</node>
+    <node id="DEF_rail" name="Bois 45x45 traverse">${instGeom((geoms as Record<string, GeomSpec>).rail)}</node>`
+        : ''
+    }
   </library_nodes>
   <library_geometries>${allGeoms.map(geometryXml).join('')}</library_geometries>
   <library_materials>${mats.map((m) => m.mat).join('')}</library_materials>
