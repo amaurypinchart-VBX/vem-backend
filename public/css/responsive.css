@@ -4,7 +4,7 @@
    Règle : au-dessus de 1180 px (ordinateur) rien ne change, sauf le bloc « Partout »
    (corrections de bugs visibles sur tous les écrans).
    La gestion des fenêtres (barre du bas masquée, page bloquée, retour arrière, pied
-   collant posé automatiquement) est dans js/20-mobile-ui.js.
+   collant posé automatiquement) est dans js/21-mobile-ui.js.
    Classes utilitaires posées sur les éléments écrits « en dur » dans les scripts :
      .r-wrap   rangée flex qui passe à la ligne (≤ 1180 px)
      .r-stack  grille / rangée → une colonne (≤ 768 px)
@@ -38,7 +38,7 @@ input[type=date],input[type=time],input[type=datetime-local],input[type=month],i
   .r-wrap{flex-wrap:wrap!important;}
   /* .btn-xs n'avait pas de marge propre (héritait de 8 × 16 px) → rangées d'icônes trop larges (audit F1) */
   .btn-xs{padding:4px 10px;}
-  /* Onglets du projet : léger fondu quand il en reste à droite (posé par 20-mobile-ui.js) */
+  /* Onglets du projet : léger fondu quand il en reste à droite (posé par 21-mobile-ui.js) */
   .tabs.tabs-more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);}
   /* Planning du dashboard : le Gantt défile dans sa carte, colonne des noms collante (audit P1) */
   .cal-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;}
@@ -91,7 +91,7 @@ input[type=date],input[type=time],input[type=datetime-local],input[type=month],i
   /* Visionneuse d'image : « Télécharger » au-dessus de la zone du pouce / de l'indicateur iPhone */
   .file-viewer-overlay a[download]{bottom:calc(20px + env(safe-area-inset-bottom))!important;}
 
-  /* ── Fenêtres ouvertes (body.has-sheet, posé par 20-mobile-ui.js) ── */
+  /* ── Fenêtres ouvertes (body.has-sheet, posé par 21-mobile-ui.js) ── */
   body.has-sheet .bottom-nav,body.has-sheet .fab-menu{display:none!important;}
   .overlay{overscroll-behavior:contain;}
   /* plus de marge de 110 px pour la barre du bas : elle est masquée */

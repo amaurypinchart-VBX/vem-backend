@@ -165,6 +165,10 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'POST', p: '/project/:projectId/:phase/file', need: 'write', proj: (p) => [p.projectId] },
     { m: 'POST', p: '/project/:projectId/:phase/send', need: 'write', proj: (p) => [p.projectId] },
   ],
+  // Validation des plans par le client : l'équipe du projet voit l'historique (envoi réservé aux rôles « tous projets »)
+  planApprovals: [
+    { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },
+  ],
   checklists: [
     { m: 'GET', p: '/templates', need: 'read', list: true },
     { m: 'GET', p: '/project/:projectId', need: 'read', proj: (p) => [p.projectId] },

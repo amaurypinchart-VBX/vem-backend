@@ -19,7 +19,9 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, checkPlan, planPlates } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
-import { calageRemedies } from '../../structure/core/calageRemedies';
+import { SLEEPER_SECTIONS, calageRemedies, isFlat } from '../../structure/core/calageRemedies';
+import type { SleeperVariant } from '../../structure/core/sleeperCompare';
+import { sleeperVariants } from '../../structure/core/sleeperCompare';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
 import type { Terrain } from '../../structure/core/wind';
@@ -353,10 +355,165 @@ function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageRes
             Retirer (revenir aux plaques)
           </button>
           <div className="hint" style={{ width: '100%' }}>
-            {r.summary} Le plan, la vérification de chaque appui, le matériel, la fiche, le plan de calage A3 et le rapport sont calculés avec cette solution ; elle est revérifiée à chaque changement (charges, portance, raideur du sol).
+            {r.summary} Le plan, la vérification de chaque appui, le matériel, la fiche, le plan de calage A3 et le rapport sont calculés avec cette solution et la dessinent (madriers à l’échelle avec leurs joints, légende des couches, coupe du calage) ; elle est revérifiée à chaque changement (charges, portance, raideur du sol).
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** « 10 × 23 cm, à plat (23 cm au sol) » : section d'un madrier (b = largeur au sol, h = épaisseur). */
+const sectionCm = (mm: number) => n(mm / 10, mm % 10 ? 1 : 0);
+const sectionLabel = (b: { b: number; h: number }) =>
+  isFlat(b) ? `${sectionCm(b.h)} × ${sectionCm(b.b)} cm, à plat (${sectionCm(b.b)} cm au sol)` : b.b === b.h ? `${sectionCm(b.b)} × ${sectionCm(b.h)} cm` : `${sectionCm(b.b)} × ${sectionCm(b.h)} cm, sur chant`;
+
+/**
+ * Madriers choisis à la main sous les rangées d'appuis (section, nombre par rangée) : calculés sur le calage sans
+ * solution retenue, avec et sans les blocs dessinés côte à côte (charge sur la dalle ou au sol, poids, hauteur), puis
+ * appliqués comme les autres pistes. Disponible même quand tout passe (dalle en charge répartie : répartir la charge de
+ * chaque pied le long de la rangée).
+ */
+export function SleepersCard({ input, result, choices, onApply }: { input: CalageInput; result: CalageResult; choices: CalageChoices; onApply: (r: CalageRemedy) => void }) {
+  const [sec, setSec] = useState(0);
+  const [count, setCount] = useState(0);
+  const [variants, setVariants] = useState<SleeperVariant[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
+  const slab = input.bearingMode === 'distributed';
+  // la piste change avec le calage (charges, portance) et les choix : à recalculer
+  useEffect(() => setVariants(null), [result, sec, count]);
+  const compute = () => {
+    setBusy(true);
+    setTimeout(() => {
+      try {
+        const base = input.choices?.remedy ? { ...input, choices: { ...input.choices, remedy: undefined } } : input;
+        setVariants(sleeperVariants(base, base === input ? result : computeCalage(base), { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}) }));
+      } finally {
+        setBusy(false);
+      }
+    }, 20);
+  };
+  const isApplied = (r: CalageRemedy) => typeof r.apply === 'object' && JSON.stringify(choices.remedy) === JSON.stringify(r.apply);
+  const kg = (q: number) => `${n((q * 1e6) / 9.81, 0)} kg/m²`;
+  const withB = variants?.find((v) => v.withBlocks && variants.length > 1);
+  const without = variants?.find((v) => !v.withBlocks);
+  return (
+    <div className="card" data-testid="calage-sleepers">
+      <div className="card-head">
+        <h2>🪵 Madriers sous les rangées d’appuis</h2>
+        <span className="hint">
+          {slab
+            ? 'dalle en charge répartie : les madriers répartissent la charge de chaque pied le long de la rangée ; le critère reste la charge au m² de chaque zone'
+            : 'sol : les madriers doivent porter toute la charge de la rangée à la portance donnée'}
+        </span>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className="row" style={{ gap: 6 }}>
+            Section
+            <select value={sec} onChange={(e) => setSec(Number(e.target.value))} data-testid="sleepers-section">
+              {SLEEPER_SECTIONS.map((b, k) => (
+                <option key={k} value={k}>
+                  {sectionLabel(b)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="row" style={{ gap: 6 }}>
+            Madriers par rangée
+            <select value={count} onChange={(e) => setCount(Number(e.target.value))} data-testid="sleepers-count">
+              <option value={0}>automatique</option>
+              {[1, 2, 3, 4, 5, 6, 8, 10].map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn small primary" disabled={busy} onClick={compute} data-testid="sleepers-compute">
+            {busy ? 'Calcul…' : 'Calculer'}
+          </button>
+        </div>
+        {variants && !variants.length && <div className="hint">Pas de rangée d’appuis où poser des madriers.</div>}
+        {variants && variants.length > 0 && (
+          <table className="list" data-testid="sleepers-variants">
+            <thead>
+              <tr>
+                <th>Variante</th>
+                <th>Madriers</th>
+                <th className="num">Bois η</th>
+                <th className="num">{slab ? 'Charge sur la dalle (zone la plus chargée)' : 'Charge au sol sous les madriers'}</th>
+                <th className="num">Poids du calage</th>
+                <th className="num">Hauteur du calage (hors vérin)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((v, k) => (
+                <tr key={k} data-testid={`sleepers-variant-${v.withBlocks ? 'blocks' : 'no-blocks'}`}>
+                  <td>
+                    <b>{variants.length > 1 ? (v.withBlocks ? 'Avec les blocs dessinés' : 'Sans les blocs (vérins sur les madriers)') : v.remedy.title}</b>
+                    {v.recommended && <span className="badge ok" style={{ marginLeft: 6 }}>conseillée</span>}
+                    <div>
+                      <span className={`badge ${v.ok ? 'ok' : 'ko'}`}>{v.ok ? 'passe' : 'ne passe pas'}</span>{' '}
+                      <button className="btn small ghost" onClick={() => setOpen(open === k ? null : k)}>
+                        {open === k ? 'Masquer le détail' : 'Détail'}
+                      </button>
+                    </div>
+                  </td>
+                  <td>{v.remedy.materials.filter((m) => m.label.startsWith('Madrier')).map((m) => `${m.quantity} × ${m.dims}`).join(' ; ') || '—'}</td>
+                  <td className="num">{v.remedy.eta !== undefined ? n(v.remedy.eta, 2) : '—'}</td>
+                  <td className="num">
+                    {slab ? (v.slabQ !== undefined ? kg(v.slabQ) : '—') : v.groundMean !== undefined ? `moy. ${kg(v.groundMean)} · maxi ${kg(v.groundMax!)}` : '—'}
+                  </td>
+                  <td className="num">{n(v.packingKg, 0)} kg</td>
+                  <td className="num">{v.height > 0 ? `${n(v.height / 10, 1)} cm` : '—'}</td>
+                  <td>
+                    {typeof v.remedy.apply === 'object' &&
+                      (isApplied(v.remedy) ? (
+                        <span className="badge ok">✔ retenue</span>
+                      ) : (
+                        <button className={`btn small ${v.recommended || (v.ok && variants.length === 1) ? 'primary' : ''}`} onClick={() => onApply(v.remedy)} data-testid={`sleepers-apply${variants.length > 1 ? (v.withBlocks ? '-blocks' : '-no-blocks') : ''}`}>
+                          Appliquer
+                        </button>
+                      ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {variants && open !== null && variants[open] && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderLeft: '3px solid #a16207', paddingLeft: 10 }} data-testid="sleepers-option">
+            <div style={{ fontSize: 13, lineHeight: 1.45 }}>{variants[open].remedy.summary}</div>
+            {variants[open].remedy.details.map((d, k) => (
+              <div key={k} className="hint">
+                • {d}
+              </div>
+            ))}
+            {variants[open].remedy.notes.map((d, k) => (
+              <div key={`n${k}`} className="hint" style={{ fontStyle: 'italic' }}>
+                {d}
+              </div>
+            ))}
+            {!!variants[open].remedy.records.length && <Records records={variants[open].remedy.records} />}
+          </div>
+        )}
+        {withB && without && (
+          <div className="hint" data-testid="sleepers-blocks-note">
+            Les blocs ne servent qu’à surélever la Viewbox (les vérins ne rattrapent que 5 cm) :{' '}
+            {slab
+              ? `en charge répartie ils n’aident pas la dalle, ils ajoutent leur poids (${withB.slabQ !== undefined && without.slabQ !== undefined ? `${kg(withB.slabQ)} avec, ${kg(without.slabQ)} sans` : 'voir le tableau'}).`
+              : 'sans eux, les vérins reposent directement sur les madriers.'}{' '}
+            Sans les blocs, l’installation est plus basse d’environ {n(Math.max(0, withB.height - without.height) / 10, 0)} cm : à garder seulement si cette hauteur est voulue (niveau, câbles, accès).
+          </div>
+        )}
+        <div className="hint">
+          Les madriers sont posés jointifs le long de chaque rangée d’appuis, centrés sous les vérins / pieds. « Automatique » = le moins de madriers de cette section qui passe
+          {slab ? ' (bois vérifié ; la charge au m² de chaque zone de dalle est recalculée avec eux)' : ' (pression au sol sous les madriers ≤ portance)'}. Une fois appliqués, ils sont dessinés sur le plan, la fiche, le plan des appuis, le plan de calage A3 et dans le rapport, avec la charge au sol répartie.
+        </div>
+      </div>
     </div>
   );
 }
@@ -1206,6 +1363,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               onRemove={removeRemedy}
             />
           )}
+          {input.bearing > 0 && result.checks.filter((c) => !c.reaction.group.stair && !c.reaction.group.terrace).length >= 2 && (
+            <SleepersCard input={input} result={result} choices={choices} onApply={applyRemedy} />
+          )}
 
           {roadway && (
             <div className="card">
@@ -1352,9 +1512,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <TypeChoice t={t} result={result} stock={input.stock} set={choiceSet} onSelect={select} selected={selected} />
-                {t.block && (
+                {t.block && t.checks.some((c) => c.block) && (
                   <div className="hint">
-                    Blocs de bois dessinés dans le modèle : {[...new Set(t.checks.map((c) => `${c.block!.id} ${c.block!.dims} (${n(c.block!.massKg, 0)} kg${c.block!.massSource === 'computed' ? ', calculé' : ''})`))].join(' · ')}. Pieds → bois sous chaque pied → diffusion dans le bloc (45°, centrée
+                    Blocs de bois dessinés dans le modèle : {[...new Set(t.checks.flatMap((c) => (c.block ? [`${c.block.id} ${c.block.dims} (${n(c.block.massKg, 0)} kg${c.block.massSource === 'computed' ? ', calculé' : ''})`] : [])))].join(' · ')}. Pieds → bois sous chaque pied → diffusion dans le bloc (45°, centrée
                     sur la charge) → poids du bloc → sol ; les plaques choisies se posent sous le bloc, centrées.
                   </div>
                 )}
@@ -1455,7 +1615,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
   );
 }
 
-/** Coupe du calage (de la dalle à la Viewbox) : croquis et couches de bas en haut, comme la fiche et le rapport. */
+/** Coupe du calage (de la dalle ou du sol à la Viewbox) : croquis et couches de bas en haut, comme la fiche et le rapport. */
 function StackCard({ result }: { result: CalageResult }) {
   const stacks = result.stacks ?? [];
   if (!stacks.length) return null;
@@ -1464,11 +1624,11 @@ function StackCard({ result }: { result: CalageResult }) {
   return (
     <div className="card" data-testid="calage-stack">
       <div className="card-head">
-        <h2>{S.stackTitle}</h2>
-        <span className="hint">ce qui est posé sur la dalle, couche par couche — repris dans la fiche de calage et le rapport</span>
+        <h2>{result.slab ? S.stackTitle : S.stackTitleGround}</h2>
+        <span className="hint">ce qui est posé sur {result.slab ? 'la dalle' : 'le sol'}, couche par couche — repris dans la fiche de calage et le rapport</span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <svg viewBox={`0 0 186 ${h}`} style={{ width: '100%', maxWidth: 760, background: '#fff' }} dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, 'fr')(0, 0, 186, h) }} />
+        <svg viewBox={`0 0 186 ${h}`} style={{ width: '100%', maxWidth: 760, background: '#fff' }} dangerouslySetInnerHTML={{ __html: stacksFigureSvg(stacks, 'fr', !!result.slab)(0, 0, 186, h) }} />
         <table className="list">
           <thead>
             <tr>

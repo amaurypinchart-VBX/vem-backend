@@ -122,6 +122,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       siteManagerUser,
       ...data
     } = req.body;
+    // check-list de montage seulement en annexe du PDF / de la page de signature
+    if (data.checklistAnnex !== undefined) data.checklistAnnex = data.checklistAnnex === true;
 
     const h = await prisma.handover.update({
       where: { id: req.params.id },
@@ -280,11 +282,13 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
      items,
       generalNotes: h.generalNotes,
       scopeOfWork: h.scopeOfWork,
+      customFields: (h.customFields as Record<string, any> | null) || null,
       managerSignatureUrl: h.managerSignatureUrl,
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
       checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: h.checklistAnnex === true,
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -362,11 +366,13 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
     items,
       generalNotes: h.generalNotes,
       scopeOfWork: h.scopeOfWork,
+      customFields: (h.customFields as Record<string, any> | null) || null,
       managerSignatureUrl: h.managerSignatureUrl,
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
       checklist: checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: h.checklistAnnex === true,
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
@@ -404,6 +410,8 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
 
     // Génère un token cryptographique URL-safe (43 caractères)
     const token = crypto.randomBytes(32).toString('base64url');
+    // langue de la page de signature, du PDF signé et de l'e-mail envoyé après la signature
+    const lang = req.body?.lang === 'en' ? 'en' : 'fr';
 
     await prisma.handover.update({
       where: { id: req.params.id },
@@ -411,10 +419,11 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
         signatureToken: token,
         signatureTokenUsed: false,
         signatureTokenCreatedAt: new Date(),
+        signatureLang: lang,
       },
     });
 
-    res.json({ success: true, data: { token } });
+    res.json({ success: true, data: { token, lang } });
   } catch (err) { next(err); }
 });
 export default router;

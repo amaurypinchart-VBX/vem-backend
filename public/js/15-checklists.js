@@ -1947,8 +1947,8 @@ document.addEventListener('keydown', e => {
 // ☑️ CHECK-LIST DANS LE HANDOVER — carte, fiche, lien de signature
 // ═══════════════════════════════════════════════════════════
 
-/** Ligne « ☑️ Check-list : 42/48 OK · … » sur la carte d'un handover (h.checklistSummary). */
-function checklistHandoverLine(s) {
+/** Ligne « ☑️ Check-list : 42/48 OK · … » sur la carte d'un handover (h.checklistSummary ; annex = h.checklistAnnex). */
+function checklistHandoverLine(s, annex) {
   if (!s) return '';
   const parts = [`<strong>${s.ok}/${s.total} OK</strong>`];
   if (s.na) parts.push(`${s.na} N.A.`);
@@ -1956,6 +1956,7 @@ function checklistHandoverLine(s) {
   if (s.pending) parts.push(`${s.pending} à vérifier`);
   if (s.criticalOpen) parts.push(`<span style="color:var(--accent);font-weight:700;">⚠️ ${s.criticalOpen} critique(s) ouvert(s)</span>`);
   if (s.validatedAt) parts.push('<span style="color:var(--green);">✅ validée</span>');
+  if (annex) parts.push('<span title="Dans le PDF et la page de signature, la check-list est mise en annexe, après les signatures">📎 en annexe</span>');
   return `<div style="font-size:11px;color:var(--text2);margin-top:4px;">☑️ Check-list : ${parts.join(' · ')}</div>`;
 }
 
@@ -1965,8 +1966,57 @@ function openChecklistFullFromHandover(projectId) {
   openChecklistFull(projectId, 'installation');
 }
 
+/**
+ * Case « 📎 Mettre la check-list en annexe » (PDF du handover + page de signature du client).
+ * En annexe : un court rappel reste après les zones, le détail complet passe après les signatures.
+ * Une ligne d'état sous la case dit ce qui est enregistré (ou pourquoi ça ne l'est pas) — elle reste affichée.
+ */
+function handoverChecklistAnnexText(annex) {
+  return annex
+    ? 'PDF et page de signature : un court rappel après les zones, la check-list complète <strong>en annexe à la fin</strong>, après les signatures.'
+    : 'PDF et page de signature : la check-list complète est <strong>dans le document</strong>, après les zones inspectées.';
+}
+
+function handoverChecklistPlacementHtml(handoverId, annex) {
+  return `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="checkbox" id="hf-cl-annex-${handoverId}" ${annex ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;flex-shrink:0;"
+          onchange="setHandoverChecklistAnnex('${handoverId}', this.checked)">
+        📎 Mettre la check-list en annexe du PDF (après les signatures)
+      </label>
+      <div id="hf-cl-annex-status-${handoverId}" style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5;">${handoverChecklistAnnexText(annex)}</div>
+    </div>`;
+}
+
+async function setHandoverChecklistAnnex(handoverId, annex) {
+  annex = !!annex;
+  const box = document.getElementById(`hf-cl-annex-${handoverId}`);
+  const status = document.getElementById(`hf-cl-annex-status-${handoverId}`);
+  const show = (html, color) => { if (status) { status.innerHTML = html; status.style.color = color || 'var(--text3)'; } };
+  if (box) box.disabled = true;
+  show('⏳ Enregistrement…');
+  const res = await api('PATCH', `/handover/${handoverId}`, { checklistAnnex: annex });
+  if (box) box.disabled = false;
+  // le serveur renvoie le handover enregistré : on vérifie que le choix y est bien
+  const saved = res?.success ? res.data?.checklistAnnex : undefined;
+  if (!res?.success || saved !== annex) {
+    const why = !res ? 'pas de réponse du serveur'
+      : !res.success ? (res.error || 'erreur du serveur')
+      : 'le serveur n’a pas pris le choix en compte (nouvelle version pas encore en ligne ? recharge la page)';
+    console.error('[handover] check-list en annexe non enregistrée', { handoverId, annex, res });
+    if (box) box.checked = !annex; // remet le choix enregistré
+    show(`❌ Non enregistré : ${esc(why)}`, 'var(--accent2)');
+    toast(`Choix non enregistré : ${why}`, 'error');
+    return;
+  }
+  show(`✅ Enregistré — ${handoverChecklistAnnexText(annex)} <a href="#" onclick="event.preventDefault();downloadHandoverPdf('${handoverId}')" style="color:var(--blue);white-space:nowrap;">📄 Voir le PDF</a>`, 'var(--green)');
+  toast(annex ? 'Check-list mise en annexe du handover 📎' : 'Check-list dans le document du handover', 'success');
+  if (typeof loadDetailHandovers === 'function' && CURRENT_PROJECT_ID) loadDetailHandovers(CURRENT_PROJECT_ID);
+}
+
 /** Section « Check-list de montage » de la fiche handover (lecture, par catégorie, photos en vignettes). */
-async function loadHandoverChecklistSection(projectId, handoverId) {
+async function loadHandoverChecklistSection(projectId, handoverId, annex = false) {
   const el = document.getElementById(`hf-checklist-${handoverId}`);
   if (!el) return;
   const res = await api('GET', `/checklists/project/${projectId}?phase=installation`);
@@ -1996,6 +2046,7 @@ async function loadHandoverChecklistSection(projectId, handoverId) {
         </div>
       </div>
       ${cl.boxesChecked ? `<div style="font-size:12px;color:var(--text2);margin-top:6px;">Boxes contrôlées : <strong>${esc(cl.boxesChecked)}</strong></div>` : ''}
+      ${handoverChecklistPlacementHtml(handoverId, annex)}
       ${checklistStatsHtml(cl.stats)}
       <details style="margin-top:10px;">
         <summary style="cursor:pointer;font-size:13px;color:var(--blue);padding:6px 0;">Voir le détail des ${cl.stats.total} points</summary>
@@ -2038,7 +2089,7 @@ function showChecklistSignatureWarning(handoverId, info) {
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         ${info.projectId ? `<button class="btn btn-ghost btn-sm" onclick="openChecklistFullFromHandover('${info.projectId}')">☑️ Ouvrir la check-list</button>` : ''}
-        ${info.canForce ? `<button class="btn btn-primary" onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', true)">Générer quand même</button>` : ''}
+        ${info.canForce ? `<button class="btn btn-primary" onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', true, '${info.lang === 'en' ? 'en' : 'fr'}')">Générer quand même</button>` : ''}
       </div>
     </div>`;
   document.body.appendChild(el);

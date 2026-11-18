@@ -197,7 +197,7 @@ describe('documents de calage en anglais', () => {
     const sheet = groundSheetPages({ result: r, modules: mods, info: { project: 'P', source: 's', date: 'd', assumptions: [] }, lang: 'en' })
       .map((p) => renderToStaticMarkup(p))
       .join(' ');
-    for (const k of ['PACKING SHEET', '5. Packing section — from the slab to the Viewbox', '6. Regulatory references (TÜV)', '7. Reservations', 'corner jacks on one plate', 'Layers, bottom to top']) expect(sheet).toContain(k);
+    for (const k of ['PACKING SHEET', '5. Packing section — from the ground to the Viewbox', '6. Regulatory references (TÜV)', '7. Reservations', 'corner jacks on one plate', 'Layers, bottom to top']) expect(sheet).toContain(k);
     const texts = [...sheet.matchAll(/>([^<]+)</g)].map((m) => m[1]);
     for (const t of texts) expect(t).not.toMatch(FRENCH);
   });

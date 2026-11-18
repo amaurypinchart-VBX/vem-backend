@@ -75,16 +75,86 @@ const params = new URLSearchParams(window.location.search);
 const token = params.get('token');
 const root = document.getElementById('root');
 
+// ─── Langue de la page (choisie à la génération du lien : ?lang=en dans le lien, confirmée par le serveur) ───
+const I18N = {
+  fr: {
+    pageTitle: 'Signature Handover — VIEWBOX', loading: 'Chargement du handover...',
+    invalidLink: '<strong>Lien invalide.</strong><br>Aucun token de signature fourni.',
+    usedLink: '<strong>Ce lien a déjà été utilisé ou a expiré.</strong><br><br>Si vous devez signer un nouveau document, demandez un nouveau lien à votre interlocuteur VIEWBOX.',
+    loadError: '<strong>Erreur de chargement.</strong><br>Impossible de récupérer le document. Vérifiez votre connexion et réessayez.',
+    retry: '🔄 Réessayer',
+    projectInfo: '📋 Informations Projet', project: 'Projet', internalRef: 'N° Interne', address: 'Adresse', client: 'Client',
+    siteManager: 'Site Manager', date: 'Date', scope: '📐 Étendue des travaux', zones: '🔍 Zones inspectées',
+    notes: '📝 Remarques / Réservations', managerSig: '✍️ Signature Site Manager', yourSig: '✏️ Votre signature',
+    yourName: 'Votre nom complet', namePlaceholder: 'Nom du signataire', signHere: 'Signez ci-dessous avec votre doigt ou la souris',
+    signHint: 'En signant, vous confirmez avoir lu et approuvé le contenu de ce handover.',
+    clear: '🗑️ Effacer', submit: '✅ Valider la signature', sending: '⏳ Envoi en cours...',
+    needSignature: 'Veuillez signer dans la zone prévue avant de valider.', needName: 'Veuillez saisir votre nom.',
+    error: 'Erreur : ', checkConnection: 'Vérifiez votre connexion et réessayez.',
+    doneTitle: 'Signature enregistrée !', doneText: 'Merci. Une copie du document signé a été envoyée par email à l\'équipe VIEWBOX et au client.',
+    doneClose: 'Vous pouvez fermer cette page.',
+    clTitle: '☑️ Check-list de montage', clAnnexTitle: '📎 Annexe — Check-list de montage', points: 'points',
+    clBoxes: 'Boxes contrôlées', clValidated: '✅ Validée le {date}', clBy: ' par {name}', clNotValidated: 'Check-list pas encore validée',
+    clCriticalOpen: '{n} point(s) critique(s) non validé(s)', clCritical: 'critique', clCheckedBy: 'Vérifié par {name}',
+    clAnnexNote: 'Le détail est joint en annexe, en bas de cette page.',
+    status: { ok: 'OK', remark: 'Remarque', defect: 'Défaut', pending: 'En attente' },
+    clStatus: { ok: 'OK', partial: 'Partiel', nok: 'Non fait', pending: 'À vérifier' },
+    viewbox: { ephemere: 'Éphémère', permanente: 'Permanente' },
+  },
+  en: {
+    pageTitle: 'Handover signature — VIEWBOX', loading: 'Loading the handover...',
+    invalidLink: '<strong>Invalid link.</strong><br>No signature token provided.',
+    usedLink: '<strong>This link has already been used or has expired.</strong><br><br>If you need to sign a new document, please ask your VIEWBOX contact for a new link.',
+    loadError: '<strong>Loading error.</strong><br>The document could not be retrieved. Please check your connection and try again.',
+    retry: '🔄 Try again',
+    projectInfo: '📋 Project information', project: 'Project', internalRef: 'Internal ref.', address: 'Address', client: 'Client',
+    siteManager: 'Site manager', date: 'Date', scope: '📐 Scope of work', zones: '🔍 Inspected areas',
+    notes: '📝 Comments / Reservations', managerSig: '✍️ Site manager signature', yourSig: '✏️ Your signature',
+    yourName: 'Your full name', namePlaceholder: 'Name of the signatory', signHere: 'Sign below with your finger or the mouse',
+    signHint: 'By signing, you confirm that you have read and approved the content of this handover.',
+    clear: '🗑️ Clear', submit: '✅ Confirm signature', sending: '⏳ Sending...',
+    needSignature: 'Please sign in the box before confirming.', needName: 'Please enter your name.',
+    error: 'Error: ', checkConnection: 'Please check your connection and try again.',
+    doneTitle: 'Signature saved!', doneText: 'Thank you. A copy of the signed document has been e-mailed to the VIEWBOX team and to the client.',
+    doneClose: 'You can close this page.',
+    clTitle: '☑️ Installation checklist', clAnnexTitle: '📎 Appendix — Installation checklist', points: 'items',
+    clBoxes: 'Boxes checked', clValidated: '✅ Validated on {date}', clBy: ' by {name}', clNotValidated: 'Checklist not validated yet',
+    clCriticalOpen: '{n} critical item(s) not validated', clCritical: 'critical', clCheckedBy: 'Checked by {name}',
+    clAnnexNote: 'The full checklist is attached as an appendix at the bottom of this page.',
+    status: { ok: 'OK', remark: 'Remark', defect: 'Defect', pending: 'Pending' },
+    clStatus: { ok: 'OK', partial: 'Partial', nok: 'Not done', pending: 'To check' },
+    viewbox: { ephemere: 'Temporary', permanente: 'Permanent' },
+  },
+};
+let LANG = params.get('lang') === 'en' ? 'en' : 'fr';
+function tr(key) { return I18N[LANG][key] !== undefined ? I18N[LANG][key] : I18N.fr[key]; }
+function setLang(l) {
+  LANG = l === 'en' ? 'en' : 'fr';
+  document.documentElement.lang = LANG;
+  document.title = tr('pageTitle');
+}
+const LOCALE = () => (LANG === 'en' ? 'en-GB' : 'fr-FR');
+setLang(LANG);
+{ const l = root.querySelector('.loading div:last-child'); if (l) l.textContent = tr('loading'); }
+
 const STATUS_COLORS = { ok:'#2dc653', remark:'#f4a261', defect:'#e63946', pending:'#8892a4' };
-const STATUS_LABELS = { ok:'OK', remark:'Remarque', defect:'Défaut', pending:'En attente' };
 
 function esc(s) { return String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
 // ─── Check-list de montage (lecture seule, sans les points non applicables) ───
 const CL_COLORS = { ok:'#2dc653', partial:'#f4a261', nok:'#e63946', pending:'#8892a4' };
-const CL_LABELS = { ok:'OK', partial:'Partiel', nok:'Non fait', pending:'À vérifier' };
-const CL_VIEWBOX = { ephemere:'Éphémère', permanente:'Permanente' };
-function fmtDateTime(d) { return new Date(d).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+function fmtDateTime(d) { return new Date(d).toLocaleString(LOCALE(), { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+/** Pastilles « ● 3 OK  ● 1 Partiel … » de la check-list. */
+function clStatsHTML(st) {
+  const L = tr('clStatus');
+  return `<div class="cl-stats">
+      <span style="color:${CL_COLORS.ok}">● ${st.ok || 0} ${L.ok}</span>
+      ${st.partial ? `<span style="color:${CL_COLORS.partial}">● ${st.partial} ${L.partial}</span>` : ''}
+      ${st.nok ? `<span style="color:${CL_COLORS.nok}">● ${st.nok} ${L.nok}</span>` : ''}
+      ${st.pending ? `<span style="color:${CL_COLORS.pending}">● ${st.pending} ${L.pending}</span>` : ''}
+    </div>
+    ${st.criticalOpen ? `<div class="cl-alert">${tr('clCriticalOpen').replace('{n}', st.criticalOpen)}</div>` : ''}`;
+}
 /** Vignette Cloudinary (l'image entière s'ouvre au clic). */
 function thumbUrl(url) { return String(url).includes('/upload/') ? String(url).replace('/upload/', '/upload/c_fill,w_160,h_160,q_auto,f_auto/') : url; }
 function openImg(url) {
@@ -94,7 +164,7 @@ function openImg(url) {
   o.onclick = () => o.remove();
   document.body.appendChild(o);
 }
-function checklistHTML(cl) {
+function checklistHTML(cl, annex) {
   if (!cl || !cl.items || !cl.items.length) return '';
   const st = cl.stats || {};
   const groups = [];
@@ -103,47 +173,43 @@ function checklistHTML(cl) {
     groups[groups.length - 1].items.push(it);
   }
   const summary = [
-    `Viewbox ${esc(CL_VIEWBOX[cl.viewboxType] || cl.viewboxType)}`,
-    cl.boxesChecked ? `Boxes contrôlées : <strong>${esc(cl.boxesChecked)}</strong>` : '',
-    cl.validatedAt ? `✅ Validée le ${fmtDate(cl.validatedAt)}${cl.validatedBy ? ` par ${esc(cl.validatedBy)}` : ''}` : 'Check-list pas encore validée',
+    `Viewbox ${esc(tr('viewbox')[cl.viewboxType] || cl.viewboxType)}`,
+    cl.boxesChecked ? `${tr('clBoxes')} : <strong>${esc(cl.boxesChecked)}</strong>` : '',
+    cl.validatedAt
+      ? tr('clValidated').replace('{date}', fmtDate(cl.validatedAt)) + (cl.validatedBy ? tr('clBy').replace('{name}', esc(cl.validatedBy)) : '')
+      : tr('clNotValidated'),
   ].filter(Boolean).join('<br>');
   return `<div class="card">
-    <div class="card-title">☑️ Check-list de montage (${cl.items.length} points)</div>
+    <div class="card-title">${annex ? tr('clAnnexTitle') : tr('clTitle')} (${cl.items.length} ${tr('points')})</div>
     <div class="cl-summary">${summary}</div>
-    <div class="cl-stats">
-      <span style="color:${CL_COLORS.ok}">● ${st.ok || 0} OK</span>
-      ${st.partial ? `<span style="color:${CL_COLORS.partial}">● ${st.partial} Partiel</span>` : ''}
-      ${st.nok ? `<span style="color:${CL_COLORS.nok}">● ${st.nok} Non fait</span>` : ''}
-      ${st.pending ? `<span style="color:${CL_COLORS.pending}">● ${st.pending} À vérifier</span>` : ''}
-    </div>
-    ${st.criticalOpen ? `<div class="cl-alert">${st.criticalOpen} point(s) critique(s) non validé(s)</div>` : ''}
+    ${clStatsHTML(st)}
     ${groups.map(g => {
       const okCount = g.items.filter(it => it.status === 'ok').length;
       const allOk = okCount === g.items.length;
       return `<details class="cl-cat" ${allOk ? '' : 'open'}>
-        <summary><span>${allOk ? '✅' : '⚠️'}</span><span>${esc(g.name)}</span><span class="cl-count">${okCount}/${g.items.length} OK</span></summary>
+        <summary><span>${allOk ? '✅' : '⚠️'}</span><span>${esc(g.name)}</span><span class="cl-count">${okCount}/${g.items.length} ${tr('clStatus').ok}</span></summary>
         ${g.items.map(it => {
           const color = CL_COLORS[it.status] || '#8892a4';
           return `<div class="cl-item">
             <div class="zone-dot" style="background:${color}"></div>
             <div style="flex:1;min-width:0;">
-              <div class="zone-name">${esc(it.label)}${it.critical ? '<span class="cl-critical">critique</span>' : ''}</div>
+              <div class="zone-name">${esc(it.label)}${it.critical ? `<span class="cl-critical">${tr('clCritical')}</span>` : ''}</div>
               ${it.comment ? `<div class="zone-comment">${esc(it.comment)}</div>` : ''}
-              ${it.checkedBy && it.status !== 'pending' ? `<div class="cl-meta">Vérifié par ${esc(it.checkedBy)}${it.checkedAt ? ` — ${fmtDateTime(it.checkedAt)}` : ''}</div>` : ''}
+              ${it.checkedBy && it.status !== 'pending' ? `<div class="cl-meta">${tr('clCheckedBy').replace('{name}', esc(it.checkedBy))}${it.checkedAt ? ` — ${fmtDateTime(it.checkedAt)}` : ''}</div>` : ''}
               ${(it.photos || []).length ? `<div class="cl-photos">${it.photos.map(u => `<img src="${esc(thumbUrl(u))}" data-full="${esc(u)}" loading="lazy" alt="Photo" onclick="openImg(this.dataset.full)">`).join('')}</div>` : ''}
             </div>
-            <span class="zone-badge" style="background:${color}">${CL_LABELS[it.status] || esc(it.status)}</span>
+            <span class="zone-badge" style="background:${color}">${tr('clStatus')[it.status] || esc(it.status)}</span>
           </div>`;
         }).join('')}
       </details>`;
     }).join('')}
   </div>`;
 }
-function fmtDate(d) { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' }); }
+function fmtDate(d) { return new Date(d).toLocaleDateString(LOCALE(), { day:'2-digit', month:'long', year:'numeric' }); }
 
 async function loadHandover() {
   if (!token) {
-    root.innerHTML = `<div class="error-card"><strong>Lien invalide.</strong><br>Aucun token de signature fourni.</div>`;
+    root.innerHTML = `<div class="error-card">${tr('invalidLink')}</div>`;
     return;
   }
   try {
@@ -151,8 +217,7 @@ async function loadHandover() {
     if (r.status === 410) {
       root.innerHTML = `<div class="error-card">
         <div style="font-size:48px;margin-bottom:10px;">⚠️</div>
-        <strong>Ce lien a déjà été utilisé ou a expiré.</strong><br><br>
-        Si vous devez signer un nouveau document, demandez un nouveau lien à votre interlocuteur VIEWBOX.
+        ${tr('usedLink')}
       </div>`;
       return;
     }
@@ -162,17 +227,17 @@ async function loadHandover() {
   } catch (e) {
     console.error('[sign]', e);
     root.innerHTML = `<div class="error-card">
-      <strong>Erreur de chargement.</strong><br>
-      Impossible de récupérer le document. Vérifiez votre connexion et réessayez.<br><br>
-      <button class="btn btn-ghost" onclick="location.reload()">🔄 Réessayer</button>
+      ${tr('loadError')}<br><br>
+      <button class="btn btn-ghost" onclick="location.reload()">${tr('retry')}</button>
     </div>`;
   }
 }
 
 function renderSignaturePage(h) {
+  if (h.lang) setLang(h.lang);
   const zonesHTML = (h.items || []).map(z => {
     const color = STATUS_COLORS[z.status] || '#8892a4';
-    const label = STATUS_LABELS[z.status] || z.status;
+    const label = tr('status')[z.status] || esc(z.status);
     return `<div class="zone">
       <div class="zone-dot" style="background:${color}"></div>
       <div style="flex:1;">
@@ -193,34 +258,34 @@ function renderSignaturePage(h) {
     </div>
 
     <div class="card">
-      <div class="card-title">📋 Informations Projet</div>
-      <div class="info-row"><span class="info-label">Projet</span><span class="info-value">${esc(h.project.name)}</span></div>
-      <div class="info-row"><span class="info-label">N° Interne</span><span class="info-value">${esc(h.project.internalNumber)}</span></div>
-      <div class="info-row"><span class="info-label">Adresse</span><span class="info-value">${esc(h.project.address)}</span></div>
-      <div class="info-row"><span class="info-label">Client</span><span class="info-value">${esc(h.clientName)}</span></div>
-      <div class="info-row"><span class="info-label">Site Manager</span><span class="info-value">${esc(h.siteManagerName)}</span></div>
-      <div class="info-row"><span class="info-label">Date</span><span class="info-value">${fmtDate(h.date)}</span></div>
+      <div class="card-title">${tr('projectInfo')}</div>
+      <div class="info-row"><span class="info-label">${tr('project')}</span><span class="info-value">${esc(h.project.name)}</span></div>
+      <div class="info-row"><span class="info-label">${tr('internalRef')}</span><span class="info-value">${esc(h.project.internalNumber)}</span></div>
+      <div class="info-row"><span class="info-label">${tr('address')}</span><span class="info-value">${esc(h.project.address)}</span></div>
+      <div class="info-row"><span class="info-label">${tr('client')}</span><span class="info-value">${esc(h.clientName)}</span></div>
+      <div class="info-row"><span class="info-label">${tr('siteManager')}</span><span class="info-value">${esc(h.siteManagerName)}</span></div>
+      <div class="info-row"><span class="info-label">${tr('date')}</span><span class="info-value">${fmtDate(h.date)}</span></div>
     </div>
 
     ${h.scopeOfWork ? `<div class="card">
-      <div class="card-title">📐 Étendue des travaux</div>
+      <div class="card-title">${tr('scope')}</div>
       <div style="font-size:14px;color:#f0f2f5;line-height:1.6;">${esc(h.scopeOfWork)}</div>
     </div>` : ''}
 
     ${zonesHTML ? `<div class="card">
-      <div class="card-title">🔍 Zones inspectées (${h.items.length})</div>
+      <div class="card-title">${tr('zones')} (${h.items.length})</div>
       ${zonesHTML}
     </div>` : ''}
 
-    ${checklistHTML(h.checklist)}
+    ${h.checklistAnnex ? '' : checklistHTML(h.checklist)}
 
     ${h.generalNotes ? `<div class="card">
-      <div class="card-title">📝 Remarques / Réservations</div>
+      <div class="card-title">${tr('notes')}</div>
       <div style="font-size:14px;color:#f0f2f5;line-height:1.6;">${esc(h.generalNotes)}</div>
     </div>` : ''}
 
     ${h.managerSignatureUrl ? `<div class="card">
-      <div class="card-title">✍️ Signature Site Manager</div>
+      <div class="card-title">${tr('managerSig')}</div>
       <div class="sig-existing">
         <img src="${esc(h.managerSignatureUrl)}" alt="Signature site manager">
       </div>
@@ -228,21 +293,23 @@ function renderSignaturePage(h) {
     </div>` : ''}
 
     <div class="card">
-      <div class="card-title">✏️ Votre signature</div>
+      <div class="card-title">${tr('yourSig')}</div>
       <div style="margin-bottom:14px;">
-        <label style="font-size:12px;color:#8892a4;display:block;margin-bottom:6px;">Votre nom complet</label>
-        <input type="text" class="input" id="signer-name" value="${esc(h.clientName)}" placeholder="Nom du signataire">
+        <label style="font-size:12px;color:#8892a4;display:block;margin-bottom:6px;">${tr('yourName')}</label>
+        <input type="text" class="input" id="signer-name" value="${esc(h.clientRep || h.clientName)}" placeholder="${tr('namePlaceholder')}">
       </div>
       <div style="margin-bottom:8px;">
-        <label style="font-size:12px;color:#8892a4;display:block;margin-bottom:6px;">Signez ci-dessous avec votre doigt ou la souris</label>
+        <label style="font-size:12px;color:#8892a4;display:block;margin-bottom:6px;">${tr('signHere')}</label>
         <canvas id="sig-canvas"></canvas>
-        <div class="label-hint">En signant, vous confirmez avoir lu et approuvé le contenu de ce handover.</div>
+        <div class="label-hint">${tr('signHint')}</div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" onclick="clearCanvas()">🗑️ Effacer</button>
-        <button class="btn btn-primary" id="submit-btn" onclick="submitSignature()">✅ Valider la signature</button>
+        <button class="btn btn-ghost" onclick="clearCanvas()">${tr('clear')}</button>
+        <button class="btn btn-primary" id="submit-btn" onclick="submitSignature()">${tr('submit')}</button>
       </div>
     </div>
+
+    ${h.checklistAnnex ? checklistHTML(h.checklist, true) : ''}
   `;
   initCanvas();
 }
@@ -268,9 +335,13 @@ function sizeCanvas() {
 }
 function initCanvas() {
   canvas = document.getElementById('sig-canvas');
+  hasDrawing = false; strokeLen = 0; // nouvelle zone (page redessinée) = vierge
   sizeCanvas();
-  window.addEventListener('resize', sizeCanvas);
-  window.addEventListener('orientationchange', () => setTimeout(sizeCanvas, 300));
+  if (!initCanvas.listening) {
+    initCanvas.listening = true;
+    window.addEventListener('resize', sizeCanvas);
+    window.addEventListener('orientationchange', () => setTimeout(sizeCanvas, 300));
+  }
 
   const pos = e => {
     const r = canvas.getBoundingClientRect();
@@ -315,13 +386,13 @@ function clearCanvas() {
 }
 
 async function submitSignature() {
-  if (!hasDrawing) { alert('Veuillez signer dans la zone prévue avant de valider.'); return; }
+  if (!hasDrawing) { alert(tr('needSignature')); return; }
   const signerName = document.getElementById('signer-name').value.trim();
-  if (!signerName) { alert('Veuillez saisir votre nom.'); return; }
+  if (!signerName) { alert(tr('needName')); return; }
 
   const btn = document.getElementById('submit-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Envoi en cours...';
+  btn.textContent = tr('sending');
 
   const signatureBase64 = canvas.toDataURL('image/png');
 
@@ -337,14 +408,14 @@ async function submitSignature() {
     }
     root.innerHTML = `<div class="success-card">
       <div class="success-icon">✅</div>
-      <div class="success-title">Signature enregistrée !</div>
-      <div>Merci. Une copie du document signé a été envoyée par email à l'équipe VIEWBOX et au client.</div>
-      <div style="margin-top:20px;font-size:13px;opacity:0.7;">Vous pouvez fermer cette page.</div>
+      <div class="success-title">${tr('doneTitle')}</div>
+      <div>${tr('doneText')}</div>
+      <div style="margin-top:20px;font-size:13px;opacity:0.7;">${tr('doneClose')}</div>
     </div>`;
   } catch (e) {
     btn.disabled = false;
-    btn.textContent = '✅ Valider la signature';
-    alert('Erreur : ' + e.message + '\n\nVérifiez votre connexion et réessayez.');
+    btn.textContent = tr('submit');
+    alert(tr('error') + e.message + '\n\n' + tr('checkConnection'));
   }
 }
 

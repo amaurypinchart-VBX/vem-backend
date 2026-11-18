@@ -14,7 +14,10 @@
 # Clic droit sur des groupes/composants › Viewbox › Catégorie / désignation… : même correction, sur la sélection.
 # Clic droit › Viewbox › C'est une Viewbox (1.5.0) : catégorie VIEWBOX, l'objet est une Viewbox quel que soit son nom ;
 #   s'il contient plusieurs Viewbox (ex. un « Escalier intérieur » fait de deux Viewbox), c'est un ensemble : chacune
-#   est numérotée et calculée comme une Viewbox, et toutes gardent la désignation de l'ensemble.
+#   est numérotée et calculée comme une Viewbox, et toutes gardent la désignation de l'ensemble. Ce qu'elle contient
+#   sans catégorie (lampes, plancher bois, escalier…) fait partie de la Viewbox (1.5.1) : rien à classer.
+# Extensions › Viewbox › Retirer les catégories… (1.5.1, aussi au clic droit) : remet en automatique les catégories
+#   choisies à la main, sur tout le modèle ou sur la sélection et ce qu'elle contient.
 #
 # Pourquoi un manifest : l'export COLLADA (.dae) perd les balises (tags) et SketchUp y réécrit les noms
 # (espaces, "#", ":"…). Pendant l'export, chaque objet reçoit un nom technique unique ("VBXE-12"), noté
@@ -32,9 +35,11 @@ require File.join(__dir__, 'core')
 
 module Viewbox
   module Prep
-    VERSION = '1.5.0'.freeze
+    VERSION = '1.5.1'.freeze
     DICT = 'viewbox'.freeze
     C = Core
+    # Source de la catégorie d'un objet sans catégorie dans une Viewbox marquée « C'est une Viewbox » : il en fait partie.
+    PART_SOURCE = 'partie de la Viewbox'.freeze
 
     # Réglages d'export COLLADA (voir "Exporter Options" de l'API Ruby SketchUp).
     DAE_OPTIONS = {
@@ -174,9 +179,11 @@ module Viewbox
     # chacune de ses Viewbox est un module (calculé comme une Viewbox), l'ensemble garde sa désignation.
     # parents : entité → transformation monde de son parent (Viewbox et objets d'un ensemble ; absent = haut du modèle).
     # how : Viewbox → 'nom' | 'manuel' | 'type' | 'taille' | 'ensemble' (reconnue par…).
+    # box_parts : objets d'un ensemble marqué « Viewbox » posés à côté de ses Viewbox (escalier, lampes…) : sans
+    # catégorie, ils font partie de la Viewbox (1.5.1).
     Analysis = Struct.new(:named, :candidates, :groups_as_modules, :duplicates, :attached, :orphans, :context,
                           :common, :others, :levels, :parents, :how, :assemblies, :assembly_of, :shared, :multiples,
-                          keyword_init: true)
+                          :box_parts, keyword_init: true)
     # Ensemble de Viewbox : l'objet, ses Viewbox, ses autres objets (escalier, garde-corps…).
     Assembly = Struct.new(:entity, :modules, :items, keyword_init: true)
 
@@ -358,6 +365,9 @@ module Viewbox
       # objets d'un ensemble : contexte / ignorés à part, éléments communs, sinon posés sur ses Viewbox
       loose_context = loose.select { |e| C.context?(label(e)) || ignored?(e) }
       loose_common = (loose - loose_context).select { |e| C.common?(label(e)) }
+      # ceux d'un ensemble marqué « Viewbox » font partie de la Viewbox
+      box_parts = {}
+      assemblies.select { |x| viewbox_marked?(x.entity) }.each { |x| (x.items - loose_context - loose_common).each { |e| box_parts[e] = true } }
       zs = modules.map { |e| mm(world_bbox(e, parents[e] || IDENTITY).min.z) }
       levels = modules.zip(C.group_levels(zs)).to_h
       # Viewbox marquée d'un seul bloc qui en fait plusieurs (ex. deux Viewbox superposées) : calculée comme une seule
@@ -370,7 +380,22 @@ module Viewbox
                    duplicates: duplicates, attached: attached + (loose - loose_context - loose_common), orphans: orphans,
                    context: context + loose_context, common: common + loose_common, others: others - attached - orphans,
                    levels: levels, parents: parents, how: how, assemblies: assemblies, assembly_of: assembly_of,
-                   shared: shared, multiples: multiples)
+                   shared: shared, multiples: multiples, box_parts: box_parts)
+    end
+
+    # Viewbox marquée à la main (catégorie VIEWBOX), seule ou dans un ensemble marqué (même numérotée VBX-xx depuis) :
+    # ce qu'elle contient sans catégorie fait partie de la Viewbox — lampes, plancher bois, escalier… —, rien à classer.
+    def self.marked_box?(a, m)
+      return true if viewbox_marked?(m)
+      asm = a.assembly_of && a.assembly_of[m]
+      !asm.nil? && viewbox_marked?(asm.entity)
+    end
+
+    # Catégorie d'un objet hors des Viewbox (libre, commun, objet d'un ensemble) : un objet sans catégorie d'un ensemble
+    # marqué « Viewbox » fait partie de la Viewbox.
+    def self.item_category(a, e)
+      cat = category_for(e)
+      cat.first.nil? && a.box_parts && a.box_parts[e] ? [C::VIEWBOX, PART_SOURCE] : cat
     end
 
     # Désignation d'un ensemble : saisie, sinon son nom (nom d'instance, ou de composant ; un groupe sans nom n'en a pas).
@@ -418,7 +443,8 @@ module Viewbox
 
     # Parcourt les objets d'un module : yield(entité, catégorie, source, transformation monde du parent).
     # Un groupe non classé qui contient des objets classés est "ouvert" ; les objets ignorés sont sautés.
-    def self.each_item(entities, parent_tr, depth = 0, &block)
+    # part : Viewbox marquée « C'est une Viewbox » (marked_box?) — un objet sans catégorie en fait partie (VIEWBOX).
+    def self.each_item(entities, parent_tr, depth = 0, part: false, &block)
       @textile_cache = {} if depth.zero? # cadres textile cherchés une fois par parcours
       entities.each do |e|
         next unless container?(e)
@@ -428,7 +454,9 @@ module Viewbox
         if cat || textile_marked?(e)
           yield(e, cat, source, parent_tr)
         elsif depth < 3 && classified_inside?(definition_of(e))
-          each_item(definition_of(e).entities, parent_tr * e.transformation, depth + 1, &block)
+          each_item(definition_of(e).entities, parent_tr * e.transformation, depth + 1, part: part, &block)
+        elsif part
+          yield(e, C::VIEWBOX, PART_SOURCE, parent_tr)
         else
           yield(e, nil, nil, parent_tr)
         end
@@ -437,10 +465,10 @@ module Viewbox
 
     def self.unclassified_types(model, a)
       types = {}
-      (a.named + a.candidates).map { |m| definition_of(m) }.uniq.each do |d|
-        each_item(d.entities, IDENTITY) { |e, cat, _s, _t| types[definition_of(e)] = true if cat.nil? }
+      (a.named + a.candidates).map { |m| [definition_of(m), marked_box?(a, m)] }.uniq.each do |d, part|
+        each_item(d.entities, IDENTITY, part: part) { |e, cat, _s, _t| types[definition_of(e)] = true if cat.nil? }
       end
-      (a.attached + a.others).each { |e| types[definition_of(e)] = true if category_for(e).first.nil? }
+      (a.attached + a.others).each { |e| types[definition_of(e)] = true if item_category(a, e).first.nil? }
       types.size
     end
 
@@ -450,8 +478,12 @@ module Viewbox
       lines = []
       lines << "Viewbox nommées (VBX-xx) : #{a.named.size}"
       lines << "Viewbox à nommer (reconnues à leur taille, à leur type ou marquées « Viewbox ») : #{a.candidates.size}" if a.candidates.any?
-      marked = (a.named + a.candidates).count { |m| %w[manuel ensemble].include?(a.how[m]) || a.assembly_of[m] }
-      lines << "dont Viewbox marquées à la main ou dans un ensemble : #{marked}" if marked > 0
+      marked = (a.named + a.candidates).count { |m| %w[manuel ensemble].include?(a.how[m]) || a.assembly_of[m] || marked_box?(a, m) }
+      parts =(a.named + a.candidates).count { |m| marked_box?(a, m) }
+      if marked > 0
+        lines << "dont Viewbox marquées à la main ou dans un ensemble : #{marked}" \
+                 "#{parts > 0 ? " — ce qu'elles contiennent sans catégorie (lampes, plancher, escalier…) fait partie de la Viewbox, rien à classer" : ''}"
+      end
       a.assemblies.select { |x| x.modules.any? }.each do |x|
         ids = x.modules.map { |m| C.module_id(m.name) || 'à numéroter' }
         lines << "Ensemble « #{assembly_label(x.entity) || label(x.entity)} » : #{x.modules.size} Viewbox (#{ids.join(', ')}), calculées chacune comme une Viewbox" \
@@ -576,7 +608,7 @@ module Viewbox
           wtr = world_tr(a, m)
           tr = wtr.to_a.each_with_index.map { |v, i| [12, 13, 14].include?(i) ? (v * C::MM_PER_INCH).round(3) : v.round(9) }
           items = []
-          each_item(defn.entities, wtr) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr, m) }
+          each_item(defn.entities, wtr, part: marked_box?(a, m)) { |e, cat, source, parent_tr| items << entry.call(e, cat, source, parent_tr, m) }
           asm = a.assembly_of[m] && asm_rows[a.assembly_of[m]]
           {
             'id' => C.module_id(m.name), 'definition' => defn.name.to_s, 'tag' => tag_name(m), 'level' => a.levels[m] || 0,
@@ -594,7 +626,7 @@ module Viewbox
           }
         end,
         'common' => (a.common + a.attached + a.orphans + a.others).map do |e|
-          cat, source = category_for(e)
+          cat, source = item_category(a, e)
           entry.call(e, cat, source, parent_tr(a, e))
         end,
         # ensembles de Viewbox : un objet qui contient plusieurs Viewbox (chacune est un module ci-dessus)
@@ -689,7 +721,10 @@ module Viewbox
       zip_path = File.join(dir, "#{base}.zip")
       Sketchup.status_text = 'Viewbox : export .dae en cours…'
       count, manifest = export_zip(model, a, zip_path, base)
-      manual = (manifest['modules'].flat_map { |m| m['accessories'] } + manifest['common']).count { |x| x['categorySource'] == 'manuel' }
+      all_items = manifest['modules'].flat_map { |m| m['accessories'] } + manifest['common']
+      manual = all_items.count { |x| x['categorySource'] == 'manuel' }
+      box_parts = all_items.count { |x| x['categorySource'] == PART_SOURCE }
+      uniq_text += " · objets qui font partie d'une Viewbox marquée : #{box_parts}" if box_parts > 0
       report = ["Export VEM — #{Time.now.strftime('%d/%m/%Y %H:%M')}", "Fichier : #{zip_path} (#{count} fichiers)",
                 "Viewbox numérotées : #{renamed_modules} · objets avec un choix manuel : #{manual}#{uniq_text}", '', *report_lines(a)].join("\n")
       File.write(File.join(dir, "#{base}_rapport.txt"), report)
@@ -835,6 +870,95 @@ module Viewbox
       selection.select { |e| (a.named + a.candidates).include?(e) || a.assemblies.any? { |x| x.entity == e } }
     end
 
+    # ─── « Retirer les catégories » : remettre en automatique (tout le modèle, ou la sélection) ───
+
+    CLEAR_WHERE = ['Tout le modèle', 'La sélection et tout ce qu’elle contient'].freeze
+    CLEAR_WHAT = ['Les catégories choisies à la main (garder « C’est une Viewbox » et les cadres textile)',
+                  'Toutes, y compris « C’est une Viewbox » et les cadres textile'].freeze
+    CLEAR_LABELS = ['Les garder', 'Les retirer aussi'].freeze
+
+    # Objets et types (définitions) concernés : [objets, définitions]. Tout le modèle (y compris les composants pas
+    # posés), ou les objets donnés et tout ce qu'ils contiennent (à toute profondeur).
+    def self.clear_targets(model, roots = nil)
+      unless roots
+        defs = model.definitions.to_a
+        insts = model.entities.select { |e| container?(e) } + defs.flat_map { |d| d.entities.select { |c| container?(c) } }
+        return [insts.uniq, defs]
+      end
+      defs = {}
+      insts = []
+      stack = roots.select { |e| container?(e) }
+      until stack.empty?
+        e = stack.pop
+        insts << e
+        d = definition_of(e)
+        next if defs[d]
+        defs[d] = true
+        d.entities.each { |c| stack << c if container?(c) }
+      end
+      [insts.uniq, defs.keys]
+    end
+
+    # Retire les choix manuels (catégorie, dont « Ignorer ») : tout redevient automatique (balise / nom). everything :
+    # aussi « C'est une Viewbox » (catégorie VIEWBOX) et les cadres textile (catégorie Frame + marque) ; labels : aussi
+    # les désignations et réf. articles. Numéros VBX-xx, types de structure, dimensions nominales et repères F1… ne
+    # changent pas. Une seule opération (Ctrl+Z). Retourne { 'types', 'objects', 'values' } (ce qui a été retiré).
+    def self.clear_categories(model, roots: nil, everything: false, labels: false)
+      insts, defs = clear_targets(model, roots)
+      keys = labels ? %w[userCategory userLabel userArticleRef] : %w[userCategory]
+      keys += ['textileFrame'] if everything
+      kept = ->(key, value) { key == 'userCategory' && !everything && ([C::VIEWBOX] + C::FRAME_CATEGORIES).include?(C.category_key(value)) }
+      count = { 'types' => 0, 'objects' => 0, 'values' => 0 }
+      model.start_operation('Viewbox : retirer les catégories', true)
+      begin
+        [[defs, 'types'], [insts, 'objects']].each do |list, kind|
+          list.each do |t|
+            n = 0
+            keys.each do |key|
+              v = t.get_attribute(DICT, key)
+              next if v.nil? || kept.call(key, v.to_s)
+              t.delete_attribute(DICT, key)
+              n += 1
+            end
+            next if n.zero?
+            count[kind] += 1
+            count['values'] += n
+          end
+        end
+        model.commit_operation
+      rescue StandardError
+        model.abort_operation
+        raise
+      end
+      count
+    end
+
+    # Fenêtre « Retirer les catégories » ; from_selection : ouverte par le clic droit (la sélection proposée d'abord).
+    def self.clear_categories_dialog(model, selection = [], from_selection: false)
+      sel = selection.select { |e| container?(e) }
+      wheres = sel.empty? ? [CLEAR_WHERE[0]] : CLEAR_WHERE
+      res = UI.inputbox(['Où', 'Catégories à retirer', 'Désignations et réf. articles'],
+                        [from_selection && sel.any? ? CLEAR_WHERE[1] : CLEAR_WHERE[0], CLEAR_WHAT[0], CLEAR_LABELS[0]],
+                        [wheres.join('|'), CLEAR_WHAT.join('|'), CLEAR_LABELS.join('|')],
+                        'Viewbox — retirer les catégories (tout remettre en automatique)')
+      return unless res
+      everything = res[1] == CLEAR_WHAT[1]
+      n = clear_categories(model, roots: res[0] == CLEAR_WHERE[1] ? sel : nil, everything: everything, labels: res[2] == CLEAR_LABELS[1])
+      text =
+        if n['values'].zero?
+          'Rien à retirer : aucune catégorie choisie à la main ici.'
+        else
+          "✓ #{n['values']} choix retiré(s) sur #{n['types']} type(s) de composants et #{n['objects']} objet(s).\n\n" \
+            "Tout est de nouveau en automatique (catégorie lue dans la balise ou le nom, objets « Ignorer » de nouveau exportés)." \
+            "#{everything ? '' : "\n« C’est une Viewbox » et les cadres textile sont gardés."}\n" \
+            "Les numéros VBX-xx, types de structure et repères F1… ne changent pas.\n\nAnnulable avec Ctrl+Z."
+        end
+      UI.messagebox("Viewbox — retirer les catégories\n\n#{text}")
+      n
+    rescue StandardError => e
+      fail_with(e)
+    end
+
     # Structure d'une ou plusieurs Viewbox (attribut d'instance : deux instances d'un même composant peuvent différer).
     # Seules les valeurs hors standard sont gardées ; VEM les reprend sans poser de question.
     def self.edit_structure(model, selection)
@@ -893,6 +1017,7 @@ module Viewbox
       menu = UI.menu('Extensions').add_submenu('Viewbox')
       menu.add_item('Contrôler le modèle') { control_only }
       menu.add_item('Réviser les catégories…') { show_review_dialog }
+      menu.add_item('Retirer les catégories (tout en automatique)…') { clear_categories_dialog(Sketchup.active_model, Sketchup.active_model.selection.to_a) }
       menu.add_item('Préparer & exporter pour VEM…') { prepare_and_export }
       menu.add_item('Structure des Viewbox sélectionnées…') { edit_structure(Sketchup.active_model, Sketchup.active_model.selection.select { |e| container?(e) }) }
       menu.add_item('Structure de la box (profils)…') { show_frame_dialog }
@@ -903,6 +1028,7 @@ module Viewbox
         next if sel.empty?
         sub = context_menu.add_submenu('Viewbox')
         sub.add_item('Catégorie / désignation…') { edit_selection(model, sel) }
+        sub.add_item('Retirer les catégories (et de ce qu’il contient)…') { clear_categories_dialog(model, sel, from_selection: true) }
         # Viewbox quel que soit son nom (ex. « Escalier intérieur » : calculée comme une Viewbox, ou comme les Viewbox
         # qu'elle contient), catégorie VIEWBOX
         if sel.all? { |e| viewbox_entity?(e) }
@@ -918,7 +1044,9 @@ module Viewbox
         else
           sub.add_item('C’est une Viewbox') do
             mark_viewbox(model, sel)
-            UI.messagebox("Viewbox — catégorie VIEWBOX\n\n#{viewbox_status_lines(model, sel).join("\n\n")}\n\nDésignation : clic droit › Viewbox › Catégorie / désignation…")
+            UI.messagebox("Viewbox — catégorie VIEWBOX\n\n#{viewbox_status_lines(model, sel).join("\n\n")}\n\n" \
+                          "Ce qu'elle contient sans catégorie (lampes, plancher bois, escalier…) fait partie de la Viewbox : rien à classer.\n\n" \
+                          'Désignation : clic droit › Viewbox › Catégorie / désignation…')
           rescue StandardError => e
             fail_with(e)
           end

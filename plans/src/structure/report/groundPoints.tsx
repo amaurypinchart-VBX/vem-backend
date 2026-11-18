@@ -13,7 +13,7 @@ import type { SheetInfo } from './groundSheet';
 import { GroundPlan, planPlates, wrap } from './groundSheet';
 import type { Lang } from './i18n';
 import { num } from './i18n';
-import { CALAGE_LABELS, LEVEL_LABELS } from './calageI18n';
+import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import type { LevelSurvey } from '../core/groundLevels';
 import { formatLevel } from '../core/groundLevels';
 import { translate } from './translate';
@@ -230,16 +230,17 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
         text={2.2}
         axes
         plates={checks?.length ? planPlates(checks, { remedy, slab, lang }) : undefined}
-        zoneFill={(m) => (zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
+        // solution retenue (madriers) : pas de teinte « pression sous plaques de roulage », qui ne s'applique pas
+        zoneFill={(m) => (!remedy && zoneOf.get(m.id) ? pressureFill(zoneOf.get(m.id)!.eta) : undefined)}
         zoneLabel={(m, levels) => {
-          const z = zoneOf.get(m.id);
+          const z = remedy ? undefined : zoneOf.get(m.id);
           return z ? [`${n1(kNm2(z.q), 1)} kN/m²`, C.levels(levels)] : [C.levels(levels)];
         }}
       />
     </g>,
   );
   y += planH + 5.5;
-  const legend = wrap(C.coordsLegend, 140);
+  const legend = wrap(remedy ? TIMBER_LABELS[lang].coordsLegend : C.coordsLegend, 140);
   if (withLevels) {
     const V = LEVEL_LABELS[lang];
     const extra = [V.legend, V.ref(formatLevel(levels!.ref!), levels!.refIds.join(', '))];
@@ -255,39 +256,59 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     ),
   );
   y += legend.length * 3 + 3;
-  first.push(<g key="t2">{title(C.roadwayTitle, y)}</g>);
-  y += 5;
-  const v = (eta: number) => C.verdictText[verdictOf(eta)];
-  const lines: Array<[string, string]> = [
-    [R.area, R.areaValue(n1(roadway.area / 1e6, 2))],
-    [R.load, R.loadValue(n1(roadway.load / 1e3, 0), n1(roadway.load / 9.81e3, 1))],
-    [R.plates, roadway.plates > 0 ? `${n1(kNm2(roadway.plates), 2)} kN/m² (${n1(kgm2(roadway.plates), 0)} kg/m²)` : R.notCounted],
-    [R.mean, `${n1(kNm2(roadway.mean), 2)} kN/m² (${n1(kgm2(roadway.mean), 0)} kg/m²) — ${R.bearing} ${bearingLabel} : η = ${n1(roadway.etaMean, 2)} ${v(roadway.etaMean)}`],
-  ];
-  if (roadway.max)
-    lines.push([R.worst, `${roadway.max.stack.join(' + ')} : ${n1(kNm2(roadway.max.q), 2)} kN/m² (${n1(kgm2(roadway.max.q), 0)} kg/m²) — η = ${n1(roadway.etaMax, 2)} ${v(roadway.etaMax)}`]);
-  lines.forEach(([k, t], i) =>
-    first.push(
-      <g key={`r${i}`}>
-        <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={2.6} fill="#6b7280">
-          {k}
-        </text>
-        <text fontFamily={FONT_SANS} x={M + 42} y={y + i * 3.6} fontSize={2.6} fill="#111827" fontWeight={k === R.mean ? 700 : undefined}>
-          {t}
-        </text>
-      </g>,
-    ),
-  );
-  y += lines.length * 3.6 + 1;
-  const note = C.roadwayNote;
-  for (const [k, line] of wrap(note, 130).entries()) {
-    first.push(
-      <text fontFamily={FONT_SANS} key={`n${k}`} x={M} y={y + k * 3.2} fontSize={2.3} fill="#374151">
-        {line}
-      </text>,
+  if (remedy) {
+    // solution retenue (grille / plateau de madriers) : ce qui est posé, couche par couche, et comment le poser
+    const T = TIMBER_LABELS[lang];
+    first.push(<g key="t2">{title(`2. ${T.chosen}${lang === 'fr' ? ' : ' : ': '}${E(remedy.remedy.title)}`, y)}</g>);
+    y += 5;
+    const pieces = remedy.outlines.flatMap((o) => (o.timber ? [o.timber] : []));
+    const ground = timberGroundText(lang, remedy.outlines, !!slab);
+    const items = [E(remedy.remedy.summary), ...timberLegend(lang, pieces).map((l) => l.text), ...(ground ? [ground] : []), T.laying(pieces.some((p) => p.system === 'platform') ? 'platform' : 'grid', pieces.some((p) => p.layer === 'upper'))];
+    for (const [i, t] of items.entries())
+      for (const [k, line] of wrap(t, 130).entries()) {
+        first.push(
+          <text fontFamily={FONT_SANS} key={`rm${i}-${k}`} x={M + (k ? 3 : 0)} y={y} fontSize={2.4} fill={i ? '#374151' : '#111827'} fontWeight={i ? undefined : 700}>
+            {k ? line : `• ${line}`}
+          </text>,
+        );
+        y += 3.2;
+      }
+    y += 3;
+  } else {
+    first.push(<g key="t2">{title(C.roadwayTitle, y)}</g>);
+    y += 5;
+    const v = (eta: number) => C.verdictText[verdictOf(eta)];
+    const lines: Array<[string, string]> = [
+      [R.area, R.areaValue(n1(roadway.area / 1e6, 2))],
+      [R.load, R.loadValue(n1(roadway.load / 1e3, 0), n1(roadway.load / 9.81e3, 1))],
+      [R.plates, roadway.plates > 0 ? `${n1(kNm2(roadway.plates), 2)} kN/m² (${n1(kgm2(roadway.plates), 0)} kg/m²)` : R.notCounted],
+      [R.mean, `${n1(kNm2(roadway.mean), 2)} kN/m² (${n1(kgm2(roadway.mean), 0)} kg/m²) — ${R.bearing} ${bearingLabel} : η = ${n1(roadway.etaMean, 2)} ${v(roadway.etaMean)}`],
+    ];
+    if (roadway.max)
+      lines.push([R.worst, `${roadway.max.stack.join(' + ')} : ${n1(kNm2(roadway.max.q), 2)} kN/m² (${n1(kgm2(roadway.max.q), 0)} kg/m²) — η = ${n1(roadway.etaMax, 2)} ${v(roadway.etaMax)}`]);
+    lines.forEach(([k, t], i) =>
+      first.push(
+        <g key={`r${i}`}>
+          <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={2.6} fill="#6b7280">
+            {k}
+          </text>
+          <text fontFamily={FONT_SANS} x={M + 42} y={y + i * 3.6} fontSize={2.6} fill="#111827" fontWeight={k === R.mean ? 700 : undefined}>
+            {t}
+          </text>
+        </g>,
+      ),
     );
+    y += lines.length * 3.6 + 1;
+    const note = C.roadwayNote;
+    for (const [k, line] of wrap(note, 130).entries()) {
+      first.push(
+        <text fontFamily={FONT_SANS} key={`n${k}`} x={M} y={y + k * 3.2} fontSize={2.3} fill="#374151">
+          {line}
+        </text>,
+      );
+    }
+    y += wrap(note, 130).length * 3.2 + 4;
   }
-  y += wrap(note, 130).length * 3.2 + 4;
   // références réglementaires du calage (Prüfbuch TÜV)
   if (checks?.length && !noTuv) {
     first.push(<g key="tl">{title(C.legalTitle, y)}</g>);

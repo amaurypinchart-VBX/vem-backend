@@ -8,7 +8,10 @@ import { ingest } from '../src/ingest/pipeline';
 import { inlineRunner } from '../src/ingest/cleanup';
 import { DEFAULT_RULES, categoryFromName, compileRules, mergeRules } from '../src/core/classification';
 import { makeLookup } from '../src/core/subset';
-import { missingData, proposeFor } from '../src/structure/core/recognition';
+import { missingData, proposeFor, recognize } from '../src/structure/core/recognition';
+import { mergeLibrary } from '../src/structure/core/libraryStore';
+import { SEED } from '../src/structure/library/seed';
+import { isBoxPart } from '../src/loading/topology/products';
 import { makeSketchupDae } from './fixtures/sketchupDae';
 
 const rules = compileRules(DEFAULT_RULES);
@@ -98,6 +101,22 @@ describe('ensemble de Viewbox (escalier intérieur = deux Viewbox superposées)'
     const st = index.nodes.find((n) => n.name === 'VBXE-21')!;
     expect([st.category, st.categorySource, st.role, st.assignment, st.moduleId]).toEqual(['ESCALIER-INTERIEUR', 'manifest', 'item', 'spatial', 'VBX-01']);
     expect(st.sourceName).toBe('Escalier intérieur 18 marches');
+  });
+
+  it('1.5.1 : un objet de l’ensemble marqué « partie de la Viewbox » est compris dans la box (étude structure, loading)', async () => {
+    // lampes, plancher bois, escalier… posés à côté des Viewbox d'un ensemble marqué : catégorie VIEWBOX dans le manifest
+    const m2 = { ...manifest, common: [{ ...manifest.common[0], category: 'VIEWBOX', categorySource: 'partie de la Viewbox' }] };
+    const z2 = zipSync({ 'x/esc.dae': strToU8(dae), 'x/manifest.json': strToU8(JSON.stringify(m2)) });
+    const { index: i2 } = await ingest({ fileName: 'esc.zip', data: z2.buffer as ArrayBuffer, sha256: 'test2', rules: DEFAULT_RULES, runner: inlineRunner });
+    const st = i2.nodes.find((n) => n.name === 'VBXE-21')!;
+    expect([st.category, st.assignment, st.moduleId]).toEqual(['VIEWBOX', 'spatial', 'VBX-01']);
+    const rec = recognize({ index: i2, look: makeLookup(i2), library: mergeLibrary(SEED, []), assignments: {} });
+    expect(rec.templateParts.get(st.id)).toBe('VBX-01');
+    expect(rec.types.some((t) => t.nodeIds.includes(st.id))).toBe(false); // pas de question
+    expect(isBoxPart(st)).toBe(true);
+    expect(isBoxPart({ ...st, articleRef: '4-730-007' })).toBe(false); // avec une réf. : un produit compté
+    // une autre catégorie rattachée par sa position reste un objet à part (pas le corps de la box)
+    expect(isBoxPart({ ...st, category: 'STRUCTURE' })).toBe(false);
   });
 
   it('sans manifest, l’objet qui contient des Viewbox n’est pas classé par son nom', async () => {

@@ -37,9 +37,11 @@ export function dedupeMirrors(nodes: NodeInfo[]): { kept: NodeInfo[]; mirrors: N
 }
 
 /** Pièces de la box elle-même (cadre, pieds, plancher, toit dans le composant de la Viewbox) : livrées avec la box. */
-// VIEWBOX : corps de la Viewbox classé d'un bloc dans SketchUp (extension ≥ 1.5.0), sans réf. = pièce de la box
+// VIEWBOX : corps de la Viewbox classé d'un bloc dans SketchUp (extension ≥ 1.5.0), sans réf. = pièce de la box ; aussi
+// rattachée par sa position (objet d'un ensemble marqué « C'est une Viewbox », extension ≥ 1.5.1 « partie de la Viewbox »)
 const BOX_PART_CATEGORIES = new Set(['STRUCTURE', 'PLANCHER', 'TOIT', 'PIED', 'VIEWBOX']);
-export const isBoxPart = (n: NodeInfo) => !n.articleRef && n.assignment === 'hierarchy' && !!n.category && BOX_PART_CATEGORIES.has(n.category);
+export const isBoxPart = (n: NodeInfo) =>
+  !n.articleRef && !!n.category && BOX_PART_CATEGORIES.has(n.category) && (n.assignment === 'hierarchy' || (n.assignment === 'spatial' && n.category === 'VIEWBOX'));
 
 export interface ProductCount {
   lines: ProductLine[];

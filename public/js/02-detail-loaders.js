@@ -739,6 +739,7 @@ async function loadHandovers() {
 }
 
 async function downloadHandoverPDF(id) {
+  if (typeof downloadHandoverPdf === 'function') return downloadHandoverPdf(id);
   toast('Génération PDF...', 'info');
   const r = await fetch(`${API}/reports/handover/${id}`, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
   if (r.ok) {

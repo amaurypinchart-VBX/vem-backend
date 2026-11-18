@@ -1627,6 +1627,99 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] split_files : ${e.message}`);
   }
+  // Handover : check-list de montage seulement en annexe (A. Pinchart 16.11.2026)
+  try {
+    await prisma.$executeRawUnsafe('ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "checklist_annex" BOOLEAN NOT NULL DEFAULT false');
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.checklist_annex : ${e.message}`);
+  }
+  // Handover : langue du lien de signature client (A. Pinchart 16.11.2026)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "signature_lang" TEXT NOT NULL DEFAULT 'fr'`);
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.signature_lang : ${e.message}`);
+  }
+  // Validation des plans par le client : demandes + journal (A. Pinchart 17.11.2026)
+  try {
+    for (const sql of [
+      `CREATE TABLE IF NOT EXISTS "plan_approvals" (
+        "id"                TEXT         NOT NULL,
+        "project_id"        TEXT         NOT NULL,
+        "ref"               TEXT         NOT NULL,
+        "token"             TEXT         NOT NULL,
+        "revision"          TEXT         NOT NULL,
+        "status"            TEXT         NOT NULL DEFAULT 'pending',
+        "lang"              TEXT         NOT NULL DEFAULT 'fr',
+        "message"           TEXT,
+        "source_file_id"    TEXT,
+        "file_name"         TEXT         NOT NULL,
+        "file_url"          TEXT         NOT NULL,
+        "file_public_id"    TEXT,
+        "file_size"         INTEGER      NOT NULL,
+        "file_sha256"       TEXT         NOT NULL,
+        "page_count"        INTEGER      NOT NULL,
+        "signer_name"       TEXT         NOT NULL,
+        "signer_email"      TEXT         NOT NULL,
+        "cc_emails"         JSONB        NOT NULL DEFAULT '[]',
+        "expires_at"        TIMESTAMP(3) NOT NULL,
+        "code_hash"         TEXT,
+        "code_expires_at"   TIMESTAMP(3),
+        "code_attempts"     INTEGER      NOT NULL DEFAULT 0,
+        "codes_sent"        INTEGER      NOT NULL DEFAULT 0,
+        "last_code_at"      TIMESTAMP(3),
+        "decided_at"        TIMESTAMP(3),
+        "signed_name"       TEXT,
+        "signed_title"      TEXT,
+        "signed_company"    TEXT,
+        "comment"           TEXT,
+        "signature_image"   TEXT,
+        "signed_ip"         TEXT,
+        "signed_user_agent" TEXT,
+        "signed_file_url"   TEXT,
+        "signed_file_id"    TEXT,
+        "signed_sha256"     TEXT,
+        "created_by"        TEXT,
+        "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "plan_approvals_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "plan_approvals_ref_key" ON "plan_approvals" ("ref")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "plan_approvals_token_key" ON "plan_approvals" ("token")`,
+      `CREATE INDEX IF NOT EXISTS "plan_approvals_project_id_idx" ON "plan_approvals" ("project_id")`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_approvals_project_id_fkey') THEN
+          ALTER TABLE "plan_approvals"
+            ADD CONSTRAINT "plan_approvals_project_id_fkey"
+            FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+      `CREATE TABLE IF NOT EXISTS "plan_approval_events" (
+        "id"          TEXT         NOT NULL,
+        "approval_id" TEXT         NOT NULL,
+        "kind"        TEXT         NOT NULL,
+        "at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "ip"          TEXT,
+        "user_agent"  TEXT,
+        "by_user_id"  TEXT,
+        "detail"      TEXT,
+        CONSTRAINT "plan_approval_events_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE INDEX IF NOT EXISTS "plan_approval_events_approval_id_at_idx" ON "plan_approval_events" ("approval_id", "at")`,
+      `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_approval_events_approval_id_fkey') THEN
+          ALTER TABLE "plan_approval_events"
+            ADD CONSTRAINT "plan_approval_events_approval_id_fkey"
+            FOREIGN KEY ("approval_id") REFERENCES "plan_approvals"("id")
+            ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$`,
+    ])
+      await prisma.$executeRawUnsafe(sql);
+    logger.info('[migration] tables plan_approvals / plan_approval_events créées si absentes');
+  } catch (e: any) {
+    logger.warn(`[migration] plan_approvals : ${e.message}`);
+  }
   await migrateBriefingNext();
 }
 

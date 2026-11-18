@@ -3,7 +3,9 @@
 # corrige la catégorie proposée (dont VIEWBOX : « c'est une Viewbox »), saisit une désignation et une réf. article, et,
 # pour les Viewbox, leur désignation, leur type et leurs dimensions nominales ; les ensembles de Viewbox (un objet qui
 # en contient plusieurs, ex. « Escalier intérieur ») ont leur désignation. Tout est enregistré en attributs sur les définitions
-# (Ctrl+Z annule l'enregistrement en une fois).
+# (Ctrl+Z annule l'enregistrement en une fois). Ce qui n'a pas de catégorie dans une Viewbox marquée « C'est une Viewbox »
+# en fait partie (« partie de la Viewbox », pas à classer) ; « ↺ Remettre en automatique » vide les catégories des
+# lignes affichées (1.5.1).
 
 module Viewbox
   module Prep
@@ -39,7 +41,8 @@ module Viewbox
         }
       end
       rows = {}
-      add = lambda do |e, count, scope|
+      parts = Hash.new(0) # objets d'un type qui sont dans une Viewbox marquée « C'est une Viewbox »
+      add = lambda do |e, count, scope, part = false|
         d = definition_of(e)
         row = rows[d] ||= begin
           auto, source = auto_category(e)
@@ -57,14 +60,25 @@ module Viewbox
         row['count'] += count
         row['tags'] |= [tag_name(e)]
         row['individual'] += count unless blank?(e.get_attribute(DICT, 'userCategory'))
+        parts[d] += count if part
       end
-      modules.group_by { |m| definition_of(m) }.each do |d, inst|
-        d.entities.each { |c| add.call(c, inst.size, 'Viewbox') if container?(c) }
+      modules.group_by { |m| [definition_of(m), marked_box?(a, m)] }.each do |(d, part), inst|
+        d.entities.each { |c| add.call(c, inst.size, 'Viewbox', part) if container?(c) }
       end
-      (a.common + a.attached + a.orphans + a.others).each { |e| add.call(e, 1, 'libre') }
+      (a.common + a.attached + a.orphans + a.others).each { |e| a.box_parts[e] ? add.call(e, 1, 'Viewbox', true) : add.call(e, 1, 'libre') }
       a.context.select { |e| ignored?(e) }.each { |e| add.call(e, 1, 'libre') }
-      # Les types à classer d'abord, puis par portée et par nom.
-      components = rows.values.sort_by { |r| [r['auto'].nil? && r['category'].to_s.empty? ? 0 : 1, r['scope'], r['name'].downcase] }
+      # sans catégorie, et seulement dans des Viewbox marquées : fait partie de la Viewbox (pas à classer)
+      rows.each do |d, r|
+        next unless r['auto'].nil? && parts[d] == r['count']
+        r['auto'] = C::VIEWBOX
+        r['autoSource'] = PART_SOURCE
+        r['part'] = true
+      end
+      # Les types à classer d'abord, les pièces des Viewbox marquées à la fin, puis par portée et par nom.
+      components = rows.values.sort_by do |r|
+        rank = r['auto'].nil? && r['category'].to_s.empty? ? 0 : r['part'] && r['category'].to_s.empty? ? 2 : 1
+        [rank, r['scope'], r['name'].downcase]
+      end
       categories = (C::CATEGORIES + custom_categories(model)).uniq
       { 'modules' => module_rows, 'assemblies' => assembly_rows, 'components' => components, 'categories' => categories, 'version' => VERSION }
     end

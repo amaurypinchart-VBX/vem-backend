@@ -263,7 +263,9 @@ export function recognize(input: RecognitionInput): Recognition {
   for (const n of index.nodes) {
     if (n.role !== 'item') continue;
     const c = look.categoryOf(n.id);
-    if (n.moduleId && n.assignment === 'hierarchy' && c && TEMPLATE_CATEGORIES.has(c)) {
+    // VIEWBOX rattachée par sa position : objet d'un ensemble marqué « C'est une Viewbox » posé à côté de ses Viewbox
+    // (lampes, plancher, escalier… — extension SketchUp ≥ 1.5.1, « partie de la Viewbox »), compris dans la box
+    if (n.moduleId && (n.assignment === 'hierarchy' || (n.assignment === 'spatial' && c === 'VIEWBOX')) && c && TEMPLATE_CATEGORIES.has(c)) {
       templateParts.set(n.id, n.moduleId);
       continue;
     }

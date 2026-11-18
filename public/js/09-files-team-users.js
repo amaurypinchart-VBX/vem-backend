@@ -903,8 +903,11 @@ async function editHandoverFields(handoverId, projectId) {
           <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">✍️ Page 2 — Signatures</div>
 
           <div class="form-group2">
-            <label class="form-label2">Comments / Reservations</label>
-            <textarea clasid="hf-comments" rows="3"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <label class="form-label2" style="margin:0;">Comments / Reservations</label>
+              ${(h.items||[]).some(i => i.status !== 'ok') ? `<button type="button" class="btn btn-ghost btn-xs" onclick="fillHandoverReservationsFromZones()" title="Ajoute les zones en remarque / défaut / en attente">↺ Reprendre les zones avec remarque</button>` : ''}
+            </div>
+            <textarea class="input" id="hf-comments" rows="3" placeholder="Remarques ou réserves du client (section « Remarques / Réservations » du PDF, au-dessus des signatures)"></textarea>
           </div>
 
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin:10px 0 8px;">CLIENT</div>
@@ -931,6 +934,17 @@ async function editHandoverFields(handoverId, projectId) {
             </div>
           </div>
         </div>
+
+        <!-- Check-list de montage : dans le document ou seulement en annexe -->
+        ${h.checklistSummary ? `
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:10px;">☑️ Check-list de montage</div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
+            <input type="checkbox" id="hf-checklistAnnex" ${h.checklistAnnex ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;flex-shrink:0;">
+            📎 Mettre la check-list en annexe du PDF (après les signatures)
+          </label>
+          <div style="font-size:12px;color:var(--text3);margin-top:6px;">Coché : un court rappel après les zones, la check-list complète à la fin. Pris en compte avec « 💾 Sauvegarder ».</div>
+        </div>` : ''}
 
         <!-- Zones d'inspection -->
         ${(h.items||[]).length ? `
@@ -961,14 +975,23 @@ async function editHandoverFields(handoverId, projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  // Populate comments textarea safely
-  const commentsTA = document.getElementById('hf-comments-area');
+  // Remarques / réserves = generalNotes du handover (PDF, fiche, page de signature) ; valeur posée en JS (pas d'injection HTML)
+  const commentsTA = document.getElementById('hf-comments');
   if (commentsTA) {
-    const existingComments = f['comments'] !== undefined ? f['comments'] : 
-      (h.items||[]).filter(i=>i.status!=='ok').map(i=>'• '+i.zoneName+(i.comment?' — '+i.comment:'')).join('\n');
-    commentsTA.value = existingComments;
+    commentsTA.value = h.generalNotes || f.comments || '';
+    commentsTA._zones = h.items || []; // pour « ↺ Reprendre les zones avec remarque »
   }
   // Pas de fermeture au clic sur le fond (voir 03-create-forms.js) — évite la perte de saisie sur un scroll/swipe mobile mal interprété.
+}
+
+// « ✏️ Modifier » : ajoute aux remarques / réserves les zones en remarque / défaut / en attente
+function fillHandoverReservationsFromZones() {
+  const ta = document.getElementById('hf-comments');
+  if (!ta) return;
+  const lines = (ta._zones || []).filter(i => i.status !== 'ok')
+    .map(i => '• ' + i.zoneName + (i.comment ? ' — ' + i.comment : ''));
+  if (!lines.length) return;
+  ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + lines.join('\n');
 }
 
 async function updateHandoverItemStatus(itemId, handoverId, status) {
@@ -995,8 +1018,11 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
     customFields: fields,
     clientName: fields.clientName || undefined,
     clientEmail: fields.clientContactEmail || undefined,
-    generalNotes: document.getElementById('hf-projectSummary')?.value || undefined,
+    // « Comments / Reservations » → remarques / réserves du PDF (vide = aucune)
+    generalNotes: document.getElementById('hf-comments') ? (document.getElementById('hf-comments').value.trim() || null) : undefined,
     scopeOfWork: document.getElementById('hf-scope')?.value || null,
+    // check-list de montage en annexe (absent quand le projet n'a pas de check-list)
+    checklistAnnex: document.getElementById('hf-checklistAnnex') ? document.getElementById('hf-checklistAnnex').checked : undefined,
   });
   if (res?.success) {
     toast('Handover mis à jour ✅','success');
@@ -1006,18 +1032,48 @@ async function saveHandoverFields(handoverId, projectId, overlay) {
 }
 
 // ── Lien de signature client (sans compte) ──
-async function generateSignatureLink(handoverId, force = false) {
+// Choix de la langue du lien de signature : page de signature, PDF signé et e-mail envoyé après la signature.
+// Dernier choix gardé dans localStorage « vem_sign_lang ».
+function askSignatureLang(handoverId, force) {
+  let last = 'fr';
+  try { last = localStorage.getItem('vem_sign_lang') === 'en' ? 'en' : 'fr'; } catch (e) {}
+  const btn = (lang, label) => `<button class="btn ${lang === last ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:14px;font-size:15px;"
+      onclick="this.closest('.overlay').remove();generateSignatureLink('${handoverId}', ${force ? 'true' : 'false'}, '${lang}')">${label}</button>`;
+  const el = document.createElement('div');
+  el.className = 'overlay open';
+  el.innerHTML = `
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-head">
+        <div class="modal-title">🌐 Langue du lien de signature</div>
+        <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5;">
+        Langue de la page que le client verra pour signer, du PDF signé et de l’e-mail envoyé après la signature.
+      </div>
+      <div style="display:flex;gap:10px;">
+        ${btn('fr', '🇫🇷 Français')}
+        ${btn('en', '🇬🇧 English')}
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+async function generateSignatureLink(handoverId, force = false, lang = null) {
+  // 0. Langue d'abord (page de signature + PDF signé + e-mail)
+  if (lang !== 'fr' && lang !== 'en') { askSignatureLang(handoverId, force); return; }
+  try { localStorage.setItem('vem_sign_lang', lang); } catch (e) {}
   // 1. Demande un nouveau token au backend (invalide tout token précédent)
   toast('Génération du lien...', 'info');
-  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`, force ? { force: true } : undefined);
+  const tokenRes = await api('POST', `/handover/${handoverId}/signature-token`, force ? { force: true, lang } : { lang });
   // Check-list de montage incomplète : avertissement, « Générer quand même » pour admin / technical manager (js/15-checklists.js)
-  if (tokenRes && !tokenRes.success && tokenRes.data?.checklist) { showChecklistSignatureWarning(handoverId, tokenRes.data); return; }
-  if (!tokenRes?.success) { toast('Erreur génération du lien', 'error'); return; }
+  if (tokenRes && !tokenRes.success && tokenRes.data?.checklist) { showChecklistSignatureWarning(handoverId, { ...tokenRes.data, lang }); return; }
+  if (!tokenRes?.success) { toast(tokenRes?.error || 'Erreur génération du lien', 'error'); return; }
   const token = tokenRes.data.token;
+  const en = (tokenRes.data.lang || lang) === 'en';
 
-  // 2. Construit le lien complet vers la page publique
+  // 2. Construit le lien complet vers la page publique (?lang=en : la page s'affiche en anglais dès le chargement)
   const baseUrl = window.location.origin;
-  const link = `${baseUrl}/sign-handover.html?token=${token}`;
+  const link = `${baseUrl}/sign-handover.html?token=${token}${en ? '&lang=en' : ''}`;
 
   // 3. Modal d'affichage du lien
   const overlay = document.createElement('div');
@@ -1029,7 +1085,7 @@ async function generateSignatureLink(handoverId, force = false) {
         <button class="modal-close" onclick="this.closest('.overlay').remove()">×</button>
       </div>
       <div style="background:rgba(45,198,83,.1);border:1px solid rgba(45,198,83,.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--green);">
-        ✅ Nouveau lien généré (les liens précédents pour ce handover sont désactivés)
+        ✅ Nouveau lien généré en <strong>${en ? '🇬🇧 anglais' : '🇫🇷 français'}</strong> (les liens précédents pour ce handover sont désactivés)
       </div>
       <div style="background:var(--bg3);border-radius:10px;padding:16px;margin-bottom:16px;">
         <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Envoyez ce lien au client :</div>
@@ -1046,7 +1102,9 @@ async function generateSignatureLink(handoverId, force = false) {
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Fermer</button>
-        <button class="btn btn-primary" onclick="window.open('mailto:?subject=Signature du handover&body=Bonjour,%0A%0AVeuillez signer le document via ce lien :%0A${encodeURIComponent(link)}%0A%0ACordialement,%0AL%27équipe VIEWBOX')">📧 Envoyer par email</button>
+        <button class="btn btn-primary" onclick="window.open('${en
+          ? `mailto:?subject=${encodeURIComponent('Handover signature')}&body=${encodeURIComponent('Hello,\n\nPlease sign the handover document using this link:\n' + link + '\n\nBest regards,\nThe VIEWBOX team').replace(/'/g, '%27')}`
+          : `mailto:?subject=${encodeURIComponent('Signature du handover')}&body=${encodeURIComponent('Bonjour,\n\nVeuillez signer le document via ce lien :\n' + link + '\n\nCordialement,\nL’équipe VIEWBOX').replace(/'/g, '%27')}`}')">📧 Envoyer par email</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);

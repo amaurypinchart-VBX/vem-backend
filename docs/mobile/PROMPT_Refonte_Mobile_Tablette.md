@@ -25,7 +25,7 @@ de commencer.
    petits utilitaires JS ; on remplace les `style="…"` **seulement là où on touche**, par des classes.
 3. **Un seul endroit par règle** : la mise en page tactile vit dans `public/css/responsive.css`
    (nouveau, chargé après `app.css` et `briefing-next.css`) ; la gestion des fenêtres / historique
-   dans `public/js/20-mobile-ui.js` (nouveau, chargé en dernier). Pas de nouveau `@media` dispersé
+   dans `public/js/21-mobile-ui.js` (nouveau, chargé en dernier). Pas de nouveau `@media` dispersé
    dans les scripts, sauf composants autonomes déjà ainsi (check-lists, WhatsApp).
 4. **Points de rupture** : téléphone `≤ 640 px`, tablette `641–1180 px`, ordinateur `> 1180 px` ;
    et, indépendamment de la largeur, `(pointer: coarse)` = doigt (cibles ≥ 44 px, pas de survol).
@@ -70,7 +70,7 @@ dont on n'atteint pas « Enregistrer », plus de sortie de l'app au geste retour
   passe à la ligne.
 
 ### 4.2 Fenêtres (M1–M8, S3, S5, C3, C4, A1)
-Dans `20-mobile-ui.js`, un **gestionnaire de fenêtres** unique :
+Dans `21-mobile-ui.js`, un **gestionnaire de fenêtres** unique :
 - Il repère toute fenêtre ouverte (`.overlay.open`, `.overlay` ajoutée au `body`, `.ap-ov`,
   `#clf-view`, Studios) par un `MutationObserver` — aucun écran n'a besoin d'être réécrit pour en
   profiter.
@@ -126,7 +126,7 @@ ordinateur identiques ; recette § 8 points 1 à 6 validée par A. Pinchart sur 
 `overflow-x: clip`, recherche / en-têtes de carte / rangées de boutons qui passent à la ligne,
 `.btn-xs`, grilles du daily, des contacts, des camions, des bookings, carte et vue handover,
 fichiers, lignes de tâches, planning du dashboard défilant avec noms collants, iPad = barre
-latérale en icônes par défaut) ; 4.2 (`20-mobile-ui.js` : `body.has-sheet`, page bloquée, plus
+latérale en icônes par défaut) ; 4.2 (`21-mobile-ui.js` : `body.has-sheet`, page bloquée, plus
 aucune fermeture au tap sur le fond, une seule zone qui défile au téléphone, pied collant au
 téléphone, double ouverture du daily, contenu qui ne bouge plus, en-tête des fenêtres aligné,
 `dvh` dans l'envoi du planning de montage) ; 4.3 (historique, `#projet/<id>`) ; 4.4 : H1, M8, M9,
@@ -304,7 +304,7 @@ ordinateur ». Le diaporama check-list reste l'exemple à suivre (plein écran, 
 ## 10. Fichiers concernés (repères)
 
 `public/index.html` (coque, fenêtres statiques, `<head>`), `public/css/app.css`,
-`public/css/responsive.css` (nouveau), `public/js/20-mobile-ui.js` (nouveau),
+`public/css/responsive.css` (nouveau), `public/js/21-mobile-ui.js` (nouveau),
 `01-core.js` (goto, planning, visionneuse, 🤖), `02-detail-loaders.js` (onglets projet),
 `03-create-forms.js` (showModal, daily nouveau, photos, toasts), `04-edit-clients-templates.js`
 (daily édition, tâches), `05-templates-trucks-reports.js` (handover), `07-auth-mobile-daily-ai.js`

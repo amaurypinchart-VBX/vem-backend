@@ -682,6 +682,138 @@ class MainSmokeTest < Minitest::Test
     refute_includes a.named + a.candidates, body
   end
 
+  # ─── 1.5.1 : ce que contient une Viewbox marquée « C'est une Viewbox » en fait partie (rien à classer) ───
+  def build_stair_box(model, d)
+    lamp = S::ComponentDefinition.new('Spot LED', [box(0, 0, 0, 100, 100, 100)])
+    floor = S::ComponentDefinition.new('Wood floor', [box(0, 0, 0, 5900, 2500, 20)])
+    trap = S::ComponentDefinition.new('Trap 18 treden', [box(0, 0, 0, 4000, 1000, 3300)])
+    ens = S::ComponentDefinition.new('Box escalier', [])
+    ens.entities << S::ComponentInstance.new(d[:viewbox], t(0, 0, 0)) # corps des deux Viewbox (composant standard)
+    ens.entities << S::ComponentInstance.new(d[:viewbox], t(0, 0, 3300))
+    ens.entities << S::ComponentInstance.new(lamp, t(1000, 1000, 2900))
+    ens.entities << S::ComponentInstance.new(floor, t(0, 0, 300))
+    ens.entities << S::ComponentInstance.new(trap, t(600, 300, 0))
+    ens.entities << S::ComponentInstance.new(d[:glass], t(0, 0, 150)) # classé par son nom : garde sa catégorie
+    stair = S::ComponentInstance.new(ens, t(20_000, 0, 0))
+    # Viewbox d'un seul bloc marquée à la main, avec ses propres pièces
+    hanging = S::ComponentDefinition.new('Lampe suspendue', [box(0, 0, 0, 300, 300, 400)])
+    parquet = S::ComponentDefinition.new('Parquet chêne', [box(0, 0, 0, 5900, 2500, 20)])
+    single_def = S::ComponentDefinition.new('Box lounge', [box(0, 0, 0, 5900, 2500, 3080)])
+    single_def.entities << S::ComponentInstance.new(hanging, t(2800, 1100, 2600))
+    single_def.entities << S::ComponentInstance.new(parquet, t(0, 0, 300))
+    single = S::ComponentInstance.new(single_def, t(40_000, 0, 0))
+    model.entities << stair << single
+    model.defs.push(lamp, floor, trap, ens, hanging, parquet, single_def)
+    [stair, single]
+  end
+
+  def test_marked_box_contents_are_part_of_it
+    model, d = build_model
+    Sketchup.active_model = model
+    stair, single = build_stair_box(model, d)
+    base = PREP.unclassified_types(model, PREP.analyze(model))
+    PREP.mark_viewbox(model, [stair, single])
+    a = PREP.analyze(model)
+    assert_equal 2, a.assemblies.first.modules.size
+    assert_equal 'manuel', a.how[single]
+    assert_equal %w[Spot\ LED Trap\ 18\ treden Wood\ floor], a.box_parts.keys.map { |e| e.definition.name }.reject { |n| n.start_with?('7-637') }.sort
+    lamp = a.assemblies.first.items.find { |e| e.definition.name == 'Spot LED' }
+    assert_equal ['VIEWBOX', 'partie de la Viewbox'], PREP.item_category(a, lamp)
+    glass = a.assemblies.first.items.find { |e| e.definition.name.start_with?('7-637') }
+    assert_equal 'VITRE-SEAMLESS', PREP.item_category(a, glass).first
+    # avant : « Box lounge » reconnue par sa taille, lampe et parquet à classer ; après : lampes, plancher, escalier
+    # font partie des Viewbox marquées — restent les 4 types du modèle de base (cadre, groupe, porte, bandeau)
+    assert_equal 6, base
+    assert_equal 4, PREP.unclassified_types(model, a)
+    assert(PREP.report_lines(a).any? { |l| l.include?('fait partie de la Viewbox, rien à classer') })
+
+    # fenêtre de révision : « partie de la Viewbox », pas à classer, en fin de liste
+    rows = PREP.review_rows(model)
+    comp = rows['components'].to_h { |r| [r['definition'], r] }
+    ['Spot LED', 'Wood floor', 'Trap 18 treden', 'Lampe suspendue', 'Parquet chêne'].each do |n|
+      assert_equal ['VIEWBOX', 'partie de la Viewbox', true, 'Viewbox'], comp[n].values_at('auto', 'autoSource', 'part', 'scope'), n
+    end
+    # le cadre du composant standard sert aussi dans VBX-01 / VBX-02 (non marquées) : toujours à classer
+    assert_nil comp['VBXM16FULL']['auto']
+    assert_nil comp['VBXM16FULL']['part']
+    assert(rows['components'].last['part'])
+
+    # export : catégorie VIEWBOX « partie de la Viewbox » dans les Viewbox marquées seulement
+    PREP.prepare(model, a)
+    a = PREP.analyze(model)
+    Dir.mktmpdir do |dir|
+      _c, manifest = PREP.export_zip(model, a, File.join(dir, 'p.zip'), 'p')
+      mods = manifest['modules'].to_h { |m| [m['id'], m] }
+      frame_of = ->(id) { mods[id]['accessories'].find { |x| x['definition'] == 'VBXM16FULL' } }
+      assert_nil frame_of.('VBX-01')['category']
+      inner = a.assemblies.first.modules.map { |m| PREP::C.module_id(m.name) }
+      inner.each { |id| assert_equal %w[VIEWBOX partie\ de\ la\ Viewbox], frame_of.(id).values_at('category', 'categorySource') }
+      single_id = PREP::C.module_id(single.name)
+      assert_equal [%w[Lampe\ suspendue VIEWBOX], %w[Parquet\ chêne VIEWBOX]], mods[single_id]['accessories'].map { |x| x.values_at('definition', 'category') }.sort
+      common = manifest['common'].to_h { |x| [x['definition'], x] }
+      assert_equal %w[VIEWBOX partie\ de\ la\ Viewbox], common['Spot LED'].values_at('category', 'categorySource')
+      assert_equal 'VITRE-SEAMLESS', manifest['common'].find { |x| x['definition'].start_with?('7-637') && x['bboxWorld']['min'][0] > 19_000 }['category']
+      assert_nil common['porte orangerie']['category'] # objets libres : inchangé
+    end
+    # numérotée depuis, la Viewbox marquée garde la règle (catégorie VIEWBOX de son composant)
+    assert PREP.marked_box?(a, single)
+  end
+
+  # ─── 1.5.1 : « Retirer les catégories » ───
+  def test_clear_categories
+    model, d = build_model
+    Sketchup.active_model = model
+    stair, = build_stair_box(model, d)
+    lone_door = model.entities.to_a[7]
+    seg = model.entities.to_a[6] # bandeau dibond
+    d[:door].set_attribute('viewbox', 'userCategory', 'PORTE-ORANGERIE')
+    d[:door].set_attribute('viewbox', 'userLabel', 'Porte orangerie 1800')
+    lone_door.set_attribute('viewbox', 'userCategory', 'MUR-LOURD')
+    d[:frame].set_attribute('viewbox', 'userCategory', 'STRUCTURE')
+    trap = stair.definition.entities.to_a[4]
+    trap.definition.set_attribute('viewbox', 'userCategory', 'ESCALIER-INTERIEUR')
+    trap.definition.set_attribute('viewbox', 'userArticleRef', '7-000-001')
+    PREP.mark_viewbox(model, [stair])
+    PREP.mark_textile(model, [seg], true, 'FRAME-INTERIEUR')
+    d[:dibond].set_attribute('viewbox', 'userCategory', 'IGNORER')
+
+    # sélection (l'escalier et ce qu'il contient) : seul ce qui est dedans est retiré, « C'est une Viewbox » gardé
+    UI.inputs = [[PREP::CLEAR_WHERE[1], PREP::CLEAR_WHAT[0], PREP::CLEAR_LABELS[0]]]
+    UI.messages = []
+    n = PREP.clear_categories_dialog(model, [stair], from_selection: true)
+    assert_equal({ 'types' => 2, 'objects' => 0, 'values' => 2 }, n) # cadre STRUCTURE + escalier
+    assert_match(/✓ 2 choix retiré/, UI.messages.last)
+    assert_nil d[:frame].get_attribute('viewbox', 'userCategory')
+    assert_nil trap.definition.get_attribute('viewbox', 'userCategory')
+    assert_equal '7-000-001', trap.definition.get_attribute('viewbox', 'userArticleRef')
+    assert_equal ['VIEWBOX', 'manuel'], PREP.category_for(stair)
+    assert_equal 'PORTE-ORANGERIE', d[:door].get_attribute('viewbox', 'userCategory') # hors de la sélection
+
+    # tout le modèle, catégories seulement : Viewbox marquées et cadres textile gardés
+    n = PREP.clear_categories(model)
+    assert_equal({ 'types' => 2, 'objects' => 1, 'values' => 3 }, n) # porte, dibond « Ignorer », porte isolée
+    assert_nil PREP.category_for(lone_door).first # « porte orangerie » : rien dans le nom
+    refute PREP.ignored?(seg)
+    assert_equal 'Porte orangerie 1800', d[:door].get_attribute('viewbox', 'userLabel')
+    assert_equal ['VIEWBOX', 'manuel'], PREP.category_for(stair)
+    assert_equal 'FRAME-INTERIEUR', PREP.textile_place(seg)
+    assert_equal({ 'types' => 0, 'objects' => 0, 'values' => 0 }, PREP.clear_categories(model)) # plus rien
+
+    # tout, y compris « C'est une Viewbox », cadres textile, désignations et réf. articles ; Ctrl+Z = une opération
+    ops = model.ops.size
+    n = PREP.clear_categories(model, everything: true, labels: true)
+    assert_equal %i[start commit], model.ops[ops..]
+    assert_equal 5, n['values'] # VIEWBOX, Frame + marque, désignation de la porte, réf. de l'escalier
+    assert_equal ['ESCALIER', 'définition'], PREP.category_for(stair) # « Box escalier » : catégorie lue dans le nom
+    refute PREP.textile_marked?(seg)
+    assert_nil d[:door].get_attribute('viewbox', 'userLabel')
+    assert_nil trap.definition.get_attribute('viewbox', 'userArticleRef')
+    assert_equal 'VBX-01', model.entities.to_a[0].name # numéros inchangés
+    UI.inputs = [[PREP::CLEAR_WHERE[0], PREP::CLEAR_WHAT[1], PREP::CLEAR_LABELS[1]]]
+    PREP.clear_categories_dialog(model)
+    assert_match(/Rien à retirer/, UI.messages.last)
+  end
+
   def test_full_menu_flow
     model, = build_model
     Sketchup.active_model = model
