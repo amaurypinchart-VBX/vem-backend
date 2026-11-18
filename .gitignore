@@ -12,3 +12,6 @@ plans/e2e/*.zip
 # Dépendances et build du backend (réinstallés / recompilés par le Dockerfile)
 node_modules/
 dist/
+
+# Contrôle téléphone / tablette : captures et rapports générés (tests/mobile/audit.mjs)
+tests/mobile/out/

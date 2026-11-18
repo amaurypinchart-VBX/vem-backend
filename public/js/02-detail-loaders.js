@@ -502,7 +502,7 @@ async function openTicketDetail(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function updateTicket(id, status) {
@@ -669,7 +669,7 @@ async function sendDailyReport(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // Highlight visuel du toggle FR/EN sur clic
   el.querySelectorAll('input[name="send-lang"]').forEach(r => {
@@ -813,7 +813,7 @@ async function generateAndSendHandover(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // Highlight visuel du toggle FR/EN sur clic
   el.querySelectorAll('input[name="hsend-lang"]').forEach(r => {
@@ -908,7 +908,7 @@ async function openBoxDetail(id) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function addBoxItem(boxId) {
@@ -989,7 +989,7 @@ async function openToolboxDetail(id) {
         </div>`).join('')}
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if(e.target===el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function checkTool(id, isChecked) {

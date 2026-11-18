@@ -148,7 +148,8 @@ function showAddTruckModal(projectId, existing) {
     const wrap = document.getElementById('at-unloading-other-wrap');
     if (wrap) wrap.style.display = this.value === 'other' ? 'block' : 'none';
   });
-  setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
+  // pas de curseur automatique au doigt : le clavier s'ouvrait même pour lire la fiche (audit E3)
+  if (!window.matchMedia('(pointer: coarse)').matches) setTimeout(() => document.getElementById('at-driver')?.focus(), 80);
 }
 
 async function saveTruck(projectId, overlay, truckId) {
@@ -376,7 +377,7 @@ async function showSendToMemberModal(projectId, memberId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 
   // Si pas d'email, force le canal sur "notif"
   if (!email) {
@@ -697,7 +698,7 @@ async function loadDetailBookings(projectId) {
         <div style="font-size:12px;font-weight:700;color:${ph.color};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
           ${ph.icon} ${ph.label} (${list.length})
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:8px;">
           ${list.map(b => renderTransportCard(projectId, b)).join('')}
         </div>
       </div>`;
@@ -731,7 +732,7 @@ async function loadDetailBookings(projectId) {
         <div style="font-size:12px;font-weight:700;color:${ph.color};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
           ${ph.icon} ${ph.label} (${list.length})
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr));gap:8px;">
           ${list.map(h => renderHotelCard(projectId, h)).join('')}
         </div>
       </div>`;

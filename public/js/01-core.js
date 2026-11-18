@@ -924,7 +924,7 @@ async function renderDashCalendar() {
         <div style="font-size:8px;${isToday?'':'opacity:.7;'}">${day.getDate()}</div>
       </div>`);
     }
-    daysHeader = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;margin-top:6px;padding-bottom:6px;border-bottom:1px solid var(--border);">
+    daysHeader = `<div class="cal-row cal-head" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;margin-top:6px;padding-bottom:6px;border-bottom:1px solid var(--border);">
       <div></div>
       <div style="display:grid;grid-template-columns:repeat(${totalDays}, 1fr);gap:1px;">${dayCells.join('')}</div>
     </div>`;
@@ -963,7 +963,7 @@ async function renderDashCalendar() {
     const canUp   = idx > 0;
     const canDown = idx < list.length - 1;
 
-    let html = `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;background:var(--bg2);border-radius:6px;padding:6px;">
+    let html = `<div class="cal-row" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;align-items:center;background:var(--bg2);border-radius:6px;padding:6px;">
       <div style="display:flex;align-items:center;gap:4px;overflow:hidden;">
         <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0;">
           <button onclick="event.stopPropagation();moveProjectInGantt('${p.id}','up')" ${canUp?'':'disabled'} style="background:none;border:none;color:${canUp?'var(--text2)':'var(--text3)'};cursor:${canUp?'pointer':'not-allowed'};padding:0 2px;font-size:10px;line-height:1;opacity:${canUp?'1':'.3'};" title="Monter">▲</button>
@@ -997,7 +997,7 @@ async function renderDashCalendar() {
         const eP = posPct(tEnd);
         const icon = truckIcons[t.vehicleType] || '🚛';
         const lbl = (eP - sP) > 5 ? `${shortD(tStart)}→${shortD(tEnd)}` : '';
-        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
+        html += `<div class="cal-row" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${icon} ${esc(t.truckNumber||t.licensePlate||'Véhicule')}</div>
             ${t.driverName ? `<div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(t.driverName)}</div>` : ''}
@@ -1026,7 +1026,7 @@ async function renderDashCalendar() {
         const color = b.phase === 'installation' ? 'var(--blue)' : '#f4a261';
         const phaseIcon = b.phase === 'installation' ? '🏗️' : '🔨';
         const lbl = (onE - onS) > 5 ? `${shortD(b.onSiteStart)}→${shortD(b.onSiteEnd)}` : '';
-        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
+        html += `<div class="cal-row" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;">
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <div style="font-size:11px;font-weight:600;color:var(--text2);">└ ${phaseIcon} ${esc(u.firstName||'')} ${esc(u.lastName||'')}</div>
             <div style="font-size:10px;color:var(--text3);padding-left:8px;">${esc(u.role||'')}</div>
@@ -1040,7 +1040,7 @@ async function renderDashCalendar() {
         </div>`;
       });
       if (bookings.length === 0) {
-        html += `<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;font-size:10px;color:var(--text3);font-style:italic;">
+        html += `<div class="cal-row" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;align-items:center;padding:2px 6px 2px 22px;font-size:10px;color:var(--text3);font-style:italic;">
           <div>└ Aucun booking équipe</div><div></div>
         </div>`;
       }
@@ -1049,15 +1049,20 @@ async function renderDashCalendar() {
     return html;
   }).join('<div style="height:6px;"></div>');
 
+  // Téléphone / tablette : le Gantt défile dans sa carte, colonne des noms collante
+  // (css/responsive.css .cal-scroll / .cal-inner / .cal-row ; rien ne change sur ordinateur).
+  const calUnits = NUM_WEEKS <= 12 ? totalDays : NUM_WEEKS * 2;
   el.innerHTML = `
     <div style="padding:12px;">
+      <div class="cal-scroll"><div class="cal-inner" style="--cal-days:${calUnits};">
       <!-- Header semaines : taille augmentée pour lisibilité -->
-      <div style="display:grid;grid-template-columns:200px 1fr;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+      <div class="cal-row cal-head" style="display:grid;grid-template-columns:var(--cal-name,200px) 1fr;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;font-weight:600;">Projet / Ressource</div>
         <div style="display:grid;grid-template-columns:repeat(${NUM_WEEKS}, 1fr);gap:3px;">${weeks.join('')}</div>
       </div>
       ${daysHeader}
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">${rows}</div>
+      </div></div>
       <div style="display:flex;gap:16px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);flex-wrap:wrap;">
         <span><span style="display:inline-block;width:12px;height:8px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📐 Installation</span>
         <span><span style="display:inline-block;width:12px;height:8px;background:#f4a261;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>📦 Démontage</span>

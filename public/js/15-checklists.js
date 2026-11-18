@@ -242,7 +242,7 @@ function showChecklistCategoryModal(catId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   setTimeout(() => el.querySelector('#clc-name')?.focus(), 50);
 }
 
@@ -329,7 +329,7 @@ function showChecklistItemModal(itemId, catId) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   if (!itemId) setTimeout(() => el.querySelector('#cli-label')?.focus(), 50);
 }
 
@@ -589,7 +589,7 @@ async function openChecklistConfig(projectId, phase) {
         </div>
       </div>`;
     document.body.appendChild(el);
-    el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+    // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
     return;
   }
   CLC = {
@@ -633,7 +633,7 @@ async function openChecklistConfig(projectId, phase) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
   renderChecklistConfig();
   renderChecklistConfigCustoms();
 }
@@ -1435,7 +1435,7 @@ async function showChecklistItemHistory(id) {
         </div>`).join('') : '<div style="color:var(--text3);font-size:13px;">Aucun changement de statut.</div>'}
     </div>`;
   document.body.appendChild(el);
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
 async function validateChecklistFull() {
