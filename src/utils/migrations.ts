@@ -1633,6 +1633,14 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] handovers.checklist_annex : ${e.message}`);
   }
+  // Handover : place de la check-list body | annex | none (A. Pinchart 18.11.2026 : « il y a toujours la checklist même si je décoche »)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "checklist_mode" TEXT NOT NULL DEFAULT 'body'`);
+    // handovers mis « en annexe » avant cette colonne (checklist_annex est tenu à jour à chaque écriture, donc rejouable)
+    await prisma.$executeRawUnsafe(`UPDATE "handovers" SET "checklist_mode" = 'annex' WHERE "checklist_annex" = true AND "checklist_mode" = 'body'`);
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.checklist_mode : ${e.message}`);
+  }
   // Handover : langue du lien de signature client (A. Pinchart 16.11.2026)
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "signature_lang" TEXT NOT NULL DEFAULT 'fr'`);

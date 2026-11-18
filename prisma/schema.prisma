@@ -458,6 +458,8 @@ model Handover {
   customFields         Json?     @map("custom_fields")
   /// check-list de montage seulement en annexe (après les signatures) dans le PDF et la page de signature
   checklistAnnex       Boolean   @default(false) @map("checklist_annex")
+  /// place de la check-list dans le handover (PDF + page de signature) : body (dans le document) | annex (après les signatures) | none (pas du tout)
+  checklistMode        String    @default("body") @map("checklist_mode")
   /// langue du lien de signature client : page de signature, PDF signé et e-mail (fr | en)
   signatureLang        String    @default("fr") @map("signature_lang")
   signatureToken          String?   @map("signature_token")

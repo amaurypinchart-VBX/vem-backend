@@ -4,7 +4,7 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
-import { handoverChecklist, checklistPdfData } from '../services/checklistService';
+import { handoverChecklist, checklistPdfData, handoverChecklistMode } from '../services/checklistService';
 import { buildDailyReportPdf } from '../services/dailyAttachments';
 import { logger } from '../utils/logger';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
@@ -69,8 +69,8 @@ router.get('/handover/:id', async (req: AuthRequest, res: Response, next: NextFu
       scopeOfWork: h.scopeOfWork,
       customFields: (h.customFields as Record<string, any> | null) || null,
       date: h.createdAt,
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
-      checklistAnnex: h.checklistAnnex === true,
+      checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: handoverChecklistMode(h) === 'annex',
     });
 
     saveProjectFilePdf(h.projectId, pdf, `Handover_${h.project.internalNumber}.pdf`, 'handover', req.user?.id);

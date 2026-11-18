@@ -6,7 +6,7 @@ import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
-import { checklistSummaries, handoverChecklist, checklistPdfData } from '../services/checklistService';
+import { checklistSummaries, handoverChecklist, checklistPdfData, handoverChecklistMode } from '../services/checklistService';
 import crypto from 'crypto';
 
 const router = Router();
@@ -122,8 +122,14 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       siteManagerUser,
       ...data
     } = req.body;
-    // check-list de montage seulement en annexe du PDF / de la page de signature
-    if (data.checklistAnnex !== undefined) data.checklistAnnex = data.checklistAnnex === true;
+    // place de la check-list : checklistMode body | annex | none (checklistAnnex seul = ancien écran, gardé)
+    if (data.checklistMode !== undefined) {
+      if (!['body', 'annex', 'none'].includes(data.checklistMode)) throw new AppError('checklistMode invalide', 400);
+      data.checklistAnnex = data.checklistMode === 'annex';
+    } else if (data.checklistAnnex !== undefined) {
+      data.checklistAnnex = data.checklistAnnex === true;
+      data.checklistMode = data.checklistAnnex ? 'annex' : 'body';
+    }
 
     const h = await prisma.handover.update({
       where: { id: req.params.id },
@@ -287,8 +293,8 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
-      checklistAnnex: h.checklistAnnex === true,
+      checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: handoverChecklistMode(h) === 'annex',
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -371,8 +377,8 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       clientSignatureUrl:  h.clientSignatureUrl,
       date: h.createdAt,
       lang,
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
-      checklistAnnex: h.checklistAnnex === true,
+      checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: handoverChecklistMode(h) === 'annex',
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
@@ -392,7 +398,8 @@ router.post('/:id/signature-token', async (req: AuthRequest, res: Response, next
     const h = await prisma.handover.findUnique({ where: { id: req.params.id } });
     if (!h) throw new AppError('Handover introuvable', 404);
 
-    const summary = (await checklistSummaries([h.projectId])).get(h.projectId);
+    // check-list retirée du handover : elle ne bloque pas la signature
+    const summary = handoverChecklistMode(h) === 'none' ? undefined : (await checklistSummaries([h.projectId])).get(h.projectId);
     if (summary && (summary.criticalOpen > 0 || summary.pending > 0)) {
       const canForce = SIGNATURE_FORCE_ROLES.includes(req.user!.role);
       if (req.body?.force !== true || !canForce) {

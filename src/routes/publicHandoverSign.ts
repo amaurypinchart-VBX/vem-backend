@@ -8,7 +8,7 @@ import { AppError } from '../utils/AppError';
 import { generateHandoverPdf } from '../services/pdfService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
-import { handoverChecklist, checklistPdfData, publicChecklist } from '../services/checklistService';
+import { handoverChecklist, checklistPdfData, publicChecklist, handoverChecklistMode } from '../services/checklistService';
 import { translateTexts } from '../services/translationService';
 
 /** Langue choisie à la génération du lien de signature (fr par défaut). */
@@ -87,9 +87,9 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
       managerSignatureUrl: h.managerSignatureUrl,
       date: typedDate && !isNaN(typedDate.getTime()) ? typedDate : h.createdAt,
       // check-list de montage en lecture seule (sans N.A. ni données internes)
-      checklist: publicChecklist(await handoverChecklist(h.projectId)),
+      checklist: handoverChecklistMode(h) === 'none' ? null : publicChecklist(await handoverChecklist(h.projectId)),
       // true : la check-list est montrée en annexe, après la signature
-      checklistAnnex: h.checklistAnnex === true,
+      checklistAnnex: handoverChecklistMode(h) === 'annex',
     };
     await translateSignPage(data, lang);
     res.json({ success: true, data });
@@ -163,8 +163,8 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       clientSignatureUrl: signatureBase64,
       date: h.createdAt,
       lang: signLang(h),
-      checklist: checklistPdfData(await handoverChecklist(h.projectId)),
-      checklistAnnex: h.checklistAnnex === true,
+      checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
+      checklistAnnex: handoverChecklistMode(h) === 'annex',
     });
     const lang = signLang(h);
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed${lang === 'en' ? '_en' : ''}.pdf`, 'handover', null);

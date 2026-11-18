@@ -444,7 +444,7 @@ async function openHandoverFull(id) {
     </div>`;
   document.body.appendChild(el);
   // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
-  loadHandoverChecklistSection(h.projectId, h.id, h.checklistAnnex === true);
+  loadHandoverChecklistSection(h.projectId, h.id, handoverChecklistModeOf(h));
   setTimeout(()=>{ initSigPad(`sig-mgr-${h.id}`); initSigPad(`sig-cli-${h.id}`); }, 150);
 }
 

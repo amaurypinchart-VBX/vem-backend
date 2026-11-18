@@ -193,6 +193,13 @@ export function checklistPdfData(cl: FullChecklist | null) {
  * Check-list montrée au client sur la page de signature : lecture seule, sans les points N.A.,
  * sans identifiants ni données internes (seulement prénom + nom de qui a vérifié).
  */
+/** Place de la check-list dans un handover : body (dans le document) | annex (après les signatures) | none (absente). */
+export type HandoverChecklistMode = 'body' | 'annex' | 'none';
+export function handoverChecklistMode(h: { checklistMode?: string | null; checklistAnnex?: boolean | null }): HandoverChecklistMode {
+  if (h.checklistMode === 'annex' || h.checklistMode === 'none') return h.checklistMode;
+  return h.checklistAnnex === true ? 'annex' : 'body';
+}
+
 export function publicChecklist(cl: FullChecklist | null) {
   if (!cl) return null;
   const items = cl.items.filter((it: any) => it.status !== 'na');
