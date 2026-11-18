@@ -54,10 +54,13 @@ test("legacy export failure disposes isolated canvas without mutating live canva
     },
   };
   vm.createContext(sandbox);
-  vm.runInContext(
-    fs.readFileSync("public/js/13-briefing-studio-slides.js", "utf8"),
-    sandbox,
-  );
+  // Same scripts as the page: the export also uses the country safety-slide
+  // helpers of 14-briefing-autogen.js (brfJsonHasSafetyImage, brfSafetyJsonForLang).
+  for (const file of [
+    "public/js/13-briefing-studio-slides.js",
+    "public/js/14-briefing-autogen.js",
+  ])
+    vm.runInContext(fs.readFileSync(file, "utf8"), sandbox);
   await sandbox.briefingStudioExportPDF();
   assert.equal(JSON.stringify(state), before);
   assert.equal(disposed, 2);
