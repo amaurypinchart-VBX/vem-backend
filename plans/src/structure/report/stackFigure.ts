@@ -30,7 +30,7 @@ export const STACK_LABELS: Record<
     plusRoadway: string;
     toProfiles: string;
     unknownThickness: string;
-    short: Record<'slab' | 'ground' | 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot' | 'viewbox' | 'profiles', string>;
+    short: Record<'slab' | 'ground' | 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot' | 'viewbox' | 'profiles' | 'joists' | 'cale', string>;
     figure: string;
   }
 > = {
@@ -53,7 +53,7 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ plaques de roulage',
     toProfiles: 'jusqu’au dessous des profils du plancher',
     unknownThickness: 'ép. ?',
-    short: { slab: 'Dalle', ground: 'Sol', roadway: 'Plaques de roulage', timber: 'Madriers', plate: 'Plaques', block: 'Bloc bois', packing: 'Cales', jack: 'Vérin', foot: 'Pied', viewbox: 'Viewbox (UNP)', profiles: 'Profils du plancher' },
+    short: { slab: 'Dalle', ground: 'Sol', roadway: 'Plaques de roulage', timber: 'Madriers', plate: 'Plaques', block: 'Bloc bois', packing: 'Cales', jack: 'Vérin', foot: 'Pied', viewbox: 'Viewbox (UNP)', profiles: 'Profils du plancher', joists: 'Madriers', cale: 'Cale composée' },
     figure: 'Coupe du calage (échelle des hauteurs, largeurs schématiques)',
   },
   de: {
@@ -75,7 +75,7 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ Fahrplatten',
     toProfiles: 'bis Unterkante der Bodenträger',
     unknownThickness: 'Dicke ?',
-    short: { slab: 'Decke', ground: 'Boden', roadway: 'Fahrplatten', timber: 'Kanthölzer', plate: 'Platten', block: 'Holzklotz', packing: 'Keile', jack: 'Spindel', foot: 'Fuß', viewbox: 'Viewbox (UNP)', profiles: 'Bodenträger' },
+    short: { slab: 'Decke', ground: 'Boden', roadway: 'Fahrplatten', timber: 'Kanthölzer', plate: 'Platten', block: 'Holzklotz', packing: 'Keile', jack: 'Spindel', foot: 'Fuß', viewbox: 'Viewbox (UNP)', profiles: 'Bodenträger', joists: 'Kanthölzer', cale: 'Zusammengesetzter Klotz' },
     figure: 'Unterpallung im Schnitt (Höhen maßstäblich, Breiten schematisch)',
   },
   en: {
@@ -97,7 +97,7 @@ export const STACK_LABELS: Record<
     plusRoadway: '+ roadway plates',
     toProfiles: 'to the underside of the floor members',
     unknownThickness: 'thickn. ?',
-    short: { slab: 'Slab', ground: 'Ground', roadway: 'Roadway plates', timber: 'Sleepers', plate: 'Plates', block: 'Timber block', packing: 'Packing', jack: 'Jack', foot: 'Foot', viewbox: 'Viewbox (UNP)', profiles: 'Floor members' },
+    short: { slab: 'Slab', ground: 'Ground', roadway: 'Roadway plates', timber: 'Sleepers', plate: 'Plates', block: 'Timber block', packing: 'Packing', jack: 'Jack', foot: 'Foot', viewbox: 'Viewbox (UNP)', profiles: 'Floor members', joists: 'Joists', cale: 'Built-up block' },
     figure: 'Packing section (heights to scale, widths schematic)',
   },
 };
@@ -133,7 +133,7 @@ const rect = (x: number, y: number, w: number, h: number, fill: string, stroke =
   `<rect x="${r2(x)}" y="${r2(y)}" width="${r2(w)}" height="${r2(Math.max(h, 0.2))}" fill="${fill}" stroke="${stroke}" stroke-width="${r2(sw)}"${dash ? ' stroke-dasharray="0.8 0.6"' : ''}/>`;
 const line = (x1: number, y1: number, x2: number, y2: number, color = '#374151', w = 0.2) => `<line x1="${r2(x1)}" y1="${r2(y1)}" x2="${r2(x2)}" y2="${r2(y2)}" stroke="${color}" stroke-width="${r2(w)}"/>`;
 
-const FILL: Record<string, string> = { roadway: '#9ca3af', timber: '#e8c58f', plate: '#fcd34d', block: '#d6a76c', packing: '#f59e0b', jack: '#6b7280', foot: '#6b7280' };
+const FILL: Record<string, string> = { roadway: '#9ca3af', timber: '#e8c58f', joists: '#e8c58f', plate: '#fcd34d', block: '#d6a76c', packing: '#f59e0b', jack: '#6b7280', foot: '#6b7280' };
 /** Couleur du trait des madriers (comme sur les plans). */
 const TIMBER_STROKE = '#a16207';
 
@@ -159,12 +159,32 @@ export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, 
   out.push(rect(x + w * 0.04, yy, w * 0.92 - 0.2, slabH, '#e5e7eb', '#6b7280'));
   for (let hx = x + w * 0.06; hx < x + w * 0.95; hx += 2) out.push(line(hx, yy + slabH, Math.min(hx + 2, x + w * 0.96), yy, '#9ca3af', 0.15));
   out.push(text(x + w * 0.06, yy + slabH - 1, slab ? S.short.slab : S.short.ground, size * 0.85, { color: '#374151' }));
-  const widthOf = (kind: string) => ({ roadway: full, timber: full * 0.92, plate: full * 0.78, block: full * 0.62, packing: full * 0.5, jack: full * 0.12, foot: full * 0.2 })[kind] ?? full * 0.5;
+  // couches d'une cale composée : même largeur (plaques et madriers à la taille du bloc)
+  const widthOf = (kind: string, group?: string) => (group && kind !== 'jack' ? full * 0.66 : ({ roadway: full, timber: full * 0.92, joists: full * 0.78, plate: full * 0.78, block: full * 0.62, packing: full * 0.5, jack: full * 0.12, foot: full * 0.2 })[kind] ?? full * 0.5);
+  const groups: Array<{ name: string; top: number; bottom: number }> = [];
   s.layers.forEach((l, i) => {
     const lh = shown[i] * k;
     yy -= lh;
-    const lw = widthOf(l.kind);
-    if (l.kind === 'jack') {
+    const lw = widthOf(l.kind, l.group);
+    if (l.group) {
+      const g = groups[groups.length - 1];
+      if (g && g.name === l.group && Math.abs(g.top - (yy + lh)) < 1e-6) g.top = yy;
+      else groups.push({ name: l.group, top: yy, bottom: yy + lh });
+    }
+    if (l.kind === 'joists' && l.joists) {
+      // madriers sur chant coupés : un à chaque bord, les autres à intervalles égaux, croix = bois coupé
+      const n = Math.max(1, l.joists.n);
+      const pw = Math.max(0.8, Math.min(lw / n, (lw * l.joists.b) / Math.max(l.joists.width, 1)));
+      for (let j = 0; j < n; j++) {
+        const px = n === 1 ? cx - pw / 2 : cx - lw / 2 + (j * (lw - pw)) / (n - 1);
+        out.push(rect(px, yy, pw, lh, FILL.joists, TIMBER_STROKE, 0.18));
+        out.push(line(px, yy, px + pw, yy + lh, TIMBER_STROKE, 0.1), line(px + pw, yy, px, yy + lh, TIMBER_STROKE, 0.1));
+      }
+    } else if (l.kind === 'plate' && l.count && l.count > 1) {
+      // plaques empilées : une ligne entre chaque plaque
+      out.push(rect(cx - lw / 2, yy, lw, lh, FILL.plate, '#374151', 0.2));
+      for (let j = 1; j < l.count; j++) out.push(line(cx - lw / 2, yy + (j * lh) / l.count, cx + lw / 2, yy + (j * lh) / l.count, '#374151', 0.12));
+    } else if (l.kind === 'jack') {
       // platine + tige
       const ph = Math.min(lh * 0.25, 1.2);
       out.push(rect(cx - full * 0.13, yy + lh - ph, full * 0.26, ph, FILL.jack));
@@ -179,12 +199,23 @@ export function stackSketchSvg(s: CalageStack, x: number, y: number, w: number, 
       out.push(rect(cx - lw / 2, yy, lw, lh, FILL.timber, TIMBER_STROKE, 0.2));
       out.push(line(cx - lw / 2 + 0.6, yy + lh / 2, cx + lw / 2 - 0.6, yy + lh / 2, TIMBER_STROKE, 0.1));
     } else out.push(rect(cx - lw / 2, yy, lw, lh, FILL[l.kind] ?? '#e5e7eb', '#374151', 0.2, l.thickness === null));
-    const label = `${S.short[l.kind as keyof typeof S.short] ?? ''}${l.thickness !== null ? ` ${cmText(lang, l.thickness)}` : ` (${S.unknownThickness})`}`;
+    const label =
+      l.kind === 'joists' && l.joists && l.thickness !== null
+        ? `${S.short.joists} ${l.joists.n} × ${l.joists.b}×${Math.round(l.thickness)} mm`
+        : l.kind === 'plate' && l.count && l.count > 1 && l.thickness !== null
+          ? `${S.short.plate} ${l.count} × ${cmText(lang, l.thickness / l.count)}`
+          : `${S.short[l.kind as keyof typeof S.short] ?? ''}${l.thickness !== null ? ` ${cmText(lang, l.thickness)}` : ` (${S.unknownThickness})`}`;
     // étiquette à droite de la couche, réduite si elle déborderait du cadre
     const lx = cx + full / 2 + 1;
     const ls = Math.min(size * 0.85, (x + w - lx) / Math.max(1, label.length * 0.5));
     out.push(text(lx, yy + lh / 2 + ls * 0.35, label, ls));
   });
+  // cale composée : cadre en tirets autour de ses couches, nom au-dessus à gauche
+  for (const g of groups) {
+    const gw = full * 0.66 + 1.6;
+    out.push(rect(cx - gw / 2, g.top - 0.5, gw, g.bottom - g.top + 1, 'none', '#7c2d12', 0.18, true));
+    out.push(text(cx - gw / 2 + 0.4, g.top - 0.9, S.short.cale, size * 0.7, { color: '#7c2d12' }));
+  }
   // élément de la Viewbox qui porte : profil en U (rive) ou rectangle (profils du plancher)
   const vy = yy - 6;
   const vw = full * 1.05;

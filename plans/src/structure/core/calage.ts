@@ -8,16 +8,16 @@ import type { CalcRecord } from './records';
 import type { ComboReaction, Estimate, EstimateModule, EstimateOptions, GroupReaction, P2 } from './estimate';
 import type { AddedSupport } from './estimate';
 import { addSupports, estimateReactions, fullPublic, limitPublic, stripTypeKey, stripTypeLabel } from './estimate';
-import type { CommercialPlate, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
-import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, leastBad, recommended, sizePlate, stockLayer } from './ground';
+import type { CommercialPlate, LoadFoot, LongrineResult, MaterialLine, PanelMaterial, PlateResult, Solution, SolutionKind, SpreadLayer, StockPlate, TimberBeam } from './ground';
+import { C24_BEAMS, PANELS, PLATE_LABEL, isWoodPlate, chooseLongrine, designGroup, diffusionDepth, joistLayer, layerThickness, leastBad, recommended, sizePlate, stockLayer } from './ground';
 import type { RoadwayResult } from './roadway';
 import { roadwayPressure } from './roadway';
 import type { CalageChoices, ChainInput, ChainResult, LayerRef } from './spreading';
-import { adviseChain, bestStockForAll, bestStockLayers, checkChain, dimsCm, pressureText, resolveLayers } from './spreading';
+import { adviseChain, bestStockForAll, bestStockLayers, checkChain, dimsCm, joistVariants, layerShort, pressureText, resolveLayers } from './spreading';
 import type { BlockChain, BlockSupport, BlockUnder, DrawnBlock } from './blocks';
-import { assignBlocks, blockAxes, blockChain, blockDimsText, blockDrawingNotes, blockMaterial, blockOutline, centredBlock } from './blocks';
+import { assignBlocks, blockAxes, blockChain, blockDims, blockDimsText, blockDrawingNotes, blockMaterial, blockOutline, centredBlock } from './blocks';
 import type { PlateGroup, PlatePlacement, PlatePlan, SupportGeometry } from './placement';
-import { flushCaps, plateGroups, platePlan, supportGeometry } from './placement';
+import { JACK_PLATE, flushCaps, plateGroups, platePlan, supportGeometry } from './placement';
 import type { TuvCheck } from './tuv';
 import { TUV, tuvConformity, tuvPlate } from './tuv';
 import type { GroundLevel, LevelSurvey } from './groundLevels';
@@ -102,6 +102,8 @@ export interface CalageInput {
   bearingMode?: 'pressure' | 'distributed';
   /** épaisseur des plaques de roulage (mm, coupe du calage) ; absente = inconnue */
   roadwayThickness?: number;
+  /** type de plaques de roulage choisi (coupe du calage, matériel) et taille d'une plaque (mm) pour en estimer le nombre */
+  roadwayType?: { label: string; piece?: [number, number] };
 }
 
 /** Vérification d'un appui de calage (une plaque) sous sa propre réaction avec le calage qui lui est appliqué. */
@@ -141,6 +143,8 @@ export interface SupportCheck extends ChainResult {
     /** hauteur du bloc (mm) et ce qui repose dessus dans le dessin (vérins, UPN, profils ; écarts en mm) */
     height: number;
     under?: BlockUnder;
+    /** bloc décrit comme une cale composée : ses couches de haut en bas (sens des madriers retenu), hauteur, et le bloc dessiné */
+    composition?: { layers: SpreadLayer[]; height: number; drawnHeight: number; drawnMassKg: number };
   };
   /** entrée de la chaîne de répartition de l'appui (sans les couches) : pour rejouer l'appui avec d'autres plaques */
   chainBase: Omit<ChainInput, 'layers'>;
@@ -313,13 +317,40 @@ export function envelopeReactions(fem: Estimate, est: Estimate): Estimate {
   };
 }
 
-export function computeCalage(inp: CalageInput): CalageResult {
+/**
+ * Blocs dessinés décrits comme des cales composées (`CalageChoices.blockComposition`) : la masse du bloc devient celle
+ * de la cale (plaques à la taille du bloc, madriers), sa hauteur est gardée à côté de celle du dessin.
+ */
+export function withComposedBlocks(inp: CalageInput): CalageInput {
+  const refs = inp.choices?.blockComposition;
+  if (!inp.blocks?.length) return inp;
+  if (!refs?.length) return inp.blocks.some((b) => b.composition) ? { ...inp, blocks: inp.blocks.map(uncomposed) } : inp;
+  const blocks = inp.blocks.map((b0): DrawnBlock => {
+    const b = uncomposed(b0);
+    const { layers } = resolveLayers(refs, inp.stock, [b.x1 - b.x0, b.z1 - b.z0]);
+    if (!layers.length) return b;
+    const massKg = layers.reduce((a, l) => a + l.n * l.massKg, 0);
+    const height = layers.reduce((a, l) => a + layerThickness(l), 0);
+    return { ...b, massKg, massSource: 'composed', composition: { height, drawnHeight: b.top - b.bottom, drawnMassKg: b.massKg, drawnMassSource: b.massSource } };
+  });
+  return { ...inp, blocks };
+}
+
+/** Bloc tel que dessiné (masse du modèle), sans la cale composée. */
+function uncomposed(b: DrawnBlock): DrawnBlock {
+  if (!b.composition) return b;
+  const { composition, ...rest } = b;
+  return { ...rest, massKg: composition.drawnMassKg, massSource: composition.drawnMassSource };
+}
+
+export function computeCalage(inp0: CalageInput): CalageResult {
+  const inp = withComposedBlocks(inp0);
   const base = computeCalageBase(inp);
   const applied = inp.choices?.remedy;
   const res = applied ? withRemedy(inp, base, applied) : base;
   const out = inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
   const mode: GroundMode = inp.estimate.jacks ? 'jacks' : (inp.estimate.contact?.mode ?? 'points');
-  return { ...out, groundMode: mode, stacks: calageStacks(out, mode, inp.roadwayThickness) };
+  return { ...out, groundMode: mode, stacks: calageStacks(out, mode, inp.roadwayThickness, inp.roadwayType?.label) };
 }
 
 /**
@@ -514,7 +545,7 @@ function withRemedy(inp: CalageInput, res: CalageResult, applied: AppliedRemedy)
   });
   const checks = res.checks.map((c) => types.flatMap((t) => t.checks).find((x) => x.id === c.id) ?? c);
   // matériel : blocs gardés, madriers de la solution, calage des appuis non concernés (escalier, terrasse)
-  const blockLines = res.materials.filter((l) => l.label.startsWith('Bloc de calage'));
+  const blockLines = res.materials.filter((l) => l.label.startsWith('Bloc de calage') || l.label.startsWith('Cale composée'));
   const others = types.filter((t) => !t.checks.some((c) => ev.perSupport.has(c.id))).flatMap((t) => t.chosen?.materials ?? []);
   const materials = mergeMaterials([...(noBlocks ? [] : blockLines), ...others, ...ev.remedy.materials]);
   const allPlates = types.every((t) => t.standard);
@@ -601,6 +632,27 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     byType.get(key)!.push(g);
   }
   const choices = inp.choices ?? {};
+  // blocs dessinés décrits comme des cales composées : couches à la taille du bloc (axes de l'appui)
+  const compCache = new Map<string, SpreadLayer[] | undefined>();
+  const compositionOf = (sp: BlockSupport): SpreadLayer[] | undefined => {
+    const refs = choices.blockComposition;
+    if (!refs?.length || !sp.block.composition) return undefined;
+    const dims: [number, number] = [sp.rect[1] - sp.rect[0], sp.rect[3] - sp.rect[2]];
+    const key = `${sp.block.id}|${dims.map(Math.round).join('x')}`;
+    if (!compCache.has(key)) {
+      const res = resolveLayers(refs, inp.stock, dims);
+      compCache.set(key, res.layers.length ? res.layers : undefined);
+    }
+    return compCache.get(key);
+  };
+  // vérins voisins sur une même plaque : chaque platine à sa place (madriers sur chant : où tombe chaque pied)
+  const feetOf = (g: PlateGroup, geo: SupportGeometry): LoadFoot[] | undefined => {
+    if (!g.reaction.group.jack || g.members.length < 2) return undefined;
+    const tot = g.members.reduce((a, m) => a + Math.max(m.REd, 0), 0);
+    if (!(tot > 0)) return undefined;
+    const P = (p: P2): [number, number] => [p[0] * geo.u[0] + p[1] * geo.u[1] - geo.center[0], p[0] * geo.v[0] + p[1] * geo.v[1] - geo.center[1]];
+    return g.members.map((m) => ({ id: m.group.id, at: P(m.group.position), size: [JACK_PLATE, JACK_PLATE], REd: (g.reaction.REd * Math.max(m.REd, 0)) / tot }));
+  };
   // poids des blocs dessinés (posés au sol sous les pieds) compté dans la charge totale et dans leur emprise
   // plaques de roulage qui débordent tout autour de l'installation : surface couverte agrandie
   const overhang = choices.roadway ? Math.max(0, choices.roadwayOverhang ?? 0) : 0;
@@ -759,13 +811,14 @@ function computeCalageBase(inp: CalageInput): CalageResult {
         if (bs) {
           // bloc dessiné : pieds → bloc → (plaques sous le bloc : à fleur de la Viewbox ou centrées sur le bloc) → sol
           // pas de répartition uniforme sous un bloc (voir l'avertissement plaques de roulage + blocs)
-          const run = (ls: SpreadLayer[], plate: 'centered' | 'flush') => {
-            const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale, plate), ...(slabMode ? { groundInfo: true } : {}) };
+          const run = (ls: SpreadLayer[], plate: 'centered' | 'flush', comp?: SpreadLayer[]) => {
+            const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, block: blockChain(bs.s, bs.scale, plate, comp), ...(slabMode ? { groundInfo: true } : {}) };
             return { base, chain: checkChain({ ...base, layers: ls }), ls };
           };
-          // plaque rectangulaire : dans le sens qui répartit le mieux
-          const options = [layers, ...(layers.some((L) => L.l !== L.w) ? [rotated(layers)] : [])];
-          const best = (plate: 'centered' | 'flush') => options.map((ls) => run(ls, plate)).reduce((a, b) => (b.chain.eta < a.chain.eta - 1e-9 ? b : a));
+          // plaque rectangulaire et madriers sans sens choisi : dans le sens qui répartit le mieux ; cale composée de même
+          const options = [layers, ...(layers.some((L) => L.l !== L.w) ? [rotated(layers)] : [])].flatMap(joistVariants);
+          const comps: Array<SpreadLayer[] | undefined> = compositionOf(bs.s) ? joistVariants(compositionOf(bs.s)!) : [undefined];
+          const best = (plate: 'centered' | 'flush') => options.flatMap((ls) => comps.map((cp) => run(ls, plate, cp))).reduce((a, b) => (b.chain.eta < a.chain.eta - 1e-9 ? b : a));
           const fl = best('flush');
           const ce = best('centered');
           const hasEdge = bs.s.edges.some((x) => x !== null);
@@ -775,16 +828,21 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           return { r, geo, Rk, base: pick.base, flushBase: fl.base, centeredBase: ce.base, chain: pick.chain, atFlush: fl.chain, atCenter: ce.chain, placement, eccentric: false, bottom: pick.ls[pick.ls.length - 1], layersUsed: pick.ls };
         }
         const flush = flushCaps(geo);
-        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, ...(slabMode ? { groundInfo: true } : {}) };
-        const bottom = layers[layers.length - 1];
+        const feet = feetOf(g, geo);
+        const base = { Rzk: Rk, REd: r.REd, contact: geo.contact, contactLabel: contactLabelOf(geo), bearing: inp.bearing, roadway: roadwayOn ? rw : null, pointLoadMax: inp.pointLoadMax, subgrade: inp.longrine.k, ...(feet ? { feet } : {}), ...(slabMode ? { groundInfo: true } : {}) };
         const flushBase = { ...base, caps: flush.caps, edgeDist: flush.edgeDist };
-        const atFlush = checkChain({ ...flushBase, layers });
-        const atCenter = checkChain({ ...base, layers });
-        const eccentric = layers.length > 0 && flush.caps.some((c, k) => c < [bottom.l, bottom.w][k]);
-        let placement: 'flush' | 'centered' = placementMode === 'centered' ? 'centered' : 'flush';
-        if (placementMode === 'auto' && eccentric && atFlush.eta > 1 && atCenter.eta < atFlush.eta) placement = 'centered';
-        const chain = placement === 'flush' ? atFlush : atCenter;
-        return { r, geo, Rk, base: placement === 'flush' ? flushBase : base, flushBase, centeredBase: base, chain, atFlush, atCenter, placement, eccentric, bottom, layersUsed: layers };
+        // madriers sur chant sans sens choisi : le sens le plus favorable
+        const one = (ls: SpreadLayer[]) => {
+          const bottom = ls[ls.length - 1];
+          const atFlush = checkChain({ ...flushBase, layers: ls });
+          const atCenter = checkChain({ ...base, layers: ls });
+          const eccentric = ls.length > 0 && flush.caps.some((c, k) => c < [bottom.l, bottom.w][k]);
+          let placement: 'flush' | 'centered' = placementMode === 'centered' ? 'centered' : 'flush';
+          if (placementMode === 'auto' && eccentric && atFlush.eta > 1 && atCenter.eta < atFlush.eta) placement = 'centered';
+          const chain = placement === 'flush' ? atFlush : atCenter;
+          return { r, geo, Rk, base: placement === 'flush' ? flushBase : base, flushBase, centeredBase: base, chain, atFlush, atCenter, placement, eccentric, bottom, layersUsed: ls };
+        };
+        return joistVariants(layers).map(one).reduce((a, b) => (b.chain.eta < a.chain.eta - 1e-9 ? b : a));
       };
       const passes = (layers: SpreadLayer[]) => part.groups.every((g) => evaluate(g, layers).chain.eta <= 1);
       // blocs : sans plaque si le bloc suffit, sinon les plaques du stock (sous le bloc) qui suffisent à tous les blocs du type
@@ -797,7 +855,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
             part.groups.map((g) => {
               const bs = blockOf.get(g)!;
               const e = evaluate(g, []);
-              return { ...e.base, block: blockChain(bs.s, bs.scale, bs.s.edges.some((x) => x !== null) ? plate : 'centered') };
+              return { ...e.base, block: blockChain(bs.s, bs.scale, bs.s.edges.some((x) => x !== null) ? plate : 'centered', (e.base as { block?: BlockChain }).block?.composition?.layers) };
             });
           const found = (placementMode !== 'centered' ? bestStockForAll(basesFor('flush'), inp.stock) : null) ?? (placementMode !== 'flush' ? bestStockForAll(basesFor('centered'), inp.stock) : null);
           blockAuto = found?.layers ?? [];
@@ -851,7 +909,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
         if (!inp.noAdvice && bs && e.chain.eta > 1 && e.chain.etaGround > 1 && bc) {
           const off = Math.max(...bc.offset.map(Math.abs));
           if (off > 50) {
-            const moved = checkChain({ ...e.base, layers, block: blockChain(centredBlock(bs), blockOf.get(g)!.scale) });
+            const moved = checkChain({ ...e.base, layers, block: blockChain(centredBlock(bs), blockOf.get(g)!.scale, 'centered', bc.composition?.layers) });
             if (moved.etaGround < e.chain.etaGround)
               advice += ` La charge est à ${Math.round(off / 10)} cm du centre du bloc : seule la zone centrée sur la charge porte (${dimsCm(e.chain.steps[1].dims ?? [0, 0])}). Bloc centré sous l’appui : ${pressureText(moved.pressure)}${moved.eta <= 1 ? ', OK' : ', insuffisant aussi'} (η ${fmtNumber(moved.eta, 2)}).`;
           }
@@ -893,10 +951,20 @@ function computeCalageBase(inp: CalageInput): CalageResult {
                   feet: bs.feet.map((f) => f.id),
                   height: bs.block.top - bs.block.bottom,
                   ...(bs.block.under ? { under: bs.block.under } : {}),
+                  ...((e.base as { block: BlockChain }).block.composition && bs.block.composition
+                    ? {
+                        composition: {
+                          layers: (e.base as { block: BlockChain }).block.composition!.layers,
+                          height: (e.base as { block: BlockChain }).block.composition!.height,
+                          drawnHeight: bs.block.composition.drawnHeight,
+                          drawnMassKg: bs.block.composition.drawnMassKg,
+                        },
+                      }
+                    : {}),
                   size: [bs.rect[1] - bs.rect[0], bs.rect[3] - bs.rect[2]],
                   offset: Math.hypot(...(e.base as { block: BlockChain }).block.offset),
                   centred: (() => {
-                    const cc = checkChain({ ...e.base, layers: [], block: blockChain(centredBlock(bs), blockOf.get(g)!.scale) });
+                    const cc = checkChain({ ...e.base, layers: [], block: blockChain(centredBlock(bs), blockOf.get(g)!.scale, 'centered', (e.base as { block: BlockChain }).block.composition?.layers) });
                     return { pressure: cc.pressure, eta: cc.eta };
                   })(),
                 },
@@ -916,11 +984,12 @@ function computeCalageBase(inp: CalageInput): CalageResult {
       let solutions = d.solutions;
       if (custom || layers.length || onBlock) {
         const bottom = layers[layers.length - 1];
-        const stack = layers.map((l) => `${l.n} × ${l.l / 10} × ${l.w / 10}${l.t ? ` × ${l.t} mm` : ' cm'}`).join(' + ');
+        const stack = layers.map(layerShort).join(' + ');
+        const composed = onBlock && checks.some((c) => c.block?.composition);
         const title = onBlock && !part.refs
           ? layers.length
-            ? 'Bloc bois dessiné + plaques de répartition sous le bloc'
-            : 'Bloc bois dessiné, sans plaque'
+            ? composed ? 'Cale composée (bloc dessiné) + plaques de répartition sous la cale' : 'Bloc bois dessiné + plaques de répartition sous le bloc'
+            : composed ? 'Cale composée (bloc dessiné), sans plaque' : 'Bloc bois dessiné, sans plaque'
           : custom
           ? layers.length
             ? roadwayOn
@@ -937,10 +1006,12 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           title,
           summary: onBlock
             ? layers.length
-              ? `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? ', sur les plaques de roulage' : ''}`
+              ? composed
+                ? `${stack} sous chaque cale, centrées sur la cale${roadwayOn ? ', sur les plaques de roulage' : ''}`
+                : `${stack} sous chaque bloc, centrées sur le bloc${roadwayOn ? ', sur les plaques de roulage' : ''}`
               : roadwayOn
-                ? 'bloc posé sur les plaques de roulage'
-                : 'bloc posé directement au sol'
+                ? composed ? 'cale posée sur les plaques de roulage' : 'bloc posé sur les plaques de roulage'
+                : composed ? 'cale posée directement au sol' : 'bloc posé directement au sol'
             : layers.length ? `${stack} par ${unit}${placeText}${roadwayOn ? ', sur plaques de roulage' : ''}` : roadwayOn ? 'pied posé sur les plaques de roulage' : 'pied posé directement au sol',
           feasible: worst.eta <= 1,
           remarks: worst.problems,
@@ -949,12 +1020,15 @@ function computeCalageBase(inp: CalageInput): CalageResult {
           materials:
             !custom && !onBlock && !slabStock && autoChosen?.materials.length
               ? autoChosen.materials
-              : layers.map((l) => ({
-                  label: materialLabel(l),
-                  dims: l.material === 'commercial' ? `${l.l} × ${l.w} mm` : `${l.l} × ${l.w} × ${l.t} mm`,
-                  quantity: l.n * reactions.length,
-                  massKg: l.massKg * l.n * reactions.length,
-                })),
+              : layers.some((l) => l.joist)
+                ? // madriers : le sens retenu appui par appui (longueur des madriers)
+                  mergeMaterials(checks.flatMap((c) => c.layerList.map((l) => ({ label: materialLabel(l), dims: layerDims(l), quantity: l.n, massKg: l.massKg * l.n }))))
+                : layers.map((l) => ({
+                    label: materialLabel(l),
+                    dims: layerDims(l),
+                    quantity: l.n * reactions.length,
+                    massKg: l.massKg * l.n * reactions.length,
+                  })),
           // automatique : vérification statico de la plaque retenue, puis la chaîne de l'appui le plus chargé
           records: !custom && !onBlock && !slabStock && autoChosen ? [...autoChosen.records, ...worst.records] : worst.records,
           ...(bottom ? { footprint: { l: bottom.l, w: bottom.w } } : {}),
@@ -1085,7 +1159,12 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     const u = blockAxes(inp.modules);
     materials.unshift(
       ...mergeMaterials(
-        inp.blocks.map((b) => ({ label: `Bloc de calage ${blockMaterial(b.material).name.replace(/\s*\(.*\)$/, '').toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg })),
+        inp.blocks.flatMap((b) => {
+          // bloc décrit comme une cale composée : ses plaques et ses madriers
+          const comp = b.composition && choices.blockComposition?.length ? resolveLayers(choices.blockComposition, inp.stock, blockDims(b, u)).layers : [];
+          if (comp.length) return comp.map((l) => ({ label: `Cale composée (bloc dessiné) — ${materialLabel(l)}`, dims: layerDims(l), quantity: l.n, massKg: l.n * l.massKg }));
+          return [{ label: `Bloc de calage ${blockMaterial(b.material).name.replace(/\s*\(.*\)$/, '').toLowerCase()} (dessiné dans le modèle)`, dims: blockDimsText(b, u), quantity: 1, massKg: b.massKg }];
+        }),
       ),
     );
     if (tuvOn && blockOf.size) {
@@ -1097,13 +1176,30 @@ function computeCalageBase(inp: CalageInput): CalageResult {
       );
     }
   }
-  if (roadwayOn)
+  if (roadwayOn) {
+    // type choisi : nombre de plaques au moins (surface / surface d'une plaque, calepinage à faire)
+    const piece = inp.roadwayType?.piece;
+    const count = piece && piece[0] > 0 && piece[1] > 0 ? Math.ceil(roadway.area / (piece[0] * piece[1]) - 1e-9) : 0;
     materials.push({
-      label: 'Plaques de roulage jointives',
-      dims: `${(roadway.area / 1e6).toFixed(1).replace('.', ',')} m² à couvrir (toute l’emprise au sol)`,
-      quantity: 1,
+      label: `Plaques de roulage jointives${inp.roadwayType ? ` — ${inp.roadwayType.label}` : ''}`,
+      dims: `${(roadway.area / 1e6).toFixed(1).replace('.', ',')} m² à couvrir (toute l’emprise au sol${count ? ', nombre minimal de plaques, calepinage à faire' : ''})`,
+      quantity: count || 1,
       massKg: (roadway.plates * roadway.area) / 9.81,
     });
+  }
+  // madriers sur chant (calage choisi ou cale composée) : à fixer pour qu'ils ne se couchent pas
+  if (checks.some((c) => c.layerList.some((l) => l.joist) || c.block?.composition?.layers.some((l) => l.joist)))
+    warnings.push('Madriers posés sur chant : les visser aux plaques en tête et en pied (ou les entretoiser) pour qu’ils ne se couchent pas sous la charge.');
+  // cales composées : hauteur de la cale ≠ hauteur du bloc dessiné
+  const comps = [...new Map(checks.filter((c) => c.block?.composition).map((c) => [c.block!.id, c.block!])).values()];
+  const diff = comps.filter((b) => Math.abs(b.composition!.height - b.composition!.drawnHeight) > 10);
+  if (diff.length) {
+    const d0 = diff[0].composition!;
+    const dh = d0.height - d0.drawnHeight;
+    warnings.push(
+      `Cale composée de ${fmtNumber(d0.height / 10, 1)} cm de haut à la place ${diff.length > 1 ? 'des blocs dessinés' : 'du bloc dessiné'} ${diff.map((b) => b.id).join(', ')} (${fmtNumber(d0.drawnHeight / 10, 1)} cm dans le modèle) : ${fmtNumber(Math.abs(dh) / 10, 1)} cm ${dh > 0 ? 'plus haut' : 'plus bas'} — ${dh > 0 ? 'les vérins sortent d’autant moins' : 'les vérins sortent d’autant plus'} (ou mettre le modèle à jour).`,
+    );
+  }
   if (!allPlates && !longrineChosen) {
     warnings.push('Aucune solution standard pour tous les appuis : la moins mauvaise est chiffrée, une étude de répartition spécifique est nécessaire.');
     if (longrine && longrine.result.eta <= 1) warnings.push(`La variante longrines passe (η = ${fmtNumber(longrine.result.eta, 2)}) : elle peut être retenue à l’étape Sol & calage.`);
@@ -1192,7 +1288,10 @@ function blockTypeLabel(n: number, middle: boolean, jack: boolean, capital = fal
 /** Contour en plan d'un appui sur bloc : la plaque du dessous (centrée sur le bloc), sinon le bloc lui-même. */
 /** Plaque (n plaques identiques par couche) tournée d'un quart de tour : longueur et largeur échangées. */
 function rotated(layers: SpreadLayer[]): SpreadLayer[] {
-  return layers.map((L) => (L.l !== L.w ? { ...L, l: L.w, w: L.l } : L));
+  return layers.map((L) => {
+    if (L.joist) return L.l !== L.w ? joistLayer(L.joist.b, L.joist.h, L.n, L.w, L.l, L.joist.along === 'u' ? 'v' : 'u', L.joist.auto) : L;
+    return L.l !== L.w ? { ...L, l: L.w, w: L.l } : L;
+  });
 }
 
 /**
@@ -1223,9 +1322,16 @@ function blockPlan(bs: BlockSupport, bottom: SpreadLayer | undefined, placement:
 }
 
 function materialLabel(l: SpreadLayer): string {
+  if (l.material === 'joists') return 'Madriers C24 posés sur chant';
   if (l.material === 'commercial') return l.label;
   if (l.material === 'steel') return 'Tôle acier S235';
   return PLATE_LABEL[l.material];
+}
+
+/** Dimensions d'une couche pour la liste de matériel (madriers : section × longueur). */
+function layerDims(l: SpreadLayer): string {
+  if (l.joist) return `${l.joist.b} × ${l.joist.h} × ${Math.round(l.joist.along === 'u' ? l.l : l.w)} mm`;
+  return l.material === 'commercial' ? `${l.l} × ${l.w} mm` : `${l.l} × ${l.w} × ${l.t} mm`;
 }
 
 /** Lignes de matériel identiques (même désignation et mêmes dimensions) additionnées. */

@@ -9,6 +9,8 @@ import type { EstimateModule, GroupReaction, P2 } from './estimate';
 import type { PlateGroup, SupportGeometry } from './placement';
 import { moduleAxes, sumReactions, supportGeometry } from './placement';
 import { MATERIALS } from './materials';
+import type { LoadFoot, SpreadLayer } from './ground';
+import { layerThickness } from './ground';
 import { fmtNumber } from './units';
 
 /** Masse volumique par défaut d'un bloc bois (kg/m³) : C24, EN 338 (valeur de l'annexe SCIA statico). */
@@ -27,15 +29,20 @@ export interface DrawnBlock {
   /** dessous et dessus du bloc (mm) */
   bottom: number;
   top: number;
-  /** masse du bloc (kg) et son origine : saisie à l'étape 1, ou volume dessiné × masse volumique */
+  /** masse du bloc (kg) et son origine : saisie à l'étape 1, volume dessiné × masse volumique, ou cale composée */
   massKg: number;
-  massSource: 'given' | 'computed';
+  massSource: 'given' | 'computed' | 'composed';
   /** matériau (clé du catalogue des matériaux, bois ou contreplaqué) */
   material: string;
   /** pièces dessinées qui composent le bloc (madriers d'une pile…) */
   pieces: number;
   /** ce qui repose sur le bloc dans le dessin (écarts au dessus du bloc, mm) : absent = non mesuré */
   under?: BlockUnder;
+  /**
+   * bloc décrit comme une cale composée (plaques à sa taille, madriers sur chant — `CalageChoices.blockComposition`) :
+   * hauteur et masse de la cale, et celles du bloc dessiné (la masse du bloc devient celle de la cale)
+   */
+  composition?: { height: number; drawnHeight: number; drawnMassKg: number; drawnMassSource: 'given' | 'computed' | 'composed' };
 }
 
 /**
@@ -361,6 +368,11 @@ export interface BlockChain {
   edge: [number | null, number | null];
   /** tronçons de rive / profils posés sur la plaque : portée de la répartition de chaque côté de la semelle (mm) */
   stripReach?: number;
+  /**
+   * cale composée à la place du bloc plein : ses couches de haut en bas (axes u v de l'appui), sa hauteur et les pieds
+   * posés dessus (par rapport à la résultante) — la chaîne passe par les couches au lieu de la diffusion dans un bloc
+   */
+  composition?: { name: string; layers: SpreadLayer[]; height: number; feet: LoadFoot[] };
 }
 
 /**
@@ -369,9 +381,9 @@ export interface BlockChain {
  * centrée sur la résultante (B' = 2 × distance au bord le plus proche), poids du bloc. `scale` = rapport réaction
  * limitée / réaction complète (public limité), appliqué aux pieds.
  */
-export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flush' = 'centered'): BlockChain {
+export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flush' = 'centered', composed?: SpreadLayer[]): BlockChain {
   const b = s.block;
-  const h = Math.max(0, b.top - b.bottom);
+  const h = composed ? composed.reduce((a, l) => a + layerThickness(l), 0) : Math.max(0, b.top - b.bottom);
   const [u0, u1, v0, v1] = s.rect;
   const [cu, cv] = s.geometry.center;
   const fr = [
@@ -423,8 +435,25 @@ export function blockChain(s: BlockSupport, scale = 1, plate: 'centered' | 'flus
     if (sigma >= c90.sigma) c90 = { foot: f.id, sigma, fc90d, area, REd: f.REd * scale };
   }
   const W = b.massKg * 9.81;
+  // cale composée : pieds par rapport à la résultante (position entre les madriers)
+  const composition = composed?.length
+    ? {
+        name: `cale ${b.id}`,
+        layers: composed,
+        height: h,
+        feet: s.feet.map((ft): LoadFoot => ({
+          id: ft.id,
+          at: [(ft.rect[0] + ft.rect[1]) / 2 - cu, (ft.rect[2] + ft.rect[3]) / 2 - cv],
+          size: [Math.max(1, ft.rect[1] - ft.rect[0]), Math.max(1, ft.rect[3] - ft.rect[2])],
+          REd: ft.REd * scale,
+        })),
+      }
+    : undefined;
   return {
-    label: `${b.id.startsWith('PL') ? 'Plaque bois' : 'Bloc bois'} ${b.id} ${cm(u1 - u0)} × ${cm(v1 - v0)} × ${cm(h)} cm (${fmtNumber(b.massKg, 0)} kg)`,
+    label: composition
+      ? `Cale composée ${b.id} ${cm(u1 - u0)} × ${cm(v1 - v0)} × ${cm(h)} cm (${fmtNumber(b.massKg, 0)} kg)`
+      : `${b.id.startsWith('PL') ? 'Plaque bois' : 'Bloc bois'} ${b.id} ${cm(u1 - u0)} × ${cm(v1 - v0)} × ${cm(h)} cm (${fmtNumber(b.massKg, 0)} kg)`,
+    ...(composition ? { composition } : {}),
     dims: [u1 - u0, v1 - v0],
     height: h,
     eff: [eu, ev],

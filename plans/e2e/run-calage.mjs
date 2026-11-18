@@ -57,14 +57,15 @@ console.log('Appui choisi :', (await panel.locator('.card-head').innerText()).re
 await panel.locator('select').first().selectOption('custom');
 await page.waitForTimeout(400);
 const rows = panel.locator('.row', { hasText: 'sous le pied' }).last();
-const opt40 = await rows.locator('select').nth(1).locator('option', { hasText: '40 × 40 × 36' }).first().getAttribute('value');
-await rows.locator('select').nth(1).selectOption(opt40);
-await rows.locator('select').nth(0).selectOption('1');
-await panel.getByRole('button', { name: /couche en dessous/ }).click();
+// une ligne de couche : genre (plaques / madriers sur chant), nombre, plaque
+const opt40 = await rows.locator('select').nth(2).locator('option', { hasText: '40 × 40 × 36' }).first().getAttribute('value');
+await rows.locator('select').nth(2).selectOption(opt40);
+await rows.locator('select').nth(1).selectOption('1');
+await panel.getByRole('button', { name: /plaques en dessous/ }).click();
 await page.waitForTimeout(400);
 const layer2 = panel.locator('.row', { hasText: 'couche 2' }).last();
-const opt100 = await layer2.locator('select').nth(1).locator('option', { hasText: '100 × 100 × 36' }).first().getAttribute('value');
-await layer2.locator('select').nth(1).selectOption(opt100);
+const opt100 = await layer2.locator('select').nth(2).locator('option', { hasText: '100 × 100 × 36' }).first().getAttribute('value');
+await layer2.locator('select').nth(2).selectOption(opt100);
 await page.waitForTimeout(700);
 console.log('Étapes :', (await panel.locator('table.list tbody').innerText()).replace(/\t/g, ' · ').split('\n').join(' | '));
 console.log('Conseil :', await panel.locator('.card-body > div').first().innerText());

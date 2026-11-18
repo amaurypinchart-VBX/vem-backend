@@ -11,7 +11,7 @@ import { TERRACE } from '../../structure/core/terrace';
 import { ESTIMATE_DEFAULTS } from '../../structure/core/estimate';
 import { DEFAULTS } from '../../structure/library/defaults';
 import type { BearingUnit, CommercialPlate, Solution, StockPlate } from '../../structure/core/ground';
-import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PLATE_LABEL, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom } from '../../structure/core/ground';
+import { BEARING_PRESETS, C24_BEAMS, GROUND_NOTE, PLATE_LABEL, SUBGRADE_PRESETS, VIEWBOX_STOCK, bearingFrom, roadwayTypes } from '../../structure/core/ground';
 import type { PlateMaterial } from '../../structure/core/ground';
 import type { CalageChoices } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
@@ -34,8 +34,8 @@ import { DEFAULT_FR_WIND, frOutOfService, serviceWindPressure, spdHorizontalRati
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
 import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from '../../structure/report/stackFigure';
-import type { ChoiceSetters } from './CalageChoice';
-import { CHECK_COLORS, CalageDiagnostic, SupportPanel, TypeChoice } from './CalageChoice';
+import type { ChoiceSetters, RoadwayFieldsProps } from './CalageChoice';
+import { BlockCompositionCard, CHECK_COLORS, CalageDiagnostic, RoadwayTypeFields, SupportPanel, TypeChoice } from './CalageChoice';
 import type { Project } from '../../api/vem';
 import { PROJECT_ID, STRUCTURE_STOCK_KEY, vem } from '../../api/vem';
 import { downloadBlob } from '../common';
@@ -93,6 +93,8 @@ export interface Hypotheses {
   roadwayKg: number;
   /** épaisseur des plaques de roulage (mm, coupe du calage) ; 0 / absent = inconnue */
   roadwayMm?: number;
+  /** type de plaques de roulage choisi (`roadwayTypes` : « stock:… », « hdpe-2200x1100x38 », « steel-20 »…) ; absent = saisi à la main */
+  roadwayType?: string;
   /** public pour le sol : charge réglementaire (kN/m²) ou nombre de personnes limité sur toute l'installation */
   publicMode: 'norm' | 'persons';
   persons: number;
@@ -242,6 +244,11 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     ...(h.publicMode === 'persons' ? { publicLimit: { persons: Math.max(0, Math.round(h.persons)), kg: h.personKg } } : {}),
     roadwayPlates: (h.roadwayKg * 9.81) / 1e6,
     ...(h.roadwayMm && h.roadwayMm > 0 ? { roadwayThickness: h.roadwayMm } : {}),
+    ...(() => {
+      // type de plaques de roulage : libellé (coupe, matériel) et taille d'une plaque (nombre de plaques)
+      const t = h.roadwayType ? roadwayTypes(stock.plates.length ? stock.plates : VIEWBOX_STOCK).find((x) => x.key === h.roadwayType) : undefined;
+      return t ? { roadwayType: { label: t.label, ...(t.piece ? { piece: t.piece } : {}) } } : {};
+    })(),
     placement: h.platePlacement ?? 'auto',
     tuvMinimum: h.tuvMinimum ?? true,
     ...(h.groundLevels?.length ? { levels: h.groundLevels } : {}),
@@ -284,19 +291,6 @@ function Num({ value, onChange, step = 0.05, width = 80 }: { value: number; onCh
       }}
       data-step={step}
     />
-  );
-}
-
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return (
-    <label className="row" style={{ justifyContent: 'space-between', gap: 8 }} title={hint}>
-      <span className="hint" style={{ minWidth: 170 }}>
-        {label}
-      </span>
-      <span className="row" style={{ gap: 4 }}>
-        {children}
-      </span>
-    </label>
   );
 }
 
@@ -1059,7 +1053,30 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     setPlace: (id, v) => setChoices((c) => ({ ...c, placeBySupport: setIn(c.placeBySupport, id, v) })),
     setRoadway: (on) => setChoices((c) => ({ ...c, roadway: on })),
     setRoadwayOverhang: (mm) => setChoices((c) => ({ ...c, roadwayOverhang: mm })),
-    reset: () => setChoices(() => ({})),
+    // la composition des blocs dessinés décrit ce qui est posé : elle reste
+    reset: () => setChoices((c) => (c.blockComposition ? { blockComposition: c.blockComposition } : {})),
+  };
+  // type de plaques de roulage : poids au m² et épaisseur repris du type ; une valeur retouchée = « autre »
+  const rwTypes = roadwayTypes(input.stock);
+  const rwFixed = (key: string | undefined) => {
+    const t = rwTypes.find((x) => x.key === key);
+    return !!t && t.kgm2 !== null && t.thickness !== null;
+  };
+  const roadwayFields: RoadwayFieldsProps = {
+    types: rwTypes,
+    value: hyp.roadwayType && rwTypes.some((t) => t.key === hyp.roadwayType) ? hyp.roadwayType : '',
+    kgm2: hyp.roadwayKg,
+    mm: hyp.roadwayMm ?? 0,
+    onType: (key) =>
+      setHyp((h) => {
+        const t = rwTypes.find((x) => x.key === key);
+        const out: Hypotheses = { ...h, roadwayType: key || undefined };
+        if (t?.kgm2 != null) out.roadwayKg = Math.round(t.kgm2 * 10) / 10;
+        if (t?.thickness != null) out.roadwayMm = t.thickness;
+        return out;
+      }),
+    onKg: (v) => setHyp((h) => ({ ...h, roadwayKg: v, ...(rwFixed(h.roadwayType) ? { roadwayType: undefined } : {}) })),
+    onMm: (v) => setHyp((h) => ({ ...h, roadwayMm: v, ...(rwFixed(h.roadwayType) ? { roadwayType: undefined } : {}) })),
   };
   const bearingLabel = (() => {
     if (pdfLang === 'fr') return bearingText();
@@ -1350,7 +1367,22 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             </div>
           </div>
 
-          <CalageDiagnostic result={result} set={choiceSet} onSelect={select} publicLine={publicLine} />
+          <CalageDiagnostic result={result} set={choiceSet} onSelect={select} publicLine={publicLine} roadwayFields={roadwayFields} />
+          {!!blocks?.length && (
+            <BlockCompositionCard
+              blocks={blocks}
+              value={choices.blockComposition}
+              onChange={(v) =>
+                setChoices((c) => {
+                  const out = { ...c };
+                  if (v?.length) out.blockComposition = v;
+                  else delete out.blockComposition;
+                  return out;
+                })
+              }
+              stock={input.stock}
+            />
+          )}
           {(result.checks.some((c) => c.eta > 1) || !!choices.remedy || !!choices.centreBlocks) && (
             <RemediesCard
               remedies={remedies}
@@ -1379,12 +1411,8 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 </button>
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <Field label="Poids propre des plaques" hint="acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD ≈ 15 kg/m² ; 0 = non compté">
-                  <Num value={hyp.roadwayKg} onChange={(v) => setHyp((h) => ({ ...h, roadwayKg: Math.max(0, v) }))} width={60} /> kg/m²
-                </Field>
-                <Field label="Épaisseur des plaques" hint="pour la coupe du calage et la hauteur de la Viewbox au-dessus de la dalle ; 0 = inconnue">
-                  <Num value={hyp.roadwayMm ?? 0} onChange={(v) => setHyp((h) => ({ ...h, roadwayMm: Math.max(0, v) }))} width={60} /> mm
-                </Field>
+                <RoadwayTypeFields {...roadwayFields} />
+                <div className="hint">Poids propre : acier 20 mm ≈ 157 kg/m², aluminium ≈ 35 kg/m², plaques PEHD Viewbox ≈ 19 kg/m² ; 0 = non compté. Épaisseur : coupe du calage et hauteur de la Viewbox au-dessus de la dalle ; 0 = inconnue.</div>
                 <div className="stats">
                   <div className="stat">
                     <div className="v">{n(roadway.area / 1e6, 1)} m²</div>
@@ -1491,8 +1519,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             </div>
           )}
 
-          {result.types.map((t) => (
-            <div className="card" key={t.key}>
+          {result.types.map((t, i) => (
+            // clé stable quand le calage du type change (sinon la carte est recréée et l'éditeur des couches se referme)
+            <div className="card" key={`${t.typeKey}#${result.types.slice(0, i).filter((x) => x.typeKey === t.typeKey).length}`}>
               <div className="card-head">
                 <span className="chip">
                   <i style={{ background: typeColor(t.typeKey) }} />

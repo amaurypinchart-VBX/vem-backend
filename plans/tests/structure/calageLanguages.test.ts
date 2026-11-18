@@ -12,6 +12,7 @@ import { gridModules } from '../../src/structure/core/estimate';
 import type { EstimateModule } from '../../src/structure/core/estimate';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
 import { withLevel } from '../../src/structure/core/groundLevels';
+import { ROADWAY_PRESETS, blockPlateKey, joistKey } from '../../src/structure/core/ground';
 import { calageLevelMarks, calagePlates, calageSheet, fitCalageViewport, outlineLinework } from '../../src/structure/report/calagePlan';
 import { groundPointsPages } from '../../src/structure/report/groundPoints';
 import { groundSheetPages } from '../../src/structure/report/groundSheet';
@@ -113,6 +114,16 @@ function scenarios(): Array<[string, CalageResult, EstimateModule[]]> {
   const pehd = { label: 'PEHD', length: 2200, width: 1100, thickness: 38, quantity: 0, material: 'hdpe' as const, massKg: 46 };
   out.push(['PEHD centrées', computeCalage({ ...calageInput(mods, hyp, stock), stock: [pehd], placement: 'centered' }), mods]);
   out.push(['longrines', computeCalage({ ...calageInput(mods, { ...hyp, bearingValue: 60, bearingUnit: 'kN/m²' }, stock), choices: { longrine: true } }), mods]);
+  // madriers sur chant entre des plaques, cale composée à la place des blocs, plaques de roulage PEHD (18.11.2026)
+  const MX = 'birch:1000x1000x18';
+  const J = joistKey(75, 225);
+  const jInp = calageInput(mods, hyp, stock, true);
+  const jAuto = computeCalage(jInp);
+  out.push(['madriers sur chant', computeCalage({ ...jInp, choices: { byType: Object.fromEntries(jAuto.types.map((t) => [t.typeKey, [{ plate: MX, n: 3 }, { plate: J, n: 3 }, { plate: MX, n: 4 }]])) } }), mods]);
+  const cale = [{ plate: blockPlateKey('birch', 18), n: 1 }, { plate: J, n: 3, along: 'u' as const }, { plate: blockPlateKey('birch', 18), n: 1 }];
+  const pehdType = { roadwayType: { label: ROADWAY_PRESETS[0].label, piece: [2200, 1100] as [number, number] }, roadwayThickness: 38 };
+  out.push(['cale composée, dalle, PEHD', computeCalage({ ...slab, ...pehdType, blocks: nine, choices: { blockComposition: cale, roadway: true, byType: { B1: [{ plate: MX, n: 3 }] } } }), m2]);
+  out.push(['cale composée, sol', computeCalage({ ...inp, ...pehdType, choices: { blockComposition: cale } }), mods]);
   return out;
 }
 

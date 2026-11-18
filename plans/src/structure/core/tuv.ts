@@ -69,6 +69,8 @@ export function tuvConformity(containers: number, middle: boolean, layers: Sprea
   const req = tuvPlateText(plate);
   const bottom = layers[layers.length - 1];
   if (!bottom) return { plate, ok: false, text: `aucune plaque ; Prüfbuch : ${req}` };
+  // madriers sur chant entre des plaques : rien de comparable dans le plan du Prüfbuch
+  if (layers.some((l) => l.joist)) return { plate, ok: null, text: `calage avec madriers sur chant : non prévu par le plan ${TUV.calagePlan} (Prüfbuch : ${req})` };
   if (bottom.material !== 'F40' && bottom.material !== 'birch') return { plate, ok: null, text: `${bottom.label} : non prévu par le plan ${TUV.calagePlan} (Prüfbuch : ${req})` };
   const small = Math.min(bottom.l, bottom.w) < plate.side;
   const n = Math.min(3, bottom.n);

@@ -136,7 +136,7 @@ export function compactIds(ids: string[]): string {
 /** « 2 × 100 × 100 × 36 mm · 61 kN/m² » (▲ = plaque centrée, elle dépasse) */
 function calageCell(c: SupportCheck, roadway: boolean, lang: Lang, timber = false): string {
   const C = CALAGE_LABELS[lang];
-  const lay = timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList) : C.noPlate;
+  const lay = timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList, lang) : C.noPlate;
   if (c.zone) return `  ${lay} · ${num(lang, (c.zone.q * 1e6) / 9.81, 0)} kg/m² (${num(lang, c.zone.area / 1e6, 2)} m²)${verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : ''}`;
   const q = c.pressure * 1e3;
   const mark = verdictOf(c.eta) === 'fail' ? C.exceeded : verdictOf(c.eta) === 'limit' ? C.limit : '';

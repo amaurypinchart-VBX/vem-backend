@@ -14,6 +14,8 @@ import type { CalageResult, SupportCheck } from './calage';
 import type { EstimateModule, P2 } from './estimate';
 import type { SlabZone } from './slabZones';
 import { BLOCK_TOUCH, blockBearing } from './blocks';
+import type { SpreadLayer } from './ground';
+import { joistLabel } from './ground';
 import { fmtNumber } from './units';
 
 const G = 9.81;
@@ -21,13 +23,19 @@ const G = 9.81;
 export type GroundMode = 'jacks' | 'points' | 'pads' | 'rims';
 
 export interface StackLayer {
-  kind: 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot';
+  kind: 'roadway' | 'timber' | 'plate' | 'block' | 'packing' | 'jack' | 'foot' | 'joists';
   label: string;
   /** épaisseur (mm) ; null = inconnue (à préciser) */
   thickness: number | null;
   note?: string;
   /** madriers de la solution retenue : coupés (sections côte à côte) ou vus en long dans la coupe */
   section?: 'cut' | 'long';
+  /** plaques empilées : nombre de plaques (dessinées une à une dans la coupe) */
+  count?: number;
+  /** madriers sur chant : nombre, largeur d'un madrier et largeur de la couche (mm), coupés dans la coupe */
+  joists?: { n: number; b: number; width: number };
+  /** couche d'une cale composée (bloc dessiné décrit couche par couche) : nom de la cale */
+  group?: string;
 }
 
 export interface CalageStack {
@@ -64,7 +72,7 @@ function bearingElement(c: SupportCheck, mode: GroundMode): { label: string; und
  * Coupe du calage de chaque appui, de la dalle à la Viewbox. `mode` = pose au sol du calcul ; `roadwayThickness` =
  * épaisseur des plaques de roulage (mm, absente = inconnue). Les appuis aux couches identiques sont regroupés.
  */
-export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickness?: number): CalageStack[] {
+export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickness?: number, roadwayLabel?: string): CalageStack[] {
   const out: CalageStack[] = [];
   for (const t of res.types)
     for (const c of t.checks) {
@@ -72,41 +80,50 @@ export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickne
       if (res.roadwayOn && !c.reaction.group.stair && !c.reaction.group.terrace)
         layers.push({
           kind: 'roadway',
-          label: `Plaques de roulage jointives sur toute l’emprise${res.roadway.plates > 0 ? ` (${fmtNumber((res.roadway.plates * 1e6) / G, 0)} kg/m²)` : ''}`,
+          label: `Plaques de roulage jointives sur toute l’emprise${roadwayLabel ? ` — ${roadwayLabel}` : ''}${res.roadway.plates > 0 ? ` (${fmtNumber((res.roadway.plates * 1e6) / G, 0)} kg/m²)` : ''}`,
           thickness: roadwayThickness && roadwayThickness > 0 ? roadwayThickness : null,
           ...(roadwayThickness && roadwayThickness > 0 ? {} : { note: 'épaisseur à préciser' }),
         });
       // madriers de la solution retenue (grille sous la rangée, plateau) : posés sur le sol, sous le bloc ou le pied
       for (const l of c.chainBase.timber?.stack ?? []) layers.push({ kind: 'timber', label: l.label, thickness: l.thickness, section: l.section });
-      // plaques : sous le bloc, ou sous le pied (de bas en haut : la dernière couche choisie est en bas)
-      for (const l of [...c.layerList].reverse())
-        layers.push({
-          kind: 'plate',
-          label: `${l.label || 'Plaque'}${l.n > 1 ? ` — ${l.n} plaques côte à côte` : ''}${l.material === 'commercial' ? '' : ` (${cm(l.l)} × ${cm(l.w)})`}`,
-          thickness: l.material === 'commercial' ? null : l.t,
-          ...(l.material === 'commercial' ? { note: 'épaisseur selon fabricant' } : {}),
-        });
+      // plaques (et madriers sur chant) : sous le bloc, ou sous le pied (de bas en haut : la dernière couche choisie est en bas)
+      for (const l of [...c.layerList].reverse()) layers.push(layerOf(l));
       const top = bearingElement(c, mode);
       if (c.block) {
-        layers.push({ kind: 'block', label: `Bloc bois ${c.block.id} ${c.block.dims}${c.block.massKg ? ` (${fmtNumber(c.block.massKg, 0)} kg)` : ''}`, thickness: c.block.height });
+        const comp = c.block.composition;
+        if (comp) {
+          // bloc dessiné décrit comme une cale composée : ses couches, de bas en haut
+          const [bu, bv] = c.block.size;
+          const group = `Cale composée ${fmtNumber(bu / 10, bu % 10 ? 1 : 0)} × ${fmtNumber(bv / 10, bv % 10 ? 1 : 0)} cm (${fmtNumber(c.block.massKg, 0)} kg)`;
+          for (const l of [...comp.layers].reverse()) layers.push({ ...layerOf(l), group });
+        } else layers.push({ kind: 'block', label: `Bloc bois ${c.block.id} ${c.block.dims}${c.block.massKg ? ` (${fmtNumber(c.block.massKg, 0)} kg)` : ''}`, thickness: c.block.height });
+        // vide du dessin au-dessus du bloc, corrigé de la hauteur de la cale composée
+        const dh = comp ? comp.height - comp.drawnHeight : 0;
+        const adj = (h: number | null): number | null => (h === null ? null : h - dh > 0 ? h - dh : null);
+        const adjNote = (n: string) => (comp && Math.abs(dh) > 1 ? `${n}, corrigé de la hauteur de la cale : ${dh > 0 ? '−' : '+'} ${cmFine(Math.abs(dh))} cm` : n);
         const b = c.block.under ? blockBearing({ under: c.block.under }) : null;
         const strip = c.reaction.group.strip;
         if (strip) {
           // UPN / profils posés sur le bloc : ce qu'il y a dans le dessin entre le bloc et eux = cales à prévoir
           const gap = strip.kind === 'secondary' ? (b?.kind === 'frame' ? b.gap : null) : c.block.under?.frame ?? null;
-          if (gap !== null && gap > BLOCK_TOUCH)
+          if (gap !== null && adj(gap) !== null && adj(gap)! > BLOCK_TOUCH)
             layers.push({
               kind: 'packing',
               label: strip.kind === 'secondary' ? 'Cales serrées sous les profils du plancher (à prévoir)' : 'Cales / rehausse sous l’UPN sur toute la largeur du bloc (vérins retirés)',
-              thickness: gap,
-              note: `vide de ${cmFine(gap)} cm dans le dessin`,
+              thickness: adj(gap),
+              note: adjNote(`vide de ${cmFine(gap)} cm dans le dessin`),
             });
         } else if (c.reaction.group.jack) {
           // vérin posé sur le bloc : du dessus du bloc au dessous de la Viewbox (platine + sortie du vérin), d'après le dessin
-          const h = b?.kind === 'feet' && Math.abs(b.gap) <= BLOCK_TOUCH ? c.block.under?.frame ?? null : null;
-          layers.push({ kind: 'jack', label: 'Vérin Viewbox (platine 15 × 15 cm) posé sur le bloc', thickness: h, ...(h === null ? { note: 'hauteur réglée sur site' } : { note: 'du dessus du bloc au dessous de la Viewbox, d’après le dessin' }) });
-        } else if (b?.kind === 'feet' && (c.block.under?.frame ?? 0) > BLOCK_TOUCH) {
-          layers.push({ kind: 'foot', label: 'Pied de la Viewbox posé sur le bloc', thickness: c.block.under!.frame, note: 'du dessus du bloc au dessous de la Viewbox, d’après le dessin' });
+          const h = adj(b?.kind === 'feet' && Math.abs(b.gap) <= BLOCK_TOUCH ? c.block.under?.frame ?? null : null);
+          layers.push({
+            kind: 'jack',
+            label: `Vérin Viewbox (platine 15 × 15 cm) posé sur ${comp ? 'la cale' : 'le bloc'}`,
+            thickness: h,
+            ...(h === null ? { note: 'hauteur réglée sur site' } : { note: adjNote(`du dessus ${comp ? 'de la cale' : 'du bloc'} au dessous de la Viewbox, d’après le dessin`) }),
+          });
+        } else if (b?.kind === 'feet' && (adj(c.block.under?.frame ?? 0) ?? 0) > BLOCK_TOUCH) {
+          layers.push({ kind: 'foot', label: `Pied de la Viewbox posé sur ${comp ? 'la cale' : 'le bloc'}`, thickness: adj(c.block.under!.frame), note: adjNote(`du dessus ${comp ? 'de la cale' : 'du bloc'} au dessous de la Viewbox, d’après le dessin`) });
         }
       } else if (c.reaction.group.jack) layers.push({ kind: 'jack', label: 'Vérin Viewbox (platine 15 × 15 cm)', thickness: null, note: 'sortie réglée sur site (≤ 5 cm)' });
       const known = layers.reduce((s, l) => s + (l.thickness ?? 0), 0);
@@ -127,6 +144,29 @@ export function calageStacks(res: CalageResult, mode: GroundMode, roadwayThickne
     if (s.supports.length > 1)
       for (const l of s.layers) if (l.kind === 'block') l.label = l.label.replace(/^Bloc bois \S+ /, 'Bloc bois ');
   return out;
+}
+
+/** Couche de la coupe pour une couche de calage : n plaques empilées, ou madriers sur chant (un à chaque bord…). */
+function layerOf(l: SpreadLayer): StackLayer {
+  if (l.joist) {
+    const j = l.joist;
+    const [length, width] = j.along === 'u' ? [l.l, l.w] : [l.w, l.l];
+    const where = l.n === 1 ? 'un au milieu' : l.n === 2 ? 'un à chaque bord' : l.n === 3 ? 'un à chaque bord et un au milieu' : `un à chaque bord, ${l.n - 2} entre les deux`;
+    return {
+      kind: 'joists',
+      label: `${joistLabel(l.n, j.b, j.h)} (répartis sur ${cm(width)} : ${where} ; longueur ${cm(length)} ; ${j.along === 'u' ? 'parallèles au grand côté de la Viewbox' : 'parallèles au petit côté de la Viewbox'})`,
+      thickness: j.h,
+      note: 'vissés aux plaques en tête et en pied',
+      joists: { n: l.n, b: j.b, width },
+    };
+  }
+  return {
+    kind: 'plate',
+    label: `${l.label || 'Plaque'}${l.n > 1 ? ` — ${l.n} plaques empilées` : ''}${l.material === 'commercial' ? '' : ` (${cm(l.l)} × ${cm(l.w)})`}`,
+    thickness: l.material === 'commercial' ? null : l.n * l.t,
+    ...(l.material === 'commercial' ? { note: 'épaisseur selon fabricant' } : {}),
+    ...(l.n > 1 ? { count: l.n } : {}),
+  };
 }
 
 /** « Plaques de roulage 2 cm → Bloc bois 100 × 100 × 24,4 cm → Vérin 9,6 cm → Rive UNP » : une coupe en une ligne. */

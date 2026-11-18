@@ -42,9 +42,19 @@ const PLAN_ROADWAY: Record<Lang, string> = {
 /** Couleur d'un type d'appui de calage (« 1 »…« 4 », « M », « M2 »). */
 export const typeColor = (key: string): string => TYPE_HEX[key] ?? (key.startsWith('B') ? TYPE_HEX.B : TYPE_HEX[key.startsWith('M') ? 'M' : String(Math.min(4, Number(key) || 1))]);
 
-/** « 3 × 70 × 70 × 36 mm » : couches d'un appui (plaque du dessus d'abord). */
-export function layersShort(layers: SpreadLayer[]): string {
-  return layers.map((l) => (l.material === 'commercial' ? `${l.n} × ${l.label}` : `${l.n} × ${l.l / 10} × ${l.w / 10} × ${l.t} mm`)).join(' + ');
+/** « 100 × 100 × 26,1 cm » : dimensions d'une cale composée (côtés du bloc, hauteur de la cale). */
+function caleDims(size: [number, number], height: number, lang: Lang): string {
+  const c = (mm: number) => num(lang, Math.round(mm) / 10, mm % 10 ? 1 : 0);
+  return `${c(size[0])} × ${c(size[1])} × ${c(height)} cm`;
+}
+
+/** « 3 × 70 × 70 × 36 mm », « 3 madriers 75 × 225 mm sur chant » : couches d'un appui (plaque du dessus d'abord). */
+export function layersShort(layers: SpreadLayer[], lang: Lang = 'fr'): string {
+  const joists = (n: number, b: number, h: number) =>
+    lang === 'de' ? `${n} Kanthölzer ${b} × ${h} mm hochkant` : lang === 'en' ? `${n} joist${n > 1 ? 's' : ''} ${b} × ${h} mm on edge` : `${n} madrier${n > 1 ? 's' : ''} ${b} × ${h} mm sur chant`;
+  return layers
+    .map((l) => (l.joist ? joists(l.n, l.joist.b, l.joist.h) : l.material === 'commercial' ? `${l.n} × ${l.label}` : `${l.n} × ${l.l / 10} × ${l.w / 10} × ${l.t} mm`))
+    .join(' + ');
 }
 
 /** Plaques (ou longrines) de la solution retenue, en plan, à leur place : à fleur de la Viewbox ou centrées (▲). */
@@ -140,8 +150,8 @@ export function calagePlates(s: Pick<StructuralModel, 'modules' | 'baseY'>, cala
     out.push({
       id: c.id,
       label: c.block
-        ? `${C.onBlock(c.block.dims.replace(/,/g, lang === 'en' ? '.' : ','))}${c.chainBase.timber ? ` ${C.onTimber}` : c.layerList.length ? ` + ${layersShort(c.layerList)}` : ''}`
-        : c.chainBase.timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList) : C.noPlate,
+        ? `${c.block.composition ? C.onCale(caleDims(c.block.size, c.block.composition.height, lang)) : C.onBlock(c.block.dims.replace(/,/g, lang === 'en' ? '.' : ','))}${c.chainBase.timber ? ` ${C.onTimber}` : c.layerList.length ? ` + ${layersShort(c.layerList, lang)}` : ''}`
+        : c.chainBase.timber ? C.onTimber : c.layerList.length ? layersShort(c.layerList, lang) : C.noPlate,
       sub: `Rz,k ${N(c.Rzk / 1e3)} kN${over}`,
       color: typeColor(c.typeKey),
       corners: rect.map(W),

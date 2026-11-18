@@ -260,12 +260,133 @@ export interface SpreadLayer {
   w: number;
   t: number;
   n: number;
-  material: PlateMaterial | 'steel' | 'commercial';
+  material: PlateMaterial | 'steel' | 'commercial' | 'joists';
   capacity?: number;
-  /** masse d'une plaque (kg) */
+  /** masse d'une plaque (kg) — madriers : masse d'un madrier */
   massKg: number;
   /** PEHD : données de la fiche technique ; `solid` = masse compatible avec une plaque pleine (sinon nervurée / alvéolée) */
   hdpe?: { E?: number; fc?: number; fm?: number; solid: boolean; rho: number };
+  /**
+   * madriers C24 posés sur chant (sur leur tranche) : `n` madriers b × h répartis sur la largeur de la couche (un à
+   * chaque bord, les autres à intervalles égaux), de longueur l (le long de u) ou w (le long de v) ; `t` = h ;
+   * `auto` = sens non choisi (le calage prend le plus favorable)
+   */
+  joist?: { b: number; h: number; along: 'u' | 'v'; auto?: boolean };
+}
+
+/** Pied (ou point d'appui) posé sur le calage : centre par rapport à la résultante (mm, axes u v), contact, Rz,Ed. */
+export interface LoadFoot {
+  at: [number, number];
+  size: [number, number];
+  REd: number;
+  id?: string;
+}
+
+/** Épaisseur totale d'une couche : n plaques empilées, ou la hauteur des madriers sur chant (posés côte à côte). */
+export const layerThickness = (l: SpreadLayer) => (l.joist ? l.t : l.n * l.t);
+
+// ─── madriers sur chant (A. Pinchart 18.11.2026 : « des madriers de 75 × 225 sur leur tranche, un à gauche, un à
+// droite et un au milieu de la planche, puis des plaques de multiplex 18 mm par-dessus ») ───
+
+/** Sections courantes de madriers C24 posés sur chant (b = largeur posée sur la plaque, h = hauteur). */
+export const JOIST_SECTIONS: Array<{ b: number; h: number }> = [
+  { b: 75, h: 225 },
+  { b: 63, h: 225 },
+  { b: 75, h: 200 },
+  { b: 63, h: 175 },
+  { b: 75, h: 175 },
+  { b: 100, h: 200 },
+  { b: 100, h: 225 },
+  { b: 75, h: 150 },
+  { b: 100, h: 100 },
+  { b: 150, h: 150 },
+];
+
+/** Clé d'une couche de madriers sur chant dans les choix de calage (« joists:75x225 »). */
+export const joistKey = (b: number, h: number) => `joists:${b}x${h}`;
+export function parseJoistKey(key: string): { b: number; h: number } | null {
+  const m = /^joists:(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(key);
+  return m ? { b: Number(m[1]), h: Number(m[2]) } : null;
+}
+
+/** « 3 madriers C24 75 × 225 mm sur chant ». */
+export const joistLabel = (n: number, b: number, h: number) => `${n} madrier${n > 1 ? 's' : ''} C24 ${b} × ${h} mm sur chant`;
+
+/**
+ * Couche de `count` madriers C24 b × h sur chant sous / sur une plaque l × w (axes u, v de l'appui) : ils courent le
+ * long de `along` (longueur = l ou w) et sont répartis sur l'autre côté (un à chaque bord, les autres entre les deux).
+ */
+export function joistLayer(b: number, h: number, count: number, l: number, w: number, along: 'u' | 'v' = 'u', auto = false): SpreadLayer {
+  const length = along === 'u' ? l : w;
+  const n = Math.max(1, Math.round(count));
+  return {
+    key: joistKey(b, h),
+    label: joistLabel(n, b, h),
+    l,
+    w,
+    t: h,
+    n,
+    material: 'joists',
+    massKg: (b * h * length * C24.rho) / 1e9,
+    joist: { b, h, along, ...(auto ? { auto: true } : {}) },
+  };
+}
+
+/** Position des axes des madriers sur la largeur W de la couche (mm, par rapport au milieu) : un à chaque bord, les autres à intervalles égaux. */
+export function joistAxes(W: number, b: number, n: number): number[] {
+  if (n <= 1) return [0];
+  const step = (W - b) / (n - 1);
+  return Array.from({ length: n }, (_, i) => -W / 2 + b / 2 + i * step);
+}
+
+// ─── plaques à la taille d'un bloc dessiné (cale composée) ───
+
+/** Clé d'une plaque « à la taille du bloc » dans la composition des blocs dessinés (« bloc:birch:18 »). */
+export const blockPlateKey = (material: PanelMaterial, t: number) => `bloc:${material}:${t}`;
+export function parseBlockPlateKey(key: string): { material: PanelMaterial; t: number } | null {
+  const m = /^bloc:(birch|F40):(\d+(?:\.\d+)?)$/.exec(key);
+  return m ? { material: m[1] as PanelMaterial, t: Number(m[2]) } : null;
+}
+/** Épaisseurs proposées pour les plaques d'une cale composée (mm). */
+export const BLOCK_PLATE_THICKNESSES = [12, 15, 18, 21, 24, 27, 30, 36, 40];
+
+// ─── plaques de roulage (type choisi : épaisseur et poids au m² pour la coupe, la dalle et le matériel) ───
+
+export interface RoadwayType {
+  key: string;
+  label: string;
+  /** poids au m² (kg/m²) et épaisseur (mm) ; null = à saisir */
+  kgm2: number | null;
+  thickness: number | null;
+  /** taille d'une plaque (mm), pour estimer le nombre de plaques */
+  piece?: [number, number];
+}
+
+/**
+ * Types de plaques de roulage proposés : PEHD de l'entrepôt Viewbox (220 × 110 × 38 mm, 46 kg — fiche du fournisseur
+ * donnée le 03.11.2026), tôles d'acier (masse volumique 7 850 kg/m³), aluminium (poids à saisir, ≈ 35 kg/m² courant) ;
+ * les plaques du stock de l'entrepôt sont ajoutées par `roadwayTypes`.
+ */
+export const ROADWAY_PRESETS: RoadwayType[] = [
+  { key: 'hdpe-2200x1100x38', label: 'PEHD 220 × 110 × 38 mm (46 kg la plaque)', kgm2: 46 / (2.2 * 1.1), thickness: 38, piece: [2200, 1100] },
+  { key: 'steel-15', label: 'Tôle acier 15 mm', kgm2: 7850 * 0.015, thickness: 15 },
+  { key: 'steel-20', label: 'Tôle acier 20 mm', kgm2: 7850 * 0.02, thickness: 20 },
+  { key: 'steel-25', label: 'Tôle acier 25 mm', kgm2: 7850 * 0.025, thickness: 25 },
+  { key: 'alu', label: 'Plaques aluminium (poids et épaisseur à saisir)', kgm2: null, thickness: null },
+];
+
+/** Types de plaques de roulage : les plaques du stock (clé « stock:… »), puis les types courants. */
+export function roadwayTypes(stock: StockPlate[]): RoadwayType[] {
+  const fromStock = stock
+    .filter((s) => s.length > 0 && s.width > 0 && s.thickness > 0)
+    .map((s): RoadwayType => {
+      const L = stockLayer(s, 1);
+      return { key: `stock:${plateKey(s)}`, label: `${stockPlateLabel(s)} (stock${s.label ? ` « ${s.label} »` : ''})`, kgm2: L.massKg / ((s.length * s.width) / 1e6), thickness: s.thickness, piece: [s.length, s.width] };
+    });
+  const keys = new Set(fromStock.map((t) => t.key));
+  // la plaque PEHD Viewbox déjà saisie au stock n'est pas proposée deux fois
+  const dup = (t: RoadwayType) => t.key === 'hdpe-2200x1100x38' && keys.has('stock:hdpe:2200x1100x38');
+  return [...fromStock, ...ROADWAY_PRESETS.filter((t) => !dup(t))];
 }
 
 export function stockLayer(s: StockPlate, n: number): SpreadLayer {
