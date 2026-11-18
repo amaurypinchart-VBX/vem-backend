@@ -1049,7 +1049,11 @@ function renderDetailFiles(projectId, files) {
     return '📎';
   };
 
+  // validation des plans par le client (public/js/20-plan-approvals.js) : bouton sur les PDF + carte au-dessus de la liste
+  const canApprove = typeof canSendPlanApproval === 'function' && canSendPlanApproval();
+
   el.innerHTML = `
+    <div id="plan-approvals-card"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div style="font-size:14px;font-weight:700;">📁 Fichiers du projet</div>
       <div style="display:flex;gap:8px;">
@@ -1121,6 +1125,7 @@ function renderDetailFiles(projectId, files) {
                 <button class="btn btn-ghost btn-xs" style="padding:1px 6px;" onclick="moveProjectFile('${f.id}','down','${projectId}')" title="Descendre">▼</button>
               </div>
               <div style="display:flex;gap:6px;flex-shrink:0;">
+                ${canApprove && isPDF(f) && !/_VALIDE/.test(f.fileName || '') ? `<button class="btn btn-ghost btn-xs" onclick="openPlanApprovalModal('${projectId}','${f.id}')" title="Envoyer ce PDF au client pour vérification et signature (sans compte)">✍️ Faire valider</button>` : ''}
                 ${is3D(f) ? `<button class="btn btn-primary btn-xs" onclick="openIn3DViewer('${f.fileUrl}','${esc(f.fileName||'')}','${projectId}')" title="Ouvrir dans le viewer 3D (mesures, photos, dimensions)">🎮 Voir en 3D</button>` : ''}
                 <a href="${f.fileUrl}" target="_blank" class="btn btn-ghost btn-xs">👁️ Voir</a>
                 <a href="${f.fileUrl}" download class="btn btn-ghost btn-xs">⬇️</a>
@@ -1130,6 +1135,7 @@ function renderDetailFiles(projectId, files) {
         </div>
       </div>` : ''}
     `}`;
+  if (typeof loadPlanApprovalsCard === 'function') loadPlanApprovalsCard(projectId);
 }
 
 // ─────────────────────────────────────────────────────────────────

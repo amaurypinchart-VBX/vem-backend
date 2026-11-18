@@ -234,6 +234,7 @@ model Project {
   checklists       ProjectChecklist[]
   infoRequests     InfoRequest[]
   assemblyPlans    AssemblyPlan[]
+  planApprovals    PlanApproval[]
 
   @@map("projects")
 }
@@ -1465,4 +1466,74 @@ model AssemblyPlan {
 
   @@unique([projectId, phase])
   @@map("assembly_plans")
+}
+
+// Validation des plans par le client (A. Pinchart 17.11.2026) : lien personnel sans compte + code à usage unique
+// envoyé par e-mail ; le PDF est figé à l'envoi (copie + empreinte SHA-256) ; après signature : cachet + filigrane
+// sur chaque page + page « Certificat de validation », rangé dans les Fichiers du projet et envoyé à l'équipe.
+// Tables créées par src/utils/migrations.ts (accès dans les routes par (prisma as any).planApproval).
+model PlanApproval {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  ref             String    @unique
+  token           String    @unique
+  revision        String
+  // pending | approved | reserves (validé avec réserves) | changes (modifications demandées) | cancelled | superseded
+  status          String    @default("pending")
+  lang            String    @default("fr")
+  message         String?
+  sourceFileId    String?   @map("source_file_id")
+  fileName        String    @map("file_name")
+  // copie figée du PDF envoyé (jamais modifiée)
+  fileUrl         String    @map("file_url")
+  filePublicId    String?   @map("file_public_id")
+  fileSize        Int       @map("file_size")
+  fileSha256      String    @map("file_sha256")
+  pageCount       Int       @map("page_count")
+  signerName      String    @map("signer_name")
+  signerEmail     String    @map("signer_email")
+  ccEmails        Json      @default("[]") @map("cc_emails")
+  expiresAt       DateTime  @map("expires_at")
+  codeHash        String?   @map("code_hash")
+  codeExpiresAt   DateTime? @map("code_expires_at")
+  codeAttempts    Int       @default(0) @map("code_attempts")
+  codesSent       Int       @default(0) @map("codes_sent")
+  lastCodeAt      DateTime? @map("last_code_at")
+  decidedAt       DateTime? @map("decided_at")
+  signedName      String?   @map("signed_name")
+  signedTitle     String?   @map("signed_title")
+  signedCompany   String?   @map("signed_company")
+  comment         String?
+  signatureImage  String?   @map("signature_image")
+  signedIp        String?   @map("signed_ip")
+  signedUserAgent String?   @map("signed_user_agent")
+  signedFileUrl   String?   @map("signed_file_url")
+  signedFileId    String?   @map("signed_file_id")
+  signedSha256    String?   @map("signed_sha256")
+  createdById     String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events  PlanApprovalEvent[]
+
+  @@index([projectId])
+  @@map("plan_approvals")
+}
+
+// Journal d'une demande de validation (rien n'est effacé) : envoi, ouvertures, codes, signature, cachet, e-mails.
+model PlanApprovalEvent {
+  id         String   @id @default(uuid())
+  approvalId String   @map("approval_id")
+  kind       String
+  at         DateTime @default(now())
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  byUserId   String?  @map("by_user_id")
+  detail     String?
+
+  approval PlanApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  @@index([approvalId, at])
+  @@map("plan_approval_events")
 }
