@@ -610,7 +610,7 @@ function Wizard({
                       {scene.light
                         ? 'charge le modèle 3D pour lire les pièces'
                         : production
-                          ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit + plan d’assemblage`
+                          ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit + plans d’assemblage (box, plancher, toit)`
                           : ''}
                     </span>
                   </span>

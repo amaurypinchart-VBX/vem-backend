@@ -16,6 +16,8 @@ import { frameSheets } from './frames';
 import { FLOOR_CUT_DEFAULT, tagHideRule } from '../core/subsetHide';
 import type { PartType } from '../production/parts';
 import { productionSheets } from '../production/sheets';
+import type { PartZone } from '../production/parts';
+import { zoneOfPart } from '../production/parts';
 import { TEXTILE_TAG } from '../core/customViews/tags';
 
 export type SheetKind = 'cover' | 'fourViews' | 'longSides' | 'shortSides' | 'implantation' | 'assembly' | 'levels' | 'floorPlan' | 'perModule' | 'frames' | 'production';
@@ -31,7 +33,7 @@ export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   floorPlan: 'Vue du sol de chaque niveau (coupe à 1,20 m : plancher, murs, vitres, poteaux — passage des câbles)',
   perModule: 'Une planche par Viewbox (3D, dessus, avant, arrière, gauche, droite)',
   frames: 'Cadres textile : nomenclature (un repère F1, F2… par cadre) + chaque taille de cadre cotée',
-  production: 'Plans de production (en anglais) : liste de débit, plan d’assemblage (bulles + nomenclature), une planche cotée par pièce (longueur, coupes, perçages, taraudages)',
+  production: 'Plans de production (en anglais) : liste de débit, plans d’assemblage (box, plancher, toit : bulles + nomenclature), une planche cotée par pièce (longueur, coupes, perçages, taraudages)',
 };
 
 export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'floorPlan', 'perModule', 'frames'];
@@ -324,7 +326,7 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
       style: { ...opts.style, colorByCategory: false },
       moduleLabel: opts.production.moduleLabel,
       typeLabel: opts.production.typeLabel,
-      ...(prodModule ? { module: { id: prodModule.id, nodeId: prodModule.nodeId } } : {}),
+      ...(prodModule ? { module: { id: prodModule.id, nodeId: prodModule.nodeId, zoneOf: partZones(index, prodModule, opts.production.types) } } : {}),
     });
     sheets.push(...pr.sheets);
     captures.push(...pr.captures);
@@ -347,6 +349,19 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     updatedAt: new Date().toISOString(),
   };
   return { set, captures, dimensioned };
+}
+
+/** Zone (plancher / toit / ossature) de chaque pièce d'une Viewbox, d'après les boîtes de l'index (Y = hauteur). */
+function partZones(index: SceneIndex, mod: SceneIndex['modules'][number], types: PartType[]): Record<string, PartZone> {
+  const byId = new Map(index.nodes.map((n) => [n.id, n]));
+  const box: [number, number] = [mod.bboxMm[1], mod.bboxMm[4]];
+  const out: Record<string, PartZone> = {};
+  for (const t of types)
+    for (const id of t.nodeIds) {
+      const b = byId.get(id)?.bboxMm;
+      if (b) out[id] = zoneOfPart([b[1], b[4]], box);
+    }
+  return out;
 }
 
 /**

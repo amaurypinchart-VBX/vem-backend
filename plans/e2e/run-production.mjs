@@ -50,7 +50,7 @@ const titles = (await page.locator('.sheet-thumb .thumb-foot').allInnerTexts()).
 console.log('Planches :', titles.slice(0, 6).join(' | '), titles.length > 6 ? `… (${titles.length})` : '');
 check('série PR : liste de débit en premier', /PR\.1/.test(titles[0]) && /Cut list/.test(titles[0]));
 const texts = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
-check('liste de débit : CUT LIST, repère P01, renvoi PR.3 (après le plan d’assemblage)', texts.includes('CUT LIST') && texts.includes('P01') && texts.includes('PR.3'));
+check('liste de débit : CUT LIST, repère P01, renvoi PR.5 (après les 3 plans d’assemblage)', texts.includes('CUT LIST') && texts.includes('P01') && texts.includes('PR.5'));
 await page.screenshot({ path: shots + 'cutlist.png' });
 // plan d'assemblage (PR.2) : vues de la box, bulles P01… une seule fois, nomenclature
 await page.locator('.sheet-thumb').nth(1).click();
@@ -61,13 +61,20 @@ check(`plan d'assemblage : PARTS LIST + vues`, asm.includes('PARTS LIST') && asm
 const balloons = await page.locator('.sheet-paper svg circle + text').evaluateAll((els) => els.map((e) => e.textContent ?? '').filter((t) => /^P\d{2}$/.test(t)));
 check(`bulles posées (${balloons.length}), chacune une fois`, balloons.length >= 5 && new Set(balloons).size === balloons.length && marks.length > balloons.length);
 await page.screenshot({ path: shots + 'assembly.png' });
+// sous-ensembles plancher et toit (PR.3, PR.4)
+const t3 = titles.slice(0, 5).join(' | ');
+await page.locator('.sheet-thumb').nth(2).click();
+await page.waitForTimeout(2500);
+const floor = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
+check(`plan d'assemblage plancher (${t3})`, floor.includes('BOTTOM VIEW') && floor.includes('PARTS LIST') && floor.some((x) => /Floor platform/.test(x)));
+await page.screenshot({ path: shots + 'floor.png' });
 // première pièce avec des perçages : planche dont le tableau HOLES a des lignes
 let found = false;
 for (let i = 1; i < titles.length && !found; i++) {
   await page.locator('.sheet-thumb').nth(i).click();
   await page.waitForTimeout(600);
   const t = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
-  if (!t.includes('HOLES') || !t.some((x) => /^Drill/.test(x))) continue;
+  if (!t.includes('HOLES') || !t.some((x) => /^Drill/.test(x)) || !t.some((x) => /^DETAIL A/.test(x))) continue;
   found = true;
   await page.waitForFunction(() => !document.querySelector('.sheet-paper [data-status=running], .sheet-paper .vp-loading'), null, { timeout: 300000 }).catch(() => {});
   await page.waitForTimeout(2000);
@@ -76,6 +83,7 @@ for (let i = 1; i < titles.length && !found; i++) {
   check('cotes posées (mm)', t2.filter((x) => / mm$/.test(x)).length >= 3);
   check('repère de perçage sur la vue (« A — 9× Ø10 »…)', t2.some((x) => /^[A-Z] — \d+× /.test(x)));
   check('données de la pièce : QTY … PER VIEWBOX, Material à remplir', t2.some((x) => /QTY \d+ PER VIEWBOX/.test(x)) && t2.includes('Material'));
+  check('détail agrandi d’un bout (DETAIL A — LEFT END)', t2.some((x) => /^DETAIL A — (LEFT|RIGHT) END$/.test(x)));
   await page.screenshot({ path: shots + 'part.png' });
 }
 check('une pièce percée trouvée', found);

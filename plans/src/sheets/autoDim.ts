@@ -53,8 +53,36 @@ export function partHolesInView(vp: ViewportItem, basis: ViewBasis): Array<{ x: 
     .map((h) => ({ x: dot(basis.right, h.c), y: dot(basis.up, h.c), ref: h.ref, name: h.name, c: h.c }));
 }
 
+/** Emprise dessinée d'une vue de pièce : toute la pièce, ou la région d'un détail de bout (dans le dessin). */
+export function partBounds(vp: ViewportItem, bounds: Linework2D['boundsMm'], basis: ViewBasis): Linework2D['boundsMm'] {
+  const w = vp.partView?.window;
+  if (!w) return bounds;
+  const xs = [dot(basis.right, w.a), dot(basis.right, w.b)];
+  const ys = [dot(basis.up, w.a), dot(basis.up, w.b)];
+  return {
+    minX: Math.max(bounds.minX, Math.min(...xs)),
+    maxX: Math.min(bounds.maxX, Math.max(...xs)),
+    minY: Math.max(bounds.minY, Math.min(...ys)),
+    maxY: Math.min(bounds.maxY, Math.max(...ys)),
+  };
+}
+
+const inBounds = (b: Linework2D['boundsMm'], h: { x: number; y: number }) => h.x >= b.minX - 0.5 && h.x <= b.maxX + 0.5 && h.y >= b.minY - 0.5 && h.y <= b.maxY + 0.5;
+
 export function autoDimInput(vp: ViewportItem, lw: Linework2D, basis: ViewBasis, scene: LoadedScene): AutoDimInput {
-  if (vp.partView) return { purpose: 'part', bounds: lw.boundsMm, modules: [], doors: [], feet: [], holes: partHolesInView(vp, basis) };
+  if (vp.partView) {
+    const bounds = partBounds(vp, lw.boundsMm, basis);
+    const w = vp.partView.window;
+    return {
+      purpose: 'part',
+      bounds,
+      modules: [],
+      doors: [],
+      feet: [],
+      holes: partHolesInView(vp, basis).filter((h) => inBounds(bounds, h)),
+      ...(w ? { endX: dot(basis.right, w.end) } : {}),
+    };
+  }
   if (vp.layerDims) {
     // détail toiture / plancher (vue spéciale) : couches coupées, pas de Viewbox à mesurer
     const stack = layerStack(lw, scene, vp.layerDims);
@@ -240,7 +268,7 @@ function holeCallouts(
   fit: { scale: number; center: [number, number] },
   margins: Record<'top' | 'bottom' | 'left' | 'right', number>,
 ): LabelItem[] {
-  const holes = partHolesInView(vp, basis);
+  const holes = partHolesInView(vp, basis).filter((h) => inBounds(bounds, h));
   if (!holes.length) return [];
   const tr = viewportTransform(vp.rect, fit.scale, fit.center);
   const groups = new Map<string, typeof holes>();

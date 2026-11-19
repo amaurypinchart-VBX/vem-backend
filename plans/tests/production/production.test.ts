@@ -4,7 +4,8 @@ import type { V3 } from '../../src/production/analyze';
 import { analyzePart, detectHoles, endCuts, holeName, niceDiameter, partKind, threadFor } from '../../src/production/analyze';
 import type { PartInfo } from '../../src/production/parts';
 import { cleanName, describePart, groupParts, holeAction, holeGroups, partKey } from '../../src/production/parts';
-import { holePositions, isCladding, partViewSpec, partViews, productionSheets } from '../../src/production/sheets';
+import { endDetails, holePositions, isCladding, partViewSpec, partViews, productionSheets } from '../../src/production/sheets';
+import { zoneOfPart } from '../../src/production/parts';
 import { assemblyBalloons, partsSeen } from '../../src/sheets/balloons';
 import type { Linework2D } from '../../src/linework/types';
 import type { LoadedScene } from '../../src/scene/loadedScene';
@@ -270,5 +271,50 @@ describe('vues, cotes et planches', () => {
     expect(out[0].anchor3d![0]).toBeGreaterThanOrEqual(0);
     // posée une seconde fois : rien (déjà sur la planche)
     expect(assemblyBalloons(vp, lw, basis, scene, fit, m, taken)).toEqual([]);
+  });
+
+  it('zones de la box : plancher, toit, ossature', () => {
+    expect(zoneOfPart([0, 200], [0, 3300])).toBe('floor');
+    expect(zoneOfPart([3050, 3300], [0, 3300])).toBe('roof');
+    expect(zoneOfPart([0, 3240], [0, 3300])).toBe('frame');
+    expect(zoneOfPart([1000, 1200], [0, 3300])).toBe('frame');
+  });
+
+  it('plans des sous-ensembles plancher et toit, avec leur habillage, après la vue d’ensemble', () => {
+    const rim = part('Rim', [...box(0, 0, 0, 3000, 80, 40), ...cylinder(250, 40, 5, 0, 40)], 'f1');
+    const ply = part('Plywood', box(0, 0, 0, 3000, 2300, 36), 'f2');
+    const roof = part('Roof rim', box(0, 0, 0, 2000, 80, 40), 'r1');
+    const epdm = part('EPDM', box(0, 0, 0, 3000, 2300, 5), 'r2');
+    const types = groupParts([rim, ply, roof, epdm]);
+    const zoneOf = { f1: 'floor', f2: 'floor', r1: 'roof', r2: 'roof' } as const;
+    const res = productionSheets(types, { paper: 'A1', modelKey: 'k', style: DEFAULT_LINE_STYLE, moduleLabel: 'VBX-01', typeLabel: 'Box', module: { id: 'VBX-01', nodeId: 'm1', zoneOf } });
+    renumber(res.sheets);
+    expect(res.sheets.slice(1, 4).map((s) => s.title)).toEqual(['Production - Assembly - Box', 'Production - Assembly - Floor platform - Box', 'Production - Assembly - Roof platform - Box']);
+    const floor = res.sheets[2].items.filter((i): i is ViewportItem => i.type === 'viewport');
+    expect(floor.map((v) => v.label)).toEqual(['TOP VIEW', 'BOTTOM VIEW', 'LONG SIDE', 'SHORT SIDE']);
+    // le contreplaqué fait partie du plancher : dessiné ici (pas sur la vue d'ensemble)
+    expect(new Set(floor[0].request.subset.include)).toEqual(new Set(['f1', 'f2']));
+    expect(floor[1].request.view.kind).toBe('bottom');
+    const overall = res.sheets[1].items.find((i): i is ViewportItem => i.type === 'viewport')!;
+    expect(overall.request.subset.include).not.toContain('f2');
+  });
+
+  it('détails agrandis des bouts d’un profil percé près de ses bouts', () => {
+    const pos = [...box(0, 0, 0, 3000, 80, 40), ...cylinder(55, 40, 5, 0, 40), ...cylinder(165, 40, 5, 0, 40), ...cylinder(1500, 40, 5, 0, 40), ...cylinder(2945, 40, 5, 0, 40)];
+    const types = groupParts([part('Post', pos, 'p')]);
+    const d = endDetails(types[0], 'w');
+    expect(d.map((x) => x.side)).toEqual(['start', 'end']);
+    expect(d[0].u1).toBeCloseTo(245, 0);
+    expect(d[1].u0).toBeCloseTo(2800, 0); // au moins 200 mm de bout
+    const res = productionSheets(types, { paper: 'A1', modelKey: 'k', style: DEFAULT_LINE_STYLE, moduleLabel: 'VBX-01', typeLabel: 'Box' });
+    const vps = res.sheets[1].items.filter((i): i is ViewportItem => i.type === 'viewport');
+    expect(vps.map((v) => v.label)).toEqual(['ELEVATION', 'PLAN', 'END VIEW', 'DETAIL A — LEFT END', 'DETAIL B — RIGHT END']);
+    expect(vps[3].partView!.window).toBeDefined();
+    // un profil court ou sans perçage près des bouts : pas de détail
+    expect(endDetails(groupParts([part('Short', box(0, 0, 0, 800, 80, 40), 's')])[0], 'w')).toEqual([]);
+    // cotes d'un détail : chaîne depuis le bout, pas de longueur totale
+    const dims = planDimensions({ purpose: 'part', bounds: { minX: 0, minY: 0, maxX: 245, maxY: 80 }, modules: [], doors: [], feet: [], holes: [{ x: 55, y: 40 }, { x: 165, y: 40 }], endX: 0 });
+    expect(dims.find((x) => x.side === 'top')!.points.map((p) => p[0])).toEqual([0, 55, 165]);
+    expect(dims.some((x) => x.side === 'bottom')).toBe(false);
   });
 });

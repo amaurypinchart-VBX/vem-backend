@@ -198,6 +198,8 @@ export interface AutoDimInput {
   layers?: number[];
   /** plan de production : centres des perçages vus en rond (mm modèle, repère du dessin) */
   holes?: Array<{ x: number; y: number }>;
+  /** détail d'un bout de profil : x du bout (les perçages sont cotés en chaîne depuis lui, pas de longueur totale) */
+  endX?: number;
 }
 
 export interface AutoDim {
@@ -259,6 +261,16 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
     // pièce de production : positions des perçages en chaîne depuis les bouts (haut, droite), longueur et hauteur
     // hors tout (bas, gauche)
     const hs = inp.holes ?? [];
+    if (inp.endX !== undefined) {
+      // détail d'un bout : chaîne bout → perçages (en haut), positions en hauteur (à droite), hauteur (à gauche)
+      if (hs.length) {
+        add('h', 'top', uniqueSorted([inp.endX, ...hs.map((h) => h.x)], 0.5));
+        const ys = uniqueSorted([minY, ...hs.map((h) => h.y), maxY], 0.5);
+        if (ys.length > 2) add('v', 'right', ys);
+      }
+      add('v', 'left', [minY, maxY]);
+      return out;
+    }
     if (hs.length) {
       const xs = uniqueSorted([minX, ...hs.map((h) => h.x), maxX], 0.5);
       if (xs.length > 2) add('h', 'top', xs);

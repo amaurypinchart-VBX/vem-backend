@@ -173,7 +173,17 @@ export interface ViewportItem extends ItemBase {
    * automatiques = longueur, hauteur et positions des perçages vus de face (chaînes depuis le bout) + repères des
    * perçages ; `common` = même échelle que les autres vues `common` de la planche (élévation et dessus d'un profil)
    */
-  partView?: { nodeId: string; mark: string; holes: PartViewHole[]; common?: boolean };
+  partView?: {
+    nodeId: string;
+    mark: string;
+    holes: PartViewHole[];
+    common?: boolean;
+    /**
+     * vue de détail agrandie d'un bout de profil : région dessinée (deux coins opposés de la boîte, monde) et un point de
+     * la face du bout (les cotes partent de ce bout)
+     */
+    window?: { a: Vec3; b: Vec3; end: Vec3 };
+  };
   /**
    * vue d'ensemble d'un plan d'assemblage de production : chaque pièce (nœud) avec son repère ; « Coter
    * automatiquement » pose aussi une bulle par repère visible dans la vue (une seule fois par planche)

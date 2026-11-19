@@ -18,7 +18,7 @@ import type { Linework2D } from '../linework/types';
 import type { ViewportData } from './SheetSvg';
 import { moduleOverlays } from './overlays';
 import { fitScale } from './scales';
-import { autoDimensionViewport } from './autoDim';
+import { partBounds, autoDimensionViewport } from './autoDim';
 import { subsetMeshes } from '../linework/subset';
 import type { PaintColor } from '../core/paint/types';
 import type { PaintedScene } from '../linework/paintScene';
@@ -693,7 +693,8 @@ export async function fitDrawingSet(
   const results = new Map<string, { key: string; lw: { boundsMm: Linework2D['boundsMm'] } } | null>();
   const one = async (vp: ViewportItem) => {
     const r = await bank.load(vp, signal, { cacheOnly: opts.cacheOnly });
-    results.set(vp.id, r && { key: r.key, lw: { boundsMm: r.lw.boundsMm } });
+    // détail d'un bout de profil : seulement la région du détail compte pour l'échelle et le centrage
+    results.set(vp.id, r && { key: r.key, lw: { boundsMm: vp.partView?.window && r.lw.meta?.basis ? partBounds(vp, r.lw.boundsMm, r.lw.meta.basis) : r.lw.boundsMm } });
     onProgress(++done, vps.length);
   };
   if (opts.sequential) for (const vp of vps) await one(vp);

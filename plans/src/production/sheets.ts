@@ -14,6 +14,7 @@ import { newId } from '../sheets/generate';
 import type { PartAxis, V3 } from './analyze';
 import { axisVector, toWorld } from './analyze';
 import type { HoleGroup, PartType } from './parts';
+import type { PartZone } from './parts';
 import { fmtMm, holeAction, holeGroups } from './parts';
 
 export interface ProductionOptions {
@@ -24,8 +25,11 @@ export interface ProductionOptions {
   moduleLabel: string;
   /** type de la Viewbox (« Permabox V1B ») : titres des planches */
   typeLabel: string;
-  /** Viewbox mesurée : plan d'assemblage (vues de la box entière, bulles, nomenclature) */
-  module?: { id: string; nodeId: string };
+  /**
+   * Viewbox mesurée : plan d'assemblage (vues de la box entière, bulles, nomenclature) ; `zoneOf` = zone de chaque pièce
+   * (nœud) dans la hauteur de la box → plans des sous-ensembles plancher et toit
+   */
+  module?: { id: string; nodeId: string; zoneOf?: Record<string, PartZone> };
 }
 
 export interface ProductionResult {
@@ -91,6 +95,28 @@ export function partViews(t: PartType): PartViewPlan[] {
     { key: 'edge', title: 'TOP', toward: 'v', right: { axis: 'u', sign: 1 }, common: true },
     { key: 'end', title: 'SIDE', toward: 'u', right: { axis: 'w', sign: -1 }, common: false },
   ];
+}
+
+/** Longueur minimale d'un profil pour des détails de bout, et zone d'un bout où l'on cherche des perçages (mm). */
+export const DETAIL_MIN_LENGTH = 1200;
+export const DETAIL_ZONE = 600;
+
+/**
+ * Détails agrandis des bouts d'un profil (« DETAIL A — LEFT END ») : un par bout qui a des perçages vus en élévation dans
+ * ses 600 premiers mm ; la région va du bout jusqu'au-delà du dernier de ces perçages (200 à 600 mm), en u (repère de
+ * la pièce).
+ */
+export function endDetails(t: PartType, elevationAxis: PartAxis): Array<{ side: 'start' | 'end'; u0: number; u1: number }> {
+  const g = t.rep.geo;
+  const L = g.size[0];
+  if (g.kind !== 'profile' || L < DETAIL_MIN_LENGTH) return [];
+  const us = g.holes.filter((h) => h.axis === elevationAxis).map((h) => h.c[0]);
+  const out: Array<{ side: 'start' | 'end'; u0: number; u1: number }> = [];
+  const near = us.filter((u) => u <= DETAIL_ZONE);
+  if (near.length) out.push({ side: 'start', u0: -20, u1: Math.min(L / 2, Math.max(200, Math.max(...near) + 80)) });
+  const far = us.filter((u) => u >= L - DETAIL_ZONE);
+  if (far.length) out.push({ side: 'end', u0: Math.max(L / 2, Math.min(L - 200, Math.min(...far) - 80)), u1: L + 20 });
+  return out;
 }
 
 const VIEW_NAMES: Record<PartViewPlan['key'], string> = { elevation: 'Elevation', plan: 'Plan', end: 'End view', face: 'Face', edge: 'Edge' };
@@ -224,25 +250,33 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
   );
   listed.sheet.items.push(text({ x: x0, y: Math.min(listed.y + 3, area.y + area.h - 14), w: width, h: 12 }, NOTE, 2.8));
 
-  // ─── plan d'assemblage : la Viewbox entière (dessus, plan coupé à 1,20 m, grand côté, petit côté, 3D), une bulle par
-  // repère (posée avec les cotes, une fois les vues calculées : autoDim + sheets/balloons.ts) et la nomenclature ───
-  if (opts.module) {
-    const mod = opts.module;
-    const sheet = newSheet(`Production - Assembly - ${opts.typeLabel}`);
-    const parts = types.flatMap((t) => t.nodeIds.map((nodeId) => ({ nodeId, mark: t.mark })));
-    // la structure seule (sans l'habillage) ; tout le modèle de la box si tout est de l'habillage
-    const structure = types.filter((t) => !isCladding(t)).flatMap((t) => t.nodeIds);
-    const include = structure.length ? structure : [mod.nodeId];
-    const cladding = types.filter(isCladding).map((t) => t.mark);
-    const titleSize = 5;
-    const view = (r: RectMm, kind: ViewKind, title: string, extra: Partial<ViewportItem['request']> = {}) => {
+  // ─── plans d'assemblage : une feuille avec bulles (posées avec les cotes, une fois les vues calculées : autoDim +
+  // sheets/balloons.ts) et nomenclature, pour une sélection de pièces ───
+  const titleSize = 5;
+  const assemblySheet = (
+    title: string,
+    picked: Array<{ t: PartType; nodeIds: string[] }>,
+    views: Array<{ r: RectMm; kind: ViewKind; title: string; extra?: Partial<ViewportItem['request']> }>,
+    drawCladding: boolean,
+    note: string,
+    layout: { img: RectMm; listBottom: number } = { img: { x: 247, y: 416, w: 215, h: 162 }, listBottom: area.y + area.h - 18 },
+  ) => {
+    const mod = opts.module!;
+    const sheet = newSheet(title);
+    const parts = picked.flatMap(({ t, nodeIds }) => nodeIds.map((nodeId) => ({ nodeId, mark: t.mark })));
+    // dessinées : la structure seule (sans l'habillage) sauf pour un sous-ensemble (plancher, toit), où l'habillage en fait
+    // partie ; toute la box si rien n'est dessinable
+    const drawn = picked.filter(({ t }) => drawCladding || !isCladding(t)).flatMap(({ nodeIds }) => nodeIds);
+    const include = drawn.length ? drawn : [mod.nodeId];
+    for (const v of views) {
+      const r = v.r;
       const vp: ViewportItem = {
         id: newId('v'),
         type: 'viewport',
         rect: scaleRect({ x: r.x, y: r.y + titleSize + 3, w: r.w, h: r.h - titleSize - 3 }, k),
-        request: { modelId: opts.modelKey, subset: { include }, view: { kind, frame: { moduleId: mod.id } }, style: { ...opts.style, colorByCategory: false, facadeMarks: false, hiddenLines: false }, ...extra },
+        request: { modelId: opts.modelKey, subset: { include }, view: { kind: v.kind, frame: { moduleId: mod.id } }, style: { ...opts.style, colorByCategory: false, facadeMarks: false, hiddenLines: false }, ...(v.extra ?? {}) },
         scale: 0,
-        label: title,
+        label: v.title,
         showLabel: true,
         labelPos: { x: r.x * k, y: (r.y + titleSize) * k },
         labelSize: titleSize * k,
@@ -251,29 +285,74 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
       };
       sheet.items.push(vp);
       dimensioned.push(vp.id);
-    };
-    view({ x: 22, y: 44, w: 215, h: 178 }, 'top', 'TOP VIEW');
-    view({ x: 247, y: 44, w: 215, h: 178 }, 'top', 'PLAN — CUT AT 1.20 m', { floorCut: FLOOR_CUT_DEFAULT });
-    view({ x: 22, y: 230, w: 440, h: 172 }, 'left', 'LONG SIDE');
-    view({ x: 22, y: 410, w: 215, h: 168 }, 'front', 'SHORT SIDE');
-    const img: Image3dItem = { id: newId('c'), type: 'image3d', rect: scaleRect({ x: 247, y: 416, w: 215, h: 162 }, k), url: '', width: 0, height: 0 };
+    }
+    const img: Image3dItem = { id: newId('c'), type: 'image3d', rect: scaleRect(layout.img, k), url: '', width: 0, height: 0 };
     sheet.items.push(img);
-    captures.push({ sheetId: sheet.id, itemId: img.id, include: [mod.nodeId], hideCategories: [], view: 'iso-ne', projection: 'orthographic' });
+    captures.push({ sheetId: sheet.id, itemId: img.id, include: drawCladding ? include : [mod.nodeId], hideCategories: [], view: 'iso-ne', projection: 'orthographic' });
     sheet.items.push(line(470, 40, 470, area.y + area.h - 4, 0.25));
-    const bomRows = types.map((t) => [t.mark, String(t.qty), isCladding(t) ? `${t.description} (cladding, not drawn)` : t.description, t.name || '—', noSheet(t) ? '—' : `@${t.mark}`]);
+    const bomRows = picked.map(({ t, nodeIds }) => [
+      t.mark,
+      String(nodeIds.length),
+      isCladding(t) && !drawCladding ? `${t.description} (cladding, not drawn)` : t.description,
+      t.name || '—',
+      noSheet(t) ? '—' : `@${t.mark}`,
+    ]);
     const bom = table(
       sheet,
       'PARTS LIST',
       ['Mark', 'Qty', 'Description', 'Name in model', 'Sheet'],
       [13, 10, 92, 62],
       bomRows,
-      { x: 476, y: 44, w: 224, bottom: area.y + area.h - 18 },
+      { x: 476, y: 44, w: 224, bottom: layout.listBottom },
       2.6,
-      () => newSheet(`Production - Assembly - ${opts.typeLabel} (parts list continued)`),
+      () => newSheet(`${title} (parts list continued)`),
     );
-    bom.sheet.items.push(
-      text({ x: 476, y: Math.min(bom.y + 3, area.y + area.h - 14), w: 224, h: 12 }, `Qty per Viewbox. Views show the structure without the cladding${cladding.length ? ` (${cladding.join(', ')}: panels, boards, membranes)` : ''}. Balloons show each mark once on this sheet, where the part is seen; parts hidden in every view are only in the list. Details on the part sheets.`, 2.4),
+    bom.sheet.items.push(text({ x: 476, y: Math.min(bom.y + 3, layout.listBottom + 4), w: 224, h: 12 }, note, 2.4));
+  };
+
+  if (opts.module) {
+    const all = types.map((t) => ({ t, nodeIds: t.nodeIds }));
+    const cladding = types.filter(isCladding).map((t) => t.mark);
+    // vue d'ensemble : dessus, plan coupé à 1,20 m, grand côté, petit côté, 3D
+    assemblySheet(
+      `Production - Assembly - ${opts.typeLabel}`,
+      all,
+      [
+        { r: { x: 22, y: 44, w: 215, h: 178 }, kind: 'top', title: 'TOP VIEW' },
+        { r: { x: 247, y: 44, w: 215, h: 178 }, kind: 'top', title: 'PLAN — CUT AT 1.20 m', extra: { floorCut: FLOOR_CUT_DEFAULT } },
+        { r: { x: 22, y: 230, w: 440, h: 172 }, kind: 'left', title: 'LONG SIDE' },
+        { r: { x: 22, y: 410, w: 215, h: 168 }, kind: 'front', title: 'SHORT SIDE' },
+      ],
+      false,
+      `Qty per Viewbox. Views show the structure without the cladding${cladding.length ? ` (${cladding.join(', ')}: panels, boards, membranes)` : ''}. Balloons show each mark once on this sheet, where the part is seen; parts hidden in every view are only in the list. Details on the part sheets.`,
     );
+    // sous-ensembles plancher et toit (comme les plans « Floor platform » / « Roof platform ») : dessus, dessous (l'ossature
+    // vue d'en bas), grand côté, petit côté, avec leur habillage (contreplaqué, isolation, EPDM)
+    const zoneOf = opts.module.zoneOf;
+    if (zoneOf) {
+      for (const [zone, name] of [
+        ['floor', 'Floor platform'],
+        ['roof', 'Roof platform'],
+      ] as const) {
+        const picked = types.map((t) => ({ t, nodeIds: t.nodeIds.filter((id) => zoneOf[id] === zone) })).filter((x) => x.nodeIds.length);
+        if (picked.length < 2) continue;
+        assemblySheet(
+          `Production - Assembly - ${name} - ${opts.typeLabel}`,
+          picked,
+          // dessus et dessous en grand à gauche, grand côté dessous ; petit côté et 3D sous la nomenclature (toutes les vues
+          // d'une planche par Viewbox sont à la même échelle : aucune vue trop basse pour ses cotes et bulles)
+          [
+            { r: { x: 22, y: 44, w: 440, h: 205 }, kind: 'top', title: 'TOP VIEW' },
+            { r: { x: 22, y: 253, w: 440, h: 205 }, kind: 'bottom', title: 'BOTTOM VIEW' },
+            { r: { x: 22, y: 462, w: 440, h: 116 }, kind: 'left', title: 'LONG SIDE' },
+            { r: { x: 476, y: 384, w: 224, h: 104 }, kind: 'front', title: 'SHORT SIDE' },
+          ],
+          true,
+          `${name}: parts of one Viewbox whose height lies in the ${zone === 'floor' ? 'floor' : 'roof'} zone (qty in this sub-assembly). The bottom view shows the frame from underneath. Details on the part sheets.`,
+          { img: { x: 476, y: 492, w: 224, h: 86 }, listBottom: 362 },
+        );
+      }
+    }
   }
 
   // ─── une planche par pièce ───
@@ -310,7 +389,12 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
             elevation: { x: 0, y: 0, w: 0, h: 0 },
             plan: { x: 0, y: 0, w: 0, h: 0 },
           };
-    const imgRect: RectMm = g.kind === 'profile' ? { x: 262, y: 296, w: 260, h: 86 } : { x: 460, y: 50, w: 240, h: 236 };
+    // détails des bouts : la rangée du bas devient vue de bout · détail(s) · 3D
+    const elevation = views.find((v) => v.key === 'elevation');
+    const details = elevation ? endDetails(t, elevation.toward) : [];
+    if (details.length) rects.end = { x: 22, y: 296, w: 150, h: 86 };
+    const imgRect: RectMm =
+      g.kind !== 'profile' ? { x: 460, y: 50, w: 240, h: 236 } : details.length ? { x: 180 + details.length * 178, y: 296, w: 700 - (180 + details.length * 178), h: 86 } : { x: 262, y: 296, w: 260, h: 86 };
     const titleSize = 5;
     for (const v of views) {
       const r = rects[v.key];
@@ -337,6 +421,37 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
       sheet.items.push(vp);
       dimensioned.push(vp.id);
     }
+    // détails agrandis des bouts : même vue que l'élévation, cadrée sur le bout
+    if (elevation)
+      details.forEach((d, i) => {
+        const r: RectMm = { x: 180 + i * 178, y: 296, w: 170, h: 86 };
+        const letter = String.fromCharCode(65 + i);
+        const [B, H] = [g.size[1], g.size[2]];
+        const a = toWorld(f, [d.u0, -20, -20]) as Vec3;
+        const b = toWorld(f, [d.u1, B + 20, H + 20]) as Vec3;
+        const end = toWorld(f, [d.side === 'start' ? 0 : g.size[0], B / 2, H / 2]) as Vec3;
+        const toward = axisVector(f, elevation.toward);
+        const vp: ViewportItem = {
+          id: newId('v'),
+          type: 'viewport',
+          rect: scaleRect({ x: r.x, y: r.y + titleSize + 3, w: r.w, h: r.h - titleSize - 3 }, k),
+          request: {
+            modelId: opts.modelKey,
+            subset: { include: [t.rep.nodeId] },
+            view: partViewSpec(toward, axisVector(f, 'u')),
+            style: { ...opts.style, hiddenLines: true, colorByCategory: false, facadeMarks: false, fineThresholdPaperMm: 0.2, detailMinPaperMm: 0 },
+          },
+          scale: 0,
+          label: `DETAIL ${letter} — ${d.side === 'start' ? 'LEFT' : 'RIGHT'} END`,
+          showLabel: true,
+          labelPos: { x: r.x * k, y: (r.y + titleSize) * k },
+          labelSize: titleSize * k,
+          renderStyle: 'trait',
+          partView: { nodeId: t.rep.nodeId, mark: t.mark, holes, window: { a, b, end } },
+        };
+        sheet.items.push(vp);
+        dimensioned.push(vp.id);
+      });
     const img: Image3dItem = { id: newId('c'), type: 'image3d', rect: scaleRect(imgRect, k), url: '', width: 0, height: 0 };
     sheet.items.push(img);
     captures.push({ sheetId: sheet.id, itemId: img.id, include: [t.rep.nodeId], hideCategories: [], view: 'iso-ne', projection: 'orthographic' });

@@ -184,3 +184,22 @@ export function holeAction(g: Pick<HoleGroup, 'thread' | 'd' | 'walls'>): string
 
 const TAP_DRILL: Record<string, number> = { M3: 2.5, M4: 3.3, M5: 4.2, M6: 5, M8: 6.8, M10: 8.5, M12: 10.2, M14: 12, M16: 14, M20: 17.5, M24: 21 };
 const niceDrill = (m: string) => TAP_DRILL[m] ?? 0;
+
+/** Zone d'une pièce dans la hauteur de sa Viewbox : plancher, toit, ou ossature / murs (poteaux, panneaux de façade). */
+export type PartZone = 'floor' | 'roof' | 'frame';
+
+/** Épaisseur des zones plancher / toit comptée depuis le bas / le haut de la box (mm). */
+export const PLATFORM_ZONE = 500;
+
+/**
+ * Zone d'une pièce d'après sa hauteur (y0…y1, mm) dans celle de sa box (Y0…Y1, pieds compris ou non) : entièrement dans
+ * les 500 mm du bas = plancher, du haut = toit, sinon ossature (un poteau traverse toute la hauteur).
+ */
+export function zoneOfPart(part: [number, number], box: [number, number]): PartZone {
+  const [y0, y1] = part;
+  const [Y0, Y1] = box;
+  const zone = Math.min(PLATFORM_ZONE, (Y1 - Y0) / 3);
+  if (y1 <= Y0 + zone) return 'floor';
+  if (y0 >= Y1 - zone) return 'roof';
+  return 'frame';
+}
