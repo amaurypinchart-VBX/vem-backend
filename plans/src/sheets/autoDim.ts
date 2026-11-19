@@ -14,6 +14,7 @@ import { viewportTransform } from './scales';
 import { newId } from './generate';
 import { UNIT_FRAME_MARGINS } from './overlays';
 import { textileFrameOf } from '../linework/subset';
+import { BALLOON_RING, assemblyBalloons } from './balloons';
 
 export function dimPurpose(vp: ViewportItem): DimPurpose {
   if (vp.partView) return 'part';
@@ -143,7 +144,7 @@ export interface AutoDimResult {
 }
 
 /** Cotes automatiques d'une fenêtre de vue, avec l'échelle et le centrage qui les font tenir dans son cadre. */
-export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: ViewBasis, scene: LoadedScene, minScale = 1): AutoDimResult {
+export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: ViewBasis, scene: LoadedScene, minScale = 1, balloonsTaken: Set<string> = new Set()): AutoDimResult {
   const input = autoDimInput(vp, lw, basis, scene);
   const plan = planDimensions(input);
   const depth = depthRef(vp, basis, scene);
@@ -163,7 +164,10 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
       left: Math.max(margins.left, UNIT_FRAME_MARGINS.left),
       right: Math.max(margins.right, UNIT_FRAME_MARGINS.right),
     };
-  let fit = fitWithDims(input.bounds, vp.rect, margins, minScale);
+  // plan d'assemblage : de la place pour les bulles au-delà des cotes
+  const ring = vp.assembly ? BALLOON_RING : 0;
+  const withRing = (m: typeof margins) => (ring ? { top: m.top + ring, bottom: m.bottom + ring, left: m.left + ring, right: m.right + ring } : m);
+  let fit = fitWithDims(input.bounds, vp.rect, withRing(margins), minScale);
   for (let pass = 0; pass < 2; pass++) {
     const tr = viewportTransform(vp.rect, fit.scale, fit.center);
     const extra = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -190,7 +194,7 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
     const next = { top: margins.top + extra.top, bottom: margins.bottom + extra.bottom, left: margins.left + extra.left, right: margins.right + extra.right };
     if (next.top === margins.top && next.bottom === margins.bottom && next.left === margins.left && next.right === margins.right) break;
     margins = next;
-    fit = fitWithDims(input.bounds, vp.rect, margins, minScale);
+    fit = fitWithDims(input.bounds, vp.rect, withRing(margins), minScale);
   }
   const dims: DimensionItem[] = plan.map((d) => ({
     id: newId('d'),
@@ -221,6 +225,7 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
     }));
   }
   if (vp.partView) labels = holeCallouts(vp, basis, input.bounds, fit, margins);
+  if (vp.assembly) labels = [...(labels ?? []), ...assemblyBalloons(vp, lw, basis, scene, fit, margins, balloonsTaken)];
   return { dims, scale: fit.scale, center: fit.center, ...(labels ? { labels } : {}) };
 }
 

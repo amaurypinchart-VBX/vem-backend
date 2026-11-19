@@ -656,13 +656,16 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const autoDimension = (vps: ViewportItem[]) => {
     const results: Array<{ vp: ViewportItem; dims: DimensionItem[]; scale: number; center: [number, number]; labels?: LabelItem[] }> = [];
     let missing = 0;
+    // bulles d'un plan d'assemblage : une par repère, en comptant celles des autres vues de la planche
+    const ids0 = new Set(vps.map((v) => v.id));
+    const taken = new Set(sheet.items.filter((i): i is LabelItem => i.type === 'label' && i.auto === 'balloon' && !ids0.has(i.viewportId ?? '')).map((i) => i.text));
     for (const vp of vps) {
       const data = bank.data(vp);
       if (!data.lw || !data.basis) {
         missing++;
         continue;
       }
-      const r = autoDimensionViewport(vp, data.lw, data.basis, scene);
+      const r = autoDimensionViewport(vp, data.lw, data.basis, scene, undefined, taken);
       results.push({ vp, ...r });
     }
     if (!results.length) {
@@ -673,7 +676,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     useEditor.getState().apply('Cotes automatiques', (d) => {
       const s = d.sheets.find((x) => x.id === sheet.id);
       if (!s) return;
-      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)) && !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole') && ids.has(i.viewportId ?? '')));
+      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)) && !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole' || i.auto === 'balloon') && ids.has(i.viewportId ?? '')));
       for (const r of results) {
         const it = s.items.find((i) => i.id === r.vp.id) as ViewportItem | undefined;
         if (it) {

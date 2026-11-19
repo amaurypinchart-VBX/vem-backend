@@ -174,6 +174,11 @@ export interface ViewportItem extends ItemBase {
    * perçages ; `common` = même échelle que les autres vues `common` de la planche (élévation et dessus d'un profil)
    */
   partView?: { nodeId: string; mark: string; holes: PartViewHole[]; common?: boolean };
+  /**
+   * vue d'ensemble d'un plan d'assemblage de production : chaque pièce (nœud) avec son repère ; « Coter
+   * automatiquement » pose aussi une bulle par repère visible dans la vue (une seule fois par planche)
+   */
+  assembly?: { parts: Array<{ nodeId: string; mark: string }> };
 }
 
 /** Perçage d'une pièce (monde, mm) : centre, axe unitaire, repère de la nomenclature et désignation (« A », « M8×1.25 »). */
@@ -212,7 +217,9 @@ export interface LabelItem extends ItemBase {
   text: string;
   style: 'bold' | 'normal';
   /** repère posé automatiquement (cadres textile « F1 », couches d'un détail) : remplacé quand on le repose */
-  auto?: 'frame' | 'layer' | 'hole';
+  auto?: 'frame' | 'layer' | 'hole' | 'balloon';
+  /** bulle (plan d'assemblage) : le texte dans un cercle centré sur `textPos` */
+  balloon?: boolean;
 }
 
 /**

@@ -505,7 +505,7 @@ function Wizard({
     frames: FrameType[];
     hideFrames: boolean;
     exterior?: ExteriorChoice;
-    production?: { types: PartType[]; moduleLabel: string; typeLabel: string };
+    production?: { types: PartType[]; moduleLabel: string; typeLabel: string; moduleId?: string };
   }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => compareLabels(labelOf(moduleLabels, a.id), labelOf(moduleLabels, b.id)));
@@ -549,7 +549,7 @@ function Wizard({
       const types = groupParts(measureParts(scene, prodModule));
       const node = m ? scene.look.byId.get(m.nodeId) : undefined;
       const typeLabel = m?.type || m?.label || node?.definition || m?.expected.label || labelOf(moduleLabels, prodModule);
-      return { types, moduleLabel: labelOf(moduleLabels, prodModule), typeLabel };
+      return { types, moduleLabel: labelOf(moduleLabels, prodModule), typeLabel, moduleId: prodModule };
     } catch {
       return { types: [], moduleLabel: labelOf(moduleLabels, prodModule), typeLabel: '' };
     }
@@ -610,7 +610,7 @@ function Wizard({
                       {scene.light
                         ? 'charge le modèle 3D pour lire les pièces'
                         : production
-                          ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit`
+                          ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit + plan d’assemblage`
                           : ''}
                     </span>
                   </span>

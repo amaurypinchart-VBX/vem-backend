@@ -31,7 +31,7 @@ export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   floorPlan: 'Vue du sol de chaque niveau (coupe à 1,20 m : plancher, murs, vitres, poteaux — passage des câbles)',
   perModule: 'Une planche par Viewbox (3D, dessus, avant, arrière, gauche, droite)',
   frames: 'Cadres textile : nomenclature (un repère F1, F2… par cadre) + chaque taille de cadre cotée',
-  production: 'Plans de production (en anglais) : liste de débit + une planche cotée par pièce (longueur, coupes, perçages, taraudages)',
+  production: 'Plans de production (en anglais) : liste de débit, plan d’assemblage (bulles + nomenclature), une planche cotée par pièce (longueur, coupes, perçages, taraudages)',
 };
 
 export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'floorPlan', 'perModule', 'frames'];
@@ -52,7 +52,7 @@ export interface GenerateOptions {
   /** cadres textile masqués sur toutes les vues (sauf leurs planches de détail) */
   hideFrames?: boolean;
   /** pièces d'une Viewbox (production/measure + groupParts) : plans de production à la fin du jeu */
-  production?: { types: PartType[]; moduleLabel: string; typeLabel: string };
+  production?: { types: PartType[]; moduleLabel: string; typeLabel: string; moduleId?: string };
 }
 
 export interface GenerateContext {
@@ -317,12 +317,14 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
 
   // plans de production : liste de débit + une planche par pièce, à la fin du jeu (série PR)
   if (opts.kinds.includes('production') && opts.production?.types.length) {
+    const prodModule = index.modules.find((m) => m.id === opts.production!.moduleId);
     const pr = productionSheets(opts.production.types, {
       paper: opts.paper,
       modelKey: ctx.modelKey,
       style: { ...opts.style, colorByCategory: false },
       moduleLabel: opts.production.moduleLabel,
       typeLabel: opts.production.typeLabel,
+      ...(prodModule ? { module: { id: prodModule.id, nodeId: prodModule.nodeId } } : {}),
     });
     sheets.push(...pr.sheets);
     captures.push(...pr.captures);

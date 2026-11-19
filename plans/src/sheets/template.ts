@@ -40,6 +40,9 @@ export const TB = {
   size: { header: 3.3, body: 2.8, small: 2.5, notes: 2.9, legend: 3.1 },
 };
 
+/** Rayon d'une bulle de plan d'assemblage (mm papier, A1). */
+export const BALLOON_R = 4;
+
 /** Titres de vue (« Long side ») : Gelasio, ~13 mm en A1. */
 export const VIEW_TITLE_SIZE = 12;
 

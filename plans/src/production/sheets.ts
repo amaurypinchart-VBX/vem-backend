@@ -7,6 +7,8 @@ import type { Vec3 } from '../core/views';
 import type { LineStyleSpec } from '../linework/types';
 import type { Image3dItem, Paper, PartViewHole, RectMm, Sheet, ShapeItem, TextItem, ViewportItem } from '../sheets/types';
 import { DRAW_AREA, scaleRect, templateScale } from '../sheets/template';
+import { FLOOR_CUT_DEFAULT } from '../core/subsetHide';
+import type { ViewKind } from '../core/views';
 import type { CaptureJob } from '../sheets/generate';
 import { newId } from '../sheets/generate';
 import type { PartAxis, V3 } from './analyze';
@@ -22,6 +24,8 @@ export interface ProductionOptions {
   moduleLabel: string;
   /** type de la Viewbox (« Permabox V1B ») : titres des planches */
   typeLabel: string;
+  /** Viewbox mesurée : plan d'assemblage (vues de la box entière, bulles, nomenclature) */
+  module?: { id: string; nodeId: string };
 }
 
 export interface ProductionResult {
@@ -37,6 +41,15 @@ const neg = (a: V3): V3 => [-a[0], -a[1], -a[2]];
 /** Vue d'une pièce : on regarde dans la direction −toward, `right` est la droite du dessin. */
 export function partViewSpec(toward: V3, right: V3): { kind: 'custom'; direction: Vec3; up: Vec3 } {
   return { kind: 'custom', direction: neg(toward), up: cross(toward, right) };
+}
+
+/**
+ * Habillage : panneaux sandwich, contreplaqué, membranes (plaques larges ≥ 600 mm ou épaisses > 25 mm). Le plan
+ * d'assemblage dessine la structure sans eux (sinon on ne voit que les panneaux), ils restent dans la nomenclature.
+ */
+export function isCladding(t: PartType): boolean {
+  const g = t.rep.geo;
+  return g.kind === 'plate' && (g.size[1] >= 600 || g.size[2] > 25);
 }
 
 /** Une petite pièce sans nom (morceau d'un export STL) : dans la liste de débit, sans planche. */
@@ -210,6 +223,58 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
     () => newSheet(`${listTitle} (continued)`),
   );
   listed.sheet.items.push(text({ x: x0, y: Math.min(listed.y + 3, area.y + area.h - 14), w: width, h: 12 }, NOTE, 2.8));
+
+  // ─── plan d'assemblage : la Viewbox entière (dessus, plan coupé à 1,20 m, grand côté, petit côté, 3D), une bulle par
+  // repère (posée avec les cotes, une fois les vues calculées : autoDim + sheets/balloons.ts) et la nomenclature ───
+  if (opts.module) {
+    const mod = opts.module;
+    const sheet = newSheet(`Production - Assembly - ${opts.typeLabel}`);
+    const parts = types.flatMap((t) => t.nodeIds.map((nodeId) => ({ nodeId, mark: t.mark })));
+    // la structure seule (sans l'habillage) ; tout le modèle de la box si tout est de l'habillage
+    const structure = types.filter((t) => !isCladding(t)).flatMap((t) => t.nodeIds);
+    const include = structure.length ? structure : [mod.nodeId];
+    const cladding = types.filter(isCladding).map((t) => t.mark);
+    const titleSize = 5;
+    const view = (r: RectMm, kind: ViewKind, title: string, extra: Partial<ViewportItem['request']> = {}) => {
+      const vp: ViewportItem = {
+        id: newId('v'),
+        type: 'viewport',
+        rect: scaleRect({ x: r.x, y: r.y + titleSize + 3, w: r.w, h: r.h - titleSize - 3 }, k),
+        request: { modelId: opts.modelKey, subset: { include }, view: { kind, frame: { moduleId: mod.id } }, style: { ...opts.style, colorByCategory: false, facadeMarks: false, hiddenLines: false }, ...extra },
+        scale: 0,
+        label: title,
+        showLabel: true,
+        labelPos: { x: r.x * k, y: (r.y + titleSize) * k },
+        labelSize: titleSize * k,
+        renderStyle: 'trait',
+        assembly: { parts },
+      };
+      sheet.items.push(vp);
+      dimensioned.push(vp.id);
+    };
+    view({ x: 22, y: 44, w: 215, h: 178 }, 'top', 'TOP VIEW');
+    view({ x: 247, y: 44, w: 215, h: 178 }, 'top', 'PLAN — CUT AT 1.20 m', { floorCut: FLOOR_CUT_DEFAULT });
+    view({ x: 22, y: 230, w: 440, h: 172 }, 'left', 'LONG SIDE');
+    view({ x: 22, y: 410, w: 215, h: 168 }, 'front', 'SHORT SIDE');
+    const img: Image3dItem = { id: newId('c'), type: 'image3d', rect: scaleRect({ x: 247, y: 416, w: 215, h: 162 }, k), url: '', width: 0, height: 0 };
+    sheet.items.push(img);
+    captures.push({ sheetId: sheet.id, itemId: img.id, include: [mod.nodeId], hideCategories: [], view: 'iso-ne', projection: 'orthographic' });
+    sheet.items.push(line(470, 40, 470, area.y + area.h - 4, 0.25));
+    const bomRows = types.map((t) => [t.mark, String(t.qty), isCladding(t) ? `${t.description} (cladding, not drawn)` : t.description, t.name || '—', noSheet(t) ? '—' : `@${t.mark}`]);
+    const bom = table(
+      sheet,
+      'PARTS LIST',
+      ['Mark', 'Qty', 'Description', 'Name in model', 'Sheet'],
+      [13, 10, 92, 62],
+      bomRows,
+      { x: 476, y: 44, w: 224, bottom: area.y + area.h - 18 },
+      2.6,
+      () => newSheet(`Production - Assembly - ${opts.typeLabel} (parts list continued)`),
+    );
+    bom.sheet.items.push(
+      text({ x: 476, y: Math.min(bom.y + 3, area.y + area.h - 14), w: 224, h: 12 }, `Qty per Viewbox. Views show the structure without the cladding${cladding.length ? ` (${cladding.join(', ')}: panels, boards, membranes)` : ''}. Balloons show each mark once on this sheet, where the part is seen; parts hidden in every view are only in the list. Details on the part sheets.`, 2.4),
+    );
+  }
 
   // ─── une planche par pièce ───
   const size = 3;

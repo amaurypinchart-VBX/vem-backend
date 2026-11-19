@@ -742,14 +742,16 @@ export function dimensionDrawingSet(set: DrawingSet, bank: LineworkBank, ids: st
     // plan de production : élévation et dessus d'une pièce à la même échelle
     const partGroup = first.filter((x) => x.vp.partView?.common);
     const partCommon = partGroup.length > 1 ? Math.max(...partGroup.map((x) => x.r.scale)) : 0;
+    // plan d'assemblage : une bulle par repère et par planche (la vue recalculée à son échelle finale les pose)
+    const taken = new Set<string>();
     for (const { vp, data, r } of first) {
       const want = moduleSheet ? common : vp.partView?.common ? partCommon : 0;
-      const res = want && r.scale !== want ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, want) : r;
+      const res = (want && r.scale !== want) || vp.assembly ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, want || r.scale, taken) : r;
       vp.scale = res.scale;
       vp.center = res.center;
       sheet.items.push(...res.dims);
       if (res.labels) {
-        sheet.items = sheet.items.filter((i) => !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole') && i.viewportId === vp.id));
+        sheet.items = sheet.items.filter((i) => !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole' || i.auto === 'balloon') && i.viewportId === vp.id));
         sheet.items.push(...res.labels);
       }
       count += res.dims.length;

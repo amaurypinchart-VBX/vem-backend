@@ -1,8 +1,8 @@
 // Test navigateur : plans de production (liste de débit + une planche par pièce, en anglais).
 //   cd plans && npm run build && ZIP=../test-models/<modèle>.dae node e2e/server.mjs   (puis)   node e2e/run-production.mjs
 // (sans ZIP : la maquette d'essai, sans perçage). Parcours : analyse → Planches A1 → assistant : seulement « Plans de
-// production », Viewbox mesurée → génération → liste de débit (repères, renvois PR.n) → planche d'une pièce (3 vues
-// calculées, cotes, repères des perçages, tableau HOLES) → PDF du jeu.
+// production », Viewbox mesurée → génération → liste de débit (repères, renvois PR.n) → plan d'assemblage → planche d'une pièce (3 vues
+// calculées, cotes, repères des perçages, tableau HOLES), plan d'assemblage (bulles, nomenclature).
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -50,8 +50,17 @@ const titles = (await page.locator('.sheet-thumb .thumb-foot').allInnerTexts()).
 console.log('Planches :', titles.slice(0, 6).join(' | '), titles.length > 6 ? `… (${titles.length})` : '');
 check('série PR : liste de débit en premier', /PR\.1/.test(titles[0]) && /Cut list/.test(titles[0]));
 const texts = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
-check('liste de débit : CUT LIST, repère P01, renvoi PR.2', texts.includes('CUT LIST') && texts.includes('P01') && texts.includes('PR.2'));
+check('liste de débit : CUT LIST, repère P01, renvoi PR.3 (après le plan d’assemblage)', texts.includes('CUT LIST') && texts.includes('P01') && texts.includes('PR.3'));
 await page.screenshot({ path: shots + 'cutlist.png' });
+// plan d'assemblage (PR.2) : vues de la box, bulles P01… une seule fois, nomenclature
+await page.locator('.sheet-thumb').nth(1).click();
+await page.waitForTimeout(2500);
+const asm = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
+const marks = asm.filter((x) => /^P\d{2}$/.test(x));
+check(`plan d'assemblage : PARTS LIST + vues`, asm.includes('PARTS LIST') && asm.includes('TOP VIEW') && asm.includes('LONG SIDE'));
+const balloons = await page.locator('.sheet-paper svg circle + text').evaluateAll((els) => els.map((e) => e.textContent ?? '').filter((t) => /^P\d{2}$/.test(t)));
+check(`bulles posées (${balloons.length}), chacune une fois`, balloons.length >= 5 && new Set(balloons).size === balloons.length && marks.length > balloons.length);
+await page.screenshot({ path: shots + 'assembly.png' });
 // première pièce avec des perçages : planche dont le tableau HOLES a des lignes
 let found = false;
 for (let i = 1; i < titles.length && !found; i++) {

@@ -14,7 +14,7 @@ import type { SymbolDef } from './symbols';
 import { DETAILS, detailFit, detailScale } from './details';
 import type { DimInput } from './dimensions';
 import { DIM, dimGeometry, dimOffsetAfterDrag } from './dimensions';
-import { COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
+import { BALLOON_R, COVER, FONT_SANS, FONT_SERIF, FRAME, PAPER_MM, TB, TITLE_BOX, VIEW_TITLE_SIZE, scaleRect, templateScale } from './template';
 import type { ModuleOverlay } from './overlays';
 import { UNIT_FRAME, numberLabels, unitFrames } from './overlays';
 import { scaleLabel, viewportTransform } from './scales';
@@ -965,7 +965,34 @@ function DimensionView({ input }: { input: DimInput }) {
   );
 }
 
+function BalloonView({ label, anchor, k }: { label: LabelItem; anchor: PointMm | null; k: number }) {
+  const r = BALLOON_R * k;
+  const { x, y } = label.textPos;
+  const size = Math.min(3.2 * k, (2 * r * 0.82) / Math.max(1, label.text.length * 0.55));
+  // ligne d'attache : de l'ancre au bord du cercle
+  let edge: PointMm | null = null;
+  if (anchor) {
+    const d = Math.hypot(anchor.x - x, anchor.y - y);
+    if (d > r) edge = { x: x + ((anchor.x - x) * r) / d, y: y + ((anchor.y - y) * r) / d };
+  }
+  return (
+    <g>
+      {anchor && edge && (
+        <>
+          <line x1={num(anchor.x)} y1={num(anchor.y)} x2={num(edge.x)} y2={num(edge.y)} stroke="#000" strokeWidth={num(0.18 * k)} />
+          <circle cx={num(anchor.x)} cy={num(anchor.y)} r={num(0.45 * k)} fill="#000" />
+        </>
+      )}
+      <circle cx={num(x)} cy={num(y)} r={num(r)} fill="#fff" stroke="#000" strokeWidth={num(0.25 * k)} />
+      <text x={num(x)} y={num(y + size * 0.36)} fontSize={num(size)} fontFamily={FONT_SANS} fontWeight={700} textAnchor="middle">
+        {label.text}
+      </text>
+    </g>
+  );
+}
+
 function LabelView({ label, anchor, k }: { label: LabelItem; anchor: PointMm | null; k: number }) {
+  if (label.balloon) return <BalloonView label={label} anchor={anchor} k={k} />;
   const size = (label.style === 'bold' ? 4.2 : 3.6) * k;
   const width = label.text.length * size * 0.52;
   // la ligne d'attache arrive sur le bord du texte le plus proche de l'ancre
@@ -994,7 +1021,8 @@ export function itemBounds(item: SheetItem, anchor?: PointMm | null, k = 1, dimB
   if (item.type !== 'label') return item.rect;
   const size = (item.style === 'bold' ? 4.2 : 3.6) * k;
   const w = Math.max(4, item.text.length * size * 0.52);
-  let r = { x: item.textPos.x, y: item.textPos.y - size, w, h: size * 1.25 };
+  const br = BALLOON_R * k;
+  let r = item.balloon ? { x: item.textPos.x - br, y: item.textPos.y - br, w: 2 * br, h: 2 * br } : { x: item.textPos.x, y: item.textPos.y - size, w, h: size * 1.25 };
   if (anchor) {
     const x0 = Math.min(r.x, anchor.x);
     const y0 = Math.min(r.y, anchor.y);

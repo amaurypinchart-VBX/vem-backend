@@ -4,7 +4,11 @@ import type { V3 } from '../../src/production/analyze';
 import { analyzePart, detectHoles, endCuts, holeName, niceDiameter, partKind, threadFor } from '../../src/production/analyze';
 import type { PartInfo } from '../../src/production/parts';
 import { cleanName, describePart, groupParts, holeAction, holeGroups, partKey } from '../../src/production/parts';
-import { holePositions, partViewSpec, partViews, productionSheets } from '../../src/production/sheets';
+import { holePositions, isCladding, partViewSpec, partViews, productionSheets } from '../../src/production/sheets';
+import { assemblyBalloons, partsSeen } from '../../src/sheets/balloons';
+import type { Linework2D } from '../../src/linework/types';
+import type { LoadedScene } from '../../src/scene/loadedScene';
+import type { ViewportItem } from '../../src/sheets/types';
 import { planDimensions } from '../../src/sheets/dimensions';
 import { viewBasis } from '../../src/core/views';
 import { renumber } from '../../src/sheets/generate';
@@ -207,5 +211,64 @@ describe('vues, cotes et planches', () => {
     // la vue d'élévation regarde le côté percé
     expect(partViews(types[0])[0].toward).toBe('w');
     expect(holePositions(types[0], holeGroups(types[0].rep.geo.holes)[0])).toBe('250, 900');
+  });
+
+  it('plan d’assemblage : la structure sans l’habillage, nomenclature, après la liste de débit', () => {
+    const pos = [...box(0, 0, 0, 1000, 80, 40), ...cylinder(250, 40, 5, 0, 40)];
+    const types = groupParts([part('Rim', pos, 'r1'), part('Panel', box(0, 0, 0, 2400, 950, 60), 'pn')]);
+    expect(isCladding(types.find((t) => t.name === 'Panel')!)).toBe(true);
+    const res = productionSheets(types, { paper: 'A1', modelKey: 'k', style: DEFAULT_LINE_STYLE, moduleLabel: 'VBX-01', typeLabel: 'Permabox', module: { id: 'VBX-01', nodeId: 'm1' } });
+    renumber(res.sheets);
+    expect(res.sheets.map((s) => s.title).slice(0, 2)).toEqual(['Production - Cut list - Permabox', 'Production - Assembly - Permabox']);
+    const asm = res.sheets[1];
+    const vps = asm.items.filter((i): i is ViewportItem => i.type === 'viewport');
+    expect(vps.map((v) => v.label)).toEqual(['TOP VIEW', 'PLAN — CUT AT 1.20 m', 'LONG SIDE', 'SHORT SIDE']);
+    expect(vps[0].request.subset.include).toEqual(['r1']);
+    expect(vps[0].assembly!.parts.map((p) => p.mark)).toEqual(['P01', 'P02']);
+    expect(vps[1].request.floorCut).toBe(1200);
+    const texts = asm.items.map((i) => (i.type === 'text' ? i.text : ''));
+    expect(texts).toContain('PARTS LIST');
+    expect(texts.some((t) => /cladding, not drawn/.test(t))).toBe(true);
+    // renvois de la nomenclature vers les planches des pièces (PR.3 = P01 Rim)
+    expect(texts).toContain('PR.3');
+  });
+
+  it('bulles : une par repère vu, attachée à son trait, hors du dessin, jamais deux fois sur la planche', () => {
+    const vp: ViewportItem = {
+      id: 'v1',
+      type: 'viewport',
+      rect: { x: 0, y: 0, w: 300, h: 200 },
+      request: { modelId: 'k', subset: { include: [] }, view: { kind: 'top', frame: 'world' }, style: DEFAULT_LINE_STYLE },
+      scale: 20,
+      showLabel: false,
+      renderStyle: 'trait',
+      assembly: { parts: [{ nodeId: 'a', mark: 'P01' }, { nodeId: 'b', mark: 'P02' }, { nodeId: 'c', mark: 'P03' }] },
+    };
+    const basis = viewBasis({ kind: 'top', frame: 'world' });
+    const lw = {
+      boundsMm: { minX: 0, minY: 0, maxX: 2000, maxY: 1000 },
+      layers: [
+        // P01 : rive du bas (vue par un nœud maillé enfant de « a ») ; P02 : traverse au milieu ; P03 : seulement caché
+        { key: 'visible', polylines: [new Float64Array([0, 0, 2000, 0]), new Float64Array([1000, 0, 1000, 1000])], sourceNodeIds: ['a-mesh', 'b'] },
+        { key: 'hidden', polylines: [new Float64Array([0, 500, 2000, 500])], sourceNodeIds: ['c'] },
+      ],
+    } as unknown as Linework2D;
+    const scene = {
+      look: { byId: new Map([['a-mesh', { id: 'a-mesh', parentId: 'a' }], ['a', { id: 'a', parentId: null }], ['b', { id: 'b', parentId: null }]]) },
+      index: { nodes: [] },
+    } as unknown as Pick<LoadedScene, 'look' | 'index'>;
+    expect(partsSeen(vp, lw, scene).map((s) => s.mark)).toEqual(['P01', 'P02']);
+    const taken = new Set(['P02']);
+    const fit = { scale: 20, center: [1000, 500] as [number, number] };
+    const m = { top: 20, bottom: 20, left: 20, right: 20 };
+    const out = assemblyBalloons(vp, lw, basis, scene, fit, m, taken);
+    expect(out.map((l) => l.text)).toEqual(['P01']);
+    expect(out[0].balloon).toBe(true);
+    expect(taken.has('P01')).toBe(true);
+    // rive du bas → bulle sous le dessin, au-delà des cotes (dessin : y papier 75 … 125)
+    expect(out[0].textPos.y).toBeGreaterThan(125 + 20);
+    expect(out[0].anchor3d![0]).toBeGreaterThanOrEqual(0);
+    // posée une seconde fois : rien (déjà sur la planche)
+    expect(assemblyBalloons(vp, lw, basis, scene, fit, m, taken)).toEqual([]);
   });
 });

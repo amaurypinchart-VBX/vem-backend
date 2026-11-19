@@ -66,7 +66,7 @@ describe.skipIf(!files.length)('plans de production — modèles réels', () => 
         expect(Math.round(g.holes[0].c[0])).toBe(250);
       }
       const gen = generateDrawingSet(
-        { modules: [mod.id], kinds: ['production'], paper: 'A1', style: DEFAULT_LINE_STYLE, title: 'Production', production: { types, moduleLabel: mod.id, typeLabel: 'Permabox' } },
+        { modules: [mod.id], kinds: ['production'], paper: 'A1', style: DEFAULT_LINE_STYLE, title: 'Production', production: { types, moduleLabel: mod.id, typeLabel: 'Permabox', moduleId: mod.id } },
         { index: res.index, projectId: 'p', modelVersionId: 'm', modelKey: 'prod', titleBlock: emptyTitleBlock() },
       );
       expect(gen.set.sheets[0].number).toBe('PR.1');
@@ -84,6 +84,13 @@ describe.skipIf(!files.length)('plans de production — modèles réels', () => 
         paper: sheet.paper,
         svg: renderToStaticMarkup(createElement(SheetSvg, { sheet, titleBlock: gen.set.titleBlock, notes: gen.set.notes, legend, viewData: (vp: ViewportItem) => bank.data(vp) })),
       }));
+      // plan d'assemblage (PR.2) : 4 vues de la box, bulles une seule fois par repère, nomenclature
+      const asm = gen.set.sheets[1];
+      expect(asm.title).toBe('Production - Assembly - Permabox');
+      const balloons = asm.items.filter((i) => i.type === 'label' && i.balloon).map((i) => (i.type === 'label' ? i.text : ''));
+      expect(balloons.length).toBeGreaterThan(10);
+      expect(new Set(balloons).size).toBe(balloons.length);
+      expect(asm.items.some((i) => i.type === 'text' && i.text === 'PARTS LIST')).toBe(true);
       // chaque vue de pièce est calculée et cotée
       for (const s of gen.set.sheets.slice(1)) {
         const vps = s.items.filter((i): i is ViewportItem => i.type === 'viewport');
