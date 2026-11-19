@@ -168,6 +168,20 @@ export interface ViewportItem extends ItemBase {
   dimFrames?: boolean;
   /** détail toiture / plancher (vue spéciale) : cotes et repères des couches coupées */
   layerDims?: 'roof' | 'floor';
+  /**
+   * vue d'une pièce sur un plan de production (`production/sheets.ts`) : la pièce seule, dans ses axes ; cotes
+   * automatiques = longueur, hauteur et positions des perçages vus de face (chaînes depuis le bout) + repères des
+   * perçages ; `common` = même échelle que les autres vues `common` de la planche (élévation et dessus d'un profil)
+   */
+  partView?: { nodeId: string; mark: string; holes: PartViewHole[]; common?: boolean };
+}
+
+/** Perçage d'une pièce (monde, mm) : centre, axe unitaire, repère de la nomenclature et désignation (« A », « M8×1.25 »). */
+export interface PartViewHole {
+  c: Vec3;
+  axis: Vec3;
+  ref: string;
+  name: string;
 }
 
 export interface Image3dItem extends ItemBase {
@@ -198,7 +212,7 @@ export interface LabelItem extends ItemBase {
   text: string;
   style: 'bold' | 'normal';
   /** repère posé automatiquement (cadres textile « F1 », couches d'un détail) : remplacé quand on le repose */
-  auto?: 'frame' | 'layer';
+  auto?: 'frame' | 'layer' | 'hole';
 }
 
 /**
@@ -330,8 +344,11 @@ export interface Sheet {
   kind: 'standard' | 'cover';
   /** unité de l'installation (série A1.x, A2.x…) ; absent = vue d'ensemble (série A0.x) */
   unit?: number;
-  /** planche générée : « frames » = détail des cadres textile (remplacée quand on les régénère) */
-  role?: 'frames';
+  /**
+   * planche générée : « frames » = détail des cadres textile (remplacée quand on les régénère), « production » = plan
+   * de production (liste de débit, une planche par pièce ; numérotée PR.1, PR.2…)
+   */
+  role?: 'frames' | 'production';
   /**
    * numéros des Viewbox avec lesquels la planche est dessinée (identifiant SketchUp → nom affiché, seulement ceux
    * renumérotés dans l'application) ; absent = numéros SketchUp. Ils diffèrent de ceux du modèle ⇒ « numéros à mettre

@@ -168,7 +168,7 @@ export function boxesOverlap(a: RectMm, b: RectMm, margin = 0): boolean {
 // ─── cotation automatique ───
 
 /** élévation, plan, implantation des pieds, objet seul (cadre textile : largeur × hauteur hors tout) */
-export type DimPurpose = 'elevation' | 'plan' | 'implantation' | 'object' | 'layers';
+export type DimPurpose = 'elevation' | 'plan' | 'implantation' | 'object' | 'layers' | 'part';
 
 /** Un cadre textile n'est coté dans une direction que s'il y mesure plus que ça (vu de face, pas sur la tranche). */
 export const FRAME_DIM_MIN = 150;
@@ -196,6 +196,8 @@ export interface AutoDimInput {
   frames?: Extent[];
   /** détail toiture / plancher : bords des couches (mm modèle, de bas en haut) */
   layers?: number[];
+  /** plan de production : centres des perçages vus en rond (mm modèle, repère du dessin) */
+  holes?: Array<{ x: number; y: number }>;
 }
 
 export interface AutoDim {
@@ -250,6 +252,21 @@ export function planDimensions(inp: AutoDimInput, tol = 5): AutoDim[] {
     if (e.length > 2) add('v', 'right', e);
     if (e.length >= 2) add('v', 'right', [e[0], e[e.length - 1]]);
     add('h', 'bottom', [minX, maxX]);
+    return out;
+  }
+
+  if (inp.purpose === 'part') {
+    // pièce de production : positions des perçages en chaîne depuis les bouts (haut, droite), longueur et hauteur
+    // hors tout (bas, gauche)
+    const hs = inp.holes ?? [];
+    if (hs.length) {
+      const xs = uniqueSorted([minX, ...hs.map((h) => h.x), maxX], 0.5);
+      if (xs.length > 2) add('h', 'top', xs);
+      const ys = uniqueSorted([minY, ...hs.map((h) => h.y), maxY], 0.5);
+      if (ys.length > 2) add('v', 'right', ys);
+    }
+    add('h', 'bottom', [minX, maxX]);
+    add('v', 'left', [minY, maxY]);
     return out;
   }
 

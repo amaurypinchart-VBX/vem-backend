@@ -14,9 +14,11 @@ import { COVER, DEFAULT_GENERAL_NOTES, VIEW_TITLE_SIZE, scaleRect, templateScale
 import type { FrameLang, FrameType } from './frames';
 import { frameSheets } from './frames';
 import { FLOOR_CUT_DEFAULT, tagHideRule } from '../core/subsetHide';
+import type { PartType } from '../production/parts';
+import { productionSheets } from '../production/sheets';
 import { TEXTILE_TAG } from '../core/customViews/tags';
 
-export type SheetKind = 'cover' | 'fourViews' | 'longSides' | 'shortSides' | 'implantation' | 'assembly' | 'levels' | 'floorPlan' | 'perModule' | 'frames';
+export type SheetKind = 'cover' | 'fourViews' | 'longSides' | 'shortSides' | 'implantation' | 'assembly' | 'levels' | 'floorPlan' | 'perModule' | 'frames' | 'production';
 
 export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   cover: 'Couverture (vues 3D, bandeau)',
@@ -29,6 +31,7 @@ export const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   floorPlan: 'Vue du sol de chaque niveau (coupe à 1,20 m : plancher, murs, vitres, poteaux — passage des câbles)',
   perModule: 'Une planche par Viewbox (3D, dessus, avant, arrière, gauche, droite)',
   frames: 'Cadres textile : nomenclature (un repère F1, F2… par cadre) + chaque taille de cadre cotée',
+  production: 'Plans de production (en anglais) : liste de débit + une planche cotée par pièce (longueur, coupes, perçages, taraudages)',
 };
 
 export const DEFAULT_SHEET_KINDS: SheetKind[] = ['cover', 'fourViews', 'longSides', 'shortSides', 'implantation', 'floorPlan', 'perModule', 'frames'];
@@ -48,6 +51,8 @@ export interface GenerateOptions {
   frameLang?: FrameLang;
   /** cadres textile masqués sur toutes les vues (sauf leurs planches de détail) */
   hideFrames?: boolean;
+  /** pièces d'une Viewbox (production/measure + groupParts) : plans de production à la fin du jeu */
+  production?: { types: PartType[]; moduleLabel: string; typeLabel: string };
 }
 
 export interface GenerateContext {
@@ -310,6 +315,20 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     sheets.splice(firstUnit < 0 ? sheets.length : firstUnit, 0, ...fs);
   }
 
+  // plans de production : liste de débit + une planche par pièce, à la fin du jeu (série PR)
+  if (opts.kinds.includes('production') && opts.production?.types.length) {
+    const pr = productionSheets(opts.production.types, {
+      paper: opts.paper,
+      modelKey: ctx.modelKey,
+      style: { ...opts.style, colorByCategory: false },
+      moduleLabel: opts.production.moduleLabel,
+      typeLabel: opts.production.typeLabel,
+    });
+    sheets.push(...pr.sheets);
+    captures.push(...pr.captures);
+    dimensioned.push(...pr.dimensioned);
+  }
+
   renumber(sheets);
   const set: DrawingSet = {
     id: '',
@@ -334,7 +353,12 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
  */
 export function renumber(sheets: Sheet[]): void {
   const next = new Map<number, number>();
+  let production = 0;
   for (const s of sheets) {
+    if (s.role === 'production') {
+      s.number = `PR.${++production}`;
+      continue;
+    }
     const u = s.unit ?? 0;
     const n = next.get(u) ?? (sheets.some((x) => (x.unit ?? 0) === u && x.kind === 'cover') ? 0 : 1);
     s.number = `A${u}.${n}`;

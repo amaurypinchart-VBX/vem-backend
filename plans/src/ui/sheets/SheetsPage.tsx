@@ -22,6 +22,10 @@ import { LineworkBank, dimensionDrawingSet, fitDrawingSet } from '../../sheets/b
 import { setSubsetViewTags } from '../../linework/subset';
 import type { FrameType } from '../../sheets/frames';
 import { compactRefs, groupFrames, measureFrames } from '../../sheets/frames';
+import type { PartType } from '../../production/parts';
+import { groupParts } from '../../production/parts';
+import { measureParts } from '../../production/measure';
+import { noSheet } from '../../production/sheets';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
@@ -325,7 +329,7 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
               const fresh = await vem.project(PROJECT_ID).catch(() => project);
               const who = me ?? (await vem.me().catch(() => null));
               const { set, captures, dimensioned } = generateDrawingSet(
-                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors, frames: opts.frames, hideFrames: opts.hideFrames },
+                { ...opts, style: { ...DEFAULT_LINE_STYLE, facadeMarks: opts.facadeMarks, glassTransparent: !opts.opaqueGlass }, topColors: opts.topColors, frames: opts.frames, hideFrames: opts.hideFrames, production: opts.production },
                 { index: scene.index, projectId: PROJECT_ID, modelVersionId: model?.id ?? null, modelKey: scene.modelKey, titleBlock: titleBlockFromProject(fresh, who) },
               );
               // numéros changés dans la Vue 3D : titres, nomenclatures et plans du jeu avec ces numéros, planches « une
@@ -501,6 +505,7 @@ function Wizard({
     frames: FrameType[];
     hideFrames: boolean;
     exterior?: ExteriorChoice;
+    production?: { types: PartType[]; moduleLabel: string; typeLabel: string };
   }) => void;
 }) {
   const mods = [...scene.index.modules].sort((a, b) => compareLabels(labelOf(moduleLabels, a.id), labelOf(moduleLabels, b.id)));
@@ -535,6 +540,21 @@ function Wizard({
     }
   }, [scene]);
   const frames = useMemo(() => groupFrames(allFrames.filter((f) => !f.moduleId || modules.has(f.moduleId))), [allFrames, modules]);
+  // plans de production : pièces de la Viewbox choisie, lues seulement quand la case est cochée
+  const [prodModule, setProdModule] = useState(() => mods[0]?.id ?? '');
+  const production = useMemo(() => {
+    if (!kinds.has('production') || !prodModule || scene.light) return undefined;
+    try {
+      const m = scene.index.modules.find((x) => x.id === prodModule);
+      const types = groupParts(measureParts(scene, prodModule));
+      const node = m ? scene.look.byId.get(m.nodeId) : undefined;
+      const typeLabel = m?.type || m?.label || node?.definition || m?.expected.label || labelOf(moduleLabels, prodModule);
+      return { types, moduleLabel: labelOf(moduleLabels, prodModule), typeLabel };
+    } catch {
+      return { types: [], moduleLabel: labelOf(moduleLabels, prodModule), typeLabel: '' };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kinds, prodModule, scene]);
   const toggle = <T,>(set: Set<T>, v: T) => {
     const n = new Set(set);
     if (n.has(v)) n.delete(v);
@@ -546,11 +566,11 @@ function Wizard({
   const nSheets = useMemo(
     () =>
       generateDrawingSet(
-        { modules: [...modules], units, kinds: [...kinds], paper, style: DEFAULT_LINE_STYLE, title: '', frames },
+        { modules: [...modules], units, kinds: [...kinds], paper, style: DEFAULT_LINE_STYLE, title: '', frames, production },
         { index: scene.index, projectId: '', modelVersionId: null, modelKey: '', titleBlock: emptyTitleBlock() },
       ).set.sheets.length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modules, kinds, paper, split, unitNames, scene, frames],
+    [modules, kinds, paper, split, unitNames, scene, frames, production],
   );
   return (
     <div className="card">
@@ -574,6 +594,27 @@ function Wizard({
             {(Object.keys(SHEET_KIND_LABELS) as SheetKind[]).map((k) => (
               <label key={k} className="check" data-kind={k}>
                 <input type="checkbox" checked={kinds.has(k)} disabled={k === 'frames' && !frames.length} onChange={() => setKinds((s) => toggle(s, k))} /> {SHEET_KIND_LABELS[k]}
+                {k === 'production' && kinds.has('production') && (
+                  <span className="wizard-production" data-testid="wizard-production">
+                    {' '}
+                    — Viewbox mesurée{' '}
+                    <select value={prodModule} onChange={(e) => setProdModule(e.target.value)} data-testid="wizard-production-module" onClick={(e) => e.stopPropagation()}>
+                      {mods.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {labelOf(moduleLabels, m.id)}
+                          {m.type ? ` (${m.type})` : ''}
+                        </option>
+                      ))}
+                    </select>{' '}
+                    <span className="hint">
+                      {scene.light
+                        ? 'charge le modèle 3D pour lire les pièces'
+                        : production
+                          ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit`
+                          : ''}
+                    </span>
+                  </span>
+                )}
                 {k === 'frames' && (
                   <span className="hint">
                     {' '}
@@ -700,7 +741,7 @@ function Wizard({
             className="btn primary"
             disabled={!nSheets || (!modules.size && !kinds.has('cover')) || !exteriorReady}
             title={exteriorReady ? undefined : 'Choisis la couleur des côtés extérieurs'}
-            onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames, exterior: exteriorChoice })}
+            onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames, exterior: exteriorChoice, production })}
           >
             Générer
           </button>

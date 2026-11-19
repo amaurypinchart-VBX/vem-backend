@@ -16,6 +16,7 @@ import { UNIT_FRAME_MARGINS } from './overlays';
 import { textileFrameOf } from '../linework/subset';
 
 export function dimPurpose(vp: ViewportItem): DimPurpose {
+  if (vp.partView) return 'part';
   if (vp.frameView) return 'object';
   if (vp.layerDims) return 'layers';
   if (vp.request.subset.onlyCategories?.includes('PIED')) return 'implantation';
@@ -44,7 +45,15 @@ function extentsBy(lw: Linework2D, scene: LoadedScene, pick: (category: string |
   return [...byId.values()];
 }
 
+/** Perçages d'une pièce vus en rond dans la vue (axe ≈ direction du regard), dans le repère du dessin. */
+export function partHolesInView(vp: ViewportItem, basis: ViewBasis): Array<{ x: number; y: number; ref: string; name: string; c: Vec3 }> {
+  return (vp.partView?.holes ?? [])
+    .filter((h) => Math.abs(dot(h.axis, basis.toward)) > 0.9)
+    .map((h) => ({ x: dot(basis.right, h.c), y: dot(basis.up, h.c), ref: h.ref, name: h.name, c: h.c }));
+}
+
 export function autoDimInput(vp: ViewportItem, lw: Linework2D, basis: ViewBasis, scene: LoadedScene): AutoDimInput {
+  if (vp.partView) return { purpose: 'part', bounds: lw.boundsMm, modules: [], doors: [], feet: [], holes: partHolesInView(vp, basis) };
   if (vp.layerDims) {
     // détail toiture / plancher (vue spéciale) : couches coupées, pas de Viewbox à mesurer
     const stack = layerStack(lw, scene, vp.layerDims);
@@ -211,7 +220,45 @@ export function autoDimensionViewport(vp: ViewportItem, lw: Linework2D, basis: V
       auto: 'layer' as const,
     }));
   }
+  if (vp.partView) labels = holeCallouts(vp, basis, input.bounds, fit, margins);
   return { dims, scale: fit.scale, center: fit.center, ...(labels ? { labels } : {}) };
+}
+
+/**
+ * Repères des perçages d'une pièce : un par groupe vu en rond (« A — 9× Ø10 »), sur le premier trou du groupe, textes
+ * alignés sous la cote de longueur, de gauche à droite.
+ */
+function holeCallouts(
+  vp: ViewportItem,
+  basis: ViewBasis,
+  bounds: AutoDimInput['bounds'],
+  fit: { scale: number; center: [number, number] },
+  margins: Record<'top' | 'bottom' | 'left' | 'right', number>,
+): LabelItem[] {
+  const holes = partHolesInView(vp, basis);
+  if (!holes.length) return [];
+  const tr = viewportTransform(vp.rect, fit.scale, fit.center);
+  const groups = new Map<string, typeof holes>();
+  for (const h of holes) groups.set(h.ref, [...(groups.get(h.ref) ?? []), h]);
+  const firsts = [...groups.values()].map((g) => g.sort((a, b) => a.x - b.x || a.y - b.y)[0]).sort((a, b) => a.x - b.x);
+  const below = tr.toPaper(0, bounds.minY).y + margins.bottom + 2;
+  const out: LabelItem[] = [];
+  firsts.forEach((h, i) => {
+    const n = groups.get(h.ref)!.length;
+    const p = tr.toPaper(h.x, h.y);
+    const y = Math.min(below + 4 + i * 4.6, vp.rect.y + vp.rect.h - 1);
+    out.push({
+      id: newId('l'),
+      type: 'label',
+      viewportId: vp.id,
+      anchor3d: h.c,
+      textPos: { x: Math.max(vp.rect.x + 1, Math.min(p.x + 3, vp.rect.x + vp.rect.w - 40)), y },
+      text: `${h.ref} — ${n}× ${h.name}`,
+      style: 'normal',
+      auto: 'hole',
+    });
+  });
+  return out;
 }
 
 /** Boîtes (mm papier) des textes de cotes et du dessin : sert aux contrôles de chevauchement. */

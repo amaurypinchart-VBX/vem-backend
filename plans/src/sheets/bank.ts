@@ -714,6 +714,12 @@ export async function fitDrawingSet(
       const common = Math.max(...own.map((v) => v.scale || 0));
       for (const vp of own) if (vp.scale) vp.scale = common;
     }
+    // plan de production : élévation et dessus d'une pièce à la même échelle
+    const part = own.filter((v) => v.partView?.common && v.scale);
+    if (part.length > 1) {
+      const common = Math.max(...part.map((v) => v.scale));
+      for (const vp of part) vp.scale = common;
+    }
   }
 }
 
@@ -733,13 +739,17 @@ export function dimensionDrawingSet(set: DrawingSet, bank: LineworkBank, ids: st
     const first = ready.map(({ vp, data }) => ({ vp, data, r: autoDimensionViewport(vp, data.lw, data.basis, bank.scene) }));
     const moduleSheet = ready.length > 1 && ready.every(({ vp }) => !vp.frameView && vp.request.view.kind !== 'custom' && typeof vp.request.view.frame === 'object');
     const common = moduleSheet ? Math.max(...first.map((x) => x.r.scale)) : 0;
+    // plan de production : élévation et dessus d'une pièce à la même échelle
+    const partGroup = first.filter((x) => x.vp.partView?.common);
+    const partCommon = partGroup.length > 1 ? Math.max(...partGroup.map((x) => x.r.scale)) : 0;
     for (const { vp, data, r } of first) {
-      const res = moduleSheet && r.scale !== common ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, common) : r;
+      const want = moduleSheet ? common : vp.partView?.common ? partCommon : 0;
+      const res = want && r.scale !== want ? autoDimensionViewport(vp, data.lw, data.basis, bank.scene, want) : r;
       vp.scale = res.scale;
       vp.center = res.center;
       sheet.items.push(...res.dims);
       if (res.labels) {
-        sheet.items = sheet.items.filter((i) => !(i.type === 'label' && i.auto === 'layer' && i.viewportId === vp.id));
+        sheet.items = sheet.items.filter((i) => !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole') && i.viewportId === vp.id));
         sheet.items.push(...res.labels);
       }
       count += res.dims.length;

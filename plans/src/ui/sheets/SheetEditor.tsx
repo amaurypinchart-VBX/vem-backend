@@ -673,7 +673,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     useEditor.getState().apply('Cotes automatiques', (d) => {
       const s = d.sheets.find((x) => x.id === sheet.id);
       if (!s) return;
-      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)) && !(i.type === 'label' && i.auto === 'layer' && ids.has(i.viewportId ?? '')));
+      s.items = s.items.filter((i) => !(i.type === 'dimension' && i.auto && ids.has(i.viewportId)) && !(i.type === 'label' && (i.auto === 'layer' || i.auto === 'hole') && ids.has(i.viewportId ?? '')));
       for (const r of results) {
         const it = s.items.find((i) => i.id === r.vp.id) as ViewportItem | undefined;
         if (it) {
