@@ -4,6 +4,7 @@ import type { DetectedSection } from '../structure/core/sectionDetect';
 import { barAxis, catalogueCandidates, memberSection } from '../structure/core/sectionDetect';
 import type { Hole, PartGeometry, V3 } from './analyze';
 import { holeName, niceDiameter, toLocal } from './analyze';
+import { specAction, specName } from './holeSpecs';
 
 /** Une pièce dessinée, lue dans le modèle. */
 export interface PartInfo {
@@ -160,26 +161,39 @@ export interface HoleGroup {
   axis: Hole['axis'];
   walls: number;
   holes: Hole[];
+  /** choix fait dans l'application (même pour tout le groupe) */
+  spec?: Hole['spec'];
 }
 
 export function holeGroups(holes: Hole[]): HoleGroup[] {
   const out: HoleGroup[] = [];
   for (const h of [...holes].sort((a, b) => a.c[0] - b.c[0] || a.c[1] - b.c[1] || a.c[2] - b.c[2])) {
-    const name = holeName(h);
-    const g = out.find((x) => x.name === name && x.axis === h.axis && x.walls === h.walls);
+    const name = h.spec ? specName(h.spec, h.d) : holeName(h);
+    const action = h.spec ? specAction(h.spec, h.d, h.walls) : '';
+    const g = out.find((x) => x.name === name && x.axis === h.axis && x.walls === h.walls && (x.spec ? specAction(x.spec, x.d, x.walls) : '') === action);
     if (g) g.holes.push(h);
-    else out.push({ ref: '', name, ...(h.thread ? { thread: h.thread } : {}), d: h.d, axis: h.axis, walls: h.walls, holes: [h] });
+    else
+      out.push({ ref: '', name, ...(h.thread ? { thread: h.thread } : {}), ...(h.spec ? { spec: h.spec } : {}), d: h.d, axis: h.axis, walls: h.walls, holes: [h] });
   }
   out.sort((a, b) => b.holes.length - a.holes.length || a.d - b.d);
   out.forEach((g, i) => (g.ref = String.fromCharCode(65 + (i % 26)) + (i >= 26 ? String(Math.floor(i / 26)) : '')));
   return out;
 }
 
-/** « Tapped M8×1.25 (from Ø6.6) », « Drill Ø10 through 2 walls ». */
-export function holeAction(g: Pick<HoleGroup, 'thread' | 'd' | 'walls'>): string {
+/**
+ * « Drill Ø6.8 + tap M8×1.25 (to confirm) », « Drill Ø10 through 2 walls » ; un choix fait dans l'application est écrit
+ * tel quel (sans « to confirm »).
+ */
+export function holeAction(g: Pick<HoleGroup, 'thread' | 'd' | 'walls' | 'spec'>): string {
+  if (g.spec) return specAction(g.spec, g.d, g.walls);
   const walls = g.walls > 1 ? ` through ${g.walls} walls` : '';
-  if (g.thread) return `Drill Ø${g.thread.from === 'minor' ? fmt1(niceDrill(g.thread.name)) : fmt1(g.d)} + tap ${g.thread.name}×${g.thread.pitch}${walls}`;
+  if (g.thread) return `Drill Ø${g.thread.from === 'minor' ? fmt1(niceDrill(g.thread.name)) : fmt1(g.d)} + tap ${g.thread.name}×${g.thread.pitch}${walls} (to confirm)`;
   return `Drill Ø${niceDiameter(g.d)}${walls}`;
+}
+
+/** Désignation sur les repères et la liste de débit : « M8 », « Ø10 », « CSK M6 ». */
+export function holeCallout(g: Pick<HoleGroup, 'thread' | 'name' | 'spec'>): string {
+  return g.spec ? g.name : g.thread ? g.thread.name : g.name;
 }
 
 const TAP_DRILL: Record<string, number> = { M3: 2.5, M4: 3.3, M5: 4.2, M6: 5, M8: 6.8, M10: 8.5, M12: 10.2, M14: 12, M16: 14, M20: 17.5, M24: 21 };

@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { V3 } from '../../src/production/analyze';
 import { analyzePart, detectHoles, endCuts, holeName, niceDiameter, partKind, threadFor } from '../../src/production/analyze';
 import type { PartInfo } from '../../src/production/parts';
-import { cleanName, describePart, groupParts, holeAction, holeGroups, partKey } from '../../src/production/parts';
+import { cleanName, describePart, groupParts, holeAction, holeCallout, holeGroups, partKey } from '../../src/production/parts';
+import { applyHoleSpecs, cleanHoleSpecs, diameterClasses, diameterSpec, partHoleKey, partSignature, specAction, specName } from '../../src/production/holeSpecs';
 import { endDetails, holePositions, isCladding, partViewSpec, partViews, productionSheets } from '../../src/production/sheets';
 import { zoneOfPart } from '../../src/production/parts';
 import { assemblyBalloons, partsSeen } from '../../src/sheets/balloons';
@@ -172,7 +173,7 @@ describe('regroupement et désignations', () => {
   });
 
   it('opérations de perçage', () => {
-    expect(holeAction({ d: 6.66, thread: threadFor(6.66), walls: 1 })).toBe('Drill Ø6.8 + tap M8×1.25');
+    expect(holeAction({ d: 6.66, thread: threadFor(6.66), walls: 1 })).toBe('Drill Ø6.8 + tap M8×1.25 (to confirm)');
     expect(holeAction({ d: 14.02, walls: 2 })).toBe('Drill Ø14 through 2 walls');
   });
 });
@@ -316,5 +317,63 @@ describe('vues, cotes et planches', () => {
     const dims = planDimensions({ purpose: 'part', bounds: { minX: 0, minY: 0, maxX: 245, maxY: 80 }, modules: [], doors: [], feet: [], holes: [{ x: 55, y: 40 }, { x: 165, y: 40 }], endX: 0 });
     expect(dims.find((x) => x.side === 'top')!.points.map((p) => p[0])).toEqual([0, 55, 165]);
     expect(dims.some((x) => x.side === 'bottom')).toBe(false);
+  });
+});
+
+describe('trous et taraudages dits dans l’application', () => {
+  // profil 1 000 × 80 × 40 : deux Ø10 sur l'épaisseur, un Ø6,65 (taraudage M8 proposé) sur le côté
+  const pos = [...box(0, 0, 0, 1000, 80, 40), ...cylinder(250, 40, 5, 0, 40), ...cylinder(900, 40, 5, 0, 40), ...cylinder(500, 40, 3.3235, 0, 40)];
+  const types = () => groupParts([part('Roof C', pos, 'r1'), part('Roof C', pos, 'r2')]);
+
+  it('lecture tolérante, opérations et désignations', () => {
+    const s = cleanHoleSpecs({ byDiameter: { 'd6.6': { op: 'tap', size: 8 }, bad: { op: 'drill' }, 'd10': { op: 'nope' } }, byPart: { x: { op: 'tap' } } });
+    expect(s).toEqual({ byDiameter: { 'd6.6': { op: 'tap', size: 8 } }, byPart: {} });
+    expect(specAction({ op: 'tap', size: 8 }, 6.65, 1)).toBe('Drill Ø6.8 + tap M8×1.25');
+    expect(specAction({ op: 'tap', size: 10, pitch: 1 }, 8.9, 1)).toBe('Drill Ø9 + tap M10×1');
+    expect(specName({ op: 'tap', size: 10, pitch: 1 }, 9)).toBe('M10×1');
+    expect(specAction({ op: 'countersink', size: 6 }, 6.6, 1)).toBe('Drill Ø6.6 + countersink 90° Ø12.6 (M6 flat head screw)');
+    expect(specAction({ op: 'screw', d: 4.2, note: 'Ejot 5.5 × 25' }, 4.2, 1)).toBe('Pre-drill Ø4.2 for self-drilling screw — Ejot 5.5 × 25');
+    expect(specAction({ op: 'drill', d: 11 }, 10, 2)).toBe('Drill Ø11 through 2 walls');
+    expect(specAction({ op: 'rivet', d: 4.1 }, 4, 1)).toBe('Drill Ø4.1 for blind rivet');
+    expect(specAction({ op: 'rivet' }, 5.02, 1)).toBe('Drill Ø5 for blind rivet');
+  });
+
+  it('choix pour tout le modèle par Ø dessiné, choix d’une pièce prioritaire, « rien à usiner » retiré', () => {
+    const t = types();
+    const classes = diameterClasses(t);
+    expect(classes.map((c) => [c.key, c.holes, c.detected])).toEqual([
+      ['d6.6', 2, 'M8×1.25'],
+      ['d10', 4, 'Ø10'],
+    ]);
+    // tout le modèle : Ø10 → perçage Ø11 ; la pièce : son M8 → rien
+    const sig = partSignature(t[0]);
+    const m8 = t[0].rep.geo.holes.find((h) => h.thread)!;
+    const specs = cleanHoleSpecs({ byDiameter: { d10: { op: 'drill', d: 11 } }, byPart: { [partHoleKey(sig, m8)]: { op: 'none' } } });
+    const out = applyHoleSpecs(t, specs);
+    expect(out[0].mark).toBe('P01');
+    const groups = holeGroups(out[0].rep.geo.holes);
+    expect(groups.map((g) => [g.holes.length, holeAction(g), holeCallout(g)])).toEqual([[2, 'Drill Ø11', 'Ø11']]);
+    // la détection n'est pas touchée
+    expect(t[0].rep.geo.holes).toHaveLength(3);
+    // retrouvé à ± 0,12 mm (nouvelle analyse du modèle)
+    expect(diameterSpec(specs, 9.93)?.key).toBe('d10');
+    expect(diameterSpec(specs, 9.8)).toBeUndefined();
+  });
+
+  it('planches : opération et repère du choix, sans « to confirm »', () => {
+    const t = types();
+    const auto = productionSheets(t, { paper: 'A1', modelKey: 'k', style: DEFAULT_LINE_STYLE, moduleLabel: 'VBX-01', typeLabel: 'Permabox' });
+    const textsOf = (r: typeof auto) => r.sheets.flatMap((s) => s.items.flatMap((i) => (i.type === 'text' ? [i.text] : [])));
+    expect(textsOf(auto)).toContain('Drill Ø6.8 + tap M8×1.25 (to confirm)');
+    const specs = cleanHoleSpecs({ byDiameter: { 'd6.6': { op: 'tap', size: 8 }, d10: { op: 'countersink', size: 8 } } });
+    const res = productionSheets(applyHoleSpecs(t, specs), { paper: 'A1', modelKey: 'k', style: DEFAULT_LINE_STYLE, moduleLabel: 'VBX-01', typeLabel: 'Permabox' });
+    const texts = textsOf(res);
+    expect(texts).toContain('Drill Ø6.8 + tap M8×1.25');
+    expect(texts).toContain('Drill Ø9 + countersink 90° Ø17.3 (M8 flat head screw)');
+    expect(texts.some((x) => x.endsWith('(to confirm)'))).toBe(false);
+    expect(texts.some((x) => x.includes('2× CSK M8') && x.includes('1× M8'))).toBe(true);
+    const vp = res.sheets[1].items.find((i) => i.type === 'viewport' && i.partView);
+    const names = vp?.type === 'viewport' ? [...new Set(vp.partView!.holes.map((h) => h.name))].sort() : [];
+    expect(names).toEqual(['CSK M8', 'M8']);
   });
 });

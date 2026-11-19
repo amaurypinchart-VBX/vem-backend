@@ -10,6 +10,7 @@
 // - coupe des extrémités d'un profil : angle du plan de coupe (90° = coupe droite).
 // La géométrie ne dit ni la matière, ni la finition, ni les soudures : ce sont des champs à remplir sur la planche.
 
+import type { HoleSpec } from './holeSpecs';
 export type V3 = [number, number, number];
 
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -50,6 +51,8 @@ export interface Hole {
   /** parois traversées (un tube percé de part en part : 2) */
   walls: number;
   thread?: Thread;
+  /** choix fait dans l'application (perçage, taraudage, fraisage…), voir holeSpecs.ts */
+  spec?: HoleSpec;
 }
 
 export type PartKind = 'profile' | 'plate' | 'block';
@@ -70,7 +73,7 @@ export interface PartGeometry {
 
 // ─── filetages ISO (pas gros) : diamètre intérieur D1 (filet cosmétique d'Inventor) et perçage avant taraudage ───
 
-const ISO: Array<{ m: number; p: number; d1: number; drill: number }> = [
+export const ISO: Array<{ m: number; p: number; d1: number; drill: number }> = [
   { m: 3, p: 0.5, d1: 2.459, drill: 2.5 },
   { m: 4, p: 0.7, d1: 3.242, drill: 3.3 },
   { m: 5, p: 0.8, d1: 4.134, drill: 4.2 },

@@ -398,6 +398,8 @@ export interface DrawingSet {
   sheets: Sheet[];
   /** unités de l'installation, quand le jeu est séparé en unités */
   units?: DrawingSetUnit[];
+  /** plans de production : Viewbox mesurée (pour refaire les planches PR quand les trous / taraudages changent) */
+  production?: { moduleId: string; moduleLabel: string; typeLabel: string };
   /** incrémentée à l'export officiel (P5) */
   revision: number;
   /** valeurs du projet VEM lors de la dernière reprise dans le cartouche (détecte ce qui a changé depuis) */

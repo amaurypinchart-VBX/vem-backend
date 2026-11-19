@@ -263,6 +263,8 @@ export function Workspace({ index, model, glb, rules, busy, onRebuild, onBack, i
             customViews={settings.customViews}
             categoryColors={categoryColors}
             paint={settings.paint}
+            holeSpecs={settings.holeSpecs}
+            onSaveHoleSpecs={(holeSpecs) => saveSettings({ holeSpecs })}
             onPaintSaved={(paint) => {
               // la peinture est enregistrée par ses propres opérations : on garde seulement la copie locale à jour
               settingsRef.current = { ...settingsRef.current, paint };

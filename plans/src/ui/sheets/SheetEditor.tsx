@@ -21,7 +21,7 @@ import { SymbolPalette } from './SymbolPalette';
 import { DEFAULT_LINE_STYLE } from '../../linework/types';
 import { SheetSvg } from '../../sheets/SheetSvg';
 import type { LegendEntry } from '../../sheets/SheetSvg';
-import { dimensionDrawingSet, useBank } from '../../sheets/bank';
+import { dimensionDrawingSet, fitDrawingSet, useBank } from '../../sheets/bank';
 import type { LineworkBank } from '../../sheets/bank';
 import { actions, useEditor } from '../../sheets/store';
 import { fitScale, viewportTransform } from '../../sheets/scales';
@@ -96,7 +96,13 @@ import type { FramesChoice } from './FramesDialog';
 import type { FrameLang, FrameType } from '../../sheets/frames';
 import { frameLabels, frameRefs, frameSheets, groupFrames, measureFrames } from '../../sheets/frames';
 import { TEXTILE_TAG } from '../../core/customViews/tags';
-import { renumber } from '../../sheets/generate';
+import { productionFor, renumber } from '../../sheets/generate';
+import type { PartType } from '../../production/parts';
+import { groupParts } from '../../production/parts';
+import { measureParts } from '../../production/measure';
+import type { HoleSpecs } from '../../production/holeSpecs';
+import { EMPTY_HOLE_SPECS, applyHoleSpecs } from '../../production/holeSpecs';
+import { HoleSpecsDialog } from './HoleSpecsDialog';
 import { NOT_PREPARED } from '../../sheets/consult';
 import type { ModuleLabels } from '../../core/moduleNumbers';
 import { labelChanges } from '../../core/moduleNumbers';
@@ -132,6 +138,9 @@ interface Props {
   glassTest: GlassTest;
   legendColors: Map<string, LegendEntry>;
   captures: SavedCapture[];
+  /** trous et taraudages des plans de production (réglages du modèle) */
+  holeSpecs?: HoleSpecs;
+  onSaveHoleSpecs?: (specs: HoleSpecs) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -160,7 +169,7 @@ function pdfChunkChars(): number {
 }
 const bigScenes = new WeakMap<object, boolean>();
 
-export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint, onNeedScene, sceneLoading, lightTick, moduleLabels = NO_LABELS }: Props) {
+export function SheetEditor({ scene, bank, glassTest, legendColors, captures, onClose, paint, onNeedScene, sceneLoading, lightTick, moduleLabels = NO_LABELS, holeSpecs = EMPTY_HOLE_SPECS, onSaveHoleSpecs }: Props) {
   /** consultation sans le modèle 3D */
   const light = !!scene.light;
   // très gros modèle (bigModel) : calculé une fois par scène
@@ -239,6 +248,7 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
   const [hideAll, setHideAll] = useState(false);
   const [setHideOpen, setSetHideOpen] = useState(false);
   const [frames, setFrames] = useState<{ types: FrameType[]; lang: FrameLang } | null>(null);
+  const [holes, setHoles] = useState<{ types: PartType[]; moduleId: string; moduleLabel: string; typeLabel: string } | null>(null);
   const lastPointer = useRef({ x: 0, y: 0 });
   useEffect(() => {
     const rec = (e: PointerEvent) => (lastPointer.current = { x: e.clientX, y: e.clientY });
@@ -1033,6 +1043,79 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
     setToast(`Masqué : ${a.rule.label}${hideAll ? ` — ${n} vue(s)` : ''} · Ctrl+Z pour annuler`);
   };
 
+  // ─── plans de production : trous et taraudages dits dans l'application → planches PR refaites ───
+  const productionOf = (): DrawingSet['production'] | undefined => {
+    if (doc.production) return doc.production;
+    // jeu généré avant que la Viewbox mesurée soit notée : « (measured on VBX-01) » de la liste de débit
+    const intro = doc.sheets
+      .filter((s) => s.role === 'production')
+      .flatMap((s) => s.items)
+      .find((i): i is TextItem => i.type === 'text' && /measured on /.test(i.text));
+    const label = intro && /measured on (.+?)\)/.exec(intro.text)?.[1];
+    const m = scene.index.modules.find((x) => x.id === label || moduleLabels[x.id] === label) ?? scene.index.modules[0];
+    const typeLabel = intro && /Viewbox (.+?) \(measured/.exec(intro.text)?.[1];
+    return m ? { moduleId: m.id, moduleLabel: label ?? m.id, typeLabel: typeLabel ?? m.type ?? '' } : undefined;
+  };
+  const openHoles = () => {
+    if (needs3D('Trous et taraudages')) return;
+    const p = productionOf();
+    if (!p) return setToast('Pas de Viewbox mesurée pour les plans de production');
+    try {
+      setHoles({ types: groupParts(measureParts(scene, p.moduleId)), ...p });
+    } catch (e) {
+      setToast(`Pièces illisibles : ${(e as Error).message}`);
+    }
+  };
+  const applyHoles = async (specs: HoleSpecs) => {
+    const h = holes;
+    setHoles(null);
+    if (!h) return;
+    await onSaveHoleSpecs?.(specs);
+    if (!doc.sheets.some((s) => s.role === 'production')) return setToast('Trous et taraudages enregistrés');
+    const old = doc.sheets.filter((s) => s.role === 'production');
+    const vp0 = old.flatMap((s) => s.items).find((i): i is ViewportItem => i.type === 'viewport');
+    const pr = productionFor(
+      scene.index,
+      { types: applyHoleSpecs(h.types, specs), moduleId: h.moduleId, moduleLabel: h.moduleLabel, typeLabel: h.typeLabel },
+      { paper: old[0]?.paper ?? sheet.paper, modelKey: scene.modelKey, style: vp0?.request.style ?? { ...DEFAULT_LINE_STYLE } },
+    );
+    // images 3D : celles des anciennes planches (même titre, même ordre), sinon rendues à l'ouverture sur ordinateur
+    const oldImages = new Map(old.map((s) => [s.title, s.items.filter((i): i is Image3dItem => i.type === 'image3d')]));
+    const jobs = new Map(pr.captures.map((c) => [c.itemId, c]));
+    for (const sh of pr.sheets) {
+      const prev = oldImages.get(sh.title) ?? [];
+      let n = 0;
+      for (const it of sh.items) {
+        if (it.type !== 'image3d') continue;
+        const o = prev[n++];
+        const c = jobs.get(it.id);
+        if (o?.url && !o.pendingCapture) Object.assign(it, { url: o.url, width: o.width, height: o.height });
+        else if (c) it.pendingCapture = { include: c.include, hideCategories: c.hideCategories, view: c.view, projection: c.projection };
+      }
+    }
+    // vues : échelles et cotes calculées ici sur ordinateur, posées à l'affichage de chaque planche sur téléphone
+    const tmp = { sheets: pr.sheets } as unknown as DrawingSet;
+    if (lightDevice) {
+      const wanted = new Set(pr.dimensioned);
+      for (const s of pr.sheets) for (const it of s.items) if (it.type === 'viewport' && wanted.has(it.id)) it.pendingAutoDims = true;
+    } else {
+      try {
+        await fitDrawingSet(tmp, bank, (done, total) => setToast(`Plans de production : vues ${done}/${total}…`), undefined, { sequential: true });
+        dimensionDrawingSet(tmp, bank, pr.dimensioned);
+      } catch (e) {
+        return setToast(`Planches PR non refaites : ${(e as Error).message}`);
+      }
+    }
+    actions.editDoc('Trous et taraudages', (d) => {
+      const at = d.sheets.findIndex((s) => s.role === 'production');
+      d.sheets = d.sheets.filter((s) => s.role !== 'production');
+      d.sheets.splice(at < 0 ? d.sheets.length : at, 0, ...(pr.sheets as typeof d.sheets));
+      d.production = { moduleId: h.moduleId, moduleLabel: h.moduleLabel, typeLabel: h.typeLabel };
+      renumber(d.sheets as Sheet[]);
+    });
+    setToast(`${pr.sheets.length} planche(s) de production refaite(s) avec les trous et taraudages · Ctrl+Z pour annuler`);
+  };
+
   // ─── cadres textile : planches de détail, repères F1…, cotes, masquage ───
   const openFrames = (lang: FrameLang = frames?.lang ?? 'en') => {
     if (needs3D('Cadres textile')) return;
@@ -1706,6 +1789,11 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         <button className="btn small" data-testid="open-frames" onClick={() => (openFrames(), setMoreOpen(false))} title="Cadres textile : planches cotées + nomenclature, repères F1… et cotes sur les vues, ou les masquer">
           ▦ Cadres textile
         </button>
+        {doc.sheets.some((s) => s.role === 'production') && (
+          <button className="btn small" data-testid="open-holes" onClick={() => (openHoles(), setMoreOpen(false))} title="Plans de production : dire pour chaque trou dessiné s'il est percé, taraudé (M8…), fraisé, pour vis autoperceuse, rivet, ou rien — les planches PR sont refaites">
+            🔩 Trous et taraudages
+          </button>
+        )}
         <button className={`btn small${tool === 'dim' ? ' primary' : ''}`} onClick={() => setTool('dim')} title="Cote : 2 clics sur la vue (accroche ■ extrémité ▲ milieu ● centre), 3e clic pour placer la ligne de cote (Maj = alignée)">
           ↔ Cote
         </button>
@@ -2177,6 +2265,17 @@ export function SheetEditor({ scene, bank, glassTest, legendColors, captures, on
         </ClickBubble>
       )}
       {setHideOpen && <SetHideDialog doc={doc} scene={scene} onClose={() => setSetHideOpen(false)} />}
+      {holes && (
+        <HoleSpecsDialog
+          types={holes.types}
+          specs={holeSpecs}
+          moduleLabel={holes.moduleLabel}
+          readOnly={!onSaveHoleSpecs}
+          applyLabel="Enregistrer et refaire les planches PR"
+          onClose={() => setHoles(null)}
+          onSave={(next) => void applyHoles(next)}
+        />
+      )}
       {frames && (
         <FramesDialog
           types={frames.types}

@@ -134,6 +134,8 @@ export interface ModelSettings {
   paint?: unknown;
   /** Viewbox renumérotées dans l'application (Vue 3D) : à relire avec cleanModuleNumbers (core/moduleNumbers.ts) */
   moduleNumbers?: unknown;
+  /** trous et taraudages des plans de production : à relire avec cleanHoleSpecs (production/holeSpecs.ts) */
+  holeSpecs?: unknown;
 }
 
 /** Modification des réglages : clés remplacées, ou fonction des réglages à jour (listes modifiées en parallèle). */

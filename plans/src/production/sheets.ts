@@ -15,7 +15,7 @@ import type { PartAxis, V3 } from './analyze';
 import { axisVector, toWorld } from './analyze';
 import type { HoleGroup, PartType } from './parts';
 import type { PartZone } from './parts';
-import { fmtMm, holeAction, holeGroups } from './parts';
+import { fmtMm, holeAction, holeCallout, holeGroups } from './parts';
 
 export interface ProductionOptions {
   paper: Paper;
@@ -156,7 +156,7 @@ function lines(text: string, width: number, size: number): number {
 }
 
 const NOTE =
-  'Generated from the 3D model: dimensions and holes are measured on the drawing (mm). Threads are proposed from the drawn hole diameter — check before production. Material, finish, welds and self-drilling screws are not in the model: fill in by hand.';
+  'Generated from the 3D model: dimensions and holes are measured on the drawing (mm). Threads marked « to confirm » are proposed from the drawn hole diameter — check before production; the other hole operations were set in VEM. Material, finish and welds are not in the model: fill in by hand.';
 
 /** Liste de débit + une planche par pièce. */
 export function productionSheets(types: PartType[], opts: ProductionOptions): ProductionResult {
@@ -234,7 +234,7 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
   const listRows = types.map((t) => {
     const g = t.rep.geo;
     const groups = holeGroups(g.holes);
-    const holes = groups.length ? groups.map((h) => `${h.holes.length}× ${h.thread ? `${h.thread.name}` : h.name}`).join(', ') : '—';
+    const holes = groups.length ? groups.map((h) => `${h.holes.length}× ${holeCallout(h)}`).join(', ') : '—';
     const size = g.kind === 'profile' ? `${fmtMm(g.size[0])}` : `${fmtMm(g.size[0])} × ${fmtMm(g.size[1])} × ${fmtMm(g.size[2])}`;
     return [t.mark, String(t.qty), t.description, t.name || '—', size, g.kind === 'profile' ? endsText(g.ends).replace(' (angle of cut to the axis)', '') : '—', holes, noSheet(t) ? 'small unnamed piece — no sheet' : `@${t.mark}`];
   });
@@ -369,7 +369,7 @@ export function productionSheets(types: PartType[], opts: ProductionOptions): Pr
     const f = g.frame;
     const holes: PartViewHole[] = g.holes.map((h) => {
       const hg = refOf.get(h)!;
-      return { c: toWorld(f, h.c) as Vec3, axis: axisVector(f, h.axis) as Vec3, ref: hg.ref, name: hg.thread ? hg.thread.name : hg.name };
+      return { c: toWorld(f, h.c) as Vec3, axis: axisVector(f, h.axis) as Vec3, ref: hg.ref, name: holeCallout(hg) };
     });
     // cadres des vues (A1) : profil = élévation et dessus sur toute la largeur, bout + 3D dessous ; plaque / bloc =
     // face en grand, chant dessous, 3D à droite

@@ -319,15 +319,7 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
 
   // plans de production : liste de débit + une planche par pièce, à la fin du jeu (série PR)
   if (opts.kinds.includes('production') && opts.production?.types.length) {
-    const prodModule = index.modules.find((m) => m.id === opts.production!.moduleId);
-    const pr = productionSheets(opts.production.types, {
-      paper: opts.paper,
-      modelKey: ctx.modelKey,
-      style: { ...opts.style, colorByCategory: false },
-      moduleLabel: opts.production.moduleLabel,
-      typeLabel: opts.production.typeLabel,
-      ...(prodModule ? { module: { id: prodModule.id, nodeId: prodModule.nodeId, zoneOf: partZones(index, prodModule, opts.production.types) } } : {}),
-    });
+    const pr = productionFor(index, opts.production, { paper: opts.paper, modelKey: ctx.modelKey, style: opts.style });
     sheets.push(...pr.sheets);
     captures.push(...pr.captures);
     dimensioned.push(...pr.dimensioned);
@@ -345,10 +337,30 @@ export function generateDrawingSet(opts: GenerateOptions, ctx: GenerateContext):
     notes: DEFAULT_GENERAL_NOTES,
     sheets,
     ...(split ? { units: units.map((u) => ({ n: u.n, name: u.name, moduleIds: u.moduleIds, commonIds: u.commonIds })) } : {}),
+    ...(opts.kinds.includes('production') && opts.production?.types.length && opts.production.moduleId
+      ? { production: { moduleId: opts.production.moduleId, moduleLabel: opts.production.moduleLabel, typeLabel: opts.production.typeLabel } }
+      : {}),
     revision: 0,
     updatedAt: new Date().toISOString(),
   };
   return { set, captures, dimensioned };
+}
+
+/** Planches de production (série PR) d'une Viewbox : à la génération du jeu, et refaites dans l'éditeur (trous). */
+export function productionFor(
+  index: SceneIndex,
+  production: NonNullable<GenerateOptions['production']>,
+  o: { paper: GenerateOptions['paper']; modelKey: string; style: GenerateOptions['style'] },
+) {
+  const prodModule = index.modules.find((m) => m.id === production.moduleId);
+  return productionSheets(production.types, {
+    paper: o.paper,
+    modelKey: o.modelKey,
+    style: { ...o.style, colorByCategory: false },
+    moduleLabel: production.moduleLabel,
+    typeLabel: production.typeLabel,
+    ...(prodModule ? { module: { id: prodModule.id, nodeId: prodModule.nodeId, zoneOf: partZones(index, prodModule, production.types) } } : {}),
+  });
 }
 
 /** Zone (plancher / toit / ossature) de chaque pièce d'une Viewbox, d'après les boîtes de l'index (Y = hauteur). */

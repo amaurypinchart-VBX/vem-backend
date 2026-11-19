@@ -43,6 +43,18 @@ await page.getByTestId('wizard-production').waitFor();
 const info = await page.getByTestId('wizard-production').innerText();
 check(`assistant : ${info.replace(/\s+/g, ' ').trim()}`, /type\(s\) de pièce/.test(info));
 await page.screenshot({ path: shots + 'wizard.png' });
+// trous et taraudages : le premier Ø dessiné du modèle = perçage + fraisage M8, enregistré avec le modèle
+await page.getByTestId('wizard-holes').click();
+await page.getByTestId('hole-specs-dialog').waitFor();
+const classOps = page.locator('[data-testid^=hole-class-][data-testid$=-op]');
+const nClasses = await classOps.count();
+check(`trous : ${nClasses} Ø dessiné(s) listé(s), ${await page.locator('[data-testid^=hole-part-P]').count()} groupe(s) par pièce`, nClasses > 0);
+await classOps.first().selectOption('countersink');
+await page.locator('[data-testid^=hole-class-][data-testid$=-size]').first().selectOption('8');
+await page.screenshot({ path: shots + 'holes.png' });
+await page.getByTestId('hole-specs-save').click();
+await page.getByTestId('hole-specs-dialog').waitFor({ state: 'detached' });
+check('assistant : « 1 choix » sur le bouton', /1 choix/.test(await page.getByTestId('wizard-holes').innerText()));
 await page.getByRole('button', { name: 'Générer', exact: true }).click();
 await page.locator('.sheet-editor').waitFor({ timeout: 900000 });
 await page.waitForTimeout(2500);
@@ -51,6 +63,7 @@ console.log('Planches :', titles.slice(0, 6).join(' | '), titles.length > 6 ? `�
 check('série PR : liste de débit en premier', /PR\.1/.test(titles[0]) && /Cut list/.test(titles[0]));
 const texts = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
 check('liste de débit : CUT LIST, repère P01, renvoi PR.5 (après les 3 plans d’assemblage)', texts.includes('CUT LIST') && texts.includes('P01') && texts.includes('PR.5'));
+check('liste de débit : le choix « CSK M8 » repris', texts.some((x) => /CSK M8/.test(x)));
 await page.screenshot({ path: shots + 'cutlist.png' });
 // plan d'assemblage (PR.2) : vues de la box, bulles P01… une seule fois, nomenclature
 await page.locator('.sheet-thumb').nth(1).click();
@@ -87,5 +100,16 @@ for (let i = 1; i < titles.length && !found; i++) {
   await page.screenshot({ path: shots + 'part.png' });
 }
 check('une pièce percée trouvée', found);
+// éditeur : ce Ø devient « rien à usiner » → planches PR refaites, plus de CSK sur la liste de débit
+await page.getByTestId('open-holes').click();
+await page.getByTestId('hole-specs-dialog').waitFor();
+await page.locator('[data-testid^=hole-class-][data-testid$=-op]').first().selectOption('none');
+await page.getByTestId('hole-specs-save').click();
+await page.getByText(/planche\(s\) de production refaite/).waitFor({ timeout: 600000 });
+await page.locator('.sheet-thumb').first().click();
+await page.waitForTimeout(1500);
+const after = await page.locator('.sheet-paper svg text').evaluateAll((els) => els.map((e) => e.textContent ?? ''));
+check('éditeur : planches PR refaites sans le Ø retiré', after.includes('CUT LIST') && !after.some((x) => /CSK M8/.test(x)));
+await page.screenshot({ path: shots + 'holes-after.png' });
 check(`aucune erreur console${errors.length ? ' : ' + errors.slice(0, 3).join(' | ') : ''}`, errors.length === 0);
 await browser.close();

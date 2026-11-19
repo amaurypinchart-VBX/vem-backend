@@ -26,6 +26,9 @@ import type { PartType } from '../../production/parts';
 import { groupParts } from '../../production/parts';
 import { measureParts } from '../../production/measure';
 import { noSheet } from '../../production/sheets';
+import type { HoleSpecs } from '../../production/holeSpecs';
+import { applyHoleSpecs, cleanHoleSpecs } from '../../production/holeSpecs';
+import { HoleSpecsDialog } from './HoleSpecsDialog';
 import type { LegendEntry } from '../../sheets/SheetSvg';
 import { useEditor } from '../../sheets/store';
 import { captureOffscreen } from '../../viewer/offscreenCapture';
@@ -77,9 +80,13 @@ interface Props {
   /** peinture du modèle (réglages) */
   paint?: unknown;
   onPaintSaved?: (p: PaintSettings) => void;
+  /** trous et taraudages des plans de production (réglages du modèle, à relire avec cleanHoleSpecs) */
+  holeSpecs?: unknown;
+  onSaveHoleSpecs?: (specs: HoleSpecs) => Promise<void> | void;
 }
 
-export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts, moduleLabels = NO_LABELS, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved }: Props) {
+export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts, moduleLabels = NO_LABELS, glassTest, model, rules, framesVersion, captures, customViews, categoryColors, paint, onPaintSaved, holeSpecs: rawHoleSpecs, onSaveHoleSpecs }: Props) {
+  const holeSpecs = useMemo(() => cleanHoleSpecs(rawHoleSpecs), [rawHoleSpecs]);
   const bank = useMemo(() => {
     const b = new LineworkBank(scene, provider);
     // budget des traits gardés en mémoire (les vues retirées sont relues de l'IndexedDB / du serveur en un instant) :
@@ -300,6 +307,8 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
         glassTest={glassTest}
         legendColors={legendColors}
         captures={captures}
+        holeSpecs={holeSpecs}
+        onSaveHoleSpecs={onSaveHoleSpecs}
         onClose={() => {
           useEditor.getState().close();
           void refresh();
@@ -319,6 +328,8 @@ export function SheetsPage({ scene, provider, onNeedScene, sceneLoading, fronts,
           palette={paintState.paint.colors}
           canPaint={!paintState.disabled}
           defaultTitle={project?.name ?? index0Title(scene)}
+          holeSpecs={holeSpecs}
+          onSaveHoleSpecs={onSaveHoleSpecs}
           onCancel={() => setWizard(false)}
           onGenerate={async (opts) => {
             setError('');
@@ -484,6 +495,8 @@ function Wizard({
   palette,
   canPaint,
   defaultTitle,
+  holeSpecs,
+  onSaveHoleSpecs,
   onCancel,
   onGenerate,
 }: {
@@ -492,6 +505,8 @@ function Wizard({
   palette: PaintColor[];
   canPaint: boolean;
   defaultTitle: string;
+  holeSpecs: HoleSpecs;
+  onSaveHoleSpecs?: (specs: HoleSpecs) => Promise<void> | void;
   onCancel: () => void;
   onGenerate: (o: {
     modules: string[];
@@ -542,6 +557,8 @@ function Wizard({
   const frames = useMemo(() => groupFrames(allFrames.filter((f) => !f.moduleId || modules.has(f.moduleId))), [allFrames, modules]);
   // plans de production : pièces de la Viewbox choisie, lues seulement quand la case est cochée
   const [prodModule, setProdModule] = useState(() => mods[0]?.id ?? '');
+  const [holesOpen, setHolesOpen] = useState(false);
+  const holeChoices = Object.keys(holeSpecs.byDiameter).length + Object.keys(holeSpecs.byPart).length;
   const production = useMemo(() => {
     if (!kinds.has('production') || !prodModule || scene.light) return undefined;
     try {
@@ -574,6 +591,19 @@ function Wizard({
   );
   return (
     <div className="card">
+      {holesOpen && production && (
+        <HoleSpecsDialog
+          types={production.types}
+          specs={holeSpecs}
+          moduleLabel={production.moduleLabel}
+          readOnly={!onSaveHoleSpecs}
+          onClose={() => setHolesOpen(false)}
+          onSave={async (next) => {
+            setHolesOpen(false);
+            await onSaveHoleSpecs?.(next);
+          }}
+        />
+      )}
       <div className="card-head">
         <h2>Générer un jeu de plans</h2>
       </div>
@@ -612,7 +642,21 @@ function Wizard({
                         : production
                           ? `${production.types.length} type(s) de pièce, ${production.types.reduce((a, t) => a + t.qty, 0)} pièce(s), ${production.types.filter((t) => !noSheet(t)).length} planche(s) de pièce + liste de débit + plans d’assemblage (box, plancher, toit)`
                           : ''}
-                    </span>
+                    </span>{' '}
+                    {production && production.types.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn small"
+                        data-testid="wizard-holes"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setHolesOpen(true);
+                        }}
+                      >
+                        🔩 Trous et taraudages…{holeChoices ? ` (${holeChoices} choix)` : ''}
+                      </button>
+                    )}
                   </span>
                 )}
                 {k === 'frames' && (
@@ -741,7 +785,22 @@ function Wizard({
             className="btn primary"
             disabled={!nSheets || (!modules.size && !kinds.has('cover')) || !exteriorReady}
             title={exteriorReady ? undefined : 'Choisis la couleur des côtés extérieurs'}
-            onClick={() => onGenerate({ modules: [...modules], units, kinds: [...kinds], paper, title: title.trim() || defaultTitle, facadeMarks, opaqueGlass, topColors, frames, hideFrames, exterior: exteriorChoice, production })}
+            onClick={() =>
+              onGenerate({
+                modules: [...modules],
+                units,
+                kinds: [...kinds],
+                paper,
+                title: title.trim() || defaultTitle,
+                facadeMarks,
+                opaqueGlass,
+                topColors,
+                frames,
+                hideFrames,
+                exterior: exteriorChoice,
+                production: production && { ...production, types: applyHoleSpecs(production.types, holeSpecs) },
+              })
+            }
           >
             Générer
           </button>
