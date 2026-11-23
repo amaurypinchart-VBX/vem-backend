@@ -10,7 +10,7 @@ import { verdictOf } from '../core/records';
 import { FONT_SANS } from '../../sheets/template';
 import { LOGO_COLOR, VIEWBOX_WORDMARK } from '../../sheets/logos';
 import type { SheetInfo } from './groundSheet';
-import { GroundPlan, planPlates, wrap } from './groundSheet';
+import { GroundPlan, planPlates, planReactions, wrap } from './groundSheet';
 import type { Lang } from './i18n';
 import { num } from './i18n';
 import { CALAGE_LABELS, LEVEL_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
@@ -194,7 +194,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
     if (!withLevels) return [];
     return lr?.level === undefined ? ['—', ''] : [formatLevel(lr.level), lr.makeUp ? `${lr.makeUp}${lr.shims ? '*' : ''}` : '0'];
   };
-  const rows = estimate.reactions.map((r) => {
+  const rows = planReactions(estimate.reactions, checks).map((r) => {
     const [x, y] = planCoords(r.group.position, o);
     const ids = r.group.moduleIds.filter((id) => ground.has(id));
     const c = checkOf.get(r.group.id);
@@ -222,7 +222,7 @@ export function groundPointsPages({ modules, estimate, roadway, info, bearingLab
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
       <GroundPlan
         modules={modules}
-        reactions={estimate.reactions}
+        reactions={planReactions(estimate.reactions, checks)}
         x={M}
         y={y + 2}
         w={W - 2 * M}

@@ -26,7 +26,7 @@ import type { Labels, Lang } from './i18n';
 import { LABELS, num } from './i18n';
 import { TUV_LABELS } from './tuvI18n';
 import { ellipsis, textWidth, wrapText } from './metrics';
-import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg, supportLoadTable } from './stackFigure';
 import { translate } from './translate';
 import { CUSTOM_LABELS, neutralText } from './customI18n';
 import { FR_CODE_LABELS } from './frCodeI18n';
@@ -172,6 +172,9 @@ export function buildReport(inp: ReportInput): ReportOutput {
   const st = run.summary.states;
   const loads = study.loads;
   const mu = study.options.friction;
+  // contact au sol du calcul : pose sur plaques / au sol (sans vérins), et appuis ajoutés (blocs calés sous le plancher)
+  const gcMain = study.groundContact && study.groundContact.mode !== 'added' && !study.options.jacks ? study.groundContact : null;
+  const gcAdded = study.groundContact?.mode === 'added' ? study.groundContact : null;
   const ground = calageVerdict(inp.calage);
   const verdict = worstVerdict([run.verdict.verdict, ground.verdict]);
   const H = Math.max(...s.modules.map((m) => m.origin[1] + m.params.topZ)) - Math.min(...s.modules.map((m) => m.origin[1]));
@@ -378,6 +381,31 @@ export function buildReport(inp: ReportInput): ReportOutput {
         cols: [{ title: b.cols[0], w: 100 - wz * (b.cols.length - 1) }, ...b.cols.slice(1).map((c) => ({ title: c, w: wz, align: 'end' as const }))],
         rows: b.rows.map((r) => [{ text: r.label, ...(r.bold ? { bold: true } : {}), ...(r.proposed ? { color: VERDICT_COLORS.limit } : {}) }, ...r.values.map((v) => ({ text: v, ...(r.bold ? { bold: true } : {}) }))]),
       },
+      ...supportLoadBlocks(),
+    ];
+  };
+  /** descente de charges par appui : charge locale sous la plaque de chaque appui */
+  const supportLoadBlocks = (): Block[] => {
+    const t = inp.calage ? supportLoadTable(inp.calage, inp.lang) : null;
+    if (!t) return [];
+    const S = STACK_LABELS[inp.lang];
+    const over = new Set((inp.calage!.slab!.supports ?? []).map((l, i) => (l.eta > 1 ? i : -1)).filter((i) => i >= 0));
+    return [
+      { t: 'para', text: S.localTitle, bold: true, after: 0.6 },
+      { t: 'para', text: S.localIntro(t.checked), size: SIZE.small, color: GREY },
+      {
+        t: 'table',
+        cols: [
+          { title: t.cols[0], w: 14 },
+          { title: t.cols[1], w: 11, align: 'end' as const },
+          { title: t.cols[2], w: 10, align: 'end' as const },
+          { title: t.cols[3], w: 30 },
+          { title: t.cols[4], w: 20, align: 'end' as const },
+          { title: t.cols[5], w: 15, align: 'end' as const },
+        ],
+        rows: t.rows.map((r, i) => r.map((v, k) => ({ text: v, ...(k === 4 && over.has(i) ? { color: t.checked ? VERDICT_COLORS.fail : VERDICT_COLORS.limit } : {}) }))),
+      },
+      { t: 'para', text: t.sum, size: SIZE.small, color: GREY },
     ];
   };
   blocks.push({ t: 'heading', level: 3, num: '', text: L.groundTitle });
@@ -424,7 +452,8 @@ export function buildReport(inp: ReportInput): ReportOutput {
     t: 'bullets',
     items: [
       ...L.generalNotes.slice(0, 3),
-      noVbx ? CX.jacks : study.options.jacks ? L.jacksUsed : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRims : L.groundPads(study.groundContact.pads.length, padsUnderProfiles(run))) : L.jacksForbidden,
+      noVbx ? CX.jacks : study.options.jacks ? L.jacksUsed : gcMain ? (gcMain.mode === 'rims' ? L.groundRims : L.groundPads(gcMain.pads.length, padsUnderProfiles(run))) : L.jacksForbidden,
+      ...(gcAdded ? [L.addedSupports(gcAdded.pads.map((p) => p.id).join(', '))] : []),
       ...L.generalNotes.slice(3),
       ...(hasGlazing ? [L.glazingNote] : []),
       L.impactNote,
@@ -471,7 +500,7 @@ export function buildReport(inp: ReportInput): ReportOutput {
       [L.overturning, `${L.verdict[run.stability.overturning.verdict]} — ${overturnText}`],
       [L.sliding, `${L.slidingValue(N(run.stability.sliding.muReq), N(mu))} (${run.stability.sliding.combo || '—'})`],
       [L.ballast, run.stability.overturning.verdict === 'fail' ? L.ballastOverturning : ballast > 0 ? L.ballastRequired(N(ballast / 1e3, 1), N(Math.ceil(ballast / GRAVITY / 10) * 10, 0)) : L.ballastNone],
-      [L.jacks, study.options.jacks ? L.jacksYes : study.groundContact ? (study.groundContact.mode === 'rims' ? L.groundRimsShort : L.groundPadsShort(study.groundContact.pads.length)) : L.jacksNo],
+      [L.jacks, `${study.options.jacks ? L.jacksYes : gcMain ? (gcMain.mode === 'rims' ? L.groundRimsShort : L.groundPadsShort(gcMain.pads.length)) : L.jacksNo}${gcAdded ? ` ${L.addedSupportsShort(gcAdded.pads.length)}` : ''}`],
       ...(inp.bearing ? ([[L.bearing, L.bearingValue(bearingN(inp.bearing.value), `${E(inp.bearing.label)} — ${N((inp.bearing.value * 1000) / GRAVITY, 0)} kg/m²`)]] as Array<[string, string]>) : []),
     ],
   });

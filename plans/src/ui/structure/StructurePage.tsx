@@ -49,6 +49,7 @@ import type { StudyMods } from '../../structure/core/mods';
 import { describeMods, placedToEstimate } from '../../structure/core/mods';
 import type { SectionEntry } from '../../structure/core/library';
 import { buildStudyInputs, carriedDetail, carriedWeights, groundContactOf, groundExtras, studyBase } from './studyInputs';
+import { addedSupportBlocks } from '../../structure/core/groundContact';
 import { SupportsCard } from './SupportsCard';
 import { designation } from '../../structure/core/library';
 import { addedSupportEtas, sizeAddedSupports, supportKey } from '../../structure/advisor/supports';
@@ -731,6 +732,7 @@ export function StructurePage({ scene, model, glassTest, rules, framesVersion, a
           onRun={() => void startRun()}
           middleFeet={hyp.middleFeet}
           modelBlocks={sceneModel.blocks?.length ?? 0}
+          addedBlocks={addedSupportBlocks(sceneModel.blocks ?? [], studyInputs.modules, calcOpts.jacks, hyp.middleFeet).map((b) => b.id)}
           subgrade={hyp.subgrade}
           modsLines={describeMods(mods, sectionName)}
           onCancel={cancelRun}

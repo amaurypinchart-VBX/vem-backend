@@ -48,12 +48,40 @@ export interface SlabZone {
   budget?: BudgetLine[];
 }
 
+/**
+ * Descente de charges par appui (comme une note de bureau d'études, 99Vectors 19.11.2026) : charge de chaque appui
+ * de calage (la plus forte de ses combinaisons) + son calage (bloc, plaques sous lui), rapportée à la surface de la
+ * plaque qui le pose sur la dalle (bloc / cale / plaque du dessous, élargie à 45° dans l'épaisseur des plaques de
+ * roulage) + le poids réparti des plaques de roulage / madriers. Ce n'est pas le critère d'une charge répartie (la
+ * dalle sous chaque Viewbox) : c'est la charge locale sous chaque plaque, à faire accepter par l'exploitant, ou le
+ * critère retenu quand l'exploitant l'exige (`CalageInput.slabLocal`).
+ */
+export interface SupportLoad {
+  id: string;
+  /** points d'appui du plan posés sur cet appui (P1, M2, tronçons…) */
+  members: string[];
+  /** charge de l'appui (N, caractéristique, la plus forte de ses combinaisons) et poids de son calage (N) */
+  reaction: number;
+  calage: number;
+  /** plaque qui pose l'appui sur la dalle : côtés (mm) et surface (mm²) */
+  plate: { dims: [number, number]; area: number; label: string };
+  /** charge locale sous la plaque (N/mm², plaques de roulage comprises) et taux = q / charge admissible */
+  q: number;
+  eta: number;
+  /** surface de plaque qu'il faudrait pour rester sous la charge admissible (mm²) */
+  areaNeeded: number;
+}
+
 export interface SlabResult {
   bearing: number;
   /** ensemble : surface couverte, poids total simultané (combinaison la plus lourde + calage), charge moyenne, taux */
   global: { area: number; load: number; q: number; eta: number };
   zones: SlabZone[];
   worst: SlabZone | null;
+  /** descente de charges par appui (charge locale sous chaque plaque) */
+  supports?: SupportLoad[];
+  /** la charge locale sous chaque plaque est aussi un critère (exigé par l'exploitant / un bureau d'études) */
+  local?: boolean;
 }
 
 const kgm2 = (q: number) => (q * 1e6) / G;
@@ -354,5 +382,54 @@ export function globalRecord(s: SlabResult): CalcRecord {
     result: s.global.q,
     limit: s.bearing,
     eta: s.global.eta,
+  };
+}
+
+/** Côtés (mm) et surface (mm²) d'un contour convexe à 4 angles (rectangle). */
+function rectDims(c: P2[]): [number, number] {
+  const d = (a: P2, b: P2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  return c.length === 4 ? [d(c[0], c[1]), d(c[1], c[2])] : [Math.sqrt(areaOf(c)), Math.sqrt(areaOf(c))];
+}
+
+/**
+ * Descente de charges par appui (`SupportLoad`) : `spread` = poids réparti des plaques de roulage / madriers (N/mm²),
+ * `grow` = épaisseur des plaques de roulage sous les appuis (diffusion à 45° : la plaque de l'appui s'élargit de
+ * 2 × grow), `bearing` = charge admissible (N/mm²).
+ */
+export function supportLoads(res: CalageResult, bearing: number, spread: number, grow = 0): SupportLoad[] {
+  return res.checks.map((c): SupportLoad => {
+    const calage = (c.block ? c.block.massKg * G : 0) + platesWeight(c);
+    const outline = c.plan?.corners ?? (c.block ? c.block.outline : null);
+    const base: [number, number] = outline ? rectDims(outline) : c.block ? c.block.size : [c.geometry.contact[0], c.geometry.contact[1]];
+    const dims: [number, number] = [base[0] + 2 * grow, base[1] + 2 * grow];
+    const area = dims[0] * dims[1];
+    const what = c.plan ? 'plaque' : c.block ? (c.block.composition ? 'cale' : 'bloc') : 'pied';
+    const load = c.Rzk + calage;
+    const q = load / area + spread;
+    return {
+      id: c.id,
+      // tronçons de profil posés sur un bloc : le bloc (les tronçons L… du calcul ne parlent pas sur site)
+      members: c.reaction.group.strip && c.block ? [c.block.id] : c.members,
+      reaction: c.Rzk,
+      calage,
+      plate: { dims, area, label: `${what} ${f(base[0] / 10, 0)} × ${f(base[1] / 10, 0)} cm${grow > 0 ? ` (+ ${f(grow / 10, 1)} cm à 45°)` : ''}` },
+      q,
+      eta: q / bearing,
+      areaNeeded: bearing > spread ? load / (bearing - spread) : Infinity,
+    };
+  });
+}
+
+/** Fiche de calcul de la charge locale sous la plaque d'un appui (descente de charges par appui). */
+export function supportLoadRecord(l: SupportLoad, bearing: number, spread: number): CalcRecord {
+  return {
+    key: 'slab.local',
+    title: `Charge locale sous la plaque de ${l.id}`,
+    clause: 'descente de charges par appui : charge de l’appui + son calage, sur la surface de la plaque qui le pose sur la dalle (+ plaques de roulage / madriers répartis)',
+    formula: 'q = (Rz,k + G calage) / A + g plaques de roulage ≤ charge admissible',
+    withValues: `q = (${kN(l.reaction)} + ${kN(l.calage)}) / ${m2(l.plate.area)}${spread > 0 ? ` + ${loadPerM2Text(spread)}` : ''} = ${loadPerM2Text(l.q)} ≤ ${loadPerM2Text(bearing)}`,
+    result: l.q,
+    limit: bearing,
+    eta: l.eta,
   };
 }

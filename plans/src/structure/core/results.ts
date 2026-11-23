@@ -523,7 +523,7 @@ export function groundEstimate(
     const jack = s.supportMeta[c[0]].jack;
     const strip = s.supportMeta[c[0]].kind === 'line' ? s.contact?.strips.find((x) => x.id === s.supportMeta[c[0]].strip) : undefined;
     if (strip) {
-      const info: StripInfo = { kind: strip.kind, label: strip.label, ...(strip.pad ? { pad: strip.pad } : {}), center: strip.center, along: strip.along, length: strip.length, width: strip.width, corner: strip.corner, middle: strip.middle };
+      const info: StripInfo = { kind: strip.kind, label: strip.label, ...(strip.pad ? { pad: strip.pad } : {}), center: strip.center, along: strip.along, length: strip.length, width: strip.width, corner: strip.corner, middle: strip.middle, ...(strip.added ? { added: true as const } : {}) };
       return { id: `L${k + 1}`, position: strip.center, corners: strip.corner ? 1 : 0, middle: strip.middle, strip: info, moduleIds: [strip.module] };
     }
     return { id: `${post ? 'R' : stair ? 'E' : middle ? 'M' : 'P'}${k + 1}`, position: center(c), corners: middle || stair ? 0 : c.length, middle, jack, ...(stair ? { stair } : {}), ...(post ? { post } : {}), moduleIds: [...new Set(c.map((x) => s.supportMeta[x].module))] };

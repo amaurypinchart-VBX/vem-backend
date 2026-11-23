@@ -124,6 +124,15 @@ function scenarios(): Array<[string, CalageResult, EstimateModule[]]> {
   const pehdType = { roadwayType: { label: ROADWAY_PRESETS[0].label, piece: [2200, 1100] as [number, number] }, roadwayThickness: 38 };
   out.push(['cale composée, dalle, PEHD', computeCalage({ ...slab, ...pehdType, blocks: nine, choices: { blockComposition: cale, roadway: true, byType: { B1: [{ plate: MX, n: 3 }] } } }), m2]);
   out.push(['cale composée, sol', computeCalage({ ...inp, ...pehdType, choices: { blockComposition: cale } }), mods]);
+  // appuis ajoutés (blocs calés sous le plancher, hors des vérins) et descente de charges par appui exigée (23.11.2026)
+  const centres = mods.flatMap((m, i) => {
+    const cx = (Math.min(...m.corners.map((c) => c[0])) + Math.max(...m.corners.map((c) => c[0]))) / 2;
+    const cz = (Math.min(...m.corners.map((c) => c[1])) + Math.max(...m.corners.map((c) => c[1]))) / 2;
+    return [-1000, 1000].map((dx, k): DrawnBlock => ({ ...block(`BL${20 + 2 * i + k}`, cx + dx, cz), under: { feet: null, frame: 12 } }));
+  });
+  const addedInp = { ...calageInput(m2, hyp450, stock, true, [], false, { mode: 'added', pads: centres, k: 0.03 }), bearingMode: 'distributed' as const, blocks: [...nine, ...centres] };
+  out.push(['appuis ajoutés, dalle, critère sous chaque plaque', computeCalage({ ...addedInp, ...pehdType, slabLocal: true, choices: { roadway: true, blockComposition: cale } }), m2]);
+  out.push(['appuis ajoutés, dalle, information', computeCalage(addedInp), m2]);
   return out;
 }
 
@@ -134,6 +143,11 @@ describe('documents de calage en anglais et en allemand', () => {
     const names = cases.map((c) => c[0]);
     expect(names).toContain('solution platform');
     expect(names).toContain('solution platform-no-blocks');
+    // appuis ajoutés : un type « bloc ajouté (calé) », descente de charges par appui (exigée)
+    const added = cases.find((c) => c[0] === 'appuis ajoutés, dalle, critère sous chaque plaque')![1];
+    expect(added.types.some((t) => t.label.startsWith('bloc ajouté (calé)'))).toBe(true);
+    expect(added.slab?.local).toBe(true);
+    expect(added.slab?.supports?.length).toBe(added.checks.length);
   });
 
   for (const lang of ['en', 'de'] as const)

@@ -26,8 +26,8 @@ import { verdictOf } from './records';
 import { fmtNumber } from './units';
 import type { AppliedRemedy, CalageRemedy, RemedyOutline } from './calageRemedies';
 import { evaluateRemedy } from './calageRemedies';
-import type { SlabResult, SlabZone } from './slabZones';
-import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, unionLoops, zoneOfSupport, zoneRecord } from './slabZones';
+import type { SlabResult, SlabZone, SupportLoad } from './slabZones';
+import { coveredArea, globalRecord, grownRect, loadPerM2Text, slabZones, unionLoops, supportLoadRecord, supportLoads, zoneOfSupport, zoneRecord } from './slabZones';
 import type { CalageStack, GroundMode } from './calageStack';
 import { calageStacks, zoneBudget } from './calageStack';
 
@@ -100,6 +100,11 @@ export interface CalageInput {
    * plancher, toiture : charge répartie admissible, vérifiée sous chaque Viewbox — `slabZones.ts`)
    */
   bearingMode?: 'pressure' | 'distributed';
+  /**
+   * charge répartie : la charge locale sous chaque plaque (descente de charges par appui, `supportLoads`) est aussi un
+   * critère ; sinon seulement affichée
+   */
+  slabLocal?: boolean;
   /** épaisseur des plaques de roulage (mm, coupe du calage) ; absente = inconnue */
   roadwayThickness?: number;
   /** type de plaques de roulage choisi (coupe du calage, matériel) et taille d'une plaque (mm) pour en estimer le nombre */
@@ -152,6 +157,8 @@ export interface SupportCheck extends ChainResult {
   at: P2;
   /** dalle en charge répartie : la zone de dalle de l'appui = la dalle sous sa Viewbox (la plus chargée s'il en porte plusieurs) */
   zone?: SlabZone;
+  /** dalle en charge répartie : descente de charges de l'appui (charge locale sous sa plaque) */
+  local?: SupportLoad;
   /**
    * appui commun à plusieurs Viewbox (bloc ou plaque sous les pieds / rives de deux Viewbox) : réaction de chaque
    * point d'appui posé dessus (ses Viewbox, combinaison par combinaison, public plein) — la charge de la dalle sous
@@ -279,6 +286,8 @@ export function envelopeReactions(fem: Estimate, est: Estimate): Estimate {
     let bd = 300;
     for (const e of est.reactions) {
       if (used.has(e) || e.group.middle !== r.group.middle || e.group.stair || e.group.terrace) continue;
+      // tronçon sur un bloc ajouté : le même tronçon de l'estimation (même bloc), jamais un vérin
+      if (!!e.group.strip !== !!r.group.strip || (r.group.strip && e.group.strip!.pad !== r.group.strip.pad)) continue;
       const d = Math.hypot(e.group.position[0] - r.group.position[0], e.group.position[1] - r.group.position[1]);
       if (d < bd) [bd, best] = [d, e];
     }
@@ -343,13 +352,25 @@ function uncomposed(b: DrawnBlock): DrawnBlock {
   return { ...rest, massKg: composition.drawnMassKg, massSource: composition.drawnMassSource };
 }
 
+/** Pose au sol du calcul : vérins, angles / pieds (avec ou sans blocs ajoutés calés), plaques / blocs, rives au sol. */
+export function groundModeOf(inp: Pick<CalageInput, 'estimate'>): GroundMode {
+  const c = inp.estimate.contact;
+  return inp.estimate.jacks ? 'jacks' : c && c.mode !== 'added' ? c.mode : 'points';
+}
+
+/** Blocs ajoutés calés sous le plancher (appuis du calcul en plus des vérins / angles). */
+export function addedPadIds(inp: Pick<CalageInput, 'estimate'>): Set<string> {
+  const c = inp.estimate.contact;
+  return new Set(c?.mode === 'added' ? c.pads.map((p) => p.id) : []);
+}
+
 export function computeCalage(inp0: CalageInput): CalageResult {
   const inp = withComposedBlocks(inp0);
   const base = computeCalageBase(inp);
   const applied = inp.choices?.remedy;
   const res = applied ? withRemedy(inp, base, applied) : base;
   const out = inp.bearingMode === 'distributed' && inp.bearing > 0 ? withSlab(inp, res) : res;
-  const mode: GroundMode = inp.estimate.jacks ? 'jacks' : (inp.estimate.contact?.mode ?? 'points');
+  const mode = groundModeOf(inp);
   return { ...out, groundMode: mode, stacks: calageStacks(out, mode, inp.roadwayThickness, inp.roadwayType?.label) };
 }
 
@@ -394,6 +415,12 @@ function bottomEffective(c: SupportCheck): P2[] | null {
  * Dalle en charge répartie admissible : chaque appui est vérifié sur sa zone de dalle (poids au m² à cet endroit) au
  * lieu de la pression juste sous le calage, qui reste affichée pour information.
  */
+/** « P4 : 1 950 kg/m² (19,1 kN/m²) sur 1,08 m² » : l'appui le plus chargé de la descente de charges par appui. */
+function worstLocalText(locals: SupportLoad[]): string {
+  const w = locals.reduce<SupportLoad | null>((a, l) => (!a || l.eta > a.eta ? l : a), null);
+  return w ? `${w.id}, ${loadPerM2Text(w.q)} sur ${fmtNumber(w.plate.area / 1e6, 2)} m² (η ${fmtNumber(w.eta, 2)})` : '—';
+}
+
 function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   const plat = res.remedy?.outlines.find((o) => o.id === 'PL');
   // surface de dalle chargée : emprise des Viewbox (agrandie du débord des plaques de roulage), plateau retenu, et la
@@ -428,11 +455,23 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   }
   const point = inp.pointLoadMax;
   const t = (kgOrN: number) => fmtNumber(kgOrN / 9.81 / 1000, 2);
+  // descente de charges par appui : charge locale sous la plaque de chaque appui (information, ou critère si exigé)
+  const spreadQ = area > 0 ? spreadN / area : 0;
+  const locals = supportLoads(res, inp.bearing, spreadQ, res.roadwayOn ? (inp.roadwayThickness ?? 0) : 0);
+  slab.supports = locals;
+  if (inp.slabLocal) slab.local = true;
+  const localOf = new Map(locals.map((l) => [l.id, l]));
   const withZone = (c: SupportCheck): SupportCheck => {
     const z = zoneOfSupport(slab, c.id);
     if (!z) return c;
-    const eta = Math.max(c.etaC90, c.etaCapacity, c.etaPoint, z.eta);
-    const problems = z.eta > 1 ? [`dalle sous ${z.id} : ${loadPerM2Text(z.q)} > ${loadPerM2Text(inp.bearing)}`, ...c.problems] : c.problems;
+    const info = localOf.get(c.id);
+    const lo = inp.slabLocal ? info : undefined;
+    const eta = Math.max(c.etaC90, c.etaCapacity, c.etaPoint, z.eta, lo?.eta ?? 0);
+    const problems = [
+      ...(z.eta > 1 ? [`dalle sous ${z.id} : ${loadPerM2Text(z.q)} > ${loadPerM2Text(inp.bearing)}`] : []),
+      ...(lo && lo.eta > 1 ? [`charge locale sous la plaque de ${c.id} : ${loadPerM2Text(lo.q)} > ${loadPerM2Text(inp.bearing)} (il faudrait ${fmtNumber(lo.areaNeeded / 1e6, 2)} m² de plaque)`] : []),
+      ...c.problems,
+    ];
     const verdict =
       z.eta <= 1
         ? ` ≤ ${loadPerM2Text(inp.bearing)} admissibles : OK (η ${fmtNumber(z.eta, 2)}).`
@@ -443,19 +482,20 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
     return {
       ...c,
       steps: [...c.steps, { label: `Dalle sous ${z.id} : ${fmtNumber(z.load / 1e3, 1)} kN sur ${fmtNumber(z.area / 1e6, 2)} m²`, dims: null, area: z.area, pressure: z.q, eta: z.eta, note: 'charge répartie admissible : poids sur la dalle sous la Viewbox (somme de ses pieds dans la combinaison la plus lourde + calage) / surface de dalle chargée' }],
-      pressure: z.q,
-      etaGround: z.eta,
+      pressure: lo && lo.eta > z.eta ? lo.q : z.q,
+      etaGround: Math.max(z.eta, lo?.eta ?? 0),
       eta,
       problems,
-      records: [...c.records, zoneRecord(z, inp.bearing)],
+      records: [...c.records, zoneRecord(z, inp.bearing), ...(lo ? [supportLoadRecord(lo, inp.bearing, spreadQ)] : [])],
       advice,
       zone: z,
+      ...(info ? { local: info } : {}),
     };
   };
   const types = res.types.map((ty): CalageType => {
     const checks = ty.checks.map(withZone);
     const worst = checks.reduce((a, c) => (c.eta > a.eta ? c : a));
-    const chosen = ty.chosen ? { ...ty.chosen, eta: worst.eta, feasible: worst.eta <= 1, remarks: worst.problems, records: [...ty.chosen.records.filter((r) => r.key !== 'slab.zone'), ...worst.records.filter((r) => r.key === 'slab.zone')] } : ty.chosen;
+    const chosen = ty.chosen ? { ...ty.chosen, eta: worst.eta, feasible: worst.eta <= 1, remarks: worst.problems, records: [...ty.chosen.records.filter((r) => r.key !== 'slab.zone' && r.key !== 'slab.local'), ...worst.records.filter((r) => r.key === 'slab.zone' || r.key === 'slab.local')] } : ty.chosen;
     return { ...ty, checks, chosen, standard: verdictOf(worst.eta) !== 'fail', advice: worst.advice };
   });
   const byId = new Map(types.flatMap((ty) => ty.checks).map((c) => [c.id, c]));
@@ -467,7 +507,11 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   warnings.unshift(
     `Dalle — charge répartie admissible ${loadPerM2Text(inp.bearing)} : vérifiée sous chaque Viewbox (poids de tous ses pieds dans la combinaison la plus lourde + calage, sur la surface de dalle qu’elle charge — ajouter des appuis sous une Viewbox ne change pas ce poids) ; ensemble de l’installation : ${loadPerM2Text(slab.global.q)} (η ${fmtNumber(slab.global.eta, 2)})${
       w ? ` ; zone la plus chargée : ${w.id}, ${loadPerM2Text(w.q)} (η ${fmtNumber(w.eta, 2)})` : ''
-    }. La pression juste sous les plaques n’est qu’une information.${
+    }. ${
+      inp.slabLocal
+        ? `Charge locale sous chaque plaque aussi vérifiée (descente de charges par appui) : la plus forte ${worstLocalText(locals)}.`
+        : `La charge locale sous chaque plaque (descente de charges par appui) n’est qu’une information : la plus forte ${worstLocalText(locals)}.`
+    }${
       point ? '' : ` Charge ponctuelle admissible de la dalle inconnue : charge maxi sous un seul pied ${fmtNumber(Math.max(...res.checks.map((c) => c.Rzk)) / 1e3, 1)} kN, à faire confirmer par l’exploitant (poinçonnement).`
     }`,
   );
@@ -613,7 +657,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
   if (blk) {
     warnings.push(...blk.warnings);
     // le dessin correspond-il au mode de pose calculé (vérins, UPN sur les blocs) ?
-    warnings.push(...blockDrawingNotes(inp.blocks!, inp.estimate.jacks ? 'jacks' : inp.estimate.contact?.mode ?? 'points'));
+    warnings.push(...blockDrawingNotes(inp.blocks!, groundModeOf(inp), addedPadIds(inp)));
     if (blk.unused.length)
       warnings.push(
         `${blk.unused.length} bloc(s) de calage sous aucun appui (${blk.unused.map((b) => b.id).join(', ')})${inp.estimate.middleFeet || inp.estimate.jacks ? '' : ' : si les pieds centraux des Viewbox posent sur ces blocs, cocher « pieds centraux » (étape 2)'} — ${
@@ -704,7 +748,7 @@ function computeCalageBase(inp: CalageInput): CalageResult {
     const stripLabel = strip ? `${stripTypeLabel(stripKey)}${nVbx > 1 ? ` de ${nVbx} Viewbox` : ''}` : '';
     const baseLabel = strip
       ? onBlock
-        ? `plaque / bloc sous ${stripKey === 'LS' ? 'les traverses / lisses du plancher' : `la ${stripLabel}`}`
+        ? `${strip.added ? 'bloc ajouté (calé)' : 'plaque / bloc'} sous ${stripKey === 'LS' ? 'les traverses / lisses du plancher' : `la ${stripLabel}`}`
         : `${stripLabel} posée au sol`
       : onBlock
       ? `bloc bois sous ${blockTypeLabel(n, middle, jack)}${withPost ? ' et un pied de poteau' : ''}`
@@ -1331,7 +1375,7 @@ function materialLabel(l: SpreadLayer): string {
 /** Dimensions d'une couche pour la liste de matériel (madriers : section × longueur). */
 function layerDims(l: SpreadLayer): string {
   if (l.joist) return `${l.joist.b} × ${l.joist.h} × ${Math.round(l.joist.along === 'u' ? l.l : l.w)} mm`;
-  return l.material === 'commercial' ? `${l.l} × ${l.w} mm` : `${l.l} × ${l.w} × ${l.t} mm`;
+  return l.material === 'commercial' ? `${Math.round(l.l)} × ${Math.round(l.w)} mm` : `${Math.round(l.l)} × ${Math.round(l.w)} × ${l.t} mm`;
 }
 
 /** Lignes de matériel identiques (même désignation et mêmes dimensions) additionnées. */

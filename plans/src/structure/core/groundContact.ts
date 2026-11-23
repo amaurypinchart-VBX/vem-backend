@@ -28,6 +28,19 @@ import { fmtNumber } from './units';
 
 export type GroundContactMode = 'points' | 'rims' | 'pads';
 
+/**
+ * Contact au sol passé au calcul : rives posées au sol, Viewbox posées sur plaques / blocs, ou appuis ajoutés —
+ * vérins / angles comme d'habitude + blocs dessinés sous le plancher hors des pieds (calés), qui portent les profils
+ * au-dessus d'eux. `padK` = raideur verticale du sol sous une plaque (N/mm), à la place de k · A (appuis ajoutés :
+ * même raideur que l'appui d'un vérin, les blocs reposant sur le même sol que ceux des vérins).
+ */
+export interface GroundContactInput {
+  mode: 'rims' | 'pads' | 'added';
+  pads: DrawnBlock[];
+  k: number;
+  padK?: number;
+}
+
 /** Disposition de plaques générée par l'outil (sans blocs dessinés dans le modèle). */
 export interface PadLayout {
   /** côté des plaques (mm, carrées) et épaisseur (mm) */
@@ -56,6 +69,12 @@ export interface GroundContactOptions {
   layout?: PadLayout;
   /** raideur du sol (clé de `SUBGRADE_PRESETS`) ; absent = celle des hypothèses (étape 2) */
   subgrade?: string;
+  /**
+   * sur vérins / angles : blocs dessinés sous le plancher hors des pieds (A. Pinchart 23.11.2026, « quand on rajoute des
+   * points, qu'ils se rajoutent bien dedans ») — calés (coins serrés : ils portent dans le calcul, défaut) ou seulement
+   * leur poids sur la dalle / le sol
+   */
+  added?: 'packed' | 'weight';
 }
 
 export const PAD_LAYOUT_DEFAULT: PadLayout = { size: 1000, thickness: 40, material: 'C24', corners: true, middles: true, centre: 0 };
@@ -126,11 +145,13 @@ export interface ContactStrip {
   corner: boolean;
   /** tronçon au milieu d'un grand côté (sous la réception centrale) */
   middle: boolean;
+  /** appui ajouté (bloc calé sous le plancher, en plus des vérins / angles) */
+  added?: true;
   stations: ContactStation[];
 }
 
 export interface ContactPlan {
-  mode: 'rims' | 'pads';
+  mode: 'rims' | 'pads' | 'added';
   strips: ContactStrip[];
   pads: DrawnBlock[];
   /** raideur du sol utilisée (N/mm³) */
@@ -347,7 +368,7 @@ export function layoutPads(floors: ModuleFloor[], layout: PadLayout, groundY = 0
  * traversent chaque plaque (mode 'pads'). `k` = raideur du sol (N/mm³), `kh` = raideur horizontale d'un appui de
  * référence (N/mm, comptée par mètre de contact).
  */
-export function contactStrips(floors: ModuleFloor[], mode: 'rims' | 'pads', pads: DrawnBlock[], k: number, kh: number): ContactPlan {
+export function contactStrips(floors: ModuleFloor[], mode: 'rims' | 'pads' | 'added', pads: DrawnBlock[], k: number, kh: number, padK?: number): ContactPlan {
   const warnings: string[] = [];
   const strips: ContactStrip[] = [];
   const padStations = new Map<string, Array<{ strip: ContactStrip; st: ContactStation; area: number }>>();
@@ -396,6 +417,7 @@ export function contactStrips(floors: ModuleFloor[], mode: 'rims' | 'pads', pads
         width,
         corner,
         middle,
+        ...(mode === 'added' ? { added: true as const } : {}),
         stations: [],
       };
       for (const q of sts) {
@@ -459,19 +481,20 @@ export function contactStrips(floors: ModuleFloor[], mode: 'rims' | 'pads', pads
     const list = padStations.get(pad.id);
     if (!list?.length) {
       if (mode === 'pads') warnings.push(`${pad.id} (${pad.label}) : sous aucune rive ni profil du plancher d’une Viewbox posée au sol — ne porte rien.`);
+      if (mode === 'added') warnings.push(`${pad.id} (${pad.label}) : sous aucune rive ni profil du plancher — ne porte rien, seulement son poids sur la dalle / le sol.`);
       continue;
     }
     const A = (pad.x1 - pad.x0) * (pad.z1 - pad.z0);
     const h = Math.max(1, pad.top - pad.bottom);
     const tot = list.reduce((a, e) => a + e.area, 0) || 1;
     for (const e of list) {
-      const soil = (k * A * e.area) / tot;
+      const soil = ((padK ?? k * A) * e.area) / tot;
       const width = e.strip.width;
       const wood = (E_PERP_TIMBER * e.st.trib * (width + Math.min(h, 1000))) / h;
       e.st.kv = 1 / (1 / soil + 1 / wood);
     }
   }
-  return { mode, strips, pads: mode === 'pads' ? pads : [], k, warnings };
+  return { mode, strips, pads: mode === 'rims' ? [] : pads, k, warnings };
 }
 
 /**
@@ -521,7 +544,12 @@ export function splitFloor(tpl: ViewboxTemplate, points: ReadonlyArray<{ u: numb
 
 /** Texte court d'un mode d'appui (étapes 3 / 5, rapport). */
 export function contactModeText(c: Pick<ContactPlan, 'mode' | 'pads' | 'strips'> | null | undefined, jacks: boolean): string {
-  if (!c) return jacks ? 'pieds à vérin (6 par Viewbox)' : 'angles posés directement sur le calage';
+  const base = jacks ? 'pieds à vérin (6 par Viewbox)' : 'angles posés directement sur le calage';
+  if (!c) return base;
+  if (c.mode === 'added') {
+    const ids = [...new Set(c.strips.map((s) => s.pad).filter(Boolean))];
+    return `${base} + ${ids.length} appui(s) ajouté(s) sous le plancher (${ids.join(', ')}), calés`;
+  }
   if (c.mode === 'rims') return 'Viewbox posées directement au sol : toute la rive (UNP) du plancher porte';
   const sec = new Set(c.strips.filter((s) => s.kind === 'secondary').map((s) => s.pad));
   return `Viewbox posées sur ${c.pads.length} plaque(s) / bloc(s) : la rive (UNP) porte sur la largeur de chaque plaque${sec.size ? ` ; ${sec.size} sous les profils du plancher (traverses / lisses)` : ''}`;
@@ -533,10 +561,54 @@ export function floorOfPlaced(pm: PlacedModule): ModuleFloor {
   return { id: pm.id, origin: [pm.origin[0], pm.origin[2]], u: [pm.u[0], pm.u[2]], v: [pm.v[0], pm.v[2]], size: [p.x0 + p.x1, p.y0 + p.y1], lines: [] };
 }
 
+/** Vide maxi (mm) entre un bloc ajouté et le plancher au-dessus de lui pour qu'on le cale (au-delà : il ne porte rien). */
+export const ADDED_GAP_MAX = 100;
+/** Distance (mm) autour d'un pied dans laquelle un bloc est « sous le pied » (moitié d'un contact d'angle 21 × 21 cm). */
+const FOOT_REACH = 110;
+
 /**
- * Contact au sol de l'étude à partir des options de calcul : null = appuis ponctuels (vérins ou angles). Plaques :
- * blocs dessinés dans le modèle (s'il y en a et que la source n'est pas « disposition »), sinon disposition générée
- * sous les Viewbox posées au sol.
+ * Points d'appui habituels d'une Viewbox posée au sol (repère du monde) : angles (155 mm à l'intérieur avec des
+ * vérins) et milieux des grands côtés (vérins, ou pieds centraux calés).
+ */
+export function footPoints(f: ModuleFloor, jacks: boolean, middleFeet: boolean): P2[] {
+  const [L, W] = f.size;
+  const o = jacks ? 155 : 0;
+  const pts: Array<[number, number]> = [
+    [o, o],
+    [L - o, o],
+    [L - o, W - o],
+    [o, W - o],
+  ];
+  if (jacks || middleFeet) pts.push([L / 2, o], [L / 2, W - o]);
+  return pts.map(([u, v]) => toWorld(f, u, v));
+}
+
+/**
+ * Blocs dessinés qui sont des appuis ajoutés : sous le plancher d'une Viewbox posée au sol, sous aucun pied (vérin,
+ * angle, pied central), avec au plus `ADDED_GAP_MAX` de vide sous la structure dans le dessin (à caler). Sans mesure
+ * du dessin : tout bloc sous le plancher (au moins le quart de sa surface) et loin des pieds.
+ */
+export function addedSupportBlocks(blocks: readonly DrawnBlock[], modules: readonly PlacedModule[], jacks: boolean, middleFeet: boolean): DrawnBlock[] {
+  const floors = modules.filter((m) => m.level === 0).map(floorOfPlaced);
+  const feet = floors.flatMap((f) => footPoints(f, jacks, middleFeet));
+  return blocks.filter((b) => {
+    if (feet.some((p) => p[0] >= b.x0 - FOOT_REACH && p[0] <= b.x1 + FOOT_REACH && p[1] >= b.z0 - FOOT_REACH && p[1] <= b.z1 + FOOT_REACH)) return false;
+    const u = b.under;
+    if (u && (u.feet !== null || u.frame !== null)) return u.feet === null && u.frame !== null && u.frame <= ADDED_GAP_MAX;
+    const area = Math.max(1, (b.x1 - b.x0) * (b.z1 - b.z0));
+    return floors.some((f) => {
+      const r = rectIn(f, b);
+      const ov = Math.max(0, Math.min(r[1], f.size[0]) - Math.max(r[0], 0)) * Math.max(0, Math.min(r[3], f.size[1]) - Math.max(r[2], 0));
+      return ov >= 0.25 * area;
+    });
+  });
+}
+
+/**
+ * Contact au sol de l'étude à partir des options de calcul : null = appuis ponctuels (vérins ou angles) seuls. Vérins /
+ * angles avec des blocs dessinés sous le plancher hors des pieds : ces blocs sont des appuis ajoutés (calés), sauf
+ * choix « seulement leur poids ». Plaques : blocs dessinés dans le modèle (s'il y en a et que la source n'est pas
+ * « disposition »), sinon disposition générée sous les Viewbox posées au sol.
  */
 export function resolveGroundContact(
   opts: GroundContactOptions | undefined,
@@ -544,8 +616,13 @@ export function resolveGroundContact(
   modules: readonly PlacedModule[],
   modelBlocks: readonly DrawnBlock[] | undefined,
   k: number,
-): { mode: 'rims' | 'pads'; pads: DrawnBlock[]; k: number; source?: 'model' | 'layout' } | null {
-  if (jacks || !opts || opts.mode === 'points') return null;
+  middleFeet = false,
+): { mode: 'rims' | 'pads' | 'added'; pads: DrawnBlock[]; k: number; source?: 'model' | 'layout' } | null {
+  if (jacks || !opts || opts.mode === 'points') {
+    if (opts?.added === 'weight' || !modelBlocks?.length) return null;
+    const pads = addedSupportBlocks(modelBlocks, modules, jacks, middleFeet);
+    return pads.length ? { mode: 'added', pads, k, source: 'model' } : null;
+  }
   if (opts.mode === 'rims') return { mode: 'rims', pads: [], k };
   const ground = modules.filter((m) => m.level === 0);
   const useModel = opts.pads !== 'layout' && !!modelBlocks?.length;

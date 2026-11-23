@@ -10,7 +10,7 @@ import type { Lang } from './i18n';
 import { LABELS, num } from './i18n';
 import { CALAGE_LABELS, TIMBER_LABELS, timberGroundText, timberLegend } from './calageI18n';
 import { translate } from './translate';
-import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from './stackFigure';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg, supportLoadTable } from './stackFigure';
 import { typeColor } from './calagePlan';
 import { verdictOf } from '../core/records';
 import { fmtNumber } from '../core/units';
@@ -30,6 +30,20 @@ const PLAN_WORDS: Record<Lang, { slab: string; roadway: string; colon: string }>
 
 export const TYPE_COLORS: Record<string, string> = { '1': '#2563eb', '2': '#16a34a', '3': '#d97706', '4': '#dc2626', M: '#7c3aed', E: '#0891b2' };
 export const typeKey = (r: GroupReaction) => groupTypeKey(r.group);
+
+/**
+ * Points du plan : les tronçons de profil posés sur un bloc ajouté (calé sous le plancher, hors des vérins) sont
+ * remplacés par un seul point par bloc — l'appui de calage « B… » au centre du bloc, sa réaction totale (les tronçons
+ * L… du calcul n'ont pas de sens sur site et surchargeaient le plan).
+ */
+export function planReactions(reactions: GroupReaction[], checks?: readonly SupportCheck[] | null): GroupReaction[] {
+  if (!checks?.length || !reactions.some((r) => r.group.strip?.added)) return reactions;
+  const blocks = checks.filter((c) => c.reaction.group.strip?.added && c.block);
+  return [
+    ...reactions.filter((r) => !r.group.strip?.added),
+    ...blocks.map((c): GroupReaction => ({ ...c.reaction, group: { ...c.reaction.group, id: c.id, position: c.at }, Rk: c.Rzk, REd: c.REd })),
+  ];
+}
 
 const n1 = (v: number, d = 1) => fmtNumber(v, d);
 
@@ -175,8 +189,12 @@ export const zoneLines = (z: NonNullable<SupportCheck['zone']>, lang: Lang = 'fr
  * Dalle en charge répartie : pas de pression — le poids réparti sur la dalle à cet endroit, celui de la Viewbox sous
  * laquelle est l'appui (« 270 kg/m² »), le même que celui écrit au milieu de sa zone.
  */
+const PLATE_WORD: Record<Lang, string> = { fr: 'plaque', de: 'Platte', en: 'plate' };
+
 export const pressureLines = (c: SupportCheck, lang: Lang = 'fr'): string[] => {
-  if (c.zone) return [`${num(lang, (c.zone.q * 1e6) / 9.81, 0)} kg/m²`];
+  // dalle : le poids au m² de la dalle de sa Viewbox (A. Pinchart 06.11.2026), puis la charge locale sous sa plaque
+  // (descente de charges par appui, 23.11.2026) — les deux valeurs nommées pour ne pas les confondre
+  if (c.zone) return [`${num(lang, (c.zone.q * 1e6) / 9.81, 0)} kg/m²`, ...(c.local ? [`${c.id} · ${PLATE_WORD[lang]} ${num(lang, (c.local.q * 1e6) / 9.81, 0)} kg/m²`] : [])];
   return [`${num(lang, c.pressure * 1e3, c.pressure * 1e3 < 10 ? 1 : 0)} kN/m²`, `${num(lang, (c.pressure * 1e6) / 9.81, 0)} kg/m²`];
 };
 
@@ -727,20 +745,25 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
   // 1. hypothèses
   title(C.s1, 't1');
   y += 5;
-  // une ligne par hypothèse (les valeurs sont parfois longues)
+  // une ligne par hypothèse ; une valeur longue continue sur les lignes suivantes (elle était coupée au bord de la page)
   info.assumptions.forEach(([k, v], i) => {
+    const vl = wrap(v, 100);
+    need(3.6 * vl.length);
     push(
       <g key={`a${i}`}>
-        <text fontFamily={FONT_SANS} x={M} y={y + i * 3.6} fontSize={body} fill="#6b7280">
+        <text fontFamily={FONT_SANS} x={M} y={y} fontSize={body} fill="#6b7280">
           {k}
         </text>
-        <text fontFamily={FONT_SANS} x={M + 48} y={y + i * 3.6} fontSize={body} fill="#111827">
-          {v}
-        </text>
+        {vl.map((line, j) => (
+          <text fontFamily={FONT_SANS} key={j} x={M + 48} y={y + j * 3.3} fontSize={body} fill="#111827">
+            {line}
+          </text>
+        ))}
       </g>,
     );
+    y += 3.6 + (vl.length - 1) * 3.3;
   });
-  y += info.assumptions.length * 3.6 + 3;
+  y += 3;
   // 2. plan des appuis et des plaques
   const fem = result.estimate.method === 'fem';
   title(C.s2(fem), 't2');
@@ -749,7 +772,7 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
   push(
     <g key="plan">
       <rect x={M} y={y + 2} width={W - 2 * M} height={planH} fill="none" stroke="#d1d5db" strokeWidth={0.2} />
-      <GroundPlan modules={modules} reactions={result.estimate.reactions} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} {...checkPlan(result, lang)} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
+      <GroundPlan modules={modules} reactions={planReactions(result.estimate.reactions, result.checks)} x={M} y={y + 2} w={W - 2 * M} h={planH} text={2.4} {...checkPlan(result, lang)} zoneLabel={(m, n) => [n > 1 ? C.levels(n) : m.level > 0 ? C.level(m.level) : C.levels(1)]} />
     </g>,
   );
   y += planH + 8;
@@ -832,6 +855,27 @@ export function groundSheetPages({ result, modules, info, lang = 'fr' }: GroundS
     para('bi', [S.slabIntro], 2.2, 3.1, '#6b7280', 140);
     const wz = Math.min(40, 100 / (budget.cols.length - 1));
     table('budget', [{ title: budget.cols[0], w: W - 2 * M - wz * (budget.cols.length - 1) }, ...budget.cols.slice(1).map((c) => ({ title: c, w: wz, align: 'end' as const }))], budget.rows.map((r) => [r.label, ...r.values]));
+  }
+  // 7. descente de charges par appui : charge locale sous la plaque de chaque appui (comme une note de bureau d'études)
+  const local = supportLoadTable(result, lang);
+  if (local) {
+    title(S.localTitle, 't6b');
+    y += 4.5;
+    para('li', [S.localIntro(local.checked)], 2.2, 3.1, '#6b7280', 140);
+    table(
+      'local',
+      [
+        { title: local.cols[0], w: 28 },
+        { title: local.cols[1], w: 18, align: 'end' },
+        { title: local.cols[2], w: 17, align: 'end' },
+        { title: `  ${local.cols[3]}`, w: 62 },
+        { title: local.cols[4], w: 32, align: 'end' },
+        { title: local.cols[5], w: 27, align: 'end' },
+      ],
+      local.rows.map((r) => r.map((v, i) => (i === 3 ? `  ${v}` : v))),
+    );
+    para('ls', [local.sum], 2.2, 3.1, '#374151', 140);
+    y += 3;
   }
   // références réglementaires (Prüfbuch TÜV) : seulement avec des Viewbox
   const jacks = result.estimate.reactions.some((r) => r.group.jack);

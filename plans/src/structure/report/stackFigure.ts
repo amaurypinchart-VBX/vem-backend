@@ -18,6 +18,11 @@ export const STACK_LABELS: Record<
     stackIntroGround: string;
     slabTitle: string;
     slabIntro: string;
+    /** descente de charges par appui (charge locale sous chaque plaque) */
+    localTitle: string;
+    localIntro: (checked: boolean) => string;
+    localCols: [string, string, string, string, string, string];
+    localSum: (sum: string, total: string) => string;
     colSupports: string;
     colLayers: string;
     colHeight: string;
@@ -41,6 +46,11 @@ export const STACK_LABELS: Record<
     stackIntroGround: 'Ce qui est posé sur le sol, couche par couche de bas en haut, sous chaque appui (appuis identiques regroupés). Épaisseurs : calage retenu et dessin du modèle (blocs, vide entre le bloc et la Viewbox).',
     slabTitle: 'Charge sur la dalle sous chaque Viewbox',
     slabIntro: 'Poids posé sur la dalle sous chaque Viewbox, poste par poste, dans la combinaison la plus lourde (caractéristique), rapporté à la surface de dalle qu’elle charge.',
+    localTitle: 'Descente de charges par appui — charge locale sous chaque plaque',
+    localIntro: (checked) =>
+      `Charge de chaque appui (la plus forte de ses combinaisons) + son calage, divisée par la surface de la plaque qui le pose sur la dalle (élargie à 45° dans l’épaisseur des plaques de roulage, dont le poids réparti s’ajoute), comparée au poids admis par m² ; « surface nécessaire » = plaque qu’il faudrait pour rester sous l’admissible. ${checked ? 'Critère exigé : chaque plaque doit passer.' : 'Pour information (le critère est la dalle sous chaque Viewbox) : au-dessus de 1, charge locale à faire accepter par l’exploitant, ou plaque plus grande / appuis ajoutés.'}`,
+    localCols: ['Appui', 'Charge', 'Calage', 'Plaque sous l’appui', 'Charge locale', 'Surface nécessaire'],
+    localSum: (sum, total) => `Somme des charges par appui : ${sum} (maxima de chaque appui, pas simultanés) ; poids total simultané (combinaison la plus lourde + calage) : ${total}.`,
     colSupports: 'Appuis',
     colLayers: 'Couches, de bas en haut',
     colHeight: 'Hauteur',
@@ -63,6 +73,11 @@ export const STACK_LABELS: Record<
     stackIntroGround: 'Was auf dem Boden liegt, Lage für Lage von unten nach oben, unter jedem Auflager (gleiche Auflager zusammengefasst). Dicken: gewählte Unterpallung und Zeichnung des Modells (Klötze, Abstand zwischen Klotz und Viewbox).',
     slabTitle: 'Last auf der Decke unter jeder Viewbox',
     slabIntro: 'Last auf der Decke unter jeder Viewbox, Posten für Posten, in der ungünstigsten Kombination (charakteristisch), bezogen auf die von ihr belastete Deckenfläche.',
+    localTitle: 'Lastabtrag je Auflager — örtliche Last unter jeder Platte',
+    localIntro: (checked) =>
+      `Last jedes Auflagers (die größte seiner Kombinationen) + seine Unterpallung, geteilt durch die Fläche der Platte, mit der es auf der Decke steht (unter 45° durch die Dicke der Fahrplatten verbreitert, deren verteiltes Gewicht hinzukommt), verglichen mit der zulässigen Last je m²; „erf. Fläche“ = Platte, die für die zulässige Last nötig wäre. ${checked ? 'Gefordertes Kriterium: jede Platte muss bestehen.' : 'Zur Information (Kriterium ist die Decke unter jeder Viewbox): über 1 muss der Betreiber die örtliche Last freigeben, oder größere Platte / zusätzliche Auflager.'}`,
+    localCols: ['Auflager', 'Last', 'Unterpallung', 'Platte unter dem Auflager', 'Örtliche Last', 'Erf. Fläche'],
+    localSum: (sum, total) => `Summe der Auflagerlasten: ${sum} (Größtwerte je Auflager, nicht gleichzeitig); gleichzeitige Gesamtlast (ungünstigste Kombination + Unterpallung): ${total}.`,
     colSupports: 'Auflager',
     colLayers: 'Lagen, von unten nach oben',
     colHeight: 'Höhe',
@@ -85,6 +100,11 @@ export const STACK_LABELS: Record<
     stackIntroGround: 'What is laid on the ground, layer by layer from bottom to top, under each support (identical supports grouped). Thicknesses: chosen packing and model drawing (blocks, gap between the block and the Viewbox).',
     slabTitle: 'Load on the slab under each Viewbox',
     slabIntro: 'Weight on the slab under each Viewbox, item by item, in the heaviest combination (characteristic), divided by the slab area it loads.',
+    localTitle: 'Load take-down per support — local load under each plate',
+    localIntro: (checked) =>
+      `Load of each support (the highest of its combinations) + its packing, divided by the area of the plate that sets it on the slab (widened at 45° through the thickness of the roadway plates, whose distributed weight is added), compared with the allowable weight per m²; “area needed” = plate that would keep it under the allowable. ${checked ? 'Required criterion: every plate must pass.' : 'For information (the criterion is the slab under each Viewbox): above 1, the local load must be accepted by the operator, or a larger plate / added supports.'}`,
+    localCols: ['Support', 'Load', 'Packing', 'Plate under the support', 'Local load', 'Area needed'],
+    localSum: (sum, total) => `Sum of the support loads: ${sum} (maxima of each support, not simultaneous); simultaneous total weight (heaviest combination + packing): ${total}.`,
     colSupports: 'Supports',
     colLayers: 'Layers, bottom to top',
     colHeight: 'Height',
@@ -282,4 +302,23 @@ export function slabBudgetTable(res: CalageResult, lang: Lang): { cols: string[]
   rows.push({ label: S.area, values: zones.map((z) => `${num(lang, z.area / 1e6, 2)} m²`) });
   rows.push({ label: `${S.perM2} (${S.allowable} ${num(lang, (slab.bearing * 1e6) / 9.81, 0)} kg/m²)`, values: zones.map((z) => `${num(lang, (z.q * 1e6) / 9.81, 0)} kg/m² — η ${num(lang, z.eta, 2)}`), bold: true });
   return { cols: [S.colItem, ...zones.map((z) => z.id)], rows };
+}
+
+/** Tableau de la descente de charges par appui (charge locale sous chaque plaque), dans la langue du document. */
+export function supportLoadTable(res: CalageResult, lang: Lang): { cols: string[]; rows: string[][]; sum: string; checked: boolean } | null {
+  const slab = res.slab;
+  if (!slab?.supports?.length) return null;
+  const S = STACK_LABELS[lang];
+  const E = (t: string) => translate(lang, t);
+  const kg = (N: number) => `${num(lang, N / 9.81, 0)} kg`;
+  const rows = slab.supports.map((l) => [
+    l.members.length > 1 || (l.members[0] && l.members[0] !== l.id) ? `${l.id} (${l.members.join(', ')})` : l.id,
+    kg(l.reaction),
+    kg(l.calage),
+    `${E(l.plate.label)} → ${num(lang, l.plate.area / 1e6, 2)} m²`,
+    `${num(lang, (l.q * 1e6) / 9.81, 0)} kg/m² — η ${num(lang, l.eta, 2)}`,
+    Number.isFinite(l.areaNeeded) ? `${num(lang, l.areaNeeded / 1e6, 2)} m²` : '—',
+  ]);
+  const sumN = slab.supports.reduce((a, l) => a + l.reaction + l.calage, 0);
+  return { cols: [...S.localCols], rows, sum: S.localSum(kg(sumN), kg(slab.global.load)), checked: !!slab.local };
 }

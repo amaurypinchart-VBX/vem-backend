@@ -17,7 +17,7 @@ import type { CalageChoices } from '../../structure/core/spreading';
 import type { CalcRecord } from '../../structure/core/records';
 import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
-import { GroundPlan, checkPlan, planPlates } from '../../structure/report/groundSheet';
+import { GroundPlan, checkPlan, planPlates, planReactions } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
 import { SLEEPER_SECTIONS, calageRemedies, isFlat } from '../../structure/core/calageRemedies';
 import type { SleeperVariant } from '../../structure/core/sleeperCompare';
@@ -33,7 +33,7 @@ import type { FrSnowRegion, FrWindSite } from '../../structure/core/codeFR';
 import { DEFAULT_FR_WIND, frOutOfService, serviceWindPressure, spdHorizontalRatio } from '../../structure/core/codeFR';
 import { kNm2, kgm2, planCoords, planOrigin, supportType } from '../../structure/core/roadway';
 import { pressureFill } from '../../structure/report/groundPoints';
-import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg } from '../../structure/report/stackFigure';
+import { STACK_LABELS, slabBudgetTable, stackHeightText, stackLines, stacksFigureSvg, supportLoadTable } from '../../structure/report/stackFigure';
 import type { ChoiceSetters, RoadwayFieldsProps } from './CalageChoice';
 import { BlockCompositionCard, CHECK_COLORS, CalageDiagnostic, RoadwayTypeFields, SupportPanel, TypeChoice } from './CalageChoice';
 import type { Project } from '../../api/vem';
@@ -61,6 +61,11 @@ export interface Hypotheses {
    * toiture : poids au m² vérifié sous chaque Viewbox) ; absent = selon le type de support
    */
   bearingMode?: 'pressure' | 'distributed';
+  /**
+   * charge répartie : vérifier aussi la charge locale sous chaque plaque (descente de charges par appui, comme une note
+   * de bureau d'études — exigé par certains exploitants) ; absent = seulement la dalle sous chaque Viewbox
+   */
+  slabLocal?: boolean;
   pointLoadKN: number;
   /** poids pesé d'une Viewbox (kg) : structure, plancher, sol, plafond et isolants compris */
   moduleWeightKg: number;
@@ -220,13 +225,14 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
       ...(fr ? { code: 'FR' as const, horizontalRatio: spdHorizontalRatio(modules.reduce((a, m) => a + planArea(m.corners), 0)) } : {}),
       middleFeet: h.middleFeet || jacks,
       jacks,
-      ...(contact && !jacks ? { contact } : {}),
+      ...(contact && (!jacks || contact.mode === 'added') ? { contact } : {}),
       evacuateTopLevel: h.evacuateTop,
       extraFactor: h.extraPct / 100,
     },
     bearing: bearingFrom(h.bearingValue, h.bearingUnit),
     pointLoadMax: (BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad || bearingModeOf(h) === 'distributed') && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
     bearingMode: bearingModeOf(h),
+    ...(h.slabLocal && bearingModeOf(h) === 'distributed' ? { slabLocal: true } : {}),
     // France : réactions caractéristiques (pas de conversion statico), pas de Prüfbuch TÜV
     staticoConversion: fr ? false : h.staticoConversion,
     ...(fr ? { code: 'FR' as const } : {}),
@@ -922,6 +928,9 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
     // exploitation du rez-de-chaussée sous les 5 kN/m² du calcul de type statico 18-0573 : la structure n'est pas
     // vérifiée avec la charge réglementaire (ne pas l'écrire)
     const liveReduced = (hyp.liveGround ?? 5) < 5 - 1e-9;
+    // appuis ajoutés (blocs calés sous le plancher, en plus des vérins / angles) : à part de la pose sur plaques / au sol
+    const added = contact?.mode === 'added' ? [...new Set(contact.pads.map((p) => p.id))] : null;
+    const cMain = contact && contact.mode !== 'added' ? contact : null;
     const T = {
       fr: {
         bearing: ['Portance admissible', `${bearing} (${preset?.label ?? 'saisie'})`],
@@ -931,12 +940,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Public pour le sol', hyp.publicMode === 'persons' ? `limité à ${Math.round(hyp.persons)} personnes × ${N(hyp.personKg)} kg (nombre contrôlé sur place ; ${liveReduced ? `structure calculée avec ${N(hyp.liveGround ?? 5, 2)} kN/m² au rez-de-chaussée, moins que la charge réglementaire de 5 kN/m²` : 'structure vérifiée avec la charge réglementaire'})` : 'charge réglementaire (public libre)'],
         wind: ['Vent en / hors service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Réaction pour la surface', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'caractéristique (ELS)'],
-        feet: contact
-          ? ['Pose au sol', contact.mode === 'rims' ? 'posées directement au sol : toute la rive (UNP) porte, appui continu (tronçons d’environ 1 m vérifiés un par un)' : `sur ${contact.pads.length} plaque(s) / bloc(s) : la rive (UNP) porte sur la largeur de chaque plaque, une plaque hors rive porte les traverses / lisses`]
+        feet: cMain
+          ? ['Pose au sol', cMain.mode === 'rims' ? 'posées directement au sol : toute la rive (UNP) porte, appui continu (tronçons d’environ 1 m vérifiés un par un)' : `sur ${cMain.pads.length} plaque(s) / bloc(s) : la rive (UNP) porte sur la largeur de chaque plaque, une plaque hors rive porte les traverses / lisses`]
           : jacks ? ['Pieds à vérin', '6 par Viewbox (4 angles + 2 centraux), tiges Tr 24 × 5, sortie ≤ 5 cm ; vérins voisins sur une même plaque'] : ['Pieds centraux', hyp.middleFeet ? 'utilisés' : 'non (angles seuls)'],
         place: ['Pose des plaques', { auto: 'à fleur de la Viewbox, centrées seulement si nécessaire', flush: 'toujours à fleur de la Viewbox', centered: 'centrées sous chaque appui (statico)' }[placement]],
+        added: ['Appuis ajoutés', `${added?.length ?? 0} bloc(s) calé(s) sous les profils du plancher, hors des ${jacks ? 'vérins' : 'pieds'} (${added?.join(', ') ?? ''}) : ils portent dans le calcul (coins serrés sur site)`],
         vbx: ['Viewbox', `${modules.length} (${levels} niveau${levels > 1 ? 'x' : ''})`],
-        src: ['Réactions', reactions ? (contact ? 'calcul complet (modèle 3D, 2ᵉ ordre), appuis élastiques le long des rives / profils (raideur du sol)' : jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : contact ? 'estimation instantanée (plancher rigide sur appuis élastiques)' : 'estimation instantanée (surfaces tributaires)'],
+        src: ['Réactions', reactions ? (cMain ? 'calcul complet (modèle 3D, 2ᵉ ordre), appuis élastiques le long des rives / profils (raideur du sol)' : jacks ? 'calcul complet (modèle 3D, 2ᵉ ordre), au moins l’estimation sous chaque vérin (vérins réglables)' : 'calcul complet (modèle 3D, 2ᵉ ordre)') : cMain ? 'estimation instantanée (plancher rigide sur appuis élastiques)' : 'estimation instantanée (surfaces tributaires)'],
       },
       de: {
         bearing: ['Zul. Bodenpressung', `${bearing} (${presetName ?? 'Eingabe'})`],
@@ -946,12 +956,13 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Publikum für den Boden', hyp.publicMode === 'persons' ? `begrenzt auf ${Math.round(hyp.persons)} Personen × ${N(hyp.personKg)} kg (vor Ort kontrolliert; ${liveReduced ? `Tragwerk mit ${N(hyp.liveGround ?? 5, 2)} kN/m² im Erdgeschoss berechnet, weniger als die Normlast von 5 kN/m²` : 'Tragwerk mit der Normlast nachgewiesen'})` : 'Normlast (freies Publikum)'],
         wind: ['Wind in / außer Betrieb', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Auflagerkraft für die Fläche', hyp.staticoConversion ? 'Rz,Ed / 1,35 (statico)' : 'charakteristisch (GZG)'],
-        feet: contact
-          ? ['Auflagerung', contact.mode === 'rims' ? 'direkt auf dem Boden: der ganze Randträger (UNP) trägt, durchgehende Auflagerung (Abschnitte von etwa 1 m einzeln nachgewiesen)' : `auf ${contact.pads.length} Platte(n) / Klotz/Klötzen: der Randträger (UNP) liegt über die Breite jeder Platte auf, eine Platte ohne Randträger trägt die Quer- / Längsträger`]
+        feet: cMain
+          ? ['Auflagerung', cMain.mode === 'rims' ? 'direkt auf dem Boden: der ganze Randträger (UNP) trägt, durchgehende Auflagerung (Abschnitte von etwa 1 m einzeln nachgewiesen)' : `auf ${cMain.pads.length} Platte(n) / Klotz/Klötzen: der Randträger (UNP) liegt über die Breite jeder Platte auf, eine Platte ohne Randträger trägt die Quer- / Längsträger`]
           : jacks ? ['Spindelfüße', '6 je Viewbox (4 Ecken + 2 Mitte), Gewindestangen Tr 24 × 5, Auszug ≤ 5 cm; benachbarte Spindeln auf einer Platte'] : ['Mittelfüße', hyp.middleFeet ? 'verwendet' : 'nein (nur Ecken)'],
         place: ['Lage der Platten', { auto: 'bündig mit der Viewbox, nur wenn nötig mittig', flush: 'immer bündig mit der Viewbox', centered: 'mittig unter jedem Auflager (statico)' }[placement]],
+        added: ['Zusätzliche Auflager', `${added?.length ?? 0} unter den Bodenträgern verkeilte(r) Klotz/Klötze, außerhalb der ${jacks ? 'Spindeln' : 'Füße'} (${added?.join(', ') ?? ''}): in der Berechnung tragend (vor Ort fest verkeilen)`],
         vbx: ['Viewbox', `${modules.length} (${levels} Ebene${levels > 1 ? 'n' : ''})`],
-        src: ['Auflagerkräfte', reactions ? (contact ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), elastische Bettung entlang der Träger (Bettungsmodul)' : jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
+        src: ['Auflagerkräfte', reactions ? (cMain ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), elastische Bettung entlang der Träger (Bettungsmodul)' : jacks ? 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung), unter jeder Spindel mindestens die Schätzung (verstellbare Spindeln)' : 'Gesamtberechnung (3D-Modell, Theorie II. Ordnung)') : 'Sofortschätzung (Einzugsflächen)'],
       },
       en: {
         bearing: ['Allowable bearing', `${bearing} (${presetName ?? 'entered'})`],
@@ -961,15 +972,16 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
         pub: ['Public for the ground', hyp.publicMode === 'persons' ? `limited to ${Math.round(hyp.persons)} persons × ${N(hyp.personKg)} kg (number controlled on site; ${liveReduced ? `structure calculated with ${N(hyp.liveGround ?? 5, 2)} kN/m² on the ground floor, less than the code load of 5 kN/m²` : 'structure checked with the code load'})` : 'code load (free public)'],
         wind: ['Wind in / out of service', `${N(hyp.windIn, 2)} / ${N(hyp.windOut, 2)} kN/m², cp ${N(hyp.cp, 1)}`],
         react: ['Reaction for the area', hyp.staticoConversion ? 'Rz,Ed / 1.35 (statico)' : 'characteristic (SLS)'],
-        feet: contact
-          ? ['Bearing on the ground', contact.mode === 'rims' ? 'placed directly on the ground: the whole floor edge beam (UNP) bears, continuous support (segments of about 1 m checked one by one)' : `on ${contact.pads.length} plate(s) / block(s): the edge beam (UNP) bears over the width of each plate, a plate away from the edge carries the cross / longitudinal members`]
+        feet: cMain
+          ? ['Bearing on the ground', cMain.mode === 'rims' ? 'placed directly on the ground: the whole floor edge beam (UNP) bears, continuous support (segments of about 1 m checked one by one)' : `on ${cMain.pads.length} plate(s) / block(s): the edge beam (UNP) bears over the width of each plate, a plate away from the edge carries the cross / longitudinal members`]
           : jacks ? ['Jack feet', '6 per Viewbox (4 corners + 2 middle), Tr 24 × 5 rods, extension ≤ 5 cm; neighbouring jacks on one plate'] : ['Middle feet', hyp.middleFeet ? 'used' : 'no (corners only)'],
         place: ['Plate laying', { auto: 'flush with the Viewbox, centred only where needed', flush: 'always flush with the Viewbox', centered: 'centred under each support (statico)' }[placement]],
+        added: ['Added supports', `${added?.length ?? 0} block(s) packed under the floor members, away from the ${jacks ? 'jacks' : 'feet'} (${added?.join(', ') ?? ''}): bearing in the calculation (wedge tight on site)`],
         vbx: ['Viewbox', `${modules.length} (${levels} level${levels > 1 ? 's' : ''})`],
-        src: ['Reactions', reactions ? (contact ? 'full calculation (3D model, 2nd order), elastic supports along the beams (subgrade modulus)' : jacks ? 'full calculation (3D model, 2nd order), at least the estimate under each jack (adjustable jacks)' : 'full calculation (3D model, 2nd order)') : 'instant estimate (tributary areas)'],
+        src: ['Reactions', reactions ? (cMain ? 'full calculation (3D model, 2nd order), elastic supports along the beams (subgrade modulus)' : jacks ? 'full calculation (3D model, 2nd order), at least the estimate under each jack (adjustable jacks)' : 'full calculation (3D model, 2nd order)') : 'instant estimate (tributary areas)'],
       },
     }[lang];
-    return [T.bearing, T.weight, T.finishes, T.live, T.pub, T.wind, T.react, T.feet, T.place, T.vbx, T.src] as Array<[string, string]>;
+    return [T.bearing, T.weight, T.finishes, T.live, T.pub, T.wind, T.react, T.feet, ...(added?.length ? [T.added] : []), T.place, T.vbx, T.src] as Array<[string, string]>;
   };
 
   const exportPdf = async () => {
@@ -1182,6 +1194,11 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <option value="pressure">pression maxi sous chaque plaque (sol)</option>
               <option value="distributed">poids admis par m² de dalle (charge répartie)</option>
             </select>
+            {bearingModeOf(hyp) === 'distributed' && (
+              <label className="row" style={{ gap: 4 }} title="Descente de charges par appui : charge de chaque appui (+ son calage) / surface de sa plaque ≤ charge admissible, comme une note de bureau d’études">
+                <input type="checkbox" checked={!!hyp.slabLocal} onChange={(e) => setHyp((h) => ({ ...h, slabLocal: e.target.checked || undefined }))} data-testid="slab-local-quick" /> aussi sous chaque plaque
+              </label>
+            )}
           </div>
         </div>
       )}
@@ -1307,7 +1324,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
               <svg viewBox="0 0 1000 420" style={{ width: '100%', maxHeight: 460, background: '#fff', borderRadius: 6 }}>
                 <GroundPlan
                   modules={modules}
-                  reactions={result.estimate.reactions}
+                  reactions={planReactions(result.estimate.reactions, result.checks)}
                   x={0}
                   y={0}
                   w={1000}
@@ -1440,7 +1457,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
                 <svg viewBox="0 0 1000 420" style={{ width: '100%', maxHeight: 460, background: '#fff', borderRadius: 6 }}>
                   <GroundPlan
                     modules={modules}
-                    reactions={result.estimate.reactions}
+                    reactions={planReactions(result.estimate.reactions, result.checks)}
                     x={0}
                     y={0}
                     w={1000}
@@ -1638,6 +1655,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
           {showStock && <StockEditor stock={stock} onSaved={setStock} />}
           <StackCard result={result} />
           <SlabBudgetCard result={result} />
+          <SupportLoadCard result={result} />
         </>
       )}
     </div>
@@ -1686,6 +1704,47 @@ function StackCard({ result }: { result: CalageResult }) {
 }
 
 /** Dalle en charge répartie : poids sous chaque Viewbox, poste par poste. */
+/** Descente de charges par appui : charge locale sous la plaque de chaque appui (comme une note de bureau d'études). */
+function SupportLoadCard({ result }: { result: CalageResult }) {
+  const t = supportLoadTable(result, 'fr');
+  if (!t) return null;
+  const S = STACK_LABELS.fr;
+  const loads = result.slab?.supports ?? [];
+  return (
+    <div className="card" data-testid="support-loads">
+      <div className="card-head">
+        <h2>{S.localTitle}</h2>
+        <span className="hint">{S.localIntro(t.checked)}</span>
+      </div>
+      <div className="card-body">
+        <table className="list">
+          <thead>
+            <tr>
+              {t.cols.map((c, i) => (
+                <th key={i} className={i === 1 || i === 2 || i >= 4 ? 'num' : undefined}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {t.rows.map((r, k) => (
+              <tr key={k}>
+                {r.map((v, i) => (
+                  <td key={i} className={i === 1 || i === 2 || i >= 4 ? 'num' : undefined} style={i === 4 && (loads[k]?.eta ?? 0) > 1 ? { color: t.checked ? '#b91c1c' : '#b45309', fontWeight: 700 } : undefined}>
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="hint">{t.sum}</div>
+      </div>
+    </div>
+  );
+}
+
 function SlabBudgetCard({ result }: { result: CalageResult }) {
   const b = slabBudgetTable(result, 'fr');
   if (!b) return null;

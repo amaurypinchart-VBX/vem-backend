@@ -521,15 +521,25 @@ const range = (vs: number[]) => {
  * des blocs qui portent les vérins quand le calcul fait porter l'UPN (et de combien rehausser), l'inverse, et les blocs
  * dessinés avec un vide au-dessus (ils ne portent qu'une fois calés).
  */
-export function blockDrawingNotes(blocks: DrawnBlock[], mode: 'jacks' | 'points' | 'pads' | 'rims'): string[] {
+export function blockDrawingNotes(blocks: DrawnBlock[], mode: 'jacks' | 'points' | 'pads' | 'rims', added: ReadonlySet<string> = new Set()): string[] {
   if (mode === 'rims') return [];
   const out: string[] = [];
   const onFeet = blocks.filter((b) => blockBearing(b)?.kind === 'feet' && Math.abs(blockBearing(b)!.gap) <= BLOCK_TOUCH);
-  const onFrame = blocks.filter((b) => blockBearing(b)?.kind === 'frame' && Math.abs(blockBearing(b)!.gap) <= BLOCK_TOUCH);
+  // blocs ajoutés (calés sous le plancher, en plus des vérins / angles) : ils portent dans le calcul
+  const onFrame = blocks.filter((b) => !added.has(b.id) && blockBearing(b)?.kind === 'frame' && Math.abs(blockBearing(b)!.gap) <= BLOCK_TOUCH);
   const apart = blocks.filter((b) => {
     const k = blockBearing(b);
-    return k && k.gap > BLOCK_TOUCH;
+    return k && k.gap > BLOCK_TOUCH && !added.has(b.id);
   });
+  const packed = blocks.filter((b) => added.has(b.id));
+  if (packed.length) {
+    const gaps = packed.map((b) => blockBearing(b)?.gap).filter((g): g is number => g !== undefined && g > BLOCK_TOUCH);
+    out.push(
+      `Appuis ajoutés : ${packed.length > 1 ? 'les blocs' : 'le bloc'} ${ids(packed)}, sous les profils du plancher hors des ${mode === 'jacks' ? 'vérins' : 'pieds'}, ${packed.length > 1 ? 'portent' : 'porte'} dans le calcul (${packed.length > 1 ? 'calés' : 'calé'})${
+        gaps.length ? ` ; dans le dessin, ${range(gaps)} de vide sous la structure` : ''
+      } — à caler serré (cales bois / coins sur toute la surface) ${mode === 'jacks' ? 'une fois les vérins réglés' : 'après la pose'} ; ${packed.length > 1 ? 'non calés, ils ne portent' : 'non calé, il ne porte'} rien et les ${mode === 'jacks' ? 'vérins' : 'angles'} reprennent toute la charge.`,
+    );
+  }
   if (mode === 'pads') {
     const lifted = onFeet.filter((b) => (blockBearing(b)!.frameGap ?? Infinity) > BLOCK_TOUCH);
     if (lifted.length) {

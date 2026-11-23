@@ -732,7 +732,8 @@ export function resolveLayers(refs: LayerRef[], stock: StockPlate[], blockSize?:
     }
     const bp = parseBlockPlateKey(r.plate);
     if (bp) {
-      const [l, w] = blockSize ?? [1000, 1000];
+      // plaques coupées à la taille du bloc : au demi-centimètre (le dessin donne 1 001,000061 × 999,53 mm pour 1 × 1 m)
+      const [l, w] = (blockSize ?? [1000, 1000]).map((x) => Math.round(x / 5) * 5);
       out.push(stockLayer({ length: l, width: w, thickness: bp.t, quantity: 0, material: bp.material }, n(r)));
       continue;
     }
@@ -746,7 +747,7 @@ export function resolveLayers(refs: LayerRef[], stock: StockPlate[], blockSize?:
     const below = out.slice(i + 1).find(isPlate);
     const above = [...out.slice(0, i)].reverse().find(isPlate);
     const ref = below ?? above;
-    const [l, w] = ref ? [ref.l, ref.w] : (blockSize ?? [1000, 1000]);
+    const [l, w] = ref ? [ref.l, ref.w] : (blockSize ?? [1000, 1000]).map((x) => Math.round(x / 5) * 5);
     return joistLayer(x.joists.b, x.joists.h, n(x.ref), l, w, x.ref.along ?? 'u', !x.ref.along);
   });
   return { layers, missing };

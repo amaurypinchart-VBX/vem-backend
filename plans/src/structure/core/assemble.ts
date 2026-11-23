@@ -14,9 +14,8 @@ import { materialByKey, steelStrength } from './materials';
 import type { RimExtras, Side, TemplateFace, TemplateFamily, ViewboxTemplate } from './templates/viewboxEU';
 import { nodeKey } from './templates/viewboxEU';
 import { moduleTemplate } from './templates/frameModule';
-import type { ContactPlan, ModuleFloor } from './groundContact';
+import type { ContactPlan, GroundContactInput, ModuleFloor } from './groundContact';
 import { contactStrips, floorLinesOfTemplate, splitFloor } from './groundContact';
-import type { DrawnBlock } from './blocks';
 import type { StairFamily, StairKitParams } from './templates/stair';
 import { stairGeometry } from './templates/stair';
 import { fmtNumber, KN_PER_CM } from './units';
@@ -142,7 +141,7 @@ export interface AssembleOptions {
    * sur des plaques / blocs — appuis élastiques rapprochés, compression seule (`groundContact.ts`) ; absent = appuis
    * ponctuels aux angles (ou aux vérins)
    */
-  groundContact?: { mode: 'rims' | 'pads'; pads: DrawnBlock[]; k: number } | null;
+  groundContact?: GroundContactInput | null;
 }
 
 /**
@@ -877,8 +876,13 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
           lines: floorLinesOfTemplate(tpl, (k) => opt.sections.get(k)?.section.dims.b),
         };
       });
-    const kh0 = modules.find((m) => m.level === 0)?.params.springs.supportHorizontal ?? HOKA_SUPPORT_K;
-    contact = contactStrips(floors, opt.groundContact.mode, opt.groundContact.pads, opt.groundContact.k, kh0);
+    const g0 = modules.find((m) => m.level === 0);
+    const kh0 = g0?.params.springs.supportHorizontal ?? HOKA_SUPPORT_K;
+    // appuis ajoutés (blocs calés sous le plancher, en plus des vérins / angles) : posés sur le même sol que les blocs des
+    // vérins, ils ont la raideur verticale d'un appui de vérin (en série avec le bois comprimé du bloc)
+    const kvJack = opt.calibration ? undefined : g0?.params.springs.supportVertical;
+    const padK = opt.groundContact.mode === 'added' ? (opt.groundContact.padK ?? (typeof kvJack === 'number' ? kvJack : 1e6)) : opt.groundContact.padK;
+    contact = contactStrips(floors, opt.groundContact.mode, opt.groundContact.pads, opt.groundContact.k, kh0, padK);
     warnings.push(...contact.warnings);
     for (const st of contact.strips) {
       if (!contactOf.has(st.module)) contactOf.set(st.module, []);
@@ -1204,21 +1208,26 @@ export function assembleStructure(input: PlacedModule[], opt: AssembleOptions): 
       supportMeta.push({ module: pm.id, corner, kind, jack: opt.jacks && !raise });
     };
     const strips = raise ? undefined : contactOf.get(pm.id);
-    if (strips?.length) {
-      // contact par tronçons : un appui élastique à chaque station (compression seule)
-      let c = 0;
-      for (const st of strips)
+    const added = opt.groundContact?.mode === 'added';
+    // contact par tronçons : un appui élastique à chaque station (compression seule)
+    const lineSupports = (first: number) => {
+      let c = first;
+      for (const st of strips ?? [])
         for (const x of st.stations) {
           const node = P(pm, nodeKey(x.u, x.v, pm.params.floorZ));
           if (node === undefined) continue;
           supports.push({ node, dofs: [x.kh, x.kv, x.kh, 'free', 'free', 'free'], compressionOnly: true, upliftReleases: opt.upliftReleases });
           supportMeta.push({ module: pm.id, corner: c++, kind: 'line', jack: false, label: `${pm.id} · ${st.label}${st.pad ? ` sur ${st.pad}` : ' au sol'}`, strip: st.id });
         }
-    } else if (opt.groundContact && !raise) {
+    };
+    if (strips?.length && !added) lineSupports(0);
+    else if (opt.groundContact && !added && !raise) {
       errors.push(`${pm.id} : aucune rive ni aucun profil du plancher ne porte sur une plaque — la Viewbox n’a pas d’appui (disposition des plaques à revoir).`);
     } else {
       (opt.jacks ? tpl.footNodes : tpl.cornerFloor).forEach((k, c) => place(k, c, opt.jacks ? 'foot' : 'corner'));
       if (opt.middleFeet || opt.jacks) (opt.middleUnderRim && !opt.jacks ? tpl.middleRim : tpl.middleFeet).forEach((k, c) => place(k, 4 + c, 'middle'));
+      // appuis ajoutés : blocs calés sous les profils du plancher, en plus des vérins / angles
+      if (added) lineSupports(100);
     }
     // croix entre les pieds des poteaux et la tête des poteaux voisins, dans le plan de chaque côté (angles 1-2, 2-3, 3-4, 4-1)
     if (raise?.bracing)

@@ -88,6 +88,8 @@ export interface Labels {
   /** Viewbox posées directement au sol (rives UNP en appui continu) / sur plaques ou blocs (n plaques, dont sous les profils) */
   groundRims: string;
   groundPads: (n: number, under: number) => string;
+  /** appuis ajoutés : blocs calés sous le plancher en plus des vérins / angles */
+  addedSupports: (ids: string) => string;
   glazingNote: string;
   impactNote: string;
   snowNote: string;
@@ -265,6 +267,7 @@ export interface Labels {
   jacksNo: string;
   groundRimsShort: string;
   groundPadsShort: (n: number) => string;
+  addedSupportsShort: (n: number) => string;
   combosNote: (n: number) => string;
   supportsFigure: string;
   contactArea: string;
@@ -302,6 +305,7 @@ const FR: Labels = {
   overturningFail: (c, m) => `Basculement sous le vent hors service (${c}) : un appui de ${m} se soulève et l’ensemble devient instable — lest ou ancrage nécessaire.`,
   jacksYes: 'utilisés : 6 par Viewbox, tiges Tr 24 × 5 classe 10.9, sortie ≤ 5 cm (vérifiées)',
   groundRimsShort: 'non utilisés : Viewbox posées directement au sol, toute la rive (UNP) porte',
+  addedSupportsShort: (n) => `+ ${n} appui(s) ajouté(s) calé(s) sous le plancher`,
   groundPadsShort: (n) => `non utilisés : Viewbox posées sur ${n} plaque(s) / bloc(s), la rive (UNP) porte sur chaque plaque`,
   jacksNo: 'non utilisés : angles posés directement sur le calage',
   combosNote: (n) => `Directions x+ seulement ; les directions x−, y+ et y− sont identiques au sens près (${n} combinaisons calculées au total, liste complète dans la version détaillée).`,
@@ -413,6 +417,7 @@ const FR: Labels = {
     'Les notices de montage, agréments et consignes d’exploitation des fabricants sont à respecter.',
   ],
   groundRims: 'Viewbox posées directement au sol, sans vérins : toute la rive (UNP 220) du plancher porte. Le modèle 3D appuie les rives sur des ressorts de sol rapprochés (compression seule, module de réaction du sol) : la charge se répartit le long de l’UNP selon sa raideur et celle du sol ; le sol est vérifié par tronçon d’environ 1 m sous la semelle de l’UNP. Les réceptions de pied ne doivent pas dépasser sous l’UNP.',
+  addedSupports: (ids) => `Appuis ajoutés : blocs ${ids}, posés sous les profils du plancher (traverses / lisses ou rive) hors des pieds, calés serré à leur niveau. Le modèle 3D les appuie comme des ressorts sous ces profils (compression seule, même raideur de sol qu’un pied, en série avec le bois comprimé du bloc) : ils reprennent la part du plancher autour d’eux et soulagent les autres appuis. Non calés, ils ne portent rien.`,
   groundPads: (n, k) => `Viewbox posées sans vérins sur ${n} plaque(s) / bloc(s) : la rive (UNP 220) porte sur toute la largeur de chaque plaque${k ? ` ; ${k} plaque(s) sous le milieu des Viewbox portent les traverses / lisses du plancher, calées à leur niveau` : ''}. Le modèle 3D appuie chaque tronçon sur des ressorts (sol sous la plaque en série avec le bois comprimé, compression seule) ; chaque plaque est vérifiée avec la résultante de ses tronçons (emprise centrée sur la charge, B’ = B − 2 e), la compression transversale du bois et son poids.`,
   jacksForbidden: 'Les pieds à vérins intégrés des Viewbox ne doivent pas être utilisés (réceptions de pied surchargées) : les vérins sont retirés et les angles posés directement sur le calage.',
   jacksUsed: 'Pieds à vérin utilisés : 6 par Viewbox (4 angles + milieu des grands côtés), tiges Tr 24 × 5 classe 10.9 sorties de 5 cm au plus ; chaque tige est vérifiée en compression et flexion sous sa réaction. Filetage de la douille du pied non vérifié.',
@@ -658,6 +663,7 @@ const DE: Labels = {
   overturningFail: (c, m) => `Kippen unter Wind außer Betrieb (${c}): ein Auflager von ${m} hebt ab und die Anlage wird instabil — Ballast oder Verankerung erforderlich.`,
   jacksYes: 'verwendet: 6 je Viewbox, Gewindestangen Tr 24 × 5 Festigkeitsklasse 10.9, Auszug ≤ 5 cm (nachgewiesen)',
   groundRimsShort: 'nicht verwendet: Viewbox direkt auf dem Boden, der ganze Randträger (UNP) liegt auf',
+  addedSupportsShort: (n) => `+ ${n} zusätzliche(s) verkeilte(s) Auflager unter dem Boden`,
   groundPadsShort: (n) => `nicht verwendet: Viewbox auf ${n} Platte(n) / Klotz/Klötzen, der Randträger (UNP) liegt auf jeder Platte auf`,
   jacksNo: 'nicht verwendet: Ecken direkt unterpallt',
   combosNote: (n) => `Nur Richtung x+; die Richtungen x−, y+ und y− sind bis auf das Vorzeichen gleich (insgesamt ${n} berechnete Kombinationen, vollständige Liste in der ausführlichen Fassung).`,
@@ -769,6 +775,7 @@ const DE: Labels = {
     'Einbauvorschriften, bauaufsichtliche Zulassungen und Aufbau- bzw. Betriebshinweise der Hersteller sind zu beachten.',
   ],
   groundRims: 'Viewbox ohne Spindelfüße direkt auf dem Boden: der ganze Bodenrandträger (UNP 220) liegt auf. Das 3D-Modell lagert die Randträger auf dicht gesetzten Bodenfedern (nur Druck, Bettungsmodul): die Last verteilt sich entlang des UNP nach seiner Steifigkeit und der des Bodens; der Boden wird abschnittsweise (etwa 1 m) unter dem Flansch des UNP nachgewiesen. Die Fußaufnahmen dürfen nicht unter das UNP ragen.',
+  addedSupports: (ids) => `Zusätzliche Auflager: Klötze ${ids}, unter den Bodenträgern (Quer- / Längsträger oder Randträger) außerhalb der Füße, auf deren Höhe fest verkeilt. Das 3D-Modell lagert sie als Federn unter diesen Trägern (nur Druck, gleiche Bodensteifigkeit wie ein Fuß, in Reihe mit dem gedrückten Holz des Klotzes): sie übernehmen den Bodenanteil um sie herum und entlasten die übrigen Auflager. Nicht verkeilt tragen sie nichts.`,
   groundPads: (n, k) => `Viewbox ohne Spindelfüße auf ${n} Platte(n) / Klotz/Klötzen: der Randträger (UNP 220) liegt über die ganze Breite jeder Platte auf${k ? `; ${k} Platte(n) unter der Mitte der Viewbox tragen die Quer- / Längsträger des Bodens, auf deren Höhe unterfüttert` : ''}. Das 3D-Modell lagert jeden Abschnitt auf Federn (Boden unter der Platte in Reihe mit dem gedrückten Holz, nur Druck); jede Platte wird mit der Resultierenden ihrer Abschnitte (auf die Last zentrierte Fläche, B’ = B − 2 e), der Querdruckspannung des Holzes und ihrem Eigengewicht nachgewiesen.`,
   jacksForbidden: 'Die integrierten Spindelfüße der Viewbox dürfen nicht verwendet werden, da die Fußaufnahmen sonst überlastet wären. Die Spindeln sind zu entfernen und die Ecken direkt zu unterpallen.',
   jacksUsed: 'Spindelfüße verwendet: 6 je Viewbox (4 Ecken + Mitte der Längsseiten), Gewindestangen Tr 24 × 5 Festigkeitsklasse 10.9 mit höchstens 5 cm Auszug; jede Spindel wird unter ihrer Auflagerkraft auf Druck und Biegung nachgewiesen. Gewinde der Fußhülse nicht nachgewiesen.',
@@ -1014,6 +1021,7 @@ const EN: Labels = {
   overturningFail: (c, m) => `Overturning under out-of-service wind (${c}): a support of ${m} lifts off and the installation becomes unstable — ballast or anchorage required.`,
   jacksYes: 'used: 6 per Viewbox, Tr 24 × 5 threaded rods grade 10.9, extension ≤ 5 cm (checked)',
   groundRimsShort: 'not used: units placed directly on the ground, the whole edge beam (UNP) bears',
+  addedSupportsShort: (n) => `+ ${n} added support(s) wedged under the floor`,
   groundPadsShort: (n) => `not used: units placed on ${n} plate(s) / block(s), the edge beam (UNP) bears on each plate`,
   jacksNo: 'not used: corners placed directly on the packing',
   combosNote: (n) => `Direction x+ only; directions x−, y+ and y− are identical except for the sign (${n} combinations computed in total, full list in the detailed version).`,
@@ -1125,6 +1133,7 @@ const EN: Labels = {
     'Manufacturers’ installation instructions, approvals and operating instructions are to be followed.',
   ],
   groundRims: 'Viewbox units placed directly on the ground, without jacks: the whole floor edge beam (UNP 220) bears. The 3D model supports the edge beams on closely spaced ground springs (compression only, subgrade modulus): the load spreads along the UNP according to its stiffness and that of the ground; the ground is checked segment by segment (about 1 m) under the UNP flange. The foot receptions must not protrude below the UNP.',
+  addedSupports: (ids) => `Added supports: blocks ${ids}, placed under the floor members (cross / longitudinal members or edge beam) away from the feet, wedged tight to their level. The 3D model supports them as springs under these members (compression only, same ground stiffness as a foot, in series with the compressed timber of the block): they take the share of the floor around them and relieve the other supports. Not wedged, they carry nothing.`,
   groundPads: (n, k) => `Viewbox units placed without jacks on ${n} plate(s) / block(s): the edge beam (UNP 220) bears over the full width of each plate${k ? `; ${k} plate(s) under the middle of the units carry the floor cross / longitudinal members, packed to their level` : ''}. The 3D model supports each segment on springs (ground under the plate in series with the compressed timber, compression only); each plate is checked with the resultant of its segments (area centred on the load, B’ = B − 2 e), the timber compression perpendicular to the grain and its own weight.`,
   jacksForbidden: 'The integrated jack feet of the Viewbox units must not be used (the foot receptacles would be overloaded): the jacks are removed and the corners placed directly on the packing.',
   jacksUsed: 'Jack feet used: 6 per Viewbox (4 corners + middle of the long sides), Tr 24 × 5 threaded rods grade 10.9 extended by 5 cm at most; each rod is checked in compression and bending under its reaction. Thread of the foot sleeve not checked.',

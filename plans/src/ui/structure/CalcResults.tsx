@@ -129,6 +129,8 @@ export interface CalcPanelProps {
   middleFeet?: boolean;
   /** blocs de calage dessinés dans le modèle (étape 1) et raideur du sol de l'étape 2 */
   modelBlocks?: number;
+  /** blocs dessinés sous le plancher hors des pieds (appuis ajoutés possibles avec les vérins / angles) */
+  addedBlocks?: string[];
   subgrade?: string;
 }
 
@@ -183,6 +185,18 @@ function GroundSupportChoice({ o, set, p }: { o: CalcOptions; set: <K extends ke
           ) : (
             <span>Tige de vérin absente ou désactivée dans la bibliothèque (VBX-JACK).</span>
           )}
+        </div>
+      )}
+      {(choice === 'jacks' || choice === 'points') && (p.addedBlocks?.length ?? 0) > 0 && (
+        <div style={{ paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 2 }} data-testid="added-blocks">
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={o.contact?.added !== 'weight'} onChange={(e) => setContact({ added: e.target.checked ? undefined : 'weight' })} data-testid="added-blocks-packed" />
+            Appuis ajoutés : {p.addedBlocks!.length} bloc(s) dessiné(s) sous le plancher, hors des {choice === 'jacks' ? 'vérins' : 'pieds'} ({p.addedBlocks!.join(', ')}) — calés, ils portent dans le calcul
+          </label>
+          <span className="hint">
+            Le calcul 3D les fait porter sous les profils du plancher au-dessus d’eux (comme les appuis P11 à P14 d’une note de bureau d’études) ; ils apparaissent sur le plan, dans la fiche de calage et le rapport. Décoché : ils ne comptent que pour leur poids sur la dalle / le sol. Sur site : à caler serré
+            (cales bois / coins){choice === 'jacks' ? ' une fois les vérins réglés' : ''}.
+          </span>
         </div>
       )}
       {choice === 'points' && (

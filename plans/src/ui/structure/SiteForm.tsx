@@ -293,6 +293,21 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
             <option value="distributed">Poids admis par m² de dalle (charge répartie : dalle, plancher, toiture)</option>
           </select>
         </Q>
+        {bearingModeOf(hyp) === 'distributed' && (
+          <Q
+            label="Contrôler aussi sous chaque plaque"
+            help={
+              <>
+                Descente de charges par appui (comme une note de bureau d’études) : la charge de chaque appui et de son calage, divisée par la surface de la plaque qui le pose sur la dalle, doit aussi rester sous le poids admis par m². Plus
+                sévère que le contrôle sous chaque Viewbox : ajouter des appuis ou de plus grandes plaques fait baisser la charge locale. À cocher quand l’exploitant de la dalle l’exige ; sinon le tableau reste affiché pour information.
+              </>
+            }
+          >
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={!!hyp.slabLocal} onChange={(e) => set('slabLocal', e.target.checked || undefined)} data-testid="slab-local" /> la charge locale sous chaque plaque est aussi un critère
+            </label>
+          </Q>
+        )}
         {(preset?.pointLoad || bearingModeOf(hyp) === 'distributed') && (
           <Q label="Charge maximale sous un seul pied" help="Une dalle ou une toiture a aussi une limite par point (sous un pied, poinçonnement). Valeur de la fiche du bâtiment ; 0 = inconnue (à faire confirmer par l’exploitant)." conv={`= ${n(hyp.pointLoadKN, 1)} kN`}>
             <Num value={(hyp.pointLoadKN * 1000) / G} onChange={(v) => set('pointLoadKN', (v * G) / 1000)} /> kg

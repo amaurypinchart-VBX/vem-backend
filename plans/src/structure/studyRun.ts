@@ -101,9 +101,10 @@ export interface StudyInputs {
   groundBlocks?: import('./core/blocks').DrawnBlock[];
   /**
    * contact au sol par tronçons (sans vérins) : mode, plaques / blocs sous la structure (dessinés ou générés) et raideur
-   * du sol (N/mm³) — dans le calcul et dans `inputKey`
+   * du sol (N/mm³) ; mode 'added' = vérins / angles + blocs calés sous le plancher (avec ou sans vérins) — dans le calcul
+   * et dans `inputKey`
    */
-  groundContact?: { mode: 'rims' | 'pads'; pads: import('./core/blocks').DrawnBlock[]; k: number } | null;
+  groundContact?: import('./core/groundContact').GroundContactInput | null;
 }
 
 export interface StudyRun {
@@ -155,7 +156,7 @@ export function assembleStudy(inp: StudyInputs): StructuralModel {
     stairs: inp.stairs,
     members: inp.members,
     addedSupports: inp.addedSupports,
-    groundContact: o.jacks ? null : (inp.groundContact ?? null),
+    groundContact: o.jacks && inp.groundContact?.mode !== 'added' ? null : (inp.groundContact ?? null),
   });
 }
 
@@ -479,5 +480,5 @@ export function inputKey(inp: StudyInputs): string {
     .map((e) => `${e.key}:${hash(`${e.kind}:${e.key}:${e.status}:${JSON.stringify((e as ModuleTypeEntry).params ?? (e as SectionEntry).section ?? (e as ConnectionEntry).capacities ?? '')}:${(e as ModuleTypeEntry).weighedN ?? ''}:${(e as SectionEntry).material ?? ''}${typeExtra(e)}`)}`)
     .join('|');
   const joints = inp.joints ? inp.joints.rows.map((r) => `${r.connection}:${r.status}:${r.modules.join('+')}:${r.capacities.map((c) => Math.round(c.after ?? 0)).join('/')}`) : [];
-  return JSON.stringify([...(inp.code === 'FR' ? ['code:FR'] : []), joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], ...(inp.groundContact && !inp.options.jacks ? [inp.groundContact] : []), inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
+  return JSON.stringify([...(inp.code === 'FR' ? ['code:FR'] : []), joints, mods, inp.edgeItems, inp.pointItems, inp.loads, inp.middleFeet, inp.sls, inp.options, inp.blocking, lib, inp.bracings ?? [], inp.raise ?? null, inp.stairs ?? [], inp.terraces ?? [], inp.members ?? [], inp.addedSupports ?? [], ...(inp.groundContact && (!inp.options.jacks || inp.groundContact.mode === 'added') ? [inp.groundContact] : []), inp.classes ?? null, inp.comboIds ?? null, [...inp.sections.keys()].filter((k) => k.startsWith('ETUDE-') || k.startsWith('CAT-') || k.includes('@')).map((k) => `${k}:${inp.sections.get(k)!.material}:${hash(JSON.stringify(inp.sections.get(k)!.section))}`)]);
 }

@@ -4,8 +4,8 @@
 // Les angles distants de moins de 100 mm en plan forment un groupe d'appuis (une plaque commune). Fonctions pures.
 import type { CalcRecord } from './records';
 import { fmtNumber } from './units';
-import type { DrawnBlock } from './blocks';
-import { contactStrips, floorOfEstimate } from './groundContact';
+import { contactStrips, floorOfEstimate, toLocal } from './groundContact';
+import type { GroundContactInput } from './groundContact';
 import { FR_FACTORS } from './codeFR';
 
 export type P2 = [number, number];
@@ -96,9 +96,11 @@ export interface EstimateOptions {
   /**
    * contact par tronçons (sans vérins) : Viewbox posées au sol (toute la rive porte) ou posées sur des plaques / blocs —
    * un groupe d'appuis par tronçon de rive / profil, charges réparties comme un plancher rigide sur appuis élastiques
-   * (raideur de chaque tronçon, `groundContact.ts`) ; le calcul complet affine la répartition
+   * (raideur de chaque tronçon, `groundContact.ts`) ; le calcul complet affine la répartition. Mode 'added' (avec ou
+   * sans vérins) : appuis habituels + blocs calés sous le plancher, qui reprennent la part du plancher la plus proche
+   * d'eux (surfaces d'influence)
    */
-  contact?: { mode: 'rims' | 'pads'; pads: DrawnBlock[]; k: number } | null;
+  contact?: GroundContactInput | null;
   /** hors service, le dernier niveau est évacué (en plus des terrasses) */
   evacuateTopLevel: boolean;
   /** majoration forfaitaire supplémentaire (0,1 = +10 %) */
@@ -163,6 +165,8 @@ export interface StripInfo {
   width: number;
   corner: boolean;
   middle: boolean;
+  /** appui ajouté : bloc calé sous le plancher, en plus des vérins / angles */
+  added?: true;
 }
 
 /** Type de calage d'un groupe d'appuis : « 1 »…« 4 » angles, « M » pied central, « E » pied d'escalier, « T » / « TM » pied de terrasse, « L… » tronçon de rive / profil. */
@@ -352,13 +356,40 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     return { G, Q: Qfloor + Qroof, QaB, floorG: (L.floorFinish + (L.floorExtra ?? 0)) * m.area + 0.5 * weight, Qfloor, S };
   });
   // ─── contact par tronçons : un groupe par tronçon de rive / profil, plancher rigide sur appuis élastiques ───
-  const strip = opt.contact && !opt.jacks ? stripDistribution(modules, opt.contact, perModule, warnings) : null;
+  const strip = opt.contact && !opt.jacks && opt.contact.mode !== 'added' ? stripDistribution(modules, opt.contact, perModule, warnings) : null;
   if (strip) {
     groups = strip.groups;
     parts = strip.parts;
   }
+  // ─── appuis ajoutés (blocs calés sous le plancher) : part du plancher la plus proche d'eux ───
+  const nBase = groups.length;
+  const addedOf = new Map<number, number[]>();
+  const addedShare = new Map<number, number>();
+  if (opt.contact?.mode === 'added') {
+    const add = addedDistribution(modules, opt.contact, pts, warnings);
+    for (const a of add) {
+      groups.push(a.group);
+      parts.push({ G: 0, Q: 0, QaB: 0, S: 0 });
+      const list = addedOf.get(a.module) ?? [];
+      list.push(groups.length - 1);
+      addedOf.set(a.module, list);
+    }
+    add.forEach((a, i) => addedShare.set(nBase + i, a.share));
+  }
   if (!strip) modules.forEach((_, k) => {
-    const lm = perModule[k];
+    let lm = perModule[k];
+    // blocs calés sous le plancher de ce module : ils prennent leur part du plancher (poids du plancher, public)
+    const mine = addedOf.get(k) ?? [];
+    const F = mine.reduce((a, g) => a + (addedShare.get(g) ?? 0), 0);
+    if (F > 0) {
+      for (const g of mine) {
+        const f = addedShare.get(g)!;
+        parts[g].G += f * lm.floorG;
+        parts[g].Q += f * lm.Qfloor;
+        parts[g].QaB += f * lm.QaB;
+      }
+      lm = { ...lm, G: lm.G - F * lm.floorG, Q: lm.Q - F * lm.Qfloor, QaB: lm.QaB - F * lm.QaB, floorG: (1 - F) * lm.floorG, Qfloor: (1 - F) * lm.Qfloor };
+    }
     const cornerPts = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.module === k && !p.middle);
     const midPts = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.module === k && p.middle);
     const add = (list: typeof cornerPts, G: number, Q: number, QaB: number) =>
@@ -476,7 +507,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const d = c.dir;
     const perp: P2 = [-d[1], d[0]];
     for (const { u, mods, levels } of levelData) {
-      const gi = groups.map((_, g) => g).filter((g) => groupUnit[g] === u && (!!strip || !groups[g].middle));
+      const gi = groups.map((_, g) => g).filter((g) => groupUnit[g] === u && (!!strip || (!groups[g].middle && !groups[g].strip)));
       if (gi.length < 2) continue;
       let M = 0;
       for (const lv of levels) {
@@ -545,6 +576,11 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
     const off = opt.footOffset ?? 155;
     const split: GroupReaction[] = [];
     reactions.forEach((r, g) => {
+      // appui ajouté (bloc calé sous le plancher) : pas un vérin
+      if (g >= ground.length) {
+        split.push(r);
+        return;
+      }
       const own = ground[g].filter((i) => pts[i].level === 0);
       const n = Math.max(1, own.length);
       for (const i of own) {
@@ -564,7 +600,7 @@ export function estimateReactions(modules: EstimateModule[], opt: EstimateOption
       }
     });
     split.sort((a, b) => Math.round(a.group.position[1] / 500) - Math.round(b.group.position[1] / 500) || a.group.position[0] - b.group.position[0]);
-    split.forEach((r, i) => (r.group.id = `${r.group.middle ? 'M' : 'P'}${i + 1}`));
+    split.forEach((r, i) => (r.group.id = r.group.strip ? r.group.id : `${r.group.middle ? 'M' : 'P'}${i + 1}`));
     reactions = split;
     outGroups = split.map((r) => r.group);
   }
@@ -899,4 +935,63 @@ function stripDistribution(
   });
   if (without.size) warnings.push(`${[...without].join(', ')} : aucune rive ni aucun profil ne porte sur une plaque — charges réparties sur les autres tronçons (disposition des plaques à revoir).`);
   return { groups, parts, weights };
+}
+
+/**
+ * Appuis ajoutés (blocs calés sous le plancher, en plus des vérins / angles) : un groupe par tronçon de profil posé
+ * sur un bloc (comme le calcul complet) et sa part du plancher de la Viewbox — surface d'influence : chaque point du
+ * plancher va à l'appui le plus proche (angles, pieds centraux, tronçons), comme une descente de charges par surfaces
+ * tributaires. Seule la Viewbox posée au sol est concernée (les étages descendent par les angles).
+ */
+function addedDistribution(
+  modules: EstimateModule[],
+  contact: NonNullable<EstimateOptions['contact']>,
+  pts: Array<{ pos: P2; module: number; level: number; middle: boolean }>,
+  warnings: string[],
+): Array<{ group: SupportGroup; module: number; share: number }> {
+  const ground = modules.map((m, k) => ({ m, k })).filter(({ m }) => m.level === 0);
+  const floors = ground.map(({ m }) => floorOfEstimate(m));
+  const plan = contactStrips(floors, 'added', contact.pads, contact.k, 0);
+  warnings.push(...plan.warnings);
+  const out: Array<{ group: SupportGroup; module: number; share: number }> = [];
+  const strips = [...plan.strips].sort((a, b) => Math.round(a.center[1] / 500) - Math.round(b.center[1] / 500) || a.center[0] - b.center[0]);
+  ground.forEach(({ m, k }, j) => {
+    const f = floors[j];
+    const mine = strips.filter((st) => st.module === m.id);
+    if (!mine.length) return;
+    const own = pts.filter((p) => p.module === k).map((p) => toLocal(f, p.pos));
+    const sts = mine.map((st) => toLocal(f, st.center));
+    const all = [...own, ...sts];
+    const [L, W] = f.size;
+    const nu = 59;
+    const nv = 25;
+    const count = sts.map(() => 0);
+    for (let a = 0; a < nu; a++)
+      for (let b = 0; b < nv; b++) {
+        const u = ((a + 0.5) * L) / nu;
+        const v = ((b + 0.5) * W) / nv;
+        let best = 0;
+        let bd = Infinity;
+        all.forEach((q, i) => {
+          const d = (q[0] - u) ** 2 + (q[1] - v) ** 2;
+          if (d < bd) [bd, best] = [d, i];
+        });
+        if (best >= own.length) count[best - own.length]++;
+      }
+    mine.forEach((st, i) => {
+      out.push({
+        module: k,
+        share: count[i] / (nu * nv),
+        group: {
+          id: `L${out.length + 1}`,
+          position: st.center,
+          corners: 0,
+          middle: false,
+          strip: { kind: st.kind, label: st.label, ...(st.pad ? { pad: st.pad } : {}), center: st.center, along: st.along, length: st.length, width: st.width, corner: st.corner, middle: st.middle, added: true },
+          moduleIds: [st.module],
+        },
+      });
+    });
+  });
+  return out;
 }

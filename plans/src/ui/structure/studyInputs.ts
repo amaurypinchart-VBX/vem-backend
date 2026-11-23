@@ -67,8 +67,10 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
   // contact au sol (sans vérins) : rives posées au sol, ou plaques / blocs (dessinés ou disposition générée, Viewbox
   // ajoutées par l'étude comprises) — dans le calcul ; les plaques deviennent les blocs du calage
   const k = SUBGRADE_PRESETS.find((x) => x.key === (src.calc.contact?.subgrade ?? src.hyp.subgrade))?.k ?? 0.03;
-  const gc = resolveGroundContact(src.calc.contact, src.calc.jacks, out.inputs.modules, src.sceneModel.blocks, k);
+  const gc = resolveGroundContact(src.calc.contact, src.calc.jacks, out.inputs.modules, src.sceneModel.blocks, k, src.hyp.middleFeet);
   if (!gc) return out;
+  // vérins / angles + blocs calés sous le plancher : tous les blocs dessinés restent ceux du calage
+  if (gc.mode === 'added') return { ...out, inputs: { ...out.inputs, groundContact: { mode: 'added', pads: gc.pads, k: gc.k } } };
   const { groundBlocks: _drawn, ...rest } = out.inputs;
   const inputs: StudyInputs = { ...rest, groundContact: { mode: gc.mode, pads: gc.pads, k: gc.k }, ...(gc.mode === 'pads' && gc.pads.length ? { groundBlocks: gc.pads } : {}) };
   const warnings = [...out.warnings];
@@ -78,7 +80,7 @@ export function buildStudyInputs(src: InputsSource): { inputs: StudyInputs; adde
 
 /** Contact au sol de l'étape 5 (estimation instantanée) : le même que celui du calcul. */
 export function groundContactOf(inp: Pick<StudyInputs, 'groundContact' | 'options'>): NonNullable<StudyInputs['groundContact']> | null {
-  return inp.options.jacks ? null : (inp.groundContact ?? null);
+  return inp.options.jacks && inp.groundContact?.mode !== 'added' ? null : (inp.groundContact ?? null);
 }
 
 /** Entrées avant les modifications de l'étude, et ces modifications (SketchUp « Structure… » puis étude / variante). */
