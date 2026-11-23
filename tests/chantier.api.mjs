@@ -118,6 +118,32 @@ assert.ok(detail.contacts.some((c) => c.kind === 'site_manager'));
 assert.ok(detail.counts.plans >= 1);
 step('fichiers choisis par le bureau (plans validés d’office), infos + contacts');
 
+// ── plans visibles personne par personne ─────────────────────────────────────
+const teamCard = ok(await call('GET', `/chantier/office/projects/${audi.id}`, tm), 'carte équipe');
+const piotr = teamCard.members.find((m) => m.userId === s1.user.id);
+assert.ok(teamCard.files.some((f) => f.id === f1.id) && teamCard.files.some((f) => f.id === f2.id), 'fichiers de l’app listés');
+assert.equal(piotr.filesVisible, teamCard.files.length, 'par défaut il voit tout');
+r = await call('PUT', `/chantier/office/projects/${audi.id}/members/${piotr.memberId}/files`, inst, { visible: [] });
+assert.equal(r.status, 403, 'l’installateur ne choisit pas');
+let put = ok(await call('PUT', `/chantier/office/projects/${audi.id}/members/${piotr.memberId}/files`, tm, { visible: teamCard.files.filter((f) => f.id !== f1.id).map((f) => f.id) }), 'masquer un plan pour lui');
+assert.equal(put.changed, 1);
+files = ok(await call('GET', `/chantier/projects/${audi.id}/files`, inst), 'fichiers');
+assert.ok(!files.some((f) => f.id === f1.id) && files.some((f) => f.id === f2.id), 'plan masqué pour lui seulement');
+assert.equal(ok(await call('GET', `/chantier/projects/${audi.id}`, inst), 'détail').counts.plans, detail.counts.plans - 1, 'compteur Plans de l’accueil');
+const smFiles = ok(await call('GET', `/chantier/projects/${audi.id}/files`, smToken), 'fichiers SM');
+assert.ok(smFiles.some((f) => f.id === f1.id), 'le reste de l’équipe le voit toujours');
+// depuis l'onglet Fichiers : « qui voit ce fichier »
+let pf = ok(await call('PATCH', `/chantier/office/files/${f2.id}`, smToken, { hiddenFor: [s1.user.id, sm.id] }), 'masquer pour 2 personnes');
+assert.deepEqual(pf.hiddenFor, [s1.user.id, sm.id]);
+assert.equal(pf.section, 'briefing', 'rubrique inchangée');
+assert.ok(!ok(await call('GET', `/chantier/projects/${audi.id}/files`, smToken), 'SM').some((f) => f.id === f2.id));
+pf = ok(await call('PATCH', `/chantier/office/files/${f2.id}`, smToken, { hiddenFor: [] }), 'toute l’équipe');
+assert.deepEqual(pf.hiddenFor, []);
+assert.equal((await prisma.projectFile.findUnique({ where: { id: f2.id } })).siteHiddenFor, null, '[] enregistré comme « toute l’équipe »');
+put = ok(await call('PUT', `/chantier/office/projects/${audi.id}/members/${piotr.memberId}/files`, tm, { visible: teamCard.files.map((f) => f.id) }), 'tout remontrer');
+assert.equal(ok(await call('GET', `/chantier/office/projects/${audi.id}`, tm), 'carte').members.find((m) => m.userId === s1.user.id).filesVisible, teamCard.files.length);
+step('plans visibles personne par personne (carte Équipe et onglet Fichiers), le reste de l’équipe inchangé');
+
 // ── feuille de temps ─────────────────────────────────────────────────────────
 const tasks = ok(await call('GET', `/chantier/projects/${audi.id}/tasks?date=${today}`, inst), 'tâches');
 const t = tasks.templates.find((x) => x.id === tpl.id);

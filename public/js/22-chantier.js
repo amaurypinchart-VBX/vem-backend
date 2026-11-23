@@ -2,7 +2,9 @@
 // VEM CHANTIER — côté bureau (l'application des installateurs est public/chantier.html, servie à /chantier)
 //  • Onglet Équipe du projet : carte « 👷 VEM Chantier » — inviter un installateur (lien WhatsApp / SMS / QR),
 //    chef d'équipe, accès dans le temps (J−14 / J+14, « redonner l'accès »), nouveau lien si code oublié.
-//  • Onglet Fichiers : « 👷 » sur chaque document = rubrique où les installateurs le voient (Plans / Briefing / Infos).
+//  • Onglet Fichiers : « 👷 » sur chaque document = rubrique où les installateurs le voient (Plans / Briefing / Infos),
+//    « 👥 » à côté = qui le voit (toute l'équipe par défaut, ou on décoche des personnes).
+//  • Carte VEM Chantier : « 📐 n / N » par personne = les fichiers de l'app que CETTE personne voit.
 //  • Onglet Daily Reports : carte « 📝 Feuilles de temps du chantier » — corriger, valider (→ rapport du jour), renvoyer.
 //  • Réglages › modèles de tâches : compteurs de quantités (Viewbox, vitres, portes…), repris dans les rapports journaliers.
 // Serveur : src/routes/chantier.ts. Chargé avant 21-mobile-ui.js ; ne fait que définir des fonctions.
@@ -61,8 +63,10 @@ async function loadChantierTeamCard(projectId) {
   const res = await api('GET', `/chantier/office/projects/${projectId}`);
   if (!res?.success) { box.innerHTML = ''; return; }
   const d = res.data;
+  CHANTIER_TEAM[projectId] = d;
   const w = d.window;
   const can = d.canManage;
+  const nFiles = (d.files || []).length;
   const rows = d.members.map((m) => {
     let access;
     if (!m.limited) access = '<span class="badge badge-blue">toujours (rôle VEM)</span>';
@@ -81,6 +85,10 @@ async function loadChantierTeamCard(projectId) {
         : (m.crewLead ? '⭐' : '')}</td>
       <td>${access}</td>
       <td>${login}</td>
+      <td style="text-align:center;">${chUsesApp(m)
+        ? `<button class="btn btn-ghost btn-xs" onclick="chantierMemberFiles('${projectId}','${m.memberId}')" title="Plans et documents que ${chEsc(m.name)} voit dans l’app"
+            style="${nFiles && m.filesVisible < nFiles ? 'color:var(--amber, #d97706);font-weight:700;' : ''}">📐 ${m.filesVisible} / ${nFiles}</button>`
+        : ''}</td>
       <td style="white-space:nowrap;text-align:right;">
         ${can && m.pinLogin ? `<button class="btn btn-ghost btn-xs" onclick="chantierNewLink('${projectId}','${m.memberId}')" title="Lien de connexion (première fois ou code oublié)">📲 Lien</button>` : ''}
         ${can && m.limited ? `<button class="btn btn-ghost btn-xs" onclick="chantierExtend('${projectId}','${m.memberId}','${m.accessUntil ? m.accessUntil.slice(0, 10) : ''}','${chEsc(m.name).replace(/'/g, '&#39;')}')" title="Redonner l'accès après la période du chantier">⏳ Accès</button>` : ''}
@@ -100,10 +108,66 @@ async function loadChantierTeamCard(projectId) {
         </div>
       </div>
       ${d.members.length ? `<div class="table-wrap"><table class="ch-table">
-        <thead><tr><th>Personne</th><th style="text-align:center;">Chef d’équipe</th><th>Accès à l’app</th><th>Connexion</th><th></th></tr></thead>
+        <thead><tr><th>Personne</th><th style="text-align:center;">Chef d’équipe</th><th>Accès à l’app</th><th>Connexion</th><th style="text-align:center;" title="Plans et documents visibles dans l’app, personne par personne">Plans visibles</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : '<div style="padding:12px 18px;color:var(--text3);font-size:13px;">Personne dans l’équipe pour l’instant.</div>'}
       ${!can ? '<div style="padding:8px 18px 12px;font-size:11px;color:var(--text3);">Inviter, désigner le chef d’équipe et prolonger l’accès : admin, technical manager, sales engineer.</div>' : ''}
     </div>`;
+}
+
+const CHANTIER_TEAM = {};
+const CHANTIER_SECTION_LABELS = { plans: '📐 Plans', briefing: '📋 Briefing', info: 'ℹ️ Infos' };
+/** Personne qui se sert de l'app chantier (installateur / ouvrier, site manager, chef d'équipe). */
+const chUsesApp = (m) => m.pinLogin || m.role === 'site_manager' || m.crewLead;
+
+// Fichiers de l'app que cette personne voit (cocher / décocher)
+function chantierMemberFiles(projectId, memberId) {
+  const d = CHANTIER_TEAM[projectId];
+  const m = d?.members.find((x) => x.memberId === memberId);
+  if (!m) return;
+  const files = d.files || [];
+  const edit = d.canEditFiles;
+  const groups = Object.keys(CHANTIER_SECTION_LABELS).map((sec) => {
+    const list = files.filter((f) => f.section === sec);
+    if (!list.length) return '';
+    return `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;">${CHANTIER_SECTION_LABELS[sec]}</div>
+      ${list.map((f) => `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:${edit ? 'pointer' : 'default'};">
+        <input type="checkbox" class="chmf-cb" value="${f.id}" ${f.hiddenFor.includes(m.userId) ? '' : 'checked'} ${edit ? '' : 'disabled'} style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);">
+        <span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${chEsc(f.name)}</span>
+        <a href="${chEsc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="btn btn-ghost btn-xs">👁️</a></label>`).join('')}</div>`;
+  }).join('');
+  const el = chModal(`
+    <div class="modal-head"><div class="modal-title">📐 Ce que ${chEsc(m.name)} voit dans l’app</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+    ${files.length ? `
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Coché = il le voit. Décoche les plans ou documents qu’il ne doit pas voir : le reste de l’équipe ne change pas. Un fichier ajouté plus tard dans l’app est visible par toute l’équipe.</div>
+      ${edit ? `<div style="display:flex;gap:6px;margin-bottom:10px;"><button class="btn btn-ghost btn-xs" id="chmf-all">Tout cocher</button><button class="btn btn-ghost btn-xs" id="chmf-none">Tout décocher</button></div>` : ''}
+      ${groups}`
+    : `<div style="font-size:13px;color:var(--text3);padding:8px 0;">Aucun fichier dans l’app pour l’instant. Onglet <strong>Fichiers</strong> du projet : menu « 👷 » sur chaque document (Plans / Briefing / Infos). Les plans validés par le client (…_VALIDE.pdf) y sont d’office.</div>`}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">${edit && files.length ? 'Annuler' : 'Fermer'}</button>
+      ${edit && files.length ? '<button class="btn btn-primary" id="chmf-go">Enregistrer</button>' : ''}
+    </div>`, 560);
+  const all = (on) => el.querySelectorAll('.chmf-cb').forEach((c) => { c.checked = on; });
+  el.querySelector('#chmf-all')?.addEventListener('click', () => all(true));
+  el.querySelector('#chmf-none')?.addEventListener('click', () => all(false));
+  const go = el.querySelector('#chmf-go');
+  if (go) go.onclick = async () => {
+    const visible = [...el.querySelectorAll('.chmf-cb')].filter((c) => c.checked).map((c) => c.value);
+    go.disabled = true;
+    const r = await api('PUT', `/chantier/office/projects/${projectId}/members/${memberId}/files`, { visible });
+    go.disabled = false;
+    if (!r?.success) { toast(r?.error || 'Erreur', 'error'); return; }
+    el.remove();
+    toast(`✅ ${m.name} voit ${r.data.visible} fichier(s) sur ${r.data.total}`, 'success');
+    loadChantierTeamCard(projectId);
+    chantierRefreshFiles(projectId);
+  };
+}
+
+// après un changement depuis la carte Équipe : remettre à jour la liste de l'onglet Fichiers si elle est chargée
+async function chantierRefreshFiles(projectId) {
+  if (typeof loadDetailFiles !== 'function' || !document.getElementById('detail-files-content')) return;
+  if (typeof CURRENT_PROJECT_ID !== 'undefined' && CURRENT_PROJECT_ID !== projectId) return;
+  if (document.getElementById('detail-files-content').innerHTML.trim()) loadDetailFiles(projectId);
 }
 
 async function setChantierCrewLead(projectId, memberId, on) {
@@ -251,21 +315,72 @@ function chantierAutoSection(f) {
   if (f.category === 'planning') return 'info';
   return 'none';
 }
+function chantierHiddenOf(f) { return Array.isArray(f.siteHiddenFor) ? f.siteHiddenFor : []; }
 function chantierFileControl(f, projectId) {
   if (!CURRENT_USER || ['installer', 'worker', 'client'].includes(CURRENT_USER.role)) return '';
+  return `<span id="chf-${f.id}" style="display:inline-flex;gap:4px;align-items:center;">${chantierFileControlInner(f, projectId)}</span>`;
+}
+function chantierFileControlInner(f, projectId) {
   const sec = f.siteSection || chantierAutoSection(f);
   const opts = [['none', '👷 Chantier : non'], ['plans', '👷 📐 Plans'], ['briefing', '👷 📋 Briefing'], ['info', '👷 ℹ️ Infos']];
-  return `<select title="Rubrique où les installateurs voient ce fichier dans l’app VEM Chantier${f.siteSection ? '' : ' (choix automatique)'}" onchange="setChantierFileSection('${f.id}',this.value,this)"
+  const hidden = chantierHiddenOf(f).length;
+  return `<select title="Rubrique où les installateurs voient ce fichier dans l’app VEM Chantier${f.siteSection ? '' : ' (choix automatique)'}" onchange="setChantierFileSection('${f.id}',this.value,'${projectId}')"
     style="padding:3px 6px;background:${sec === 'none' ? 'var(--bg2)' : 'rgba(31,157,85,.15)'};border:1px solid ${sec === 'none' ? 'var(--border)' : 'var(--green, #1f9d55)'};border-radius:6px;color:var(--text);font-size:11px;cursor:pointer;max-width:150px;">
-    ${opts.map(([k, l]) => `<option value="${k}" ${k === sec ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    ${opts.map(([k, l]) => `<option value="${k}" ${k === sec ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    ${sec === 'none' ? '' : `<button class="btn btn-ghost btn-xs" onclick="chantierFileWho('${projectId}','${f.id}')" title="Qui voit ce fichier dans l’app chantier"
+      style="${hidden ? 'color:var(--amber, #d97706);font-weight:700;' : ''}">👥 ${hidden ? hidden + ' masqué' + (hidden > 1 ? 's' : '') : 'Toute l’équipe'}</button>`}`;
 }
-async function setChantierFileSection(fileId, section, sel) {
+function chantierRedrawFileControl(f, projectId) {
+  const box = document.getElementById('chf-' + f.id);
+  if (box) box.innerHTML = chantierFileControlInner(f, projectId);
+}
+async function setChantierFileSection(fileId, section, projectId) {
   const r = await api('PATCH', `/chantier/office/files/${fileId}`, { siteSection: section });
-  if (!r?.success) { toast(r?.error || 'Erreur', 'error'); return; }
   const f = (typeof CURRENT_PROJECT_FILES !== 'undefined' ? CURRENT_PROJECT_FILES : []).find((x) => x.id === fileId);
-  if (f) f.siteSection = r.data.siteSection;
-  if (sel) { const on = r.data.section !== 'none'; sel.style.background = on ? 'rgba(31,157,85,.15)' : 'var(--bg2)'; sel.style.borderColor = on ? 'var(--green, #1f9d55)' : 'var(--border)'; }
+  if (!r?.success) { toast(r?.error || 'Erreur', 'error'); if (f) chantierRedrawFileControl(f, projectId); return; }
+  if (f) { f.siteSection = r.data.siteSection; chantierRedrawFileControl(f, projectId); }
   toast(r.data.section === 'none' ? 'Caché aux installateurs' : 'Visible dans l’app chantier ✅', 'success');
+  if (document.getElementById('detail-chantier-card')?.innerHTML.trim()) loadChantierTeamCard(projectId);
+}
+
+// Qui voit ce fichier : une case par personne de l'équipe qui se sert de l'app
+async function chantierFileWho(projectId, fileId) {
+  const f = (typeof CURRENT_PROJECT_FILES !== 'undefined' ? CURRENT_PROJECT_FILES : []).find((x) => x.id === fileId);
+  if (!f) return;
+  const res = await api('GET', `/chantier/office/projects/${projectId}`);
+  if (!res?.success) { toast(res?.error || 'Erreur', 'error'); return; }
+  CHANTIER_TEAM[projectId] = res.data;
+  const people = res.data.members.filter(chUsesApp);
+  const hidden = chantierHiddenOf(f);
+  const edit = res.data.canEditFiles;
+  const el = chModal(`
+    <div class="modal-head"><div class="modal-title">👥 Qui voit ce fichier sur chantier ?</div><button class="modal-close" onclick="this.closest('.overlay').remove()">×</button></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${chEsc(f.fileName || 'Fichier')}</div>
+    ${people.length ? `
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Coché = il le voit dans l’app VEM Chantier. Les personnes ajoutées plus tard à l’équipe le verront aussi (décoche-les ensuite si besoin).</div>
+      ${people.map((m) => `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;cursor:${edit ? 'pointer' : 'default'};">
+        <input type="checkbox" class="chfw-cb" value="${m.userId}" ${hidden.includes(m.userId) ? '' : 'checked'} ${edit ? '' : 'disabled'} style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);">
+        <span style="flex:1;font-size:13px;">${m.crewLead ? '⭐ ' : ''}${chEsc(m.name)} <span style="font-size:11px;color:var(--text3);">${chEsc(CHANTIER_ROLE_LABELS[m.role] || m.role)}</span></span></label>`).join('')}`
+    : `<div style="font-size:13px;color:var(--text3);padding:8px 0;">Personne dans l’équipe n’utilise encore l’app. Onglet <strong>Équipe</strong> › « ＋ Inviter un installateur ».</div>`}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">${edit && people.length ? 'Annuler' : 'Fermer'}</button>
+      ${edit && people.length ? '<button class="btn btn-primary" id="chfw-go">Enregistrer</button>' : ''}
+    </div>`, 460);
+  const go = el.querySelector('#chfw-go');
+  if (go) go.onclick = async () => {
+    const shown = new Set(people.map((m) => m.userId));
+    const next = hidden.filter((id) => !shown.has(id)); // personnes hors de la liste : on garde leur choix
+    el.querySelectorAll('.chfw-cb').forEach((c) => { if (!c.checked) next.push(c.value); });
+    go.disabled = true;
+    const r = await api('PATCH', `/chantier/office/files/${fileId}`, { hiddenFor: next });
+    go.disabled = false;
+    if (!r?.success) { toast(r?.error || 'Erreur', 'error'); return; }
+    f.siteHiddenFor = r.data.hiddenFor.length ? r.data.hiddenFor : null;
+    chantierRedrawFileControl(f, projectId);
+    el.remove();
+    toast(r.data.hiddenFor.length ? `✅ Masqué pour ${r.data.hiddenFor.length} personne(s)` : '✅ Visible par toute l’équipe', 'success');
+    if (document.getElementById('detail-chantier-card')?.innerHTML.trim()) loadChantierTeamCard(projectId);
+  };
 }
 
 // ═══ Onglet Daily Reports : feuilles de temps du chantier ════════

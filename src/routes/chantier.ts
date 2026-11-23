@@ -8,6 +8,7 @@ import { Router, Response, NextFunction, Request } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { prisma } from '../config/database';
+import { Prisma } from '@prisma/client';
 import { AuthRequest, projectIds } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { rateLimit } from '../middleware/rateLimit';
@@ -18,7 +19,7 @@ import { upload, uploadToCloudinary } from '../services/cloudinaryService';
 import {
   cleanLang, phoneKey, pinProblem, PIN_ROLES, DESIGNATOR_ROLES, siteWindow, brusselsYmd, isYmd, phaseOn, ymdOf,
   siteSectionOf, SITE_SECTIONS, cleanLines, cleanPresent, sheetTotals, canValidate, filledRoleOf, fillerCanEdit,
-  TimesheetLine, Present, FilledRole, autoSiteSection,
+  TimesheetLine, Present, FilledRole, autoSiteSection, cleanHiddenFor, fileVisibleFor, withVisibility,
 } from '../services/chantierLogic';
 import {
   issueSession, createInvite, placeholderEmail, isPlaceholderEmail, templatesWithFields, translateComments,
@@ -141,9 +142,10 @@ async function appProject(req: AuthRequest, projectId: string) {
 
 const fileOut = (f: any) => ({ id: f.id, name: f.fileName, url: f.fileUrl, type: f.fileType, size: f.fileSize, section: siteSectionOf(f), createdAt: f.createdAt });
 
-async function siteFiles(projectId: string) {
+/** Fichiers du projet visibles dans l'app : rubrique choisie (≠ none) et pas masqués pour cette personne. */
+async function siteFiles(projectId: string, userId: string) {
   const files = await prisma.projectFile.findMany({ where: { projectId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] });
-  return files.map(fileOut).filter((f) => f.section !== 'none');
+  return files.filter((f) => fileVisibleFor(f as any, userId)).map(fileOut).filter((f) => f.section !== 'none');
 }
 
 // GET /chantier/me
@@ -210,7 +212,7 @@ chantierAppRoutes.get('/projects/:id', async (req: AuthRequest, res: Response, n
 
     const bookings = await prisma.teamBooking.findMany({ where: { projectId: p.id, userId: req.user!.id }, orderBy: { onSiteStart: 'asc' } });
     const hotels = await prisma.hotelBooking.findMany({ where: { projectId: p.id, occupants: { some: { userId: req.user!.id } } }, orderBy: { checkin: 'asc' } });
-    const files = await siteFiles(p.id);
+    const files = await siteFiles(p.id, req.user!.id);
     res.json({
       success: true,
       data: {
@@ -237,7 +239,7 @@ chantierAppRoutes.get('/projects/:id/files', async (req: AuthRequest, res: Respo
   try {
     const { project } = await appProject(req, req.params.id);
     const section = String(req.query.section || '');
-    const files = await siteFiles(project.id);
+    const files = await siteFiles(project.id, req.user!.id);
     res.json({ success: true, data: section ? files.filter((f) => f.section === section) : files });
   } catch (err) { next(err); }
 });
@@ -394,6 +396,8 @@ chantierOfficeRoutes.get('/projects/:projectId', async (req: AuthRequest, res: R
     const team = await prisma.projectTeam.findMany({ where: { projectId }, include: { user: true }, orderBy: { createdAt: 'asc' } });
     const invites = await db.chantierInvite.findMany({ where: { userId: { in: team.map((t) => t.userId) }, usedAt: null, expiresAt: { gt: new Date() } }, select: { userId: true } });
     const pendingInvite = new Set(invites.map((i: any) => i.userId));
+    const allFiles = await prisma.projectFile.findMany({ where: { projectId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] });
+    const appFiles = allFiles.map((f: any) => ({ ...fileOut(f), hiddenFor: cleanHiddenFor(f.siteHiddenFor) })).filter((f) => f.section !== 'none');
     const members = team.map((t: any) => {
       const u = t.user;
       const limited = timeLimitedRole(u.role);
@@ -405,6 +409,7 @@ chantierOfficeRoutes.get('/projects/:projectId', async (req: AuthRequest, res: R
         crewLead: t.crewLead === true, accessUntil: until ? until.toISOString() : null,
         pinLogin: PIN_ROLES.includes(u.role), pinSet: !!u.pinHash, inviteOpen: pendingInvite.has(u.id), lastLogin: u.lastLogin,
         limited, hasAccess: !limited || extended || (today >= win.from && today <= win.to), extended,
+        filesVisible: appFiles.filter((f) => !f.hiddenFor.includes(u.id)).length,
       };
     });
     res.json({
@@ -412,6 +417,7 @@ chantierOfficeRoutes.get('/projects/:projectId', async (req: AuthRequest, res: R
       data: {
         window: { ...win, custom: p.siteDaysBefore != null || p.siteDaysAfter != null, defaults },
         today, members, canManage: isDesignator(req), canEditFiles: canWrite(req.access!),
+        files: appFiles.map((f) => ({ id: f.id, name: f.name, url: f.url, section: f.section, hiddenFor: f.hiddenFor })),
       },
     });
   } catch (err) { next(err); }
@@ -514,17 +520,45 @@ chantierOfficeRoutes.put('/settings', async (req: AuthRequest, res: Response, ne
   } catch (err) { next(err); }
 });
 
-// PATCH /chantier/office/files/:fileId { siteSection: plans | briefing | info | none | null (automatique) }
+// PATCH /chantier/office/files/:fileId { siteSection?: plans | briefing | info | none | null (automatique), hiddenFor?: [userId] (qui ne le voit pas) }
 chantierOfficeRoutes.patch('/files/:fileId', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const f = await prisma.projectFile.findUnique({ where: { id: req.params.fileId } });
     if (!f) throw new AppError('Fichier introuvable', 404);
     await assertProjectAccess(req, f.projectId);
     if (!canWrite(req.access!)) throw new AppError('Tu peux consulter mais pas modifier.', 403);
-    const v = req.body?.siteSection;
-    if (v !== null && !(SITE_SECTIONS as readonly string[]).includes(v)) throw new AppError('Rubrique invalide', 400);
-    const out = await db.projectFile.update({ where: { id: f.id }, data: { siteSection: v === autoSiteSection(f) ? null : v } });
-    res.json({ success: true, data: { id: out.id, siteSection: out.siteSection, section: siteSectionOf(out) } });
+    const data: any = {};
+    if (req.body?.siteSection !== undefined) {
+      const v = req.body.siteSection;
+      if (v !== null && !(SITE_SECTIONS as readonly string[]).includes(v)) throw new AppError('Rubrique invalide', 400);
+      data.siteSection = v === autoSiteSection(f) ? null : v;
+    }
+    if (req.body?.hiddenFor !== undefined) {
+      const list = cleanHiddenFor(req.body.hiddenFor);
+      data.siteHiddenFor = list.length ? list : Prisma.DbNull;
+    }
+    if (!Object.keys(data).length) throw new AppError('Rien à modifier', 400);
+    const out = await db.projectFile.update({ where: { id: f.id }, data });
+    res.json({ success: true, data: { id: out.id, siteSection: out.siteSection, section: siteSectionOf(out), hiddenFor: cleanHiddenFor(out.siteHiddenFor) } });
+  } catch (err) { next(err); }
+});
+
+// PUT /chantier/office/projects/:projectId/members/:memberId/files { visible: [fileId] }
+// Fichiers de l'app que CETTE personne voit : les autres fichiers de l'app lui sont masqués (le reste de l'équipe ne change pas).
+chantierOfficeRoutes.put('/projects/:projectId/members/:memberId/files', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const projectId = req.params.projectId;
+    await assertProjectAccess(req, projectId);
+    if (!canWrite(req.access!)) throw new AppError('Tu peux consulter mais pas modifier.', 403);
+    const m: any = await memberOr404(projectId, req.params.memberId);
+    if (!Array.isArray(req.body?.visible)) throw new AppError('Liste des fichiers manquante', 400);
+    const visible = new Set(req.body.visible.map((x: any) => String(x)));
+    const files = (await prisma.projectFile.findMany({ where: { projectId } })).filter((f) => siteSectionOf(f) !== 'none');
+    const changes = files
+      .map((f: any) => ({ f, next: withVisibility(f.siteHiddenFor, m.userId, visible.has(f.id)) }))
+      .filter(({ f, next }) => next.join('|') !== cleanHiddenFor(f.siteHiddenFor).join('|'));
+    await prisma.$transaction(changes.map(({ f, next }) => db.projectFile.update({ where: { id: f.id }, data: { siteHiddenFor: next.length ? next : Prisma.DbNull } })));
+    res.json({ success: true, data: { changed: changes.length, visible: files.filter((f) => visible.has(f.id)).length, total: files.length } });
   } catch (err) { next(err); }
 });
 

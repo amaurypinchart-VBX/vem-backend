@@ -87,6 +87,27 @@ export function autoSiteSection(f: { fileName?: string | null; category?: string
   return 'none';
 }
 
+/** Personnes qui ne voient pas un fichier (ids, sans doublon, 500 au plus). [] = toute l'équipe le voit. */
+export function cleanHiddenFor(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    const id = String(v ?? '').trim();
+    if (id && id.length <= 64 && !out.includes(id)) out.push(id);
+    if (out.length >= 500) break;
+  }
+  return out;
+}
+/** Le fichier (déjà dans une rubrique chantier) est-il visible pour cette personne ? */
+export function fileVisibleFor(f: { siteHiddenFor?: unknown }, userId: string): boolean {
+  return !cleanHiddenFor(f.siteHiddenFor).includes(userId);
+}
+/** Masquer / montrer un fichier pour une personne : nouvelle liste des personnes qui ne le voient pas. */
+export function withVisibility(hidden: unknown, userId: string, visible: boolean): string[] {
+  const list = cleanHiddenFor(hidden).filter((id) => id !== userId);
+  return visible ? list : [...list, userId];
+}
+
 // ── compteurs de quantités (modèles de tâches) ───────────────────────────────
 export interface QuantityField { key: string; label: Partial<Record<Lang, string>>; unit?: string }
 export interface Quantity { key: string; label: string; unit?: string; qty: number }

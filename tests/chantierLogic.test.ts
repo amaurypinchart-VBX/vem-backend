@@ -37,6 +37,14 @@ eq('planning → infos', L.siteSectionOf({ fileName: 'planning.pdf', category: '
 eq('devis caché', L.siteSectionOf({ fileName: 'devis.pdf', category: 'general' }), 'none');
 eq('choix du bureau', L.siteSectionOf({ fileName: 'devis.pdf', category: 'general', siteSection: 'plans' }), 'plans');
 eq('choix du bureau : caché', L.siteSectionOf({ fileName: 'X_VALIDE.pdf', siteSection: 'none' }), 'none');
+// fichier masqué pour certaines personnes (par défaut : toute l'équipe le voit)
+eq('visible par défaut', L.fileVisibleFor({ siteHiddenFor: null }, 'u1'), true);
+eq('masqué pour u1', [L.fileVisibleFor({ siteHiddenFor: ['u1'] }, 'u1'), L.fileVisibleFor({ siteHiddenFor: ['u1'] }, 'u2')], [false, true]);
+eq('liste nettoyée', L.cleanHiddenFor(['u1', ' u1 ', '', null, 'u2', 3]), ['u1', 'u2', '3']);
+eq('liste invalide', L.cleanHiddenFor('u1'), []);
+eq('masquer', L.withVisibility(['u2'], 'u1', false), ['u2', 'u1']);
+eq('masquer deux fois', L.withVisibility(['u1'], 'u1', false), ['u1']);
+eq('remontrer', L.withVisibility(['u1', 'u2'], 'u1', true), ['u2']);
 
 // compteurs d'un modèle de tâche
 eq('compteurs', L.cleanQuantityFields([{ label: 'Vitres' }, { label: { fr: 'Vitres', pl: 'Szyby' } }, { label: { en: 'only en' } }, { label: { fr: 'Portes' }, unit: 'pcs' }]),
