@@ -28,6 +28,9 @@ const PHONE2 = '0499/00.33.44';
 // nettoyage d'un passage précédent
 async function cleanup() {
   const users = (await prisma.user.findMany({ where: { phone: { in: [PHONE, PHONE2] } }, select: { id: true } })).map((u) => u.id);
+  const sheetIds = (await prisma.siteTimesheet.findMany({ where: { filledById: { in: users } }, select: { id: true } })).map((x) => x.id);
+  await prisma.dailyReportEntry.deleteMany({ where: { sourceTimesheetId: { in: sheetIds } } });
+  await prisma.dailyReportTaskHours.deleteMany({ where: { sourceTimesheetId: { in: sheetIds } } });
   await prisma.siteTimesheet.deleteMany({ where: { filledById: { in: users } } });
   await prisma.chantierInvite.deleteMany({ where: { userId: { in: users } } });
   await prisma.refreshToken.deleteMany({ where: { userId: { in: users } } });
@@ -179,6 +182,7 @@ projects = ok(await call('GET', '/chantier/projects', inst), 'projets');
 assert.equal(projects.find((p) => p.id === audi.id).toFix, true);
 const back = ok(await call('GET', `/chantier/projects/${audi.id}/timesheets/${today}`, inst), 'feuille renvoyée');
 assert.equal(back.sheet.returnComment, 'Il manque les vitres');
+assert.ok('returnCommentTr' in back.sheet, 'traduction du message pour le chef d’équipe (polonais) prévue');
 const fixed = back.sheet.lines.map((l) => (l.id === 'l1' ? { ...l, quantities: [{ key: 'viewbox', label: 'Viewbox', qty: 6 }, { key: 'vitres', label: 'Vitres', qty: 10 }] } : l));
 ok(await call('PUT', `/chantier/projects/${audi.id}/timesheets/${today}`, inst, { present: back.sheet.present, lines: fixed, submit: true }), 'renvoi corrigé');
 const corrected = fixed.map((l) => (l.id === 'l2' ? { ...l, hours: 1.5 } : l));
@@ -215,6 +219,33 @@ const kept = await prisma.dailyReportTaskHours.findFirst({ where: { reportId: re
 assert.deepEqual(kept.quantities.map((q) => q.qty), [6, 10]);
 assert.equal(kept.sourceTimesheetId, sheet.id);
 step('repris dans le rapport journalier du jour (heures, gars, quantités), tâche créée une fois, revalidation sans doublon');
+
+// ── journée complète en une tâche, racontée en polonais ──────────────────────
+const yesterday = new Date(Date.parse(today + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+const story = 'Zdemontowaliśmy dach VBX-01 i VBX-02, jutro szyby';
+let gday = ok(await call('PUT', `/chantier/projects/${audi.id}/timesheets/${yesterday}`, inst, {
+  present: [{ name: 'Piotr Test' }, { name: 'Łukasz Wiśniewski' }],
+  lines: [{ id: 'g1', general: 'dismantling', title: 'Demontaż (cały dzień)', newTask: true, done: true, hours: 8, workers: 2, comment: story, commentLang: 'pl' }],
+  comment: 'Brak prądu do 10:00', submit: true,
+}), 'journée complète');
+assert.equal(gday.lines[0].title, 'Démontage (journée complète)', 'titre en français pour le bureau');
+assert.deepEqual([gday.lines[0].general, gday.lines[0].newTask, gday.lines[0].done], ['dismantling', false, false]);
+assert.equal(gday.commentLang, 'pl', 'remarque du jour : langue gardée');
+const gv = ok(await call('POST', `/chantier/office/timesheets/${gday.id}/validate`, smToken, {}), 'validation journée complète');
+const grep = await prisma.dailyReport.findUnique({ where: { id: gv.dailyReportId }, include: { taskHours: true, entries: true } });
+assert.deepEqual(grep.taskHours.filter((h) => h.sourceTimesheetId === gday.id).map((h) => [h.taskTitle, h.hours, h.workers]), [['Démontage (journée complète)', 8, 2]]);
+const gentries = grep.entries.filter((e) => e.sourceTimesheetId === gday.id);
+assert.equal(gentries.length, 1);
+assert.ok(gentries[0].description.startsWith('Démontage (journée complète) : ') && gentries[0].description.includes('VBX-01'), 'le récit va dans le journal du rapport');
+assert.ok(grep.generalNotes?.includes('10:00'), 'remarque du jour dans le rapport');
+assert.equal(await prisma.task.count({ where: { projectId: audi.id, title: { contains: 'journée complète' } } }), 0, 'aucune tâche créée dans le projet');
+ok(await call('POST', `/chantier/office/timesheets/${gday.id}/reopen`, tm), 'rouvrir');
+ok(await call('POST', `/chantier/office/timesheets/${gday.id}/validate`, tm, {}), 'revalider');
+assert.equal(await prisma.dailyReportEntry.count({ where: { sourceTimesheetId: gday.id } }), 1, 'journal remplacé, pas doublé');
+// le PDF du rapport garde les lettres polonaises lisibles (sans accent plutôt que « ? »)
+const pdfRes = await fetch(`${API}/daily-reports/${grep.id}/pdf`, { headers: { Authorization: 'Bearer ' + smToken } });
+assert.equal(pdfRes.status, 200, 'PDF du rapport');
+step('journée complète en une tâche (récit polonais) : titre français, journal du rapport, aucune tâche créée, revalidation sans doublon');
 
 // ── feuille d'un site manager : validée par technical manager / sales, jamais par lui-même ─────────────────────
 const smSheet = ok(await call('PUT', `/chantier/projects/${audi.id}/timesheets/${today}`, smToken, { lines: [{ id: 'x', title: 'TEST CHANTIER coordination', hours: 2, workers: 1 }], submit: true }), 'feuille SM');

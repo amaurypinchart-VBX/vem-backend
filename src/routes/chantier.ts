@@ -23,7 +23,7 @@ import {
 } from '../services/chantierLogic';
 import {
   issueSession, createInvite, placeholderEmail, isPlaceholderEmail, templatesWithFields, translateComments,
-  notify, validatorsToNotify, syncToDailyReport, lineSummary,
+  notify, validatorsToNotify, syncToDailyReport, lineSummary, translateSiteTexts,
 } from '../services/chantierService';
 
 const db = prisma as any;
@@ -283,7 +283,8 @@ chantierAppRoutes.get('/projects/:id/tasks', async (req: AuthRequest, res: Respo
 
 const sheetOut = (s: any) => ({
   id: s.id, projectId: s.projectId, workDate: s.workDate, status: s.status, filledRole: s.filledRole,
-  present: s.present || [], lines: s.lines || [], comment: s.comment || '', returnComment: s.returnComment || null,
+  present: s.present || [], lines: s.lines || [], comment: s.comment || '', commentLang: s.commentLang || null, commentFr: s.commentFr || null,
+  returnComment: s.returnComment || null, returnCommentTr: s.returnCommentTr || null,
   submittedAt: s.submittedAt, validatedAt: s.validatedAt, updatedAt: s.updatedAt, totals: sheetTotals(s.lines || []),
 });
 
@@ -328,14 +329,23 @@ chantierAppRoutes.put('/projects/:id/timesheets/:date', async (req: AuthRequest,
     let lines = cleanLines(req.body?.lines, old?.lines || [], lang);
     const present = cleanPresent(req.body?.present);
     const comment = String(req.body?.comment ?? '').trim().slice(0, 2000) || null;
+    // remarque du jour : écrite dans la langue de l'app ; traduction française gardée tant qu'elle ne change pas
+    let commentFr: string | null = comment && old && old.comment === comment ? (old.commentFr ?? null) : (lang === 'fr' ? comment : null);
     const submit = req.body?.submit === true;
     if (submit && !lines.length) throw new AppError('NO_LINES', 400);
-    if (submit) lines = await translateComments(lines);
+    if (submit) {
+      const [tl, tc] = await Promise.all([
+        translateComments(lines),
+        comment && !commentFr ? translateSiteTexts([{ text: comment, from: lang }], 'fr') : Promise.resolve([null]),
+      ]);
+      lines = tl;
+      if (tc[0]) commentFr = tc[0];
+    }
     const status = submit ? 'submitted' : (old?.status === 'submitted' ? 'submitted' : old?.status === 'returned' ? 'returned' : 'draft');
     const history = [...(old?.history || [])];
     if (submit) history.push({ at: new Date().toISOString(), by: req.user!.id, action: 'submitted', lines: lines.length });
     const data = {
-      present, lines, comment, status, filledRole,
+      present, lines, comment, commentLang: comment ? lang : null, commentFr, status, filledRole,
       ...(submit ? { submittedAt: new Date(), returnComment: old?.returnComment || null } : {}),
       history,
     };
@@ -631,7 +641,10 @@ function applyCorrections(req: AuthRequest, s: any) {
     if (present.length !== (s.present || []).length) changes.push(`présents : ${(s.present || []).length} → ${present.length}`);
     out.present = present;
   }
-  if (typeof req.body?.comment === 'string') out.comment = req.body.comment.trim().slice(0, 2000) || null;
+  if (typeof req.body?.comment === 'string') {
+    out.comment = req.body.comment.trim().slice(0, 2000) || null;
+    if (out.comment !== s.comment) { out.commentLang = out.comment ? 'fr' : null; out.commentFr = out.comment; } // corrigée par le bureau, en français
+  }
   return { out, changes };
 }
 
@@ -668,7 +681,7 @@ chantierOfficeRoutes.post('/timesheets/:id/validate', async (req: AuthRequest, r
       history.push({ at: new Date().toISOString(), by: req.user!.id, action: 'validated' });
       const upd = await db.siteTimesheet.update({
         where: { id: s.id },
-        data: { ...out, lines: sync.lines, status: 'validated', validatedById: req.user!.id, validatedAt: new Date(), dailyReportId: sync.reportId, returnComment: null, history },
+        data: { ...out, lines: sync.lines, status: 'validated', validatedById: req.user!.id, validatedAt: new Date(), dailyReportId: sync.reportId, returnComment: null, returnCommentTr: null, history },
       });
       const project = await prisma.project.findUnique({ where: { id: s.projectId }, select: { name: true } });
       await notify([s.filledById], { title: `✅ Feuille du ${s.workDate} validée — ${project?.name || ''}`, data: { projectId: s.projectId, timesheetId: s.id } });
@@ -690,7 +703,11 @@ chantierOfficeRoutes.post('/timesheets/:id/return', async (req: AuthRequest, res
     const comment = String(req.body?.comment || '').trim().slice(0, 1000);
     if (!comment) throw new AppError('Dis au chef d’équipe ce qu’il faut corriger.', 400);
     const history = [...(s.history || []), { at: new Date().toISOString(), by: req.user!.id, action: 'returned', comment }];
-    const upd = await db.siteTimesheet.update({ where: { id: s.id }, data: { status: 'returned', returnComment: comment, history } });
+    // le chef d'équipe lit le message dans sa langue (polonais…) ; l'original reste affiché en dessous
+    const filler = await db.user.findUnique({ where: { id: s.filledById }, select: { lang: true } });
+    const toLang = cleanLang(filler?.lang);
+    const tr = toLang === 'fr' ? [null] : await translateSiteTexts([{ text: comment, from: 'fr' }], toLang);
+    const upd = await db.siteTimesheet.update({ where: { id: s.id }, data: { status: 'returned', returnComment: comment, returnCommentTr: tr[0] || null, history } });
     const project = await prisma.project.findUnique({ where: { id: s.projectId }, select: { name: true } });
     await notify([s.filledById], { title: `⚠ Feuille du ${s.workDate} à corriger — ${project?.name || ''}`, body: comment, data: { projectId: s.projectId, timesheetId: s.id } });
     const names = await nameMap([upd.filledById, upd.validatedById]);

@@ -1746,6 +1746,7 @@ export async function migrateChantier() {
     `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "site_days_after" INTEGER`,
     `ALTER TABLE "project_files" ADD COLUMN IF NOT EXISTS "site_section" TEXT`,
     `ALTER TABLE "project_files" ADD COLUMN IF NOT EXISTS "site_hidden_for" JSONB`,
+    `ALTER TABLE "daily_report_entries" ADD COLUMN IF NOT EXISTS "source_timesheet_id" TEXT`,
     `ALTER TABLE "daily_report_task_hours" ADD COLUMN IF NOT EXISTS "quantities" JSONB`,
     `ALTER TABLE "daily_report_task_hours" ADD COLUMN IF NOT EXISTS "source_timesheet_id" TEXT`,
     `ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "quantity_fields" JSONB`,
@@ -1792,6 +1793,9 @@ export async function migrateChantier() {
           ON DELETE CASCADE ON UPDATE CASCADE;
       END IF;
     END $$`,
+    `ALTER TABLE "site_timesheets" ADD COLUMN IF NOT EXISTS "comment_lang" TEXT`,
+    `ALTER TABLE "site_timesheets" ADD COLUMN IF NOT EXISTS "comment_fr" TEXT`,
+    `ALTER TABLE "site_timesheets" ADD COLUMN IF NOT EXISTS "return_comment_tr" TEXT`,
   ];
   for (const sql of steps) {
     try { await prisma.$executeRawUnsafe(sql); }

@@ -311,6 +311,14 @@ const AMBER  = '#f4a261';
 // "exotiques" (apostrophes courbes, em-dash, etc.) sortent en charabia ou s'affichent
 // comme des cases vides. On les remplace par leurs équivalents ASCII.
 // Les caractères Latin-1 standards (é, è, à, ç, ü, ö, ä, ß) sont supportés et passent inchangés.
+// Helvetica (pdfkit) n'a que le Latin-1 : les lettres d'Europe centrale perdent leur accent au lieu de devenir « ? »
+// (noms et textes des installateurs polonais : Łukasz → Lukasz, Wiśniewski → Wisniewski).
+const NO_DECOMPOSE: Record<string, string> = { 'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D', 'ħ': 'h', 'Ħ': 'H', 'ı': 'i', 'œ': 'oe', 'Œ': 'OE', 'ß': 'ss' };
+function latin1Fallback(ch: string): string {
+  if (NO_DECOMPOSE[ch]) return NO_DECOMPOSE[ch];
+  const base = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return base && /^[\x00-\xFF]+$/.test(base) ? base : '?';
+}
 function s(text: any): string {
   if (text === null || text === undefined) return '';
   const str = String(text);
@@ -323,7 +331,7 @@ function s(text: any): string {
     .replace(/[\u200B-\u200D\uFEFF]/g, '')           // zero-width spaces → rien
     .replace(/[\u2022\u2023\u25E6\u2043]/g, '-')    // • ‣ ◦ ⁃   → -
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\uFE0F\u200D]\s?/gu, '') // emojis (☀️ Ensoleillé) → rien
-    .replace(/[^\x00-\xFF]/g, '?');                  // tout caractère non Latin-1 → ?
+    .replace(/[^\x00-\xFF]/g, latin1Fallback);     // ł ś ż ą (polonais), č ř (tchèque)… → lettre sans accent ; le reste → ?
 }
 
 // Chemin du logo (version claire pour fond sombre du header).

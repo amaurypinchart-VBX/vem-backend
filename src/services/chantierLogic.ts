@@ -174,6 +174,24 @@ export interface TimesheetLine {
   photos?: Photo[];
   done?: boolean;     // tâche du projet terminée
   newTask?: boolean;  // tâche ajoutée sur chantier (créée dans le projet à la validation)
+  general?: GeneralKind | null; // « journée complète » : une seule ligne qui résume la journée (jamais une tâche du projet)
+}
+
+// ── journée complète en une tâche (A. Pinchart 23.11.2026) ───────────────────
+/** Une ligne générale raconte la journée dans son commentaire (dicté) : Installation, Démontage ou Intervention sur site. */
+export const GENERAL_KINDS = ['installation', 'dismantling', 'intervention'] as const;
+export type GeneralKind = typeof GENERAL_KINDS[number];
+/** Titre en français (bureau, rapport journalier) ; l'app l'affiche dans la langue de l'installateur. */
+export const GENERAL_TITLES: Record<GeneralKind, string> = {
+  installation: 'Installation (journée complète)',
+  dismantling: 'Démontage (journée complète)',
+  intervention: 'Intervention sur site (journée complète)',
+};
+export const cleanGeneral = (v: unknown): GeneralKind | null => ((GENERAL_KINDS as readonly string[]).includes(String(v)) ? (v as GeneralKind) : null);
+/** Texte d'une ligne pour le journal du rapport journalier : commentaire traduit en français, sinon l'original. */
+export function journalText(l: TimesheetLine): string | null {
+  const c = String(l.commentFr || l.comment || '').trim();
+  return c ? `${l.title} : ${c}` : null;
 }
 export interface Present { userId?: string | null; name: string }
 
@@ -196,7 +214,8 @@ export function cleanLines(raw: unknown, prev: TimesheetLine[] = [], lang: Lang 
   for (const r of raw.slice(0, 40)) {
     if (!r || typeof r !== 'object') continue;
     const x = r as any;
-    const title = str(x.title, 200);
+    const general = cleanGeneral(x.general);
+    const title = general ? GENERAL_TITLES[general] : str(x.title, 200);
     if (!title) continue;
     let id = idOf(x.id) || randomId();
     if (seen.has(id)) id = randomId();
@@ -209,8 +228,8 @@ export function cleanLines(raw: unknown, prev: TimesheetLine[] = [], lang: Lang 
       .map((p: any) => (p.publicId ? { url: p.url, publicId: String(p.publicId).slice(0, 300) } : { url: p.url }));
     const line: TimesheetLine = {
       id,
-      taskId: idOf(x.taskId),
-      taskTemplateId: idOf(x.taskTemplateId),
+      taskId: general ? null : idOf(x.taskId),
+      taskTemplateId: general ? null : idOf(x.taskTemplateId),
       title,
       hours: cleanHours(x.hours),
       workers: cleanWorkers(x.workers),
@@ -219,11 +238,12 @@ export function cleanLines(raw: unknown, prev: TimesheetLine[] = [], lang: Lang 
       commentLang,
       commentFr: comment && old && old.comment === comment ? (old.commentFr ?? null) : (commentLang === 'fr' ? comment || null : null),
       photos,
-      done: x.done === true,
-      newTask: !x.taskId && !x.taskTemplateId ? (x.newTask !== false) : false,
+      done: general ? false : x.done === true,
+      newTask: general ? false : !x.taskId && !x.taskTemplateId ? (x.newTask !== false) : false,
     };
+    if (general) line.general = general;
     // tâche créée dans le projet lors d'une validation précédente : on garde son id
-    if (old?.taskId && old.newTask && !line.taskId) { line.taskId = old.taskId; line.newTask = true; }
+    else if (old?.taskId && old.newTask && !line.taskId) { line.taskId = old.taskId; line.newTask = true; }
     out.push(line);
   }
   return out;

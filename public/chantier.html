@@ -200,6 +200,9 @@ const LANGS = [
 ];
 const I18N = {
   fr: {
+    wholeDay: '⚡ Journée complète en une tâche', wholeDayS: 'Une seule ligne pour toute la journée : tu racontes ce que vous avez fait en parlant.', orDetail: 'ou tâche par tâche :',
+    g_installation: 'Installation (journée complète)', g_dismantling: 'Démontage (journée complète)', g_intervention: 'Intervention sur site (journée complète)',
+    tellDay: 'Raconte la journée', tellDayS: 'Appuie sur le micro et dis ce que vous avez fait : ce qui est monté ou démonté, les problèmes, ce qui reste à faire.', tellDayPh: 'Ce que vous avez fait aujourd’hui…', dictateBig: '🎤 Appuie et parle', translatedFr: 'Traduit en français pour le bureau',
     hello: 'Bonjour {name} 👋', myProjects: 'Mes chantiers', noProjects: 'Aucun chantier pour le moment.', askBoss: 'Si tu attends un chantier, appelle ton responsable.',
     onSite: 'En cours', installation: 'Installation', dismantling: 'Démontage', toFix: '⚠ Journée à corriger',
     btnInfo: 'Infos', btnInfoS: 'Adresse, contacts, planning', btnPlans: 'Plans', btnBriefing: 'Briefing', btnDay: 'Remplir la journée', btnDayS: 'Tâches, gars, heures', btnDone: 'Tâches réalisées', btnDoneS: 'Les journées déjà remplies',
@@ -226,6 +229,9 @@ const I18N = {
     photoFail: 'Photo non envoyée (réseau ?)', micNo: 'Dictée non disponible sur ce téléphone : utilise le micro du clavier.',
   },
   en: {
+    wholeDay: '⚡ Whole day as one task', wholeDayS: 'A single line for the whole day: just say what you did.', orDetail: 'or task by task:',
+    g_installation: 'Installation (whole day)', g_dismantling: 'Dismantling (whole day)', g_intervention: 'On-site intervention (whole day)',
+    tellDay: 'Tell us about the day', tellDayS: 'Tap the microphone and say what you did: what was built or dismantled, problems, what is left to do.', tellDayPh: 'What you did today…', dictateBig: '🎤 Tap and speak', translatedFr: 'Translated into French for the office',
     hello: 'Hello {name} 👋', myProjects: 'My jobs', noProjects: 'No job for now.', askBoss: 'If you are expecting a job, call your manager.',
     onSite: 'Ongoing', installation: 'Installation', dismantling: 'Dismantling', toFix: '⚠ Day to correct',
     btnInfo: 'Info', btnInfoS: 'Address, contacts, schedule', btnPlans: 'Drawings', btnBriefing: 'Briefing', btnDay: 'Fill in the day', btnDayS: 'Tasks, crew, hours', btnDone: 'Work done', btnDoneS: 'Days already filled in',
@@ -252,6 +258,9 @@ const I18N = {
     photoFail: 'Photo not sent (network?)', micNo: 'Dictation not available on this phone: use the keyboard microphone.',
   },
   nl: {
+    wholeDay: '⚡ Volledige dag in één taak', wholeDayS: 'Eén lijn voor de hele dag: vertel gewoon wat jullie gedaan hebben.', orDetail: 'of taak per taak:',
+    g_installation: 'Opbouw (volledige dag)', g_dismantling: 'Afbraak (volledige dag)', g_intervention: 'Interventie ter plaatse (volledige dag)',
+    tellDay: 'Vertel over de dag', tellDayS: 'Tik op de microfoon en zeg wat jullie gedaan hebben: wat opgebouwd of afgebroken is, problemen, wat nog moet gebeuren.', tellDayPh: 'Wat jullie vandaag gedaan hebben…', dictateBig: '🎤 Tik en spreek', translatedFr: 'Vertaald in het Frans voor het kantoor',
     hello: 'Hallo {name} 👋', myProjects: 'Mijn werven', noProjects: 'Voorlopig geen werf.', askBoss: 'Verwacht je een werf? Bel je verantwoordelijke.',
     onSite: 'Bezig', installation: 'Opbouw', dismantling: 'Afbraak', toFix: '⚠ Dag te verbeteren',
     btnInfo: 'Info', btnInfoS: 'Adres, contacten, planning', btnPlans: 'Plannen', btnBriefing: 'Briefing', btnDay: 'Dag invullen', btnDayS: 'Taken, mannen, uren', btnDone: 'Uitgevoerde taken', btnDoneS: 'Reeds ingevulde dagen',
@@ -278,26 +287,29 @@ const I18N = {
     photoFail: 'Foto niet verstuurd (netwerk?)', micNo: 'Dicteren niet beschikbaar op deze telefoon: gebruik de microfoon van het toetsenbord.',
   },
   pl: {
+    wholeDay: '⚡ Cały dzień jako jedno zadanie', wholeDayS: 'Jedna linia na cały dzień: po prostu powiedz, co zrobiliście.', orDetail: 'albo zadanie po zadaniu:',
+    g_installation: 'Montaż (cały dzień)', g_dismantling: 'Demontaż (cały dzień)', g_intervention: 'Interwencja na miejscu (cały dzień)',
+    tellDay: 'Opowiedz o dniu', tellDayS: 'Dotknij mikrofonu i powiedz, co zrobiliście: co zostało zmontowane lub zdemontowane, problemy, co zostało do zrobienia.', tellDayPh: 'Co zrobiliście dzisiaj…', dictateBig: '🎤 Dotknij i mów', translatedFr: 'Przetłumaczone na francuski dla biura',
     hello: 'Cześć {name} 👋', myProjects: 'Moje budowy', noProjects: 'Na razie brak budowy.', askBoss: 'Jeśli czekasz na budowę, zadzwoń do kierownika.',
     onSite: 'W toku', installation: 'Montaż', dismantling: 'Demontaż', toFix: '⚠ Dzień do poprawy',
     btnInfo: 'Informacje', btnInfoS: 'Adres, kontakty, harmonogram', btnPlans: 'Plany', btnBriefing: 'Briefing', btnDay: 'Wypełnij dzień', btnDayS: 'Zadania, ludzie, godziny', btnDone: 'Wykonane zadania', btnDoneS: 'Już wypełnione dni',
-    docs: '{n} dokument(y)', noDocs: 'Brak dokumentów.',
+    docs: (v) => plPlural(v.n, 'dokument', 'dokumenty', 'dokumentów'), noDocs: 'Brak dokumentów.',
     address: 'Adres budowy', route: 'Trasa', contacts: 'Kontakty', planning: 'Harmonogram', myStay: 'Mój pobyt', hotel: 'Hotel', documents: 'Dokumenty', onSiteFrom: 'Na miejscu', travelOut: 'Wyjazd', travelBack: 'Powrót',
     role_site_manager: 'Kierownik budowy', role_crew_lead: 'Brygadzista', role_technical_manager: 'Technical manager', role_sales_engineer: 'Sales', role_project_manager: 'Project manager',
     who: 'Kto był dzisiaj?', whoS: 'Dotknij osobę, aby zaznaczyć / odznaczyć.', addPerson: '＋ Ktoś inny', personName: 'Imię i nazwisko', add: 'Dodaj',
-    tasksOfDay: 'Zadania dnia', addTask: '＋ Dodaj zadanie', noTasksYet: 'Brak zadań: dotknij « Dodaj zadanie ».',
+    tasksOfDay: 'Zadania dnia', addTask: '＋ Dodaj zadanie', noTasksYet: 'Brak zadań: dotknij „Dodaj zadanie”.',
     plannedToday: 'Zaplanowane na dziś', otherTasks: 'Inne zadania budowy', taskList: 'Lista zadań', somethingElse: '✏️ Coś innego (wpiszę)', typeTask: 'Wpisz, co zostało zrobione', search: 'Szukaj zadania',
     men: 'Liczba ludzi', duration: 'Czas zadania', hours: 'h', quantities: 'Ile?', quantitiesS: 'Tylko jeśli da się policzyć. Inaczej zostaw 0.', taskDone: 'Zadanie zakończone', comment: 'Komentarz', commentPh: 'Co trzeba wiedzieć (opcjonalnie)', dictate: '🎤 Dyktuj', stop: '⏹ Stop', photo: '📷 Zdjęcie', removeLine: '🗑 Usuń to zadanie', ok: 'OK', cancel: 'Anuluj',
-    total: 'Razem w ciągu dnia', manHours: 'roboczogodziny', menXh: '{w} os. × {h} h',
+    total: 'Razem za dzień', manHours: 'roboczogodziny', menXh: '{w} os. × {h} h',
     dayComment: 'Uwaga dla kierownika (opcjonalnie)',
     send: '📤 Wyślij do zatwierdzenia', sendAgain: '📤 Wyślij ponownie', confirmSend: 'Wysłać dzień do kierownika?', sentOk: 'Wysłano ✅',
     st_draft: 'Wersja robocza', st_submitted: 'Wysłano — czeka', st_returned: 'Do poprawy', st_validated: 'Zatwierdzono ✅', st_validating: 'W trakcie zatwierdzania',
     returnedMsg: 'Wiadomość od kierownika:', validatedMsg: 'Ten dzień jest zatwierdzony: nie można go już zmienić.', submittedMsg: 'Wysłano do kierownika. Możesz jeszcze poprawić, dopóki nie zostanie zatwierdzony.',
     savedPhone: '💾 Zapisano w telefonie', savedServer: '✓ Zapisano', offline: '📵 Brak sieci — zapisano w telefonie, zostanie wysłane jak najszybciej', sending: 'Wysyłanie…', pendingSend: '📵 Zostanie wysłane, gdy wróci sieć',
-    noHistory: 'Brak wypełnionych dni.', tasksN: '{n} zadań', open: 'Otwórz',
+    noHistory: 'Brak wypełnionych dni.', tasksN: (v) => plPlural(v.n, 'zadanie', 'zadania', 'zadań'), open: 'Otwórz',
     phone: 'Twój numer telefonu', code: 'Twój kod (4 cyfry)', enter: 'Wejdź', vemAccount: 'Mam konto VEM (e-mail)', phoneAccount: 'Wróć do telefonu + kodu', email: 'E-mail', password: 'Hasło', forgot: 'Zapomniałeś kodu? Poproś kierownika o nowy link.',
     welcome: 'Witaj {name}!', chooseLang: 'Wybierz język', chooseCode: 'Wybierz kod z 4 cyfr', chooseCodeS: 'Użyjesz go do ponownego logowania, razem z numerem telefonu.', confirmCode: 'Wpisz kod jeszcze raz', codesDiffer: 'Kody nie są takie same. Spróbuj ponownie.',
-    installTitle: '📌 Dodaj VEM Chantier do ekranu głównego', installIos: 'Dotknij ⬆️ « Udostępnij » na dole, potem « Do ekranu początkowego ».', installAndroid: 'Dotknij ⋮ w prawym górnym rogu, potem « Dodaj do ekranu głównego ».', installBtn: 'Zainstaluj', gotIt: 'Rozumiem',
+    installTitle: '📌 Dodaj VEM Chantier do ekranu głównego', installIos: 'Dotknij ⬆️ „Udostępnij” na dole, potem „Do ekranu początkowego”.', installAndroid: 'Dotknij ⋮ w prawym górnym rogu, potem „Dodaj do ekranu głównego”.', installBtn: 'Zainstaluj', gotIt: 'Rozumiem',
     logout: 'Wyloguj', refresh: '↻ Odśwież', back: 'Wstecz',
     e_PIN_WEAK: 'Kod zbyt prosty (1234, 0000…). Wybierz inny.', e_PIN_FORMAT: 'Kod musi mieć 4 cyfry.', e_LOGIN_FAILED: 'Zły numer lub kod.', e_LOCKED: 'Za dużo prób. Poczekaj 15 minut lub poproś o nowy link.',
     e_NO_ACCESS: 'Nie masz już dostępu do tej budowy.', e_NOT_CREW_LEAD: 'Tylko dla brygadzisty.', e_FUTURE_DATE: 'Nie można wypełnić dnia w przyszłości.', e_ALREADY_VALIDATED: 'Ten dzień jest już zatwierdzony.', e_NO_LINES: 'Dodaj co najmniej jedno zadanie.', e_network: 'Brak sieci.', e_generic: 'Błąd', e_SERVER_BUSY: 'Serwer nie odpowiada prawidłowo. Spróbuj za minutę; jeśli to się powtarza, powiadom kierownika.',
@@ -327,8 +339,14 @@ function guessLang() {
   const n = (navigator.language || 'fr').slice(0, 2).toLowerCase();
   return I18N[n] ? n : 'fr';
 }
+/** Polonais : 1 zadanie, 2–4 zadania (sauf 12–14), 5+ zadań. */
+function plPlural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  return `${n} ${n === 1 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many}`;
+}
 function t(key, vars) {
   let s = (I18N[S.lang] && I18N[S.lang][key]) || I18N.fr[key] || key;
+  if (typeof s === 'function') return s(vars || {});
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.split('{' + k + '}').join(v);
   return s;
 }
@@ -728,8 +746,8 @@ async function loadDay(pid, date) {
   }
   // le brouillon du téléphone gagne s'il n'a pas encore été envoyé au serveur
   let day;
-  if (local && local.dirty && (!server || server.status !== 'validated')) day = { ...local, status: server ? server.status : local.status || 'draft', returnComment: server ? server.returnComment : local.returnComment };
-  else if (server) day = { projectId: pid, date, present: server.present, lines: server.lines, comment: server.comment, status: server.status, returnComment: server.returnComment, dirty: false };
+  if (local && local.dirty && (!server || server.status !== 'validated')) day = { ...local, status: server ? server.status : local.status || 'draft', returnComment: server ? server.returnComment : local.returnComment, returnCommentTr: server ? server.returnCommentTr : local.returnCommentTr };
+  else if (server) day = { projectId: pid, date, present: server.present, lines: server.lines, comment: server.comment, status: server.status, returnComment: server.returnComment, returnCommentTr: server.returnCommentTr, dirty: false };
   else day = { projectId: pid, date, present: (crew || []).map((c) => ({ userId: c.userId, name: c.name })), lines: [], comment: '', status: 'draft', dirty: false, fresh: true };
   day.crew = crew || [];
   day.phase = phase;
@@ -750,7 +768,7 @@ function touchDay() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => pushDay(false), 1500);
 }
-const stripDay = (d) => ({ projectId: d.projectId, date: d.date, present: d.present, lines: d.lines, comment: d.comment, status: d.status, returnComment: d.returnComment, dirty: d.dirty, submitPending: d.submitPending || false });
+const stripDay = (d) => ({ projectId: d.projectId, date: d.date, present: d.present, lines: d.lines, comment: d.comment, status: d.status, returnComment: d.returnComment, returnCommentTr: d.returnCommentTr, dirty: d.dirty, submitPending: d.submitPending || false });
 function setStatus(txt) { const el = $('#daystatus'); if (el) el.textContent = txt; }
 
 async function pushDay(submit) {
@@ -760,7 +778,7 @@ async function pushDay(submit) {
   try {
     const s = await api('PUT', `/chantier/projects/${d.projectId}/timesheets/${d.date}`, body);
     if (S.day === d) {
-      d.status = s.status; d.lines = s.lines; d.dirty = false; d.submitPending = false; d.returnComment = s.returnComment;
+      d.status = s.status; d.lines = s.lines; d.dirty = false; d.submitPending = false; d.returnComment = s.returnComment; d.returnCommentTr = s.returnCommentTr;
       LS.set(draftKey(d.projectId, d.date), stripDay(d));
       setStatus(t('savedServer'));
     }
@@ -821,7 +839,7 @@ function viewDay() {
       <div class="d">${esc(fmtDate(d.date, { weekday: 'long', day: 'numeric', month: 'long' }))}<small><span class="pill ${st === 'validated' ? 'green' : st === 'returned' ? 'amber' : st === 'submitted' ? 'blue' : 'grey'}">${esc(t('st_' + st))}</span></small></div>
       <button onclick="switchDay(1)" ${d.date >= today ? 'disabled' : ''} aria-label="next">›</button>
     </div>
-    ${st === 'returned' && d.returnComment ? `<div class="banner amber"><b>${esc(t('returnedMsg'))}</b><br>${esc(d.returnComment)}</div>` : ''}
+    ${st === 'returned' && d.returnComment ? `<div class="banner amber"><b>${esc(t('returnedMsg'))}</b><br>${esc(d.returnCommentTr || d.returnComment)}${d.returnCommentTr ? `<div class="small" style="margin-top:6px;opacity:.75">🇫🇷 ${esc(d.returnComment)}</div>` : ''}</div>` : ''}
     ${st === 'validated' ? `<div class="banner green">${esc(t('validatedMsg'))}</div>` : ''}
     ${st === 'submitted' ? `<div class="banner blue">${esc(t('submittedMsg'))}</div>` : ''}
     ${d.submitPending ? `<div class="banner amber">${esc(t('pendingSend'))}</div>` : ''}
@@ -835,8 +853,8 @@ function viewDay() {
     </div>
 
     <h2>🛠️ ${esc(t('tasksOfDay'))}</h2>
-    ${d.lines.map((l, i) => `<button class="line" onclick="editLine(${i})"><span class="grow"><span class="t" style="display:block">${esc(l.title)}</span><span class="s" style="display:block">${lineSummary(l)}</span></span><span class="chev" style="font-size:26px;color:var(--ink3)">›</span></button>`).join('')
-      || `<div class="card muted center small">${esc(t('noTasksYet'))}</div>`}
+    ${d.lines.map((l, i) => `<button class="line" onclick="editLine(${i})"><span class="grow"><span class="t" style="display:block">${l.general ? '⚡ ' : ''}${esc(lineTitle(l))}</span><span class="s" style="display:block">${lineSummary(l)}</span></span><span class="chev" style="font-size:26px;color:var(--ink3)">›</span></button>`).join('')
+      || (ed ? generalBlock(false) + `<p class="small muted" style="margin:4px 4px 0">${esc(t('orDetail'))}</p>` : `<div class="card muted center small">${esc(t('noTasksYet'))}</div>`)}
     ${ed ? `<button class="big ghost" onclick="pickTask()">${esc(t('addTask'))}</button>` : ''}
     <div class="total"><span>${esc(t('total'))}</span><span><b>${fmtNum(manHours)}</b> ${esc(t('manHours'))}</span></div>
 
@@ -892,6 +910,25 @@ function markProjectFixed(pid) {
   if (p) p.toFix = false;
 }
 
+// journée complète en une tâche (titre français pour le bureau, affiché dans la langue de l'app)
+const GENERAL_KINDS = [['installation', '🏗️'], ['dismantling', '📦'], ['intervention', '🔧']];
+const GENERAL_FR = { installation: 'Installation (journée complète)', dismantling: 'Démontage (journée complète)', intervention: 'Intervention sur site (journée complète)' };
+const lineTitle = (l) => (l.general ? t('g_' + l.general) : l.title);
+function generalBlock(fromPick) {
+  return `<div class="card" style="border:2px solid var(--green);margin-bottom:12px">
+    <div style="font-weight:800;font-size:18px">${esc(t('wholeDay'))}</div>
+    <p class="small muted" style="margin:4px 0 10px">${esc(t('wholeDayS'))}</p>
+    ${GENERAL_KINDS.map(([k, ic]) => `<button class="big" style="margin:8px 0 0" onclick="chooseGeneral('${k}',${fromPick ? 'true' : 'false'})"><span style="font-size:28px">${ic}</span>${esc(t('g_' + k))}</button>`).join('')}
+  </div>`;
+}
+function chooseGeneral(kind, fromPick) {
+  const line = newLine({ title: GENERAL_FR[kind], general: kind });
+  delete line.quantityFields;
+  if (fromPick) S.stack.pop();
+  S.stack.push({ name: 'line', line, isNew: true });
+  render();
+}
+
 // choisir une tâche
 function pickTask() {
   const key = S.project.id + S.day.date;
@@ -910,6 +947,7 @@ function viewPick() {
   const tpls = (data.templates || []).filter(match);
   return topBar(t('addTask').replace('＋ ', ''), S.project.name, true) + `<main>
     <div class="search"><span>🔎</span><input class="input" id="pq" placeholder="${esc(t('search'))}" value="${esc(c.q || '')}" oninput="cur().q=this.value;rerenderPick()"></div>
+    ${c.q ? '' : generalBlock(true)}
     <div id="picklist">
     ${planned.length ? `<div class="sec">📌 ${esc(t('plannedToday'))}</div>${planned.map((x) => opt(x, 'task')).join('')}` : ''}
     ${others.length ? `<div class="sec">${esc(t('otherTasks'))}</div>${others.map((x) => opt(x, 'task')).join('')}` : ''}
@@ -959,7 +997,21 @@ function viewLine() {
   const c = cur();
   const l = c.line;
   const ed = editable();
-  return topBar(l.title, S.project.name, true) + `<main>
+  const g = !!l.general;
+  // journée complète : on raconte d'abord (dictée en grand), puis gars et durée
+  const commentBlock = `
+    <label class="lbl">💬 ${esc(g ? t('tellDay') : t('comment'))}</label>
+    ${g && ed ? `<p class="small muted" style="margin:-4px 2px 8px">${esc(t('tellDayS'))}</p>` : ''}
+    ${g && ed ? `<button id="micbtn" class="big green" style="margin:0 0 10px;justify-content:center" onclick="dictate()">${esc(t('dictateBig'))}</button>` : ''}
+    <textarea class="input" id="lcomment" placeholder="${esc(g ? t('tellDayPh') : t('commentPh'))}" ${ed ? '' : 'disabled'} style="${g ? 'min-height:170px' : ''}" oninput="cur().line.comment=this.value;cur().line.commentLang=S.lang">${esc(l.comment || '')}</textarea>
+    ${l.commentFr && l.commentLang && l.commentLang !== 'fr' && l.commentFr !== l.comment ? `<div class="small muted" style="margin-top:6px">🇫🇷 ${esc(t('translatedFr'))} : ${esc(l.commentFr)}</div>` : ''}
+    ${ed ? `<div class="tools">
+      ${g ? '' : `<button id="micbtn" onclick="dictate()">${esc(t('dictate'))}</button>`}
+      <label>${esc(t('photo'))}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="addPhoto(this)"></label>
+    </div>` : ''}
+    <div class="photos">${(l.photos || []).map((ph, k) => `<div class="ph"><img src="${esc(ph.url)}" alt="">${ed ? `<button onclick="cur().line.photos.splice(${k},1);render()">✕</button>` : ''}</div>`).join('')}<span id="photoBusy"></span></div>`;
+  return topBar(lineTitle(l), S.project.name, true) + `<main>
+    ${g ? commentBlock : ''}
     <label class="lbl">👷 ${esc(t('men'))}</label>
     <div class="stepper"><button ${ed ? '' : 'disabled'} onclick="lineSet('workers',-1)">−</button><div class="v" id="lv-workers">${l.workers}</div><button ${ed ? '' : 'disabled'} onclick="lineSet('workers',1)">＋</button></div>
 
@@ -971,16 +1023,9 @@ function viewLine() {
       <div class="card" style="padding:6px 14px">${l.quantities.map((q, k) => `<div class="qrow"><div class="ql">${esc(q.label)}${q.unit ? ` <small class="muted">(${esc(q.unit)})</small>` : ''}</div>
         <div class="stepper"><button ${ed ? '' : 'disabled'} onclick="qtySet(${k},-1)">−</button><div class="v" id="lq-${k}">${q.qty}</div><button ${ed ? '' : 'disabled'} onclick="qtySet(${k},1)">＋</button></div></div>`).join('')}</div>` : ''}
 
-    ${l.taskId || l.newTask ? `<div style="margin-top:16px"><button class="toggle ${l.done ? 'on' : ''}" ${ed ? `onclick="cur().line.done=!cur().line.done;render()"` : 'disabled'}><span class="box">${l.done ? '✓' : ''}</span>${esc(t('taskDone'))}</button></div>` : ''}
+    ${!g && (l.taskId || l.newTask) ? `<div style="margin-top:16px"><button class="toggle ${l.done ? 'on' : ''}" ${ed ? `onclick="cur().line.done=!cur().line.done;render()"` : 'disabled'}><span class="box">${l.done ? '✓' : ''}</span>${esc(t('taskDone'))}</button></div>` : ''}
 
-    <label class="lbl">💬 ${esc(t('comment'))}</label>
-    <textarea class="input" id="lcomment" placeholder="${esc(t('commentPh'))}" ${ed ? '' : 'disabled'} oninput="cur().line.comment=this.value;cur().line.commentLang=S.lang">${esc(l.comment || '')}</textarea>
-    ${l.commentFr && l.commentLang && l.commentLang !== S.lang && S.lang === 'fr' ? `<div class="small muted" style="margin-top:6px">🇫🇷 ${esc(l.commentFr)}</div>` : ''}
-    ${ed ? `<div class="tools">
-      <button id="micbtn" onclick="dictate()">${esc(t('dictate'))}</button>
-      <label>${esc(t('photo'))}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="addPhoto(this)"></label>
-    </div>` : ''}
-    <div class="photos">${(l.photos || []).map((ph, k) => `<div class="ph"><img src="${esc(ph.url)}" alt="">${ed ? `<button onclick="cur().line.photos.splice(${k},1);render()">✕</button>` : ''}</div>`).join('')}<span id="photoBusy"></span></div>
+    ${g ? '' : commentBlock}
 
     ${ed && !c.isNew ? `<button class="big ghost" style="margin-top:22px;color:var(--red-d)" onclick="removeLine()">${esc(t('removeLine'))}</button>` : ''}
   </main>
@@ -1063,7 +1108,8 @@ function dictate() {
     if (box) box.value = v;
     if (cur().line) { cur().line.comment = v; cur().line.commentLang = S.lang; }
   };
-  rec.onend = () => { rec = null; const b = $('#micbtn'); if (b) { b.textContent = t('dictate'); b.classList.remove('rec'); } };
+  const idle = () => (cur().line && cur().line.general ? t('dictateBig') : t('dictate'));
+  rec.onend = () => { rec = null; const b = $('#micbtn'); if (b) { b.textContent = idle(); b.classList.remove('rec'); } };
   rec.onerror = () => { stopDictation(); };
   try { rec.start(); } catch { rec = null; return; }
   const b = $('#micbtn'); if (b) { b.textContent = t('stop'); b.classList.add('rec'); }
@@ -1084,7 +1130,7 @@ function viewHistory() {
       <span class="grow"><span class="t" style="display:block">${esc(fmtDate(s.workDate, { weekday: 'long', day: 'numeric', month: 'long' }))}</span>
       <span class="s" style="display:block">${esc(t('tasksN', { n: s.totals.tasks }))} · <b>${fmtNum(s.totals.manHours)}</b> ${esc(t('manHours'))}</span>
       <span style="display:block;margin-top:6px"><span class="pill ${s.status === 'validated' ? 'green' : s.status === 'returned' ? 'amber' : s.status === 'submitted' ? 'blue' : 'grey'}">${esc(t('st_' + s.status))}</span></span>
-      ${s.lines.slice(0, 4).map((l) => `<span class="s" style="display:block">• ${esc(l.title)} — ${esc(t('menXh', { w: l.workers, h: fmtNum(l.hours) }))}${(l.quantities || []).filter((q) => q.qty > 0).map((q) => ' · ' + q.qty + ' ' + esc(q.label)).join('')}</span>`).join('')}
+      ${s.lines.slice(0, 4).map((l) => `<span class="s" style="display:block">• ${esc(lineTitle(l))} — ${esc(t('menXh', { w: l.workers, h: fmtNum(l.hours) }))}${(l.quantities || []).filter((q) => q.qty > 0).map((q) => ' · ' + q.qty + ' ' + esc(q.label)).join('')}</span>`).join('')}
       </span><span class="chev" style="font-size:26px;color:var(--ink3)">›</span></button>`).join('')
       || `<div class="card muted center">${esc(t('noHistory'))}</div>`}
   </main>`;

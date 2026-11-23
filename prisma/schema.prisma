@@ -567,6 +567,8 @@ model DailyReportEntry {
   reportId    String      @map("report_id")
   entryTime   String?     @map("entry_time")
   description String
+  // Entrée reprise d'une feuille de temps VEM Chantier validée (remplacée si la feuille est revalidée)
+  sourceTimesheetId String? @map("source_timesheet_id")
   createdAt   DateTime    @default(now()) @map("created_at")
   report      DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
@@ -1590,10 +1592,13 @@ model SiteTimesheet {
   present       Json      @default("[]")         // [{ userId?, name }]
   lines         Json      @default("[]")         // [{ id, taskId?, taskTemplateId?, title, hours, workers, quantities, comment, commentLang, commentFr, photos, done, newTask }]
   comment       String?
+  commentLang   String?   @map("comment_lang")      // langue de la remarque du jour
+  commentFr     String?   @map("comment_fr")        // remarque traduite en français pour le bureau
   submittedAt   DateTime? @map("submitted_at")
   validatedById String?   @map("validated_by")
   validatedAt   DateTime? @map("validated_at")
   returnComment String?   @map("return_comment")
+  returnCommentTr String? @map("return_comment_tr") // message « à corriger » traduit dans la langue du chef d'équipe
   dailyReportId String?   @map("daily_report_id")
   history       Json      @default("[]")
   createdAt     DateTime  @default(now()) @map("created_at")

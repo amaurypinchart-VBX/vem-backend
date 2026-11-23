@@ -9,7 +9,7 @@ import { logger } from '../utils/logger';
 import { z } from 'zod';
 import { callClaudeJSON } from './aiService';
 import {
-  Lang, TimesheetLine, Present, phaseOn, quantitiesText, cleanQuantityFields, QuantityField, FilledRole,
+  Lang, TimesheetLine, Present, phaseOn, quantitiesText, cleanQuantityFields, QuantityField, FilledRole, journalText,
 } from './chantierLogic';
 
 const db = prisma as any; // modèles ajoutés (client régénéré au build Docker)
@@ -59,24 +59,35 @@ export async function templatesWithFields(): Promise<Array<{ id: string; title: 
 // ── traduction des commentaires en français (pour le bureau) ─────────────────
 const LANG_NAMES: Record<Lang, string> = { fr: 'français', en: 'anglais', nl: 'néerlandais', pl: 'polonais' };
 
+/**
+ * Traduit de courts textes de chantier vers une langue (polonais, anglais, néerlandais ↔ français).
+ * Rend un tableau de même longueur : null quand c'est impossible (pas de clé IA, erreur) — le texte d'origine reste alors affiché.
+ */
+export async function translateSiteTexts(items: Array<{ text: string; from: Lang }>, to: Lang): Promise<Array<string | null>> {
+  const out: Array<string | null> = items.map(() => null);
+  const todo = items.map((x, i) => ({ i, lang: LANG_NAMES[x.from], text: String(x.text || '').trim() })).filter((x) => x.text && items[x.i].from !== to);
+  if (!todo.length || !process.env.ANTHROPIC_API_KEY) return out;
+  try {
+    const r = await callClaudeJSON({
+      schema: z.object({ translations: z.array(z.object({ i: z.number(), text: z.string() })) }),
+      system: `Tu traduis de courts textes de chantier (montage et démontage de structures modulaires Viewbox : box, vitres, panneaux, portes, toiture, pieds, vérins) en ${LANG_NAMES[to]} simple, comme un chef de chantier les écrirait. Les textes peuvent venir d'une dictée vocale (sans ponctuation, mots mal reconnus) : garde le sens, corrige seulement la ponctuation. Ne rien ajouter, ne rien résumer, garder les nombres, les noms et les références (VBX-01…) tels quels. Réponds uniquement en JSON {"translations":[{"i":0,"text":"..."}]}.`,
+      messages: [{ role: 'user', content: JSON.stringify(todo) }],
+      maxTokens: 6000,
+      timeoutMs: 45000,
+    });
+    for (const t of r?.translations || []) if (Number.isInteger(t.i) && t.i >= 0 && t.i < out.length && t.text) out[t.i] = String(t.text).slice(0, 3000);
+  } catch (e: any) {
+    logger.warn(`[chantier] traduction impossible : ${e?.message || e}`);
+  }
+  return out;
+}
+
 /** Traduit en français les commentaires qui ne le sont pas encore. Sans clé IA ou en cas d'erreur : laissés tels quels. */
 export async function translateComments(lines: TimesheetLine[]): Promise<TimesheetLine[]> {
   const todo = lines.filter((l) => l.comment && !l.commentFr && l.commentLang && l.commentLang !== 'fr');
-  if (!todo.length || !process.env.ANTHROPIC_API_KEY) return lines;
-  try {
-    const items = todo.map((l, i) => ({ i, lang: LANG_NAMES[l.commentLang as Lang], text: l.comment }));
-    const out = await callClaudeJSON({
-      schema: z.object({ translations: z.array(z.object({ i: z.number(), fr: z.string() })) }),
-      system: 'Tu traduis de courts commentaires de chantier (montage de structures modulaires) en français simple. Ne rien ajouter, ne rien résumer. Réponds uniquement en JSON {"translations":[{"i":0,"fr":"..."}]}.',
-      messages: [{ role: 'user', content: JSON.stringify(items) }],
-      maxTokens: 4000,
-      timeoutMs: 30000,
-    });
-    const byI = new Map((out?.translations || []).map((t) => [t.i, String(t.fr || '').slice(0, 3000)]));
-    todo.forEach((l, i) => { const fr = byI.get(i); if (fr) l.commentFr = fr; });
-  } catch (e: any) {
-    logger.warn(`[chantier] traduction des commentaires impossible : ${e?.message || e}`);
-  }
+  if (!todo.length) return lines;
+  const fr = await translateSiteTexts(todo.map((l) => ({ text: l.comment || '', from: l.commentLang as Lang })), 'fr');
+  todo.forEach((l, i) => { if (fr[i]) l.commentFr = fr[i]; });
   return lines;
 }
 
@@ -114,7 +125,7 @@ export async function validatorsToNotify(projectId: string, filledRole: FilledRo
  * Rend les lignes (avec l'id des tâches créées) et l'id du rapport.
  */
 export async function syncToDailyReport(sheet: {
-  id: string; projectId: string; workDate: string; filledById: string; present: Present[]; lines: TimesheetLine[]; comment?: string | null; dailyReportId?: string | null;
+  id: string; projectId: string; workDate: string; filledById: string; present: Present[]; lines: TimesheetLine[]; comment?: string | null; commentFr?: string | null; dailyReportId?: string | null;
 }, validatorId: string): Promise<{ reportId: string; lines: TimesheetLine[] }> {
   const project = await prisma.project.findUnique({ where: { id: sheet.projectId } });
   if (!project) throw new Error('Projet introuvable');
@@ -143,6 +154,7 @@ export async function syncToDailyReport(sheet: {
       lines.push(line);
     }
 
+    const dayNote = String(sheet.commentFr || sheet.comment || '').trim();
     let report = sheet.dailyReportId
       ? await t.dailyReport.findFirst({ where: { id: sheet.dailyReportId, projectId: sheet.projectId } })
       : null;
@@ -156,7 +168,7 @@ export async function syncToDailyReport(sheet: {
       report = await t.dailyReport.create({
         data: {
           projectId: sheet.projectId, reportDate: day, createdById: sheet.filledById, phase,
-          workersPresent: sheet.present.length, generalNotes: sheet.comment || null,
+          workersPresent: sheet.present.length, generalNotes: dayNote || null,
         },
       });
     } else {
@@ -164,6 +176,7 @@ export async function syncToDailyReport(sheet: {
       const fill: any = {};
       if (!report.workersPresent && sheet.present.length) fill.workersPresent = sheet.present.length;
       if (!report.phase) fill.phase = phase;
+      if (!report.generalNotes && dayNote) fill.generalNotes = dayNote;
       if (Object.keys(fill).length) await t.dailyReport.update({ where: { id: report.id }, data: fill });
     }
 
@@ -178,6 +191,13 @@ export async function syncToDailyReport(sheet: {
           sourceTimesheetId: sheet.id, sortOrder: order++,
         },
       });
+    }
+
+    // ce que l'équipe a raconté (commentaires des lignes, en français) → journal du rapport ; remplacé à chaque validation
+    await t.dailyReportEntry.deleteMany({ where: { reportId: report.id, sourceTimesheetId: sheet.id } });
+    for (const l of lines) {
+      const text = journalText(l);
+      if (text) await t.dailyReportEntry.create({ data: { reportId: report.id, entryTime: null, description: text.slice(0, 4000), sourceTimesheetId: sheet.id } });
     }
 
     // photos : ajoutées une fois (même URL = déjà là)

@@ -74,6 +74,16 @@ eq('tâche créée gardée', L.cleanLines([{ id: 'b', title: 'Déchargement', ne
 eq('total', L.sheetTotals([{ id: '1', title: 'a', hours: 7.5, workers: 4 }, { id: '2', title: 'b', hours: 1, workers: 3 }]), { manHours: 33, hours: 8.5, tasks: 2 });
 eq('présents', L.cleanPresent([{ userId: 'u1', name: 'Jan' }, { userId: 'u1', name: 'Jan' }, { name: ' Intérim  X ' }, { name: 'intérim x' }, {}]), [{ userId: 'u1', name: 'Jan' }, { name: 'Intérim X' }]);
 
+// journée complète en une tâche : jamais une tâche du projet, titre français imposé
+const gen = L.cleanLines([{ id: 'g', general: 'dismantling', title: 'Demontaż', taskId: 't1', newTask: true, done: true, hours: 8, workers: 4, comment: 'Zdemontowaliśmy dach', commentLang: 'pl' }], [], 'pl')[0];
+eq('générale : titre FR', gen.title, 'Démontage (journée complète)');
+eq('générale : pas de tâche', [gen.general, gen.taskId, gen.newTask, gen.done], ['dismantling', null, false, false]);
+eq('générale : commentaire polonais gardé, à traduire', [gen.comment, gen.commentLang, gen.commentFr], ['Zdemontowaliśmy dach', 'pl', null]);
+eq('générale inconnue = ligne normale', L.cleanLines([{ id: 'x', general: 'autre', title: 'Câblage' }])[0].general, undefined);
+eq('journal : traduction', L.journalText({ ...gen, commentFr: 'Nous avons démonté le toit' }), 'Démontage (journée complète) : Nous avons démonté le toit');
+eq('journal : original sans traduction', L.journalText(gen), 'Démontage (journée complète) : Zdemontowaliśmy dach');
+eq('journal : rien sans commentaire', L.journalText({ ...gen, comment: '' }), null);
+
 // qui valide : le niveau juste au-dessus, jamais soi-même
 const v = (validatorRole: string, filledRole: L.FilledRole, isPSM = false, same = false) =>
   L.canValidate({ validatorId: same ? 'me' : 'v', validatorRole, filledById: 'me', filledRole, isProjectSiteManager: isPSM });
