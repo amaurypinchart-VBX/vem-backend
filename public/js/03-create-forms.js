@@ -84,6 +84,7 @@ async function onDailyPhaseChange(phase) {
     hours: 0,
     workers: 0,
   }));
+  if (typeof dailyEnsureQuantities === 'function') DAILY_TASK_HOURS.forEach(dailyEnsureQuantities);
   renderDailyTaskHoursGrid();
 }
 
@@ -115,7 +116,7 @@ function renderDailyTaskHoursGrid() {
         onchange="updateDailyTaskHour(${i},'workers',this.value)"
         style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
       <button onclick="removeDailyTaskHourRow(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;" title="Retirer">✕</button>
-    </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
+    </div>${typeof dailyQtyHtml === 'function' ? dailyQtyHtml(t, i, 'DAILY') : ''}`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
 }
 
 function updateDailyTaskHour(idx, field, value) {
@@ -520,8 +521,8 @@ async function createDailyReport(send=false) {
 
   const entries = DAILY_ENTRIES.map(e => ({ entryTime: e.time, description: e.text }));
   const taskHours = DAILY_TASK_HOURS
-    .filter(t => (t.hours || 0) > 0 || (t.workers || 0) > 0)
-    .map(t => ({ taskTemplateId: t.taskTemplateId || undefined, taskTitle: t.taskTitle, hours: t.hours || 0, workers: t.workers || 0 }));
+    .filter(t => (t.hours || 0) > 0 || (t.workers || 0) > 0 || (typeof dailyHasQty === 'function' && dailyHasQty(t)))
+    .map(t => typeof dailyRowPayload === 'function' ? dailyRowPayload(t) : ({ taskTemplateId: t.taskTemplateId || undefined, taskTitle: t.taskTitle, hours: t.hours || 0, workers: t.workers || 0 }));
 
   const res = await api('POST', '/daily-reports', {
     projectId, reportDate: date,

@@ -2,6 +2,15 @@
 
 Cahier des charges — A. Pinchart, 23.11.2026 (discussion + deux séries de réponses du même jour).
 
+## État — 23.11.2026 : phases I1, I2, I3 faites (Odoo = deuxième temps)
+
+- **App téléphone** : `/chantier` (`public/chantier.html`), FR / EN / NL / PL, gros boutons, connexion par lien + code à 4 chiffres, session de 90 jours, brouillons gardés sur le téléphone (hors réseau).
+- **Bureau** (VEM, fiche projet) : onglet **Équipe** › carte « 👷 VEM Chantier » (inviter, chef d'équipe, accès, nouveau lien, période) ; onglet **Fichiers** › menu « 👷 » sur chaque document (Plans / Briefing / Infos / non) ; onglet **Daily Reports** › carte « 📝 Feuilles de temps du chantier » (corriger, valider, renvoyer) ; **Réglages › templates** › « 🔢 Compteurs de quantités ».
+- La période d'accès s'applique à tout VEM pour les installateurs / ouvriers (pas seulement l'app).
+- Une feuille validée remplit le rapport journalier du jour (heures, gars, quantités, photos ; tâches ajoutées sur chantier créées dans le projet).
+- Tests : `npm run test:chantier` (logique) et `tests/chantier.api.mjs` (de bout en bout sur une base jetable).
+- Pas fait : import des tâches Odoo et export des feuilles de temps vers Odoo (§ 7, à voir avec l'intégrateur).
+
 ## 1. But
 
 Une petite application **pour les installateurs sur chantier** (ouvriers, intérimaires, indépendants), pensée pour des personnes qui ne sont pas à l'aise avec un téléphone :

@@ -97,6 +97,11 @@ model User {
   plansAccess  Boolean   @default(false) @map("plans_access")
   // Droits d'écriture donnés à un installateur / ouvrier : daily_reports, handover, checklists (src/middleware/access.ts)
   accessGrants String[]  @default([]) @map("access_grants")
+  // VEM Chantier (installateurs) : code à 4 chiffres (haché), essais ratés, blocage, langue de l'app
+  pinHash        String?   @map("pin_hash")
+  pinFailed      Int       @default(0) @map("pin_failed")
+  pinLockedUntil DateTime? @map("pin_locked_until")
+  lang           String?
   lastLogin    DateTime? @map("last_login")
   pushToken    String?   @map("push_token")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -206,6 +211,9 @@ model Project {
   sortOrder           Int           @default(0) @map("sort_order")
   technicalManagerId  String?       @map("technical_manager_id")
   createdById         String?       @map("created_by")
+  // VEM Chantier : jours d'accès des installateurs avant l'installation / après le démontage (null = réglage général, 14)
+  siteDaysBefore      Int?          @map("site_days_before")
+  siteDaysAfter       Int?          @map("site_days_after")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
@@ -327,6 +335,9 @@ model ProjectTeam {
   // Phase du projet sur laquelle ce membre intervient :
   // 'installation' = uniquement à l'install, 'dismantling' = uniquement au démontage, 'both' = les deux.
   phase     String   @default("both")
+  // VEM Chantier : chef d'équipe (remplit la feuille de temps de l'équipe) ; accès prolongé jusqu'au … (au-delà de la période du chantier)
+  crewLead    Boolean   @default(false) @map("crew_lead")
+  accessUntil DateTime? @map("access_until")
   createdAt DateTime @default(now()) @map("created_at")
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id])
@@ -367,6 +378,8 @@ model ProjectFile {
   fileType   String?  @map("file_type")
   fileSize   Int?     @map("file_size")
   category   String   @default("general")
+  // VEM Chantier : rubrique où les installateurs voient ce fichier — plans | briefing | info | none (null = automatique)
+  siteSection String? @map("site_section")
   sortOrder  Int      @default(0) @map("sort_order")
   createdAt  DateTime @default(now()) @map("created_at")
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -403,6 +416,8 @@ model Task {
   createdById    String?    @map("created_by")
   estimatedHours Float?     @map("estimated_hours")
   actualHours    Float?     @map("actual_hours")
+  // 'chantier' = créée par un chef d'équipe depuis VEM Chantier
+  source         String?
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
@@ -619,6 +634,10 @@ model DailyReportTaskHours {
   taskTitle      String   @map("task_title")
   hours          Float    @default(0)
   workers        Int      @default(0)
+  // Quantités faites (facultatif) : [{ key, label, unit, qty }] — compteurs du modèle de tâche
+  quantities     Json?
+  // Ligne reprise d'une feuille de temps VEM Chantier validée (remplacée si la feuille est revalidée)
+  sourceTimesheetId String? @map("source_timesheet_id")
   sortOrder      Int      @default(0) @map("sort_order")
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -824,6 +843,8 @@ model TaskTemplate {
   // Détermine dans quelle liste (Installation / Démontage) la tâche apparaît dans le
   // tableau heures/hommes des rapports journaliers.
   phase         String?
+  // Compteurs de quantités (facultatif) : [{ key, label: { fr, en, nl, pl }, unit }] — ex. « Viewbox », « Vitres »
+  quantityFields Json?       @map("quantity_fields")
   sortOrder     Int          @default(0)
   isActive      Boolean      @default(true)
   createdAt     DateTime     @default(now())
@@ -1538,4 +1559,45 @@ model PlanApprovalEvent {
 
   @@index([approvalId, at])
   @@map("plan_approval_events")
+}
+
+// ─── VEM Chantier (application des installateurs, /chantier) ───────────────
+// Lien d'invitation (WhatsApp / SMS / QR) : la personne choisit son code à 4 chiffres. Une seule utilisation.
+model ChantierInvite {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String    @map("user_id")
+  createdBy String?   @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+
+  @@index([userId])
+  @@map("chantier_invites")
+}
+
+// Feuille de temps d'une journée, remplie par un chef d'équipe (ou un site manager) pour son équipe.
+// Une feuille par chef d'équipe et par jour. Validée par le niveau au-dessus, puis reprise dans le rapport journalier.
+model SiteTimesheet {
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  workDate      String    @map("work_date")      // AAAA-MM-JJ
+  filledById    String    @map("filled_by")
+  filledRole    String    @map("filled_role")    // crew_lead | site_manager
+  status        String    @default("draft")      // draft | submitted | returned | validated
+  present       Json      @default("[]")         // [{ userId?, name }]
+  lines         Json      @default("[]")         // [{ id, taskId?, taskTemplateId?, title, hours, workers, quantities, comment, commentLang, commentFr, photos, done, newTask }]
+  comment       String?
+  submittedAt   DateTime? @map("submitted_at")
+  validatedById String?   @map("validated_by")
+  validatedAt   DateTime? @map("validated_at")
+  returnComment String?   @map("return_comment")
+  dailyReportId String?   @map("daily_report_id")
+  history       Json      @default("[]")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([projectId, workDate, filledById])
+  @@index([projectId])
+  @@map("site_timesheets")
 }

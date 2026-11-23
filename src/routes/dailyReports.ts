@@ -11,6 +11,21 @@ import {
   ATTACHMENT_MAX_BYTES, classifyFile, inspectPdf, storeAttachmentFile, checklistSnapshot, buildDailyReportPdf,
 } from '../services/dailyAttachments';
 import { prepareWhatsAppImport, draftDailyFromChat } from '../services/whatsappDaily';
+import { cleanQuantities } from '../services/chantierLogic';
+
+/** Ligne heures / gars (+ quantités facultatives, + feuille de temps d'origine) reçue du front. */
+function taskHourRow(t: any, i: number) {
+  const quantities = cleanQuantities(t?.quantities);
+  return {
+    taskTemplateId: t.taskTemplateId || null,
+    taskTitle: t.taskTitle,
+    hours: Number(t.hours) || 0,
+    workers: Number(t.workers) || 0,
+    ...(quantities ? { quantities } : {}),
+    ...(typeof t.sourceTimesheetId === 'string' && t.sourceTimesheetId ? { sourceTimesheetId: t.sourceTimesheetId } : {}),
+    sortOrder: i,
+  };
+}
 
 const router = Router();
 const db = prisma as any; // DailyReportAttachment : client typé régénéré au build Docker
@@ -136,13 +151,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
         reportDate,
         entries:   { create: entries },
         checklist: { create: checklist },
-        taskHours: { create: taskHours.map((t: any, i: number) => ({
-          taskTemplateId: t.taskTemplateId || null,
-          taskTitle: t.taskTitle,
-          hours: Number(t.hours) || 0,
-          workers: Number(t.workers) || 0,
-          sortOrder: i,
-        })) },
+        taskHours: { create: taskHours.map(taskHourRow) },
       },
       include: { entries: true, checklist: true, photos: true, taskHours: true },
     });
@@ -171,13 +180,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
     if (Array.isArray(entries)   && entries.length)   data.entries   = { create: entries };
     if (Array.isArray(checklist) && checklist.length) data.checklist = { create: checklist };
     if (Array.isArray(taskHours) && taskHours.length) {
-      data.taskHours = { create: taskHours.map((t: any, i: number) => ({
-        taskTemplateId: t.taskTemplateId || null,
-        taskTitle: t.taskTitle,
-        hours: Number(t.hours) || 0,
-        workers: Number(t.workers) || 0,
-        sortOrder: i,
-      })) };
+      data.taskHours = { create: taskHours.map(taskHourRow) };
     }
 
     const report = await prisma.dailyReport.update({

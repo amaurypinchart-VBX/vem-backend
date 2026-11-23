@@ -60,7 +60,7 @@ async function loadTemplatesPage() {
               <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;display:flex;justify-content:space-between;align-items:flex-start;">
                 <div style="flex:1;padding-right:6px;">
                   <div style="font-size:13px;font-weight:500;">${t.title}</div>
-                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}${t.phase?` · ${t.phase==='installation'?'🏗️ Installation':'🔨 Démontage'}`:''}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px;">⏱️ ${t.durationHours}h · ${t.priority}${t.phase?` · ${t.phase==='installation'?'🏗️ Installation':'🔨 Démontage'}`:''}${(t.quantityFields||[]).length?` · 🔢 ${(t.quantityFields||[]).map(f=>esc((f.label&&f.label.fr)||f.key)).join(', ')}`:''}</div>
                 </div>
                 <div style="display:flex;gap:4px;flex-shrink:0;">
                   <button class="btn btn-ghost btn-xs" onclick="editTemplate('${t.id}','${cat.id}','${t.title.replace(/'/g,"'")}','${t.priority}',${t.durationHours},'${t.phase||''}')">✏️</button>
@@ -105,12 +105,14 @@ function showNewTemplateModal(catId='') {
           <option value="dismantling">🔨 Démontage</option>
         </select>
       </div>
+      ${typeof chantierCountersBlock === 'function' ? chantierCountersBlock('nt-counters') : ''}
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
         <button class="btn btn-outline" onclick="this.closest('.overlay').remove()">Annuler</button>
         <button class="btn btn-primary" onclick="createTemplate(this.closest('.overlay'))">✅ Créer</button>
       </div>
     </div>`;
   document.body.appendChild(el);
+  if (typeof chantierCountersEditor === 'function') chantierCountersEditor('nt-counters', []);
   // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
@@ -124,6 +126,7 @@ async function createTemplate(overlay) {
     durationHours: parseFloat(document.getElementById('nt-hours')?.value)||4,
     priority: document.getElementById('nt-priority')?.value||'normal',
     phase: document.getElementById('nt-phase')?.value||null,
+    ...(typeof chantierCountersValue === 'function' && chantierCountersValue('nt-counters') ? { quantityFields: chantierCountersValue('nt-counters') } : {}),
   });
   if (res?.success) { toast('Template créé ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); loadProjTemplateSelector(); }
   else toast('Erreur création template','error');
@@ -153,6 +156,7 @@ async function editTemplate(id, catId, title, priority, hours, phase) {
           <option value="dismantling" ${phase==='dismantling'?'selected':''}>🔨 Démontage</option>
         </select>
       </div>
+      ${typeof chantierCountersBlock === 'function' ? chantierCountersBlock('edit-tpl-counters') : ''}
       <div style="display:flex;justify-content:space-between;margin-top:12px;">
         <button class="btn btn-ghost btn-sm" style="color:var(--accent);" onclick="deleteTemplate('${id}');this.closest('.overlay').remove()">🗑️ Supprimer</button>
         <div style="display:flex;gap:8px;">
@@ -162,6 +166,7 @@ async function editTemplate(id, catId, title, priority, hours, phase) {
       </div>
     </div>`;
   document.body.appendChild(el);
+  if (typeof chantierCountersEditor === 'function') chantierCountersEditor('edit-tpl-counters', ((typeof PROJ_TEMPLATES_FLAT !== 'undefined' && PROJ_TEMPLATES_FLAT) || []).find(t => t.id === id)?.quantityFields || []);
   // Pas de fermeture au tap sur le fond (perte de saisie au téléphone, audit M1) : ✕, Annuler ou retour.
 }
 
@@ -171,6 +176,7 @@ async function saveTemplate(id, overlay) {
     durationHours: parseFloat(document.getElementById('edit-tpl-hours')?.value)||4,
     priority: document.getElementById('edit-tpl-priority')?.value,
     phase: document.getElementById('edit-tpl-phase')?.value||null,
+    ...(typeof chantierCountersValue === 'function' && chantierCountersValue('edit-tpl-counters') ? { quantityFields: chantierCountersValue('edit-tpl-counters') } : {}),
   });
   if (res?.success) { toast('Template mis à jour ✅','success'); overlay?.remove(); await loadTaskTemplatesFromAPI(); loadTemplatesPage(); }
   else toast('Erreur','error');

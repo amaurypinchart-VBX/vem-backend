@@ -57,6 +57,7 @@ import publicInfoRequestRoutes from './routes/publicInfoRequest';
 import planApprovalRoutes from './routes/planApprovals';
 import publicPlanApprovalRoutes from './routes/publicPlanApproval';
 import { startInfoRequestScheduler } from './services/infoRequestService';
+import { publicChantierRoutes, chantierAppRoutes, chantierOfficeRoutes } from './routes/chantier';
 
 const app  = express();
 const http = createServer(app);
@@ -85,7 +86,7 @@ io.on('connection', (socket) => {
   socket.on('project:join', async (pid: string) => {
     try {
       if (typeof pid !== 'string') return;
-      if (access.scope !== 'all' && !(await projectIdsOf(userId, access.scope)).includes(pid)) return;
+      if (access.scope !== 'all' && !(await projectIdsOf(userId, access.scope, access.role)).includes(pid)) return;
       socket.join(`project:${pid}`);
     } catch { /* ignoré */ }
   });
@@ -132,6 +133,8 @@ app.use('/api/v1/public/info-request', publicInfoRequestRoutes);
 app.use('/api/v1/public/files', publicFileRoutes);
 // Validation des plans par le client : lien personnel + code par e-mail, sans compte
 app.use('/api/v1/public/plan-approval', publicPlanApprovalRoutes);
+// VEM Chantier (application des installateurs) : lien d'invitation + connexion téléphone / code à 4 chiffres, sans compte
+app.use('/api/v1/public/chantier', publicChantierRoutes);
 // Route PUBLIQUE — calendrier projets 2 mois pour écran entrepôt
 app.use('/api/v1/public', publicCalendarRoutes);
 
@@ -179,6 +182,11 @@ app.use(`${API}/formation`,      authMiddleware, requireRole('admin', 'project_m
 // Demandes d'infos par mail : rôles qui voient tous les projets + site manager (ses projets : contrôlé dans chaque route)
 app.use(`${API}/info-requests`,  authMiddleware, requireRole('admin', 'project_manager', 'technical_manager', 'engineer', 'sales_engineer', 'warehouse', 'site_manager'), infoRequestRoutes);
 
+// VEM Chantier : bureau (inviter, chef d'équipe, accès, fichiers visibles, validation des feuilles de temps) et
+// application du téléphone. Droits vérifiés dans chaque route (src/routes/chantier.ts, src/services/chantierLogic.ts).
+app.use(`${API}/chantier/office`, authMiddleware, chantierOfficeRoutes);
+app.use(`${API}/chantier`,        authMiddleware, chantierAppRoutes);
+
 // Le routeur teamBookings définit ses propres chemins (/projects/:id/bookings,
 // /bookings/:id, /bookings/calendar) donc on le monte directement à l'API root.
 app.use(API,                     authMiddleware, scopeGuard('bookings'), teamBookingsRoutes);
@@ -204,6 +212,8 @@ app.use('/plans/assets', (_req, res) => res.status(404).type('text/plain').send(
 // Lien « Répondre en ligne » des mails de demande d'infos (page publique, sans connexion)
 app.get('/info/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'info-request.html')));
 // Lien « Vérifier et valider les plans » envoyé au client (page publique, sans compte)
+// VEM Chantier : l'application des installateurs (téléphone)
+app.get('/chantier', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'chantier.html')));
 app.get('/plan-approval/:token', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'plan-approval.html')));
 
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));

@@ -46,7 +46,7 @@ export async function projectIds(req: AuthRequest): Promise<string[] | null> {
   const a = req.access;
   if (!a || !req.user) throw new AppError('Non autorisé', 401);
   if (a.scope === 'all') return null;
-  if (!req.scopeProjectIds) req.scopeProjectIds = await projectIdsOf(req.user.id, a.scope);
+  if (!req.scopeProjectIds) req.scopeProjectIds = await projectIdsOf(req.user.id, a.scope, a.role);
   return req.scopeProjectIds;
 }
 

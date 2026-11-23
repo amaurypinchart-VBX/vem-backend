@@ -2,6 +2,8 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
+import { cleanQuantityFields } from '../services/chantierLogic';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
 
@@ -77,7 +79,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 // les erreurs silencieuses où la catégorie n'est pas liée.
 router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { categoryId, title, durationHours, priority, sortOrder, description, phase } = req.body;
+    const { categoryId, title, durationHours, priority, sortOrder, description, phase, quantityFields } = req.body;
 
     if (!categoryId || !title) {
       return res.status(400).json({
@@ -104,6 +106,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
         phase: phase || null,
         sortOrder: sortOrder || 0,
         description: description || null,
+        ...(quantityFields !== undefined ? { quantityFields: cleanQuantityFields(quantityFields) ?? Prisma.DbNull } : {}),
         isActive: true,
       },
       include: { category: true },
@@ -115,8 +118,10 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
 // PATCH /task-templates/:id — modifier un template existant
 router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { categoryId, title, durationHours, priority, sortOrder, description, isActive, phase } = req.body;
+    const { categoryId, title, durationHours, priority, sortOrder, description, isActive, phase, quantityFields } = req.body;
     const data: any = {};
+    // compteurs de quantités (VEM Chantier / rapports journaliers) : [] ou null = aucun
+    if (quantityFields !== undefined) data.quantityFields = cleanQuantityFields(quantityFields) ?? Prisma.DbNull;
     if (categoryId !== undefined) data.categoryId = categoryId;
     if (title !== undefined) data.title = title;
     if (durationHours !== undefined) data.durationHours = durationHours;

@@ -1728,7 +1728,74 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] plan_approvals : ${e.message}`);
   }
+  await migrateChantier();
   await migrateBriefingNext();
+}
+
+/** VEM Chantier (application des installateurs) : colonnes et tables, toutes additives et rejouables. */
+export async function migrateChantier() {
+  const steps = [
+    `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "pin_hash" TEXT`,
+    `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "pin_failed" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "pin_locked_until" TIMESTAMP(3)`,
+    `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lang" TEXT`,
+    `ALTER TABLE "project_team" ADD COLUMN IF NOT EXISTS "crew_lead" BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE "project_team" ADD COLUMN IF NOT EXISTS "access_until" TIMESTAMP(3)`,
+    `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "site_days_before" INTEGER`,
+    `ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "site_days_after" INTEGER`,
+    `ALTER TABLE "project_files" ADD COLUMN IF NOT EXISTS "site_section" TEXT`,
+    `ALTER TABLE "daily_report_task_hours" ADD COLUMN IF NOT EXISTS "quantities" JSONB`,
+    `ALTER TABLE "daily_report_task_hours" ADD COLUMN IF NOT EXISTS "source_timesheet_id" TEXT`,
+    `ALTER TABLE "task_templates" ADD COLUMN IF NOT EXISTS "quantity_fields" JSONB`,
+    `ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "source" TEXT`,
+    `CREATE TABLE IF NOT EXISTS "chantier_invites" (
+      "id"         TEXT         NOT NULL,
+      "token"      TEXT         NOT NULL,
+      "user_id"    TEXT         NOT NULL,
+      "created_by" TEXT,
+      "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "expires_at" TIMESTAMP(3) NOT NULL,
+      "used_at"    TIMESTAMP(3),
+      CONSTRAINT "chantier_invites_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "chantier_invites_token_key" ON "chantier_invites" ("token")`,
+    `CREATE INDEX IF NOT EXISTS "chantier_invites_user_id_idx" ON "chantier_invites" ("user_id")`,
+    `CREATE TABLE IF NOT EXISTS "site_timesheets" (
+      "id"              TEXT         NOT NULL,
+      "project_id"      TEXT         NOT NULL,
+      "work_date"       TEXT         NOT NULL,
+      "filled_by"       TEXT         NOT NULL,
+      "filled_role"     TEXT         NOT NULL,
+      "status"          TEXT         NOT NULL DEFAULT 'draft',
+      "present"         JSONB        NOT NULL DEFAULT '[]',
+      "lines"           JSONB        NOT NULL DEFAULT '[]',
+      "comment"         TEXT,
+      "submitted_at"    TIMESTAMP(3),
+      "validated_by"    TEXT,
+      "validated_at"    TIMESTAMP(3),
+      "return_comment"  TEXT,
+      "daily_report_id" TEXT,
+      "history"         JSONB        NOT NULL DEFAULT '[]',
+      "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "site_timesheets_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "site_timesheets_project_id_work_date_filled_by_key" ON "site_timesheets" ("project_id", "work_date", "filled_by")`,
+    `CREATE INDEX IF NOT EXISTS "site_timesheets_project_id_idx" ON "site_timesheets" ("project_id")`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'site_timesheets_project_id_fkey') THEN
+        ALTER TABLE "site_timesheets"
+          ADD CONSTRAINT "site_timesheets_project_id_fkey"
+          FOREIGN KEY ("project_id") REFERENCES "projects"("id")
+          ON DELETE CASCADE ON UPDATE CASCADE;
+      END IF;
+    END $$`,
+  ];
+  for (const sql of steps) {
+    try { await prisma.$executeRawUnsafe(sql); }
+    catch (e: any) { logger.warn(`[migration] chantier : ${e.message}`); }
+  }
+  logger.info('[migration] VEM Chantier : colonnes et tables créées si absentes');
 }
 
 /** Additive and repeatable; exported for the PostgreSQL integration test. */

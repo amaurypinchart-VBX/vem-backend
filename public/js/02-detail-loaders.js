@@ -337,7 +337,10 @@ async function loadProjectDetail(id) {
         </tr>`;
         }).join('')}</tbody>
       </table></div>
-    </div>`;
+    </div>
+    <div id="detail-chantier-card"></div>`;
+  // VEM Chantier : accès des installateurs, chef d'équipe (js/22-chantier.js)
+  if (typeof loadChantierTeamCard === 'function') loadChantierTeamCard(p.id);
 
   // Trucks tab
   const trucks = p.trucks || [];

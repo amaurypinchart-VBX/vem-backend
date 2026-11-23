@@ -1107,6 +1107,8 @@ function updateDailySummary() {
 async function loadDetailDailyReports(projectId) {
   // check-list de montage / démontage : remplie au jour le jour, reprise dans le handover (js/15-checklists.js)
   const cardDone = typeof loadChecklistCard === 'function' ? Promise.resolve(loadChecklistCard(projectId)).catch(() => {}) : null;
+  // feuilles de temps remplies dans l'app VEM Chantier (js/22-chantier.js)
+  if (typeof loadChantierTimesheets === 'function') loadChantierTimesheets(projectId);
   const res = await api('GET', `/daily-reports?projectId=${projectId}`);
   // la carte check-list (au-dessus) est en place avant la liste : la liste ne descend plus sous le doigt (audit P5)
   if (cardDone) await cardDone;
@@ -1169,6 +1171,8 @@ async function openDailyDetail(id, projectId) {
           <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px;text-transform:uppercase;">📝 Notes</div>
           <div style="font-size:13px;color:var(--text2);line-height:1.5;">${r.generalNotes}</div>
         </div>` : ''}
+
+      ${typeof dailyTaskHoursViewHtml === 'function' ? dailyTaskHoursViewHtml(r.taskHours) : ''}
 
       ${(r.photos||[]).length ? `
         <div style="margin-bottom:14px;">

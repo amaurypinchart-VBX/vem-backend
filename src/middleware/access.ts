@@ -75,8 +75,57 @@ export async function loadUserRow(userId: string): Promise<UserRow | null> {
   }
 }
 
-/** Ids des projets d'une personne (membre de l'équipe ou technical manager du projet). */
-export async function projectIdsOf(userId: string, scope: Scope): Promise<string[]> {
+/** Rôles limités dans le temps (VEM Chantier) : installateur, ouvrier et rôle inconnu — pas le site manager ni le client. */
+export function timeLimitedRole(role: string | undefined | null): boolean {
+  if (!role) return false;
+  return !ALL_PROJECTS_ROLES.includes(role) && role !== 'site_manager' && role !== 'client';
+}
+
+/** Jours d'accès par défaut avant l'installation / après le démontage (app_settings « chantier.access », 14 / 14). */
+export const SITE_DAYS_DEFAULT = { before: 14, after: 14 };
+let siteDaysCache: { at: number; v: { before: number; after: number } } | null = null;
+export async function siteAccessDays(): Promise<{ before: number; after: number }> {
+  if (siteDaysCache && Date.now() - siteDaysCache.at < 60_000) return siteDaysCache.v;
+  let v = { ...SITE_DAYS_DEFAULT };
+  try {
+    const rows = await prisma.$queryRaw<Array<{ value: any }>>`SELECT value FROM app_settings WHERE key = 'chantier.access' LIMIT 1`;
+    const raw = rows[0]?.value;
+    const b = Number(raw?.before), a = Number(raw?.after);
+    if (Number.isFinite(b) && b >= 0 && b <= 365) v.before = Math.round(b);
+    if (Number.isFinite(a) && a >= 0 && a <= 365) v.after = Math.round(a);
+  } catch { /* table / clé absente : valeurs par défaut */ }
+  siteDaysCache = { at: Date.now(), v };
+  return v;
+}
+export function clearSiteDaysCache() { siteDaysCache = null; }
+
+/**
+ * Ids des projets d'une personne (membre de l'équipe ou technical manager du projet).
+ * Installateur / ouvrier (`role` donné et limité dans le temps) : seulement pendant la période du chantier — de
+ * N jours avant le début de l'installation à N jours après la fin du démontage (fin d'installation sans démontage),
+ * dates de Bruxelles —, ou jusqu'à la date « accès prolongé » de sa ligne d'équipe.
+ */
+export async function projectIdsOf(userId: string, scope: Scope, role?: string): Promise<string[]> {
+  if (scope === 'team' && timeLimitedRole(role)) {
+    try {
+      const d = await siteAccessDays();
+      const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT p.id FROM projects p
+        WHERE p.technical_manager_id = ${userId}
+           OR EXISTS (
+             SELECT 1 FROM project_team t
+             WHERE t.project_id = p.id AND t.user_id = ${userId} AND (
+               (t.access_until IS NOT NULL AND t.access_until >= NOW())
+               OR (
+                 (NOW() AT TIME ZONE 'Europe/Brussels')::date >= p.installation_start::date - COALESCE(p.site_days_before, ${d.before})::int
+                 AND (NOW() AT TIME ZONE 'Europe/Brussels')::date <= COALESCE(p.dismantling_end, p.dismantling_start, p.installation_end)::date + COALESCE(p.site_days_after, ${d.after})::int
+               )
+             )
+           )
+      `;
+      return rows.map((r) => r.id);
+    } catch { /* colonnes pas encore créées (premières secondes après un déploiement) : règle sans période */ }
+  }
   const rows = await prisma.project.findMany({
     where: scope === 'client'
       ? { team: { some: { userId } } }

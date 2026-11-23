@@ -1,0 +1,1118 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e63946">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chantier">
+<link rel="manifest" href="/chantier-app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/chantier-app/icon-192.png">
+<link rel="icon" href="/chantier-app/icon-192.png">
+<title>VEM Chantier</title>
+<!--
+  VEM Chantier — l'application des installateurs (téléphone d'abord, gros boutons, FR / EN / NL / PL).
+  Cahier des charges : docs/installateurs/PROMPT_App_Chantier_Installateurs.md. API : src/routes/chantier.ts.
+  Page autonome (pas la coquille index.html). Brouillons de la journée gardés sur le téléphone (localStorage) :
+  une coupure de réseau ne fait rien perdre, l'envoi repart quand le réseau revient.
+-->
+<style>
+  :root {
+    --red: #e63946; --red-d: #c1121f; --ink: #14213d; --ink2: #4a5568; --ink3: #8a94a6;
+    --bg: #f4f5f7; --card: #ffffff; --line: #dfe3ea; --green: #1f9d55; --green-l: #e3f6ea;
+    --amber: #b7791f; --amber-l: #fff4d6; --blue: #2563eb; --blue-l: #e6efff;
+    --r: 18px; --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body { font: 18px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; min-height: 100vh; overscroll-behavior-y: contain; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: none; background: none; }
+  a { color: inherit; }
+
+  /* ── barre du haut ───────────────────────── */
+  .top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 8px; background: var(--red); color: #fff; min-height: 64px; }
+  .top .back { width: 52px; height: 52px; border-radius: 14px; font-size: 30px; line-height: 1; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .top .back:active { background: rgba(255,255,255,.18); }
+  .top .title { flex: 1; min-width: 0; font-weight: 800; font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top .title small { display: block; font-weight: 500; font-size: 14px; opacity: .9; overflow: hidden; text-overflow: ellipsis; }
+  .top .lang { height: 48px; min-width: 64px; padding: 0 10px; border-radius: 14px; background: rgba(255,255,255,.2); color: #fff; font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 6px; justify-content: center; flex-shrink: 0; }
+  .top .lang span { font-size: 24px; }
+
+  main { padding: 16px 14px calc(110px + var(--safe-b)); max-width: 640px; margin: 0 auto; }
+  h2 { font-size: 20px; margin: 22px 4px 10px; }
+  h2:first-child { margin-top: 4px; }
+  .muted { color: var(--ink2); }
+  .small { font-size: 15px; }
+  .center { text-align: center; }
+
+  /* ── gros boutons ────────────────────────── */
+  .big { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 84px; padding: 16px 18px; margin: 0 0 12px;
+    border-radius: var(--r); background: var(--card); border: 2px solid var(--line); text-align: left; font-size: 21px; font-weight: 800; box-shadow: 0 1px 2px rgba(0,0,0,.04); text-decoration: none; }
+  .big:active { transform: scale(.99); background: #fafafa; }
+  .big .ico { font-size: 38px; width: 48px; text-align: center; flex-shrink: 0; }
+  .big .txt { flex: 1; min-width: 0; }
+  .big .txt small { display: block; font-size: 15px; font-weight: 500; color: var(--ink2); margin-top: 2px; }
+  .big .chev { font-size: 26px; color: var(--ink3); }
+  .big.primary { background: var(--red); border-color: var(--red); color: #fff; }
+  .big.primary small { color: rgba(255,255,255,.9); }
+  .big.primary .chev { color: #fff; }
+  .big.green { background: var(--green); border-color: var(--green); color: #fff; justify-content: center; text-align: center; }
+  .big.ghost { background: transparent; border-style: dashed; justify-content: center; text-align: center; color: var(--red); }
+  .big[disabled] { opacity: .5; }
+
+  .pill { display: inline-block; padding: 4px 10px; border-radius: 99px; font-size: 14px; font-weight: 700; }
+  .pill.green { background: var(--green-l); color: var(--green); }
+  .pill.amber { background: var(--amber-l); color: var(--amber); }
+  .pill.blue { background: var(--blue-l); color: var(--blue); }
+  .pill.grey { background: #eceff3; color: var(--ink2); }
+  .pill.red { background: #fde5e7; color: var(--red-d); }
+
+  .card { background: var(--card); border-radius: var(--r); border: 2px solid var(--line); padding: 16px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .row > .grow { flex: 1; min-width: 0; }
+  .banner { border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; font-size: 17px; }
+  .banner.amber { background: var(--amber-l); color: #7a4f0b; border: 2px solid #f5d38a; }
+  .banner.green { background: var(--green-l); color: #145c33; border: 2px solid #9bdcb4; }
+  .banner.blue { background: var(--blue-l); color: #1d3f8f; border: 2px solid #b6cbff; }
+
+  /* ── projets ─────────────────────────────── */
+  .proj .ico { font-size: 34px; }
+  .proj .name { font-size: 21px; font-weight: 800; }
+  .proj .meta { font-size: 15px; font-weight: 500; color: var(--ink2); margin-top: 3px; }
+
+  /* ── champs ──────────────────────────────── */
+  label.lbl { display: block; font-weight: 700; margin: 16px 2px 8px; }
+  .input { width: 100%; height: 60px; padding: 0 16px; border-radius: 14px; border: 2px solid var(--line); background: #fff; font-size: 20px; }
+  .input:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  textarea.input { height: auto; min-height: 96px; padding: 12px 16px; font-size: 18px; resize: vertical; }
+
+  /* clavier du code */
+  .dots { display: flex; justify-content: center; gap: 16px; margin: 18px 0 8px; }
+  .dots i { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--ink); display: block; }
+  .dots i.on { background: var(--ink); }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 360px; margin: 14px auto 0; }
+  .pad button { height: 72px; border-radius: 18px; background: #fff; border: 2px solid var(--line); font-size: 30px; font-weight: 700; }
+  .pad button:active { background: #eef1f5; }
+  .pad button.soft { background: transparent; border-color: transparent; font-size: 26px; }
+
+  /* langues */
+  .langs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .langs button { min-height: 76px; border-radius: 18px; background: #fff; border: 3px solid var(--line); font-size: 20px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .langs button span { font-size: 32px; }
+  .langs button.on { border-color: var(--red); background: #fff5f6; }
+
+  /* ── journée ─────────────────────────────── */
+  .daybar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .daybar button { width: 60px; height: 60px; border-radius: 16px; background: #fff; border: 2px solid var(--line); font-size: 26px; font-weight: 800; flex-shrink: 0; }
+  .daybar button[disabled] { opacity: .3; }
+  .daybar .d { flex: 1; text-align: center; font-weight: 800; font-size: 20px; }
+  .daybar .d small { display: block; font-size: 14px; font-weight: 600; color: var(--ink2); }
+  .people { display: flex; flex-wrap: wrap; gap: 10px; }
+  .person { display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 8px 16px 8px 8px; border-radius: 99px; border: 3px solid var(--line); background: #fff; font-weight: 700; font-size: 17px; }
+  .person .av { width: 42px; height: 42px; border-radius: 50%; background: #d7dce5; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; }
+  .person.on { border-color: var(--green); background: var(--green-l); }
+  .person.on .av { background: var(--green); }
+  .person.add { border-style: dashed; color: var(--red); padding-left: 16px; }
+  .line { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border-radius: var(--r); background: #fff; border: 2px solid var(--line); margin-bottom: 10px; text-align: left; }
+  .line .t { font-weight: 800; font-size: 18px; }
+  .line .s { font-size: 16px; color: var(--ink2); margin-top: 3px; }
+  .line .s b { color: var(--ink); }
+  .total { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 6px; font-size: 17px; color: var(--ink2); }
+  .total b { color: var(--ink); font-size: 22px; }
+
+  /* compteurs */
+  .stepper { display: flex; align-items: center; gap: 10px; }
+  .stepper button { width: 64px; height: 64px; border-radius: 18px; background: #fff; border: 2px solid var(--line); font-size: 32px; font-weight: 800; flex-shrink: 0; }
+  .stepper button:active { background: #eef1f5; }
+  .stepper .v { flex: 1; text-align: center; font-size: 30px; font-weight: 800; min-width: 60px; }
+  .stepper .v small { display: block; font-size: 14px; font-weight: 600; color: var(--ink2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .chips button { min-width: 64px; height: 56px; padding: 0 14px; border-radius: 14px; background: #fff; border: 2px solid var(--line); font-size: 19px; font-weight: 800; }
+  .chips button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .qrow { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .qrow:last-child { border-bottom: 0; }
+  .qrow .ql { flex: 1; font-weight: 700; min-width: 0; }
+  .qrow .stepper button { width: 56px; height: 56px; font-size: 28px; }
+  .qrow .stepper .v { font-size: 26px; min-width: 56px; }
+  .toggle { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 68px; padding: 10px 16px; border-radius: var(--r); border: 2px solid var(--line); background: #fff; font-weight: 800; font-size: 19px; text-align: left; }
+  .toggle .box { width: 36px; height: 36px; border-radius: 10px; border: 3px solid var(--ink3); display: flex; align-items: center; justify-content: center; font-size: 24px; color: #fff; flex-shrink: 0; }
+  .toggle.on { border-color: var(--green); background: var(--green-l); }
+  .toggle.on .box { background: var(--green); border-color: var(--green); }
+  .photos { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .photos .ph { position: relative; width: 92px; height: 92px; border-radius: 12px; overflow: hidden; border: 2px solid var(--line); background: #eee; }
+  .photos .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photos .ph button { position: absolute; top: 4px; right: 4px; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 18px; }
+  .tools { display: flex; gap: 10px; margin-top: 10px; }
+  .tools button, .tools label { flex: 1; min-height: 60px; border-radius: 14px; background: #fff; border: 2px solid var(--line); font-weight: 800; font-size: 17px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+  .tools .rec { border-color: var(--red); color: var(--red); background: #fff5f6; }
+
+  /* barre d'action en bas */
+  .foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding: 10px 14px calc(10px + var(--safe-b)); background: rgba(244,245,247,.96); border-top: 1px solid var(--line); backdrop-filter: blur(6px); }
+  .foot .in { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; }
+  .foot .big { margin: 0; min-height: 68px; justify-content: center; text-align: center; font-size: 20px; }
+  .status { font-size: 14px; color: var(--ink2); text-align: center; padding: 0 0 6px; max-width: 640px; margin: 0 auto; }
+
+  /* recherche */
+  .search { position: relative; margin-bottom: 12px; }
+  .search input { padding-left: 50px; }
+  .search span { position: absolute; left: 16px; top: 16px; font-size: 22px; }
+  .sec { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--ink2); margin: 18px 4px 8px; }
+  .opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 66px; padding: 12px 16px; border-radius: 16px; background: #fff; border: 2px solid var(--line); margin-bottom: 8px; text-align: left; font-weight: 700; font-size: 18px; }
+  .opt small { display: block; font-weight: 500; font-size: 14px; color: var(--ink2); }
+  .opt .q { margin-left: auto; color: var(--ink3); font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .opt.free { border-style: dashed; color: var(--red); }
+
+  /* fenêtre */
+  .sheet-bg { position: fixed; inset: 0; z-index: 40; background: rgba(20,33,61,.45); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { width: 100%; max-width: 640px; max-height: 92vh; overflow: auto; background: var(--bg); border-radius: 22px 22px 0 0; padding: 18px 16px calc(18px + var(--safe-b)); }
+  .sheet h3 { margin: 0 0 14px; font-size: 21px; }
+  .toast { position: fixed; left: 50%; bottom: calc(100px + var(--safe-b)); transform: translateX(-50%); z-index: 60; max-width: 92vw; padding: 14px 20px; border-radius: 14px; background: var(--ink); color: #fff; font-weight: 700; font-size: 17px; box-shadow: 0 6px 24px rgba(0,0,0,.25); text-align: center; }
+  .toast.err { background: var(--red-d); }
+  .spin { width: 42px; height: 42px; border: 4px solid #d7dce5; border-top-color: var(--red); border-radius: 50%; margin: 40px auto; animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .logo { display: block; width: 210px; max-width: 70%; margin: 18px auto 6px; }
+  .hello { font-size: 24px; font-weight: 800; margin: 4px 4px 2px; }
+  .link { background: none; border: none; color: var(--blue); font-weight: 700; font-size: 17px; padding: 14px 6px; text-decoration: underline; }
+  .contact { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .contact:last-child { border-bottom: 0; }
+  .contact .grow { flex: 1; min-width: 0; }
+  .contact .n { font-weight: 800; }
+  .contact a.call { min-width: 64px; height: 56px; border-radius: 14px; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; text-decoration: none; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 17px; }
+  .kv:last-child { border-bottom: 0; }
+  .kv span:first-child { color: var(--ink2); }
+  .kv span:last-child { font-weight: 700; text-align: right; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+// ═══ Traductions ═════════════════════════════════════════════════════════════
+const LANGS = [
+  { k: 'fr', flag: '🇫🇷', name: 'Français' },
+  { k: 'en', flag: '🇬🇧', name: 'English' },
+  { k: 'nl', flag: '🇳🇱', name: 'Nederlands' },
+  { k: 'pl', flag: '🇵🇱', name: 'Polski' },
+];
+const I18N = {
+  fr: {
+    hello: 'Bonjour {name} 👋', myProjects: 'Mes chantiers', noProjects: 'Aucun chantier pour le moment.', askBoss: 'Si tu attends un chantier, appelle ton responsable.',
+    onSite: 'En cours', installation: 'Installation', dismantling: 'Démontage', toFix: '⚠ Journée à corriger',
+    btnInfo: 'Infos', btnInfoS: 'Adresse, contacts, planning', btnPlans: 'Plans', btnBriefing: 'Briefing', btnDay: 'Remplir la journée', btnDayS: 'Tâches, gars, heures', btnDone: 'Tâches réalisées', btnDoneS: 'Les journées déjà remplies',
+    docs: '{n} document(s)', noDocs: 'Pas encore de document.',
+    address: 'Adresse du chantier', route: 'Itinéraire', contacts: 'Contacts', planning: 'Planning', myStay: 'Mon séjour', hotel: 'Hôtel', documents: 'Documents', onSiteFrom: 'Sur place', travelOut: 'Aller', travelBack: 'Retour',
+    role_site_manager: 'Site manager', role_crew_lead: "Chef d'équipe", role_technical_manager: 'Technical manager', role_sales_engineer: 'Sales', role_project_manager: 'Project manager',
+    who: "Qui était là aujourd'hui ?", whoS: 'Touche une personne pour la cocher / décocher.', addPerson: "＋ Quelqu'un d'autre", personName: 'Nom de la personne', add: 'Ajouter',
+    tasksOfDay: 'Tâches de la journée', addTask: '＋ Ajouter une tâche', noTasksYet: 'Pas encore de tâche : appuie sur « Ajouter une tâche ».',
+    plannedToday: "Prévu aujourd'hui", otherTasks: 'Autres tâches du projet', taskList: 'Liste des tâches', somethingElse: '✏️ Autre chose (je l’écris)', typeTask: 'Écris ce qui a été fait', search: 'Chercher une tâche',
+    men: 'Nombre de gars', duration: 'Durée de la tâche', hours: 'h', quantities: 'Combien ?', quantitiesS: 'Seulement si ça se compte. Sinon laisse à 0.', taskDone: 'Tâche terminée', comment: 'Commentaire', commentPh: 'Ce qu’il faut savoir (facultatif)', dictate: '🎤 Dicter', stop: '⏹ Stop', photo: '📷 Photo', removeLine: '🗑 Retirer cette tâche', ok: 'OK', cancel: 'Annuler',
+    total: 'Total de la journée', manHours: 'h-hommes', menXh: '{w} gars × {h} h',
+    dayComment: 'Remarque pour le responsable (facultatif)',
+    send: '📤 Envoyer pour validation', sendAgain: '📤 Renvoyer pour validation', confirmSend: 'Envoyer la journée au responsable ?', sentOk: 'Envoyé ✅',
+    st_draft: 'Brouillon', st_submitted: 'Envoyée — en attente', st_returned: 'À corriger', st_validated: 'Validée ✅', st_validating: 'En validation',
+    returnedMsg: 'Message du responsable :', validatedMsg: 'Cette journée est validée : elle ne peut plus être modifiée.', submittedMsg: 'Envoyée au responsable. Tu peux encore corriger tant qu’elle n’est pas validée.',
+    savedPhone: '💾 Enregistré sur le téléphone', savedServer: '✓ Enregistré', offline: '📵 Pas de réseau — enregistré sur le téléphone, envoi dès que possible', sending: 'Envoi…', pendingSend: '📵 Sera envoyé dès que le réseau revient',
+    noHistory: 'Aucune journée remplie pour le moment.', tasksN: '{n} tâche(s)', open: 'Ouvrir',
+    phone: 'Ton numéro de téléphone', code: 'Ton code (4 chiffres)', enter: 'Entrer', vemAccount: "J'ai un compte VEM (e-mail)", phoneAccount: 'Revenir au téléphone + code', email: 'E-mail', password: 'Mot de passe', forgot: 'Code oublié ? Demande un nouveau lien à ton responsable.',
+    welcome: 'Bienvenue {name} !', chooseLang: 'Choisis ta langue', chooseCode: 'Choisis ton code à 4 chiffres', chooseCodeS: 'Tu l’utiliseras pour te reconnecter, avec ton numéro de téléphone.', confirmCode: 'Tape encore une fois ton code', codesDiffer: 'Les deux codes ne sont pas pareils. Recommence.',
+    installTitle: '📌 Mets VEM Chantier sur ton écran d’accueil', installIos: 'Appuie sur ⬆️ « Partager » en bas, puis « Sur l’écran d’accueil ».', installAndroid: 'Appuie sur ⋮ en haut à droite, puis « Ajouter à l’écran d’accueil ».', installBtn: 'Installer', gotIt: "C'est compris",
+    logout: 'Se déconnecter', refresh: '↻ Actualiser', back: 'Retour',
+    e_PIN_WEAK: 'Code trop simple (1234, 0000…). Choisis-en un autre.', e_PIN_FORMAT: 'Le code doit avoir 4 chiffres.', e_LOGIN_FAILED: 'Numéro ou code incorrect.', e_LOCKED: 'Trop d’essais. Attends 15 minutes ou demande un nouveau lien.',
+    e_NO_ACCESS: "Tu n'as plus accès à ce chantier.", e_NOT_CREW_LEAD: "Réservé au chef d'équipe.", e_FUTURE_DATE: 'Pas de journée dans le futur.', e_ALREADY_VALIDATED: 'Cette journée est déjà validée.', e_NO_LINES: 'Ajoute au moins une tâche.', e_network: 'Pas de réseau.', e_generic: 'Erreur',
+    photoFail: 'Photo non envoyée (réseau ?)', micNo: 'Dictée non disponible sur ce téléphone : utilise le micro du clavier.',
+  },
+  en: {
+    hello: 'Hello {name} 👋', myProjects: 'My jobs', noProjects: 'No job for now.', askBoss: 'If you are expecting a job, call your manager.',
+    onSite: 'Ongoing', installation: 'Installation', dismantling: 'Dismantling', toFix: '⚠ Day to correct',
+    btnInfo: 'Info', btnInfoS: 'Address, contacts, schedule', btnPlans: 'Drawings', btnBriefing: 'Briefing', btnDay: 'Fill in the day', btnDayS: 'Tasks, crew, hours', btnDone: 'Work done', btnDoneS: 'Days already filled in',
+    docs: '{n} document(s)', noDocs: 'No document yet.',
+    address: 'Site address', route: 'Directions', contacts: 'Contacts', planning: 'Schedule', myStay: 'My stay', hotel: 'Hotel', documents: 'Documents', onSiteFrom: 'On site', travelOut: 'Outbound', travelBack: 'Return',
+    role_site_manager: 'Site manager', role_crew_lead: 'Crew leader', role_technical_manager: 'Technical manager', role_sales_engineer: 'Sales', role_project_manager: 'Project manager',
+    who: 'Who was there today?', whoS: 'Tap a person to tick / untick.', addPerson: '＋ Someone else', personName: 'Name of the person', add: 'Add',
+    tasksOfDay: 'Tasks of the day', addTask: '＋ Add a task', noTasksYet: 'No task yet: tap “Add a task”.',
+    plannedToday: 'Planned today', otherTasks: 'Other tasks of the job', taskList: 'Task list', somethingElse: '✏️ Something else (I type it)', typeTask: 'Type what was done', search: 'Search a task',
+    men: 'Number of workers', duration: 'Duration of the task', hours: 'h', quantities: 'How many?', quantitiesS: 'Only if it can be counted. Otherwise leave 0.', taskDone: 'Task finished', comment: 'Comment', commentPh: 'Anything to know (optional)', dictate: '🎤 Dictate', stop: '⏹ Stop', photo: '📷 Photo', removeLine: '🗑 Remove this task', ok: 'OK', cancel: 'Cancel',
+    total: 'Total of the day', manHours: 'man-hours', menXh: '{w} workers × {h} h',
+    dayComment: 'Note for the manager (optional)',
+    send: '📤 Send for approval', sendAgain: '📤 Send again for approval', confirmSend: 'Send the day to the manager?', sentOk: 'Sent ✅',
+    st_draft: 'Draft', st_submitted: 'Sent — waiting', st_returned: 'To correct', st_validated: 'Approved ✅', st_validating: 'Being approved',
+    returnedMsg: 'Message from the manager:', validatedMsg: 'This day is approved: it can no longer be changed.', submittedMsg: 'Sent to the manager. You can still correct it until it is approved.',
+    savedPhone: '💾 Saved on the phone', savedServer: '✓ Saved', offline: '📵 No network — saved on the phone, will be sent as soon as possible', sending: 'Sending…', pendingSend: '📵 Will be sent when the network is back',
+    noHistory: 'No day filled in yet.', tasksN: '{n} task(s)', open: 'Open',
+    phone: 'Your phone number', code: 'Your code (4 digits)', enter: 'Enter', vemAccount: 'I have a VEM account (e-mail)', phoneAccount: 'Back to phone + code', email: 'E-mail', password: 'Password', forgot: 'Forgot your code? Ask your manager for a new link.',
+    welcome: 'Welcome {name}!', chooseLang: 'Choose your language', chooseCode: 'Choose your 4-digit code', chooseCodeS: 'You will use it to log in again, with your phone number.', confirmCode: 'Type your code once more', codesDiffer: 'The two codes are not the same. Try again.',
+    installTitle: '📌 Put VEM Chantier on your home screen', installIos: 'Tap ⬆️ “Share” at the bottom, then “Add to Home Screen”.', installAndroid: 'Tap ⋮ at the top right, then “Add to Home screen”.', installBtn: 'Install', gotIt: 'Got it',
+    logout: 'Log out', refresh: '↻ Refresh', back: 'Back',
+    e_PIN_WEAK: 'Code too simple (1234, 0000…). Choose another one.', e_PIN_FORMAT: 'The code must have 4 digits.', e_LOGIN_FAILED: 'Wrong number or code.', e_LOCKED: 'Too many attempts. Wait 15 minutes or ask for a new link.',
+    e_NO_ACCESS: 'You no longer have access to this job.', e_NOT_CREW_LEAD: 'For the crew leader only.', e_FUTURE_DATE: 'No day in the future.', e_ALREADY_VALIDATED: 'This day is already approved.', e_NO_LINES: 'Add at least one task.', e_network: 'No network.', e_generic: 'Error',
+    photoFail: 'Photo not sent (network?)', micNo: 'Dictation not available on this phone: use the keyboard microphone.',
+  },
+  nl: {
+    hello: 'Hallo {name} 👋', myProjects: 'Mijn werven', noProjects: 'Voorlopig geen werf.', askBoss: 'Verwacht je een werf? Bel je verantwoordelijke.',
+    onSite: 'Bezig', installation: 'Opbouw', dismantling: 'Afbraak', toFix: '⚠ Dag te verbeteren',
+    btnInfo: 'Info', btnInfoS: 'Adres, contacten, planning', btnPlans: 'Plannen', btnBriefing: 'Briefing', btnDay: 'Dag invullen', btnDayS: 'Taken, mannen, uren', btnDone: 'Uitgevoerde taken', btnDoneS: 'Reeds ingevulde dagen',
+    docs: '{n} document(en)', noDocs: 'Nog geen document.',
+    address: 'Adres van de werf', route: 'Route', contacts: 'Contacten', planning: 'Planning', myStay: 'Mijn verblijf', hotel: 'Hotel', documents: 'Documenten', onSiteFrom: 'Ter plaatse', travelOut: 'Heenreis', travelBack: 'Terugreis',
+    role_site_manager: 'Site manager', role_crew_lead: 'Ploegleider', role_technical_manager: 'Technical manager', role_sales_engineer: 'Sales', role_project_manager: 'Project manager',
+    who: 'Wie was er vandaag?', whoS: 'Tik op een persoon om aan / uit te vinken.', addPerson: '＋ Iemand anders', personName: 'Naam van de persoon', add: 'Toevoegen',
+    tasksOfDay: 'Taken van de dag', addTask: '＋ Taak toevoegen', noTasksYet: 'Nog geen taak: tik op « Taak toevoegen ».',
+    plannedToday: 'Vandaag gepland', otherTasks: 'Andere taken van de werf', taskList: 'Takenlijst', somethingElse: '✏️ Iets anders (ik typ het)', typeTask: 'Typ wat er gedaan is', search: 'Taak zoeken',
+    men: 'Aantal mannen', duration: 'Duur van de taak', hours: 'u', quantities: 'Hoeveel?', quantitiesS: 'Alleen als het te tellen is. Anders 0 laten.', taskDone: 'Taak afgewerkt', comment: 'Opmerking', commentPh: 'Wat je moet weten (optioneel)', dictate: '🎤 Dicteren', stop: '⏹ Stop', photo: '📷 Foto', removeLine: '🗑 Deze taak verwijderen', ok: 'OK', cancel: 'Annuleren',
+    total: 'Totaal van de dag', manHours: 'manuren', menXh: '{w} mannen × {h} u',
+    dayComment: 'Opmerking voor de verantwoordelijke (optioneel)',
+    send: '📤 Versturen ter goedkeuring', sendAgain: '📤 Opnieuw versturen', confirmSend: 'De dag naar de verantwoordelijke sturen?', sentOk: 'Verstuurd ✅',
+    st_draft: 'Concept', st_submitted: 'Verstuurd — wacht', st_returned: 'Te verbeteren', st_validated: 'Goedgekeurd ✅', st_validating: 'Wordt goedgekeurd',
+    returnedMsg: 'Bericht van de verantwoordelijke:', validatedMsg: 'Deze dag is goedgekeurd: hij kan niet meer gewijzigd worden.', submittedMsg: 'Verstuurd. Je kan nog verbeteren zolang hij niet goedgekeurd is.',
+    savedPhone: '💾 Opgeslagen op de telefoon', savedServer: '✓ Opgeslagen', offline: '📵 Geen netwerk — opgeslagen op de telefoon, wordt zo snel mogelijk verstuurd', sending: 'Versturen…', pendingSend: '📵 Wordt verstuurd zodra er netwerk is',
+    noHistory: 'Nog geen ingevulde dag.', tasksN: '{n} taak/taken', open: 'Openen',
+    phone: 'Je telefoonnummer', code: 'Je code (4 cijfers)', enter: 'Binnengaan', vemAccount: 'Ik heb een VEM-account (e-mail)', phoneAccount: 'Terug naar telefoon + code', email: 'E-mail', password: 'Wachtwoord', forgot: 'Code vergeten? Vraag je verantwoordelijke om een nieuwe link.',
+    welcome: 'Welkom {name}!', chooseLang: 'Kies je taal', chooseCode: 'Kies je code van 4 cijfers', chooseCodeS: 'Daarmee meld je je opnieuw aan, met je telefoonnummer.', confirmCode: 'Typ je code nog een keer', codesDiffer: 'De twee codes zijn niet gelijk. Opnieuw.',
+    installTitle: '📌 Zet VEM Chantier op je beginscherm', installIos: 'Tik onderaan op ⬆️ « Deel », dan « Zet op beginscherm ».', installAndroid: 'Tik rechtsboven op ⋮, dan « Toevoegen aan startscherm ».', installBtn: 'Installeren', gotIt: 'Begrepen',
+    logout: 'Afmelden', refresh: '↻ Vernieuwen', back: 'Terug',
+    e_PIN_WEAK: 'Code te eenvoudig (1234, 0000…). Kies een andere.', e_PIN_FORMAT: 'De code moet 4 cijfers hebben.', e_LOGIN_FAILED: 'Verkeerd nummer of verkeerde code.', e_LOCKED: 'Te veel pogingen. Wacht 15 minuten of vraag een nieuwe link.',
+    e_NO_ACCESS: 'Je hebt geen toegang meer tot deze werf.', e_NOT_CREW_LEAD: 'Alleen voor de ploegleider.', e_FUTURE_DATE: 'Geen dag in de toekomst.', e_ALREADY_VALIDATED: 'Deze dag is al goedgekeurd.', e_NO_LINES: 'Voeg minstens één taak toe.', e_network: 'Geen netwerk.', e_generic: 'Fout',
+    photoFail: 'Foto niet verstuurd (netwerk?)', micNo: 'Dicteren niet beschikbaar op deze telefoon: gebruik de microfoon van het toetsenbord.',
+  },
+  pl: {
+    hello: 'Cześć {name} 👋', myProjects: 'Moje budowy', noProjects: 'Na razie brak budowy.', askBoss: 'Jeśli czekasz na budowę, zadzwoń do kierownika.',
+    onSite: 'W toku', installation: 'Montaż', dismantling: 'Demontaż', toFix: '⚠ Dzień do poprawy',
+    btnInfo: 'Informacje', btnInfoS: 'Adres, kontakty, harmonogram', btnPlans: 'Plany', btnBriefing: 'Briefing', btnDay: 'Wypełnij dzień', btnDayS: 'Zadania, ludzie, godziny', btnDone: 'Wykonane zadania', btnDoneS: 'Już wypełnione dni',
+    docs: '{n} dokument(y)', noDocs: 'Brak dokumentów.',
+    address: 'Adres budowy', route: 'Trasa', contacts: 'Kontakty', planning: 'Harmonogram', myStay: 'Mój pobyt', hotel: 'Hotel', documents: 'Dokumenty', onSiteFrom: 'Na miejscu', travelOut: 'Wyjazd', travelBack: 'Powrót',
+    role_site_manager: 'Kierownik budowy', role_crew_lead: 'Brygadzista', role_technical_manager: 'Technical manager', role_sales_engineer: 'Sales', role_project_manager: 'Project manager',
+    who: 'Kto był dzisiaj?', whoS: 'Dotknij osobę, aby zaznaczyć / odznaczyć.', addPerson: '＋ Ktoś inny', personName: 'Imię i nazwisko', add: 'Dodaj',
+    tasksOfDay: 'Zadania dnia', addTask: '＋ Dodaj zadanie', noTasksYet: 'Brak zadań: dotknij « Dodaj zadanie ».',
+    plannedToday: 'Zaplanowane na dziś', otherTasks: 'Inne zadania budowy', taskList: 'Lista zadań', somethingElse: '✏️ Coś innego (wpiszę)', typeTask: 'Wpisz, co zostało zrobione', search: 'Szukaj zadania',
+    men: 'Liczba ludzi', duration: 'Czas zadania', hours: 'h', quantities: 'Ile?', quantitiesS: 'Tylko jeśli da się policzyć. Inaczej zostaw 0.', taskDone: 'Zadanie zakończone', comment: 'Komentarz', commentPh: 'Co trzeba wiedzieć (opcjonalnie)', dictate: '🎤 Dyktuj', stop: '⏹ Stop', photo: '📷 Zdjęcie', removeLine: '🗑 Usuń to zadanie', ok: 'OK', cancel: 'Anuluj',
+    total: 'Razem w ciągu dnia', manHours: 'roboczogodziny', menXh: '{w} os. × {h} h',
+    dayComment: 'Uwaga dla kierownika (opcjonalnie)',
+    send: '📤 Wyślij do zatwierdzenia', sendAgain: '📤 Wyślij ponownie', confirmSend: 'Wysłać dzień do kierownika?', sentOk: 'Wysłano ✅',
+    st_draft: 'Wersja robocza', st_submitted: 'Wysłano — czeka', st_returned: 'Do poprawy', st_validated: 'Zatwierdzono ✅', st_validating: 'W trakcie zatwierdzania',
+    returnedMsg: 'Wiadomość od kierownika:', validatedMsg: 'Ten dzień jest zatwierdzony: nie można go już zmienić.', submittedMsg: 'Wysłano do kierownika. Możesz jeszcze poprawić, dopóki nie zostanie zatwierdzony.',
+    savedPhone: '💾 Zapisano w telefonie', savedServer: '✓ Zapisano', offline: '📵 Brak sieci — zapisano w telefonie, zostanie wysłane jak najszybciej', sending: 'Wysyłanie…', pendingSend: '📵 Zostanie wysłane, gdy wróci sieć',
+    noHistory: 'Brak wypełnionych dni.', tasksN: '{n} zadań', open: 'Otwórz',
+    phone: 'Twój numer telefonu', code: 'Twój kod (4 cyfry)', enter: 'Wejdź', vemAccount: 'Mam konto VEM (e-mail)', phoneAccount: 'Wróć do telefonu + kodu', email: 'E-mail', password: 'Hasło', forgot: 'Zapomniałeś kodu? Poproś kierownika o nowy link.',
+    welcome: 'Witaj {name}!', chooseLang: 'Wybierz język', chooseCode: 'Wybierz kod z 4 cyfr', chooseCodeS: 'Użyjesz go do ponownego logowania, razem z numerem telefonu.', confirmCode: 'Wpisz kod jeszcze raz', codesDiffer: 'Kody nie są takie same. Spróbuj ponownie.',
+    installTitle: '📌 Dodaj VEM Chantier do ekranu głównego', installIos: 'Dotknij ⬆️ « Udostępnij » na dole, potem « Do ekranu początkowego ».', installAndroid: 'Dotknij ⋮ w prawym górnym rogu, potem « Dodaj do ekranu głównego ».', installBtn: 'Zainstaluj', gotIt: 'Rozumiem',
+    logout: 'Wyloguj', refresh: '↻ Odśwież', back: 'Wstecz',
+    e_PIN_WEAK: 'Kod zbyt prosty (1234, 0000…). Wybierz inny.', e_PIN_FORMAT: 'Kod musi mieć 4 cyfry.', e_LOGIN_FAILED: 'Zły numer lub kod.', e_LOCKED: 'Za dużo prób. Poczekaj 15 minut lub poproś o nowy link.',
+    e_NO_ACCESS: 'Nie masz już dostępu do tej budowy.', e_NOT_CREW_LEAD: 'Tylko dla brygadzisty.', e_FUTURE_DATE: 'Nie można wypełnić dnia w przyszłości.', e_ALREADY_VALIDATED: 'Ten dzień jest już zatwierdzony.', e_NO_LINES: 'Dodaj co najmniej jedno zadanie.', e_network: 'Brak sieci.', e_generic: 'Błąd',
+    photoFail: 'Zdjęcie nie zostało wysłane (sieć?)', micNo: 'Dyktowanie niedostępne na tym telefonie: użyj mikrofonu klawiatury.',
+  },
+};
+const SPEECH = { fr: 'fr-FR', en: 'en-GB', nl: 'nl-BE', pl: 'pl-PL' };
+
+// ═══ État ════════════════════════════════════════════════════════════════════
+const API = '/api/v1';
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* plein ou bloqué */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* */ } },
+};
+const S = {
+  lang: LS.get('vemc_lang', null) || guessLang(),
+  token: LS.get('vemc_token', null),
+  refresh: LS.get('vemc_refresh', null),
+  user: LS.get('vemc_user', null),
+  stack: [],          // écrans : { name, ...params }
+  projects: null,
+  project: null,
+  day: null,          // feuille en cours d'édition { projectId, date, present, lines, comment, status, ... }
+};
+function guessLang() {
+  const n = (navigator.language || 'fr').slice(0, 2).toLowerCase();
+  return I18N[n] ? n : 'fr';
+}
+function t(key, vars) {
+  let s = (I18N[S.lang] && I18N[S.lang][key]) || I18N.fr[key] || key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split('{' + k + '}').join(v);
+  return s;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = (sel) => document.querySelector(sel);
+const app = $('#app');
+const locale = () => ({ fr: 'fr-BE', en: 'en-GB', nl: 'nl-BE', pl: 'pl-PL' }[S.lang]);
+function fmtDate(ymd, opts) {
+  if (!ymd) return '';
+  const d = new Date(ymd + 'T12:00:00Z');
+  return new Intl.DateTimeFormat(locale(), opts || { weekday: 'short', day: 'numeric', month: 'short' }).format(d);
+}
+const fmtNum = (n) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(n);
+function todayYmd() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+function addDays(ymd, n) { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const labelOf = (f) => (f.label && (f.label[S.lang] || f.label.fr)) || f.key;
+
+// ═══ API ═════════════════════════════════════════════════════════════════════
+class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
+async function refreshToken() {
+  if (!S.refresh) return false;
+  try {
+    const r = await fetch(API + '/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: S.refresh }) });
+    if (!r.ok) return false;
+    const j = await r.json();
+    S.token = j.data.token; LS.set('vemc_token', S.token);
+    return true;
+  } catch { return null; } // réseau
+}
+async function api(method, path, body, isForm) {
+  const go = () => fetch(API + path, {
+    method,
+    headers: { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}) },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
+  });
+  let r;
+  try { r = await go(); } catch { throw new ApiError('network', 0); }
+  if (r.status === 401 && S.refresh && !path.startsWith('/public/')) {
+    const ok = await refreshToken();
+    if (ok === null) throw new ApiError('network', 0);
+    if (!ok) { logout(true); throw new ApiError('LOGIN_FAILED', 401); }
+    try { r = await go(); } catch { throw new ApiError('network', 0); }
+  }
+  let j = {};
+  try { j = await r.json(); } catch { /* */ }
+  if (!r.ok || j.success === false) throw new ApiError(j.error || 'generic', r.status);
+  return j.data;
+}
+function errText(e) {
+  const code = e && e.code;
+  if (code && I18N.fr['e_' + code]) return t('e_' + code);
+  return code && code !== 'generic' ? code : t('e_generic');
+}
+function toast(msg, err) {
+  document.querySelectorAll('.toast').forEach((x) => x.remove());
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), err ? 4200 : 2400);
+}
+
+// ═══ Navigation (le bouton « retour » du téléphone revient à l'écran d'avant) ══
+function go(name, params) {
+  S.stack.push({ name, ...(params || {}) });
+  history.pushState({ d: S.stack.length }, '');
+  render();
+}
+function replace(name, params) {
+  S.stack[S.stack.length - 1] = { name, ...(params || {}) };
+  render();
+}
+function back() {
+  if (S.stack.length > 1) history.back();
+}
+window.addEventListener('popstate', () => {
+  if (closeSheet()) { history.pushState({ d: S.stack.length }, ''); return; }
+  if (S.stack.length > 1) { S.stack.pop(); render(); }
+});
+const cur = () => S.stack[S.stack.length - 1];
+
+function topBar(title, sub, canBack) {
+  const L = LANGS.find((l) => l.k === S.lang);
+  return `<div class="top">
+    ${canBack ? `<button class="back" onclick="back()" aria-label="${esc(t('back'))}">‹</button>` : '<span style="width:6px"></span>'}
+    <div class="title">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+    <button class="lang" onclick="openLang()" aria-label="Langue / Language"><span>${L.flag}</span>${L.k.toUpperCase()}</button>
+  </div>`;
+}
+
+// ═══ Fenêtres ════════════════════════════════════════════════════════════════
+function openSheet(html) {
+  closeSheet();
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  bg.innerHTML = `<div class="sheet">${html}</div>`;
+  document.body.appendChild(bg);
+  return bg;
+}
+function closeSheet() {
+  const el = document.querySelector('.sheet-bg');
+  if (el) { el.remove(); return true; }
+  return false;
+}
+function openLang() {
+  openSheet(`<h3>🌐 ${esc(t('chooseLang'))}</h3><div class="langs">${LANGS.map((l) => `<button class="${l.k === S.lang ? 'on' : ''}" onclick="setLang('${l.k}')"><span>${l.flag}</span>${l.name}</button>`).join('')}</div>
+    <button class="big ghost" style="margin-top:14px" onclick="closeSheet()">${esc(t('cancel'))}</button>`);
+}
+function setLang(k) {
+  S.lang = k; LS.set('vemc_lang', k);
+  document.documentElement.lang = k;
+  closeSheet();
+  if (S.token) api('PATCH', '/chantier/me', { lang: k }).catch(() => {});
+  render();
+}
+
+// ═══ Connexion ═══════════════════════════════════════════════════════════════
+function saveSession(d) {
+  S.token = d.token; S.refresh = d.refreshToken; S.user = d.user;
+  LS.set('vemc_token', S.token); LS.set('vemc_refresh', S.refresh); LS.set('vemc_user', S.user);
+  if (d.user && d.user.lang) { S.lang = d.user.lang; LS.set('vemc_lang', S.lang); }
+}
+function logout(silent) {
+  if (S.refresh) fetch(API + '/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: S.refresh }) }).catch(() => {});
+  S.token = S.refresh = S.user = null;
+  LS.del('vemc_token'); LS.del('vemc_refresh'); LS.del('vemc_user');
+  S.stack = [{ name: 'login' }];
+  if (!silent) render(); else setTimeout(render, 0);
+}
+
+const pin = { value: '', first: null, onDone: null };
+function padHtml() {
+  return `<div class="dots">${[0, 1, 2, 3].map((i) => `<i class="${pin.value.length > i ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button onclick="padKey('${n}')">${n}</button>`).join('')}
+      <button class="soft" onclick="padKey('C')" aria-label="clear">✕</button><button onclick="padKey('0')">0</button><button class="soft" onclick="padKey('B')" aria-label="backspace">⌫</button></div>`;
+}
+function padKey(k) {
+  if (k === 'C') pin.value = '';
+  else if (k === 'B') pin.value = pin.value.slice(0, -1);
+  else if (pin.value.length < 4) pin.value += k;
+  const box = $('#pad');
+  if (box) box.innerHTML = padHtml();
+  if (pin.value.length === 4 && pin.onDone) { const v = pin.value; setTimeout(() => pin.onDone(v), 120); }
+}
+
+function viewLogin() {
+  const mode = cur().mode || 'phone';
+  pin.value = ''; pin.onDone = null;
+  if (mode === 'email') {
+    return topBar('VEM Chantier', '', false) + `<main>
+      <img class="logo" src="/logo.png" alt="Viewbox">
+      <label class="lbl">${esc(t('email'))}</label><input class="input" id="em" type="email" autocomplete="username" inputmode="email">
+      <label class="lbl">${esc(t('password'))}</label><input class="input" id="pw" type="password" autocomplete="current-password">
+      <button class="big primary" style="margin-top:20px;justify-content:center" onclick="loginEmail()">${esc(t('enter'))}</button>
+      <div class="center"><button class="link" onclick="replace('login',{mode:'phone'})">${esc(t('phoneAccount'))}</button></div>
+    </main>`;
+  }
+  setTimeout(() => {
+    pin.onDone = async (v) => {
+      const phone = ($('#ph') || {}).value || '';
+      LS.set('vemc_phone', phone);
+      try {
+        const d = await api('POST', '/public/chantier/login', { phone, pin: v });
+        saveSession(d);
+        S.stack = [{ name: 'home' }]; render();
+      } catch (e) { pin.value = ''; padKey(''); toast(errText(e), true); }
+    };
+  });
+  return topBar('VEM Chantier', '', false) + `<main>
+    <img class="logo" src="/logo.png" alt="Viewbox">
+    <label class="lbl">📱 ${esc(t('phone'))}</label>
+    <input class="input" id="ph" type="tel" inputmode="tel" autocomplete="tel" value="${esc(LS.get('vemc_phone', ''))}" placeholder="+32 4…">
+    <label class="lbl center" style="margin-top:22px">🔒 ${esc(t('code'))}</label>
+    <div id="pad">${padHtml()}</div>
+    <p class="small muted center" style="margin-top:20px">${esc(t('forgot'))}</p>
+    <div class="center"><button class="link" onclick="replace('login',{mode:'email'})">${esc(t('vemAccount'))}</button></div>
+  </main>`;
+}
+async function loginEmail() {
+  try {
+    const d = await api('POST', '/auth/login', { email: $('#em').value.trim(), password: $('#pw').value });
+    saveSession({ token: d.token, refreshToken: d.refreshToken, user: { ...d.user, lang: S.lang } });
+    S.stack = [{ name: 'home' }]; render();
+  } catch (e) { toast(e.code === 'generic' || !e.code ? t('e_LOGIN_FAILED') : errText(e), true); }
+}
+
+// lien d'invitation : langue puis code (deux fois)
+function viewInvite() {
+  const c = cur();
+  if (!c.info) {
+    api('GET', '/public/chantier/invite/' + encodeURIComponent(c.token)).then((info) => {
+      if (!LS.get('vemc_lang', null) && info.lang) S.lang = info.lang;
+      replace('invite', { token: c.token, info, step: 'lang' });
+    }).catch((e) => replace('inviteError', { msg: errText(e) }));
+    return topBar('VEM Chantier', '', false) + '<main><div class="spin"></div></main>';
+  }
+  const name = c.info.firstName;
+  if (c.step === 'lang') {
+    return topBar('VEM Chantier', '', false) + `<main>
+      <img class="logo" src="/logo.png" alt="Viewbox">
+      <div class="hello center">${esc(t('welcome', { name }))}</div>
+      <h2 class="center">${esc(t('chooseLang'))}</h2>
+      <div class="langs">${LANGS.map((l) => `<button class="${l.k === S.lang ? 'on' : ''}" onclick="S.lang='${l.k}';LS.set('vemc_lang','${l.k}');replace('invite',{token:'${esc(c.token)}',info:cur().info,step:'pin'})"><span>${l.flag}</span>${l.name}</button>`).join('')}</div>
+    </main>`;
+  }
+  pin.value = '';
+  setTimeout(() => {
+    pin.onDone = async (v) => {
+      if (!pin.first) { pin.first = v; pin.value = ''; render(); return; }
+      if (pin.first !== v) { pin.first = null; pin.value = ''; toast(t('codesDiffer'), true); render(); return; }
+      try {
+        const d = await api('POST', '/public/chantier/invite/' + encodeURIComponent(c.token), { pin: v, lang: S.lang });
+        pin.first = null;
+        saveSession(d);
+        history.replaceState(null, '', '/chantier');
+        S.stack = [{ name: 'home', welcome: true }]; render();
+      } catch (e) { pin.first = null; pin.value = ''; toast(errText(e), true); render(); }
+    };
+  });
+  return topBar('VEM Chantier', '', false) + `<main>
+    <div class="hello center" style="margin-top:14px">${esc(t('welcome', { name }))}</div>
+    <h2 class="center">${esc(pin.first ? t('confirmCode') : t('chooseCode'))}</h2>
+    <p class="small muted center">${esc(t('chooseCodeS'))}</p>
+    <div id="pad">${padHtml()}</div>
+  </main>`;
+}
+function viewInviteError() {
+  return topBar('VEM Chantier', '', false) + `<main><div class="banner amber" style="margin-top:20px">${esc(cur().msg)}</div>
+    <button class="big" onclick="history.replaceState(null,'','/chantier');S.stack=[{name:'login'}];render()"><span class="ico">📱</span><span class="txt">${esc(t('enter'))}</span></button></main>`;
+}
+
+// ═══ Accueil ═════════════════════════════════════════════════════════════════
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
+const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function installCard() {
+  if (standalone() || LS.get('vemc_install_done', false)) return '';
+  return `<div class="card" style="border-color:#b6cbff;background:var(--blue-l)">
+    <div style="font-weight:800;margin-bottom:6px">${esc(t('installTitle'))}</div>
+    <div class="small">${esc(isIOS() ? t('installIos') : t('installAndroid'))}</div>
+    <div class="row" style="margin-top:10px;gap:10px">
+      ${deferredInstall ? `<button class="big primary" style="margin:0;min-height:56px;justify-content:center;font-size:18px" onclick="doInstall()">${esc(t('installBtn'))}</button>` : ''}
+      <button class="big" style="margin:0;min-height:56px;justify-content:center;font-size:18px" onclick="LS.set('vemc_install_done',true);render()">${esc(t('gotIt'))}</button>
+    </div></div>`;
+}
+async function doInstall() {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  try { await deferredInstall.userChoice; } catch { /* */ }
+  deferredInstall = null; LS.set('vemc_install_done', true); render();
+}
+
+function viewHome() {
+  if (!S.projects) {
+    loadProjects();
+    return topBar('VEM Chantier', '', false) + '<main><div class="spin"></div></main>';
+  }
+  const name = (S.user && S.user.firstName) || '';
+  const list = S.projects.map((p) => {
+    const dates = `${fmtDate(p.installationStart)} → ${fmtDate(p.dismantlingEnd || p.installationEnd)}`;
+    return `<button class="big proj" onclick="openProject('${p.id}')">
+      <span class="ico">🏗️</span>
+      <span class="txt"><span class="name">${esc(p.name)}</span>
+        <span class="meta">${esc([p.city, dates].filter(Boolean).join(' · '))}</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${p.onSite ? `<span class="pill green">● ${esc(t('onSite'))}</span>` : ''}${p.toFix ? `<span class="pill amber">${esc(t('toFix'))}</span>` : ''}</span>
+      </span><span class="chev">›</span></button>`;
+  }).join('');
+  return topBar('VEM Chantier', '', false) + `<main>
+    <div class="hello">${esc(t('hello', { name }))}</div>
+    ${installCard()}
+    <h2>${esc(t('myProjects'))}</h2>
+    ${list || `<div class="card center"><div style="font-size:42px">🏖️</div><div style="font-weight:800;margin:6px 0">${esc(t('noProjects'))}</div><div class="muted small">${esc(t('askBoss'))}</div></div>`}
+    <div class="row" style="margin-top:20px;justify-content:space-between">
+      <button class="link" onclick="S.projects=null;render()">${esc(t('refresh'))}</button>
+      <button class="link" style="color:var(--ink2)" onclick="logout()">${esc(t('logout'))}</button>
+    </div>
+  </main>`;
+}
+async function loadProjects() {
+  try {
+    S.projects = await api('GET', '/chantier/projects');
+    LS.set('vemc_projects', S.projects);
+  } catch (e) {
+    S.projects = LS.get('vemc_projects', []);
+    if (e.code !== 'LOGIN_FAILED') toast(errText(e), true);
+  }
+  if (cur().name === 'home') render();
+  flushPending();
+}
+
+// ═══ Projet ══════════════════════════════════════════════════════════════════
+async function openProject(id) {
+  go('project', { id });
+}
+async function loadProject(id) {
+  try {
+    S.project = await api('GET', '/chantier/projects/' + id);
+    LS.set('vemc_project_' + id, S.project);
+  } catch (e) {
+    const cached = LS.get('vemc_project_' + id, null);
+    if (cached) S.project = cached;
+    else { toast(errText(e), true); if (e.code === 'NO_ACCESS') { S.projects = null; S.stack = [{ name: 'home' }]; } }
+  }
+  render();
+}
+function viewProject() {
+  const c = cur();
+  const p = S.project && S.project.id === c.id ? S.project : null;
+  if (!p) { loadProject(c.id); return topBar('…', '', true) + '<main><div class="spin"></div></main>'; }
+  const docs = (n) => (n ? t('docs', { n }) : t('noDocs'));
+  const fixing = (S.projects || []).find((x) => x.id === p.id && x.toFix);
+  return topBar(p.name, [p.city, p.internalNumber].filter(Boolean).join(' · '), true) + `<main>
+    ${fixing ? `<div class="banner amber">${esc(t('toFix'))}</div>` : ''}
+    <button class="big" onclick="go('info')"><span class="ico">ℹ️</span><span class="txt">${esc(t('btnInfo'))}<small>${esc(t('btnInfoS'))}</small></span><span class="chev">›</span></button>
+    <button class="big" onclick="go('files',{section:'plans'})"><span class="ico">📐</span><span class="txt">${esc(t('btnPlans'))}<small>${esc(docs(p.counts.plans))}</small></span><span class="chev">›</span></button>
+    <button class="big" onclick="go('files',{section:'briefing'})"><span class="ico">📋</span><span class="txt">${esc(t('btnBriefing'))}<small>${esc(docs(p.counts.briefing))}</small></span><span class="chev">›</span></button>
+    ${p.canFill ? `
+    <button class="big primary" onclick="openDay(todayYmd())"><span class="ico">⏱️</span><span class="txt">${esc(t('btnDay'))}<small>${esc(fmtDate(todayYmd(), { weekday: 'long', day: 'numeric', month: 'long' }))}</small></span><span class="chev">›</span></button>
+    <button class="big" onclick="go('history')"><span class="ico">✅</span><span class="txt">${esc(t('btnDone'))}<small>${esc(t('btnDoneS'))}</small></span><span class="chev">›</span></button>` : ''}
+  </main>`;
+}
+
+function viewInfo() {
+  const p = S.project;
+  if (!p) { back(); return ''; }
+  const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([p.address, p.city].filter(Boolean).join(', '));
+  const kv = (k, v) => (v ? `<div class="kv"><span>${esc(k)}</span><span>${esc(v)}</span></div>` : '');
+  const range = (a, b) => (a ? (b && b !== a ? `${fmtDate(a)} → ${fmtDate(b)}` : fmtDate(a)) : '');
+  const tr = (mode, date, det) => [mode, date ? fmtDate(String(date).slice(0, 10)) : '', det].filter(Boolean).join(' · ');
+  return topBar(t('btnInfo'), p.name, true) + `<main>
+    <h2>📍 ${esc(t('address'))}</h2>
+    <div class="card"><div style="font-weight:800;font-size:19px">${esc(p.address || '')}</div><div class="muted">${esc(p.city || '')}</div>
+      <a class="big primary" style="margin:14px 0 0;justify-content:center;min-height:64px" href="${maps}" target="_blank" rel="noopener">🧭 ${esc(t('route'))}</a></div>
+    <h2>📞 ${esc(t('contacts'))}</h2>
+    <div class="card">${(p.contacts || []).map((c) => `<div class="contact"><div class="grow"><div class="n">${esc(c.name)}</div><div class="small muted">${esc(t('role_' + c.kind))}</div></div>
+      ${c.phone ? `<a class="call" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}" aria-label="call">📞</a>` : ''}</div>`).join('') || '<div class="muted">—</div>'}</div>
+    <h2>📅 ${esc(t('planning'))}</h2>
+    <div class="card">${kv(t('installation'), range(p.installationStart, p.installationEnd))}${kv(t('dismantling'), range(p.dismantlingStart, p.dismantlingEnd))}</div>
+    ${(p.bookings || []).length || (p.hotels || []).length ? `<h2>🧳 ${esc(t('myStay'))}</h2><div class="card">
+      ${(p.bookings || []).map((b) => kv(t('onSiteFrom') + ' (' + t(b.phase) + ')', range(b.onSiteStart, b.onSiteEnd)) + kv(t('travelOut'), tr(b.outboundMode, b.outboundDate, b.outboundDetails)) + kv(t('travelBack'), tr(b.returnMode, b.returnDate, b.returnDetails))).join('')}
+      ${(p.hotels || []).map((h) => `<div class="kv"><span>🏨 ${esc(t('hotel'))}</span><span>${esc(h.name)}<br><small class="muted">${esc(range(h.checkin, h.checkout))}${h.address ? ' · ' + esc(h.address) : ''}</small></span></div>`).join('')}
+    </div>` : ''}
+    ${(p.infoFiles || []).length ? `<h2>📄 ${esc(t('documents'))}</h2>${p.infoFiles.map(fileBtn).join('')}` : ''}
+  </main>`;
+}
+
+function fileBtn(f) {
+  const ext = String(f.name || '').split('.').pop().toLowerCase();
+  const ico = ext === 'pdf' ? '📄' : ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? '🖼️' : '📎';
+  return `<a class="big" href="${esc(f.url)}" target="_blank" rel="noopener"><span class="ico">${ico}</span><span class="txt" style="font-size:18px;word-break:break-word">${esc(f.name)}<small>${esc(fmtDate(String(f.createdAt || '').slice(0, 10)))}</small></span><span class="chev">↗</span></a>`;
+}
+function viewFiles() {
+  const c = cur();
+  const p = S.project;
+  if (!p) { back(); return ''; }
+  if (!c.files) {
+    api('GET', `/chantier/projects/${p.id}/files?section=${c.section}`).then((files) => {
+      LS.set(`vemc_files_${p.id}_${c.section}`, files);
+      if (cur() === c) replace('files', { section: c.section, files });
+    }).catch((e) => {
+      const files = LS.get(`vemc_files_${p.id}_${c.section}`, []);
+      toast(errText(e), true);
+      if (cur() === c) replace('files', { section: c.section, files });
+    });
+    return topBar(c.section === 'plans' ? t('btnPlans') : t('btnBriefing'), p.name, true) + '<main><div class="spin"></div></main>';
+  }
+  return topBar(c.section === 'plans' ? t('btnPlans') : t('btnBriefing'), p.name, true) + `<main>
+    ${c.files.map(fileBtn).join('') || `<div class="card center muted">${esc(t('noDocs'))}</div>`}
+  </main>`;
+}
+
+// ═══ Journée (feuille de temps du chef d'équipe) ═════════════════════════════
+const draftKey = (pid, date) => `vemc_day_${pid}_${date}`;
+let saveTimer = null;
+let tasksCache = {};
+
+async function openDay(date) {
+  const pid = S.project.id;
+  go('day', { date, loading: true });
+  await loadDay(pid, date);
+}
+async function loadDay(pid, date) {
+  const local = LS.get(draftKey(pid, date), null);
+  let server = null, crew = null, phase = null;
+  try {
+    const d = await api('GET', `/chantier/projects/${pid}/timesheets/${date}`);
+    server = d.sheet; crew = d.crew; phase = d.phase;
+    LS.set('vemc_crew_' + pid, crew);
+  } catch (e) {
+    if (e.code !== 'network') { toast(errText(e), true); back(); return; }
+    crew = LS.get('vemc_crew_' + pid, []);
+  }
+  // le brouillon du téléphone gagne s'il n'a pas encore été envoyé au serveur
+  let day;
+  if (local && local.dirty && (!server || server.status !== 'validated')) day = { ...local, status: server ? server.status : local.status || 'draft', returnComment: server ? server.returnComment : local.returnComment };
+  else if (server) day = { projectId: pid, date, present: server.present, lines: server.lines, comment: server.comment, status: server.status, returnComment: server.returnComment, dirty: false };
+  else day = { projectId: pid, date, present: (crew || []).map((c) => ({ userId: c.userId, name: c.name })), lines: [], comment: '', status: 'draft', dirty: false, fresh: true };
+  day.crew = crew || [];
+  day.phase = phase;
+  S.day = day;
+  if (cur().name === 'day' && cur().date === date) replace('day', { date });
+  // brouillon du téléphone pas encore arrivé au serveur (réseau coupé la dernière fois)
+  if (day.dirty && !day.submitPending) { clearTimeout(saveTimer); saveTimer = setTimeout(() => pushDay(false), 800); }
+  // tâches proposées (en arrière-plan)
+  api('GET', `/chantier/projects/${pid}/tasks?date=${date}`).then((x) => { tasksCache[pid + date] = x; LS.set('vemc_tasks_' + pid, x); }).catch(() => { tasksCache[pid + date] = LS.get('vemc_tasks_' + pid, null); });
+}
+const editable = () => S.day && S.day.status !== 'validated' && S.day.status !== 'validating';
+
+function touchDay() {
+  const d = S.day;
+  d.dirty = true;
+  LS.set(draftKey(d.projectId, d.date), stripDay(d));
+  setStatus(t('savedPhone'));
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => pushDay(false), 1500);
+}
+const stripDay = (d) => ({ projectId: d.projectId, date: d.date, present: d.present, lines: d.lines, comment: d.comment, status: d.status, returnComment: d.returnComment, dirty: d.dirty, submitPending: d.submitPending || false });
+function setStatus(txt) { const el = $('#daystatus'); if (el) el.textContent = txt; }
+
+async function pushDay(submit) {
+  const d = S.day;
+  if (!d) return false;
+  const body = { present: d.present, lines: d.lines, comment: d.comment, submit: !!submit };
+  try {
+    const s = await api('PUT', `/chantier/projects/${d.projectId}/timesheets/${d.date}`, body);
+    if (S.day === d) {
+      d.status = s.status; d.lines = s.lines; d.dirty = false; d.submitPending = false; d.returnComment = s.returnComment;
+      LS.set(draftKey(d.projectId, d.date), stripDay(d));
+      setStatus(t('savedServer'));
+    }
+    return true;
+  } catch (e) {
+    if (e.code === 'network') {
+      if (submit) { d.submitPending = true; LS.set(draftKey(d.projectId, d.date), stripDay(d)); queuePending(d.projectId, d.date); }
+      setStatus(submit ? t('pendingSend') : t('offline'));
+      return null;
+    }
+    toast(errText(e), true);
+    return false;
+  }
+}
+// envois en attente (pas de réseau au moment d'envoyer)
+function queuePending(pid, date) {
+  const q = LS.get('vemc_pending', []);
+  if (!q.some((x) => x.pid === pid && x.date === date)) q.push({ pid, date });
+  LS.set('vemc_pending', q);
+}
+async function flushPending() {
+  const q = LS.get('vemc_pending', []);
+  if (!q.length || !S.token) return;
+  const left = [];
+  for (const it of q) {
+    const d = LS.get(draftKey(it.pid, it.date), null);
+    if (!d) continue;
+    try {
+      await api('PUT', `/chantier/projects/${it.pid}/timesheets/${it.date}`, { present: d.present, lines: d.lines, comment: d.comment, submit: !!d.submitPending });
+      d.dirty = false; d.submitPending = false; d.status = 'submitted';
+      LS.set(draftKey(it.pid, it.date), d);
+      toast(t('sentOk'));
+    } catch (e) { if (e.code === 'network') left.push(it); }
+  }
+  LS.set('vemc_pending', left);
+}
+window.addEventListener('online', () => { flushPending(); if (S.day && S.day.dirty) pushDay(false); });
+
+function lineSummary(l) {
+  const q = (l.quantities || []).filter((x) => x.qty > 0).map((x) => `${x.qty} ${x.label}`).join(' · ');
+  return `<b>${esc(t('menXh', { w: l.workers, h: fmtNum(l.hours) }))}</b>${q ? ' · ' + esc(q) : ''}${l.done ? ' · ✅' : ''}${(l.photos || []).length ? ' · 📷 ' + l.photos.length : ''}${l.comment ? ' · 💬' : ''}`;
+}
+function viewDay() {
+  const c = cur();
+  const d = S.day;
+  const p = S.project;
+  if (!d || d.date !== c.date || !p) return topBar(t('btnDay'), p ? p.name : '', true) + '<main><div class="spin"></div></main>';
+  const today = todayYmd();
+  const ed = editable();
+  const manHours = d.lines.reduce((s, l) => s + l.hours * l.workers, 0);
+  const presentIds = new Set(d.present.filter((x) => x.userId).map((x) => x.userId));
+  const extra = d.present.filter((x) => !x.userId);
+  const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const st = d.status;
+  return topBar(t('btnDay'), p.name, true) + `<main>
+    <div class="daybar">
+      <button onclick="switchDay(-1)" aria-label="prev">‹</button>
+      <div class="d">${esc(fmtDate(d.date, { weekday: 'long', day: 'numeric', month: 'long' }))}<small><span class="pill ${st === 'validated' ? 'green' : st === 'returned' ? 'amber' : st === 'submitted' ? 'blue' : 'grey'}">${esc(t('st_' + st))}</span></small></div>
+      <button onclick="switchDay(1)" ${d.date >= today ? 'disabled' : ''} aria-label="next">›</button>
+    </div>
+    ${st === 'returned' && d.returnComment ? `<div class="banner amber"><b>${esc(t('returnedMsg'))}</b><br>${esc(d.returnComment)}</div>` : ''}
+    ${st === 'validated' ? `<div class="banner green">${esc(t('validatedMsg'))}</div>` : ''}
+    ${st === 'submitted' ? `<div class="banner blue">${esc(t('submittedMsg'))}</div>` : ''}
+    ${d.submitPending ? `<div class="banner amber">${esc(t('pendingSend'))}</div>` : ''}
+
+    <h2>👷 ${esc(t('who'))}</h2>
+    <p class="small muted" style="margin:-4px 4px 10px">${esc(t('whoS'))}</p>
+    <div class="people">
+      ${d.crew.map((m) => `<button class="person ${presentIds.has(m.userId) ? 'on' : ''}" ${ed ? `onclick="togglePerson('${m.userId}')"` : 'disabled'}><span class="av">${esc(initials(m.name))}</span>${esc(m.name)}</button>`).join('')}
+      ${extra.map((x, i) => `<button class="person on" ${ed ? `onclick="removeExtra(${i})"` : 'disabled'}><span class="av">${esc(initials(x.name))}</span>${esc(x.name)} ✕</button>`).join('')}
+      ${ed ? `<button class="person add" onclick="addPerson()">${esc(t('addPerson'))}</button>` : ''}
+    </div>
+
+    <h2>🛠️ ${esc(t('tasksOfDay'))}</h2>
+    ${d.lines.map((l, i) => `<button class="line" onclick="editLine(${i})"><span class="grow"><span class="t" style="display:block">${esc(l.title)}</span><span class="s" style="display:block">${lineSummary(l)}</span></span><span class="chev" style="font-size:26px;color:var(--ink3)">›</span></button>`).join('')
+      || `<div class="card muted center small">${esc(t('noTasksYet'))}</div>`}
+    ${ed ? `<button class="big ghost" onclick="pickTask()">${esc(t('addTask'))}</button>` : ''}
+    <div class="total"><span>${esc(t('total'))}</span><span><b>${fmtNum(manHours)}</b> ${esc(t('manHours'))}</span></div>
+
+    <label class="lbl">${esc(t('dayComment'))}</label>
+    <textarea class="input" id="daycomment" ${ed ? '' : 'disabled'} oninput="S.day.comment=this.value;touchDay()">${esc(d.comment || '')}</textarea>
+  </main>
+  ${ed ? `<div class="foot"><div class="status" id="daystatus">${d.dirty ? esc(t('savedPhone')) : ''}</div><div class="in">
+    <button class="big green" onclick="sendDay()" ${d.lines.length ? '' : 'disabled'}>${esc(st === 'submitted' || st === 'returned' ? t('sendAgain') : t('send'))}</button>
+  </div></div>` : ''}`;
+}
+async function switchDay(delta) {
+  const d = S.day;
+  if (!d) return;
+  if (d.dirty) await pushDay(false);
+  const date = addDays(d.date, delta);
+  if (date > todayYmd()) return;
+  S.day = null;
+  replace('day', { date });
+  await loadDay(S.project.id, date);
+}
+function togglePerson(userId) {
+  const d = S.day;
+  const i = d.present.findIndex((x) => x.userId === userId);
+  if (i >= 0) d.present.splice(i, 1);
+  else { const m = d.crew.find((x) => x.userId === userId); d.present.push({ userId, name: m ? m.name : '?' }); }
+  touchDay(); render();
+}
+function removeExtra(i) {
+  const d = S.day;
+  const extras = d.present.filter((x) => !x.userId);
+  const x = extras[i];
+  d.present = d.present.filter((p) => p !== x);
+  touchDay(); render();
+}
+function addPerson() {
+  openSheet(`<h3>${esc(t('addPerson'))}</h3><input class="input" id="pname" placeholder="${esc(t('personName'))}" autocomplete="off">
+    <div class="row" style="margin-top:14px;gap:10px"><button class="big" style="margin:0;justify-content:center" onclick="closeSheet()">${esc(t('cancel'))}</button>
+    <button class="big primary" style="margin:0;justify-content:center" onclick="const v=$('#pname').value.trim();if(v){S.day.present.push({name:v});closeSheet();touchDay();render();}">${esc(t('add'))}</button></div>`);
+  setTimeout(() => $('#pname') && $('#pname').focus(), 50);
+}
+async function sendDay() {
+  const d = S.day;
+  if (!d.lines.length) { toast(t('e_NO_LINES'), true); return; }
+  if (!confirm(t('confirmSend'))) return;
+  clearTimeout(saveTimer);
+  setStatus(t('sending'));
+  const r = await pushDay(true);
+  if (r === true) { toast(t('sentOk')); markProjectFixed(d.projectId); render(); }
+  else if (r === null) render();
+}
+function markProjectFixed(pid) {
+  const p = (S.projects || []).find((x) => x.id === pid);
+  if (p) p.toFix = false;
+}
+
+// choisir une tâche
+function pickTask() {
+  const key = S.project.id + S.day.date;
+  const data = tasksCache[key] || LS.get('vemc_tasks_' + S.project.id, null) || { planned: [], others: [], templates: [] };
+  go('pick', { data, q: '' });
+}
+function viewPick() {
+  const c = cur();
+  const q = (c.q || '').trim().toLowerCase();
+  const data = tasksCache[S.project.id + S.day.date] || c.data;
+  const used = new Set(S.day.lines.map((l) => l.taskId || l.taskTemplateId).filter(Boolean));
+  const match = (x) => !q || String(x.title).toLowerCase().includes(q) || String(x.category || x.stage || '').toLowerCase().includes(q);
+  const opt = (x, kind) => `<button class="opt" onclick="chooseTask('${kind}','${x.id}')"><span style="min-width:0">${esc(x.title)}${x.category || x.stage ? `<small>${esc(x.category || x.stage)}</small>` : ''}</span>${used.has(x.id) ? '<span class="q">✓</span>' : (x.quantityFields || []).length ? `<span class="q">🔢</span>` : ''}</button>`;
+  const planned = (data.planned || []).filter(match);
+  const others = (data.others || []).filter(match);
+  const tpls = (data.templates || []).filter(match);
+  return topBar(t('addTask').replace('＋ ', ''), S.project.name, true) + `<main>
+    <div class="search"><span>🔎</span><input class="input" id="pq" placeholder="${esc(t('search'))}" value="${esc(c.q || '')}" oninput="cur().q=this.value;rerenderPick()"></div>
+    <div id="picklist">
+    ${planned.length ? `<div class="sec">📌 ${esc(t('plannedToday'))}</div>${planned.map((x) => opt(x, 'task')).join('')}` : ''}
+    ${others.length ? `<div class="sec">${esc(t('otherTasks'))}</div>${others.map((x) => opt(x, 'task')).join('')}` : ''}
+    ${tpls.length ? `<div class="sec">${esc(t('taskList'))}</div>${tpls.map((x) => opt(x, 'template')).join('')}` : ''}
+    </div>
+    <button class="opt free" style="margin-top:16px" onclick="freeTask()">${esc(t('somethingElse'))}</button>
+  </main>`;
+}
+function rerenderPick() {
+  const pos = $('#pq') ? $('#pq').selectionStart : 0;
+  render();
+  const el = $('#pq');
+  if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch { /* */ } }
+}
+function newLine(base) {
+  const d = S.day;
+  const presentN = d.present.length || 1;
+  return { id: uid(), hours: 0, workers: presentN, quantities: (base.quantityFields || []).map((f) => ({ key: f.key, label: labelOf(f), unit: f.unit || '', qty: 0 })), comment: '', commentLang: S.lang, photos: [], done: false, ...base };
+}
+function chooseTask(kind, id) {
+  const data = tasksCache[S.project.id + S.day.date] || cur().data;
+  const src = kind === 'task' ? [...(data.planned || []), ...(data.others || [])].find((x) => x.id === id) : (data.templates || []).find((x) => x.id === id);
+  if (!src) return;
+  const base = kind === 'task'
+    ? { taskId: src.id, taskTemplateId: src.taskTemplateId || null, title: src.title, quantityFields: src.quantityFields }
+    : { taskTemplateId: src.id, title: src.title, quantityFields: src.quantityFields };
+  const line = newLine(base);
+  delete line.quantityFields;
+  S.stack.pop(); // remplace l'écran « choisir » par l'éditeur de la ligne
+  S.stack.push({ name: 'line', line, isNew: true });
+  render();
+}
+function freeTask() {
+  openSheet(`<h3>${esc(t('somethingElse'))}</h3><textarea class="input" id="ftitle" placeholder="${esc(t('typeTask'))}" style="min-height:90px"></textarea>
+    <div class="row" style="margin-top:14px;gap:10px"><button class="big" style="margin:0;justify-content:center" onclick="closeSheet()">${esc(t('cancel'))}</button>
+    <button class="big primary" style="margin:0;justify-content:center" onclick="const v=$('#ftitle').value.trim();if(v){closeSheet();const l=newLine({title:v,newTask:true});delete l.quantityFields;S.stack.pop();S.stack.push({name:'line',line:l,isNew:true});render();}">${esc(t('ok'))}</button></div>`);
+  setTimeout(() => $('#ftitle') && $('#ftitle').focus(), 50);
+}
+
+// éditer une ligne
+function editLine(i) {
+  const l = JSON.parse(JSON.stringify(S.day.lines[i]));
+  go('line', { line: l, index: i });
+}
+const HOUR_CHIPS = [0.5, 1, 2, 3, 4, 6, 8];
+function viewLine() {
+  const c = cur();
+  const l = c.line;
+  const ed = editable();
+  return topBar(l.title, S.project.name, true) + `<main>
+    <label class="lbl">👷 ${esc(t('men'))}</label>
+    <div class="stepper"><button ${ed ? '' : 'disabled'} onclick="lineSet('workers',-1)">−</button><div class="v" id="lv-workers">${l.workers}</div><button ${ed ? '' : 'disabled'} onclick="lineSet('workers',1)">＋</button></div>
+
+    <label class="lbl">⏱️ ${esc(t('duration'))}</label>
+    <div class="stepper"><button ${ed ? '' : 'disabled'} onclick="lineSet('hours',-0.5)">−</button><div class="v" id="lv-hours">${fmtNum(l.hours)} ${esc(t('hours'))}</div><button ${ed ? '' : 'disabled'} onclick="lineSet('hours',0.5)">＋</button></div>
+    ${ed ? `<div class="chips">${HOUR_CHIPS.map((h) => `<button class="${l.hours === h ? 'on' : ''}" onclick="cur().line.hours=${h};render()">${fmtNum(h)} ${esc(t('hours'))}</button>`).join('')}</div>` : ''}
+
+    ${(l.quantities || []).length ? `<label class="lbl">🔢 ${esc(t('quantities'))}</label><p class="small muted" style="margin:-4px 2px 8px">${esc(t('quantitiesS'))}</p>
+      <div class="card" style="padding:6px 14px">${l.quantities.map((q, k) => `<div class="qrow"><div class="ql">${esc(q.label)}${q.unit ? ` <small class="muted">(${esc(q.unit)})</small>` : ''}</div>
+        <div class="stepper"><button ${ed ? '' : 'disabled'} onclick="qtySet(${k},-1)">−</button><div class="v" id="lq-${k}">${q.qty}</div><button ${ed ? '' : 'disabled'} onclick="qtySet(${k},1)">＋</button></div></div>`).join('')}</div>` : ''}
+
+    ${l.taskId || l.newTask ? `<div style="margin-top:16px"><button class="toggle ${l.done ? 'on' : ''}" ${ed ? `onclick="cur().line.done=!cur().line.done;render()"` : 'disabled'}><span class="box">${l.done ? '✓' : ''}</span>${esc(t('taskDone'))}</button></div>` : ''}
+
+    <label class="lbl">💬 ${esc(t('comment'))}</label>
+    <textarea class="input" id="lcomment" placeholder="${esc(t('commentPh'))}" ${ed ? '' : 'disabled'} oninput="cur().line.comment=this.value;cur().line.commentLang=S.lang">${esc(l.comment || '')}</textarea>
+    ${l.commentFr && l.commentLang && l.commentLang !== S.lang && S.lang === 'fr' ? `<div class="small muted" style="margin-top:6px">🇫🇷 ${esc(l.commentFr)}</div>` : ''}
+    ${ed ? `<div class="tools">
+      <button id="micbtn" onclick="dictate()">${esc(t('dictate'))}</button>
+      <label>${esc(t('photo'))}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="addPhoto(this)"></label>
+    </div>` : ''}
+    <div class="photos">${(l.photos || []).map((ph, k) => `<div class="ph"><img src="${esc(ph.url)}" alt="">${ed ? `<button onclick="cur().line.photos.splice(${k},1);render()">✕</button>` : ''}</div>`).join('')}<span id="photoBusy"></span></div>
+
+    ${ed && !c.isNew ? `<button class="big ghost" style="margin-top:22px;color:var(--red-d)" onclick="removeLine()">${esc(t('removeLine'))}</button>` : ''}
+  </main>
+  <div class="foot"><div class="in">
+    ${ed ? `<button class="big" style="flex:0 0 38%" onclick="back()">${esc(t('cancel'))}</button><button class="big green" onclick="saveLine()">✓ ${esc(t('ok'))}</button>`
+      : `<button class="big" onclick="back()">${esc(t('back'))}</button>`}
+  </div></div>`;
+}
+function lineSet(field, delta) {
+  const l = cur().line;
+  if (field === 'workers') l.workers = Math.max(0, Math.min(99, (l.workers || 0) + delta));
+  else l.hours = Math.max(0, Math.min(24, Math.round(((l.hours || 0) + delta) * 4) / 4));
+  render();
+}
+function qtySet(k, delta) {
+  const q = cur().line.quantities[k];
+  q.qty = Math.max(0, Math.min(99999, (q.qty || 0) + delta));
+  const el = $('#lq-' + k);
+  if (el) el.textContent = q.qty;
+}
+function saveLine() {
+  const c = cur();
+  const l = c.line;
+  const box = $('#lcomment');
+  if (box) l.comment = box.value;
+  if (c.isNew) S.day.lines.push(l); else S.day.lines[c.index] = l;
+  stopDictation();
+  touchDay();
+  back();
+}
+function removeLine() {
+  const c = cur();
+  S.day.lines.splice(c.index, 1);
+  touchDay();
+  back();
+}
+
+// photo : réduite (≈ 1 600 px, JPEG) avant l'envoi — 4G de chantier
+async function shrink(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.82));
+    return blob ? new File([blob], 'photo.jpg', { type: 'image/jpeg' }) : file;
+  } catch { return file; }
+}
+async function addPhoto(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const line = cur().line;
+  const busy = $('#photoBusy');
+  if (busy) busy.innerHTML = '<div class="ph"><div class="spin" style="margin:24px auto;width:36px;height:36px"></div></div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', await shrink(file));
+    const r = await api('POST', `/chantier/projects/${S.project.id}/photo`, fd, true);
+    (line.photos = line.photos || []).push({ url: r.url, publicId: r.publicId });
+  } catch { toast(t('photoFail'), true); }
+  if (cur().line === line) { const box = $('#lcomment'); if (box) line.comment = box.value; render(); }
+}
+
+// dictée (Chrome Android ; sinon le micro du clavier)
+let rec = null;
+function dictate() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast(t('micNo')); $('#lcomment') && $('#lcomment').focus(); return; }
+  if (rec) { stopDictation(); return; }
+  rec = new SR();
+  rec.lang = SPEECH[S.lang]; rec.interimResults = false; rec.continuous = true;
+  const box = $('#lcomment');
+  const startText = box ? box.value : '';
+  let said = '';
+  rec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) said += (said ? ' ' : '') + e.results[i][0].transcript;
+    const v = (startText ? startText.trim() + ' ' : '') + said;
+    if (box) box.value = v;
+    if (cur().line) { cur().line.comment = v; cur().line.commentLang = S.lang; }
+  };
+  rec.onend = () => { rec = null; const b = $('#micbtn'); if (b) { b.textContent = t('dictate'); b.classList.remove('rec'); } };
+  rec.onerror = () => { stopDictation(); };
+  try { rec.start(); } catch { rec = null; return; }
+  const b = $('#micbtn'); if (b) { b.textContent = t('stop'); b.classList.add('rec'); }
+}
+function stopDictation() { if (rec) { try { rec.stop(); } catch { /* */ } rec = null; } }
+
+// tâches réalisées (historique du chef d'équipe)
+function viewHistory() {
+  const c = cur();
+  const p = S.project;
+  if (!c.rows) {
+    api('GET', `/chantier/projects/${p.id}/timesheets`).then((rows) => { LS.set('vemc_hist_' + p.id, rows); if (cur() === c) replace('history', { rows }); })
+      .catch((e) => { toast(errText(e), true); if (cur() === c) replace('history', { rows: LS.get('vemc_hist_' + p.id, []) }); });
+    return topBar(t('btnDone'), p.name, true) + '<main><div class="spin"></div></main>';
+  }
+  return topBar(t('btnDone'), p.name, true) + `<main>
+    ${c.rows.map((s) => `<button class="line" onclick="openDay('${s.workDate}')">
+      <span class="grow"><span class="t" style="display:block">${esc(fmtDate(s.workDate, { weekday: 'long', day: 'numeric', month: 'long' }))}</span>
+      <span class="s" style="display:block">${esc(t('tasksN', { n: s.totals.tasks }))} · <b>${fmtNum(s.totals.manHours)}</b> ${esc(t('manHours'))}</span>
+      <span style="display:block;margin-top:6px"><span class="pill ${s.status === 'validated' ? 'green' : s.status === 'returned' ? 'amber' : s.status === 'submitted' ? 'blue' : 'grey'}">${esc(t('st_' + s.status))}</span></span>
+      ${s.lines.slice(0, 4).map((l) => `<span class="s" style="display:block">• ${esc(l.title)} — ${esc(t('menXh', { w: l.workers, h: fmtNum(l.hours) }))}${(l.quantities || []).filter((q) => q.qty > 0).map((q) => ' · ' + q.qty + ' ' + esc(q.label)).join('')}</span>`).join('')}
+      </span><span class="chev" style="font-size:26px;color:var(--ink3)">›</span></button>`).join('')
+      || `<div class="card muted center">${esc(t('noHistory'))}</div>`}
+  </main>`;
+}
+
+// ═══ Rendu ═══════════════════════════════════════════════════════════════════
+const VIEWS = { login: viewLogin, invite: viewInvite, inviteError: viewInviteError, home: viewHome, project: viewProject, info: viewInfo, files: viewFiles, day: viewDay, pick: viewPick, line: viewLine, history: viewHistory };
+function render() {
+  const c = cur();
+  if (!c) return;
+  const y = c._y;
+  app.innerHTML = (VIEWS[c.name] || viewHome)();
+  window.scrollTo(0, 0);
+  if (y) window.scrollTo(0, y);
+}
+// garde la position quand on revient à un écran
+window.addEventListener('scroll', () => { const c = cur(); if (c) c._y = window.scrollY; }, { passive: true });
+
+(function start() {
+  document.documentElement.lang = S.lang;
+  const inviteToken = new URLSearchParams(location.search).get('i');
+  if (inviteToken) S.stack = [{ name: 'invite', token: inviteToken }];
+  else if (S.token || S.refresh) S.stack = [{ name: 'home' }];
+  else S.stack = [{ name: 'login' }];
+  history.replaceState({ d: 1 }, '');
+  render();
+  if (S.token) api('GET', '/chantier/me').then((u) => { S.user = { ...S.user, ...u }; LS.set('vemc_user', S.user); }).catch(() => {});
+})();
+</script>
+</body>
+</html>

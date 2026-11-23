@@ -677,12 +677,16 @@ async function onEditPhaseChange(reportId, phase) {
   window._EDIT_PHASE = phase;
   const templates = await loadDailyAllTemplates();
   const forPhase = templates.filter(t => t.phase === phase);
-  window._EDIT_TASK_HOURS = forPhase.map(t => ({
+  // les lignes déjà remplies (et celles reprises d'une feuille de temps VEM Chantier) sont gardées
+  const kept = (window._EDIT_TASK_HOURS || []).filter(t => (t.hours || 0) > 0 || (t.workers || 0) > 0 || t.sourceTimesheetId || (t.quantities || []).some(q => (q.qty || 0) > 0));
+  const keptIds = new Set(kept.map(t => t.taskTemplateId).filter(Boolean));
+  window._EDIT_TASK_HOURS = kept.concat(forPhase.filter(t => !keptIds.has(t.id)).map(t => ({
     taskTemplateId: t.id,
     taskTitle: t.title,
     hours: 0,
     workers: 0,
-  }));
+  })));
+  if (typeof dailyEnsureQuantities === 'function') window._EDIT_TASK_HOURS.forEach(dailyEnsureQuantities);
   renderEditTaskHoursGrid();
 }
 
@@ -712,7 +716,7 @@ function renderEditTaskHoursGrid() {
         onchange="updateEditTaskHour(${i},'workers',this.value)"
         style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-size:12px;text-align:right;">
       <button type="button" onclick="removeEditTaskHourRow(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;" title="Retirer">✕</button>
-    </div>`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
+    </div>${typeof dailyQtyHtml === 'function' ? dailyQtyHtml(t, i, 'EDIT') : ''}`).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px;">Aucune tâche pour cette phase</div>';
 }
 
 function updateEditTaskHour(idx, field, value) {
@@ -998,8 +1002,8 @@ async function saveDailyReport(id, overlay) {
   if (window._EDIT_PHASE) body.phase = window._EDIT_PHASE;
   if (window._EDIT_TASK_HOURS) {
     body.taskHours = window._EDIT_TASK_HOURS
-      .filter(t => (t.hours||0) > 0 || (t.workers||0) > 0)
-      .map(t => ({ taskTemplateId: t.taskTemplateId||undefined, taskTitle: t.taskTitle, hours: t.hours||0, workers: t.workers||0 }));
+      .filter(t => (t.hours||0) > 0 || (t.workers||0) > 0 || (typeof dailyHasQty === 'function' && dailyHasQty(t)) || t.sourceTimesheetId)
+      .map(t => typeof dailyRowPayload === 'function' ? dailyRowPayload(t) : ({ taskTemplateId: t.taskTemplateId||undefined, taskTitle: t.taskTitle, hours: t.hours||0, workers: t.workers||0 }));
   }
 
   const res = await api('PATCH', `/daily-reports/${id}`, body);
