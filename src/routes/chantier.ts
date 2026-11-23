@@ -11,6 +11,7 @@ import { prisma } from '../config/database';
 import { AuthRequest, projectIds } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
 import { rateLimit } from '../middleware/rateLimit';
+import { logger } from '../utils/logger';
 import { siteAccessDays, timeLimitedRole, clearSiteDaysCache, canWrite } from '../middleware/access';
 import { assertProjectAccess } from '../middleware/projectAccess';
 import { upload, uploadToCloudinary } from '../services/cloudinaryService';
@@ -77,27 +78,36 @@ publicChantierRoutes.post('/login', loginLimit, async (req: Request, res: Respon
     const key = phoneKey(req.body?.phone);
     const pin = String(req.body?.pin ?? '');
     if (key.length < 6 || !/^\d{4}$/.test(pin)) throw new AppError('LOGIN_FAILED', 401);
-    const candidates = (await db.user.findMany({
-      where: { isActive: true, role: { in: PIN_ROLES as any }, pinHash: { not: null }, phone: { not: null } },
-      select: { id: true, email: true, role: true, firstName: true, lastName: true, phone: true, pinHash: true, pinFailed: true, pinLockedUntil: true, lang: true },
-    })).filter((u: any) => phoneKey(u.phone) === key);
+    // SQL brut : le rôle est comparé en texte (un filtre Prisma sur l'enum UserRole avec les valeurs ajoutées après coup
+    // — installer — peut échouer en 22P03 « incorrect binary data format », voir migrations.ts) ; colonnes lues par leur nom.
+    let rows: any[];
+    try {
+      rows = await prisma.$queryRaw<any[]>`
+        SELECT id, email, role::text AS role, first_name AS "firstName", last_name AS "lastName", phone,
+               pin_hash AS "pinHash", pin_failed AS "pinFailed", pin_locked_until AS "pinLockedUntil", lang
+        FROM users
+        WHERE is_active = true AND role::text IN ('installer', 'worker') AND pin_hash IS NOT NULL AND phone IS NOT NULL
+      `;
+    } catch (e: any) {
+      logger.error(`[chantier/login] lecture des comptes impossible : ${e?.message || e}`);
+      throw new AppError('SERVER_BUSY', 503);
+    }
+    const candidates = rows.filter((u) => phoneKey(u.phone) === key);
     if (!candidates.length) throw new AppError('LOGIN_FAILED', 401);
     const now = Date.now();
-    const open = candidates.filter((u: any) => !u.pinLockedUntil || new Date(u.pinLockedUntil).getTime() <= now);
+    const open = candidates.filter((u) => !u.pinLockedUntil || new Date(u.pinLockedUntil).getTime() <= now);
     if (!open.length) throw new AppError('LOCKED', 429);
     for (const u of open) {
       if (await bcrypt.compare(pin, u.pinHash)) {
-        await db.user.update({ where: { id: u.id }, data: { pinFailed: 0, pinLockedUntil: null, lastLogin: new Date() } });
+        await prisma.$executeRaw`UPDATE users SET pin_failed = 0, pin_locked_until = NULL, last_login = NOW() WHERE id = ${u.id}`;
         const session = await issueSession(u);
         return res.json({ success: true, data: { ...session, user: sessionUser(u) } });
       }
     }
     for (const u of open) {
-      const fails = (u.pinFailed || 0) + 1;
-      await db.user.update({
-        where: { id: u.id },
-        data: fails >= MAX_FAILS ? { pinFailed: 0, pinLockedUntil: new Date(now + LOCK_MIN * 60000) } : { pinFailed: fails },
-      });
+      const fails = (Number(u.pinFailed) || 0) + 1;
+      if (fails >= MAX_FAILS) await prisma.$executeRaw`UPDATE users SET pin_failed = 0, pin_locked_until = ${new Date(now + LOCK_MIN * 60000)} WHERE id = ${u.id}`;
+      else await prisma.$executeRaw`UPDATE users SET pin_failed = ${fails} WHERE id = ${u.id}`;
     }
     throw new AppError('LOGIN_FAILED', 401);
   } catch (err) { next(err); }

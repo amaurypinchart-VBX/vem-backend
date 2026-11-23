@@ -144,6 +144,8 @@ async function seedTaskTemplatesIfEmpty(): Promise<void> {
 }
 
 export async function runStartupMigrations() {
+  // VEM Chantier en premier : colonnes de users / project_team lues à chaque connexion (additif, rapide)
+  await migrateChantier();
   try {
     // ─── Table "briefings" ───
     await prisma.$executeRawUnsafe(`
@@ -1728,7 +1730,6 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] plan_approvals : ${e.message}`);
   }
-  await migrateChantier();
   await migrateBriefingNext();
 }
 
