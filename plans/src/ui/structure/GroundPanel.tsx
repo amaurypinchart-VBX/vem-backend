@@ -62,8 +62,8 @@ export interface Hypotheses {
    */
   bearingMode?: 'pressure' | 'distributed';
   /**
-   * charge répartie : vérifier aussi la charge locale sous chaque plaque (descente de charges par appui, comme une note
-   * de bureau d'études — exigé par certains exploitants) ; absent = seulement la dalle sous chaque Viewbox
+   * charge répartie : vérifier aussi la charge locale sous chaque plaque (descente de charges par appui, comme les notes
+   * des bureaux d'études) ; absent = oui (A. Pinchart 23.11.2026), false = seulement la dalle sous chaque Viewbox
    */
   slabLocal?: boolean;
   pointLoadKN: number;
@@ -175,6 +175,9 @@ export const DISTRIBUTED_PRESETS = ['slab', 'roof', 'operator'];
 /** Lecture de la portance : choix enregistré, sinon selon le type de support. */
 export const bearingModeOf = (h: Pick<Hypotheses, 'bearingMode' | 'bearingPreset'>): 'pressure' | 'distributed' => h.bearingMode ?? (DISTRIBUTED_PRESETS.includes(h.bearingPreset) ? 'distributed' : 'pressure');
 
+/** charge répartie : contrôle aussi sous chaque plaque ? Oui par défaut (A. Pinchart 23.11.2026, après les deux bureaux d'études) */
+export const slabLocalOf = (h: Pick<Hypotheses, 'slabLocal'>): boolean => h.slabLocal ?? true;
+
 /**
  * Pressions du vent retenues (kN/m²) : Allemagne = valeurs de l'étape 2 ; France = vent de service de l'arrêté
  * (q = ½ ρ v²) et vent hors service de NF EN 1991-1-4/NA à la hauteur de l'installation (mm).
@@ -232,7 +235,7 @@ export function calageInput(modules: EstimateModule[], h: Hypotheses, stock: Str
     bearing: bearingFrom(h.bearingValue, h.bearingUnit),
     pointLoadMax: (BEARING_PRESETS.find((p) => p.key === h.bearingPreset)?.pointLoad || bearingModeOf(h) === 'distributed') && h.pointLoadKN > 0 ? h.pointLoadKN * 1e3 : undefined,
     bearingMode: bearingModeOf(h),
-    ...(h.slabLocal && bearingModeOf(h) === 'distributed' ? { slabLocal: true } : {}),
+    ...(slabLocalOf(h) && bearingModeOf(h) === 'distributed' ? { slabLocal: true } : {}),
     // France : réactions caractéristiques (pas de conversion statico), pas de Prüfbuch TÜV
     staticoConversion: fr ? false : h.staticoConversion,
     ...(fr ? { code: 'FR' as const } : {}),
@@ -1264,7 +1267,7 @@ export function GroundPanel({ modules, source, storageKey, intro, hyp: hypProp, 
             </select>
             {bearingModeOf(hyp) === 'distributed' && (
               <label className="row" style={{ gap: 4 }} title="Descente de charges par appui : charge de chaque appui (+ son calage) / surface de sa plaque ≤ charge admissible, comme une note de bureau d’études">
-                <input type="checkbox" checked={!!hyp.slabLocal} onChange={(e) => setHyp((h) => ({ ...h, slabLocal: e.target.checked || undefined }))} data-testid="slab-local-quick" /> aussi sous chaque plaque
+                <input type="checkbox" checked={slabLocalOf(hyp)} onChange={(e) => setHyp((h) => ({ ...h, slabLocal: e.target.checked }))} data-testid="slab-local-quick" /> aussi sous chaque plaque
               </label>
             )}
           </div>

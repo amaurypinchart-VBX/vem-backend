@@ -22,6 +22,13 @@ describe('dalle en charge répartie admissible', () => {
     expect(calageInput(mods, { ...hyp450, bearingPreset: 'operator' }, { plates: [], commercial: [] }, true).bearingMode).toBe('distributed');
   });
 
+  it('contrôle aussi sous chaque plaque : oui par défaut (23.11.2026), décochable, jamais sur un sol en pression', () => {
+    const st = { plates: [], commercial: [] };
+    expect(calageInput(mods, { ...hyp450, bearingPreset: 'operator' }, st, true).slabLocal).toBe(true);
+    expect(calageInput(mods, { ...hyp450, bearingPreset: 'operator', slabLocal: false }, st, true).slabLocal).toBeUndefined();
+    expect(calageInput(mods, { ...hyp450, bearingPreset: 'meadow' }, st, true).slabLocal).toBeUndefined();
+  });
+
   it('une zone de dalle par Viewbox : les zones couvrent exactement l’emprise, poids au m² = poids / surface', () => {
     const r = computeCalage(slab);
     const s = r.slab!;

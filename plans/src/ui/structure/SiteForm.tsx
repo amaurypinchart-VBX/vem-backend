@@ -8,7 +8,7 @@ import { DEFAULT_SITE, TERRAIN_LABEL, peakPressure } from '../../structure/core/
 import type { WindZone } from '../../structure/core/wind';
 import { fmtNumber } from '../../structure/core/units';
 import type { Hypotheses } from './GroundPanel';
-import { DEFAULT_HYP, bearingModeOf } from './GroundPanel';
+import { DEFAULT_HYP, bearingModeOf, slabLocalOf } from './GroundPanel';
 import { PROJECT_ID, vem } from '../../api/vem';
 import type { FrDuration, FrSnowRegion, FrTerrain, FrWindRegion, FrWindSite } from '../../structure/core/codeFR';
 import { DEFAULT_FR_WIND, FR_DURATIONS, FR_DURATION_KEYS, FR_SNOW_KEYS, FR_SNOW_SK200, FR_TERRAINS, FR_TERRAIN_KEYS, FR_WIND_REGIONS, RHO_AIR, SPD, frPeak, frSnowGround, serviceWindPressure } from '../../structure/core/codeFR';
@@ -299,12 +299,12 @@ export function HypothesesForm({ hyp, setHyp, jacks = false, levels = 1, without
             help={
               <>
                 Descente de charges par appui (comme une note de bureau d’études) : la charge de chaque appui et de son calage, divisée par la surface de la plaque qui le pose sur la dalle, doit aussi rester sous le poids admis par m². Plus
-                sévère que le contrôle sous chaque Viewbox : ajouter des appuis ou de plus grandes plaques fait baisser la charge locale. À cocher quand l’exploitant de la dalle l’exige ; sinon le tableau reste affiché pour information.
+                sévère que le contrôle sous chaque Viewbox : ajouter des appuis ou de plus grandes plaques fait baisser la charge locale. Coché par défaut (c’est ce que vérifient les bureaux d’études) ; décocher seulement si l’exploitant de la dalle confirme que seul le poids moyen sous chaque Viewbox compte — le tableau reste alors affiché pour information.
               </>
             }
           >
             <label className="row" style={{ gap: 6 }}>
-              <input type="checkbox" checked={!!hyp.slabLocal} onChange={(e) => set('slabLocal', e.target.checked || undefined)} data-testid="slab-local" /> la charge locale sous chaque plaque est aussi un critère
+              <input type="checkbox" checked={slabLocalOf(hyp)} onChange={(e) => set('slabLocal', e.target.checked)} data-testid="slab-local" /> la charge locale sous chaque plaque est aussi un critère
             </label>
           </Q>
         )}

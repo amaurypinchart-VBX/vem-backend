@@ -30,7 +30,8 @@ const nine: DrawnBlock[] = layoutPads(floors, { ...PAD_LAYOUT_DEFAULT, thickness
 const centre: DrawnBlock[] = layoutPads(floors, { ...PAD_LAYOUT_DEFAULT, corners: false, middles: false, centre: 2, thickness: 407 }, -12).map((b, i) => ({ ...b, id: `BL${10 + i}`, under: { feet: null, frame: 12 } }));
 const blocks = [...nine, ...centre];
 const base: StudyInputs = { modules: two, edgeItems: [], pointItems: [], library: SEED, sections: sectionMap(SEED), loads: { ...LOADS, liveGround: 0.49e-3 }, middleFeet: true, sls: true, options: { ...CALC_DEFAULTS, jacks: true }, blocking: [] };
-const hyp = { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, bearingMode: 'distributed' as const, middleFeet: true, liveGround: 0.49, publicMode: 'persons' as const, persons: 8 };
+// slabLocal: false = contrôle sous chaque Viewbox seulement (le défaut est « aussi sous chaque plaque » depuis le 23.11.2026)
+const hyp = { ...DEFAULT_HYP, bearingValue: 450, bearingUnit: 'kg/m²' as const, bearingMode: 'distributed' as const, slabLocal: false, middleFeet: true, liveGround: 0.49, publicMode: 'persons' as const, persons: 8 };
 const stock = { plates: [], commercial: [] };
 const estMods = two.map(placedToEstimate);
 
