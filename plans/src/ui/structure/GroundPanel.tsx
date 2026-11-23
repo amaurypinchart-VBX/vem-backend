@@ -19,9 +19,9 @@ import { VERDICT_LABEL, verdictOf } from '../../structure/core/records';
 import { fmtNumber } from '../../structure/core/units';
 import { GroundPlan, checkPlan, planPlates, planReactions } from '../../structure/report/groundSheet';
 import type { CalageRemedy, RemedyVerdict } from '../../structure/core/calageRemedies';
-import { SLEEPER_SECTIONS, calageRemedies, isFlat } from '../../structure/core/calageRemedies';
+import { PLATFORM_LOWER, PLATFORM_UPPER, SLEEPER_SECTIONS, calageRemedies, isFlat } from '../../structure/core/calageRemedies';
 import type { SleeperVariant } from '../../structure/core/sleeperCompare';
-import { sleeperVariants } from '../../structure/core/sleeperCompare';
+import { platformVariants, sleeperVariants } from '../../structure/core/sleeperCompare';
 import { typeColor } from '../../structure/report/calagePlan';
 import type { PlatePlacement } from '../../structure/core/placement';
 import type { Terrain } from '../../structure/core/wind';
@@ -365,8 +365,8 @@ function AppliedRemedies({ result, centreBlocks, onRemove }: { result: CalageRes
 
 /** « 10 × 23 cm, à plat (23 cm au sol) » : section d'un madrier (b = largeur au sol, h = épaisseur). */
 const sectionCm = (mm: number) => n(mm / 10, mm % 10 ? 1 : 0);
-const sectionLabel = (b: { b: number; h: number }) =>
-  isFlat(b) ? `${sectionCm(b.h)} × ${sectionCm(b.b)} cm, à plat (${sectionCm(b.b)} cm au sol)` : b.b === b.h ? `${sectionCm(b.b)} × ${sectionCm(b.h)} cm` : `${sectionCm(b.b)} × ${sectionCm(b.h)} cm, sur chant`;
+const sectionLabel = (b: { b: number; h: number; grade?: 'GL24h' }) =>
+  `${isFlat(b) ? `${sectionCm(b.h)} × ${sectionCm(b.b)} cm, à plat (${sectionCm(b.b)} cm au sol)${b.b === 175 && b.h === 63 ? ' — bastaing' : ''}` : b.b === b.h ? `${sectionCm(b.b)} × ${sectionCm(b.h)} cm` : `${sectionCm(b.b)} × ${sectionCm(b.h)} cm, sur chant`}${b.grade ? ` ${b.grade} (lamellé-collé)` : ' C24'}`;
 
 /**
  * Madriers choisis à la main sous les rangées d'appuis (section, nombre par rangée) : calculés sur le calage sans
@@ -377,18 +377,28 @@ const sectionLabel = (b: { b: number; h: number }) =>
 export function SleepersCard({ input, result, choices, onApply }: { input: CalageInput; result: CalageResult; choices: CalageChoices; onApply: (r: CalageRemedy) => void }) {
   const [sec, setSec] = useState(0);
   const [count, setCount] = useState(0);
+  // système : madriers sous chaque rangée, ou plateau en 2 couches (poutres sous les rangées sur une couche jointive)
+  const [system, setSystem] = useState<'rows' | 'platform'>('rows');
+  const [upper, setUpper] = useState(0);
+  const [lower, setLower] = useState(0);
+  const [over, setOver] = useState(0);
   const [variants, setVariants] = useState<SleeperVariant[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const slab = input.bearingMode === 'distributed';
   // la piste change avec le calage (charges, portance) et les choix : à recalculer
-  useEffect(() => setVariants(null), [result, sec, count]);
+  useEffect(() => setVariants(null), [result, sec, count, system, upper, lower, over]);
   const compute = () => {
     setBusy(true);
     setTimeout(() => {
       try {
         const base = input.choices?.remedy ? { ...input, choices: { ...input.choices, remedy: undefined } } : input;
-        setVariants(sleeperVariants(base, base === input ? result : computeCalage(base), { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}) }));
+        const res0 = base === input ? result : computeCalage(base);
+        setVariants(
+          system === 'platform'
+            ? platformVariants(base, res0, { upper: PLATFORM_UPPER[upper], lower: PLATFORM_LOWER[lower], over })
+            : sleeperVariants(base, res0, { beam: SLEEPER_SECTIONS[sec], ...(count ? { count } : {}) }),
+        );
       } finally {
         setBusy(false);
       }
@@ -401,7 +411,7 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
   return (
     <div className="card" data-testid="calage-sleepers">
       <div className="card-head">
-        <h2>🪵 Madriers sous les rangées d’appuis</h2>
+        <h2>🪵 Madriers ou plateau sous les appuis</h2>
         <span className="hint">
           {slab
             ? 'dalle en charge répartie : les madriers répartissent la charge de chaque pied le long de la rangée ; le critère reste la charge au m² de chaque zone'
@@ -409,6 +419,52 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
         </span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className="row" style={{ gap: 6 }}>
+            Système
+            <select value={system} onChange={(e) => setSystem(e.target.value as 'rows' | 'platform')} data-testid="sleepers-system">
+              <option value="rows">madriers sous chaque rangée d’appuis</option>
+              <option value="platform">plateau 2 couches : poutres sous les rangées + couche jointive en travers</option>
+            </select>
+          </label>
+        </div>
+        {system === 'platform' ? (
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }} data-testid="platform-choice">
+            <label className="row" style={{ gap: 6 }}>
+              Sous chaque rangée
+              <select value={upper} onChange={(e) => setUpper(Number(e.target.value))} data-testid="platform-upper">
+                {PLATFORM_UPPER.map((b, k) => (
+                  <option key={k} value={k}>
+                    {sectionLabel(b)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="row" style={{ gap: 6 }}>
+              Couche du dessous (jointive)
+              <select value={lower} onChange={(e) => setLower(Number(e.target.value))} data-testid="platform-lower">
+                {PLATFORM_LOWER.map((b, k) => (
+                  <option key={k} value={k}>
+                    {sectionLabel(b)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="row" style={{ gap: 6 }}>
+              Débord
+              <select value={over} onChange={(e) => setOver(Number(e.target.value))} data-testid="platform-over">
+                {[0, 100, 250, 500].map((k) => (
+                  <option key={k} value={k}>
+                    {k ? `${k / 10} cm autour de l’installation` : 'aucun (emprise de l’installation)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="btn small primary" disabled={busy} onClick={compute} data-testid="platform-compute">
+              {busy ? 'Calcul…' : 'Calculer'}
+            </button>
+          </div>
+        ) : (
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <label className="row" style={{ gap: 6 }}>
             Section
@@ -435,6 +491,7 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
             {busy ? 'Calcul…' : 'Calculer'}
           </button>
         </div>
+        )}
         {variants && !variants.length && <div className="hint">Pas de rangée d’appuis où poser des madriers.</div>}
         {variants && variants.length > 0 && (
           <table className="list" data-testid="sleepers-variants">
@@ -443,7 +500,7 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
                 <th>Variante</th>
                 <th>Madriers</th>
                 <th className="num">Bois η</th>
-                <th className="num">{slab ? 'Charge sur la dalle (zone la plus chargée)' : 'Charge au sol sous les madriers'}</th>
+                <th className="num">{slab ? 'Charge sur la dalle (zone la plus chargée) · sous le bois' : 'Charge au sol sous les madriers'}</th>
                 <th className="num">Poids du calage</th>
                 <th className="num">Hauteur du calage (hors vérin)</th>
                 <th />
@@ -465,7 +522,11 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
                   <td>{v.remedy.materials.filter((m) => m.label.startsWith('Madrier')).map((m) => `${m.quantity} × ${m.dims}`).join(' ; ') || '—'}</td>
                   <td className="num">{v.remedy.eta !== undefined ? n(v.remedy.eta, 2) : '—'}</td>
                   <td className="num">
-                    {slab ? (v.slabQ !== undefined ? kg(v.slabQ) : '—') : v.groundMean !== undefined ? `moy. ${kg(v.groundMean)} · maxi ${kg(v.groundMax!)}` : '—'}
+                    {slab
+                      ? `${v.slabQ !== undefined ? kg(v.slabQ) : '—'}${v.groundMax !== undefined ? ` · sous le bois moy. ${kg(v.groundMean!)}, maxi ${kg(v.groundMax)}` : ''}`
+                      : v.groundMean !== undefined
+                        ? `moy. ${kg(v.groundMean)} · maxi ${kg(v.groundMax!)}`
+                        : '—'}
                   </td>
                   <td className="num">{n(v.packingKg, 0)} kg</td>
                   <td className="num">{v.height > 0 ? `${n(v.height / 10, 1)} cm` : '—'}</td>
@@ -507,6 +568,13 @@ export function SleepersCard({ input, result, choices, onApply }: { input: Calag
               ? `en charge répartie ils n’aident pas la dalle, ils ajoutent leur poids (${withB.slabQ !== undefined && without.slabQ !== undefined ? `${kg(withB.slabQ)} avec, ${kg(without.slabQ)} sans` : 'voir le tableau'}).`
               : 'sans eux, les vérins reposent directement sur les madriers.'}{' '}
             Sans les blocs, l’installation est plus basse d’environ {n(Math.max(0, withB.height - without.height) / 10, 0)} cm : à garder seulement si cette hauteur est voulue (niveau, câbles, accès).
+          </div>
+        )}
+        {system === 'platform' && (
+          <div className="hint">
+            Plateau en 2 couches : sous chaque rangée d’appuis une ou plusieurs poutres (ex. lamellé-collé GL24h 140 × 240) le long de la rangée, posées sur une couche jointive en travers (ex. bastaings à plat) qui couvre toute
+            l’emprise. Calcul : chaque bastaing comme une poutre sur sol élastique chargée par les rangées ; la pointe sous les appuis est donnée avec la moyenne
+            {slab ? ' (avec « Contrôler aussi sous chaque plaque » à l’étape 2, la pointe doit rester sous le poids admis par m²)' : ''}.
           </div>
         )}
         <div className="hint">

@@ -290,8 +290,11 @@ export function slabBudgetTable(res: CalageResult, lang: Lang): { cols: string[]
       const k = keyOf(l);
       if (!order.some((o) => o.k === k)) order.push({ k, label: l.key === 'box' ? 'Viewbox, pesée (structure, plancher, sol, plafond, isolants)' : l.key === 'redistribution' ? 'Report de charge (vent, raideurs : combinaison la plus lourde de la zone)' : l.key === 'block' ? 'Blocs de calage bois' : l.label, ...(l.proposed ? { proposed: true } : {}) });
     }
+  // public : le nombre de personnes et le fait qu'elles sont toutes comptées dans chaque Viewbox (deux bureaux d'études
+  // avaient additionné les colonnes et lu 16 personnes pour 8 — 23.11.2026)
+  const publicNote = zones.flatMap((z) => z.budget!).find((l) => l.key === 'public' && l.note)?.note;
   const rows: Array<{ label: string; values: string[]; bold?: boolean; proposed?: boolean }> = order.map((o) => ({
-    label: `${E(o.label)}${o.proposed ? ` (${S.proposed})` : ''}`,
+    label: `${E(o.label)}${o.proposed ? ` (${S.proposed})` : ''}${o.k.startsWith('public|') && publicNote ? ` — ${E(publicNote)}` : ''}`,
     values: zones.map((z) => {
       const l = z.budget!.find((x) => keyOf(x) === o.k);
       return l ? `${kg(l.N)}${l.count && l.count > 1 ? ` (${l.count} ×)` : ''}` : '—';
@@ -301,6 +304,15 @@ export function slabBudgetTable(res: CalageResult, lang: Lang): { cols: string[]
   rows.push({ label: S.total, values: zones.map((z) => kg(z.load)), bold: true });
   rows.push({ label: S.area, values: zones.map((z) => `${num(lang, z.area / 1e6, 2)} m²`) });
   rows.push({ label: `${S.perM2} (${S.allowable} ${num(lang, (slab.bearing * 1e6) / 9.81, 0)} kg/m²)`, values: zones.map((z) => `${num(lang, (z.q * 1e6) / 9.81, 0)} kg/m² — η ${num(lang, z.eta, 2)}`), bold: true });
+  // l'installation entière, charges simultanées (public compté une fois) : à ne pas confondre avec la somme des colonnes
+  if (zones.length > 1) {
+    const g = slab.global;
+    rows.push({
+      label: E('Ensemble de l’installation (simultané, public compté une fois)'),
+      values: zones.map((_, i) => (i === zones.length - 1 ? `${kg(g.load)} / ${num(lang, g.area / 1e6, 2)} m² = ${num(lang, (g.q * 1e6) / 9.81, 0)} kg/m²` : '')),
+      bold: true,
+    });
+  }
   return { cols: [S.colItem, ...zones.map((z) => z.id)], rows };
 }
 

@@ -399,6 +399,23 @@ function rectDims(c: P2[]): [number, number] {
 export function supportLoads(res: CalageResult, bearing: number, spread: number, grow = 0): SupportLoad[] {
   return res.checks.map((c): SupportLoad => {
     const calage = (c.block ? c.block.massKg * G : 0) + platesWeight(c);
+    // appui posé sur des madriers / un plateau retenus : la charge locale = la pointe sous le bois (sol élastique, poids
+    // du bois compris), la surface = celle du bois qui porte sa rangée / tout le plateau
+    const tb = c.chainBase.timber;
+    if (tb) {
+      const side = Math.sqrt(tb.area);
+      const platform = tb.label.startsWith('Plateau');
+      return {
+        id: c.id,
+        members: c.reaction.group.strip && c.block ? [c.block.id] : c.members,
+        reaction: c.Rzk,
+        calage,
+        plate: { dims: [side, side], area: tb.area, label: platform ? 'plateau de madriers (pointe sous le bois)' : 'madriers de la rangée (pointe sous le bois)' },
+        q: tb.pressure,
+        eta: tb.pressure / bearing,
+        areaNeeded: (c.Rzk + calage) / bearing,
+      };
+    }
     const outline = c.plan?.corners ?? (c.block ? c.block.outline : null);
     const base: [number, number] = outline ? rectDims(outline) : c.block ? c.block.size : [c.geometry.contact[0], c.geometry.contact[1]];
     const dims: [number, number] = [base[0] + 2 * grow, base[1] + 2 * grow];

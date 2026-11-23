@@ -4,8 +4,8 @@
 // sur la dalle (ou au sol), poids du calage, hauteur sous la Viewbox. Fonctions pures ; N, mm.
 import type { CalageInput, CalageResult } from './calage';
 import { computeCalage } from './calage';
-import type { CalageRemedy, SleeperChoice } from './calageRemedies';
-import { sleeperOption } from './calageRemedies';
+import type { CalageRemedy, PlatformChoice, SleeperChoice } from './calageRemedies';
+import { platformOption, sleeperOption } from './calageRemedies';
 
 export interface SleeperVariant {
   /** blocs dessinés gardés (sous les vérins, sur les madriers) ou retirés (vérins directement sur les madriers) */
@@ -15,7 +15,7 @@ export interface SleeperVariant {
   result: CalageResult | null;
   /** tous les appuis passent avec la variante */
   ok: boolean;
-  /** dalle en charge répartie : charge de la zone la plus chargée (N/mm²) ; sol : charge moyenne et maxi sous les madriers */
+  /** dalle en charge répartie : charge de la zone la plus chargée (N/mm²) ; charge moyenne et maxi sous les madriers du dessous */
   slabQ?: number;
   groundMean?: number;
   groundMax?: number;
@@ -32,11 +32,23 @@ export interface SleeperVariant {
  * modèle), sur le calage `res` calculé sans solution retenue.
  */
 export function sleeperVariants(inp: CalageInput, res: CalageResult, choice: SleeperChoice): SleeperVariant[] {
+  return timberVariants(inp, res, (withBlocks) => sleeperOption(inp, res, { ...choice, withBlocks }));
+}
+
+/**
+ * Plateau en 2 couches choisi à la main (par exemple poutres GL24h 140 × 240 sous les rangées sur bastaings à plat,
+ * sans débord), avec et sans les blocs dessinés.
+ */
+export function platformVariants(inp: CalageInput, res: CalageResult, choice: PlatformChoice): SleeperVariant[] {
+  return timberVariants(inp, res, (withBlocks) => platformOption(inp, res, { ...choice, withBlocks }));
+}
+
+function timberVariants(inp: CalageInput, res: CalageResult, make: (withBlocks: boolean) => CalageRemedy | null): SleeperVariant[] {
   const slab = inp.bearingMode === 'distributed';
   const hasBlocks = res.checks.some((c) => c.block);
   const out: SleeperVariant[] = [];
   for (const withBlocks of hasBlocks ? [false, true] : [true]) {
-    const remedy = sleeperOption(inp, res, { ...choice, withBlocks });
+    const remedy = make(withBlocks);
     if (!remedy) continue;
     const result = typeof remedy.apply === 'object' ? computeCalage({ ...inp, choices: { ...(inp.choices ?? {}), remedy: remedy.apply, roadway: false, longrine: false } }) : null;
     const lower = (result?.remedy?.outlines ?? []).filter((o) => o.timber?.layer === 'lower' && o.ground);
@@ -48,7 +60,7 @@ export function sleeperVariants(inp: CalageInput, res: CalageResult, choice: Sle
       result,
       ok: !!result && result.checks.every((c) => c.eta <= 1) && (!result.slab || result.slab.global.eta <= 1),
       ...(slab && result?.slab ? { slabQ: Math.max(...result.slab.zones.map((z) => z.q)) } : {}),
-      ...(!slab && lower.length
+      ...(lower.length
         ? { groundMean: lower.reduce((a, o) => a + o.ground!.mean * area(o.corners), 0) / Math.max(A, 1), groundMax: Math.max(...lower.map((o) => o.ground!.max)) }
         : {}),
       packingKg: (result?.materials ?? remedy.materials).reduce((a, m) => a + m.massKg, 0),

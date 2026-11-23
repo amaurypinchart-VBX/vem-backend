@@ -14,7 +14,19 @@ import { fmtNumber } from './units';
 
 export type RemedyVerdict = 'ok' | 'fail' | 'study' | 'info';
 
-type Beam = Pick<TimberBeam, 'b' | 'h'>;
+/** Section de bois (b = largeur vue en plan, h = épaisseur) et classe : C24 (bois massif, défaut) ou lamellé-collé GL24h. */
+type Beam = Pick<TimberBeam, 'b' | 'h'> & { grade?: 'GL24h' };
+
+/** Propriétés du bois d'une section : C24 (EN 338) ou GL24h (EN 14080 : E0,mean 11 500, fm,k 24, fv,k 3,5, ρmean 420). */
+export const timberOf = (beam: Beam) => (beam.grade === 'GL24h' ? { E: 11500, fmk: 24, fvk: 3.5, fc90k: 2.5, rho: 420, name: 'lamellé-collé GL24h' } : { ...C24, name: 'C24' });
+
+/**
+ * Plateau choisi à la main (A. Pinchart 23.11.2026, solution d'un bureau d'études pour IKEA place de l'Opéra :
+ * « poutres 140 × 240 en GL24h » sous les appuis, sur des « bastaings à plat », plateau = emprise sans débord) :
+ * sections proposées pour la couche du dessus (sous les rangées d'appuis) et celle du dessous (jointive, en travers).
+ */
+export const PLATFORM_UPPER: Beam[] = [{ b: 140, h: 240, grade: 'GL24h' }, { b: 140, h: 200, grade: 'GL24h' }, { b: 115, h: 240, grade: 'GL24h' }, { b: 75, h: 225 }, { b: 100, h: 200 }, { b: 150, h: 150 }, { b: 200, h: 200 }];
+export const PLATFORM_LOWER: Beam[] = [{ b: 175, h: 63 }, { b: 230, h: 100 }, { b: 225, h: 75 }, { b: 200, h: 50 }, { b: 150, h: 150 }];
 
 /** Grille de madriers retenue pour une rangée d'appuis (appuis par leur id, pour retrouver la rangée). */
 export interface SleeperRowDesign {
@@ -52,6 +64,8 @@ export interface TimberPiece {
   row?: number;
   /** répartiteurs sous un appui (grille) */
   support?: string;
+  /** lamellé-collé GL24h (absent : bois massif C24) */
+  grade?: 'GL24h';
 }
 
 /** Contour en plan d'une partie de la solution (monde x, z, mm), pour les plans. */
@@ -276,8 +290,9 @@ function evalRow(loads: RowLoad[], length: number, inp: CalageInput, beam: Beam,
   const mean = (ld.reduce((a, l) => a + l.Pk, 0) + r.massKg * G) / (B * length);
   const others = r.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
   const etaTimber = Math.max(0, ...others, ...topList.map((t) => t.eta));
-  // dalle en charge répartie : la pression sous les madriers est une information (le critère = la charge de la zone)
-  const slab = inp.bearingMode === 'distributed';
+  // dalle en charge répartie : la pression sous les madriers est une information (le critère = la charge de la zone),
+  // sauf si l'exploitant exige la charge admissible sous chaque plaque (`slabLocal`)
+  const slab = inp.bearingMode === 'distributed' && !inp.slabLocal;
   const etaGround = slab ? 0 : pressure / inp.bearing;
   const rec: CalcRecord = slab
     ? {
@@ -501,7 +516,7 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
         etaTimber: d.etaTimber,
         records: rowRecords,
         note: slab ? 'charge locale maxi sous la rangée (information : le critère est la charge répartie de la zone de dalle)' : 'pression maxi sous la rangée (sol élastique, toutes les charges de la rangée + poids de la grille)',
-        ...(slab ? { info: true } : {}),
+        ...(slab && !inp.slabLocal ? { info: true } : {}),
       });
     }
   });
@@ -592,14 +607,36 @@ export function sleeperOption(inp: CalageInput, res: CalageResult, choice: Sleep
   return sleepers(inp, res, rowAxis(inp), choice.withBlocks || !res.checks.some((c) => c.block), undefined, choice)?.remedy ?? null;
 }
 
+/** Plateau choisi à la main : sections des deux couches, débord (0 = emprise sans débord), avec ou sans les blocs. */
+export interface PlatformChoice {
+  upper: Beam;
+  lower: Beam;
+  over: number;
+}
+
+/**
+ * Plateau en 2 couches choisi à la main (poutres sous chaque rangée d'appuis sur une couche jointive en travers), sur
+ * le calage `res` calculé sans solution retenue : la piste chiffrée, à appliquer comme les autres.
+ */
+export function platformOption(inp: CalageInput, res: CalageResult, choice: PlatformChoice & { withBlocks: boolean }): CalageRemedy | null {
+  if (!(inp.bearing > 0)) return null;
+  return platformGrid(inp, res, rowAxis(inp), choice.withBlocks || !res.checks.some((c) => c.block), { over: Math.max(0, choice.over), lower: choice.lower, upper: choice.upper })?.remedy ?? null;
+}
+
 /** Pistes chiffrées quand au moins un appui ne passe pas (vide sinon). */
 export function calageRemedies(inp: CalageInput, res: CalageResult): CalageRemedy[] {
   const failing = res.checks.filter((c) => c.eta > 1);
   if (!failing.length || !(inp.bearing > 0)) return [];
-  if (inp.bearingMode === 'distributed' && res.slab) return slabRemedies(inp, res);
+  // dalle en charge répartie : les pistes de la dalle ; si la charge admissible est exigée sous chaque plaque
+  // (`slabLocal`), les pistes du sol (madriers, plateau) en plus, et la charge linéique à faire accepter
+  if (inp.bearingMode === 'distributed' && res.slab && !inp.slabLocal) return slabRemedies(inp, res);
   const out: CalageRemedy[] = [];
   const u = rowAxis(inp);
   const q = inp.bearing;
+  if (inp.bearingMode === 'distributed' && res.slab) {
+    out.push(lineLoadRemedy(inp, res, u));
+    if (res.slab.zones.some((z) => z.eta > 1)) out.push(...slabRemedies(inp, res));
+  }
 
   // 1. blocs centrés sous les pieds
   const eccentric = res.checks.filter((c) => c.block && c.block.offset > 50);
@@ -705,7 +742,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const us = pts.map((p) => p[0] * u[0] + p[1] * u[1]);
   const vs = pts.map((p) => p[0] * v[0] + p[1] * v[1]);
   const [U0, U1, V0, V1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
-  const fmd = (0.9 * C24.fmk) / 1.3;
+  const infoOnly = inp.bearingMode === 'distributed' && !inp.slabLocal;
   // surface chargée par chaque appui sur la couche du dessus, centrée sur sa charge (pas tout le bloc)
   const foot = checks.map((c) => loadedFootprint(c, withBlocks));
   type Grid = { over: number; lower: Beam; upper: Beam; nUpper: number; eta: number; etaTimber: number; pressure: number; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
@@ -719,7 +756,8 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
         // couche du dessus : sous chaque rangée, de la largeur de ses appuis
         const across = Math.max(...foot.map((f) => f[1]));
         const nUpper = Math.max(1, Math.ceil(across / upper.b - 1e-9));
-        const beta = Math.pow((3 * inp.longrine.k) / (C24.E * upper.h ** 3), 0.25);
+        const up = timberOf(upper);
+        const beta = Math.pow((3 * inp.longrine.k) / (up.E * upper.h ** 3), 0.25);
         const alongMin = Math.min(...foot.map((f) => f[0]));
         const reach = alongMin + 2 / beta;
         // charge d'une rangée par mm le long de la rangée : répartie sur la longueur couverte par ses appuis
@@ -731,7 +769,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
           const peak = Math.max(...r.items.map((i) => supportLoad(i.c, withBlocks).Pk)) / Math.min(reach, L);
           return { v: r.v - V0 + over, q: Math.max(P / spread, peak), qEd: Math.max(PEd / spread, (peak * PEd) / Math.max(P, 1)) };
         });
-        const upperKgPerMm = (nUpper * upper.b * upper.h * C24.rho) / 1e9;
+        const upperKgPerMm = (nUpper * upper.b * upper.h * up.rho) / 1e9;
         // un madrier du dessous (largeur b) : charges des rangées + poids de la couche du dessus
         const loads = rowLine.map((r) => ({ x: r.v, Pk: (r.q + upperKgPerMm * G) * lower.b, PEd: (r.qEd + 1.35 * upperKgPerMm * G) * lower.b }));
         const rr = checkLongrine({ loads, length: W, beam: lower, count: 1, k: inp.longrine.k, bearing: inp.bearing, contact: across });
@@ -742,22 +780,23 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
         const span = spans.length ? Math.max(...spans) : 0;
         const Pmax = Math.max(...checks.map((c) => supportLoad(c, withBlocks).PEd));
         const Mup = (Pmax * Math.min(span, 2 / beta)) / 8 / nUpper;
-        const etaUp = Mup / ((upper.b * upper.h ** 2) / 6) / fmd;
+        const fmdUp = (0.9 * up.fmk) / 1.3;
+        const etaUp = Mup / ((upper.b * upper.h ** 2) / 6) / fmdUp;
         const others = rr.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
         const etaTimber = Math.max(etaUp, ...others);
-        const eta = Math.max(pressure / inp.bearing, etaTimber);
+        // dalle en charge répartie : la pression sous le plateau n'est un critère que si l'exploitant l'exige
+        const eta = Math.max(infoOnly ? 0 : pressure / inp.bearing, etaTimber);
         const nLower = Math.ceil(L / lower.b - 1e-9);
-        const massKg = ((nLower * lower.b * lower.h * W + rows.length * nUpper * upper.b * upper.h * L) * C24.rho) / 1e9;
+        const massKg = (nLower * lower.b * lower.h * W * C24.rho + rows.length * nUpper * upper.b * upper.h * L * up.rho) / 1e9;
         const records: CalcRecord[] = [
           {
             key: 'platform.pressure',
-            title: 'Pression au sol sous le plateau (madriers du dessous, sol élastique)',
+            title: infoOnly ? 'Charge locale sous le plateau (information : le critère est la charge répartie de la zone de dalle)' : 'Pression au sol sous le plateau (madriers du dessous, sol élastique)',
             clause: 'poutre sur sol élastique sans traction (Winkler) ; charge de chaque rangée répartie le long de la rangée par la couche du dessus (≈ 1/β au-delà de l’appui)',
             formula: 'max p = max (k · w) + poids des deux couches ≤ portance',
             withValues: `madrier ${lower.b} × ${lower.h} mm, L = ${m(W)}, k = ${f(inp.longrine.k * 1e3, 0)} MN/m³ ; max p = ${pressureText(rr.pMaxK)} + ${pressureText(self)} = ${pressureText(pressure)} ≤ ${pressureText(inp.bearing)}`,
             result: pressure,
-            limit: inp.bearing,
-            eta: pressure / inp.bearing,
+            ...(infoOnly ? {} : { limit: inp.bearing, eta: pressure / inp.bearing }),
           },
           ...asSleepers(rr.records.filter((x) => x.key !== 'longrine.pressure')),
           {
@@ -765,7 +804,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
             title: 'Flexion de la couche du dessus (le long des rangées)',
             clause: 'charge de l’appui le plus chargé sur la longueur qu’il atteint (entraxe des appuis, au plus 2/β)',
             formula: 'M = P · ℓ / 8 / n ≤ fm,d · W',
-            withValues: `${nUpper} × ${upper.b} × ${upper.h} mm ; P = ${kN(Pmax)} ; ℓ = ${m(Math.min(span, 2 / beta))} ; σ = ${f(Mup / ((upper.b * upper.h ** 2) / 6), 2)} ≤ ${f(fmd, 2)} N/mm²`,
+            withValues: `${nUpper} × ${upper.b} × ${upper.h} mm ${up.name} ; P = ${kN(Pmax)} ; ℓ = ${m(Math.min(span, 2 / beta))} ; σ = ${f(Mup / ((upper.b * upper.h ** 2) / 6), 2)} ≤ ${f(fmdUp, 2)} N/mm²`,
             eta: etaUp,
           },
         ];
@@ -777,18 +816,35 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   if (!g) return null;
   const totalN = checks.reduce((a, c) => a + supportLoad(c, withBlocks).Pk, 0);
   const blocksKg = res.checks.reduce((a, c) => a + (c.block?.massKg ?? 0), 0);
+  // moyenne sous le plateau : la charge simultanée (combinaison la plus lourde de toute l'installation), pas la somme des
+  // maxima de chaque appui (pris dans des combinaisons différentes) — les pointes, elles, gardent le maximum de chaque appui
+  const vk = res.estimate.verticalK;
+  const simN = vk !== undefined && vk > 0 ? Math.min(totalN, vk + (withBlocks ? blocksKg * G : 0)) : totalN;
   const nLower = Math.ceil(g.L / g.lower.b - 1e-9);
   const ok = !!best;
   const key = withBlocks ? 'platform' : 'platform-no-blocks';
   const perSupport = new Map<string, RemedySupport>();
-  const stepLabel = `Plateau de madriers ${m(g.L)} × ${m(g.W)} : ${nLower} × ${g.lower.b} × ${g.lower.h} mm + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm sous chaque rangée`;
+  const upName = timberOf(g.upper).name;
+  const upWord = g.upper.grade === 'GL24h' ? 'poutres' : 'madriers';
+  const stepLabel = `Plateau de madriers ${m(g.L)} × ${m(g.W)} : ${nLower} × ${g.lower.b} × ${g.lower.h} mm + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm${g.upper.grade ? ` ${g.upper.grade}` : ''} sous chaque rangée`;
   // coupe le long d'une rangée : madriers du dessous coupés (en travers des rangées), ceux du dessus vus en long
   const stack: TimberStackLayer[] = [
     { layer: 'lower', label: `Plateau, couche du dessous : madriers C24 ${g.lower.b} × ${g.lower.h} mm jointifs en travers des rangées (L = ${m(g.W)})`, thickness: g.lower.h, section: 'cut' },
-    { layer: 'upper', label: `Plateau, couche du dessus : ${g.nUpper} madriers C24 ${g.upper.b} × ${g.upper.h} mm le long de la rangée (L = ${m(g.L)})`, thickness: g.upper.h, section: 'long' },
+    { layer: 'upper', label: `Plateau, couche du dessus : ${g.nUpper} ${upWord} ${upName} ${g.upper.b} × ${g.upper.h} mm le long de la rangée (L = ${m(g.L)})`, thickness: g.upper.h, section: 'long' },
   ];
   for (const c of checks)
-    perSupport.set(c.id, { stack, label: stepLabel, pressure: g.pressure, area: g.L * g.W, etaTimber: g.etaTimber, records: g.records, note: 'pression maxi sous le plateau (sol élastique, charge de chaque rangée répartie par la couche du dessus + poids des deux couches)' });
+    perSupport.set(c.id, {
+      stack,
+      label: stepLabel,
+      pressure: g.pressure,
+      area: g.L * g.W,
+      etaTimber: g.etaTimber,
+      records: g.records,
+      note: infoOnly
+        ? 'charge locale maxi sous le plateau (information : le critère est la charge répartie de la zone de dalle)'
+        : 'pression maxi sous le plateau (sol élastique, charge de chaque rangée répartie par la couche du dessus + poids des deux couches)',
+      ...(infoOnly ? { info: true } : {}),
+    });
   const s0 = U0 - g.over;
   const t0 = V0 - g.over;
   const outlines: RemedyOutline[] = [
@@ -798,15 +854,15 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
       label: `${nLower} × ${g.lower.b} × ${g.lower.h} mm`,
       sub: `${m(g.L)} × ${m(g.W)}`,
       timber: { layer: 'lower', system: 'platform', count: nLower, b: g.lower.b, h: g.lower.h, length: g.W, dir: v },
-      ground: { mean: (totalN + g.massKg * G) / (g.L * g.W), max: g.pressure },
+      ground: { mean: (simN + g.massKg * G) / (g.L * g.W), max: g.pressure },
     },
     ...rows.map((r, k): RemedyOutline => {
       const half = (g.nUpper * g.upper.b) / 2;
       return {
         id: `PR${k + 1}`,
         corners: rectUV(u, s0, s0 + g.L, r.v - half, r.v + half),
-        label: `${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm`,
-        timber: { layer: 'upper', system: 'platform', count: g.nUpper, b: g.upper.b, h: g.upper.h, length: g.L, dir: u, row: k + 1 },
+          label: `${g.nUpper} × ${g.upper.b} × ${g.upper.h} mm${g.upper.grade ? ` ${g.upper.grade}` : ''}`,
+        timber: { layer: 'upper', system: 'platform', count: g.nUpper, b: g.upper.b, h: g.upper.h, length: g.L, dir: u, row: k + 1, ...(g.upper.grade ? { grade: g.upper.grade } : {}) },
       };
     }),
   ];
@@ -816,22 +872,25 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
     verdict: ok ? 'ok' : 'fail',
     eta: g.eta,
     summary: ok
-      ? `Plateau ${m(g.L)} × ${m(g.W)}${g.over > 100 ? ` (débord ${f(g.over / 10, 0)} cm de chaque côté)` : ' (sans débord)'} : ${nLower} madriers ${g.lower.b} × ${g.lower.h} en travers + ${g.nUpper} × ${g.upper.b} × ${g.upper.h} sous chaque rangée, ${f(g.massKg, 0)} kg de bois — pression maxi ${pressureText(g.pressure)} (η ${f(g.eta, 2)}).`
+      ? `Plateau ${m(g.L)} × ${m(g.W)}${g.over > 100 ? ` (débord ${f(g.over / 10, 0)} cm de chaque côté)` : ' (sans débord)'} : ${nLower} madriers ${g.lower.b} × ${g.lower.h} en travers + ${g.nUpper} × ${g.upper.b} × ${g.upper.h}${g.upper.grade ? ` ${g.upper.grade}` : ''} sous chaque rangée, ${f(g.massKg, 0)} kg de bois — ${infoOnly ? 'charge locale' : 'pression'} maxi ${pressureText(g.pressure)}, moyenne ${pressureText((simN + g.massKg * G) / (g.L * g.W))} (η ${f(g.eta, 2)}).`
       : fixed
         ? `Plateau retenu ${m(g.L)} × ${m(g.W)} : ne passe pas avec les charges actuelles (η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) — relancer la recherche de solutions.`
         : `Même un plateau continu en grille de madriers ne passe pas (meilleur essai : η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) : la charge (${kN(totalN)}) est trop grande pour ${pressureText(inp.bearing)} sur cette emprise — alléger, agrandir l’emprise ou faire préciser la portance.`,
     details: [
       `Couche du dessous : ${nLower} madriers C24 ${g.lower.b} × ${g.lower.h} mm jointifs, longueur ${m(g.W)}, posés en travers des rangées d’appuis sur toute la longueur ${m(g.L)}.`,
-      `Couche du dessus : sous chaque rangée, ${g.nUpper} madriers ${g.upper.b} × ${g.upper.h} mm le long de la rangée (longueur ${m(g.L)}), vissés aux madriers du dessous ; chaque appui (bloc ou pied) posé dessus, centré.`,
+      g.upper.grade === 'GL24h'
+        ? `Couche du dessus : sous chaque rangée, ${g.nUpper} poutres lamellé-collé GL24h ${g.upper.b} × ${g.upper.h} mm le long de la rangée (longueur ${m(g.L)}), vissées aux madriers du dessous ; chaque appui (bloc ou pied) posé dessus, centré.`
+        : `Couche du dessus : sous chaque rangée, ${g.nUpper} madriers ${g.upper.b} × ${g.upper.h} mm le long de la rangée (longueur ${m(g.L)}), vissés aux madriers du dessous ; chaque appui (bloc ou pied) posé dessus, centré.`,
       `Chaque appui est réparti le long de sa rangée sur ≈ ${m(g.reach)} par la couche du dessus.`,
     ],
     materials: mergeLines([
       { label: 'Madrier bois C24 (plateau, couche du dessous)', dims: `${g.lower.b} × ${g.lower.h} × ${Math.round(g.W)} mm`, quantity: nLower, massKg: (nLower * g.lower.b * g.lower.h * g.W * C24.rho) / 1e9 },
-      { label: 'Madrier bois C24 (plateau, couche du dessus)', dims: `${g.upper.b} × ${g.upper.h} × ${Math.round(g.L)} mm`, quantity: g.nUpper * rows.length, massKg: (g.nUpper * rows.length * g.upper.b * g.upper.h * g.L * C24.rho) / 1e9 },
+      { label: g.upper.grade === 'GL24h' ? 'Poutre lamellé-collé GL24h (plateau, couche du dessus)' : 'Madrier bois C24 (plateau, couche du dessus)', dims: `${g.upper.b} × ${g.upper.h} × ${Math.round(g.L)} mm`, quantity: g.nUpper * rows.length, massKg: (g.nUpper * rows.length * g.upper.b * g.upper.h * g.L * timberOf(g.upper).rho) / 1e9 },
     ]),
     records: g.records,
     notes: [
       'Sol réglé et compacté avant pose ; madriers jointifs (sans vide), les deux couches vissées entre elles pour travailler ensemble.',
+      ...(infoOnly ? ['Dalle en charge répartie : le critère reste la charge au m² de chaque zone ; la charge locale maxi sous le plateau est donnée pour l’exploitant (cocher « Contrôler aussi sous chaque plaque » à l’étape 2 s’il l’exige).'] : []),
       `Raideur du sol ${f(inp.longrine.k * 1e3, 0)} MN/m³ (étape 2, options avancées) : à confirmer — plus le sol est dur, plus la pression se concentre sous les rangées.`,
       'Modèle simplifié (chaque madrier du dessous calculé seul, charge des rangées répartie par la couche du dessus) : à faire valider par un ingénieur pour l’exécution.',
       ...longNote(Math.max(g.L, g.W)),
@@ -840,6 +899,36 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
     apply: { key, over: g.over, lower: g.lower, upper: g.upper },
   };
   return { remedy, perSupport, outlines };
+}
+
+/**
+ * Dalle avec la charge admissible exigée sous chaque plaque : ce critère est très sévère (une dalle n'est pas un sol —
+ * elle porte une charge locale bien plus forte que sa charge répartie, sa limite est la flexion et le poinçonnement).
+ * Les données à faire accepter par l'exploitant (ou son bureau d'études de la dalle) : la charge linéique sous chaque
+ * rangée d'appuis si elle est répartie par des madriers le long de la rangée, et la charge sous le pied le plus chargé.
+ */
+function lineLoadRemedy(inp: CalageInput, res: CalageResult, u: P2): CalageRemedy {
+  const rows = supportRows(gridChecks(res), u);
+  const lines = rows.map((r, k) => {
+    const P = r.items.reduce((a, i) => a + i.c.Rzk, 0);
+    const L = Math.max(1000, r.items[r.items.length - 1].s - r.items[0].s);
+    return { k: k + 1, ids: r.items.map((i) => i.c.id), P, line: P / L, L };
+  });
+  const worst = res.checks.reduce((a, c) => (c.Rzk > a.Rzk ? c : a));
+  return {
+    key: 'load',
+    title: 'Dalle : charge admissible exigée sous chaque plaque — à faire préciser par l’exploitant',
+    verdict: 'info',
+    summary: `Avec ${pressureText(inp.bearing)} sous chaque pièce posée sur la dalle, même un plateau de madriers ne passe pas facilement : sous les rangées d’appuis la charge reste concentrée (le bois ne répartit que sur quelques dizaines de cm en travers). Ce qu’une dalle supporte vraiment, c’est une charge linéique ou ponctuelle (flexion, poinçonnement) : la demander à l’exploitant.`,
+    details: [
+      ...lines.map((l) => `Rangée ${l.k} (${l.ids.join(', ')}) : ${kN(l.P)} sur ${m(l.L)} → ≈ ${f(l.line, 1)} kN/m si un madrier ou une poutre la répartit le long de la rangée (maxima de chaque appui additionnés, prudent).`),
+      `Charge sous le pied le plus chargé : ${worst.id}, ${kN(worst.Rzk)} (${f(worst.Rzk / G / 1000, 2)} t).`,
+      'Question à poser : « quelle charge linéique (kN/m) et quelle charge ponctuelle (kN) la dalle admet-elle, et quelle est sa portée ? » — avec ces valeurs, les madriers sous les rangées suffisent en général.',
+    ],
+    materials: [],
+    records: [],
+    notes: [],
+  };
 }
 
 /** Masse volumique C24 (kg/m³), pour l'affichage. */

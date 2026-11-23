@@ -447,7 +447,7 @@ function withSlab(inp: CalageInput, res: CalageResult): CalageResult {
   });
   // bilan du poids de chaque zone poste par poste (Viewbox, objets portés, public, report, calage)
   const publicNote = inp.publicLimit
-    ? `${Math.round(inp.publicLimit.persons)} personnes × ${fmtNumber(inp.publicLimit.kg, 0)} kg au plus sur toute l’installation, toutes comptées dans cette zone`
+    ? `${Math.round(inp.publicLimit.persons)} personnes × ${fmtNumber(inp.publicLimit.kg, 0)} kg au plus sur toute l’installation, toutes comptées dans chaque Viewbox (pire cas) : ne pas additionner les colonnes`
     : 'exploitation réglementaire sur le plancher';
   for (const z of slab.zones) {
     const b = zoneBudget(z, inp.modules, inp.estimate.loads.moduleWeight, publicNote);

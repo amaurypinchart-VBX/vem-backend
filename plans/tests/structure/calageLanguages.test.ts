@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { computeCalage } from '../../src/structure/core/calage';
 import type { CalageResult } from '../../src/structure/core/calage';
-import { calageRemedies, sleeperOption } from '../../src/structure/core/calageRemedies';
+import { platformOption, calageRemedies, sleeperOption } from '../../src/structure/core/calageRemedies';
 import { gridModules } from '../../src/structure/core/estimate';
 import type { EstimateModule } from '../../src/structure/core/estimate';
 import type { DrawnBlock } from '../../src/structure/core/blocks';
@@ -133,6 +133,11 @@ function scenarios(): Array<[string, CalageResult, EstimateModule[]]> {
   const addedInp = { ...calageInput(m2, hyp450, stock, true, [], false, { mode: 'added', pads: centres, k: 0.03 }), bearingMode: 'distributed' as const, blocks: [...nine, ...centres] };
   out.push(['appuis ajoutés, dalle, critère sous chaque plaque', computeCalage({ ...addedInp, ...pehdType, slabLocal: true, choices: { roadway: true, blockComposition: cale } }), m2]);
   out.push(['appuis ajoutés, dalle, information', computeCalage(addedInp), m2]);
+  // solution du 2e bureau d'études (23.11.2026) : poutres GL24h 140 × 240 sous les rangées sur bastaings à plat, sans débord
+  const gl = { ...slab, blocks: nine, slabLocal: true, publicLimit: { persons: 8, kg: 80 } };
+  const glRes = computeCalage(gl);
+  const glOpt = platformOption(gl, glRes, { upper: { b: 140, h: 240, grade: 'GL24h' }, lower: { b: 175, h: 63 }, over: 0, withBlocks: false })!;
+  out.push(['plateau GL24h sur bastaings, dalle, critère sous chaque plaque', computeCalage({ ...gl, choices: { remedy: glOpt.apply as never } }), m2]);
   return out;
 }
 
@@ -148,6 +153,9 @@ describe('documents de calage en anglais et en allemand', () => {
     expect(added.types.some((t) => t.label.startsWith('bloc ajouté (calé)'))).toBe(true);
     expect(added.slab?.local).toBe(true);
     expect(added.slab?.supports?.length).toBe(added.checks.length);
+    const gl = cases.find((c) => c[0] === 'plateau GL24h sur bastaings, dalle, critère sous chaque plaque')![1];
+    expect(gl.remedy?.applied.key).toBe('platform-no-blocks');
+    expect(gl.slab?.supports?.every((l) => l.plate.label.startsWith('plateau de madriers'))).toBe(true);
   });
 
   for (const lang of ['en', 'de'] as const)

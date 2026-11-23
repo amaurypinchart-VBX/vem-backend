@@ -543,7 +543,11 @@ export interface TimberPieceInfo {
   length: number;
   row?: number;
   support?: string;
+  /** lamellé-collé GL24h (absent : bois massif C24) */
+  grade?: 'GL24h';
 }
+
+const GLULAM: Record<Lang, string> = { fr: 'lamellé-collé GL24h', de: 'Brettschichtholz GL24h', en: 'glulam GL24h' };
 
 /**
  * Lignes de légende des madriers (une par couche ; les contours identiques regroupés : rangées de même grille,
@@ -556,7 +560,7 @@ export function timberLegend(lang: Lang, pieces: TimberPieceInfo[]): Array<{ lay
   const hText = (p: TimberPieceInfo) => (p.b > p.h ? `${p.h} mm ${T.flat}` : `${p.h}`);
   const groups = new Map<string, { p: TimberPieceInfo; rows: number[]; n: number }>();
   for (const p of pieces) {
-    const k = [p.layer, p.system, p.count, p.b, p.h, Math.round(p.length / 10)].join('|');
+    const k = [p.layer, p.system, p.count, p.b, p.h, p.grade ?? '', Math.round(p.length / 10)].join('|');
     const g = groups.get(k);
     if (g) {
       g.n++;
@@ -574,7 +578,7 @@ export function timberLegend(lang: Lang, pieces: TimberPieceInfo[]): Array<{ lay
         : p.layer === 'lower'
           ? T.lowerGrid(lowerGrids > 1 ? rowsText(lang, rows.sort((a, b) => a - b)) : '', p.count, p.b, p.h, L(p.length))
           : T.upperGrid(n, p.count, p.b, p.h, L(p.length))
-    ).replace(` × ${p.h} mm`, ` × ${hText(p)}${p.b > p.h ? '' : ' mm'}`);
+    ).replace(` × ${p.h} mm`, ` × ${hText(p)}${p.b > p.h ? '' : ' mm'}${p.grade ? ` ${GLULAM[lang]}` : ''}`);
     out.push({ layer: p.layer, text });
   }
   return out;
@@ -591,7 +595,7 @@ export function timberGroundText(lang: Lang, outlines: Array<{ timber?: { layer:
   const kg = (q: number) => num(lang, (q * 1e6) / 9.81, 0);
   if (slab) {
     const line = Math.max(0, ...low.map((o) => o.ground!.line ?? 0));
-    return line > 0 ? T.lineText(num(lang, line, 1)) : null;
+    if (line > 0) return T.lineText(num(lang, line, 1));
   }
   // moyenne sur toute la surface de madriers (pondérée par les surfaces), pointe = la plus forte
   const area = (c: Array<readonly [number, number]>) => Math.abs(c.reduce((a, p, i) => a + p[0] * c[(i + 1) % c.length][1] - c[(i + 1) % c.length][0] * p[1], 0)) / 2;

@@ -17,6 +17,9 @@ import { createInlineStudyRunner } from '../../src/structure/worker/study';
 import { SEED } from '../../src/structure/library/seed';
 import { blockPlateKey, joistKey } from '../../src/structure/core/ground';
 import { groundSheetPages } from '../../src/structure/report/groundSheet';
+import { slabBudgetTable } from '../../src/structure/report/stackFigure';
+import { calageRemedies } from '../../src/structure/core/calageRemedies';
+import { platformVariants } from '../../src/structure/core/sleeperCompare';
 import { DEFAULT_HYP, calageInput } from '../../src/ui/structure/GroundPanel';
 import { LOADS, vbx } from './studyHelpers';
 
@@ -157,5 +160,57 @@ describe('descente de charges par appui (charge locale sous chaque plaque)', () 
     const long = 'limité à 8 personnes × 80 kg (nombre contrôlé sur place ; structure calculée avec 2,94 kN/m² au rez-de-chaussée, moins que la charge réglementaire de 5 kN/m²)';
     const txt = renderToStaticMarkup(groundSheetPages({ result: r, modules: estMods, info: { project: 'P', source: 'S', date: 'd', assumptions: [['Public pour le sol', long]] } })[0]);
     expect(txt).toMatch(/moins que la charge réglementaire de 5 kN\/m²\)/);
+  });
+});
+
+// Deuxième bureau d'études (23.11.2026, IKEA) : « structure secondaire en bois, poutres 140 × 240 en GL24h » sous les
+// appuis, sur des bastaings à plat, plateau = emprise sans débord, « réaction du sol 2,49 kN/m² en moyenne ».
+describe('plateau choisi à la main : poutres GL24h sous les rangées sur bastaings à plat (2e bureau d’études)', () => {
+  const inp0 = { ...calageInput(estMods, { ...hyp, liveGround: 2.94 }, stock, true), blocks: nine };
+  const choice = { upper: { b: 140, h: 240, grade: 'GL24h' as const }, lower: { b: 175, h: 63 }, over: 0 };
+
+  it('moyenne = charge simultanée / emprise ; pointe sous le bois bien plus forte (bastaings chargés en bout, sans débord)', () => {
+    const res = computeCalage(inp0);
+    const vs = platformVariants(inp0, res, choice);
+    expect(vs.map((v) => v.withBlocks)).toEqual([false, true]);
+    const v = vs[0];
+    // emprise sans débord = les deux Viewbox, 5,90 × 5,00 m
+    expect(v.remedy.summary).toMatch(/Plateau 5,90 m × 5,00 m \(sans débord\)/);
+    expect(v.remedy.summary).toMatch(/140 × 240 GL24h/);
+    // moyenne : la charge simultanée de l'installation + le bois, pas la somme des maxima des appuis
+    const outline = v.result!.remedy!.outlines.find((o) => o.id === 'PL')!;
+    const wood = v.remedy.materials.reduce((a, m) => a + m.massKg, 0) * 9.81;
+    expect(outline.ground!.mean).toBeCloseTo((res.estimate.verticalK! + wood) / (5900 * 5000), 6);
+    expect(outline.ground!.max).toBeGreaterThan(3 * outline.ground!.mean);
+    expect(v.remedy.materials.some((m) => m.label.startsWith('Poutre lamellé-collé GL24h'))).toBe(true);
+    // charge répartie (information) : le bois passe, la pointe n'est pas un critère
+    expect(v.ok).toBe(true);
+    expect(v.result!.checks.every((c) => c.local?.plate.label === 'plateau de madriers (pointe sous le bois)')).toBe(true);
+    expect(v.result!.checks[0].local!.q).toBeCloseTo(outline.ground!.max, 9);
+  });
+
+  it('charge admissible exigée sous chaque plaque : le plateau ne passe pas, piste « charge linéique à faire préciser »', () => {
+    const inp = { ...inp0, slabLocal: true };
+    const res = computeCalage(inp);
+    const v = platformVariants(inp, res, choice)[0];
+    expect(v.ok).toBe(false);
+    expect(v.remedy.eta!).toBeGreaterThan(1);
+    const pistes = calageRemedies(inp, res);
+    const line = pistes.find((p) => p.title.startsWith('Dalle : charge admissible exigée sous chaque plaque'))!;
+    expect(line.details.some((d) => /kN\/m si un madrier ou une poutre la répartit/.test(d))).toBe(true);
+    // les pistes du sol (madriers, plateau) sont proposées aussi
+    expect(pistes.some((p) => p.key.startsWith('platform') || p.key.startsWith('sleepers'))).toBe(true);
+  });
+
+  it('fiche : public compté une fois (pas 16 personnes pour 8), total simultané de l’installation', () => {
+    const r = computeCalage({ ...inp0, publicLimit: { persons: 8, kg: 80 } });
+    const t = slabBudgetTable(r, 'fr')!;
+    expect(t.rows.find((x) => x.label.startsWith('Public'))!.label).toMatch(/8 personnes × 80 kg au plus sur toute l’installation, toutes comptées dans chaque Viewbox \(pire cas\) : ne pas additionner les colonnes/);
+    const last = t.rows[t.rows.length - 1];
+    expect(last.label).toBe('Ensemble de l’installation (simultané, public compté une fois)');
+    expect(last.values[last.values.length - 1]).toMatch(/kg \/ .* m² = .* kg\/m²$/);
+    const en = slabBudgetTable(r, 'en')!;
+    expect(en.rows[en.rows.length - 1].label).toBe('Whole installation (simultaneous, public counted once)');
+    expect(en.rows.find((x) => x.label.startsWith('Public'))!.label).toMatch(/do not add up the columns/);
   });
 });
