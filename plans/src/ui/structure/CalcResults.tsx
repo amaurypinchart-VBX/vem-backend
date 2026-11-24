@@ -245,8 +245,15 @@ function GroundSupportChoice({ o, set, p }: { o: CalcOptions; set: <K extends ke
                   <label className="row">
                     <input type="checkbox" checked={layout.corners} onChange={(e) => setLayout({ corners: e.target.checked })} /> une plaque à chaque angle (l’UNP des deux côtés de l’angle porte dessus)
                   </label>
-                  <label className="row">
-                    <input type="checkbox" checked={layout.middles} onChange={(e) => setLayout({ middles: e.target.checked })} /> une plaque au milieu de chaque grand côté
+                  <label className="row" style={{ gap: 6 }}>
+                    Le long de chaque grand côté, entre les angles :
+                    <select value={layout.perSide ?? (layout.middles ? 1 : 0)} onChange={(e) => setLayout({ perSide: Number(e.target.value), middles: Number(e.target.value) > 0 })} data-testid="pad-per-side">
+                      {[0, 1, 2, 3, 4].map((k) => (
+                        <option key={k} value={k}>
+                          {k === 0 ? 'aucune plaque' : k === 1 ? '1 plaque au milieu' : `${k} plaques régulièrement espacées (${k + 2} appuis par grand côté)`}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label className="row" style={{ gap: 6 }}>
                     Blocs au centre de chaque Viewbox, sous les profils du plancher :

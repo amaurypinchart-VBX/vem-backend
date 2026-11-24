@@ -9,6 +9,7 @@ import { C24, C24_BEAMS, checkLongrine } from './ground';
 import type { P2 } from './estimate';
 import { moduleAxes } from './placement';
 import type { CalcRecord } from './records';
+import { influenceZones } from './slabZones';
 import { checkChain, pressureText } from './spreading';
 import { fmtNumber } from './units';
 
@@ -290,10 +291,21 @@ function evalRow(loads: RowLoad[], length: number, inp: CalageInput, beam: Beam,
   const mean = (ld.reduce((a, l) => a + l.Pk, 0) + r.massKg * G) / (B * length);
   const others = r.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
   const etaTimber = Math.max(0, ...others, ...topList.map((t) => t.eta));
-  // dalle en charge répartie : la pression sous les madriers est une information (le critère = la charge de la zone),
-  // sauf si l'exploitant exige la charge admissible sous chaque plaque (`slabLocal`)
-  const slab = inp.bearingMode === 'distributed' && !inp.slabLocal;
-  const etaGround = slab ? 0 : pressure / inp.bearing;
+  // dalle en charge répartie : la pointe sous les madriers (sol élastique) est une information ; le critère = la charge
+  // de la zone de dalle et, si exigé (`slabLocal`), la zone d'influence de chaque appui sur les madriers (mi-distances
+  // avec ses voisins de la rangée, largeur chargée), poids du bois compris — méthode des bureaux d'études (24.11.2026)
+  const slab = inp.bearingMode === 'distributed';
+  const width = Math.min(B, loaded);
+  const order = ld.map((_, i) => i).sort((a, b) => ld[a].x - ld[b].x);
+  let zoneQ = 0;
+  let zoneAt = 0;
+  order.forEach((i, k) => {
+    const lo = k ? (ld[order[k - 1]].x + ld[i].x) / 2 : 0;
+    const hi = k < order.length - 1 ? (ld[i].x + ld[order[k + 1]].x) / 2 : length;
+    const q = ld[i].Pk / (width * Math.max(hi - lo, 1)) + self;
+    if (q > zoneQ) [zoneQ, zoneAt] = [q, (hi - lo) * width];
+  });
+  const etaGround = slab ? (inp.slabLocal ? zoneQ / inp.bearing : 0) : pressure / inp.bearing;
   const rec: CalcRecord = slab
     ? {
         key: 'sleepers.pressure',
@@ -336,7 +348,25 @@ function evalRow(loads: RowLoad[], length: number, inp: CalageInput, beam: Beam,
     etaTimber,
     eta: Math.max(etaGround, etaTimber),
     massKg: r.massKg + topKg,
-    records: [rec, ...asSleepers(r.records.filter((x) => x.key !== 'longrine.pressure')), ...topRec],
+    records: [
+      rec,
+      ...(slab && inp.slabLocal
+        ? [
+            {
+              key: 'sleepers.zone',
+              title: 'Charge locale sous l’appui le plus chargé : zone d’influence sur les madriers',
+              clause: 'zone d’influence de l’appui sur les madriers de la rangée (mi-distances avec ses voisins, largeur chargée), poids du bois réparti',
+              formula: 'q = P / A zone + G madriers / (B · L) ≤ charge admissible',
+              withValues: `A zone = ${f(zoneAt / 1e6, 2)} m² ; q = ${pressureText(zoneQ)} ≤ ${pressureText(inp.bearing)}`,
+              result: zoneQ,
+              limit: inp.bearing,
+              eta: zoneQ / inp.bearing,
+            } as CalcRecord,
+          ]
+        : []),
+      ...asSleepers(r.records.filter((x) => x.key !== 'longrine.pressure')),
+      ...topRec,
+    ],
     top: heaviest && { ...heaviest, pieces: topList.reduce((a, t) => a + t.perSupport, 0), massKg: topKg },
   };
 }
@@ -516,7 +546,7 @@ function sleepers(inp: CalageInput, res: CalageResult, u: P2, withBlocks: boolea
         etaTimber: d.etaTimber,
         records: rowRecords,
         note: slab ? 'charge locale maxi sous la rangée (information : le critère est la charge répartie de la zone de dalle)' : 'pression maxi sous la rangée (sol élastique, toutes les charges de la rangée + poids de la grille)',
-        ...(slab && !inp.slabLocal ? { info: true } : {}),
+        ...(slab ? { info: true } : {}),
       });
     }
   });
@@ -742,10 +772,14 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
   const us = pts.map((p) => p[0] * u[0] + p[1] * u[1]);
   const vs = pts.map((p) => p[0] * v[0] + p[1] * v[1]);
   const [U0, U1, V0, V1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
-  const infoOnly = inp.bearingMode === 'distributed' && !inp.slabLocal;
+  // dalle en charge répartie : la pointe sous le plateau (sol élastique) est une information ; le critère = la zone de
+  // dalle de chaque Viewbox et, si exigé (`slabLocal`), la zone d'influence de chaque appui sur le plateau
+  const infoOnly = inp.bearingMode === 'distributed';
+  const zoneCheck = infoOnly && !!inp.slabLocal;
   // surface chargée par chaque appui sur la couche du dessus, centrée sur sa charge (pas tout le bloc)
   const foot = checks.map((c) => loadedFootprint(c, withBlocks));
-  type Grid = { over: number; lower: Beam; upper: Beam; nUpper: number; eta: number; etaTimber: number; pressure: number; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
+  const at = checks.map((c) => ({ id: c.id, at: [c.at[0] * u[0] + c.at[1] * u[1], c.at[0] * v[0] + c.at[1] * v[1]] as P2 }));
+  type Grid = { over: number; lower: Beam; upper: Beam; nUpper: number; eta: number; etaTimber: number; pressure: number; zoneQ: number; zoneId: string; massKg: number; records: CalcRecord[]; L: number; W: number; reach: number };
   let best: Grid | null = null;
   let leastBad: Grid | null = null;
   for (const over of fixed ? [fixed.over] : [100, 500])
@@ -784,10 +818,20 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
         const etaUp = Mup / ((upper.b * upper.h ** 2) / 6) / fmdUp;
         const others = rr.records.filter((x) => x.key !== 'longrine.pressure').map((x) => x.eta ?? 0);
         const etaTimber = Math.max(etaUp, ...others);
-        // dalle en charge répartie : la pression sous le plateau n'est un critère que si l'exploitant l'exige
-        const eta = Math.max(infoOnly ? 0 : pressure / inp.bearing, etaTimber);
         const nLower = Math.ceil(L / lower.b - 1e-9);
         const massKg = (nLower * lower.b * lower.h * W * C24.rho + rows.length * nUpper * upper.b * upper.h * L * up.rho) / 1e9;
+        // zone d'influence de chaque appui sur le plateau (mi-distances, limitée au plateau) + poids du bois réparti
+        let zoneQ = 0;
+        let zoneId = '';
+        if (zoneCheck) {
+          const zones = influenceZones(at, [[U0 - over, V0 - over], [U1 + over, V0 - over], [U1 + over, V1 + over], [U0 - over, V1 + over]]);
+          for (const c of checks) {
+            const z = zones.get(c.id);
+            const q = z && z.area > 0 ? supportLoad(c, withBlocks).Pk / z.area + (massKg * G) / (L * W) : Infinity;
+            if (q > zoneQ) [zoneQ, zoneId] = [q, c.id];
+          }
+        }
+        const eta = Math.max(infoOnly ? (zoneCheck ? zoneQ / inp.bearing : 0) : pressure / inp.bearing, etaTimber);
         const records: CalcRecord[] = [
           {
             key: 'platform.pressure',
@@ -798,6 +842,20 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
             result: pressure,
             ...(infoOnly ? {} : { limit: inp.bearing, eta: pressure / inp.bearing }),
           },
+          ...(zoneCheck
+            ? [
+                {
+                  key: 'platform.zone',
+                  title: `Charge locale sous ${zoneId} : zone d’influence sur le plateau`,
+                  clause: 'zone d’influence de l’appui sur le plateau (mi-distances avec les appuis voisins, limitée au plateau), poids du bois réparti — méthode des bureaux d’études',
+                  formula: 'q = P / A zone + G bois / (L · W) ≤ charge admissible',
+                  withValues: `q = ${pressureText(zoneQ)} ≤ ${pressureText(inp.bearing)}`,
+                  result: zoneQ,
+                  limit: inp.bearing,
+                  eta: zoneQ / inp.bearing,
+                } as CalcRecord,
+              ]
+            : []),
           ...asSleepers(rr.records.filter((x) => x.key !== 'longrine.pressure')),
           {
             key: 'platform.upper',
@@ -808,7 +866,7 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
             eta: etaUp,
           },
         ];
-        const g: Grid = { over, lower, upper, nUpper, eta, etaTimber, pressure, massKg, records, L, W, reach };
+        const g: Grid = { over, lower, upper, nUpper, eta, etaTimber, pressure, zoneQ, zoneId, massKg, records, L, W, reach };
         if (eta <= 1 && (!best || g.over < best.over || (g.over === best.over && g.massKg < best.massKg))) best = g;
         if (!leastBad || g.eta < leastBad.eta) leastBad = g;
       }
@@ -872,10 +930,10 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
     verdict: ok ? 'ok' : 'fail',
     eta: g.eta,
     summary: ok
-      ? `Plateau ${m(g.L)} × ${m(g.W)}${g.over > 100 ? ` (débord ${f(g.over / 10, 0)} cm de chaque côté)` : ' (sans débord)'} : ${nLower} madriers ${g.lower.b} × ${g.lower.h} en travers + ${g.nUpper} × ${g.upper.b} × ${g.upper.h}${g.upper.grade ? ` ${g.upper.grade}` : ''} sous chaque rangée, ${f(g.massKg, 0)} kg de bois — ${infoOnly ? 'charge locale' : 'pression'} maxi ${pressureText(g.pressure)}, moyenne ${pressureText((simN + g.massKg * G) / (g.L * g.W))} (η ${f(g.eta, 2)}).`
+      ? `Plateau ${m(g.L)} × ${m(g.W)}${g.over > 100 ? ` (débord ${f(g.over / 10, 0)} cm de chaque côté)` : ' (sans débord)'} : ${nLower} madriers ${g.lower.b} × ${g.lower.h} en travers + ${g.nUpper} × ${g.upper.b} × ${g.upper.h}${g.upper.grade ? ` ${g.upper.grade}` : ''} sous chaque rangée, ${f(g.massKg, 0)} kg de bois — ${zoneCheck ? `zone d’influence la plus chargée ${pressureText(g.zoneQ)} (${g.zoneId}), pointe sous le bois ${pressureText(g.pressure)} (information)` : `${infoOnly ? 'charge locale' : 'pression'} maxi ${pressureText(g.pressure)}`}, moyenne ${pressureText((simN + g.massKg * G) / (g.L * g.W))} (η ${f(g.eta, 2)}).`
       : fixed
-        ? `Plateau retenu ${m(g.L)} × ${m(g.W)} : ne passe pas avec les charges actuelles (η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) — relancer la recherche de solutions.`
-        : `Même un plateau continu en grille de madriers ne passe pas (meilleur essai : η ${f(g.eta, 2)}, ${pressureText(g.pressure)}) : la charge (${kN(totalN)}) est trop grande pour ${pressureText(inp.bearing)} sur cette emprise — alléger, agrandir l’emprise ou faire préciser la portance.`,
+        ? `Plateau retenu ${m(g.L)} × ${m(g.W)} : ne passe pas avec les charges actuelles (η ${f(g.eta, 2)}, ${pressureText(zoneCheck ? g.zoneQ : g.pressure)}${zoneCheck ? ` sur la zone d’influence de ${g.zoneId}` : ''}) — relancer la recherche de solutions.`
+        : `Même un plateau continu en grille de madriers ne passe pas (meilleur essai : η ${f(g.eta, 2)}, ${pressureText(zoneCheck ? g.zoneQ : g.pressure)}${zoneCheck ? ` sur la zone d’influence de ${g.zoneId}` : ''}) : la charge (${kN(totalN)}) est trop grande pour ${pressureText(inp.bearing)} sur cette emprise — alléger, agrandir l’emprise ou faire préciser la portance.`,
     details: [
       `Couche du dessous : ${nLower} madriers C24 ${g.lower.b} × ${g.lower.h} mm jointifs, longueur ${m(g.W)}, posés en travers des rangées d’appuis sur toute la longueur ${m(g.L)}.`,
       g.upper.grade === 'GL24h'
@@ -890,7 +948,11 @@ function platformGrid(inp: CalageInput, res: CalageResult, u: P2, withBlocks: bo
     records: g.records,
     notes: [
       'Sol réglé et compacté avant pose ; madriers jointifs (sans vide), les deux couches vissées entre elles pour travailler ensemble.',
-      ...(infoOnly ? ['Dalle en charge répartie : le critère reste la charge au m² de chaque zone ; la charge locale maxi sous le plateau est donnée pour l’exploitant (cocher « Contrôler aussi sous chaque plaque » à l’étape 2 s’il l’exige).'] : []),
+      ...(zoneCheck
+        ? ['Dalle en charge répartie : chaque appui est vérifié sur sa zone d’influence du plateau (mi-distances avec ses voisins, poids du bois compris) ; la pointe sous le bois (sol élastique) est donnée pour information.']
+        : infoOnly
+          ? ['Dalle en charge répartie : le critère reste la charge au m² de chaque zone ; la charge locale maxi sous le plateau est donnée pour l’exploitant (cocher « Contrôler aussi sous chaque plaque » à l’étape 2 s’il l’exige).']
+          : []),
       `Raideur du sol ${f(inp.longrine.k * 1e3, 0)} MN/m³ (étape 2, options avancées) : à confirmer — plus le sol est dur, plus la pression se concentre sous les rangées.`,
       'Modèle simplifié (chaque madrier du dessous calculé seul, charge des rangées répartie par la couche du dessus) : à faire valider par un ingénieur pour l’exécution.',
       ...longNote(Math.max(g.L, g.W)),

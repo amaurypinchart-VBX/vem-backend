@@ -155,7 +155,8 @@ describe('documents de calage en anglais et en allemand', () => {
     expect(added.slab?.supports?.length).toBe(added.checks.length);
     const gl = cases.find((c) => c[0] === 'plateau GL24h sur bastaings, dalle, critère sous chaque plaque')![1];
     expect(gl.remedy?.applied.key).toBe('platform-no-blocks');
-    expect(gl.slab?.supports?.every((l) => l.plate.label.startsWith('plateau de madriers'))).toBe(true);
+    // chaque appui sur sa zone d'influence du plateau (méthode des bureaux d'études, 24.11.2026), pointe en information
+    expect(gl.slab?.supports?.every((l) => /^zone d’influence \d+ × \d+ cm sur le plateau de madriers$/.test(l.plate.label) && l.zone && l.zone.peak > l.q)).toBe(true);
   });
 
   for (const lang of ['en', 'de'] as const)
