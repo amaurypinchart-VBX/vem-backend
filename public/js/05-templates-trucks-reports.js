@@ -367,6 +367,7 @@ async function openHandoverFull(id) {
           <span class="badge ${h.status==='signed'?'badge-green':'badge-amber'}">${h.status==='signed'?'✅ Signé':'En attente'}</span>
           <button class="btn btn-ghost btn-xs" onclick="showAddHandoverItemModal('${h.id}','${h.projectId}')">+ Point</button>
           <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${h.projectId}')">✏️ Modifier</button>
+          <button class="btn btn-ghost btn-xs" onclick="openHandoverAttestation('${h.id}')" title="Attestation de bon montage (annexe V) jointe au PDF signé">📜 Attestation</button>
           <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
           <button class="btn btn-primary btn-xs" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
         </div>

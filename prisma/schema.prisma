@@ -477,6 +477,8 @@ model Handover {
   checklistMode        String    @default("body") @map("checklist_mode")
   /// langue du lien de signature client : page de signature, PDF signé et e-mail (fr | en)
   signatureLang        String    @default("fr") @map("signature_lang")
+  /// attestation de bon montage (annexe V, arrêté du 25.07.2022) jointe au PDF signé : { enabled, values (champs modifiés à la main), updatedAt, updatedBy }
+  attestation          Json?     @map("attestation")
   signatureToken          String?   @map("signature_token")
   signatureTokenUsed      Boolean   @default(false) @map("signature_token_used")
   signatureTokenCreatedAt DateTime? @map("signature_token_created_at")

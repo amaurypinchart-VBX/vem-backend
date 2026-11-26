@@ -4,6 +4,8 @@ const PDFDocument = require('pdfkit');
 import * as path from 'path';
 import * as fs from 'fs';
 import { translateTexts } from './translationService';
+import type { AttestationPdf } from './attestationService';
+import { GROUND_LINKS, GROUND_LINK_LABELS } from './attestationLogic';
 // ═══════════════════════════════════════════════════════════════
 // Système de traduction pour les PDFs (FR/EN)
 // Un seul dictionnaire partagé entre tous les PDFs (Handover, Daily Report, Visit)
@@ -761,8 +763,11 @@ export async function generateHandoverPdf(data: {
   checklist?: HandoverChecklistPdf | null;
   /** true : la check-list n'est que dans une annexe après les signatures (un rappel reste après les zones) */
   checklistAnnex?: boolean;
+  /** attestation de bon montage (annexe V, arrêté du 25.07.2022) : dernière page, une fois le client signé (attestationForPdf) */
+  attestation?: AttestationPdf | null;
 }): Promise<Buffer> {
   const lang: Lang = data.lang || 'fr';
+  const attestationSig = data.attestation ? await loadSignatureBuffer(data.attestation.signatureUrl) : null;
 
   // ─── Traduction IA du contenu utilisateur (si lang !== 'fr') ───
   if (lang !== 'fr') {
@@ -1071,9 +1076,256 @@ export async function generateHandoverPdf(data: {
     }
 
     footer(doc, lang);
+
+    // ─── Attestation de bon montage (document réglementaire français, toujours en français), dernière page ───
+    if (data.attestation) {
+      doc.addPage();
+      renderAttestationPage(doc, data.attestation, attestationSig, lang);
+    }
     doc.end();
   });
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Attestation de bon montage — annexe V de l'arrêté du 25 juillet 2022 (article 38)
+// Mise en page du modèle Viewbox « Attestation_bon_montage_ED_annexe_V_2026.docx » ; les mentions non retenues
+// sont rayées comme sur le papier (« (1) Rayer les mentions inutiles »).
+// ═══════════════════════════════════════════════════════════════
+const ATT_BLUE = '#305170';
+const ATT_LINE = '#b9c8d8';
+const ATT_TXT = '#333333';
+const ATT_VAL = '#111827';
+const ATT_X = 48;
+const ATT_W = 499;
+
+// Caractères que Helvetica (WinAnsi) sait afficher en plus du Latin-1 : tirets longs, apostrophes courbes, €, œ…
+const WIN_ANSI_EXTRA = new Set([0x0192, 0x2013, 0x2014, 0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x2020, 0x2021, 0x2022,
+  0x2026, 0x20AC, 0x2030, 0x2039, 0x203A, 0x02C6, 0x2122, 0x0152, 0x0153, 0x02DC, 0x0160, 0x0161, 0x0178, 0x017D, 0x017E]);
+function sw(text: any): string {
+  if (text === null || text === undefined) return '';
+  return Array.from(String(text)
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}️]\s?/gu, '')
+    .replace(/ | /g, ' ')
+    .replace(/[​-‍﻿]/g, ''))
+    .map((c) => (c.charCodeAt(0) <= 0xFF || WIN_ANSI_EXTRA.has(c.charCodeAt(0)) ? c : '?'))
+    .join('');
+}
+
+/** Bouts de texte sur une ligne, chacun éventuellement rayé ; renvoie x de fin. */
+function attRun(doc: any, x: number, y: number, parts: Array<{ t: string; strike?: boolean; bold?: boolean; color?: string }>, size: number): number {
+  let cx = x;
+  for (const p of parts) {
+    doc.font(p.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(p.color || ATT_TXT);
+    const w = doc.widthOfString(p.t);
+    doc.text(p.t, cx, y, { lineBreak: false });
+    if (p.strike && p.t.trim()) {
+      const lead = doc.widthOfString(p.t.length - p.t.trimStart().length ? p.t.slice(0, p.t.length - p.t.trimStart().length) : '');
+      const tail = doc.widthOfString(p.t.length - p.t.trimEnd().length ? p.t.slice(p.t.trimEnd().length) : '');
+      const ly = y + size * 0.45;
+      doc.moveTo(cx + lead, ly).lineTo(cx + w - tail, ly).lineWidth(0.8).strokeColor(p.color || ATT_TXT).stroke();
+    }
+    cx += w;
+  }
+  return cx;
+}
+
+/** Nouvelle page si la suite ne tient pas (le modèle tient sur une page ; seulement des textes très longs débordent). */
+function attNeed(doc: any, y: number, h: number): number {
+  if (y + h <= 788) return y;
+  doc.addPage();
+  return 48;
+}
+
+function attSection(doc: any, title: string, y: number, strike = false): number {
+  y = attNeed(doc, y, 40);
+  attRun(doc, ATT_X, y, [{ t: title, bold: true, color: ATT_BLUE, strike }], 9.5);
+  const ly = y + 12.5;
+  doc.moveTo(ATT_X, ly).lineTo(ATT_X + ATT_W, ly).lineWidth(0.6).strokeColor(ATT_LINE).stroke();
+  return ly + 5;
+}
+
+/** Ligne « libellé ……… valeur » du modèle (valeur en gras sur un trait). */
+function attRow(doc: any, label: string, value: string, y: number): number {
+  const LX = ATT_X + 10, LW = 165, VX = ATT_X + 180, VW = ATT_W - 180;
+  doc.font('Helvetica').fontSize(8.5);
+  const lh = doc.heightOfString(label, { width: LW });
+  doc.font('Helvetica-Bold').fontSize(9);
+  const vh = value ? doc.heightOfString(sw(value), { width: VW, lineGap: 1 }) : 0;
+  const h = Math.max(lh, vh, 10.5);
+  y = attNeed(doc, y, h + 7);
+  doc.font('Helvetica').fontSize(8.5).fillColor(ATT_TXT).text(label, LX, y, { width: LW });
+  if (value) doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text(sw(value), VX, y - 0.5, { width: VW, lineGap: 1 });
+  const ly = y + h + 2;
+  doc.moveTo(VX, ly).lineTo(VX + VW, ly).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  return ly + 4.5;
+}
+
+/** Valeur sur toute la largeur (sous un libellé), avec un trait dessous. */
+function attBlockValue(doc: any, value: string, y: number, x = ATT_X, w = ATT_W): number {
+  doc.font('Helvetica-Bold').fontSize(9);
+  const h = value ? doc.heightOfString(sw(value), { width: w, lineGap: 1 }) : 11;
+  y = attNeed(doc, y, h + 6);
+  if (value) doc.fillColor(ATT_VAL).text(sw(value), x, y, { width: w, lineGap: 1 });
+  const ly = y + h + 2;
+  doc.moveTo(x, ly).lineTo(x + w, ly).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  return ly + 5;
+}
+
+/** Page d'attestation sur la page courante du document (déjà ajoutée). */
+function renderAttestationPage(doc: any, a: AttestationPdf, sigBuf: Buffer | null, lang: Lang) {
+  const v = a.values;
+  const cx = (text: string, y: number, font: string, size: number, color: string, extra: any = {}) =>
+    doc.font(font).fontSize(size).fillColor(color).text(text, ATT_X, y, { width: ATT_W, align: 'center', lineBreak: false, ...extra });
+
+  // ─── en-tête ───
+  if (a.reference) cx(sw(a.reference), 24, 'Helvetica', 7, MUTED);
+  cx('ANNEXE V  |  ARRÊTÉ DU 25 JUILLET 2022', 42, 'Helvetica-Bold', 8, ATT_BLUE, { characterSpacing: 0.4 });
+  cx('ATTESTATION DE BON MONTAGE', 54, 'Helvetica-Bold', 15, '#1f2f46');
+  cx('(Article 38)', 73, 'Helvetica-Oblique', 8, '#777777');
+  cx('Une attestation pour plusieurs ensembles démontables identiques', 84, 'Helvetica', 8, '#555555');
+  let y = 96;
+  if (lang === 'en') {
+    cx('Certificate of correct assembly — French regulation (order of 25 July 2022, annex V), issued in French', 95, 'Helvetica-Oblique', 7, MUTED);
+    y = 106;
+  }
+
+  // ─── Événement ───
+  y = attSection(doc, 'ÉVÉNEMENT', y + 2);
+  y = attRow(doc, 'Nom :', v.eventName, y);
+  y = attRow(doc, 'Adresse :', v.eventAddress, y);
+  y = attRow(doc, 'Dates :', v.eventDates, y);
+
+  // ─── Entreprise ───
+  y = attSection(doc, 'ENTREPRISE EN CHARGE DE L’INSTALLATION', y + 3);
+  y = attRow(doc, 'Nom :', v.companyName, y);
+  y = attRow(doc, 'Adresse :', v.companyAddress, y);
+  y = attRow(doc, 'Courriel :', v.companyEmail, y);
+  y = attRow(doc, 'Téléphone :', v.companyPhone, y);
+  y = attRow(doc, 'Nom et prénom du responsable du montage :', v.managerName, y);
+  y = attRow(doc, 'Téléphone :', v.managerPhone, y);
+  y = attRow(doc, 'Fonction dans l’entreprise :', v.managerFunction, y);
+
+  // ─── Caractéristiques ───
+  y = attSection(doc, 'CARACTÉRISTIQUES DE L’ENSEMBLE DÉMONTABLE', y + 3);
+  y = attRow(doc, 'Fabriqué par :', v.manufacturer, y);
+  y = attRow(doc, 'Descriptif sommaire et marquage(s) :', v.description, y);
+  y = attNeed(doc, y, 30);
+  doc.font('Helvetica').fontSize(8.5).fillColor(ATT_TXT)
+    .text('Documents et plans utilisés pour l’installation : références, dates, indices, etc. :', ATT_X, y, { width: ATT_W });
+  y = attBlockValue(doc, v.documents, doc.y + 2);
+
+  // ─── Liaison au sol : aucune cochée = rubrique entièrement rayée ───
+  const links = new Set(v.groundLink || []);
+  const none = links.size === 0;
+  y = attNeed(doc, y + 2, 30);
+  attRun(doc, ATT_X, y, [{ t: 'LIAISON AU SOL (1) :', bold: true, color: ATT_BLUE, strike: none }], 9);
+  y += 13;
+  const linkParts: Array<{ t: string; strike?: boolean }> = [];
+  GROUND_LINKS.forEach((g, i) => {
+    if (i) linkParts.push({ t: '        ' });
+    linkParts.push({ t: `— ${GROUND_LINK_LABELS[g]}${i === GROUND_LINKS.length - 1 ? '.' : ' ;'}`, strike: none || !links.has(g) });
+  });
+  attRun(doc, ATT_X, y, linkParts, 8.5);
+  y += 16;
+
+  // ─── Vent ───
+  y = attNeed(doc, y, 18);
+  const windEnd = attRun(doc, ATT_X, y, [{ t: 'VITESSE DE VENT RETENUE (km/h) :  ', bold: true, color: ATT_BLUE }], 9);
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text(sw(v.windSpeed), windEnd, y - 0.5, { width: ATT_X + ATT_W - windEnd, lineBreak: false });
+  doc.moveTo(windEnd, y + 11).lineTo(ATT_X + ATT_W, y + 11).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  y += 18;
+
+  // ─── Équipements techniques suspendus (un seul choix ; pas de choix = rien de rayé) ───
+  y = attNeed(doc, y, 50);
+  attRun(doc, ATT_X, y, [{ t: 'SÉCURISATION DES ÉQUIPEMENTS TECHNIQUES SUSPENDUS (1) :', bold: true, color: ATT_BLUE }], 9);
+  y += 13;
+  const susp = v.suspended;
+  attRun(doc, ATT_X, y, [{ t: '— réalisée conformément aux dispositions de l’article 26 ;', strike: !!susp && susp !== 'art26' }], 8.5);
+  y += 12;
+  attRun(doc, ATT_X, y, [{ t: '— sans objet ;', strike: !!susp && susp !== 'none' }], 8.5);
+  y += 12;
+  const otherEnd = attRun(doc, ATT_X, y, [{ t: '— autre à préciser :', strike: !!susp && susp !== 'other' }, { t: ' ' }], 8.5);
+  if (susp === 'other' && v.suspendedOther) {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text(sw(v.suspendedOther), otherEnd, y - 0.5, { width: ATT_X + ATT_W - otherEnd });
+    y = Math.max(y + 12, doc.y + 2);
+  } else {
+    doc.moveTo(otherEnd, y + 10).lineTo(ATT_X + ATT_W - 60, y + 10).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+    y += 14;
+  }
+
+  // ─── Je, soussigné ───
+  y = attNeed(doc, y + 4, 34);
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text('Je, soussigné, (Nom, prénom et fonction)', ATT_X, y, { lineBreak: false });
+  y = attBlockValue(doc, v.signatory, y + 14, ATT_X, ATT_W - 120);
+
+  // ─── certifie avoir monté le/les ensemble(s) conformément : ───
+  y = attNeed(doc, y + 2, 90);
+  attRun(doc, ATT_X, y, [
+    { t: 'certifie avoir monté ', bold: true, color: ATT_VAL },
+    { t: 'le', bold: true, color: ATT_VAL, strike: v.plural === 'les' },
+    { t: '/', bold: true, color: ATT_VAL },
+    { t: 'les', bold: true, color: ATT_VAL, strike: v.plural !== 'les' },
+    { t: ' (1) ensemble(s) démontable(s) conformément :', bold: true, color: ATT_VAL },
+  ], 9);
+  y += 14;
+  const bullet = (text: string, strike: boolean) => {
+    attRun(doc, ATT_X + 10, y, [{ t: text, strike }], 8.5);
+    y += 11.5;
+  };
+  bullet('— aux pièces graphiques ;', false);
+  bullet('— à la notice technique et aux plans du fabricant (1) ;', !v.notice);
+  bullet('— à la conclusion de la note de calcul (1) ;', !v.calcNote);
+  bullet('— à l’avis sur modèle type ou sur dossier technique (1) ;', !v.typeOpinion);
+  doc.font('Helvetica').fontSize(8.5).fillColor(ATT_TXT)
+    .text('— à l’arrêté fixant les règles de sécurité et les dispositions techniques applicables aux structures provisoires et démontables.', ATT_X + 10, y, { width: ATT_W - 10 });
+  y = doc.y + 9;
+
+  // ─── Fait à / Le ───
+  y = attNeed(doc, y, 98);
+  const placeEnd = attRun(doc, ATT_X, y, [{ t: 'Fait à : ', bold: true, color: ATT_VAL }], 9);
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text(sw(v.place), placeEnd + 2, y - 0.5, { width: ATT_X + 233 - placeEnd, lineBreak: false, ellipsis: true });
+  doc.moveTo(placeEnd, y + 11).lineTo(ATT_X + 235, y + 11).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  const dateX = ATT_X + 262;
+  const dateEnd = attRun(doc, dateX, y, [{ t: 'Le : ', bold: true, color: ATT_VAL }], 9);
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text(sw(a.date), dateEnd + 2, y - 0.5, { lineBreak: false });
+  doc.moveTo(dateEnd, y + 11).lineTo(dateX + 130, y + 11).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  y += 22;
+
+  // ─── Exemplaires + signature ───
+  doc.font('Helvetica').fontSize(8.5).fillColor('#666666').text('En deux exemplaires originaux', ATT_X, y + 2, { lineBreak: false });
+  const sigX = ATT_X + 262, sigW = ATT_W - 262;
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(ATT_VAL).text('Signature :', sigX, y, { lineBreak: false });
+  if (sigBuf) {
+    try { doc.image(sigBuf, sigX, y + 11, { fit: [sigW, 46], align: 'center', valign: 'center' }); } catch { console.warn('[pdf] signature de l’attestation illisible'); }
+  }
+  doc.moveTo(sigX, y + 60).lineTo(sigX + sigW, y + 60).lineWidth(0.5).strokeColor(ATT_LINE).stroke();
+  if (v.managerName) doc.font('Helvetica').fontSize(7.5).fillColor('#666666').text(sw(v.managerName), sigX, y + 63, { width: sigW, align: 'center', lineBreak: false });
+  y += 78;
+
+  doc.font('Helvetica').fontSize(7.5).fillColor('#555555').text('(1) Rayer les mentions inutiles.', ATT_X, y, { lineBreak: false });
+
+  // ─── pied de page : source du modèle (sous la marge du bas : pas de page vide ajoutée par pdfkit) ───
+  const bottom = doc.page.margins.bottom;
+  doc.page.margins.bottom = 0;
+  doc.font('Helvetica').fontSize(7).fillColor(MUTED)
+    .text('Source : Annexe V de l’arrêté du 25 juillet 2022, rédaction en vigueur depuis le 12 juin 2025 — Légifrance', ATT_X, 812, { width: ATT_W, align: 'center', lineBreak: false });
+  doc.page.margins.bottom = bottom;
+}
+
+/** Attestation seule (aperçu / impression en deux exemplaires), une page A4. */
+export async function generateAttestationPdf(a: AttestationPdf, lang: Lang = 'fr'): Promise<Buffer> {
+  const sig = await loadSignatureBuffer(a.signatureUrl);
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: 'Attestation de bon montage', Author: sw(a.values.companyName) } });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    renderAttestationPage(doc, a, sig, lang);
+    doc.end();
+  });
+}
+
 export async function generateDailyReportPdf(data: {
   project: { name: string; internalNumber: string };
   client?: { name?: string | null; contactName?: string | null; email?: string | null; phone?: string | null; address?: string | null; } | null;

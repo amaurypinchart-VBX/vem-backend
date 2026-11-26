@@ -947,6 +947,17 @@ async function editHandoverFields(handoverId, projectId) {
           <div style="font-size:12px;color:var(--text3);margin-top:6px;">Pris en compte avec « 💾 Sauvegarder ».</div>
         </div>` : ''}
 
+        <!-- Attestation de bon montage (annexe V) : js/23-attestation.js -->
+        <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:8px;">📜 Attestation de bon montage</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:12px;color:var(--text2);flex:1;min-width:200px;">${h.attestation && h.attestation.enabled === false
+              ? 'Désactivée : le PDF signé partira sans attestation.'
+              : 'Annexe V de l’arrêté du 25 juillet 2022, préremplie avec le stand et le client, ajoutée en dernière page du PDF quand le client a signé.'}</div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openHandoverAttestation('${handoverId}')">📜 Vérifier / modifier</button>
+          </div>
+        </div>
+
         <!-- Zones d'inspection -->
         ${(h.items||[]).length ? `
         <div style="background:var(--bg3);border-radius:10px;padding:14px;">
@@ -1055,8 +1066,11 @@ function askSignatureLang(handoverId, force) {
         ${btn('fr', '🇫🇷 Français')}
         ${btn('en', '🇬🇧 English')}
       </div>
+      <div id="att-sign-note" style="font-size:12px;color:var(--text2);margin-top:14px;line-height:1.6;"></div>
     </div>`;
   document.body.appendChild(el);
+  // attestation de bon montage (annexe V) jointe au PDF signé : rappel + « ✏️ Vérifier » avant d'envoyer le lien
+  if (typeof fillAttestationSignNote === 'function') fillAttestationSignNote(handoverId);
 }
 
 async function generateSignatureLink(handoverId, force = false, lang = null) {

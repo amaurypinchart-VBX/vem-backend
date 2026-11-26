@@ -15,7 +15,8 @@
     "test:plan-approvals": "ts-node --transpile-only -P tsconfig.json tests/planApproval.test.ts",
     "test:chantier": "ts-node --transpile-only -P tsconfig.json tests/chantierLogic.test.ts",
     "postinstall": "prisma generate",
-    "test:briefing-next": "npm run build && node --test tests/briefingNext*.test.js"
+    "test:briefing-next": "npm run build && node --test tests/briefingNext*.test.js",
+    "test:attestation": "ts-node --transpile-only -P tsconfig.json tests/attestationLogic.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

@@ -147,6 +147,10 @@ export const RULES: Record<string, Rule[]> = {
     { m: 'GET', p: '/', need: 'read', client: true, list: true },
     { m: 'GET', p: '/:id', need: 'read', client: true, proj: async (p) => [await look.handover(p.id)] },
     { m: 'GET', p: '/:id/pdf', need: 'read', client: true, proj: async (p) => [await look.handover(p.id)] },
+    // attestation de bon montage (annexe V) : lue par l'équipe, modifiée par qui peut faire le handover
+    { m: 'GET', p: '/:id/attestation', need: 'read', proj: async (p) => [await look.handover(p.id)] },
+    { m: 'PUT', p: '/:id/attestation', need: 'handover', proj: async (p) => [await look.handover(p.id)] },
+    { m: 'GET', p: '/:id/attestation/pdf', need: 'read', proj: async (p) => [await look.handover(p.id)] },
     { m: 'POST', p: '/', need: 'handover', proj: (_p, req) => body(req) },
     { m: 'PATCH', p: '/:id', need: 'handover', proj: async (p) => [await look.handover(p.id)] },
     { m: 'POST', p: '/:id/items', need: 'handover', proj: async (p) => [await look.handover(p.id)] },

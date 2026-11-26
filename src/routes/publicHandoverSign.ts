@@ -10,6 +10,7 @@ import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { handoverChecklist, checklistPdfData, publicChecklist, handoverChecklistMode } from '../services/checklistService';
 import { translateTexts } from '../services/translationService';
+import { attestationForPdf } from '../services/attestationService';
 
 /** Langue choisie à la génération du lien de signature (fr par défaut). */
 const signLang = (h: { signatureLang?: string | null }): 'fr' | 'en' => (h.signatureLang === 'en' ? 'en' : 'fr');
@@ -125,11 +126,12 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
     }
 
     // 1. Marquer comme signé + token utilisé (atomique)
+    const signedAt = new Date();
     await prisma.handover.update({
       where: { id: h.id },
       data: {
         clientSignatureUrl: signatureBase64,
-        clientSignedAt: new Date(),
+        clientSignedAt: signedAt,
         clientName: (signerName || '').trim() || h.clientName,
         signatureTokenUsed: true,
         status: h.managerSignedAt ? 'signed' : h.status,
@@ -147,6 +149,8 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       ],
     }));
 
+    // attestation de bon montage (annexe V, arrêté du 25.07.2022) préremplie, en dernière page (sauf si désactivée)
+    const attestation = await attestationForPdf(h.id, { clientSignedAt: signedAt });
     const pdfBuffer = await generateHandoverPdf({
       project: { name: h.project.name, internalNumber: h.project.internalNumber, address: h.project.address },
       clientName: (signerName || '').trim() || h.clientName || h.project.client?.name || 'Client',
@@ -165,6 +169,7 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
       lang: signLang(h),
       checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
       checklistAnnex: handoverChecklistMode(h) === 'annex',
+      attestation,
     });
     const lang = signLang(h);
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_signed${lang === 'en' ? '_en' : ''}.pdf`, 'handover', null);
@@ -184,11 +189,11 @@ router.post('/:token', async (req: Request, res: Response, next: NextFunction) =
           html: lang === 'en'
             ? `<p>Hello,</p>
 <p>The client has signed the handover of the project <strong>${h.project.name}</strong> (ref. ${h.project.internalNumber}).</p>
-<p>The full report with both signatures is attached.</p>
+<p>The full report with both signatures is attached.${attestation ? ' The certificate of correct assembly (French regulation, annex V) is on its last page.' : ''}</p>
 <p>Best regards,<br>The VIEWBOX team</p>`
             : `<p>Bonjour,</p>
 <p>Le client a signé le handover du projet <strong>${h.project.name}</strong> (réf. ${h.project.internalNumber}).</p>
-<p>Le rapport complet avec les 2 signatures est en pièce jointe.</p>
+<p>Le rapport complet avec les 2 signatures est en pièce jointe.${attestation ? ' L’attestation de bon montage (annexe V de l’arrêté du 25 juillet 2022) est en dernière page.' : ''}</p>
 <p>Cordialement,<br>L'équipe VIEWBOX</p>`,
           attachments: [{
             filename: `Handover_${h.project.internalNumber}_signed.pdf`,

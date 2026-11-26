@@ -1649,6 +1649,12 @@ console.log('[migration] briefings.studio_slides OK (+ migration v2 → studio_s
   } catch (e: any) {
     logger.warn(`[migration] handovers.signature_lang : ${e.message}`);
   }
+  // Handover : attestation de bon montage (annexe V, arrêté du 25.07.2022) jointe au PDF signé (A. Pinchart 26.11.2026)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "handovers" ADD COLUMN IF NOT EXISTS "attestation" JSONB`);
+  } catch (e: any) {
+    logger.warn(`[migration] handovers.attestation : ${e.message}`);
+  }
   // Validation des plans par le client : demandes + journal (A. Pinchart 17.11.2026)
   try {
     for (const sql of [

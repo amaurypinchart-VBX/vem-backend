@@ -1235,12 +1235,14 @@ async function loadDetailHandovers(projectId) {
             ${def?`<span style="font-size:11px;color:var(--accent);">❌ ${def} défaut(s)</span>`:''}
           </div>
           ${checklistHandoverLine(h.checklistSummary, handoverChecklistModeOf(h))}
+          ${typeof attestationHandoverLine === 'function' ? attestationHandoverLine(h) : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;" onclick="event.stopPropagation()">
           <span class="badge ${sc[h.status]||'badge-muted'}">${sl[h.status]||h.status}</span>
           <div class="r-wrap" style="display:flex;gap:4px;justify-content:flex-end;">
             <button class="btn btn-ghost btn-xs" onclick="openHandoverFull('${h.id}')">👁️ Ouvrir</button>
             <button class="btn btn-ghost btn-xs" onclick="editHandoverFields('${h.id}','${projectId}')">✏️ Modifier</button>
+            <button class="btn btn-ghost btn-xs" onclick="openHandoverAttestation('${h.id}')" title="Attestation de bon montage (annexe V) jointe au PDF signé">📜 Attestation</button>
             <button class="btn btn-ghost btn-xs" onclick="downloadHandoverPdf('${h.id}')">📄 PDF</button>
             <button class="btn btn-ghost btn-xs" onclick="generateSignatureLink('${h.id}')">🔗 Signer</button>
             <button class="btn btn-ghost btn-xs" style="color:var(--accent);" onclick="deleteHandover('${h.id}')">🗑️</button>

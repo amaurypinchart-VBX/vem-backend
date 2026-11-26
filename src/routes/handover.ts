@@ -3,7 +3,8 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest, projectWhere } from '../middleware/auth';
 import { AppError } from '../utils/AppError';
-import { generateHandoverPdf } from '../services/pdfService';
+import { generateHandoverPdf, generateAttestationPdf } from '../services/pdfService';
+import { attestationForPdf, resolveAttestation, saveAttestation, saveCompany } from '../services/attestationService';
 import { sendMail } from '../services/emailService';
 import { saveProjectFilePdf } from '../utils/saveProjectFile';
 import { checklistSummaries, handoverChecklist, checklistPdfData, handoverChecklistMode } from '../services/checklistService';
@@ -29,6 +30,46 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       success: true,
       data: handovers.map((h) => ({ ...h, checklistSummary: summaries.get(h.projectId) || null })),
     });
+  } catch (err) { next(err); }
+});
+
+// ─── Attestation de bon montage (annexe V de l'arrêté du 25.07.2022), jointe au PDF une fois le client signé ───
+// PUT /handover/attestation/company — coordonnées de la société pour toutes les attestations (admin / technical manager)
+router.put('/attestation/company', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!['admin', 'technical_manager'].includes(req.user!.role)) throw new AppError('Réservé aux admins et technical managers', 403);
+    res.json({ success: true, data: await saveCompany(req.body) });
+  } catch (err) { next(err); }
+});
+
+// GET /handover/:id/attestation — valeurs (préremplies + modifiées), champs manquants, date imprimée
+router.get('/:id/attestation', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const r = await resolveAttestation(req.params.id);
+    if (!r) throw new AppError('Handover introuvable', 404);
+    res.json({ success: true, data: r });
+  } catch (err) { next(err); }
+});
+
+// PUT /handover/:id/attestation { enabled?, values? } — seuls les champs différents du préremplissage sont gardés
+router.put('/:id/attestation', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const r = await saveAttestation(req.params.id, req.body, req.user?.id || null);
+    if (!r) throw new AppError('Handover introuvable', 404);
+    res.json({ success: true, data: r });
+  } catch (err) { next(err); }
+});
+
+// GET /handover/:id/attestation/pdf[?inline=1&lang=en] — attestation seule (aperçu, impression en deux exemplaires)
+router.get('/:id/attestation/pdf', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const a = await attestationForPdf(req.params.id, { force: true });
+    if (!a) throw new AppError('Handover introuvable', 404);
+    const pdf = await generateAttestationPdf(a, req.query.lang === 'en' ? 'en' : 'fr');
+    const name = `Attestation_bon_montage_${String(a.values.eventName || 'handover').replace(/[^\w.-]+/g, '_').slice(0, 60)}.pdf`;
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `${req.query.inline === '1' ? 'inline' : 'attachment'}; filename="${name}"`);
+    res.send(pdf);
   } catch (err) { next(err); }
 });
 
@@ -59,7 +100,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
       // compte client : le handover et les contacts du chantier, pas les données internes du projet / de la fiche client
       const { project, ...rest } = h as any;
       return res.json({ success: true, data: {
-        ...rest, signatureToken: undefined,
+        ...rest, signatureToken: undefined, attestation: undefined,
         project: {
           id: project.id, name: project.name, internalNumber: project.internalNumber, address: project.address, city: project.city,
           client: project.client ? { id: project.client.id, name: project.client.name } : null,
@@ -81,6 +122,7 @@ router.post('/', async (req: AuthRequest, res: Response, next: NextFunction) => 
       responsible,
       customFields,
       handoverDate,
+      attestation: _attestation,
       ...handoverData
     } = req.body;
 
@@ -120,6 +162,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response, next: NextFunction)
       project,
       createdBy,
       siteManagerUser,
+      attestation: _attestation,
       ...data
     } = req.body;
     // place de la check-list : checklistMode body | annex | none (checklistAnnex seul = ancien écran, gardé)
@@ -295,6 +338,8 @@ router.post('/:id/send', async (req: AuthRequest, res: Response, next: NextFunct
       lang,
       checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
       checklistAnnex: handoverChecklistMode(h) === 'annex',
+      // attestation de bon montage en dernière page, seulement une fois le client signé
+      attestation: await attestationForPdf(h.id),
     });
     saveProjectFilePdf(h.projectId, pdfBuffer, `Handover_${h.project.internalNumber}_${lang}.pdf`, 'handover', req.user?.id);
     const recipients = new Set<string>();
@@ -379,6 +424,8 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response, next: NextFunctio
       lang,
       checklist: handoverChecklistMode(h) === 'none' ? null : checklistPdfData(await handoverChecklist(h.projectId)),
       checklistAnnex: handoverChecklistMode(h) === 'annex',
+      // attestation de bon montage en dernière page, seulement une fois le client signé
+      attestation: await attestationForPdf(h.id),
     });
 
     const filename = `Handover_${h.project.internalNumber}_${lang}.pdf`;
