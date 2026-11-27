@@ -70,6 +70,12 @@ export interface SupportLoad {
   eta: number;
   /** surface de plaque qu'il faudrait pour rester sous la charge admissible (mm²) */
   areaNeeded: number;
+  /**
+   * appui posé sur un plateau / des madriers continus : sa zone d'influence (mi-distances avec les appuis voisins posés
+   * sur le même bois, limitée au bois — méthode des bureaux d'études), le poids du bois réparti (N/mm²) et la pointe
+   * sous le bois du calcul sur sol élastique (N/mm², information)
+   */
+  zone?: { timber: number; peak: number };
 }
 
 export interface SlabResult {
@@ -385,6 +391,44 @@ export function globalRecord(s: SlabResult): CalcRecord {
   };
 }
 
+/**
+ * Zones d'influence d'appuis posés sur un même bois continu (plateau, madriers d'une rangée) : chaque point du bois va
+ * à l'appui le plus proche (mi-distances entre appuis), dans les limites du contour du bois (A. Pinchart 24.11.2026,
+ * méthode de la note ASIME3D « σ = R / A zone + p »). Appuis confondus (< 1 mm) : la zone est partagée à parts égales.
+ */
+export function influenceZones(points: Array<{ id: string; at: P2 }>, outline: P2[]): Map<string, { area: number; dims: [number, number]; poly: P2[] }> {
+  const out = new Map<string, { area: number; dims: [number, number]; poly: P2[] }>();
+  for (const a of points) {
+    let poly = ccw(outline);
+    let same = 1;
+    for (const b of points) {
+      if (b === a) continue;
+      const d: P2 = [b.at[0] - a.at[0], b.at[1] - a.at[1]];
+      if (Math.hypot(d[0], d[1]) < 1) {
+        same++;
+        continue;
+      }
+      poly = clipHalf(poly, [(a.at[0] + b.at[0]) / 2, (a.at[1] + b.at[1]) / 2], d);
+      if (poly.length < 3) break;
+    }
+    const area = poly.length >= 3 ? areaOf(poly) / same : 0;
+    const xs = poly.map((p) => p[0]);
+    const zs = poly.map((p) => p[1]);
+    const dims: [number, number] = poly.length >= 3 ? [Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs)] : [0, 0];
+    out.set(a.id, { area, dims, poly });
+  }
+  return out;
+}
+
+/** Le point est dans le contour convexe (bord compris, tolérance 1 mm). */
+function inside(p: P2, poly: P2[]): boolean {
+  const q = ccw(poly);
+  return q.every((a, i) => {
+    const b = q[(i + 1) % q.length];
+    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= -1 * Math.hypot(b[0] - a[0], b[1] - a[1]);
+  });
+}
+
 /** Côtés (mm) et surface (mm²) d'un contour convexe à 4 angles (rectangle). */
 function rectDims(c: P2[]): [number, number] {
   const d = (a: P2, b: P2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -397,11 +441,40 @@ function rectDims(c: P2[]): [number, number] {
  * 2 × grow), `bearing` = charge admissible (N/mm²).
  */
 export function supportLoads(res: CalageResult, bearing: number, spread: number, grow = 0): SupportLoad[] {
+  // bois continu retenu (plateau, madriers sous les rangées) : zone d'influence de chaque appui sur le bois du dessous
+  const lower = (res.remedy?.outlines ?? []).filter((o) => o.timber?.layer === 'lower');
+  const onTimber = res.checks.filter((c) => c.chainBase.timber);
+  const zoneOf = new Map<string, { area: number; dims: [number, number]; poly: P2[] }>();
+  if (lower.length && onTimber.length) {
+    for (const o of lower) {
+      const pts = onTimber.filter((c) => inside(c.at, o.corners)).map((c) => ({ id: c.id, at: c.at }));
+      for (const [id, z] of influenceZones(pts, o.corners)) if (!zoneOf.has(id)) zoneOf.set(id, z);
+    }
+  }
   return res.checks.map((c): SupportLoad => {
     const calage = (c.block ? c.block.massKg * G : 0) + platesWeight(c);
-    // appui posé sur des madriers / un plateau retenus : la charge locale = la pointe sous le bois (sol élastique, poids
-    // du bois compris), la surface = celle du bois qui porte sa rangée / tout le plateau
     const tb = c.chainBase.timber;
+    const z = tb ? zoneOf.get(c.id) : undefined;
+    // appui posé sur un plateau / des madriers continus : sa zone d'influence sur le bois (mi-distances avec ses
+    // voisins), le poids du bois réparti (déjà dans `spread`, avec la solution retenue), la pointe sous le bois (sol
+    // élastique) en information
+    if (tb && z && z.area > 0) {
+      const load = c.Rzk + calage;
+      const q = load / z.area + spread;
+      const platform = tb.label.startsWith('Plateau');
+      return {
+        id: c.id,
+        members: c.reaction.group.strip && c.block ? [c.block.id] : c.members,
+        reaction: c.Rzk,
+        calage,
+        plate: { dims: z.dims, area: z.area, label: `zone d’influence ${f(z.dims[0] / 10, 0)} × ${f(z.dims[1] / 10, 0)} cm ${platform ? 'sur le plateau de madriers' : 'sur les madriers de la rangée'}` },
+        q,
+        eta: q / bearing,
+        areaNeeded: bearing > spread ? load / (bearing - spread) : Infinity,
+        zone: { timber: spread, peak: tb.pressure },
+      };
+    }
+    // sinon (bois sans contour) : la pointe sous le bois (sol élastique, poids du bois compris)
     if (tb) {
       const side = Math.sqrt(tb.area);
       const platform = tb.label.startsWith('Plateau');
@@ -439,6 +512,17 @@ export function supportLoads(res: CalageResult, bearing: number, spread: number,
 
 /** Fiche de calcul de la charge locale sous la plaque d'un appui (descente de charges par appui). */
 export function supportLoadRecord(l: SupportLoad, bearing: number, spread: number): CalcRecord {
+  if (l.zone)
+    return {
+      key: 'slab.local',
+      title: `Charge locale sous ${l.id} : zone d’influence sur le bois`,
+      clause: 'descente de charges par appui sur un plateau / des madriers continus : zone d’influence de l’appui (mi-distances avec les appuis voisins, limitée au bois), poids du bois réparti',
+      formula: 'q = (Rz,k + G calage) / A zone + g bois ≤ charge admissible',
+      withValues: `q = (${kN(l.reaction)} + ${kN(l.calage)}) / ${m2(l.plate.area)} + ${loadPerM2Text(l.zone.timber)} = ${loadPerM2Text(l.q)} ≤ ${loadPerM2Text(bearing)} ; pointe sous le bois (sol élastique, information) ${loadPerM2Text(l.zone.peak)}`,
+      result: l.q,
+      limit: bearing,
+      eta: l.eta,
+    };
   return {
     key: 'slab.local',
     title: `Charge locale sous la plaque de ${l.id}`,

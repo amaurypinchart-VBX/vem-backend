@@ -52,6 +52,11 @@ export interface PadLayout {
   corners: boolean;
   /** une plaque au milieu de chaque grand côté (à fleur) */
   middles: boolean;
+  /**
+   * nombre de plaques le long de chaque grand côté entre les angles, régulièrement espacées (remplace `middles` ;
+   * 3 = 5 appuis par grand côté, comme la note ASIME3D du 24.11.2026) ; absent = `middles` ? 1 : 0
+   */
+  perSide?: number;
   /** plaques au centre de chaque Viewbox, sous les profils du plancher (traverses / lisses), réparties sur la longueur */
   centre: number;
   /**
@@ -297,7 +302,8 @@ export function layoutPads(floors: ModuleFloor[], layout: PadLayout, groundY = 0
   for (const f of floors) {
     const [L, W] = f.size;
     if (layout.corners) for (const [a, b] of [[0, 0], [L, 0], [L, W], [0, W]] as const) anchors.push({ p: toWorld(f, a, b), kind: 'corner' });
-    if (layout.middles) for (const b of [0, W]) anchors.push({ p: toWorld(f, L / 2, b), kind: 'middle' });
+    const between = Math.max(0, Math.round(layout.perSide ?? (layout.middles ? 1 : 0)));
+    for (let k = 1; k <= between; k++) for (const b of [0, W]) anchors.push({ p: toWorld(f, (L * k) / (between + 1), b), kind: 'middle' });
     for (let k = 1; k <= layout.centre; k++) anchors.push({ p: toWorld(f, (L * k) / (layout.centre + 1), W / 2), kind: 'centre' });
   }
   // regroupement des points voisins de même nature

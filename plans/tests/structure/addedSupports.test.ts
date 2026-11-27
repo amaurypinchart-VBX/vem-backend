@@ -184,10 +184,12 @@ describe('plateau choisi à la main : poutres GL24h sous les rangées sur bastai
     expect(outline.ground!.mean).toBeCloseTo((res.estimate.verticalK! + wood) / (5900 * 5000), 6);
     expect(outline.ground!.max).toBeGreaterThan(3 * outline.ground!.mean);
     expect(v.remedy.materials.some((m) => m.label.startsWith('Poutre lamellé-collé GL24h'))).toBe(true);
-    // charge répartie (information) : le bois passe, la pointe n'est pas un critère
+    // charge répartie (information) : le bois passe, la pointe n'est pas un critère ; chaque appui sur sa zone
+    // d'influence du plateau (24.11.2026), la pointe sous le bois gardée en information
     expect(v.ok).toBe(true);
-    expect(v.result!.checks.every((c) => c.local?.plate.label === 'plateau de madriers (pointe sous le bois)')).toBe(true);
-    expect(v.result!.checks[0].local!.q).toBeCloseTo(outline.ground!.max, 9);
+    expect(v.result!.checks.every((c) => /^zone d’influence \d+ × \d+ cm sur le plateau de madriers$/.test(c.local!.plate.label))).toBe(true);
+    expect(v.result!.checks[0].local!.zone!.peak).toBeCloseTo(outline.ground!.max, 9);
+    expect(Math.max(...v.result!.checks.map((c) => c.local!.q))).toBeLessThan(outline.ground!.max);
   });
 
   it('charge admissible exigée sous chaque plaque : le plateau ne passe pas, piste « charge linéique à faire préciser »', () => {
